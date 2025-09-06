@@ -119,7 +119,7 @@ def validate_inventory_file_and_get_inventory(inventory_file) -> tuple[Any, str]
 async def main():
     parser = argparse.ArgumentParser(
         description='Process inventory and source files with a specified class',
-        epilog='Example: python3 main.py inventory.py source.py Make_directory'
+        epilog='Example: python3 examples/cli/main.py ~/inventory.py examples/cli/create_tmp_mydir.py Make_directory'
     )
 
     parser.add_argument(

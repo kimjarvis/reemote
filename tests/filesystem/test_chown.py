@@ -22,7 +22,7 @@ def process_chown_generator(generator, ls_output_before, ls_output_after, return
         s1 = SSHCompletedProcess()
         s1.returncode = returncode
         s1.stdout = ls_output_before
-        result1 = Result(cp=s1, host="localhost", executed=True)
+        result1 = Result(cp=s1, host="localhost")
         results.append(result1)
 
         # Second yield: chown command
@@ -35,7 +35,7 @@ def process_chown_generator(generator, ls_output_before, ls_output_after, return
         # Send chown result (empty stdout for chown)
         s2 = SSHCompletedProcess()
         s2.returncode = returncode
-        result2 = Result(cp=s2, host="localhost", executed=True)
+        result2 = Result(cp=s2, host="localhost")
         results.append(result2)
 
         # Third yield: ls -ld command again
@@ -49,7 +49,7 @@ def process_chown_generator(generator, ls_output_before, ls_output_after, return
         s3 = SSHCompletedProcess()
         s3.returncode = returncode
         s3.stdout = ls_output_after
-        result3 = Result(cp=s3, host="localhost", executed=True)
+        result3 = Result(cp=s3, host="localhost")
         results.append(result3)
 
         # Final send to complete the generator

@@ -99,8 +99,8 @@ def construct_host_ops(operations, results):
         if host not in host_dict:
             host_dict[host] = []
         host_dict[host].append(
-            ({"command": operation.command, "condition": operation.condition, "changed": operation.changed},
-             {"stdout": stdout, "returncode": result.cp.returncode, "executed": result.executed,
+            ({"command": operation.command},
+             {"stdout": stdout, "returncode": result.cp.returncode,
               "changed": result.changed}))
 
     # Convert the dictionary into the desired list of dictionaries format
@@ -194,7 +194,7 @@ def summarize_data_for_aggrid(data):
         # Add boolean values for each host
         for host_index, host_data in enumerate(data):
             command_dict, result_dict = host_data["ops"][ops_index]
-            changed = command_dict.get("changed", False) or result_dict.get("changed", False)
+            changed = result_dict.get("changed", False)
             row[f"host{host_index}"] = changed
 
         # Append the row to rowData

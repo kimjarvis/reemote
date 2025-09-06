@@ -13,24 +13,23 @@ def process_generator(generator, returncode):
         while True:
             # Handle strings by converting to Operation objects
             if isinstance(value, str):
-                operation = Operation(command=value, condition=True)
+                operation = Operation(command=value)
                 commands.append(operation.command)
 
                 # Simulate result
                 s = SSHCompletedProcess()
                 s.returncode = returncode
-                result = Result(cp=s, host="localhost", executed=True)
+                result = Result(cp=s, host="localhost")
 
                 value = generator.send(result)
 
             elif isinstance(value, Operation):
-                if value.condition:
-                    commands.append(value.command)
+                commands.append(value.command)
 
                 # Simulate result
                 s = SSHCompletedProcess()
                 s.returncode = returncode
-                result = Result(cp=s, host="localhost", executed=True)
+                result = Result(cp=s, host="localhost")
 
                 value = generator.send(result)
 

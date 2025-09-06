@@ -22,17 +22,17 @@ class Directory:
         """
         _sudo = "sudo -S " if self.sudo else ""
         # Check whether the directory exists
-        r: Result = yield f"{_sudo}[ -d {self.path} ]"
+        r0: Result = yield f"{_sudo}[ -d {self.path} ]"
         # print(f">>>>> Received in Directory: {r}")
 
-        # Present directory does not exist, so create it
-        yield Operation(command=f"{_sudo}mkdir -p {self.path}",
-                            condition=self.present and r.cp.returncode != 0,
-                            changed=True)
-        # print(f">>>>> Received in Directory: {r}")
+        if self.present and r0.cp.returncode != 0:
+            # Present directory does not exist, so create it
+            r1 =yield f"{_sudo}mkdir -p {self.path}"
+            # print(f">>>>> Received in Directory: {r1}")
+            r1.changed=True
 
-        # Not Present directory exists, so remove it
-        yield Operation(command=f"{_sudo}rmdir -p {self.path}",
-                            condition=not self.present and r.cp.returncode == 0,
-                            changed=True)
-        # print(f">>>>> Received in Directory: {r}")
+        if not self.present and r0.cp.returncode == 0:
+            # Not Present directory exists, so remove it
+            r2 = yield f"{_sudo}rmdir -p {self.path}"
+            # print(f">>>>> Received in Directory: {r2}")
+            r2.changed=True
