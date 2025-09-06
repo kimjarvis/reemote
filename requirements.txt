@@ -1,0 +1,7 @@
+pytest
+cryptography
+bcrypt
+asyncssh
+nicegui
+pandas
+tabulate
