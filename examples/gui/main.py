@@ -4,23 +4,18 @@ from reemote.run import run
 from reemote.operations.filesystem.directory import Directory
 from reemote.validate_inventory_structure import validate_inventory_structure
 from reemote.verify_inventory_connect import verify_inventory_connect
-from reemote.printers import construct_host_ops, generate_change_df, convert_df_to_ag_grid
-from reemote.printers import construct_host_ops, print_json_ops, print_json_ops, summarize_data_for_aggrid, get_printable_aggrid
+from reemote.printers import construct_host_ops, summarize_data_for_aggrid
+from reemote.operations.filesystem.directory import Directory
 
-class Make_directory:
-    def __init__(self, present):
-        self.present = present
-
-    def execute(self):
-        yield Directory(path="/tmp/mydir", present=self.present, sudo=False)
 
 class Gui:
     def __init__(self):
-        app.storage.user["columns"]=[]
-        app.storage.user["rows"]=[]
+        app.storage.user["columns"] = []
+        app.storage.user["rows"] = []
 
-    async def dir(self,present):
-        operations, responses = await run(app.storage.user["inventory"], Make_directory(present=present))
+    async def dir(self, present):
+        operations, responses = await run(app.storage.user["inventory"],
+                                          Directory(path="/tmp/mydir", present=present, sudo=True))
         if present:
             ui.notify("Directory present")
         else:
@@ -51,8 +46,7 @@ class Gui:
             'rowData': app.storage.user["rows"],
         }).classes('max-h-40  overflow-y-auto')
 
-
-    async def show(self,event: ValueChangeEventArguments):
+    async def show(self, event: ValueChangeEventArguments):
         name = type(event.sender).__name__
         await self.dir(event.value)
         self.grid.refresh()
@@ -72,5 +66,6 @@ def page():
 
     gui.grid()
 
-ui.run(title="Reemote RC Demo", reload=False, port=native.find_open_port(),
+
+ui.run(title="Reemote", reload=False, port=native.find_open_port(),
        storage_secret='private key to secure the browser session cookie')

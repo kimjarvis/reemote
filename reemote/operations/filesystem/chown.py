@@ -8,6 +8,12 @@ class Chown:
                  options=None,
                  sudo: bool = False):
 
+        self.target = target
+        self.user = user
+        self.group = group
+        self.options = options
+        self.sudo = sudo
+
         if options is None:
             options = []
 
@@ -31,10 +37,17 @@ class Chown:
         op.append(target)
 
         self.chown = " ".join(op)
-        self.target = target
-        self.sudo = sudo
+
+    def __repr__(self):
+        """
+        Return an unambiguous string representation of the Chown object.
+        This representation can be used to recreate the object.
+        """
+        return (f"Chown(target={self.target!r}, user={self.user!r}, "
+                f"group={self.group!r}, options={self.options!r}, sudo={self.sudo!r})")
 
     def execute(self):
+        yield f"echo {self}"
         _sudo = "sudo -S " if self.sudo else ""
 
         # Get initial file info

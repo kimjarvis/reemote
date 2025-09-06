@@ -14,7 +14,15 @@ class Directory:
         self.present = present
         self.sudo = sudo
 
+    def __repr__(self):
+        """
+        Return an unambiguous string representation of the Directory object.
+        This representation can be used to recreate the object.
+        """
+        return f"Directory(path={self.path!r}, present={self.present!r}, sudo={self.sudo!r})"
+
     def execute(self):
+        yield f"echo {self}"
         """
         Execute the directory management logic as a generator.
 
