@@ -189,7 +189,10 @@ def summarize_data_for_aggrid(data):
     for ops_index, ops in enumerate(data[0]["ops"]):  # Assuming all hosts have the same commands
         row = {}
         # Add the command to the row
-        row["command"] = ops[0]["command"]
+        if ops[0]["command"].startswith("echo"):
+            row["command"] = ops[0]["command"].replace("echo", ">>>>")
+        else:
+            row["command"] = ops[0]["command"]
 
         # Add boolean values for each host
         for host_index, host_data in enumerate(data):

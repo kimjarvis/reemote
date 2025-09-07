@@ -1,6 +1,5 @@
 import asyncssh
 from asyncssh import SSHCompletedProcess
-
 from reemote.result import Result
 
 
@@ -21,26 +20,22 @@ async def run_command_on_host(operation):
                 if not sudo_info.get("sudo_password"):
                     raise ValueError("Command requires sudo, but no sudo password was provided.")
 
-                # Run the command with sudo, providing the password via stdin
-                cp = await conn.run(
-                    command,
-                    input=sudo_info.get("sudo_password") + "\n",
-                    # Provide the sudo password followed by a newline
-                    check=False  # Do not raise an exception if the command fails
-                )
+                # Construct the full command for sudo
+                full_command = f'echo "{sudo_info["sudo_password"]}" | sudo -S {command[len("sudo "):]}'
+
+                # Run the command
+                cp = await conn.run(full_command, check=False)
             elif command.startswith("su"):
                 if not sudo_info.get("su_password"):
                     raise ValueError("Command requires su, but no su password was provided.")
 
-                # Run the command with sudo, providing the password via stdin
-                cp = await conn.run(
-                    command,
-                    input=sudo_info.get("su_password") + "\n",
-                    # Provide the sudo password followed by a newline
-                    check=False  # Do not raise an exception if the command fails
-                )
+                # Construct the full command for su
+                full_command = f'echo "{sudo_info["su_password"]}" | su -c "{command[len("su "):]}"'
 
-
+                # Run the command
+                cp = await conn.run(full_command, check=False)
+            elif command.startswith("echo"):
+                pass
             else:
                 cp = await conn.run(command, check=False)
 
