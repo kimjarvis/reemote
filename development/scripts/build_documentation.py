@@ -12,12 +12,6 @@ def run_command(command, error_message):
         sys.exit(1)
 
 def main():
-    # Step 1: Generate the API documentation using sphinx-apidoc
-    print("Generating API documentation...")
-    run_command(
-        "sphinx-apidoc -o docs/ reemote/ --force",
-        "Error: Failed to generate API documentation with sphinx-apidoc."
-    )
 
     # Step 2: Navigate to the 'docs' directory
     print("Navigating to the 'docs' directory...")

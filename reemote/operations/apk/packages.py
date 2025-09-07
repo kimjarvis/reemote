@@ -23,29 +23,34 @@ class Packages:
     def __init__(self,
                  packages: List[str],
                  present: bool,
+                 repository: str = None ,
                  sudo: bool = False,
                  su: bool = False):
         self.packages: List[str] = packages
         self.present: bool = present
+        self.repository: str = repository
         self.sudo: bool = sudo
         self.su: bool = su
 
         # Construct the operation string from the list of packages
         op: List[str] = []
         op.extend(self.packages)
+        if repository:
+            op.append(f"--repository {repository}")
         self.op: str = " ".join(op)
 
     def __repr__(self) -> str:
         return (f"Packages(packages={self.packages!r}, present={self.present!r},"
+                f"repository={self.repository!r},"
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r = yield f"echo {self}"
+        r0 = yield f"echo {self}"
         _sudo: str = "sudo -S " if self.sudo else ""
         _su: str = "su -c " if self.su else ""
 
         # Retrieve the current list of installed packages
-        r1 = yield f"{_sudo}apk info"
+        r1 = yield f"{_sudo}apk info -v"
 
         # Add or remove packages based on the `present` flag
         if self.present:
@@ -54,7 +59,7 @@ class Packages:
             r2 = yield f"{_sudo}{_su}'apk del {self.op}'"
 
         # Retrieve the updated list of installed packages
-        r3 = yield f"{_sudo}apk info"
+        r3 = yield f"{_sudo}apk info -v"
 
         # Set the `changed` flag if the package state has changed
         if r1.cp.stdout != r3.cp.stdout:
