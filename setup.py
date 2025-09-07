@@ -1,9 +1,14 @@
 from setuptools import setup, find_packages
 
+with open("description.md", "r", encoding="utf-8") as fh:
+    long_description = fh.read()
+
 setup(
     name="reemote",  # Name of your package
     version="0.0.1",   # Version number
     description="A Python package for reemote functionality",  # Short description
+    long_description=long_description,
+    long_description_content_type="text/markdown",  # Change to "text/x-rst" if using reStructuredText
     author="Kim Jarvis",  # Your name
     author_email="kim.jarvis@tpfsystems.com",  # Your email
     url="https://github.com/kimjarvis/reemote",  # URL to the source code repository
