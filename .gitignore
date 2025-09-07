@@ -1,6 +1,5 @@
 inventory/
 inventory.py
-docs/_build/
 storage-user*
 
 # Byte-compiled / optimized / DLL files

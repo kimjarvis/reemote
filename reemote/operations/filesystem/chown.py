@@ -1,4 +1,17 @@
 class Chown:
+    """
+    A class to encapsulate the functionality of the `chown` or `chgrp` command in Unix-like operating systems.
+    It allows users to specify a target file or directory, along with optional user and group ownership changes,
+    additional command-line options, and the ability to execute the command with elevated privileges (`sudo`).
+
+    Attributes:
+        target (str): The file or directory whose ownership is to be changed.
+        user (Optional[str]): The new user owner. Defaults to `None`.
+        group (Optional[str]): The new group owner. Defaults to `None`.
+        options (List[str]): Additional command-line options for the `chown` or `chgrp` command.
+        sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
+        su (bool): If `True`, the commands will be executed with `su` privileges.
+    """
     def __init__(self, target: str,
                  user: str | None = None,
                  group: str | None = None,
@@ -36,10 +49,6 @@ class Chown:
         self.chown = " ".join(op)
 
     def __repr__(self):
-        """
-        Return an unambiguous string representation of the Chown object.
-        This representation can be used to recreate the object.
-        """
         return (f"Chown(target={self.target!r}, user={self.user!r}, "
                 f"group={self.group!r}, options={self.options!r}, sudo={self.sudo!r})")
 

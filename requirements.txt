@@ -5,3 +5,4 @@ asyncssh
 nicegui
 pandas
 tabulate
+sphinx

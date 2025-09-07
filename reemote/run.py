@@ -62,7 +62,6 @@ async def run_command_on_host(operation):
                     check=False  # Do not raise an exception if the command fails
                 )
             elif command.startswith("su"):
-                print(f"hi {sudo_info.get("su_password")} {command}")
                 if not sudo_info.get("su_password"):
                     raise ValueError("Command requires su, but no su password was provided.")
 

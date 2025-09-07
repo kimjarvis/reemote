@@ -1,23 +1,29 @@
 from reemote.result import Result
 
 class Directory:
-    def __init__(self, path: str, present: bool, sudo: bool = False):
+    class Directory:
         """
-        Initialize the Directory class with the required parameters.
+        A class to manage directory states on a filesystem.
 
-        :param path: The directory path to check or modify.
-        :param present: Whether the directory should exist (True) or not (False).
-        :param sudo: Whether to use sudo privileges (default is False).
+        Attributes:
+            path (str): The absolute or relative path of the directory to manage. This is the target directory whose state will be checked or modified.
+            present (bool): Indicates whether the directory should exist (`True`) or not (`False`) on the system. If `True`, the directory will be created if it does not exist. If `False`, the directory will be removed if it exists.
+            sudo (bool): If `True`, the commands will be executed with `sudo` privileges. Defaults to `False`.
+
+        Usage:
+            This class is designed to be used in a generator-based workflow where commands are yielded for execution.
+            It supports creating or removing directories based on the `present` flag and allows privilege escalation via `sudo`.
+
+        Notes:
+            - Commands are constructed based on the `present` and `sudo` flags.
+            - The `changed` flag is set if the directory state changes after execution.
         """
+    def __init__(self, path: str, present: bool, sudo: bool = False):
         self.path = path
         self.present = present
         self.sudo = sudo
 
     def __repr__(self):
-        """
-        Return an unambiguous string representation of the Directory object.
-        This representation can be used to recreate the object.
-        """
         return f"Directory(path={self.path!r}, present={self.present!r}, sudo={self.sudo!r})"
 
     def execute(self):
