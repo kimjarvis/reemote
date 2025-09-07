@@ -4,7 +4,8 @@ from reemote.run import run
 from reemote.operations.filesystem.directory import Directory
 from reemote.validate_inventory_structure import validate_inventory_structure
 from reemote.verify_inventory_connect import verify_inventory_connect
-from reemote.printers import construct_host_ops, summarize_data_for_aggrid
+from reemote.summarize_data_for_aggrid import summarize_data_for_aggrid
+from reemote.construct_host_ops import construct_host_ops
 from reemote.operations.filesystem.directory import Directory
 
 

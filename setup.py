@@ -10,7 +10,13 @@ setup(
     long_description_content_type="text/markdown",  # Change to "text/x-rst" if using reStructuredText
     author="Kim Jarvis",  # Your name
     author_email="kim.jarvis@tpfsystems.com",  # Your email
-    url="https://github.com/kimjarvis/reemote",  # URL to the source code repository
+    url="http://reemote.org/",
+    project_urls={
+        "Documentation": "http://reemote.org/",
+        "Source Code": "https://github.com/kimjarvis/reemote",
+        "Bug Tracker": "https://github.com/kimjarvis/reemote/issues",
+        "Changelog": "https://github.com/kimjarvis/reemote/blob/main/CHANGELOG.md",
+    },
     license="MIT",  # License type
     packages=find_packages(),  # Automatically find all packages in the directory
     install_requires=[
