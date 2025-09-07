@@ -1,4 +1,3 @@
-from reemote.operation import Operation
 from reemote.result import Result
 
 class Directory:

@@ -1,6 +1,3 @@
-from reemote.operation import Operation
-
-
 class Chown:
     def __init__(self, target: str,
                  user: str | None = None,

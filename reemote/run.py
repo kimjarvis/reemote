@@ -61,6 +61,20 @@ async def run_command_on_host(operation):
                     # Provide the sudo password followed by a newline
                     check=False  # Do not raise an exception if the command fails
                 )
+            elif command.startswith("su"):
+                print(f"hi {sudo_info.get("su_password")} {command}")
+                if not sudo_info.get("su_password"):
+                    raise ValueError("Command requires su, but no su password was provided.")
+
+                # Run the command with sudo, providing the password via stdin
+                cp = await conn.run(
+                    command,
+                    input=sudo_info.get("su_password") + "\n",
+                    # Provide the sudo password followed by a newline
+                    check=False  # Do not raise an exception if the command fails
+                )
+
+
             else:
                 cp = await conn.run(command, check=False)
 

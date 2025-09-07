@@ -5,7 +5,7 @@ Makes a directory on all the servers listed in inventory.py.
 ## Example 
 
 ```bash
-python3 examples/cli/main.py ~/inventory.py examples/cli/create_tmp_mydir.py Make_directory
+python3 examples/cli/main.py ~/inventory.py examples/cli/packages.py Make_directory
 +------------------------------------------------------------+-------------------+-----------------+
 | Command                                                    | 192.168.122.197   | 192.168.122.7   |
 +============================================================+===================+=================+

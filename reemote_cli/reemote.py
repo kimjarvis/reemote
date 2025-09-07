@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import asyncio
 import sys
@@ -14,7 +16,7 @@ from reemote.validate_inventory_structure import validate_inventory_structure
 async def main():
     parser = argparse.ArgumentParser(
         description='Process inventory and source files with a specified class',
-        epilog='Example: python3 examples/cli/main.py ~/inventory.py examples/cli/main.py Make_directory'
+        epilog='Example: reemote ~/inventory.py examples/cli/main.py Make_directory'
     )
 
     parser.add_argument(
