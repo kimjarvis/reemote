@@ -28,4 +28,9 @@ setup(
         ],
     },
     python_requires=">=3.6",  # Specify the minimum Python version required
+    entry_points={
+        'console_scripts': [
+            'reemote=reemote:main',  # This creates a CLI command `reemote`
+        ],
+    },
 )
