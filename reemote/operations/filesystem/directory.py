@@ -27,7 +27,7 @@ class Directory:
         return f"Directory(path={self.path!r}, present={self.present!r}, sudo={self.sudo!r})"
 
     def execute(self):
-        yield f"echo {self}"
+        yield f"composite {self}"
         """
         Execute the directory management logic as a generator.
 

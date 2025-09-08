@@ -53,7 +53,7 @@ class Chown:
                 f"group={self.group!r}, options={self.options!r}, sudo={self.sudo!r})")
 
     def execute(self):
-        yield f"echo {self}"
+        yield f"composite {self}"
         _sudo = "sudo -S " if self.sudo else ""
 
         # Get initial file info

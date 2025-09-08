@@ -28,7 +28,7 @@ class Update:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r0 = yield f"echo {self}"
+        r0 = yield f"composite {self}"
         _sudo: str = "sudo -S " if self.sudo else ""
         _su: str = "su -c " if self.su else ""
 
