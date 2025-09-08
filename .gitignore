@@ -1,6 +1,8 @@
 inventory/
 inventory.py
 storage-user*
+.idea
+development/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
