@@ -3,6 +3,6 @@ cryptography
 bcrypt
 asyncssh
 nicegui
-pandas
 tabulate
 sphinx
+nicegui
