@@ -2,3 +2,20 @@
 
 Makes a directory on all the servers listed in inventory.py.
 
+Copy `example_inventory.py` to your home directory and modify it with the credentials of the target host.
+
+Example output:
+
+```
+reemote ~/inventory.py examples/cli/make_directory.py Make_directory
+
++---------------------------------------------------------------------+------------------+
+| Command                                                             | 192.168.122.47   |
++=====================================================================+==================+
+| >>>> Directory(path='/tmp/mydir', present=True,sudo=False, su=True) | True             |
++---------------------------------------------------------------------+------------------+
+| [ -d /tmp/mydir ]                                                   | False            |
++---------------------------------------------------------------------+------------------+
+| mkdir -p /tmp/mydir                                                 | True             |
++---------------------------------------------------------------------+------------------+
+```
