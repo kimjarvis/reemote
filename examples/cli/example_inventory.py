@@ -9,7 +9,7 @@ def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
                 'password': 'passwd'               # Password
             },
             {
-                'sudo_password': 'passwd'       # Password
+                'su_password': 'passwd'       # Password
             }
         ),
         (
@@ -20,7 +20,7 @@ def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
                 'passphrase': 'secret'            # Password for the SSH key
             },
             {
-                'sudo_password': 'secret'       # Password
+                'su_password': 'secret'       # Password
             }
         )
     ]
