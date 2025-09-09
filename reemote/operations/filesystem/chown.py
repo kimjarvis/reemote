@@ -47,7 +47,6 @@ class Chown:
         op.extend(options)
         op.append(user_group)
         op.append(target)
-2
         self.chown = " ".join(op)
 
     def __repr__(self):

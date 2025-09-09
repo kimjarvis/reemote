@@ -6,7 +6,7 @@ look at an example.
 
 .. code-block:: python
 
-    reemote.py ~/inventory.py examples/cli/make_directory.py Make_directory
+    reemote ~/inventory.py examples/cli/make_directory.py Make_directory
 
 The command will create a directory on all of the hosts in the inventory.
 

@@ -4,7 +4,7 @@ Getting started
 Hello World Example
 -------------------
 
-This is the Hello world example helloworld.py.
+This example echos "Hello world" on the localhost.
 
 .. code-block:: python
 
@@ -33,7 +33,7 @@ This is the Hello world example helloworld.py.
     if __name__ == "__main__":
         asyncio.run(main())
 
-It runs echo on the local host.  To run it, modify youruser and yourpassword.  You should see:
+To run it, modify youruser and yourpassword.  You should see:
 
 .. code-block:: bash
 
@@ -45,6 +45,8 @@ It runs echo on the local host.  To run it, modify youruser and yourpassword.  Y
     +------------------+-------------+
     None
 
+The False under the host localhost indicates that the command didn't change anything on the host.
+
 Inventory is a function that describes the hosts on which the execute function in class Hello_world
 runs.  In this case its our localhost.  The yield in execute class in Hello_world describes the
 action.  In this case its to echo "hello world".  The echo command does not change the host so the
@@ -55,7 +57,7 @@ appear as another column.
 Installing vim on Alpine Example
 --------------------------------
 
-This installs vim on a server 192.168.122.47 which is running Alpine using the apk package manager.
+This example installs vim on a server, which is running Alpine, using the apk package manager.
 
 .. code-block:: python
 
@@ -127,3 +129,50 @@ a False in the changed column.  The operation Package installs vim.  This functi
 list of packages on the host.  The changed column is flagged True on both the Packages command and
 the apk add vim operation.
 
+.. _gui-example:
+
+GUI Example
+-----------
+
+This example creates or deletes a directory on all the servers in the inventory.
+
+.. image:: gui_demo.png
+   :width: 100%
+   :align: center
+   :alt: GUI Demo Screenshot
+
+The Reemote GUI is based on `NiceGUI <https://nicegui.io>`_ .  The Gui class provides methods to upload the
+inventory and produce and execution report.
+
+.. code-block:: python
+
+    from nicegui import ui, native, app
+    from reemote.gui import Gui
+    from reemote.run import run
+    from reemote.grid import grid
+    from reemote.operations.filesystem.directory import Directory
+
+
+    async def Control_directory(gui):
+        operations, responses = await run(app.storage.user["inventory"],
+                                          Directory(path="/tmp/mydir", present=app.storage.user["present"], su=True))
+        app.storage.user["columnDefs"],app.storage.user["rowData"] = grid(operations, responses)
+        gui.execution_report.refresh()
+
+    @ui.page('/')
+    def page():
+        gui = Gui()
+        gui.upload_inventory()
+        ui.switch('Directory /tmp/mydir is present on hosts', value=False).bind_value(app.storage.user, 'present')
+        ui.button('Run', on_click=lambda: Control_directory(gui))
+        gui.execution_report()
+
+
+    ui.run(title="Manage directory", reload=False, port=native.find_open_port(),
+           storage_secret='private key to secure the browser session cookie')
+
+The source code is `here <https://github.com/kimjarvis/reemote/blob/main/examples/gui/main.py>`_
+
+The Gui class contains elements to upload the inventory and to display a report of the execution on the hosts. On the web page
+the boolean value of the switch is written to application storage.
+The function Control_directory runs the Directory operation.  The present parameter is read from application storage.
