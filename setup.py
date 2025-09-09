@@ -23,12 +23,12 @@ setup(
         "cryptography",
         "bcrypt",
         "asyncssh",
-        "tabulate"
+        "tabulate",
+        "nicegui",
     ],  # List of dependencies with proper commas
     extras_require={
         "dev": [
             "setuptools",
-            "asyncssh",
         ],
         "doc": [
             "sphinx",
