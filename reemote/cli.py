@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import argparse
 import asyncio
 import sys
@@ -18,7 +16,8 @@ from reemote.validate_inventory_structure import validate_inventory_structure
 async def main():
     parser = argparse.ArgumentParser(
         description='Process inventory and source files with a specified class',
-        epilog='Example: reemote ~/inventory.py examples/cli/main.py Make_directory'
+        usage="usage: reemote.py [-h] inventory_file source_file class_name",
+        epilog='Example: reemote.py ~/inventory.py examples/cli/make_directory.py Make_directory'
     )
 
     parser.add_argument(
@@ -63,17 +62,18 @@ async def main():
 
     if not validate_inventory_structure(inventory()):
         print("Inventory structure is invalid")
-        return False
+        sys.exit(1)
 
     if not await verify_inventory_connect(inventory()):
         print("Inventory connections are invalid")
-        return False
+        sys.exit(1)
 
     operations, responses = await run(inventory(), root_class())
     host_ops = construct_host_ops(operations,responses)
     dgrid=summarize_data_for_aggrid(host_ops)
     grid=get_printable_aggrid(dgrid)
     print(grid)
+    sys.exit(0)
 
 if __name__ == "__main__":
     asyncio.run(main())

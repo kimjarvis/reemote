@@ -1,7 +1,10 @@
 Inventory
 =========
 
-The ssh connection to reemote hosts is usually defined in an inventory file.
+Specifying the ssh connection
+-----------------------------
+
+Reemote connects to hosts using asyncssh.  The inventory contains the information used to create a ssh connection to reemote hosts.
 This is an example inventory that contains ssh connection information for one host.
 
 .. code-block:: python
@@ -28,6 +31,9 @@ represents a host.  A host tuple contains two dictionaries.  The first contians 
 is passed to the `AsyncSSH Connect API <https://asyncssh.readthedocs.io/en/latest/api.html#asyncssh.connect>`_
 The second contains global information that is available in your reemote class. For example, sudo and su passwords.
 
-The inventory.py file may contain sensitive information and is usually added to .gitignore.
+Using an inventory file
+-----------------------
 
+Inventory is just a python List.  It can be defined inline in code.  But, usually it is defined in
+a file inventory.py.  The file may contain sensitive information and is usually added to .gitignore.
 The reemote cli takes the inventory file as its first parameter.

@@ -1,8 +1,8 @@
 Getting started
 ===============
 
-Hello world example
-===================
+Hello World Example
+-------------------
 
 This is the Hello world example helloworld.py.
 
@@ -48,12 +48,12 @@ It runs echo on the local host.  To run it, modify youruser and yourpassword.  Y
 Inventory is a function that describes the hosts on which the execute function in class Hello_world
 runs.  In this case its our localhost.  The yield in execute class in Hello_world describes the
 action.  In this case its to echo "hello world".  The echo command does not change the host so the
-changed value is set to false.  This is the value shown in hosts column in the output table.  If more commands
-are added they appear as rows in the output table.  If another host is added to the inventory it will
+changed value is set to false.  This is the value shown in hosts column in the output table.  When more commands
+are added they appear as rows in the output table.  When another host is added to the inventory it will
 appear as another column.
 
-Installing vim on Alpine example
-================================
+Installing vim on Alpine Example
+--------------------------------
 
 This installs vim on a server 192.168.122.47 which is running Alpine using the apk package manager.
 
@@ -92,7 +92,7 @@ This installs vim on a server 192.168.122.47 which is running Alpine using the a
     if __name__ == "__main__":
         asyncio.run(main())
 
-It on the Alpine host.  To run it, spin up a VM modify the IP address and youruser and yourpassword.  You should see:
+To run it, spin up an Alpine VM, then modify the IP address, youruser and yourpassword.  You should see:
 
 .. code-block:: bash
 

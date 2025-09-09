@@ -2,6 +2,8 @@
 
 Reemote is a Python API for task automation, configuration management and application deployment.
 
+Visit [reemote.org](http://reemote.org/).
+
 # Example
 
 The [GUI example](examples/gui) demonstrates a switch that creates or removes the directory `/tmp/mydir` on all the servers in an inventory.
