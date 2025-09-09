@@ -3,8 +3,10 @@ Reemote documentation
 
 Reemote is a Python API for task automation, configuration management and application deployment.
 
-For example, you can use Reemote to write a GUI application that creates or deletes a directory on all the servers in an inventory.
-Like this...
+You can use Reemote to install and configure software on multiple servers.
+You can do anything you could do in Ansible, only in Python, and with a GUI !
+
+This example deletes a directory on all the servers in an inventory.
 
 .. image:: gui_demo.png
    :width: 100%
