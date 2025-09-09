@@ -43,3 +43,4 @@ class Upgrade:
         # Set the `changed` flag if the package state has changed
         if r1.cp.stdout != r3.cp.stdout:
             r2.changed = True
+            r0.changed = True

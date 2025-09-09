@@ -16,13 +16,15 @@ class Chown:
                  user: str | None = None,
                  group: str | None = None,
                  options=None,
-                 sudo: bool = False):
+                 sudo: bool = False,
+                 su: bool = False):
 
         self.target = target
         self.user = user
         self.group = group
         self.options = options
         self.sudo = sudo
+        self.su = su
 
         if options is None:
             options = []
@@ -45,7 +47,7 @@ class Chown:
         op.extend(options)
         op.append(user_group)
         op.append(target)
-
+2
         self.chown = " ".join(op)
 
     def __repr__(self):
@@ -53,18 +55,20 @@ class Chown:
                 f"group={self.group!r}, options={self.options!r}, sudo={self.sudo!r})")
 
     def execute(self):
-        yield f"composite {self}"
+        r0 = yield f"composite {self}"
         _sudo = "sudo -S " if self.sudo else ""
+        _su: str = "su -c " if self.su else ""
 
         # Get initial file info
-        r0 = yield f"{_sudo}ls -ld {self.target}"
+        r1 = yield f"{_sudo}ls -ld {self.target}"
 
         # Execute chown command
-        r1 = yield f"{_sudo}{self.chown}"
+        r2 = yield f"{_sudo}{self.chown}"
 
         # Get final file info to check if changed
-        r2 = yield f"{_sudo}ls -ld {self.target}"
+        r3 = yield f"{_sudo}ls -ld {self.target}"
 
         # Set changed flag if the output differs
-        if r0.cp.stdout != r2.cp.stdout:
-            r1.changed = True
+        if r1.cp.stdout != r3.cp.stdout:
+            r2.changed = True
+            r0.changed = True

@@ -9,6 +9,12 @@ from reemote.construct_host_ops import construct_host_ops
 from reemote.operations.filesystem.directory import Directory
 
 
+from reemote.operations.filesystem.directory import Directory
+
+class Make_directory:
+    def execute(self):
+        yield Directory(path="/tmp/mydir", present=True, su=True)
+
 class Gui:
     def __init__(self):
         app.storage.user["columns"] = []
@@ -16,7 +22,7 @@ class Gui:
 
     async def dir(self, present):
         operations, responses = await run(app.storage.user["inventory"],
-                                          Directory(path="/tmp/mydir", present=present, sudo=True))
+                                          Make_directory())
         if present:
             ui.notify("Directory present")
         else:
