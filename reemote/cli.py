@@ -16,8 +16,8 @@ from reemote.validate_inventory_structure import validate_inventory_structure
 async def main():
     parser = argparse.ArgumentParser(
         description='Process inventory and source files with a specified class',
-        usage="usage: reemote.py [-h] inventory_file source_file class_name",
-        epilog='Example: reemote.py ~/inventory.py examples/cli/make_directory.py Make_directory'
+        usage="usage: reemote [-h] inventory_file source_file class_name",
+        epilog='Example: reemote ~/inventory.py examples/cli/make_directory.py Make_directory'
     )
 
     parser.add_argument(
@@ -75,5 +75,9 @@ async def main():
     print(grid)
     sys.exit(0)
 
-if __name__ == "__main__":
+# Synchronous wrapper for console_scripts
+def _main():
     asyncio.run(main())
+
+if __name__ == "__main__":
+    _main()
