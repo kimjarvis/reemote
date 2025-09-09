@@ -10,11 +10,11 @@ look at an example.
 
 The command will create a directory on all of the hosts in the inventory.
 
-The first parameter is the path to the inventory Python file (.py extension required).
+The first parameter is the path to the inventory Python file.
 This is a python source with a function Inventory() that returns an
 inventory List object.  See the :doc:`inventory` for more details.
 
-The second is the path to the source Python file (.py extension required).  For example:
+The second parameter is the path to the source Python file.  For example:
 
 .. code-block:: python
 
