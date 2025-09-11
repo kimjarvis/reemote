@@ -104,7 +104,7 @@ def process_chown_generator(generator, ls_output_before, ls_output_after, return
 def test_chown(target, user, group, options, sudo, ls_before, ls_after, expected_commands):
     # Create an instance of the Chown class
     chown_instance = Chown(
-        target=target,
+        path=target,
         user=user,
         group=group,
         options=options,
@@ -137,7 +137,7 @@ def test_chown(target, user, group, options, sudo, ls_before, ls_after, expected
 def test_chown_no_user_or_group():
     """Test that ValueError is raised when neither user nor group is specified"""
     with pytest.raises(ValueError, match="Either user or group must be specified"):
-        Chown(target="/opt/myapp")
+        Chown(path="/opt/myapp")
 
 
 if __name__ == "__main__":

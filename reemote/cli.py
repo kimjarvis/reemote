@@ -13,6 +13,9 @@ from reemote.verify_python_file import verify_python_file
 from reemote.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
 from reemote.validate_inventory_structure import validate_inventory_structure
 
+from produce_json import produce_json
+from produce_table import produce_table
+
 async def main():
     parser = argparse.ArgumentParser(
         description='Process inventory and source files with a specified class',
@@ -68,11 +71,10 @@ async def main():
         print("Inventory connections are invalid")
         sys.exit(1)
 
-    operations, responses = await run(inventory(), root_class())
-    host_ops = construct_host_ops(operations,responses)
-    dgrid=summarize_data_for_aggrid(host_ops)
-    grid=get_printable_aggrid(dgrid)
-    print(grid)
+    _, results = await run(inventory(), root_class())
+    json_output = produce_json(results)
+    table_output = produce_table(json_output)
+    print(table_output)
     sys.exit(0)
 
 # Synchronous wrapper for console_scripts

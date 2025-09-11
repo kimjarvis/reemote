@@ -14,8 +14,16 @@ def pre_order_generator(node):
             value = iterator.send(result) if result is not None else next(iterator)
             result = None
 
+            if isinstance(value, tuple):
+                # Check if the operation is guarded
+                if len(value) == 2 and isinstance(value[0], bool) and isinstance(value[1], str):
+                    operation = Operation(value[1],value[0])
+                    result = yield operation
+                else:
+                    raise TypeError(f"Unsupported yield type: {type(value)}")
+
             # Handle different types of yielded values
-            if isinstance(value, Operation):
+            elif isinstance(value, Operation):
                 result = yield value
             elif isinstance(value, str):
                 # Auto-wrap strings in Operation objects
