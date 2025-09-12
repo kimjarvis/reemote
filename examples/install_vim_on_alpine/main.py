@@ -19,10 +19,10 @@ def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
 
 class Install_vim:
     def execute(self):
-        r = yield "echo Installing VIM on Alpine!"
+        r = yield f"echo Installing VIM on Alpine!"
         r.changed = False
-        yield Update(su=True)
-        yield Packages(packages=["vim"], present=True, su=True)
+        yield Update(sudo=True)
+        yield Packages(packages=["vim"], present=True, sudo=True)
 
 
 async def main():
