@@ -7,7 +7,7 @@ Copy `example_inventory.py` to your home directory and modify it with the creden
 Example output:
 
 ```
-reemote ~/inventory.py examples/cli/make_directory.py Make_directory
+reemote --cli -i ~/inventory.py -s examples/cli/make_directory.py -c Make_directory
 
 +---------------------------------------------------------------------+------------------+
 | Command                                                             | 192.168.122.47   |

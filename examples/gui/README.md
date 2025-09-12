@@ -2,3 +2,6 @@
 
 Make or remove a directory on all the servers listed in inventory.py.
 
+```angular2html
+python3 examples/gui/main.py
+```
