@@ -19,8 +19,8 @@ def _generate_table(data):
 
     # Add two columns for each host: Executed and Changed
     for host in hosts:
-        result["columnDefs"].append({"headerName": f"{host}\nExecuted", "field": f"{host}_executed"})
-        result["columnDefs"].append({"headerName": f"{host}\nChanged", "field": f"{host}_changed"})
+        result["columnDefs"].append({"headerName": f"{host} Executed", "field": f"{host.replace(".","_")}_executed"})
+        result["columnDefs"].append({"headerName": f"{host} Changed", "field": f"{host.replace(".","_")}_changed"})
 
     # Step 3: Process data by grouping consecutive entries with the same command
     i = 0
@@ -44,8 +44,8 @@ def _generate_table(data):
             changed = entry['changed']
 
             # Add the current host's data
-            row[f"{host}_executed"] = executed
-            row[f"{host}_changed"] = changed
+            row[f"{host.replace(".","_")}_executed"] = executed
+            row[f"{host.replace(".","_")}_changed"] = changed
 
             i += 1  # Move to next entry
 
@@ -63,8 +63,8 @@ def generate_table(data):
     for row in result["rowData"]:
         formatted_row = [row['command']]  # Start with command
         for host in hosts:
-            executed = row[f"{host}_executed"]
-            changed = row[f"{host}_changed"]
+            executed = row[f"{host.replace(".","_")}_executed"]
+            changed = row[f"{host.replace(".","_")}_changed"]
             formatted_row.append(executed if executed != "" else "")
             formatted_row.append(changed if changed != "" else "")
         table_data.append(formatted_row)
@@ -74,7 +74,4 @@ def generate_table(data):
 
 def generate_grid(data):
     result , hosts = _generate_table(data)
-    return {
-        "columnDefs": result["columnDefs"],
-        'rowData': result["rowData"],
-    }
+    return result["columnDefs"], result["rowData"],

@@ -20,7 +20,7 @@ def pre_order_generator(node):
                     operation = Operation(value[1],value[0])
                     result = yield operation
                 else:
-                    raise TypeError(f"Unsupported yield type: {type(value)}")
+                    raise TypeError(f"Unsupported yield type: {type(value)} {len(value)} {value}")
 
             # Handle different types of yielded values
             elif isinstance(value, Operation):

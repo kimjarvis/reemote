@@ -9,6 +9,7 @@ class Gui:
         app.storage.user["columnDefs"] = [{'headerName': 'Command', 'field': 'command'}]
         app.storage.user["rowData"] = []
 
+
     async def handle_upload(self, e: events.UploadEventArguments):
         text = e.content.read().decode('utf-8')
         exec(text, globals())
@@ -27,7 +28,8 @@ class Gui:
         # Dynamically generate column definitions for each host
         for index, (host_info, _) in enumerate(inventory()):
             host_ip = host_info['host']
-            columnDefs.append({'headerName': host_ip, 'field': f'host{index}'})
+            columnDefs.append({'headerName': f'{host_ip} Executed', 'field': f'{host_ip.replace(".","_")}_executed'})
+            columnDefs.append({'headerName': f'{host_ip} Changed', 'field': f'{host_ip.replace(".","_")}_changed'})
         app.storage.user["columnDefs"] = columnDefs
         self.execution_report.refresh()
 

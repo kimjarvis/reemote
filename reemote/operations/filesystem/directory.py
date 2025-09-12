@@ -74,5 +74,8 @@ class Directory:
         # This is contingent on either a user or group being specified
         # Does not yield a result, because the component operations have not been executed yet, so we cannot tell whether it changed anything
         # Cannot be guarded because its action is to push to the stack, if it didn't do that the operations would not always be executed.
-        # Solution is to pass the guard to the Operation.
-        yield Chown(guard=self.guard and self.present, path=self.path, user=self.user, group=self.group, sudo=self.sudo, su=self.su)
+        # The operation is dependent on static values, the parameters of Directory() these will be the same on all hosts
+        # so, we can use if here.
+        #
+        if self.present and (self.group is not None or self.user is not None):
+            yield Chown(guard=self.guard, path=self.path, user=self.user, group=self.group, sudo=self.sudo, su=self.su)
