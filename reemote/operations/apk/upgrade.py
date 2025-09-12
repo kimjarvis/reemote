@@ -1,6 +1,3 @@
-from reemote.print_ssh_completed_process import print_ssh_completed_process
-from typing import List
-
 class Upgrade:
     """
     A class to manage package operations on a remote system using `apk` (Alpine Linux package manager).

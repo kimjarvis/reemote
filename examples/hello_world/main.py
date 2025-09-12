@@ -1,13 +1,14 @@
 import asyncio
-from reemote.report import report
 from reemote.run import run
+from reemote.produce_json import produce_json
+from reemote.produce_table import produce_table
 
 from typing import List, Tuple, Dict, Any
 
 def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
     return [({'host': 'localhost',
-              'username': 'youruser',  # User name
-              'password': 'yourpassword'  # Password
+              'username': 'kim',  # User name
+              'password': 'xnjs'  # Password
               },{})]
 
 class Hello_world:
@@ -16,8 +17,8 @@ class Hello_world:
         r.changed = False
 
 async def main():
-    operations, responses = await run(inventory(), Hello_world())
-    print(report(operations, responses))
+    _, responses = await run(inventory(), Hello_world())
+    print(produce_table(produce_json(responses)))
 
 
 if __name__ == "__main__":
