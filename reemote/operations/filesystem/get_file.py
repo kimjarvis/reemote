@@ -31,6 +31,15 @@ async def get_file(host_info, sudo_info, command, cp, caller):
 
 
 class Get_file:
+    """
+        A class to encapsulate the functionality of sftp get in Unix-like operating systems.
+        It allows users to specify a target file to be copied from a host.
+        The content of the file is made available as cp.stdout.
+
+        Attributes:
+            path (str): The file or directory whose ownership is to be changed.
+            host (str): The host form which the file is being copied from.
+    """
     def __init__(self,
                  path: str,
                  host: str,):

@@ -33,6 +33,14 @@ async def put_file(host_info, sudo_info, command, cp, caller):
 
 
 class Put_file:
+    """
+        A class to encapsulate the functionality of sftp put in Unix-like operating systems.
+        It allows users to specify a text to copied to file on all hosts.
+
+        Attributes:
+            path (str): The file or directory whose ownership is to be changed.
+            text (str): The file content.
+    """
     def __init__(self,
                  path: str,
                  text: str):
