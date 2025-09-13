@@ -1,3 +1,4 @@
+from reemote.operation import Operation
 
 class Chmod:
     """
@@ -43,21 +44,21 @@ class Chmod:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r0 = yield self.guard, f"composite {self}"
+        r0 = yield Operation(f"composite {self}")
         r0.executed = self.guard
         _sudo = "sudo -S " if self.sudo else ""
         _su: str = "su" if self.su else ""
 
         # Get initial file info
-        r1 = yield self.guard, f'{_sudo}{_su}"ls -l {self.path}"'
+        r1 = yield Operation(f'{_sudo}{_su}"ls -l {self.path}"')
         # print(r1)
 
         # Execute chown command
-        r2 = yield self.guard, f'{_sudo}{_su}"{self.chmod}"'
+        r2 = yield Operation(f'{_sudo}{_su}"{self.chmod}"')
         # print(r2)
 
         # Get final file info to check if changed
-        r3 = yield self.guard, f'{_sudo}{_su}"ls -l {self.path}"'
+        r3 = yield Operation('{_sudo}{_su}"ls -l {self.path}"')
         # print(r3)
 
         # Set changed flag if the output differs

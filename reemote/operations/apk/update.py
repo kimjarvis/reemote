@@ -1,3 +1,4 @@
+from reemote.operation import Operation
 class Update:
     """
     A class to manage package operations on a remote system using `apk` (Alpine Linux package manager).
@@ -28,18 +29,18 @@ class Update:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r0 = yield f"composite {self}"
+        r0 = yield Operation(f"composite {self}")
         r0.executed = self.guard
         _sudo: str = "sudo -S " if self.sudo else ""
         _su: str = "su -c " if self.su else ""
 
         # Retrieve the current list of installed packages
-        r1 = yield f"{_sudo}apk info -v"
+        r1 = yield Operation(f"{_sudo}apk info -v")
 
-        r2 = yield f"{_sudo}{_su}'apk update'"
+        r2 = yield Operation(f"{_sudo}{_su}'apk update'")
 
         # Retrieve the updated list of installed packages
-        r3 = yield f"{_sudo}apk info -v"
+        r3 = yield Operation(f"{_sudo}apk info -v")
 
         # Set the `changed` flag if the package state has changed
         if r1.cp.stdout != r3.cp.stdout:

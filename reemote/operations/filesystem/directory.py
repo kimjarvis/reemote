@@ -1,5 +1,6 @@
 from reemote.operations.filesystem.chown import Chown
 from reemote.result import Result
+from reemote.operation import Operation
 
 
 class Directory:
@@ -47,25 +48,27 @@ class Directory:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r0 = yield f"composite {self}"
+        r0 = yield Operation(f"composite {self}")
         r0.executed = self.guard
         _sudo: str = "sudo -S " if self.sudo else ""
         _su: str = "su" if self.su else ""
 
         # Check whether the directory exists
-        r1: Result = yield self.guard, f"{_sudo}[ -d {self.path} ]"
+        r1: Result = yield Operation(f"{_sudo}[ -d {self.path} ]")
         # # print(r1)
         #
         # # Directory should be present, but it does not exist, so create it
-        mguard = self.present and r1.cp.returncode != 0
-        r2 = yield mguard and self.guard, f'{_sudo}{_su}"mkdir -p {self.path}"'
+        # mguard = self.present and r1.cp.returncode != 0
+        # r2 = yield mguard and self.guard, f'{_sudo}{_su}"mkdir -p {self.path}"'
+        r2 = yield Operation(f'{_sudo}{_su}"mkdir -p {self.path}"')
         # print(r2)
         if self.guard:
             r2.changed = r2.executed
         #
         # # Directory should not be present, but it exists, so remove it
-        rguard = (not self.present) and r1.cp.returncode == 0
-        r3 = yield rguard and self.guard, f'{_sudo}{_su}"rmdir -p {self.path}"'
+        # rguard = (not self.present) and r1.cp.returncode == 0
+        # r3 = yield rguard and self.guard, f'{_sudo}{_su}"rmdir -p {self.path}"'
+        r3 = yield Operation(f'{_sudo}{_su}"rmdir -p {self.path}"')
         # print(r3)
         if self.guard:
             r3.changed = r3.executed
@@ -77,5 +80,5 @@ class Directory:
         # The operation is dependent on static values, the parameters of Directory() these will be the same on all hosts
         # so, we can use if here.
         #
-        if self.present and (self.group is not None or self.user is not None):
-            yield Chown(guard=self.guard, path=self.path, user=self.user, group=self.group, sudo=self.sudo, su=self.su)
+        # if self.present and (self.group is not None or self.user is not None):
+        #     yield Chown(guard=self.guard, path=self.path, user=self.user, group=self.group, sudo=self.sudo, su=self.su)
