@@ -62,7 +62,7 @@ class Chown:
 
     def execute(self):
 
-     r0 = yield self.guard, f"composite {self}"
+        r0 = yield self.guard, f"composite {self}"
         r0.executed = self.guard
         _sudo = "sudo -S " if self.sudo else ""
         _su: str = "su" if self.su else ""
