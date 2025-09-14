@@ -33,12 +33,12 @@ class Update:
         r0.executed = self.guard
 
         # Retrieve the current list of installed packages
-        r1 = yield Operation(f"{_sudo}apk info -v", guard=self.guard, sudo=self.sudo, su=self.su)
+        r1 = yield Operation(f"apk info -v", guard=self.guard, sudo=self.sudo, su=self.su)
 
-        r2 = yield Operation(f"{_sudo}{_su}'apk update'", guard=self.guard, sudo=self.sudo, su=self.su)
+        r2 = yield Operation(f"apk update", guard=self.guard, sudo=self.sudo, su=self.su)
 
         # Retrieve the updated list of installed packages
-        r3 = yield Operation(f"{_sudo}apk info -v", guard=self.guard, sudo=self.sudo, su=self.su)
+        r3 = yield Operation(f"apk info -v", guard=self.guard, sudo=self.sudo, su=self.su)
 
         # Set the `changed` flag if the package state has changed
         if self.guard and (r1.cp.stdout != r3.cp.stdout):
