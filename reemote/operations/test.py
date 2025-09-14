@@ -1,6 +1,6 @@
 from typing import List
 from reemote.operation import Operation
-class Info:
+class Test:
     """
     A class to manage package operations on a remote system using `apk` (Alpine Linux package manager).
 
@@ -29,9 +29,9 @@ class Info:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r0 = yield Operation(f"composite {self}", sudo=self.sudo, su=self.su)
+        r0 = yield Operation(f"composite {self}")
         r0.executed = True
 
         # Retrieve the package information
-        r1 = yield Operation(f"{_sudo}{_su}apk info {self.package}", sudo=self.sudo, su=self.su)
-        # print(r1.cp.stdout)
+        r1 = yield Operation(f"ls -ltr", sudo=self.sudo, su=self.su)
+        print(r1)

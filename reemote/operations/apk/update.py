@@ -29,18 +29,16 @@ class Update:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r0 = yield Operation(f"composite {self}", guard=self.guard)
+        r0 = yield Operation(f"composite {self}", guard=self.guard, sudo=self.sudo, su=self.su)
         r0.executed = self.guard
-        _sudo: str = "sudo -S " if self.sudo else ""
-        _su: str = "su -c " if self.su else ""
 
         # Retrieve the current list of installed packages
-        r1 = yield Operation(f"{_sudo}apk info -v", guard=self.guard)
+        r1 = yield Operation(f"{_sudo}apk info -v", guard=self.guard, sudo=self.sudo, su=self.su)
 
-        r2 = yield Operation(f"{_sudo}{_su}'apk update'", guard=self.guard)
+        r2 = yield Operation(f"{_sudo}{_su}'apk update'", guard=self.guard, sudo=self.sudo, su=self.su)
 
         # Retrieve the updated list of installed packages
-        r3 = yield Operation(f"{_sudo}apk info -v", guard=self.guard)
+        r3 = yield Operation(f"{_sudo}apk info -v", guard=self.guard, sudo=self.sudo, su=self.su)
 
         # Set the `changed` flag if the package state has changed
         if self.guard and (r1.cp.stdout != r3.cp.stdout):

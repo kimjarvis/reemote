@@ -62,21 +62,19 @@ class Chown:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r0 = yield Operation(f"composite {self}", guard=self.guard)
+        r0 = yield Operation(f"composite {self}", guard=self.guard, sudo=self.sudo, su=self.su)
         r0.executed = self.guard
-        _sudo = "sudo -S " if self.sudo else ""
-        _su: str = "su" if self.su else ""
 
         # Get initial file info
-        r1 = yield Operation(f'{_sudo}{_su}"ls -ld {self.path}"', guard=self.guard)
+        r1 = yield Operation(f'{_sudo}{_su}"ls -ld {self.path}"', guard=self.guard, sudo=self.sudo, su=self.su)
         # print(r1)
 
         # Execute chown command
-        r2 = yield Operation(f'{_sudo}{_su}"{self.chown}"', guard=self.guard)
+        r2 = yield Operation(f'{_sudo}{_su}"{self.chown}"', guard=self.guard, sudo=self.sudo, su=self.su)
         # print(r2)
 
         # Get final file info to check if changed
-        r3 = yield Operation(f'{_sudo}{_su}"ls -ld {self.path}"', guard=self.guard)
+        r3 = yield Operation(f'{_sudo}{_su}"ls -ld {self.path}"', guard=self.guard, sudo=self.sudo, su=self.su)
         # print(r3)
 
         # Set changed flag if the output differs
