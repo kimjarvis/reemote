@@ -17,6 +17,7 @@ def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
                  'su_password': 'xnjs'})]
 
 
+
 class Install_vim:
     def execute(self):
         r = yield f"echo Installing VIM on Alpine!"
