@@ -55,10 +55,10 @@ class Chmod:
 
         # Execute chown command
         r2 = yield Operation(f'{_sudo}{_su}"{self.chmod}"', guard=self.guard)
-        # print(r2)
+        print(r2)
 
         # Get final file info to check if changed
-        r3 = yield Operation('{_sudo}{_su}"ls -l {self.path}"', guard=self.guard)
+        r3 = yield Operation(f'{_sudo}{_su}"ls -l {self.path}"', guard=self.guard)
         # print(r3)
 
         # Set changed flag if the output differs

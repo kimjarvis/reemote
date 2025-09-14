@@ -57,15 +57,16 @@ class Packages:
         r1 = yield Operation(f"{_sudo}apk info -v",guard=self.guard)
 
         # Add or remove packages based on the `present` flag
-        if self.present:
-            r2 = yield Operation(f"{_sudo}{_su}'apk add {self.op}'",guard=self.guard)
-        else:
-            r2 = yield Operation(f"{_sudo}{_su}'apk del {self.op}'",guard=self.guard)
+        r2 = yield Operation(f"{_sudo}{_su}'apk add {self.op}'",guard=self.guard and self.present)
+        r2.changed = r2.executed
+
+        r3 = yield Operation(f"{_sudo}{_su}'apk del {self.op}'",guard=self.guard and not self.present)
+        r3.changed = r3.executed
 
         # Retrieve the updated list of installed packages
-        r3 = yield Operation(f"{_sudo}apk info -v",guard=self.guard)
+        r4 = yield Operation(f"{_sudo}apk info -v",guard=self.guard)
 
         # Set the `changed` flag if the package state has changed
-        if self.guard and (r1.cp.stdout != r3.cp.stdout):
+        if self.guard and (r1.cp.stdout != r4.cp.stdout):
             r2.changed = True
             r0.changed = True

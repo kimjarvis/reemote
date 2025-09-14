@@ -32,7 +32,7 @@ async def run_command_on_host(operation):
                         # Run the command
                         cp = await conn.run(full_command, check=False)
                     elif command.startswith("su"):
-                        full_command = f'su {sudo_info["su_user"]} -c {command.replace("su", "")}'
+                        full_command = f'su {sudo_info["su_user"]} -c {command.replace("su", "", 1)}'
                         async with conn.create_process(full_command,
                         # async with conn.create_process(f'su {sudo_info["su_user"]} -c "ls -ld /tmp/mydir"',
                                                        term_type='xterm',
