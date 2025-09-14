@@ -1,5 +1,6 @@
 from reemote.pre_order_generator import pre_order_generator
 from reemote.run_command_on_host import run_command_on_host
+from reemote.run_command_on_local import run_command_on_local
 
 async def run(inventory, obj):
     operations = []
@@ -24,9 +25,12 @@ async def run(inventory, obj):
                 # print(f"Sending result to generator: {results[gen]}")
                 operation = gen.send(results[gen])
                 operation.host_info, operation.sudo_info = inventory_item
-                results[gen] = await run_command_on_host(operation)
-
                 # print(f"Operation: {operation}")
+                if operation.local:
+                    results[gen] = await run_command_on_local(operation)
+                else:
+                    results[gen] = await run_command_on_host(operation)
+
                 operations.append(operation)
                 # print(f"Result: {results[gen]}")
                 responses.append(results[gen])

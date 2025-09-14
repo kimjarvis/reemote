@@ -1,6 +1,6 @@
 import pytest
 from asyncssh import SSHCompletedProcess
-from reemote.operations.filesystem.directory import Directory
+from reemote.operations.filesystem.mkdir import Mkdir
 from reemote.result import Result
 from reemote.operation import Operation
 
@@ -54,7 +54,7 @@ def process_generator(generator, returncode):
 )
 def test_directory(path, present, sudo, returncode, expected_commands):
     # Create an instance of the Directory class
-    directory_instance = Directory(path=path, present=present, sudo=sudo)
+    directory_instance = Mkdir(path=path, present=present, sudo=sudo)
 
     # Process the generator
     commands = process_generator(directory_instance.execute(), returncode)

@@ -1,5 +1,5 @@
-from reemote.operations.filesystem.directory import Directory
+from reemote.operations.filesystem.mkdir import Mkdir
 
 class Make_directory:
     def execute(self):
-        yield Directory(path="/tmp/mydir", present=False, su=True)
+        yield Mkdir(path="/tmp/mydir", present=True, su=True, guard=True)
