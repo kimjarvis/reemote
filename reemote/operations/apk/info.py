@@ -30,6 +30,7 @@ class Info:
 
     def execute(self):
         r0 = yield Operation(f"composite {self}")
+        r0.executed = True
         _sudo: str = "sudo -S " if self.sudo else ""
         _su: str = "su -c " if self.su else ""
 

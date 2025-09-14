@@ -38,7 +38,7 @@ class Put_file:
         It allows users to specify a text to copied to file on all hosts.
 
         Attributes:
-            path (str): The file or directory whose ownership is to be changed.
+            path (str): The file or directory whose content is to be changed.
             text (str): The file content.
     """
     def __init__(self,
@@ -49,3 +49,5 @@ class Put_file:
 
     def execute(self):
         r = yield Operation(f"put file {self.path}", local=True, callback=put_file, caller=self)
+        r.executed = True
+        r.changed = True
