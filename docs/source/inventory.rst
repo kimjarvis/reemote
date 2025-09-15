@@ -5,26 +5,37 @@ Specifying the ssh connection
 -----------------------------
 
 Reemote connects to hosts using asyncssh.  The inventory contains the information used to create a ssh connection to reemote hosts.
-This is an example inventory that contains ssh connection information for one host.
+This is an example inventory that contains ssh connection information for two hosts.
 
 .. code-block:: python
 
     from typing import List, Tuple, Dict, Any
 
     def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
-        return [
+         return [
             (
                 {
-                    'host': '192.168.122.47',     # The host IP
-                    'username': 'joe',            # User name
-                    'password': 'password'        # Password
+                    'host': '192.168.122.47',  # alpine
+                    'username': 'youruser',  # User name
+                    'password': 'yourpassword'  # Password
                 },
                 {
-                    'su_password': 'password'     # Password
+                    'su_user': 'root',
+                    'su_password': 'rootuser'  # Password
+                }
+            ),
+            (
+                {
+                    'host': '192.168.122.24',  # alpine
+                    'username': 'youruser',  # User name
+                    'password': 'yourpassword'  # Password
+                },
+                {
+                    'su_user': 'root',
+                    'su_password': 'rootuser'  # Password
                 }
             )
         ]
-
 
 The inventory() function returns the inventory structure which is a list of tuples.  Each tuple
 represents a host.  A host tuple contains two dictionaries.  The first dictonary contains ssh connection information that

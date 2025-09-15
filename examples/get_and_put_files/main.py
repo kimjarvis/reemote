@@ -12,23 +12,23 @@ def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
         (
             {
                 'host': '192.168.122.24',  # alpine
-                'username': 'kim',  # User name
-                'password': 'xnjs'  # Password
+                'username': 'youruser',  # User name
+                'password': 'yourpassword'  # Password
             },
             {
                 'su_user': 'root',
-                'su_password': 'xnjs'  # Password
+                'su_password': 'rootpassword'  # Password
             }
         ),
         (
             {
                 'host': '192.168.122.47',  # alpine
-                'username': 'kim',  # User name
-                'password': 'xnjs'  # Password
+                'username': 'youruser',  # User name
+                'password': 'yourpassword'  # Password
             },
             {
                 'su_user': 'root',
-                'su_password': 'xnjs'  # Password
+                'su_password': 'rootpassword'  # Password
             }
         )
     ]
