@@ -34,12 +34,32 @@ async def put_file(host_info, sudo_info, command, cp, caller):
 
 class Put_file:
     """
-        A class to encapsulate the functionality of sftp put in Unix-like operating systems.
-        It allows users to specify a text to copied to file on all hosts.
+    A class to encapsulate the functionality of sftp put in Unix-like operating systems.
+    It allows users to specify a text to copied to file on all hosts.
 
-        Attributes:
-            path (str): The file or directory whose content is to be changed.
-            text (str): The file content.
+    Attributes:
+        path (str): The file or directory whose content is to be changed.
+        text (str): The file content.
+
+    **Examples:**
+
+    .. code:: python
+
+        class Put_file_example:
+            def execute(self):
+                from reemote.operations.filesystem.put_file import Put_file
+                from reemote.operations.server.shell import Shell
+                # Create a file from text on all hosts
+                r = yield Put_file(path='example.txt', text='Hello World!')
+                # Verify the file content on the hosts
+                r = yield Shell("cat example.txt")
+                print(r.cp.stdout)
+
+    Usage:
+        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
+
+    Notes:
+
     """
     def __init__(self,
                  path: str,

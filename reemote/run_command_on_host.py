@@ -1,9 +1,11 @@
 import asyncssh
+import asyncio
 from asyncssh import SSHCompletedProcess
 from reemote.result import Result
 
 
 async def run_command_on_host(operation):
+    # print("running operation", operation)
     # Define the asynchronous function to connect to a host and run a command
     host_info = operation.host_info
     sudo_info = operation.sudo_info
@@ -22,7 +24,7 @@ async def run_command_on_host(operation):
                 else:
                     # print(f"Executing command: {command}")
                     executed = True
-                    if command.startswith("sudo"):
+                    if operation.sudo:
                         if not sudo_info.get("sudo_password"):
                             raise ValueError("Command requires sudo, but no sudo password was provided.")
 
@@ -31,24 +33,32 @@ async def run_command_on_host(operation):
 
                         # Run the command
                         cp = await conn.run(full_command, check=False)
-                    elif command.startswith("su"):
-                        full_command = f'su {sudo_info["su_user"]} -c {command.replace("su", "", 1)}'
-                        async with conn.create_process(full_command,
-                        # async with conn.create_process(f'su {sudo_info["su_user"]} -c "ls -ld /tmp/mydir"',
-                                                       term_type='xterm',
-                                                       stdin=asyncssh.PIPE, stdout=asyncssh.PIPE,
-                                                       stderr=asyncssh.PIPE) as process:
-                            # Wait for the password prompt and send the password
-                            output = await process.stdout.readuntil('Password:')
-                            process.stdin.write(f'{sudo_info["su_password"]}\n')  # Provide the su password
-                            # Read the remaining output and check for errors
-                            stdout, stderr = await process.communicate()
-
-                            # if process.exit_status != 0:
-                            #     print(stderr, end='', file=sys.stderr)
-                            #     print(f'Process exited with status {process.exit_status}', file=sys.stderr)
-                            # else:
-                            #     print(stdout, end='')
+                    elif operation.su:
+                        # print(f"its su {sudo_info["su_user"]} {command}")
+                        full_command = f"su {sudo_info['su_user']} -c '{command}'"
+                        # print(full_command)
+                        if sudo_info["su_user"] == "root":
+                            # For root, don't expect password prompt
+                            async with conn.create_process(full_command,
+                                                           term_type='xterm',
+                                                           stdin=asyncssh.PIPE, stdout=asyncssh.PIPE,
+                                                           stderr=asyncssh.PIPE) as process:
+                                try:
+                                    output = await process.stdout.readuntil('Password:')
+                                    process.stdin.write(f'{sudo_info["su_password"]}\n')
+                                except asyncio.TimeoutError:
+                                    # No password prompt, continue without writing to stdin
+                                    pass
+                                stdout, stderr = await process.communicate()
+                        else:
+                            # For non-root users, handle password prompt
+                            async with conn.create_process(full_command,
+                                                           term_type='xterm',
+                                                           stdin=asyncssh.PIPE, stdout=asyncssh.PIPE,
+                                                           stderr=asyncssh.PIPE) as process:
+                                output = await process.stdout.readuntil('Password:')
+                                process.stdin.write(f'{sudo_info["su_password"]}\n')
+                                stdout, stderr = await process.communicate()
 
                         cp = SSHCompletedProcess(
                             command=full_command ,  # Command executed
@@ -57,6 +67,7 @@ async def run_command_on_host(operation):
                             stdout=stdout,                                       # Standard output
                             stderr=stderr                                        # Standard error
                         )
+
                     else:
                         cp = await conn.run(command, check=False)
 

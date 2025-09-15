@@ -10,6 +10,16 @@ class Upgrade:
         sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
         su (bool): If `True`, the commands will be executed with `su` privileges.
 
+    **Examples:**
+
+    .. code:: python
+
+        class Upgrade_example:
+            def execute(self):
+                from reemote.operations.apk.upgrade import Upgrade
+                # Upgrade the packages on all hosts
+                r = yield Upgrade()
+
     Usage:
         Upgrade installed packages.
 
@@ -32,18 +42,16 @@ class Upgrade:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r0 = yield Operation(f"composite {self}", guard=self.guard)
+        r0 = yield Operation(f"composite {self}", guard=self.guard, sudo=self.sudo, su=self.su)
         r0.executed = self.guard
-        _sudo: str = "sudo -S " if self.sudo else ""
-        _su: str = "su -c " if self.su else ""
 
         # Retrieve the current list of installed packages
-        r1 = yield Operation(f"{_sudo}apk info -v", guard=self.guard)
+        r1 = yield Operation(f"apk info -v", guard=self.guard, sudo=self.sudo, su=self.su)
 
-        r2 = yield Operation(f"{_sudo}{_su}'apk upgrade'", guard=self.guard)
+        r2 = yield Operation(f"apk upgrade", guard=self.guard, sudo=self.sudo, su=self.su)
 
         # Retrieve the upgraded list of installed packages
-        r3 = yield Operation(f"{_sudo}apk info -v", guard=self.guard)
+        r3 = yield Operation(f"apk info -v", guard=self.guard, sudo=self.sudo, su=self.su)
 
         # Set the `changed` flag if the package state has changed
         if self.guard and (r1.cp.stdout != r3.cp.stdout):

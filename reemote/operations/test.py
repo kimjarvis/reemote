@@ -1,6 +1,6 @@
 from typing import List
 from reemote.operation import Operation
-class Info:
+class Test:
     """
     A class to manage package operations on a remote system using `apk` (Alpine Linux package manager).
 
@@ -8,18 +8,6 @@ class Info:
         package (str): A package name to be queried.
         sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
         su (bool): If `True`, the commands will be executed with `su` privileges.
-
-    **Examples:**
-
-    .. code:: python
-
-        class Info_example:
-            def execute(self):
-                from reemote.operations.apk.info import Info
-                # Get the package information on all hosts
-                r = yield Info(package='vim')
-                # View the package information
-                print(r.cp.stdout)
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.
@@ -41,9 +29,9 @@ class Info:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r0 = yield Operation(f"composite {self}", sudo=self.sudo, su=self.su)
+        r0 = yield Operation(f"composite {self}")
         r0.executed = True
 
         # Retrieve the package information
-        r1 = yield Operation(f"apk info {self.package}", sudo=self.sudo, su=self.su)
-        # print(r1.cp.stdout)
+        r1 = yield Operation(f"ls -ltr", sudo=self.sudo, su=self.su)
+        print(r1)

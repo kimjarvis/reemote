@@ -1,6 +1,11 @@
 apk
 ===
 
+.. automodule:: reemote.operations.apk.info
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 .. automodule:: reemote.operations.apk.packages
    :members:
    :show-inheritance:

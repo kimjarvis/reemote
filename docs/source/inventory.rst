@@ -27,13 +27,12 @@ This is an example inventory that contains ssh connection information for one ho
 
 
 The inventory() function returns the inventory structure which is a list of tuples.  Each tuple
-represents a host.  A host tuple contains two dictionaries.  The first contians ssh connection information that
-is passed to the `AsyncSSH Connect API <https://asyncssh.readthedocs.io/en/latest/api.html#asyncssh.connect>`_
-The second contains global information that is available in your reemote class. For example, sudo and su passwords.
+represents a host.  A host tuple contains two dictionaries.  The first dictonary contains ssh connection information that
+is passed to the `AsyncSSH Connect API <https://asyncssh.readthedocs.io/en/latest/api.html#asyncssh.connect>`_.
+The second dictonary contains global information that is available in your reemote class. For example, the su password.
 
 Using an inventory file
 -----------------------
 
-Inventory is just a python List.  It can be defined inline in code.  But, usually it is defined in
-a file inventory.py.  The file may contain sensitive information and is usually added to .gitignore.
-The reemote cli takes the inventory file as its first parameter.
+Inventory is just a python List.  It can be defined inline in code or in a python file.
+The inventory may contain sensitive information and best practice is to use a file and add it to .gitignore.
