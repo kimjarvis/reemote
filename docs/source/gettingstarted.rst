@@ -9,25 +9,27 @@ This example echos "Hello world" on the localhost.
 .. code-block:: python
 
     import asyncio
-    from reemote.report import report
     from reemote.run import run
+    from reemote.produce_json import produce_json
+    from reemote.produce_table import produce_table
+    from reemote.operations.server.shell import Shell
 
     from typing import List, Tuple, Dict, Any
 
     def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
         return [({'host': 'localhost',
-                  'username': 'youruser',  # User name
-                  'password': 'yourpassword'  # Password
+                  'username': 'kim',  # User name
+                  'password': 'xnjs'  # Password
                   },{})]
 
     class Hello_world:
         def execute(self):
-            r = yield "echo hello world"
-            r.changed = False
+            r = yield Shell("echo Hello World!")
+            print(r.cp.stdout)
 
     async def main():
-        operations, responses = await run(inventory(), Hello_world())
-        print(report(operations, responses))
+        _, responses = await run(inventory(), Hello_world())
+        print(produce_table(produce_json(responses)))
 
 
     if __name__ == "__main__":
@@ -38,19 +40,19 @@ To run it, modify youruser and yourpassword.  You should see:
 .. code-block:: bash
 
     ❯ python3 helloworld.py
-    +------------------+-------------+
-    | Command          | localhost   |
-    +==================+=============+
-    | echo hello world | False       |
-    +------------------+-------------+
-    None
+    +-------------------+----------------------+---------------------+
+    | Command           | localhost Executed   | localhost Changed   |
+    +===================+======================+=====================+
+    | echo Hello World! | True                 | True                |
+    +-------------------+----------------------+---------------------+
 
-The False under the host localhost indicates that the command didn't change anything on the host.
+The True under the host localhost Executed indicates that the command was executed.
+The True under locahost changed indicates that the host was changed.  The host wasn't changed,
+but all Shell commands are assumed to change values on the host.
 
 Inventory is a function that describes the hosts on which the execute function in class Hello_world
 runs.  In this case its our localhost.  The yield in execute class in Hello_world describes the
-action.  In this case its to echo "hello world".  The echo command does not change the host so the
-changed value is set to false.  This is the value shown in hosts column in the output table.  When more commands
+action.  In this case its to echo "hello world".  When more commands
 are added they appear as rows in the output table.  When another host is added to the inventory it will
 appear as another column.
 
@@ -94,7 +96,7 @@ This example installs vim on a server, which is running Alpine, using the apk pa
     if __name__ == "__main__":
         asyncio.run(main())
 
-To run it, spin up an Alpine VM, then modify the IP address, youruser and yourpassword.  You should see:
+To run it, spin up an Alpine VM, then modify the IP address and youruser and yourpassword.  You should see:
 
 .. code-block:: bash
 

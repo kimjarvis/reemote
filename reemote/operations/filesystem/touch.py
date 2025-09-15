@@ -2,16 +2,42 @@ from reemote.operation import Operation
 
 class Touch:
     """
-        A class to encapsulate the functionality of the `touch` and `rm` command in Unix-like operating systems.
-        It allows users to specify a target file to be created or removed,
-        additional command-line options, and the ability to execute the command with elevated privileges (`sudo`).
+    A class to encapsulate the functionality of the `touch` and `rm` command in Unix-like operating systems.
+    It allows users to specify a target file to be created or removed,
+    additional command-line options, and the ability to execute the command with elevated privileges (`sudo`).
 
-        Attributes:
-            path (str): The file or directory whose ownership is to be changed.
-            present (bool): Indicates whether the file should exist (`True`) or not (`False`) on the system. If `True`, the file will be created if it does not exist. If `False`, the file will be removed if it exists.
-            guard (bool): If `False` the commands will not be executed.
-            sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
-            su (bool): If `True`, the commands will be executed with `su` privileges.
+    Attributes:
+        path (str): The file or directory whose ownership is to be changed.
+        present (bool): Indicates whether the file should exist (`True`) or not (`False`) on the system. If `True`, the file will be created if it does not exist. If `False`, the file will be removed if it exists.
+        guard (bool): If `False` the commands will not be executed.
+        sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
+        su (bool): If `True`, the commands will be executed with `su` privileges.
+
+
+    **Examples:**
+
+    .. code:: python
+
+        class Touch_example:
+            def execute(self):
+                from reemote.operations.filesystem.touch import Touch
+                from reemote.operations.server.shell import Shell
+                # Create file on all hosts
+                r = yield Touch(path='log.txt', present=True)
+                # View the file
+                r = yield Shell("ls -ltr log.txt")
+                print(r.cp.stdout)
+                # Remove file from all hosts
+                r = yield Touch(path='log.txt', present=False)
+                # Check the file
+                r = yield Shell("ls -ltr log.txt")
+                print(r.cp.stdout)
+
+    Usage:
+        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
+
+    Notes:
+        - Commands are constructed based on the `present`, `sudo`, and `su` flags.
     """
     def __init__(self,
                  path: str,
@@ -25,13 +51,6 @@ class Touch:
         self.guard = guard
         self.sudo = sudo
         self.su = su
-
-        command = "touch"
-
-        op = []
-        op.append(command)
-        op.append(path)
-        self.touch = " ".join(op)
 
     def __repr__(self):
         return (f"Touch(path={self.path!r}, "
@@ -47,8 +66,12 @@ class Touch:
         r1 = yield Operation(f'ls -l {self.path}', guard=self.guard, sudo=self.sudo, su=self.su)
         # print(r1)
 
-        # Execute chown command
-        r2 = yield Operation(f'{self.touch}', guard=self.guard, sudo=self.sudo, su=self.su)
+        # Execute command
+        r2 = yield Operation(f'touch {self.path}', guard=self.guard and self.present, sudo=self.sudo, su=self.su)
+        # print(r2)
+
+        # Execute command
+        r2 = yield Operation(f'rm {self.path}', guard=self.guard and not self.present, sudo=self.sudo, su=self.su)
         # print(r2)
 
         # Get final file info to check if changed

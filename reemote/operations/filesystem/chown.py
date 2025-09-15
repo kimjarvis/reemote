@@ -2,18 +2,42 @@ from reemote.operation import Operation
 
 class Chown:
     """
-        A class to encapsulate the functionality of the `chown` or `chgrp` command in Unix-like operating systems.
-        It allows users to specify a target file or directory, along with optional user and group ownership changes,
-        additional command-line options, and the ability to execute the command with elevated privileges (`sudo`).
+    A class to encapsulate the functionality of the `chown` or `chgrp` command in Unix-like operating systems.
+    It allows users to specify a target file or directory, along with optional user and group ownership changes,
+    additional command-line options, and the ability to execute the command with elevated privileges (`sudo`).
 
-        Attributes:
-            path (str): The file or directory whose ownership is to be changed.
-            user (Optional[str]): The new user owner. Defaults to `None`.
-            group (Optional[str]): The new group owner. Defaults to `None`.
-            options (List[str]): Additional command-line options for the `chown` or `chgrp` command.
-            guard (bool): If `False` the commands will not be executed.
-            sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
-            su (bool): If `True`, the commands will be executed with `su` privileges.
+    Attributes:
+        path (str): The file or directory whose ownership is to be changed.
+        user (Optional[str]): The new user owner. Defaults to `None`.
+        group (Optional[str]): The new group owner. Defaults to `None`.
+        options (List[str]): Additional command-line options for the `chown` or `chgrp` command.
+        guard (bool): If `False` the commands will not be executed.
+        sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
+        su (bool): If `True`, the commands will be executed with `su` privileges.
+
+    **Examples:**
+
+    .. code:: python
+
+        class Chown_example:
+            def execute(self):
+                from reemote.operations.filesystem.chown import Chown
+                from reemote.operations.filesystem.mkdir import Mkdir
+                from reemote.operations.server.shell import Shell
+                # Create directory on all hosts
+                r = yield Mkdir(path='mydir', present=True)
+                # Change the ownership
+                r = yield Chown(path='mydir', user="root", group="root", su=True)
+                # View the ownership
+                r = yield Shell("ls -ltr .")
+                print(r.cp.stdout)
+
+    Usage:
+        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
+
+    Notes:
+        - Commands are constructed based on the `present`, `sudo`, and `su` flags.
+
     """
     def __init__(self,
                  path: str,

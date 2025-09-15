@@ -7,6 +7,16 @@ class Update:
         sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
         su (bool): If `True`, the commands will be executed with `su` privileges.
 
+    **Examples:**
+
+    .. code:: python
+
+        class Update_example:
+            def execute(self):
+                from reemote.operations.apk.update import Update
+                # Update the packages on all hosts
+                r = yield Update()
+
     Usage:
         Update installed packages.
 

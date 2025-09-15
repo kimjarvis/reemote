@@ -11,6 +11,25 @@ class Packages:
         sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
         su (bool): If `True`, the commands will be executed with `su` privileges.
 
+    **Examples:**
+
+    .. code:: python
+
+        class Packages_example:
+            def execute(self):
+                from reemote.operations.apk.packages import Packages
+                from reemote.operations.server.shell import Shell
+                # Add the packages on all hosts
+                r = yield Packages(packages=["vim","asterisk"],present=True, su=True)
+                # Verify installation
+                r = yield Shell("which vim")
+                print(r.cp.stdout)
+                # Delete the packages on all hosts
+                r = yield Packages(packages=["vim","asterisk"],present=False, su=True)
+                # Verify removal
+                r = yield Shell("which vim")
+                print(r.cp.stdout)
+
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.
         It supports adding or removing packages based on the `present` flag and allows privilege escalation via `sudo` or `su`.

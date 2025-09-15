@@ -10,6 +10,16 @@ class Upgrade:
         sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
         su (bool): If `True`, the commands will be executed with `su` privileges.
 
+    **Examples:**
+
+    .. code:: python
+
+        class Upgrade_example:
+            def execute(self):
+                from reemote.operations.apk.upgrade import Upgrade
+                # Upgrade the packages on all hosts
+                r = yield Upgrade()
+
     Usage:
         Upgrade installed packages.
 

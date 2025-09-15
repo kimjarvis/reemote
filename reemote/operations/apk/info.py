@@ -9,6 +9,18 @@ class Info:
         sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
         su (bool): If `True`, the commands will be executed with `su` privileges.
 
+    **Examples:**
+
+    .. code:: python
+
+        class Info_example:
+            def execute(self):
+                from reemote.operations.apk.info import Info
+                # Get the package information on all hosts
+                r = yield Info(package='vim')
+                # View the package information
+                print(r.cp.stdout)
+
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.
 
@@ -33,5 +45,5 @@ class Info:
         r0.executed = True
 
         # Retrieve the package information
-        r1 = yield Operation(f"{_sudo}{_su}apk info {self.package}", sudo=self.sudo, su=self.su)
+        r1 = yield Operation(f"apk info {self.package}", sudo=self.sudo, su=self.su)
         # print(r1.cp.stdout)

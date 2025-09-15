@@ -5,7 +5,7 @@ from reemote.result import Result
 
 
 async def run_command_on_host(operation):
-    print("running operation", operation)
+    # print("running operation", operation)
     # Define the asynchronous function to connect to a host and run a command
     host_info = operation.host_info
     sudo_info = operation.sudo_info
@@ -34,9 +34,9 @@ async def run_command_on_host(operation):
                         # Run the command
                         cp = await conn.run(full_command, check=False)
                     elif operation.su:
-                        print(f"its su {sudo_info["su_user"]} {command}")
+                        # print(f"its su {sudo_info["su_user"]} {command}")
                         full_command = f"su {sudo_info['su_user']} -c '{command}'"
-                        print(full_command)
+                        # print(full_command)
                         if sudo_info["su_user"] == "root":
                             # For root, don't expect password prompt
                             async with conn.create_process(full_command,

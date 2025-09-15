@@ -5,22 +5,38 @@ from reemote.operation import Operation
 
 class Mkdir:
     """
-        A class to manage directory states on a filesystem.
+    A class to manage directory states on a filesystem.
 
-        Attributes:
-            path (str): The absolute or relative path of the directory to manage. This is the target directory whose state will be checked or modified.
-            present (bool): Indicates whether the directory should exist (`True`) or not (`False`) on the system. If `True`, the directory will be created if it does not exist. If `False`, the directory will be removed if it exists.
-            guard (bool): If `False` the commands will not be executed.
-            sudo (bool): If `True`, the commands will be executed with `sudo` privileges. Defaults to `False`.
-            su (bool): If `True`, the commands will be executed with `su` privileges.
+    Attributes:
+        path (str): The absolute or relative path of the directory to manage. This is the target directory whose state will be checked or modified.
+        present (bool): Indicates whether the directory should exist (`True`) or not (`False`) on the system. If `True`, the directory will be created if it does not exist. If `False`, the directory will be removed if it exists.
+        guard (bool): If `False` the commands will not be executed.
+        sudo (bool): If `True`, the commands will be executed with `sudo` privileges. Defaults to `False`.
+        su (bool): If `True`, the commands will be executed with `su` privileges.
 
-        Usage:
-            This class is designed to be used in a generator-based workflow where commands are yielded for execution.
-            It supports creating or removing directories based on the `present` flag and allows privilege escalation via `sudo`.
+    **Examples:**
 
-        Notes:
-            - Commands are constructed based on the `present` and `sudo` flags.
-            - The `changed` flag is set if the directory state changes after execution.
+    .. code:: python
+
+        class Mkdir_example:
+            def execute(self):
+                from reemote.operations.filesystem.mkdir import Mkdir
+                from reemote.operations.server.shell import Shell
+                # Create directory on all hosts
+                r = yield Mkdir(path='mydir', present=True)
+                # Remove directory from all hosts
+                r = yield Mkdir(path='mydir', present=False)
+                # View the directory
+                r = yield Shell("ls -ltr .")
+                print(r.cp.stdout)
+
+    Usage:
+        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
+        It supports creating or removing directories based on the `present` flag and allows privilege escalation via `sudo`.
+
+    Notes:
+        - Commands are constructed based on the `present` and `sudo` flags.
+        - The `changed` flag is set if the directory state changes after execution.
     """
     def __init__(self,
                  path: str,

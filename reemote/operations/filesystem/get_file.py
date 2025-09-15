@@ -32,13 +32,30 @@ async def get_file(host_info, sudo_info, command, cp, caller):
 
 class Get_file:
     """
-        A class to encapsulate the functionality of sftp get in Unix-like operating systems.
-        It allows users to specify a target file to be copied from a host.
-        The content of the file is made available as cp.stdout.
+    A class to encapsulate the functionality of sftp get in Unix-like operating systems.
+    It allows users to specify a target file to be copied from a host.
+    The content of the file is available as stdout.
 
-        Attributes:
-            path (str): The file or directory whose ownership is to be changed.
-            host (str): The host form which the file is being copied from.
+    Attributes:
+        path (str): The file or directory whose ownership is to be changed.
+        host (str): The host form which the file is being copied from.
+
+    **Examples:**
+
+    .. code:: python
+
+        class Get_file_example:
+            def execute(self):
+                from reemote.operations.filesystem.get_file import Get_file
+                # Get file content from a host
+                r = yield Get_file(path='example.txt', host='192.168.122.5')
+                # The content is available in stdout
+                print(r.cp.stdout)
+
+    Usage:
+        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
+
+    Notes:
     """
     def __init__(self,
                  path: str,
@@ -47,3 +64,5 @@ class Get_file:
         self.host = host
     def execute(self):
         r = yield Operation(f"get file {self.path}", local=True, callback=get_file, caller=self)
+        r.executed = True
+        r.changed = False
