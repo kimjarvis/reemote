@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="reemote",  # Name of your package
-    version="0.0.7",   # Version number
+    version="0.0.8",   # Version number
     description="A Python package for reemote functionality",  # Short description
     long_description="""
     Reemote is a Python API for task automation, configuration management and application deployment.
