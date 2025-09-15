@@ -6,5 +6,6 @@ Install from PyPI
 
 .. code-block:: bash
 
-   pip install reemote
+    pip install fastapi
+    pip install reemote
 
