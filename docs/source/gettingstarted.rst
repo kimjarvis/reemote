@@ -4,9 +4,6 @@ Getting started
 Hello World CLI Example
 -----------------------
 
-Verify installation
--------------------
-
 We are going to connect to localhost using ssh and then execute a command using Reemote.
 
 Check out the Reemote git repo.

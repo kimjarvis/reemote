@@ -1,5 +1,8 @@
-apk
-===
+Alpine Linux package keeper
+===========================
+
+APK operations
+--------------
 
 .. automodule:: reemote.operations.apk.info
    :members:
