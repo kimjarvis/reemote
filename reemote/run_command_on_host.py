@@ -14,7 +14,7 @@ async def run_command_on_host(operation):
     executed = False
     try:
         # Connect to the host
-        async with asyncssh.connect(**host_info) as conn:
+        async with asyncssh.connect(**host_info, term_type='vt100') as conn:
             if command.startswith("composite"):
                 # print(f"Executing composite command: {command}")
                 pass
@@ -27,6 +27,7 @@ async def run_command_on_host(operation):
                     if operation.sudo:
 
                         # Construct the full sudo command
+                        # full_command = f"sudo -S -u {sudo_info['sudo_user']} {command}"
                         full_command = f"sudo -S -u {sudo_info['sudo_user']} {command}"
                         print(full_command)
 
@@ -41,15 +42,16 @@ async def run_command_on_host(operation):
                                 check=False  # Do not raise an exception on failure
                             )
 
-                            # Check if the command failed due to incorrect password
-                            if "sudo: no tty present and no askpass program specified" in cp.stderr:
-                                raise RuntimeError("Password was required but not provided.")
-                            elif "Sorry, try again." in cp.stderr:
-                                raise RuntimeError("Incorrect password provided.")
-                            elif "are you root?" in cp.stderr:
-                                raise RuntimeError("Insufficient privileges. Ensure the user has sudo access.")
-                            else:
-                                raise RuntimeError(f"Command failed with error: {cp.stderr}")
+                            if cp.stderr:
+                                # Check if the command failed due to incorrect password
+                                if "sudo: no tty present and no askpass program specified" in cp.stderr:
+                                    raise RuntimeError("Password was required but not provided.")
+                                elif "Sorry, try again." in cp.stderr:
+                                    raise RuntimeError("Incorrect password provided.")
+                                elif "are you root?" in cp.stderr:
+                                    raise RuntimeError("Insufficient privileges. Ensure the user has sudo access.")
+                                else:
+                                    raise RuntimeError(f"Command failed with error: {cp.stderr}")
 
                             return cp
 
