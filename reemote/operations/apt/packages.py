@@ -68,7 +68,7 @@ class Packages:
 
     def execute(self):
         r0 = yield Operation(f"composite {self}",guard=self.guard, sudo=self.sudo, su=self.su)
-        r0.executed = self.guard
+        # r0.executed = self.guard
 
-        r3 = yield Operation(f"apt get {self.op}",guard=self.guard and not self.present, sudo=self.sudo, su=self.su)
-
+        r3 = yield Operation(f"apt-get install {self.op}",guard=self.guard and self.present, sudo=self.sudo, su=self.su)
+        print(r3)

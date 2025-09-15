@@ -25,14 +25,39 @@ async def run_command_on_host(operation):
                     # print(f"Executing command: {command}")
                     executed = True
                     if operation.sudo:
-                        if not sudo_info.get("sudo_password"):
-                            raise ValueError("Command requires sudo, but no sudo password was provided.")
 
-                        # Construct the full command for sudo
-                        full_command = f'echo "{sudo_info["sudo_password"]}" | sudo -S {command[len("sudo "):]}'
+                        # Construct the full sudo command
+                        full_command = f"sudo -S -u {sudo_info['sudo_user']} {command}"
+                        print(full_command)
 
-                        # Run the command
-                        cp = await conn.run(full_command, check=False)
+                        # Prepare the password input (if required)
+                        password_input = sudo_info.get("sudo_password", "") + "\n"
+                        print(password_input)
+                        try:
+                            # Run the command with stdin for password input
+                            cp = await conn.run(
+                                full_command,
+                                input=password_input,  # Provide the password via stdin
+                                check=False  # Do not raise an exception on failure
+                            )
+
+                            # Check if the command failed due to incorrect password
+                            if "sudo: no tty present and no askpass program specified" in cp.stderr:
+                                raise RuntimeError("Password was required but not provided.")
+                            elif "Sorry, try again." in cp.stderr:
+                                raise RuntimeError("Incorrect password provided.")
+                            elif "are you root?" in cp.stderr:
+                                raise RuntimeError("Insufficient privileges. Ensure the user has sudo access.")
+                            else:
+                                raise RuntimeError(f"Command failed with error: {cp.stderr}")
+
+                            return cp
+
+                        except asyncssh.ProcessError as e:
+                            # Handle any process-related errors
+                            print(f"Command failed with error: {e}")
+                            return None
+
                     elif operation.su:
                         # print(f"its su {sudo_info["su_user"]} {command}")
                         full_command = f"su {sudo_info['su_user']} -c '{command}'"
