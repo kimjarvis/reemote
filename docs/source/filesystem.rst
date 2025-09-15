@@ -1,5 +1,8 @@
-filesystem
+Filesystem
 ==========
+
+Filesystem operations
+---------------------
 
 .. automodule:: reemote.operations.filesystem.chmod
    :members:

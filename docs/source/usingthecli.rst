@@ -1,4 +1,4 @@
-Using the reemote CLI
+Using the Reemote CLI
 =====================
 
 The reemote CLI is a handy way to get your Reemote classes running quickly.
