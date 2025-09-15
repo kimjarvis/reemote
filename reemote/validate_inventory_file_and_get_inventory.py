@@ -2,9 +2,6 @@ import importlib.util
 import sys
 from typing import Any
 
-from reemote.validate_inventory_structure import validate_inventory_structure
-
-
 def validate_inventory_file_and_get_inventory(inventory_file) -> tuple[Any, str]:
     # Create a module specification from the file location
     module_name = "dynamic_module"  # You can name this anything

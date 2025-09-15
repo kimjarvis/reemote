@@ -1,6 +1,7 @@
 import asyncssh
 from typing import List, Tuple, Dict, Any
 
+
 async def verify_inventory_connect(inventory: List[Tuple[Dict[str, Any], Dict[str, str]]]) -> bool:
     for host_info,ssh_info in inventory:
         try:

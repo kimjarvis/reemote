@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import sys
 
+
 from reemote.validate_inventory_file_and_get_inventory import validate_inventory_file_and_get_inventory
 from reemote.validate_root_class_name_and_get_root_class import validate_root_class_name_and_get_root_class
 from reemote.verify_inventory_connect import verify_inventory_connect
@@ -10,8 +11,8 @@ from reemote.verify_python_file import verify_python_file
 from reemote.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
 from reemote.validate_inventory_structure import validate_inventory_structure
 
-from produce_json import produce_json
-from produce_table import produce_table
+from reemote.produce_json import produce_json
+from reemote.produce_table import produce_table
 import argparse
 
 from typing import List, Tuple, Dict, Any
