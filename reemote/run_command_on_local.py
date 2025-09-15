@@ -1,9 +1,5 @@
-import asyncssh
 from asyncssh import SSHCompletedProcess
-from jinja2.lexer import operator_re
-
 from reemote.result import Result
-
 
 async def run_command_on_local(operation):
     # Define the asynchronous function to connect to a host and run a command

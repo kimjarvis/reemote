@@ -24,6 +24,7 @@ setup(
         "bcrypt",
         "asyncssh",
         "tabulate",
+        "fastapi",
         "nicegui",
     ],  # List of dependencies with proper commas
     extras_require={

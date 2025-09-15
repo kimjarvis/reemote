@@ -1,15 +1,6 @@
 from typing import List, Tuple, Dict, Any
 
 def validate_inventory_structure(inventory: List[Tuple[Dict[str, Any], Dict[str, str]]]) -> bool:
-    """
-    Validates the structure of the inventory object.
-
-    Args:
-        inventory (List[Tuple[Dict[str, Any], Dict[str, str]]]): The inventory object to validate.
-
-    Returns:
-        bool: True if the structure is valid, False otherwise.
-    """
     # Check if the input is a list
     if not isinstance(inventory, list):
         return False
