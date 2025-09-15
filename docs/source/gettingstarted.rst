@@ -1,8 +1,80 @@
 Getting started
 ===============
 
-Hello World Example
+Hello World CLI Example
+-----------------------
+
+Verify installation
 -------------------
+
+We are going to connect to localhost using ssh and then execute a command using Reemote.
+
+Check out the Reemote git repo.
+
+.. code-block:: bash
+
+   git clone git@github.com:kimjarvis/reemote.git
+   cd reemote
+
+Modify the file localhost.py to add your user name and your password.  This is an inventory file.
+It describes the hosts on which the Reemote command will run.  In this case its localhost.
+
+.. code-block:: bash
+
+    from typing import List, Tuple, Dict, Any
+
+    def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
+        return [({'host': 'localhost',  # Host
+                  'username': 'youruser',  # User name
+                  'password': 'yourpassword'  # Password
+        },{})]
+
+Now we can now execute a class using the Reemote CLI.
+
+.. code-block:: bash
+
+    reemote --cli -i localhost.py -s examples/hello_world/main.py -c Hello_world
+
+This executes the following class in main.py
+
+.. code-block:: bash
+
+    class Hello_world:
+        def execute(self):
+            r = yield Shell("echo Hello World!")
+            print(r.cp.stdout)
+
+You should see the output of the command and an execution report.
+
+.. code-block:: bash
+
+    > reemote --cli -i localhost.py -s examples/hello_world/main.py -c Hello_world
+    Hello World!
+
+    +-------------------+----------------------+---------------------+
+    | Command           | localhost Executed   | localhost Changed   |
+    +===================+======================+=====================+
+    | echo Hello World! | True                 | True                |
+    +-------------------+----------------------+---------------------+
+
+Hello World GUI Example
+-----------------------
+
+Lets try running that in the GUI.
+
+.. code-block:: bash
+
+    reemote --gui -s examples/hello_world/main.py -c Hello_world
+
+Use the inventory file picker to select localhost.py.
+
+.. image:: gui_localhost.png
+   :width: 100%
+   :align: center
+   :alt: GUI Demo Screenshot
+
+Hello World API Example
+-----------------------
 
 This example echos "Hello world" on the localhost.
 
@@ -18,8 +90,8 @@ This example echos "Hello world" on the localhost.
 
     def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
         return [({'host': 'localhost',
-                  'username': 'kim',  # User name
-                  'password': 'xnjs'  # Password
+                  'username': 'youruser',  # User name
+                  'password': 'yourpassword'  # Password
                   },{})]
 
     class Hello_world:
@@ -39,7 +111,7 @@ To run it, modify youruser and yourpassword.  You should see:
 
 .. code-block:: bash
 
-    ❯ python3 helloworld.py
+    ❯ python3 examples/hello_world/main.py
     +-------------------+----------------------+---------------------+
     | Command           | localhost Executed   | localhost Changed   |
     +===================+======================+=====================+
@@ -56,8 +128,8 @@ action.  In this case its to echo "hello world".  When more commands
 are added they appear as rows in the output table.  When another host is added to the inventory it will
 appear as another column.
 
-Installing vim on Alpine Example
---------------------------------
+Installing vim on Alpine API Example
+------------------------------------
 
 This example installs vim on a server, which is running Alpine, using the apk package manager.
 
@@ -96,11 +168,11 @@ This example installs vim on a server, which is running Alpine, using the apk pa
     if __name__ == "__main__":
         asyncio.run(main())
 
-To run it, spin up an Alpine VM, then modify the IP address and youruser and yourpassword.  You should see:
+To run it, spin up an Alpine VM, then modify the IP address,youruser and yourpassword.  You should see:
 
 .. code-block:: bash
 
-    ❯ python3 vimonapline.py
+    >python3 examples/install_vim_on_alpine/main.py
     +-----------------------------------------------------------------------------------+------------------+
     | Command                                                                           | 192.168.122.47   |
     +===================================================================================+==================+
@@ -133,8 +205,8 @@ the apk add vim operation.
 
 .. _gui-example:
 
-GUI Example
------------
+Make Directory GUI Example
+--------------------------
 
 This example creates or deletes a directory on all the servers in the inventory.
 
@@ -144,7 +216,7 @@ This example creates or deletes a directory on all the servers in the inventory.
    :alt: GUI Demo Screenshot
 
 The Reemote GUI is based on `NiceGUI <https://nicegui.io>`_ .  The Gui class provides methods to upload the
-inventory and produce and execution report.
+inventory and produce an execution report.
 
 .. code-block:: python
 
@@ -173,7 +245,6 @@ inventory and produce and execution report.
     ui.run(title="Manage directory", reload=False, port=native.find_open_port(),
            storage_secret='private key to secure the browser session cookie')
 
-The source code is `here <https://github.com/kimjarvis/reemote/blob/main/examples/gui/main.py>`_
 
 The Gui class contains elements to upload the inventory and to display a report of the execution on the hosts. On the web page
 the boolean value of the switch is written to application storage.
