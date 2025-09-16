@@ -68,6 +68,6 @@ class Put_file:
         self.text = text
 
     def execute(self):
-        r = yield Operation(f"put file {self.path}", local=True, callback=put_file, caller=self)
-        r.executed = True
-        r.changed = True
+        r0 = yield Operation(f"{self}",composite=True)
+        r0.executed = True
+        r0.changed = True

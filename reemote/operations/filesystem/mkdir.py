@@ -57,7 +57,7 @@ class Mkdir:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r0 = yield Operation(f"composite {self}",guard=self.guard)
+        r0 = yield Operation(f"{self}",composite=True)
         r0.executed = self.guard
 
         # Check whether the directory exists

@@ -42,7 +42,7 @@ class Upgrade:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r0 = yield Operation(f"composite {self}", guard=self.guard, sudo=self.sudo, su=self.su)
+        r0 = yield Operation(f"{self}",composite=True)
         r0.executed = self.guard
 
         # Retrieve the current list of installed packages

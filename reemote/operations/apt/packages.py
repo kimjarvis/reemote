@@ -15,17 +15,17 @@ class Packages:
 
     .. code:: python
 
-        class Packages_example:
+        class Apt_packages_example:
             def execute(self):
-                from reemote.operations.apk.packages import Packages
+                from reemote.operations.apt.packages import Packages
                 from reemote.operations.server.shell import Shell
                 # Add the packages on all hosts
-                r = yield Packages(packages=["vim","asterisk"],present=True, sudo=True)
+                r = yield Packages(packages=["vim"],present=True, sudo=True)
                 # Verify installation
                 r = yield Shell("which vim")
                 print(r.cp.stdout)
                 # Delete the packages on all hosts
-                r = yield Packages(packages=["vim","asterisk"],present=False, sudo=True)
+                r = yield Packages(packages=["vim"],present=False, sudo=True)
                 # Verify removal
                 r = yield Shell("which vim")
                 print(r.cp.stdout)
@@ -42,13 +42,11 @@ class Packages:
     def __init__(self,
                  packages: List[str],
                  present: bool,
-                 repository: str = None ,
                  guard: bool = True,
                  sudo: bool = False,
                  su: bool = False):
         self.packages: List[str] = packages
         self.present: bool = present
-        self.repository: str = repository
         self.guard: bool = guard
         self.sudo: bool = sudo
         self.su: bool = su
@@ -56,19 +54,33 @@ class Packages:
         # Construct the operation string from the list of packages
         op: List[str] = []
         op.extend(self.packages)
-        if repository:
-            op.append(f"--repository {repository}")
         self.op: str = " ".join(op)
 
     def __repr__(self) -> str:
         return (f"Packages(packages={self.packages!r}, present={self.present!r},"
-                f"repository={self.repository!r},"
                 f"guard={self.guard!r}, "                                
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r0 = yield Operation(f"composite {self}",guard=self.guard, sudo=self.sudo, su=self.su)
-        # r0.executed = self.guard
+        r0 = yield Operation(f"{self}",composite=True)
+        r0.executed = self.guard
 
-        r3 = yield Operation(f"apt-get install {self.op}",guard=self.guard and self.present, sudo=self.sudo, su=self.su)
-        print(r3)
+        # Retrieve the current list of installed packages
+        r1 = yield Operation(f"dpkg-query -l",guard=self.guard, sudo=self.sudo, su=self.su)
+
+        # Add or remove packages based on the `present` flag
+        r2 = yield Operation(f"apt-get install -y {self.op}",guard=self.guard and self.present, sudo=self.sudo, su=self.su)
+        r2.changed = self.guard and self.present
+        # print(r2)
+
+        r3 = yield Operation(f"apt-get remove -y {self.op}",guard=self.guard and not self.present, sudo=self.sudo, su=self.su)
+        r3.changed = self.guard and not self.present
+        # print(r3)
+
+        # Retrieve the updated list of installed packages
+        r4 = yield Operation(f"dpkg-query -l",guard=self.guard, sudo=self.sudo, su=self.su)
+
+        # Set the `changed` flag if the package state has changed
+        if self.guard and (r1.cp.stdout != r4.cp.stdout):
+            r0.changed = True
+

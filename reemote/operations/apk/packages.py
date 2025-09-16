@@ -8,6 +8,7 @@ class Packages:
     Attributes:
         packages (List[str]): A list of package names to be added or removed.
         present (bool): Indicates whether the packages should be present (`True`) or absent (`False`) on the system.
+        repository (string): The name of the repository to be used.
         sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
         su (bool): If `True`, the commands will be executed with `su` privileges.
 
@@ -67,7 +68,7 @@ class Packages:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r0 = yield Operation(f"composite {self}",guard=self.guard, sudo=self.sudo, su=self.su)
+        r0 = yield Operation(f"{self}",composite=True)
         r0.executed = self.guard
 
         # Retrieve the current list of installed packages
