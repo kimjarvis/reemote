@@ -1,10 +1,7 @@
 from reemote.operation import Operation
-from reemote.operation import Operation
-
-
-class Upgrade:
+class Update:
     """
-    A class to manage package operations on a remote system using `apk` (Alpine Linux package manager).
+    A class to manage package operations on a remote system using `apt` (Advanced Package Tool).
 
     Attributes:
         sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
@@ -14,14 +11,14 @@ class Upgrade:
 
     .. code:: python
 
-        class Upgrade_example:
+        class Update_example:
             def execute(self):
-                from reemote.operations.apk.upgrade import Upgrade
-                # Upgrade the packages on all hosts
-                r = yield Upgrade()
+                from reemote.operations.apk.update import Update
+                # Update the packages on all hosts
+                r = yield Update()
 
     Usage:
-        Upgrade installed packages.
+        Update installed packages.
 
     Notes:
         - Commands are constructed based on the `present`, `sudo`, and `su` flags.
@@ -37,8 +34,8 @@ class Upgrade:
         self.su: bool = su
 
     def __repr__(self) -> str:
-        return (f"Upgrade("
-                f"guard={self.guard!r}, "                                
+        return (f"Update("
+                f"guard={self.guard!r}, "                
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
@@ -46,12 +43,12 @@ class Upgrade:
         r0.executed = self.guard
 
         # Retrieve the current list of installed packages
-        r1 = yield Operation(f"apk info -v", guard=self.guard, sudo=self.sudo, su=self.su)
+        r1 = yield Operation(f"dpkg-query -l", guard=self.guard, sudo=self.sudo, su=self.su)
 
-        r2 = yield Operation(f"apk upgrade", guard=self.guard, sudo=self.sudo, su=self.su)
-
-        # Retrieve the upgraded list of installed packages
-        r3 = yield Operation(f"apk info -v", guard=self.guard, sudo=self.sudo, su=self.su)
+        r2 = yield Operation(f"apt-get update", guard=self.guard, sudo=self.sudo, su=self.su)
+        print(r2)
+        # Retrieve the updated list of installed packages
+        r3 = yield Operation(f"dpkg-query -l", guard=self.guard, sudo=self.sudo, su=self.su)
 
         # Set the `changed` flag if the package state has changed
         if self.guard and (r1.cp.stdout != r3.cp.stdout):

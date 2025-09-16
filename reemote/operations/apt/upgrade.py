@@ -4,7 +4,7 @@ from reemote.operation import Operation
 
 class Upgrade:
     """
-    A class to manage package operations on a remote system using `apk` (Alpine Linux package manager).
+    A class to manage package operations on a remote system using `apt` (Advanced Package Tool).
 
     Attributes:
         sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
@@ -46,12 +46,12 @@ class Upgrade:
         r0.executed = self.guard
 
         # Retrieve the current list of installed packages
-        r1 = yield Operation(f"apk info -v", guard=self.guard, sudo=self.sudo, su=self.su)
+        r1 = yield Operation(f"dpkg-query -l", guard=self.guard, sudo=self.sudo, su=self.su)
 
-        r2 = yield Operation(f"apk upgrade", guard=self.guard, sudo=self.sudo, su=self.su)
+        r2 = yield Operation(f"apt-get upgrade", guard=self.guard, sudo=self.sudo, su=self.su)
 
         # Retrieve the upgraded list of installed packages
-        r3 = yield Operation(f"apk info -v", guard=self.guard, sudo=self.sudo, su=self.su)
+        r3 = yield Operation(f"dpkg-query -l", guard=self.guard, sudo=self.sudo, su=self.su)
 
         # Set the `changed` flag if the package state has changed
         if self.guard and (r1.cp.stdout != r3.cp.stdout):

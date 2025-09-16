@@ -63,6 +63,6 @@ class Get_file:
         self.path = path
         self.host = host
     def execute(self):
-        r = yield Operation(f"get file {self.path}", local=True, callback=get_file, caller=self)
-        r.executed = True
-        r.changed = False
+        r0 = yield Operation(f"{self}",composite=True)
+        r0.executed = True
+        r0.changed = False

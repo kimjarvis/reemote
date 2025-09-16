@@ -15,7 +15,8 @@ async def run_command_on_host(operation):
     try:
         # Connect to the host
         async with asyncssh.connect(**host_info) as conn:
-            if command.startswith("composite"):
+            # print("connected to host", host_info)
+            if operation.composite:
                 # print(f"Executing composite command: {command}")
                 pass
             else:
@@ -25,14 +26,12 @@ async def run_command_on_host(operation):
                     # print(f"Executing command: {command}")
                     executed = True
                     if operation.sudo:
-                        if not sudo_info.get("sudo_password"):
-                            raise ValueError("Command requires sudo, but no sudo password was provided.")
-
-                        # Construct the full command for sudo
-                        full_command = f'echo "{sudo_info["sudo_password"]}" | sudo -S {command[len("sudo "):]}'
-
-                        # Run the command
+                        full_command = f"echo {sudo_info['sudo_password']} | sudo -S {command}"
+                        # print(full_command)
+                        # print("sudo begin")
                         cp = await conn.run(full_command, check=False)
+                        # print("sudo end")
+                        # print(cp)
                     elif operation.su:
                         # print(f"its su {sudo_info["su_user"]} {command}")
                         full_command = f"su {sudo_info['su_user']} -c '{command}'"

@@ -1,7 +1,10 @@
 from typing import Dict, Optional, Callable
 
+from wheel.macosx_libfile import segment_command_fields
+
+
 class Operation:
-    def __init__(self, command: str, guard: bool = True, local: bool = False, callback: Optional[Callable] = None, caller=None, sudo: bool = False, su: bool = False):
+    def __init__(self, command: str, guard: bool = True, local: bool = False, callback: Optional[Callable] = None, caller=None, sudo: bool = False, su: bool = False, composite=False):
         self.command: str = command
         self.guard: bool = guard
         self.host_info: Optional[Dict[str, str]] = None
@@ -11,6 +14,7 @@ class Operation:
         self.caller=caller
         self.sudo=sudo
         self.su=su
+        self.composite=composite
 
     def __str__(self) -> str:
         return repr(self)
@@ -19,6 +23,7 @@ class Operation:
         return (f"Operation(command={self.command!r}, "
                 f"guard={self.guard!r}, "
                 f"local={self.local!r}, "
+                f"composite={self.composite!r}, "
                 f"sudo={self.sudo!r}, su={self.su!r}), "
                 f"host_info={self.host_info!r}, "
                 f"sudo_info={self.sudo_info!r})")
