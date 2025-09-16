@@ -3,9 +3,10 @@
 class Hello_world:
     def execute(self):
         from reemote.operations.server.shell import Shell
-        r0 = yield Shell("echo 'Hello'")
+        from reemote.result import Result
+        r0 : Results = yield Shell("echo 'Hello'")
         print(r0.cp.stdout)
-        r1 = yield Shell("echo 'World!'")
+        r1 : Result = yield Shell("echo 'World!'")
         print(r1.cp.stdout)
 
 class Install_wget:
@@ -15,6 +16,12 @@ class Install_wget:
         r0 = yield Packages(packages=["wget"], present=True, sudo=True)
         r1 = yield Shell("which wget")
         print(r1.cp.stdout)
+
+class Which_wget:
+    def execute(self):
+        from reemote.operations.server.shell import Shell
+        r0 = yield Shell("which wget")
+        r0.changed = False
 
 class Get_OS:
     def execute(self):
