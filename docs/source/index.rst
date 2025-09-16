@@ -21,4 +21,5 @@ For more information about this example see :ref:`gui-example`.
    gettingstarted
    inventory
    usingthecli
+   tutorial
    operations

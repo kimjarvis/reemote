@@ -66,7 +66,7 @@ class Packages:
         r0.executed = self.guard
 
         # Retrieve the current list of installed packages
-        r1 = yield Operation(f"dpkg-query -l",guard=self.guard, sudo=self.sudo, su=self.su)
+        r1 = yield Operation(f"apt list --installed",guard=self.guard, sudo=self.sudo, su=self.su)
 
         # Add or remove packages based on the `present` flag
         r2 = yield Operation(f"apt-get install -y {self.op}",guard=self.guard and self.present, sudo=self.sudo, su=self.su)
@@ -76,7 +76,7 @@ class Packages:
         # print(r3)
 
         # Retrieve the updated list of installed packages
-        r4 = yield Operation(f"dpkg-query -l",guard=self.guard, sudo=self.sudo, su=self.su)
+        r4 = yield Operation(f"apt list --installed",guard=self.guard, sudo=self.sudo, su=self.su)
 
         # Set the `changed` flag iff the package state has changed
         if self.guard and (r1.cp.stdout != r4.cp.stdout):
