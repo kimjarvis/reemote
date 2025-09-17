@@ -46,7 +46,7 @@ class Update:
         r1 = yield Operation(f"dpkg-query -l", guard=self.guard, sudo=self.sudo, su=self.su)
 
         r2 = yield Operation(f"apt-get update", guard=self.guard, sudo=self.sudo, su=self.su)
-        print(r2)
+        # print(r2)
         # Retrieve the updated list of installed packages
         r3 = yield Operation(f"dpkg-query -l", guard=self.guard, sudo=self.sudo, su=self.su)
 

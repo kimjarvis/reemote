@@ -6,10 +6,6 @@ from reemote.operations.server.shell import Shell
 
 from typing import List, Tuple, Dict, Any
 
-from typing import List, Tuple, Dict, Any
-
-from typing import List, Tuple, Dict, Any
-
 def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
      return [
         (
@@ -39,7 +35,7 @@ def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
 class Hello_world:
     def execute(self):
         r = yield Shell("dpkg-query -l")
-        print(r.cp.stdout)
+        print(r)
 
 async def main():
     responses = await execute(inventory(), Hello_world())
