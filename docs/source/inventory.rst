@@ -15,24 +15,24 @@ This is an example inventory that contains ssh connection information for two ho
          return [
             (
                 {
-                    'host': '192.168.122.47',  # alpine
-                    'username': 'youruser',  # User name
-                    'password': 'yourpassword'  # Password
+                    'host': '10.156.135.16',  # alpine
+                    'username': 'user',  # User name
+                    'password': 'user'  # Password
                 },
                 {
                     'su_user': 'root',
-                    'su_password': 'rootuser'  # Password
+                    'su_password': 'root'  # Password
                 }
             ),
             (
                 {
-                    'host': '192.168.122.24',  # alpine
-                    'username': 'youruser',  # User name
-                    'password': 'yourpassword'  # Password
+                    'host': '10.156.135.19',  # alpine
+                    'username': 'user',  # User name
+                    'password': 'user'  # Password
                 },
                 {
                     'su_user': 'root',
-                    'su_password': 'rootuser'  # Password
+                    'su_password': 'root'  # Password
                 }
             )
         ]

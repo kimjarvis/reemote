@@ -287,14 +287,14 @@ When the callback is run we see:
 In particular, the message from the callback is only printed once.  The callback function is asynchronous so
 its output may appear before or after the "Hello World!" message from each host.
 
-A callable function must have the signature:
+A callable callback function must have the signature:
 
 .. code-block:: python
 
-async def callable_function(
-    host_info: dict,
-    sudo_info: dict,
-    command: str,
-    cp: object,
-    caller: str
-) -> None:
+    async def callable_function(
+        host_info: dict,
+        sudo_info: dict,
+        command: str,
+        cp: object,
+        caller: str
+    ) -> None:
