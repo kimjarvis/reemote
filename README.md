@@ -2,7 +2,7 @@
 
 Reemote is a Python API for task automation, configuration management and application deployment.
 
-Visit [reemote.org](http://reemote.org/).
+Visit [reemote.org](https://reemote.org/).
 
 # Example
 
