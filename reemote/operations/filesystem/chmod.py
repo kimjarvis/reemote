@@ -59,7 +59,7 @@ class Chmod:
         op.append(options)
         op.append(path)
         self.chmod = " ".join(op)
-        print(self.chmod)
+        # print(self.chmod)
 
     def __repr__(self):
         return (f"Chmod(path={self.path!r}, "

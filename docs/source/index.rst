@@ -4,14 +4,12 @@ Reemote documentation
 Reemote is a Python API for task automation, configuration management and application deployment.
 You can use Reemote to install and configure software on multiple servers.
 
-This example deletes a directory on all the servers in an inventory.
+This example manages apk package versions on all servers in an inventory.
 
-.. image:: gui_demo.png
+.. image:: apk_package_controller.png
    :width: 100%
    :align: center
-   :alt: GUI Demo Screenshot
-
-For more information about this example see :ref:`gui-example`.
+   :alt: APK package controller GUI Demo Screenshot
 
 .. toctree::
    :maxdepth: 2

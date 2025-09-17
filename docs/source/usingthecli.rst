@@ -3,9 +3,9 @@ Using the Reemote CLI
 
 The reemote CLI is a handy way to get your Reemote classes running quickly.
 
-.. code-block:: python
+.. code-block:: bash
 
-    python3 reemote/cli.py --help
+    reemote --help
     usage: usage: reemote [-h] [-i INVENTORY_FILE] [-s SOURCE_FILE] [-c CLASS_NAME] [--gui | --cli]
 
     Process inventory and source files with a specified class
@@ -20,6 +20,9 @@ The reemote CLI is a handy way to get your Reemote classes running quickly.
                             Path to the source Python file (.py extension required)
       -c, --class CLASS_NAME
                             Name of the class in source file that has an execute(self) method
+      -o, --output OUTPUT_FILE
+                            Path to the output file where results will be saved
+      -t, --type TYPE       Output format type: "grid", "json", or "rst"
 
     Example: reemote --cli -i ~/inventory.py -s examples/cli/make_directory.py -c Make_directory
 

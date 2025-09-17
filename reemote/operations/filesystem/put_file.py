@@ -5,7 +5,7 @@ import asyncssh
 from reemote.operation import Operation
 
 
-async def put_file(host_info, sudo_info, command, cp, caller):
+async def put_file(host_info, sudo_global, command, cp, caller):
     # Initialize file_content to None
     file_content = None
 

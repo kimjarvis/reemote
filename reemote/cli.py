@@ -1,16 +1,16 @@
 import argparse
 import asyncio
 import sys
-
+import os
 
 from reemote.validate_inventory_file_and_get_inventory import validate_inventory_file_and_get_inventory
 from reemote.validate_root_class_name_and_get_root_class import validate_root_class_name_and_get_root_class
 from reemote.verify_inventory_connect import verify_inventory_connect
-from reemote.run import run
+from reemote.execute import execute
 from reemote.verify_python_file import verify_python_file
 from reemote.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
 from reemote.validate_inventory_structure import validate_inventory_structure
-
+from reemote.write_responses_to_file import write_responses_to_file
 from reemote.produce_json import produce_json
 from reemote.produce_table import produce_table
 import argparse
@@ -71,6 +71,25 @@ def main():
         default=None
     )
 
+    # Add --output / -o argument
+    parser.add_argument(
+        '-o', '--output',
+        dest='output_file',
+        metavar='OUTPUT_FILE',
+        help='Path to the output file where results will be saved',
+        default=None
+    )
+
+    # Add --type / -t argument with choices
+    parser.add_argument(
+        '-t', '--type',
+        dest='output_type',
+        metavar='TYPE',
+        choices=['grid', 'json', 'rst'],
+        help='Output format type: "grid", "json", or "rst"',
+        default=None
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -126,11 +145,11 @@ def main():
     if args.gui:
         from nicegui import ui, native, app
         from reemote.gui import Gui
-        from reemote.run import run
+        from reemote.execute import execute
         from reemote.produce_grid import produce_grid
 
         async def Control_directory(gui):
-            _, responses = await run(app.storage.user["inventory"],root_class())
+            responses = await execute(app.storage.user["inventory"], root_class())
             app.storage.user["columnDefs"], app.storage.user["rowData"] = produce_grid(produce_json(responses))
             gui.execution_report.refresh()
 
@@ -151,11 +170,19 @@ async def run_cli(args, inventory: tuple[Any, str], root_class):
             print("Inventory connections are invalid")
             sys.exit(1)
 
-    _, results = await run(inventory(), root_class())
-    json_output = produce_json(results)
+    responses = await execute(inventory(), root_class())
+    json_output = produce_json(responses)
     table_output = produce_table(json_output)
     print(table_output)
+    if args.output_type=="json":
+        write_responses_to_file(responses = responses, type="json", filepath="development/output/out.json")
+    if args.output_type=="rst":
+        write_responses_to_file(responses = produce_json(responses), type="rst", filepath="development/output/out.rst")
+    if args.output_type=="grid":
+        write_responses_to_file(responses = produce_json(responses), type="grid", filepath="development/output/out.py")
+
     sys.exit(0)
+
 
 
 # Synchronous wrapper for console_scripts

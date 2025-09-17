@@ -59,7 +59,7 @@ class Show_OS:
         r0 = yield Get_OS()
         print(r0.cp.stdout)
 
-async def callable_function(host_info, sudo_info, command, cp, caller):
+async def callable_function(host_info, global_info, command, cp, caller):
     if host_info["host"] == caller.host:
         print(f"callback called for host {caller.host}")
 
