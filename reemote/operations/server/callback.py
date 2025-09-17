@@ -18,7 +18,7 @@ class Callback:
 
     .. code:: python
 
-        async def callable_function(host_info, sudo_info, command, cp, caller):
+        async def callable_function(host_info, global_info, command, cp, caller):
             if host_info["host"] == caller.host:
                 print(f"callback called for host {caller.host}")
 

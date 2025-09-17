@@ -46,7 +46,7 @@ def serialize_result(obj):
             "command": obj.command,
             "guard": obj.guard,
             "host_info": obj.host_info,
-            "sudo_info": obj.sudo_info,
+            "global_info": obj.global_info,
         }
     else:
         raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")

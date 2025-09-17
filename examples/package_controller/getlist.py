@@ -1,5 +1,5 @@
 import asyncio
-from reemote.run import run
+from reemote.execute import execute
 from reemote.produce_json import produce_json
 from reemote.produce_table import produce_table
 from reemote.operations.server.shell import Shell
@@ -8,17 +8,30 @@ from typing import List, Tuple, Dict, Any
 
 from typing import List, Tuple, Dict, Any
 
+from typing import List, Tuple, Dict, Any
+
 def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
-    return [
+     return [
         (
             {
-                'host': '192.168.122.143',  # debian
-                'username': 'kim',  # User name
-                'password': 'userpassword'  # Password
+                'host': '10.156.135.16',  # alpine
+                'username': 'user',  # User name
+                'password': 'user'  # Password
             },
             {
-                'sudo_user': 'kim',
-                'sudo_password': 'userpassword',
+                'su_user': 'root',
+                'su_password': 'root'  # Password
+            }
+        ),
+        (
+            {
+                'host': '10.156.135.19',  # alpine
+                'username': 'user',  # User name
+                'password': 'user'  # Password
+            },
+            {
+                'su_user': 'root',
+                'su_password': 'root'  # Password
             }
         )
     ]
@@ -29,7 +42,7 @@ class Hello_world:
         print(r.cp.stdout)
 
 async def main():
-    _, responses = await run(inventory(), Hello_world())
+    responses = await execute(inventory(), Hello_world())
     print(produce_table(produce_json(responses)))
 
 

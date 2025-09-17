@@ -1,14 +1,14 @@
 from nicegui import ui, native, app
 from reemote.gui import Gui
-from reemote.run import run
+from reemote.execute import execute
 from reemote.produce_grid import produce_grid
 from reemote.produce_json import produce_json
 from reemote.operations.filesystem.mkdir import Mkdir
 
 
 async def Control_directory(gui):
-    _, responses = await run(app.storage.user["inventory"],
-                             Mkdir(path="/tmp/mydir", present=app.storage.user["present"], su=True))
+    responses = await execute(app.storage.user["inventory"],
+                              Mkdir(path="/tmp/mydir", present=app.storage.user["present"], su=True))
     app.storage.user["columnDefs"],app.storage.user["rowData"] = produce_grid(produce_json(responses))
     gui.execution_report.refresh()
 

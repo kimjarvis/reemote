@@ -12,7 +12,7 @@ setup(
     author_email="kim.jarvis@tpfsystems.com",  # Your email
     url="http://reemote.org/",
     project_urls={
-        "Documentation": "http://reemote.org/",
+        "Documentation": "https://reemote.org/",
         "Source Code": "https://github.com/kimjarvis/reemote",
         "Bug Tracker": "https://github.com/kimjarvis/reemote/issues",
         "Changelog": "https://github.com/kimjarvis/reemote/blob/main/CHANGELOG.md",

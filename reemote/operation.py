@@ -8,7 +8,7 @@ class Operation:
         self.command: str = command
         self.guard: bool = guard
         self.host_info: Optional[Dict[str, str]] = None
-        self.sudo_info: Optional[Dict[str, str]] = None
+        self.global_info: Optional[Dict[str, str]] = None
         self.local=local
         self.callback=callback
         self.caller=caller
@@ -28,7 +28,7 @@ class Operation:
                 f"composite={self.composite!r}, "
                 f"sudo={self.sudo!r}, su={self.su!r}), "
                 f"host_info={self.host_info!r}, "
-                f"sudo_info={self.sudo_info!r})")
+                f"global_info={self.global_info!r})")
 
 def serialize_operation(obj):
     if isinstance(obj, Operation):  # Check if the object is of type Operation
@@ -36,7 +36,7 @@ def serialize_operation(obj):
             "command": obj.command,          # Serialize the command (string)
             "guard": obj.guard,              # Serialize the guard (boolean)
             "host_info": obj.host_info,      # Serialize the host_info (dict or None)
-            "sudo_info": obj.sudo_info       # Serialize the sudo_info (dict or None)
+            "global_info": obj.global_info       # Serialize the global_info (dict or None)
         }
     else:
         raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
