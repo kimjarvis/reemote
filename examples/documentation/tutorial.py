@@ -1,5 +1,3 @@
-
-
 class Hello_world:
     def execute(self):
         from reemote.operations.server.shell import Shell
@@ -60,3 +58,15 @@ class Show_OS:
     def execute(self):
         r0 = yield Get_OS()
         print(r0.cp.stdout)
+
+async def callable_function(host_info, sudo_info, command, cp, caller):
+    if host_info["host"] == caller.host:
+        print(f"callback called for host {caller.host}")
+
+class Demonstrate_callback:
+    def execute(self):
+        from reemote.operations.server.callback import Callback
+        from reemote.operations.server.shell import Shell
+        r = yield Shell("echo 'Hello World!'")
+        print(r.cp.stdout)
+        yield Callback(host="10.156.135.16", callback=callable_function)

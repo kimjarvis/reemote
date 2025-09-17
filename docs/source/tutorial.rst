@@ -43,13 +43,21 @@ Crucially, we don't see this:
     Hello
     World!
 
-The Shell command "echo 'Hello'" is sent to both servers.  The result is received from both servers before the next shell
-command, "echo 'World!'" is executed.
+The Shell command echo 'Hello' is sent to both servers. The results are received from both servers before the next Shell command, echo 'World!', is executed.
 
-Reemote executes each operation on all servers before moving on to execute the next operation.  The
-results of the operation, a Result object (here R0,R1) is yielded and are available in the script.
-The changed and execute fields of the Result object indicate where the opration was executed and
-whether it changed anything on the host.  The cp.returncode, cp.stdout and cp.stderr fields are available.
+Reemote ensures that each operation is executed on all servers before proceeding to the next operation. After executing an operation, a Result object (here represented as R0, R1) is generated and made available in the class.
+
+Each Result object contains the following key fields:
+
+    * changed: Indicates whether the operation modified anything on the host.
+    * executed: Specifies where the operation was executed.
+
+
+Additionally, the Result object provides access to the following subprocess details:
+
+    * cp.returncode: The return code of the executed command.
+    * cp.stdout: The standard output produced by the command.
+    * cp.stderr: The standard error output, if any, produced by the command.
 
 Delarative and Idempotent operation
 -----------------------------------
@@ -88,26 +96,32 @@ This is the result of the execution.
     | which wget                                                                | True                       | True                      |
     +---------------------------------------------------------------------------+----------------------------+---------------------------+
 
-The Packages class is a declarative.  After it is executed the wget package is present on the server, or absent depending on the option.
-Whether the package was already installed or not does not matter at all.
 
-The declartive nature of the Packages class makes it idempotent.  We can run the class as many times as we like without
-affecting the outcome.
+The ``Packages`` class is a **declarative** and **idempotent** resource.
+Its purpose is to ensure the ``wget`` package is either present on or absent from the server,
+depending on the specified option.
 
-The Packages class yields and "apt-get install" operations to install the wget package and and "apt-get remove" operation to remove it.
-The present flag indicates that only the install is executed.  We can see this in the Executed column.
-The Executed flag of the Packages class is also set to True.  This indicates that the Class was exectued.
-The Packages class yields "apt list --installed" operations to list all of the installed packages.
-It compares the results of these two operations and sets the Changed flags.
-The lists of packages is unequal, becase the wget pacakge has been installed.  This causes the chagned flag to be set
-to True for the install operation.  It also causes the changed flag to be set to True for the Packages class.
-The wget package is installed and the "which wget" finds it at "/usr/bin/wget".
+The class declares a desired state (e.g., ``wget`` must be present).
+Executing the class multiple times will not change the final outcome, making it idempotent.
+Whether the package was already in the desired state or not is irrelevant.
+
+The **Executed** flag for the ``Packages`` class is set to ``True``, indicating that the
+class logic ran.
+
+The **Changed** flag indicates whether the system's state was modified.
+
+*   The result of the ``apt list --installed`` check after the commands are executed
+    is compared to the initial state.
+*   If the lists are unequal (e.g., the ``wget`` package was missing and needed to be installed),
+    the Changed flag is set to ``True`` for
+    both the specific install operation and the overall ``Packages`` class.
+
 
 Reemote does not wrap shell commands
 ------------------------------------
 
 Simple shell commands, such as the "which wget" in the example above are not wrapped in Classes to make them
-delarative and idempotent.  In some cases, they could be.  But in general, reemote takes the approach that it is
+delarative and idempotent.  In some cases, they could be.  But in general, Reemote takes the approach that it is
 better to be clear what is going on, rather than obfuscate simple operations behind wrappers.  Shell commands are
 assumed to change the host.  In the case of the "which wget" command no changes occur on the host.
 
@@ -134,11 +148,12 @@ Reemote does not execute in phases
 ----------------------------------
 
 Configuration management tools, such as Ansible execute in phases.  Reemote does not do phases.  When an Ansible
-playbook is run it tries all of the operations and creates a report on which operations changed anything on the hosts.
-The user is then prompted whether to go ahead with the script.
+Playbook (script) is run it tries all of the operations and creates a report on which operations changed anything on the hosts.
+The user is then prompted whether to go ahead and apply the changes in the Playbook (script) to the hosts.
 
 Our observation is that the changes report, which is only a guess, is highly unreliable.  Reemote does away with
 this aproach.  It goes ahead and performs the operations, giving a reliable report of what happed after the fact.
+
 
 Reemote does not gather facts
 -----------------------------
@@ -173,18 +188,25 @@ Lets find out which OS a server is running.
     | cat /etc/os-release | True                       | True                      |
     +---------------------+----------------------------+---------------------------+
 
-Configuration management tools, such as Ansible facts are imutable values gathered at the start of the execution.
-Facts are used to make descisions in Ansible playbooks, such as, deciding which packages manager to use.
-Reemote does not implement Classes to gather facts.  As shown above, is simple enough to gather fact values from the output
-of Shell commands.
+Configuration management tools, such as Ansible, use **facts**---immutable
+values gathered about a remote system at the start of an execution run.
 
-Of course, its really easy to create Classes that return facts, so this guidance is often ignored as
-we will see below.
+These facts are used to make decisions within playbooks.
+A common example is detecting the operating system to determine the package
+manager (e.g., ``apt``, ``yum``, ``dnf``)
+to use for installing software.
+
+Unlike Ansible, Remote does not implement a dedicated
+class-based system for fact gathering. As demonstrated previously,
+it is straightforward to gather these values by parsing the output of shell commands.
+
+However, because it is also simple to create classes that
+return structured fact data, this guidance is often ignored, as the examples below will illustrate.
 
 Reemote is composable
 ---------------------
 
-Reemote classes are composable.  A reemote class can yield another class and all of the operations in that Class are
+Reemote classes are composable.  A Reemote class can yield another class and all of the operations in that Class are
 executed.  Lets modify the example above to create, what we said we wouldn't, that is, a class that returns a fact.
 
 .. code-block:: python
@@ -223,3 +245,56 @@ The Get_OS class now returns the name of the OS in stdout.
     | cat /etc/os-release | True                       | True                      |
     +---------------------+----------------------------+---------------------------+
 
+Callbacks
+---------
+
+Callbacks are asynchronous python functions.  They are especially usefull when a python
+function should only execute for one host.
+
+.. code-block:: python
+
+    async def callable_function(host_info, sudo_info, command, cp, caller):
+        if host_info["host"] == caller.host:
+            print(f"callback called for host {caller.host}")
+
+    class Demonstrate_callback:
+        def execute(self):
+            from reemote.operations.server.callback import Callback
+            from reemote.operations.server.shell import Shell
+            r = yield Shell("echo 'Hello World!'")
+            print(r.cp.stdout)
+            yield Callback(host="10.156.135.16", callback=callable_function)
+
+In this example, the function callable_function runs twice once for each host.  An If statement ensures that it only
+runs for one host.  It is often convenient to restrict exectuion to the first host in the inventory ``inventory()[0][0]['host']``.
+
+When the callback is run we see:
+
+.. code-block:: bash
+
+    reemote --cli -i ~/inventory10.py -s examples/documentation/tutorial.py -c Demonstrate_callback
+    Hello World!
+    callback called for host 10.156.135.16
+    Hello World!
+    +--------------------------------------------------------------------------+--------------------------+-------------------------+--------------------------+-------------------------+
+    | Command                                                                  | 10.156.135.16 Executed   | 10.156.135.16 Changed   | 10.156.135.19 Executed   | 10.156.135.19 Changed   |
+    +==========================================================================+==========================+=========================+==========================+=========================+
+    | echo 'Hello World!'                                                      | True                     | True                    | True                     | True                    |
+    +--------------------------------------------------------------------------+--------------------------+-------------------------+--------------------------+-------------------------+
+    | Callback(host='10.156.135.16', guard=True, callback='callable_function') | True                     | True                    | True                     | True                    |
+    +--------------------------------------------------------------------------+--------------------------+-------------------------+--------------------------+-------------------------+
+
+In particular, the message from the callback is only printed once.  The callback function is asynchronous so
+its output may appear before or after the "Hello World!" message from each host.
+
+A callable function must have the signature:
+
+.. code-block:: python
+
+async def callable_function(
+    host_info: dict,
+    sudo_info: dict,
+    command: str,
+    cp: object,
+    caller: str
+) -> None:

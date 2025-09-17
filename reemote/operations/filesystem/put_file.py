@@ -67,7 +67,11 @@ class Put_file:
         self.path = path
         self.text = text
 
+    def __repr__(self):
+        return (f"Put_file(path={self.path!r}, "
+                f"user={self.text!r})")
+
     def execute(self):
-        r0 = yield Operation(f"{self}",composite=True)
-        r0.executed = True
-        r0.changed = True
+        r = yield Operation(f"{self}", local=True, callback=put_file, caller=self)
+        r.executed = True
+        r.changed = True

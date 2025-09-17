@@ -115,12 +115,12 @@ To run it, modify youruser and yourpassword.  You should see:
     | echo Hello World! | True                 | True                |
     +-------------------+----------------------+---------------------+
 
-The True under the host localhost Executed indicates that the command was executed.
-The True under locahost changed indicates that the host was changed.  The host wasn't changed,
+The True in the "localhost Executed" column indicates that the command was executed.
+The True in the "locahost Changed" changed indicates that the host was changed.  The host wasn't changed,
 but all Shell commands are assumed to change values on the host.
 
 Inventory is a function that describes the hosts on which the execute function in class Hello_world
-runs.  In this case its our localhost.  The yield in execute class in Hello_world describes the
+runs.  In this case its our localhost.  The yield in the execute method of the class in Hello_world describes the
 action.  In this case its to echo "hello world".  When more commands
 are added they appear as rows in the output table.  When another host is added to the inventory it will
 appear as another column.
@@ -194,11 +194,11 @@ To run it, spin up an Alpine VM, then modify the IP address,youruser and yourpas
     None
 
 The operation Update updates the list of packages on the server.  The command column shows
-that the command apk update is wrapped by two apk info commands.  These allow Update to check for
+that the command "apk update" is wrapped by two "apk info" commands.  These allow Update to check for
 changes to the installed packages.  Update doesn't change anything so there is
-a False in the changed column.  The operation Package installs vim.  This function changes the
-list of packages on the host.  The changed column is flagged True on both the Packages command and
-the apk add vim operation.
+a False in the changed column.  The commadn installs vim.  This command changes the
+list of packages on the host.  There is a True in the changed colum on both the Packages command and
+the "apk add vim" operation to indicate that the host was changed.
 
 .. _gui-example:
 

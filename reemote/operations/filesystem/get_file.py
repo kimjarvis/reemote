@@ -62,7 +62,12 @@ class Get_file:
                  host: str,):
         self.path = path
         self.host = host
+
+    def __repr__(self):
+        return (f"Get_file(path={self.path!r}, "
+                f"host={self.host!r})")
+
     def execute(self):
-        r0 = yield Operation(f"{self}",composite=True)
-        r0.executed = True
-        r0.changed = False
+        r = yield Operation(f"{self}", local=True, callback=get_file, caller=self)
+        r.executed = True
+        r.changed = False

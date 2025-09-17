@@ -23,6 +23,8 @@ class Operation:
         return (f"Operation(command={self.command!r}, "
                 f"guard={self.guard!r}, "
                 f"local={self.local!r}, "
+                f"callback={self.callback!r}, "
+                f"caller={self.caller!r}, "
                 f"composite={self.composite!r}, "
                 f"sudo={self.sudo!r}, su={self.su!r}), "
                 f"host_info={self.host_info!r}, "
