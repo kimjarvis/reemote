@@ -335,5 +335,5 @@ def page():
     gui.execution_report()
 
 def _main_pm():
-    ui.run(title="Package versions", reload=False, port=native.find_open_port(),
+    ui.run(title="Package Controller", reload=False, port=native.find_open_port(),
        storage_secret='private key to secure the browser session cookie')

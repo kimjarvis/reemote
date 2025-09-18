@@ -1,18 +1,23 @@
 Using the ReemotePM GUI
 =======================
 
-The Reemote Package Manager GUI presents an overview of all of the packages installed on your servers.
 
-The command starts a new browser window.
+The Reemote Package Manager
+---------------------------
+
+
+The Reemote Package Manager GUI presents an overview of all of the packages installed on your servers.
 
 .. code-block:: bash
 
     reemotepm
 
-.. image:: package_controller.png
+The command starts a new browser window.
+
+.. image:: package_manager.png
    :width: 100%
    :align: center
-   :alt: Package Controller GUI Demo Screenshot
+   :alt: Package Manager GUI Demo Screenshot
 
 The GUI presents:
 

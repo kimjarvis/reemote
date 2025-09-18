@@ -42,7 +42,9 @@ setup(
     entry_points={
         'console_scripts': [
             'reemote=reemote.cli:_main',  # Use the synchronous wrapper
-            'reemotepm=reemote.package_controller.main:_main_pm',
+            'reemotepc=reemote.package_controller.main:_main_pm',
+            'reemotefc=reemote.file_controller.main:_main_pm',
+            'reemoteac=reemote.adhoc_controller.main:_main_pm',
         ],
     },
 )
