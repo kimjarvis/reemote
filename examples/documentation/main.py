@@ -127,3 +127,33 @@ class Apt_packages_example:
         # Verify removal
         r = yield Shell("which vim")
         print(r.cp.stdout)
+
+class Pip_packages_example:
+    def execute(self):
+        from reemote.operations.pip.packages import Packages
+        from reemote.operations.server.shell import Shell
+        # Add the packages on all hosts
+        r = yield Packages(packages=["requests"],present=True, sudo=True)
+        # Verify installation
+        r = yield Shell("python3 -c 'import requests; print(requests.__version__)'")
+        print(r.cp.stdout)
+        # Delete the packages on all hosts
+        r = yield Packages(packages=["requests"],present=False, sudo=True)
+        # Verify removal
+        r = yield Shell("python3 -c 'import requests; print(requests.__version__)'")
+        print(r.cp.stdout)
+
+class Pipx_packages_example:
+    def execute(self):
+        from reemote.operations.pipx.packages import Packages
+        from reemote.operations.server.shell import Shell
+        # Add the packages on all hosts
+        r = yield Packages(packages=["pycowsay"],present=True, su=True)
+        # Verify installation
+        r = yield Shell("pycowsay moo")
+        print(r.cp.stdout)
+        # Delete the packages on all hosts
+        r = yield Packages(packages=["pycowsay"],present=False, su=True)
+        # Verify removal
+        r = yield Shell("pycowsay moo")
+        print(r.cp.stdout)

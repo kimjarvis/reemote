@@ -1,6 +1,9 @@
 Using the Reemote CLI
 =====================
 
+The Reemote CLI
+---------------
+
 The reemote CLI is a handy way to get your Reemote classes running quickly.
 
 .. code-block:: bash

@@ -1,5 +1,5 @@
-Debian Package
-==============
+DPKG (Debian Package)
+=====================
 
 DPKG operations
 ---------------
