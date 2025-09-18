@@ -334,6 +334,6 @@ def page():
     version_grid.version_report()
     gui.execution_report()
 
-def _main_pm():
+def _main_pc():
     ui.run(title="Package Controller", reload=False, port=native.find_open_port(),
        storage_secret='private key to secure the browser session cookie')

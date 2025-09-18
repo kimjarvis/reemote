@@ -5,7 +5,7 @@ from reemote.produce_grid import produce_grid
 from reemote.produce_json import produce_json
 from reemote.operations.filesystem.get_file import Get_file
 from reemote.operations.filesystem.put_file import Put_file
-from reemote.file_controller.local_file_picker import local_file_picker
+from reemote.file_manager.local_file_picker import local_file_picker
 
 class Gui1:
     def __init__(self):
@@ -44,6 +44,6 @@ def page():
     ui.button('Upload File', on_click=lambda: pick_file(gui), icon='folder')
     gui.execution_report()
 
-def _main_pm():
-    ui.run(title="File Controller", reload=False, port=native.find_open_port(),
+def _main_fm():
+    ui.run(title="File Manager", reload=False, port=native.find_open_port(),
            storage_secret='private key to secure the browser session cookie')

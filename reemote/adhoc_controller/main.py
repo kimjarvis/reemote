@@ -34,6 +34,6 @@ def page():
     gui1.stdout()
     gui.execution_report()
 
-def _main_pm():
-    ui.run(title="Adhoc Controller", reload=False, port=native.find_open_port(),
+def _main_ac():
+    ui.run(title="Ad Hoc Controller", reload=False, port=native.find_open_port(),
            storage_secret='private key to secure the browser session cookie')

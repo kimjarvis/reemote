@@ -1,4 +1,3 @@
-# APK Package controller
+# Ad Hoc Command Controller
 
-GUI application to show package versions on all servers and to add or remove apk packages.
-
+The Reemote Adhoc Controller GUI presents a command line for your servers.
