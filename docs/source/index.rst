@@ -19,5 +19,6 @@ This example manages apk package versions on all servers in an inventory.
    gettingstarted
    inventory
    usingthecli
+   usingthereemotepmgui
    tutorial
    operations

@@ -1,5 +1,5 @@
-Advanced Package Tool
-=====================
+APT (Advanced Package Tool)
+===========================
 
 APT operations
 --------------

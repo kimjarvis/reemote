@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.abspath(os.path.join('..', '..')))  # Path to ~/reemo
 project = 'Reemote'
 copyright = '2025, Kim Jarvis'
 author = 'Kim Jarvis'
-release = '0.0.1'
+release = '0.0.9'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -35,5 +35,6 @@ exclude_patterns = []
 
 import sphinx_rtd_theme
 
-html_theme = 'sphinx_rtd_theme'
+# html_theme = 'sphinx_rtd_theme'
+html_theme = "furo"
 
