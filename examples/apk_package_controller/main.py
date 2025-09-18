@@ -75,6 +75,8 @@ class Version_grid:
 
 async def get_versions(gui, version_grid):
     responses = await execute(app.storage.user["inventory"],Shell("apk info -v"))
+    # responses = await execute(app.storage.user["inventory"],Shell("pip list --format=json"))
+
     await version_grid.List_package_versions(responses)
     app.storage.user["columnDefs"],app.storage.user["rowData"] = produce_grid(produce_json(responses))
     gui.execution_report.refresh()
