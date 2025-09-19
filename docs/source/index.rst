@@ -24,3 +24,4 @@ This example manages apk package versions on all servers in an inventory.
    using_the_reemoteac_gui
    tutorial
    operations
+   facts
