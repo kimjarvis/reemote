@@ -1,7 +1,12 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import sys
 import argparse
 import asyncio
 import sys
 import os
+import ast
 
 from reemote.validate_inventory_file_and_get_inventory import validate_inventory_file_and_get_inventory
 from reemote.validate_root_class_name_and_get_root_class import validate_root_class_name_and_get_root_class
@@ -17,58 +22,91 @@ import argparse
 
 from typing import List, Tuple, Dict, Any
 
-def main():
+class Wrapper:
+
+    def __init__(self, command):
+        self.command = command
+
+    def execute(self):
+        # Execute a shell command on all hosts
+        r = yield self.command()
+        # The result is available in stdout
+        print(r.cp.stdout)
+
+class Shell:
+
+    def __init__(self, command):
+        self.command = command
+
+    def execute(self):
+        from reemote.operations.server.shell import Shell
+        # Execute a shell command on all hosts
+        r = yield Shell(self.command)
+        # The result is available in stdout
+        print(r.cp.stdout)
+
+def parse_kwargs_string(param_str):
+    """Parse 'key=value,key2=value2' string into dict."""
+    if not param_str:
+        return {}
+    kwargs = {}
+    for pair in param_str.split(','):
+        key, value_str = pair.split('=', 1)
+        key = key.strip()
+        value_str = value_str.strip()
+
+        # Safely evaluate the value (handles True, False, None, numbers, strings)
+        try:
+            value = ast.literal_eval(value_str)
+        except (ValueError, SyntaxError):
+            # Fallback: treat as string if literal_eval fails
+            value = value_str
+
+        kwargs[key] = value
+    return kwargs
+
+async def main():
+    parser = argparse.ArgumentParser(
+        description="CLI tool with inventory, source, class, and command options.",
+        allow_abbrev=False  # Prevents ambiguous abbreviations
+    )
     # Create the argument parser
     parser = argparse.ArgumentParser(
         description='Process inventory and source files with a specified class',
-        usage="usage: reemote [-h] [-i INVENTORY_FILE] [-s SOURCE_FILE] [-c CLASS_NAME] [--gui | --cli]",
-        epilog='Example: reemote --cli -i ~/inventory.py -s examples/cli/make_directory.py -c Make_directory'
+        usage="usage: reemote [-h] [-i INVENTORY_FILE] [-s SOURCE_FILE] [-c CLASS_NAME]",
+        epilog="""
+        Example: reemote -i ~/inventory.py -s development/examples/main.py -c Info_example
+                 reemote -i ~/inventory.py -- echo "hello"      
+        """,formatter_class=argparse.RawTextHelpFormatter
     )
 
-    # Add mutually exclusive group for --gui and --cli
-    group = parser.add_mutually_exclusive_group()
-
-    # Add the --gui flag (default is True)
-    group.add_argument(
-        '--gui',
-        action='store_true',
-        help='Use the GUI to upload inventory and view execution results (default)',
-        default=True
-    )
-
-    # Add the --cli flag (default is False)
-    group.add_argument(
-        '--cli',
-        action='store_true',
-        help='Use the CLI to process inventory and source files',
-        default=False
-    )
-
-    # Make inventory_file an optional keyword parameter
     parser.add_argument(
-        '-i', '--inventory',
-        dest='inventory_file',  # Map to args.inventory_file
-        metavar='INVENTORY_FILE',
-        help='Path to the inventory Python file (.py extension required)',
-        default=None
+        "-i", "--inventory",
+        required=True,
+        dest="inventory",
+        help="Path to the inventory Python file (.py extension required)"
     )
 
-    # Make source_file an optional keyword parameter
     parser.add_argument(
-        '-s', '--source',
-        dest='source_file',  # Map to args.source_file
-        metavar='SOURCE_FILE',
-        help='Path to the source Python file (.py extension required)',
-        default=None
+        "-s", "--source",
+        dest="source",
+        default="",
+        help="Path to the source Python file (.py extension required)"
     )
 
-    # Make class_name an optional keyword parameter
     parser.add_argument(
-        '-c', '--class',
-        dest='class_name',  # Use dest to avoid conflict with Python's reserved keyword 'class'
-        metavar='CLASS_NAME',
-        help='Name of the class in source file that has an execute(self) method',
-        default=None
+        "-c", "--class",
+        dest="_class",  # 'class' is a keyword, so use '_class'
+        default="",
+        help="Name of the class in source file that has an execute(self) method"
+    )
+
+    parser.add_argument('--parameters', default='', help='Comma-separated key=value pairs')
+
+    parser.add_argument(
+        "command",
+        nargs=argparse.REMAINDER,
+        help="Command to execute (everything after --)"
     )
 
     # Add --output / -o argument
@@ -90,105 +128,106 @@ def main():
         default=None
     )
 
-    # Parse arguments
+
     args = parser.parse_args()
 
-    # Validation logic
-    if args.cli:
-        # For CLI mode, all three parameters must be specified
-        if not (args.inventory_file and args.source_file and args.class_name):
-            parser.error("--cli requires --inventory_file, --source_file, and --class_name to be specified")
-    elif args.gui:
-        # For GUI mode, source_file and class_name must be specified, but inventory_file is optional
-        if not (args.source_file and args.class_name):
-            parser.error("--gui requires --source_file and --class_name to be specified")
-        if args.inventory_file:
-            parser.error("--gui requires --inventory_file not to be specified")
+    # Expand user directory (e.g., ~/inventory.py → /home/kim/inventory.py)
+    args.inventory = os.path.expanduser(args.inventory)
+    if args.source:
+        args.source = os.path.expanduser(args.source)
+
+    # Validation Rule 1: If --class (-c) is specified, --source (-s) and --inventory (-i) must also be specified
+    if args._class and (not args.source or not args.inventory):
+        parser.error("--class requires --source and --inventory to be specified")
+
+    # Validation Rule 2: If --source (-s) is specified, --class (-c) and --inventory (-i) must also be specified
+    if args.source and (not args._class or not args.inventory):
+        parser.error("--source requires --class and --inventory to be specified")
+
+    # Validation Rule 3: If a command is provided (args.command is a list and not empty),
+    # then --source and --class must NOT be specified
+    if args.command and (args.source or args._class):
+        parser.error("Command (after --) cannot be used with --source or --class")
+
+    # Validation Rule 4: --inventory (-i) is always required in both modes
+    if not args.inventory:
+        parser.error("--inventory is required")
+
+    # Validation Rule 5: Exactly one mode must be used: either (-s + -c) OR (command), not both, not neither
+    has_script_mode = bool(args.source and args._class)
+    has_command_mode = bool(args.command)
+
+    # Custom validation: if output is specified, type must be too
+    if args.output_file is not None and args.output_type is None:
+        parser.error("Argument -t/--type is required when -o/--output is specified")
+
+    if not (has_script_mode or has_command_mode):
+        parser.error("You must specify either (-s and -c) OR a command (after --)")
+
+    if has_script_mode and has_command_mode:
+        parser.error("Cannot mix script mode (-s/-c) with command mode (after --)")
+
+    # Print parsed args for debugging/demo (remove in production)
+    print(f"args.inventory = {repr(args.inventory)}")
+    print(f"args.source = {repr(args.source)}")
+    print(f"args._class = {repr(args._class)}")
+    print(f"args.command = {repr(args.command)}")
 
     # Verify inventory file
-    if args.inventory_file:
-        if not verify_python_file(args.inventory_file):
+    if args.inventory:
+        if not verify_python_file(args.inventory):
             sys.exit(1)
 
     # Verify source file
-    if args.source_file:
-        if not verify_python_file(args.source_file):
+    if args.source:
+        if not verify_python_file(args.source):
             sys.exit(1)
 
     # Verify class and method
-    if args.source_file and args.class_name:
-        if not verify_source_file_contains_valid_class(args.source_file, args.class_name):
+    if args.source and args._class:
+        if not verify_source_file_contains_valid_class(args.source, args._class):
             sys.exit(1)
 
     # Verify the source and class
-    if args.source_file and args.class_name:
-        root_class = validate_root_class_name_and_get_root_class(args.class_name, args.source_file)
+    if args.source and args._class:
+        root_class = validate_root_class_name_and_get_root_class(args._class, args.source)
         if not root_class:
             sys.exit(1)
 
     # verify the inventory
-    if args.inventory_file:
-        inventory = validate_inventory_file_and_get_inventory(args.inventory_file)
+    if args.inventory:
+        inventory = validate_inventory_file_and_get_inventory(args.inventory)
         if not inventory:
             sys.exit(1)
     else:
         inventory = []
 
-    if args.inventory_file:
+    if args.inventory:
         if not validate_inventory_structure(inventory()):
             print("Inventory structure is invalid")
             sys.exit(1)
 
-    if args.cli:
-        asyncio.run(run_cli(args, inventory, root_class))
+    # Parse parameters into kwargs
+    kwargs = parse_kwargs_string(args.parameters)
 
-    if args.gui:
-        from nicegui import ui, native, app
-        from reemote.gui import Gui
-        from reemote.execute import execute
-        from reemote.produce_grid import produce_grid
+    if args.source:
+        responses = await execute(inventory(), Wrapper(root_class))
 
-        async def Control_directory(gui):
-            responses = await execute(app.storage.user["inventory"], root_class())
-            app.storage.user["columnDefs"], app.storage.user["rowData"] = produce_grid(produce_json(responses))
-            gui.execution_report.refresh()
+    if args.command:
+        responses = await execute(inventory(), Shell(" ".join(args.command[1:])))
 
-        @ui.page('/')
-        def page():
-            gui = Gui()
-            gui.upload_inventory()
-            ui.button('Run', on_click=lambda: Control_directory(gui))
-            gui.execution_report()
-
-        ui.run(title="Manage directory", reload=False, port=native.find_open_port(),
-               storage_secret='private key to secure the browser session cookie')
-
-
-async def run_cli(args, inventory: tuple[Any, str], root_class):
-    if args.inventory_file:
-        if not await verify_inventory_connect(inventory()):
-            print("Inventory connections are invalid")
-            sys.exit(1)
-
-    responses = await execute(inventory(), root_class())
-    json_output = produce_json(responses)
-    table_output = produce_table(json_output)
-    print(table_output)
     if args.output_type=="json":
-        write_responses_to_file(responses = responses, type="json", filepath="development/output/out.json")
-    if args.output_type=="rst":
-        write_responses_to_file(responses = produce_json(responses), type="rst", filepath="development/output/out.rst")
-    if args.output_type=="grid":
-        write_responses_to_file(responses = produce_json(responses), type="grid", filepath="development/output/out.py")
+        write_responses_to_file(responses = responses, type="json", filepath=args.output_file)
+    elif args.output_type=="rst":
+        write_responses_to_file(responses = produce_json(responses), type="rst", filepath=args.output_file)
+    elif args.output_type=="grid":
+        write_responses_to_file(responses = produce_json(responses), type="grid", filepath=args.output_file)
+    else:
+        print(produce_table(produce_json(responses)))
 
-    sys.exit(0)
-
-
-
-# Synchronous wrapper for console_scripts
 def _main():
-    # asyncio.run(main())
-    main()
+    """Synchronous wrapper for console_scripts."""
+    asyncio.run(main())
 
 if __name__ == "__main__":
     _main()

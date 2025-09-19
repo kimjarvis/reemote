@@ -178,3 +178,8 @@ class Pacman_update:
         from reemote.operations.pacman.update import Update
         # Update the packages on all hosts
         r = yield Update(sudo=True)
+
+class Get_os_example:
+    def execute(self):
+        from reemote.facts.server.get_os import Get_OS
+        r = yield Get_OS("NAME")
