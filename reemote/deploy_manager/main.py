@@ -27,6 +27,7 @@ class Gui2:
     def __init__(self):
         app.storage.user["classes"] = ["None"]
         app.storage.user["source"] = "~"
+        self.sources="/"
 
     @ui.refreshable
     def classes(self):
@@ -36,6 +37,7 @@ class Gui2:
         result = await local_file_picker('~', multiple=False)
         ui.notify(f'Uploading file {result}')
         app.storage.user["source"] = result
+        self.sources = result
         app.storage.user["classes"] = get_classes_in_source(result[0])
         self.classes.refresh()
 
@@ -51,9 +53,10 @@ class Wrapper:
         print(r.cp.stdout)
 
 
-async def run_the_deploy(gui, gui1):
+async def run_the_deploy(gui, gui1, gui2):
     # Verify class and method
     app.storage.user["source"]=app.storage.user["source"][0]
+    print(gui2.sources)
     print(app.storage.user["source"])
     if app.storage.user["source"] != "/":
         print(app.storage.user["deployment"])
@@ -88,7 +91,7 @@ def page():
     gui.upload_inventory()
     ui.button('Upload Source', on_click=lambda: gui2.pick_file(), icon='folder')
     ui.input(label='Deployment').bind_value(app.storage.user, 'deployment')
-    ui.button('Deploy', on_click=lambda: run_the_deploy(gui, gui1))
+    ui.button('Deploy', on_click=lambda: run_the_deploy(gui, gui1, gui2))
     gui2.classes()
     gui1.execution_report()
     gui.execution_report()
