@@ -3,6 +3,7 @@ from nicegui import ui, native, app, events
 from reemote.gui import Gui
 from reemote.execute import execute
 from reemote.produce_grid import produce_grid
+from reemote.produce_output_grid import produce_output_grid
 from reemote.produce_json import produce_json
 from reemote.operations.server.shell import Shell
 from reemote.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
@@ -12,12 +13,15 @@ from reemote.get_classes_in_source import get_classes_in_source
 
 class Gui1:
     def __init__(self):
-        app.storage.user["stdout"] = ""
+        app.storage.user["columnDefs1"] = [{'headerName': 'Command', 'field': 'command'}]
+        app.storage.user["rowData1"] = []
 
     @ui.refreshable
-    def stdout(self):
-        # return ui.code(app.storage.user["stdout"],language="bash").classes('w-full')
-        ui.label(app.storage.user["stdout"])
+    def execution_report(self):
+        return ui.aggrid({
+            'columnDefs': app.storage.user["columnDefs1"],
+            'rowData': app.storage.user["rowData1"],
+        }).classes('max-h-40  overflow-y-auto')
 
 class Gui2:
     def __init__(self):
@@ -67,11 +71,14 @@ async def run_the_deploy(gui, gui1):
         responses = await execute(app.storage.user["inventory"], Wrapper(root_class))
         print(responses)
         # responses[0] is the output of the info command.
-        app.storage.user["stdout"] = responses[0].cp.stdout
-        print(app.storage.user["stdout"])
-        gui1.stdout.refresh()
+        # app.storage.user["stdout"] = responses[0].cp.stdout
+        # print(app.storage.user["stdout"])
+        # gui1.stdout.refresh()
         app.storage.user["columnDefs"],app.storage.user["rowData"] = produce_grid(produce_json(responses))
         gui.execution_report.refresh()
+        app.storage.user["columnDefs1"],app.storage.user["rowData1"] = produce_output_grid(produce_json(responses))
+        gui1.execution_report.refresh()
+
 
 @ui.page('/')
 def page():
@@ -83,7 +90,7 @@ def page():
     ui.input(label='Deployment').bind_value(app.storage.user, 'deployment')
     ui.button('Deploy', on_click=lambda: run_the_deploy(gui, gui1))
     gui2.classes()
-    gui1.stdout()
+    gui1.execution_report()
     gui.execution_report()
 
 ui.run(title="Ad Hoc Controller", reload=False, port=native.find_open_port(),
