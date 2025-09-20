@@ -168,10 +168,10 @@ async def main():
         parser.error("Cannot mix script mode (-s/-c) with command mode (after --)")
 
     # Print parsed args for debugging/demo (remove in production)
-    print(f"args.inventory = {repr(args.inventory)}")
-    print(f"args.source = {repr(args.source)}")
-    print(f"args._class = {repr(args._class)}")
-    print(f"args.command = {repr(args.command)}")
+    # print(f"args.inventory = {repr(args.inventory)}")
+    # print(f"args.source = {repr(args.source)}")
+    # print(f"args._class = {repr(args._class)}")
+    # print(f"args.command = {repr(args.command)}")
 
     # Verify inventory file
     if args.inventory:

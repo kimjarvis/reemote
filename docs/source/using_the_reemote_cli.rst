@@ -72,9 +72,9 @@ The example can be executed like this:
 
     reemote -i ~/inventory.py -s examples/documentation/main.py -c Get_os_example
 
-This will run the command deployment on all of the servers in the inventory.
-The stdout will be written to the console, our inventory contains two servers so
-the output will appear twice.
+This will run the deployment on all of the servers in the inventory.
+Standard output is written to the console by the cli wrapper.
+Our inventory contains two servers so the standard output will appear twice.
 
 .. code-block:: bash
 

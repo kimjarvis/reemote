@@ -132,7 +132,7 @@ class Version_grid:
                     packages.append((package_name, version))
 
             pkg_dict = {}
-            for name, versoin in packages:
+            for name, version in packages:
                 pkg_dict[name] = version
             host_packages.append(pkg_dict)
             # print(host_packages)
