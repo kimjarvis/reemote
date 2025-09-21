@@ -155,8 +155,8 @@ Our observation is that the changes report, which is only a guess, is highly unr
 this aproach.  It goes ahead and performs the operations, giving a reliable report of what happed after the fact.
 
 
-Reemote does not gather facts
------------------------------
+Reemote facts
+-------------
 
 Lets find out which OS a server is running.
 
@@ -196,18 +196,11 @@ A common example is detecting the operating system to determine the package
 manager (e.g., ``apt``, ``yum``, ``dnf``)
 to use for installing software.
 
-Unlike Ansible, Remote does not implement a dedicated
-class-based system for fact gathering. As demonstrated previously,
-it is straightforward to gather these values by parsing the output of shell commands.
-
-However, because it is also simple to create classes that
-return structured fact data, this guidance is often ignored, as the examples below will illustrate.
-
 Reemote is composable
 ---------------------
 
 Reemote classes are composable.  A Reemote class can yield another class and all of the operations in that Class are
-executed.  Lets modify the example above to create, what we said we wouldn't, that is, a class that returns a fact.
+executed.
 
 .. code-block:: python
 
