@@ -128,6 +128,10 @@ async def main():
         default=None
     )
 
+    # Check if no arguments were provided (only script name)
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(1)
 
     args = parser.parse_args()
 
