@@ -183,3 +183,9 @@ class Get_os_example:
     def execute(self):
         from reemote.facts.server.get_os import Get_OS
         r = yield Get_OS("NAME")
+
+
+class Get_packages:
+    def execute(self):
+        from reemote.facts.apt.get_packages import Get_packages
+        r = yield Get_packages()
