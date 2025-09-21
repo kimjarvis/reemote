@@ -18,6 +18,8 @@ This example manages apk package versions on all servers in an inventory.
    installation
    gettingstarted
    inventory
+   deployment
+   using_the_reemote_gui
    using_the_reemote_cli
    using_the_reemotepm_gui
    using_the_reemotefm_gui
@@ -25,3 +27,4 @@ This example manages apk package versions on all servers in an inventory.
    tutorial
    operations
    facts
+   deployments
