@@ -8,37 +8,81 @@ The reemote CLI is a handy way to get your Reemote classes running quickly.
 
 .. code-block:: bash
 
-    reemote --help
-    usage: usage: reemote [-h] [-i INVENTORY_FILE] [-s SOURCE_FILE] [-c CLASS_NAME] [--gui | --cli]
+    usage: usage: reemote [-h] [-i INVENTORY_FILE] [-s SOURCE_FILE] [-c CLASS_NAME]
 
     Process inventory and source files with a specified class
 
+    positional arguments:
+      command               Command to execute (everything after --)
+
     options:
       -h, --help            show this help message and exit
-      --gui                 Use the GUI to upload inventory and view execution results (default)
-      --cli                 Use the CLI to process inventory and source files
-      -i, --inventory INVENTORY_FILE
+      -i, --inventory INVENTORY
                             Path to the inventory Python file (.py extension required)
-      -s, --source SOURCE_FILE
-                            Path to the source Python file (.py extension required)
-      -c, --class CLASS_NAME
-                            Name of the class in source file that has an execute(self) method
+      -s, --source SOURCE   Path to the source Python file (.py extension required)
+      -c, --class _CLASS    Name of the class in source file that has an execute(self) method
+      --parameters PARAMETERS
+                            Comma-separated key=value pairs
       -o, --output OUTPUT_FILE
                             Path to the output file where results will be saved
       -t, --type TYPE       Output format type: "grid", "json", or "rst"
 
-    Example: reemote --cli -i ~/inventory.py -s examples/cli/make_directory.py -c Make_directory
+            Example: reemote -i ~/inventory.py -s development/examples/main.py -c Info_example
+                     reemote -i ~/inventory.py -- echo "hello"
 
-The cli flag causes the class to be run in the CLI.  The execution results are presented in a table.
-When the cli flag is used the inventory parameter is required.
+Ad-hoc commands with reemote
+----------------------------
 
-The gui flag causes a browser session to start.  The inventory is choosen from the GUI.  The execution results are
-presented in the GUI.
-When the gui flag is used the inventory parameter is not used.
+You can start reemote immediately with some ad-hoc command execution.
 
-The source file path identifes a file containing the class to be executed.
-The class name identifies the class in this file.
+.. code-block:: bash
 
+    reemote -i ~/inventory.py -- echo "hello"
 
+This will run the command ``echo "hello"`` on all of the servers in the inventory.
+The stdout will be written to the console, our inventory contains two servers so
+hello will appear twice.
 
+.. code-block:: bash
+
+    hello
+    hello
+    +------------+--------------------------+-------------------------+--------------------------+-------------------------+
+    | Command    | 10.156.135.16 Executed   | 10.156.135.16 Changed   | 10.156.135.19 Executed   | 10.156.135.19 Changed   |
+    +============+==========================+=========================+==========================+=========================+
+    | echo hello | True                     | True                    | True                     | True                    |
+    +------------+--------------------------+-------------------------+--------------------------+-------------------------+
+
+Running a deployment
+--------------------
+
+A deploment is a collection of operations defined in Python files.
+For example, the file examples/documentation/main.py contains the class Get_os_example.
+
+.. code-block:: python
+
+    class Get_os_example:
+        def execute(self):
+            from reemote.facts.server.get_os import Get_OS
+            r = yield Get_OS("NAME")
+
+The example can be executed like this:
+
+.. code-block:: bash
+
+    reemote -i ~/inventory.py -s examples/documentation/main.py -c Get_os_example
+
+This will run the deployment on all of the servers in the inventory.
+Standard output is written to the console by the cli wrapper.
+Our inventory contains two servers so the standard output will appear twice.
+
+.. code-block:: bash
+
+    Alpine Linux
+    Alpine Linux
+    +---------------------+--------------------------+-------------------------+--------------------------+-------------------------+
+    | Command             | 10.156.135.16 Executed   | 10.156.135.16 Changed   | 10.156.135.19 Executed   | 10.156.135.19 Changed   |
+    +=====================+==========================+=========================+==========================+=========================+
+    | cat /etc/os-release | True                     | True                    | True                     | True                    |
+    +---------------------+--------------------------+-------------------------+--------------------------+-------------------------+
 

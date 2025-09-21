@@ -6,9 +6,16 @@ Visit [reemote.org](https://reemote.org/).
 
 # Example
 
-The [GUI example](examples/gui) demonstrates a switch that creates or removes the directory `/tmp/mydir` on all the servers in an inventory.
+![Screenshot](docs/source/gui/Screenshot_20250921_203424.png)
 
-![GUI Demo](examples/gui/gui_demo.png)
+![Screenshot](docs/source/gui/Screenshot_20250921_203907.png)
+
+![Screenshot](docs/source/gui/Screenshot_20250921_204117.png)
+
+![Screenshot](docs/source/gui/Screenshot_20250921_204130.png)
+
+![Screenshot](docs/source/gui/Screenshot_20250921_204140.png)
+
 
 # Installation
 

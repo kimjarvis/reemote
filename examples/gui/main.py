@@ -1,5 +1,5 @@
 from nicegui import ui, native, app
-from reemote.gui import Gui
+from gui.gui import Gui
 from reemote.execute import execute
 from reemote.produce_grid import produce_grid
 from reemote.produce_json import produce_json
