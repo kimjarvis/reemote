@@ -62,6 +62,6 @@ class Get_packages:
     """
     def execute(self):
         from reemote.operations.server.shell import Shell
-        r = yield Shell("yum list installed | head -6")
+        r = yield Shell("yum list installed")
         r.cp.stdout = parse_dnf_list_installed(r.cp.stdout)
         # print(r.cp.stdout)

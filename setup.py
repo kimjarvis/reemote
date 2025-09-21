@@ -41,10 +41,8 @@ setup(
     python_requires=">=3.6",  # Specify the minimum Python version required
     entry_points={
         'console_scripts': [
-            'reemote=reemote.cli:_main',  # Use the synchronous wrapper
-            'reemotepc=reemote.package_controller.main:_main_pc',
-            'reemotefm=reemote.file_manager.main:_main_fm',
-            'reemoteac=reemote.adhoc_controller.main:_main_ac',
+            'reemote=cli:_main',  # Use the synchronous wrapper
+            'reemotecontrol=gui.main:_main'
         ],
     },
 )

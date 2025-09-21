@@ -46,6 +46,6 @@ class Get_packages:
     """
     def execute(self):
         from reemote.operations.server.shell import Shell
-        r = yield Shell("apk info -v | head -6")
+        r = yield Shell("apk info -v")
         r.cp.stdout = parse_apk_list_installed(r.cp.stdout)
         # print(r.cp.stdout)
