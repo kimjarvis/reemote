@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="reemote",  # Name of your package
-    version="0.0.10",   # Version number
+    version="0.0.11",   # Version number
     description="A Python package for reemote functionality",  # Short description
     long_description="""
     Reemote is a Python API for task automation, configuration management and application deployment.
@@ -41,7 +41,7 @@ setup(
     python_requires=">=3.6",  # Specify the minimum Python version required
     entry_points={
         'console_scripts': [
-            'reemote=cli:_main',  # Use the synchronous wrapper
+            'reemote=reemote.cli:_main',  # Use the synchronous wrapper
             'reemotecontrol=gui.main:_main'
         ],
     },
