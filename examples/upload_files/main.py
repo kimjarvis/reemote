@@ -20,13 +20,14 @@ from reemote.operations.filesystem.mget_files import Mget_files
 from reemote.operations.filesystem.copy_files import Copy_files
 from reemote.operations.filesystem.mcopy_files import Mcopy_files
 from reemote.operations.filesystem.chdir import Chdir
-from reemote.facts.filesystem.get_cwd import Getcwd
+from reemote.facts.filesystem.get_cwd import Get_cwd
 from reemote.operations.filesystem.chown import Chown
 from reemote.operations.filesystem.chmod import Chmod
 from reemote.operations.filesystem.touch import Touch
 from reemote.operations.filesystem.upload import Upload
 from reemote.operations.filesystem.download import Download
 from reemote.operations.filesystem.copy import Copy
+from reemote.facts.filesystem.get_stat import Get_stat
 
 
 def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
@@ -181,13 +182,30 @@ class Deployment:
         # )
         #
         # # Copy between remote hosts
-        yield Copy(
-            srcpaths='/home/user/*.txt',
-            dstpath='/home/user/',
-            src_hosts=["10.156.135.16"],
-            dst_hosts=["10.156.135.17"],
-            recurse=True
-        )
+        # yield Copy(
+        #     srcpaths='/home/user/*.txt',
+        #     dstpath='/home/user/',
+        #     src_hosts=["10.156.135.16"],
+        #     dst_hosts=["10.156.135.17"],
+        #     recurse=True
+        # )
+
+        # r = yield Get_cwd(
+        #     hosts=["10.156.135.16", "10.156.135.17"]
+        # )
+        # print(r)
+
+        # r = yield Get_stat(
+        #     hosts=["10.156.135.16", "10.156.135.19"],
+        #     path="/etc/passwd"
+        # )
+        # print(r)
+
+        # yield Get_lstat(
+        #     hosts=["10.156.135.16", "10.156.135.17"],
+        #     file_path="/path/to/symlink.txt"
+        # )
+        # print(r)
 
 async def main():
     responses = await execute(inventory(), Deployment())

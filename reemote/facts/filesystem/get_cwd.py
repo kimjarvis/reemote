@@ -2,16 +2,18 @@ import asyncssh
 from reemote.operation import Operation
 
 
-class Getcwd:
+class Get_cwd:
     """
-    A class to encapsulate the functionality of getcwd (get current working directory)
+    A class to encapsulate the functionality of cwd (get current working directory)
     in Unix-like operating systems.
 
     Attributes:
         hosts (list): The list of hosts from which to get the current working directory.
 
-    Examples:
-        .. code:: python
+    **Examples:**
+
+    .. code:: python
+
             class GetcwdExample:
                 def execute(self):
                     yield Getcwd(

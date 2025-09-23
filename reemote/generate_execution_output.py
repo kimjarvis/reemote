@@ -42,7 +42,7 @@ def _generate_table(data):
             host = entry['host']
             executed = entry["cp"]['returncode']
             stdout_value = entry["cp"]['stdout']
-            changed = stdout_value[:60] if stdout_value is not None else "None"
+            changed = str(stdout_value)[:60] if stdout_value is not None else "None"
 
             # Add the current host's data
             row[f"{host.replace(".","_")}_executed"] = executed
