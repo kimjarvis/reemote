@@ -15,8 +15,10 @@ class Chown:
         group (str, optional): The new group to assign to the file (SFTPv4 only).
         hosts (list): The list of hosts on which the ownership change is to be performed.
 
-    Examples:
-        .. code:: python
+    **Examples:**
+
+    .. code:: python
+
             class ChownExample:
                 def execute(self):
                     yield Chown(

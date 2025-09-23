@@ -13,8 +13,10 @@ class Chmod:
         hosts (list): The list of hosts on which the permission change is to be performed.
         follow_symlinks (bool): Whether or not to follow symbolic links (default: True).
 
-    Examples:
-        .. code:: python
+    **Examples:**
+
+    .. code:: python
+
             class ChmodExample:
                 def execute(self):
                     yield Chmod(

@@ -24,6 +24,9 @@ from reemote.facts.filesystem.get_cwd import Getcwd
 from reemote.operations.filesystem.chown import Chown
 from reemote.operations.filesystem.chmod import Chmod
 from reemote.operations.filesystem.touch import Touch
+from reemote.operations.filesystem.upload import Upload
+from reemote.operations.filesystem.download import Download
+from reemote.operations.filesystem.copy import Copy
 
 
 def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
@@ -32,18 +35,23 @@ def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
             {
                 'host': '10.156.135.16',  # alpine
                 'username': 'user',  # User name
-                'password': 'user'  # Password
+                'password': 'user',  # Password
+                'client_keys': ['/home/kim/.ssh/id_ed25519'],
+                'known_hosts': '/home/kim/.ssh/known_hosts',
             },
             {
                 'su_user': 'root',
                 'su_password': 'root'  # Password
+
             }
         ),
         (
             {
                 'host': '10.156.135.19',  # alpine
                 'username': 'user',  # User name
-                'password': 'user'  # Password
+                'password': 'user',  # Password
+                'client_keys':['/home/kim/.ssh/id_ed25519'],
+                'known_hosts': '/home/kim/.ssh/known_hosts',
             },
             {
                 'su_user': 'root',
@@ -138,24 +146,47 @@ class Deployment:
         # print(r.cp.stdout)
 
 
-        yield Touch(
-            path='/home/user/script.sh',
-            hosts=["10.156.135.16", "10.156.135.17"],
-            pflags_or_mode='w',  # Equivalent to FXF_WRITE | FXF_CREAT | FXF_TRUNC
-            attrs=asyncssh.SFTPAttrs(perms=0o755)  # Executable permissions
-        )
+        # yield Touch(
+        #     path='/home/user/script.sh',
+        #     hosts=["10.156.135.16", "10.156.135.17"],
+        #     pflags_or_mode='w',  # Equivalent to FXF_WRITE | FXF_CREAT | FXF_TRUNC
+        #     attrs=asyncssh.SFTPAttrs(perms=0o755)  # Executable permissions
+        # )
+        #
+        # yield Chmod(
+        #     path='/home/user/script.sh',
+        #     mode=0o755,
+        #     hosts=["10.156.135.16", "10.156.135.17"]
+        # )
+        #
+        # yield Chown(
+        #     path='/home/user/script.sh',
+        #     owner='kim',
+        #     group='root',
+        #     hosts=["10.156.135.16", "10.156.135.17"]
+        # )
 
-        yield Chmod(
-            path='/home/user/script.sh',
-            mode=0o755,
-            hosts=["10.156.135.16", "10.156.135.17"]
-        )
+        # yield Download(
+        #     srcpaths='/home/user/*.txt',  # Remove the host: prefix
+        #     dstpath='/home/kim/',
+        #     hosts=["10.156.135.16"],
+        #     recurse=True
+        # )
 
-        yield Chown(
-            path='/home/user/script.sh',
-            owner='kim',
-            group='root',
-            hosts=["10.156.135.16", "10.156.135.17"]
+        # yield Upload(
+        #     srcpaths='/home/kim/inventory_alpine.py',  # Remove the host: prefix
+        #     dstpath='/home/user/',
+        #     hosts=["10.156.135.16"],
+        #     recurse=True
+        # )
+        #
+        # # Copy between remote hosts
+        yield Copy(
+            srcpaths='/home/user/*.txt',
+            dstpath='/home/user/',
+            src_hosts=["10.156.135.16"],
+            dst_hosts=["10.156.135.17"],
+            recurse=True
         )
 
 async def main():

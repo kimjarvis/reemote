@@ -13,14 +13,17 @@ class Makedirs:
         exist_ok (bool): Whether to raise an error if the target directory already exists.
         hosts (list): The list of hosts on which the directories are to be created.
 
-    Examples:
-        .. code:: python
-            class Create_dirs_example:
-                def execute(self):
-                    yield Makedirs(path='/home/user/hfs/subdir1/subdir2',
-                                 attrs=SFTPAttrs(permissions=0o755),
-                                 exist_ok=True,
-                                 hosts=["10.156.135.16", "10.156.135.17"])
+    **Examples:**
+
+    .. code:: python
+
+        class Create_dirs_example:
+            def execute(self):
+                yield Makedirs(path='/home/user/hfs/subdir1/subdir2',
+                     attrs=SFTPAttrs(permissions=0o755),
+                     exist_ok=True,
+                     hosts=["10.156.135.16", "10.156.135.17"],
+                )
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

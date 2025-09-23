@@ -11,8 +11,10 @@ class Chdir:
         path (str): The directory path to change to.
         hosts (list): The list of hosts on which the directory change is to be performed.
 
-    Examples:
-        .. code:: python
+    **Examples:**
+
+    .. code:: python
+
             class ChdirExample:
                 def execute(self):
                     yield Chdir(

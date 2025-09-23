@@ -24,7 +24,9 @@ class Mcopy_files:
         remote_only (bool): Whether to only allow remote copy operations.
 
     **Examples:**
+
     .. code:: python
+
         class Mcopy_files_example:
             def execute(self):
                 from reemote.operations.filesystem.mkdir import Mkdir

@@ -23,8 +23,9 @@ class Copy_files:
         remote_only (bool): Whether to only allow remote copy operations.
 
     **Examples:**
+
     .. code:: python
-        class Copy_files_example:
+            class Copy_files_example:
             def execute(self):
                 from reemote.operations.filesystem.copy_files import Copy_files
                 src_dir = '/home/user/'
@@ -36,9 +37,9 @@ class Copy_files:
                     recurse=True,
                     progress_handler=my_progress_callback,
                     hosts=["10.156.135.16"]
-                )
-                r = yield Shell(f"cat {dst_dir}/example1.txt")
-                print(r.cp.stdout)
+            )
+            r = yield Shell(f"cat {dst_dir}/example1.txt")
+            print(r.cp.stdout)
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

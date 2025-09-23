@@ -23,7 +23,9 @@ class Mget_files:
         error_handler (Callable): Callback for handling errors.
 
     **Examples:**
+
     .. code:: python
+
         class Mget_file_example:
             def execute(self):
                 from reemote.operations.filesystem.mget_files import Mget_files

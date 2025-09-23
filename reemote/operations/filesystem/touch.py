@@ -17,8 +17,10 @@ class Touch:
         block_size (int): Block size for read/write requests (default: -1).
         max_requests (int): Maximum parallel read/write requests (default: -1).
 
-    Examples:
-        .. code:: python
+    **Examples:**
+
+    .. code:: python
+
             class TouchExample:
                 def execute(self):
                     yield Touch(

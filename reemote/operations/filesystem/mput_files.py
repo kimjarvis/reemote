@@ -22,8 +22,11 @@ class Mput_files:
         progress_handler (Callable): Callback for transfer progress.
         error_handler (Callable): Callback for handling errors.
 
+
     **Examples:**
+
     .. code:: python
+
         class Mput_file_example:
             def execute(self):
                 from reemote.operations.filesystem.mput_files import Mput_files
