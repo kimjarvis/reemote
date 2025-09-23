@@ -351,7 +351,7 @@ def page():
         with ui.tabs() as tabs:
             ui.tab('Inventory')
             ui.tab('Deployment Manager')
-            ui.tab('Ad Hoc Commands')
+            ui.tab('Ad-hoc Commands')
             ui.tab('File Manager')
             ui.tab('Package Manager')
 
@@ -446,8 +446,8 @@ def page():
             sr.execution_report()
             er.execution_report()
 
-        with ui.tab_panel('Ad Hoc Commands'):
-            ui.label('Ad Hoc Commands')
+        with ui.tab_panel('Ad-hoc Commands'):
+            ui.label('Ad-hoc Commands')
             ah = Ad_Hoc()
 
             with ui.row():
@@ -455,7 +455,7 @@ def page():
                 ui.switch('su', value=False).bind_value(ah, 'su')
                 ui.input(label='Adhoc command').bind_value(ah, 'command')
                 ui.markdown("""
-                Type and Ad Hoc command, such as `hostname`.  
+                Type and Ad-hoc command, such as `hostname`.
                 """)
             with ui.row():
                 ui.button('Run', on_click=lambda: Perform_adhoc_command(inv, sr, er, ah))

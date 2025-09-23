@@ -28,13 +28,13 @@ Deployment Manager
    :align: center
    :alt: Deployment Manager
 
-Ad Hoc commands
+Ad-hoc commands
 ---------------
 
 .. image:: Screenshot_20250921_204117.png
    :width: 100%
    :align: center
-   :alt: Ad Hoc commands
+   :alt: Ad-hoc commands
 
 File Manger
 -----------
