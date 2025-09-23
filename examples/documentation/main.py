@@ -41,7 +41,7 @@ class Touch_example:
 
 class Mkdir_example:
     def execute(self):
-        from reemote.operations.filesystem.mkdir import Mkdir
+        from reemote.operations.filesystem.mkdir1 import Mkdir
         from reemote.operations.server.shell import Shell
         # Create directory on all hosts
         r = yield Mkdir(path='mydir', present=True)
@@ -54,7 +54,7 @@ class Mkdir_example:
 class Chown_example:
     def execute(self):
         from reemote.operations.filesystem.chown import Chown
-        from reemote.operations.filesystem.mkdir import Mkdir
+        from reemote.operations.filesystem.mkdir1 import Mkdir
         from reemote.operations.server.shell import Shell
         # Create directory on all hosts
         r = yield Mkdir(path='mydir', present=True)
