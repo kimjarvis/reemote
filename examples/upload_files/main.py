@@ -5,30 +5,33 @@ from reemote.produce_table import produce_table
 from reemote.produce_output_table import produce_output_table
 import sys
 import asyncssh
-from reemote.operation import Operation
 from asyncssh import SFTPAttrs
 
 from typing import List, Tuple, Dict, Any
 
-from reemote.operations.server.shell import Shell
-from reemote.operations.filesystem.mkdir import Mkdir
-from reemote.operations.filesystem.makedirs import Makedirs
-from reemote.operations.filesystem.read_file import Read_file
-from reemote.operations.filesystem.write_file import Write_file
-from reemote.operations.filesystem.mput_files import Mput_files
-from reemote.operations.filesystem.mget_files import Mget_files
-from reemote.operations.filesystem.copy_files import Copy_files
-from reemote.operations.filesystem.mcopy_files import Mcopy_files
-from reemote.operations.filesystem.chdir import Chdir
-from reemote.facts.filesystem.get_cwd import Get_cwd
-from reemote.operations.filesystem.chown import Chown
-from reemote.operations.filesystem.chmod import Chmod
-from reemote.operations.filesystem.touch import Touch
-from reemote.operations.filesystem.upload import Upload
-from reemote.operations.filesystem.download import Download
-from reemote.operations.filesystem.copy import Copy
-from reemote.facts.filesystem.get_stat import Get_stat
-
+# from reemote.operations.server.shell import Shell
+# from reemote.operations.filesystem.mkdir import Mkdir
+# from reemote.operations.filesystem.makedirs import Makedirs
+# from reemote.operations.filesystem.read_file import Read_file
+# from reemote.operations.filesystem.write_file import Write_file
+# from reemote.operations.filesystem.mput_files import Mput_files
+# from reemote.operations.filesystem.mget_files import Mget_files
+# from reemote.operations.filesystem.copy_files import Copy_files
+# from reemote.operations.filesystem.mcopy_files import Mcopy_files
+# from reemote.operations.filesystem.chdir import Chdir
+# from reemote.facts.filesystem.get_cwd import Get_cwd
+# from reemote.operations.filesystem.chown import Chown
+# from reemote.operations.filesystem.chmod import Chmod
+# from reemote.operations.filesystem.touch import Touch
+# from reemote.operations.filesystem.upload import Upload
+# from reemote.operations.filesystem.download import Download
+# from reemote.operations.filesystem.copy import Copy
+# from reemote.facts.filesystem.get_stat import Get_stat
+# from reemote.facts.filesystem.get_fstat import Get_fstat
+# from reemote.facts.filesystem.get_lstat import Get_lstat
+# from reemote.operations.filesystem.rmtree import Rmtree
+# from reemote.operations.sftp.setstat import Setstat
+from reemote.facts.scp.get_statvfs import Get_statvfs
 
 def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
      return [
@@ -204,6 +207,35 @@ class Deployment:
         # yield Get_lstat(
         #     hosts=["10.156.135.16", "10.156.135.17"],
         #     file_path="/path/to/symlink.txt"
+        # )
+        # print(r)
+
+        # Open file handle
+        # yield Get_fstat(
+        #     hosts=["10.156.135.16", "10.156.135.17"],
+        #     file_handle=file_handle
+        # )
+
+        # yield Rmtree(path='/home/user/hfs',
+        #      ignore_errors=False,
+        #      hosts=["10.156.135.16", "10.156.135.17"])
+
+
+        # yield Setstat(
+        #     hosts=["10.156.135.16", "10.156.135.17"],
+        #     path="/home/user/example.txt",
+        #     attrs={
+        #         "permissions": 0o644,
+        #         "uid": 1000,
+        #         "gid": 1000,
+        #         "mtime": 1672531200
+        #     }
+        # )
+
+
+        # r = yield Get_statvfs(
+        #     hosts=["10.156.135.16", "10.156.135.17"],
+        #     path="/home/user"
         # )
         # print(r)
 

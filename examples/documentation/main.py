@@ -26,7 +26,7 @@ class Get_file_example:
 
 class Touch_example:
     def execute(self):
-        from reemote.operations.filesystem.touch import Touch
+        from reemote.operations.sftp.touch import Touch
         from reemote.operations.server.shell import Shell
         # Create file on all hosts
         r = yield Touch(path='log.txt', present=True)
@@ -53,7 +53,7 @@ class Mkdir_example:
 
 class Chown_example:
     def execute(self):
-        from reemote.operations.filesystem.chown import Chown
+        from reemote.operations.sftp.chown import Chown
         from reemote.operations.filesystem.mkdir1 import Mkdir
         from reemote.operations.server.shell import Shell
         # Create directory on all hosts
@@ -66,8 +66,8 @@ class Chown_example:
 
 class Chmod_example:
     def execute(self):
-        from reemote.operations.filesystem.chmod import Chmod
-        from reemote.operations.filesystem.touch import Touch
+        from reemote.operations.sftp.chmod import Chmod
+        from reemote.operations.sftp.touch import Touch
         from reemote.operations.server.shell import Shell
         # Create file on all hosts
         r = yield Touch(path='script.sh', present=True)

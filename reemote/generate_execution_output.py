@@ -42,7 +42,38 @@ def _generate_table(data):
             host = entry['host']
             executed = entry["cp"]['returncode']
             stdout_value = entry["cp"]['stdout']
+            # print(type(stdout_value))
+            # if type(stdout_value) == "SFTPVFSAttrs":
+            #
+            #     # Assuming stdout is an instance of SFTPVFSAttrs
+            #     def get_sftp_vfs_attrs_representation(sftp_vfs_attrs):
+            #         """
+            #         Returns a dictionary-like representation of the SFTPVFSAttrs object.
+            #         """
+            #         if sftp_vfs_attrs is None:
+            #             return "None"
+            #
+            #         # Extract attributes and their values
+            #         representation = {
+            #             "bsize": sftp_vfs_attrs.bsize,
+            #             "frsize": sftp_vfs_attrs.frsize,
+            #             "blocks": sftp_vfs_attrs.blocks,
+            #             "bfree": sftp_vfs_attrs.bfree,
+            #             "bavail": sftp_vfs_attrs.bavail,
+            #             "files": sftp_vfs_attrs.files,
+            #             "ffree": sftp_vfs_attrs.ffree,
+            #             "favail": sftp_vfs_attrs.favail,
+            #             "fsid": sftp_vfs_attrs.fsid,
+            #             "flags": sftp_vfs_attrs.flags,
+            #             "namemax": sftp_vfs_attrs.namemax,
+            #         }
+            #         return representation
+            #
+            #     stdout_value = get_sftp_vfs_attrs_representation(sftp_vfs_attrs)
+
             changed = str(stdout_value)[:60] if stdout_value is not None else "None"
+
+
 
             # Add the current host's data
             row[f"{host.replace(".","_")}_executed"] = executed
