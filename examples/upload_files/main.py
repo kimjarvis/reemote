@@ -17,6 +17,14 @@ from reemote.operations.filesystem.read_file import Read_file
 from reemote.operations.filesystem.write_file import Write_file
 from reemote.operations.filesystem.mput_files import Mput_files
 from reemote.operations.filesystem.mget_files import Mget_files
+from reemote.operations.filesystem.copy_files import Copy_files
+from reemote.operations.filesystem.mcopy_files import Mcopy_files
+from reemote.operations.filesystem.chdir import Chdir
+from reemote.facts.filesystem.get_cwd import Getcwd
+from reemote.operations.filesystem.chown import Chown
+from reemote.operations.filesystem.chmod import Chmod
+from reemote.operations.filesystem.touch import Touch
+
 
 def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
      return [
@@ -100,18 +108,55 @@ class Deployment:
         # r = yield Shell(f"tree {dir}")
         # print(r.cp.stdout)
 
-        remote_dir = '/home/user/hfs'
-        local_dir = '/home/kim/reemote/development/output'
+        # remote_dir = '/home/user/hfs'
+        # local_dir = '/home/kim/reemote/development/output'
+        #
+        # r = yield Mget_files(
+        #     remotepaths=f"{remote_dir}/",
+        #     localpath=local_dir,
+        #     preserve=True,
+        #     recurse=True,
+        #     progress_handler=my_progress_callback
+        # )
+        # r = yield Shell(f"ls -la {local_dir}")
+        # print(r.cp.stdout)
 
-        r = yield Mget_files(
-            remotepaths=f"{remote_dir}/",
-            localpath=local_dir,
-            preserve=True,
-            recurse=True,
-            progress_handler=my_progress_callback
+
+        # src_dir = '/home/user/'
+        # dst_dir = '/home/user/backup/'
+        # r = yield Mkdir(path=dst_dir, attrs=SFTPAttrs(permissions=0o755), hosts=["10.156.135.16"])
+        #
+        # r = yield Mcopy_files(
+        #     srcpaths=src_dir + '*.txt',  # Using wildcard pattern
+        #     dstpath=dst_dir,
+        #     preserve=True,
+        #     recurse=True,
+        #     progress_handler=my_progress_callback,
+        #     hosts=["10.156.135.16"]
+        # )
+        # r = yield Shell(f"ls {dst_dir}/backup/")
+        # print(r.cp.stdout)
+
+
+        yield Touch(
+            path='/home/user/script.sh',
+            hosts=["10.156.135.16", "10.156.135.17"],
+            pflags_or_mode='w',  # Equivalent to FXF_WRITE | FXF_CREAT | FXF_TRUNC
+            attrs=asyncssh.SFTPAttrs(perms=0o755)  # Executable permissions
         )
-        r = yield Shell(f"ls -la {local_dir}")
-        print(r.cp.stdout)
+
+        yield Chmod(
+            path='/home/user/script.sh',
+            mode=0o755,
+            hosts=["10.156.135.16", "10.156.135.17"]
+        )
+
+        yield Chown(
+            path='/home/user/script.sh',
+            owner='kim',
+            group='root',
+            hosts=["10.156.135.16", "10.156.135.17"]
+        )
 
 async def main():
     responses = await execute(inventory(), Deployment())
