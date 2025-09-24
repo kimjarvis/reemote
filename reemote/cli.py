@@ -1,51 +1,16 @@
-#!/usr/bin/env python3
-import argparse
-import os
-import sys
-import argparse
 import asyncio
-import sys
-import os
 import ast
-
 from reemote.validate_inventory_file_and_get_inventory import validate_inventory_file_and_get_inventory
 from reemote.validate_root_class_name_and_get_root_class import validate_root_class_name_and_get_root_class
-from reemote.verify_inventory_connect import verify_inventory_connect
 from reemote.execute import execute
 from reemote.verify_python_file import verify_python_file
 from reemote.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
 from reemote.validate_inventory_structure import validate_inventory_structure
 from reemote.write_responses_to_file import write_responses_to_file
-from reemote.produce_json import produce_json
 from reemote.produce_table import produce_table
 from reemote.produce_output_table import produce_output_table
 from reemote.produce_json import produce_json
-import argparse
 
-from typing import List, Tuple, Dict, Any
-
-class Wrapper:
-
-    def __init__(self, command):
-        self.command = command
-
-    def execute(self):
-        # Execute a shell command on all hosts
-        r = yield self.command()
-        # The result is available in stdout
-        print(r.cp.stdout)
-
-class Shell:
-
-    def __init__(self, command):
-        self.command = command
-
-    def execute(self):
-        from reemote.operations.server.shell import Shell
-        # Execute a shell command on all hosts
-        r = yield Shell(self.command)
-        # The result is available in stdout
-        print(r.cp.stdout)
 
 def parse_kwargs_string(param_str):
     """Parse 'key=value,key2=value2' string into dict."""
@@ -73,8 +38,8 @@ async def main():
 
     # Create the argument parser
     parser = argparse.ArgumentParser(
-        description="CLI tool with inventory, source, class, and command options.",
-        usage="usage: reemote [-h] -i INVENTORY_FILE -s SOURCE_FILE -c CLASS_NAME -k KWARGS [-- COMMAND]",
+        description="CLI tool with inventory, source, class, and kwarg options.",
+        usage="usage: reemote [-h] -i INVENTORY_FILE -s SOURCE_FILE -c CLASS_NAME -k KWARGS",
         epilog="""
         Example: 
           reemote -i ~/inventory_alpine1.py -s reemote/operations/users/add_user.py -c Add_user -k user='abc',password='def' -o output.txt -t json
@@ -107,7 +72,7 @@ async def main():
 
     parser.add_argument(
         "-k", "--kwargs",
-        required=True,
+        required=False,
         dest="kwargs",
         help="Path to the kwargs file for the deployment class constructor"
     )
@@ -130,13 +95,6 @@ async def main():
         default=None
     )
 
-    # Command argument (everything after --)
-    parser.add_argument(
-        "command",
-        nargs=argparse.REMAINDER,
-        help="Command to execute (everything after --)"
-    )
-
     # Parse arguments
     args = parser.parse_args()
 
@@ -148,16 +106,6 @@ async def main():
     if len(sys.argv) == 1:
         parser.print_help()
         sys.exit(1)
-
-    # # Debugging output (for demonstration purposes)
-    # print("Parsed Arguments:")
-    # print(f"Inventory: {args.inventory}")
-    # print(f"Source: {args.source}")
-    # print(f"Class: {args._class}")
-    # print(f"Kwargs: {args.kwargs}")
-    # print(f"Output File: {args.output_file}")
-    # print(f"Output Type: {args.output_type}")
-    # print(f"Command: {' '.join(args.command)}")
 
     # Verify inventory file
     if args.inventory:
@@ -196,12 +144,10 @@ async def main():
     # Parse parameters into kwargs
     kwargs = parse_kwargs_string(args.kwargs)
 
+    responses=[]
     if args.source:
-        # responses = await execute(inventory(), Wrapper(root_class))
         responses = await execute(inventory(), root_class(**kwargs))
 
-    if args.command:
-        responses = await execute(inventory(), Shell(" ".join(args.command[1:])))
 
     if args.output_type=="json":
         write_responses_to_file(responses = responses, type="json", filepath=args.output_file)

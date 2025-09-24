@@ -39,7 +39,7 @@ class Add_sudo_user:
                  password: str=None,
                  guard: bool = True,
                  sudo: bool = False,
-                 su: bool = False)
+                 su: bool = False):
         self.user = user
         self.password = password
         self.guard = guard
@@ -49,7 +49,7 @@ class Add_sudo_user:
     def __repr__(self):
         return (f"Add_sudo_user("
                 f"user={self.user!r}, "
-                f"password={self.password!r}
+                f"password={self.password!r}, "
                 f"guard={self.guard!r}, "
                 f"sudo={self.sudo!r}, su={self.su!r})")
 

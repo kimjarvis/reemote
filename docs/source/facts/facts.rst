@@ -10,6 +10,7 @@ This section contains documentation for various facts supported by Reemote.
    apt
    dnf
    dpkg
+   pacman
    pip
    server
    sftp
