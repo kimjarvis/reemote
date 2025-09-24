@@ -20,6 +20,8 @@ Inventory
    :align: center
    :alt: Inventory
 
+Use the inventory page to upload an inventory.
+
 Deployment Manager
 ------------------
 
@@ -27,6 +29,8 @@ Deployment Manager
    :width: 100%
    :align: center
    :alt: Deployment Manager
+
+Start a deployment from the deployment manager.
 
 Ad-hoc commands
 ---------------
@@ -36,6 +40,8 @@ Ad-hoc commands
    :align: center
    :alt: Ad-hoc commands
 
+Perform an Ad-hoc command on all your servers.
+
 File Manger
 -----------
 
@@ -44,6 +50,8 @@ File Manger
    :align: center
    :alt: File Manger
 
+Upload and download files on all your servers.
+
 Package Manager
 ---------------
 
@@ -51,3 +59,5 @@ Package Manager
    :width: 100%
    :align: center
    :alt: Package Manger
+
+View package versions and update packages on all your servers.
