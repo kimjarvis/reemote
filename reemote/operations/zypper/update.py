@@ -43,12 +43,12 @@ class Update:
         r0.executed = self.guard
 
         # Retrieve the current list of installed packages
-        r1 = yield Operation(f"pacman -Q", guard=self.guard, sudo=self.sudo, su=self.su)
+        r1 = yield Operation(f"rpm -qa", guard=self.guard, sudo=self.sudo, su=self.su)
 
-        r2 = yield Operation(f"pacman --noconfirm -Syu", guard=self.guard, sudo=self.sudo, su=self.su)
+        r2 = yield Operation(f"zypper --non-interactive update", guard=self.guard, sudo=self.sudo, su=self.su)
         # print(r2)
         # Retrieve the updated list of installed packages
-        r3 = yield Operation(f"pacman -Q", guard=self.guard, sudo=self.sudo, su=self.su)
+        r3 = yield Operation(f"rpm -qa", guard=self.guard, sudo=self.sudo, su=self.su)
 
         # Set the `changed` flag if the package state has changed
         if self.guard and (r1.cp.stdout != r3.cp.stdout):
