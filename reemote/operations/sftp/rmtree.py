@@ -47,6 +47,7 @@ class Rmtree:
 
     @staticmethod
     async def _rmtree_callback(host_info, global_info, command, cp, caller):
+        print(f"{caller}")
         """Static callback method for recursive directory removal"""
 
         # Check if this host is in the target hosts list or if hosts list is empty/None

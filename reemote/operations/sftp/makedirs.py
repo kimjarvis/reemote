@@ -35,6 +35,7 @@ class Makedirs:
 
     @staticmethod
     async def _makedirs_callback(host_info, global_info, command, cp, caller):
+        print(f"{caller}")
         """Static callback method for directory creation"""
         # print("Making directories recursively")
 

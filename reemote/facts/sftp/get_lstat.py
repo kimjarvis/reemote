@@ -2,10 +2,12 @@ import asyncssh
 from reemote.operation import Operation
 from typing import Optional
 
-class Get_stat:
+
+class Get_lstat:
     """
-    A class to encapsulate the functionality of stat for getting file attributes
-    using SFTP stat in Unix-like operating systems.
+    A class to encapsulate the functionality of lstat for getting file attributes
+    using SFTP lstat in Unix-like operating systems. Unlike stat, lstat returns
+    attributes of symlinks themselves rather than their targets.
 
     Attributes:
         hosts (list): The list of hosts from which to get file attributes.
@@ -13,12 +15,14 @@ class Get_stat:
         flags (int): Flags indicating attributes of interest (SFTPv4 or later)
 
     **Examples:**
+
     .. code:: python
-            class GetStatExample:
+
+            class GetLstatExample:
                 def execute(self):
-                    yield Get_stat(
+                    yield Get_lstat(
                         hosts=["10.156.135.16", "10.156.135.17"],
-                        file_path="/path/to/file.txt"
+                        file_path="/path/to/symlink.txt"
                     )
 
     Usage:
@@ -28,6 +32,8 @@ class Get_stat:
 
     Notes:
         If hosts is None or empty, the operation will execute on the current host.
+        Unlike stat, lstat returns attributes of symlinks themselves rather than
+        the files they point to.
     """
 
     def __init__(self, path: str, hosts: list = None):
@@ -35,7 +41,7 @@ class Get_stat:
         self.hosts = hosts
 
     def __repr__(self):
-        return f"Get_stat(file_path={self.path!r}, hosts={self.hosts!r})"
+        return f"Get_lstat(file_path={self.path!r}, hosts={self.hosts!r})"
 
     @staticmethod
     def _sftp_attrs_to_dict(attrs):
@@ -67,23 +73,24 @@ class Get_stat:
         return result
 
     @staticmethod
-    async def _get_stat_callback(host_info, sudo_global, command, cp, caller):
-        """Static callback method for getting file status"""
+    async def _get_lstat_callback(host_info, sudo_global, command, cp, caller):
+        """Static callback method for getting file status using lstat"""
         if (caller.hosts is None or
                 not caller.hosts or
                 host_info["host"] in caller.hosts):
 
-            print(f"Getting file status on host {host_info['host']}")
+            print(f"Getting file status using lstat on host {host_info['host']}")
 
             async def run_client() -> None:
                 try:
                     async with asyncssh.connect(**host_info) as conn:
                         async with conn.start_sftp_client() as sftp:
-                            stat_result = await sftp.stat(caller.path)
+                            # Use lstat instead of stat to get symlink attributes
+                            lstat_result = await sftp.lstat(caller.path)
                             # Convert SFTPAttrs to dictionary for JSON serialization
-                            return caller._sftp_attrs_to_dict(stat_result)
+                            return caller._sftp_attrs_to_dict(lstat_result)
                 except (OSError, asyncssh.Error) as exc:
-                    print(f'SFTP stat operation failed on {host_info["host"]}: {str(exc)}')
+                    print(f'SFTP lstat operation failed on {host_info["host"]}: {str(exc)}')
                     raise
 
             try:
@@ -97,7 +104,7 @@ class Get_stat:
                 return None
 
     def execute(self):
-        r = yield Operation(f"{self}", local=True, callback=self._get_stat_callback, caller=self)
+        r = yield Operation(f"{self}", local=True, callback=self._get_lstat_callback, caller=self)
         r.executed = True
         r.changed = False
         return r

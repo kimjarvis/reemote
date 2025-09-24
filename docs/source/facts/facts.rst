@@ -12,5 +12,6 @@ This section contains documentation for various facts supported by Reemote.
    dpkg
    pip
    server
+   sftp
    yum
 

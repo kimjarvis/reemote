@@ -2,28 +2,28 @@ import asyncssh
 from reemote.operation import Operation
 
 
-class Check_exists:
+class Islink:
     """
-    A class to encapsulate the functionality of checking if a remote path exists
-    using SFTP exists method in Unix-like operating systems.
-
+    A class to encapsulate the functionality of checking if a path refers to a symbolic link
+    using SFTP islink in Unix-like operating systems.
     Attributes:
-        hosts (list): The list of hosts on which to check path existence.
-        path (str): The remote path to check for existence.
+        hosts (list): The list of hosts on which to check the symbolic link.
+        path: The remote path to check (can be PurePath, str, or bytes).
 
     **Examples:**
+
     .. code:: python
 
-            class CheckExistsExample:
+            class GetIsLinkExample:
                 def execute(self):
-                    yield Check_exists(
+                    yield Get_islink(
                         hosts=["10.156.135.16", "10.156.135.17"],
-                        path="/path/to/check"
+                        path="/path/to/symlink"
                     )
 
     Usage:
         This class is designed to be used in a generator-based workflow where
-        commands are yielded for execution. The existence check result for each
+        commands are yielded for execution. The boolean result for each
         host will be returned in the operation result.
 
     Notes:
@@ -31,16 +31,16 @@ class Check_exists:
         The path must be a valid remote path accessible via SFTP.
     """
 
-    def __init__(self, hosts: list = None, path: str = None):
+    def __init__(self, hosts: list = None, path=None):
         self.hosts = hosts
         self.path = path
 
     def __repr__(self):
-        return f"Check_exists(hosts={self.hosts!r}, path={self.path!r})"
+        return f"Get_islink(hosts={self.hosts!r}, path={self.path!r})"
 
     @staticmethod
-    async def _check_exists_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for checking if a remote path exists"""
+    async def _islink_callback(host_info, global_info, command, cp, caller):
+        """Static callback method for checking if a path is a symbolic link"""
 
         # Check if this host is in the target hosts list or if hosts list is empty/None
         if (caller.hosts is None or
@@ -51,25 +51,25 @@ class Check_exists:
                 try:
                     async with asyncssh.connect(**host_info) as conn:
                         async with conn.start_sftp_client() as sftp:
-                            # Check if path exists using the exists method
+                            # Check if the path refers to a symbolic link
                             if caller.path:
-                                exists = await sftp.exists(caller.path)
-                                return exists
+                                is_link = await sftp.islink(caller.path)
+                                return is_link
                             else:
-                                raise ValueError("Path must be provided for exists operation")
+                                raise ValueError("Path must be provided for islink operation")
                 except (OSError, asyncssh.Error) as exc:
-                    print(f'SFTP exists operation failed on {host_info["host"]}: {str(exc)}')
+                    print(f'SFTP islink operation failed on {host_info["host"]}: {str(exc)}')
                     raise
 
             try:
-                exists_result = await run_client()
-                return exists_result
+                is_link_result = await run_client()
+                return is_link_result
             except Exception as e:
                 print(f"An error occurred on {host_info['host']}: {e}")
-                return False
+                return None
 
     def execute(self):
-        r = yield Operation(f"{self}", local=True, callback=self._check_exists_callback, caller=self)
+        r = yield Operation(f"{self}", local=True, callback=self._islink_callback, caller=self)
         r.executed = True
         r.changed = False
         return r

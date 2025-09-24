@@ -41,6 +41,7 @@ class Mkdir:
 
     @staticmethod
     async def _mkdir_callback(host_info, global_info, command, cp, caller):
+        print(f"{caller}")
         """Static callback method for directory creation"""
         # print("Making directory")
 

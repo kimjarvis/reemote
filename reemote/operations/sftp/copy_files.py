@@ -25,6 +25,7 @@ class Copy_files:
     **Examples:**
 
     .. code:: python
+
             class Copy_files_example:
             def execute(self):
                 from reemote.operations.filesystem.copy_files import Copy_files
@@ -88,6 +89,7 @@ class Copy_files:
 
     @staticmethod
     async def _copy_callback(host_info, sudo_global, command, cp, caller):
+        print(f"{caller}")
         """Static callback method for remote-to-remote file copying with full parameter support"""
         # Check if this host is in the target hosts list or if hosts list is empty/None
         if (caller.hosts is None or

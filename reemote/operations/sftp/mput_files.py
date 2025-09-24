@@ -106,6 +106,7 @@ class Mput_files:
 
     @staticmethod
     async def _mput_files_callback(host_info, sudo_global, command, cp, caller):
+        print(f"{caller}")
         """Static callback method for multiple file upload with full parameter support"""
         # Check if this host is in the target hosts list or if hosts list is empty/None
         if (caller.hosts is None or

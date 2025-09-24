@@ -13,7 +13,9 @@ class Get_fstat:
         flags (int): Flags indicating attributes of interest (SFTPv4 or later)
 
     **Examples:**
+
     .. code:: python
+
             class GetFstatExample:
                 def execute(self):
                     yield Get_fstat(

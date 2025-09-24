@@ -44,6 +44,7 @@ class Chmod:
 
     @staticmethod
     async def _chmod_callback(host_info, global_info, command, cp, caller):
+        print(f"{caller}")
         """Static callback method for file permission change"""
 
         # Check if this host is in the target hosts list or if hosts list is empty/None

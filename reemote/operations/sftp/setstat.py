@@ -14,7 +14,9 @@ class Setstat:
         attrs (dict): Dictionary of attributes to set on the file.
 
     **Examples:**
+
     .. code:: python
+
             class SetStatExample:
                 def execute(self):
                     yield Setstat(
@@ -77,6 +79,7 @@ class Setstat:
 
     @staticmethod
     async def _setstat_callback(host_info, sudo_global, command, cp, caller):
+        print(f"{caller}")
         """Static callback method for setting file attributes"""
         if (caller.hosts is None or
                 not caller.hosts or

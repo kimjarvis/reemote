@@ -50,6 +50,7 @@ class Chown:
 
     @staticmethod
     async def _chown_callback(host_info, global_info, command, cp, caller):
+        print(f"{caller}")
         """Static callback method for file ownership change"""
 
         # Check if this host is in the target hosts list or if hosts list is empty/None

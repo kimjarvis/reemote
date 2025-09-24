@@ -41,6 +41,7 @@ class Read_file:
 
     @staticmethod
     async def _read_file_callback(host_info, global_info, command, cp, caller):
+        print(f"{caller}")
         """Static callback method for file reading"""
         # Initialize file_content to None
         file_content = None
