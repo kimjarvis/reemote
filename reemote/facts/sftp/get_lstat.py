@@ -18,12 +18,10 @@ class Get_lstat:
 
     .. code:: python
 
-            class GetLstatExample:
-                def execute(self):
-                    yield Get_lstat(
-                        hosts=["10.156.135.16", "10.156.135.17"],
-                        file_path="/path/to/symlink.txt"
-                    )
+        yield Get_lstat(
+            hosts=["10.156.135.16", "10.156.135.17"],
+            file_path="/path/to/symlink.txt"
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where

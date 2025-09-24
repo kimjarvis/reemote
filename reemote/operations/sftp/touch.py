@@ -21,14 +21,12 @@ class Touch:
 
     .. code:: python
 
-            class TouchExample:
-                def execute(self):
-                    yield Touch(
-                        path='/home/user/newfile.txt',
-                        hosts=["10.156.135.16", "10.156.135.17"],
-                        pflags_or_mode='w',  # Create file if it doesn't exist
-                        attrs=asyncssh.SFTPAttrs(perms=0o644)  # Set file permissions
-                    )
+        yield Touch(
+            path='/home/user/newfile.txt',
+            hosts=["10.156.135.16", "10.156.135.17"],
+            pflags_or_mode='w',  # Create file if it doesn't exist
+            attrs=asyncssh.SFTPAttrs(perms=0o644)  # Set file permissions
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where

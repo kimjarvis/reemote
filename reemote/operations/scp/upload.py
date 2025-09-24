@@ -20,14 +20,12 @@ class Upload:
 
     .. code:: python
 
-        class UploadExample:
-            def execute(self):
-                yield Upload(
-                    srcpaths='/home/kim/inventory_alpine.py',  # Remove the host: prefix
-                    dstpath='/home/user/',
-                    hosts=["10.156.135.16"],
-                    recurse=True
-                )
+        yield Upload(
+            srcpaths='/home/kim/inventory_alpine.py',  # Remove the host: prefix
+            dstpath='/home/user/',
+            hosts=["10.156.135.16"],
+            recurse=True
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where

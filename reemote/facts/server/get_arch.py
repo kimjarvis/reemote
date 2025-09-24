@@ -7,11 +7,7 @@ class Get_Arch:
 
     .. code:: python
 
-        class Get_arch_example:
-            def execute(self):
-                from reemote.facts.server.get_arch import Get_Arch
-                r = yield Get_Arch()
-                print(r.cp.stdout)
+        yield Get_Arch()
 
     """
     def execute(self):

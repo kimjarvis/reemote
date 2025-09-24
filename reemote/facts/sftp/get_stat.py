@@ -16,12 +16,10 @@ class Get_stat:
 
     .. code:: python
 
-            class GetStatExample:
-                def execute(self):
-                    yield Get_stat(
-                        hosts=["10.156.135.16", "10.156.135.17"],
-                        file_path="/path/to/file.txt"
-                    )
+        yield Get_stat(
+            hosts=["10.156.135.16", "10.156.135.17"],
+            file_path="/path/to/file.txt"
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where

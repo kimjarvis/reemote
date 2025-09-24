@@ -14,13 +14,10 @@ class Read_file:
 
     .. code:: python
 
-        class Read_file_example:
-            def execute(self):
-                from reemote.operations.filesystem.read_file import Read_file
-                # Get file content from specific hosts
-                r = yield Read_file(path='example.txt', hosts=['192.168.122.5', '192.168.122.6'])
-                # The content is available in stdout
-                print(r.cp.stdout)
+        # Get file content from specific hosts
+        r = yield Read_file(path='example.txt', hosts=['192.168.122.5', '192.168.122.6'])
+        # The content is available in stdout
+        print(r.cp.stdout)
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

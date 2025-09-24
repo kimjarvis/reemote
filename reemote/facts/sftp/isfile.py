@@ -14,12 +14,10 @@ class Isfile:
 
     .. code:: python
 
-            class GetIsFileExample:
-                def execute(self):
-                    yield Get_isfile(
-                        hosts=["10.156.135.16", "10.156.135.17"],
-                        path="/path/to/file.txt"
-                    )
+        yield Get_isfile(
+            hosts=["10.156.135.16", "10.156.135.17"],
+            path="/path/to/file.txt"
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where

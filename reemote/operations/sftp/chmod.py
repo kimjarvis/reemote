@@ -17,13 +17,11 @@ class Chmod:
 
     .. code:: python
 
-            class ChmodExample:
-                def execute(self):
-                    yield Chmod(
-                        path='/home/user/script.sh',
-                        mode=0o755,
-                        hosts=["10.156.135.16", "10.156.135.17"]
-                    )
+        yield Chmod(
+            path='/home/user/script.sh',
+            mode=0o755,
+            hosts=["10.156.135.16", "10.156.135.17"]
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where

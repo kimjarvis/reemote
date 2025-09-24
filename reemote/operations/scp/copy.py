@@ -28,25 +28,25 @@ class Copy:
         block_size (int): Block size used for file transfers in bytes. Defaults to 16384.
         port (int): SSH port to use for connections. Defaults to 22.
 
-    Example:
-        >>> # Copy files from one host to another
-        >>> class MyCopyOperation:
-        ...     def execute(self):
-        ...         yield Copy(
-        ...             srcpaths='/home/user/*.txt',
-        ...             dstpath='/home/user/',
-        ...             src_hosts=["10.156.135.16"],
-        ...             dst_hosts=["10.156.135.17"],
-        ...             recurse=True
-        ...         )
-        >>>
-        >>> # Copy multiple files between hosts
-        >>> yield Copy(
-        ...     srcpaths=['/var/log/app.log', '/tmp/debug.log'],
-        ...     dstpath='backup-server:/backup/logs/',
-        ...     src_hosts=["host1", "host2"],
-        ...     dst_hosts=["backup-server"]
-        ... )
+    **Examples:**
+
+    .. code:: python
+
+        # Copy files from one host to another
+        yield Copy(
+            srcpaths='/home/user/*.txt',
+            dstpath='/home/user/',
+            src_hosts=["10.156.135.16"],
+            dst_hosts=["10.156.135.17"],
+            recurse=True
+        )
+        # Copy multiple files between hosts
+        yield Copy(
+            srcpaths=['/var/log/app.log', '/tmp/debug.log'],
+            dstpath='backup-server:/backup/logs/',
+            src_hosts=["host1", "host2"],
+            dst_hosts=["backup-server"]
+        )
 
     Note:
         - The copy operation requires proper SSH credentials and permissions on both source and destination hosts

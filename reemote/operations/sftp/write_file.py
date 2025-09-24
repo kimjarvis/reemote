@@ -14,15 +14,11 @@ class Write_file:
 
     .. code:: python
 
-        class Write_file_example:
-            def execute(self):
-                from reemote.operations.filesystem.write_file import Write_file
-                from reemote.operations.server.shell import Shell
-                # Create a file from text on specific hosts
-                r = yield Write_file(path='example.txt', text='Hello World!', hosts=['host1', 'host2'])
-                # Verify the file content on the hosts
-                r = yield Shell("cat example.txt")
-                print(r.cp.stdout)
+        # Create a file from text on specific hosts
+        r = yield Write_file(path='example.txt', text='Hello World!', hosts=['host1', 'host2'])
+        # Verify the file content on the hosts
+        r = yield Shell("cat example.txt")
+        print(r.cp.stdout)
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

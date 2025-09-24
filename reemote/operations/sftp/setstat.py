@@ -17,18 +17,16 @@ class Setstat:
 
     .. code:: python
 
-            class SetStatExample:
-                def execute(self):
-                    yield Setstat(
-                        hosts=["10.156.135.16", "10.156.135.17"],
-                        file_path="/path/to/file.txt",
-                        attrs={
-                            "permissions": 0o644,
-                            "uid": 1000,
-                            "gid": 1000,
-                            "mtime": 1672531200
-                        }
-                    )
+        yield Setstat(
+            hosts=["10.156.135.16", "10.156.135.17"],
+            file_path="/path/to/file.txt",
+            attrs={
+                "permissions": 0o644,
+                "uid": 1000,
+                "gid": 1000,
+                "mtime": 1672531200
+            }
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where

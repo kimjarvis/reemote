@@ -7,11 +7,7 @@ class Get_TmpDir:
 
     .. code:: python
 
-        class Get_tmpdir_example:
-            def execute(self):
-                from reemote.facts.server.get_ import Get_tmpdir
-                r = yield Get_tmpdir()
-                print(r.cp.stdout)
+        yield Get_tmpdir()
 
     """
     def execute(self):

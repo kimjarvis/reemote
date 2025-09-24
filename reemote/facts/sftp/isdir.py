@@ -15,12 +15,10 @@ class Isdir:
 
     .. code:: python
 
-            class GetIsDirExample:
-                def execute(self):
-                    yield Get_isdir(
-                        hosts=["10.156.135.16", "10.156.135.17"],
-                        path="/path/to/directory"
-                    )
+        yield Get_isdir(
+            hosts=["10.156.135.16", "10.156.135.17"],
+            path="/path/to/directory"
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where

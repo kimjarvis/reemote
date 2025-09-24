@@ -14,12 +14,10 @@ class Islink:
 
     .. code:: python
 
-            class GetIsLinkExample:
-                def execute(self):
-                    yield Get_islink(
-                        hosts=["10.156.135.16", "10.156.135.17"],
-                        path="/path/to/symlink"
-                    )
+        yield Get_islink(
+            hosts=["10.156.135.16", "10.156.135.17"],
+            path="/path/to/symlink"
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where

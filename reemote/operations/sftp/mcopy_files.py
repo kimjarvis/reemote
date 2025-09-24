@@ -27,24 +27,19 @@ class Mcopy_files:
 
     .. code:: python
 
-        class Mcopy_files_example:
-            def execute(self):
-                from reemote.operations.filesystem.mkdir import Mkdir
-                from reemote.operations.filesystem.copy_files import Mcopy_files
-                src_dir = '/home/user/'
-                dst_dir = '/home/user/backup/'
-                r = yield Mkdir(path=dst_dir, attrs=SFTPAttrs(permissions=0o755), hosts=["10.156.135.16"])
-
-                r = yield Mcopy_files(
-                    srcpaths=src_dir + '*.txt',  # Using wildcard pattern
-                    dstpath=dst_dir,
-                    preserve=True,
-                    recurse=True,
-                    progress_handler=my_progress_callback,
-                    hosts=["10.156.135.16"]
-                )
-                r = yield Shell(f"ls {dst_dir}/backup/")
-                print(r.cp.stdout)
+        src_dir = '/home/user/'
+        dst_dir = '/home/user/backup/'
+        r = yield Mkdir(path=dst_dir, attrs=SFTPAttrs(permissions=0o755), hosts=["10.156.135.16"])
+        r = yield Mcopy_files(
+            srcpaths=src_dir + '*.txt',  # Using wildcard pattern
+            dstpath=dst_dir,
+            preserve=True,
+            recurse=True,
+            progress_handler=my_progress_callback,
+            hosts=["10.156.135.16"]
+        )
+        r = yield Shell(f"ls {dst_dir}/backup/")
+        print(r.cp.stdout)
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

@@ -21,13 +21,11 @@ class Rename:
 
     .. code:: python
 
-        class RenameExample:
-            def execute(self):
-                yield Rename(
-                    oldpath='/home/user/oldname.txt',
-                    newpath='/home/user/newname.txt',
-                    hosts=["10.156.135.16", "10.156.135.17"]
-                )
+        yield Rename(
+            oldpath='/home/user/oldname.txt',
+            newpath='/home/user/newname.txt',
+            hosts=["10.156.135.16", "10.156.135.17"]
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where

@@ -17,13 +17,11 @@ class Makedirs:
 
     .. code:: python
 
-        class Create_dirs_example:
-            def execute(self):
-                yield Makedirs(path='/home/user/hfs/subdir1/subdir2',
-                     attrs=SFTPAttrs(permissions=0o755),
-                     exist_ok=True,
-                     hosts=["10.156.135.16", "10.156.135.17"],
-                )
+        yield Makedirs(path='/home/user/hfs/subdir1/subdir2',
+             attrs=SFTPAttrs(permissions=0o755),
+             exist_ok=True,
+             hosts=["10.156.135.16", "10.156.135.17"],
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

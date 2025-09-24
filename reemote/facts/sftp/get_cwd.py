@@ -14,11 +14,9 @@ class Get_cwd:
 
     .. code:: python
 
-            class GetcwdExample:
-                def execute(self):
-                    yield Getcwd(
-                        hosts=["10.156.135.16", "10.156.135.17"]
-                    )
+        yield Getcwd(
+            hosts=["10.156.135.16", "10.156.135.17"]
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where

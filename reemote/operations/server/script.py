@@ -14,13 +14,11 @@ class Script:
 
     .. code:: python
 
-        class Shell_example:
-            def execute(self):
-                from reemote.operations.server.script import Script
-                # Execute a shell command on all hosts
-                yield Script(text="echo Hello World")
-                # The result is available in stdout
-                print(r.cp.stdout)
+        from reemote.operations.server.script import Script
+        # Execute a shell command on all hosts
+        yield Script(text="echo Hello World")
+        # The result is available in stdout
+        print(r.cp.stdout)
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

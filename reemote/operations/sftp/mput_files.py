@@ -27,20 +27,18 @@ class Mput_files:
 
     .. code:: python
 
-        class Mput_file_example:
-            def execute(self):
-                from reemote.operations.filesystem.mput_files import Mput_files
-                dir='/home/user/dir'
-                r = yield Mkdir(path=dir, attrs=SFTPAttrs(permissions=0o755))
-                r = yield Mput_files(
-                    localpaths='~/reemote/development/hfs/*',
-                    remotepath=dir,
-                    preserve=True,
-                    recurse=True,
-                    progress_handler=my_progress_callback
-                )
-                r = yield Shell(f"tree {dir}")
-                print(r.cp.stdout)
+        from reemote.operations.filesystem.mput_files import Mput_files
+        dir='/home/user/dir'
+        r = yield Mkdir(path=dir, attrs=SFTPAttrs(permissions=0o755))
+        r = yield Mput_files(
+            localpaths='~/reemote/development/hfs/*',
+            remotepath=dir,
+            preserve=True,
+            recurse=True,
+            progress_handler=my_progress_callback
+        )
+        r = yield Shell(f"tree {dir}")
+        print(r.cp.stdout)
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

@@ -11,11 +11,7 @@ class Get_OS:
 
     .. code:: python
 
-        class Packages_example:
-            def execute(self):
-                from reemote.facts.server.get_os import Get_OS
-                r = yield Get_OS("NAME")
-                print(r.cp.stdout)
+        yield Get_OS("NAME")
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

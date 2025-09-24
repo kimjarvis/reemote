@@ -7,11 +7,7 @@ class Get_User:
 
     .. code:: python
 
-        class Get_user_example:
-            def execute(self):
-                from reemote.facts.server.get_ import Get_user
-                r = yield Get_user()
-                print(r.cp.stdout)
+        yield Get_user()
 
     """
     def execute(self):

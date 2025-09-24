@@ -11,11 +11,7 @@ class Update:
 
     .. code:: python
 
-        class Update_example:
-            def execute(self):
-                from reemote.operations.apk.update import Update
-                # Update the packages on all hosts
-                r = yield Update()
+        yield Update()
 
     Usage:
         Update installed packages.

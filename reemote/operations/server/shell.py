@@ -16,13 +16,10 @@ class Shell:
 
     .. code:: python
 
-        class Shell_example:
-            def execute(self):
-                from reemote.operations.server.shell import Shell
-                # Execute a shell command on all hosts
-                r = yield Shell("echo Hello World")
-                # The result is available in stdout
-                print(r.cp.stdout)
+        # Execute a shell command on all hosts
+        r = yield Shell("echo Hello World")
+        # The result is available in stdout
+        print(r.cp.stdout)
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

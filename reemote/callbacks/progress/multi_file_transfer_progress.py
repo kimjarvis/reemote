@@ -1,5 +1,13 @@
 class Multi_file_transfer_progress:
-    """Progress handler that tracks multiple files"""
+    """
+    Progress handler that tracks multiple files
+
+    Args:
+        src_path: Source file path
+        dst_path: Destination file path
+        copied_bytes: Number of bytes copied so far
+        total_bytes: Total bytes to copy (None if unknown)
+    """
 
     def __init__(self):
         self.files = {}

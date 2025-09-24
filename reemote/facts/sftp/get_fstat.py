@@ -16,12 +16,10 @@ class Get_fstat:
 
     .. code:: python
 
-            class GetFstatExample:
-                def execute(self):
-                    yield Get_fstat(
-                        hosts=["10.156.135.16", "10.156.135.17"],
-                        file_handle=file_handle
-                    )
+        yield Get_fstat(
+            hosts=["10.156.135.16", "10.156.135.17"],
+            file_handle=file_handle
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where

@@ -7,11 +7,7 @@ class Get_Hostname:
 
     .. code:: python
 
-        class Get_hostname_example:
-            def execute(self):
-                from reemote.facts.server.get_ import Get_hostname
-                r = yield Get_hostname()
-                print(r.cp.stdout)
+        yield Get_hostname()
 
     """
     def execute(self):

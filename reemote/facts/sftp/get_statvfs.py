@@ -15,12 +15,10 @@ class Get_statvfs:
     **Examples:**
     .. code:: python
 
-            class GetStatvfsExample:
-                def execute(self):
-                    yield Get_statvfs(
-                        hosts=["10.156.135.16", "10.156.135.17"],
-                        path="/home/user"
-                    )
+        yield Get_statvfs(
+            hosts=["10.156.135.16", "10.156.135.17"],
+            path="/home/user"
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where

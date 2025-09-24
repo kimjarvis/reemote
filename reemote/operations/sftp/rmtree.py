@@ -19,11 +19,10 @@ class Rmtree:
 
     .. code:: python
 
-        class Rmtree_example:
-            def execute(self):
-                yield Rmtree(path='/home/user/hfs',
-                           ignore_errors=False,
-                           hosts=["10.156.135.16", "10.156.135.17"])
+        yield Rmtree(path='/home/user/hfs',
+           ignore_errors=False,
+           hosts=["10.156.135.16", "10.156.135.17"],
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

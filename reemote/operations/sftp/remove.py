@@ -14,12 +14,10 @@ class Remove:
 
     .. code:: python
 
-            class Remove_example:
-                def execute(self):
-                    yield Remove(
-                        path='/home/user/unwanted_file.txt',
-                        hosts=["10.156.135.16", "10.156.135.17"]
-                    )
+        yield Remove(
+            path='/home/user/unwanted_file.txt',
+            hosts=["10.156.135.16", "10.156.135.17"]
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

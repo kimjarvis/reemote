@@ -26,22 +26,18 @@ class Mget_files:
 
     .. code:: python
 
-        class Mget_file_example:
-            def execute(self):
-                from reemote.operations.filesystem.mget_files import Mget_files
+        remote_dir = '/home/user/remote_data'
+        local_dir = '/home/user/local_downloads'
 
-                remote_dir = '/home/user/remote_data'
-                local_dir = '/home/user/local_downloads'
-
-                r = yield Mget_files(
-                    remotepaths=f"{remote_dir}/*.log",
-                    localpath=local_dir,
-                    preserve=True,
-                    recurse=True,
-                    progress_handler=my_progress_callback
-                )
-                r = yield Shell(f"ls -la {local_dir}")
-                print(r.cp.stdout)
+        r = yield Mget_files(
+            remotepaths=f"{remote_dir}/*.log",
+            localpath=local_dir,
+            preserve=True,
+            recurse=True,
+            progress_handler=my_progress_callback
+        )
+        r = yield Shell(f"ls -la {local_dir}")
+        print(r.cp.stdout)
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

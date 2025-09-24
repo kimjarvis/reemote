@@ -26,21 +26,16 @@ class Copy_files:
 
     .. code:: python
 
-            class Copy_files_example:
-            def execute(self):
-                from reemote.operations.filesystem.copy_files import Copy_files
-                src_dir = '/home/user/'
-                dst_dir = '/home/user/'
-                r = yield Copy_files(
-                    srcpaths=src_dir + '/example.txt',
-                    dstpath=dst_dir+ '/example1.txt',
-                    preserve=True,
-                    recurse=True,
-                    progress_handler=my_progress_callback,
-                    hosts=["10.156.135.16"]
-            )
-            r = yield Shell(f"cat {dst_dir}/example1.txt")
-            print(r.cp.stdout)
+        src_dir = '/home/user/'
+        dst_dir = '/home/user/'
+        r = yield Copy_files(
+            srcpaths=src_dir + '/example.txt',
+            dstpath=dst_dir+ '/example1.txt',
+            preserve=True,
+            recurse=True,
+            progress_handler=my_progress_callback,
+            hosts=["10.156.135.16"]
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

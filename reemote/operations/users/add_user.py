@@ -14,13 +14,10 @@ class Add_user:
 
     .. code:: python
 
-        class Add_user_example:
-            def execute(self):
-                from reemote.operations.server.add_user import Add_user
-                # Create a new user with password
-                yield Add_user(user="john", password="secret123")
-                # Create a user with sudo privileges
-                yield Add_user(user="admin", password="admin123", sudo=True)
+        # Create a new user with password
+        yield Add_user(user="john", password="secret123")
+        # Create a user with sudo privileges
+        yield Add_user(user="admin", password="admin123", sudo=True)
 
     Usage:
         This class is designed to be used in a generator-based workflow where user creation

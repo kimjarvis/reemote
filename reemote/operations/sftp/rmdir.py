@@ -14,12 +14,10 @@ class Rmdir:
 
     .. code:: python
 
-            class Rmdir_example:
-                def execute(self):
-                    yield Rmdir(
-                        path='/home/user/hfs',
-                        hosts=["10.156.135.16", "10.156.135.17"]
-                    )
+        yield Rmdir(
+            path='/home/user/hfs',
+            hosts=["10.156.135.16", "10.156.135.17"]
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands

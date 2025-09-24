@@ -15,12 +15,10 @@ class Check_exists:
 
     .. code:: python
 
-            class CheckExistsExample:
-                def execute(self):
-                    yield Check_exists(
-                        hosts=["10.156.135.16", "10.156.135.17"],
-                        path="/path/to/check"
-                    )
+        yield Check_exists(
+            hosts=["10.156.135.16", "10.156.135.17"],
+            path="/path/to/check"
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where

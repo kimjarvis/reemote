@@ -15,13 +15,10 @@ class Add_sudo_user:
 
     .. code:: python
 
-        class Add_sudo_user_example:
-            def execute(self):
-                from reemote.operations.server.add_sudo_user import Add_sudo_user
-                # Create a new user with sudo privileges
-                yield Add_sudo_user(user="admin", password="securepass123")
-                # Create a sudo user with specific privilege escalation
-                yield Add_sudo_user(user="deployer", password="deploy123", sudo=True)
+        # Create a new user with sudo privileges
+        yield Add_sudo_user(user="admin", password="securepass123")
+        # Create a sudo user with specific privilege escalation
+        yield Add_sudo_user(user="deployer", password="deploy123", sudo=True)
 
     Usage:
         This class is designed to be used in a generator-based workflow where user creation

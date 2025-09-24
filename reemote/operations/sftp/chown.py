@@ -19,14 +19,12 @@ class Chown:
 
     .. code:: python
 
-            class ChownExample:
-                def execute(self):
-                    yield Chown(
-                        path='/home/user/file.txt',
-                        owner='newuser',
-                        group='newgroup',
-                        hosts=["10.156.135.16", "10.156.135.17"]
-                    )
+        yield Chown(
+            path='/home/user/file.txt',
+            owner='newuser',
+            group='newgroup',
+            hosts=["10.156.135.16", "10.156.135.17"]
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where
