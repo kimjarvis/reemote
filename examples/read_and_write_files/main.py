@@ -1,6 +1,6 @@
 import asyncio
-from reemote.operations.filesystem.get_file import Get_file
-from reemote.operations.filesystem.put_file import Put_file
+from reemote.operations.sftp.read_file import Read_file
+from reemote.operations.sftp.write_file import Write_file
 from reemote.execute import execute
 from reemote.produce_json import produce_json
 from reemote.produce_table import produce_table
@@ -42,11 +42,11 @@ async def main():
 
 class Hello:
     def execute(self):
-        r = yield Operation("echo hello1")
+        r = yield Operation("Read and Write", composite=True)
         r.changed = False
-        r1 = yield Get_file(path='example.txt', host=inventory()[0][0]['host'])
+        r1 = yield Read_file(path='example.txt', hosts=inventory()[0][0]['host'])
         # print(">>",r1)
-        r2 = yield Put_file(path='example.txt', text='hello world')
+        r2 = yield Write_file(path='example.txt', text='hello world')
         # print(">>",r2)
 
 if __name__ == "__main__":

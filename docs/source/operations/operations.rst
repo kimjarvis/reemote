@@ -10,6 +10,7 @@ This section contains documentation for various operations supported by Reemote.
    apt
    dnf
    dpkg
+   filesystem
    pip
    pipx
    scp

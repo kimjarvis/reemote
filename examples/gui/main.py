@@ -3,12 +3,12 @@ from gui.gui import Gui
 from reemote.execute import execute
 from reemote.produce_grid import produce_grid
 from reemote.produce_json import produce_json
-from reemote.operations.sftp.mkdir import Mkdir
+from reemote.operations.filesystem.directory import Directory
 
 
 async def Control_directory(gui):
     responses = await execute(app.storage.user["inventory"],
-                              Mkdir(path="/tmp/mydir", su=True))
+                              Directory(path="/tmp/mydir", present=app.storage.user["present"]))
     app.storage.user["columnDefs"],app.storage.user["rowData"] = produce_grid(produce_json(responses))
     gui.execution_report.refresh()
 
