@@ -2,12 +2,12 @@ import argparse
 import asyncio
 import sys
 from reemote.execute import execute
-from reemote.produce_table import produce_table
-from reemote.produce_output_table import produce_output_table
-from reemote.produce_json import produce_json
-from reemote.verify_python_file import verify_python_file
-from reemote.validate_inventory_file_and_get_inventory import validate_inventory_file_and_get_inventory
-from reemote.validate_inventory_structure import validate_inventory_structure
+from reemote.utilities.produce_table import produce_table
+from reemote.utilities.produce_output_table import produce_output_table
+from reemote.utilities.produce_json import produce_json
+from reemote.utilities.verify_python_file import verify_python_file
+from reemote.utilities.validate_inventory_file_and_get_inventory import validate_inventory_file_and_get_inventory
+from reemote.utilities.validate_inventory_structure import validate_inventory_structure
 from reemote.operations.filesystem.directory import Directory
 
 def str_to_bool(value):

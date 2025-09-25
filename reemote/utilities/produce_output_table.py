@@ -1,10 +1,9 @@
 import json
-import os
 
-from reemote.generate_execution_results import generate_table
+from reemote.utilities.generate_execution_output import generate_table
 
 
-def produce_table(json_output: tuple[str, str]):
+def produce_output_table(json_output: tuple[str, str]):
     # Ensure the output directory exists
     # output_dir = "development/output"
     # os.makedirs(output_dir, exist_ok=True)

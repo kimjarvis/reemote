@@ -1,8 +1,8 @@
 import os
 #
-from reemote.produce_grid import produce_grid
-from reemote.produce_table import produce_table
-from reemote.produce_json import produce_json
+from reemote.utilities.produce_grid import produce_grid
+from reemote.utilities.produce_table import produce_table
+from reemote.utilities.produce_json import produce_json
 
 def write_responses_to_file(type: str=None, filepath: str=None, responses=None):
     if type == "json":

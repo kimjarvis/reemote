@@ -1,8 +1,8 @@
 from nicegui import ui, native, app
 from reemote.gui import Gui
 from reemote.execute import execute
-from reemote.produce_grid import produce_grid
-from reemote.produce_json import produce_json
+from reemote.utilities.produce_grid import produce_grid
+from reemote.utilities.produce_json import produce_json
 from reemote.operations.server.shell import Shell
 
 class Hello_world:

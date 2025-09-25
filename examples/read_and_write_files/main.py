@@ -2,10 +2,9 @@ import asyncio
 from reemote.operations.sftp.read_file import Read_file
 from reemote.operations.sftp.write_file import Write_file
 from reemote.execute import execute
-from reemote.produce_json import produce_json
-from reemote.produce_table import produce_table
+from reemote.utilities.produce_json import produce_json
+from reemote.utilities.produce_table import produce_table
 from reemote.operation import Operation
-from typing import List, Tuple, Dict, Any
 
 from typing import List, Tuple, Dict, Any
 

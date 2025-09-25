@@ -1,7 +1,7 @@
 from nicegui import app, events, ui
 
-from reemote.validate_inventory_structure import validate_inventory_structure
-from reemote.verify_inventory_connect import verify_inventory_connect
+from reemote.utilities.validate_inventory_structure import validate_inventory_structure
+from reemote.utilities.verify_inventory_connect import verify_inventory_connect
 
 
 class Gui:

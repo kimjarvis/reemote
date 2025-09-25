@@ -1,13 +1,13 @@
 import sys
 from nicegui import native
 from reemote.execute import execute
-from reemote.produce_grid import produce_grid
-from reemote.produce_output_grid import produce_output_grid
-from reemote.produce_json import produce_json
-from reemote.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
-from reemote.validate_root_class_name_and_get_root_class import validate_root_class_name_and_get_root_class
+from reemote.utilities.produce_grid import produce_grid
+from reemote.utilities.produce_output_grid import produce_output_grid
+from reemote.utilities.produce_json import produce_json
+from reemote.utilities.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
+from reemote.utilities.validate_root_class_name_and_get_root_class import validate_root_class_name_and_get_root_class
 from reemote.gui.local_file_picker import local_file_picker
-from reemote.get_classes_in_source import get_classes_in_source
+from reemote.utilities.get_classes_in_source import get_classes_in_source
 from reemote.operations.server.shell import Shell
 from reemote.operations.sftp.read_file import Read_file
 from reemote.operations.sftp.write_file import Write_file
@@ -16,8 +16,8 @@ from reemote.utilities.parse_kwargs_string import parse_kwargs_string
 
 from nicegui import events, ui
 
-from reemote.validate_inventory_structure import validate_inventory_structure
-from reemote.verify_inventory_connect import verify_inventory_connect
+from reemote.utilities.validate_inventory_structure import validate_inventory_structure
+from reemote.utilities.verify_inventory_connect import verify_inventory_connect
 
 class Execution_report:
     def __init__(self):

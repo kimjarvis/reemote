@@ -1,9 +1,9 @@
 import json
 
-from reemote.generate_execution_results import generate_grid
+from reemote.utilities.generate_execution_output import generate_grid
 
 
-def produce_grid(json_output: tuple[str, str]):
+def produce_output_grid(json_output: tuple[str, str]):
     # Parse the JSON data first, then pass it to generate_table
     # Generate the RST table and write it to out.rst
     try:
