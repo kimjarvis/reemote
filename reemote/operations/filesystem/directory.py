@@ -18,7 +18,8 @@ class Directory:
 
         yield Directory(
             path='/home/user/hfs',
-            present=True
+            present=True,
+            attrs=asyncssh.SFTPAttrs(),
         )
 
     Usage:

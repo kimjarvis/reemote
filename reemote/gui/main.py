@@ -6,11 +6,12 @@ from reemote.produce_output_grid import produce_output_grid
 from reemote.produce_json import produce_json
 from reemote.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
 from reemote.validate_root_class_name_and_get_root_class import validate_root_class_name_and_get_root_class
-from development.deploy_manager.local_file_picker import local_file_picker
+from reemote.gui.local_file_picker import local_file_picker
 from reemote.get_classes_in_source import get_classes_in_source
 from reemote.operations.server.shell import Shell
-from reemote.operations.filesystem.get_file import Get_file
-from reemote.operations.filesystem.put_file import Put_file
+from reemote.operations.sftp.read_file import Read_file
+from reemote.operations.sftp.write_file import Write_file
+from reemote.utilities.parse_kwargs_string import parse_kwargs_string
 
 
 from nicegui import events, ui
@@ -77,10 +78,14 @@ class Sources_upload:
         self.source= "/"
         self._classes = []
         self.deployment = ""
+        self.kwargs = ""
 
     @ui.refreshable
     def classes(self):
         return ui.select(self._classes).bind_value(self, 'deployment')
+
+    def _kwargs(self):
+        return ui.input(label='kwargs', placeholder='kwargs string').bind_value(self, 'kwargs')
 
     async def pick_file(self) -> None:
         result = await local_file_picker('~', multiple=False)
@@ -131,7 +136,12 @@ async def run_the_deploy(inv, er, stdout, sources):
             print("root class not found")
             sys.exit(1)
 
-        responses = await execute(inv.inventory, Wrapper(root_class))
+        # Parse parameters into kwargs
+        kwargs = parse_kwargs_string(sources.kwargs)
+        responses = []
+        responses = await execute(inventory(), root_class(**kwargs))
+        # responses = await execute(inv.inventory, Wrapper(root_class))
+        # responses = await execute(inv.inventory, root_class(**sources.kwargs))
         c, r =produce_grid(produce_json(responses))
         er.set(c, r)
         er.execution_report.refresh()
@@ -165,7 +175,7 @@ class File_path:
         self.path = ""
 
 async def Download_file(inv, fp, sr, er):
-    responses = await execute(inv.inventory,Get_file(path=fp.path,host=inv.inventory)) # [0][0]['host']
+    responses = await execute(inv.inventory,Read_file(path=fp.path)) # [0][0]['host']
     c, r = produce_grid(produce_json(responses))
     er.set(c, r)
     er.execution_report.refresh()
@@ -178,7 +188,7 @@ async def pick_file(inv, fp, sr, er) -> None:
     ui.notify(f'Uploading file {result}')
     with open(result[0], 'r', encoding='utf-8') as file:
         text = file.read()
-    responses = await execute(inv.inventory,Put_file(path=fp.path,text=text))
+    responses = await execute(inv.inventory,Write_file(path=fp.path,text=text))
     c, r = produce_grid(produce_json(responses))
     er.set(c, r)
     er.execution_report.refresh()
@@ -437,6 +447,13 @@ def page():
                 ui.markdown("""
                 Choose a deployment from the drop down list.  
                 """)
+
+            with ui.row():
+                sources._kwargs()
+                ui.markdown("""
+                Input the deployment arguments eg. "present=True".  
+                """)
+
             with ui.row():
                 ui.button('Deploy', on_click=lambda: run_the_deploy(inv, er, sr, sources))
                 ui.markdown("""

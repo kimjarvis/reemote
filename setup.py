@@ -42,7 +42,7 @@ setup(
     entry_points={
         'console_scripts': [
             'reemote=reemote.cli:_main',  # Use the synchronous wrapper
-            'reemotecontrol=gui.main:_main'
+            'reemotecontrol=reemote.gui.main:_main'
         ],
     },
 )

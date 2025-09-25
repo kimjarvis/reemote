@@ -8,7 +8,7 @@ The Reemote Package Manager GUI presents an overview of all of the packages inst
 
 .. code-block:: bash
 
-    reemotepm
+    reemotecontrol
 
 The command starts a new browser window.
 

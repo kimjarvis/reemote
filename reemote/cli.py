@@ -1,5 +1,6 @@
 import asyncio
-import ast
+
+from reemote.utilities.parse_kwargs_string import parse_kwargs_string
 from reemote.validate_inventory_file_and_get_inventory import validate_inventory_file_and_get_inventory
 from reemote.validate_root_class_name_and_get_root_class import validate_root_class_name_and_get_root_class
 from reemote.execute import execute
@@ -11,26 +12,6 @@ from reemote.produce_table import produce_table
 from reemote.produce_output_table import produce_output_table
 from reemote.produce_json import produce_json
 
-
-def parse_kwargs_string(param_str):
-    """Parse 'key=value,key2=value2' string into dict."""
-    if not param_str:
-        return {}
-    kwargs = {}
-    for pair in param_str.split(','):
-        key, value_str = pair.split('=', 1)
-        key = key.strip()
-        value_str = value_str.strip()
-
-        # Safely evaluate the value (handles True, False, None, numbers, strings)
-        try:
-            value = ast.literal_eval(value_str)
-        except (ValueError, SyntaxError):
-            # Fallback: treat as string if literal_eval fails
-            value = value_str
-
-        kwargs[key] = value
-    return kwargs
 
 async def main():
     import argparse
