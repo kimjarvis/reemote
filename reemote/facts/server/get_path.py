@@ -7,11 +7,7 @@ class Get_Path:
 
     .. code:: python
 
-        class Get_path_example:
-            def execute(self):
-                from reemote.facts.server.get_ import Get_path
-                r = yield Get_path()
-                print(r.cp.stdout)
+        yield Get_path()
 
     """
     def execute(self):

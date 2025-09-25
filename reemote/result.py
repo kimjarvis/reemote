@@ -7,7 +7,7 @@ from reemote.operation import serialize_operation
 
 class Result:
 
-    def __init__(self, cp: SSHCompletedProcess, host: str, op: Operation, changed: bool = False, executed: bool = False):
+    def __init__(self, cp: SSHCompletedProcess=None, host: str=None, op: Operation=None, changed: bool = False, executed: bool = False):
         self.host = host
         self.op = op
         self.changed = changed

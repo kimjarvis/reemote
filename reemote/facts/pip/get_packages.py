@@ -33,11 +33,7 @@ class Get_packages:
 
     .. code:: python
 
-        class Get_packages::
-            def execute(self):
-                from reemote.facts.apt.get_packages import Get_packages
-                r = yield Get_packages()
-                print(r.cp.stdout)
+        yield Get_packages()
 
     """
     def execute(self):

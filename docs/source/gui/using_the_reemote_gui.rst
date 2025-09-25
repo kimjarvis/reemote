@@ -8,7 +8,7 @@ The Reemote Package Manager GUI presents an overview of all of the packages inst
 
 .. code-block:: bash
 
-    reemotepm
+    reemotecontrol
 
 The command starts a new browser window.
 
@@ -20,6 +20,8 @@ Inventory
    :align: center
    :alt: Inventory
 
+Use the inventory page to upload an inventory.
+
 Deployment Manager
 ------------------
 
@@ -28,13 +30,17 @@ Deployment Manager
    :align: center
    :alt: Deployment Manager
 
-Ad Hoc commands
+Start a deployment from the deployment manager.
+
+Ad-hoc commands
 ---------------
 
 .. image:: Screenshot_20250921_204117.png
    :width: 100%
    :align: center
-   :alt: Ad Hoc commands
+   :alt: Ad-hoc commands
+
+Perform an Ad-hoc command on all your servers.
 
 File Manger
 -----------
@@ -44,6 +50,8 @@ File Manger
    :align: center
    :alt: File Manger
 
+Upload and download files on all your servers.
+
 Package Manager
 ---------------
 
@@ -51,3 +59,5 @@ Package Manager
    :width: 100%
    :align: center
    :alt: Package Manger
+
+View package versions and update packages on all your servers.

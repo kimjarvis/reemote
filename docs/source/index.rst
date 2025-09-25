@@ -16,7 +16,7 @@ This example manages apk package versions on all servers in an inventory.
    :caption: Contents:
 
    installation
-   gettingstarted
+   examples/examples
    inventory
    deployment
    gui/using_the_reemote_gui
@@ -25,3 +25,5 @@ This example manages apk package versions on all servers in an inventory.
    operations/operations
    facts/facts
    deployments/deployments
+   callbacks/callbacks
+

@@ -13,5 +13,8 @@ This section contains documentation for various operations supported by Reemote.
    filesystem
    pip
    pipx
+   scp
    server
+   sftp
+   users
    yum

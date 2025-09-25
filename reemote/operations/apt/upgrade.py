@@ -14,11 +14,9 @@ class Upgrade:
 
     .. code:: python
 
-        class Upgrade_example:
-            def execute(self):
-                from reemote.operations.apk.upgrade import Upgrade
-                # Upgrade the packages on all hosts
-                r = yield Upgrade()
+        from reemote.operations.apk.upgrade import Upgrade
+        # Upgrade the packages on all hosts
+        r = yield Upgrade()
 
     Usage:
         Upgrade installed packages.

@@ -7,11 +7,7 @@ class Get_Date:
 
     .. code:: python
 
-        class Get_arch_example:
-            def execute(self):
-                from reemote.facts.server.get_date import Get_Date
-                r = yield Get_Date()
-                print(r.cp.stdout)
+        yield Get_Date()
 
     """
     def execute(self):

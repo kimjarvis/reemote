@@ -13,13 +13,7 @@ class Info:
 
     .. code:: python
 
-        class Info_example:
-            def execute(self):
-                from reemote.operations.apk.info import Info
-                # Get the package information on all hosts
-                r = yield Info(package='vim')
-                # View the package information
-                print(r.cp.stdout)
+        yield Info(package='vim')
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

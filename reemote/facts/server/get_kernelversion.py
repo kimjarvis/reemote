@@ -7,11 +7,7 @@ class Get_KernelVersion:
 
     .. code:: python
 
-        class Get_kernelversion_example:
-            def execute(self):
-                from reemote.facts.server.get_ import Get_kernelversion
-                r = yield Get_kernelversion()
-                print(r.cp.stdout)
+        yield Get_kernelversion()
 
     """
     def execute(self):

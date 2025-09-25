@@ -15,20 +15,18 @@ class Packages:
 
     .. code:: python
 
-        class Dpkg_packages_example:
-            def execute(self):
-                from reemote.operations.apt.packages import Packages
-                from reemote.operations.server.shell import Shell
-                # Add the packages on all hosts
-                r = yield Packages(packages=["vim"],present=True, sudo=True)
-                # Verify installation
-                r = yield Shell("which vim")
-                print(r.cp.stdout)
-                # Delete the packages on all hosts
-                r = yield Packages(packages=["vim"],present=False, sudo=True)
-                # Verify removal
-                r = yield Shell("which vim")
-                print(r.cp.stdout)
+        from reemote.operations.apt.packages import Packages
+        from reemote.operations.server.shell import Shell
+        # Add the packages on all hosts
+        r = yield Packages(packages=["vim"],present=True, sudo=True)
+        # Verify installation
+        r = yield Shell("which vim")
+        print(r.cp.stdout)
+        # Delete the packages on all hosts
+        r = yield Packages(packages=["vim"],present=False, sudo=True)
+        # Verify removal
+        r = yield Shell("which vim")
+        print(r.cp.stdout)
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.

@@ -7,11 +7,7 @@ class Get_Kernel:
 
     .. code:: python
 
-        class Get_kernel_example:
-            def execute(self):
-                from reemote.facts.server.get_ import Get_kernel
-                r = yield Get_kernel()
-                print(r.cp.stdout)
+        yield Get_kernel()
 
     """
     def execute(self):

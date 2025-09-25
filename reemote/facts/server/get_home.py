@@ -7,11 +7,7 @@ class Get_Home:
 
     .. code:: python
 
-        class Get_home_example:
-            def execute(self):
-                from reemote.facts.server.get_ import Get_home
-                r = yield Get_home()
-                print(r.cp.stdout)
+        yield Get_home()
 
     """
     def execute(self):

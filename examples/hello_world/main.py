@@ -1,7 +1,7 @@
 import asyncio
 from reemote.execute import execute
-from reemote.produce_json import produce_json
-from reemote.produce_table import produce_table
+from reemote.utilities.produce_json import produce_json
+from reemote.utilities.produce_table import produce_table
 from reemote.operations.server.shell import Shell
 
 from typing import List, Tuple, Dict, Any

@@ -1,85 +1,35 @@
-#!/usr/bin/env python3
-import argparse
-import os
-import sys
-import argparse
 import asyncio
-import sys
-import os
-import ast
 
-from reemote.validate_inventory_file_and_get_inventory import validate_inventory_file_and_get_inventory
-from reemote.validate_root_class_name_and_get_root_class import validate_root_class_name_and_get_root_class
-from reemote.verify_inventory_connect import verify_inventory_connect
+from reemote.utilities.parse_kwargs_string import parse_kwargs_string
+from reemote.utilities.validate_inventory_file_and_get_inventory import validate_inventory_file_and_get_inventory
+from reemote.utilities.validate_root_class_name_and_get_root_class import validate_root_class_name_and_get_root_class
 from reemote.execute import execute
-from reemote.verify_python_file import verify_python_file
-from reemote.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
-from reemote.validate_inventory_structure import validate_inventory_structure
-from reemote.write_responses_to_file import write_responses_to_file
-from reemote.produce_json import produce_json
-from reemote.produce_table import produce_table
-import argparse
+from reemote.utilities.verify_python_file import verify_python_file
+from reemote.utilities.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
+from reemote.utilities.validate_inventory_structure import validate_inventory_structure
+from reemote.utilities.write_responses_to_file import write_responses_to_file
+from reemote.utilities.produce_table import produce_table
+from reemote.utilities.produce_output_table import produce_output_table
+from reemote.utilities.produce_json import produce_json
 
-from typing import List, Tuple, Dict, Any
-
-class Wrapper:
-
-    def __init__(self, command):
-        self.command = command
-
-    def execute(self):
-        # Execute a shell command on all hosts
-        r = yield self.command()
-        # The result is available in stdout
-        print(r.cp.stdout)
-
-class Shell:
-
-    def __init__(self, command):
-        self.command = command
-
-    def execute(self):
-        from reemote.operations.server.shell import Shell
-        # Execute a shell command on all hosts
-        r = yield Shell(self.command)
-        # The result is available in stdout
-        print(r.cp.stdout)
-
-def parse_kwargs_string(param_str):
-    """Parse 'key=value,key2=value2' string into dict."""
-    if not param_str:
-        return {}
-    kwargs = {}
-    for pair in param_str.split(','):
-        key, value_str = pair.split('=', 1)
-        key = key.strip()
-        value_str = value_str.strip()
-
-        # Safely evaluate the value (handles True, False, None, numbers, strings)
-        try:
-            value = ast.literal_eval(value_str)
-        except (ValueError, SyntaxError):
-            # Fallback: treat as string if literal_eval fails
-            value = value_str
-
-        kwargs[key] = value
-    return kwargs
 
 async def main():
-    parser = argparse.ArgumentParser(
-        description="CLI tool with inventory, source, class, and command options.",
-        allow_abbrev=False  # Prevents ambiguous abbreviations
-    )
+    import argparse
+    import sys
+
     # Create the argument parser
     parser = argparse.ArgumentParser(
-        description='Process inventory and source files with a specified class',
-        usage="usage: reemote [-h] [-i INVENTORY_FILE] [-s SOURCE_FILE] [-c CLASS_NAME]",
+        description="CLI tool with inventory, source, class, and kwarg options.",
+        usage="usage: reemote [-h] -i INVENTORY_FILE -s SOURCE_FILE -c CLASS_NAME -k KWARGS",
         epilog="""
-        Example: reemote -i ~/inventory.py -s development/examples/main.py -c Info_example
-                 reemote -i ~/inventory.py -- echo "hello"      
-        """,formatter_class=argparse.RawTextHelpFormatter
+        Example: 
+          reemote -i ~/inventory_alpine1.py -s reemote/operations/users/add_user.py -c Add_user -k user='abc',password='def' -o output.txt -t json
+        """,
+        formatter_class=argparse.RawTextHelpFormatter,
+        allow_abbrev=False  # Prevents ambiguous abbreviations
     )
 
+    # Required arguments
     parser.add_argument(
         "-i", "--inventory",
         required=True,
@@ -89,27 +39,26 @@ async def main():
 
     parser.add_argument(
         "-s", "--source",
+        required=True,
         dest="source",
-        default="",
         help="Path to the source Python file (.py extension required)"
     )
 
     parser.add_argument(
         "-c", "--class",
+        required=True,
         dest="_class",  # 'class' is a keyword, so use '_class'
-        default="",
-        help="Name of the class in source file that has an execute(self) method"
+        help="Name of the deployment class in source file that has an execute(self) method"
     )
-
-    parser.add_argument('--parameters', default='', help='Comma-separated key=value pairs')
 
     parser.add_argument(
-        "command",
-        nargs=argparse.REMAINDER,
-        help="Command to execute (everything after --)"
+        "-k", "--kwargs",
+        required=False,
+        dest="kwargs",
+        help="Path to the kwargs file for the deployment class constructor"
     )
 
-    # Add --output / -o argument
+    # Optional arguments with dependencies
     parser.add_argument(
         '-o', '--output',
         dest='output_file',
@@ -118,7 +67,6 @@ async def main():
         default=None
     )
 
-    # Add --type / -t argument with choices
     parser.add_argument(
         '-t', '--type',
         dest='output_type',
@@ -128,54 +76,17 @@ async def main():
         default=None
     )
 
-    # Check if no arguments were provided (only script name)
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Validate that output and type are either both specified or neither is specified
+    if (args.output_file is not None) != (args.output_type is not None):
+        parser.error("--output (-o) and --type (-t) must both be specified if either is used.")
+
+    # Display help if no arguments are provided
     if len(sys.argv) == 1:
         parser.print_help()
         sys.exit(1)
-
-    args = parser.parse_args()
-
-    # Expand user directory (e.g., ~/inventory.py → /home/kim/inventory.py)
-    args.inventory = os.path.expanduser(args.inventory)
-    if args.source:
-        args.source = os.path.expanduser(args.source)
-
-    # Validation Rule 1: If --class (-c) is specified, --source (-s) and --inventory (-i) must also be specified
-    if args._class and (not args.source or not args.inventory):
-        parser.error("--class requires --source and --inventory to be specified")
-
-    # Validation Rule 2: If --source (-s) is specified, --class (-c) and --inventory (-i) must also be specified
-    if args.source and (not args._class or not args.inventory):
-        parser.error("--source requires --class and --inventory to be specified")
-
-    # Validation Rule 3: If a command is provided (args.command is a list and not empty),
-    # then --source and --class must NOT be specified
-    if args.command and (args.source or args._class):
-        parser.error("Command (after --) cannot be used with --source or --class")
-
-    # Validation Rule 4: --inventory (-i) is always required in both modes
-    if not args.inventory:
-        parser.error("--inventory is required")
-
-    # Validation Rule 5: Exactly one mode must be used: either (-s + -c) OR (command), not both, not neither
-    has_script_mode = bool(args.source and args._class)
-    has_command_mode = bool(args.command)
-
-    # Custom validation: if output is specified, type must be too
-    if args.output_file is not None and args.output_type is None:
-        parser.error("Argument -t/--type is required when -o/--output is specified")
-
-    if not (has_script_mode or has_command_mode):
-        parser.error("You must specify either (-s and -c) OR a command (after --)")
-
-    if has_script_mode and has_command_mode:
-        parser.error("Cannot mix script mode (-s/-c) with command mode (after --)")
-
-    # Print parsed args for debugging/demo (remove in production)
-    # print(f"args.inventory = {repr(args.inventory)}")
-    # print(f"args.source = {repr(args.source)}")
-    # print(f"args._class = {repr(args._class)}")
-    # print(f"args.command = {repr(args.command)}")
 
     # Verify inventory file
     if args.inventory:
@@ -212,13 +123,12 @@ async def main():
             sys.exit(1)
 
     # Parse parameters into kwargs
-    kwargs = parse_kwargs_string(args.parameters)
+    kwargs = parse_kwargs_string(args.kwargs)
 
+    responses=[]
     if args.source:
-        responses = await execute(inventory(), Wrapper(root_class))
+        responses = await execute(inventory(), root_class(**kwargs))
 
-    if args.command:
-        responses = await execute(inventory(), Shell(" ".join(args.command[1:])))
 
     if args.output_type=="json":
         write_responses_to_file(responses = responses, type="json", filepath=args.output_file)
@@ -228,6 +138,7 @@ async def main():
         write_responses_to_file(responses = produce_json(responses), type="grid", filepath=args.output_file)
     else:
         print(produce_table(produce_json(responses)))
+        print(produce_output_table(produce_json(responses)))
 
 def _main():
     """Synchronous wrapper for console_scripts."""
