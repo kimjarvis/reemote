@@ -4,6 +4,7 @@ from asyncssh import SSHCompletedProcess
 from reemote.operation import Operation
 from reemote.result import Result
 
+
 async def run_command_on_local(operation):
     host_info = operation.host_info
     global_info = operation.global_info
@@ -14,19 +15,27 @@ async def run_command_on_local(operation):
 
     try:
         result = await operation.callback(host_info, global_info, command, cp, caller)
+
+        # Set successful return codes for local operations
+        cp.exit_status = 0
+        cp.returncode = 0
         cp.stdout = result
         executed = True
+
         return Result(cp=cp, host=host_info.get("host"), op=operation, executed=executed)
     except Exception as e:
         raw_error = str(e)
+        # Always set proper exit codes for failures, regardless of composite flag
+        cp = SSHCompletedProcess()
+        cp.exit_status = 1
+        cp.returncode = 1
+
         if operation.composite:
             # Composite operations get raw error only
-            return Result(error=raw_error, host=host_info.get("host"), op=operation, executed=True)
+            return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=True)
         else:
             # Non-composite operations get error field only
-            cp = SSHCompletedProcess()
-            cp.exit_status = 1
-            cp.returncode = 1
+            cp.stderr = raw_error  # Also set stderr for consistency
             return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=True)
 
 
@@ -84,24 +93,30 @@ async def run_command_on_host(operation):
 
     except asyncssh.ProcessError as exc:
         raw_error = str(exc)
+        cp = SSHCompletedProcess()
+        cp.exit_status = exc.exit_status if hasattr(exc, 'exit_status') else 1
+        cp.returncode = exc.exit_status if hasattr(exc, 'exit_status') else 1
+
         if operation.composite:
             # Composite operations get raw error only
-            return Result(error=raw_error, host=host_info.get("host"), op=operation, executed=executed)
+            return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=executed)
         else:
             # Non-composite operations get formatted error
             error_msg = f"Process on host {host_info.get('host')} exited with status {exc.exit_status}"
-            return Result(error=error_msg, host=host_info.get("host"), op=operation, executed=executed)
+            cp.stderr = raw_error
+            return Result(cp=cp, error=error_msg, host=host_info.get("host"), op=operation, executed=executed)
 
     except (OSError, asyncssh.Error) as e:
         raw_error = str(e)
+        cp = SSHCompletedProcess()
+        cp.exit_status = 1
+        cp.returncode = 1
+
         if operation.composite:
             # Composite operations (like Directory) get raw error only
-            return Result(error=raw_error, host=host_info.get("host"), op=operation, executed=executed)
+            return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=executed)
         else:
-            # Non-composite operations (like Isdir, Mkdir) get error field only, no stderr
-            cp = SSHCompletedProcess()
-            cp.exit_status = 1
-            cp.returncode = 1
+            # Non-composite operations (like Isdir, Mkdir) get error field only
             return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=executed)
 
     return Result(cp=cp, host=host_info.get("host"), op=operation, executed=executed)
