@@ -16,8 +16,6 @@ class Download:
         srcpaths (Union[str, List[str]]): Source file or directory path(s) on remote host(s).
             Can be a single string path or a list of paths. Supports host:path format.
         dstpath (str): Local destination path where files will be downloaded.
-        hosts (List[str], optional): List of target host identifiers. If None or empty,
-            operation will attempt to run on all available hosts.
         preserve (bool): If True, preserves file modification times, access times,
             and modes from the original files. Defaults to False.
         recurse (bool): If True, recursively copies entire directories. Defaults to False.
@@ -31,7 +29,6 @@ class Download:
         yield Download(
             srcpaths='/home/user/*.txt',  # Remove the host: prefix
             dstpath='/home/kim/',
-            hosts=["10.156.135.16"],
             recurse=True
         )
 
@@ -43,92 +40,85 @@ class Download:
     def __init__(self,
                  srcpaths: Union[str, List[str]],
                  dstpath: str,
-                 hosts: List[str] = None,
                  preserve: bool = False,
                  recurse: bool = False,
                  block_size: int = 16384,
                  port: int = 22):
         self.srcpaths = srcpaths
         self.dstpath = dstpath
-        self.hosts = hosts
         self.preserve = preserve
         self.recurse = recurse
         self.block_size = block_size
         self.port = port
 
     def __repr__(self):
-        return f"Download(srcpaths={self.srcpaths!r}, dstpath={self.dstpath!r}, hosts={self.hosts!r}, preserve={self.preserve}, recurse={self.recurse})"
+        return f"Download(srcpaths={self.srcpaths!r}, dstpath={self.dstpath!r}, preserve={self.preserve}, recurse={self.recurse})"
 
     @staticmethod
     async def _download_callback(host_info, global_info, command, cp, caller):
         """Static callback method for file download"""
 
-        # Check if this host is in the target hosts list or if hosts list is empty/None
-        if (caller.hosts is None or
-                not caller.hosts or
-                host_info["host"] in caller.hosts):
+        # Validate host_info (matching Upload error handling)
+        required_keys = ['host', 'username', 'password']
+        for key in required_keys:
+            if key not in host_info or host_info[key] is None:
+                raise ValueError(f"Missing or invalid value for '{key}' in host_info.")
 
-            async def run_client():
-                try:
-                    # Create proper connection parameters
-                    connect_kwargs = {
-                        'host': host_info['host'],
-                        'username': host_info.get('username'),
-                        'password': host_info.get('password'),
-                        'client_keys': host_info.get('client_keys'),
-                        'known_hosts': host_info.get('known_hosts')
-                    }
+        # Validate caller attributes (matching Upload error handling)
+        if caller.srcpaths is None:
+            raise ValueError("The 'srcpaths' attribute of the caller cannot be None.")
+        if caller.dstpath is None:
+            raise ValueError("The 'dstpath' attribute of the caller cannot be None.")
 
-                    # Remove None values
-                    connect_kwargs = {k: v for k, v in connect_kwargs.items() if v is not None}
+        try:
+            # Create proper connection parameters
+            connect_kwargs = {
+                'host': host_info['host'],
+                'username': host_info.get('username'),
+                'password': host_info.get('password'),
+                'client_keys': host_info.get('client_keys'),
+                'known_hosts': host_info.get('known_hosts')
+            }
 
-                    # Set port if specified and different from default
-                    if caller.port != 22:
-                        connect_kwargs['port'] = caller.port
+            # Remove None values
+            connect_kwargs = {k: v for k, v in connect_kwargs.items() if v is not None}
 
-                    print(f"Connecting to {host_info['host']} with username: {host_info.get('username')}")
+            # Set port if specified and different from default
+            if caller.port != 22:
+                connect_kwargs['port'] = caller.port
 
-                    async with asyncssh.connect(**connect_kwargs) as conn:
-                        print(f"Connected successfully to {host_info['host']}")
+            # Connect to the SSH server
+            async with asyncssh.connect(**connect_kwargs) as conn:
+                # Handle source paths - remove any host prefix since we're already connected
+                if isinstance(caller.srcpaths, list):
+                    srcpaths = []
+                    for srcpath in caller.srcpaths:
+                        # Remove host: prefix if present
+                        if ':' in srcpath:
+                            # Extract path after host: part
+                            srcpath = srcpath.split(':', 1)[1]
+                        srcpaths.append(srcpath)
+                else:
+                    if ':' in caller.srcpaths:
+                        # Extract path after host: part
+                        srcpaths = caller.srcpaths.split(':', 1)[1]
+                    else:
+                        srcpaths = caller.srcpaths
 
-                        # Handle source paths - remove any host prefix since we're already connected
-                        if isinstance(caller.srcpaths, list):
-                            srcpaths = []
-                            for srcpath in caller.srcpaths:
-                                # Remove host: prefix if present
-                                if ':' in srcpath:
-                                    # Extract path after host: part
-                                    srcpath = srcpath.split(':', 1)[1]
-                                srcpaths.append(srcpath)
-                        else:
-                            if ':' in caller.srcpaths:
-                                # Extract path after host: part
-                                srcpaths = caller.srcpaths.split(':', 1)[1]
-                            else:
-                                srcpaths = caller.srcpaths
+                # Perform the SCP download
+                await asyncssh.scp(
+                    (conn, srcpaths),  # Use connection object instead of host string
+                    caller.dstpath,
+                    preserve=caller.preserve,
+                    recurse=caller.recurse,
+                    block_size=caller.block_size
+                )
 
-                        print(f"Downloading: {srcpaths} -> {caller.dstpath}")
-
-                        await asyncssh.scp(
-                            (conn, srcpaths),  # Use connection object instead of host string
-                            caller.dstpath,
-                            preserve=caller.preserve,
-                            recurse=caller.recurse,
-                            block_size=caller.block_size
-                        )
-                        print(f"Download completed from {host_info['host']}")
-
-                except (OSError, asyncssh.Error) as exc:
-                    print(f'SCP download failed on {host_info["host"]}: {str(exc)}')
-                    raise
-
-            try:
-                await run_client()
-            except Exception as e:
-                print(f"An error occurred on {host_info['host']}: {e}")
-                return None
+        except (OSError, asyncssh.Error) as exc:
+            raise
 
     def execute(self):
         r = yield Operation(f"{self}", local=True, callback=self._download_callback, caller=self)
         r.executed = True
         r.changed = True
+        return r
