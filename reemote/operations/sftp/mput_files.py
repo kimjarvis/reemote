@@ -12,7 +12,6 @@ class Mput_files:
     Attributes:
         localpaths (str): The local file or directory path(s) to upload.
         remotepath (str): The remote path where files will be uploaded.
-        hosts (list): The list of hosts to which files will be uploaded.
         preserve (bool): Preserve file attributes (permissions, timestamps).
         recurse (bool): Recursively upload directories.
         follow_symlinks (bool): Follow symbolic links during upload.
@@ -21,7 +20,6 @@ class Mput_files:
         max_requests (int): Maximum number of concurrent transfer requests.
         progress_handler (Callable): Callback for transfer progress.
         error_handler (Callable): Callback for handling errors.
-
 
     **Examples:**
 
@@ -42,15 +40,11 @@ class Mput_files:
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.
-
-    Notes:
-        If hosts is None or empty, the operation will execute on the current host.
     """
 
     def __init__(self,
                  localpaths: str,
                  remotepath: str,
-                 hosts: list = None,
                  preserve: bool = False,
                  recurse: bool = False,
                  follow_symlinks: bool = False,
@@ -61,7 +55,6 @@ class Mput_files:
                  error_handler: Optional[Callable] = None):
         self.localpaths = localpaths
         self.remotepath = remotepath
-        self.hosts = hosts
         self.preserve = preserve
         self.recurse = recurse
         self.follow_symlinks = follow_symlinks
@@ -74,7 +67,6 @@ class Mput_files:
     def __repr__(self):
         return (f"Mput_files(localpaths={self.localpaths!r}, "
                 f"remotepath={self.remotepath!r}, "
-                f"hosts={self.hosts!r}, "
                 f"preserve={self.preserve!r}, "
                 f"recurse={self.recurse!r}, "
                 f"follow_symlinks={self.follow_symlinks!r}, "
@@ -103,50 +95,45 @@ class Mput_files:
         return absolute_path_with_glob
 
     @staticmethod
-    async def _mput_files_callback(host_info, sudo_global, command, cp, caller):
-        print(f"{caller}")
+    async def _mput_files_callback(host_info, global_info, command, cp, caller):
         """Static callback method for multiple file upload with full parameter support"""
-        # Check if this host is in the target hosts list or if hosts list is empty/None
-        if (caller.hosts is None or
-                not caller.hosts or
-                host_info["host"] in caller.hosts):
 
-            print(f"Uploading files to host {host_info['host']}")
+        # Validate host_info (matching Mget_files error handling)
+        required_keys = ['host', 'username', 'password']
+        for key in required_keys:
+            if key not in host_info or host_info[key] is None:
+                raise ValueError(f"Missing or invalid value for '{key}' in host_info.")
 
-            async def run_client() -> None:
-                try:
-                    # Connect to the SSH server
-                    async with asyncssh.connect(**host_info) as conn:
-                        # Start an SFTP session
-                        async with conn.start_sftp_client() as sftp:
-                            await sftp.mput(
-                                localpaths=Mput_files.get_absolute_path(caller.localpaths),
-                                remotepath=caller.remotepath,
-                                preserve=caller.preserve,
-                                recurse=caller.recurse,
-                                follow_symlinks=caller.follow_symlinks,
-                                sparse=caller.sparse,
-                                block_size=caller.block_size,
-                                max_requests=caller.max_requests,
-                                progress_handler=caller.progress_handler,
-                                error_handler=caller.error_handler
-                            )
-                            print(f"Successfully uploaded files to {host_info['host']}")
-                except (OSError, asyncssh.Error) as exc:
-                    print(f'SFTP operation failed on {host_info["host"]}: {str(exc)}')
-                    raise
+        # Validate caller attributes (matching Mget_files error handling)
+        if caller.localpaths is None:
+            raise ValueError("The 'localpaths' attribute of the caller cannot be None.")
+        if caller.remotepath is None:
+            raise ValueError("The 'remotepath' attribute of the caller cannot be None.")
 
-            try:
-                # Run the client coroutine
-                await run_client()
-            except KeyboardInterrupt:
-                print('Operation interrupted by user.')
-                raise
-            except Exception as e:
-                print(f"An error occurred on {host_info['host']}: {e}")
-                return None
+        try:
+            # Connect to the SSH server
+            async with asyncssh.connect(**host_info) as conn:
+                # Start an SFTP session
+                async with conn.start_sftp_client() as sftp:
+                    # Use the mput method for file upload
+                    await sftp.mput(
+                        localpaths=Mput_files.get_absolute_path(caller.localpaths),
+                        remotepath=caller.remotepath,
+                        preserve=caller.preserve,
+                        recurse=caller.recurse,
+                        follow_symlinks=caller.follow_symlinks,
+                        sparse=caller.sparse,
+                        block_size=caller.block_size,
+                        max_requests=caller.max_requests,
+                        progress_handler=caller.progress_handler,
+                        error_handler=caller.error_handler
+                    )
+                    return f"Successfully uploaded files to {host_info['host']}"
+        except (OSError, asyncssh.Error) as exc:
+            raise  # Re-raise the exception to handle it in the caller
 
     def execute(self):
         r = yield Operation(f"{self}", local=True, callback=self._mput_files_callback, caller=self)
         r.executed = True
         r.changed = True
+        return r
