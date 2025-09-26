@@ -1,5 +1,7 @@
 import asyncssh
 from reemote.operation import Operation
+from reemote.result import Result
+
 class Mkdir:
     """
     A class to encapsulate the functionality of mkdir in Unix-like operating systems.
@@ -26,21 +28,19 @@ class Mkdir:
 
     def __init__(self,
                  path: str,
-                 attrs: str=None,
+                 # attrs: asyncssh.SFTPAttrs = None,
                  ):
         self.path = path
-        self.attrs = attrs
+        # self.attrs = attrs
 
     def __repr__(self):
-        return (f"Mkdir(path={self.path!r}, "
-                f"attrs={self.attrs!r}, "
-                ")")
+        return (f"Mkdir(path={self.path!r})")
+        # return (f"Mkdir(path={self.path!r}, attrs={self.attrs!r})")
 
     @staticmethod
     async def _mkdir_callback(host_info, global_info, command, cp, caller):
-        print(f"{caller}")
         """Static callback method for directory creation"""
-        # print(f"Making directory on host {host_info['host']}")
+        # print(f"{caller}")
 
         # Validate host_info
         required_keys = ['host', 'username', 'password']
@@ -51,30 +51,29 @@ class Mkdir:
         # Validate caller attributes
         if caller.path is None:
             raise ValueError("The 'path' attribute of the caller cannot be None.")
-        if caller.attrs is None:
-            raise ValueError("The 'attrs' attribute of the caller cannot be None.")
 
         async def run_client():
-            # print(f"Connecting to {host_info['host']}")
             try:
                 async with asyncssh.connect(**host_info) as conn:
-                    # print(f"Connected to {host_info['host']}")
                     async with conn.start_sftp_client() as sftp:
-                        # print(f"Creating directory {caller.path} on {host_info['host']}")
-                        # Create the directory with the desired attributes
-                        await sftp.mkdir(path=caller.path, attrs=caller.attrs)
-                        # print(f"Successfully created directory on {host_info['host']}")
+                        await sftp.mkdir(path=caller.path)
+                        # Return success message instead of None
+                        return f"Successfully created directory {caller.path} on {host_info['host']}"
             except (OSError, asyncssh.Error) as exc:
-                print(f'SFTP operation failed on {host_info["host"]}: {str(exc)}')
+                error_msg = f'SFTP operation failed on {host_info["host"]}: {str(exc)}'
+                # print(error_msg)
                 raise  # Re-raise the exception to handle it in the caller
 
         try:
-            await run_client()
+            result = await run_client()
+            return result  # Return the success message
         except Exception as e:
-            print(f"An error occurred on {host_info['host']}: {e}")
-            return None  # Return None or handle the error as needed
+            error_msg = f"An error occurred on {host_info['host']}: {e}"
+            # print(error_msg)
+            raise  # Re-raise to be caught by the framework
 
     def execute(self):
         r = yield Operation(f"{self}", local=True, callback=self._mkdir_callback, caller=self)
         r.executed = True
         r.changed = False
+        return r

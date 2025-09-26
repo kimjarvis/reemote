@@ -12,6 +12,8 @@ from reemote.utilities.produce_table import produce_table
 from reemote.utilities.produce_output_table import produce_output_table
 from reemote.utilities.produce_json import produce_json
 
+from reemote.utilities.convert_to_df import convert_to_df
+from reemote.utilities.convert_to_tabulate import convert_to_tabulate
 
 async def main():
     import argparse
@@ -137,8 +139,19 @@ async def main():
     elif args.output_type=="grid":
         write_responses_to_file(responses = produce_json(responses), type="grid", filepath=args.output_file)
     else:
-        print(produce_table(produce_json(responses)))
-        print(produce_output_table(produce_json(responses)))
+        json = produce_json(responses)
+        # print(json)
+        df = convert_to_df(json,columns=["command", "host", "guard", "executed", "changed"])
+        table = convert_to_tabulate(df)
+        # print(table)
+        df = convert_to_df(json,columns=["command", "host", "returncode", "stdout", "stderr", "error"])
+        table = convert_to_tabulate(df)
+        print(table)
+
+        # df = convert_to_df(json)
+        # table = convert_to_tabulate(df)
+        # print(table)
+
 
 def _main():
     """Synchronous wrapper for console_scripts."""

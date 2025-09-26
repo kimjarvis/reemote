@@ -1,6 +1,6 @@
 import json
 
-from reemote.utilities.generate_execution_output import generate_grid
+from reemote.utilities.generate_table import generate_grid
 
 
 def produce_output_grid(json_output: tuple[str, str]):

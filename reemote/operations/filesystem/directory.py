@@ -32,16 +32,16 @@ class Directory:
     def __init__(self,
                  path: str,
                  present: bool,
-                 attrs: asyncssh.SFTPAttrs = None,
+                 # attrs: asyncssh.SFTPAttrs = None,
                  ):
         self.path = path
         self.present = present
-        self.attrs = attrs
+        # self.attrs = attrs
 
     def __repr__(self):
         return (
                 f"Directory(path={self.path!r}, "
-                f"attrs={self.attrs!r}, "
+                # f"attrs={self.attrs!r}, "
                 f"present={self.present!r}, "
                 )
 
@@ -65,7 +65,8 @@ class Directory:
         # Add or remove directory based on the `present` flag
         r2.changed = False
         if self.present and not found:
-            r2 = yield Mkdir(path=self.path, attrs=asyncssh.SFTPAttrs())
+            # r2 = yield Mkdir(path=self.path, attrs=asyncssh.SFTPAttrs())
+            r2 = yield Mkdir(path=self.path)
             r3.executed = True
             r2.changed = True
 

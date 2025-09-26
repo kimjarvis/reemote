@@ -5,7 +5,6 @@ from reemote.operation import Operation
 from reemote.result import Result
 
 async def run_command_on_local(operation):
-    # Define the asynchronous function to connect to a host and run a command
     host_info = operation.host_info
     global_info = operation.global_info
     command = operation.command
@@ -13,45 +12,47 @@ async def run_command_on_local(operation):
     executed = False
     caller = operation.caller
 
-    cp.stdout= await operation.callback(host_info, global_info, command, cp, caller)
-
-    return Result(cp=cp, host=host_info.get("host"), op=operation, executed=executed)
+    try:
+        result = await operation.callback(host_info, global_info, command, cp, caller)
+        cp.stdout = result
+        executed = True
+        return Result(cp=cp, host=host_info.get("host"), op=operation, executed=executed)
+    except Exception as e:
+        raw_error = str(e)
+        if operation.composite:
+            # Composite operations get raw error only
+            return Result(error=raw_error, host=host_info.get("host"), op=operation, executed=True)
+        else:
+            # Non-composite operations get error field only
+            cp = SSHCompletedProcess()
+            cp.exit_status = 1
+            cp.returncode = 1
+            return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=True)
 
 
 async def run_command_on_host(operation):
-    # print("running operation", operation)
-    # Define the asynchronous function to connect to a host and run a command
     host_info = operation.host_info
     global_info = operation.global_info
     command = operation.command
     cp = SSHCompletedProcess()
     executed = False
+
     try:
-        # Connect to the host
         async with asyncssh.connect(**host_info) as conn:
-            # print("connected to host", host_info)
             if operation.composite:
-                # print(f"Executing composite command: {command}")
+                # Composite operations (like Directory) get raw error messages
                 pass
             else:
                 if not operation.guard:
                     pass
                 else:
-                    # print(f"Executing command: {command}")
                     executed = True
                     if operation.sudo:
                         full_command = f"echo {global_info['sudo_password']} | sudo -S {command}"
-                        # print(full_command)
-                        # print("sudo begin")
                         cp = await conn.run(full_command, check=False)
-                        # print("sudo end")
-                        # print(cp)
                     elif operation.su:
-                        # print(f"its su {global_info["su_user"]} {command}")
                         full_command = f"su {global_info['su_user']} -c '{command}'"
-                        # print(full_command)
                         if global_info["su_user"] == "root":
-                            # For root, don't expect password prompt
                             async with conn.create_process(full_command,
                                                            term_type='xterm',
                                                            stdin=asyncssh.PIPE, stdout=asyncssh.PIPE,
@@ -60,11 +61,9 @@ async def run_command_on_host(operation):
                                     output = await process.stdout.readuntil('Password:')
                                     process.stdin.write(f'{global_info["su_password"]}\n')
                                 except asyncio.TimeoutError:
-                                    # No password prompt, continue without writing to stdin
                                     pass
                                 stdout, stderr = await process.communicate()
                         else:
-                            # For non-root users, handle password prompt
                             async with conn.create_process(full_command,
                                                            term_type='xterm',
                                                            stdin=asyncssh.PIPE, stdout=asyncssh.PIPE,
@@ -74,24 +73,38 @@ async def run_command_on_host(operation):
                                 stdout, stderr = await process.communicate()
 
                         cp = SSHCompletedProcess(
-                            command=full_command ,  # Command executed
-                            exit_status=process.exit_status,                     # Exit status
-                            returncode=process.returncode,                       # Return code
-                            stdout=stdout,                                       # Standard output
-                            stderr=stderr                                        # Standard error
+                            command=full_command,
+                            exit_status=process.exit_status,
+                            returncode=process.returncode,
+                            stdout=stdout,
+                            stderr=stderr
                         )
-
                     else:
                         cp = await conn.run(command, check=False)
 
     except asyncssh.ProcessError as exc:
-        return f"Process on host {host_info.get("host")} exited with status {exc.exit_status}"
+        raw_error = str(exc)
+        if operation.composite:
+            # Composite operations get raw error only
+            return Result(error=raw_error, host=host_info.get("host"), op=operation, executed=executed)
+        else:
+            # Non-composite operations get formatted error
+            error_msg = f"Process on host {host_info.get('host')} exited with status {exc.exit_status}"
+            return Result(error=error_msg, host=host_info.get("host"), op=operation, executed=executed)
+
     except (OSError, asyncssh.Error) as e:
-        return f"Connection failed on host {host_info.get("host")}: {str(e)}"
+        raw_error = str(e)
+        if operation.composite:
+            # Composite operations (like Directory) get raw error only
+            return Result(error=raw_error, host=host_info.get("host"), op=operation, executed=executed)
+        else:
+            # Non-composite operations (like Isdir, Mkdir) get error field only, no stderr
+            cp = SSHCompletedProcess()
+            cp.exit_status = 1
+            cp.returncode = 1
+            return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=executed)
 
-    # print(f"Output: {cp.stdout}")
     return Result(cp=cp, host=host_info.get("host"), op=operation, executed=executed)
-
 
 def pre_order_generator(node):
     """
@@ -117,8 +130,12 @@ def pre_order_generator(node):
         except StopIteration:
             stack.pop()
         except Exception as e:
-            # Handle errors in node execution
             print(f"Error in node execution: {e}")
+            print(f"Current node: {current_node}")
+            print(f"Node type: {type(current_node)}")
+            # Handle errors in node execution - yield a Result object instead of printing
+            error_msg = f"Error in node execution: {e}"
+            result = yield Result(error=error_msg)
             stack.pop()
 
 
@@ -131,34 +148,47 @@ async def execute(inventory, obj):
     for inventory_item in inventory:
         roots.append(obj)
         inventory_items.append(inventory_item)  # Store the inventory item
+
     # Create generators for step-wise traversal of each tree
     generators = [pre_order_generator(root) for root in roots]
-    # Result of the previous operation to send
     results = {gen: None for gen in generators}  # Initialize results as None
-    # Perform step-wise traversal
+
     done = False
     while not done:
         all_done = True
 
         for gen, inventory_item in zip(generators, inventory_items):
             try:
-                # print(f"Sending result to generator: {results[gen]}")
-                operation = gen.send(results[gen])
-                operation.host_info, operation.global_info = inventory_item
-                # print(f"Operation: {operation}")
-                if operation.local:
-                    results[gen] = await run_command_on_local(operation)
+                # Get the next operation or result from the generator
+                yielded_object = gen.send(results[gen])
+
+                # Check if the yielded object is an Operation
+                if isinstance(yielded_object, Operation):
+                    operation = yielded_object
+                    operation.host_info, operation.global_info = inventory_item
+
+                    if operation.local:
+                        results[gen] = await run_command_on_local(operation)
+                    else:
+                        results[gen] = await run_command_on_host(operation)
+
+                    operations.append(operation)
+                    responses.append(results[gen])
+                    all_done = False
+
+                elif isinstance(yielded_object, Result):
+                    # Handle the Result object (e.g., log the error or skip)
+                    print(f"Received Result object: {yielded_object}")
+                    responses.append(yielded_object)
+                    results[gen] = yielded_object  # Pass the result back to the generator
+
                 else:
-                    results[gen] = await run_command_on_host(operation)
-
-                operations.append(operation)
-                # print(f"Result: {results[gen]}")
-                responses.append(results[gen])
-
-                all_done = False
+                    raise TypeError(f"Unsupported type yielded by generator: {type(yielded_object)}")
 
             except StopIteration:
                 pass
+
         # If all generators are done, exit the loop
         done = all_done
+
     return responses
