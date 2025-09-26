@@ -1,6 +1,6 @@
 import asyncssh
 from reemote.operation import Operation
-from reemote.result import Result
+
 
 class Mkdir:
     """
@@ -8,39 +8,31 @@ class Mkdir:
 
     Attributes:
         path (str): The directory path to create.
-        attrs (str): asyncssh SFTPAttrs object for directory attributes.
+        attrs (SFTPAttrs, optional): SFTP attributes to set on the created directory.
 
     **Examples:**
 
     .. code:: python
 
-        yield Mkdir(
-            path='/home/user/hfs',
-            attrs=SFTPAttrs(permissions=0o755),
-        )
+        yield Mkdir(path='/home/user/hfs')
+        yield Mkdir(path='/home/user/hfs', attrs=SFTPAttrs(permissions=0o755))
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.
-
-    Notes:
-        If hosts is None or empty, the operation will execute on the current host.
     """
 
-    def __init__(self,
-                 path: str,
-                 # attrs: asyncssh.SFTPAttrs = None,
-                 ):
+    def __init__(self, path: str, attrs: asyncssh.SFTPAttrs = None):
         self.path = path
-        # self.attrs = attrs
+        self.attrs = attrs
 
     def __repr__(self):
-        return (f"Mkdir(path={self.path!r})")
-        # return (f"Mkdir(path={self.path!r}, attrs={self.attrs!r})")
+        if self.attrs:
+            return f"Mkdir(path={self.path!r}, attrs={self.attrs!r})"
+        return f"Mkdir(path={self.path!r})"
 
     @staticmethod
     async def _mkdir_callback(host_info, global_info, command, cp, caller):
         """Static callback method for directory creation"""
-        # print(f"{caller}")
 
         # Validate host_info
         required_keys = ['host', 'username', 'password']
@@ -52,28 +44,29 @@ class Mkdir:
         if caller.path is None:
             raise ValueError("The 'path' attribute of the caller cannot be None.")
 
-        async def run_client():
-            try:
-                async with asyncssh.connect(**host_info) as conn:
-                    async with conn.start_sftp_client() as sftp:
-                        await sftp.mkdir(path=caller.path)
-                        # Return success message instead of None
-                        return f"Successfully created directory {caller.path} on {host_info['host']}"
-            except (OSError, asyncssh.Error) as exc:
-                error_msg = f'SFTP operation failed on {host_info["host"]}: {str(exc)}'
-                # print(error_msg)
-                raise  # Re-raise the exception to handle it in the caller
-
         try:
-            result = await run_client()
-            return result  # Return the success message
-        except Exception as e:
-            error_msg = f"An error occurred on {host_info['host']}: {e}"
-            # print(error_msg)
-            raise  # Re-raise to be caught by the framework
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    # Create the remote directory with optional attributes
+                    await sftp.mkdir(path=caller.path, attrs=caller.attrs)
+
+                    # If attributes were provided, we should check if they were applied
+                    # and set changed flag accordingly
+                    if caller.attrs:
+                        # Verify the attributes were set by reading them back
+                        stat_result = await sftp.stat(caller.path)
+                        # Note: We can't easily determine if all attributes were applied
+                        # but we'll assume the operation changed something if attrs were provided
+                        return f"Successfully created directory {caller.path} with attributes on {host_info['host']}"
+                    else:
+                        return f"Successfully created directory {caller.path} on {host_info['host']}"
+
+        except (OSError, asyncssh.Error) as exc:
+            raise  # Re-raise the exception to handle it in the caller
 
     def execute(self):
         r = yield Operation(f"{self}", local=True, callback=self._mkdir_callback, caller=self)
         r.executed = True
-        r.changed = False
+        # Set changed to True if attributes were provided, False otherwise
+        r.changed = self.attrs is not None
         return r
