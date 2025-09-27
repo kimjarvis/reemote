@@ -218,7 +218,6 @@ def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
             f.write(inventory_content)
     except IOError as e:
         print(f"Error writing inventory file '{inventory_filename}': {e}", file=sys.stderr)
-        sys.exit(1)
 
 
 
