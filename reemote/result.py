@@ -2,32 +2,49 @@ from asyncssh import SSHCompletedProcess
 from reemote.operation import Operation
 from typing import Optional, Mapping, Tuple, Union
 from types import MappingProxyType
+from base64 import b64encode
 from asyncssh import SSHCompletedProcess
 from reemote.operation import serialize_operation
 
+
 class Result:
 
-    def __init__(self, cp: SSHCompletedProcess=None, host: str=None, op: Operation=None, changed: bool = False, executed: bool = False):
+    def __init__(self,
+                 cp: SSHCompletedProcess = None,
+                 host: str = None,
+                 op: Operation = None,
+                 changed: bool = False,
+                 executed: bool = False,
+                 error: str = None,
+                 ):
+        self.cp = cp
         self.host = host
         self.op = op
         self.changed = changed
         self.executed = executed
-        self.cp = cp
+        self.error = error
 
     def __str__(self) -> str:
         return repr(self)
 
     def __repr__(self) -> str:
+        # Use helper variables for the ternary operations
+        returncode = self.cp.returncode if self.cp else None
+        stdout = self.cp.stdout if self.cp else None
+        stderr = self.cp.stderr if self.cp else None
+
         return (f"Result(host={self.host!r}, "
-                f"op={self.op!r}, "                
+                f"op={self.op!r}, "
                 f"changed={self.changed!r}, "
                 f"executed={self.executed!r}, "
-                f"return code={self.cp.returncode!r}, "
-                f"stdout={self.cp.stdout!r}, "
-                f"stderr={self.cp.stderr!r})")
+                f"return code={returncode!r}, "
+                f"stdout={stdout!r}, "
+                f"stderr={stderr!r}, "
+                f"error={self.error!r})")
 
     # Type alias for clarity
     BytesOrStr = Union[str, bytes]
+
 
 def serialize_result(obj):
     # print(f"Serializing object of type {obj.__class__.__name__}: {obj}")
@@ -35,10 +52,11 @@ def serialize_result(obj):
         # print(f"Result attributes: {vars(obj)}")
         return {
             "host": obj.host,
-            "op": serialize_operation(obj.op),
+            "op": serialize_operation(obj.op) if obj.op else None,
             "changed": obj.changed,
             "executed": obj.executed,
             "cp": serialize_cp(obj.cp),
+            "error": obj.error,
         }
     elif isinstance(obj, Operation):
         # print(f"Operation attributes: {vars(obj)}")
@@ -51,8 +69,11 @@ def serialize_result(obj):
     else:
         raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
+
 def serialize_cp(obj):
-    if isinstance(obj, SSHCompletedProcess):
+    if obj is None:
+        return None
+    elif isinstance(obj, SSHCompletedProcess):
         # Convert mappingproxy to dict if necessary
         env = dict(obj.env) if isinstance(obj.env, MappingProxyType) else obj.env
 

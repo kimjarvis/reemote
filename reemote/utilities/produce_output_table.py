@@ -1,6 +1,6 @@
 import json
 
-from reemote.utilities.generate_execution_output import generate_table
+from reemote.utilities.generate_table import generate_table
 
 
 def produce_output_table(json_output: tuple[str, str]):

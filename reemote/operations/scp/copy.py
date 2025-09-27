@@ -79,6 +79,18 @@ class Copy:
     async def _copy_callback(host_info, global_info, command, cp, caller):
         """Static callback method for file copy between hosts"""
 
+        # Validate host_info (matching Download error handling)
+        required_keys = ['host', 'username', 'password']
+        for key in required_keys:
+            if key not in host_info or host_info[key] is None:
+                raise ValueError(f"Missing or invalid value for '{key}' in host_info.")
+
+        # Validate caller attributes (matching Download error handling)
+        if caller.srcpaths is None:
+            raise ValueError("The 'srcpaths' attribute of the caller cannot be None.")
+        if caller.dstpath is None:
+            raise ValueError("The 'dstpath' attribute of the caller cannot be None.")
+
         # This operation should run on destination hosts to pull files from source hosts
         is_dest_host = (caller.dst_hosts is None or
                         not caller.dst_hosts or
@@ -87,82 +99,75 @@ class Copy:
         if not is_dest_host:
             return  # Only run on destination hosts
 
-        async def run_client():
-            try:
-                # Create connection parameters for destination host
-                connect_kwargs = {
-                    'host': host_info['host'],
-                    'username': host_info.get('username'),
-                    'password': host_info.get('password'),
-                    'client_keys': host_info.get('client_keys'),
-                    'known_hosts': host_info.get('known_hosts')
-                }
-
-                # Remove None values
-                connect_kwargs = {k: v for k, v in connect_kwargs.items() if v is not None}
-
-                # Set port if specified and different from default
-                if caller.port != 22:
-                    connect_kwargs['port'] = caller.port
-
-                print(f"Connecting to destination host {host_info['host']} for copy operation")
-
-                async with asyncssh.connect(**connect_kwargs) as conn:
-                    print(f"Connected successfully to destination host {host_info['host']}")
-
-                    # Prepare source paths with proper host prefixes
-                    if isinstance(caller.srcpaths, list):
-                        srcpaths = []
-                        for srcpath in caller.srcpaths:
-                            # Add source host prefix if not already present
-                            if ':' not in srcpath and caller.src_hosts:
-                                # Use the first source host if multiple specified
-                                source_host = caller.src_hosts[0]
-                                srcpaths.append(f"{source_host}:{srcpath}")
-                            else:
-                                srcpaths.append(srcpath)
-                    else:
-                        if ':' not in caller.srcpaths and caller.src_hosts:
-                            source_host = caller.src_hosts[0]
-                            srcpaths = f"{source_host}:{caller.srcpaths}"
-                        else:
-                            srcpaths = caller.srcpaths
-
-                    # Prepare destination path (local to destination host)
-                    if ':' in caller.dstpath:
-                        # Extract path if destination has host prefix
-                        dstpath = caller.dstpath.split(':', 1)[1]
-                    else:
-                        dstpath = caller.dstpath
-
-                    print(f"Copying from source: {srcpaths} -> destination: {dstpath} on {host_info['host']}")
-
-                    # Perform the SCP copy operation (pulling from source to destination)
-                    await asyncssh.scp(
-                        srcpaths,
-                        dstpath,
-                        preserve=caller.preserve,
-                        recurse=caller.recurse,
-                        block_size=caller.block_size
-                    )
-
-                    print(f"Copy completed successfully to destination host {host_info['host']}")
-
-            except (OSError, asyncssh.Error) as exc:
-                print(f'SCP copy failed on destination host {host_info["host"]}: {str(exc)}')
-                # Provide more detailed error information
-                if "Permission denied" in str(exc):
-                    print(f"Check that user {host_info.get('username', 'current user')} has:")
-                    print(f" - Read permission on source paths: {caller.srcpaths}")
-                    print(f" - Write permission on destination path: {caller.dstpath}")
-                    print(f" - Proper SSH key authentication configured")
-                raise
-
         try:
-            await run_client()
-        except Exception as e:
-            print(f"An error occurred during copy operation on destination host {host_info['host']}: {e}")
-            return None
+            # Create connection parameters for destination host
+            connect_kwargs = {
+                'host': host_info['host'],
+                'username': host_info.get('username'),
+                'password': host_info.get('password'),
+                'client_keys': host_info.get('client_keys'),
+                'known_hosts': host_info.get('known_hosts')
+            }
+
+            # Remove None values
+            connect_kwargs = {k: v for k, v in connect_kwargs.items() if v is not None}
+
+            # Set port if specified and different from default
+            if caller.port != 22:
+                connect_kwargs['port'] = caller.port
+
+            print(f"Connecting to destination host {host_info['host']} for copy operation")
+
+            async with asyncssh.connect(**connect_kwargs) as conn:
+                print(f"Connected successfully to destination host {host_info['host']}")
+
+                # Prepare source paths with proper host prefixes
+                if isinstance(caller.srcpaths, list):
+                    srcpaths = []
+                    for srcpath in caller.srcpaths:
+                        # Add source host prefix if not already present
+                        if ':' not in srcpath and caller.src_hosts:
+                            # Use the first source host if multiple specified
+                            source_host = caller.src_hosts[0]
+                            srcpaths.append(f"{source_host}:{srcpath}")
+                        else:
+                            srcpaths.append(srcpath)
+                else:
+                    if ':' not in caller.srcpaths and caller.src_hosts:
+                        source_host = caller.src_hosts[0]
+                        srcpaths = f"{source_host}:{caller.srcpaths}"
+                    else:
+                        srcpaths = caller.srcpaths
+
+                # Prepare destination path (local to destination host)
+                if ':' in caller.dstpath:
+                    # Extract path if destination has host prefix
+                    dstpath = caller.dstpath.split(':', 1)[1]
+                else:
+                    dstpath = caller.dstpath
+
+                print(f"Copying from source: {srcpaths} -> destination: {dstpath} on {host_info['host']}")
+
+                # Perform the SCP copy operation (pulling from source to destination)
+                await asyncssh.scp(
+                    srcpaths,
+                    dstpath,
+                    preserve=caller.preserve,
+                    recurse=caller.recurse,
+                    block_size=caller.block_size
+                )
+
+                print(f"Copy completed successfully to destination host {host_info['host']}")
+
+        except (OSError, asyncssh.Error) as exc:
+            print(f'SCP copy failed on destination host {host_info["host"]}: {str(exc)}')
+            # Provide more detailed error information
+            if "Permission denied" in str(exc):
+                print(f"Check that user {host_info.get('username', 'current user')} has:")
+                print(f" - Read permission on source paths: {caller.srcpaths}")
+                print(f" - Write permission on destination path: {caller.dstpath}")
+                print(f" - Proper SSH key authentication configured")
+            raise
 
     def execute(self):
         """

@@ -15,7 +15,6 @@ class Rename:
             - 0x0001: OVERWRITE - Allow overwriting existing files
             - 0x0002: ATOMIC - Perform atomic rename
             - 0x0004: NATIVE - Use native filesystem semantics
-        hosts (list): The list of hosts on which the rename operation is to be performed.
 
     **Examples:**
 
@@ -23,8 +22,7 @@ class Rename:
 
         yield Rename(
             oldpath='/home/user/oldname.txt',
-            newpath='/home/user/newname.txt',
-            hosts=["10.156.135.16", "10.156.135.17"]
+            newpath='/home/user/newname.txt'
         )
 
     Usage:
@@ -32,47 +30,46 @@ class Rename:
         commands are yielded for execution.
 
     Notes:
-        If hosts is None or empty, the operation will execute on the current host.
         The flags parameter is only supported in SFTP version 5 and later.
         For older SFTP versions, only basic rename functionality is available.
     """
 
-    def __init__(self, oldpath: str, newpath: str, flags: int = 0, hosts: list = None):
+    def __init__(self, oldpath: str, newpath: str, flags: int = 0):
         self.oldpath = oldpath
         self.newpath = newpath
         self.flags = flags
-        self.hosts = hosts
 
     def __repr__(self):
-        return f"Rename(oldpath={self.oldpath!r}, newpath={self.newpath!r}, flags={self.flags!r}, hosts={self.hosts!r})"
+        return f"Rename(oldpath={self.oldpath!r}, newpath={self.newpath!r}, flags={self.flags!r})"
 
     @staticmethod
     async def _rename_callback(host_info, global_info, command, cp, caller):
-        print(f"{caller}")
         """Static callback method for file/directory rename"""
 
-        # Check if this host is in the target hosts list or if hosts list is empty/None
-        if (caller.hosts is None or
-                not caller.hosts or
-                host_info["host"] in caller.hosts):
+        # Validate host_info (matching Read_file error handling)
+        required_keys = ['host', 'username', 'password']
+        for key in required_keys:
+            if key not in host_info or host_info[key] is None:
+                raise ValueError(f"Missing or invalid value for '{key}' in host_info.")
 
-            async def run_client():
-                try:
-                    async with asyncssh.connect(**host_info) as conn:
-                        async with conn.start_sftp_client() as sftp:
-                            # Rename the remote file/directory
-                            await sftp.rename(caller.oldpath, caller.newpath, caller.flags)
-                except (OSError, asyncssh.Error) as exc:
-                    print(f'SFTP rename operation failed on {host_info["host"]}: {str(exc)}')
-                    raise
+        # Validate caller attributes (matching Read_file error handling)
+        if caller.oldpath is None:
+            raise ValueError("The 'oldpath' attribute of the caller cannot be None.")
+        if caller.newpath is None:
+            raise ValueError("The 'newpath' attribute of the caller cannot be None.")
 
-            try:
-                await run_client()
-            except Exception as e:
-                print(f"An error occurred on {host_info['host']}: {e}")
-                return None
+        try:
+            # Connect to the SSH server
+            async with asyncssh.connect(**host_info) as conn:
+                # Start an SFTP session
+                async with conn.start_sftp_client() as sftp:
+                    # Rename the remote file/directory
+                    await sftp.rename(caller.oldpath, caller.newpath, caller.flags)
+        except (OSError, asyncssh.Error) as exc:
+            raise  # Re-raise the exception to handle it in the caller
 
     def execute(self):
         r = yield Operation(f"{self}", local=True, callback=self._rename_callback, caller=self)
         r.executed = True
         r.changed = False
+        return r

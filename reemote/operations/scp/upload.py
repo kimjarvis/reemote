@@ -10,7 +10,6 @@ class Upload:
     Attributes:
         srcpaths (Union[str, List[str]]): The local source file(s) or directory to upload.
         dstpath (str): The remote destination path.
-        hosts (list): The list of hosts to which to upload files.
         preserve (bool): Whether to preserve file attributes.
         recurse (bool): Whether to recursively copy directories.
         block_size (int): The block size for file transfers.
@@ -21,9 +20,8 @@ class Upload:
     .. code:: python
 
         yield Upload(
-            srcpaths='/home/kim/inventory_alpine.py',  # Remove the host: prefix
+            srcpaths='/home/kim/inventory_alpine.py',
             dstpath='/home/user/',
-            hosts=["10.156.135.16"],
             recurse=True
         )
 
@@ -38,83 +36,76 @@ class Upload:
     def __init__(self,
                  srcpaths: Union[str, List[str]],
                  dstpath: str,
-                 hosts: List[str] = None,
                  preserve: bool = False,
                  recurse: bool = False,
                  block_size: int = 16384,
                  port: int = 22):
         self.srcpaths = srcpaths
         self.dstpath = dstpath
-        self.hosts = hosts
         self.preserve = preserve
         self.recurse = recurse
         self.block_size = block_size
         self.port = port
 
     def __repr__(self):
-        return f"Upload(srcpaths={self.srcpaths!r}, dstpath={self.dstpath!r}, hosts={self.hosts!r}, preserve={self.preserve}, recurse={self.recurse})"
+        return f"Upload(srcpaths={self.srcpaths!r}, dstpath={self.dstpath!r}, preserve={self.preserve}, recurse={self.recurse})"
 
     @staticmethod
     async def _upload_callback(host_info, global_info, command, cp, caller):
         """Static callback method for file upload"""
 
-        # Check if this host is in the target hosts list or if hosts list is empty/None
-        if (caller.hosts is None or
-                not caller.hosts or
-                host_info["host"] in caller.hosts):
+        # Validate host_info (matching Write_file error handling)
+        required_keys = ['host', 'username', 'password']
+        for key in required_keys:
+            if key not in host_info or host_info[key] is None:
+                raise ValueError(f"Missing or invalid value for '{key}' in host_info.")
 
-            async def run_client():
-                try:
-                    # Create proper connection parameters
-                    connect_kwargs = {
-                        'host': host_info['host'],
-                        'username': host_info.get('username'),
-                        'password': host_info.get('password'),
-                        'client_keys': host_info.get('client_keys'),
-                        'known_hosts': host_info.get('known_hosts')
-                    }
+        # Validate caller attributes (matching Write_file error handling)
+        if caller.srcpaths is None:
+            raise ValueError("The 'srcpaths' attribute of the caller cannot be None.")
+        if caller.dstpath is None:
+            raise ValueError("The 'dstpath' attribute of the caller cannot be None.")
 
-                    # Remove None values
-                    connect_kwargs = {k: v for k, v in connect_kwargs.items() if v is not None}
+        try:
+            # Create proper connection parameters
+            connect_kwargs = {
+                'host': host_info['host'],
+                'username': host_info.get('username'),
+                'password': host_info.get('password'),
+                'client_keys': host_info.get('client_keys'),
+                'known_hosts': host_info.get('known_hosts')
+            }
 
-                    # Set port if specified and different from default
-                    if caller.port != 22:
-                        connect_kwargs['port'] = caller.port
+            # Remove None values
+            connect_kwargs = {k: v for k, v in connect_kwargs.items() if v is not None}
 
-                    print(f"Connecting to {host_info['host']} with username: {host_info.get('username')}")
+            # Set port if specified and different from default
+            if caller.port != 22:
+                connect_kwargs['port'] = caller.port
 
-                    async with asyncssh.connect(**connect_kwargs) as conn:
-                        print(f"Connected successfully to {host_info['host']}")
+            # Connect to the SSH server
+            async with asyncssh.connect(**connect_kwargs) as conn:
+                # Handle destination path - remove any host prefix since we're already connected
+                if ':' in caller.dstpath:
+                    # Extract path after host: part
+                    dstpath = caller.dstpath.split(':', 1)[1]
+                else:
+                    dstpath = caller.dstpath
 
-                        # Handle destination path - remove any host prefix since we're already connected
-                        if ':' in caller.dstpath:
-                            # Extract path after host: part
-                            dstpath = caller.dstpath.split(':', 1)[1]
-                        else:
-                            dstpath = caller.dstpath
+                # Perform the SCP upload
+                await asyncssh.scp(
+                    caller.srcpaths,
+                    (conn, dstpath),  # Use connection object instead of host string
+                    preserve=caller.preserve,
+                    recurse=caller.recurse,
+                    block_size=caller.block_size
+                )
 
-                        print(f"Uploading: {caller.srcpaths} -> {dstpath} on {host_info['host']}")
-
-                        await asyncssh.scp(
-                            caller.srcpaths,
-                            (conn, dstpath),  # Use connection object instead of host string
-                            preserve=caller.preserve,
-                            recurse=caller.recurse,
-                            block_size=caller.block_size
-                        )
-                        print(f"Upload completed to {host_info['host']}")
-
-                except (OSError, asyncssh.Error) as exc:
-                    print(f'SCP upload failed on {host_info["host"]}: {str(exc)}')
-                    raise
-
-            try:
-                await run_client()
-            except Exception as e:
-                print(f"An error occurred on {host_info['host']}: {e}")
-                return None
+        except (OSError, asyncssh.Error) as exc:
+            raise
 
     def execute(self):
         r = yield Operation(f"{self}", local=True, callback=self._upload_callback, caller=self)
         r.executed = True
         r.changed = True
+        return r

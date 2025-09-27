@@ -12,7 +12,6 @@ class Mget_files:
     Attributes:
         remotepaths (str): The remote file or directory path(s) to download.
         localpath (str): The local path where files will be downloaded.
-        hosts (list): The list of hosts from which files will be downloaded.
         preserve (bool): Preserve file attributes (permissions, timestamps).
         recurse (bool): Recursively download directories.
         follow_symlinks (bool): Follow symbolic links during download.
@@ -43,13 +42,12 @@ class Mget_files:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.
 
     Notes:
-        If hosts is None or empty, the operation will execute on the current host.
+        This implementation uses mget which supports wildcard patterns in remote paths.
     """
 
     def __init__(self,
                  remotepaths: str,
                  localpath: Optional[str] = None,
-                 hosts: list = None,
                  preserve: bool = False,
                  recurse: bool = False,
                  follow_symlinks: bool = False,
@@ -60,7 +58,6 @@ class Mget_files:
                  error_handler: Optional[Callable] = None):
         self.remotepaths = remotepaths
         self.localpath = localpath
-        self.hosts = hosts
         self.preserve = preserve
         self.recurse = recurse
         self.follow_symlinks = follow_symlinks
@@ -73,7 +70,6 @@ class Mget_files:
     def __repr__(self):
         return (f"Mget_files(remotepaths={self.remotepaths!r}, "
                 f"localpath={self.localpath!r}, "
-                f"hosts={self.hosts!r}, "
                 f"preserve={self.preserve!r}, "
                 f"recurse={self.recurse!r}, "
                 f"follow_symlinks={self.follow_symlinks!r}, "
@@ -102,50 +98,43 @@ class Mget_files:
         return absolute_path_with_glob
 
     @staticmethod
-    async def _mget_files_callback(host_info, sudo_global, command, cp, caller):
-        print(f"{caller}")
+    async def _mget_files_callback(host_info, global_info, command, cp, caller):
         """Static callback method for multiple file download with full parameter support"""
-        # Check if this host is in the target hosts list or if hosts list is empty/None
-        if (caller.hosts is None or
-                not caller.hosts or
-                host_info["host"] in caller.hosts):
 
-            print(f"Downloading files from host {host_info['host']}")
+        # Validate host_info (matching Mcopy_files error handling)
+        required_keys = ['host', 'username', 'password']
+        for key in required_keys:
+            if key not in host_info or host_info[key] is None:
+                raise ValueError(f"Missing or invalid value for '{key}' in host_info.")
 
-            async def run_client() -> None:
-                try:
-                    # Connect to the SSH server
-                    async with asyncssh.connect(**host_info) as conn:
-                        # Start an SFTP session
-                        async with conn.start_sftp_client() as sftp:
-                            await sftp.mget(
-                                remotepaths=caller.remotepaths,
-                                localpath=caller.localpath,
-                                preserve=caller.preserve,
-                                recurse=caller.recurse,
-                                follow_symlinks=caller.follow_symlinks,
-                                sparse=caller.sparse,
-                                block_size=caller.block_size,
-                                max_requests=caller.max_requests,
-                                progress_handler=caller.progress_handler,
-                                error_handler=caller.error_handler
-                            )
-                            print(f"Successfully downloaded files from {host_info['host']}")
-                except (OSError, asyncssh.Error) as exc:
-                    print(f'SFTP operation failed on {host_info["host"]}: {str(exc)}')
-                    raise
+        # Validate caller attributes (matching Mcopy_files error handling)
+        if caller.remotepaths is None:
+            raise ValueError("The 'remotepaths' attribute of the caller cannot be None.")
 
-            try:
-                # Run the client coroutine
-                await run_client()
-            except KeyboardInterrupt:
-                print('Operation interrupted by user.')
-                raise
-            except Exception as e:
-                print(f"An error occurred on {host_info['host']}: {e}")
-                return None
+        try:
+            # Connect to the SSH server
+            async with asyncssh.connect(**host_info) as conn:
+                # Start an SFTP session
+                async with conn.start_sftp_client() as sftp:
+                    # Use the mget method for file download
+                    await sftp.mget(
+                        remotepaths=caller.remotepaths,
+                        localpath=caller.localpath,
+                        preserve=caller.preserve,
+                        recurse=caller.recurse,
+                        follow_symlinks=caller.follow_symlinks,
+                        sparse=caller.sparse,
+                        block_size=caller.block_size,
+                        max_requests=caller.max_requests,
+                        progress_handler=caller.progress_handler,
+                        error_handler=caller.error_handler
+                    )
+                    return f"Successfully downloaded files from {host_info['host']}"
+        except (OSError, asyncssh.Error) as exc:
+            raise  # Re-raise the exception to handle it in the caller
 
     def execute(self):
         r = yield Operation(f"{self}", local=True, callback=self._mget_files_callback, caller=self)
         r.executed = True
         r.changed = True
+        return r

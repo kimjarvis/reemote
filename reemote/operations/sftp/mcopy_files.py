@@ -12,7 +12,6 @@ class Mcopy_files:
     Attributes:
         srcpaths (str): The remote source file or directory path(s) to copy with wildcard patterns.
         dstpath (str): The remote destination path where files will be copied.
-        hosts (list): The list of hosts on which the copy operation will be performed.
         preserve (bool): Preserve file attributes (permissions, timestamps).
         recurse (bool): Recursively copy directories.
         follow_symlinks (bool): Follow symbolic links during copy.
@@ -29,14 +28,12 @@ class Mcopy_files:
 
         src_dir = '/home/user/'
         dst_dir = '/home/user/backup/'
-        r = yield Mkdir(path=dst_dir, attrs=SFTPAttrs(permissions=0o755), hosts=["10.156.135.16"])
         r = yield Mcopy_files(
             srcpaths=src_dir + '*.txt',  # Using wildcard pattern
             dstpath=dst_dir,
             preserve=True,
             recurse=True,
             progress_handler=my_progress_callback,
-            hosts=["10.156.135.16"]
         )
         r = yield Shell(f"ls {dst_dir}/backup/")
         print(r.cp.stdout)
@@ -45,14 +42,12 @@ class Mcopy_files:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.
 
     Notes:
-        If hosts is None or empty, the operation will execute on the current host.
         This implementation uses mcopy which supports wildcard patterns in source paths.
     """
 
     def __init__(self,
                  srcpaths: str,
                  dstpath: str,
-                 hosts: list = None,
                  preserve: bool = False,
                  recurse: bool = False,
                  follow_symlinks: bool = False,
@@ -64,7 +59,6 @@ class Mcopy_files:
                  remote_only: bool = True):
         self.srcpaths = srcpaths
         self.dstpath = dstpath
-        self.hosts = hosts
         self.preserve = preserve
         self.recurse = recurse
         self.follow_symlinks = follow_symlinks
@@ -78,7 +72,6 @@ class Mcopy_files:
     def __repr__(self):
         return (f"Mcopy_files(srcpaths={self.srcpaths!r}, "
                 f"dstpath={self.dstpath!r}, "
-                f"hosts={self.hosts!r}, "
                 f"preserve={self.preserve!r}, "
                 f"recurse={self.recurse!r}, "
                 f"follow_symlinks={self.follow_symlinks!r}, "
@@ -88,56 +81,46 @@ class Mcopy_files:
                 f"remote_only={self.remote_only!r})")
 
     @staticmethod
-    async def _mcopy_files_callback(host_info, sudo_global, command, cp, caller):
-        print(f"{caller}")
+    async def _mcopy_files_callback(host_info, global_info, command, cp, caller):
         """Static callback method for remote-to-remote file copying with glob pattern support"""
-        # Check if this host is in the target hosts list or if hosts list is empty/None
-        if (caller.hosts is None or
-                not caller.hosts or
-                host_info["host"] in caller.hosts):
 
-            print(f"Copying files with glob patterns on host {host_info['host']}")
-            print(f"Source patterns: {caller.srcpaths}")
-            print(f"Destination: {caller.dstpath}")
+        # Validate host_info (matching Copy_files error handling)
+        required_keys = ['host', 'username', 'password']
+        for key in required_keys:
+            if key not in host_info or host_info[key] is None:
+                raise ValueError(f"Missing or invalid value for '{key}' in host_info.")
 
-            async def run_client() -> None:
-                try:
-                    # Connect to the SSH server
-                    async with asyncssh.connect(**host_info) as conn:
-                        # Start an SFTP session
-                        print(f"Connecting to {host_info['host']}")
-                        async with conn.start_sftp_client() as sftp:
-                            print(f"Using mcopy with SFTP client")
-                            # Use the mcopy method for glob pattern matching
-                            await sftp.mcopy(
-                                srcpaths=caller.srcpaths,
-                                dstpath=caller.dstpath,
-                                preserve=caller.preserve,
-                                recurse=caller.recurse,
-                                follow_symlinks=caller.follow_symlinks,
-                                sparse=caller.sparse,
-                                block_size=caller.block_size,
-                                max_requests=caller.max_requests,
-                                progress_handler=caller.progress_handler,
-                                error_handler=caller.error_handler,
-                                remote_only=caller.remote_only
-                            )
-                            print(f"Successfully copied files using glob patterns on {host_info['host']}")
-                except (OSError, asyncssh.Error) as exc:
-                    print(f'mcopy operation failed on {host_info["host"]}: {str(exc)}')
-                    raise
+        # Validate caller attributes (matching Copy_files error handling)
+        if caller.srcpaths is None:
+            raise ValueError("The 'srcpaths' attribute of the caller cannot be None.")
+        if caller.dstpath is None:
+            raise ValueError("The 'dstpath' attribute of the caller cannot be None.")
 
-            try:
-                # Run the client coroutine
-                await run_client()
-            except KeyboardInterrupt:
-                print('Operation interrupted by user.')
-                raise
-            except Exception as e:
-                print(f"An error occurred on {host_info['host']}: {e}")
-                return None
+        try:
+            # Connect to the SSH server
+            async with asyncssh.connect(**host_info) as conn:
+                # Start an SFTP session
+                async with conn.start_sftp_client() as sftp:
+                    # Use the mcopy method for glob pattern matching
+                    await sftp.mcopy(
+                        srcpaths=caller.srcpaths,
+                        dstpath=caller.dstpath,
+                        preserve=caller.preserve,
+                        recurse=caller.recurse,
+                        follow_symlinks=caller.follow_symlinks,
+                        sparse=caller.sparse,
+                        block_size=caller.block_size,
+                        max_requests=caller.max_requests,
+                        progress_handler=caller.progress_handler,
+                        error_handler=caller.error_handler,
+                        remote_only=caller.remote_only
+                    )
+                    return f"Successfully copied files using glob patterns on {host_info['host']}"
+        except (OSError, asyncssh.Error) as exc:
+            raise  # Re-raise the exception to handle it in the caller
 
     def execute(self):
         r = yield Operation(f"{self}", local=True, callback=self._mcopy_files_callback, caller=self)
         r.executed = True
         r.changed = True
+        return r

@@ -26,7 +26,7 @@ def _generate_table(data):
     i = 0
     while i < len(data):
         # Get the current command
-        command = data[i]['op']['command']
+        command = data[i]['op']['command'][:60]
 
         # Create a new row for this command
         row = {"command": command}
@@ -42,6 +42,7 @@ def _generate_table(data):
             host = entry['host']
             executed = entry["cp"]['returncode']
             stdout_value = entry["cp"]['stdout']
+
             # print(type(stdout_value))
             # if type(stdout_value) == "SFTPVFSAttrs":
             #
@@ -72,8 +73,6 @@ def _generate_table(data):
             #     stdout_value = get_sftp_vfs_attrs_representation(sftp_vfs_attrs)
 
             changed = str(stdout_value)[:60] if stdout_value is not None else "None"
-
-
 
             # Add the current host's data
             row[f"{host.replace(".","_")}_executed"] = executed

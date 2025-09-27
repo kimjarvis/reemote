@@ -10,18 +10,13 @@ class Get_lstat:
     attributes of symlinks themselves rather than their targets.
 
     Attributes:
-        hosts (list): The list of hosts from which to get file attributes.
         file_path (str): The path of the file to get attributes for.
-        flags (int): Flags indicating attributes of interest (SFTPv4 or later)
 
     **Examples:**
 
     .. code:: python
 
-        yield Get_lstat(
-            hosts=["10.156.135.16", "10.156.135.17"],
-            file_path="/path/to/symlink.txt"
-        )
+        yield Get_lstat(file_path="/path/to/symlink.txt")
 
     Usage:
         This class is designed to be used in a generator-based workflow where
@@ -29,17 +24,16 @@ class Get_lstat:
         host will be returned in the operation result.
 
     Notes:
-        If hosts is None or empty, the operation will execute on the current host.
+        The operation will execute on all hosts in the current execution context.
         Unlike stat, lstat returns attributes of symlinks themselves rather than
         the files they point to.
     """
 
-    def __init__(self, path: str, hosts: list = None):
+    def __init__(self, path: str):
         self.path = path
-        self.hosts = hosts
 
     def __repr__(self):
-        return f"Get_lstat(file_path={self.path!r}, hosts={self.hosts!r})"
+        return f"Get_lstat(file_path={self.path!r})"
 
     @staticmethod
     def _sftp_attrs_to_dict(attrs):
@@ -71,35 +65,18 @@ class Get_lstat:
         return result
 
     @staticmethod
-    async def _get_lstat_callback(host_info, sudo_global, command, cp, caller):
+    async def _get_lstat_callback(host_info, global_info, command, cp, caller):
         """Static callback method for getting file status using lstat"""
-        if (caller.hosts is None or
-                not caller.hosts or
-                host_info["host"] in caller.hosts):
-
-            print(f"Getting file status using lstat on host {host_info['host']}")
-
-            async def run_client() -> None:
-                try:
-                    async with asyncssh.connect(**host_info) as conn:
-                        async with conn.start_sftp_client() as sftp:
-                            # Use lstat instead of stat to get symlink attributes
-                            lstat_result = await sftp.lstat(caller.path)
-                            # Convert SFTPAttrs to dictionary for JSON serialization
-                            return caller._sftp_attrs_to_dict(lstat_result)
-                except (OSError, asyncssh.Error) as exc:
-                    print(f'SFTP lstat operation failed on {host_info["host"]}: {str(exc)}')
-                    raise
-
-            try:
-                result = await run_client()
-                return result
-            except KeyboardInterrupt:
-                print('Operation interrupted by user.')
-                raise
-            except Exception as e:
-                print(f"An error occurred on {host_info['host']}: {e}")
-                return None
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                # Check if the path is provided
+                if caller.path:
+                    # Use lstat instead of stat to get symlink attributes
+                    lstat_result = await sftp.lstat(caller.path)
+                    # Convert SFTPAttrs to dictionary for JSON serialization
+                    return caller._sftp_attrs_to_dict(lstat_result)
+                else:
+                    raise ValueError("Path must be provided for lstat operation")
 
     def execute(self):
         r = yield Operation(f"{self}", local=True, callback=self._get_lstat_callback, caller=self)
