@@ -2,7 +2,7 @@ import asyncssh
 from reemote.operation import Operation
 
 
-class Rename:
+class Read_file:
     """
     A class to encapsulate the functionality of renaming files/directories
     in Unix-like operating systems using SFTP.

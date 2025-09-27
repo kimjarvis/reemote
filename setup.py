@@ -26,6 +26,7 @@ setup(
         "tabulate",
         "fastapi",
         "nicegui",
+        "pandas",
     ],  # List of dependencies with proper commas
     extras_require={
         "dev": [
