@@ -167,6 +167,7 @@ Example usage:
             print(self.image)
             global ip_address
             ip_address = r2.cp.stdout.rstrip('\n')
+            print("IP address: ", ip_address)
 
     responses = await execute(inventory_func(), Setup_vm(
         vm=args.vm,
