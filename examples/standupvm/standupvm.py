@@ -151,13 +151,11 @@ Example usage:
             r0 = yield Shell(f"mkpasswd -m sha-512 {self.user_password}")
             user_password=r0.cp.stdout.rstrip('\n')
             yield Shell(f"lxc exec {self.vm} -- usermod --password '{user_password}' {self.user}", sudo=True)
-            # if "ubuntu" in self.image:
-            #     # yield Shell(f"rm -rf /home/{self.user}/.ssh")
-            #     # yield Shell(f"mkdir /home/{self.user}/.ssh")
-            #     # yield Mkdir(f"/home/{self.user}/.ssh")
-            #     pass
-            if "centos" in self.image or "ubuntu" in self.image:
-                yield Shell(f"lxc exec {self.vm} -- echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKEUQy84O10r+TapITpKH6Hc/C1wUcA2UzIGeWq1I7QP kim.jarvis@tpfsystems.com' >> /home/{self.user}/.ssh/authorized_keys")
+            if "ubuntu" in self.image:
+                yield Shell(f"lxc exec {self.vm} -- rm -rf /home/{self.user}/.ssh")
+                yield Shell(f"lxc exec {self.vm} -- mkdir /home/{self.user}/.ssh")
+            if ("centos" in self.image) or ("ubuntu" in self.image):
+                yield Shell(f"lxc exec {self.vm} -- echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILKsCuIhJ3KAu2swPUAvYQq5o5evMu8DaJJDOHlVtb20 kim.jarvis@tpfsystems.com' >> /home/{self.user}/.ssh/authorized_keys")
             r1 = yield Shell(f"mkpasswd -m sha-512 {self.root_password}")
             root_password=r1.cp.stdout.rstrip('\n')
             yield Shell(f"lxc exec {self.vm} -- usermod --password '{root_password}' root", sudo=True)
