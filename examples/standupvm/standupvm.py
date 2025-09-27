@@ -152,9 +152,10 @@ Example usage:
             user_password=r0.cp.stdout.rstrip('\n')
             yield Shell(f"lxc exec {self.vm} -- usermod --password '{user_password}' {self.user}", sudo=True)
             if "ubuntu" in self.image:
-                yield Shell(f"lxc exec {self.vm} -- rm -rf /home/{self.user}/.ssh")
+                # yield Shell(f"lxc exec {self.vm} -- rm -rf /home/{self.user}/.ssh")
                 yield Shell(f"lxc exec {self.vm} -- mkdir /home/{self.user}/.ssh")
             if ("centos" in self.image) or ("ubuntu" in self.image):
+                # For Ubuntu, this needs to be written to the host but this does not write it.  Very odd!
                 yield Shell(f"lxc exec {self.vm} -- echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILKsCuIhJ3KAu2swPUAvYQq5o5evMu8DaJJDOHlVtb20 kim.jarvis@tpfsystems.com' >> /home/{self.user}/.ssh/authorized_keys")
             r1 = yield Shell(f"mkpasswd -m sha-512 {self.root_password}")
             root_password=r1.cp.stdout.rstrip('\n')
