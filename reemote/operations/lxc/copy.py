@@ -41,4 +41,4 @@ class Copy:
 
     def execute(self):
         from reemote.operations.server.shell import Shell
-        yield Shell(f"sudo lxc image {self.image} local: --alias {self.alias}")
+        yield Shell(f"sudo lxc image copy {self.image} local: --alias {self.alias}",sudo=self.sudo,su=self.su)

@@ -38,4 +38,4 @@ class Start:
 
     def execute(self):
         from reemote.operations.server.shell import Shell
-        yield Shell(f"lxc start {self.vm}")
+        yield Shell(f"lxc start {self.vm}",sudo=self.sudo,su=self.su)

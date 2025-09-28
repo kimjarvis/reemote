@@ -39,4 +39,4 @@ class Stop:
 
     def execute(self):
         from reemote.operations.server.shell import Shell
-        yield Shell(f"lxc stop {self.vm}")
+        yield Shell(f"lxc stop {self.vm}",sudo=self.sudo,su=self.su)

@@ -14,16 +14,19 @@ class Get_ip:
     """
     def __init__(self,
                  vm: str,
-                 ):
+                 sudo: bool = False,
+                 su: bool = False):
         self.vm = vm
+        self.sudo: bool = sudo
+        self.su: bool = su
 
-    def __repr__(self):
-        return (f"Get_ip("
+    def __repr__(self) -> str:
+        return (f"Stop("
                 f"vm={self.vm!r}, "
-                ")")
+                f"sudo={self.sudo!r}, "
+                f"su={self.su!r}"
+                f")")
 
     def execute(self):
         from reemote.operations.server.shell import Shell
-        r = yield Shell("lxc info centos-vm3 | grep -oE 'inet: *([0-9]{1,3}\.){3}[0-9]{1,3}' | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1")
-        # ip_address = r.cp.stdout.rstrip('\n')
-        # print("IP address: ", ip_address)
+        yield Shell(f"""sudo lxc info {self.vm}"""+"""| grep "inet:" | grep "global" | awk '{print $2}' | cut -d'/' -f1""",sudo=self.sudo, su=self.su)

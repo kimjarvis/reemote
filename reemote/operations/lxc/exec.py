@@ -42,4 +42,4 @@ class Exec:
 
     def execute(self):
         from reemote.operations.server.shell import Shell
-        yield Shell(f"lxc exec {self.vm} -- {self.cmd}")
+        yield Shell(f"lxc exec {self.vm} -- {self.cmd}",sudo=self.sudo,su=self.su)

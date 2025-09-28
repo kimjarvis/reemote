@@ -13,7 +13,7 @@ class Init:
 
     .. code:: python
 
-        yield Init(vm='debian-vm2')
+        yield Init(alias="debian",vm="debian-vm10")
 
     Usage:
         Initialise container
@@ -25,19 +25,22 @@ class Init:
 
     def __init__(self,
                  vm: str,
+                 alias: str,
                  sudo: bool = False,
                  su: bool = False):
         self.vm = vm
+        self.alias = alias
         self.sudo: bool = sudo
         self.su: bool = su
 
     def __repr__(self) -> str:
         return (f"Stop("
                 f"vm={self.vm!r}, "
+                f"alias={self.alias!r}, "
                 f"sudo={self.sudo!r}, "
                 f"su={self.su!r}"
                 f")")
 
     def execute(self):
         from reemote.operations.server.shell import Shell
-        yield Shell(f"lxc stop {self.vm}")
+        yield Shell(f"lxc init {self.alias} {self.vm}",sudo=self.sudo,su=self.su)

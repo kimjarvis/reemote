@@ -38,4 +38,4 @@ class Delete:
 
     def execute(self):
         from reemote.operations.server.shell import Shell
-        yield Shell(f"lxc delete {self.vm}")
+        yield Shell(f"lxc delete {self.vm}",sudo=self.sudo,su=self.su)
