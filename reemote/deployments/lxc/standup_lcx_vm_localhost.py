@@ -41,9 +41,7 @@ class Standup_lcx_vm_localhost:
         from reemote.utilities.make_inventory import make_inventory
         # Call the function
         add_localhost_to_known_hosts()
-        # yield Copy(image=self.image,,sudo=self.sudo,su=self.su)
-        # yield Init(vm=self.vm,sudo=self.sudo,su=self.su)
-        #
+        yield Copy(image=self.image,,sudo=self.sudo,su=self.su)
         yield Init(image=self.image,
             vm=self.vm,
             user=self.user,

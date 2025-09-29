@@ -96,23 +96,23 @@ Example usage:
     # Parse arguments
     args = parser.parse_args()
 
-    # # Read the inventory file
-    # inventory_func=read_inventory(args.inventory)
-    #
-    # responses = await execute(inventory_func(), Standup_lcx_vm_localhost(
-    #     vm=args.vm,
-    #     image=args.image,
-    #     name=args.name,
-    #     user=args.user,
-    #     user_password=args.user_password,
-    #     root_password=args.root_password,
-    #     sudo=True,
-    #     su=False,
-    # ))
-    # json = produce_json(responses)
-    # df = convert_to_df(json, columns=["command", "host", "returncode", "stdout", "stderr", "error"])
-    # table = convert_to_tabulate(df)
-    # print(table)
+    # Read the inventory file
+    inventory_func=read_inventory(args.inventory)
+
+    responses = await execute(inventory_func(), Standup_lcx_vm_localhost(
+        vm=args.vm,
+        image=args.image,
+        name=args.name,
+        user=args.user,
+        user_password=args.user_password,
+        root_password=args.root_password,
+        sudo=True,
+        su=False,
+    ))
+    json = produce_json(responses)
+    df = convert_to_df(json, columns=["command", "host", "returncode", "stdout", "stderr", "error"])
+    table = convert_to_tabulate(df)
+    print(table)
 
 
     inventory_func = read_inventory(f"inventory-{args.vm}.py")
