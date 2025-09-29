@@ -61,6 +61,8 @@ class Get_OS:
         return r0.cp.stdout
 
     def __repr__(self):
-        return (f"Get_OS(field={self.filed!r}, "
+        return (f"Get_OS(field={self.field!r}, "
                 f"guard={self.guard!r}, "                                
-                f"sudo={self.sudo!r}, su={self.su!r})")
+                f"sudo={self.sudo!r}, "
+                f"su={self.su!r}"
+                f")")

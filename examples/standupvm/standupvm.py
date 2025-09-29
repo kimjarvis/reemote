@@ -20,7 +20,7 @@ from reemote.utilities.convert_to_tabulate import convert_to_tabulate
 from reemote.utilities.read_inventory import read_inventory
 
 from reemote.deployments.lxc.standup_lcx_vm_localhost import Standup_lcx_vm_localhost
-from reemote.deployments.lxc.standup_lcx_vm_remotehost import Standup_lcx_vm_remotehost
+from reemote.deployments.nginx.install_nginx import Install_nginx
 
 def validate_file_path(file_path):
     """Validate that the given file path exists."""
@@ -96,36 +96,16 @@ Example usage:
     # Parse arguments
     args = parser.parse_args()
 
-    # Read the inventory file
-    inventory_func=read_inventory(args.inventory)
-
-    responses = await execute(inventory_func(), Standup_lcx_vm_localhost(
-        vm=args.vm,
-        image=args.image,
-        name=args.name,
-        user=args.user,
-        user_password=args.user_password,
-        root_password=args.root_password,
-        sudo=True,
-        su=False,
-    ))
-    json = produce_json(responses)
-    df = convert_to_df(json, columns=["command", "host", "returncode", "stdout", "stderr", "error"])
-    table = convert_to_tabulate(df)
-    print(table)
-
-
-    # inventory_func = read_inventory(f"inventory-{args.vm}.py")
-    # ip_address = inventory_func()[0][0]['host']
+    # # Read the inventory file
+    # inventory_func=read_inventory(args.inventory)
     #
-    # responses = await execute(inventory_func(), Standup_lcx_vm_remotehost(
+    # responses = await execute(inventory_func(), Standup_lcx_vm_localhost(
     #     vm=args.vm,
     #     image=args.image,
     #     name=args.name,
     #     user=args.user,
     #     user_password=args.user_password,
     #     root_password=args.root_password,
-    #     ip_address=ip_address,
     #     sudo=True,
     #     su=False,
     # ))
@@ -133,6 +113,35 @@ Example usage:
     # df = convert_to_df(json, columns=["command", "host", "returncode", "stdout", "stderr", "error"])
     # table = convert_to_tabulate(df)
     # print(table)
+
+
+    inventory_func = read_inventory(f"inventory-{args.vm}.py")
+    ip_address = inventory_func()[0][0]['host']
+
+    responses = await execute(inventory_func(), Install_nginx(
+        title=f"{args.vm}",
+        body=f"""
+            <h1>{args.image} virtual machine {args.vm} started</h1>
+            <p>ssh access:</p>
+            <p>ssh {args.user}@{ip_address}</p>
+            <p>using password: {args.user_password}</p>
+            <p>The user {args.user} has been added to the sudoers file</p>
+            <p>Wrote inventory file inventory-{args.vm}.py</p>
+        """,
+        # vm=args.vm,
+        # image=args.image,
+        # name=args.name,
+        user=args.user,
+        # user_password=args.user_password,
+        # root_password=args.root_password,
+        # ip_address=ip_address,
+        sudo=True,
+        su=False,
+    ))
+    json = produce_json(responses)
+    df = convert_to_df(json, columns=["command", "host", "returncode", "stdout", "stderr", "error"])
+    table = convert_to_tabulate(df)
+    print(table)
 
 if __name__ == "__main__":
     asyncio.run(main())

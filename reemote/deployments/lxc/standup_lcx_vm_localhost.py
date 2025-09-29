@@ -66,29 +66,27 @@ class Standup_lcx_vm_localhost:
             r=yield Mkpasswd(password=self.user_password)
             print(r)
             yield Exec(vm=self.vm,cmd=f"usermod --password '{r.cp.stdout}' {self.user}", sudo=self.sudo,su=self.su)
-
             # Should check whether there are pipes in these commands as cannot run in terminal ?  We can grep the output but not run a script like thing in lxc
             # yield Exec(vm=self.vm,cmd=f"echo '{self.user} ALL=(ALL:ALL) ALL' | sudo tee /etc/sudoers.d/{self.user} > /dev/null", sudo=self.sudo,su=self.su)
-
-            yield Exec(vm=self.vm, cmd=f"""bash -c 'cat <<EOF > /etc/sudoers.d/kim
-kim ALL=(ALL:ALL) ALL
+            yield Exec(vm=self.vm, cmd=f"""bash -c 'cat <<EOF > /etc/sudoers.d/{self.user}
+{self.user} ALL=(ALL:ALL) ALL
 EOF'
 """)
-            
-            
             yield Exec(vm=self.vm,cmd=f"sudo chmod 440 /etc/sudoers.d/{self.user}", sudo=self.sudo,su=self.su)
+        if "alpine" in self.image:
+            yield Exec(vm=self.vm,cmd='apk update',sudo=self.sudo,su=self.su)
+            # yield Exec(vm=self.vm,cmd='apk add shadow',sudo=self.sudo,su=self.su)
+            yield Exec(vm=self.vm,cmd='apk add openssh-server',sudo=self.sudo,su=self.su)
+            yield Exec(vm=self.vm, cmd='rc-update add sshd', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd='rc-service sshd start', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd='rc-service sshd status', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd=f"useradd -m -s /bin/sh -c '{self.name}' {self.user}", sudo=self.sudo,su=self.su)
+            r = yield Mkpasswd(password=self.user_password)
+            print(r)
+            yield Exec(vm=self.vm, cmd=f"usermod --password '{r.cp.stdout}' {self.user}", sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm,cmd='apk add sudo',sudo=self.sudo,su=self.su)
+            yield Exec(vm=self.vm, cmd=f"""sh -c 'echo "{self.user} ALL=(ALL:ALL) ALL" > /etc/sudoers.d/{self.user}' """, sudo=self.sudo, su=self.su)
 
-        # add to sudoers file
-
-
-        # if "alpine" in self.image:
-        #     yield Exec(vm=self.vm,cmd='apk update',sudo=self.sudo,su=self.su)
-        #     yield Exec(vm=self.vm,cmd='apk add shadow',sudo=self.sudo,su=self.su)
-        #     yield Exec(vm=self.vm,cmd='apk add openssh-server',sudo=self.sudo,su=self.su)
-        #     yield Exec(vm=self.vm, cmd='rc-update add sshd', sudo=self.sudo, su=self.su)
-        #     yield Exec(vm=self.vm, cmd='rc-service sshd start', sudo=self.sudo, su=self.su)
-        #     yield Exec(vm=self.vm, cmd='rc-service sshd status', sudo=self.sudo, su=self.su)
-        #     # yield Exec(vm=self.vm, cmd=f"useradd -m -s /bin/sh -c '{self.name}' {self.user}", sudo=self.sudo,su=self.su)
         #     # No rc-service or shadow on debian
         #     yield Exec(vm=self.vm, cmd=f"""sh -c "echo -e 'PasswordAuthentication yes\nPermitRootLogin no\nAllowUsers {self.user}' >> /etc/ssh/sshd_config && rc-service sshd restart" """, sudo=self.sudo,su=self.su)
         #     r=yield Mkpasswd(password=self.user_password)
@@ -98,6 +96,7 @@ EOF'
         # # yield Shell(f"lxc exec {self.vm} -- usermod --password '{r.cp.stdout}' {self.user}", sudo=self.sudo,su=self.su)
         # # r=yield Mkpasswd(password=self.root_password)
         # # yield Shell(f"lxc exec {self.vm} -- usermod --password '{r.cp.stdout}' root", sudo=self.sudo,su=self.su)
+
         r=yield Get_ip(vm=self.vm, sudo=self.sudo,su=self.su)
         ip_address=r.cp.stdout
         yield Shell(f"ssh-keyscan {ip_address} >> ~/.ssh/known_hosts", sudo=self.sudo,su=self.su)
