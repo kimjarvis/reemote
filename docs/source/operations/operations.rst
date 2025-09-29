@@ -11,6 +11,7 @@ This section contains documentation for various operations supported by Reemote.
    dnf
    dpkg
    filesystem
+   pacman
    pip
    pipx
    scp
@@ -18,3 +19,4 @@ This section contains documentation for various operations supported by Reemote.
    sftp
    users
    yum
+   zypper

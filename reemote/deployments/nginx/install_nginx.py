@@ -41,6 +41,7 @@ class Install_nginx:
         from reemote.operations.sftp.chmod import Chmod
         from reemote.operations.filesystem.chown import Chown
         from reemote.facts.server.get_os import Get_OS
+        from reemote.operations.sftp.touch import Touch
         from reemote.operations.sftp.remove import Remove
         # yield Remove(
         #     path=f'/tmp/{self.user}',
@@ -85,7 +86,7 @@ class Install_nginx:
             yield Upgrade(sudo=True)
             yield Packages(packages=["nginx", "ufw"], present=True, sudo=True)
             yield Shell("ufw allow 'Nginx Full'", sudo=True)
-        if "Centos" in os:
+        if "CentOS" in os:
             from reemote.operations.dnf.update import Update
             from reemote.operations.dnf.upgrade import Upgrade
             from reemote.operations.dnf.packages import Packages
@@ -93,17 +94,24 @@ class Install_nginx:
             yield Upgrade(sudo=True)
             yield Packages(packages=["nginx", "ufw"], present=True, sudo=True)
             yield Shell("ufw allow 'Nginx Full'", sudo=True)
+        if "Arch" in os:
+            from reemote.operations.pacman.update import Update
+            from reemote.operations.pacman.packages import Packages
+            yield Update(sudo=True)
+            yield Packages(packages=["nginx", "ufw"], present=True, sudo=True)
+            yield Shell("ufw allow 'Nginx Full'", sudo=True)
 
-        if "Debian" in os:
-            index_directory="/var/www/html"
-            index_file="index.nginx-debian.html"
-        if "Centos" in os:
-            index_directory="/usr/share/nginx/html"
-            index_file="index.html"
+
         if "Alpine" in os:
             index_directory = "/usr/share/nginx/html"
             index_file = "index.html"
-        if "Centos" in os:
+        if "Debian" in os or "Ubuntu" in os:
+            index_directory="/var/www/html"
+            index_file="index.nginx-debian.html"
+        if "CentOS" in os:
+            index_directory="/usr/share/nginx/html"
+            index_file="index.html"
+        if "Arch" in os:
             index_directory="/usr/share/nginx/html"
             index_file="index.html"
 
@@ -143,11 +151,53 @@ server {
     index index.html;
 }                             
             """)
+        if "CentOS" in os:
+            # yield Chown(path="/etc/nginx/default.d", owner=self.user, group=self.user, sudo=True)
+            # yield Chmod(
+            #     path="/etc/nginx/default.d",
+            #     mode=0o755,
+            # )
+            yield Touch(path="/etc/nginx/conf.d/centos.conf")
+            yield Chown(path="/etc/nginx/conf.d/centos.conf", owner=self.user, group=self.user, sudo=True)
+            yield Chmod(
+                path=f"/etc/nginx/conf.d/centos.conf",
+                mode=0o755,
+            )
+            yield Write_file(path=f"/etc/nginx/conf.d/centos.conf",
+                             text="""
+server {
+    listen       80;
+    server_name  localhost;
+
+    root /usr/share/nginx/html;
+    index index.html;
+}                             
+                        """)
+            if "CentOS" in os:
+                # yield Chown(path="/etc/nginx/conf.d", owner=self.user, group=self.user, sudo=True)
+                # yield Chmod(
+                #     path="/etc/nginx/conf.d",
+                #     mode=0o755,
+                # )
+                yield Touch(path="/etc/nginx/conf.d/centos.conf")
+                yield Chown(path="/etc/nginx/conf.d/centos.conf", owner=self.user, group=self.user, sudo=True)
+                yield Chmod(
+                    path=f"/etc/nginx/conf.d/centos.conf",
+                    mode=0o755,
+                )
+                yield Write_file(path=f"/etc/nginx/conf.d/centos.conf",
+                                 text="""
+        server {
+            listen       80;
+            server_name  localhost;
+
+            root /usr/share/nginx/html;
+            index index.html;
+        }                             
+                                """)
 
         if "Alpine" in os:
             yield Shell("rc-service nginx restart", sudo=True)
             print("restart nginx")
-        if "Debian" in os or "Ubuntu" in os:
+        if "CentOS" in os or "Arch" in os or "Debian" in os or "Ubuntu" in os:
             yield Shell("systemctl restart nginx", sudo=True)
-        if "Centos" in os:
-            print("restart nginx")

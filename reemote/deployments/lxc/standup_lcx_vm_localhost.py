@@ -41,7 +41,7 @@ class Standup_lcx_vm_localhost:
         from reemote.utilities.make_inventory import make_inventory
         # Call the function
         add_localhost_to_known_hosts()
-        yield Copy(image=self.image,,sudo=self.sudo,su=self.su)
+        yield Copy(image=self.image,sudo=self.sudo,su=self.su)
         yield Init(image=self.image,
             vm=self.vm,
             user=self.user,
@@ -84,6 +84,61 @@ EOF'
             yield Exec(vm=self.vm, cmd=f"usermod --password '{r.cp.stdout}' {self.user}", sudo=self.sudo, su=self.su)
             yield Exec(vm=self.vm,cmd='apk add sudo',sudo=self.sudo,su=self.su)
             yield Exec(vm=self.vm, cmd=f"""sh -c 'echo "{self.user} ALL=(ALL:ALL) ALL" > /etc/sudoers.d/{self.user}' """, sudo=self.sudo, su=self.su)
+        if "centos" in self.image:
+            yield Exec(vm=self.vm, cmd='dnf update', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd='dnf install -y openssh-server', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd='systemctl start sshd', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd='systemctl enable sshd', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd='systemctl status sshd', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd=f"useradd -m -s /bin/bash -c '{self.name}' {self.user}", sudo=self.sudo,
+                       su=self.su)
+            r = yield Mkpasswd(password=self.user_password)
+            print(r)
+            yield Exec(vm=self.vm, cmd=f"usermod --password '{r.cp.stdout}' {self.user}", sudo=self.sudo, su=self.su)
+            # Should check whether there are pipes in these commands as cannot run in terminal ?  We can grep the output but not run a script like thing in lxc
+            # yield Exec(vm=self.vm,cmd=f"echo '{self.user} ALL=(ALL:ALL) ALL' | sudo tee /etc/sudoers.d/{self.user} > /dev/null", sudo=self.sudo,su=self.su)
+            yield Exec(vm=self.vm, cmd=f"sudo chmod 777 /etc/sudoers.d", sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd=f"echo '{self.user} ALL=(ALL:ALL) ALL' > /etc/sudoers.d/{self.user}", sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd=f"sudo chmod 440 /etc/sudoers.d", sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd=f"sudo chmod 440 /etc/sudoers.d/{self.user}", sudo=self.sudo, su=self.su)
+        if "arch" in self.image:
+            yield Exec(vm=self.vm, cmd='pacman --noconfirm -Syu', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd='pacman --noconfirm -S openssh', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd='systemctl start sshd', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd='systemctl enable sshd', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd='systemctl status sshd', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd=f"useradd -m -s /bin/bash -c '{self.name}' {self.user}", sudo=self.sudo,
+                       su=self.su)
+            r = yield Mkpasswd(password=self.user_password)
+            print(r)
+            yield Exec(vm=self.vm, cmd=f"usermod --password '{r.cp.stdout}' {self.user}", sudo=self.sudo,
+                       su=self.su)
+            # Should check whether there are pipes in these commands as cannot run in terminal ?  We can grep the output but not run a script like thing in lxc
+            # yield Exec(vm=self.vm,cmd=f"echo '{self.user} ALL=(ALL:ALL) ALL' | sudo tee /etc/sudoers.d/{self.user} > /dev/null", sudo=self.sudo,su=self.su)
+            yield Exec(vm=self.vm, cmd=f"""bash -c 'cat <<EOF > /etc/sudoers.d/{self.user}
+{self.user} ALL=(ALL:ALL) ALL
+EOF'
+""")
+            yield Exec(vm=self.vm, cmd=f"sudo chmod 440 /etc/sudoers.d/{self.user}", sudo=self.sudo, su=self.su)
+        if "suse" in self.image:
+            yield Exec(vm=self.vm, cmd='pacman --noconfirm -Syu', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd='pacman --noconfirm -S openssh', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd='systemctl start sshd', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd='systemctl enable sshd', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd='systemctl status sshd', sudo=self.sudo, su=self.su)
+            yield Exec(vm=self.vm, cmd=f"useradd -m -s /bin/bash -c '{self.name}' {self.user}", sudo=self.sudo,
+                       su=self.su)
+            r = yield Mkpasswd(password=self.user_password)
+            print(r)
+            yield Exec(vm=self.vm, cmd=f"usermod --password '{r.cp.stdout}' {self.user}", sudo=self.sudo,
+                       su=self.su)
+            # Should check whether there are pipes in these commands as cannot run in terminal ?  We can grep the output but not run a script like thing in lxc
+            # yield Exec(vm=self.vm,cmd=f"echo '{self.user} ALL=(ALL:ALL) ALL' | sudo tee /etc/sudoers.d/{self.user} > /dev/null", sudo=self.sudo,su=self.su)
+            yield Exec(vm=self.vm, cmd=f"""bash -c 'cat <<EOF > /etc/sudoers.d/{self.user}
+            {self.user} ALL=(ALL:ALL) ALL
+            EOF'
+            """)
+            yield Exec(vm=self.vm, cmd=f"sudo chmod 440 /etc/sudoers.d/{self.user}", sudo=self.sudo, su=self.su)
 
         #     # No rc-service or shadow on debian
         #     yield Exec(vm=self.vm, cmd=f"""sh -c "echo -e 'PasswordAuthentication yes\nPermitRootLogin no\nAllowUsers {self.user}' >> /etc/ssh/sshd_config && rc-service sshd restart" """, sudo=self.sudo,su=self.su)
