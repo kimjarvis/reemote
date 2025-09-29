@@ -12,10 +12,10 @@ class Copy:
 
     .. code:: python
 
-        yield Copy(image='images:af547c023b88',alias='debian')
+        yield Copy(image='images:af547c023b88')
 
     Usage:
-        Copy image to alias.
+        Copy image.
 
     Notes:
         - Commands are constructed based on the `present`, `sudo`, and `su` flags.
@@ -24,11 +24,9 @@ class Copy:
 
     def __init__(self,
                  image: str,
-                 alias: str = None,
                  sudo: bool = False,
                  su: bool = False):
         self.image = image
-        self.alias = alias
         self.sudo: bool = sudo
         self.su: bool = su
 
@@ -41,4 +39,4 @@ class Copy:
 
     def execute(self):
         from reemote.operations.server.shell import Shell
-        yield Shell(f"sudo lxc image copy {self.image} local: --alias {self.alias}",sudo=self.sudo,su=self.su)
+        yield Shell(f"sudo lxc image copy {self.image} local:",sudo=self.sudo,su=self.su)

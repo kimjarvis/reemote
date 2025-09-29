@@ -29,4 +29,5 @@ class Get_ip:
 
     def execute(self):
         from reemote.operations.server.shell import Shell
-        yield Shell(f"""sudo lxc info {self.vm}"""+"""| grep "inet:" | grep "global" | awk '{print $2}' | cut -d'/' -f1""",sudo=self.sudo, su=self.su)
+        r = yield Shell(f"""sudo lxc info {self.vm}"""+"""| grep "inet:" | grep "global" | awk '{print $2}' | cut -d'/' -f1""",sudo=self.sudo, su=self.su)
+        r.cp.stdout = r.cp.stdout.rstrip('\n')

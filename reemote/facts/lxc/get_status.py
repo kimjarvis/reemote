@@ -30,6 +30,5 @@ class Get_status:
 
     def execute(self):
         from reemote.operations.server.shell import Shell
-        r = yield Shell("lxc info centos-vm3 | grep -oP 'Status: \K\S+'")
-        # ip_address = r.cp.stdout.rstrip('\n')
-        # print("Status: ", ip_address)
+        r = yield Shell(f"lxc info {self.vm} | grep -oP 'Status: \K\S+'")
+        r.cp.stdout = r.cp.stdout.rstrip('\n')
