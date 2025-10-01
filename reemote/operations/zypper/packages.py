@@ -3,7 +3,7 @@ from reemote.operation import Operation
 
 class Packages:
     """
-    A class to manage package operations on a remote system using `pacman`.
+    A class to manage package operations on a remote system using zypper.
 
     Attributes:
         packages (List[str]): A list of package names to be added or removed.

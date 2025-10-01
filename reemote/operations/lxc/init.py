@@ -27,12 +27,14 @@ class Init:
                  image: str,
                  user: str,
                  user_password: str,
+                 options: str = "",
                  sudo: bool = False,
                  su: bool = False):
         self.vm = vm
         self.image = image
         self.user = user
         self.user_password = user_password
+        self.options = options
         self.sudo: bool = sudo
         self.su: bool = su
 
@@ -42,6 +44,7 @@ class Init:
                 f"image={self.image!r}, "
                 f"user={self.user!r}, "
                 f"user_password={self.user_password!r}, "
+                f"options={self.options!r}, "
                 f"sudo={self.sudo!r}, "
                 f"su={self.su!r}"
                 f")")
@@ -56,6 +59,6 @@ class Init:
         #             """
         #             ,sudo=self.sudo,su=self.su)
 
-        yield Shell(f"""lxc init {self.image} {self.vm}
+        yield Shell(f"""lxc init {self.image} {self.vm} {self.options}
                     """
                     ,sudo=self.sudo,su=self.su)

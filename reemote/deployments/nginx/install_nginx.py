@@ -100,6 +100,12 @@ class Install_nginx:
             yield Update(sudo=True)
             yield Packages(packages=["nginx", "ufw"], present=True, sudo=True)
             yield Shell("ufw allow 'Nginx Full'", sudo=True)
+        if "SUSE" in os:
+            from reemote.operations.zypper.update import Update
+            from reemote.operations.zypper.packages import Packages
+            yield Update(sudo=True)
+            yield Packages(packages=["nginx", "ufw"], present=True, sudo=True)
+            yield Shell("ufw allow 'Nginx Full'", sudo=True)
 
 
         if "Alpine" in os:
@@ -112,6 +118,9 @@ class Install_nginx:
             index_directory="/usr/share/nginx/html"
             index_file="index.html"
         if "Arch" in os:
+            index_directory="/usr/share/nginx/html"
+            index_file="index.html"
+        if "SUSE" in os:
             index_directory="/usr/share/nginx/html"
             index_file="index.html"
 
@@ -196,8 +205,27 @@ server {
         }                             
                                 """)
 
+
+            if "SUSE" in os:
+                yield Touch(path="/etc/nginx/conf.d/centos.conf")
+                yield Chown(path="/etc/nginx/conf.d/centos.conf", owner=self.user, group=self.user, sudo=True)
+                yield Chmod(
+                    path=f"/etc/nginx/conf.d/centos.conf",
+                    mode=0o755,
+                )
+                yield Write_file(path=f"/etc/nginx/conf.d/centos.conf",
+                                 text="""
+        server {
+            listen       80;
+            server_name  localhost;
+
+            root /usr/share/nginx/html;
+            index index.html;
+        }                             
+                                """)
+
         if "Alpine" in os:
             yield Shell("rc-service nginx restart", sudo=True)
             print("restart nginx")
-        if "CentOS" in os or "Arch" in os or "Debian" in os or "Ubuntu" in os:
+        if "CentOS" in os or "Arch" in os or "Debian" in os or "Ubuntu" in os or "SUSE" in os:
             yield Shell("systemctl restart nginx", sudo=True)
