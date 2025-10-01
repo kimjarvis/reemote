@@ -69,6 +69,51 @@ def serialize_result(obj):
     else:
         raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
+def format_output(text):
+    if text:
+        max_length = 40
+        if len(text) <= max_length:
+            # If the text is 80 characters or shorter, print it as is
+            return(text)
+        else:
+            # If the text is longer than 80 characters, slice it
+            first_part = text[:max_length]
+            last_part = text[-max_length:]
+            return(f"""{first_part}
+...
+            {last_part}""")
+    else:
+        return ""
+
+
+def word_wrap(text, width=40):
+    wrapped_lines = []
+
+    # Split the text into lines based on existing newlines
+    if text:
+        for line in text.splitlines():
+            # Handle each line separately
+            current_line = ""
+            words = line.split()
+
+            for word in words:
+                # Check if adding the next word exceeds the width
+                if len(current_line) + len(word) + 1 <= width:
+                    # Add the word to the current line (with a space if not empty)
+                    current_line += (" " + word if current_line else word)
+                else:
+                    # Append the current line to the result and start a new line
+                    wrapped_lines.append(current_line)
+                    current_line = word
+
+            # Append any remaining text in the current line
+            if current_line:
+                wrapped_lines.append(current_line)
+
+        # Join all wrapped lines with newlines and return
+        return "\n".join(wrapped_lines)
+    else:
+        return ""
 
 def serialize_cp(obj):
     if obj is None:
@@ -86,13 +131,15 @@ def serialize_cp(obj):
 
         return {
             "env": env,
-            "command": obj.command,
+            "command": word_wrap(obj.command),
             "subsystem": obj.subsystem,
             "exit_status": obj.exit_status,
             "exit_signal": exit_signal,
             "returncode": obj.returncode,
-            "stdout": stdout,
-            "stderr": stderr,
+            "stdout": format_output(stdout),
+            # "stdout",
+            "stderr": format_output(word_wrap(stderr)),
+            # "stderr": stderr,
         }
     else:
         raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")

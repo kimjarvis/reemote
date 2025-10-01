@@ -15,4 +15,5 @@ This section contains documentation for various facts supported by Reemote.
    server
    sftp
    yum
+   zypper
 

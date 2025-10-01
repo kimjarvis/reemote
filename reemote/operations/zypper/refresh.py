@@ -1,5 +1,5 @@
 from reemote.operation import Operation
-class Update:
+class Refresh:
     """
     A class to manage package operations on a remote system using zypper.
 
@@ -11,7 +11,7 @@ class Update:
 
     .. code:: python
 
-        yield Update()
+        yield Refresh()
 
     Usage:
         Update installed packages.
@@ -30,7 +30,7 @@ class Update:
         self.su: bool = su
 
     def __repr__(self) -> str:
-        return (f"Update("
+        return (f"Refresh("
                 f"guard={self.guard!r}, "                
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
@@ -41,7 +41,7 @@ class Update:
         # Retrieve the current list of installed packages
         r1 = yield Operation(f"rpm -qa", guard=self.guard, sudo=self.sudo, su=self.su)
 
-        r2 = yield Operation(f"zypper --non-interactive update", guard=self.guard, sudo=self.sudo, su=self.su)
+        r2 = yield Operation(f"zypper --non-interactive refresh", guard=self.guard, sudo=self.sudo, su=self.su)
         # print(r2)
         # Retrieve the updated list of installed packages
         r3 = yield Operation(f"rpm -qa", guard=self.guard, sudo=self.sudo, su=self.su)

@@ -30,10 +30,37 @@ class Operation:
                 f"host_info={self.host_info!r}, "
                 f"global_info={self.global_info!r})")
 
+
+def word_wrap(text, width=40):
+    wrapped_lines = []
+
+    # Split the text into lines based on existing newlines
+    for line in text.splitlines():
+        # Handle each line separately
+        current_line = ""
+        words = line.split()
+
+        for word in words:
+            # Check if adding the next word exceeds the width
+            if len(current_line) + len(word) + 1 <= width:
+                # Add the word to the current line (with a space if not empty)
+                current_line += (" " + word if current_line else word)
+            else:
+                # Append the current line to the result and start a new line
+                wrapped_lines.append(current_line)
+                current_line = word
+
+        # Append any remaining text in the current line
+        if current_line:
+            wrapped_lines.append(current_line)
+
+    # Join all wrapped lines with newlines and return
+    return "\n".join(wrapped_lines)
+
 def serialize_operation(obj):
     if isinstance(obj, Operation):  # Check if the object is of type Operation
         return {
-            "command": obj.command,          # Serialize the command (string)
+            "command": word_wrap(obj.command),          # Serialize the command (string)
             "guard": obj.guard,              # Serialize the guard (boolean)
             "host_info": obj.host_info,      # Serialize the host_info (dict or None)
             "global_info": obj.global_info       # Serialize the global_info (dict or None)

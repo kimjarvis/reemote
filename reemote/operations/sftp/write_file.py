@@ -51,18 +51,20 @@ class Write_file:
         try:
             # Connect to the SSH server
             async with asyncssh.connect(**host_info) as conn:
+                print("Connected successfully. Starting SFTP session...")
                 # Start an SFTP session
                 async with conn.start_sftp_client() as sftp:
+                    print(f"Writing content to {caller.path}...")
                     # Define the string content to be written
                     content = caller.text
 
                     # Open the remote file in write mode and write the content
                     async with sftp.open(caller.path, 'w') as remote_file:
-                        await remote_file.write(content)
-                    # print(f"Successfully wrote file on {host_info['host']}")
+                        r = await remote_file.write(content)
+                        print(f"Successfully wrote file {caller.path} on {host_info['host']} r {r}")
 
         except (OSError, asyncssh.Error) as exc:
-            # print(f'SFTP operation failed on {host_info["host"]}: {str(exc)}')
+            print(f'SFTP operation failed on {host_info["host"]}: {str(exc)}')
             raise
 
     def execute(self):
