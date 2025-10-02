@@ -1,4 +1,3 @@
-import asyncssh
 class Add_sudo_user:
     """
     A class to encapsulate the functionality of adding a user with sudo privileges
@@ -26,11 +25,15 @@ class Add_sudo_user:
         and sudo configuration commands are yielded for execution on remote hosts.
 
     Notes:
+        - The user creation uses `adduser -D` to create a system user without a home directory.
+        - The password is set using `chpasswd` for secure password assignment.
+        - Sudo privileges are configured by creating a file in `/etc/sudoers.d/` directory.
+        - The operation includes cleanup of temporary files used during configuration.
         - The sudo configuration grants the user full sudo privileges (`ALL=(ALL:ALL) ALL`).
     """
 
-    def __init__(self, user: str = None,
-                 password: str = None,
+    def __init__(self, user: str=None,
+                 password: str=None,
                  guard: bool = True,
                  sudo: bool = False,
                  su: bool = False):
@@ -49,28 +52,21 @@ class Add_sudo_user:
 
     def execute(self):
         if self.guard:
-            from reemote.commands.sftp.write_file import Write_file
             from reemote.operations.server.shell import Shell
-            # Write to a temporary location first
-            yield Write_file(
+            from reemote.operations.sftp.write_file import Write_file
+            from reemote.operations.sftp.chmod import Chmod
+            from reemote.operations.sftp.remove import Remove
+            yield Shell(f'adduser -D {self.user} && echo "{self.user}:{self.password}" | chpasswd', su=self.su)
+            yield Remove(
                 path=f'/tmp/{self.user}',
-                text=f'{self.user} ALL=(ALL) NOPASSWD:ALL',
-                attrs=asyncssh.SFTPAttrs(permissions=0o444,uid=0)
             )
-
-            # Move with sudo
-            yield Shell(
-                f'sudo mv /tmp/{self.user} /etc/sudoers.d/{self.user}',
-                sudo=True
+            yield Remove(
+                path='/tmp/set_owner.sh',
             )
-
-            # Set final permissions
-            yield Shell(
-                f'sudo chmod 0440 /etc/sudoers.d/{self.user}',
-                sudo=True
+            yield Write_file(path=f'/tmp/{self.user}', text=f'{self.user} ALL=(ALL:ALL) ALL')
+            yield Write_file(path='/tmp/set_owner.sh', text=f'chown root:root /tmp/{self.user};cp /tmp/{self.user} /etc/sudoers.d')
+            yield Chmod(
+                path='/tmp/set_owner.sh',
+                mode=0o755,
             )
-
-            yield Shell(
-                f'sudo chown root:root /etc/sudoers.d/{self.user}',
-                sudo=True
-            )
+            yield Shell("bash /tmp/set_owner.sh", su=self.su)
