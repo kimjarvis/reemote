@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="reemote",  # Name of your package
-    version="0.0.15",   # Version number
+    version="0.0.16",   # Version number
     description="A Python package for reemote functionality",  # Short description
     long_description="""
     Reemote is a Python API for task automation, configuration management and application deployment.
@@ -26,6 +26,7 @@ setup(
         "tabulate",
         "fastapi",
         "nicegui",
+        "pandas",
     ],  # List of dependencies with proper commas
     extras_require={
         "dev": [
