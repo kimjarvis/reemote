@@ -26,6 +26,7 @@ class Packages:
         r = yield Shell("which vim")
         print(r.cp.stdout)
 
+
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.
         It supports adding or removing packages based on the `present` flag and allows privilege escalation via `sudo` or `su`.

@@ -1,6 +1,6 @@
 from typing import Dict, Optional, Callable
 
-from wheel.macosx_libfile import segment_command_fields
+# from wheel.macosx_libfile import segment_command_fields
 
 
 class Operation:

@@ -9,7 +9,7 @@ Pacman operations
    :show-inheritance:
    :undoc-members:
 
-.. automodule:: reemote.operations.packman.update
+.. automodule:: reemote.operations.pacman.update
    :members:
    :show-inheritance:
    :undoc-members:

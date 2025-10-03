@@ -14,12 +14,6 @@ SFTP Facts
    :show-inheritance:
    :undoc-members:
 
-.. automodule:: reemote.operations.sftp.chown
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-
 .. automodule:: reemote.operations.sftp.copy_files
    :members:
    :show-inheritance:
