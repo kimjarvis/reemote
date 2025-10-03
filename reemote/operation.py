@@ -1,8 +1,5 @@
 from typing import Dict, Optional, Callable
 
-from wheel.macosx_libfile import segment_command_fields
-
-
 class Operation:
     def __init__(self, command: str, guard: bool = True, local: bool = False, callback: Optional[Callable] = None, caller=None, sudo: bool = False, su: bool = False, composite=False):
         self.command: str = command

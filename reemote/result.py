@@ -138,8 +138,8 @@ def serialize_cp(obj):
             "returncode": obj.returncode,
             "stdout": format_output(stdout),
             # "stdout",
-            "stderr": format_output(word_wrap(stderr)),
-            # "stderr": stderr,
+            # "stderr": format_output(word_wrap(stderr)),
+            "stderr": stderr,
         }
     else:
         raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")

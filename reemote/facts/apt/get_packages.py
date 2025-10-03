@@ -46,6 +46,11 @@ class Get_packages:
 
         yield Get_packages()
 
+
+    .. code:: bash
+
+        reemote -i ~/reemote/inventory-proxmox-debian.py -s reemote/facts/apt/get_packages.py -c Get_packages
+
     """
     def execute(self):
         from reemote.operations.server.shell import Shell

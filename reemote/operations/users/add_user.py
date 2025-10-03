@@ -24,8 +24,6 @@ class Add_user:
         commands are yielded for execution on remote hosts.
 
     Notes:
-        - The user creation uses `adduser -D` to create a system user without a home directory.
-        - The password is set using `chpasswd` for secure password assignment.
         - Privilege escalation (sudo/su) is handled based on the respective flags.
     """
     def __init__(self, user: str = None,
@@ -48,4 +46,4 @@ class Add_user:
 
     def execute(self):
         from reemote.operations.server.shell import Shell
-        yield Shell(f'adduser -D {self.user} && echo "{self.user}:{self.password}" | chpasswd', su=self.su)
+        yield Shell(f'useradd -m {self.user} && echo "{self.user}:{self.password}" | chpasswd', su=self.su)

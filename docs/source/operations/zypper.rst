@@ -9,12 +9,12 @@ Zypper operations
    :show-inheritance:
    :undoc-members:
 
-.. automodule:: reemote.operations.zypper.update
+.. automodule:: reemote.operations.zypper.refresh
    :members:
    :show-inheritance:
    :undoc-members:
 
-.. automodule:: reemote.operations.zypper.upgrade
+.. automodule:: reemote.operations.zypper.update
    :members:
    :show-inheritance:
    :undoc-members:
