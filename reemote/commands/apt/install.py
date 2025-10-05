@@ -1,9 +1,9 @@
 from typing import List
 from reemote.operation import Operation
-
+from reemote.utilities.validate_list_of_strings import validate_list_of_strings
 class Install:
     """
-    Represents an installation operation for packages using apt-get.
+    Represents an installation operation for packages using apt.
 
     This class is designed to manage package installations with options for adding
     guards, sudo privileges, or the su user. It constructs the operation string
@@ -17,7 +17,6 @@ class Install:
         su: A boolean flag to specify if the operation should run as su.
 
     """
-
     def __init__(self,
                  packages: List[str],
                  guard: bool = True,
@@ -28,6 +27,9 @@ class Install:
         self.guard: bool = guard
         self.sudo: bool = sudo
         self.su: bool = su
+
+        # Ensure self.packages is always a list of strings
+        self.packages: List[str] = validate_list_of_strings(packages)
 
         # Construct the operation string from the list of packages
         op: List[str] = []

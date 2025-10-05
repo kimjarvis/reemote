@@ -1,6 +1,5 @@
 from typing import List
 from reemote.operation import Operation
-
 class Remove:
     """
     Represents a class to remove specified packages using an operational command.
@@ -28,6 +27,9 @@ class Remove:
         self.guard: bool = guard
         self.sudo: bool = sudo
         self.su: bool = su
+
+        # Ensure self.packages is always a list of strings
+        self.packages: List[str] = [packages] if isinstance(packages, str) else packages
 
         # Construct the operation string from the list of packages
         op: List[str] = []

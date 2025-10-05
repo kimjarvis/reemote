@@ -51,11 +51,6 @@ class Packages:
         self.sudo: bool = sudo
         self.su: bool = su
 
-        # Construct the operation string from the list of packages
-        op: List[str] = []
-        op.extend(self.packages)
-        self.op: str = " ".join(op)
-
     def __repr__(self) -> str:
         return (f"Packages(packages={self.packages!r}, present={self.present!r},"
                 f"guard={self.guard!r}, "                                
@@ -71,11 +66,11 @@ class Packages:
 
         # Add or remove packages based on the `present` flag
         # r2 = yield Operation(f"apt-get install -y {self.op}",guard=self.guard and self.present, sudo=self.sudo, su=self.su)
-        r2 = yield Install(self.op,self.guard and self.present, self.sudo, self.su)
+        r2 = yield Install(self.packages,self.guard and self.present, self.sudo, self.su)
         # print(r2)
 
         # r3 = yield Operation(f"apt-get remove -y {self.op}",guard=self.guard and not self.present, sudo=self.sudo, su=self.su)
-        r3 = yield Remove(self.op,self.guard and not self.present, self.sudo, self.su)
+        r3 = yield Remove(self.packages,self.guard and not self.present, self.sudo, self.su)
         # print(r3)
 
         # Retrieve the updated list of installed packages
