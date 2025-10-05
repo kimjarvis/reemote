@@ -146,12 +146,7 @@ async def main():
         print(table)
         df = convert_to_df(json,columns=["command", "host", "returncode", "stdout", "stderr", "error"])
         table = convert_to_tabulate(df)
-        # print(table)
-
-        # df = convert_to_df(json)
-        # table = convert_to_tabulate(df)
-        # print(table)
-
+        print(table)
 
 def _main():
     """Synchronous wrapper for console_scripts."""
