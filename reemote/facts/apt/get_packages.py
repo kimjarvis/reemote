@@ -56,4 +56,5 @@ class Get_packages:
         from reemote.operations.server.shell import Shell
         r = yield Shell("apt list --installed")
         r.cp.stdout = parse_apt_list_installed(r.cp.stdout)
+        r.changed = False
         # print(r.cp.stdout)
