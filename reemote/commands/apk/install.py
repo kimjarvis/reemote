@@ -1,4 +1,4 @@
-from reemote.install import Command
+from reemote.command import Command
 from reemote.operation import Operation
 class Install(Command):
     """
