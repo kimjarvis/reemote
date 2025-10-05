@@ -1,5 +1,8 @@
 from typing import List
 from reemote.operation import Operation
+from reemote.facts.dnf.get_packages import Get_packages
+from reemote.commands.dnf.install import Install
+from reemote.commands.dnf.remove import Remove
 
 class Packages:
     """
@@ -57,19 +60,15 @@ class Packages:
         r0.executed = self.guard
 
         # Retrieve the current list of installed packages
-        r1 = yield Operation(f"dnf list installed",guard=self.guard, sudo=self.sudo, su=self.su)
+        r1 = yield Get_packages()
 
         # Add or remove packages based on the `present` flag
+        r2 = yield Install(self.packages, self.guard and self.present, self.sudo, self.su)
 
-        for package in self.packages:
-            r2 = yield Operation(f"dnf install -y {package}",guard=self.guard and self.present, sudo=self.sudo, su=self.su)
-            print(r2)
+        r3 = yield Remove(self.packages, self.guard and not self.present, self.sudo, self.su)
 
-            r3 = yield Operation(f"dnf remove -y {package}",guard=self.guard and not self.present, sudo=self.sudo, su=self.su)
-            # print(r3)
-
-        # Retrieve the updated list of installed packages
-        r4 = yield Operation(f"dnf list installed",guard=self.guard, sudo=self.sudo, su=self.su)
+        # Retrieve the current list of installed packages
+        r4 = yield Get_packages()
 
         # Set the `changed` flag iff the package state has changed
         if self.guard and (r1.cp.stdout != r4.cp.stdout):
