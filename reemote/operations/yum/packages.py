@@ -1,5 +1,8 @@
 from typing import List
 from reemote.operation import Operation
+from reemote.facts.yum.get_packages import Get_packages
+from reemote.commands.yum.install import Install
+from reemote.commands.yum.remove import Remove
 
 class Packages:
     """
@@ -58,18 +61,21 @@ class Packages:
 
         # Retrieve the current list of installed packages
         r1 = yield Operation(f"yum list installed",guard=self.guard, sudo=self.sudo, su=self.su)
+        r1 = yield Get_packages()
 
         # Add or remove packages based on the `present` flag
 
-        for package in self.packages:
-            r2 = yield Operation(f"yum install -y {package}",guard=self.guard and self.present, sudo=self.sudo, su=self.su)
-            print(r2)
+        r2 = yield Operation(f"yum install -y {package}",guard=self.guard and self.present, sudo=self.sudo, su=self.su)
+        r2 = yield Install(self.packages,self.guard and self.present, self.sudo, self.su)
+        print(r2)
 
-            r3 = yield Operation(f"yum remove -y {package}",guard=self.guard and not self.present, sudo=self.sudo, su=self.su)
-            # print(r3)
+        r3 = yield Operation(f"yum remove -y {package}",guard=self.guard and not self.present, sudo=self.sudo, su=self.su)
+        r3 = yield Remove(self.packages,self.guard and not self.present, self.sudo, self.su)
+        # print(r3)
 
         # Retrieve the updated list of installed packages
         r4 = yield Operation(f"yum list installed",guard=self.guard, sudo=self.sudo, su=self.su)
+        r4 = yield Get_packages()
 
         # Set the `changed` flag iff the package state has changed
         if self.guard and (r1.cp.stdout != r4.cp.stdout):
