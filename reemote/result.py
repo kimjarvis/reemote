@@ -1,6 +1,6 @@
 from asyncssh import SSHCompletedProcess
 from reemote.operation import Operation
-from typing import Optional, Mapping, Tuple, Union
+from typing import Optional, Mapping, Tuple, Union, Dict, Any
 from types import MappingProxyType
 from base64 import b64encode
 from asyncssh import SSHCompletedProcess
@@ -115,7 +115,8 @@ def word_wrap(text, width=40):
     else:
         return ""
 
-def serialize_cp(obj):
+
+def serialize_cp(obj: Optional[SSHCompletedProcess]) -> Dict[str, Any]:
     if obj is None:
         return None
     elif isinstance(obj, SSHCompletedProcess):
@@ -136,8 +137,8 @@ def serialize_cp(obj):
             "exit_status": obj.exit_status,
             "exit_signal": exit_signal,
             "returncode": obj.returncode,
-            "stdout": format_output(stdout),
-            # "stdout",
+            # "stdout": format_output(stdout),
+            "stdout": stdout,
             # "stderr": format_output(word_wrap(stderr)),
             "stderr": stderr,
         }

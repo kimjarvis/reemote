@@ -143,10 +143,10 @@ async def main():
         # print(json)
         df = convert_to_df(json,columns=["command", "host", "guard", "executed", "changed"])
         table = convert_to_tabulate(df)
-        # print(table)
+        print(table)
         df = convert_to_df(json,columns=["command", "host", "returncode", "stdout", "stderr", "error"])
         table = convert_to_tabulate(df)
-        print(table)
+        # print(table)
 
         # df = convert_to_df(json)
         # table = convert_to_tabulate(df)
