@@ -1,50 +1,44 @@
 import asyncio
 from reemote.execute import execute
-
 from reemote.operations.apk.packages import Packages
 from reemote.operations.apk.update import Update
 from reemote.utilities.produce_json import produce_json
-from reemote.utilities.produce_table import produce_table
+from reemote.utilities.convert_to_df import convert_to_df
+from reemote.utilities.convert_to_tabulate import convert_to_tabulate
 
 from typing import List, Tuple, Dict, Any
 
 def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
-     return [
+    return [
         (
             {
-                'host': '10.156.135.16',  # alpine
-                'username': 'user',  # User name
-                'password': 'user'  # Password
+                'host': '192.168.1.56',  # images:debian/13 debian-0
+                'username': 'kim',  # Kim Jarvis
+                'password': 'kim',  # Password
             },
             {
-                'su_user': 'root',
-                'su_password': 'root'  # Password
-            }
-        ),
-        (
-            {
-                'host': '10.156.135.19',  # alpine
-                'username': 'user',  # User name
-                'password': 'user'  # Password
-            },
-            {
-                'su_user': 'root',
-                'su_password': 'root'  # Password
+                'sudo_user': 'kim',  # Sudo user
+                'sudo_password': 'kim',  # Password
             }
         )
     ]
 
+
 class Install_vim:
     def execute(self):
-        r = yield f"echo Installing VIM on Alpine!"
-        r.changed = False
         yield Update(sudo=True)
-        yield Packages(packages=["vim"], present=True, sudo=True)
+        yield Packages(packages=["vim","nano"], present=True, sudo=True)
 
 
 async def main():
-    results = await execute(inventory(), Install_vim())
-    print(produce_table(produce_json(results)))
+    responses = await execute(inventory(), Install_vim())
+    json = produce_json(responses)
+    df = convert_to_df(json, columns=["command", "host", "guard", "executed", "changed"])
+    table = convert_to_tabulate(df)
+    # print(table)
+    df = convert_to_df(json, columns=["command", "host", "returncode", "stdout", "stderr", "error"])
+    table = convert_to_tabulate(df)
+    # print(table)
 
 if __name__ == "__main__":
     asyncio.run(main())

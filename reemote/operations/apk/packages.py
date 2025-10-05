@@ -1,5 +1,9 @@
 from typing import List
 from reemote.operation import Operation
+from reemote.commands.apk.install import Install
+from reemote.commands.apk.remove import Remove
+from reemote.facts.apk.get_packages import Get_packages
+
 
 class Packages:
     """
@@ -50,33 +54,32 @@ class Packages:
         self.sudo: bool = sudo
         self.su: bool = su
 
-        # Construct the operation string from the list of packages
-        op: List[str] = []
-        op.extend(self.packages)
-        if repository:
-            op.append(f"--repository {repository}")
-        self.op: str = " ".join(op)
-
     def __repr__(self) -> str:
-        return (f"Packages(packages={self.packages!r}, present={self.present!r},"
+        return (f"Packages(packages={self.packages!r}, "
+                f"present={self.present!r},"
                 f"repository={self.repository!r},"
                 f"guard={self.guard!r}, "                                
-                f"sudo={self.sudo!r}, su={self.su!r})")
+                f"sudo={self.sudo!r}, "
+                f"su={self.su!r})")
 
     def execute(self):
         r0 = yield Operation(f"{self}",composite=True)
         r0.executed = self.guard
 
         # Retrieve the current list of installed packages
-        r1 = yield Operation(f"apk info -v",guard=self.guard, sudo=self.sudo, su=self.su)
+        # r1 = yield Operation(f"apk info -v",guard=self.guard, sudo=self.sudo, su=self.su)
+        r1 = yield Get_packages()
 
         # Add or remove packages based on the `present` flag
-        r2 = yield Operation(f"apk add {self.op}",guard=self.guard and self.present, sudo=self.sudo, su=self.su)
+        # r2 = yield Operation(f"apk add {self.op}",guard=self.guard and self.present, sudo=self.sudo, su=self.su)
+        r2 = yield Install(self.packages, self.guard and self.present, self.sudo, self.su)
 
-        r3 = yield Operation(f"apk del {self.op}",guard=self.guard and not self.present, sudo=self.sudo, su=self.su)
+        # r3 = yield Operation(f"apk del {self.op}",guard=self.guard and not self.present, sudo=self.sudo, su=self.su)
+        r3 = yield Remove(self.packages, self.guard and not self.present, self.sudo, self.su)
 
         # Retrieve the updated list of installed packages
-        r4 = yield Operation(f"apk info -v",guard=self.guard, sudo=self.sudo, su=self.su)
+        # r4 = yield Operation(f"apk info -v",guard=self.guard, sudo=self.sudo, su=self.su)
+        r4 = yield Get_packages()
 
         # Set the `changed` flag iff the package state has changed
         if self.guard and (r1.cp.stdout != r4.cp.stdout):
