@@ -1,7 +1,7 @@
 from typing import List
 from reemote.operation import Operation
 from reemote.facts.zypper.get_packages import Get_packages
-from reemote.commands.zypper.install import Install
+from reemote.commands.zypper.install import Command
 from reemote.commands.zypper.remove import Remove
 
 class Packages:
@@ -67,7 +67,7 @@ class Packages:
 
         # for package in self.packages:
         r2 = yield Operation(f"zypper --non-interactive install {package}",guard=self.guard and self.present, sudo=self.sudo, su=self.su)
-        r2 = yield Install(self.packages,self.guard and self.present, self.sudo, self.su)
+        r2 = yield Command(self.packages, self.guard and self.present, self.sudo, self.su)
         # print(r2)
 
         r3 = yield Operation(f"zypper --non-interactive remove {package}",guard=self.guard and not self.present, sudo=self.sudo, su=self.su)

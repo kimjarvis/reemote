@@ -1,7 +1,7 @@
 from typing import List
 from reemote.operation import Operation
 from reemote.utilities.validate_list_of_strings import validate_list_of_strings
-class Install:
+class Command:
     """
     Represents an installation or removal operation for packages.
 
@@ -37,7 +37,7 @@ class Install:
         self.op: str = " ".join(op)
 
     def __repr__(self) -> str:
-        return (f"Install("
+        return (f"Command("
                 f"packages={self.packages!r}, "
                 f"guard={self.guard!r}, "                                
                 f"sudo={self.sudo!r}, "

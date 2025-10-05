@@ -1,7 +1,7 @@
 from typing import List
 from reemote.operation import Operation
 from reemote.facts.yum.get_packages import Get_packages
-from reemote.commands.yum.install import Install
+from reemote.commands.yum.install import Command
 from reemote.commands.yum.remove import Remove
 
 class Packages:
@@ -66,7 +66,7 @@ class Packages:
         # Add or remove packages based on the `present` flag
 
         r2 = yield Operation(f"yum install -y {package}",guard=self.guard and self.present, sudo=self.sudo, su=self.su)
-        r2 = yield Install(self.packages,self.guard and self.present, self.sudo, self.su)
+        r2 = yield Command(self.packages, self.guard and self.present, self.sudo, self.su)
         print(r2)
 
         r3 = yield Operation(f"yum remove -y {package}",guard=self.guard and not self.present, sudo=self.sudo, su=self.su)

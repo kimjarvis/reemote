@@ -1,6 +1,6 @@
-from reemote.commands.base.install import Install
+from reemote.install import Command
 from reemote.operation import Operation
-class Install(Install):
+class Install(Command):
     """
     Represents an installation operation for packages using apk.
 

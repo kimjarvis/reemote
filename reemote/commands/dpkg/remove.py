@@ -1,7 +1,7 @@
-from reemote.commands.base.install import Install
+from reemote.install import Command
 from reemote.operation import Operation
 
-class Remove(Install):
+class Remove(Command):
     """
     Represents a removal operation for packages using dpkg.
 

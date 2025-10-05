@@ -1,6 +1,6 @@
 from typing import List
 from reemote.operation import Operation
-from reemote.commands.apt.install import Install
+from reemote.commands.apt.install import Command
 from reemote.commands.apt.remove import Remove
 from reemote.facts.apt.get_packages import Get_packages
 
@@ -66,7 +66,7 @@ class Packages:
 
         # Add or remove packages based on the `present` flag
         # r2 = yield Operation(f"apt-get install -y {self.op}",guard=self.guard and self.present, sudo=self.sudo, su=self.su)
-        r2 = yield Install(self.packages,self.guard and self.present, self.sudo, self.su)
+        r2 = yield Command(self.packages, self.guard and self.present, self.sudo, self.su)
         # print(r2)
 
         # r3 = yield Operation(f"apt-get remove -y {self.op}",guard=self.guard and not self.present, sudo=self.sudo, su=self.su)

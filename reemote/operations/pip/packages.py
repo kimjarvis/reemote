@@ -1,7 +1,7 @@
 from typing import List
 from reemote.operation import Operation
 from reemote.facts.pip.get_packages import Get_packages
-from reemote.commands.pip.install import Install
+from reemote.commands.pip.install import Command
 from reemote.commands.pip.remove import Remove
 
 class Packages:
@@ -70,7 +70,7 @@ class Packages:
 
         # Add or remove packages based on the `present` flag
         # r2 = yield Operation(f"pip install -y {self.op}",guard=self.guard and self.present, sudo=self.sudo, su=self.su)
-        r2 = yield Install(self.packages,self.guard and self.present, self.sudo, self.su)
+        r2 = yield Command(self.packages, self.guard and self.present, self.sudo, self.su)
 
         # r3 = yield Operation(f"pip uninstall -y {self.op}",guard=self.guard and not self.present, sudo=self.sudo, su=self.su)
         r3 = yield Remove(self.packages,self.guard and not self.present, self.sudo, self.su)
