@@ -141,12 +141,12 @@ async def main():
     else:
         json = produce_json(responses)
         # print(json)
-        df = convert_to_df(json,columns=["command", "host", "guard", "executed", "changed"])
-        table = convert_to_tabulate(df)
-        print(table)
-        # df = convert_to_df(json,columns=["command", "host", "returncode", "stdout", "stderr", "error"])
+        # df = convert_to_df(json,columns=["command", "host", "guard", "executed", "changed"])
         # table = convert_to_tabulate(df)
         # print(table)
+        df = convert_to_df(json,columns=["command", "host", "returncode", "stdout", "stderr", "error"])
+        table = convert_to_tabulate(df)
+        print(table)
 
 def _main():
     """Synchronous wrapper for console_scripts."""

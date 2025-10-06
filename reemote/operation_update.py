@@ -38,7 +38,7 @@ class Operation_update:
 
     def execute(self):
         r1 = yield self.get_packages()
-        r2 = yield self.update()
+        r2 = yield self.update(guard=self.guard,sudo=self.sudo,su=self.su)
         r3 = yield self.get_packages()
         # Set the `changed` flag if the package state has changed
         if self.guard and (r1.cp.stdout != r3.cp.stdout):

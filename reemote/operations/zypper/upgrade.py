@@ -19,4 +19,5 @@ class Upgrade(Operation_upgrade):
         return Get_packages()
 
     def upgrade_packages(self, guard=None,sudo=None,su=None):
+        from reemote.commands.zypper.upgrade import Upgrade
         return Upgrade(self.guard, self.sudo, self.su)

@@ -1,6 +1,6 @@
 from typing import List
 from reemote.operation_update import Operation_update
-from reemote.commands.apk.upgrade import Upgrade
+from reemote.commands.apk.update import Update
 from reemote.facts.apk.get_packages import Get_packages
 
 
@@ -19,4 +19,5 @@ class Update(Operation_update):
         return Get_packages()
 
     def update(self, guard=None,sudo=None,su=None):
+        from reemote.commands.apk.update import Update
         return Update(self.guard, self.sudo, self.su)
