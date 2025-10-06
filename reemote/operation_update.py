@@ -37,9 +37,9 @@ class Operation_update:
                 f"su={self.su!r})")
 
     def execute(self):
-        r1 = yield Get_packages()
-        r2 = yield Update()
-        r3 = yield Get_packages()
+        r1 = yield self.get_packages()
+        r2 = yield self.update()
+        r3 = yield self.get_packages()
         # Set the `changed` flag if the package state has changed
         if self.guard and (r1.cp.stdout != r3.cp.stdout):
             r2.changed = True
@@ -52,7 +52,7 @@ class Operation_update:
         """
         raise NotImplementedError("Subclasses must implement `get_packages`.")
 
-    def update(self,guard=None,present=None,sudo=None,su=None):
+    def update(self,guard=None,sudo=None,su=None):
         """
         Install the specified packages.
         Subclasses must implement this method.

@@ -10,15 +10,13 @@ class Upgrade(Operation_upgrade):
     """
 
     def __init__(self,
-                 packages: List[str],
-                 present: bool,
                  guard: bool = True,
                  sudo: bool = False,
                  su: bool = False):
-        super().__init__(packages, present, guard, sudo, su)
+        super().__init__(guard, sudo, su)
 
     def get_packages(self):
         return Get_packages()
 
-    def upgrade_packages(self, packages=None,guard=None,present=None,sudo=None,su=None):
-        return Upgrade(self.packages, self.guard and self.present, self.sudo, self.su)
+    def upgrade_packages(self, guard=None,sudo=None,su=None):
+        return Upgrade(self.guard, self.sudo, self.su)
