@@ -1,22 +1,22 @@
-DPKG Commands
-=============
+PACMAN Commands
+===============
 
-.. automodule:: reemote.commands.dpkg.install
+.. automodule:: reemote.commands.pacman.install
    :members:
    :show-inheritance:
    :undoc-members:
 
-.. automodule:: reemote.commands.dpkg.remove
+.. automodule:: reemote.commands.pacman.remove
    :members:
    :show-inheritance:
    :undoc-members:
 
-.. automodule:: reemote.commands.dpkg.update
+.. automodule:: reemote.commands.pacman.update
    :members:
    :show-inheritance:
    :undoc-members:
 
-.. automodule:: reemote.commands.dpkg.upgrade
+.. automodule:: reemote.commands.pacman.upgrade
    :members:
    :show-inheritance:
    :undoc-members:

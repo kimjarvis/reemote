@@ -1,11 +1,23 @@
-from reemote.update import Update
+from reemote.command import Command
 from reemote.operation import Operation
-class Update(Update):
-    """
-    Representation of an update operation.
 
-    This class defines an update operation that uses an external package manager
-    to refresh available packages and updates the system's package list.
+class Update(Command):
+    """
+    Implements package index update using the apt package manager.
+
+    This class extends Command to execute the `apt update` command for updating package indexes.
+
+    Attributes:
+        guard: A boolean flag indicating whether the operation should be guarded.
+        sudo: A boolean flag to specify if sudo privileges are required.
+        su: A boolean flag to specify if the operation should run as su.
+
+    **Examples:**
+
+    .. code:: python
+
+        yield Update()
+
     """
     def execute(self):
-        yield Operation(f"apt-get update", guard=self.guard, sudo=self.sudo, su=self.su)
+        yield Operation(f"apt update", guard=self.guard, sudo=self.sudo, su=self.su)

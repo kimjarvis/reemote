@@ -3,9 +3,22 @@ from reemote.operation import Operation
 
 class Install(Command):
     """
-    Represents an installation operation for packages using dnf.
+    Implements package installation using the dnf package manager.
 
-    This class extends BaseInstall to provide specific functionality for the dnf package manager.
+    This class extends Command to execute the `dnf install -y` command for installing packages.
+
+    Attributes:
+        packages: List of package names to be installed.
+        guard: A boolean flag indicating whether the operation should be guarded.
+        sudo: A boolean flag to specify if sudo privileges are required.
+        su: A boolean flag to specify if the operation should run as su.
+
+    **Examples:**
+
+    .. code:: python
+
+        yield Install(packages=['vim', 'git'])
+
     """
     def execute(self):
         yield Operation(f"dnf install -y {self.op}", guard=self.guard, sudo=self.sudo, su=self.su)

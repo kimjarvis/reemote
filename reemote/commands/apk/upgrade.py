@@ -1,12 +1,23 @@
+from reemote.command import Command
 from reemote.operation import Operation
-from reemote.upgrade import Upgrade
-class Upgrade(Upgrade):
-    """
-    Represents an upgrade command execution.
 
-    This class is responsible for executing an update command using the underlying
-    operation mechanism. It generates an operation that performs an "apk update"
-    command with optional guards and permissions.
+class Upgrade(Command):
+    """
+    Implements package upgrade using the apk package manager.
+
+    This class extends Command to execute the `apk upgrade` command for upgrading installed packages.
+
+    Attributes:
+        guard: A boolean flag indicating whether the operation should be guarded.
+        sudo: A boolean flag to specify if sudo privileges are required.
+        su: A boolean flag to specify if the operation should run as su.
+
+    **Examples:**
+
+    .. code:: python
+
+        yield Upgrade()
+
     """
     def execute(self):
         yield Operation(f"apk upgrade", guard=self.guard, sudo=self.sudo, su=self.su)
