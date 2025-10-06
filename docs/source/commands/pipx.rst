@@ -1,4 +1,4 @@
-pipxX Commands
+PIPX Commands
 =============
 
 .. automodule:: reemote.commands.pipx.install

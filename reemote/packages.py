@@ -45,22 +45,21 @@ class Packages:
         r0 = yield Operation(f"{self}", composite=True)
         r0.executed = self.guard
 
-        # Retrieve the current list of installed packages
         r1 = yield self.get_packages()
 
-        # Add or remove packages based on the `present` flag
-        if self.present:
-            r2 = yield self.install_packages()
-        else:
-            r2 = yield self.remove_packages()
+        r2 = yield self.install_packages(packages=self.packages, guard=self.guard and self.present, sudo=self.sudo, su=self.su)
 
-        # Retrieve the updated list of installed packages
+        r3 = yield self.remove_packages(packages=self.packages, guard=self.guard and not self.present, sudo=self.sudo, su=self.su)
+
         r4 = yield self.get_packages()
 
-        # Set the `changed` flag if the package state has changed
+        # Set the `changed` flag iff the package state has changed
         if self.guard and (r1.cp.stdout != r4.cp.stdout):
             r2.changed = self.guard and self.present
+            r3.changed = self.guard and not self.present
             r0.changed = True
+
+
 
     def get_packages(self):
         """
@@ -69,14 +68,14 @@ class Packages:
         """
         raise NotImplementedError("Subclasses must implement `get_packages`.")
 
-    def install_packages(self):
+    def install_packages(self, packages=None,guard=None,present=None,sudo=None,su=None):
         """
         Install the specified packages.
         Subclasses must implement this method.
         """
         raise NotImplementedError("Subclasses must implement `install_packages`.")
 
-    def remove_packages(self):
+    def remove_packages(self, packages=None,guard=None,present=None,sudo=None,su=None):
         """
         Remove the specified packages.
         Subclasses must implement this method.

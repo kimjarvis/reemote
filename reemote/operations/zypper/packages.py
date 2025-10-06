@@ -21,8 +21,8 @@ class Packages(Packages):
     def get_packages(self):
         return Get_packages()
 
-    def install_packages(self):
+    def install_packages(self, packages=None,guard=None,present=None,sudo=None,su=None):
         return Install(self.packages, self.guard and self.present, self.sudo, self.su)
 
-    def remove_packages(self):
+    def remove_packages(self, packages=None,guard=None,present=None,sudo=None,su=None):
         return Remove(self.packages, self.guard and not self.present, self.sudo, self.su)
