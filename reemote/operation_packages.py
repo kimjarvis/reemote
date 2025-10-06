@@ -32,6 +32,8 @@ class Operation_packages:
         self.guard: bool = guard
         self.sudo: bool = sudo
         self.su: bool = su
+        print("trace 03")
+
 
     def __repr__(self) -> str:
         return (f"Packages(packages={self.packages!r}, "
@@ -44,14 +46,19 @@ class Operation_packages:
         # Start a composite operation
         r0 = yield Command(f"{self}", composite=True)
         r0.executed = self.guard
+        print("trace 04")
 
         r1 = yield self.get_packages()
+        print("trace 05")
 
         r2 = yield self.install_packages(packages=self.packages, guard=self.guard and self.present, sudo=self.sudo, su=self.su)
+        print("trace 06")
 
         r3 = yield self.remove_packages(packages=self.packages, guard=self.guard and not self.present, sudo=self.sudo, su=self.su)
+        print("trace 07")
 
         r4 = yield self.get_packages()
+        print("trace 08")
 
         # Set the `changed` flag iff the package state has changed
         if self.guard and (r1.cp.stdout != r4.cp.stdout):

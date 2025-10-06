@@ -21,4 +21,5 @@ class Remove(Command_remove):
 
     """
     def execute(self):
+        print("trace 21")
         yield Command(f"apk del {self.op}", guard=self.guard, sudo=self.sudo, su=self.su)
