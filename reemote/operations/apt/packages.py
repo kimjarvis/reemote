@@ -1,3 +1,4 @@
+from typing import List
 from reemote.packages import Packages
 from reemote.commands.apt.install import Install
 from reemote.commands.apt.remove import Remove

@@ -1,3 +1,4 @@
+from typing import List
 from reemote.packages import Packages
 from reemote.commands.pacman.install import Install
 from reemote.commands.pacman.remove import Remove

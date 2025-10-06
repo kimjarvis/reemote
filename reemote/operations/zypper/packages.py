@@ -1,3 +1,4 @@
+from typing import List
 from reemote.packages import Packages
 from reemote.commands.zypper.install import Install
 from reemote.commands.zypper.remove import Remove

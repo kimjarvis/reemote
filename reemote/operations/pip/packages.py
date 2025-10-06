@@ -1,3 +1,4 @@
+from typing import List
 from reemote.packages import Packages
 from reemote.commands.pip.install import Install
 from reemote.commands.pip.remove import Remove

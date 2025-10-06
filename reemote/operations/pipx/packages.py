@@ -1,3 +1,4 @@
+from typing import List
 from reemote.packages import Packages
 from reemote.commands.pipx.install import Install
 from reemote.commands.pipx.remove import Remove

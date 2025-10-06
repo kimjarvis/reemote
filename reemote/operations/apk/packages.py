@@ -1,3 +1,4 @@
+from typing import List
 from reemote.packages import Packages
 from reemote.commands.apk.install import Install
 from reemote.commands.apk.remove import Remove

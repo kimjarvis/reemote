@@ -1,4 +1,4 @@
-
+from typing import List
 from reemote.packages import Packages
 from reemote.commands.dpkg.install import Install
 from reemote.commands.dpkg.remove import Remove

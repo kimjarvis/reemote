@@ -1,3 +1,4 @@
+from typing import List
 from reemote.packages import Packages
 from reemote.commands.yum.install import Install
 from reemote.commands.yum.remove import Remove
