@@ -64,10 +64,10 @@ class Install_nginx:
         if "Alpine" in os:
             from reemote.operations.apk.update import Update
             from reemote.operations.apk.upgrade import Upgrade
-            from reemote.operations.apk.packages import Packages
+            from reemote.operations.apk.packages import Operation_packages
             yield Update(sudo=True)
             yield Upgrade(sudo=True)
-            yield Packages(packages=["nginx", "ufw", "iptables"], present=True, sudo=True)
+            yield Operation_packages(packages=["nginx", "ufw", "iptables"], present=True, sudo=True)
             yield Shell("iptables -A INPUT -p tcp --dport 80 -j ACCEPT", sudo=True)
             yield Shell("iptables -A INPUT -p tcp --dport 443 -j ACCEPT", sudo=True)
             yield Shell("rc-update add iptables", sudo=True)
@@ -81,30 +81,30 @@ class Install_nginx:
         if "Debian" in os or "Ubuntu" in os:
             from reemote.operations.apt.update import Update
             from reemote.operations.apt.upgrade import Upgrade
-            from reemote.operations.apt.packages import Packages
+            from reemote.operations.apt.packages import Operation_packages
             yield Update(sudo=True)
             yield Upgrade(sudo=True)
-            yield Packages(packages=["nginx", "ufw"], present=True, sudo=True)
+            yield Operation_packages(packages=["nginx", "ufw"], present=True, sudo=True)
             yield Shell("ufw allow 'Nginx Full'", sudo=True)
         if "CentOS" in os:
             from reemote.operations.dnf.update import Update
             from reemote.operations.dnf.upgrade import Upgrade
-            from reemote.operations.dnf.packages import Packages
+            from reemote.operations.dnf.packages import Operation_packages
             yield Update(sudo=True)
             yield Upgrade(sudo=True)
-            yield Packages(packages=["nginx", "ufw"], present=True, sudo=True)
+            yield Operation_packages(packages=["nginx", "ufw"], present=True, sudo=True)
             yield Shell("ufw allow 'Nginx Full'", sudo=True)
         if "Arch" in os:
             from reemote.operations.pacman.update import Update
-            from reemote.operations.pacman.packages import Packages
+            from reemote.operations.pacman.packages import Operation_packages
             yield Update(sudo=True)
-            yield Packages(packages=["nginx", "ufw"], present=True, sudo=True)
+            yield Operation_packages(packages=["nginx", "ufw"], present=True, sudo=True)
             yield Shell("ufw allow 'Nginx Full'", sudo=True)
         if "SUSE" in os:
             from reemote.operations.zypper.update import Update
-            from reemote.operations.zypper.packages import Packages
+            from reemote.operations.zypper.packages import Operation_packages
             yield Update(sudo=True)
-            yield Packages(packages=["nginx", "ufw"], present=True, sudo=True)
+            yield Operation_packages(packages=["nginx", "ufw"], present=True, sudo=True)
             yield Shell("ufw allow 'Nginx Full'", sudo=True)
 
 

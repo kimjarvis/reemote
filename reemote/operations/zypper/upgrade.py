@@ -1,12 +1,12 @@
 from typing import List
-from reemote.operation_update import Operation_update
-from reemote.commands.dnf.upgrade import Upgrade
-from reemote.facts.dnf.get_packages import Get_packages
+from reemote.operation_upgrade import Operation_upgrade
+from reemote.commands.zypper.upgrade import Upgrade
+from reemote.facts.zypper.get_packages import Get_packages
 
 
-class Update(Operation_update):
+class Upgrade(Operation_upgrade):
     """
-    A class to manage package operations on a remote system using `dnf`.
+    A class to manage package operations on a remote system using `zypper`.
     """
 
     def __init__(self,
@@ -20,5 +20,5 @@ class Update(Operation_update):
     def get_packages(self):
         return Get_packages()
 
-    def update_packages(self, packages=None,guard=None,present=None,sudo=None,su=None):
+    def upgrade_packages(self, packages=None,guard=None,present=None,sudo=None,su=None):
         return Upgrade(self.packages, self.guard and self.present, self.sudo, self.su)

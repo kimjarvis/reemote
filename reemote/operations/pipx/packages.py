@@ -1,11 +1,11 @@
 from typing import List
-from reemote.packages import Packages
+from reemote.operation_packages import Operation_packages
 from reemote.commands.pipx.install import Install
 from reemote.commands.pipx.remove import Remove
 from reemote.facts.pipx.get_packages import Get_packages
 
 
-class Packages(Packages):
+class Packages(Operation_packages):
     """
     A class to manage package operations on a remote system using `pipx`.
     """

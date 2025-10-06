@@ -1,11 +1,11 @@
 from typing import List
-from reemote.packages import Packages
+from reemote.operation_packages import Operation_packages
 from reemote.commands.apk.install import Install
 from reemote.commands.apk.remove import Remove
 from reemote.facts.apk.get_packages import Get_packages
 
 
-class Packages(Packages):
+class Packages(Operation_packages):
     """
     A class to manage package operations on a remote system using `apk`.
     """

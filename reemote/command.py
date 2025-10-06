@@ -54,7 +54,7 @@ def word_wrap(text, width=40):
     # Join all wrapped lines with newlines and return
     return "\n".join(wrapped_lines)
 
-def serialize_operation(obj):
+def serialize_command(obj):
     if isinstance(obj, Command):  # Check if the object is of type Operation
         return {
             "command": word_wrap(obj.command),          # Serialize the command (string)

@@ -2,7 +2,7 @@ from typing import List
 from reemote.command import Command
 
 
-class Packages:
+class Operation_packages:
     """
     Encapsulates the management of software package installation and removal.
 

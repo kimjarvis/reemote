@@ -1,4 +1,4 @@
-class Update:
+class Operation_upgrade:
     """
     Manages update operations under specific guard and privilege settings.
 
@@ -31,16 +31,30 @@ class Update:
         self.su: bool = su
 
     def __repr__(self) -> str:
-        return (f"Update("
+        return (f"Upgrade("
                 f"guard={self.guard!r}, "                
                 f"sudo={self.sudo!r}, "
                 f"su={self.su!r})")
 
     def execute(self):
         r1 = yield Get_packages()
-        r2 = yield Update()
+        r2 = yield Upgrade()
         r3 = yield Get_packages()
         # Set the `changed` flag if the package state has changed
         if self.guard and (r1.cp.stdout != r3.cp.stdout):
             r2.changed = True
             r0.changed = True
+
+    def get_packages(self):
+        """
+        Retrieve the list of installed packages.
+        Subclasses must implement this method.
+        """
+        raise NotImplementedError("Subclasses must implement `get_packages`.")
+
+    def upgrade(self,guard=None,present=None,sudo=None,su=None):
+        """
+        Install the specified packages.
+        Subclasses must implement this method.
+        """
+        raise NotImplementedError("Subclasses must implement `upgrade`.")

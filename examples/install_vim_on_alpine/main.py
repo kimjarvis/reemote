@@ -1,6 +1,6 @@
 import asyncio
 from reemote.execute import execute
-from reemote.operations.apk.packages import Packages
+from reemote.operations.apk.packages import Operation_packages
 from reemote.operations.apk.update import Update
 from reemote.utilities.produce_json import produce_json
 from reemote.utilities.convert_to_df import convert_to_df
@@ -27,7 +27,7 @@ def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
 class Install_vim:
     def execute(self):
         yield Update(sudo=True)
-        yield Packages(packages=["vim","nano"], present=True, sudo=True)
+        yield Operation_packages(packages=["vim", "nano"], present=True, sudo=True)
 
 
 async def main():

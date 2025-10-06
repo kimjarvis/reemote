@@ -1,11 +1,11 @@
 from typing import List
-from reemote.packages import Packages
+from reemote.operation_packages import Operation_packages
 from reemote.commands.zypper.install import Install
 from reemote.commands.zypper.remove import Remove
 from reemote.facts.zypper.get_packages import Get_packages
 
 
-class Packages(Packages):
+class Packages(Operation_packages):
     """
     A class to manage package operations on a remote system using `zypper`.
     """

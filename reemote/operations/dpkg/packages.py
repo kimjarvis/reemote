@@ -1,11 +1,11 @@
 from typing import List
-from reemote.packages import Packages
+from reemote.operation_packages import Operation_packages
 from reemote.commands.dpkg.install import Install
 from reemote.commands.dpkg.remove import Remove
 from reemote.facts.dpkg.get_packages import Get_packages
 
 
-class Packages(Packages):
+class Packages(Operation_packages):
     """
     A class to manage package operations on a remote system using `dpkg`.
     """

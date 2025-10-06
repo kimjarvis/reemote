@@ -300,23 +300,23 @@ async def get_versions(inv, versions, manager, sr, er):
 async def install(inv, versions, manager, sr, er):
     pkg=manager.package
     if manager.manager=='apk':
-        from reemote.operations.apk.packages import Packages
-        responses = await execute(inv.inventory,Packages(packages=[pkg],present=True, su=manager.su, sudo=manager.sudo))
+        from reemote.operations.apk.packages import Operation_packages
+        responses = await execute(inv.inventory, Operation_packages(packages=[pkg], present=True, su=manager.su, sudo=manager.sudo))
     if manager.manager=='pip':
-        from reemote.operations.pip.packages import Packages
-        responses = await execute(inv.inventory,Packages(packages=[pkg],present=True, su=manager.su, sudo=manager.sudo))
+        from reemote.operations.pip.packages import Operation_packages
+        responses = await execute(inv.inventory, Operation_packages(packages=[pkg], present=True, su=manager.su, sudo=manager.sudo))
     if manager.manager=='apt':
-        from reemote.operations.apt.packages import Packages
-        responses = await execute(inv.inventory,Packages(packages=[pkg],present=True, su=manager.su, sudo=manager.sudo))
+        from reemote.operations.apt.packages import Operation_packages
+        responses = await execute(inv.inventory, Operation_packages(packages=[pkg], present=True, su=manager.su, sudo=manager.sudo))
     if manager.manager=='dpkg':
-        from reemote.operations.dpkg.packages import Packages
-        responses = await execute(inv.inventory,Packages(packages=[pkg],present=True, su=manager.su, sudo=manager.sudo))
+        from reemote.operations.dpkg.packages import Operation_packages
+        responses = await execute(inv.inventory, Operation_packages(packages=[pkg], present=True, su=manager.su, sudo=manager.sudo))
     if manager.manager=='dnf':
-        from reemote.operations.dnf.packages import Packages
-        responses = await execute(inv.inventory,Packages(packages=[pkg],present=True, su=manager.su, sudo=manager.sudo))
+        from reemote.operations.dnf.packages import Operation_packages
+        responses = await execute(inv.inventory, Operation_packages(packages=[pkg], present=True, su=manager.su, sudo=manager.sudo))
     if manager.manager=='yum':
-        from reemote.operations.yum.packages import Packages
-        responses = await execute(inv.inventory,Packages(packages=[pkg],present=True, su=manager.su, sudo=manager.sudo))
+        from reemote.operations.yum.packages import Operation_packages
+        responses = await execute(inv.inventory, Operation_packages(packages=[pkg], present=True, su=manager.su, sudo=manager.sudo))
     c, r = produce_grid(produce_json(responses))
     er.set(c, r)
     er.execution_report.refresh()
@@ -329,23 +329,23 @@ async def install(inv, versions, manager, sr, er):
 async def remove(inv, versions ,manager, sr, er):
     pkg=manager.package
     if manager.manager=='apk':
-        from reemote.operations.apk.packages import Packages
-        responses = await execute(inv.inventory,Packages(packages=[pkg],present=False, su=manager.su, sudo=manager.sudo))
+        from reemote.operations.apk.packages import Operation_packages
+        responses = await execute(inv.inventory, Operation_packages(packages=[pkg], present=False, su=manager.su, sudo=manager.sudo))
     if manager.manager=='pip':
-        from reemote.operations.pip.packages import Packages
-        responses = await execute(inv.inventory,Packages(packages=[pkg],present=False, su=manager.su, sudo=manager.sudo))
+        from reemote.operations.pip.packages import Operation_packages
+        responses = await execute(inv.inventory, Operation_packages(packages=[pkg], present=False, su=manager.su, sudo=manager.sudo))
     if manager.manager=='apt':
-        from reemote.operations.apt.packages import Packages
-        responses = await execute(inv.inventory,Packages(packages=[pkg],present=False, su=manager.su, sudo=manager.sudo))
+        from reemote.operations.apt.packages import Operation_packages
+        responses = await execute(inv.inventory, Operation_packages(packages=[pkg], present=False, su=manager.su, sudo=manager.sudo))
     if manager.manager=='dpkg':
-        from reemote.operations.dpkg.packages import Packages
-        responses = await execute(inv.inventory,Packages(packages=[pkg],present=False, su=manager.su, sudo=manager.sudo))
+        from reemote.operations.dpkg.packages import Operation_packages
+        responses = await execute(inv.inventory, Operation_packages(packages=[pkg], present=False, su=manager.su, sudo=manager.sudo))
     if manager.manager=='dnf':
-        from reemote.operations.dnf.packages import Packages
-        responses = await execute(inv.inventory,Packages(packages=[pkg],present=False, su=manager.su, sudo=manager.sudo))
+        from reemote.operations.dnf.packages import Operation_packages
+        responses = await execute(inv.inventory, Operation_packages(packages=[pkg], present=False, su=manager.su, sudo=manager.sudo))
     if manager.manager=='yum':
-        from reemote.operations.yum.packages import Packages
-        responses = await execute(inv.inventory,Packages(packages=[pkg],present=False, su=manager.su, sudo=manager.sudo))
+        from reemote.operations.yum.packages import Operation_packages
+        responses = await execute(inv.inventory, Operation_packages(packages=[pkg], present=False, su=manager.su, sudo=manager.sudo))
     c, r = produce_grid(produce_json(responses))
     er.set(c, r)
     er.execution_report.refresh()
