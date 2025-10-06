@@ -1,5 +1,5 @@
 import asyncssh
-from reemote.operation import Operation
+from reemote.command import Command
 
 
 class Get_cwd:
@@ -38,7 +38,7 @@ class Get_cwd:
                 return cwd
 
     def execute(self):
-        r = yield Operation(f"{self}", local=True, callback=self._getcwd_callback, caller=self)
+        r = yield Command(f"{self}", local=True, callback=self._getcwd_callback, caller=self)
         r.executed = True
         r.changed = False
         return r

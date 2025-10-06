@@ -1,5 +1,5 @@
 import asyncssh
-from reemote.operation import Operation
+from reemote.command import Command
 from typing import Optional, Dict, Any
 
 
@@ -101,7 +101,7 @@ class Setstat:
             raise  # Re-raise the exception to handle it in the caller
 
     def execute(self):
-        r = yield Operation(
+        r = yield Command(
             f"{self}",
             local=True,
             callback=self._setstat_callback,

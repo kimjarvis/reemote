@@ -1,7 +1,7 @@
+from reemote.command_upgrade import Command_upgrade
 from reemote.command import Command
-from reemote.operation import Operation
 
-class Upgrade(Command):
+class Upgrade(Command_upgrade):
     """
     Implements package upgrade using the dnf package manager.
 
@@ -20,4 +20,4 @@ class Upgrade(Command):
 
     """
     def execute(self):
-        yield Operation(f"dnf upgrade -y", guard=self.guard, sudo=self.sudo, su=self.su)
+        yield Command(f"dnf upgrade -y", guard=self.guard, sudo=self.sudo, su=self.su)

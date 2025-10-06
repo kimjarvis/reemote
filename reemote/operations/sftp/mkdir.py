@@ -1,5 +1,5 @@
 import asyncssh
-from reemote.operation import Operation
+from reemote.command import Command
 
 
 class Mkdir:
@@ -74,7 +74,7 @@ class Mkdir:
             raise Exception(f"Failed to create directory {caller.path} on {host_info['host']}: {str(exc)}")
 
     def execute(self):
-        r = yield Operation(f"{self}", local=True, callback=self._mkdir_callback, caller=self)
+        r = yield Command(f"{self}", local=True, callback=self._mkdir_callback, caller=self)
         r.executed = True
         # Directory creation is inherently a changing operation
         r.changed = True

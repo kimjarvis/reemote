@@ -1,5 +1,5 @@
 import asyncssh
-from reemote.operation import Operation
+from reemote.command import Command
 
 
 class Rmdir:
@@ -52,7 +52,7 @@ class Rmdir:
             raise  # Re-raise the exception to handle it in the caller
 
     def execute(self):
-        r = yield Operation(
+        r = yield Command(
             f"{self}",
             local=True,
             callback=self._rmdir_callback,

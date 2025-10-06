@@ -1,5 +1,5 @@
 import asyncssh
-from reemote.operation import Operation
+from reemote.command import Command
 
 
 class Get_statvfs:
@@ -80,7 +80,7 @@ class Get_statvfs:
                     raise ValueError("Path must be provided for statvfs operation")
 
     def execute(self):
-        r = yield Operation(f"{self}", local=True, callback=self._getstatvfs_callback, caller=self)
+        r = yield Command(f"{self}", local=True, callback=self._getstatvfs_callback, caller=self)
         r.executed = True
         r.changed = False
         return r

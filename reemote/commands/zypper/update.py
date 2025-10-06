@@ -1,6 +1,6 @@
-from reemote.update import Update
-from reemote.operation import Operation
-class Update(Update):
+from reemote.command_update import Command_update
+from reemote.command import Command
+class Update(Command_update):
     """
     Implements package index update using the zypper package manager.
 
@@ -19,4 +19,4 @@ class Update(Update):
 
     """
     def execute(self):
-        yield Operation(f"zypper update", guard=self.guard, sudo=self.sudo, su=self.su)
+        yield Command(f"zypper update", guard=self.guard, sudo=self.sudo, su=self.su)

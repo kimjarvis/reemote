@@ -1,5 +1,5 @@
 from typing import List
-from reemote.operation import Operation
+from reemote.command import Command
 
 class Add_apt_key:
     """
@@ -40,7 +40,7 @@ class Add_apt_key:
                 f"su={self.su!r})")
 
     def execute(self):
-        yield Operation(
+        yield Command(
             f"curl -fsSL {self.source} | gpg --dearmor -o /usr/share/keyrings/{self.comment.lower().replace(' ', '-')}.gpg",
             guard=self.guard,
             sudo=self.sudo,

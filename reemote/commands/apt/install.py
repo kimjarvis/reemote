@@ -1,8 +1,8 @@
 
+from reemote.command import Command_install
 from reemote.command import Command
-from reemote.operation import Operation
 
-class Install(Command):
+class Install(Command_install):
     """
     Implements package installation using the apt package manager.
 
@@ -22,4 +22,4 @@ class Install(Command):
 
     """
     def execute(self):
-        yield Operation(f"apt install -y {self.op}", guard=self.guard, sudo=self.sudo, su=self.su)
+        yield Command(f"apt install -y {self.op}", guard=self.guard, sudo=self.sudo, su=self.su)

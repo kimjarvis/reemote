@@ -1,7 +1,7 @@
+from reemote.command_install import Command_install
 from reemote.command import Command
-from reemote.operation import Operation
 
-class Install(Command):
+class Install(Command_install):
     """
     Implements package installation using the apk package manager.
 
@@ -21,4 +21,4 @@ class Install(Command):
 
     """
     def execute(self):
-        yield Operation(f"apk add {self.op}", guard=self.guard, sudo=self.sudo, su=self.su)
+        yield Command(f"apk add {self.op}", guard=self.guard, sudo=self.sudo, su=self.su)

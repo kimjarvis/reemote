@@ -1,5 +1,5 @@
 import asyncssh
-from reemote.operation import Operation
+from reemote.command import Command
 from typing import List, Tuple, Dict, Any, Union, Optional
 
 class Touch:
@@ -91,7 +91,7 @@ class Touch:
             raise  # Re-raise the exception to handle it in the caller
 
     def execute(self):
-        r = yield Operation(f"{self}", local=True, callback=self._touch_callback, caller=self)
+        r = yield Command(f"{self}", local=True, callback=self._touch_callback, caller=self)
         r.executed = True
         r.changed = False
         return r

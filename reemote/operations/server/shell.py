@@ -1,4 +1,4 @@
-from reemote.operation import Operation
+from reemote.command import Command
 
 class Shell:
     """
@@ -46,5 +46,5 @@ class Shell:
 
     def execute(self):
         # print(f"{self}")
-        r = yield Operation(self.cmd,guard=self.guard,sudo=self.sudo,su=self.su)
+        r = yield Command(self.cmd, guard=self.guard, sudo=self.sudo, su=self.su)
         r.changed = True

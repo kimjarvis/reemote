@@ -1,5 +1,5 @@
 from typing import List
-from reemote.operation import Operation
+from reemote.command import Command
 
 class Add_ppa:
     """
@@ -38,5 +38,5 @@ class Add_ppa:
                 f"su={self.su!r})")
 
     def execute(self):
-        yield Operation(f"apt-add-repository -y {self.ppa}",guard=self.guard, sudo=self.sudo, su=self.su)
+        yield Command(f"apt-add-repository -y {self.ppa}", guard=self.guard, sudo=self.sudo, su=self.su)
 

@@ -1,7 +1,7 @@
+from reemote.command_update import Command_update
 from reemote.command import Command
-from reemote.operation import Operation
 
-class Update(Command):
+class Update(Command_update):
     """
     Implements package index update using the apt package manager.
 
@@ -20,4 +20,4 @@ class Update(Command):
 
     """
     def execute(self):
-        yield Operation(f"apt update", guard=self.guard, sudo=self.sudo, su=self.su)
+        yield Command(f"apt update", guard=self.guard, sudo=self.sudo, su=self.su)

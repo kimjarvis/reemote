@@ -1,5 +1,5 @@
 from typing import List
-from reemote.operation import Operation
+from reemote.command import Command
 
 class Remove_apt_key:
     """
@@ -39,7 +39,7 @@ class Remove_apt_key:
 
     def execute(self):
         keyring_file = f"/usr/share/keyrings/{self.name.lower().replace(' ', '-')}.gpg"
-        yield Operation(
+        yield Command(
             f"rm -f {keyring_file}",
             guard=self.guard,
             sudo=self.sudo,

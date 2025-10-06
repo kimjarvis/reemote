@@ -1,5 +1,5 @@
 from asyncssh import SSHCompletedProcess
-from reemote.operation import Operation
+from reemote.command import Command
 from typing import Optional, Mapping, Tuple, Union, Dict, Any
 from types import MappingProxyType
 from base64 import b64encode
@@ -12,7 +12,7 @@ class Result:
     def __init__(self,
                  cp: SSHCompletedProcess = None,
                  host: str = None,
-                 op: Operation = None,
+                 op: Command = None,
                  changed: bool = False,
                  executed: bool = False,
                  error: str = None,
@@ -58,7 +58,7 @@ def serialize_result(obj):
             "cp": serialize_cp(obj.cp),
             "error": obj.error,
         }
-    elif isinstance(obj, Operation):
+    elif isinstance(obj, Command):
         # print(f"Operation attributes: {vars(obj)}")
         return {
             "command": obj.command,

@@ -1,7 +1,7 @@
 import asyncssh
 from jinja2.filters import sync_do_reject
 
-from reemote.operation import Operation
+from reemote.command import Command
 from reemote.result import Result
 
 

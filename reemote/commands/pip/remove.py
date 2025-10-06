@@ -1,7 +1,7 @@
+from reemote.command_remove import Command_remove
 from reemote.command import Command
-from reemote.operation import Operation
 
-class Remove(Command):
+class Remove(Command_remove):
     """
     Implements package removal using the pip package manager.
 
@@ -21,4 +21,4 @@ class Remove(Command):
 
     """
     def execute(self):
-        yield Operation(f"pip uninstall -y {self.op}", guard=self.guard, sudo=self.sudo, su=self.su)
+        yield Command(f"pip uninstall -y {self.op}", guard=self.guard, sudo=self.sudo, su=self.su)

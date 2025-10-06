@@ -1,5 +1,5 @@
 from typing import List
-from reemote.operation import Operation
+from reemote.command import Command
 
 
 class Packages:
@@ -42,7 +42,7 @@ class Packages:
 
     def execute(self):
         # Start a composite operation
-        r0 = yield Operation(f"{self}", composite=True)
+        r0 = yield Command(f"{self}", composite=True)
         r0.executed = self.guard
 
         r1 = yield self.get_packages()

@@ -1,46 +1,66 @@
-from typing import List
-from reemote.operation import Operation
-from reemote.utilities.validate_list_of_strings import validate_list_of_strings
+from typing import Dict, Optional, Callable
+
 class Command:
-    """
-    Represents an installation or removal operation for packages.
-
-    This class is designed to manage package installations with options for adding
-    guards, sudo privileges, or the su user. It constructs the operation string
-    from the provided packages and represents an encapsulated way of handling
-    package installation commands.
-
-    Attributes:
-        packages: List of package names to be installed.
-        guard: A boolean flag indicating whether the operation should be guarded.
-        sudo: A boolean flag to specify if sudo privileges are required.
-        su: A boolean flag to specify if the operation should run as su.
-
-    """
-    def __init__(self,
-                 packages: List[str],
-                 guard: bool = True,
-                 sudo: bool = False,
-                 su: bool = False):
-
-        self.packages: List[str] = packages
+    def __init__(self, command: str, guard: bool = True, local: bool = False, callback: Optional[Callable] = None, caller=None, sudo: bool = False, su: bool = False, composite=False):
+        self.command: str = command
         self.guard: bool = guard
-        self.sudo: bool = sudo
-        self.su: bool = su
+        self.host_info: Optional[Dict[str, str]] = None
+        self.global_info: Optional[Dict[str, str]] = None
+        self.local=local
+        self.callback=callback
+        self.caller=caller
+        self.sudo=sudo
+        self.su=su
+        self.composite=composite
 
-        # Ensure self.packages is always a list of strings
-        self.packages: List[str] = validate_list_of_strings(packages)
-
-        # Construct the operation string from the list of packages
-        op: List[str] = []
-        op.extend(self.packages)
-        self.op: str = " ".join(op)
+    def __str__(self) -> str:
+        return repr(self)
 
     def __repr__(self) -> str:
-        return (f"Command("
-                f"packages={self.packages!r}, "
-                f"guard={self.guard!r}, "                                
-                f"sudo={self.sudo!r}, "
-                f"su={self.su!r})")
+        return (f"Operation(command={self.command!r}, "
+                f"guard={self.guard!r}, "
+                f"local={self.local!r}, "
+                f"callback={self.callback!r}, "
+                f"caller={self.caller!r}, "
+                f"composite={self.composite!r}, "
+                f"sudo={self.sudo!r}, su={self.su!r}), "
+                f"host_info={self.host_info!r}, "
+                f"global_info={self.global_info!r})")
 
 
+def word_wrap(text, width=40):
+    wrapped_lines = []
+
+    # Split the text into lines based on existing newlines
+    for line in text.splitlines():
+        # Handle each line separately
+        current_line = ""
+        words = line.split()
+
+        for word in words:
+            # Check if adding the next word exceeds the width
+            if len(current_line) + len(word) + 1 <= width:
+                # Add the word to the current line (with a space if not empty)
+                current_line += (" " + word if current_line else word)
+            else:
+                # Append the current line to the result and start a new line
+                wrapped_lines.append(current_line)
+                current_line = word
+
+        # Append any remaining text in the current line
+        if current_line:
+            wrapped_lines.append(current_line)
+
+    # Join all wrapped lines with newlines and return
+    return "\n".join(wrapped_lines)
+
+def serialize_operation(obj):
+    if isinstance(obj, Command):  # Check if the object is of type Operation
+        return {
+            "command": word_wrap(obj.command),          # Serialize the command (string)
+            "guard": obj.guard,              # Serialize the guard (boolean)
+            "host_info": obj.host_info,      # Serialize the host_info (dict or None)
+            "global_info": obj.global_info       # Serialize the global_info (dict or None)
+        }
+    else:
+        raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")

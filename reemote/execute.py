@@ -1,7 +1,7 @@
 import asyncssh
 import asyncio
 from asyncssh import SSHCompletedProcess
-from reemote.operation import Operation
+from reemote.command import Command
 from reemote.result import Result
 
 
@@ -134,7 +134,7 @@ def pre_order_generator(node):
             value = iterator.send(result) if result is not None else next(iterator)
             result = None
 
-            if isinstance(value, Operation):
+            if isinstance(value, Command):
                 result = yield value
             elif hasattr(value, 'execute') and callable(value.execute):
                 # If it's a node with execute method, push to stack
@@ -178,7 +178,7 @@ async def execute(inventory, obj):
                 yielded_object = gen.send(results[gen])
 
                 # Check if the yielded object is an Operation
-                if isinstance(yielded_object, Operation):
+                if isinstance(yielded_object, Command):
                     operation = yielded_object
                     operation.host_info, operation.global_info = inventory_item
 

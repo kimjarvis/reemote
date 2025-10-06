@@ -1,5 +1,5 @@
 import asyncssh
-from reemote.operation import Operation
+from reemote.command import Command
 from typing import Union, List, Optional
 import os
 
@@ -118,7 +118,7 @@ class Download:
             raise
 
     def execute(self):
-        r = yield Operation(f"{self}", local=True, callback=self._download_callback, caller=self)
+        r = yield Command(f"{self}", local=True, callback=self._download_callback, caller=self)
         r.executed = True
         r.changed = True
         return r

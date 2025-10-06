@@ -1,4 +1,4 @@
-from reemote.operation import Operation
+from reemote.command import Command
 class Update:
     """
     A class to manage package operations on a remote system using `apt` (Advanced Package Tool).
@@ -37,16 +37,16 @@ class Update:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        r0 = yield Operation(f"{self}",composite=True)
+        r0 = yield Command(f"{self}", composite=True)
         r0.executed = self.guard
 
         # Retrieve the current list of installed packages
-        r1 = yield Operation(f"dpkg-query -l", guard=self.guard, sudo=self.sudo, su=self.su)
+        r1 = yield Command(f"dpkg-query -l", guard=self.guard, sudo=self.sudo, su=self.su)
 
-        r2 = yield Operation(f"apt-get update", guard=self.guard, sudo=self.sudo, su=self.su)
+        r2 = yield Command(f"apt-get update", guard=self.guard, sudo=self.sudo, su=self.su)
         # print(r2)
         # Retrieve the updated list of installed packages
-        r3 = yield Operation(f"dpkg-query -l", guard=self.guard, sudo=self.sudo, su=self.su)
+        r3 = yield Command(f"dpkg-query -l", guard=self.guard, sudo=self.sudo, su=self.su)
 
         # Set the `changed` flag if the package state has changed
         if self.guard and (r1.cp.stdout != r3.cp.stdout):

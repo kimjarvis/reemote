@@ -1,6 +1,6 @@
-from reemote.operation import Operation
-from reemote.upgrade import Upgrade
-class Upgrade(Upgrade):
+from reemote.command import Command
+from reemote.command_upgrade import Command_upgrade
+class Upgrade(Command_upgrade):
     """
     Implements package upgrade using the yum package manager.
 
@@ -19,4 +19,4 @@ class Upgrade(Upgrade):
 
     """
     def execute(self):
-        yield Operation(f"yum upgrade", guard=self.guard, sudo=self.sudo, su=self.su)
+        yield Command(f"yum upgrade", guard=self.guard, sudo=self.sudo, su=self.su)
