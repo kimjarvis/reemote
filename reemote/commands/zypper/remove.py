@@ -3,9 +3,22 @@ from reemote.operation import Operation
 
 class Remove(Command):
     """
-    Represents a removal operation for packages using zypper.
+    Implements package removal using the zypper package manager.
 
-    This class extends BaseRemove to provide specific functionality for the zypper package manager.
+    This class extends Command to execute the `zypper remove -y` command for removing packages.
+
+    Attributes:
+        packages: List of package names to be removed.
+        guard: A boolean flag indicating whether the operation should be guarded.
+        sudo: A boolean flag to specify if sudo privileges are required.
+        su: A boolean flag to specify if the operation should run as su.
+
+    **Examples:**
+
+    .. code:: python
+
+        yield Remove(packages=['black', 'pytest'])
+
     """
     def execute(self):
         yield Operation(f"zypper remove -y {self.op}", guard=self.guard, sudo=self.sudo, su=self.su)

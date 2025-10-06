@@ -8,7 +8,6 @@ class Upgrade(Command):
     This class extends Command to execute the `pacman -Syu --noconfirm` command for upgrading installed packages.
 
     Attributes:
-        packages: List of package names (typically empty for upgrade operations).
         guard: A boolean flag indicating whether the operation should be guarded.
         sudo: A boolean flag to specify if sudo privileges are required.
         su: A boolean flag to specify if the operation should run as su.
