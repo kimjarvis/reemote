@@ -23,7 +23,6 @@ Commands are executed on the target system.
 
 **Example:**
 
-
 The commands.apk.packages() command installs apk packages.
 
 .. code:: bash
@@ -50,8 +49,29 @@ A deployment is a stand alone Python program with an inventory parameter
 
 **Example:**
 
-The deployments.apk.packages() deployment either installs or removes apk packages to a achieve the desired state.
+The deployments.files.write_text_to_file deployment demonstrates writing a file using scp.
 
 .. code:: bash
 
-    python3 -i=inventory.py deployments/apk/packages.py
+    python3 -i=inventory.py deployments/files/write_text_to_file.py
+
+.. code:: python
+
+    import asyncio
+    from reemote.deployment import main
+
+    class Write_text_to_file:
+        def execute(self):
+            from reemote.operations.sftp.write_file import Write_file
+            yield Write_file(path='hello.txt',text='Hello World!')
+
+    if __name__ == "__main__":
+        asyncio.run(main(Write_text_to_file))
+
+The deployment can also be called from the command line.
+
+.. code:: bash
+
+    reemote -i ~/reemote/inventory-proxmox-alpine.py \
+    -s ~/reemote/reemote/deployments/files/write_text_to_file.py \
+    -c Write_text_to_file

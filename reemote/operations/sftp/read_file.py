@@ -90,4 +90,5 @@ class Read_file:
         r = yield Command(f"{self}", local=True, callback=self._read_file_callback, caller=self)
         r.executed = True
         r.changed = False  # Reading doesn't change the system
+        r.cp.stdout=self.content
         return r
