@@ -22,7 +22,9 @@ This example manages apk package versions on all servers in an inventory.
    gui/using_the_reemote_gui
    using_the_reemote_cli
    tutorial
+   files
    facts_and_operations
+   commands/commands
    operations/operations
    facts/facts
    deployments/deployments

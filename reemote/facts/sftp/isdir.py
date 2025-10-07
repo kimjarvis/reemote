@@ -1,5 +1,5 @@
 import asyncssh
-from reemote.operation import Operation
+from reemote.command import Command
 from reemote.result import Result
 
 
@@ -46,7 +46,7 @@ class Isdir:
                     raise ValueError("Path must be provided for isdir operation")
 
     def execute(self):
-        r = yield Operation(f"{self}", local=True, callback=self._isdir_callback, caller=self)
+        r = yield Command(f"{self}", local=True, callback=self._isdir_callback, caller=self)
         r.executed = True
         r.changed = False
         return r

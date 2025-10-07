@@ -4,7 +4,7 @@ from reemote.operations.sftp.write_file import Write_file
 from reemote.execute import execute
 from reemote.utilities.produce_json import produce_json
 from reemote.utilities.produce_table import produce_table
-from reemote.operation import Operation
+from reemote.command import Command
 
 from typing import List, Tuple, Dict, Any
 
@@ -41,7 +41,7 @@ async def main():
 
 class Hello:
     def execute(self):
-        r = yield Operation("Read and Write", composite=True)
+        r = yield Command("Read and Write", composite=True)
         r.changed = False
         r1 = yield Read_file(path='example.txt', hosts=inventory()[0][0]['host'])
         # print(">>",r1)

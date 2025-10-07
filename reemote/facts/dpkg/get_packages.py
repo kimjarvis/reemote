@@ -29,5 +29,6 @@ class Get_packages:
     def execute(self):
         from reemote.operations.server.shell import Shell
         r = yield Shell("dpkg-query -W")
+        print(r)
         r.cp.stdout = parse_dpkg_list_installed(r.cp.stdout)
         # print(r.cp.stdout)

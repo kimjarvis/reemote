@@ -1,5 +1,5 @@
 import asyncssh
-from reemote.operation import Operation
+from reemote.command import Command
 from reemote.result import Result
 
 
@@ -53,7 +53,7 @@ class Directory:
         r1=Result()
         r2=Result()
         r3=Result()
-        r0 = yield Operation(f"{self}",composite=True)
+        r0 = yield Command(f"{self}", composite=True)
         r0.executed = True
         r0.changed = False
 

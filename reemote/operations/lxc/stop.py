@@ -1,4 +1,4 @@
-from reemote.operation import Operation
+from reemote.command import Command
 class Stop:
     """
     A class to manage lxc operations from the local host.

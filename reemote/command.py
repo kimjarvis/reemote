@@ -1,6 +1,6 @@
 from typing import Dict, Optional, Callable
 
-class Operation:
+class Command:
     def __init__(self, command: str, guard: bool = True, local: bool = False, callback: Optional[Callable] = None, caller=None, sudo: bool = False, su: bool = False, composite=False):
         self.command: str = command
         self.guard: bool = guard
@@ -54,8 +54,8 @@ def word_wrap(text, width=40):
     # Join all wrapped lines with newlines and return
     return "\n".join(wrapped_lines)
 
-def serialize_operation(obj):
-    if isinstance(obj, Operation):  # Check if the object is of type Operation
+def serialize_command(obj):
+    if isinstance(obj, Command):  # Check if the object is of type Operation
         return {
             "command": word_wrap(obj.command),          # Serialize the command (string)
             "guard": obj.guard,              # Serialize the guard (boolean)

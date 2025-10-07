@@ -1,5 +1,5 @@
 import asyncssh
-from reemote.operation import Operation
+from reemote.command import Command
 
 
 class Chmod:
@@ -64,7 +64,7 @@ class Chmod:
             raise  # Re-raise the exception to handle it in the caller
 
     def execute(self):
-        r = yield Operation(f"{self}", local=True, callback=self._chmod_callback, caller=self)
+        r = yield Command(f"{self}", local=True, callback=self._chmod_callback, caller=self)
         r.executed = True
         r.changed = True  # Set to True since chmod typically changes the system state
         return r

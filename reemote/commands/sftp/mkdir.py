@@ -1,5 +1,5 @@
 import asyncssh
-from reemote.operation import Operation
+from reemote.command import Command
 from pathlib import PurePath
 from typing import Union, Optional, Sequence, Tuple
 
@@ -182,7 +182,7 @@ class Mkdir:
             raise  # Re-raise the exception to handle it in the caller
 
     def execute(self):
-        r = yield Operation(f"{self}", local=True, callback=self._mkdir_callback, caller=self)
+        r = yield Command(f"{self}", local=True, callback=self._mkdir_callback, caller=self)
         r.executed = True
         r.changed = True  # Set to True since mkdir changes the system state
         return r

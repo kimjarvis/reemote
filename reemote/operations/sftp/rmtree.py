@@ -2,7 +2,7 @@ import asyncssh
 import asyncio
 import sys
 import posixpath
-from reemote.operation import Operation
+from reemote.command import Command
 from typing import cast
 
 
@@ -59,7 +59,7 @@ class Rmtree:
             raise  # Re-raise the exception to handle it in the caller
 
     def execute(self):
-        r = yield Operation(f"{self}", local=True, callback=self._rmtree_callback, caller=self)
+        r = yield Command(f"{self}", local=True, callback=self._rmtree_callback, caller=self)
         r.executed = True
         r.changed = False
         return r

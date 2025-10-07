@@ -1,6 +1,6 @@
 import asyncssh
 from asyncssh import SFTPAttrs
-from reemote.operation import Operation
+from reemote.command import Command
 
 
 class Makedirs:
@@ -67,7 +67,7 @@ class Makedirs:
                 f"exist_ok={self.exist_ok!r})")
 
     def execute(self):
-        r = yield Operation(f"{self}", local=True, callback=self._makedirs_callback, caller=self)
+        r = yield Command(f"{self}", local=True, callback=self._makedirs_callback, caller=self)
         r.executed = True
         r.changed = False
         return r

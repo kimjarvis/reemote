@@ -1,5 +1,5 @@
 
-from reemote.operation import Operation
+from reemote.command import Command
 from typing import Callable
 
 
@@ -51,7 +51,7 @@ class Callback:
                 f"callback={self.callback_name!r})")
 
     def execute(self):
-        from reemote.operation import Operation
-        r = yield Operation(f"{self}", local=True, callback=self.callback, caller=self, guard=self.guard)
+        from reemote.command import Command
+        r = yield Command(f"{self}", local=True, callback=self.callback, caller=self, guard=self.guard)
         r.executed=True
         r.changed=True

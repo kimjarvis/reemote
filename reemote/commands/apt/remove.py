@@ -1,46 +1,24 @@
-from typing import List
-from reemote.operation import Operation
+from reemote.command_remove import Command_remove
+from reemote.command import Command
 
-class Remove:
+class Remove(Command_remove):
     """
-    Represents a class to remove specified packages using an operational command.
+    Implements package removal using the apt package manager.
 
-    This class facilitates the removal of specified packages through a generated
-    command string. It provides flexibility to include optional execution features
-    like guarding the action and using elevated permissions such as sudo or su.
+    This class extends Command to execute the `apt remove -y` command for removing packages.
 
     Attributes:
-        packages (list of str): List of package names to be removed.
-        guard (bool): Whether to guard the remove operation. Defaults to True.
-        sudo (bool): Whether to execute the remove operation with sudo permissions.
-                     Defaults to False.
-        su (bool): Whether to execute the remove operation with su permissions.
-                   Defaults to False.
+        packages: List of package names to be removed.
+        guard: A boolean flag indicating whether the operation should be guarded.
+        sudo: A boolean flag to specify if sudo privileges are required.
+        su: A boolean flag to specify if the operation should run as su.
+
+    **Examples:**
+
+    .. code:: python
+
+        yield Remove(packages=['vim', 'git'])
+
     """
-
-    def __init__(self,
-                 packages: List[str],
-                 guard: bool = True,
-                 sudo: bool = False,
-                 su: bool = False):
-
-        self.packages: List[str] = packages
-        self.guard: bool = guard
-        self.sudo: bool = sudo
-        self.su: bool = su
-
-        # Construct the operation string from the list of packages
-        op: List[str] = []
-        op.extend(self.packages)
-        self.op: str = " ".join(op)
-
-    def __repr__(self) -> str:
-        return (f"Remove("
-                f"packages={self.packages!r}, "
-                f"guard={self.guard!r}, "                                
-                f"sudo={self.sudo!r}, "
-                f"su={self.su!r})")
-
     def execute(self):
-        yield Operation(f"apt-get remove -y {self.op}",guard=self.guard, sudo=self.sudo, su=self.su)
-
+        yield Command(f"apt remove -y {self.op}", guard=self.guard, sudo=self.sudo, su=self.su)

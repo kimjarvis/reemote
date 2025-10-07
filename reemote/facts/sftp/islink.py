@@ -1,5 +1,5 @@
 import asyncssh
-from reemote.operation import Operation
+from reemote.command import Command
 
 
 class Islink:
@@ -45,7 +45,7 @@ class Islink:
                     raise ValueError("Path must be provided for islink operation")
 
     def execute(self):
-        r = yield Operation(f"{self}", local=True, callback=self._islink_callback, caller=self)
+        r = yield Command(f"{self}", local=True, callback=self._islink_callback, caller=self)
         r.executed = True
         r.changed = False
         return r

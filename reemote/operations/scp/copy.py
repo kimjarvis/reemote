@@ -1,5 +1,5 @@
 import asyncssh
-from reemote.operation import Operation
+from reemote.command import Command
 from typing import Union, List, Optional
 import tempfile
 import os
@@ -177,9 +177,9 @@ class Copy:
             Operation: An Operation object that handles the asynchronous copy process.
 
         Returns:
-            Operation: The operation object with executed and changed flags set to True.
+            Command: The operation object with executed and changed flags set to True.
         """
-        r = yield Operation(f"{self}", local=True, callback=self._copy_callback, caller=self)
+        r = yield Command(f"{self}", local=True, callback=self._copy_callback, caller=self)
         r.executed = True
         r.changed = True
         return r

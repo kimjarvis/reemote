@@ -1,6 +1,6 @@
 import os
 import asyncssh
-from reemote.operation import Operation
+from reemote.command import Command
 from typing import Optional, Callable, Union
 
 
@@ -133,7 +133,7 @@ class Mput_files:
             raise  # Re-raise the exception to handle it in the caller
 
     def execute(self):
-        r = yield Operation(f"{self}", local=True, callback=self._mput_files_callback, caller=self)
+        r = yield Command(f"{self}", local=True, callback=self._mput_files_callback, caller=self)
         r.executed = True
         r.changed = True
         return r
