@@ -1,0 +1,1 @@
+/home/kim/reemote/reemote/operations/files/template.py

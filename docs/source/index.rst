@@ -26,6 +26,7 @@ This example manages apk package versions on all servers in an inventory.
    facts_and_operations
    commands/commands
    operations/operations
+   builtins/builtins
    facts/facts
    deployments/deployments
    callbacks/callbacks

@@ -1,0 +1,143 @@
+Mkdir(path='/tmp/mydir', )
+[
+    {
+        "host": "10.156.135.122",
+        "op": {
+            "command": "Directory(path='/tmp/mydir', present=True, ",
+            "guard": true,
+            "host_info": {
+                "host": "10.156.135.122",
+                "username": "user",
+                "password": "user"
+            },
+            "global_info": {
+                "sudo_user": "user",
+                "sudo_password": "user"
+            }
+        },
+        "changed": false,
+        "executed": true,
+        "cp": {
+            "env": null,
+            "command": null,
+            "subsystem": null,
+            "exit_status": null,
+            "exit_signal": null,
+            "returncode": null,
+            "stdout": null,
+            "stderr": null
+        }
+    },
+    {
+        "host": "10.156.135.138",
+        "op": {
+            "command": "Directory(path='/tmp/mydir', present=True, ",
+            "guard": true,
+            "host_info": {
+                "host": "10.156.135.138",
+                "username": "user",
+                "password": "user"
+            },
+            "global_info": {
+                "sudo_user": "user",
+                "sudo_password": "user"
+            }
+        },
+        "changed": true,
+        "executed": true,
+        "cp": {
+            "env": null,
+            "command": null,
+            "subsystem": null,
+            "exit_status": null,
+            "exit_signal": null,
+            "returncode": null,
+            "stdout": null,
+            "stderr": null
+        }
+    },
+    {
+        "host": "10.156.135.122",
+        "op": {
+            "command": "Get_isdir(hosts=None, path='/tmp/mydir')",
+            "guard": true,
+            "host_info": {
+                "host": "10.156.135.122",
+                "username": "user",
+                "password": "user"
+            },
+            "global_info": {
+                "sudo_user": "user",
+                "sudo_password": "user"
+            }
+        },
+        "changed": false,
+        "executed": true,
+        "cp": {
+            "env": null,
+            "command": null,
+            "subsystem": null,
+            "exit_status": null,
+            "exit_signal": null,
+            "returncode": null,
+            "stdout": true,
+            "stderr": null
+        }
+    },
+    {
+        "host": "10.156.135.138",
+        "op": {
+            "command": "Get_isdir(hosts=None, path='/tmp/mydir')",
+            "guard": true,
+            "host_info": {
+                "host": "10.156.135.138",
+                "username": "user",
+                "password": "user"
+            },
+            "global_info": {
+                "sudo_user": "user",
+                "sudo_password": "user"
+            }
+        },
+        "changed": false,
+        "executed": true,
+        "cp": {
+            "env": null,
+            "command": null,
+            "subsystem": null,
+            "exit_status": null,
+            "exit_signal": null,
+            "returncode": null,
+            "stdout": false,
+            "stderr": null
+        }
+    },
+    {
+        "host": "10.156.135.138",
+        "op": {
+            "command": "Mkdir(path='/tmp/mydir', )",
+            "guard": true,
+            "host_info": {
+                "host": "10.156.135.138",
+                "username": "user",
+                "password": "user"
+            },
+            "global_info": {
+                "sudo_user": "user",
+                "sudo_password": "user"
+            }
+        },
+        "changed": true,
+        "executed": true,
+        "cp": {
+            "env": null,
+            "command": null,
+            "subsystem": null,
+            "exit_status": null,
+            "exit_signal": null,
+            "returncode": null,
+            "stdout": null,
+            "stderr": null
+        }
+    }
+]
