@@ -9,7 +9,7 @@ Zypper operations
    :show-inheritance:
    :undoc-members:
 
-.. automodule:: reemote.operations.zypper.refresh
+.. automodule:: reemote.operations.zypper.upgrade
    :members:
    :show-inheritance:
    :undoc-members:

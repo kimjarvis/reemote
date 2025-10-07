@@ -1,5 +1,5 @@
 
-from reemote.command import Command_install
+from reemote.command_install import Command_install
 from reemote.command import Command
 
 class Install(Command_install):

@@ -10,6 +10,7 @@ This section contains documentation for various operations supported by Reemote.
    apt
    dnf
    dpkg
+   files
    filesystem
    pacman
    pip
