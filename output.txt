@@ -1,0 +1,30 @@
+[
+    {
+        "host": "10.156.135.16",
+        "op": {
+            "command": "adduser -D abc && echo \"abc:def\" | chpasswd",
+            "guard": true,
+            "host_info": {
+                "host": "10.156.135.16",
+                "username": "user",
+                "password": "user"
+            },
+            "global_info": {
+                "su_user": "root",
+                "su_password": "root"
+            }
+        },
+        "changed": true,
+        "executed": true,
+        "cp": {
+            "env": null,
+            "command": "su root -c 'adduser -D abc && echo \"abc:def\" | chpasswd'",
+            "subsystem": null,
+            "exit_status": 1,
+            "exit_signal": null,
+            "returncode": 1,
+            "stdout": " \r\nadduser: user 'abc' in use\r\n",
+            "stderr": ""
+        }
+    }
+]
