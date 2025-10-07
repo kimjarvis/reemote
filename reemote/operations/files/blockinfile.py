@@ -63,6 +63,47 @@ class Blockinfile:
     execute()
         Executes the blockinfile operation, modifying the file as specified.
 
+    Examples
+    --------
+    # Example 1: Insert a block of text at the end of a file
+    task = Blockinfile(
+        path="/etc/example.conf",
+        block="This is an example block.",
+        marker="# {mark} CUSTOM BLOCK",
+        state="present",
+        insertafter="EOF"
+    )
+    yield task.execute()
+
+    # Example 2: Remove a block of text identified by custom markers
+    task = Blockinfile(
+        path="/etc/example.conf",
+        marker="# {mark} CUSTOM BLOCK",
+        state="absent"
+    )
+    yield task.execute()
+
+    # Example 3: Insert a block of text before a specific pattern
+    task = Blockinfile(
+        path="/etc/example.conf",
+        block="New configuration block.",
+        marker="# {mark} NEW CONFIG",
+        state="present",
+        insertbefore=r"^# Existing Section"
+    )
+    yield task.execute()
+
+    # Example 4: Insert a block with file attributes (permissions, owner, group)
+    task = Blockinfile(
+        path="/etc/example.conf",
+        block="Secure block content.",
+        marker="# {mark} SECURE BLOCK",
+        state="present",
+        insertafter="EOF",
+        attrs={"permissions": 0o600, "owner": "root", "group": "root"}
+    )
+    yield task.execute()
+
     Notes
     -----
     - The `attrs` parameter is used to set file attributes via the `Setstat` class.
