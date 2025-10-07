@@ -9,6 +9,47 @@ from reemote.operations.sftp.write_file import Write_file
 from reemote.operations.sftp.setstat import Setstat
 
 class Lineinfile():
+    """
+    A class to manage lines in a remote file using SFTP operations.
+
+    This class allows you to ensure that a specific line exists in a file on a remote server.
+    It supports adding, replacing, or modifying lines based on search criteria such as regular
+    expressions, string matches, or exact line comparisons. Additionally, it can set file
+    attributes (e.g., permissions) after making changes.
+
+    Parameters:
+        line (str): The line to ensure exists in the file. This line will be added, replaced,
+                    or left unchanged depending on the search criteria.
+        path (str): The path to the file on the remote server.
+        regexp (str, optional): A regular expression pattern to match lines in the file.
+                                Mutually exclusive with `search_string`.
+        search_string (str, optional): A string to search for in the file. Mutually exclusive
+                                        with `regexp`.
+        insertafter (str, optional): A pattern or keyword ('EOF') specifying where to insert
+                                      the line after a match. Mutually exclusive with `insertbefore`.
+        insertbefore (str, optional): A pattern or keyword ('BOF') specifying where to insert
+                                       the line before a match. Mutually exclusive with `insertafter`.
+        attrs (dict, optional): File attributes (e.g., permissions) to set after modifying the file.
+
+    Methods:
+        execute(): Executes the logic to read, modify, and write the file based on the provided
+                   parameters. Ensures idempotency by checking if the line already exists before
+                   making changes.
+
+    Raises:
+        ValueError: If mutually exclusive parameters (`regexp` and `search_string`, or
+                    `insertafter` and `insertbefore`) are both provided.
+
+    Example Usage:
+        # Ensure the line "example_line" exists in /path/to/file.txt
+        line_in_file = Lineinfile(
+            line="example_line",
+            path="/path/to/file.txt",
+            regexp="^pattern_to_match$",
+            attrs={"permissions": 0o644}
+        )
+        yield line_in_file.execute()
+    """
     def __init__(self,
                  line="",
                  path="",
@@ -70,7 +111,8 @@ class Lineinfile():
             if line.rstrip('\r\n') == target_line:
                 exact_match_found = True
                 print(f"Exact match found. Setting attributes for {self.path}: {self.attrs}")
-                yield Setstat(path=self.path, attrs=self.attrs)  # Pass attrs directly
+                if self.attrs:
+                    yield Setstat(path=self.path, attrs=self.attrs)  # Pass attrs directly
                 return
 
             # Check if line matches our search pattern (for replacement)
@@ -93,7 +135,8 @@ class Lineinfile():
 
             print("Replacing line and setting attributes...")
             yield Write_file(path=self.path, text=new_content)
-            yield Setstat(path=self.path, attrs=self.attrs)  # Pass attrs directly
+            if self.attrs:
+                yield Setstat(path=self.path, attrs=self.attrs)  # Pass attrs directly
             return
 
         # Step 3: Insert the line if no matches found
@@ -140,4 +183,5 @@ class Lineinfile():
 
             print("Inserting line and setting attributes...")
             yield Write_file(path=self.path, text=new_content)
-            yield Setstat(path=self.path, attrs=self.attrs)  # Pass attrs directly
+            if self.attrs:
+                yield Setstat(path=self.path, attrs=self.attrs)  # Pass attrs directly
