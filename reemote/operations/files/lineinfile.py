@@ -17,30 +17,37 @@ class Lineinfile():
     expressions, string matches, or exact line comparisons. Additionally, it can set file
     attributes (e.g., permissions) after making changes.
 
-    Parameters:
+    Attributes:
         line (str): The line to ensure exists in the file. This line will be added, replaced,
                     or left unchanged depending on the search criteria.
         path (str): The path to the file on the remote server.
         regexp (str, optional): A regular expression pattern to match lines in the file.
-                                Mutually exclusive with `search_string`.
+                                Mutually exclusive with `search_string`. Defaults to ``None``.
         search_string (str, optional): A string to search for in the file. Mutually exclusive
-                                        with `regexp`.
+                                       with `regexp`. Defaults to ``None``.
         insertafter (str, optional): A pattern or keyword ('EOF') specifying where to insert
-                                      the line after a match. Mutually exclusive with `insertbefore`.
+                                     the line after a match. Mutually exclusive with `insertbefore`.
+                                     Defaults to ``None``.
         insertbefore (str, optional): A pattern or keyword ('BOF') specifying where to insert
-                                       the line before a match. Mutually exclusive with `insertafter`.
+                                      the line before a match. Mutually exclusive with `insertafter`.
+                                      Defaults to ``None``.
         attrs (dict, optional): File attributes (e.g., permissions) to set after modifying the file.
+                                Defaults to ``None``.
 
     Methods:
-        execute(): Executes the logic to read, modify, and write the file based on the provided
-                   parameters. Ensures idempotency by checking if the line already exists before
-                   making changes.
+        execute():
+            Executes the logic to read, modify, and write the file based on the provided
+            parameters. Ensures idempotency by checking if the line already exists before
+            making changes.
 
     Raises:
         ValueError: If mutually exclusive parameters (`regexp` and `search_string`, or
                     `insertafter` and `insertbefore`) are both provided.
 
-    Example Usage:
+    **Examples:**
+
+    .. code:: python
+
         # Ensure the line "example_line" exists in /path/to/file.txt
         line_in_file = Lineinfile(
             line="example_line",
@@ -49,7 +56,12 @@ class Lineinfile():
             attrs={"permissions": 0o644}
         )
         yield line_in_file.execute()
+
+    Usage:
+        This class is designed to be used in a generator-based workflow where
+        commands are yielded for execution.
     """
+
     def __init__(self,
                  line="",
                  path="",

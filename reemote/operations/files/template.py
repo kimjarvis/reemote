@@ -18,29 +18,33 @@ class Template():
     It supports template rendering with variables, backup creation, validation commands,
     and setting file attributes after transfer.
 
-    Parameters:
+    Attributes:
         src (str): Path to the Jinja2 template file on the local system.
         dest (str): Path where the rendered template should be placed on the remote server.
-        vars (dict, optional): Variables to use when rendering the template.
-        backup (bool, optional): Whether to create a backup of the existing file.
-        force (bool, optional): Whether to replace the file if content differs.
-        lstrip_blocks (bool, optional): Strip leading spaces and tabs from blocks.
-        trim_blocks (bool, optional): Remove first newline after a block.
-        newline_sequence (str, optional): Newline sequence to use ('\n', '\r', '\r\n').
-        output_encoding (str, optional): Encoding for the output file.
-        block_start_string (str, optional): String marking block start.
-        block_end_string (str, optional): String marking block end.
-        variable_start_string (str, optional): String marking variable start.
-        variable_end_string (str, optional): String marking variable end.
-        comment_start_string (str, optional): String marking comment start.
-        comment_end_string (str, optional): String marking comment end.
-        validate (str, optional): Validation command to run before final copy.
-        attrs (dict, optional): File attributes to set after writing the file.
+        vars (dict, optional): Variables to use when rendering the template. Defaults to ``None``.
+        backup (bool, optional): Whether to create a backup of the existing file. Defaults to ``False``.
+        force (bool, optional): Whether to replace the file if content differs. Defaults to ``False``.
+        lstrip_blocks (bool, optional): Strip leading spaces and tabs from blocks. Defaults to ``False``.
+        trim_blocks (bool, optional): Remove first newline after a block. Defaults to ``False``.
+        newline_sequence (str, optional): Newline sequence to use ('\\n', '\\r', '\\r\\n'). Defaults to ``None``.
+        output_encoding (str, optional): Encoding for the output file. Defaults to ``None``.
+        block_start_string (str, optional): String marking block start. Defaults to ``None``.
+        block_end_string (str, optional): String marking block end. Defaults to ``None``.
+        variable_start_string (str, optional): String marking variable start. Defaults to ``None``.
+        variable_end_string (str, optional): String marking variable end. Defaults to ``None``.
+        comment_start_string (str, optional): String marking comment start. Defaults to ``None``.
+        comment_end_string (str, optional): String marking comment end. Defaults to ``None``.
+        validate (str, optional): Validation command to run before final copy. Defaults to ``None``.
+        attrs (dict, optional): File attributes to set after writing the file. Defaults to ``None``.
 
     Methods:
-        execute(): Executes the template rendering and file transfer logic.
+        execute():
+            Executes the template rendering and file transfer logic.
 
-    Example Usage:
+    **Examples:**
+
+    .. code:: python
+
         template = Template(
             src="/local/templates/nginx.conf.j2",
             dest="/etc/nginx/nginx.conf",
@@ -48,7 +52,12 @@ class Template():
             attrs={"permissions": 0o644}
         )
         yield template.execute()
+
+    Usage:
+        This class is designed to be used in a generator-based workflow where
+        commands are yielded for execution.
     """
+
     def __init__(self,
                  src="",
                  dest="",

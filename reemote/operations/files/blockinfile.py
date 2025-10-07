@@ -15,100 +15,90 @@ class Blockinfile:
     The class also supports setting file attributes such as permissions, ownership,
     and group information.
 
-    Parameters
-    ----------
-    path : str
-        The path to the file to modify.
-    block : str, optional
-        The text to insert inside the marker lines. If empty or None, the block will
-        be removed if `state="absent"`. Default is an empty string.
-    marker : str, optional
-        The marker line template. `{mark}` will be replaced with the values in
-        `marker_begin` (default="BEGIN") and `marker_end` (default="END").
-        Default is "# {mark} ANSIBLE MANAGED BLOCK".
-    marker_begin : str, optional
-        The text to replace `{mark}` in the opening marker line. Default is "BEGIN".
-    marker_end : str, optional
-        The text to replace `{mark}` in the closing marker line. Default is "END".
-    state : str, optional
-        Whether the block should be present or absent. Choices are:
-        - "present" (default): Ensure the block exists.
-        - "absent": Remove the block if it exists.
-    create : bool, optional
-        Create a new file if it does not exist. Default is False.
-    insertafter : str, optional
-        Insert the block after the last match of the specified regular expression.
-        Special value "EOF" inserts the block at the end of the file. Default is None.
-    insertbefore : str, optional
-        Insert the block before the last match of the specified regular expression.
-        Special value "BOF" inserts the block at the beginning of the file. Default is None.
-    append_newline : bool, optional
-        Append a blank line to the inserted block if this does not appear at the end
-        of the file. Default is False.
-    prepend_newline : bool, optional
-        Prepend a blank line to the inserted block if this does not appear at the
-        beginning of the file. Default is False.
-    backup : bool, optional
-        Create a backup file including the timestamp information so the original file
-        can be restored if needed. Default is False.
-    attrs : dict, optional
-        A dictionary containing file attributes to set, such as permissions, owner,
-        and group. Example: {"permissions": 0o644, "owner": "root", "group": "root"}.
-        Default is an empty dictionary.
-    unsafe_writes : bool, optional
-        Allow unsafe writes if atomic operations fail. Default is False.
+    Attributes:
+        path (str): The path to the file to modify.
+        block (str, optional): The text to insert inside the marker lines. If empty or None,
+                               the block will be removed if `state="absent"`. Defaults to ``""``.
+        marker (str, optional): The marker line template. `{mark}` will be replaced with the values
+                                in `marker_begin` (default="BEGIN") and `marker_end` (default="END").
+                                Defaults to ``"# {mark} ANSIBLE MANAGED BLOCK"``.
+        marker_begin (str, optional): The text to replace `{mark}` in the opening marker line.
+                                      Defaults to ``"BEGIN"``.
+        marker_end (str, optional): The text to replace `{mark}` in the closing marker line.
+                                    Defaults to ``"END"``.
+        state (str, optional): Whether the block should be present or absent. Choices are:
+                               - "present" (default): Ensure the block exists.
+                               - "absent": Remove the block if it exists.
+                               Defaults to ``"present"``.
+        create (bool, optional): Create a new file if it does not exist. Defaults to ``False``.
+        insertafter (str, optional): Insert the block after the last match of the specified regular
+                                     expression. Special value "EOF" inserts the block at the end of
+                                     the file. Defaults to ``None``.
+        insertbefore (str, optional): Insert the block before the last match of the specified regular
+                                      expression. Special value "BOF" inserts the block at the beginning
+                                      of the file. Defaults to ``None``.
+        append_newline (bool, optional): Append a blank line to the inserted block if this does not
+                                         appear at the end of the file. Defaults to ``False``.
+        prepend_newline (bool, optional): Prepend a blank line to the inserted block if this does not
+                                          appear at the beginning of the file. Defaults to ``False``.
+        backup (bool, optional): Create a backup file including the timestamp information so the original
+                                 file can be restored if needed. Defaults to ``False``.
+        attrs (dict, optional): A dictionary containing file attributes to set, such as permissions,
+                                owner, and group. Example: ``{"permissions": 0o644, "owner": "root",
+                                "group": "root"}``. Defaults to an empty dictionary.
+        unsafe_writes (bool, optional): Allow unsafe writes if atomic operations fail. Defaults to ``False``.
 
-    Methods
-    -------
-    execute()
-        Executes the blockinfile operation, modifying the file as specified.
+    Methods:
+        execute():
+            Executes the blockinfile operation, modifying the file as specified.
 
-    Examples
-    --------
-    # Example 1: Insert a block of text at the end of a file
-    task = Blockinfile(
-        path="/etc/example.conf",
-        block="This is an example block.",
-        marker="# {mark} CUSTOM BLOCK",
-        state="present",
-        insertafter="EOF"
-    )
-    yield task.execute()
+    **Examples:**
 
-    # Example 2: Remove a block of text identified by custom markers
-    task = Blockinfile(
-        path="/etc/example.conf",
-        marker="# {mark} CUSTOM BLOCK",
-        state="absent"
-    )
-    yield task.execute()
+    .. code:: python
 
-    # Example 3: Insert a block of text before a specific pattern
-    task = Blockinfile(
-        path="/etc/example.conf",
-        block="New configuration block.",
-        marker="# {mark} NEW CONFIG",
-        state="present",
-        insertbefore=r"^# Existing Section"
-    )
-    yield task.execute()
+        # Example 1: Insert a block of text at the end of a file
+        task = Blockinfile(
+            path="/etc/example.conf",
+            block="This is an example block.",
+            marker="# {mark} CUSTOM BLOCK",
+            state="present",
+            insertafter="EOF"
+        )
+        yield task.execute()
 
-    # Example 4: Insert a block with file attributes (permissions, owner, group)
-    task = Blockinfile(
-        path="/etc/example.conf",
-        block="Secure block content.",
-        marker="# {mark} SECURE BLOCK",
-        state="present",
-        insertafter="EOF",
-        attrs={"permissions": 0o600, "owner": "root", "group": "root"}
-    )
-    yield task.execute()
+        # Example 2: Remove a block of text identified by custom markers
+        task = Blockinfile(
+            path="/etc/example.conf",
+            marker="# {mark} CUSTOM BLOCK",
+            state="absent"
+        )
+        yield task.execute()
 
-    Notes
-    -----
-    - The `attrs` parameter is used to set file attributes via the `Setstat` class.
-    - The `insertafter` and `insertbefore` parameters are mutually exclusive.
-    - Multi-line markers are not supported and may result in repeated insertions.
+        # Example 3: Insert a block of text before a specific pattern
+        task = Blockinfile(
+            path="/etc/example.conf",
+            block="New configuration block.",
+            marker="# {mark} NEW CONFIG",
+            state="present",
+            insertbefore=r"^# Existing Section"
+        )
+        yield task.execute()
+
+        # Example 4: Insert a block with file attributes (permissions, owner, group)
+        task = Blockinfile(
+            path="/etc/example.conf",
+            block="Secure block content.",
+            marker="# {mark} SECURE BLOCK",
+            state="present",
+            insertafter="EOF",
+            attrs={"permissions": 0o600, "owner": "root", "group": "root"}
+        )
+        yield task.execute()
+
+    Notes:
+        - The `attrs` parameter is used to set file attributes via the `Setstat` class.
+        - The `insertafter` and `insertbefore` parameters are mutually exclusive.
+        - Multi-line markers are not supported and may result in repeated insertions.
     """
 
     def __init__(self,

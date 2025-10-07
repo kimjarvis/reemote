@@ -10,3 +10,8 @@ Builtins
    :members:
    :show-inheritance:
    :undoc-members:
+
+.. automodule:: reemote.builtins.template
+   :members:
+   :show-inheritance:
+   :undoc-members:
