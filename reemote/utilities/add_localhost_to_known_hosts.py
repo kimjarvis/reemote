@@ -3,6 +3,29 @@ import os
 
 
 def add_localhost_to_known_hosts():
+    """Manages SSH host key for localhost.
+
+    This script provides a function to automatically add the SSH host key for
+    'localhost' to the current user's `~/.ssh/known_hosts` file. This is useful
+    for pre-configuring an environment to allow passwordless SSH connections to
+    the local machine, avoiding interactive prompts and connection errors,
+    especially in automated scripts or development containers.
+
+    Key actions performed:
+
+    - Ensures the `~/.ssh` directory exists, creating it with secure permissions
+      (0o700) if necessary.
+    - Runs the `ssh-keyscan localhost` command to retrieve the public key.
+    - Appends the retrieved key to the `~/.ssh/known_hosts` file.
+    - Handles potential errors during the process and prints informative
+      messages to the console.
+
+    Args:
+        None.
+
+    Returns:
+        None. The function prints success or error messages to standard output.
+    """
     # Define the path to the known_hosts file
     known_hosts_path = os.path.expanduser("~/.ssh/known_hosts")
 

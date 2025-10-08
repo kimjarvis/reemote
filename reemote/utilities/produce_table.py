@@ -4,17 +4,32 @@ from reemote.utilities.generate_execution_results import generate_table
 
 
 def produce_table(json_output: tuple[str, str]):
-    # Ensure the output directory exists
-    # output_dir = "development/output"
-    # os.makedirs(output_dir, exist_ok=True)
-    # Parse the JSON data first, then pass it to generate_table
-    # Generate the RST table and write it to out.rst
+    """Creates a reStructuredText (RST) table from JSON-formatted results.
+
+     This function processes a JSON string, which is expected to contain
+     structured results from a command or process execution. It parses the
+     JSON and utilizes the `generate_table` function to format the data
+     into a reStructuredText table.
+
+     The primary use case is to present command or script execution outcomes
+     in a structured table format. It includes error handling for malformed
+     JSON input.
+
+     Args:
+         json_output (str): A JSON string representing execution results to
+             be displayed in a table.
+
+     Returns:
+         str: A string containing the generated reStructuredText table of
+             execution results.
+
+     Raises:
+         json.JSONDecodeError: If the input `json_output` string is not
+             valid JSON.
+     """
     try:
         parsed_data = json.loads(json_output)
         table = generate_table(parsed_data)
-        # rst_file_path = os.path.join(output_dir, "out.rst")
-        # with open(rst_file_path, "w") as rst_file:
-        #     rst_file.write(table)
 
     except json.JSONDecodeError as e:
         print("Error: Invalid JSON format.")

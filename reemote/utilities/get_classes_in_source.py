@@ -2,9 +2,26 @@ import importlib.util
 import inspect
 
 def get_classes_in_source(source_file):
-    """
-    Returns a list of class names (strings) defined in the given Python source file.
-    Only includes top-level classes defined in the file — excludes imported classes.
+    """Finds and returns the names of all top-level classes within a Python source file.
+
+    This function dynamically loads a given Python file as a temporary module
+    in memory. It then uses Python's `inspect` capabilities to scan the
+    module for class definitions.
+
+    The key feature of this function is its ability to differentiate between
+    classes defined directly in the file versus those that are imported from
+    other modules. It achieves this by checking the `__module__` attribute of
+    each found class, ensuring it matches the name of the temporarily
+    created module.
+
+    Args:
+        source_file (str): The file path to the Python source file (.py)
+            to be inspected.
+
+    Returns:
+        list[str]: A list of strings, where each string is the name of a
+            top-level class defined in the source file. Returns an empty
+            list if no classes are found.
     """
     # Load module from file
     spec = importlib.util.spec_from_file_location("temp_module", source_file)

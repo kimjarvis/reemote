@@ -30,4 +30,5 @@ This example manages apk package versions on all servers in an inventory.
    facts/facts
    deployments/deployments
    callbacks/callbacks
+   utilities
 

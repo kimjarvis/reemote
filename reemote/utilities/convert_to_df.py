@@ -2,7 +2,42 @@ import json
 import pandas as pd
 
 def convert_to_df(data, columns=None):
-    """Convert JSON data to DataFrame with specified columns"""
+    """Converts structured JSON data into a pandas DataFrame.
+
+    This module provides the `convert_to_df` function, which takes structured
+    data (as a JSON string or list of dictionaries) and transforms it into a
+    pandas DataFrame. It is designed to flatten a nested JSON structure, often
+    from command-line tool outputs, based on a predefined set of extraction rules.
+
+    The main function, `convert_to_df`, performs several key transformations:
+
+    - Parses the input if it is a JSON-formatted string.
+    - Extracts data from nested objects (e.g., 'op', 'cp') into top-level columns.
+    - Gracefully handles missing keys or objects by using empty strings as
+      fallback values.
+    - Allows the user to select a custom subset of columns for the final DataFrame.
+    - Validates requested column names against the list of available fields.
+
+    The function signature is:
+        convert_to_df(data, columns=None)
+
+    Args:
+        data (str or list[dict]): The input data. This can be a JSON-formatted
+            string or a list of dictionaries representing the rows.
+        columns (list[str], optional): A list of column names to be included
+            in the output DataFrame. If None, all predefined columns will be
+            used. Defaults to None.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame containing the extracted and
+            flattened data, with columns ordered as specified.
+
+    Raises:
+        ValueError: If the input `data` is a string that cannot be parsed as
+            JSON, or if a requested column name in the `columns` list is not
+            available.
+    """
+
     # If data is a string, parse it as JSON
     if isinstance(data, str):
         try:

@@ -11,17 +11,32 @@ def make_inventory(
         root_password: str,
         ip_address: str
 ) -> None:
-    """
-    Create an inventory file for VM configuration.
+    """Generates a Python-based inventory file for a virtual machine.
+
+    This function creates a Python script that serves as a configuration
+    inventory. The generated script contains a single function, `inventory()`,
+    which returns the connection and privilege escalation details for a
+    specific VM host. The content of the file is dynamically generated
+    using the provided arguments.
+
+    The resulting inventory file is structured to be compatible with tools
+    that expect a Python-based configuration module.
 
     Args:
-        inventory_filename: Path to the inventory file
-        image: VM image description
-        name: User's full name
-        user: Username
-        user_password: User password
-        root_password: Root password
-        ip_address: IP address of the VM
+        inventory_filename (str): The path and name for the output inventory file.
+        image (str): A description of the VM image (e.g., "Ubuntu 22.04").
+        vm (str): A name or identifier for the virtual machine.
+        name (str): The full name of the user, used for generating comments.
+        user (str): The username for SSH and sudo access.
+        user_password (str): The password for the regular user account.
+        root_password (str): The password for the root account, used for `su`.
+        ip_address (str): The IP address of the target virtual machine.
+
+    Returns:
+        None
+
+    Raises:
+        IOError: If an error occurs while writing to the inventory file.
     """
     # Create the inventory file content
     inventory_content = f"""from typing import List, Tuple, Dict, Any
