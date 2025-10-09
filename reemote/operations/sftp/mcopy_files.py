@@ -11,11 +11,11 @@ class Mcopy_files:
 
     Attributes:
         srcpaths (str): The remote source file or directory path(s) to copy with wildcard patterns.
-        dstpath (str): The remote destination path where files will be copied.
+        dstpath (str): The remote destination path where file will be copied.
         preserve (bool): Preserve file attributes (permissions, timestamps).
         recurse (bool): Recursively copy directories.
         follow_symlinks (bool): Follow symbolic links during copy.
-        sparse (bool): Create sparse files on the remote system.
+        sparse (bool): Create sparse file on the remote system.
         block_size (int): Block size for file transfers.
         max_requests (int): Maximum number of concurrent transfer requests.
         progress_handler (Callable): Callback for copy progress.
@@ -115,7 +115,7 @@ class Mcopy_files:
                         error_handler=caller.error_handler,
                         remote_only=caller.remote_only
                     )
-                    return f"Successfully copied files using glob patterns on {host_info['host']}"
+                    return f"Successfully copied file using glob patterns on {host_info['host']}"
         except (OSError, asyncssh.Error) as exc:
             raise  # Re-raise the exception to handle it in the caller
 

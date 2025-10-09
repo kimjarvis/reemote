@@ -7,15 +7,15 @@ from typing import Optional, Callable, Union
 class Mput_files:
     """
     A class to encapsulate the functionality of multiple file uploads using SFTP.
-    It allows users to upload multiple local files to remote hosts with full parameter support.
+    It allows users to upload multiple local file to remote hosts with full parameter support.
 
     Attributes:
         localpaths (str): The local file or directory path(s) to upload.
-        remotepath (str): The remote path where files will be uploaded.
+        remotepath (str): The remote path where file will be uploaded.
         preserve (bool): Preserve file attributes (permissions, timestamps).
         recurse (bool): Recursively upload directories.
         follow_symlinks (bool): Follow symbolic links during upload.
-        sparse (bool): Create sparse files on the remote system.
+        sparse (bool): Create sparse file on the remote system.
         block_size (int): Block size for file transfers.
         max_requests (int): Maximum number of concurrent transfer requests.
         progress_handler (Callable): Callback for transfer progress.
@@ -128,7 +128,7 @@ class Mput_files:
                         progress_handler=caller.progress_handler,
                         error_handler=caller.error_handler
                     )
-                    return f"Successfully uploaded files to {host_info['host']}"
+                    return f"Successfully uploaded file to {host_info['host']}"
         except (OSError, asyncssh.Error) as exc:
             raise  # Re-raise the exception to handle it in the caller
 

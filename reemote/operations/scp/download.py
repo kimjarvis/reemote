@@ -8,16 +8,16 @@ class Download:
     """
     A class to handle secure file downloads from remote hosts using SCP (Secure Copy Protocol).
 
-    This class provides functionality to download files or directories from one or more
+    This class provides functionality to download file or directories from one or more
     remote hosts to a local destination path. It supports various SCP options including
     preserving file attributes and recursive directory downloads.
 
     Attributes:
         srcpaths (Union[str, List[str]]): Source file or directory path(s) on remote host(s).
             Can be a single string path or a list of paths. Supports host:path format.
-        dstpath (str): Local destination path where files will be downloaded.
+        dstpath (str): Local destination path where file will be downloaded.
         preserve (bool): If True, preserves file modification times, access times,
-            and modes from the original files. Defaults to False.
+            and modes from the original file. Defaults to False.
         recurse (bool): If True, recursively copies entire directories. Defaults to False.
         block_size (int): Block size used for file transfers in bytes. Defaults to 16384.
         port (int): SSH port to use for connections. Defaults to 22.

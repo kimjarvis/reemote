@@ -5,7 +5,7 @@ from typing import Union, List, Optional
 
 class Upload:
     """
-    A class to encapsulate the functionality of uploading files via SCP.
+    A class to encapsulate the functionality of uploading file via SCP.
 
     Attributes:
         srcpaths (Union[str, List[str]]): The local source file(s) or directory to upload.

@@ -28,7 +28,7 @@ class Add_sudo_user:
         - The user creation uses `adduser -D` to create a system user without a home directory.
         - The password is set using `chpasswd` for secure password assignment.
         - Sudo privileges are configured by creating a file in `/etc/sudoers.d/` directory.
-        - The operation includes cleanup of temporary files used during configuration.
+        - The operation includes cleanup of temporary file used during configuration.
         - The sudo configuration grants the user full sudo privileges (`ALL=(ALL:ALL) ALL`).
     """
 

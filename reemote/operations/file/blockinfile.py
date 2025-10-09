@@ -8,7 +8,7 @@ from reemote.operations.sftp.setstat import Setstat
 
 class Blockinfile:
     """
-    A class to manage blocks of text in files using marker lines.
+    A class to manage blocks of text in file using marker lines.
 
     This class is inspired by Ansible's `blockinfile` module. It allows inserting,
     updating, or removing a block of text between customizable marker lines in a file.

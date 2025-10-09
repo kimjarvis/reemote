@@ -6,15 +6,15 @@ from typing import Optional, Callable, Union
 class Copy_files:
     """
     A class to encapsulate the functionality of remote-to-remote file copying using SFTP.
-    It allows users to copy multiple remote files to new remote locations with full parameter support.
+    It allows users to copy multiple remote file to new remote locations with full parameter support.
 
     Attributes:
         srcpaths (str): The remote source file or directory path(s) to copy.
-        dstpath (str): The remote destination path where files will be copied.
+        dstpath (str): The remote destination path where file will be copied.
         preserve (bool): Preserve file attributes (permissions, timestamps).
         recurse (bool): Recursively copy directories.
         follow_symlinks (bool): Follow symbolic links during copy.
-        sparse (bool): Create sparse files on the remote system.
+        sparse (bool): Create sparse file on the remote system.
         block_size (int): Block size for file transfers.
         max_requests (int): Maximum number of concurrent transfer requests.
         progress_handler (Callable): Callback for copy progress.
@@ -109,7 +109,7 @@ class Copy_files:
                         error_handler=caller.error_handler,
                         remote_only=caller.remote_only
                     )
-                    return f"Successfully copied files on {host_info['host']}"
+                    return f"Successfully copied file on {host_info['host']}"
         except (OSError, asyncssh.Error) as exc:
             raise  # Re-raise the exception to handle it in the caller
 

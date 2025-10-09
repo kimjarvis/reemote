@@ -25,10 +25,10 @@ def extract_functions_and_classes(file_path):
 
 def generate_sphinx_documentation(base_dir, output_file, title, package_name):
     """
-    Generates Sphinx autodoc documentation for all Python files in a directory.
+    Generates Sphinx autodoc documentation for all Python file in a directory.
 
     Args:
-        base_dir (str): The directory containing Python files (can be relative).
+        base_dir (str): The directory containing Python file (can be relative).
         output_file (str): The output .rst file for Sphinx documentation (can be relative).
         title (str): The title for the .rst file.
         package_name (str): The name of the Python package (e.g., 'reemote').
@@ -78,12 +78,12 @@ def generate_sphinx_documentation(base_dir, output_file, title, package_name):
 
 def main():
     # Set up argument parsing
-    parser = argparse.ArgumentParser(description="Generate Sphinx autodoc documentation from Python source files.")
+    parser = argparse.ArgumentParser(description="Generate Sphinx autodoc documentation from Python source file.")
     parser.add_argument(
         "-s", "--source",
         type=str,
         required=True,
-        help="The directory containing Python files to document (can be relative)."
+        help="The directory containing Python file to document (can be relative)."
     )
     parser.add_argument(
         "-d", "--destination",

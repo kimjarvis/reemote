@@ -9,21 +9,21 @@ class Copy:
     """
     A class to handle secure file copying between remote hosts using SCP (Secure Copy Protocol).
 
-    This class provides functionality to copy files or directories between remote hosts,
+    This class provides functionality to copy file or directories between remote hosts,
     from source hosts to destination hosts. It supports various SCP options including
     preserving file attributes and recursive directory copying.
 
     Attributes:
         srcpaths (Union[str, List[str]]): Source file or directory path(s). Can be a single
             string path or a list of paths. Supports host:path format for remote sources.
-        dstpath (str): Destination path where files will be copied. Supports host:path format
+        dstpath (str): Destination path where file will be copied. Supports host:path format
             for remote destinations.
         src_hosts (List[str], optional): List of source host identifiers. If None or empty,
             operation will attempt to use all available hosts as sources.
         dst_hosts (List[str], optional): List of destination host identifiers. If None or empty,
             operation will attempt to use all available hosts as destinations.
         preserve (bool): If True, preserves file modification times, access times,
-            and modes from the original files. Defaults to False.
+            and modes from the original file. Defaults to False.
         recurse (bool): If True, recursively copies entire directories. Defaults to False.
         block_size (int): Block size used for file transfers in bytes. Defaults to 16384.
         port (int): SSH port to use for connections. Defaults to 22.
@@ -32,7 +32,7 @@ class Copy:
 
     .. code:: python
 
-        # Copy files from one host to another
+        # Copy file from one host to another
         yield Copy(
             srcpaths='/home/user/*.txt',
             dstpath='/home/user/',
@@ -40,7 +40,7 @@ class Copy:
             dst_hosts=["10.156.135.17"],
             recurse=True
         )
-        # Copy multiple files between hosts
+        # Copy multiple file between hosts
         yield Copy(
             srcpaths=['/var/log/app.log', '/tmp/debug.log'],
             dstpath='backup-server:/backup/logs/',
@@ -91,7 +91,7 @@ class Copy:
         if caller.dstpath is None:
             raise ValueError("The 'dstpath' attribute of the caller cannot be None.")
 
-        # This operation should run on destination hosts to pull files from source hosts
+        # This operation should run on destination hosts to pull file from source hosts
         is_dest_host = (caller.dst_hosts is None or
                         not caller.dst_hosts or
                         host_info["host"] in caller.dst_hosts)

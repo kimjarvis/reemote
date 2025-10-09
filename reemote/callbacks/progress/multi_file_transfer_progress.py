@@ -1,6 +1,6 @@
 class Multi_file_transfer_progress:
     """
-    Progress handler that tracks multiple files
+    Progress handler that tracks multiple file
 
     Args:
         src_path: Source file path

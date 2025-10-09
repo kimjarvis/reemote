@@ -241,9 +241,9 @@ def main():
     )
     # Deployments
     generate_sphinx_documentation(
-        "reemote/deployments/files",
-        "docs/source/deployments/files.rst",
-        "files deployments",
+        "reemote/deployments/file",
+        "docs/source/deployments/file.rst",
+        "file deployments",
         "reemote.deployments"
     )
     generate_sphinx_documentation(

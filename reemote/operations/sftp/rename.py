@@ -4,7 +4,7 @@ from reemote.command import Command
 
 class Rename:
     """
-    A class to encapsulate the functionality of renaming files/directories
+    A class to encapsulate the functionality of renaming file/directories
     in Unix-like operating systems using SFTP.
 
     Attributes:
@@ -12,7 +12,7 @@ class Rename:
         newpath (str): The new path for the file/directory.
         flags (int, optional): Flags to control rename behavior (SFTPv5+ only).
             Common flags include:
-            - 0x0001: OVERWRITE - Allow overwriting existing files
+            - 0x0001: OVERWRITE - Allow overwriting existing file
             - 0x0002: ATOMIC - Perform atomic rename
             - 0x0004: NATIVE - Use native filesystem semantics
 

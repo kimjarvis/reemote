@@ -7,15 +7,15 @@ from typing import Optional, Callable, Union
 class Mget_files:
     """
     A class to encapsulate the functionality of multiple file downloads using SFTP.
-    It allows users to download multiple remote files to local host with full parameter support.
+    It allows users to download multiple remote file to local host with full parameter support.
 
     Attributes:
         remotepaths (str): The remote file or directory path(s) to download.
-        localpath (str): The local path where files will be downloaded.
+        localpath (str): The local path where file will be downloaded.
         preserve (bool): Preserve file attributes (permissions, timestamps).
         recurse (bool): Recursively download directories.
         follow_symlinks (bool): Follow symbolic links during download.
-        sparse (bool): Create sparse files on the local system.
+        sparse (bool): Create sparse file on the local system.
         block_size (int): Block size for file transfers.
         max_requests (int): Maximum number of concurrent transfer requests.
         progress_handler (Callable): Callback for transfer progress.
@@ -129,7 +129,7 @@ class Mget_files:
                         progress_handler=caller.progress_handler,
                         error_handler=caller.error_handler
                     )
-                    return f"Successfully downloaded files from {host_info['host']}"
+                    return f"Successfully downloaded file from {host_info['host']}"
         except (OSError, asyncssh.Error) as exc:
             raise  # Re-raise the exception to handle it in the caller
 

@@ -26,7 +26,7 @@ class Get_lstat:
     Notes:
         The operation will execute on all hosts in the current execution context.
         Unlike stat, lstat returns attributes of symlinks themselves rather than
-        the files they point to.
+        the file they point to.
     """
 
     def __init__(self, path: str):

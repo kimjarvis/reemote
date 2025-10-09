@@ -4,7 +4,7 @@ from reemote.command import Command
 
 class Read_file:
     """
-    A class to encapsulate the functionality of reading files from Unix-like operating systems.
+    A class to encapsulate the functionality of reading file from Unix-like operating systems.
     It allows users to read the content of a file from a remote system.
 
     Attributes:

@@ -15,8 +15,8 @@ class local_file_picker(ui.dialog):
 
         :param directory: The directory to start in.
         :param upper_limit: The directory to stop at (None: no limit, default: same as the starting directory).
-        :param multiple: Whether to allow multiple files to be selected.
-        :param show_hidden_files: Whether to show hidden files.
+        :param multiple: Whether to allow multiple file to be selected.
+        :param show_hidden_files: Whether to show hidden file.
         """
         super().__init__()
 

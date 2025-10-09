@@ -9,9 +9,9 @@ class TemplateRenderer:
         self.template_dir = template_dir
 
     def discover_variables_files(self):
-        """Discovers available variable files in the template directory.
+        """Discovers available variable file in the template directory.
 
-        This method scans the `template_dir` for files that follow a specific
+        This method scans the `template_dir` for file that follow a specific
         naming convention: `*.vars.yml`, `*.vars.yaml`, or `*.vars.json`.
         It then creates a dictionary that maps a "short name" (the filename
         without the `.vars.ext` suffix) to the file's full path.
@@ -20,19 +20,19 @@ class TemplateRenderer:
 
         Returns:
             dict[str, str]: A dictionary where keys are the base names of the
-                            variable files and values are their full file paths.
+                            variable file and values are their full file paths.
         """
         template_path = Path(self.template_dir)
         variables_files = {}
 
-        # Look for YAML variables files
+        # Look for YAML variables file
         for yaml_file in template_path.glob("*.vars.yml"):
             variables_files[yaml_file.stem.replace('.vars', '')] = str(yaml_file)
 
         for yaml_file in template_path.glob("*.vars.yaml"):
             variables_files[yaml_file.stem.replace('.vars', '')] = str(yaml_file)
 
-        # Look for JSON variables files
+        # Look for JSON variables file
         for json_file in template_path.glob("*.vars.json"):
             variables_files[json_file.stem.replace('.vars', '')] = str(json_file)
 

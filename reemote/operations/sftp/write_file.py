@@ -4,7 +4,7 @@ from reemote.command import Command
 
 class Write_file:
     """
-    A class to encapsulate the functionality of writing files in Unix-like operating systems.
+    A class to encapsulate the functionality of writing file in Unix-like operating systems.
     It allows users to specify text to be written to a file.
 
     Attributes:
