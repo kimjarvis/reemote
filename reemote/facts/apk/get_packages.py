@@ -2,6 +2,24 @@ from reemote.operations.server.shell import Shell
 from reemote.execute import execute
 
 def parse_apk_list_installed(output):
+    """Parses the raw output of 'apk info -v' into a structured list.
+
+    This function processes a multi-line string, where each line represents an
+    installed Alpine Linux package in the format 'name-version-release'. It is
+    designed to correctly separate the package name from its version, even when
+    the name itself contains hyphens.
+
+    The primary parsing strategy splits each line based on the last two hyphens
+    to isolate the version and release number. A fallback mechanism is included
+    for edge cases.
+
+    Args:
+        output (str): The raw string output from the 'apk info -v' command.
+
+    Returns:
+        list[dict]: A list of dictionaries, where each dictionary contains the
+            'name' and 'version' of an installed package.
+    """
     packages = []
     lines = output.strip().split('\n')
     for line in lines:

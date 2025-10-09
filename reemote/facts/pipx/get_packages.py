@@ -2,7 +2,29 @@ from reemote.operations.server.shell import Shell
 from reemote.execute import execute
 
 
-def parse_pip_list_installed(output):
+def parse_pipx_list_installed(output):
+    """Parses the raw text output from the 'pipx list' command.
+
+    This function processes the standard output of 'pipx list' to extract
+    a structured list of installed packages and their versions. It is
+    designed to handle the specific format of the 'pipx list' command,
+    including skipping the header and parsing each package line.
+
+    Key transformations include:
+
+    - Stripping leading/trailing whitespace from the input and individual lines.
+    - Skipping the first two header lines of the output.
+    - Splitting each line to separate the package name from its version string.
+    - Ignoring empty or malformed lines.
+
+    Args:
+        output (str): The raw string output from the 'pipx list' command.
+
+    Returns:
+        list[dict]: A list of dictionaries, where each dictionary
+            represents an installed package and contains 'name' and 'version'
+            keys.
+    """
     packages = []
 
     lines = output.strip().splitlines()
@@ -39,5 +61,5 @@ class Get_packages:
     def execute(self):
         from reemote.operations.server.shell import Shell
         r = yield Shell("pipx list")
-        r.cp.stdout = parse_pip_list_installed(r.cp.stdout)
+        r.cp.stdout = parse_pipx_list_installed(r.cp.stdout)
         # print(r.cp.stdout)

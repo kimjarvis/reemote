@@ -18,7 +18,7 @@ class Get_list:
         self.su: bool = su
 
     def __repr__(self) -> str:
-        return (f"Stop("
+        return (f"Get_list("
                 f"sudo={self.sudo!r}, "
                 f"su={self.su!r}"
                 f")")

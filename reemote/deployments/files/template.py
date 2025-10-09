@@ -1,6 +1,6 @@
 class Write_text_to_file:
     def execute(self):
-        from reemote.builtins.template import Template
+        from reemote.operations.template import Template
         from reemote.utilities.template_render import TemplateRenderer
         from datetime import datetime
 

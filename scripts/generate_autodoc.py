@@ -1,7 +1,6 @@
 import os
 import ast
 import argparse
-import sys
 
 
 def extract_functions_and_classes(file_path):
@@ -29,11 +28,15 @@ def generate_sphinx_documentation(base_dir, output_file, title, package_name):
     Generates Sphinx autodoc documentation for all Python files in a directory.
 
     Args:
-        base_dir (str): The directory containing Python files.
-        output_file (str): The output .rst file for Sphinx documentation.
+        base_dir (str): The directory containing Python files (can be relative).
+        output_file (str): The output .rst file for Sphinx documentation (can be relative).
         title (str): The title for the .rst file.
         package_name (str): The name of the Python package (e.g., 'reemote').
     """
+    # Resolve base_dir and output_file to absolute paths
+    base_dir = os.path.abspath(base_dir)
+    output_file = os.path.abspath(output_file)
+
     # Generate the underline for the title
     underline = "=" * len(title)
 
@@ -50,7 +53,6 @@ def generate_sphinx_documentation(base_dir, output_file, title, package_name):
                     file_path = os.path.join(root, file)
 
                     # Get the relative path from the package root
-                    # The package root should be one level up from utilities
                     package_root = os.path.dirname(base_dir)  # This gives /home/kim/reemote/reemote
                     relative_path = os.path.relpath(file_path, package_root)
 
@@ -81,13 +83,13 @@ def main():
         "-s", "--source",
         type=str,
         required=True,
-        help="The directory containing Python files to document."
+        help="The directory containing Python files to document (can be relative)."
     )
     parser.add_argument(
         "-d", "--destination",
         type=str,
         required=True,
-        help="The path to the output .rst file for Sphinx documentation."
+        help="The path to the output .rst file for Sphinx documentation (can be relative)."
     )
     parser.add_argument(
         "-t", "--title",

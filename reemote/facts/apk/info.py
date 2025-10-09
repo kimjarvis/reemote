@@ -1,8 +1,10 @@
 from typing import List
 from reemote.command import Command
 class Info:
-    """
-    A class to manage package operations on a remote system using `apk` (Alpine Linux package manager).
+    """A class to manage package operations on a remote system using `apk`.
+
+    This class constructs commands to retrieve information about a specific
+    package on an Alpine Linux system.
 
     Attributes:
         package (str): A package name to be queried.
@@ -16,12 +18,12 @@ class Info:
         yield Info(package='vim')
 
     Usage:
-        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
+        This class is designed to be used in a generator-based workflow where
+        commands are yielded for execution.
 
     Notes:
-        - Commands are constructed based on the `present`, `sudo`, and `su` flags.
+        - Commands are constructed based on the `package`, `sudo`, and `su` attributes.
     """
-
     def __init__(self,
                  package: str,
                  sudo: bool = False,

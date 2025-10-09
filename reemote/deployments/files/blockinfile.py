@@ -6,7 +6,7 @@ from asyncssh.sftp import SFTPAttrs
 
 class Write_text_to_file:
     def execute(self):
-        from reemote.builtins.blockinfile import Blockinfile
+        from reemote.operations.blockinfile import Blockinfile
         yield Blockinfile(
             path="/etc/example.conf",
             block="Secure block content.",

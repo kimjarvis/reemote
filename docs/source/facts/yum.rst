@@ -1,10 +1,9 @@
-YUM (Yellowdog Package Manager)
-===============================
-
-YUM Facts
----------
+yum facts
+=========
 
 .. automodule:: reemote.facts.yum.get_packages
    :members:
    :show-inheritance:
    :undoc-members:
+   :private-members: True,  # Include private members (starting with _)
+
