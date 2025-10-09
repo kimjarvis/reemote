@@ -9,7 +9,19 @@ class TemplateRenderer:
         self.template_dir = template_dir
 
     def discover_variables_files(self):
-        """Discover available variables files in the template directory."""
+        """Discovers available variable files in the template directory.
+
+        This method scans the `template_dir` for files that follow a specific
+        naming convention: `*.vars.yml`, `*.vars.yaml`, or `*.vars.json`.
+        It then creates a dictionary that maps a "short name" (the filename
+        without the `.vars.ext` suffix) to the file's full path.
+
+        This is useful for presenting a list of available variable sets to a user.
+
+        Returns:
+            dict[str, str]: A dictionary where keys are the base names of the
+                            variable files and values are their full file paths.
+        """
         template_path = Path(self.template_dir)
         variables_files = {}
 
@@ -29,7 +41,22 @@ class TemplateRenderer:
         return variables_files
 
     def _load_yaml_variables(self, file_path):
-        """Load variables from YAML file and return as dictionary."""
+        """Loads variables from a specified YAML file.
+
+         This private helper method opens and parses a YAML file using
+         `yaml.safe_load`. It returns an empty dictionary if the file is empty.
+         It provides specific error handling for parsing and file-read issues.
+
+         Args:
+             file_path (str): The full path to the YAML file to load.
+
+         Returns:
+             dict: A dictionary containing the variables loaded from the file.
+
+         Raises:
+             Exception: If the file cannot be read or if a YAML parsing
+                        error occurs.
+         """
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 variables = yaml.safe_load(f) or {}
@@ -41,7 +68,21 @@ class TemplateRenderer:
             raise Exception(f"Failed to read {file_path}: {e}")
 
     def _load_json_variables(self, file_path):
-        """Load variables from JSON file and return as dictionary."""
+        """Loads variables from a specified JSON file.
+
+          This private helper method opens and parses a JSON file. It provides
+          specific error handling for JSON decoding errors and file-read issues.
+
+          Args:
+              file_path (str): The full path to the JSON file to load.
+
+          Returns:
+              dict: A dictionary containing the variables loaded from the file.
+
+          Raises:
+              Exception: If the file cannot be read or if a JSON parsing
+                         error occurs.
+        """
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 variables = json.load(f)
@@ -53,8 +94,28 @@ class TemplateRenderer:
             raise Exception(f"Failed to read {file_path}: {e}")
 
     def get_variables(self, variables_file=None, additional_vars=None):
-        """Get variables dictionary from file with optional overrides."""
-        # Load base variables from file
+        """Gets a combined dictionary of variables from a file and optional overrides.
+
+         This function loads variables from a specified file (if provided) and
+         then merges them with a dictionary of additional variables. If a key
+         exists in both the file and `additional_vars`, the value from
+         `additional_vars` will take precedence.
+
+         Note:
+             This method relies on a `self.load_variables` method (not defined
+             in this snippet) to correctly dispatch to the YAML or JSON loader
+             based on the file extension.
+
+         Args:
+             variables_file (str, optional): The path to the variables file
+                 (YAML or JSON) to load. Defaults to None.
+             additional_vars (dict, optional): A dictionary of variables to
+                 merge. These will override any variables with the same key
+                 from the loaded file. Defaults to None.
+
+         Returns:
+             dict: A single dictionary containing the merged variables.
+         """
         template_vars = self.load_variables(variables_file)
 
         # Merge with additional variables (additional_vars takes precedence)
@@ -64,7 +125,26 @@ class TemplateRenderer:
         return template_vars
 
     def debug_variables(self, variables_file=None):
-        """Debug method to inspect variables before rendering."""
+        """Prints a debug report for variables, highlighting complex types.
+
+         This utility method is designed for inspecting the variables that will
+         be used for rendering. It loads the variables and prints a detailed
+         report to the console, which includes:
+
+         - The total number of variables.
+         - A list of all variable keys.
+         - A detailed breakdown of each variable's key, type, and value.
+         - Special warnings for any variables that are dictionaries or lists
+           containing dictionaries, as these can be complex in templates.
+
+         Args:
+             variables_file (str, optional): The path to the variables file
+                 to load for debugging. Defaults to None.
+
+         Returns:
+             dict: The dictionary of variables that was inspected, allowing for
+                   further use or method chaining.
+         """
         template_vars = self.get_variables(variables_file)
 
         print("=== VARIABLES DEBUG INFO ===")

@@ -3,7 +3,32 @@ import inspect
 
 
 def verify_source_file_contains_valid_class(source_file, class_name):
-    """Verify that the class exists and has execute method with no parameters"""
+    """Verifies a Python source file contains a specific class with a valid `execute` method.
+
+     This function dynamically loads a Python module from a given source file path
+     and performs a series of validations to ensure it conforms to a specific
+     interface. It is designed to check for "plugin" or "task" style classes
+     before they are executed.
+
+     The validation steps are as follows:
+
+     - It attempts to load the module from the `source_file`.
+     - It checks if a class with the name `class_name` exists in the module.
+     - It verifies that this class contains a method named `execute`.
+     - It inspects the signature of the `execute` method to confirm it accepts
+       no arguments, other than the implicit `self`.
+
+     If any of these checks fail or if an exception occurs during module loading,
+     an error message is printed to the console, and the function returns `False`.
+
+     Args:
+         source_file (str): The file path of the Python source code to inspect.
+         class_name (str): The name of the class to validate within the source file.
+
+     Returns:
+         bool: `True` if the source file contains the specified class with a
+               valid `execute` method, `False` otherwise.
+    """
     try:
         # Load the module from file
         spec = importlib.util.spec_from_file_location("source_module", source_file)
