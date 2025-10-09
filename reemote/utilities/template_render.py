@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 
+import reemote.gui.update
+
 
 class TemplateRenderer:
     def __init__(self, template_dir):
@@ -120,7 +122,7 @@ class TemplateRenderer:
 
         # Merge with additional variables (additional_vars takes precedence)
         if additional_vars:
-            template_vars.update(additional_vars)
+            reemote.gui.update.update(additional_vars)
 
         return template_vars
 
