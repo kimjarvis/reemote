@@ -99,7 +99,9 @@ class Lineinfile():
             return self.line == file_line.rstrip('\n')
 
     def execute(self):
-        # Read the file content
+        """
+        :no-index:
+        """
         r = yield Read_file(path=self.path)
         content = r.cp.stdout
 

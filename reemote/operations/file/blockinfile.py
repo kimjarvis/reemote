@@ -156,7 +156,9 @@ class Blockinfile:
         return begin_index, end_index
 
     def execute(self):
-        # Step 1: Read the file content
+        """
+        :no-index:
+        """
         r = yield Read_file(path=self.path)
         content = r.cp.stdout
 

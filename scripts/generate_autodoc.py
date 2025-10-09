@@ -72,6 +72,7 @@ def generate_sphinx_documentation(base_dir, output_file, title, package_name):
                     rst_file.write("   :members:\n")
                     rst_file.write("   :show-inheritance:\n")
                     rst_file.write("   :undoc-members:\n")
+                    rst_file.write("   :exclude-members: execute\n")
                     rst_file.write("   :private-members: True,  # Include private members (starting with _)\n")
                     rst_file.write("\n")
 

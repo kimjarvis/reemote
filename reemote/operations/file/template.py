@@ -154,7 +154,9 @@ class Template():
         return content
 
     def execute(self):
-        """Execute the template rendering and file transfer."""
+        """
+        :no-index:
+        """
         try:
             # Step 1: Read and render the template
             template_content = self._read_template_file()
