@@ -5,7 +5,7 @@ from reemote.gui.file_path import File_path
 from reemote.gui.pick_file import pick_file
 
 
-def file_manager(tabs):
+def file_manager(tabs, inv, versions, manager, sr, er):
     with ui.tab_panels(tabs, value='File Manager').classes('w-full'):
         with ui.tab_panel('File Manager'):
 

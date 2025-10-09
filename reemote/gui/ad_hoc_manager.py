@@ -4,7 +4,7 @@ from reemote.gui.ad_hoc import Ad_Hoc
 from reemote.gui.perform_adhoc_command import perform_adhoc_command
 
 
-def ad_hoc_manager(tabs):
+def ad_hoc_manager(tabs, inv, versions, manager, sr, er):
     with ui.tab_panels(tabs, value='Command Manager').classes('w-full'):
         with ui.tab_panel('Command Manager'):
             ah = Ad_Hoc()

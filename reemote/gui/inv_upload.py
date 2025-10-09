@@ -1,4 +1,4 @@
-async def inv_upload(inv, er, stdout, sources):
+async def inv_upload(inv, er, stdout):
     # Start with the fixed column definition for "Command"
     columns = [{'headerName': 'Command', 'field': 'command'}]
     rows = []

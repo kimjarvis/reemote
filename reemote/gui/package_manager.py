@@ -9,11 +9,9 @@ from reemote.gui.upgrade import upgrade
 from reemote.gui.versions import Versions
 
 
-def package_manager(tabs):
+def package_manager(tabs, inv, versions, manager, sr, er):
     with ui.tab_panels(tabs, value='Package Manager').classes('w-full'):
         with ui.tab_panel('Package Manager'):
-            versions = Versions()
-            manager = Manager()
             with ui.row():
                 ui.select(['apk', 'pip', 'apt', 'dpkg', 'dnf', 'yum'], value='apk').bind_value(manager, 'manager')
                 ui.markdown("""

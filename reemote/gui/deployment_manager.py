@@ -3,7 +3,7 @@ from nicegui import ui
 from reemote.gui.run_the_deploy import run_the_deploy
 
 
-def deployment_manager(tabs):
+def deployment_manager(tabs, inv, versions, manager, sr, er):
     with ui.tab_panels(tabs, value='Deployment Manager').classes('w-full'):
         with ui.tab_panel('Deployment Manager'):
             with ui.row():

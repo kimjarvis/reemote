@@ -7,17 +7,13 @@ from reemote.gui.source_upload import Sources_upload
 from reemote.gui.stdout_report import Stdout_report
 
 
-def inventory_manager(tabs):
-    with ui.tab_panels(tabs, value='Inventory Manger').classes('w-full'):
-        with ui.tab_panel('Inventory Manger'):
-            sr = Stdout_report()
-            er = Execution_report()
-            sources = Sources_upload()
-            inv = Inventory_upload()
+def inventory_manager(tabs, inv, versions, manager, sr, er):
+    with ui.tab_panels(tabs, value='Inventory Manager').classes('w-full'):
+        with ui.tab_panel('Inventory Manager'):
 
             async def combined_upload_handler(e):
                 await inv.handle_upload(e)  # Handle the upload first
-                await inv_upload(inv, er, sr, sources)  # Then run your setup logic
+                await inv_upload(inv, er, sr)  # Then run your setup logic
 
             with ui.row():
                 ui.upload(
