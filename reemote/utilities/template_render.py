@@ -1,9 +1,8 @@
 import yaml
 import json
-import os
 from pathlib import Path
 
-import reemote.gui.update
+import reemote.gui.functions.update
 
 
 class TemplateRenderer:
@@ -122,7 +121,7 @@ class TemplateRenderer:
 
         # Merge with additional variables (additional_vars takes precedence)
         if additional_vars:
-            reemote.gui.update.update(additional_vars)
+            reemote.gui.functions.update.update(additional_vars)
 
         return template_vars
 

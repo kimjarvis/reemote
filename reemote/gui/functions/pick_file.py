@@ -8,15 +8,16 @@ from reemote.utilities.produce_json import produce_json
 from reemote.utilities.produce_output_grid import produce_output_grid
 
 
-async def pick_file(inv, fp, sr, er) -> None:
+async def pick_file(inventory, file_path, stdout_report, execution_report) -> None:
     result = await local_file_picker('~', multiple=False)
     ui.notify(f'Uploading file {result}')
     with open(result[0], 'r', encoding='utf-8') as file:
         text = file.read()
-    responses = await execute(inv.inventory,Write_file(path=fp.path,text=text))
-    c, r = produce_grid(produce_json(responses))
-    er.set(c, r)
-    er.execution_report.refresh()
-    c, r = produce_output_grid(produce_json(responses))
-    sr.set(c, r)
-    sr.execution_report.refresh()
+    responses = await execute(inventory.inventory, Write_file(path=file_path.path, text=text))
+
+    columns, rows = produce_grid(produce_json(responses))
+    execution_report.set(columns, rows)
+    execution_report.execution_report.refresh()
+    columns, rows = produce_output_grid(produce_json(responses))
+    stdout_report.set(columns, rows)
+    stdout_report.execution_report.refresh()

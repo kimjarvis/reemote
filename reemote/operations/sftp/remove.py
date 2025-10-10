@@ -1,6 +1,6 @@
 import asyncssh
 
-import reemote.gui.remove
+import reemote.gui.functions.remove
 from reemote.command import Command
 
 
@@ -45,7 +45,7 @@ class Remove:
             # Connect to the SSH server and remove the file
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    await reemote.gui.remove.remove(path=caller.path)
+                    await reemote.gui.functions.remove.remove(path=caller.path)
         except (OSError, asyncssh.Error) as exc:
             raise  # Re-raise the exception to handle it in the caller
 

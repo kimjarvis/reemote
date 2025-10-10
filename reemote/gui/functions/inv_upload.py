@@ -1,4 +1,4 @@
-async def inv_upload(inv, er, stdout):
+async def inv_upload(inventory, execution_report, stdout_report):
     # Start with the fixed column definition for "Command"
     columns = [{'headerName': 'Command', 'field': 'command'}]
     rows = []
@@ -8,8 +8,10 @@ async def inv_upload(inv, er, stdout):
         host_ip = host_info['host']
         columns.append({'headerName': f'{host_ip} Executed', 'field': f'{host_ip.replace(".","_")}_executed'})
         columns.append({'headerName': f'{host_ip} Changed', 'field': f'{host_ip.replace(".","_")}_changed'})
-    # print(columns)
-    er.set(columns, rows)
-    er.execution_report.refresh()
-    stdout.set(columns, rows)
-    stdout.execution_report.refresh()
+
+    columns, rows = produce_grid(produce_json(responses))
+    execution_report.set(columns, rows)
+    execution_report.execution_report.refresh()
+    columns, rows = produce_output_grid(produce_json(responses))
+    stdout_report.set(columns, rows)
+    stdout_report.execution_report.refresh()

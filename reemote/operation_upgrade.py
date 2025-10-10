@@ -43,7 +43,6 @@ class Operation_upgrade:
         # Set the `changed` flag if the package state has changed
         if self.guard and (r1.cp.stdout != r3.cp.stdout):
             r2.changed = True
-            r0.changed = True
 
     def get_packages(self):
         """

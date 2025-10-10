@@ -9,8 +9,9 @@ from reemote.utilities.validate_root_class_name_and_get_root_class import valida
 from reemote.utilities.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
 
 
-async def run_the_deploy(inv, er, stdout, sources):
+async def run_the_deploy(inventory, execution_report, stdout_report, sources):
     if sources.source != "/":
+
         if sources.source and sources.deployment:
             if not verify_source_file_contains_valid_class(sources.source, sources.deployment):
                 sys.exit(1)
@@ -19,17 +20,21 @@ async def run_the_deploy(inv, er, stdout, sources):
         if sources.source and sources.deployment:
             root_class = validate_root_class_name_and_get_root_class(sources.deployment, sources.source)
 
-        if not root_class:
-            print("root class not found")
+        try:
+            # Parse parameters into kwargs
+            kwargs = parse_kwargs_string(sources.kwargs)
+            responses = []
+            responses = await execute(inventory.inventory, root_class(**kwargs))
+
+        except NameError:
+            # Handle the case where the variable is not defined
+            print("The variable 'root_class' is not defined.")
             sys.exit(1)
 
-        # Parse parameters into kwargs
-        kwargs = parse_kwargs_string(sources.kwargs)
-        responses = []
-        responses = await execute(inventory(), root_class(**kwargs))
-        c, r =produce_grid(produce_json(responses))
-        er.set(c, r)
-        er.execution_report.refresh()
-        c, r =produce_output_grid(produce_json(responses))
-        stdout.set(c, r)
-        stdout.execution_report.refresh()
+
+        columns, rows = produce_grid(produce_json(responses))
+        execution_report.set(columns, rows)
+        execution_report.execution_report.refresh()
+        columns, rows = produce_output_grid(produce_json(responses))
+        stdout_report.set(columns, rows)
+        stdout_report.execution_report.refresh()
