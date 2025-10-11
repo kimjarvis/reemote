@@ -1,0 +1,9 @@
+- name: Install a package using dnf
+  hosts: host-1
+  become: yes                     # Enable privilege escalation (sudo)
+  tasks:
+    - name: Install httpd
+      ansible.builtin.dnf:
+        name: httpd
+        state: present
+        use_backend: "dnf"
