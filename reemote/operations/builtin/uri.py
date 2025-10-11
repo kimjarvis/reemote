@@ -16,9 +16,9 @@ class Uri:
         url_username (str): Username for authentication.
         url_password (str): Password for authentication.
         validate_certs (bool): Whether to validate SSL certificates.
-        ca_path (str): Path to a CA certificate builtin.
-        client_cert (str): Path to a client certificate builtin.
-        client_key (str): Path to a client private key builtin.
+        ca_path (str): Path to a CA certificate bundle.
+        client_cert (str): Path to a client certificate file.
+        client_key (str): Path to a client private key file.
         timeout (int): Socket-level timeout in seconds.
         follow_redirects (str): Redirect behavior (e.g., all, none, safe).
         force_basic_auth (bool): Force Basic authentication on the initial request.
@@ -28,16 +28,15 @@ class Uri:
         return_content (bool): Whether to return the response body as content.
         status_code (list): List of valid HTTP status codes for success.
 
-    ** Examples: **
-    
-    ..code:: python
+    **Examples:**
+
+    .. code-block:: python
 
         # Example 1: Check that you can connect (GET) to a page and it returns a status 200
         yield Uri(
             url="http://www.example.com",
             method="GET"
         )
-
 
         # Example 2: Check that a page returns successfully but fail if the word "AWESOME" is not in the page contents
         yield Uri(
@@ -121,8 +120,10 @@ class Uri:
             ]
         )
 
+    Usage:
+        This class is designed to be used in a generator-based workflow where
+        commands are yielded for execution.
     """
-
     def __init__(self,
                  url: str,
                  method: str = "GET",

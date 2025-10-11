@@ -10,7 +10,7 @@ This section contains documentation for various operations supported by Reemote.
    operations/apt
    operations/dnf
    operations/dpkg
-   operations/file
+   operations/builtin
    operations/filesystem
    operations/pacman
    operations/pip

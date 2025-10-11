@@ -7,121 +7,82 @@ from reemote.operations.sftp.setstat import Setstat
 
 
 class Blockinfile:
+
     """
-    A class to manage blocks of text in builtin using marker lines.
+    A class to manage blocks of text in files using marker lines.
 
     This class is inspired by Ansible's `blockinfile` module. It allows inserting,
-    updating, or removing a block of text between customizable marker lines in a builtin.
-    The class also supports setting builtin attributes such as permissions, ownership,
+    updating, or removing a block of text between customizable marker lines in a file.
+    The class also supports setting file attributes such as permissions, ownership,
     and group information.
 
-    Attributes:
-        path (str): The path to the builtin to modify.
+    Args:
+        path (str): The path to the file to modify.
         block (str, optional): The text to insert inside the marker lines. If empty or None,
-                               the block will be removed if `state="absent"`. Defaults to ``""``.
+            the block will be removed if `state="absent"`. Defaults to "".
         marker (str, optional): The marker line template. `{mark}` will be replaced with the values
-                                in `marker_begin` (default="BEGIN") and `marker_end` (default="END").
-                                Defaults to ``"# {mark} ANSIBLE MANAGED BLOCK"``.
+            in `marker_begin` (default="BEGIN") and `marker_end` (default="END").
+            Defaults to "# {mark} ANSIBLE MANAGED BLOCK".
         marker_begin (str, optional): The text to replace `{mark}` in the opening marker line.
-                                      Defaults to ``"BEGIN"``.
+            Defaults to "BEGIN".
         marker_end (str, optional): The text to replace `{mark}` in the closing marker line.
-                                    Defaults to ``"END"``.
+            Defaults to "END".
         state (str, optional): Whether the block should be present or absent. Choices are:
-                               - "present" (default): Ensure the block exists.
-                               - "absent": Remove the block if it exists.
-                               Defaults to ``"present"``.
-        create (bool, optional): Create a new builtin if it does not exist. Defaults to ``False``.
+            "present" (default): Ensure the block exists.
+            "absent": Remove the block if it exists.
+            Defaults to "present".
+        create (bool, optional): Create a new file if it does not exist. Defaults to False.
         insertafter (str, optional): Insert the block after the last match of the specified regular
-                                     expression. Special value "EOF" inserts the block at the end of
-                                     the builtin. Defaults to ``None``.
+            expression. Special value "EOF" inserts the block at the end of the file.
+            Defaults to None.
         insertbefore (str, optional): Insert the block before the last match of the specified regular
-                                      expression. Special value "BOF" inserts the block at the beginning
-                                      of the builtin. Defaults to ``None``.
+            expression. Special value "BOF" inserts the block at the beginning of the file.
+            Defaults to None.
         append_newline (bool, optional): Append a blank line to the inserted block if this does not
-                                         appear at the end of the builtin. Defaults to ``False``.
+            appear at the end of the file. Defaults to False.
         prepend_newline (bool, optional): Prepend a blank line to the inserted block if this does not
-                                          appear at the beginning of the builtin. Defaults to ``False``.
-        backup (bool, optional): Create a backup builtin including the timestamp information so the original
-                                 builtin can be restored if needed. Defaults to ``False``.
-        attrs (dict, optional): A dictionary containing builtin attributes to set, such as permissions,
-                                owner, and group. Example: ``{"permissions": 0o644, "owner": "root",
-                                "group": "root"}``. Defaults to an empty dictionary.
-        unsafe_writes (bool, optional): Allow unsafe writes if atomic operations fail. Defaults to ``False``.
+            appear at the beginning of the file. Defaults to False.
+        backup (bool, optional): Create a backup file including the timestamp information so the original
+            file can be restored if needed. Defaults to False.
+        attrs (dict, optional): A dictionary containing file attributes to set, such as permissions,
+            owner, and group. Example: {"permissions": 0o644, "owner": "root", "group": "root"}.
+            Defaults to an empty dictionary.
+        unsafe_writes (bool, optional): Allow unsafe writes if atomic operations fail. Defaults to False.
 
-    Methods:
-        execute():
-            Executes the blockinfile operation, modifying the builtin as specified.
+    Raises:
+        ValueError: If both 'insertafter' and 'insertbefore' are specified.
 
-    **Examples:**
+    Examples:
+        Insert/Update configuration block in sshd_config:
 
-    .. code:: python
+        >>> yield Blockinfile(
+        ...     path="/etc/ssh/sshd_config",
+        ...     append_newline=True,
+        ...     prepend_newline=True,
+        ...     block="Match User ansible-agent\\nPasswordAuthentication no"
+        ... )
 
-        # Insert/Update "Match User" configuration block in /etc/ssh/sshd_config prepending and appending a new line
-        yield Blockinfile(
-            path="/etc/ssh/sshd_config",
-            append_newline=True,
-            prepend_newline=True,
-            block="Match User ansible-agent
-            PasswordAuthentication no",
-        )
-        
-        # Insert/Update eth0 configuration stanza in /etc/network/interfaces
-        # (it might be better to copy files into /etc/network/interfaces.d/)
-        yield Blockinfile(
-            path="/etc/network/interfaces",
-            block="iface eth0 inet static
-            address 192.0.2.23
-            netmask 255.255.255.0"
-        )
-    
-        # Insert/Update configuration using a local file and validate it
-        yield Blockinfile(
-            block="{{ lookup('ansible.builtin.file', './local/sshd_config') }}",
-            path="/etc/ssh/sshd_config",
-            backup=True,
-            validate="/usr/sbin/sshd -T -f %s",
-        )
-        
-        # Insert/Update HTML surrounded by custom markers after <body> line
-        yield Blockinfile(
-            path="/var/www/html/index.html",
-            marker="<!-- {mark} ANSIBLE MANAGED BLOCK -->",
-            insertafter="<body>",
-            block="""<h1>Welcome to {{ ansible_hostname }}</h1>
-            <p>Last updated on {{ ansible_date_time.iso8601 }}</p>""",
-        )
-        
-        # Remove HTML as well as surrounding markers
-        yield Blockinfile(
-            path="/var/www/html/index.html",
-            marker="<!-- {mark} ANSIBLE MANAGED BLOCK -->",
-            block="",
-        )
-        
-        # Add mappings to /etc/hosts
-        yield Blockinfile(
-            path="/etc/hosts",
-            block="{{ item.ip }} {{ item.name }}",
-            marker="# {mark} ANSIBLE MANAGED BLOCK {{ item.name }}",
-        )
-        # loop:
-        #   - { name: host1, ip: 10.10.1.10 }
-        #   - { name: host2, ip: 10.10.1.11 }
-        #   - { name: host3, ip: 10.10.1.12 }
-        
-        # Search with a multiline search flags regex and if found insert after
-        yield Blockinfile(
-            path="listener.ora",
-            block="{{ listener_line | indent(width=8, first=True) }}",
-            insertafter="(?m)SID_LIST_LISTENER_DG =\n.*\\(SID_LIST =",
-            marker="    <!-- {mark} ANSIBLE MANAGED BLOCK -->",
-        )
-    
+        Insert/Update network interface configuration:
+
+        >>> yield Blockinfile(
+        ...     path="/etc/network/interfaces",
+        ...     block="iface eth0 inet static\\naddress 192.0.2.23\\nnetmask 255.255.255.0"
+        ... )
+
+        Remove block with custom markers:
+
+        >>> yield Blockinfile(
+        ...     path="/var/www/html/index.html",
+        ...     marker="<!-- {mark} ANSIBLE MANAGED BLOCK -->",
+        ...     block=""
+        ... )
+
     Notes:
-        - The `attrs` parameter is used to set builtin attributes via the `Setstat` class.
+        - The `attrs` parameter is used to set file attributes via the `Setstat` class.
         - The `insertafter` and `insertbefore` parameters are mutually exclusive.
         - Multi-line markers are not supported and may result in repeated insertions.
     """
+
 
     def __init__(self,
                  path="",

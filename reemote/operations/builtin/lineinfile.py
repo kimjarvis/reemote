@@ -10,59 +10,58 @@ from reemote.operations.sftp.setstat import Setstat
 
 class Lineinfile():
     """
-    A class to manage lines in a remote builtin using SFTP operations.
+    A class to manage lines in a remote file using SFTP operations.
 
-    This class allows you to ensure that a specific line exists in a builtin on a remote server.
+    This class allows you to ensure that a specific line exists in a file on a remote server.
     It supports adding, replacing, or modifying lines based on search criteria such as regular
-    expressions, string matches, or exact line comparisons. Additionally, it can set builtin
+    expressions, string matches, or exact line comparisons. Additionally, it can set file
     attributes (e.g., permissions) after making changes.
 
-    Attributes:
-        line (str): The line to ensure exists in the builtin. This line will be added, replaced,
-                    or left unchanged depending on the search criteria.
-        path (str): The path to the builtin on the remote server.
-        regexp (str, optional): A regular expression pattern to match lines in the builtin.
-                                Mutually exclusive with `search_string`. Defaults to ``None``.
-        search_string (str, optional): A string to search for in the builtin. Mutually exclusive
-                                       with `regexp`. Defaults to ``None``.
-        insertafter (str, optional): A pattern or keyword ('EOF') specifying where to insert
-                                     the line after a match. Mutually exclusive with `insertbefore`.
-                                     Defaults to ``None``.
-        insertbefore (str, optional): A pattern or keyword ('BOF') specifying where to insert
-                                      the line before a match. Mutually exclusive with `insertafter`.
-                                      Defaults to ``None``.
-        attrs (dict, optional): File attributes (e.g., permissions) to set after modifying the builtin.
-                                Defaults to ``None``.
+    :param str line: The line to ensure exists in the file. This line will be added, replaced,
+                     or left unchanged depending on the search criteria.
+    :param str path: The path to the file on the remote server.
+    :param str regexp: A regular expression pattern to match lines in the file. Mutually
+                       exclusive with ``search_string``. Defaults to ``None``.
+    :param str search_string: A string to search for in the file. Mutually exclusive with
+                              ``regexp``. Defaults to ``None``.
+    :param str insertafter: A pattern or keyword ('EOF') specifying where to insert the line
+                            after a match. Mutually exclusive with ``insertbefore``.
+                            Defaults to ``None``.
+    :param str insertbefore: A pattern or keyword ('BOF') specifying where to insert the line
+                             before a match. Mutually exclusive with ``insertafter``.
+                             Defaults to ``None``.
+    :param dict attrs: File attributes (e.g., permissions) to set after modifying the file.
+                       Defaults to ``None``.
 
-    Methods:
-        execute():
-            Executes the logic to read, modify, and write the builtin based on the provided
-            parameters. Ensures idempotency by checking if the line already exists before
-            making changes.
-
-    Raises:
-        ValueError: If mutually exclusive parameters (`regexp` and `search_string`, or
-                    `insertafter` and `insertbefore`) are both provided.
+    :raises ValueError: If mutually exclusive parameters (``regexp`` and ``search_string``, or
+                        ``insertafter`` and ``insertbefore``) are both provided.
 
     **Examples:**
 
-    .. code:: python
+    Ensure SELinux is set to enforcing mode:
 
-        # Ensure SELinux is set to enforcing mode
+    .. code-block:: python
+
         yield Lineinfile(
             path="/etc/selinux/config",
             regexp="^SELINUX=",
             line="SELINUX=enforcing",
         )
 
-        # Make sure group wheel is not in the sudoers configuration
+    Make sure group wheel is not in the sudoers configuration:
+
+    .. code-block:: python
+
         yield Lineinfile(
             path="/etc/sudoers",
             state="absent",
             regexp="^%wheel",
         )
 
-        # Replace a localhost entry with our own
+    Replace a localhost entry with our own:
+
+    .. code-block:: python
+
         yield Lineinfile(
             path="/etc/hosts",
             regexp="^127\\.0\\.0\\.1",
@@ -72,7 +71,10 @@ class Lineinfile():
             mode="0644",
         )
 
-        # Replace a localhost entry searching for a literal string to avoid escaping
+    Replace a localhost entry searching for a literal string to avoid escaping:
+
+    .. code-block:: python
+
         yield Lineinfile(
             path="/etc/hosts",
             search_string="127.0.0.1",
@@ -82,15 +84,12 @@ class Lineinfile():
             mode="0644",
         )
 
-        # Ensure the default Apache port is 8080
-        yield Lineinfile(
-            path="/etc/httpd/conf/httpd.conf",
-            regexp="^Listen ",
-            insertafter="^#Listen ",
-            line="Listen 8080",
-        )
+    Ensure the default Apache port is 8080:
 
-        # Ensure php extension matches new pattern
+    Ensure php extension matches new pattern:
+
+    .. code-block:: python
+
         yield Lineinfile(
             path="/etc/httpd/conf/httpd.conf",
             search_string='<FilesMatch ".php[45]?$">',
@@ -98,7 +97,10 @@ class Lineinfile():
             line='        <FilesMatch ".php[34]?$">',
         )
 
-        # Ensure we have our own comment added to /etc/services
+    Ensure we have our own comment added to /etc/services:
+
+    .. code-block:: python
+
         yield Lineinfile(
             path="/etc/services",
             regexp="^# port for http",
@@ -106,14 +108,20 @@ class Lineinfile():
             line="# port for http by default",
         )
 
-        # Add a line to a file if the file does not exist, without passing regexp
+    Add a line to a file if the file does not exist, without passing regexp:
+
+    .. code-block:: python
+
         yield Lineinfile(
             path="/tmp/testfile",
             line="192.168.1.99 foo.lab.net foo",
             create=True,
         )
 
-        # Ensure the JBoss memory settings are exactly as needed
+    Ensure the JBoss memory settings are exactly as needed:
+
+    .. code-block:: python
+
         yield Lineinfile(
             path="/opt/jboss-as/bin/standalone.conf",
             regexp="^(.*)Xms(\\d+)m(.*)$",
@@ -121,7 +129,10 @@ class Lineinfile():
             backrefs=True,
         )
 
-        # Validate the sudoers file before saving
+    Validate the sudoers file before saving:
+
+    .. code-block:: python
+
         yield Lineinfile(
             path="/etc/sudoers",
             state="present",
@@ -130,7 +141,10 @@ class Lineinfile():
             validate="/usr/sbin/visudo -cf %s",
         )
 
-        # Use backrefs with alternative group syntax to avoid conflicts with variable values
+    Use backrefs with alternative group syntax to avoid conflicts with variable values:
+
+    .. code-block:: python
+
         yield Lineinfile(
             path="/tmp/config",
             regexp="^(host=).*",
@@ -138,10 +152,11 @@ class Lineinfile():
             backrefs=True,
         )
 
-    Usage:
+    .. note::
         This class is designed to be used in a generator-based workflow where
         commands are yielded for execution.
     """
+
 
     def __init__(self,
                  line="",
