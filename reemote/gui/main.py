@@ -6,8 +6,10 @@ from reemote.gui.classes.manger import Manager
 from reemote.gui.classes.stdout_report import Stdout_report
 from reemote.gui.classes.execution_report import Execution_report
 from reemote.gui.classes.source_upload import Sources_upload
+from reemote.gui.classes.file_path import File_path
+from reemote.gui.classes.ad_hoc import Ad_Hoc
 
-from reemote.gui.managers.ad_hoc_manager import command_manager
+from reemote.gui.managers.command_manager import command_manager
 from reemote.gui.managers.deployment_manager import deployment_manager
 from reemote.gui.managers.file_manager import file_manager
 from reemote.gui.managers.inventory_manager import inventory_manager
@@ -15,7 +17,7 @@ from reemote.gui.managers.package_manager import package_manager
 from nicegui import ui
 
 @ui.page('/')
-def page():
+def index():
     inventory=Inventory_upload()
     versions=Versions()
     manager=Manager()
@@ -49,6 +51,10 @@ def page():
         with ui.tab_panel('Package Manager'):
             ui.label('Package Manager')
             package_manager(tabs, inventory, versions, manager, stdout_report, execution_report)
+
+    with ui.footer() as footer:
+        stdout_report.execution_report()
+        execution_report.execution_report()
 
 ui.run(
     title="Reemotecontrol",

@@ -51,5 +51,3 @@ def deployment_manager(tabs, inventory, versions, manager, stdout_report, execut
                     Deploy to view the changes and output on all all your servers.  
                     """)
 
-            # stdout_report.execution_report()
-            # execution_report.execution_report()

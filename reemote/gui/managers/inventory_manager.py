@@ -1,5 +1,5 @@
 from nicegui import ui
-from reemote.gui.functions.inv_upload import inv_upload
+from reemote.gui.functions.inv_upload import upload_inventory
 
 
 def inventory_manager(tabs, inventory, versions, manager, stdout_report, execution_report):
@@ -8,7 +8,7 @@ def inventory_manager(tabs, inventory, versions, manager, stdout_report, executi
 
             async def combined_upload_handler(e):
                 await inventory.handle_upload(e)  # Handle the upload first
-                await inv_upload(inventory, execution_report, stdout_report)  # Then run your setup logic
+                await upload_inventory(inventory, execution_report, stdout_report)  # Then run your setup logic
 
             with ui.row():
                 ui.upload(
@@ -47,5 +47,3 @@ def inventory_manager(tabs, inventory, versions, manager, stdout_report, executi
                 The inventory file format is described in detail [here](http://reemote.org/inventory.html).
                 """)
 
-            # stdout_report.execution_report()
-            # execution_report.execution_report()

@@ -21,5 +21,3 @@ def command_manager(tabs, inventory, versions, manager, stdout_report, execution
                 Run the command on all your servers.  
                 """)
 
-            # stdout_report.execution_report()
-            # execution_report.execution_report()

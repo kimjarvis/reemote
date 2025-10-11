@@ -2,11 +2,11 @@ import sys
 
 from reemote.execute import execute
 from reemote.utilities.parse_kwargs_string import parse_kwargs_string
+from reemote.utilities.validate_root_class_name_and_get_root_class import validate_root_class_name_and_get_root_class
+from reemote.utilities.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
 from reemote.utilities.produce_grid import produce_grid
 from reemote.utilities.produce_json import produce_json
 from reemote.utilities.produce_output_grid import produce_output_grid
-from reemote.utilities.validate_root_class_name_and_get_root_class import validate_root_class_name_and_get_root_class
-from reemote.utilities.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
 
 
 async def run_the_deploy(inventory, execution_report, stdout_report, sources):

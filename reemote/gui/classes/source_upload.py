@@ -1,8 +1,7 @@
 from nicegui import ui
 
-from reemote.gui.local_file_picker import local_file_picker
+from reemote.gui.local_file_picker.local_file_picker import local_file_picker
 from reemote.utilities.get_classes_in_source import get_classes_in_source
-
 
 class Sources_upload:
     def __init__(self):

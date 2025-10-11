@@ -37,5 +37,3 @@ def package_manager(tabs, inventory, versions, manager, stdout_report, execution
                 ui.button('Update', on_click=lambda: update(inventory, versions, manager, stdout_report, execution_report))
                 ui.button('Upgrade', on_click=lambda: upgrade(inventory, versions, manager, stdout_report, execution_report))
 
-            # stdout_report.execution_report()
-            # execution_report.execution_report()

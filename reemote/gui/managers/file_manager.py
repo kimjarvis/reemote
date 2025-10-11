@@ -1,11 +1,22 @@
 from nicegui import ui
 
 from reemote.gui.functions.download_file import download_file
-from reemote.gui.classes.file_path import File_path
-from reemote.gui.functions.pick_file import pick_file
+from reemote.gui.local_file_picker.local_file_picker import local_file_picker
+from reemote.gui.functions.upload_file import upload_file
 
+class File_picker:
+    def __init__(self):
+        self.paths= "/"
+
+async def pick_file(fp: File_picker) -> None:
+    result = await local_file_picker('~', multiple=True)
+    ui.notify(f'You chose {result}')
+    fp.paths=result
 
 def file_manager(tabs, inventory, versions, manager, stdout_report, execution_report, file_path):
+
+    fp = File_picker()
+
     with ui.tab_panels(tabs, value='File Manager').classes('w-full'):
         with ui.tab_panel('File Manager'):
 
@@ -21,10 +32,13 @@ def file_manager(tabs, inventory, versions, manager, stdout_report, execution_re
                 Download the file content from the first server in the inventory.  
                 """)
             with ui.row():
-                ui.button('Upload File', on_click=lambda: pick_file(inventory, file_path, stdout_report, execution_report), icon='folder')
+                ui.button('Choose Files', on_click=lambda: pick_file(fp), icon='folder')
                 ui.markdown("""
-                Upload a file from the host to all the servers in the inventory.  
+                Choose files on the local host.  
+                """)
+            with ui.row():
+                ui.button('Upload Files', on_click=lambda: upload_file(fp, inventory, file_path, stdout_report, execution_report))
+                ui.markdown("""
+                Upload a file from the local host to all the servers in the inventory.  
                 """)
 
-            # stdout_report.execution_report()
-            # execution_report.execution_report()
