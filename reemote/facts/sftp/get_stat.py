@@ -4,21 +4,21 @@ from typing import Optional
 
 class Get_stat:
     """
-    A class to encapsulate the functionality of stat for getting file attributes
+    A class to encapsulate the functionality of stat for getting builtin attributes
     using SFTP stat in Unix-like operating systems.
 
     Attributes:
-        file_path (str): The path of the file to get attributes for.
+        file_path (str): The path of the builtin to get attributes for.
 
     **Examples:**
 
     .. code:: python
 
-        yield Get_stat(file_path="/path/to/file.txt")
+        yield Get_stat(file_path="/path/to/builtin.txt")
 
     Usage:
         This class is designed to be used in a generator-based workflow where
-        commands are yielded for execution. The file attributes for each
+        commands are yielded for execution. The builtin attributes for each
         host will be returned in the operation result.
 
     Notes:
@@ -62,10 +62,10 @@ class Get_stat:
 
     @staticmethod
     async def _get_stat_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for getting file status"""
+        """Static callback method for getting builtin status"""
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                # Get file status using SFTP stat
+                # Get builtin status using SFTP stat
                 if caller.path:
                     stat_result = await sftp.stat(caller.path)
                     # Convert SFTPAttrs to dictionary for JSON serialization

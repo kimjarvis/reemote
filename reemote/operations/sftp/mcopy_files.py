@@ -6,17 +6,17 @@ from typing import Optional, Callable, Union
 
 class Mcopy_files:
     """
-    A class to encapsulate the functionality of remote-to-remote file copying using SFTP
+    A class to encapsulate the functionality of remote-to-remote builtin copying using SFTP
     with glob pattern matching (mcopy functionality).
 
     Attributes:
-        srcpaths (str): The remote source file or directory path(s) to copy with wildcard patterns.
-        dstpath (str): The remote destination path where file will be copied.
-        preserve (bool): Preserve file attributes (permissions, timestamps).
+        srcpaths (str): The remote source builtin or directory path(s) to copy with wildcard patterns.
+        dstpath (str): The remote destination path where builtin will be copied.
+        preserve (bool): Preserve builtin attributes (permissions, timestamps).
         recurse (bool): Recursively copy directories.
         follow_symlinks (bool): Follow symbolic links during copy.
-        sparse (bool): Create sparse file on the remote system.
-        block_size (int): Block size for file transfers.
+        sparse (bool): Create sparse builtin on the remote system.
+        block_size (int): Block size for builtin transfers.
         max_requests (int): Maximum number of concurrent transfer requests.
         progress_handler (Callable): Callback for copy progress.
         error_handler (Callable): Callback for handling errors.
@@ -82,7 +82,7 @@ class Mcopy_files:
 
     @staticmethod
     async def _mcopy_files_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for remote-to-remote file copying with glob pattern support"""
+        """Static callback method for remote-to-remote builtin copying with glob pattern support"""
 
         # Validate host_info (matching Copy_files error handling)
         required_keys = ['host', 'username', 'password']
@@ -115,7 +115,7 @@ class Mcopy_files:
                         error_handler=caller.error_handler,
                         remote_only=caller.remote_only
                     )
-                    return f"Successfully copied file using glob patterns on {host_info['host']}"
+                    return f"Successfully copied builtin using glob patterns on {host_info['host']}"
         except (OSError, asyncssh.Error) as exc:
             raise  # Re-raise the exception to handle it in the caller
 

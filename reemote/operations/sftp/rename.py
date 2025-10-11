@@ -4,15 +4,15 @@ from reemote.command import Command
 
 class Rename:
     """
-    A class to encapsulate the functionality of renaming file/directories
+    A class to encapsulate the functionality of renaming builtin/directories
     in Unix-like operating systems using SFTP.
 
     Attributes:
-        oldpath (str): The current path of the file/directory to rename.
-        newpath (str): The new path for the file/directory.
+        oldpath (str): The current path of the builtin/directory to rename.
+        newpath (str): The new path for the builtin/directory.
         flags (int, optional): Flags to control rename behavior (SFTPv5+ only).
             Common flags include:
-            - 0x0001: OVERWRITE - Allow overwriting existing file
+            - 0x0001: OVERWRITE - Allow overwriting existing builtin
             - 0x0002: ATOMIC - Perform atomic rename
             - 0x0004: NATIVE - Use native filesystem semantics
 
@@ -44,7 +44,7 @@ class Rename:
 
     @staticmethod
     async def _rename_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for file/directory rename"""
+        """Static callback method for builtin/directory rename"""
 
         # Validate host_info (matching Read_file error handling)
         required_keys = ['host', 'username', 'password']
@@ -63,7 +63,7 @@ class Rename:
             async with asyncssh.connect(**host_info) as conn:
                 # Start an SFTP session
                 async with conn.start_sftp_client() as sftp:
-                    # Rename the remote file/directory
+                    # Rename the remote builtin/directory
                     await sftp.rename(caller.oldpath, caller.newpath, caller.flags)
         except (OSError, asyncssh.Error) as exc:
             raise  # Re-raise the exception to handle it in the caller

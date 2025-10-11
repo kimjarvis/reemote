@@ -5,10 +5,10 @@ import argparse
 
 def extract_functions_and_classes(file_path):
     """
-    Extracts function and class names from a Python file using the AST module.
+    Extracts function and class names from a Python builtin using the AST module.
 
     Args:
-        file_path (str): Path to the Python file.
+        file_path (str): Path to the Python builtin.
 
     Returns:
         dict: A dictionary containing lists of functions and classes.
@@ -25,12 +25,12 @@ def extract_functions_and_classes(file_path):
 
 def generate_sphinx_documentation(base_dir, output_file, title, package_name):
     """
-    Generates Sphinx autodoc documentation for all Python file in a directory.
+    Generates Sphinx autodoc documentation for all Python builtin in a directory.
 
     Args:
-        base_dir (str): The directory containing Python file (can be relative).
-        output_file (str): The output .rst file for Sphinx documentation (can be relative).
-        title (str): The title for the .rst file.
+        base_dir (str): The directory containing Python builtin (can be relative).
+        output_file (str): The output .rst builtin for Sphinx documentation (can be relative).
+        title (str): The title for the .rst builtin.
         package_name (str): The name of the Python package (e.g., 'reemote').
     """
     # Resolve base_dir and output_file to absolute paths
@@ -40,7 +40,7 @@ def generate_sphinx_documentation(base_dir, output_file, title, package_name):
     # Generate the underline for the title
     underline = "=" * len(title)
 
-    # Open the output file for writing
+    # Open the output builtin for writing
     with open(output_file, "w", encoding="utf-8") as rst_file:
         # Write the title and underline
         rst_file.write(f"{title}\n")
@@ -79,24 +79,24 @@ def generate_sphinx_documentation(base_dir, output_file, title, package_name):
 
 def main():
     # Set up argument parsing
-    parser = argparse.ArgumentParser(description="Generate Sphinx autodoc documentation from Python source file.")
+    parser = argparse.ArgumentParser(description="Generate Sphinx autodoc documentation from Python source builtin.")
     parser.add_argument(
         "-s", "--source",
         type=str,
         required=True,
-        help="The directory containing Python file to document (can be relative)."
+        help="The directory containing Python builtin to document (can be relative)."
     )
     parser.add_argument(
         "-d", "--destination",
         type=str,
         required=True,
-        help="The path to the output .rst file for Sphinx documentation (can be relative)."
+        help="The path to the output .rst builtin for Sphinx documentation (can be relative)."
     )
     parser.add_argument(
         "-t", "--title",
         type=str,
         default="Utilities",  # Default title
-        help="The title for the .rst file (default: 'Utilities')."
+        help="The title for the .rst builtin (default: 'Utilities')."
     )
     parser.add_argument(
         "-p", "--package",

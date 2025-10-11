@@ -6,7 +6,7 @@ from asyncssh.sftp import SFTPAttrs
 
 class Write_text_to_file:
     def execute(self):
-        from reemote.operations.file.lineinfile import Lineinfile
+        from reemote.operations.builtin.lineinfile import Lineinfile
         yield Lineinfile(
             line='new_config_value',
             path='/etc/config.conf',

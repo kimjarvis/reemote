@@ -4,19 +4,19 @@ from reemote.command import Command
 
 class Read_file:
     """
-    A class to encapsulate the functionality of reading file from Unix-like operating systems.
-    It allows users to read the content of a file from a remote system.
+    A class to encapsulate the functionality of reading builtin from Unix-like operating systems.
+    It allows users to read the content of a builtin from a remote system.
 
     Attributes:
-        path (str): The file path to read content from.
+        path (str): The builtin path to read content from.
 
     **Examples:**
 
     .. code:: python
 
-        # Read a file from remote system
+        # Read a builtin from remote system
         r = yield Read_file(path='example.txt')
-        print(r.cp.stdout)  # Contains the file content
+        print(r.cp.stdout)  # Contains the builtin content
 
     Usage:
         This class is designed to be used in a generator-based workflow where commands are yielded for execution.
@@ -31,7 +31,7 @@ class Read_file:
 
     @staticmethod
     async def _read_file_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for file reading"""
+        """Static callback method for builtin reading"""
 
         # Validate host_info (matching Write_file error handling)
         required_keys = ['host', 'username', 'password']
@@ -51,10 +51,10 @@ class Read_file:
                 async with conn.start_sftp_client() as sftp:
                     print(f"Reading content from {caller.path}...")
 
-                    # Open the remote file in read mode and read the content
+                    # Open the remote builtin in read mode and read the content
                     async with sftp.open(caller.path, 'r') as remote_file:
                         content = await remote_file.read()
-                        print(f"Successfully read file {caller.path} from {host_info['host']}")
+                        print(f"Successfully read builtin {caller.path} from {host_info['host']}")
 
                         # Store the content in the caller for access later
                         caller.content = content

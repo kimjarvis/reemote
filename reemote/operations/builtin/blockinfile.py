@@ -8,15 +8,15 @@ from reemote.operations.sftp.setstat import Setstat
 
 class Blockinfile:
     """
-    A class to manage blocks of text in file using marker lines.
+    A class to manage blocks of text in builtin using marker lines.
 
     This class is inspired by Ansible's `blockinfile` module. It allows inserting,
-    updating, or removing a block of text between customizable marker lines in a file.
-    The class also supports setting file attributes such as permissions, ownership,
+    updating, or removing a block of text between customizable marker lines in a builtin.
+    The class also supports setting builtin attributes such as permissions, ownership,
     and group information.
 
     Attributes:
-        path (str): The path to the file to modify.
+        path (str): The path to the builtin to modify.
         block (str, optional): The text to insert inside the marker lines. If empty or None,
                                the block will be removed if `state="absent"`. Defaults to ``""``.
         marker (str, optional): The marker line template. `{mark}` will be replaced with the values
@@ -30,73 +30,95 @@ class Blockinfile:
                                - "present" (default): Ensure the block exists.
                                - "absent": Remove the block if it exists.
                                Defaults to ``"present"``.
-        create (bool, optional): Create a new file if it does not exist. Defaults to ``False``.
+        create (bool, optional): Create a new builtin if it does not exist. Defaults to ``False``.
         insertafter (str, optional): Insert the block after the last match of the specified regular
                                      expression. Special value "EOF" inserts the block at the end of
-                                     the file. Defaults to ``None``.
+                                     the builtin. Defaults to ``None``.
         insertbefore (str, optional): Insert the block before the last match of the specified regular
                                       expression. Special value "BOF" inserts the block at the beginning
-                                      of the file. Defaults to ``None``.
+                                      of the builtin. Defaults to ``None``.
         append_newline (bool, optional): Append a blank line to the inserted block if this does not
-                                         appear at the end of the file. Defaults to ``False``.
+                                         appear at the end of the builtin. Defaults to ``False``.
         prepend_newline (bool, optional): Prepend a blank line to the inserted block if this does not
-                                          appear at the beginning of the file. Defaults to ``False``.
-        backup (bool, optional): Create a backup file including the timestamp information so the original
-                                 file can be restored if needed. Defaults to ``False``.
-        attrs (dict, optional): A dictionary containing file attributes to set, such as permissions,
+                                          appear at the beginning of the builtin. Defaults to ``False``.
+        backup (bool, optional): Create a backup builtin including the timestamp information so the original
+                                 builtin can be restored if needed. Defaults to ``False``.
+        attrs (dict, optional): A dictionary containing builtin attributes to set, such as permissions,
                                 owner, and group. Example: ``{"permissions": 0o644, "owner": "root",
                                 "group": "root"}``. Defaults to an empty dictionary.
         unsafe_writes (bool, optional): Allow unsafe writes if atomic operations fail. Defaults to ``False``.
 
     Methods:
         execute():
-            Executes the blockinfile operation, modifying the file as specified.
+            Executes the blockinfile operation, modifying the builtin as specified.
 
     **Examples:**
 
     .. code:: python
 
-        # Example 1: Insert a block of text at the end of a file
-        task = Blockinfile(
-            path="/etc/example.conf",
-            block="This is an example block.",
-            marker="# {mark} CUSTOM BLOCK",
-            state="present",
-            insertafter="EOF"
+        # Insert/Update "Match User" configuration block in /etc/ssh/sshd_config prepending and appending a new line
+        yield Blockinfile(
+            path="/etc/ssh/sshd_config",
+            append_newline=True,
+            prepend_newline=True,
+            block="Match User ansible-agent
+            PasswordAuthentication no",
         )
-        yield task.execute()
-
-        # Example 2: Remove a block of text identified by custom markers
-        task = Blockinfile(
-            path="/etc/example.conf",
-            marker="# {mark} CUSTOM BLOCK",
-            state="absent"
+        
+        # Insert/Update eth0 configuration stanza in /etc/network/interfaces
+        # (it might be better to copy files into /etc/network/interfaces.d/)
+        yield Blockinfile(
+            path="/etc/network/interfaces",
+            block="iface eth0 inet static
+            address 192.0.2.23
+            netmask 255.255.255.0"
         )
-        yield task.execute()
-
-        # Example 3: Insert a block of text before a specific pattern
-        task = Blockinfile(
-            path="/etc/example.conf",
-            block="New configuration block.",
-            marker="# {mark} NEW CONFIG",
-            state="present",
-            insertbefore=r"^# Existing Section"
+    
+        # Insert/Update configuration using a local file and validate it
+        yield Blockinfile(
+            block="{{ lookup('ansible.builtin.file', './local/sshd_config') }}",
+            path="/etc/ssh/sshd_config",
+            backup=True,
+            validate="/usr/sbin/sshd -T -f %s",
         )
-        yield task.execute()
-
-        # Example 4: Insert a block with file attributes (permissions, owner, group)
-        task = Blockinfile(
-            path="/etc/example.conf",
-            block="Secure block content.",
-            marker="# {mark} SECURE BLOCK",
-            state="present",
-            insertafter="EOF",
-            attrs={"permissions": 0o600, "owner": "root", "group": "root"}
+        
+        # Insert/Update HTML surrounded by custom markers after <body> line
+        yield Blockinfile(
+            path="/var/www/html/index.html",
+            marker="<!-- {mark} ANSIBLE MANAGED BLOCK -->",
+            insertafter="<body>",
+            block="""<h1>Welcome to {{ ansible_hostname }}</h1>
+            <p>Last updated on {{ ansible_date_time.iso8601 }}</p>""",
         )
-        yield task.execute()
-
+        
+        # Remove HTML as well as surrounding markers
+        yield Blockinfile(
+            path="/var/www/html/index.html",
+            marker="<!-- {mark} ANSIBLE MANAGED BLOCK -->",
+            block="",
+        )
+        
+        # Add mappings to /etc/hosts
+        yield Blockinfile(
+            path="/etc/hosts",
+            block="{{ item.ip }} {{ item.name }}",
+            marker="# {mark} ANSIBLE MANAGED BLOCK {{ item.name }}",
+        )
+        # loop:
+        #   - { name: host1, ip: 10.10.1.10 }
+        #   - { name: host2, ip: 10.10.1.11 }
+        #   - { name: host3, ip: 10.10.1.12 }
+        
+        # Search with a multiline search flags regex and if found insert after
+        yield Blockinfile(
+            path="listener.ora",
+            block="{{ listener_line | indent(width=8, first=True) }}",
+            insertafter="(?m)SID_LIST_LISTENER_DG =\n.*\\(SID_LIST =",
+            marker="    <!-- {mark} ANSIBLE MANAGED BLOCK -->",
+        )
+    
     Notes:
-        - The `attrs` parameter is used to set file attributes via the `Setstat` class.
+        - The `attrs` parameter is used to set builtin attributes via the `Setstat` class.
         - The `insertafter` and `insertbefore` parameters are mutually exclusive.
         - Multi-line markers are not supported and may result in repeated insertions.
     """
@@ -142,7 +164,7 @@ class Blockinfile:
         return begin_marker, end_marker
 
     def _find_block_indices(self, lines, begin_marker, end_marker):
-        """Find the indices of the begin and end markers in the file."""
+        """Find the indices of the begin and end markers in the builtin."""
         begin_index = None
         end_index = None
 
@@ -162,7 +184,7 @@ class Blockinfile:
         r = yield Read_file(path=self.path)
         content = r.cp.stdout
 
-        # Handle empty file or file not existing
+        # Handle empty builtin or builtin not existing
         if not content:
             lines = []
         elif isinstance(content, bytes):
@@ -231,7 +253,7 @@ class Blockinfile:
                         if re.search(pattern, line):
                             insert_index = i + 1
             else:
-                # Default: append to end of file
+                # Default: append to end of builtin
                 insert_index = len(lines)
 
             # Insert the block

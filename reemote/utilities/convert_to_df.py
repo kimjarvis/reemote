@@ -46,21 +46,20 @@ def convert_to_df(data, columns=None):
             raise ValueError(f"Failed to parse JSON string: {e}")
 
     # Define all available columns with their extraction logic
-    # Added safe handling for None values in cp and op
     all_columns = {
-        'command': lambda item: item['op']['command'] if item.get('op') else '',
-        'host': lambda item: item['host'],
-        'guard': lambda item: item['op']['guard'] if item.get('op') else '',
-        'changed': lambda item: item['changed'],
-        'executed': lambda item: item['executed'],
-        'stdout': lambda item: item['cp']['stdout'] if item.get('cp') else '',
-        'stderr': lambda item: item['cp']['stderr'] if item.get('cp') else '',
-        'exit_status': lambda item: item['cp']['exit_status'] if item.get('cp') else '',
-        'returncode': lambda item: item['cp']['returncode'] if item.get('cp') else '',
-        'env': lambda item: item['cp'].get('env', '') if item.get('cp') else '',
-        'subsystem': lambda item: item['cp'].get('subsystem', '') if item.get('cp') else '',
-        'exit_signal': lambda item: item['cp'].get('exit_signal', '') if item.get('cp') else '',
-        'error': lambda item: item.get('error', '')
+        'command': lambda item: item['op']['command'] if isinstance(item, dict) and item.get('op') else '',
+        'host': lambda item: item['host'] if isinstance(item, dict) else '',
+        'guard': lambda item: item['op']['guard'] if isinstance(item, dict) and item.get('op') else '',
+        'changed': lambda item: item['changed'] if isinstance(item, dict) else '',
+        'executed': lambda item: item['executed'] if isinstance(item, dict) else '',
+        'stdout': lambda item: item['cp']['stdout'] if isinstance(item, dict) and item.get('cp') else '',
+        'stderr': lambda item: item['cp']['stderr'] if isinstance(item, dict) and item.get('cp') else '',
+        'exit_status': lambda item: item['cp']['exit_status'] if isinstance(item, dict) and item.get('cp') else '',
+        'returncode': lambda item: item['cp']['returncode'] if isinstance(item, dict) and item.get('cp') else '',
+        'env': lambda item: item['cp'].get('env', '') if isinstance(item, dict) and item.get('cp') else '',
+        'subsystem': lambda item: item['cp'].get('subsystem', '') if isinstance(item, dict) and item.get('cp') else '',
+        'exit_signal': lambda item: item['cp'].get('exit_signal', '') if isinstance(item, dict) and item.get('cp') else '',
+        'error': lambda item: item.get('error', '') if isinstance(item, dict) else ''
     }
 
     # If no columns specified, use all columns
@@ -74,6 +73,11 @@ def convert_to_df(data, columns=None):
 
     rows = []
     for item in data:
+        # Skip items that are not dictionaries
+        if not isinstance(item, dict):
+            print(f"Warning: Skipping non-dictionary item: {item}")
+            continue
+
         row = {}
         for col in columns:
             try:

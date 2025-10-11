@@ -36,28 +36,28 @@ async def main():
         "-i", "--inventory",
         required=True,
         dest="inventory",
-        help="Path to the inventory Python file (.py extension required)"
+        help="Path to the inventory Python builtin (.py extension required)"
     )
 
     parser.add_argument(
         "-s", "--source",
         required=True,
         dest="source",
-        help="Path to the source Python file (.py extension required)"
+        help="Path to the source Python builtin (.py extension required)"
     )
 
     parser.add_argument(
         "-c", "--class",
         required=True,
         dest="_class",  # 'class' is a keyword, so use '_class'
-        help="Name of the deployment class in source file that has an execute(self) method"
+        help="Name of the deployment class in source builtin that has an execute(self) method"
     )
 
     parser.add_argument(
         "-k", "--kwargs",
         required=False,
         dest="kwargs",
-        help="Path to the kwargs file for the deployment class constructor"
+        help="Path to the kwargs builtin for the deployment class constructor"
     )
 
     # Optional arguments with dependencies
@@ -65,7 +65,7 @@ async def main():
         '-o', '--output',
         dest='output_file',
         metavar='OUTPUT_FILE',
-        help='Path to the output file where results will be saved',
+        help='Path to the output builtin where results will be saved',
         default=None
     )
 
@@ -90,12 +90,12 @@ async def main():
         parser.print_help()
         sys.exit(1)
 
-    # Verify inventory file
+    # Verify inventory builtin
     if args.inventory:
         if not verify_python_file(args.inventory):
             sys.exit(1)
 
-    # Verify source file
+    # Verify source builtin
     if args.source:
         if not verify_python_file(args.source):
             sys.exit(1)

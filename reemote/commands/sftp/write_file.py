@@ -5,29 +5,29 @@ from typing import Optional
 
 class Write_file:
     """
-    A class to encapsulate the functionality of writing file in Unix-like operating systems.
-    It allows users to specify text to be written to a file with full SFTP attribute support.
+    A class to encapsulate the functionality of writing builtin in Unix-like operating systems.
+    It allows users to specify text to be written to a builtin with full SFTP attribute support.
 
     Attributes:
-        path (str): The file path where content is to be written.
-        text (str): The file content.
-        attrs (asyncssh.SFTPAttrs): SFTP attributes for the new file.
+        path (str): The builtin path where content is to be written.
+        text (str): The builtin content.
+        attrs (asyncssh.SFTPAttrs): SFTP attributes for the new builtin.
 
     **Examples:**
 
     .. code:: python
 
-        # Create a file from text with default permissions
+        # Create a builtin from text with default permissions
         r = yield Write_file(path='example.txt', text='Hello World!')
 
-        # Create a file with specific permissions
+        # Create a builtin with specific permissions
         r = yield Write_file(
             path='script.sh',
             text='#!/bin/bash\necho "Hello World"',
             attrs=asyncssh.SFTPAttrs(permissions=0o755)
         )
 
-        # Create a file with owner and timestamps
+        # Create a builtin with owner and timestamps
         r = yield Write_file(
             path='config.json',
             text='{"key": "value"}',
@@ -39,7 +39,7 @@ class Write_file:
             )
         )
 
-        # Verify the file content
+        # Verify the builtin content
         r = yield Shell("cat example.txt")
         print(r.cp.stdout)
 
@@ -76,7 +76,7 @@ class Write_file:
 
     @staticmethod
     async def _write_file_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for file writing with full attribute support"""
+        """Static callback method for builtin writing with full attribute support"""
 
         # Validate host_info
         required_keys = ['host', 'username', 'password']
@@ -98,12 +98,12 @@ class Write_file:
                 async with conn.start_sftp_client() as sftp:
                     print(f"Writing content to {caller.path}...")
 
-                    # Open the remote file in write mode and write the content
+                    # Open the remote builtin in write mode and write the content
                     async with sftp.open(caller.path, 'w') as remote_file:
                         r = await remote_file.write(caller.text)
-                        print(f"Successfully wrote file {caller.path} on {host_info['host']} (bytes: {r})")
+                        print(f"Successfully wrote builtin {caller.path} on {host_info['host']} (bytes: {r})")
 
-                    # Apply attributes after writing the file
+                    # Apply attributes after writing the builtin
                     if caller.attrs and any(
                             getattr(caller.attrs, field) is not None
                             for field in [

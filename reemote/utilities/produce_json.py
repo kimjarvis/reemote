@@ -14,7 +14,7 @@ def produce_json(results) -> tuple[str, str]:
      human-readable.
 
      Note: The function contains a commented-out block of code that was
-     intended to write the JSON output to a file. This functionality is
+     intended to write the JSON output to a builtin. This functionality is
      currently disabled.
 
      Args:

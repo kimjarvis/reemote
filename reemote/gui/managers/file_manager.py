@@ -22,14 +22,14 @@ def file_manager(tabs, inventory, versions, manager, stdout_report, execution_re
 
 
             with ui.row():
-                ui.input(label='Server file path').bind_value(file_path, 'path')
+                ui.input(label='Server builtin path').bind_value(file_path, 'path')
                 ui.markdown("""
-                This is the name of the file on the servers.  
+                This is the name of the builtin on the servers.  
                 """)
             with ui.row():
                 ui.button('Download File', on_click=lambda: download_file(inventory, file_path, stdout_report, execution_report))
                 ui.markdown("""
-                Download the file content from the first server in the inventory.  
+                Download the builtin content from the first server in the inventory.  
                 """)
             with ui.row():
                 ui.button('Choose Files', on_click=lambda: pick_file(fp), icon='folder')
@@ -39,6 +39,6 @@ def file_manager(tabs, inventory, versions, manager, stdout_report, execution_re
             with ui.row():
                 ui.button('Upload Files', on_click=lambda: upload_file(fp, inventory, file_path, stdout_report, execution_report))
                 ui.markdown("""
-                Upload a file from the local host to all the servers in the inventory.  
+                Upload a builtin from the local host to all the servers in the inventory.  
                 """)
 

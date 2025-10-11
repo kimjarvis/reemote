@@ -89,7 +89,7 @@ def open_terminal(terminal_name, terminal_cmd, ssh_command):
 async def open_ssh_console():
     """Main function to open SSH console with inventory verification."""
     parser = argparse.ArgumentParser(
-        description="Open an SSH terminal connection using an inventory file.",
+        description="Open an SSH terminal connection using an inventory builtin.",
         usage="usage: terminal.py [-h] -i INVENTORY_FILE [-n HOST_NUMBER] [--no-test]",
         epilog="""
 Examples: 
@@ -105,7 +105,7 @@ Examples:
         "-i", "--inventory",
         required=True,
         dest="inventory",
-        help="Path to the inventory Python file (.py extension required)"
+        help="Path to the inventory Python builtin (.py extension required)"
     )
     
     parser.add_argument(
@@ -125,10 +125,10 @@ Examples:
 
     args = parser.parse_args()
 
-    # Verify inventory file exists and is a Python file
-    logger.info(f"Verifying inventory file: {args.inventory}")
+    # Verify inventory builtin exists and is a Python builtin
+    logger.info(f"Verifying inventory builtin: {args.inventory}")
     if not verify_python_file(args.inventory):
-        logger.error("Invalid inventory file")
+        logger.error("Invalid inventory builtin")
         sys.exit(1)
 
     # Load and validate inventory

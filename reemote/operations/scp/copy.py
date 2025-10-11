@@ -7,32 +7,32 @@ import os
 
 class Copy:
     """
-    A class to handle secure file copying between remote hosts using SCP (Secure Copy Protocol).
+    A class to handle secure builtin copying between remote hosts using SCP (Secure Copy Protocol).
 
-    This class provides functionality to copy file or directories between remote hosts,
+    This class provides functionality to copy builtin or directories between remote hosts,
     from source hosts to destination hosts. It supports various SCP options including
-    preserving file attributes and recursive directory copying.
+    preserving builtin attributes and recursive directory copying.
 
     Attributes:
-        srcpaths (Union[str, List[str]]): Source file or directory path(s). Can be a single
+        srcpaths (Union[str, List[str]]): Source builtin or directory path(s). Can be a single
             string path or a list of paths. Supports host:path format for remote sources.
-        dstpath (str): Destination path where file will be copied. Supports host:path format
+        dstpath (str): Destination path where builtin will be copied. Supports host:path format
             for remote destinations.
         src_hosts (List[str], optional): List of source host identifiers. If None or empty,
             operation will attempt to use all available hosts as sources.
         dst_hosts (List[str], optional): List of destination host identifiers. If None or empty,
             operation will attempt to use all available hosts as destinations.
-        preserve (bool): If True, preserves file modification times, access times,
-            and modes from the original file. Defaults to False.
+        preserve (bool): If True, preserves builtin modification times, access times,
+            and modes from the original builtin. Defaults to False.
         recurse (bool): If True, recursively copies entire directories. Defaults to False.
-        block_size (int): Block size used for file transfers in bytes. Defaults to 16384.
+        block_size (int): Block size used for builtin transfers in bytes. Defaults to 16384.
         port (int): SSH port to use for connections. Defaults to 22.
 
     **Examples:**
 
     .. code:: python
 
-        # Copy file from one host to another
+        # Copy builtin from one host to another
         yield Copy(
             srcpaths='/home/user/*.txt',
             dstpath='/home/user/',
@@ -40,7 +40,7 @@ class Copy:
             dst_hosts=["10.156.135.17"],
             recurse=True
         )
-        # Copy multiple file between hosts
+        # Copy multiple builtin between hosts
         yield Copy(
             srcpaths=['/var/log/app.log', '/tmp/debug.log'],
             dstpath='backup-server:/backup/logs/',
@@ -77,7 +77,7 @@ class Copy:
 
     @staticmethod
     async def _copy_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for file copy between hosts"""
+        """Static callback method for builtin copy between hosts"""
 
         # Validate host_info (matching Download error handling)
         required_keys = ['host', 'username', 'password']
@@ -91,7 +91,7 @@ class Copy:
         if caller.dstpath is None:
             raise ValueError("The 'dstpath' attribute of the caller cannot be None.")
 
-        # This operation should run on destination hosts to pull file from source hosts
+        # This operation should run on destination hosts to pull builtin from source hosts
         is_dest_host = (caller.dst_hosts is None or
                         not caller.dst_hosts or
                         host_info["host"] in caller.dst_hosts)

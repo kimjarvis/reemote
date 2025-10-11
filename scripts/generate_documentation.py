@@ -89,9 +89,9 @@ def main():
         "reemote.operations"
     )
     generate_sphinx_documentation(
-        "reemote/operations/file",
-        "docs/source/operations/file.rst",
-        "file operations",
+        "reemote/operations/builtin",
+        "docs/source/operations/builtin.rst",
+        "builtin operations",
         "reemote.operations"
     )
     generate_sphinx_documentation(
@@ -241,9 +241,9 @@ def main():
     )
     # Deployments
     generate_sphinx_documentation(
-        "reemote/deployments/file",
-        "docs/source/deployments/file.rst",
-        "file deployments",
+        "reemote/deployments/builtin",
+        "docs/source/deployments/builtin.rst",
+        "builtin deployments",
         "reemote.deployments"
     )
     generate_sphinx_documentation(

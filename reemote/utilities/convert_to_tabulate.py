@@ -35,7 +35,7 @@ def convert_to_tabulate(df):
 
     This function takes a pandas DataFrame and transforms it into a
     well-formatted, human-readable text table using the `tabulate` library.
-    It is particularly useful for printing DataFrames to a console or log file.
+    It is particularly useful for printing DataFrames to a console or log builtin.
 
     The process involves:
 

@@ -5,10 +5,10 @@ from reemote.utilities.produce_table import produce_table
 from reemote.utilities.produce_json import produce_json
 
 def write_responses_to_file(type: str=None, filepath: str=None, responses=None):
-    """Writes response data to a file in a specified format.
+    """Writes response data to a builtin in a specified format.
 
     This function takes a collection of responses and serializes them into a
-    file. The output format is determined by the `type` parameter. It relies
+    builtin. The output format is determined by the `type` parameter. It relies
     on helper functions to handle the conversion for each specific format.
 
     Supported formats:
@@ -20,10 +20,10 @@ def write_responses_to_file(type: str=None, filepath: str=None, responses=None):
       suitable for Python interpretation.
 
     Args:
-        type (str, optional): The format for the output file. Accepted
+        type (str, optional): The format for the output builtin. Accepted
             values are "json", "rst", or "grid".
         filepath (str, optional): The full path, including the filename, for
-            the output file.
+            the output builtin.
         responses (any, optional): The data structure containing the responses
             to be serialized and written.
     """

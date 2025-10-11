@@ -29,7 +29,7 @@ class Setstat:
 
     @staticmethod
     async def _set_attributes_callback(host_info, global_info, command, cp, caller):
-        """Static callback method to set file attributes using SFTP."""
+        """Static callback method to set builtin attributes using SFTP."""
 
         print("Executing _set_attributes_callback...")  # Debug statement
 
@@ -46,17 +46,17 @@ class Setstat:
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    # Check if the file exists
+                    # Check if the builtin exists
                     try:
                         await sftp.stat(caller.path)
                     except FileNotFoundError:
                         raise FileNotFoundError(f"File {caller.path} does not exist on {host_info['host']}.")
 
-                    # Set the file attributes using setstat
+                    # Set the builtin attributes using setstat
                     await sftp.setstat(caller.path, caller.attrs_dict, follow_symlinks=caller.follow_symlinks)
 
                     # Build result message
-                    result_msg = f"Set attributes for file {caller.path} on {host_info['host']}"
+                    result_msg = f"Set attributes for builtin {caller.path} on {host_info['host']}"
 
                     # Add attribute information to result message
                     attr_details = []

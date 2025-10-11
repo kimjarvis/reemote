@@ -10,20 +10,20 @@ from reemote.operations.sftp.setstat import Setstat
 
 class Lineinfile():
     """
-    A class to manage lines in a remote file using SFTP operations.
+    A class to manage lines in a remote builtin using SFTP operations.
 
-    This class allows you to ensure that a specific line exists in a file on a remote server.
+    This class allows you to ensure that a specific line exists in a builtin on a remote server.
     It supports adding, replacing, or modifying lines based on search criteria such as regular
-    expressions, string matches, or exact line comparisons. Additionally, it can set file
+    expressions, string matches, or exact line comparisons. Additionally, it can set builtin
     attributes (e.g., permissions) after making changes.
 
     Attributes:
-        line (str): The line to ensure exists in the file. This line will be added, replaced,
+        line (str): The line to ensure exists in the builtin. This line will be added, replaced,
                     or left unchanged depending on the search criteria.
-        path (str): The path to the file on the remote server.
-        regexp (str, optional): A regular expression pattern to match lines in the file.
+        path (str): The path to the builtin on the remote server.
+        regexp (str, optional): A regular expression pattern to match lines in the builtin.
                                 Mutually exclusive with `search_string`. Defaults to ``None``.
-        search_string (str, optional): A string to search for in the file. Mutually exclusive
+        search_string (str, optional): A string to search for in the builtin. Mutually exclusive
                                        with `regexp`. Defaults to ``None``.
         insertafter (str, optional): A pattern or keyword ('EOF') specifying where to insert
                                      the line after a match. Mutually exclusive with `insertbefore`.
@@ -31,12 +31,12 @@ class Lineinfile():
         insertbefore (str, optional): A pattern or keyword ('BOF') specifying where to insert
                                       the line before a match. Mutually exclusive with `insertafter`.
                                       Defaults to ``None``.
-        attrs (dict, optional): File attributes (e.g., permissions) to set after modifying the file.
+        attrs (dict, optional): File attributes (e.g., permissions) to set after modifying the builtin.
                                 Defaults to ``None``.
 
     Methods:
         execute():
-            Executes the logic to read, modify, and write the file based on the provided
+            Executes the logic to read, modify, and write the builtin based on the provided
             parameters. Ensures idempotency by checking if the line already exists before
             making changes.
 
@@ -48,14 +48,95 @@ class Lineinfile():
 
     .. code:: python
 
-        # Ensure the line "example_line" exists in /path/to/file.txt
-        line_in_file = Lineinfile(
-            line="example_line",
-            path="/path/to/file.txt",
-            regexp="^pattern_to_match$",
-            attrs={"permissions": 0o644}
+        # Ensure SELinux is set to enforcing mode
+        yield Lineinfile(
+            path="/etc/selinux/config",
+            regexp="^SELINUX=",
+            line="SELINUX=enforcing",
         )
-        yield line_in_file.execute()
+
+        # Make sure group wheel is not in the sudoers configuration
+        yield Lineinfile(
+            path="/etc/sudoers",
+            state="absent",
+            regexp="^%wheel",
+        )
+
+        # Replace a localhost entry with our own
+        yield Lineinfile(
+            path="/etc/hosts",
+            regexp="^127\\.0\\.0\\.1",
+            line="127.0.0.1 localhost",
+            owner="root",
+            group="root",
+            mode="0644",
+        )
+
+        # Replace a localhost entry searching for a literal string to avoid escaping
+        yield Lineinfile(
+            path="/etc/hosts",
+            search_string="127.0.0.1",
+            line="127.0.0.1 localhost",
+            owner="root",
+            group="root",
+            mode="0644",
+        )
+
+        # Ensure the default Apache port is 8080
+        yield Lineinfile(
+            path="/etc/httpd/conf/httpd.conf",
+            regexp="^Listen ",
+            insertafter="^#Listen ",
+            line="Listen 8080",
+        )
+
+        # Ensure php extension matches new pattern
+        yield Lineinfile(
+            path="/etc/httpd/conf/httpd.conf",
+            search_string='<FilesMatch ".php[45]?$">',
+            insertafter="^\t<Location />\n",
+            line='        <FilesMatch ".php[34]?$">',
+        )
+
+        # Ensure we have our own comment added to /etc/services
+        yield Lineinfile(
+            path="/etc/services",
+            regexp="^# port for http",
+            insertbefore="^www.*80/tcp",
+            line="# port for http by default",
+        )
+
+        # Add a line to a file if the file does not exist, without passing regexp
+        yield Lineinfile(
+            path="/tmp/testfile",
+            line="192.168.1.99 foo.lab.net foo",
+            create=True,
+        )
+
+        # Ensure the JBoss memory settings are exactly as needed
+        yield Lineinfile(
+            path="/opt/jboss-as/bin/standalone.conf",
+            regexp="^(.*)Xms(\\d+)m(.*)$",
+            line="\\1Xms${xms}m\\3",
+            backrefs=True,
+        )
+
+        # Validate the sudoers file before saving
+        yield Lineinfile(
+            path="/etc/sudoers",
+            state="present",
+            regexp="^%ADMIN ALL=",
+            line="%ADMIN ALL=(ALL) NOPASSWD: ALL",
+            validate="/usr/sbin/visudo -cf %s",
+        )
+
+        # Use backrefs with alternative group syntax to avoid conflicts with variable values
+        yield Lineinfile(
+            path="/tmp/config",
+            regexp="^(host=).*",
+            line="\\g<1>{{ hostname }}",
+            backrefs=True,
+        )
 
     Usage:
         This class is designed to be used in a generator-based workflow where
@@ -87,7 +168,7 @@ class Lineinfile():
         print(f"Initialized Lineinfile with attrs: {self.attrs}")
 
     def _match_line(self, file_line):
-        """Check if a file line matches the search criteria."""
+        """Check if a builtin line matches the search criteria."""
         if self.regexp is not None:
             # Match using a regular expression
             return re.search(self.regexp, file_line) is not None
@@ -105,7 +186,7 @@ class Lineinfile():
         r = yield Read_file(path=self.path)
         content = r.cp.stdout
 
-        # Handle empty file or file not existing
+        # Handle empty builtin or builtin not existing
         if not content:
             lines = []
         elif isinstance(content, bytes):
@@ -177,7 +258,7 @@ class Lineinfile():
                         if re.search(pattern, line):
                             insert_index = i + 1
             else:
-                # Default: append to end of file
+                # Default: append to end of builtin
                 insert_index = len(lines)
 
             # Determine line ending

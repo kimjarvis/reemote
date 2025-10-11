@@ -9,9 +9,9 @@ def deployment_manager(tabs, inventory, versions, manager, stdout_report, execut
             with ui.row():
                 ui.button('Upload Source', on_click=lambda: source.pick_file(), icon='folder')
                 ui.markdown("""
-                Use the Upload button to upload a deployment file.
+                Use the Upload button to upload a deployment builtin.
 
-                A deployment file is python file that contains a list of Python classes, like this:
+                A deployment builtin is python builtin that contains a list of Python classes, like this:
 
                 ```python
                 class Pacman_install_vim:
@@ -25,12 +25,12 @@ def deployment_manager(tabs, inventory, versions, manager, stdout_report, execut
                         # Update the packages on all hosts
                         r = yield Update(sudo=True)
                 ```
-                This file contains two deployments.
+                This builtin contains two deployments.
 
                 - The first, Pacman_install_vim, installs vim.
                 - The second, Pacman_update, updates all Packman packages.
 
-                The deployment file format is described in detail [here](http://reemote.org/deployment.html).
+                The deployment builtin format is described in detail [here](http://reemote.org/deployment.html).
                 """)
 
             with ui.row():

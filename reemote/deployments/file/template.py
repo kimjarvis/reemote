@@ -7,11 +7,11 @@ class Write_text_to_file:
         template_dir = "/home/kim/reemote/reemote/deployments/nginx/templates"
         renderer = TemplateRenderer(template_dir)
 
-        # Use the working discovery method and load file explicitly
+        # Use the working discovery method and load builtin explicitly
         variables_files = renderer.discover_variables_files()
         template_vars = {}
 
-        # Load each variables file explicitly
+        # Load each variables builtin explicitly
         for file_name, file_path in variables_files.items():
             print(f"Loading variables from: {file_path}")
             file_vars = renderer._load_yaml_variables(file_path)  # Directly call the loader

@@ -4,13 +4,13 @@ from typing import List, Tuple, Dict, Any, Union, Optional
 
 class Touch:
     """
-    A class to encapsulate the functionality of touch (create file) in
+    A class to encapsulate the functionality of touch (create builtin) in
     Unix-like operating systems using asyncssh's SFTP open method.
 
     Attributes:
-        path (str): The file path to create.
-        pflags_or_mode (Union[int, str]): The access mode to use for the remote file.
-        attrs (SFTPAttrs): File attributes to use when creating the file.
+        path (str): The builtin path to create.
+        pflags_or_mode (Union[int, str]): The access mode to use for the remote builtin.
+        attrs (SFTPAttrs): File attributes to use when creating the builtin.
         encoding (Optional[str]): The Unicode encoding to use (default: 'utf-8').
         errors (str): Error-handling mode for Unicode (default: 'strict').
         block_size (int): Block size for read/write requests (default: -1).
@@ -22,8 +22,8 @@ class Touch:
 
         yield Touch(
             path='/home/user/newfile.txt',
-            pflags_or_mode='w',  # Create file if it doesn't exist
-            attrs=asyncssh.SFTPAttrs(perms=0o644)  # Set file permissions
+            pflags_or_mode='w',  # Create builtin if it doesn't exist
+            attrs=asyncssh.SFTPAttrs(perms=0o644)  # Set builtin permissions
         )
 
     Usage:
@@ -31,7 +31,7 @@ class Touch:
         commands are yielded for execution.
 
     Notes:
-        The file is created but no data is written to it.
+        The builtin is created but no data is written to it.
     """
 
     def __init__(self, path: str,
@@ -57,7 +57,7 @@ class Touch:
 
     @staticmethod
     async def _touch_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for file creation (touch)"""
+        """Static callback method for builtin creation (touch)"""
 
         # Validate host_info (matching Rmdir error handling)
         required_keys = ['host', 'username', 'password']
@@ -70,10 +70,10 @@ class Touch:
             raise ValueError("The 'path' attribute of the caller cannot be None.")
 
         try:
-            # Connect to the SSH server and create the file
+            # Connect to the SSH server and create the builtin
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    # Open the file with specified parameters to create it
+                    # Open the builtin with specified parameters to create it
                     # File is immediately closed after creation, no data written
                     async with sftp.open(
                             path=caller.path,
@@ -85,7 +85,7 @@ class Touch:
                             max_requests=caller.max_requests
                     ) as file:
                         # File is created but we don't write anything to it
-                        # The context manager will automatically close the file
+                        # The context manager will automatically close the builtin
                         pass
         except (OSError, asyncssh.Error) as exc:
             raise  # Re-raise the exception to handle it in the caller

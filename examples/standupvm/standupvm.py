@@ -23,7 +23,7 @@ from reemote.deployments.lxc.standup_lcx_vm_localhost import Standup_lcx_vm_loca
 from reemote.deployments.nginx.install_nginx import Install_nginx
 
 def validate_file_path(file_path):
-    """Validate that the given file path exists."""
+    """Validate that the given builtin path exists."""
     # Expand user home directory (~)
     expanded_path = os.path.expanduser(file_path)
     if not os.path.isfile(expanded_path):
@@ -53,7 +53,7 @@ Example usage:
         '--inventory',
         required=True,
         type=validate_file_path,
-        help='Path to inventory file (e.g., ~/localhost.py). The file must exist.'
+        help='Path to inventory builtin (e.g., ~/localhost.py). The builtin must exist.'
     )
 
     parser.add_argument(
@@ -96,7 +96,7 @@ Example usage:
     # Parse arguments
     args = parser.parse_args()
 
-    # Read the inventory file
+    # Read the inventory builtin
     inventory_func=read_inventory(args.inventory)
 
     responses = await execute(inventory_func(), Standup_lcx_vm_localhost(
@@ -125,8 +125,8 @@ Example usage:
             <p>ssh access:</p>
             <p>ssh {args.user}@{ip_address}</p>
             <p>using password: {args.user_password}</p>
-            <p>The user {args.user} has been added to the sudoers file</p>
-            <p>Wrote inventory file inventory-{args.vm}.py</p>
+            <p>The user {args.user} has been added to the sudoers builtin</p>
+            <p>Wrote inventory builtin inventory-{args.vm}.py</p>
         """,
         # vm=args.vm,
         # image=args.image,

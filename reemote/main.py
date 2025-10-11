@@ -10,7 +10,7 @@ from reemote.utilities.convert_to_tabulate import convert_to_tabulate
 
 async def main(callable=None):
     parser = argparse.ArgumentParser(
-        description="Open an SSH terminal connection using an inventory file.",
+        description="Open an SSH terminal connection using an inventory builtin.",
         usage="usage: terminal.py [-h] -i INVENTORY_FILE [-n HOST_NUMBER] [--no-test]",
         epilog=""
     )
@@ -18,7 +18,7 @@ async def main(callable=None):
         "-i", "--inventory",
         required=True,
         dest="inventory",
-        help="Path to the inventory Python file (.py extension required)"
+        help="Path to the inventory Python builtin (.py extension required)"
     )
     args = parser.parse_args()
 
@@ -44,8 +44,21 @@ async def main(callable=None):
         print("No hosts in inventory")
         sys.exit(1)
 
-    responses = await execute(inventory(), callable())
-    json = produce_json(responses)
+    # Execute operations
+    responses = []
+    for operation in callable().execute():  # Iterate over the generator
+        response = await execute(inventory(), operation)
+        responses.append(response)
+
+    # Process results - FIX: Flatten the responses if they contain lists
+    flattened_responses = []
+    for response in responses:
+        if isinstance(response, list):
+            flattened_responses.extend(response)
+        else:
+            flattened_responses.append(response)
+
+    json = produce_json(flattened_responses)
     df = convert_to_df(json, columns=["command", "host", "returncode", "stdout", "stderr", "error"])
     table = convert_to_tabulate(df)
     print(table)

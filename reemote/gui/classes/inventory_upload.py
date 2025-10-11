@@ -12,16 +12,16 @@ class Inventory_upload:
         print("Upload event attributes:", dir(e))
         print("Upload event:", e)
 
-        # Access the file data directly from the file._data attribute
+        # Access the builtin data directly from the builtin._data attribute
         try:
-            if hasattr(e, 'file') and hasattr(e.file, '_data'):
+            if hasattr(e, 'builtin') and hasattr(e.file, '_data'):
                 text = e.file._data.decode('utf-8')
-                print("Successfully read file content")
+                print("Successfully read builtin content")
             else:
-                ui.notify("Error: Uploaded file data not found")
+                ui.notify("Error: Uploaded builtin data not found")
                 return
         except Exception as ex:
-            ui.notify(f"Error reading file: {str(ex)}")
+            ui.notify(f"Error reading builtin: {str(ex)}")
             return
 
         # Execute the uploaded Python code
@@ -32,7 +32,7 @@ class Inventory_upload:
 
             # Check if inventory function exists
             if 'inventory' not in exec_globals or not callable(exec_globals['inventory']):
-                ui.notify("Error: No 'inventory' function found in the uploaded file")
+                ui.notify("Error: No 'inventory' function found in the uploaded builtin")
                 return
 
             inventory_func = exec_globals['inventory']

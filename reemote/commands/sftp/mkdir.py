@@ -140,10 +140,10 @@ class Mkdir:
                             try:
                                 await sftp.mkdir(current_path, attrs_to_use)
                             except (OSError, asyncssh.SFTPError) as e:
-                                # If it's not the final directory and we get "file exists", that's fine
-                                if current_path != caller.path and "file exists" in str(e).lower():
+                                # If it's not the final directory and we get "builtin exists", that's fine
+                                if current_path != caller.path and "builtin exists" in str(e).lower():
                                     continue
-                                elif current_path == caller.path and "file exists" in str(
+                                elif current_path == caller.path and "builtin exists" in str(
                                         e).lower() and caller.exist_ok:
                                     break
                                 else:

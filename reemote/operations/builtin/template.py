@@ -12,22 +12,22 @@ from reemote.operations.sftp.setstat import Setstat
 
 class Template():
     """
-    A class to manage file templating on remote servers using SFTP operations.
+    A class to manage builtin templating on remote servers using SFTP operations.
 
     This class allows you to render Jinja2 templates and transfer them to remote servers.
     It supports template rendering with variables, backup creation, validation commands,
-    and setting file attributes after transfer.
+    and setting builtin attributes after transfer.
 
     Attributes:
-        src (str): Path to the Jinja2 template file on the local system.
+        src (str): Path to the Jinja2 template builtin on the local system.
         dest (str): Path where the rendered template should be placed on the remote server.
         vars (dict, optional): Variables to use when rendering the template. Defaults to ``None``.
-        backup (bool, optional): Whether to create a backup of the existing file. Defaults to ``False``.
-        force (bool, optional): Whether to replace the file if content differs. Defaults to ``False``.
+        backup (bool, optional): Whether to create a backup of the existing builtin. Defaults to ``False``.
+        force (bool, optional): Whether to replace the builtin if content differs. Defaults to ``False``.
         lstrip_blocks (bool, optional): Strip leading spaces and tabs from blocks. Defaults to ``False``.
         trim_blocks (bool, optional): Remove first newline after a block. Defaults to ``False``.
         newline_sequence (str, optional): Newline sequence to use ('\\n', '\\r', '\\r\\n'). Defaults to ``None``.
-        output_encoding (str, optional): Encoding for the output file. Defaults to ``None``.
+        output_encoding (str, optional): Encoding for the output builtin. Defaults to ``None``.
         block_start_string (str, optional): String marking block start. Defaults to ``None``.
         block_end_string (str, optional): String marking block end. Defaults to ``None``.
         variable_start_string (str, optional): String marking variable start. Defaults to ``None``.
@@ -35,23 +35,38 @@ class Template():
         comment_start_string (str, optional): String marking comment start. Defaults to ``None``.
         comment_end_string (str, optional): String marking comment end. Defaults to ``None``.
         validate (str, optional): Validation command to run before final copy. Defaults to ``None``.
-        attrs (dict, optional): File attributes to set after writing the file. Defaults to ``None``.
-
-    Methods:
-        execute():
-            Executes the template rendering and file transfer logic.
+        attrs (dict, optional): File attributes to set after writing the builtin. Defaults to ``None``.
 
     **Examples:**
 
     .. code:: python
 
-        template = Template(
-            src="/local/templates/nginx.conf.j2",
-            dest="/etc/nginx/nginx.conf",
-            vars={"worker_processes": 4, "server_name": "example.com"},
-            attrs={"permissions": 0o644}
+        # Create temporary build directory
+        yield Tempfile(
+            state="directory",
+            suffix="build",
         )
-        yield template.execute()
+
+        # Create temporary file
+        yield Tempfile(
+            state="file",
+            suffix="temp",
+        )
+        # register: tempfile_1
+
+        # Create a temporary file with a specific prefix
+        yield Tempfile(
+            state="file",
+            suffix="txt",
+            prefix="myfile_",
+        )
+
+        # Use the registered var and the file module to remove the temporary file
+        yield File(
+            path="{{ tempfile_1.path }}",
+            state="absent",
+        )
+        # when: tempfile_1.path is defined
 
     Usage:
         This class is designed to be used in a generator-based workflow where
@@ -102,12 +117,12 @@ class Template():
         return hashlib.md5(content.encode('utf-8')).hexdigest()
 
     def _read_template_file(self):
-        """Read the template file with UTF-8 encoding."""
+        """Read the template builtin with UTF-8 encoding."""
         try:
             with open(self.src, 'r', encoding='utf-8') as f:
                 return f.read()
         except Exception as e:
-            raise Exception(f"Failed to read template file '{self.src}': {str(e)}")
+            raise Exception(f"Failed to read template builtin '{self.src}': {str(e)}")
 
     def _render_template(self, template_content):
         """Render the Jinja2 template with the provided variables."""
@@ -166,7 +181,7 @@ class Template():
             rendered_content = self._ensure_string_content(rendered_content)
             new_checksum = self._calculate_checksum(rendered_content)
 
-            # Step 2: Check if remote file exists and compare content
+            # Step 2: Check if remote builtin exists and compare content
             remote_exists = False
             remote_checksum = None
             remote_content = None
@@ -199,7 +214,7 @@ class Template():
                     yield Setstat(path=self.dest, attrs=self.attrs)
                 return
 
-            # Step 4: Create backup if requested and file exists
+            # Step 4: Create backup if requested and builtin exists
             if self.backup and remote_exists and remote_content:
                 print(f"Creating backup at {self.dest}.backup")
                 yield Write_file(path=f"{self.dest}.backup", text=remote_content)
@@ -213,11 +228,11 @@ class Template():
                 if not validation_passed:
                     raise Exception(f"Validation command failed: {self.validate}")
 
-            # Step 6: Write the rendered content to remote file
+            # Step 6: Write the rendered content to remote builtin
             print(f"Writing template to: {self.dest}")
             yield Write_file(path=self.dest, text=rendered_content)
 
-            # Step 7: Set file attributes if provided
+            # Step 7: Set builtin attributes if provided
             if self.attrs:
                 print(f"Setting attributes for {self.dest}: {self.attrs}")
                 yield Setstat(path=self.dest, attrs=self.attrs)
@@ -236,18 +251,18 @@ class Template():
             # Ensure content is string for validation
             content = self._ensure_string_content(content)
 
-            # Create temporary file with rendered content
+            # Create temporary builtin with rendered content
             with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', delete=False) as temp_file:
                 temp_file.write(content)
                 temp_path = temp_file.name
 
-            # Replace %s in validate command with temp file path
+            # Replace %s in validate command with temp builtin path
             validate_cmd = self.validate.replace('%s', temp_path)
 
             # Execute validation command
             result = yield Command(command=validate_cmd)
 
-            # Clean up temp file
+            # Clean up temp builtin
             os.unlink(temp_path)
 
             return result.return_code == 0

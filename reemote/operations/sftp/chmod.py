@@ -4,12 +4,12 @@ from reemote.command import Command
 
 class Chmod:
     """
-    A class to encapsulate the functionality of chmod (change file mode) in
+    A class to encapsulate the functionality of chmod (change builtin mode) in
     Unix-like operating systems.
 
     Attributes:
-        path (str): The file or directory path to change permissions for.
-        mode (int): The new file permissions, expressed as an octal integer (e.g., 0o755).
+        path (str): The builtin or directory path to change permissions for.
+        mode (int): The new builtin permissions, expressed as an octal integer (e.g., 0o755).
         follow_symlinks (bool): Whether or not to follow symbolic links (default: True).
 
     **Examples:**
@@ -36,7 +36,7 @@ class Chmod:
 
     @staticmethod
     async def _chmod_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for file permission change"""
+        """Static callback method for builtin permission change"""
 
         # Validate host_info
         required_keys = ['host', 'username', 'password']
@@ -53,7 +53,7 @@ class Chmod:
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    # Change the permissions of the remote file/directory
+                    # Change the permissions of the remote builtin/directory
                     await sftp.chmod(
                         path=caller.path,
                         mode=caller.mode,

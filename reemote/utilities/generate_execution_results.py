@@ -88,7 +88,7 @@ def generate_table(data):
      This function takes a list of event data, processes it into a tabular
      format, and then uses the `tabulate` library to create a formatted
      string representation of the table. It is ideal for displaying
-     command execution results in a console or log file.
+     command execution results in a console or log builtin.
 
      It internally uses `_generate_table` to structure the data before
      formatting.
@@ -123,7 +123,7 @@ def generate_grid(data):
     This function takes a list of event data, processes it into a tabular
     format, and then uses the `tabulate` library to create a formatted
     string representation of the table. It is ideal for displaying
-    command execution results in a console or log file.
+    command execution results in a console or log builtin.
 
     It internally uses `_generate_table` to structure the data before
     formatting.

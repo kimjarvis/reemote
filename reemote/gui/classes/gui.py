@@ -42,5 +42,5 @@ class Gui:
 
     def upload_inventory(self):
         return ui.upload(label="UPLOAD INVENTORY",
-             on_upload=self.handle_upload,  # Handle the file upload
+             on_upload=self.handle_upload,  # Handle the builtin upload
         ).props('accept=.py').classes('max-w-full')

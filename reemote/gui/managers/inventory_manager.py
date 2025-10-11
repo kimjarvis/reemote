@@ -17,9 +17,9 @@ def inventory_manager(tabs, inventory, versions, manager, stdout_report, executi
                 ).props('accept=.py').classes('max-w-full')
 
                 ui.markdown("""
-                Use the + to upload an inventory file.
+                Use the + to upload an inventory builtin.
     
-                An inventory is a python file that defines an inventory() function, like this:
+                An inventory is a python builtin that defines an inventory() function, like this:
     
                 ```python
                 from typing import List, Tuple, Dict, Any
@@ -44,6 +44,6 @@ def inventory_manager(tabs, inventory, versions, manager, stdout_report, executi
                 - The first, contains the parameters of Asyncio connect.
                 - The second, contains information for su and sudo access and global values.
     
-                The inventory file format is described in detail [here](http://reemote.org/inventory.html).
+                The inventory builtin format is described in detail [here](http://reemote.org/inventory.html).
                 """)
 
