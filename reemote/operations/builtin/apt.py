@@ -2,181 +2,272 @@ from reemote.command import Command
 
 
 class Apt:
-    """
-    A class to encapsulate the functionality of apt package management in Debian/Ubuntu systems.
-    It generates appropriate apt commands that can be passed to the Shell class for execution.
+    """Apt.
+    A class to encapsulate the functionality of apt package management in
+    Debian/Ubuntu systems. It generates appropriate apt commands that can be
+    passed to the Shell class for execution.
 
-    Attributes:
-        name (list): A list of package names, like ['foo'], or package specifier with version, like ['foo=1.0'].
-        state (str): Indicates the desired package state. Choices: "absent", "build-dep", "latest", "present", "fixed".
-        allow_change_held_packages (bool): Allows changing the version of a package which is on the apt hold list.
-        allow_downgrade (bool): Corresponds to the --allow-downgrades option for apt.
+    ## Attributes:
+
+        name (list): A list of package names, like ``['foo']``, or a package
+            specifier with version, like ``['foo=1.0']``.
+
+        state (str): Indicates the desired package state.
+            Choices: ``"absent"``, ``"build-dep"``, ``"latest"``, ``"present"``, ``"fixed"``.
+
+        allow_change_held_packages (bool): Allows changing the version of a
+            package which is on the apt hold list.
+
+        allow_downgrade (bool): Corresponds to the ``--allow-downgrades``
+            option for apt.
+
         allow_unauthenticated (bool): Ignore if packages cannot be authenticated.
-        auto_install_module_deps (bool): Automatically install dependencies required to run this module.
-        autoclean (bool): If true, cleans the local repository of retrieved package files.
-        autoremove (bool): If true, remove unused dependency packages.
-        cache_valid_time (int): Update the apt cache if it is older than this time (in seconds).
-        clean (bool): Run the equivalent of apt-get clean to clear out the local repository.
-        deb (str): Path to a .deb package on the remote machine.
-        default_release (str): Corresponds to the -t option for apt and sets pin priorities.
-        dpkg_options (str): Add dpkg options to apt command.
-        fail_on_autoremove (bool): Corresponds to the --no-remove option for apt.
-        force (bool): Corresponds to the --force-yes to apt-get (destructive operation).
-        force_apt_get (bool): Force usage of apt-get instead of aptitude.
+
+        auto_install_module_deps (bool): Automatically install dependencies
+            required to run this module.
+
+        autoclean (bool): If true, cleans the local repository of retrieved
+            package files (``apt-get autoclean``).
+
+        autoremove (bool): If true, remove unused dependency packages
+            (``apt-get autoremove``).
+
+        cache_valid_time (int): Update the apt cache if it is older than
+            this time in seconds.
+
+        clean (bool): Run the equivalent of ``apt-get clean`` to clear out
+            the local repository.
+
+        deb (str): Path to a ``.deb`` package on the remote machine.
+
+        default_release (str): Corresponds to the ``-t`` option for apt and
+            sets pin priorities.
+
+        dpkg_options (str): Add dpkg options to the apt command.
+
+        fail_on_autoremove (bool): Corresponds to the ``--no-remove`` option
+            for apt.
+
+        force (bool): Corresponds to the ``--force-yes`` to apt-get
+            (destructive operation).
+
+        force_apt_get (bool): Force usage of ``apt-get`` instead of ``aptitude``.
+
         install_recommends (bool): Whether to install recommended packages.
-        lock_timeout (int): How many seconds to wait to acquire a lock on the apt db.
+
+        lock_timeout (int): Seconds to wait to acquire a lock on the apt db.
+
         only_upgrade (bool): Only upgrade a package if it is already installed.
-        policy_rc_d (int): Force the exit code of /usr/sbin/policy-rc.d.
-        purge (bool): Will force purging of configuration files if state=absent or autoremove=yes.
-        update_cache (bool): Run the equivalent of apt-get update before the operation.
-        update_cache_retries (int): Amount of retries if the cache update fails.
-        update_cache_retry_max_delay (int): Max delay for exponential backoff during cache update retries.
-        upgrade (str): Type of upgrade to perform. Choices: "dist", "full", "no", "safe", "yes".
-        guard (bool): If `False` the commands will not be executed.
-        sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
-        su (bool): If `True`, the commands will be executed with `su` privileges.
 
-    **Examples:**
+        policy_rc_d (int): Force the exit code of ``/usr/sbin/policy-rc.d``.
 
-    .. code:: python
+        purge (bool): Will force purging of configuration files if
+            ``state="absent"`` or ``autoremove=True``.
 
-        # Install apache httpd (state=present is optional)
+        update_cache (bool): Run ``apt-get update`` before the operation.
+
+        update_cache_retries (int): Number of retries if the cache update fails.
+
+        update_cache_retry_max_delay (int): Max delay for exponential backoff
+            during cache update retries.
+
+        upgrade (str): Type of upgrade to perform.
+            Choices: ``"dist"``, ``"full"``, ``"no"``, ``"safe"``, ``"yes"``.
+
+        guard (bool): If ``False`` the commands will not be executed.
+
+        sudo (bool): If ``True``, execute commands with ``sudo`` privileges.
+
+        su (bool): If ``True``, execute commands with ``su`` privileges.
+
+        ## Examples:
+
+        Install apache httpd (state="present" is the default):
+
+        ```python
         yield Apt(
             name="apache2",
             state="present",
         )
+        ```
 
-        # Update repositories cache and install "foo" package
+        Update repositories cache and install the "foo" package:
+
+        ```python
         yield Apt(
             name="foo",
             update_cache=True,
         )
+        ```
 
-        # Remove "foo" package
+        Remove the "foo" package:
+
+        ```python
         yield Apt(
             name="foo",
             state="absent",
         )
+        ```
 
-        # Install the package "foo"
+        Install a list of packages:
+
+        ```python
         yield Apt(
-            name="foo",
+            name=["foo", "foo-tools"],
         )
+        ```
 
-        # Install a list of packages
-        yield Apt(
-            pkg=["foo", "foo-tools"],
-        )
+        Install a specific version of a package:
 
-        # Install the version '1.00' of package "foo"
+        ```python
         yield Apt(
             name="foo=1.00",
         )
+        ```
 
-        # Update the repository cache and update package "nginx" to latest version using default release squeeze-backport
+        Update cache and upgrade "nginx" from a specific release:
+
+        ```python
         yield Apt(
             name="nginx",
             state="latest",
             default_release="squeeze-backports",
             update_cache=True,
         )
+        ```
 
-        # Install the version '1.18.0' of package "nginx" and allow potential downgrades
+        Install a specific version of "nginx", allowing downgrades:
+
+        ```python
         yield Apt(
             name="nginx=1.18.0",
             state="present",
             allow_downgrade=True,
         )
+        ```
 
-        # Install zfsutils-linux with ensuring conflicted packages (e.g. zfs-fuse) will not be removed.
+        Install a package without removing conflicting packages:
+
+        ```python
         yield Apt(
             name="zfsutils-linux",
             state="latest",
             fail_on_autoremove=True,
         )
+        ```
 
-        # Install latest version of "openjdk-6-jdk" ignoring "install-recommends"
+        Install a package without its recommended dependencies:
+
+        ```python
         yield Apt(
             name="openjdk-6-jdk",
             state="latest",
             install_recommends=False,
         )
+        ```
 
-        # Update all packages to their latest version
+        Update all packages to their latest version:
+
+        ```python
         yield Apt(
             name="*",
             state="latest",
         )
+        ```
 
-        # Upgrade the OS (apt-get dist-upgrade)
+        Upgrade the OS (equivalent to `apt-get dist-upgrade`):
+
+        ```python
         yield Apt(
             upgrade="dist",
         )
+        ```
 
-        # Run the equivalent of "apt-get update" as a separate step
+        Run `apt-get update` as a standalone operation:
+
+        ```python
         yield Apt(
             update_cache=True,
         )
+        ```
 
-        # Only run "update_cache=yes" if the last one is more than 3600 seconds ago
+        Update the cache only if it's older than 3600 seconds:
+
+        ```python
         yield Apt(
             update_cache=True,
             cache_valid_time=3600,
         )
+        ```
 
-        # Pass options to dpkg on run
+        Pass custom options to dpkg during an upgrade:
+
+        ```python
         yield Apt(
             upgrade="dist",
             update_cache=True,
             dpkg_options="force-confold,force-confdef",
         )
+        ```
 
-        # Install a .deb package
+        Install a local .deb package:
+
+        ```python
         yield Apt(
             deb="/tmp/mypackage.deb",
         )
+        ```
 
-        # Install the build dependencies for package "foo"
-        yield Apt(
-            pkg="foo",
-            state="build-dep",
-        )
+        Install a ``.deb`` package from a URL:
 
-        # Install a .deb package from the internet
+        ```python
         yield Apt(
             deb="https://example.com/python-ppq_0.1-1_all.deb",
         )
+        ```
 
-        # Remove useless packages from the cache
+        Install the build dependencies for a package:
+
+        ```python
+        yield Apt(
+            name="foo",
+            state="build-dep",
+        )
+        ```
+
+        Remove useless packages from the cache (`autoclean`):
+
+        ```python
         yield Apt(
             autoclean=True,
         )
+        ```
 
-        # Remove dependencies that are no longer required
+        Remove dependencies that are no longer required (`autoremove`):
+
+        ```python
         yield Apt(
             autoremove=True,
         )
+        ```
 
-        # Remove dependencies that are no longer required and purge their configuration files
+        Autoremove packages and purge their configuration files:
+
+        ```python
         yield Apt(
             autoremove=True,
             purge=True,
         )
+        ```
 
-        # Run the equivalent of "apt-get clean" as a separate step
+        Clear the entire local package cache (`clean`):
+
+        ```python
         yield Apt(
             clean=True,
         )
-
-    Usage:
-        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
-
-    Notes:
-        - Commands are constructed based on the various apt options and flags.
-        - Most operations require elevated privileges (sudo/su).
-
+        ```
     """
-
     def __init__(self,
                  name: list = None,
                  state: str = "present",

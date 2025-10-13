@@ -8,15 +8,20 @@ class Operation_update:
     update commands.
 
     Attributes:
+
         guard: Specifies whether to enable guard to monitor changes during
                the update process (default is True).
+
         sudo: A flag to indicate if the update should be executed with
               superuser privileges using 'sudo' (default is False).
+
         su: A flag to indicate if the update should be executed with
             a user switch (default is False).
 
     Methods:
+
         execute:
+
             Executes the update process while optionally monitoring for
             changes and employing privilege settings depending on `guard`,
             `sudo`, and `su` attributes.
