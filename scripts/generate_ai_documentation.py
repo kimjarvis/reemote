@@ -2,82 +2,18 @@ import os
 import re
 from pathlib import Path
 import argparse
-import pypandoc  # Ensure pandoc is installed: https://pandoc.org/installing.html
-
-
-def clean_pandoc_output(text):
-    """
-    Clean up common conversion artifacts from pypandoc RST to Markdown conversion.
-
-    Args:
-        text (str): The converted markdown text.
-
-    Returns:
-        str: Cleaned markdown text.
-    """
-    # Remove unwanted > blockquote symbols at start of lines
-    text = re.sub(r'^> ', '', text, flags=re.MULTILINE)
-
-    # Clean up attribute and method formatting
-    text = re.sub(r'\n:\s*\n', '\n\n', text)  # Remove empty : lines
-    text = re.sub(r'\n\s*:\s*', ' ', text)  # Join broken attribute lines
-
-    # Fix reference formatting
-    text = re.sub(r'\[([^\]]+)\]{\.title-ref}', r'`\1`', text)
-
-    # Clean up extra whitespace
-    text = re.sub(r'\n{3,}', '\n\n', text)  # Replace 3+ newlines with 2
-    text = text.strip()
-
-    return text
-
-
-def convert_docstring_to_markdown(docstring):
-    """
-    Convert docstring to markdown format with careful handling of RST syntax.
-
-    Args:
-        docstring (str): The original docstring content.
-
-    Returns:
-        str: Markdown formatted docstring.
-    """
-    # First, try manual conversion for common RST patterns
-    markdown = docstring
-
-    # Convert RST attributes/methods to markdown
-    markdown = re.sub(r'^(\w+):\s*$', r'**\1:**', markdown, flags=re.MULTILINE)
-
-    # Convert RST code references to markdown
-    markdown = re.sub(r'``([^`]+)``', r'`\1`', markdown)
-
-    # Ensure proper line breaks
-    markdown = markdown.replace('\n', '  \n')  # Two spaces for markdown line breaks
-
-    # Try pypandoc conversion as fallback for complex RST
-    try:
-        pandoc_output = pypandoc.convert_text(docstring, 'markdown', format='rst')
-        # Only use pandoc output if it's better than our manual conversion
-        if len(pandoc_output.strip()) > len(markdown.strip()):
-            cleaned_pandoc = clean_pandoc_output(pandoc_output)
-            if cleaned_pandoc:
-                markdown = cleaned_pandoc
-    except (ImportError, Exception):
-        # If pypandoc fails, use our manual conversion
-        pass
-
-    return markdown.strip()
+import json
 
 
 def extract_docstring(file_path):
     """
-    Extracts the docstring from a Python file and converts it to Markdown format.
+    Extracts the docstring from a Python file without any conversion.
 
     Args:
         file_path (str): Path to the Python file.
 
     Returns:
-        str: Markdown-formatted docstring, or an empty string if no docstring is found.
+        str: Raw docstring content as it appears in the file.
     """
     try:
         with open(file_path, "r", encoding="utf-8") as file:
@@ -89,10 +25,7 @@ def extract_docstring(file_path):
             return ""
 
         docstring = docstring_match.group(1).strip()
-
-        # Use our improved conversion function
-        markdown_docstring = convert_docstring_to_markdown(docstring)
-        return markdown_docstring
+        return docstring
 
     except Exception as e:
         print(f"Error extracting docstring from {file_path}: {e}")
@@ -144,69 +77,47 @@ def should_ignore_file(file_path):
     return any(pattern in file_path for pattern in ignore_patterns)
 
 
-def write_to_markdown(file_path, output_file, content, docstring=None):
+def create_file_object(file_path, content, docstring=None):
     """
-    Writes the file content to the markdown file with appropriate formatting for Qwen AI.
+    Creates a JSON object for a file with the required fields.
 
     Args:
         file_path (str): Path to the source file.
-        output_file (file object): Opened markdown file for writing.
-        content (str): Complete file content to write (including docstrings).
-        docstring (str, optional): Extracted and formatted docstring to include before the code block. Defaults to None.
+        content (str): Complete file content.
+        docstring (str, optional): Extracted docstring. Defaults to None.
+
+    Returns:
+        dict: JSON object with path, doc, and source fields.
     """
     try:
-        relative_path = os.path.relpath(file_path, start=Path.cwd())
+        # Use absolute path for the path field
+        absolute_path = os.path.abspath(file_path)
 
-        # Write file header
-        output_file.write(f"## File: `{relative_path}`\n\n")
-
-        # Write extracted docstring as overview (if exists)
-        if docstring:
-            output_file.write("### Overview\n")
-            output_file.write(f"{docstring}\n\n")
-
-        # Write the complete source code
-        output_file.write("### Source Code\n")
-        extension = os.path.splitext(file_path)[1][1:]
-
-        # Map extensions to language identifiers for syntax highlighting
-        lang_map = {
-            'py': 'python',
-            'yaml': 'yaml',
-            'yml': 'yaml',
-            'md': 'markdown',
-            'txt': 'text',
-            'json': 'json',
-            'js': 'javascript',
-            'html': 'html',
-            'css': 'css',
-            'sql': 'sql'
+        file_obj = {
+            "path": absolute_path,
+            "doc": docstring or "",
+            "source": content
         }
 
-        language = lang_map.get(extension, extension)
-        output_file.write(f"```{language}\n")
-        output_file.write(content)
-        if not content.endswith('\n'):
-            output_file.write('\n')
-        output_file.write("```\n\n")
-
-        # Add separator between files
-        output_file.write("---\n\n")
+        return file_obj
 
     except Exception as e:
-        print(f"Error writing to markdown for {file_path}: {e}")
+        print(f"Error creating JSON object for {file_path}: {e}")
+        return None
 
 
-def process_file(file_path, output_file):
+def process_file(file_path):
     """
-    Process a single file and write its content to the markdown output.
+    Process a single file and return its JSON object.
 
     Args:
         file_path (str): Path to the file to process.
-        output_file (file object): Opened markdown file for writing.
+
+    Returns:
+        dict: JSON object for the file, or None if file should be ignored.
     """
     if should_ignore_file(file_path):
-        return
+        return None
 
     extension = os.path.splitext(file_path)[1].lower()
 
@@ -215,29 +126,35 @@ def process_file(file_path, output_file):
         if extension == ".py":
             docstring = extract_docstring(file_path)
             content = get_file_content(file_path)
-            write_to_markdown(file_path, output_file, content, docstring)
+            return create_file_object(file_path, content, docstring)
 
         # Process other supported file types
         elif extension in [".yaml", ".yml", ".md", ".txt", ".json", ".js", ".html", ".css"]:
             content = get_file_content(file_path)
-            write_to_markdown(file_path, output_file, content)
+            return create_file_object(file_path, content)
 
     except UnicodeDecodeError:
         print(f"Skipping binary file: {file_path}")
+        return None
     except Exception as e:
         print(f"Error processing file {file_path}: {e}")
+        return None
 
 
-def process_directory(directory, output_file):
+def process_directory(directory):
     """
-    Recursively processes the directory, extracting and writing file contents.
+    Recursively processes the directory, extracting file contents and creating JSON objects.
 
     Args:
         directory (str): Path to the directory to process.
-        output_file (file object): Opened markdown file for writing.
+
+    Returns:
+        list: List of JSON objects for each file.
     """
     if not os.path.exists(directory):
         raise FileNotFoundError(f"Directory '{directory}' does not exist.")
+
+    file_objects = []
 
     for root, dirs, files in os.walk(directory):
         # Skip ignored directories in-place
@@ -248,13 +165,17 @@ def process_directory(directory, output_file):
 
         for file in files:
             file_path = os.path.join(root, file)
-            process_file(file_path, output_file)
+            file_obj = process_file(file_path)
+            if file_obj:
+                file_objects.append(file_obj)
+
+    return file_objects
 
 
 def main():
     # Set up argument parsing
     parser = argparse.ArgumentParser(
-        description="Generate documentation in Markdown format optimized for Qwen AI."
+        description="Generate code documentation in JSON format."
     )
     parser.add_argument(
         "-d", "--directory",
@@ -263,13 +184,8 @@ def main():
     )
     parser.add_argument(
         "-o", "--output",
-        default="code_documentation.md",
-        help="Output markdown file name (default: code_documentation.md)."
-    )
-    parser.add_argument(
-        "--no-pandoc",
-        action="store_true",
-        help="Disable pypandoc conversion and use manual conversion only."
+        default="code.json",
+        help="Output JSON file name (default: code.json)."
     )
     parser.add_argument(
         "-v", "--verbose",
@@ -281,28 +197,17 @@ def main():
 
     # Process the specified directory
     try:
-        with open(args.output, "w", encoding="utf-8") as md_file:
-            # Write document header optimized for Qwen AI
-            md_file.write("# Code Documentation\n\n")
-            md_file.write("This document contains the complete source code from the project. ")
-            md_file.write("Each file is presented with its full content including docstrings and comments. ")
-            md_file.write(
-                "The documentation is structured to help AI assistants understand the codebase and provide meaningful suggestions.\n\n")
+        # Process files and get JSON objects
+        file_objects = process_directory(args.directory)
 
-            md_file.write(f"**Source Directory:** `{args.directory}`\n\n")
-            md_file.write("## Files\n\n")
-
-            # Process files
-            process_directory(args.directory, md_file)
-
-            # Write footer
-            md_file.write("## End of Documentation\n")
-            md_file.write("*This document was automatically generated.*\n")
+        # Write to JSON file
+        with open(args.output, "w", encoding="utf-8") as json_file:
+            json.dump(file_objects, json_file, indent=2, ensure_ascii=False)
 
         if args.verbose:
             print(f"✅ Successfully processed directory '{args.directory}'")
-            print(f"📄 Documentation written to '{args.output}'")
-            print("🤖 Format optimized for Qwen AI comprehension")
+            print(f"📄 JSON documentation written to '{args.output}'")
+            print(f"📊 Processed {len(file_objects)} files")
 
     except Exception as e:
         print(f"❌ Error: {e}")

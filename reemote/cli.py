@@ -8,14 +8,33 @@ from reemote.utilities.verify_python_file import verify_python_file
 from reemote.utilities.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
 from reemote.utilities.validate_inventory_structure import validate_inventory_structure
 from reemote.utilities.write_responses_to_file import write_responses_to_file
-from reemote.utilities.produce_table import produce_table
-from reemote.utilities.produce_output_table import produce_output_table
 from reemote.utilities.produce_json import produce_json
 
 from reemote.utilities.convert_to_df import convert_to_df
 from reemote.utilities.convert_to_tabulate import convert_to_tabulate
 
 async def main():
+    """
+    Main entry point for the reemote CLI tool.
+
+    This function parses command-line arguments, validates input files and parameters,
+    executes remote operations, and outputs results in the specified format.
+
+    The CLI requires three main arguments:
+    - Inventory file: Defines the target hosts for deployment
+    - Source file: Python file containing the deployment class
+    - Class name: The deployment class with an execute method
+
+    Optional arguments allow specifying output file and format.
+
+    Supported output formats:
+    - grid: Tabular format with grid borders
+    - json: Raw JSON output
+    - rst: reStructuredText table format
+
+    Returns:
+        None: Results are printed to stdout or written to a file
+    """
     import argparse
     import sys
 
