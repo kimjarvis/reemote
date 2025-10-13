@@ -6,8 +6,36 @@ from reemote.facts.apt.get_packages import Get_packages
 
 class Upgrade(Operation_upgrade):
     """
-    A class to manage package operations on a remote system using `apt`.
+    A class to manage package upgrade operations on a remote system using [apt](file:///home/kim/reemote/reemote/operations/builtin/apt.py#L0-L470).
+
+    This class provides functionality to upgrade installed packages on Debian/Ubuntu systems
+    using the apt package manager. It allows configuration of execution privileges and
+    safety guards for package upgrade operations.
+
+    Attributes:
+        guard (bool): If `False` the commands will not be executed.
+        sudo (bool): If `True`, the commands will be executed with [sudo](file:///home/kim/reemote/reemote/command.py#L11-L11) privileges.
+        su (bool): If `True`, the commands will be executed with [su](file:///home/kim/reemote/reemote/command.py#L12-L12) privileges.
+
+    **Examples:**
+
+    .. code:: python
+
+        # Upgrade installed packages on all hosts
+        r = yield Upgrade()
+        # Check if the operation was successful
+        if r.cp.return_code == 0:
+            print("Packages upgraded successfully")
+
+    Usage:
+        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
+
+    Notes:
+        - Uses `apt upgrade` command internally for upgrading packages.
+        - Inherits from [Operation_upgrade](file:///home/kim/reemote/reemote/operation_upgrade.py#L0-L58) base class.
+        - This operation upgrades installed packages to their latest versions.
     """
+
 
     def __init__(self,
                  guard: bool = True,

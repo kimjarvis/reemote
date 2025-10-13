@@ -6,7 +6,32 @@ from reemote.facts.apk.get_packages import Get_packages
 
 class Update(Operation_update):
     """
-    A class to manage package operations on a remote system using `apk`.
+    A class to manage package update operations on a remote system using `apk`.
+
+    This class provides functionality to update packages on Alpine Linux systems
+    and allows configuration of execution privileges and safety guards.
+
+    Attributes:
+        guard (bool): If `False` the commands will not be executed.
+        sudo (bool): If `True`, the commands will be executed with [sudo](file:///home/kim/reemote/reemote/command.py#L11-L11) privileges.
+        su (bool): If `True`, the commands will be executed with [su](file:///home/kim/reemote/reemote/command.py#L12-L12) privileges.
+
+    **Examples:**
+
+    .. code:: python
+
+        # Update packages on all hosts
+        r = yield Update()
+        # Check if the operation was successful
+        if r.cp.return_code == 0:
+            print("Packages updated successfully")
+
+    Usage:
+        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
+
+    Notes:
+        - Commands are constructed based on the [sudo](file:///home/kim/reemote/reemote/command.py#L11-L11), and [su](file:///home/kim/reemote/reemote/command.py#L12-L12) flags.
+        - Uses the `apk update` command internally for package management.
     """
 
     def __init__(self,

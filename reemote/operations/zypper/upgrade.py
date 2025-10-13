@@ -6,7 +6,34 @@ from reemote.facts.zypper.get_packages import Get_packages
 
 class Upgrade(Operation_upgrade):
     """
-    A class to manage package operations on a remote system using `zypper`.
+    A class to manage package upgrade operations on a remote system using `zypper`.
+
+    This class provides functionality to upgrade installed packages on openSUSE/SUSE systems
+    using the zypper package manager. It allows configuration of execution privileges and
+    safety guards for package upgrade operations.
+
+    Attributes:
+        guard (bool): If `False` the commands will not be executed.
+        sudo (bool): If `True`, the commands will be executed with sudo privileges.
+        su (bool): If `True`, the commands will be executed with su privileges.
+
+    **Examples:**
+
+    .. code:: python
+
+        # Upgrade installed packages on all hosts
+        r = yield Upgrade()
+        # Check if the operation was successful
+        if r.cp.return_code == 0:
+            print("Packages upgraded successfully")
+
+    Usage:
+        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
+
+    Notes:
+        - Uses `zypper upgrade` command internally for upgrading packages.
+        - Inherits from [Operation_upgrade](file:///home/kim/reemote/reemote/operation_upgrade.py#L0-L58) base class.
+        - This operation upgrades installed packages to their latest versions.
     """
 
     def __init__(self,
