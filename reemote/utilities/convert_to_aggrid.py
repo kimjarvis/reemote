@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com 
+# This software is licensed under the MIT License. See the LICENSE file for details.
+#
 def convert_to_aggrid(df):
     """
     Converts a pandas DataFrame into a format suitable for AG-Grid.

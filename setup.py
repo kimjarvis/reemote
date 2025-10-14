@@ -1,8 +1,11 @@
+# Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com 
+# This software is licensed under the MIT License. See the LICENSE file for details.
+#
 from setuptools import setup, find_packages
 
 setup(
     name="reemote",  # Name of your package
-    version="0.0.17",   # Version number
+    version="0.0.18",   # Version number
     description="A Python package for reemote functionality",  # Short description
     long_description="""
     Reemote is a Python API for task automation, configuration management and application deployment.

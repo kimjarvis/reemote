@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com 
+# This software is licensed under the MIT License. See the LICENSE file for details.
+#
 class Script:
     """
     A class to encapsulate the functionality of shell scripts in Unix-like operating systems.

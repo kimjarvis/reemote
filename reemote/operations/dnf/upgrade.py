@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com 
+# This software is licensed under the MIT License. See the LICENSE file for details.
+#
 from typing import List
 from reemote.operation_upgrade import Operation_upgrade
 from reemote.commands.dnf.upgrade import Upgrade
