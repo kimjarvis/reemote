@@ -1,227 +1,204 @@
-import re
-from asyncssh.sftp import SFTPAttrs
-
-from reemote.operations.sftp.read_file import Read_file
-from reemote.operations.sftp.write_file import Write_file
-from reemote.operations.sftp.setstat import Setstat
+from reemote.command import Command
 
 
-class Blockinfile:
-
+class BlockInFile:
     """
-    A class to manage blocks of text in files using marker lines.
+    A class to encapsulate the functionality of the ansible.builtin.blockinfile module.
+    This module inserts, updates, or removes a block of multi-line text surrounded by marker lines in a file.
 
-    This class is inspired by Ansible's `blockinfile` module. It allows inserting,
-    updating, or removing a block of text between customizable marker lines in a file.
-    The class also supports setting file attributes such as permissions, ownership,
-    and group information.
+    Attributes:
+        path (str): The file to modify.
+        block (str): The text to insert inside the marker lines.
+        state (str): Whether the block should be there or not ("present" or "absent").
+        marker (str): The marker line template.
+        marker_begin (str): Text inserted at {mark} in the opening marker.
+        marker_end (str): Text inserted at {mark} in the closing marker.
+        insertafter (str): Insert block after the last match of specified regex.
+        insertbefore (str): Insert block before the last match of specified regex.
+        create (bool): Create a new file if it does not exist.
+        backup (bool): Create a backup file with timestamp information.
+        append_newline (bool): Append a blank line to the inserted block.
+        prepend_newline (bool): Prepend a blank line to the inserted block.
+        owner (str): Name of the user that should own the file.
+        group (str): Name of the group that should own the file.
+        mode (str): The permissions the resulting file should have.
+        attributes (str): The attributes the resulting file should have.
+        seuser (str): The user part of the SELinux file context.
+        serole (str): The role part of the SELinux file context.
+        setype (str): The type part of the SELinux file context.
+        selevel (str): The level part of the SELinux file context.
+        unsafe_writes (bool): Allow unsafe writes if atomic operations fail.
+        validate (str): Validation command to run before copying the file.
+        guard (bool): If False, the commands will not be executed.
 
-    Args:
-        path (str): The path to the file to modify.
-        block (str, optional): The text to insert inside the marker lines. If empty or None,
-            the block will be removed if `state="absent"`. Defaults to "".
-        marker (str, optional): The marker line template. `{mark}` will be replaced with the values
-            in `marker_begin` (default="BEGIN") and `marker_end` (default="END").
-            Defaults to "# {mark} ANSIBLE MANAGED BLOCK".
-        marker_begin (str, optional): The text to replace `{mark}` in the opening marker line.
-            Defaults to "BEGIN".
-        marker_end (str, optional): The text to replace `{mark}` in the closing marker line.
-            Defaults to "END".
-        state (str, optional): Whether the block should be present or absent. Choices are:
-            "present" (default): Ensure the block exists.
-            "absent": Remove the block if it exists.
-            Defaults to "present".
-        create (bool, optional): Create a new file if it does not exist. Defaults to False.
-        insertafter (str, optional): Insert the block after the last match of the specified regular
-            expression. Special value "EOF" inserts the block at the end of the file.
-            Defaults to None.
-        insertbefore (str, optional): Insert the block before the last match of the specified regular
-            expression. Special value "BOF" inserts the block at the beginning of the file.
-            Defaults to None.
-        append_newline (bool, optional): Append a blank line to the inserted block if this does not
-            appear at the end of the file. Defaults to False.
-        prepend_newline (bool, optional): Prepend a blank line to the inserted block if this does not
-            appear at the beginning of the file. Defaults to False.
-        backup (bool, optional): Create a backup file including the timestamp information so the original
-            file can be restored if needed. Defaults to False.
-        attrs (dict, optional): A dictionary containing file attributes to set, such as permissions,
-            owner, and group. Example: {"permissions": 0o644, "owner": "root", "group": "root"}.
-            Defaults to an empty dictionary.
-        unsafe_writes (bool, optional): Allow unsafe writes if atomic operations fail. Defaults to False.
+    **Examples:**
 
-    Raises:
-        ValueError: If both 'insertafter' and 'insertbefore' are specified.
+    .. code:: python
 
-    Examples:
-        Insert/Update configuration block in sshd_config:
+        # Insert/Update "Match User" configuration block in /etc/ssh/sshd_config
+        r = yield BlockInFile(
+            path="/etc/ssh/sshd_config",
+            block="Match User ansible-agent\\nPasswordAuthentication no",
+            append_newline=True,
+            prepend_newline=True
+        )
+        print(r.cp.stdout)
 
-        >>> yield Blockinfile(
-        ...     path="/etc/ssh/sshd_config",
-        ...     append_newline=True,
-        ...     prepend_newline=True,
-        ...     block="Match User ansible-agent\\nPasswordAuthentication no"
-        ... )
+        # Insert/Update eth0 configuration in /etc/network/interfaces
+        r = yield BlockInFile(
+            path="/etc/network/interfaces",
+            block="iface eth0 inet static\\n    address 192.0.2.23\\n    netmask 255.255.255.0"
+        )
+        print(r.cp.stdout)
 
-        Insert/Update network interface configuration:
+        # Remove HTML block and surrounding markers
+        r = yield BlockInFile(
+            path="/var/www/html/index.html",
+            marker="<!-- {mark} ANSIBLE MANAGED BLOCK -->",
+            block="",
+            state="absent"
+        )
+        print(r.cp.stdout)
 
-        >>> yield Blockinfile(
-        ...     path="/etc/network/interfaces",
-        ...     block="iface eth0 inet static\\naddress 192.0.2.23\\nnetmask 255.255.255.0"
-        ... )
-
-        Remove block with custom markers:
-
-        >>> yield Blockinfile(
-        ...     path="/var/www/html/index.html",
-        ...     marker="<!-- {mark} ANSIBLE MANAGED BLOCK -->",
-        ...     block=""
-        ... )
+    Usage:
+        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
 
     Notes:
-        - The `attrs` parameter is used to set file attributes via the `Setstat` class.
-        - The `insertafter` and `insertbefore` parameters are mutually exclusive.
-        - Multi-line markers are not supported and may result in repeated insertions.
+        - When using loops, ensure each block has a unique marker to prevent overwriting.
+        - The dest option from older versions is now path, but dest still works.
+        - Multiple blocks in one file require different markers per task.
     """
 
-
     def __init__(self,
-                 path="",
-                 block="",
-                 marker="# {mark} ANSIBLE MANAGED BLOCK",
-                 marker_begin="BEGIN",
-                 marker_end="END",
-                 state="present",
-                 create=False,
-                 insertafter=None,
-                 insertbefore=None,
-                 append_newline=False,
-                 prepend_newline=False,
-                 backup=False,
-                 attrs=None,
-                 unsafe_writes=False):
+                 path: str,
+                 block: str = "",
+                 state: str = "present",
+                 marker: str = "# {mark} ANSIBLE MANAGED BLOCK",
+                 marker_begin: str = "BEGIN",
+                 marker_end: str = "END",
+                 insertafter: str = None,
+                 insertbefore: str = None,
+                 create: bool = False,
+                 backup: bool = False,
+                 append_newline: bool = False,
+                 prepend_newline: bool = False,
+                 owner: str = None,
+                 group: str = None,
+                 mode: str = None,
+                 attributes: str = None,
+                 seuser: str = None,
+                 serole: str = None,
+                 setype: str = None,
+                 selevel: str = None,
+                 unsafe_writes: bool = False,
+                 validate: str = None,
+                 guard: bool = True):
+
         self.path = path
-        self.block = block.rstrip('\n')  # Normalize block to not end with newline
+        self.block = block
+        self.state = state
         self.marker = marker
         self.marker_begin = marker_begin
         self.marker_end = marker_end
-        self.state = state
-        self.create = create
         self.insertafter = insertafter
         self.insertbefore = insertbefore
+        self.create = create
+        self.backup = backup
         self.append_newline = append_newline
         self.prepend_newline = prepend_newline
-        self.backup = backup
-        self.attrs = attrs or {}  # Default to an empty dictionary if not provided
+        self.owner = owner
+        self.group = group
+        self.mode = mode
+        self.attributes = attributes
+        self.seuser = seuser
+        self.serole = serole
+        self.setype = setype
+        self.selevel = selevel
         self.unsafe_writes = unsafe_writes
+        self.validate = validate
+        self.guard = guard
 
-        # Validate mutual exclusivity
-        if self.insertafter and self.insertbefore:
-            raise ValueError("Parameters 'insertafter' and 'insertbefore' are mutually exclusive.")
-
-    def _generate_markers(self):
-        """Generate the begin and end markers."""
-        begin_marker = self.marker.format(mark=self.marker_begin)
-        end_marker = self.marker.format(mark=self.marker_end)
-        return begin_marker, end_marker
-
-    def _find_block_indices(self, lines, begin_marker, end_marker):
-        """Find the indices of the begin and end markers in the builtin."""
-        begin_index = None
-        end_index = None
-
-        for i, line in enumerate(lines):
-            if begin_marker in line:
-                begin_index = i
-            if end_marker in line:
-                end_index = i
-                break  # End marker found, no need to continue
-
-        return begin_index, end_index
+    def __repr__(self):
+        return (f"BlockInFile(path={self.path!r}, "
+                f"block={self.block!r}, "
+                f"state={self.state!r}, "
+                f"marker={self.marker!r}, "
+                f"marker_begin={self.marker_begin!r}, "
+                f"marker_end={self.marker_end!r}, "
+                f"insertafter={self.insertafter!r}, "
+                f"insertbefore={self.insertbefore!r}, "
+                f"create={self.create!r}, "
+                f"backup={self.backup!r}, "
+                f"append_newline={self.append_newline!r}, "
+                f"prepend_newline={self.prepend_newline!r}, "
+                f"owner={self.owner!r}, "
+                f"group={self.group!r}, "
+                f"mode={self.mode!r}, "
+                f"attributes={self.attributes!r}, "
+                f"seuser={self.seuser!r}, "
+                f"serole={self.serole!r}, "
+                f"setype={self.setype!r}, "
+                f"selevel={self.selevel!r}, "
+                f"unsafe_writes={self.unsafe_writes!r}, "
+                f"validate={self.validate!r}, "
+                f"guard={self.guard!r})")
 
     def execute(self):
-        """
-        :no-index:
-        """
-        r = yield Read_file(path=self.path)
-        content = r.cp.stdout
+        # Build the ansible command
+        cmd_parts = ["ansible.builtin.blockinfile"]
 
-        # Handle empty builtin or builtin not existing
-        if not content:
-            lines = []
-        elif isinstance(content, bytes):
-            lines = content.decode('utf-8').splitlines(keepends=True)
-        else:
-            lines = content.splitlines(keepends=True)
+        # Add required path parameter
+        cmd_parts.append(f"path={self.path}")
 
-        # Generate markers
-        begin_marker, end_marker = self._generate_markers()
+        # Add optional parameters
+        if self.block:
+            # Escape newlines for shell command
+            escaped_block = self.block.replace('\n', '\\n')
+            cmd_parts.append(f"block='{escaped_block}'")
+        if self.state != "present":
+            cmd_parts.append(f"state={self.state}")
+        if self.marker != "# {mark} ANSIBLE MANAGED BLOCK":
+            cmd_parts.append(f"marker='{self.marker}'")
+        if self.marker_begin != "BEGIN":
+            cmd_parts.append(f"marker_begin={self.marker_begin}")
+        if self.marker_end != "END":
+            cmd_parts.append(f"marker_end={self.marker_end}")
+        if self.insertafter:
+            cmd_parts.append(f"insertafter='{self.insertafter}'")
+        if self.insertbefore:
+            cmd_parts.append(f"insertbefore='{self.insertbefore}'")
+        if self.create:
+            cmd_parts.append("create=yes")
+        if self.backup:
+            cmd_parts.append("backup=yes")
+        if self.append_newline:
+            cmd_parts.append("append_newline=yes")
+        if self.prepend_newline:
+            cmd_parts.append("prepend_newline=yes")
+        if self.owner:
+            cmd_parts.append(f"owner={self.owner}")
+        if self.group:
+            cmd_parts.append(f"group={self.group}")
+        if self.mode:
+            cmd_parts.append(f"mode={self.mode}")
+        if self.attributes:
+            cmd_parts.append(f"attributes={self.attributes}")
+        if self.seuser:
+            cmd_parts.append(f"seuser={self.seuser}")
+        if self.serole:
+            cmd_parts.append(f"serole={self.serole}")
+        if self.setype:
+            cmd_parts.append(f"setype={self.setype}")
+        if self.selevel:
+            cmd_parts.append(f"selevel={self.selevel}")
+        if self.unsafe_writes:
+            cmd_parts.append("unsafe_writes=yes")
+        if self.validate:
+            cmd_parts.append(f"validate='{self.validate}'")
 
-        # Find existing block indices
-        begin_index, end_index = self._find_block_indices(lines, begin_marker, end_marker)
+        # Construct the full command
+        cmd = " ".join(cmd_parts)
 
-        # Step 2: Handle state = "absent"
-        if self.state == "absent":
-            if begin_index is not None and end_index is not None:
-                # Remove the block including the markers
-                del lines[begin_index:end_index + 1]
-                new_content = ''.join(lines)
-                yield Write_file(path=self.path, text=new_content)
-                return
-            else:
-                # No block to remove, nothing to do
-                return
-
-        # Step 3: Handle state = "present"
-        if self.state == "present":
-            # Prepare the new block content with markers
-            block_lines = [f"{begin_marker}\n"]
-            if self.block:
-                block_lines.append(f"{self.block}\n")
-            block_lines.append(f"{end_marker}\n")
-
-            # Append/prepend newlines if required
-            if self.append_newline and not block_lines[-2].endswith('\n\n'):
-                block_lines.insert(-1, '\n')
-            if self.prepend_newline and not block_lines[1].startswith('\n'):
-                block_lines.insert(1, '\n')
-
-            # If block already exists, replace it
-            if begin_index is not None and end_index is not None:
-                lines[begin_index:end_index + 1] = block_lines
-                new_content = ''.join(lines)
-                yield Write_file(path=self.path, text=new_content)
-                return
-
-            # If block does not exist, insert it
-            insert_index = None
-            if self.insertbefore is not None:
-                if self.insertbefore == 'BOF':
-                    insert_index = 0
-                else:
-                    pattern = self.insertbefore
-                    insert_index = len(lines)  # Default to end if pattern not found
-                    for i, line in enumerate(lines):
-                        if re.search(pattern, line):
-                            insert_index = i
-                            break
-            elif self.insertafter is not None:
-                if self.insertafter == 'EOF':
-                    insert_index = len(lines)
-                else:
-                    pattern = self.insertafter
-                    insert_index = len(lines)  # Default to end if pattern not found
-                    for i, line in enumerate(lines):
-                        if re.search(pattern, line):
-                            insert_index = i + 1
-            else:
-                # Default: append to end of builtin
-                insert_index = len(lines)
-
-            # Insert the block
-            lines[insert_index:insert_index] = block_lines
-            new_content = ''.join(lines)
-            yield Write_file(path=self.path, text=new_content)
-
-        # Step 4: Set attributes if specified
-        if self.attrs:
-            yield Setstat(path=self.path, attrs=self.attrs)
+        # Execute the command
+        r = yield Command(cmd, guard=self.guard)
+        r.changed = True
