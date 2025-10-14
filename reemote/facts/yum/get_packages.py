@@ -3,6 +3,27 @@ from reemote.execute import execute
 
 
 def parse_dnf_list_installed(output):
+    """Parses the output of 'dnf list installed' into a structured list.
+
+    This function processes the raw string output from commands like
+    `dnf list installed` or `yum list installed`. It extracts the package
+    name and version for each entry, producing a clean, structured list.
+
+    Key transformations include:
+
+    - Skipping header lines (e.g., "Installed Packages") and empty lines.
+    - Handling package names that may contain spaces.
+    - Identifying the version by locating the repository field, which starts
+      with an '@' symbol, to reliably separate it from the name.
+    - Assembling a list of dictionaries, each with 'name' and 'version' keys.
+
+    Args:
+        output (str): The raw standard output from the dnf/yum command.
+
+    Returns:
+        list[dict]: A list of dictionaries, where each dictionary represents
+          an installed package and contains 'name' and 'version' keys.
+    """
     packages = []
     lines = output.strip().splitlines()
 

@@ -7,7 +7,7 @@ from reemote.utilities.make_inventory import make_inventory
 def parse_arguments():
     """Parse command line arguments using argparse."""
     parser = argparse.ArgumentParser(
-        description='Create an inventory file for VM configuration',
+        description='Create an inventory builtin for VM configuration',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Example usage:
@@ -27,7 +27,7 @@ Example usage:
         '--inventory_filename',
         type=str,
         required=True,
-        help='Path to the inventory file (e.g., /home/kim/inventory_debian-1.py)'
+        help='Path to the inventory builtin (e.g., /home/kim/inventory_debian-1.py)'
     )
 
     parser.add_argument(
@@ -87,7 +87,7 @@ def main():
     # Parse command line arguments
     args = parse_arguments()
 
-    print("Creating inventory file with the following parameters:")
+    print("Creating inventory builtin with the following parameters:")
     print(f"  inventory_filename: {args.inventory_filename}")
     print(f"  image: {args.image}")
     print(f"  vm: {args.vm}")
@@ -111,16 +111,16 @@ def main():
             ip_address=args.ip_address
         )
 
-        print("\nInventory file created successfully!")
+        print("\nInventory builtin created successfully!")
 
         # Display the content that was written
-        print("\nContent of the inventory file:")
+        print("\nContent of the inventory builtin:")
         print("-" * 50)
         with open(args.inventory_filename, 'r') as f:
             print(f.read())
 
     except Exception as e:
-        print(f"Failed to create inventory file: {e}")
+        print(f"Failed to create inventory builtin: {e}")
         sys.exit(1)
 
 

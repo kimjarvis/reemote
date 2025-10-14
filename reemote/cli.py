@@ -8,14 +8,33 @@ from reemote.utilities.verify_python_file import verify_python_file
 from reemote.utilities.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
 from reemote.utilities.validate_inventory_structure import validate_inventory_structure
 from reemote.utilities.write_responses_to_file import write_responses_to_file
-from reemote.utilities.produce_table import produce_table
-from reemote.utilities.produce_output_table import produce_output_table
 from reemote.utilities.produce_json import produce_json
 
 from reemote.utilities.convert_to_df import convert_to_df
 from reemote.utilities.convert_to_tabulate import convert_to_tabulate
 
 async def main():
+    """
+    Main entry point for the reemote CLI tool.
+
+    This function parses command-line arguments, validates input files and parameters,
+    executes remote operations, and outputs results in the specified format.
+
+    The CLI requires three main arguments:
+    - Inventory file: Defines the target hosts for deployment
+    - Source file: Python file containing the deployment class
+    - Class name: The deployment class with an execute method
+
+    Optional arguments allow specifying output file and format.
+
+    Supported output formats:
+    - grid: Tabular format with grid borders
+    - json: Raw JSON output
+    - rst: reStructuredText table format
+
+    Returns:
+        None: Results are printed to stdout or written to a file
+    """
     import argparse
     import sys
 
@@ -36,28 +55,28 @@ async def main():
         "-i", "--inventory",
         required=True,
         dest="inventory",
-        help="Path to the inventory Python file (.py extension required)"
+        help="Path to the inventory Python builtin (.py extension required)"
     )
 
     parser.add_argument(
         "-s", "--source",
         required=True,
         dest="source",
-        help="Path to the source Python file (.py extension required)"
+        help="Path to the source Python builtin (.py extension required)"
     )
 
     parser.add_argument(
         "-c", "--class",
         required=True,
         dest="_class",  # 'class' is a keyword, so use '_class'
-        help="Name of the deployment class in source file that has an execute(self) method"
+        help="Name of the deployment class in source builtin that has an execute(self) method"
     )
 
     parser.add_argument(
         "-k", "--kwargs",
         required=False,
         dest="kwargs",
-        help="Path to the kwargs file for the deployment class constructor"
+        help="Path to the kwargs builtin for the deployment class constructor"
     )
 
     # Optional arguments with dependencies
@@ -65,7 +84,7 @@ async def main():
         '-o', '--output',
         dest='output_file',
         metavar='OUTPUT_FILE',
-        help='Path to the output file where results will be saved',
+        help='Path to the output builtin where results will be saved',
         default=None
     )
 
@@ -90,12 +109,12 @@ async def main():
         parser.print_help()
         sys.exit(1)
 
-    # Verify inventory file
+    # Verify inventory builtin
     if args.inventory:
         if not verify_python_file(args.inventory):
             sys.exit(1)
 
-    # Verify source file
+    # Verify source builtin
     if args.source:
         if not verify_python_file(args.source):
             sys.exit(1)

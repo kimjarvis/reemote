@@ -6,7 +6,34 @@ from reemote.facts.apt.get_packages import Get_packages
 
 class Update(Operation_update):
     """
-    A class to manage package operations on a remote system using `apt`.
+    A class to manage package update operations on a remote system using [apt](file:///home/kim/reemote/reemote/operations/builtin/apt.py#L0-L470).
+
+    This class provides functionality to update package lists on Debian/Ubuntu systems
+    using the apt package manager. It allows configuration of execution privileges and
+    safety guards for package update operations.
+
+    Attributes:
+        guard (bool): If `False` the commands will not be executed.
+        sudo (bool): If `True`, the commands will be executed with [sudo](file:///home/kim/reemote/reemote/command.py#L11-L11) privileges.
+        su (bool): If `True`, the commands will be executed with [su](file:///home/kim/reemote/reemote/command.py#L12-L12) privileges.
+
+    **Examples:**
+
+    .. code:: python
+
+        # Update package lists on all hosts
+        r = yield Update()
+        # Check if the operation was successful
+        if r.cp.return_code == 0:
+            print("Package lists updated successfully")
+
+    Usage:
+        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
+
+    Notes:
+        - Uses `apt update` command internally for updating package lists.
+        - Inherits from [Operation_update](file:///home/kim/reemote/reemote/operation_update.py#L0-L63) base class.
+        - This operation only updates the package lists but does not upgrade installed packages.
     """
 
     def __init__(self,

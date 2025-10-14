@@ -8,6 +8,21 @@ from reemote.command import serialize_command
 
 
 class Result:
+    """
+    Represents the result of executing a command on a remote host via SSH.
+
+    This class encapsulates all information related to command execution,
+    including the execution status, output, and any errors that occurred.
+
+    Attributes:
+        cp (SSHCompletedProcess): The completed SSH process containing
+            execution details like stdout, stderr, and return code.
+        host (str): The hostname or IP address of the target machine.
+        op (Command): The command that was executed.
+        changed (bool): Indicates if the operation resulted in changes.
+        executed (bool): Indicates if the command was actually executed.
+        error (str): Error message if the execution failed.
+    """
 
     def __init__(self,
                  cp: SSHCompletedProcess = None,

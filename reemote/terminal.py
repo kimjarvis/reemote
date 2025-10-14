@@ -87,9 +87,36 @@ def open_terminal(terminal_name, terminal_cmd, ssh_command):
 
 
 async def open_ssh_console():
-    """Main function to open SSH console with inventory verification."""
+    """
+    Main function to open SSH console with inventory verification.
+
+    This function handles the complete workflow for establishing an SSH terminal connection:
+    1. Parses command-line arguments for inventory file, host index, and test options
+    2. Validates the inventory file and its structure
+    3. Selects the specified host from the inventory
+    4. Tests the SSH connection (unless skipped with --no-test)
+    5. Detects available terminal emulator
+    6. Opens a terminal with SSH connection to the selected host
+
+    Command-line Arguments:
+        -i/--inventory (required): Path to the inventory Python file (.py extension required)
+        -n/--host-number (optional): Index of host to connect to (default: 0)
+        --no-test (optional): Skip SSH connection test before opening terminal
+
+    The inventory file should contain a callable that returns a list of host information
+    dictionaries with at least 'host' and 'username' keys.
+
+    Supported terminal emulators (auto-detected):
+        - konsole (KDE)
+        - gnome-terminal (GNOME)
+        - xfce4-terminal (XFCE)
+        - xterm (generic)
+
+    Returns:
+        None: Opens a terminal window with SSH connection or exits with error code
+    """
     parser = argparse.ArgumentParser(
-        description="Open an SSH terminal connection using an inventory file.",
+        description="Open an SSH terminal connection using an inventory builtin.",
         usage="usage: terminal.py [-h] -i INVENTORY_FILE [-n HOST_NUMBER] [--no-test]",
         epilog="""
 Examples: 
@@ -105,7 +132,7 @@ Examples:
         "-i", "--inventory",
         required=True,
         dest="inventory",
-        help="Path to the inventory Python file (.py extension required)"
+        help="Path to the inventory Python builtin (.py extension required)"
     )
     
     parser.add_argument(
@@ -125,10 +152,10 @@ Examples:
 
     args = parser.parse_args()
 
-    # Verify inventory file exists and is a Python file
-    logger.info(f"Verifying inventory file: {args.inventory}")
+    # Verify inventory builtin exists and is a Python builtin
+    logger.info(f"Verifying inventory builtin: {args.inventory}")
     if not verify_python_file(args.inventory):
-        logger.error("Invalid inventory file")
+        logger.error("Invalid inventory builtin")
         sys.exit(1)
 
     # Load and validate inventory

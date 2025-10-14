@@ -42,19 +42,19 @@ class Get_statvfs:
         if hasattr(attrs, 'f_bsize') and attrs.f_bsize is not None:
             result['f_bsize'] = attrs.f_bsize  # File system block size
         if hasattr(attrs, 'f_frsize') and attrs.f_frsize is not None:
-            result['f_frsize'] = attrs.f_frsize  # Fundamental file system block size
+            result['f_frsize'] = attrs.f_frsize  # Fundamental builtin system block size
         if hasattr(attrs, 'f_blocks') and attrs.f_blocks is not None:
-            result['f_blocks'] = attrs.f_blocks  # Total data blocks in file system
+            result['f_blocks'] = attrs.f_blocks  # Total data blocks in builtin system
         if hasattr(attrs, 'f_bfree') and attrs.f_bfree is not None:
-            result['f_bfree'] = attrs.f_bfree  # Free blocks in file system
+            result['f_bfree'] = attrs.f_bfree  # Free blocks in builtin system
         if hasattr(attrs, 'f_bavail') and attrs.f_bavail is not None:
             result['f_bavail'] = attrs.f_bavail  # Free blocks available to unprivileged user
         if hasattr(attrs, 'f_files') and attrs.f_files is not None:
-            result['f_files'] = attrs.f_files  # Total file nodes in file system
+            result['f_files'] = attrs.f_files  # Total builtin nodes in builtin system
         if hasattr(attrs, 'f_ffree') and attrs.f_ffree is not None:
-            result['f_ffree'] = attrs.f_ffree  # Free file nodes in file system
+            result['f_ffree'] = attrs.f_ffree  # Free builtin nodes in builtin system
         if hasattr(attrs, 'f_favail') and attrs.f_favail is not None:
-            result['f_favail'] = attrs.f_favail  # Free file nodes available to unprivileged user
+            result['f_favail'] = attrs.f_favail  # Free builtin nodes available to unprivileged user
         if hasattr(attrs, 'f_fsid') and attrs.f_fsid is not None:
             result['f_fsid'] = attrs.f_fsid  # File system ID
         if hasattr(attrs, 'f_flag') and attrs.f_flag is not None:

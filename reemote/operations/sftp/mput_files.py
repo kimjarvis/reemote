@@ -6,17 +6,17 @@ from typing import Optional, Callable, Union
 
 class Mput_files:
     """
-    A class to encapsulate the functionality of multiple file uploads using SFTP.
-    It allows users to upload multiple local files to remote hosts with full parameter support.
+    A class to encapsulate the functionality of multiple builtin uploads using SFTP.
+    It allows users to upload multiple local builtin to remote hosts with full parameter support.
 
     Attributes:
-        localpaths (str): The local file or directory path(s) to upload.
-        remotepath (str): The remote path where files will be uploaded.
-        preserve (bool): Preserve file attributes (permissions, timestamps).
+        localpaths (str): The local builtin or directory path(s) to upload.
+        remotepath (str): The remote path where builtin will be uploaded.
+        preserve (bool): Preserve builtin attributes (permissions, timestamps).
         recurse (bool): Recursively upload directories.
         follow_symlinks (bool): Follow symbolic links during upload.
-        sparse (bool): Create sparse files on the remote system.
-        block_size (int): Block size for file transfers.
+        sparse (bool): Create sparse builtin on the remote system.
+        block_size (int): Block size for builtin transfers.
         max_requests (int): Maximum number of concurrent transfer requests.
         progress_handler (Callable): Callback for transfer progress.
         error_handler (Callable): Callback for handling errors.
@@ -81,7 +81,7 @@ class Mput_files:
         while preserving any wildcard (*) in the path.
 
         Args:
-            path (str): The input file path, which may include '~' and/or wildcards.
+            path (str): The input builtin path, which may include '~' and/or wildcards.
 
         Returns:
             str: The absolute path with wildcards preserved.
@@ -96,7 +96,7 @@ class Mput_files:
 
     @staticmethod
     async def _mput_files_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for multiple file upload with full parameter support"""
+        """Static callback method for multiple builtin upload with full parameter support"""
 
         # Validate host_info (matching Mget_files error handling)
         required_keys = ['host', 'username', 'password']
@@ -115,7 +115,7 @@ class Mput_files:
             async with asyncssh.connect(**host_info) as conn:
                 # Start an SFTP session
                 async with conn.start_sftp_client() as sftp:
-                    # Use the mput method for file upload
+                    # Use the mput method for builtin upload
                     await sftp.mput(
                         localpaths=Mput_files.get_absolute_path(caller.localpaths),
                         remotepath=caller.remotepath,
@@ -128,7 +128,7 @@ class Mput_files:
                         progress_handler=caller.progress_handler,
                         error_handler=caller.error_handler
                     )
-                    return f"Successfully uploaded files to {host_info['host']}"
+                    return f"Successfully uploaded builtin to {host_info['host']}"
         except (OSError, asyncssh.Error) as exc:
             raise  # Re-raise the exception to handle it in the caller
 

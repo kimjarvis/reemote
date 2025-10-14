@@ -6,8 +6,36 @@ from reemote.facts.zypper.get_packages import Get_packages
 
 class Update(Operation_update):
     """
-    A class to manage package operations on a remote system using `zypper`.
+    A class to manage package update operations on a remote system using `zypper`.
+
+    This class provides functionality to update package lists on openSUSE/SUSE systems
+    using the zypper package manager. It allows configuration of execution privileges and
+    safety guards for package update operations.
+
+    Attributes:
+        guard (bool): If `False` the commands will not be executed.
+        sudo (bool): If `True`, the commands will be executed with sudo privileges.
+        su (bool): If `True`, the commands will be executed with su privileges.
+
+    **Examples:**
+
+    .. code:: python
+
+        # Update package lists on all hosts
+        r = yield Update()
+        # Check if the operation was successful
+        if r.cp.return_code == 0:
+            print("Package lists updated successfully")
+
+    Usage:
+        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
+
+    Notes:
+        - Uses `zypper update` command internally for updating package lists.
+        - Inherits from Operation_update base class.
+        - This operation only updates the package lists but does not upgrade installed packages.
     """
+
 
     def __init__(self,
                  guard: bool = True,

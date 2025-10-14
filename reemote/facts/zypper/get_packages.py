@@ -3,20 +3,29 @@ from reemote.execute import execute
 
 
 def parse_rpm_list_installed(output):
+    """Parses the raw string output of `rpm -qa` into a structured list.
+
+    This function processes the multiline string returned by the `rpm -qa`
+    command, which lists all installed RPM packages. It intelligently
+    separates each line into a package name and its corresponding version string.
+
+    The parsing logic is designed to handle package names that may contain
+    hyphens by identifying the version string, which typically starts
+    just before the architecture part of the full package identifier.
+
+    Args:
+        output (str): The raw stdout from the `rpm -qa` command.
+
+    Returns:
+        list[dict]: A list of dictionaries, where each dictionary
+            represents an installed package and contains 'name' and
+            'version' keys.
+    """
     packages = []
     lines = output.strip().splitlines()
 
     # Skip header line(s) - look for first line that doesn't start with "Installed"
     for line in lines:
-        """
-        Parses a package string into its name and version components.
-    
-        Args:
-            package_str (str): The package string in the format "name-version-release.arch".
-    
-        Returns:
-            tuple: A tuple containing the name and version as strings.
-        """
         # Split the string by hyphens
         parts = line.split('-')
 

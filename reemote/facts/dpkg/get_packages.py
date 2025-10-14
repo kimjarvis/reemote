@@ -2,6 +2,25 @@ from reemote.operations.server.shell import Shell
 from reemote.execute import execute
 
 def parse_dpkg_list_installed(output):
+    """Parses the raw string output of `dpkg-query -W`.
+
+    This function processes the multiline string returned by the
+    `dpkg-query -W` command, which lists installed Debian packages. It
+    converts this raw text into a structured list of dictionaries.
+
+    Each line of the input is expected to contain the package name followed
+    by its version, separated by whitespace. Lines that are empty or
+    malformed are skipped.
+
+    Args:
+        output (str): The raw standard output from the `dpkg-query -W`
+            command.
+
+    Returns:
+        list[dict]: A list of dictionaries, where each dictionary
+            represents an installed package and contains 'name' and
+            'version' keys.
+    """
     packages = []
     lines = output.strip().split('\n')
     for line in lines:
@@ -16,15 +35,25 @@ def parse_dpkg_list_installed(output):
     return packages
 
 class Get_packages:
-    """
-    Returns a dictionary of installed packages.
+    """Retrieves a list of installed Debian packages.
+
+    This operation executes `dpkg-query -W` on the remote host and parses
+    the output. The result is a structured list of installed packages,
+    which replaces the `stdout` in the final result object.
+
+    Each package is represented as a dictionary with 'name' and 'version'
+    keys.
 
     **Examples:**
 
     .. code:: python
 
-        yield Get_packages()
+        # In a reemote task function, get a list of all installed packages
+        packages_result = yield Get_packages()
 
+        # The parsed list is in the stdout attribute of the result
+        print(packages_result.stdout)
+        # Outputs: [{'name': 'wget', 'version': '1.20.3-1ubuntu1'}, ...]
     """
     def execute(self):
         from reemote.operations.server.shell import Shell

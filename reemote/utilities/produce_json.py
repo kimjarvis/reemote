@@ -1,19 +1,29 @@
 import json
-import os
 
 from reemote.result import serialize_result
 
-
 def produce_json(results) -> tuple[str, str]:
+    """Serializes a results object into a pretty-printed JSON string.
 
+     This function takes a Python object, typically a collection of results,
+     and converts it into a JSON formatted string. It leverages the custom
+     `reemote.result.serialize_result` function to handle special data types
+     that are not natively supported by the standard `json` module.
+
+     The output JSON is formatted with an indent of 4 spaces to make it
+     human-readable.
+
+     Note: The function contains a commented-out block of code that was
+     intended to write the JSON output to a builtin. This functionality is
+     currently disabled.
+
+     Args:
+         results (object): The Python object to be converted into a JSON string.
+             This could be a list, dictionary, or a custom object structure
+             that `serialize_result` can process.
+
+     Returns:
+         str: A string containing the JSON representation of the `results` object.
+     """
     json_output = json.dumps(results, default=serialize_result, indent=4)
-
-    # # Ensure the output directory exists
-    # output_dir = "development/output"
-    # os.makedirs(output_dir, exist_ok=True)
-    #
-    # # Write the JSON output to out.json
-    # json_file_path = os.path.join(output_dir, "out.json")
-    # with open(json_file_path, "w") as json_file:
-    #     json_file.write(json_output)
     return json_output

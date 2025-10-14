@@ -6,20 +6,20 @@ import os
 
 class Download:
     """
-    A class to handle secure file downloads from remote hosts using SCP (Secure Copy Protocol).
+    A class to handle secure builtin downloads from remote hosts using SCP (Secure Copy Protocol).
 
-    This class provides functionality to download files or directories from one or more
+    This class provides functionality to download builtin or directories from one or more
     remote hosts to a local destination path. It supports various SCP options including
-    preserving file attributes and recursive directory downloads.
+    preserving builtin attributes and recursive directory downloads.
 
     Attributes:
-        srcpaths (Union[str, List[str]]): Source file or directory path(s) on remote host(s).
+        srcpaths (Union[str, List[str]]): Source builtin or directory path(s) on remote host(s).
             Can be a single string path or a list of paths. Supports host:path format.
-        dstpath (str): Local destination path where files will be downloaded.
-        preserve (bool): If True, preserves file modification times, access times,
-            and modes from the original files. Defaults to False.
+        dstpath (str): Local destination path where builtin will be downloaded.
+        preserve (bool): If True, preserves builtin modification times, access times,
+            and modes from the original builtin. Defaults to False.
         recurse (bool): If True, recursively copies entire directories. Defaults to False.
-        block_size (int): Block size used for file transfers in bytes. Defaults to 16384.
+        block_size (int): Block size used for builtin transfers in bytes. Defaults to 16384.
         port (int): SSH port to use for connections. Defaults to 22.
 
     **Examples:**
@@ -56,7 +56,7 @@ class Download:
 
     @staticmethod
     async def _download_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for file download"""
+        """Static callback method for builtin download"""
 
         # Validate host_info (matching Upload error handling)
         required_keys = ['host', 'username', 'password']

@@ -1,108 +1,127 @@
-from tabulate import tabulate
+import pandas as pd
+
+import pandas as pd
+
+import pandas as pd
 
 def _generate_table(data):
-    # Step 1: Extract unique hosts
+    """
+    Processes raw command output data into a structured grid format using pandas.
+
+    Groups consecutive entries by command and pivots hosts into columns.
+    Each host gets two columns: one for return codes and one for stdout.
+
+    Args:
+        data (list[dict]): A list of dictionaries representing command executions.
+
+    Returns:
+        tuple: A tuple containing:
+            - columnDefs (list[dict]): Definitions for grid columns.
+            - rowData (pd.DataFrame): The processed data as a DataFrame.
+    """
+    # Step 1: Flatten nested JSON structure
+    df = pd.json_normalize(
+        data,
+        sep="_",
+        record_path=None,  # No specific record path; flatten everything
+        meta=[
+            "host",
+            ["op", "command"],
+            ["op", "guard"],
+            ["op", "host_info", "host"],
+            ["op", "host_info", "username"],
+            ["op", "host_info", "password"],
+            ["op", "global_info", "sudo_user"],
+            ["op", "global_info", "sudo_password"],
+            ["cp", "env"],
+            ["cp", "command"],
+            ["cp", "subsystem"],
+            ["cp", "exit_status"],
+            ["cp", "exit_signal"],
+            ["cp", "returncode"],
+            ["cp", "stdout"],
+            ["cp", "stderr"],
+            "changed",
+            "executed",
+            "error"
+        ]
+    )
+
+    # Debugging: Print the flattened DataFrame columns
+    print("DataFrame columns:", df.columns)
+
+    # Step 2: Extract unique hosts
     try:
-        hosts = sorted(set(entry['host'] for entry in data))
-    except TypeError as e:
-        print("Error: The 'data' variable must be a list of dictionaries.")
-        raise e
+        hosts = sorted(df['host'].unique())
+    except KeyError as e:
+        raise KeyError("Error: The 'data' variable must contain a 'host' key.") from e
 
-    # Step 2: Initialize columnDefs and rowData
-    result = {
-        "columnDefs": [],
-        "rowData": []
-    }
+    # Step 3: Ensure 'op_command' exists in the DataFrame
+    if 'op_command' not in df.columns:
+        raise KeyError("Error: The 'op_command' field is missing or incorrectly nested in the input data.")
 
-    # Add the 'Command' column to columnDefs
-    result["columnDefs"].append({"headerName": "Command", "field": "command"})
+    # Step 4: Replace dots in hostnames
+    df['safe_host'] = df['host'].str.replace(".", "_")
 
-    # Add two columns for each host: Executed and Changed
+    # Step 5: Create additional columns for executed and changed
+    df['executed'] = df['cp_returncode']
+    df['changed'] = df['cp_stdout'].apply(lambda x: str(x)[:60] if x is not None else "None")
+
+    # Step 6: Pivot the data
+    pivot_executed = df.pivot(index='op_command', columns='safe_host', values='executed').fillna("")
+    pivot_changed = df.pivot(index='op_command', columns='safe_host', values='changed').fillna("")
+
+    # Combine executed and changed columns
+    combined = pd.concat([pivot_executed, pivot_changed], axis=1, keys=['Executed', 'Changed'])
+    combined.columns = [f"{host}_{key}" for key, host in combined.columns]
+
+    # Add the 'Command' column back
+    combined.reset_index(inplace=True)
+    combined.rename(columns={'op_command': 'Command'}, inplace=True)
+
+    # Step 7: Generate column definitions
+    column_defs = [{"headerName": "Command", "field": "Command"}]
     for host in hosts:
-        result["columnDefs"].append({"headerName": f"{host} Returncode", "field": f"{host.replace(".","_")}_executed"})
-        result["columnDefs"].append({"headerName": f"{host} Stdout", "field": f"{host.replace(".","_")}_changed"})
+        safe_host = host.replace(".", "_")
+        column_defs.append({"headerName": f"{host} Returncode", "field": f"{safe_host}_Executed"})
+        column_defs.append({"headerName": f"{host} Stdout", "field": f"{safe_host}_Changed"})
 
-    # Step 3: Process data by grouping consecutive entries with the same command
-    i = 0
-    while i < len(data):
-        # Get the current command
-        command = data[i]['op']['command'][:60]
+    return column_defs, combined
 
-        # Create a new row for this command
-        row = {"command": command}
-
-        # Initialize all host columns as empty
-        for h in hosts:
-            row[f"{h}_executed"] = ""
-            row[f"{h}_changed"] = ""
-
-        # Process all consecutive entries with this same command
-        while i < len(data) and data[i]['op']['command'] == command:
-            entry = data[i]
-            host = entry['host']
-            executed = entry["cp"]['returncode']
-            stdout_value = entry["cp"]['stdout']
-
-            # print(type(stdout_value))
-            # if type(stdout_value) == "SFTPVFSAttrs":
-            #
-            #     # Assuming stdout is an instance of SFTPVFSAttrs
-            #     def get_sftp_vfs_attrs_representation(sftp_vfs_attrs):
-            #         """
-            #         Returns a dictionary-like representation of the SFTPVFSAttrs object.
-            #         """
-            #         if sftp_vfs_attrs is None:
-            #             return "None"
-            #
-            #         # Extract attributes and their values
-            #         representation = {
-            #             "bsize": sftp_vfs_attrs.bsize,
-            #             "frsize": sftp_vfs_attrs.frsize,
-            #             "blocks": sftp_vfs_attrs.blocks,
-            #             "bfree": sftp_vfs_attrs.bfree,
-            #             "bavail": sftp_vfs_attrs.bavail,
-            #             "files": sftp_vfs_attrs.files,
-            #             "ffree": sftp_vfs_attrs.ffree,
-            #             "favail": sftp_vfs_attrs.favail,
-            #             "fsid": sftp_vfs_attrs.fsid,
-            #             "flags": sftp_vfs_attrs.flags,
-            #             "namemax": sftp_vfs_attrs.namemax,
-            #         }
-            #         return representation
-            #
-            #     stdout_value = get_sftp_vfs_attrs_representation(sftp_vfs_attrs)
-
-            changed = str(stdout_value)[:60] if stdout_value is not None else "None"
-
-            # Add the current host's data
-            row[f"{host.replace(".","_")}_executed"] = executed
-            row[f"{host.replace(".","_")}_changed"] = changed
-
-            i += 1  # Move to next entry
-
-        # Add the completed row to rowData
-        result["rowData"].append(row)
-
-    return result, hosts
+from tabulate import tabulate
 
 def generate_table(data):
-    result , hosts = _generate_table(data)
+    """
+    Converts command output data into a tabular format suitable for display.
 
-    # Step 4: Convert to tabulate format
-    headers = [col['headerName'] for col in result["columnDefs"]]
-    table_data = []
-    for row in result["rowData"]:
-        formatted_row = [row['command']]  # Start with command
-        for host in hosts:
-            executed = row[f"{host.replace(".","_")}_executed"]
-            changed = row[f"{host.replace(".","_")}_changed"]
-            formatted_row.append(executed if executed != "" else "")
-            formatted_row.append(changed if changed != "" else "")
-        table_data.append(formatted_row)
+    Args:
+        data (list[dict]): A list of dictionaries representing command executions.
 
-    # Step 5: Return the table
+    Returns:
+        str: A formatted table string.
+    """
+    column_defs, df = _generate_table(data)
+
+    # Step 1: Extract headers from column definitions
+    headers = [col['headerName'] for col in column_defs]
+
+    # Step 2: Format rows
+    table_data = df.to_dict(orient='records')
+
+    # Step 3: Generate and return the table
     return tabulate(table_data, headers=headers, tablefmt="grid")
 
 def generate_grid(data):
-    result , hosts = _generate_table(data)
-    return result["columnDefs"], result["rowData"],
+    """
+    Generates column definitions and row data for a grid.
+
+    Args:
+        data (list[dict]): A list of dictionaries representing command executions.
+
+    Returns:
+        tuple: A tuple containing:
+            - columnDefs (list[dict]): Definitions for grid columns.
+            - rowData (pd.DataFrame): The processed data as a DataFrame.
+    """
+    column_defs, df = _generate_table(data)
+    return column_defs, df.to_dict(orient='records')

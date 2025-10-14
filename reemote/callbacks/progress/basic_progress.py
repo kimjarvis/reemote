@@ -1,10 +1,10 @@
 def basis_progress(src_path, dst_path, copied_bytes, total_bytes):
     """
-    Progress callback for SFTP file transfers.
+    Progress callback for SFTP builtin transfers.
 
     Args:
-        src_path: Source file path
-        dst_path: Destination file path
+        src_path: Source builtin path
+        dst_path: Destination builtin path
         copied_bytes: Number of bytes copied so far
         total_bytes: Total bytes to copy (None if unknown)
     """

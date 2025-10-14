@@ -2,7 +2,28 @@ from reemote.operations.server.shell import Shell
 from reemote.execute import execute
 
 
-def parse_pip_list_installed(output):
+def parse_pacman_list_installed(output):
+    """Parses the raw output of 'pacman -Q' into a list of packages.
+
+    This function processes the standard output from the `pacman -Q`
+    command, which lists all installed packages and their versions. It
+    is designed to handle the specific format of this command's output.
+
+    The parsing logic involves:
+
+    - Splitting the output into lines.
+    - Skipping the first two header lines.
+    - Extracting the package name (the first word) and the version
+      (the rest of the line) for each package.
+
+    Args:
+        output (str): The raw string output from a 'pacman -Q' command.
+
+    Returns:
+        list[dict]: A list of dictionaries, where each dictionary
+            represents an installed package and contains 'name' and
+            'version' keys.
+    """
     packages = []
 
     lines = output.strip().splitlines()
@@ -26,18 +47,28 @@ def parse_pip_list_installed(output):
     return packages
 
 class Get_packages:
-    """
-    Returns a dictionary of installed pacman packages.
+    """Retrieves a list of installed pacman packages from a host.
 
-    **Examples:**
+    This Reemote operation executes `pacman -Q` on the target host to
+    get a list of all installed packages. It then parses this output
+    into a structured list of dictionaries.
 
-    .. code:: python
+    The final result of this operation will have its `cp.stdout`
+    attribute replaced with the parsed list. Each item in the list is a
+    dictionary containing the package 'name' and 'version'.
 
-        yield Get_packages()
+    Examples:
+        .. code:: python
 
+            # Yield the operation within a Reemote task
+            result = yield Get_packages()
+
+            # The parsed list is in result.cp.stdout
+            for package in result.cp.stdout:
+                print(f"{package['name']}: {package['version']}")
     """
     def execute(self):
         from reemote.operations.server.shell import Shell
         r = yield Shell("pacman -Q")
-        r.cp.stdout = parse_pip_list_installed(r.cp.stdout)
+        r.cp.stdout = parse_pacman_list_installed(r.cp.stdout)
         # print(r.cp.stdout)

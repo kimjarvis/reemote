@@ -1,0 +1,8 @@
+{
+    "ANSIBLE_MODULE_ARGS": {
+        "name": "httpd",
+        "state": "present",
+        "disable_gpg_check": false,
+        "use_backend": "dnf4",
+    }
+}

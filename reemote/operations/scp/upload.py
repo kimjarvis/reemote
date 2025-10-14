@@ -5,14 +5,14 @@ from typing import Union, List, Optional
 
 class Upload:
     """
-    A class to encapsulate the functionality of uploading files via SCP.
+    A class to encapsulate the functionality of uploading builtin via SCP.
 
     Attributes:
-        srcpaths (Union[str, List[str]]): The local source file(s) or directory to upload.
+        srcpaths (Union[str, List[str]]): The local source builtin(s) or directory to upload.
         dstpath (str): The remote destination path.
-        preserve (bool): Whether to preserve file attributes.
+        preserve (bool): Whether to preserve builtin attributes.
         recurse (bool): Whether to recursively copy directories.
-        block_size (int): The block size for file transfers.
+        block_size (int): The block size for builtin transfers.
         port (int): SSH port to use for connections.
 
     **Examples:**
@@ -52,7 +52,7 @@ class Upload:
 
     @staticmethod
     async def _upload_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for file upload"""
+        """Static callback method for builtin upload"""
 
         # Validate host_info (matching Write_file error handling)
         required_keys = ['host', 'username', 'password']

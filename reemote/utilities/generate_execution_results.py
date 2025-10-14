@@ -1,6 +1,34 @@
 from tabulate import tabulate
 
 def _generate_table(data):
+    """Transforms raw event data into a structured grid format.
+
+    This internal helper function processes a list of event dictionaries,
+    groups them by command, and pivots the data to create a table structure.
+    For each unique host found in the data, it generates 'Executed' and
+    'Changed' columns.
+
+    The primary purpose is to group consecutive entries that share the same
+    command string into a single row, showing the execution status across
+    all relevant hosts.
+
+    Args:
+        data (list[dict]): A list of dictionaries, where each dictionary
+            represents a single event. Each dictionary must contain keys:
+            'host' (str), 'executed' (any), 'changed' (any), and 'op' (dict).
+            The 'op' dictionary must contain a 'command' (str) key.
+
+    Returns:
+        tuple: A tuple containing two elements:
+            - result (dict): A dictionary with 'columnDefs' and 'rowData',
+              suitable for a grid component.
+            - hosts (list[str]): A sorted list of unique hostnames
+              found in the data.
+
+    Raises:
+        TypeError: If the input 'data' is not a list of dictionaries,
+                   preventing host extraction.
+    """
     # Step 1: Extract unique hosts
     try:
         hosts = sorted(set(entry['host'] for entry in data))
@@ -55,6 +83,23 @@ def _generate_table(data):
     return result, hosts
 
 def generate_table(data):
+    """Generates a human-readable ASCII grid table from event data.
+
+     This function takes a list of event data, processes it into a tabular
+     format, and then uses the `tabulate` library to create a formatted
+     string representation of the table. It is ideal for displaying
+     command execution results in a console or log builtin.
+
+     It internally uses `_generate_table` to structure the data before
+     formatting.
+
+     Args:
+         data (list[dict]): A list of event dictionaries. See the
+             docstring for `_generate_table` for the required structure.
+
+     Returns:
+         str: A string containing the formatted ASCII table in 'grid' format.
+     """
     result , hosts = _generate_table(data)
 
     # Step 4: Convert to tabulate format
@@ -73,5 +118,22 @@ def generate_table(data):
     return tabulate(table_data, headers=headers, tablefmt="grid")
 
 def generate_grid(data):
+    """Generates a human-readable ASCII grid table from event data.
+
+    This function takes a list of event data, processes it into a tabular
+    format, and then uses the `tabulate` library to create a formatted
+    string representation of the table. It is ideal for displaying
+    command execution results in a console or log builtin.
+
+    It internally uses `_generate_table` to structure the data before
+    formatting.
+
+    Args:
+        data (list[dict]): A list of event dictionaries. See the
+            docstring for `_generate_table` for the required structure.
+
+    Returns:
+        str: A string containing the formatted ASCII table in 'grid' format.
+    """
     result , hosts = _generate_table(data)
     return result["columnDefs"], result["rowData"],

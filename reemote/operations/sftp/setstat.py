@@ -5,19 +5,19 @@ from typing import Optional, Dict, Any
 
 class Setstat:
     """
-    A class to encapsulate the functionality of setstat for setting file attributes
+    A class to encapsulate the functionality of setstat for setting builtin attributes
     using SFTP setstat in Unix-like operating systems.
 
     Attributes:
-        path (str): The path of the file to set attributes for.
-        attrs (dict): Dictionary of attributes to set on the file.
+        path (str): The path of the builtin to set attributes for.
+        attrs (dict): Dictionary of attributes to set on the builtin.
 
     **Examples:**
 
     .. code:: python
 
         yield Setstat(
-            path="/path/to/file.txt",
+            path="/path/to/builtin.txt",
             attrs={
                 "permissions": 0o644,
                 "uid": 1000,
@@ -73,7 +73,7 @@ class Setstat:
 
     @staticmethod
     async def _setstat_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for setting file attributes"""
+        """Static callback method for setting builtin attributes"""
 
         # Validate host_info (matching Rmdir error handling)
         required_keys = ['host', 'username', 'password']
@@ -89,7 +89,7 @@ class Setstat:
             raise ValueError("The 'attrs' attribute must be a non-empty dictionary.")
 
         try:
-            # Connect to the SSH server and set file attributes
+            # Connect to the SSH server and set builtin attributes
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     # Convert dictionary to SFTPAttrs

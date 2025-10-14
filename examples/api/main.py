@@ -33,7 +33,7 @@ async def main():
         "-i", "--inventory",
         type=str,
         required=True,
-        help="Path to the inventory file (must exist)."
+        help="Path to the inventory builtin (must exist)."
     )
     parser.add_argument(
         "-d", "--directory",
@@ -58,7 +58,7 @@ async def main():
 
 
 
-    # Verify inventory file
+    # Verify inventory builtin
     if args.inventory:
         if not verify_python_file(args.inventory):
             sys.exit(1)

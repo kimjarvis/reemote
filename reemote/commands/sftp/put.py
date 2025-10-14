@@ -6,22 +6,22 @@ import io
 
 class Put:
     """
-    A class to encapsulate the functionality of writing files in Unix-like operating systems.
-    It allows users to specify text to be written to a file with full SFTP attribute support.
+    A class to encapsulate the functionality of writing builtin in Unix-like operating systems.
+    It allows users to specify text to be written to a builtin with full SFTP attribute support.
 
     Attributes:
-        path (str): The file path where content is to be written.
-        text (str): The file content.
-        attrs (asyncssh.SFTPAttrs): SFTP attributes for the new file.
+        path (str): The builtin path where content is to be written.
+        text (str): The builtin content.
+        attrs (asyncssh.SFTPAttrs): SFTP attributes for the new builtin.
 
     **Examples:**
 
     .. code:: python
 
-        # Create a file from text with default permissions
+        # Create a builtin from text with default permissions
         r = yield Write_file(path='example.txt', text='Hello World!')
         
-        # Create a file with specific permissions
+        # Create a builtin with specific permissions
         r = yield Write_file(
             path='script.sh', 
             text='#!/bin/bash\necho "Hello World"',
@@ -61,7 +61,7 @@ class Put:
 
     @staticmethod
     async def _write_file_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for file writing with full attribute support using sftp.put"""
+        """Static callback method for builtin writing with full attribute support using sftp.put"""
 
         # Validate host_info
         required_keys = ['host', 'username', 'password']
@@ -83,10 +83,10 @@ class Put:
                 async with conn.start_sftp_client() as sftp:
                     print(f"Writing content to {caller.path}...")
                     
-                    # Create a file-like object from the text
+                    # Create a builtin-like object from the text
                     file_obj = io.BytesIO(caller.text.encode('utf-8'))
                     
-                    # Use sftp.put to write the file with attributes
+                    # Use sftp.put to write the builtin with attributes
                     await sftp.put(file_obj, caller.path, preserve=True)
                     
                     # Apply custom attributes if specified (overriding any preserved ones)
@@ -103,7 +103,7 @@ class Put:
                         print(f"Applying custom attributes to {caller.path}...")
                         await sftp.setstat(caller.path, caller.attrs)
                     
-                    print(f"Successfully wrote file {caller.path} on {host_info['host']} with attributes")
+                    print(f"Successfully wrote builtin {caller.path} on {host_info['host']} with attributes")
 
         except (OSError, asyncssh.Error) as exc:
             print(f'SFTP operation failed on {host_info["host"]}: {str(exc)}')

@@ -155,6 +155,33 @@ def pre_order_generator(node):
 
 
 async def execute(inventory, obj):
+    """
+    Execute a deployment operation across multiple hosts defined in the inventory.
+
+    This function traverses the operation tree using pre-order traversal, executing
+    each command on the specified hosts. It supports both local and remote command
+    execution with various authentication methods (sudo, su).
+
+    Args:
+        inventory (list): A list of tuples containing host information and global
+                         information for each target host. Each tuple should contain
+                         (host_info: Dict[str, str], global_info: Dict[str, str]).
+        obj: The root deployment object that has an execute() method which yields
+             Command objects to be executed.
+
+    Returns:
+        list: A list of Result objects containing the execution results for each
+              command executed across all hosts.
+
+    The function handles two types of objects during traversal:
+    - Command: Executable commands that will be run on hosts
+    - Result: Error results that are collected directly
+
+    For each Command, the function:
+    1. Sets host_info and global_info from the inventory
+    2. Executes the command either locally (if operation.local is True) or remotely
+    3. Collects the result in the responses list
+    """
     operations = []
     responses = []
 

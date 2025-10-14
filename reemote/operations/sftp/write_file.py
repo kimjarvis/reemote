@@ -4,20 +4,20 @@ from reemote.command import Command
 
 class Write_file:
     """
-    A class to encapsulate the functionality of writing files in Unix-like operating systems.
-    It allows users to specify text to be written to a file.
+    A class to encapsulate the functionality of writing builtin in Unix-like operating systems.
+    It allows users to specify text to be written to a builtin.
 
     Attributes:
-        path (str): The file path where content is to be written.
-        text (str): The file content.
+        path (str): The builtin path where content is to be written.
+        text (str): The builtin content.
 
     **Examples:**
 
     .. code:: python
 
-        # Create a file from text
+        # Create a builtin from text
         r = yield Write_file(path='example.txt', text='Hello World!')
-        # Verify the file content
+        # Verify the builtin content
         r = yield Shell("cat example.txt")
         print(r.cp.stdout)
 
@@ -34,7 +34,7 @@ class Write_file:
 
     @staticmethod
     async def _write_file_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for file writing"""
+        """Static callback method for builtin writing"""
 
         # Validate host_info (matching Read_file error handling)
         required_keys = ['host', 'username', 'password']
@@ -58,10 +58,10 @@ class Write_file:
                     # Define the string content to be written
                     content = caller.text
 
-                    # Open the remote file in write mode and write the content
+                    # Open the remote builtin in write mode and write the content
                     async with sftp.open(caller.path, 'w') as remote_file:
                         r = await remote_file.write(content)
-                        print(f"Successfully wrote file {caller.path} on {host_info['host']} r {r}")
+                        print(f"Successfully wrote builtin {caller.path} on {host_info['host']} r {r}")
 
         except (OSError, asyncssh.Error) as exc:
             print(f'SFTP operation failed on {host_info["host"]}: {str(exc)}')

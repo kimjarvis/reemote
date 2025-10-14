@@ -5,12 +5,12 @@ from typing import Optional
 
 class Get_lstat:
     """
-    A class to encapsulate the functionality of lstat for getting file attributes
+    A class to encapsulate the functionality of lstat for getting builtin attributes
     using SFTP lstat in Unix-like operating systems. Unlike stat, lstat returns
     attributes of symlinks themselves rather than their targets.
 
     Attributes:
-        file_path (str): The path of the file to get attributes for.
+        file_path (str): The path of the builtin to get attributes for.
 
     **Examples:**
 
@@ -20,13 +20,13 @@ class Get_lstat:
 
     Usage:
         This class is designed to be used in a generator-based workflow where
-        commands are yielded for execution. The file attributes for each
+        commands are yielded for execution. The builtin attributes for each
         host will be returned in the operation result.
 
     Notes:
         The operation will execute on all hosts in the current execution context.
         Unlike stat, lstat returns attributes of symlinks themselves rather than
-        the files they point to.
+        the builtin they point to.
     """
 
     def __init__(self, path: str):
@@ -66,7 +66,7 @@ class Get_lstat:
 
     @staticmethod
     async def _get_lstat_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for getting file status using lstat"""
+        """Static callback method for getting builtin status using lstat"""
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
                 # Check if the path is provided

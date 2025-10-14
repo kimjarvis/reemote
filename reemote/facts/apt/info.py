@@ -21,7 +21,6 @@ class Info:
     Notes:
         - Commands are constructed based on the `present`, `sudo`, and `su` flags.
     """
-
     def __init__(self,
                  package: str,
                  sudo: bool = False,

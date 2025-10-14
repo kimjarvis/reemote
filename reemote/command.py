@@ -1,6 +1,44 @@
 from typing import Dict, Optional, Callable
 
 class Command:
+    """
+    Represents a command to be executed on a remote or local host.
+
+    This class encapsulates all the information needed to execute a command,
+    including the command string, execution options, and contextual information.
+
+    Attributes:
+        command (str): The actual command string to be executed.
+        guard (bool): If True, enables guard mode which may prevent execution
+                     under certain conditions. Defaults to True.
+        host_info (Optional[Dict[str, str]]): Host-specific information and variables.
+        global_info (Optional[Dict[str, str]]): Global information and variables
+                                               accessible across all hosts.
+        local (bool): If True, the command will be executed locally instead of
+                     on a remote host. Defaults to False.
+        callback (Optional[Callable]): A function to be called after command execution.
+        caller: Reference to the entity that initiated the command.
+        sudo (bool): If True, the command will be executed with sudo privileges.
+                    Defaults to False.
+        su (bool): If True, the command will be executed with su privileges.
+                  Defaults to False.
+        composite (bool): If True, indicates this is a composite command made up
+                         of multiple sub-commands. Defaults to False.
+    """
+
+    def __init__(self, command: str, guard: bool = True, local: bool = False, callback: Optional[Callable] = None, caller=None, sudo: bool = False, su: bool = False, composite=False):
+        self.command: str = command
+        self.guard: bool = guard
+        self.host_info: Optional[Dict[str, str]] = None
+        self.global_info: Optional[Dict[str, str]] = None
+        self.local=local
+        self.callback=callback
+        self.caller=caller
+        self.sudo=sudo
+        self.su=su
+        self.composite=composite
+
+
     def __init__(self, command: str, guard: bool = True, local: bool = False, callback: Optional[Callable] = None, caller=None, sudo: bool = False, su: bool = False, composite=False):
         self.command: str = command
         self.guard: bool = guard

@@ -6,17 +6,17 @@ from typing import Optional, Callable, Union
 
 class Mget_files:
     """
-    A class to encapsulate the functionality of multiple file downloads using SFTP.
-    It allows users to download multiple remote files to local host with full parameter support.
+    A class to encapsulate the functionality of multiple builtin downloads using SFTP.
+    It allows users to download multiple remote builtin to local host with full parameter support.
 
     Attributes:
-        remotepaths (str): The remote file or directory path(s) to download.
-        localpath (str): The local path where files will be downloaded.
-        preserve (bool): Preserve file attributes (permissions, timestamps).
+        remotepaths (str): The remote builtin or directory path(s) to download.
+        localpath (str): The local path where builtin will be downloaded.
+        preserve (bool): Preserve builtin attributes (permissions, timestamps).
         recurse (bool): Recursively download directories.
         follow_symlinks (bool): Follow symbolic links during download.
-        sparse (bool): Create sparse files on the local system.
-        block_size (int): Block size for file transfers.
+        sparse (bool): Create sparse builtin on the local system.
+        block_size (int): Block size for builtin transfers.
         max_requests (int): Maximum number of concurrent transfer requests.
         progress_handler (Callable): Callback for transfer progress.
         error_handler (Callable): Callback for handling errors.
@@ -84,7 +84,7 @@ class Mget_files:
         while preserving any wildcard (*) in the path.
 
         Args:
-            path (str): The input file path, which may include '~' and/or wildcards.
+            path (str): The input builtin path, which may include '~' and/or wildcards.
 
         Returns:
             str: The absolute path with wildcards preserved.
@@ -99,7 +99,7 @@ class Mget_files:
 
     @staticmethod
     async def _mget_files_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for multiple file download with full parameter support"""
+        """Static callback method for multiple builtin download with full parameter support"""
 
         # Validate host_info (matching Mcopy_files error handling)
         required_keys = ['host', 'username', 'password']
@@ -116,7 +116,7 @@ class Mget_files:
             async with asyncssh.connect(**host_info) as conn:
                 # Start an SFTP session
                 async with conn.start_sftp_client() as sftp:
-                    # Use the mget method for file download
+                    # Use the mget method for builtin download
                     await sftp.mget(
                         remotepaths=caller.remotepaths,
                         localpath=caller.localpath,
@@ -129,7 +129,7 @@ class Mget_files:
                         progress_handler=caller.progress_handler,
                         error_handler=caller.error_handler
                     )
-                    return f"Successfully downloaded files from {host_info['host']}"
+                    return f"Successfully downloaded builtin from {host_info['host']}"
         except (OSError, asyncssh.Error) as exc:
             raise  # Re-raise the exception to handle it in the caller
 

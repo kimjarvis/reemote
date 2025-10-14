@@ -3,6 +3,23 @@ from reemote.execute import execute
 
 
 def parse_pip_list_installed(output):
+    """Parses the stdout from 'pip list' into a list of packages.
+
+    This function processes the raw string output from the `pip list`
+    command. It skips the header lines and parses each subsequent line
+    to extract the package name and its version.
+
+    The function is designed to handle the specific two-column format
+    of the `pip list` command, correctly separating the package name
+    from the version string.
+
+    Args:
+        output (str): The raw string output from a `pip list` command.
+
+    Returns:
+        list[dict]: A list of dictionaries, where each dictionary
+        contains the 'name' and 'version' of an installed package.
+    """
     packages = []
 
     lines = output.strip().splitlines()

@@ -1,4 +1,6 @@
 import asyncssh
+
+import reemote.gui.functions.remove
 from reemote.command import Command
 
 
@@ -7,7 +9,7 @@ class Remove:
     A class to encapsulate the functionality of remove (rm) in Unix-like operating systems.
 
     Attributes:
-        path (str): The file path to remove.
+        path (str): The builtin path to remove.
 
     **Examples:**
 
@@ -27,7 +29,7 @@ class Remove:
 
     @staticmethod
     async def _remove_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for file removal"""
+        """Static callback method for builtin removal"""
 
         # Validate host_info (matching Read_file error handling)
         required_keys = ['host', 'username', 'password']
@@ -40,10 +42,10 @@ class Remove:
             raise ValueError("The 'path' attribute of the caller cannot be None.")
 
         try:
-            # Connect to the SSH server and remove the file
+            # Connect to the SSH server and remove the builtin
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    await sftp.remove(path=caller.path)
+                    await reemote.gui.functions.remove.remove(path=caller.path)
         except (OSError, asyncssh.Error) as exc:
             raise  # Re-raise the exception to handle it in the caller
 

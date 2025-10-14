@@ -11,7 +11,7 @@ class Remove_apt_key:
 
     Attributes:
         name (str): A descriptive name for the key being removed, used to
-            identify the keyring file.
+            identify the keyring builtin.
         guard (bool): Whether to add an execution guard for the
             operation. Defaults to True.
         sudo (bool): Indicates if the operation should be executed

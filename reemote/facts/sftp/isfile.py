@@ -5,7 +5,7 @@ from reemote.result import Result
 
 class Isfile:
     """
-    A class to encapsulate the functionality of checking if a path refers to a regular file
+    A class to encapsulate the functionality of checking if a path refers to a regular builtin
     using SFTP isfile in Unix-like operating systems.
 
     Attributes:
@@ -15,7 +15,7 @@ class Isfile:
 
     .. code:: python
 
-        yield Isfile(path="/path/to/file.txt")
+        yield Isfile(path="/path/to/builtin.txt")
 
     Usage:
         This class is designed to be used in a generator-based workflow where
@@ -35,10 +35,10 @@ class Isfile:
 
     @staticmethod
     async def _isfile_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for checking if a path is a regular file"""
+        """Static callback method for checking if a path is a regular builtin"""
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                # Check if the path refers to a regular file
+                # Check if the path refers to a regular builtin
                 if caller.path:
                     is_file = await sftp.isfile(caller.path)
                     return is_file

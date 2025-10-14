@@ -21,7 +21,7 @@ class Get_status:
         self.su: bool = su
 
     def __repr__(self) -> str:
-        return (f"Stop("
+        return (f"Get_status("
                 f"vm={self.vm!r}, "
                 f"sudo={self.sudo!r}, "
                 f"su={self.su!r}"

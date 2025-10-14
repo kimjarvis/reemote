@@ -8,6 +8,41 @@ from reemote.facts.zypper.get_packages import Get_packages
 class Packages(Operation_packages):
     """
     A class to manage package operations on a remote system using `zypper`.
+
+    This class provides functionality to install or remove packages on openSUSE/SUSE systems
+    using the zypper package manager. It allows configuration of execution privileges and
+    safety guards for package operations.
+
+    Attributes:
+        packages (List[str]): List of package names to install or remove.
+        present (bool): If `True`, packages will be installed; if `False`, packages will be removed.
+        guard (bool): If `False` the commands will not be executed.
+        sudo (bool): If `True`, the commands will be executed with sudo privileges.
+        su (bool): If `True`, the commands will be executed with su privileges.
+
+    **Examples:**
+
+    .. code:: python
+
+        # Install packages on all hosts
+        r = yield Packages(["nginx", "curl"], present=True)
+        # Check if the operation was successful
+        if r.cp.return_code == 0:
+            print("Packages installed successfully")
+
+        # Remove packages on all hosts
+        r = yield Packages(["nginx", "curl"], present=False)
+        # Check if the operation was successful
+        if r.cp.return_code == 0:
+            print("Packages removed successfully")
+
+    Usage:
+        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
+
+    Notes:
+        - Commands are constructed based on the present flag to determine whether to install or remove packages.
+        - Uses `zypper install` and `zypper remove` commands internally for package management.
+        - Inherits from Operation_packages base class.
     """
 
     def __init__(self,

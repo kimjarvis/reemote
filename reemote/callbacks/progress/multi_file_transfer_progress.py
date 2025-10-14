@@ -1,10 +1,10 @@
 class Multi_file_transfer_progress:
     """
-    Progress handler that tracks multiple files
+    Progress handler that tracks multiple builtin
 
     Args:
-        src_path: Source file path
-        dst_path: Destination file path
+        src_path: Source builtin path
+        dst_path: Destination builtin path
         copied_bytes: Number of bytes copied so far
         total_bytes: Total bytes to copy (None if unknown)
     """
@@ -14,7 +14,7 @@ class Multi_file_transfer_progress:
         self.start_time = time.time()
 
     def __call__(self, src_path, dst_path, copied_bytes, total_bytes):
-        # Track current file progress
+        # Track current builtin progress
         self.files[src_path] = (copied_bytes, total_bytes)
 
         # Calculate overall progress
@@ -25,7 +25,7 @@ class Multi_file_transfer_progress:
         elapsed = time.time() - self.start_time
         print(f"Files: {completed_files}/{total_files} completed | Time: {elapsed:.1f}s")
 
-        # Show current file progress
+        # Show current builtin progress
         if total_bytes:
             percentage = (copied_bytes / total_bytes) * 100
             print(f"Current: {os.path.basename(src_path)} - {percentage:.1f}%")
