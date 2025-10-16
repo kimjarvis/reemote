@@ -61,7 +61,9 @@ async def run_command_on_host(operation):
                     executed = True
                     if operation.sudo:
                         full_command = f"echo {global_info['sudo_password']} | sudo -S {command}"
+                        print("trace 04",full_command)
                         cp = await conn.run(full_command, check=False)
+                        print("trace 05",cp)
                     elif operation.su:
                         full_command = f"su {global_info['su_user']} -c '{command}'"
                         if global_info["su_user"] == "root":

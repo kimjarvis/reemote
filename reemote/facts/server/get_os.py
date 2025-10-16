@@ -1,71 +1,38 @@
-# Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com 
-# This software is licensed under the MIT License. See the LICENSE file for details.
-#
 class Get_OS:
-    """
-    A class to obtain information about the OS.
-
-    Attributes:
-        field (str): The name of the field to operate on.
-        sudo (bool): If `True`, the commands will be executed with `sudo` privileges.
-        su (bool): If `True`, the commands will be executed with `su` privileges.
-
-    **Examples:**
-
-    .. code:: python
-
-        yield Get_OS("NAME")
-
-    Usage:
-        This class is designed to be used in a generator-based workflow where commands are yielded for execution.
-        It supports adding or removing packages based on the `present` flag and allows privilege escalation via `sudo` or `su`.
-
-    Notes:
-        - Commands are constructed based on the `present`, `sudo`, and `su` flags.
-        - The `changed` flag is set if the package state changes after execution.
-    """
-
-    def __init__(self,
-                 field: str = "PRETTY_NAME",
-                 guard: bool = True,
-                 sudo: bool = False,
-                 su: bool = False):
+    def __init__(self, field: str = "PRETTY_NAME", guard: bool = True, sudo: bool = False, su: bool = False):
         self.field = field
-        self.guard: bool = guard
-        self.sudo: bool = sudo
-        self.su: bool = su
+        self.guard = guard
+        self.sudo = sudo
+        self.su = su
 
     def execute(self):
         from reemote.operations.server.shell import Shell
         import re
 
-        # Execute the shell command to read /etc/os-release
-        r0 = yield Shell("cat /etc/os-release")
+        # Yield the shell operation to the framework
+        result = yield Shell("cat /etc/os-release", sudo=self.sudo, su=self.su)
 
-        # Define a regex pattern for extracting the specified field
-        field_pattern = rf'{self.field}="([^"]+)"'
+        # Parse the result and store the value
+        lines = result.cp.stdout.split('\n')
 
-        # Search for the specified field in the output
-        match = re.search(field_pattern, r0.cp.stdout)
+        for line in lines:
+            line = line.strip()
+            if line and line.startswith(f'{self.field}='):
+                # Extract everything after the equals sign
+                value = line.split('=', 1)[1].strip()
 
-        if match:
-            # Extract and return the value of the specified field
-            result = match.group(1)
+                # Remove surrounding quotes if present
+                if value and ((value.startswith('"') and value.endswith('"')) or
+                              (value.startswith("'") and value.endswith("'"))):
+                    value = value[1:-1]
 
-            # Handle special cases for rolling releases (if applicable)
-            if self.field == "VERSION_ID" and result.lower() == "rolling":
-                result = "Rolling Release"
-
-            r0.cp.stdout = result
-        else:
-            # Handle failure to extract the specified field
-            r0.cp.stdout = f"Failed to extract field '{self.field}' from OS details."
-
-        return r0.cp.stdout
+                # Store the parsed value
+                result.cp.stdout = value
+                break
 
     def __repr__(self):
-        return (f"Get_OS(field={self.field!r}, "
-                f"guard={self.guard!r}, "                                
+        return (f"Get_OS("
+                f"field={self.field!r}, "
+                f"guard={self.guard!r}, "
                 f"sudo={self.sudo!r}, "
-                f"su={self.su!r}"
-                f")")
+                f"su={self.su!r})")

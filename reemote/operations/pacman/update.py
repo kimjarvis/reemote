@@ -49,5 +49,5 @@ class Update(Operation_update):
     def get_packages(self):
         return Get_packages()
 
-    def update_packages(self, guard=None,sudo=None,su=None):
+    def update(self, guard=None,sudo=None,su=None):
         return Update(self.guard, self.sudo, self.su)

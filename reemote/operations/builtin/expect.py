@@ -1,6 +1,8 @@
 # Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com 
 # This software is licensed under the MIT License. See the LICENSE file for details.
 #
+from jinja2.filters import sync_do_sum
+
 from reemote.command import Command
 import json
 
@@ -61,8 +63,10 @@ class Expect:
                  creates: str = None,
                  echo: bool = False,
                  removes: str = None,
-                 timeout: int = 30,
-                 guard: bool = True):
+                 timeout = None, # int = 30,
+                 guard: bool = True,
+                 sudo: bool = False,
+                 su: bool=False):
 
         self.command = command
         self.responses = responses
@@ -72,6 +76,8 @@ class Expect:
         self.removes = removes
         self.timeout = timeout
         self.guard = guard
+        self.sudo = sudo
+        self.su = su
 
     def __repr__(self):
         return (f"Expect(command={self.command!r}, "
@@ -81,7 +87,10 @@ class Expect:
                 f"echo={self.echo!r}, "
                 f"removes={self.removes!r}, "
                 f"timeout={self.timeout!r}, "
-                f"guard={self.guard!r})")
+                f"guard={self.guard!r}, "
+                f"sudo={self.sudo!r}, "
+                f"su={self.su!r})"
+                )
 
     def execute(self):
         # Construct the expect command with all parameters
@@ -108,15 +117,16 @@ class Expect:
             cmd_parts.extend(["--removes", self.removes])
 
         # Add the main command
-        cmd_parts.extend(["--command", self.command])
+        cmd_parts.extend(["-c", "'"+self.command+"'"])
 
         # Add responses as JSON
         responses_json = json.dumps(self.responses)
-        cmd_parts.extend(["--responses", responses_json])
+        cmd_parts.extend(["-r", "'"+responses_json+"'"])
 
         # Join all parts into a single command string
         full_cmd = " ".join(cmd_parts)
 
         # Execute the command
-        r = yield Command(full_cmd, guard=self.guard)
+        print("trace 05",full_cmd)
+        r = yield Command(full_cmd, guard=self.guard, sudo=self.sudo, su=self.su)
         r.changed = True

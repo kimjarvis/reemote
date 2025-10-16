@@ -49,6 +49,6 @@ class Upgrade(Operation_upgrade):
     def get_packages(self):
         return Get_packages()
 
-    def upgrade_packages(self, guard=None,sudo=None,su=None):
+    def upgrade(self, guard=None,sudo=None,su=None):
         from reemote.commands.apt.upgrade import Update
         return Upgrade(self.guard, self.sudo, self.su)

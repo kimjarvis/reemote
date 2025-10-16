@@ -91,17 +91,13 @@ class Packages(Operation_packages):
                  guard: bool = True,
                  sudo: bool = False,
                  su: bool = False):
-        print("trace 01")
         super().__init__(packages, present, guard, sudo, su)
-        print("trace 02")
 
     def get_packages(self):
-        print("trace 00")
         return Get_packages()
 
     def install_packages(self, packages=None, guard=None, present=None, sudo=None, su=None):
         return Install(self.packages, self.guard and self.present, self.sudo, self.su)
 
     def remove_packages(self, packages=None, guard=None, present=None, sudo=None, su=None):
-        print("trace 20")
         return Remove(self.packages, self.guard and not self.present, self.sudo, self.su)

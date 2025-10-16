@@ -48,6 +48,6 @@ class Shell:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        # print(f"{self}")
+        print("trace 08",f"{self}")
         r = yield Command(self.cmd, guard=self.guard, sudo=self.sudo, su=self.su)
         r.changed = True

@@ -57,7 +57,7 @@ class Script:
         yield Remove(
             path='/tmp/script.sh',
         )
-        yield Write_file(path='/tmp/script', text=f'{self.txt}')
+        yield Write_file(path='/tmp/script', text=f'{self.text}')
         yield Chmod(
             path='/tmp/script.sh',
             mode=0o755,
