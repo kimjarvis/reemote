@@ -6,7 +6,7 @@ import asyncio
 from asyncssh import SSHCompletedProcess
 from reemote.command import Command
 from reemote.result import Result
-
+import logging
 
 async def run_command_on_local(operation):
     host_info = operation.host_info
@@ -48,6 +48,13 @@ async def run_command_on_host(operation):
     command = operation.command
     cp = SSHCompletedProcess()
     executed = False
+    # Configure logging to write to a file
+    logging.basicConfig(
+        level=logging.DEBUG,
+        filename="asyncssh_debug.log",  # Log file name
+        filemode="w",  # Overwrite the file each time
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
     try:
         async with asyncssh.connect(**host_info) as conn:
@@ -60,7 +67,11 @@ async def run_command_on_host(operation):
                 else:
                     executed = True
                     if operation.sudo:
-                        full_command = f"echo {global_info['sudo_password']} | sudo -S {command}"
+                        if global_info['sudo_password']==None:
+                            full_command = f"sudo {command}"
+                        else:
+                            full_command = f"echo {global_info['sudo_password']} | sudo -S {command}"
+
                         print("trace 04",full_command)
                         cp = await conn.run(full_command, check=False)
                         print("trace 05",cp)

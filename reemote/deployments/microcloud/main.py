@@ -4,25 +4,34 @@ from reemote.main import main
 
 class Install:
     def execute(self):
-        # from reemote.operations.server.shell import Shell
-        # yield Shell("/snap/bin/lxc storage create disks zfs size=100GiB",
-        #             sudo=True)
-        # yield Shell("/snap/bin/lxc storage set disks volume.size 10GiB",
-        #             sudo=True)
-        # yield Shell("/snap/bin/lxc storage volume create disks local1 --type block",
-        #             sudo=True)
-        # yield Shell("/snap/bin/lxc storage volume create disks local2 --type block",
-        #             sudo=True)
-        # yield Shell("/snap/bin/lxc storage volume create disks local3 --type block",
-        #             sudo=True)
-        # yield Shell("/snap/bin/lxc storage volume create disks local4 --type block",
-        #             sudo=True)
-        # yield Shell("/snap/bin/lxc storage volume create disks remote1 --type block size=20GiB",
-        #             sudo=True)
-        # yield Shell("/snap/bin/lxc storage volume create disks remote2 --type block size=20GiB",
-        #             sudo=True)
-        # yield Shell("/snap/bin/lxc storage volume create disks remote3 --type block size=20GiB",
-        #             sudo=True)
+        import time
+        from reemote.operations.server.shell import Shell
+        yield Shell("/snap/bin/lxc --debug storage create disks zfs size=100GiB",
+                    sudo=True)
+        time.sleep(1)  # Sleeps for 1 second
+        yield Shell("/snap/bin/lxc --debug storage set disks volume.size 10GiB",
+                    sudo=True)
+        time.sleep(1)  # Sleeps for 1 second
+        yield Shell("/snap/bin/lxc --debug storage volume create disks local1 --type block",
+                    sudo=True)
+        time.sleep(1)  # Sleeps for 1 second
+        yield Shell("/snap/bin/lxc --debug storage volume create disks local2 --type block",
+                    sudo=True)
+        time.sleep(1)  # Sleeps for 1 second
+        yield Shell("/snap/bin/lxc storage volume create disks local3 --type block",
+                    sudo=True)
+        time.sleep(1)  # Sleeps for 1 second
+        yield Shell("/snap/bin/lxc storage volume create disks local4 --type block",
+                    sudo=True)
+        time.sleep(1)  # Sleeps for 1 second
+        yield Shell("/snap/bin/lxc storage volume create disks remote1 --type block size=20GiB",
+                    sudo=True)
+        time.sleep(1)  # Sleeps for 1 second
+        yield Shell("/snap/bin/lxc storage volume create disks remote2 --type block size=20GiB",
+                    sudo=True)
+        time.sleep(1)  # Sleeps for 1 second
+        yield Shell("/snap/bin/lxc storage volume create disks remote3 --type block size=20GiB",
+                    sudo=True)
 
 
 

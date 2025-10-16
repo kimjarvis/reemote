@@ -9,11 +9,10 @@ def inventory() -> List[Tuple[Dict[str, Any], Dict[str, str]]]:
             {
                 'host': '192.168.1.51',  # images:debian/13 debian-0
                 'username': 'kim',  # Kim Jarvis
-                'password': 'xnjsKJ*4',  # Password
             },
             {
                 'sudo_user': 'kim',  # Sudo user
-                'sudo_password': 'xnjsKJ*4',  # Password
+                'sudo_password': None,  # Password
             }
         )
     ]
