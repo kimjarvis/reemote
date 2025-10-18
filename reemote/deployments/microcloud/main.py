@@ -6,21 +6,21 @@ class Install:
     def execute(self):
         import time
         from reemote.operations.server.shell import Shell
-        yield Shell("/snap/bin/lxc --debug storage create disks zfs size=100GiB",
+        yield Shell("echo 'hello'",
                     sudo=True)
-        time.sleep(1)  # Sleeps for 1 second
+        time.sleep(10)  # Sleeps for 1 second
         yield Shell("/snap/bin/lxc --debug storage set disks volume.size 10GiB",
                     sudo=True)
-        time.sleep(1)  # Sleeps for 1 second
+        time.sleep(10)  # Sleeps for 1 second
         yield Shell("/snap/bin/lxc --debug storage volume create disks local1 --type block",
                     sudo=True)
-        time.sleep(1)  # Sleeps for 1 second
+        time.sleep(10)  # Sleeps for 1 second
         yield Shell("/snap/bin/lxc --debug storage volume create disks local2 --type block",
                     sudo=True)
-        time.sleep(1)  # Sleeps for 1 second
+        time.sleep(10)  # Sleeps for 1 second
         yield Shell("/snap/bin/lxc storage volume create disks local3 --type block",
                     sudo=True)
-        time.sleep(1)  # Sleeps for 1 second
+        time.sleep(10)  # Sleeps for 1 second
         yield Shell("/snap/bin/lxc storage volume create disks local4 --type block",
                     sudo=True)
         time.sleep(1)  # Sleeps for 1 second
