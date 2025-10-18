@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com 
+# This software is licensed under the MIT License. See the LICENSE file for details.
+#
 from reemote.command import Command
 
 class Shell:
@@ -45,6 +48,6 @@ class Shell:
                 f"sudo={self.sudo!r}, su={self.su!r})")
 
     def execute(self):
-        # print(f"{self}")
+        print("trace 08",f"{self}")
         r = yield Command(self.cmd, guard=self.guard, sudo=self.sudo, su=self.su)
         r.changed = True

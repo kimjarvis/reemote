@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com 
+# This software is licensed under the MIT License. See the LICENSE file for details.
+#
 from typing import Dict, Optional, Callable
 
 class Command:
@@ -38,18 +41,6 @@ class Command:
         self.su=su
         self.composite=composite
 
-
-    def __init__(self, command: str, guard: bool = True, local: bool = False, callback: Optional[Callable] = None, caller=None, sudo: bool = False, su: bool = False, composite=False):
-        self.command: str = command
-        self.guard: bool = guard
-        self.host_info: Optional[Dict[str, str]] = None
-        self.global_info: Optional[Dict[str, str]] = None
-        self.local=local
-        self.callback=callback
-        self.caller=caller
-        self.sudo=sudo
-        self.su=su
-        self.composite=composite
 
     def __str__(self) -> str:
         return repr(self)

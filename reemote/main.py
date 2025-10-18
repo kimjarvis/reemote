@@ -1,89 +1,102 @@
-import sys
-import argparse
+# Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com
+# This software is licensed under the MIT License. See the LICENSE file for details.
+#
+import asyncio
+
+from reemote.utilities.parse_kwargs_string import parse_kwargs_string
+from reemote.utilities.validate_inventory_file_and_get_inventory import validate_inventory_file_and_get_inventory
+from reemote.utilities.validate_root_class_name_and_get_root_class import validate_root_class_name_and_get_root_class
 from reemote.execute import execute
 from reemote.utilities.verify_python_file import verify_python_file
-from reemote.utilities.validate_inventory_file_and_get_inventory import validate_inventory_file_and_get_inventory
+from reemote.utilities.verify_source_file_contains_valid_class import verify_source_file_contains_valid_class
 from reemote.utilities.validate_inventory_structure import validate_inventory_structure
+from reemote.utilities.write_responses_to_file import write_responses_to_file
 from reemote.utilities.produce_json import produce_json
+
 from reemote.utilities.convert_to_df import convert_to_df
 from reemote.utilities.convert_to_tabulate import convert_to_tabulate
 
 async def main(callable=None):
     """
-    Main entry point for the reemote application.
+    Main entry point for deployments.
 
-    This function serves as the primary execution handler that processes command-line arguments,
-    validates the inventory file, and executes operations across remote hosts.
+    This function parses command-line arguments, validates input files and parameters,
+    executes remote operations, and outputs results in the specified format.
 
-    Args:
-        callable (callable, optional): A callable object that returns an instance with an
-            [execute()](file:///home/kim/reemote/reemote/execute.py#L0-L209) method. This method should yield [Command](file:///home/kim/reemote/reemote/command.py#L2-L65) objects to be executed
-            across the hosts defined in the inventory. Defaults to None.
+    The CLI requires three main arguments:
+    - Inventory file: Defines the target hosts for deployment
+    - Source file: Python file containing the deployment class
+    - Class name: The deployment class with an execute method
 
-    Process:
-        1. Parses command-line arguments to get the inventory file path
-        2. Validates that the inventory file is a valid Python file
-        3. Loads and validates the inventory data structure
-        4. Ensures the inventory contains at least one host
-        5. Executes operations yielded by the callable's execute() method
-        6. Processes and displays results in a tabulated format
+    Optional arguments allow specifying output file and format.
 
-    The function expects the inventory file to contain a callable that returns a list of
-    tuples, where each tuple contains host connection information and global configuration.
+    Supported output formats:
+    - grid: Tabular format with grid borders
+    - json: Raw JSON output
+    - rst: reStructuredText table format
 
     Returns:
-        None: Results are printed directly to stdout in tabular format
+        None: Results are printed to stdout or written to a file
     """
+    import argparse
+    import sys
+
+    # Create the argument parser
     parser = argparse.ArgumentParser(
-        description="Open an SSH terminal connection using an inventory builtin.",
-        usage="usage: terminal.py [-h] -i INVENTORY_FILE [-n HOST_NUMBER] [--no-test]",
-        epilog=""
+        description="CLI tool with inventory, source, class, and kwarg options.",
+        usage="usage: reemote [-h] -i INVENTORY_FILE -s SOURCE_FILE -c CLASS_NAME -k KWARGS",
+        epilog="""
+        Example: 
+          python3 reemote/deployments/microcloud.py -i ~/inventory_alpine1.py 
+        """,
+        formatter_class=argparse.RawTextHelpFormatter,
+        allow_abbrev=False  # Prevents ambiguous abbreviations
     )
+
+    # Required arguments
     parser.add_argument(
         "-i", "--inventory",
         required=True,
         dest="inventory",
         help="Path to the inventory Python builtin (.py extension required)"
     )
+
+    # Parse arguments
     args = parser.parse_args()
 
-    # Verify inventory file exists and is a Python file
-    if not verify_python_file(args.inventory):
-        print("Invalid inventory file")
+    # Display help if no arguments are provided
+    if len(sys.argv) == 1:
+        parser.print_help()
         sys.exit(1)
 
-    # Load and validate inventory
-    inventory = validate_inventory_file_and_get_inventory(args.inventory)
-    if not inventory:
-        print("Failed to load inventory")
-        sys.exit(1)
+    # Verify inventory builtin
+    if args.inventory:
+        if not verify_python_file(args.inventory):
+            sys.exit(1)
 
-    # Validate inventory structure
-    inventory_data = inventory()
-    if not validate_inventory_structure(inventory_data):
-        print("Inventory structure is invalid")
-        sys.exit(1)
+    # verify the inventory
+    if args.inventory:
+        inventory = validate_inventory_file_and_get_inventory(args.inventory)
+        if not inventory:
+            sys.exit(1)
+    else:
+        inventory = []
 
-    # Check if inventory has hosts
-    if not inventory_data or not inventory_data[0]:
-        print("No hosts in inventory")
-        sys.exit(1)
+    if args.inventory:
+        if not validate_inventory_structure(inventory()):
+            print("Inventory structure is invalid")
+            sys.exit(1)
 
-    # Execute operations
-    responses = []
-    for operation in callable().execute():  # Iterate over the generator
-        response = await execute(inventory(), operation)
-        responses.append(response)
+    responses = await execute(inventory(), callable())
 
-    # Process results - FIX: Flatten the responses if they contain lists
-    flattened_responses = []
-    for response in responses:
-        if isinstance(response, list):
-            flattened_responses.extend(response)
-        else:
-            flattened_responses.append(response)
-
-    json = produce_json(flattened_responses)
-    df = convert_to_df(json, columns=["command", "host", "returncode", "stdout", "stderr", "error"])
+    json = produce_json(responses)
+    df = convert_to_df(json,columns=["command", "host", "returncode", "stdout", "stderr", "error"])
     table = convert_to_tabulate(df)
     print(table)
+
+def _main():
+    """Synchronous wrapper for console_scripts."""
+    asyncio.run(main())
+
+if __name__ == "__main__":
+    _main()

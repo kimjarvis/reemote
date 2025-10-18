@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com 
+# This software is licensed under the MIT License. See the LICENSE file for details.
+#
 from typing import List
 from reemote.operation_update import Operation_update
 from reemote.commands.zypper.upgrade import Upgrade
@@ -46,6 +49,6 @@ class Update(Operation_update):
     def get_packages(self):
         return Get_packages()
 
-    def update_packages(self, guard=None,sudo=None,su=None):
+    def update(self, guard=None,sudo=None,su=None):
         from reemote.commands.zypper.update import Update
         return Update(self.guard, self.sudo, self.su)

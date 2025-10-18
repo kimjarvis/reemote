@@ -1,3 +1,6 @@
+# Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com 
+# This software is licensed under the MIT License. See the LICENSE file for details.
+#
 from typing import List
 from reemote.operation_upgrade import Operation_upgrade
 from reemote.commands.yum.upgrade import Upgrade
@@ -46,6 +49,6 @@ class Upgrade(Operation_upgrade):
     def get_packages(self):
         return Get_packages()
 
-    def upgrade_packages(self, guard=None,sudo=None,su=None):
+    def upgrade(self, guard=None,sudo=None,su=None):
         from reemote.commands.yum.upgrade import Upgrade
         return Upgrade(self.guard, self.sudo, self.su)
