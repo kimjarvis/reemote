@@ -4,11 +4,11 @@
 from reemote.command import Command
 
 class Get_global_info:
-    """Represents an operation to retrieve information from a global context.
+    """Represents a command to retrieve information from a global context.
 
     This class is used to create a command that fetches data from a
-    `global_info` dictionary available in the execution environment. When
-    executed, it can retrieve a specific value by its key (`field`) or
+    [global_info](file:///home/kim/reemote/reemote/command.py#L35-L35) dictionary available in the execution environment. When
+    executed, it can retrieve a specific value by its key ([field](file:///home/kim/reemote/reemote/facts/server/get_os.py#L2-L2)) or
     the entire dictionary if no field is specified.
 
     Args:
@@ -17,8 +17,13 @@ class Get_global_info:
             dictionary is returned. Defaults to None.
 
     Raises:
-        ValueError: If the provided `field` is not a string or None.
+        ValueError: If the provided [field](file:///home/kim/reemote/reemote/facts/server/get_os.py#L2-L2) is not a string or None.
+
+    Attributes:
+        field (str | None): The key of the value to retrieve from the
+            global information dictionary.
     """
+
     def __init__(self, field=None):
         if field is not None and not isinstance(field, str):
             raise ValueError("Field must be a string or None")

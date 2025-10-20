@@ -1,5 +1,5 @@
 notes/
-inventory.py
+inventory*.py
 storage-user*
 .idea/
 development/

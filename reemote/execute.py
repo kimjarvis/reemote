@@ -57,55 +57,61 @@ async def run_command_on_host(operation):
     )
 
     try:
-        async with asyncssh.connect(**host_info) as conn:
-            if operation.composite:
-                # Composite operations (like Directory) get raw error messages
-                pass
-            else:
-                if not operation.guard:
+       if operation.get_pty:
+            print("trace 01")
+            conn = await asyncssh.connect(**host_info, term_type='xterm')
+       else:
+            print("trace 02")
+            conn = await asyncssh.connect(**host_info)
+       async with conn as conn:
+                if operation.composite:
+                    # Composite operations (like Directory) get raw error messages
                     pass
                 else:
-                    executed = True
-                    if operation.sudo:
-                        if global_info['sudo_password']==None:
-                            full_command = f"sudo {command}"
-                        else:
-                            full_command = f"echo {global_info['sudo_password']} | sudo -S {command}"
+                    if not operation.guard:
+                        pass
+                    else:
+                        executed = True
+                        if operation.sudo:
+                            if global_info.get('sudo_password') is None:
+                                full_command = f"sudo {command}"
+                            else:
+                                full_command = f"echo {global_info['sudo_password']} | sudo -S {command}"
 
-                        print("trace 04",full_command)
-                        cp = await conn.run(full_command, check=False)
-                        print("trace 05",cp)
-                    elif operation.su:
-                        full_command = f"su {global_info['su_user']} -c '{command}'"
-                        if global_info["su_user"] == "root":
-                            async with conn.create_process(full_command,
-                                                           term_type='xterm',
-                                                           stdin=asyncssh.PIPE, stdout=asyncssh.PIPE,
-                                                           stderr=asyncssh.PIPE) as process:
-                                try:
+                            print("trace 04",full_command)
+                            cp = await conn.run(full_command, check=False)
+                            print("trace 05",cp)
+                        elif operation.su:
+                            full_command = f"su {global_info['su_user']} -c '{command}'"
+                            if global_info["su_user"] == "root":
+                                async with conn.create_process(full_command,
+                                                               term_type='xterm',
+                                                               stdin=asyncssh.PIPE, stdout=asyncssh.PIPE,
+                                                               stderr=asyncssh.PIPE) as process:
+                                    try:
+                                        output = await process.stdout.readuntil('Password:')
+                                        process.stdin.write(f'{global_info["su_password"]}\n')
+                                    except asyncio.TimeoutError:
+                                        pass
+                                    stdout, stderr = await process.communicate()
+                            else:
+                                async with conn.create_process(full_command,
+                                                               term_type='xterm',
+                                                               stdin=asyncssh.PIPE, stdout=asyncssh.PIPE,
+                                                               stderr=asyncssh.PIPE) as process:
                                     output = await process.stdout.readuntil('Password:')
                                     process.stdin.write(f'{global_info["su_password"]}\n')
-                                except asyncio.TimeoutError:
-                                    pass
-                                stdout, stderr = await process.communicate()
-                        else:
-                            async with conn.create_process(full_command,
-                                                           term_type='xterm',
-                                                           stdin=asyncssh.PIPE, stdout=asyncssh.PIPE,
-                                                           stderr=asyncssh.PIPE) as process:
-                                output = await process.stdout.readuntil('Password:')
-                                process.stdin.write(f'{global_info["su_password"]}\n')
-                                stdout, stderr = await process.communicate()
+                                    stdout, stderr = await process.communicate()
 
-                        cp = SSHCompletedProcess(
-                            command=full_command,
-                            exit_status=process.exit_status,
-                            returncode=process.returncode,
-                            stdout=stdout,
-                            stderr=stderr
-                        )
-                    else:
-                        cp = await conn.run(command, check=False)
+                            cp = SSHCompletedProcess(
+                                command=full_command,
+                                exit_status=process.exit_status,
+                                returncode=process.returncode,
+                                stdout=stdout,
+                                stderr=stderr
+                            )
+                        else:
+                            cp = await conn.run(command, check=False)
 
     except asyncssh.ProcessError as exc:
         raw_error = str(exc)

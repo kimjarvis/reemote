@@ -29,7 +29,7 @@ class Command:
                          of multiple sub-commands. Defaults to False.
     """
 
-    def __init__(self, command: str, guard: bool = True, local: bool = False, callback: Optional[Callable] = None, caller=None, sudo: bool = False, su: bool = False, composite=False):
+    def __init__(self, command: str, guard: bool = True, local: bool = False, callback: Optional[Callable] = None, caller=None, sudo: bool = False, su: bool = False, get_pty: bool =False, composite=False):
         self.command: str = command
         self.guard: bool = guard
         self.host_info: Optional[Dict[str, str]] = None
@@ -39,6 +39,7 @@ class Command:
         self.caller=caller
         self.sudo=sudo
         self.su=su
+        self.get_pty=get_pty
         self.composite=composite
 
 
@@ -52,9 +53,12 @@ class Command:
                 f"callback={self.callback!r}, "
                 f"caller={self.caller!r}, "
                 f"composite={self.composite!r}, "
-                f"sudo={self.sudo!r}, su={self.su!r}), "
+                f"sudo={self.sudo!r}, "
+                f"su={self.su!r}, "
+                f"get_pty={self.get_pty!r}, "
                 f"host_info={self.host_info!r}, "
-                f"global_info={self.global_info!r})")
+                f"global_info={self.global_info!r}"
+                f")")
 
 
 def word_wrap(text, width=40):
