@@ -90,3 +90,26 @@ def delete_entry(entry_id: int):
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Entry not found")
     return {"message": "Entry deleted"}
+
+def get_inventory() -> List[Tuple[Dict, Dict]]:
+    """
+    Fetches the entire inventory from the database and returns it as a Python object:
+    A list of tuples, where each tuple contains two dictionaries.
+    """
+    try:
+        # Query all entries from the database
+        cursor.execute("SELECT data FROM entries")
+        rows = cursor.fetchall()
+
+        # Deserialize the data into Python objects
+        inventory = []
+        for row in rows:
+            serialized_data = row[0]  # Extract the serialized data
+            deserialized_data = deserialize_data(serialized_data)
+            inventory.extend(deserialized_data)  # Add to the inventory list
+
+        return inventory
+
+    except Exception as e:
+        print(f"Error fetching inventory: {e}")
+        return []

@@ -12,6 +12,8 @@ uv run python -m uvicorn main:app --reload
 The redoc documentation can be converted to static web pages.  
 The validation can also modify the input parameters.
 
-
+```sh
+uv run python -m uvicorn server:app --reload --port 8005
+```
 
 

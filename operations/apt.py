@@ -1,3 +1,4 @@
+from typing import Any
 from fastapi import FastAPI, Query, Depends, HTTPException
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ValidationError
@@ -9,7 +10,7 @@ class Packages(BaseModel):
     packages: list[str]
     present: bool
 
-def validate_operations_apt_packages(common: CommonParams = Depends(common_params), **kwargs):
+def validate_operations_apt_packages(common: CommonParams = Depends(common_params), **kwargs: Any) -> dict[str, Any]:
     try:
         # Combine common parameters with additional kwargs
         common = {**common.model_dump(), **kwargs}
@@ -27,7 +28,7 @@ def operations_apt_packages(
     packages: list[str] = Query(..., description="List of package names"),
     present: bool = Query(..., description="Whether the packages are present"),
     common: CommonParams = Depends(common_params)  # Inject shared parameters
-):
+) -> dict[str, Any]:
     # Call the validation function with shared parameters and additional kwargs
     result = validate_operations_apt_packages(common=common, packages=packages, present=present)
 

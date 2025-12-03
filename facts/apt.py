@@ -1,3 +1,4 @@
+from typing import Any
 from fastapi import FastAPI, Query, Depends, HTTPException
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ValidationError
@@ -8,7 +9,7 @@ router = APIRouter()
 class Get_packages(BaseModel):
     pass  # No fields to validate for this specific model
 
-def validate_facts_get_packages(common: CommonParams = Depends(common_params)):
+def validate_facts_get_packages(common: CommonParams = Depends(common_params)) -> dict[str, Any]:
     try:
         # Validate only the common parameters using the model
         parms = Get_packages(**common.model_dump())
@@ -20,7 +21,7 @@ def validate_facts_get_packages(common: CommonParams = Depends(common_params)):
 @router.get("/get_packages/", tags=["APT Facts"],)
 def facts_apt_get_packages(
     common: CommonParams = Depends(common_params)  # Inject shared parameters
-):
+) -> dict[str, Any]:
     # Call the validation function with only the shared parameters
     result = validate_facts_get_packages(common=common)
 
