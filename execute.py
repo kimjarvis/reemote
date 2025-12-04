@@ -200,7 +200,7 @@ async def pre_order_generator_async(node):
                 stack[-1] = (stack[-1][0], stack[-1][1], result)
 
 
-async def execute(inventory, obj):
+async def execute(inventory, root_obj_factory):
     # Configure logging to write to a file
     logging.basicConfig(
         level=logging.DEBUG,
@@ -208,19 +208,19 @@ async def execute(inventory, obj):
         filemode="w",  # Overwrite the file each time
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
-    logging.info(f"execute.py execute {inventory},{obj}")
+    logging.info(f"execute.py execute {inventory},{root_obj_factory}")
     """
     Async version of execute function using async generators.
     Executes deployment operations across multiple hosts.
     """
 
-    async def process_host(inventory_item, root_obj):
+    async def process_host(inventory_item, root_obj_factory):
         """Process execution for a single host using async generators."""
-        logging.info(f"execute.py process_host {inventory_item},{root_obj}")
+        logging.info(f"execute.py process_host {inventory_item},{root_obj_factory}")
         responses = []
 
-        # Create a new instance for this host
-        host_instance = type(root_obj)()
+        # Create a new instance for this host using the factory
+        host_instance = root_obj_factory()
 
         # Create async pre-order generator
         gen = pre_order_generator_async(host_instance)
@@ -275,7 +275,7 @@ async def execute(inventory, obj):
     # Run all hosts in parallel
     tasks = []
     for inventory_item in inventory:
-        task = asyncio.create_task(process_host(inventory_item, obj))
+        task = asyncio.create_task(process_host(inventory_item, root_obj_factory))
         tasks.append(task)
 
     # Wait for all hosts to complete

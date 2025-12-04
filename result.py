@@ -2,7 +2,7 @@
 # This software is licensed under the MIT License. See the LICENSE file for details.
 #
 from asyncssh import SSHCompletedProcess
-from command import Command
+from command import Command, serialize_command
 from typing import Optional, Mapping, Tuple, Union, Dict, Any
 from types import MappingProxyType
 from base64 import b64encode

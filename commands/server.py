@@ -1,7 +1,7 @@
 import json
 from fastapi import Query, Depends
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from common import CommonParams, common_params
 from typing import Any
 from utilities.validate_parameters import validate_parameters
@@ -9,6 +9,8 @@ from utilities.base import Base
 from inventory import get_inventory
 from execute import execute
 import logging
+from result import serialize_result
+from response import Response
 
 router = APIRouter()
 
@@ -24,7 +26,7 @@ class Shell(Base):
 async def commands_server_shell(
         cmd: str = Query(..., description="Shell command"),
         common: CommonParams = Depends(common_params)  # Inject shared parameters
-) -> dict[str, Any]:
+) -> list[Response]:
     logging.basicConfig(
         level=logging.DEBUG,
         filename="asyncssh_debug.log",  # Log file name
@@ -51,7 +53,26 @@ async def commands_server_shell(
 
         all_data={"cmd": cmd, **common_dict}
         logging.info(f"server.py commands_server_shell all_data: {all_data}")
-        responses = await execute(inventory, Shell(**all_data))
-    return json.dumps(responses)
+        responses = await execute(inventory, lambda: Shell(**all_data))
+        logging.info(f"server.py commands_server_shell responses: {responses}")
+    # return [Response(host=r.host,name=r.op.name,command=r.op.command,stdout=r.cp.stdout,stderr=r.cp.stderr,changed=r.changed,return_code=r.cp.returncode,error=r.error) for r in responses]
 
-
+# Assuming `responses` is a list of objects with attributes matching the fields
+        try:
+            validated_responses = [
+                Response(
+                    host=r.host,
+                    name=r.op.name,
+                    command=r.op.command,
+                    stdout=r.cp.stdout,
+                    stderr=r.cp.stderr,
+                    changed=r.changed,
+                    return_code=r.cp.returncode,
+                    error=r.error
+                )
+                for r in responses
+            ]
+            print("Validation successful!")
+        except ValidationError as e:
+            print(f"Validation failed: {e}")
+        return validated_responses

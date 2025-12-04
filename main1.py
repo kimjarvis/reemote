@@ -16,7 +16,7 @@ class Root:
 async def main():
     inventory = get_inventory()
     print(f"Inventory: {inventory}")
-    responses = await execute(inventory, Root())
+    responses = await execute(inventory, lambda: Root())
     print(f"Responses: {responses}")
 
 if __name__ == "__main__":
