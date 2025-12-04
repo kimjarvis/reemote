@@ -1,37 +1,99 @@
-from typing import Any
+from typing import Any, Union, Dict, Optional
 from fastapi import FastAPI, Query, Depends, HTTPException
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ValidationError
 from common import CommonParams, common_params
+from command import Command
+from utilities.kwargs_to_string import kwargs_to_string
 
 router = APIRouter()
 
-class Shell(BaseModel):
+class ShellModel(BaseModel):
     cmd: str
 
-def validate_operations_server_shell(common: CommonParams = Depends(common_params), **kwargs: Any) -> dict[str, Any]:
+from typing import Any, Union, Dict
+from pydantic import BaseModel
+
+
+def validate_operations_server_shell(
+        common: Optional[Union[CommonParams, Dict[str, Any]]] = None,
+        **kwargs: Any
+) -> Dict[str, Any]:
+    """
+    Alternative explicit version with clear parameter separation
+    """
+    # Normalize common to dict
+    if common is None:
+        common_dict = {}
+    elif isinstance(common, BaseModel):
+        common_dict = common.model_dump()
+    elif isinstance(common, dict):
+        common_dict = common
+    else:
+        raise TypeError("`common` must be a CommonParams instance, dict, or None")
+
+    # Merge data (kwargs override common_dict)
+    all_data = {**common_dict, **kwargs}
+
     try:
-        # Combine common parameters with additional kwargs
-        common = {**common.model_dump(), **kwargs}
-
-        # Validate the inputs using the model
-        parms = Shell(**common)
-        return {"valid": True, "data": parms.model_dump(), "cmd": f"{parms.cmd}"}
+        parms = ShellModel(**all_data)
+        return {
+            "valid": True,
+            "data": parms.model_dump(),
+            "cmd": parms.cmd,
+        }
     except ValidationError as e:
-        # Return validation errors if inputs are invalid
-        return {"valid": False, "errors": e.errors()}
+        return {
+            "valid": False,
+            "errors": e.errors(),
+        }
 
-@router.get("/shell/", tags=["Server Commands"],)
+
+@router.get("/shell/", tags=["Server Commands"])
 def commands_server_shell(
         cmd: str = Query(..., description="Shell command"),
         common: CommonParams = Depends(common_params)  # Inject shared parameters
 ) -> dict[str, Any]:
-    # Call the validation function with only the shared parameters
-    result = validate_operations_server_shell(common=common , cmd=cmd)
+    # Call the validation function (using explicit version)
+    result = validate_operations_server_shell(common=common, cmd=cmd)
 
-    # Return the result
+    if not result["valid"]:
+        raise HTTPException(status_code=422, detail=result["errors"])
+
     return result
 
-def shell(common: dict, **kwargs: Any) -> str | None:
-    response = validate_operations_server_shell(common, **kwargs)
-    return response.get('cmd')
+class Shell():
+    def __init__(self, **kwargs: Any):
+        # Keep original kwargs for display purposes (original_type), but avoid
+        # passing duplicate keys when constructing Command
+        self.kwargs = kwargs
+        response = validate_operations_server_shell(**kwargs)
+        if response["valid"]:
+            self.cmd = response.get('cmd')
+            self.original_type = "Shell(cmd=" + self.cmd + "," + kwargs_to_string(**kwargs) + ")"
+            self.name = kwargs.get('name', 'unnamed_shell')
+            self.sudo = kwargs.get('sudo', False)
+            # Filter out keys that are explicitly passed to Command to prevent duplicates
+            filtered = {k: v for k, v in kwargs.items() if k not in {"name", "sudo", "cmd", "original_type"}}
+            self.extra_kwargs = filtered
+        else:
+            print(f"Validation errors: {response['errors']}")
+            raise ValueError(f"Shell validation failed: {response['errors']}")
+
+    async def execute(self):
+        """Async generator that yields a Command."""
+        # Yield the Command for execution and receive the result when resumed
+        result = yield Command(
+            original_type=self.original_type,
+            command=self.cmd,
+            name=self.name,
+            sudo=self.sudo,
+            **self.extra_kwargs
+        )
+
+        # When we resume, mark the result as changed
+        if result and hasattr(result, 'changed'):
+            result.changed = True
+
+        # End the async generator without returning a value
+        return
