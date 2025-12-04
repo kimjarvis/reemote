@@ -9,6 +9,7 @@ from result import Result
 import logging
 
 async def run_command_on_local(operation):
+    logging.info(f"Run command on local {operation}")
     host_info = operation.host_info
     global_info = operation.global_info
     command = operation.command
@@ -43,24 +44,19 @@ async def run_command_on_local(operation):
 
 
 async def run_command_on_host(operation):
+    logging.info(f"Run command on host {operation}")
     host_info = operation.host_info
     global_info = operation.global_info
     command = operation.command
     cp = SSHCompletedProcess()
     executed = False
-    # Configure logging to write to a file
-    logging.basicConfig(
-        level=logging.DEBUG,
-        filename="asyncssh_debug.log",  # Log file name
-        filemode="w",  # Overwrite the file each time
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
 
     try:
        if operation.get_pty:
             conn = await asyncssh.connect(**host_info, term_type='xterm')
        else:
             conn = await asyncssh.connect(**host_info)
+       logging.info(f"Connected {conn}")
        async with conn as conn:
                 if operation.composite:
                     # Composite operations (like Directory) get raw error messages
@@ -76,6 +72,7 @@ async def run_command_on_host(operation):
                             else:
                                 full_command = f"echo {global_info['sudo_password']} | sudo -S {command}"
                             cp = await conn.run(full_command, check=False)
+                            logging.info(f"Run sudo {cp}")
                         elif operation.su:
                             full_command = f"su {global_info['su_user']} -c '{command}'"
                             if global_info["su_user"] == "root":
@@ -105,9 +102,10 @@ async def run_command_on_host(operation):
                                 stdout=stdout,
                                 stderr=stderr
                             )
+                            logging.info(f"Run cp {cp}")
                         else:
                             cp = await conn.run(command, check=False)
-
+                            logging.info(f"Run normal {cp}")
     except asyncssh.ProcessError as exc:
         raw_error = str(exc)
         cp = SSHCompletedProcess()
@@ -222,6 +220,14 @@ async def pre_order_generator_async(node):
 
 
 async def execute(inventory, obj):
+    # Configure logging to write to a file
+    logging.basicConfig(
+        level=logging.DEBUG,
+        filename="asyncssh_debug.log",  # Log file name
+        filemode="w",  # Overwrite the file each time
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    logging.info(f"execute {inventory},{obj}")
     """
     Async version of execute function using async generators.
     Executes deployment operations across multiple hosts.
@@ -229,6 +235,7 @@ async def execute(inventory, obj):
 
     async def process_host(inventory_item, root_obj):
         """Process execution for a single host using async generators."""
+        logging.info(f"process host {inventory_item},{root_obj}")
         responses = []
 
         # Create a new instance for this host
@@ -245,6 +252,7 @@ async def execute(inventory, obj):
             while True:
                 try:
                     if isinstance(operation, Command):
+                        logging.info(f"execute Command {operation}")
                         # Set inventory info
                         operation.host_info, operation.global_info = inventory_item
 
@@ -260,6 +268,7 @@ async def execute(inventory, obj):
                         operation = await gen.asend(result)
 
                     elif isinstance(operation, Result):
+                        logging.info(f"execute Result {operation}")
                         # Handle Result objects
                         responses.append(operation)
                         result = operation
@@ -297,16 +306,3 @@ async def execute(inventory, obj):
         responses.extend(host_responses)
 
     return responses
-
-
-# Assuming these are defined elsewhere
-async def run_command_on_local(operation):
-    """Execute command locally."""
-    # Your implementation
-    pass
-
-
-async def run_command_on_host(operation):
-    """Execute command on remote host."""
-    # Your implementation
-    pass
