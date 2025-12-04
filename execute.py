@@ -29,18 +29,11 @@ async def run_command_on_local(operation):
         return Result(cp=cp, host=host_info.get("host"), op=operation, executed=executed)
     except Exception as e:
         raw_error = str(e)
-        # Always set proper exit codes for failures, regardless of composite flag
         cp = SSHCompletedProcess()
         cp.exit_status = 1
         cp.returncode = 1
-
-        if operation.composite:
-            # Composite operations get raw error only
-            return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=True)
-        else:
-            # Non-composite operations get error field only
-            cp.stderr = raw_error  # Also set stderr for consistency
-            return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=True)
+        cp.stderr = raw_error  # Also set stderr for consistency
+        return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=True)
 
 
 async def run_command_on_host(operation):
@@ -58,81 +51,65 @@ async def run_command_on_host(operation):
             conn = await asyncssh.connect(**host_info)
        logging.info(f"Connected {conn}")
        async with conn as conn:
-                if operation.composite:
-                    # Composite operations (like Directory) get raw error messages
+                if not operation.guard:
                     pass
                 else:
-                    if not operation.guard:
-                        pass
-                    else:
-                        executed = True
-                        if operation.sudo:
-                            if global_info.get('sudo_password') is None:
-                                full_command = f"sudo {command}"
-                            else:
-                                full_command = f"echo {global_info['sudo_password']} | sudo -S {command}"
-                            cp = await conn.run(full_command, check=False)
-                            logging.info(f"Run sudo {cp}")
-                        elif operation.su:
-                            full_command = f"su {global_info['su_user']} -c '{command}'"
-                            if global_info["su_user"] == "root":
-                                async with conn.create_process(full_command,
-                                                               term_type='xterm',
-                                                               stdin=asyncssh.PIPE, stdout=asyncssh.PIPE,
-                                                               stderr=asyncssh.PIPE) as process:
-                                    try:
-                                        output = await process.stdout.readuntil('Password:')
-                                        process.stdin.write(f'{global_info["su_password"]}\n')
-                                    except asyncio.TimeoutError:
-                                        pass
-                                    stdout, stderr = await process.communicate()
-                            else:
-                                async with conn.create_process(full_command,
-                                                               term_type='xterm',
-                                                               stdin=asyncssh.PIPE, stdout=asyncssh.PIPE,
-                                                               stderr=asyncssh.PIPE) as process:
+                    executed = True
+                    if operation.sudo:
+                        if global_info.get('sudo_password') is None:
+                            full_command = f"sudo {command}"
+                        else:
+                            full_command = f"echo {global_info['sudo_password']} | sudo -S {command}"
+                        cp = await conn.run(full_command, check=False)
+                        logging.info(f"Run sudo {cp}")
+                    elif operation.su:
+                        full_command = f"su {global_info['su_user']} -c '{command}'"
+                        if global_info["su_user"] == "root":
+                            async with conn.create_process(full_command,
+                                                           term_type='xterm',
+                                                           stdin=asyncssh.PIPE, stdout=asyncssh.PIPE,
+                                                           stderr=asyncssh.PIPE) as process:
+                                try:
                                     output = await process.stdout.readuntil('Password:')
                                     process.stdin.write(f'{global_info["su_password"]}\n')
-                                    stdout, stderr = await process.communicate()
-
-                            cp = SSHCompletedProcess(
-                                command=full_command,
-                                exit_status=process.exit_status,
-                                returncode=process.returncode,
-                                stdout=stdout,
-                                stderr=stderr
-                            )
-                            logging.info(f"Run cp {cp}")
+                                except asyncio.TimeoutError:
+                                    pass
+                                stdout, stderr = await process.communicate()
                         else:
-                            cp = await conn.run(command, check=False)
-                            logging.info(f"Run normal {cp}")
+                            async with conn.create_process(full_command,
+                                                           term_type='xterm',
+                                                           stdin=asyncssh.PIPE, stdout=asyncssh.PIPE,
+                                                           stderr=asyncssh.PIPE) as process:
+                                output = await process.stdout.readuntil('Password:')
+                                process.stdin.write(f'{global_info["su_password"]}\n')
+                                stdout, stderr = await process.communicate()
+
+                        cp = SSHCompletedProcess(
+                            command=full_command,
+                            exit_status=process.exit_status,
+                            returncode=process.returncode,
+                            stdout=stdout,
+                            stderr=stderr
+                        )
+                        logging.info(f"Run cp {cp}")
+                    else:
+                        cp = await conn.run(command, check=False)
+                        logging.info(f"Run normal {cp}")
     except asyncssh.ProcessError as exc:
         raw_error = str(exc)
         cp = SSHCompletedProcess()
         cp.exit_status = exc.exit_status if hasattr(exc, 'exit_status') else 1
         cp.returncode = exc.exit_status if hasattr(exc, 'exit_status') else 1
-
-        if operation.composite:
-            # Composite operations get raw error only
-            return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=executed)
-        else:
-            # Non-composite operations get formatted error
-            error_msg = f"Process on host {host_info.get('host')} exited with status {exc.exit_status}"
-            cp.stderr = raw_error
-            return Result(cp=cp, error=error_msg, host=host_info.get("host"), op=operation, executed=executed)
+        error_msg = f"Process on host {host_info.get('host')} exited with status {exc.exit_status}"
+        cp.stderr = raw_error
+        return Result(cp=cp, error=error_msg, host=host_info.get("host"), op=operation, executed=executed)
 
     except (OSError, asyncssh.Error) as e:
         raw_error = str(e)
         cp = SSHCompletedProcess()
         cp.exit_status = 1
         cp.returncode = 1
-
-        if operation.composite:
-            # Composite operations (like Directory) get raw error only
-            return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=executed)
-        else:
-            # Non-composite operations (like Isdir, Mkdir) get error field only
-            return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=executed)
+        return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=executed)
 
     return Result(cp=cp, host=host_info.get("host"), op=operation, executed=executed)
 

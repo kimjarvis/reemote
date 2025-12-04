@@ -25,13 +25,10 @@ class Command:
                     Defaults to False.
         su (bool): If True, the command will be executed with su privileges.
                   Defaults to False.
-        composite (bool): If True, indicates this is a composite command made up
-                         of multiple sub-commands. Defaults to False.
     """
 
     def __init__(self,
                  name: str = "",
-                 original_type: str = "",
                  command: str = "",
                  guard: bool = True,
                  local: bool = False,
@@ -39,10 +36,8 @@ class Command:
                  caller=None,
                  sudo: bool = False,
                  su: bool = False,
-                 get_pty: bool =False,
-                 composite=False):
+                 get_pty: bool =False):
         self.name = name
-        self.original_type = original_type
         self.command: str = command
         self.guard: bool = guard
         self.host_info: Optional[Dict[str, str]] = None
@@ -53,7 +48,6 @@ class Command:
         self.sudo=sudo
         self.su=su
         self.get_pty=get_pty
-        self.composite=composite
 
 
     def __str__(self) -> str:
@@ -62,13 +56,11 @@ class Command:
     def __repr__(self) -> str:
         return (f"Command("
                 f"name={self.name!r}, "
-                f"original_type={self.original_type!r}, "
                 f"command={self.command!r}, "
                 f"guard={self.guard!r}, "
                 f"local={self.local!r}, "
                 f"callback={self.callback!r}, "
                 f"caller={self.caller!r}, "
-                f"composite={self.composite!r}, "
                 f"sudo={self.sudo!r}, "
                 f"su={self.su!r}, "
                 f"get_pty={self.get_pty!r}, "
@@ -98,7 +90,6 @@ def serialize_command(obj: Command) -> Optional[Dict[str, Any]]:
         # Serialize all relevant attributes of the Command object
         return {
             "name": obj.name,
-            "original_type": obj.original_type,
             "command": obj.command,
             "guard": obj.guard,
             "local": obj.local,
@@ -107,7 +98,6 @@ def serialize_command(obj: Command) -> Optional[Dict[str, Any]]:
             "sudo": obj.sudo,
             "su": obj.su,
             "get_pty": obj.get_pty,
-            "composite": obj.composite,
             "host_info": obj.host_info,  # Directly include the dictionary
             "global_info": obj.global_info,  # Directly include the dictionary
         }

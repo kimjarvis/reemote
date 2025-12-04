@@ -64,18 +64,13 @@ def commands_server_shell(
 
 class Shell():
     def __init__(self, **kwargs: Any):
-        # Keep original kwargs for display purposes (original_type), but avoid
-        # passing duplicate keys when constructing Command
-        self.kwargs = kwargs
         response = validate_operations_server_shell(**kwargs)
         if response["valid"]:
-            self.cmd = response.get('cmd')
-            self.original_type = "Shell(cmd=" + self.cmd + "," + kwargs_to_string(**kwargs) + ")"
-            self.name = kwargs.get('name', 'unnamed_shell')
-            self.sudo = kwargs.get('sudo', False)
-            # Filter out keys that are explicitly passed to Command to prevent duplicates
-            filtered = {k: v for k, v in kwargs.items() if k not in {"name", "sudo", "cmd", "original_type"}}
-            self.extra_kwargs = filtered
+            extra_kwargs = {k: v for k, v in kwargs.items() if k not in ShellModel.__fields__}
+            self.command=Command(
+                command=response.get('cmd'),
+                **extra_kwargs
+            )
         else:
             print(f"Validation errors: {response['errors']}")
             raise ValueError(f"Shell validation failed: {response['errors']}")
@@ -83,13 +78,7 @@ class Shell():
     async def execute(self):
         """Async generator that yields a Command."""
         # Yield the Command for execution and receive the result when resumed
-        result = yield Command(
-            original_type=self.original_type,
-            command=self.cmd,
-            name=self.name,
-            sudo=self.sudo,
-            **self.extra_kwargs
-        )
+        result = yield self.command
 
         # When we resume, mark the result as changed
         if result and hasattr(result, 'changed'):
