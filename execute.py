@@ -9,7 +9,7 @@ from result import Result
 import logging
 
 async def run_command_on_local(operation):
-    logging.info(f"Run command on local {operation}")
+    logging.info(f" run_command_on_local {operation}")
     host_info = operation.host_info
     global_info = operation.global_info
     command = operation.command
@@ -37,7 +37,7 @@ async def run_command_on_local(operation):
 
 
 async def run_command_on_host(operation):
-    logging.info(f"Run command on host {operation}")
+    logging.info(f"execute.py run_command_on_host {operation}")
     host_info = operation.host_info
     global_info = operation.global_info
     command = operation.command
@@ -49,7 +49,7 @@ async def run_command_on_host(operation):
             conn = await asyncssh.connect(**host_info, term_type='xterm')
        else:
             conn = await asyncssh.connect(**host_info)
-       logging.info(f"Connected {conn}")
+       logging.info(f"execute.py run_command_on_host Connected {conn}")
        async with conn as conn:
                 if not operation.guard:
                     pass
@@ -61,7 +61,7 @@ async def run_command_on_host(operation):
                         else:
                             full_command = f"echo {global_info['sudo_password']} | sudo -S {command}"
                         cp = await conn.run(full_command, check=False)
-                        logging.info(f"Run sudo {cp}")
+                        logging.info(f"execute.py run_command_on_host run sudo {cp}")
                     elif operation.su:
                         full_command = f"su {global_info['su_user']} -c '{command}'"
                         if global_info["su_user"] == "root":
@@ -91,10 +91,10 @@ async def run_command_on_host(operation):
                             stdout=stdout,
                             stderr=stderr
                         )
-                        logging.info(f"Run cp {cp}")
+                        logging.info(f"execute.py run_command_on_host run su {cp}")
                     else:
                         cp = await conn.run(command, check=False)
-                        logging.info(f"Run normal {cp}")
+                        logging.info(f"execute.py run_command_on_host run {cp}")
     except asyncssh.ProcessError as exc:
         raw_error = str(exc)
         cp = SSHCompletedProcess()
@@ -123,6 +123,7 @@ async def pre_order_generator_async(node):
     Async version of pre-order generator traversal.
     Handles async generators and async execute() methods.
     """
+    logging.info(f"execute.py pre_order_generator_async {node}")
     # Stack stores tuples of (node, async_generator, send_value)
     stack = []
 
@@ -147,12 +148,14 @@ async def pre_order_generator_async(node):
 
             # Process the yielded value
             if isinstance(value, Command):
+                logging.info(f"execute.py pre_order_generator_async isinstance(value, Command) {value}")
                 # Yield the command for execution
                 result = yield value
                 # Store result to send back
                 stack[-1] = (current_node, generator, result)
 
             elif hasattr(value, 'execute') and callable(value.execute):
+                logging.info(f"execute.py pre_order_generator_async hasattr(value, 'execute') {value}")
                 # Found a nested operation with its own execute()
                 # Push it onto the stack. Do NOT send any value yet.
                 nested_gen = value.execute()
@@ -161,6 +164,7 @@ async def pre_order_generator_async(node):
                 # It will be primed on the next loop iteration via __anext__.
 
             elif isinstance(value, Result):
+                logging.info(f"execute.py pre_order_generator_async isinstance(value, Result) {value}")
                 # Pass through Result objects
                 result = yield value
                 stack[-1] = (current_node, generator, result)
@@ -204,7 +208,7 @@ async def execute(inventory, obj):
         filemode="w",  # Overwrite the file each time
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
-    logging.info(f"execute {inventory},{obj}")
+    logging.info(f"execute.py execute {inventory},{obj}")
     """
     Async version of execute function using async generators.
     Executes deployment operations across multiple hosts.
@@ -212,7 +216,7 @@ async def execute(inventory, obj):
 
     async def process_host(inventory_item, root_obj):
         """Process execution for a single host using async generators."""
-        logging.info(f"process host {inventory_item},{root_obj}")
+        logging.info(f"execute.py process_host {inventory_item},{root_obj}")
         responses = []
 
         # Create a new instance for this host
@@ -229,7 +233,7 @@ async def execute(inventory, obj):
             while True:
                 try:
                     if isinstance(operation, Command):
-                        logging.info(f"execute Command {operation}")
+                        logging.info(f"execute.py process_host is Command {operation}")
                         # Set inventory info
                         operation.host_info, operation.global_info = inventory_item
 
@@ -245,7 +249,7 @@ async def execute(inventory, obj):
                         operation = await gen.asend(result)
 
                     elif isinstance(operation, Result):
-                        logging.info(f"execute Result {operation}")
+                        logging.info(f"execute.py process_host is Result {operation}")
                         # Handle Result objects
                         responses.append(operation)
                         result = operation

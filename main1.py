@@ -3,7 +3,7 @@ from inventory import get_inventory
 from execute import execute
 
 
-class Hello:
+class Root:
     async def execute(self):
         from commands.server import Shell
         r = yield Shell(name="echo",
@@ -11,17 +11,6 @@ class Hello:
                      group="All",
                      sudo=False)
         print(f"Result: {r}")
-        # from commands.apt import Install
-        # r = yield Install(name="install",
-        #              packages=["vim"],
-        #              sudo=True)
-        # print(f"Result: {r}")
-
-
-class Root:
-    async def execute(self):
-        result = yield Hello()
-        print(f"Root got result: {result}")
 
 
 async def main():

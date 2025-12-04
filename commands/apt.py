@@ -6,7 +6,7 @@ from common import CommonParams, common_params
 
 router = APIRouter()
 
-class Install_remove(BaseModel):
+class InstallModel(BaseModel):
     packages: list[str]
 
 def validate_command_apt_install(common: CommonParams = Depends(common_params), **kwargs: Any) -> dict[str, Any]:
@@ -15,7 +15,7 @@ def validate_command_apt_install(common: CommonParams = Depends(common_params), 
         common = {**common.model_dump(), **kwargs}
 
         # Validate the inputs using the model
-        parms = Install_remove(**common)
+        parms = InstallModel(**common)
         return {"valid": True, "data": parms.model_dump(), "cmd": f"apt install -y {parms.packages}"}
     except ValidationError as e:
         # Return validation errors if inputs are invalid
@@ -43,7 +43,7 @@ def validate_command_apt_remove(common: CommonParams = Depends(common_params), *
         common = {**common.model_dump(), **kwargs}
 
         # Validate the inputs using the model
-        parms = Install_remove(**common)
+        parms = InstallModel(**common)
         return {"valid": True, "data": parms.model_dump(), "cmd": f"apt remove -y {parms.packages}"}
     except ValidationError as e:
         # Return validation errors if inputs are invalid

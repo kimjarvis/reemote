@@ -30,6 +30,7 @@ class Command:
     def __init__(self,
                  name: str = "",
                  command: str = "",
+                 group: str = "",
                  guard: bool = True,
                  local: bool = False,
                  callback: Optional[Callable] = None,
@@ -39,6 +40,7 @@ class Command:
                  get_pty: bool =False):
         self.name = name
         self.command: str = command
+        self.group = group
         self.guard: bool = guard
         self.host_info: Optional[Dict[str, str]] = None
         self.global_info: Optional[Dict[str, str]] = None
@@ -57,6 +59,7 @@ class Command:
         return (f"Command("
                 f"name={self.name!r}, "
                 f"command={self.command!r}, "
+                f"group={self.group!r}, "
                 f"guard={self.guard!r}, "
                 f"local={self.local!r}, "
                 f"callback={self.callback!r}, "
@@ -91,6 +94,7 @@ def serialize_command(obj: Command) -> Optional[Dict[str, Any]]:
         return {
             "name": obj.name,
             "command": obj.command,
+            "group": obj.group,
             "guard": obj.guard,
             "local": obj.local,
             "callback": str(obj.callback) if obj.callback else None,  # Serialize callback as string

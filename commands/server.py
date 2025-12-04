@@ -1,88 +1,57 @@
-from typing import Any, Union, Dict, Optional
-from fastapi import FastAPI, Query, Depends, HTTPException
+import json
+from fastapi import Query, Depends
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 from common import CommonParams, common_params
-from command import Command
-from utilities.kwargs_to_string import kwargs_to_string
+from typing import Any
+from utilities.validate_parameters import validate_parameters
+from utilities.base import Base
+from inventory import get_inventory
+from execute import execute
+import logging
 
 router = APIRouter()
 
 class ShellModel(BaseModel):
     cmd: str
 
-from typing import Any, Union, Dict
-from pydantic import BaseModel
-
-
-def validate_operations_server_shell(
-        common: Optional[Union[CommonParams, Dict[str, Any]]] = None,
-        **kwargs: Any
-) -> Dict[str, Any]:
-    """
-    Alternative explicit version with clear parameter separation
-    """
-    # Normalize common to dict
-    if common is None:
-        common_dict = {}
-    elif isinstance(common, BaseModel):
-        common_dict = common.model_dump()
-    elif isinstance(common, dict):
-        common_dict = common
-    else:
-        raise TypeError("`common` must be a CommonParams instance, dict, or None")
-
-    # Merge data (kwargs override common_dict)
-    all_data = {**common_dict, **kwargs}
-
-    try:
-        parms = ShellModel(**all_data)
-        return {
-            "valid": True,
-            "data": parms.model_dump(),
-            "cmd": parms.cmd,
-        }
-    except ValidationError as e:
-        return {
-            "valid": False,
-            "errors": e.errors(),
-        }
-
+class Shell(Base):
+    def __init__(self, **kwargs: Any):
+        logging.info(f"server.py Shell(Base) __init__ {kwargs}")
+        super().__init__(ShellModel, **kwargs)
 
 @router.get("/shell/", tags=["Server Commands"])
-def commands_server_shell(
+async def commands_server_shell(
         cmd: str = Query(..., description="Shell command"),
         common: CommonParams = Depends(common_params)  # Inject shared parameters
 ) -> dict[str, Any]:
-    # Call the validation function (using explicit version)
-    result = validate_operations_server_shell(common=common, cmd=cmd)
+    logging.basicConfig(
+        level=logging.DEBUG,
+        filename="asyncssh_debug.log",  # Log file name
+        filemode="w",  # Overwrite the file each time
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    logging.info(f"server.py commands_server_shell {cmd} {common}")
+    result = validate_parameters(ShellModel,common=common, cmd=cmd)
 
     if not result["valid"]:
         raise HTTPException(status_code=422, detail=result["errors"])
+    else:
+        inventory = get_inventory()
 
-    return result
-
-class Shell():
-    def __init__(self, **kwargs: Any):
-        response = validate_operations_server_shell(**kwargs)
-        if response["valid"]:
-            extra_kwargs = {k: v for k, v in kwargs.items() if k not in ShellModel.__fields__}
-            self.command=Command(
-                command=response.get('cmd'),
-                **extra_kwargs
-            )
+        # Normalize common to dict
+        if common is None:
+            common_dict = {}
+        elif isinstance(common, BaseModel):
+            common_dict = common.model_dump()
+        elif isinstance(common, dict):
+            common_dict = common
         else:
-            print(f"Validation errors: {response['errors']}")
-            raise ValueError(f"Shell validation failed: {response['errors']}")
+            raise TypeError("`common` must be a CommonParams instance, dict, or None")
 
-    async def execute(self):
-        """Async generator that yields a Command."""
-        # Yield the Command for execution and receive the result when resumed
-        result = yield self.command
+        all_data={"cmd": cmd, **common_dict}
+        logging.info(f"server.py commands_server_shell all_data: {all_data}")
+        responses = await execute(inventory, Shell(**all_data))
+    return json.dumps(responses)
 
-        # When we resume, mark the result as changed
-        if result and hasattr(result, 'changed'):
-            result.changed = True
 
-        # End the async generator without returning a value
-        return
