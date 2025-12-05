@@ -1,15 +1,25 @@
-from typing import Any, Union, Dict
+from typing import Any, Union, Dict, Type, TypedDict
 from typing import Optional
 from pydantic import BaseModel
 from pydantic import ValidationError
 from common import CommonParams
 
 
+class ValidationOK(TypedDict):
+    valid: bool
+    data: Dict[str, Any]
+
+
+class ValidationFail(TypedDict):
+    valid: bool
+    errors: Any
+
+
 def validate_parameters(
-        Model,
+        Model: Type[BaseModel],
         common: Optional[Union[CommonParams, Dict[str, Any]]] = None,
         **kwargs: Any
-) -> Dict[str, Any]:
+) -> Union[ValidationOK, ValidationFail]:
     """
     Alternative explicit version with clear parameter separation
     """
@@ -31,7 +41,6 @@ def validate_parameters(
         return {
             "valid": True,
             "data": parms.model_dump(),
-            "cmd": parms.cmd,
         }
     except ValidationError as e:
         return {

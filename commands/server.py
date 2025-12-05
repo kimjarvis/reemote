@@ -1,13 +1,15 @@
-from typing import Any
+from typing import Any, AsyncGenerator
 from fastapi import APIRouter, Query, Depends, HTTPException
 from pydantic import BaseModel
 from common import CommonParams, common_params
 from utilities.validate_responses import Response, validate_responses
-import logging
 from command import Command
+from result import Result
 from utilities.validate_parameters import validate_parameters
 from execute import execute
 from inventory import get_inventory
+from utilities.normalise_common import normalise_common
+
 
 router = APIRouter()
 
@@ -18,28 +20,23 @@ class ShellModel(BaseModel):
 
 class Shell():
     def __init__(self, **kwargs: Any):
-        # Direct implementation of Base's functionality
-        logging.info(f"Shell() __init__ kwargs: {kwargs}")
-
-        # Replicate validation logic from Base
         response = validate_parameters(ShellModel, **kwargs)
         if response["valid"]:
             # Get extra kwargs (those not in ShellModel's fields)
-            extra_kwargs = {k: v for k, v in kwargs.items() if k not in ShellModel.__fields__}
-
-            # Create Command instance
-            self.command = Command(
-                command=response.get('cmd'),
-                **extra_kwargs
-            )
+            self.extra_kwargs = {k: v for k, v in kwargs.items() if k not in ShellModel.__fields__}
+            self.cmd = response["data"]["cmd"]
         else:
             print(f"Validation errors: {response['errors']}")
             raise ValueError(f"Shell validation failed: {response['errors']}")
 
-    async def execute(self):
+    async def execute(self) -> AsyncGenerator[Command, Result]: 
         """Async generator that yields a Command."""
         # Yield the Command for execution and receive the result when resumed
-        result = yield self.command
+        result = yield Command(
+                command=self.cmd,
+                **self.extra_kwargs
+            )
+
 
         # When we resume, mark the result as changed
         if result and hasattr(result, 'changed'):
@@ -64,24 +61,13 @@ async def commands_server_shell(
 
     # Get inventory
     inventory = get_inventory()
-
-    # Normalize common to dict
-    if common is None:
-        common_dict = {}
-    elif isinstance(common, BaseModel):
-        common_dict = common.model_dump()
-    elif isinstance(common, dict):
-        common_dict = common
-    else:
-        raise TypeError("`common` must be a CommonParams instance, dict, or None")
+    common_dict = await normalise_common(common)
 
     # Prepare all data
     all_data = {"cmd": cmd, **common_dict}
-    logging.info(f"commands_server_shell all_data: {all_data}")
 
     # Execute the command
     responses = await execute(inventory, lambda: Shell(**all_data))
-    logging.info(f"commands_server_shell responses: {responses}")
 
     # Validate and return responses
     validated_responses = await validate_responses(responses)

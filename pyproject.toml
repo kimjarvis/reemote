@@ -8,4 +8,6 @@ dependencies = [
     "asyncssh>=2.21.1",
     "fastapi[standard]>=0.123.5",
     "pydantic>=2.12.5",
+    "pytest>=9.0.1",
+    "pytest-asyncio>=1.3.0",
 ]

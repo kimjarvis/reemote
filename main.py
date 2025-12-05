@@ -10,12 +10,6 @@ class Hello:
                      cmd="echo Hello World!",
                      group="All",
                      sudo=False)
-        # from commands.apt import Install
-        # r = yield Install(name="install",
-        #              packages=["vim"],
-        #              sudo=True)
-        # print(f"Result: {r}")
-
 
 class Root:
     async def execute(self):

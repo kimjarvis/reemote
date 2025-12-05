@@ -2,14 +2,13 @@
 # This software is licensed under the MIT License. See the LICENSE file for details.
 #
 import asyncssh
-import asyncio
 from asyncssh import SSHCompletedProcess
 from command import Command
 from result import Result
-import logging
+from typing import Any, AsyncGenerator, List, Tuple, Dict, Callable
 
-async def run_command_on_local(operation):
-    logging.info(f" run_command_on_local {operation}")
+
+async def run_command_on_local(operation: Command) -> Result:
     host_info = operation.host_info
     global_info = operation.global_info
     command = operation.command
@@ -36,8 +35,7 @@ async def run_command_on_local(operation):
         return Result(cp=cp, error=raw_error, host=host_info.get("host"), op=operation, executed=True)
 
 
-async def run_command_on_host(operation):
-    logging.info(f"execute.py run_command_on_host {operation}")
+async def run_command_on_host(operation: Command) -> Result:
     host_info = operation.host_info
     global_info = operation.global_info
     command = operation.command
@@ -49,7 +47,6 @@ async def run_command_on_host(operation):
             conn = await asyncssh.connect(**host_info, term_type='xterm')
        else:
             conn = await asyncssh.connect(**host_info)
-       logging.info(f"execute.py run_command_on_host Connected {conn}")
        async with conn as conn:
                 if not operation.guard:
                     pass
@@ -61,7 +58,6 @@ async def run_command_on_host(operation):
                         else:
                             full_command = f"echo {global_info['sudo_password']} | sudo -S {command}"
                         cp = await conn.run(full_command, check=False)
-                        logging.info(f"execute.py run_command_on_host run sudo {cp}")
                     elif operation.su:
                         full_command = f"su {global_info['su_user']} -c '{command}'"
                         if global_info["su_user"] == "root":
@@ -91,10 +87,8 @@ async def run_command_on_host(operation):
                             stdout=stdout,
                             stderr=stderr
                         )
-                        logging.info(f"execute.py run_command_on_host run su {cp}")
                     else:
                         cp = await conn.run(command, check=False)
-                        logging.info(f"execute.py run_command_on_host run {cp}")
     except asyncssh.ProcessError as exc:
         raw_error = str(exc)
         cp = SSHCompletedProcess()
@@ -115,15 +109,13 @@ async def run_command_on_host(operation):
 
 
 import asyncio
-from typing import Any, Generator, AsyncGenerator
 
 
-async def pre_order_generator_async(node):
+async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Result, Result | None]:
     """
     Async version of pre-order generator traversal.
     Handles async generators and async execute() methods.
     """
-    logging.info(f"execute.py pre_order_generator_async {node}")
     # Stack stores tuples of (node, async_generator, send_value)
     stack = []
 
@@ -148,14 +140,12 @@ async def pre_order_generator_async(node):
 
             # Process the yielded value
             if isinstance(value, Command):
-                logging.info(f"execute.py pre_order_generator_async isinstance(value, Command) {value}")
                 # Yield the command for execution
                 result = yield value
                 # Store result to send back
                 stack[-1] = (current_node, generator, result)
 
             elif hasattr(value, 'execute') and callable(value.execute):
-                logging.info(f"execute.py pre_order_generator_async hasattr(value, 'execute') {value}")
                 # Found a nested operation with its own execute()
                 # Push it onto the stack. Do NOT send any value yet.
                 nested_gen = value.execute()
@@ -164,8 +154,8 @@ async def pre_order_generator_async(node):
                 # It will be primed on the next loop iteration via __anext__.
 
             elif isinstance(value, Result):
-                logging.info(f"execute.py pre_order_generator_async isinstance(value, Result) {value}")
                 # Pass through Result objects
+                print("trace 00")
                 result = yield value
                 stack[-1] = (current_node, generator, result)
 
@@ -200,24 +190,11 @@ async def pre_order_generator_async(node):
                 stack[-1] = (stack[-1][0], stack[-1][1], result)
 
 
-async def execute(inventory, root_obj_factory):
-    # Configure logging to write to a file
-    logging.basicConfig(
-        level=logging.DEBUG,
-        filename="asyncssh_debug.log",  # Log file name
-        filemode="w",  # Overwrite the file each time
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    logging.info(f"execute.py execute {inventory},{root_obj_factory}")
-    """
-    Async version of execute function using async generators.
-    Executes deployment operations across multiple hosts.
-    """
+from typing import Iterable, Callable, List, Tuple, Dict, Any
 
-    async def process_host(inventory_item, root_obj_factory):
-        """Process execution for a single host using async generators."""
-        logging.info(f"execute.py process_host {inventory_item},{root_obj_factory}")
-        responses = []
+async def execute(inventory: Iterable[Tuple[Dict[str, Any], Dict[str, Any]]], root_obj_factory: Callable[[], Any]) -> List[Result]:
+    async def process_host(inventory_item: Tuple[Dict[str, Any], Dict[str, Any]], root_obj_factory: Callable[[], Any]) -> List[Result]:
+        responses: List[Result] = []
 
         # Create a new instance for this host using the factory
         host_instance = root_obj_factory()
@@ -228,12 +205,10 @@ async def execute(inventory, root_obj_factory):
         try:
             # Prime the async generator - get first value
             operation = await gen.__anext__()
-            result = None
 
             while True:
                 try:
                     if isinstance(operation, Command):
-                        logging.info(f"execute.py process_host is Command {operation}")
                         # Set inventory info
                         operation.host_info, operation.global_info = inventory_item
 
@@ -249,12 +224,8 @@ async def execute(inventory, root_obj_factory):
                         operation = await gen.asend(result)
 
                     elif isinstance(operation, Result):
-                        logging.info(f"execute.py process_host is Result {operation}")
-                        # Handle Result objects
                         responses.append(operation)
                         result = operation
-
-                        # Send result back and get next operation
                         operation = await gen.asend(result)
 
                     else:
@@ -273,16 +244,16 @@ async def execute(inventory, root_obj_factory):
         return responses
 
     # Run all hosts in parallel
-    tasks = []
+    tasks: List[asyncio.Task[List[Result]]] = []
     for inventory_item in inventory:
         task = asyncio.create_task(process_host(inventory_item, root_obj_factory))
         tasks.append(task)
 
     # Wait for all hosts to complete
-    all_responses = await asyncio.gather(*tasks)
+    all_responses: List[List[Result]] = await asyncio.gather(*tasks)
 
     # Flatten the list of lists
-    responses = []
+    responses: List[Result] = []
     for host_responses in all_responses:
         responses.extend(host_responses)
 

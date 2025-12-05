@@ -71,39 +71,3 @@ class Command:
                 f"global_info={self.global_info!r}"
                 f")")
 
-from typing import Dict, Any, Optional, Callable
-
-def serialize_command(obj: Command) -> Optional[Dict[str, Any]]:
-    """
-    Serializes a Command object into a dictionary.
-
-    Args:
-        obj (Command): The Command object to serialize.
-
-    Returns:
-        Optional[Dict[str, Any]]: A dictionary representation of the Command object,
-                                  or None if the input is None.
-
-    Raises:
-        TypeError: If the input object is not of type Command.
-    """
-    if obj is None:
-        return None
-    elif isinstance(obj, Command):
-        # Serialize all relevant attributes of the Command object
-        return {
-            "name": obj.name,
-            "command": obj.command,
-            "group": obj.group,
-            "guard": obj.guard,
-            "local": obj.local,
-            "callback": str(obj.callback) if obj.callback else None,  # Serialize callback as string
-            "caller": str(obj.caller) if obj.caller else None,        # Serialize caller as string
-            "sudo": obj.sudo,
-            "su": obj.su,
-            "get_pty": obj.get_pty,
-            "host_info": obj.host_info,  # Directly include the dictionary
-            "global_info": obj.global_info,  # Directly include the dictionary
-        }
-    else:
-        raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
