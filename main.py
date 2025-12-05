@@ -1,7 +1,7 @@
 import asyncio
 from inventory import get_inventory
 from execute import execute
-from response import Response, validate_responses
+from utilities.validate_responses import validate_responses
 
 class Hello:
     async def execute(self):

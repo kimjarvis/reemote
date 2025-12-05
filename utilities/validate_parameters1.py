@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from common import CommonParams
 
 
-def validate_parameters(
+def validate_parameters1(
         Model,
         common: Optional[Union[CommonParams, Dict[str, Any]]] = None,
         **kwargs: Any
@@ -31,7 +31,6 @@ def validate_parameters(
         return {
             "valid": True,
             "data": parms.model_dump(),
-            "cmd": parms.cmd,
         }
     except ValidationError as e:
         return {

@@ -1,5 +1,6 @@
 from typing import Any
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+
 
 class Response(BaseModel):
     host: str | None = None

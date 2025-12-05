@@ -4,6 +4,7 @@ from execute import execute
 import logging
 from utilities.validate_responses import validate_responses
 
+
 async def main():
     logging.basicConfig(
         level=logging.DEBUG,
@@ -13,11 +14,12 @@ async def main():
     )
     inventory = get_inventory()
     print(f"Inventory: {inventory}")
-    from commands.server import Shell
-    responses = await execute(inventory, lambda: Shell(name="echo",
-                     cmd="echo Hello World!",
+    from commands.apt import Install
+    responses = await execute(inventory, lambda: Install(name="install tree",
+                     packages =["tree","vim"],
                      group="All",
-                     sudo=False))
+                     sudo=True))
+    print(f"Result: {responses}")
     validated_responses = await validate_responses(responses)
     print(validated_responses)
 
