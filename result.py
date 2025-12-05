@@ -1,10 +1,9 @@
 # Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com 
 # This software is licensed under the MIT License. See the LICENSE file for details.
 #
+from typing import Any, Dict, Optional
 from asyncssh import SSHCompletedProcess
 from command import Command
-from typing import Optional
-
 
 class Result:
     """
@@ -29,6 +28,7 @@ class Result:
                  op: Optional[Command] = None,
                  changed: bool = False,
                  executed: bool = False,
+                 output: Optional[list[Dict[str, str | Any]]] = [],
                  error: Optional[str] = None,
                  ) -> None:
         self.cp: Optional[SSHCompletedProcess] = cp
@@ -36,6 +36,7 @@ class Result:
         self.op: Optional[Command] = op
         self.changed: bool = changed
         self.executed: bool = executed
+        self.output: Optional[list[Dict[str, str | Any]]] = output
         self.error: Optional[str] = error
 
     def __str__(self) -> str:
@@ -54,6 +55,7 @@ class Result:
                 f"return code={returncode!r}, "
                 f"stdout={stdout!r}, "
                 f"stderr={stderr!r}, "
+                f"output={self.output!r}, "
                 f"error={self.error!r})")
 
 

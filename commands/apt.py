@@ -40,7 +40,7 @@ class Install():
 
 
 @router.get("/install/", tags=["APT Commands"],)
-async def operations_apt_packages(
+async def operations_apt_packages_install(
     packages: list[str] = Query(..., description="List of package names"),
     common: CommonParams = Depends(common_params)  # Inject shared parameters
 ) -> list[Response]:
@@ -60,6 +60,57 @@ async def operations_apt_packages(
     responses = await execute(inventory, lambda: Install(**all_data))
     # Validate and return responses
     validated_responses = await validate_responses(responses)
-    return validated_responses
+    return [response.dict() for response in validated_responses]
+
+
+
+
+class RemoveModel(BaseModel):
+    packages: list[str]
+
+class Remove():
+    def __init__(self, **kwargs: Any):
+        response = validate_parameters(RemoveModel, **kwargs)
+        if response["valid"]:
+            # Get extra kwargs (those not in ShellModel's fields)
+            self.extra_kwargs = {k: v for k, v in kwargs.items() if k not in RemoveModel.__fields__}
+            self.packages = response["data"]["packages"]
+        else:
+            print(f"Validation errors: {response['errors']}")
+            raise ValueError(f"Shell validation failed: {response['errors']}")
+
+    async def execute(self) -> AsyncGenerator[Command, Result]:
+        from commands.server import Shell
+        result = yield Shell(cmd=f"apt-get remove -y {' '.join(self.packages)}",**self.extra_kwargs)
+
+        if result and hasattr(result, 'changed'):
+            result.changed = True
+
+        # End the async generator without returning a value
+        return
+
+
+@router.get("/remove/", tags=["APT Commands"],)
+async def operations_apt_packages_remove(
+    packages: list[str] = Query(..., description="List of package names"),
+    common: CommonParams = Depends(common_params)  # Inject shared parameters
+) -> list[Response]:
+    # Validate parameters
+    result = validate_parameters(RemoveModel, common=common, packages=packages)
+
+    if not result["valid"]:
+        raise HTTPException(status_code=422, detail=result["errors"])
+
+    # Get inventory
+    inventory = get_inventory()
+
+    common_dict = await normalise_common(common)
+
+    # Prepare all data
+    all_data = {"packages": packages, **common_dict}
+    responses = await execute(inventory, lambda: Remove(**all_data))
+    # Validate and return responses
+    validated_responses = await validate_responses(responses)
+    return [response.dict() for response in validated_responses]
 
 

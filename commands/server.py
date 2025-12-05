@@ -71,4 +71,4 @@ async def commands_server_shell(
 
     # Validate and return responses
     validated_responses = await validate_responses(responses)
-    return validated_responses
+    return [response.dict() for response in validated_responses]

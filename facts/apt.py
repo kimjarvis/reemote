@@ -28,7 +28,8 @@ class Get_packages():
     async def execute(self):
         from commands.server import Shell
         result = yield Shell(cmd=f"apt list --installed | head -10",**self.extra_kwargs)
-        result.cp.stdout = parse_apt_list_installed(result.cp.stdout)
+        result.output = parse_apt_list_installed(result.cp.stdout)
+        print(result.output)
         if result and hasattr(result, 'changed'):
             result.changed = True
 
@@ -54,5 +55,8 @@ async def facts_apt_packages(
     # Prepare all data
     all_data = {**common_dict}
     responses = await execute(inventory, lambda: Get_packages(**all_data))
-    return responses[0].cp.stdout
+    print(responses)
+    # Validate and return responses
+    validated_responses = await validate_responses(responses)
+    return [response.dict() for response in validated_responses]
 
