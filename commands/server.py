@@ -9,8 +9,7 @@ from utilities.base import Base
 from inventory import get_inventory
 from execute import execute
 import logging
-from result import serialize_result
-from response import Response
+from response import Response, validate_responses
 
 router = APIRouter()
 
@@ -58,21 +57,6 @@ async def commands_server_shell(
     # return [Response(host=r.host,name=r.op.name,command=r.op.command,stdout=r.cp.stdout,stderr=r.cp.stderr,changed=r.changed,return_code=r.cp.returncode,error=r.error) for r in responses]
 
 # Assuming `responses` is a list of objects with attributes matching the fields
-        try:
-            validated_responses = [
-                Response(
-                    host=r.host,
-                    name=r.op.name,
-                    command=r.op.command,
-                    stdout=r.cp.stdout,
-                    stderr=r.cp.stderr,
-                    changed=r.changed,
-                    return_code=r.cp.returncode,
-                    error=r.error
-                )
-                for r in responses
-            ]
-            print("Validation successful!")
-        except ValidationError as e:
-            print(f"Validation failed: {e}")
+        validated_responses = await validate_responses(responses)
         return validated_responses
+
