@@ -26,7 +26,6 @@ async def validate_responses(responses: list[Any]) -> list[Response]:
             )
             for r in responses
         ]
-        print("Validation successful!")
     except ValidationError as e:
         print(f"Validation failed: {e}")
     return validated_responses

@@ -2,7 +2,7 @@ import asyncio
 from inventory import get_inventory
 from execute import execute
 import logging
-from response import Response
+from response import Response, validate_responses
 
 async def main():
     logging.basicConfig(
@@ -18,24 +18,7 @@ async def main():
                      cmd="echo Hello World!",
                      group="All",
                      sudo=False))
-    # print(f"Responses: {responses}")
-    try:
-        validated_responses = [
-            Response(
-                host=r.host,
-                name=r.op.name,
-                command=r.op.command,
-                stdout=r.cp.stdout,
-                stderr=r.cp.stderr,
-                changed=r.changed,
-                return_code=r.cp.returncode,
-                error=r.error
-            )
-            for r in responses
-        ]
-        print("Validation successful!")
-    except ValidationError as e:
-        print(f"Validation failed: {e}")
+    validated_responses = await validate_responses(responses)
     print(validated_responses)
 
 if __name__ == "__main__":

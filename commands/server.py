@@ -54,9 +54,6 @@ async def commands_server_shell(
         logging.info(f"server.py commands_server_shell all_data: {all_data}")
         responses = await execute(inventory, lambda: Shell(**all_data))
         logging.info(f"server.py commands_server_shell responses: {responses}")
-    # return [Response(host=r.host,name=r.op.name,command=r.op.command,stdout=r.cp.stdout,stderr=r.cp.stderr,changed=r.changed,return_code=r.cp.returncode,error=r.error) for r in responses]
-
-# Assuming `responses` is a list of objects with attributes matching the fields
         validated_responses = await validate_responses(responses)
         return validated_responses
 
