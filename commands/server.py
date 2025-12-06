@@ -1,15 +1,13 @@
 from typing import Any, AsyncGenerator
 from fastapi import APIRouter, Query, Depends, HTTPException
 from pydantic import BaseModel
-from common import CommonParams, common_params
-from utilities.validate_responses import Response, validate_responses
 from command import Command
-from result import Result
-from utilities.validate_parameters import validate_parameters
+from common import CommonParams, common_params
 from execute import execute
 from inventory import get_inventory
+from unifiedresult import validate_responses
 from utilities.normalise_common import normalise_common
-
+from utilities.validate_parameters import validate_parameters
 
 router = APIRouter()
 
@@ -29,7 +27,7 @@ class Shell():
             print(f"Validation errors: {response['errors']}")
             raise ValueError(f"Shell validation failed: {response['errors']}")
 
-    async def execute(self) -> AsyncGenerator[Command, Result]: 
+    async def execute(self) -> AsyncGenerator[Command, UnifiedResult]:
         """Async generator that yields a Command."""
         # Yield the Command for execution and receive the result when resumed
         result = yield Command(
