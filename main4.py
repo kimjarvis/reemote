@@ -1,7 +1,7 @@
 import asyncio
 from inventory import get_inventory
 from execute import execute
-from unifiedresult import validate_responses
+from unifiedresult import UnifiedResult, validate_responses, PackageInfo
 
 
 async def main():
@@ -21,7 +21,12 @@ async def main():
         print(f"Stderr: {result.stderr}")
         print(f"Changed: {result.changed}")
         print(f"Executed: {result.executed}")
-
+        # Access package info
+        for item in result.output:
+            if isinstance(item, PackageInfo):
+                print(f"{item.name}: {item.version}")
+            elif isinstance(item, dict):
+                print(f"{item.get('name')}: {item.get('version')}")
 
 if __name__ == "__main__":
     asyncio.run(main())
