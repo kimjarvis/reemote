@@ -6,7 +6,7 @@ from response import Response, validate_responses, PackageInfo
 
 async def main():
     inventory = get_inventory()
-    from facts.apt import GetPackages
+    from commands.apt import GetPackages
     responses = await execute(inventory, lambda: GetPackages(name="get packages"))
     validated_responses = await validate_responses(responses)
     print(validated_responses)

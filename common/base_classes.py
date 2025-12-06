@@ -33,6 +33,11 @@ class BaseCommand:
         if result and hasattr(result, 'changed'):
             result.changed = True
 
+    def mark_unchanged(self, result: Optional[Response]) -> None:
+        """Helper to mark result as changed if it exists"""
+        if result and hasattr(result, 'changed'):
+            result.changed = False
+
 
 class ShellBasedCommand(BaseCommand):
     """Base class for commands that wrap Shell commands"""

@@ -6,7 +6,6 @@ from common_params import CommonParams, common_params
 from inventory import get_inventory
 from execute import execute
 from response import validate_responses
-from utilities.normalise_common import normalise_common
 from utilities.validate_parameters import validate_parameters
 
 
@@ -30,7 +29,16 @@ def create_router_handler(
 
         # Get inventory
         inventory = get_inventory()
-        common_dict = await normalise_common(common)
+
+        # Normalize common to dict (inlined from normalise_common)
+        if common is None:
+            common_dict = {}
+        elif isinstance(common, BaseModel):
+            common_dict = common.model_dump()
+        elif isinstance(common, dict):
+            common_dict = common
+        else:
+            raise TypeError("`common` must be a CommonParams instance, dict, or None")
 
         # Prepare all data
         all_data = {**kwargs, **common_dict}

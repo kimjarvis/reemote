@@ -3,8 +3,10 @@
 #
 from typing import Any, Dict, Tuple, Optional, List, Union, Generator
 from asyncssh import SSHCompletedProcess
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, ConfigDict
 from command import Command
+from pydantic.json import pydantic_encoder
+import json
 
 
 class PackageInfo(BaseModel):
@@ -18,9 +20,9 @@ class Response(BaseModel):
     Combines functionality from both Result and Response classes.
     """
     # Core execution results (from original Result)
-    cp: Optional[SSHCompletedProcess] = None
+    cp: Optional[SSHCompletedProcess] = Field(default=None, exclude=True)
     host: Optional[str] = None
-    op: Optional[Command] = None
+    op: Optional[Command] = Field(default=None, exclude=True)
     changed: bool = False
     executed: bool = False
     output: List[Union[PackageInfo, Dict[str, Any]]] = []
@@ -51,9 +53,11 @@ class Response(BaseModel):
     stdout_bytes: Optional[bytes] = None
     stderr_bytes: Optional[bytes] = None
 
-    class Config:
-        arbitrary_types_allowed = True
-        ignored_types = (Generator,)
+    # Pydantic v2 config
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        ignored_types=(Generator,),
+    )
 
     def __init__(self, **data):
         # Extract fields from cp and op if provided
