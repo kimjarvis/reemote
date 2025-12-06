@@ -1,13 +1,12 @@
 from typing import Any, AsyncGenerator
-from fastapi import APIRouter, Query, Depends, HTTPException
+from fastapi import APIRouter, Query, Depends
 from pydantic import BaseModel
+
+from common.base_classes import ShellBasedCommand
 from command import Command
-from common import CommonParams, common_params
-from execute import execute
-from inventory import get_inventory
-from response import validate_responses, Response
-from utilities.normalise_common import normalise_common
-from utilities.validate_parameters import validate_parameters
+from response import Response
+from common.router_utils import create_router_handler
+from common_params import CommonParams, common_params
 
 router = APIRouter()
 
@@ -16,57 +15,28 @@ class ShellModel(BaseModel):
     cmd: str
 
 
-class Shell():
-    def __init__(self, **kwargs: Any):
-        response = validate_parameters(ShellModel, **kwargs)
-        if response["valid"]:
-            # Get extra kwargs (those not in ShellModel's fields)
-            self.extra_kwargs = {k: v for k, v in kwargs.items() if k not in ShellModel.__fields__}
-            self.cmd = response["data"]["cmd"]
-        else:
-            print(f"Validation errors: {response['errors']}")
-            raise ValueError(f"Shell validation failed: {response['errors']}")
+class Shell(ShellBasedCommand):
+    """Shell command implementation"""
+    Model = ShellModel
+
+    @property
+    def cmd(self) -> str:
+        return self._data["cmd"]
 
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        """Async generator that yields a Command."""
-        # Yield the Command for execution and receive the result when resumed
-        result = yield Command(
-                command=self.cmd,
-                **self.extra_kwargs
-            )
+        cmd = self.cmd
+        async for response in self.execute_shell_command(cmd):
+            yield response
 
 
-        # When we resume, mark the result as changed
-        if result and hasattr(result, 'changed'):
-            result.changed = True
-
-        # End the async generator without returning a value
-        return
+# Create endpoint handler
+shell_handler = create_router_handler(ShellModel, Shell)
 
 
-@router.get("/shell/", tags=["Server Commands"])
-async def commands_server_shell(
+@router.get("/command/shell/", tags=["Server"])
+async def shell_command(
         cmd: str = Query(..., description="Shell command"),
         common: CommonParams = Depends(common_params)
-) -> list[Response]:
-    """Direct implementation of router logic for shell commands."""
-
-    # Validate parameters
-    result = validate_parameters(ShellModel, common=common, cmd=cmd)
-
-    if not result["valid"]:
-        raise HTTPException(status_code=422, detail=result["errors"])
-
-    # Get inventory
-    inventory = get_inventory()
-    common_dict = await normalise_common(common)
-
-    # Prepare all data
-    all_data = {"cmd": cmd, **common_dict}
-
-    # Execute the command
-    responses = await execute(inventory, lambda: Shell(**all_data))
-
-    # Validate and return responses
-    validated_responses = await validate_responses(responses)
-    return [response.dict() for response in validated_responses]
+) -> list[dict]:
+    """Execute shell command"""
+    return await shell_handler(cmd=cmd, common=common)

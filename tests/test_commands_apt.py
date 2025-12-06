@@ -4,7 +4,6 @@ from inventory import get_inventory
 from execute import execute
 from response import validate_responses
 
-
 @pytest.mark.asyncio
 async def test_apt_install():
     """Test that apt install command runs without errors"""
@@ -48,9 +47,9 @@ async def test_apt_get_packages():
     """Test getting apt packages information without errors"""
     inventory = get_inventory()
 
-    from facts.apt import Get_packages
+    from commands.apt import GetPackages
 
-    responses = await execute(inventory, lambda: Get_packages(
+    responses = await execute(inventory, lambda: GetPackages(
         name="get packages"
     ))
 
