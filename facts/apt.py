@@ -5,7 +5,6 @@ from execute import execute
 from utilities.validate_parameters import validate_parameters
 from fastapi import APIRouter, Query, Depends, HTTPException
 from common import CommonParams, common_params
-from utilities.validate_responses import Response, validate_responses
 from utilities.normalise_common import normalise_common
 from facts.parse_apt_list_installed import parse_apt_list_installed
 

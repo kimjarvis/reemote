@@ -1,20 +1,8 @@
 import pytest
-import asyncio
-from inventory import get_inventory
-from execute import execute
-from utilities.validate_responses import validate_responses
 
-import pytest
-import asyncio
-from inventory import get_inventory
 from execute import execute
-from utilities.validate_responses import validate_responses
-
-import pytest
-import asyncio
 from inventory import get_inventory
-from execute import execute
-from utilities.validate_responses import validate_responses
+from response import validate_responses
 
 
 @pytest.mark.asyncio

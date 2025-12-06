@@ -1,15 +1,15 @@
 from typing import Any, AsyncGenerator
-from pydantic import BaseModel
-from inventory import get_inventory
-from execute import execute
-from utilities.validate_parameters import validate_parameters
-from fastapi import APIRouter, Query, Depends, HTTPException
-from common import CommonParams, common_params
-from utilities.validate_responses import Response, validate_responses
-from utilities.normalise_common import normalise_common
-from result import Result
-from command import Command
 
+from fastapi import APIRouter, Query, Depends, HTTPException
+from pydantic import BaseModel
+
+from command import Command
+from common import CommonParams, common_params
+from execute import execute
+from inventory import get_inventory
+from response import Response, validate_responses
+from utilities.normalise_common import normalise_common
+from utilities.validate_parameters import validate_parameters
 
 router = APIRouter()
 
@@ -28,7 +28,7 @@ class Install():
             print(f"Validation errors: {response['errors']}")
             raise ValueError(f"Shell validation failed: {response['errors']}")
 
-    async def execute(self) -> AsyncGenerator[Command, Result]:
+    async def execute(self) -> AsyncGenerator[Command, Response]:
         from commands.server import Shell
         result = yield Shell(cmd=f"apt-get install -y {' '.join(self.packages)}",**self.extra_kwargs)
 
@@ -79,7 +79,7 @@ class Remove():
             print(f"Validation errors: {response['errors']}")
             raise ValueError(f"Shell validation failed: {response['errors']}")
 
-    async def execute(self) -> AsyncGenerator[Command, Result]:
+    async def execute(self) -> AsyncGenerator[Command, Response]:
         from commands.server import Shell
         result = yield Shell(cmd=f"apt-get remove -y {' '.join(self.packages)}",**self.extra_kwargs)
 
