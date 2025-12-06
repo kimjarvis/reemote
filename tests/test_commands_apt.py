@@ -10,8 +10,8 @@ async def test_apt_install():
     """Test that apt install command runs without errors"""
     try:
         inventory = get_inventory()
-        from commands.apt import Install
-        responses = await execute(inventory, lambda: Install(
+        from commands.apt import APTInstall
+        responses = await execute(inventory, lambda: APTInstall(
             name="install tree",
             packages=["tree", "vim"],
             group="All",
@@ -29,8 +29,8 @@ async def test_apt_remove():
     """Test that apt install command runs without errors"""
     try:
         inventory = get_inventory()
-        from commands.apt import Remove
-        responses = await execute(inventory, lambda: Remove(
+        from commands.apt import APTRemove
+        responses = await execute(inventory, lambda: APTRemove(
             name="remove tree",
             packages=["tree", "vim"],
             group="All",
@@ -48,9 +48,9 @@ async def test_apt_get_packages():
     """Test getting apt packages information without errors"""
     inventory = get_inventory()
 
-    from facts.apt import Get_packages
+    from facts.apt import GetPackages
 
-    responses = await execute(inventory, lambda: Get_packages(
+    responses = await execute(inventory, lambda: GetPackages(
         name="get packages"
     ))
 

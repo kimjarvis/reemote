@@ -5,8 +5,8 @@ from response import validate_responses
 
 async def main():
     inventory = get_inventory()
-    from commands.apt import Remove
-    responses = await execute(inventory, lambda: Remove(name="remove tree",
+    from commands.apt import APTRemove
+    responses = await execute(inventory, lambda: APTRemove(name="remove tree",
                      packages =["tree","vim"],
                      group="All",
                      sudo=True))

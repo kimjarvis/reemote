@@ -11,12 +11,12 @@ async def test_server_shell():
 
     # Execute the test
     inventory = get_inventory()
-    from commands.apt import Install
-    responses = await execute(inventory, lambda: Install(
-        name="install tree",
-        packages=["tree", "vim"],
+    from commands.server import Shell
+    responses = await execute(inventory, lambda: Shell(
+        name="echo",
+        cmd="echo Hello World!",
         group="All",
-        sudo=True
+        sudo=False
     ))
     validated_responses = await validate_responses(responses)
 

@@ -5,8 +5,8 @@ from response import validate_responses
 
 async def main():
     inventory = get_inventory()
-    from commands.apt import Install
-    responses = await execute(inventory, lambda: Install(name="install tree",
+    from commands.apt import APTInstall
+    responses = await execute(inventory, lambda: APTInstall(name="install tree",
                      packages =["tree","vim"],
                      group="All",
                      sudo=True))

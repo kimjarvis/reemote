@@ -2,7 +2,7 @@ from typing import Any, Union, Dict, Type, TypedDict
 from typing import Optional
 from pydantic import BaseModel
 from pydantic import ValidationError
-from common import CommonParams
+from common_params import CommonParams
 
 
 class ValidationOK(TypedDict):
