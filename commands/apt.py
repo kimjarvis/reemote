@@ -84,7 +84,7 @@ class PackageModel(BaseModel):
     upgrade: bool = False
     present: bool = True
 
-class APTPackage(ShellBasedCommand):
+class Package(ShellBasedCommand):
     """APT package command"""
     Model = PackageModel
 
@@ -129,8 +129,11 @@ class GetPackages(ShellBasedCommand):
     Model = GetPackagesModel
 
     async def execute(self) -> AsyncGenerator:
-        from commands.server import Shell
-        result = yield Shell(cmd="apt list --installed", **self.extra_kwargs)
+        cmd = f"apt list --installed"
+        result = yield Command(
+            command=cmd,
+            **self.extra_kwargs
+        )
 
         if result and hasattr(result, 'output'):
             result.output = parse_apt_list_installed(result.cp.stdout)
@@ -144,7 +147,7 @@ install_handler = create_router_handler(InstallModel, Install)
 remove_handler = create_router_handler(RemoveModel, Remove)
 update_handler = create_router_handler(UpdateModel, Update)
 upgrade_handler = create_router_handler(UpgradeModel, Upgrade)
-package_handler = create_router_handler(RemoveModel, APTPackage)
+package_handler = create_router_handler(RemoveModel, Package)
 get_packages_handler = create_router_handler(GetPackagesModel, GetPackages)
 
 

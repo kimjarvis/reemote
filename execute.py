@@ -7,9 +7,10 @@ from asyncssh import SSHCompletedProcess
 from command import Command
 from typing import Iterable, Any, AsyncGenerator, List, Tuple, Dict, Callable
 from response import Response  # Changed import
-
+import logging
 
 async def run_command_on_local(operation: Command) -> Response:  # Changed return type
+    logging.debug("run_command_on_local entry")
     host_info = operation.host_info
     global_info = operation.global_info
     command = operation.command
@@ -26,7 +27,7 @@ async def run_command_on_local(operation: Command) -> Response:  # Changed retur
         cp.stdout = result
         executed = True
 
-        return Response(  # Changed to UnifiedResult
+        return Response(
             cp=cp,
             host=host_info.get("host"),
             op=operation,
@@ -38,7 +39,7 @@ async def run_command_on_local(operation: Command) -> Response:  # Changed retur
         cp.exit_status = 1
         cp.returncode = 1
         cp.stderr = raw_error  # Also set stderr for consistency
-        return Response(  # Changed to UnifiedResult
+        return Response(
             cp=cp,
             error=raw_error,
             host=host_info.get("host"),

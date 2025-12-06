@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from commands.server import router as server_router
 from inventory import router as inventory_router  # Import the inventory router
 from commands.apt import router as apt_router
+from commands.sftp import router as sftp_router
+
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -21,6 +23,10 @@ app = FastAPI(
         {
             "name": "Server",
             "description": "Server facts, commands and operations"
+        },
+        {
+            "name": "SFTP",
+            "description": "SFTP commands"
         }
     ]
 )
@@ -31,3 +37,4 @@ app.include_router(inventory_router, prefix="/inventory")
 app.include_router(apt_router, prefix="/apt")
 app.include_router(server_router, prefix="/server")
 
+app.include_router(sftp_router, prefix="/sftp")

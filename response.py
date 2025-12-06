@@ -15,10 +15,6 @@ class PackageInfo(BaseModel):
 
 
 class Response(BaseModel):
-    """
-    Unified class representing the result of executing a command on a remote host.
-    Combines functionality from both Result and Response classes.
-    """
     # Core execution results (from original Result)
     cp: Optional[SSHCompletedProcess] = Field(default=None, exclude=True)
     host: Optional[str] = None
@@ -84,7 +80,7 @@ class Response(BaseModel):
             data['guard'] = getattr(op, 'guard', True)
             data['local'] = getattr(op, 'local', False)
             data['callback'] = self._callback_to_str(getattr(op, 'callback', None))
-            data['caller'] = getattr(op, 'caller', None)
+            data['caller'] = self._caller_to_str(getattr(op, 'caller', None))
             data['sudo'] = getattr(op, 'sudo', False)
             data['su'] = getattr(op, 'su', False)
             data['get_pty'] = getattr(op, 'get_pty', False)
@@ -115,6 +111,20 @@ class Response(BaseModel):
                 name = str(value)
             return f"<callback {name}>"
         return str(value)
+
+    @staticmethod
+    def _caller_to_str(value: Any) -> Optional[str]:
+        """Convert callback function to string representation."""
+        if value is None:
+            return None
+        if callable(value):
+            try:
+                name = value.__name__
+            except AttributeError:
+                name = str(value)
+            return f"<caller {name}>"
+        return str(value)
+
 
     @validator('output', pre=True)
     def validate_output(cls, v):
@@ -190,7 +200,7 @@ class Response(BaseModel):
         stdout = self.cp.stdout if self.cp else self.stdout
         stderr = self.cp.stderr if self.cp else self.stderr
 
-        return (f"UnifiedResult(host={self.host!r}, "
+        return (f"Response(host={self.host!r}, "
                 f"name={self.name!r}, "
                 f"command={self.command!r}, "
                 f"changed={self.changed!r}, "

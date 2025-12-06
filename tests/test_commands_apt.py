@@ -56,3 +56,24 @@ async def test_apt_get_packages():
     # Test passes if no exceptions were raised
     assert responses is not None
     print(f"Package information: {responses}")
+
+
+@pytest.mark.asyncio
+async def test_apt_package():
+    """Test getting apt packages information without errors"""
+    inventory = get_inventory()
+
+    from commands.apt import Package
+
+    responses = await execute(inventory, lambda: Package(
+        name="package",
+        packages=["tree", "vim"],
+        present=True,
+        group="All",
+        sudo=True,
+        updata=True
+    ))
+
+    # Test passes if no exceptions were raised
+    assert responses is not None
+    print(f"Package information: {responses}")

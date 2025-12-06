@@ -5,12 +5,12 @@ from response import validate_responses
 
 async def main():
     inventory = get_inventory()
-    from commands.apt import APTPackage
-    responses = await execute(inventory, lambda: APTPackage(name="apt package tree",
-                     packages =["tree"],
-                     present = False,
-                     group="All",
-                     sudo=True))
+    from commands.apt import Package
+    responses = await execute(inventory, lambda: Package(name="apt package tree",
+                                                         packages =["tree"],
+                                                         present = False,
+                                                         group="All",
+                                                         sudo=True))
     validated_responses = await validate_responses(responses)
     print(validated_responses)
 
