@@ -7,7 +7,7 @@ from command import Command
 from common import CommonParams, common_params
 from execute import execute
 from inventory import get_inventory
-from unifiedresult import UnifiedResult, validate_responses
+from response import Response, validate_responses
 from utilities.normalise_common import normalise_common
 from utilities.validate_parameters import validate_parameters
 
@@ -28,7 +28,7 @@ class Install():
             print(f"Validation errors: {response['errors']}")
             raise ValueError(f"Shell validation failed: {response['errors']}")
 
-    async def execute(self) -> AsyncGenerator[Command, UnifiedResult]:
+    async def execute(self) -> AsyncGenerator[Command, Response]:
         from commands.server import Shell
         result = yield Shell(cmd=f"apt-get install -y {' '.join(self.packages)}",**self.extra_kwargs)
 
@@ -43,7 +43,7 @@ class Install():
 async def operations_apt_packages_install(
     packages: list[str] = Query(..., description="List of package names"),
     common: CommonParams = Depends(common_params)  # Inject shared parameters
-) -> list[UnifiedResult]:
+) -> list[Response]:
     # Validate parameters
     result = validate_parameters(InstallModel, common=common, packages=packages)
 
@@ -79,7 +79,7 @@ class Remove():
             print(f"Validation errors: {response['errors']}")
             raise ValueError(f"Shell validation failed: {response['errors']}")
 
-    async def execute(self) -> AsyncGenerator[Command, UnifiedResult]:
+    async def execute(self) -> AsyncGenerator[Command, Response]:
         from commands.server import Shell
         result = yield Shell(cmd=f"apt-get remove -y {' '.join(self.packages)}",**self.extra_kwargs)
 
@@ -94,7 +94,7 @@ class Remove():
 async def operations_apt_packages_remove(
     packages: list[str] = Query(..., description="List of package names"),
     common: CommonParams = Depends(common_params)  # Inject shared parameters
-) -> list[UnifiedResult]:
+) -> list[Response]:
     # Validate parameters
     result = validate_parameters(RemoveModel, common=common, packages=packages)
 

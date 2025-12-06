@@ -5,7 +5,7 @@ from command import Command
 from common import CommonParams, common_params
 from execute import execute
 from inventory import get_inventory
-from unifiedresult import validate_responses, UnifiedResult
+from response import validate_responses, Response
 from utilities.normalise_common import normalise_common
 from utilities.validate_parameters import validate_parameters
 
@@ -27,7 +27,7 @@ class Shell():
             print(f"Validation errors: {response['errors']}")
             raise ValueError(f"Shell validation failed: {response['errors']}")
 
-    async def execute(self) -> AsyncGenerator[Command, UnifiedResult]:
+    async def execute(self) -> AsyncGenerator[Command, Response]:
         """Async generator that yields a Command."""
         # Yield the Command for execution and receive the result when resumed
         result = yield Command(
@@ -48,7 +48,7 @@ class Shell():
 async def commands_server_shell(
         cmd: str = Query(..., description="Shell command"),
         common: CommonParams = Depends(common_params)
-) -> list[UnifiedResult]:
+) -> list[Response]:
     """Direct implementation of router logic for shell commands."""
 
     # Validate parameters

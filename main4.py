@@ -1,7 +1,7 @@
 import asyncio
 from inventory import get_inventory
 from execute import execute
-from unifiedresult import UnifiedResult, validate_responses, PackageInfo
+from response import Response, validate_responses, PackageInfo
 
 
 async def main():

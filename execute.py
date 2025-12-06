@@ -6,10 +6,10 @@ import asyncio
 from asyncssh import SSHCompletedProcess
 from command import Command
 from typing import Iterable, Any, AsyncGenerator, List, Tuple, Dict, Callable
-from unifiedresult import UnifiedResult  # Changed import
+from response import Response  # Changed import
 
 
-async def run_command_on_local(operation: Command) -> UnifiedResult:  # Changed return type
+async def run_command_on_local(operation: Command) -> Response:  # Changed return type
     host_info = operation.host_info
     global_info = operation.global_info
     command = operation.command
@@ -26,7 +26,7 @@ async def run_command_on_local(operation: Command) -> UnifiedResult:  # Changed 
         cp.stdout = result
         executed = True
 
-        return UnifiedResult(  # Changed to UnifiedResult
+        return Response(  # Changed to UnifiedResult
             cp=cp,
             host=host_info.get("host"),
             op=operation,
@@ -38,7 +38,7 @@ async def run_command_on_local(operation: Command) -> UnifiedResult:  # Changed 
         cp.exit_status = 1
         cp.returncode = 1
         cp.stderr = raw_error  # Also set stderr for consistency
-        return UnifiedResult(  # Changed to UnifiedResult
+        return Response(  # Changed to UnifiedResult
             cp=cp,
             error=raw_error,
             host=host_info.get("host"),
@@ -47,7 +47,7 @@ async def run_command_on_local(operation: Command) -> UnifiedResult:  # Changed 
         )
 
 
-async def run_command_on_host(operation: Command) -> UnifiedResult:  # Changed return type
+async def run_command_on_host(operation: Command) -> Response:  # Changed return type
     host_info = operation.host_info
     global_info = operation.global_info
     command = operation.command
@@ -108,7 +108,7 @@ async def run_command_on_host(operation: Command) -> UnifiedResult:  # Changed r
         cp.returncode = exc.exit_status if hasattr(exc, 'exit_status') else 1
         error_msg = f"Process on host {host_info.get('host')} exited with status {exc.exit_status}"
         cp.stderr = raw_error
-        return UnifiedResult(  # Changed to UnifiedResult
+        return Response(  # Changed to UnifiedResult
             cp=cp,
             error=error_msg,
             host=host_info.get("host"),
@@ -121,7 +121,7 @@ async def run_command_on_host(operation: Command) -> UnifiedResult:  # Changed r
         cp = SSHCompletedProcess()
         cp.exit_status = 1
         cp.returncode = 1
-        return UnifiedResult(  # Changed to UnifiedResult
+        return Response(  # Changed to UnifiedResult
             cp=cp,
             error=raw_error,
             host=host_info.get("host"),
@@ -129,7 +129,7 @@ async def run_command_on_host(operation: Command) -> UnifiedResult:  # Changed r
             executed=executed
         )
 
-    return UnifiedResult(  # Changed to UnifiedResult
+    return Response(  # Changed to UnifiedResult
         cp=cp,
         host=host_info.get("host"),
         op=operation,
@@ -137,7 +137,7 @@ async def run_command_on_host(operation: Command) -> UnifiedResult:  # Changed r
     )
 
 
-async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | UnifiedResult, UnifiedResult | None]:  # Changed type hints
+async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Response, Response | None]:  # Changed type hints
     """
     Async version of pre-order generator traversal.
     Handles async generators and async execute() methods.
@@ -179,7 +179,7 @@ async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Un
                 # Do not yield or send any value to a just-started async generator.
                 # It will be primed on the next loop iteration via __anext__.
 
-            elif isinstance(value, UnifiedResult):  # Changed type check
+            elif isinstance(value, Response):  # Changed type check
                 # Pass through UnifiedResult objects
                 print("trace 00")
                 result = yield value
@@ -208,7 +208,7 @@ async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Un
 
             # Handle errors - yield a UnifiedResult object
             error_msg = f"Error in node execution: {e}"
-            result = yield UnifiedResult(error=error_msg)  # Changed to UnifiedResult
+            result = yield Response(error=error_msg)  # Changed to UnifiedResult
             stack.pop()
 
             # Send error to parent if exists
@@ -216,9 +216,9 @@ async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Un
                 stack[-1] = (stack[-1][0], stack[-1][1], result)
 
 
-async def execute(inventory: Iterable[Tuple[Dict[str, Any], Dict[str, Any]]], root_obj_factory: Callable[[], Any]) -> List[UnifiedResult]:  # Changed return type
-    async def process_host(inventory_item: Tuple[Dict[str, Any], Dict[str, Any]], root_obj_factory: Callable[[], Any]) -> List[UnifiedResult]:  # Changed return type
-        responses: List[UnifiedResult] = []  # Changed type
+async def execute(inventory: Iterable[Tuple[Dict[str, Any], Dict[str, Any]]], root_obj_factory: Callable[[], Any]) -> List[Response]:  # Changed return type
+    async def process_host(inventory_item: Tuple[Dict[str, Any], Dict[str, Any]], root_obj_factory: Callable[[], Any]) -> List[Response]:  # Changed return type
+        responses: List[Response] = []  # Changed type
 
         # Create a new instance for this host using the factory
         host_instance = root_obj_factory()
@@ -247,7 +247,7 @@ async def execute(inventory: Iterable[Tuple[Dict[str, Any], Dict[str, Any]]], ro
                         # Send result back and get next operation
                         operation = await gen.asend(result)
 
-                    elif isinstance(operation, UnifiedResult):  # Changed type check
+                    elif isinstance(operation, Response):  # Changed type check
                         responses.append(operation)
                         result = operation
                         operation = await gen.asend(result)
@@ -268,16 +268,16 @@ async def execute(inventory: Iterable[Tuple[Dict[str, Any], Dict[str, Any]]], ro
         return responses
 
     # Run all hosts in parallel
-    tasks: List[asyncio.Task[List[UnifiedResult]]] = []  # Changed type
+    tasks: List[asyncio.Task[List[Response]]] = []  # Changed type
     for inventory_item in inventory:
         task = asyncio.create_task(process_host(inventory_item, root_obj_factory))
         tasks.append(task)
 
     # Wait for all hosts to complete
-    all_responses: List[List[UnifiedResult]] = await asyncio.gather(*tasks)  # Changed type
+    all_responses: List[List[Response]] = await asyncio.gather(*tasks)  # Changed type
 
     # Flatten the list of lists
-    responses: List[UnifiedResult] = []  # Changed type
+    responses: List[Response] = []  # Changed type
     for host_responses in all_responses:
         responses.extend(host_responses)
 

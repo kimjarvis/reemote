@@ -12,7 +12,7 @@ class PackageInfo(BaseModel):
     version: str
 
 
-class UnifiedResult(BaseModel):
+class Response(BaseModel):
     """
     Unified class representing the result of executing a command on a remote host.
     Combines functionality from both Result and Response classes.
@@ -146,9 +146,9 @@ class UnifiedResult(BaseModel):
         elif isinstance(value, (str, int, float, bool)):
             return value
         elif isinstance(value, (list, tuple)):
-            return [UnifiedResult._make_json_serializable(item) for item in value]
+            return [Response._make_json_serializable(item) for item in value]
         elif isinstance(value, dict):
-            return {k: UnifiedResult._make_json_serializable(v) for k, v in value.items()}
+            return {k: Response._make_json_serializable(v) for k, v in value.items()}
         elif isinstance(value, bytes):
             try:
                 return value.decode('utf-8')
@@ -198,18 +198,18 @@ class UnifiedResult(BaseModel):
                 f"error={self.error!r})")
 
 
-async def validate_responses(responses: list[Any]) -> list[UnifiedResult]:
+async def validate_responses(responses: list[Any]) -> list[Response]:
     """Convert any response-like objects to UnifiedResult instances."""
     validated_responses = []
 
     for r in responses:
         try:
-            if isinstance(r, UnifiedResult):
+            if isinstance(r, Response):
                 # Already a UnifiedResult, just add it
                 validated_responses.append(r)
             else:
                 # Convert to UnifiedResult
-                unified_result = UnifiedResult(
+                unified_result = Response(
                     cp=getattr(r, 'cp', None),
                     host=getattr(r, 'host', None),
                     op=getattr(r, 'op', None),
@@ -222,7 +222,7 @@ async def validate_responses(responses: list[Any]) -> list[UnifiedResult]:
         except Exception as e:
             print(f"Error converting response: {e}")
             # Create a minimal error result
-            error_result = UnifiedResult(
+            error_result = Response(
                 error=f"Failed to convert response: {str(e)}",
                 host=getattr(r, 'host', None) if hasattr(r, 'host') else None
             )

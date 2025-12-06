@@ -2,7 +2,7 @@ import pytest
 import asyncio
 from inventory import get_inventory
 from execute import execute
-from unifiedresult import validate_responses
+from response import validate_responses
 
 
 @pytest.mark.asyncio
