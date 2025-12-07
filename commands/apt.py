@@ -27,6 +27,7 @@ class Install(ShellBasedCommand):
         result = yield Command(
             command=cmd,
             id=ConstructionTracker.get_current_id(),
+            parents=ConstructionTracker.get_parents(),
             **self.extra_kwargs
         )
         self.mark_changed(result)
@@ -46,6 +47,7 @@ class Remove(ShellBasedCommand):
         result = yield Command(
             command=cmd,
             id=ConstructionTracker.get_current_id(),
+            parents=ConstructionTracker.get_parents(),
             **self.extra_kwargs
         )
         self.mark_changed(result)
@@ -65,6 +67,7 @@ class Update(ShellBasedCommand):
         result = yield Command(
             command=cmd,
             id=ConstructionTracker.get_current_id(),
+            parents=ConstructionTracker.get_parents(),
             **self.extra_kwargs
         )
         self.mark_changed(result)
@@ -84,6 +87,7 @@ class Upgrade(ShellBasedCommand):
         result = yield Command(
             command=cmd,
             id=ConstructionTracker.get_current_id(),
+            parents=ConstructionTracker.get_parents(),
             **self.extra_kwargs
         )
         self.mark_changed(result)
@@ -149,6 +153,7 @@ class GetPackages(ShellBasedCommand):
         result = yield Command(
             command=cmd,
             id=ConstructionTracker.get_current_id(),
+            parents=ConstructionTracker.get_parents(),
             **self.extra_kwargs
         )
 

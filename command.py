@@ -38,8 +38,10 @@ class Command:
                  sudo: bool = False,
                  su: bool = False,
                  get_pty: bool = False,
-                 id: Optional[int] = None):
+                 id: Optional[int] = None,
+                 parents: Optional[list[(int,str)]] = None):
         self.id = id
+        self.parents: Optional[list[(int,str)]] = parents
         self.name = name
         self.command: str = command
         self.group = group
@@ -61,6 +63,7 @@ class Command:
     def __repr__(self) -> str:
         return (f"Command("
                 f"id={self.id!r}, "
+                f"parents={self.parents!r}, "
                 f"name={self.name!r}, "
                 f"command={self.command!r}, "
                 f"group={self.group!r}, "

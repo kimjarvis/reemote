@@ -86,6 +86,7 @@ class Mkdir(ShellBasedCommand):
                                callback=self._mkdir_callback,
                                caller=model_instance,
                                id=ConstructionTracker.get_current_id(),
+                               parents=ConstructionTracker.get_parents(),
                                **self.extra_kwargs)
         # Directory creation is inherently a changing operation
         self.mark_changed(result)

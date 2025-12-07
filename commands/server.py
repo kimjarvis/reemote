@@ -32,6 +32,7 @@ class Shell(ShellBasedCommand):
         result = yield Command(
             command=cmd,
             id=ConstructionTracker.get_current_id(),
+            parents=ConstructionTracker.get_parents(),
             **self.extra_kwargs
         )
 

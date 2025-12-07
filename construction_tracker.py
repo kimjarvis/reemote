@@ -82,6 +82,40 @@ class ConstructionTracker:
         print("]")
 
 
+    @classmethod
+    def get_parents(cls) -> List[Tuple[int, str]]:
+        hierarchy_data = cls.get_hierarchy()
+        start_id = cls.get_current_id()-1
+        if not hierarchy_data:
+            return []
+
+        # Create a mapping from id to node data for efficient lookup
+        node_map = {node[0]: node for node in hierarchy_data}
+
+        # Find the starting node
+        if start_id not in node_map:
+            raise ValueError(f"Node with id {start_id} not found in hierarchy")
+
+        parents = []
+
+        # Start with the current node itself
+        current_node = node_map[start_id]
+        parents.append((current_node[0], current_node[1]))
+
+        # Now get all parents
+        parent_id = current_node[2]
+
+        # Traverse up the parent chain
+        while parent_id is not None:
+            parent_node = node_map.get(parent_id)
+            if parent_node is None:
+                raise ValueError(f"Parent with id {parent_id} not found in hierarchy")
+
+            parents.append((parent_node[0], parent_node[1]))
+            parent_id = parent_node[2]
+
+        return parents
+
 def track_construction(cls):
     """Decorator to track object construction hierarchy"""
     # Store the original __new__ and __init__ methods BEFORE modifying them
