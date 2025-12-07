@@ -8,7 +8,7 @@ from command import Command
 from common.base_classes import ShellBasedCommand
 from common.router_utils import create_router_handler
 from common_params import CommonParams, common_params
-from construction_tracker import track_construction, track_yields
+from construction_tracker import ConstructionTracker,track_construction, track_yields
 from response import Response
 
 router = APIRouter()
@@ -29,9 +29,9 @@ class Shell(ShellBasedCommand):
     @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
         cmd = self.cmd
-        print("trace 03")
         result = yield Command(
             command=cmd,
+            id=ConstructionTracker.get_current_id(),
             **self.extra_kwargs
         )
 

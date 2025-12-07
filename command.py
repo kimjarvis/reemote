@@ -10,7 +10,7 @@ class Command:
     including the command string, execution options, and contextual information.
 
     Attributes:
-        id (int): A unique identifier for each Command object, based on the count of constructor calls.
+        id (Optional[int]): An optional identifier for the Command object.
         command (str): The actual command string to be executed.
         guard (bool): If True, enables guard mode which may prevent execution
                      under certain conditions. Defaults to True.
@@ -27,9 +27,6 @@ class Command:
                   Defaults to False.
     """
 
-    # Class-level counter to track the number of constructor calls
-    _counter = 0
-
     def __init__(self,
                  name: str = "",
                  command: str = "",
@@ -40,12 +37,9 @@ class Command:
                  caller=None,
                  sudo: bool = False,
                  su: bool = False,
-                 get_pty: bool = False):
-        # Assign a unique ID based on the current value of the counter
-        self.id = Command._counter
-        # Increment the class-level counter for the next object
-        Command._counter += 1
-
+                 get_pty: bool = False,
+                 id: Optional[int] = None):
+        self.id = id
         self.name = name
         self.command: str = command
         self.group = group
@@ -58,6 +52,8 @@ class Command:
         self.sudo = sudo
         self.su = su
         self.get_pty = get_pty
+
+        print(f"{self}")
 
     def __str__(self) -> str:
         return repr(self)

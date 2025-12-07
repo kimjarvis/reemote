@@ -13,12 +13,10 @@ class Hello:
         from commands.server import Shell
 
         yield Shell(cmd="pwd")
-        print("trace 00")
         yield Shell(name="echo",
                         cmd="echo Hello World!",
                         group="All",
                         sudo=False)
-        print("trace 01")
 
 
 @track_construction

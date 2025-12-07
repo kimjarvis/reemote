@@ -7,10 +7,8 @@ from asyncssh import SSHCompletedProcess
 from command import Command
 from typing import Iterable, Any, AsyncGenerator, List, Tuple, Dict, Callable
 from response import Response  # Changed import
-import logging
 
 async def run_command_on_local(operation: Command) -> Response:  # Changed return type
-    logging.debug("run_command_on_local entry")
     host_info = operation.host_info
     global_info = operation.global_info
     command = operation.command
@@ -150,39 +148,30 @@ async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Re
         gen = node.execute()
         # For async generators, we can't call next() immediately
         stack.append((node, gen, None))
-        print(f"DEBUG: Pushed {node.__class__.__name__} onto stack")
     else:
         raise TypeError(f"Node must have an execute() method: {type(node)}")
 
     while stack:
         current_node, generator, send_value = stack[-1]
-        print(f"DEBUG: Stack size: {len(stack)}, Current: {current_node.__class__.__name__}, Send value: {send_value}")
 
         try:
             if send_value is None:
                 # First time or after pushing new generator
-                print(f"DEBUG: Calling __anext__ on {current_node.__class__.__name__}")
                 value = await generator.__anext__()
             else:
                 # Send previous result
-                print(f"DEBUG: Calling asend on {current_node.__class__.__name__} with {send_value}")
                 value = await generator.asend(send_value)
-
-            print(f"DEBUG: Got value from {current_node.__class__.__name__}: {value}, type: {type(value)}")
 
             # Process the yielded value
             if isinstance(value, Command):
                 # Yield the command for execution
-                print(f"DEBUG: Yielding Command: {value}")
                 result = yield value
-                print(f"DEBUG: Got result for Command: {result}")
                 # Store result to send back
                 stack[-1] = (current_node, generator, result)
 
             elif hasattr(value, 'execute') and callable(value.execute):
                 # Found a nested operation with its own execute()
                 # Push it onto the stack. Do NOT send any value yet.
-                print(f"DEBUG: Found nested executable: {value.__class__.__name__}, pushing onto stack")
                 nested_gen = value.execute()
                 stack.append((value, nested_gen, None))
                 # Do not yield or send any value to a just-started async generator.
@@ -190,9 +179,7 @@ async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Re
 
             elif isinstance(value, Response):
                 # Pass through UnifiedResult objects
-                print(f"DEBUG: Yielding Response: {value}")
                 result = yield value
-                print(f"DEBUG: Got result for Response: {result}")
                 stack[-1] = (current_node, generator, result)
 
             else:
@@ -200,7 +187,6 @@ async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Re
 
         except StopAsyncIteration as e:
             # Async generator is done
-            print(f"DEBUG: StopAsyncIteration for {current_node.__class__.__name__}")
             # Capture the last value we attempted to send into this generator
             last_sent = stack[-1][2] if stack else None
             stack.pop()
@@ -210,16 +196,9 @@ async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Re
                 # otherwise, propagate the last result we sent into the child.
                 explicit = e.value if hasattr(e, 'value') else None
                 return_value = explicit if explicit is not None else last_sent
-                print(f"DEBUG: Sending return value {return_value} to parent {stack[-1][0].__class__.__name__}")
                 stack[-1] = (stack[-1][0], stack[-1][1], return_value)
 
         except Exception as e:
-            print(f"Error in async node execution: {e}")
-            print(f"Current node: {current_node}")
-            print(f"Node type: {type(current_node)}")
-            import traceback
-            traceback.print_exc()
-
             # Handle errors - yield a UnifiedResult object
             error_msg = f"Error in node execution: {e}"
             result = yield Response(error=error_msg)

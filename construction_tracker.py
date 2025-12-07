@@ -16,6 +16,10 @@ class ConstructionTracker:
     _local = threading.local()
 
     @classmethod
+    def get_current_id(cls) -> Optional[int]:
+        return cls._next_id
+
+    @classmethod
     def clear(cls):
         """Clear all tracking data"""
         cls._next_id = 1
