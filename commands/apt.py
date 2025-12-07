@@ -26,6 +26,7 @@ class Install(ShellBasedCommand):
         cmd = f"apt-get install -y {' '.join(self.data['packages'])}"
         result = yield Command(
             command=cmd,
+            id=ConstructionTracker.get_current_id(),
             **self.extra_kwargs
         )
         self.mark_changed(result)
@@ -44,6 +45,7 @@ class Remove(ShellBasedCommand):
         cmd = f"apt-get remove -y {' '.join(self.data['packages'])}"
         result = yield Command(
             command=cmd,
+            id=ConstructionTracker.get_current_id(),
             **self.extra_kwargs
         )
         self.mark_changed(result)
@@ -62,6 +64,7 @@ class Update(ShellBasedCommand):
         cmd = f"apt-get update"
         result = yield Command(
             command=cmd,
+            id=ConstructionTracker.get_current_id(),
             **self.extra_kwargs
         )
         self.mark_changed(result)
@@ -80,6 +83,7 @@ class Upgrade(ShellBasedCommand):
         cmd = f"apt-get upgrade"
         result = yield Command(
             command=cmd,
+            id=ConstructionTracker.get_current_id(),
             **self.extra_kwargs
         )
         self.mark_changed(result)
@@ -144,6 +148,7 @@ class GetPackages(ShellBasedCommand):
         cmd = f"apt list --installed"
         result = yield Command(
             command=cmd,
+            id=ConstructionTracker.get_current_id(),
             **self.extra_kwargs
         )
 

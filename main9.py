@@ -1,8 +1,10 @@
 import asyncio
-from inventory import get_inventory
+
+from construction_tracker import ConstructionTracker
 from execute import execute
+from inventory import get_inventory
 from response import validate_responses
-from construction_tracker import ConstructionTracker, track_construction, track_yields
+
 
 async def main():
     inventory = get_inventory()
