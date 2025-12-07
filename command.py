@@ -1,5 +1,5 @@
 from typing import Dict, Optional, Callable
-from construction_tracker import track_construction
+from construction_tracker import track_construction, track_yields
 
 @track_construction
 class Command:

@@ -7,6 +7,7 @@ from common.router_utils import create_router_handler
 from common_params import CommonParams, common_params
 from response import Response
 from facts.parse_apt_list_installed import parse_apt_list_installed
+from construction_tracker import ConstructionTracker, track_construction, track_yields
 
 router = APIRouter()
 
@@ -15,13 +16,14 @@ router = APIRouter()
 class InstallModel(BaseModel):
     packages: list[str]
 
-
+@track_construction
 class Install(ShellBasedCommand):
     """APT install command"""
     Model = InstallModel
 
+    @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        cmd = f"apt-get install -y {' '.join(self._data['packages'])}"
+        cmd = f"apt-get install -y {' '.join(self.data['packages'])}"
         result = yield Command(
             command=cmd,
             **self.extra_kwargs
@@ -32,12 +34,14 @@ class Install(ShellBasedCommand):
 class RemoveModel(BaseModel):
     packages: list[str]
 
+@track_construction
 class Remove(ShellBasedCommand):
     """APT remove command"""
     Model = RemoveModel
 
+    @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        cmd = f"apt-get remove -y {' '.join(self._data['packages'])}"
+        cmd = f"apt-get remove -y {' '.join(self.data['packages'])}"
         result = yield Command(
             command=cmd,
             **self.extra_kwargs
@@ -48,10 +52,12 @@ class Remove(ShellBasedCommand):
 class UpdateModel(BaseModel):
     pass
 
+@track_construction
 class Update(ShellBasedCommand):
     """APT remove command"""
     Model = UpdateModel
 
+    @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
         cmd = f"apt-get update"
         result = yield Command(
@@ -64,10 +70,12 @@ class Update(ShellBasedCommand):
 class UpgradeModel(BaseModel):
     pass
 
+@track_construction
 class Upgrade(ShellBasedCommand):
     """APT remove command"""
     Model = UpgradeModel
 
+    @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
         cmd = f"apt-get upgrade"
         result = yield Command(
@@ -84,38 +92,40 @@ class PackageModel(BaseModel):
     upgrade: bool = False
     present: bool = True
 
+@track_construction
 class Package(ShellBasedCommand):
     """APT package command"""
     Model = PackageModel
 
+    @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
         from commands.apt import GetPackages
         before_update = yield GetPackages()
-        update = yield Update(guard=self._data["update"])
+        update = yield Update(guard=self.data["update"])
         self.mark_unchanged(update)
         after_update = yield GetPackages()
         if before_update.output != after_update.output:
             self.mark_changed(update)
-        upgrade = yield Upgrade(guard=self._data["upgrade"])
+        upgrade = yield Upgrade(guard=self.data["upgrade"])
         self.mark_unchanged(upgrade)
         after_upgrade = yield GetPackages()
         if after_update.output != after_upgrade.output:
             self.mark_changed(upgrade)
         install = yield Install(
-            guard=self._data["present"],
-            packages=self._data["packages"],
+            guard=self.data["present"],
+            packages=self.data["packages"],
             **self.extra_kwargs  # Pass sudo flag here
         )
         self.mark_unchanged(install)
         remove = yield Remove(
-            guard=not self._data["present"],
-            packages=self._data["packages"],
+            guard=not self.data["present"],
+            packages=self.data["packages"],
             **self.extra_kwargs  # Pass sudo flag here
         )
         self.mark_unchanged(remove)
         after_opration = yield GetPackages()
         if after_upgrade.output != after_opration.output:
-            if self._data["present"]:
+            if self.data["present"]:
                 self.mark_changed(install)
             else:
                self.mark_changed(remove)
@@ -124,10 +134,12 @@ class Package(ShellBasedCommand):
 class GetPackagesModel(BaseModel):
     pass
 
+@track_construction
 class GetPackages(ShellBasedCommand):
     """Get installed packages fact"""
     Model = GetPackagesModel
 
+    @track_yields
     async def execute(self) -> AsyncGenerator:
         cmd = f"apt list --installed"
         result = yield Command(

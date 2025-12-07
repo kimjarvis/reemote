@@ -1,8 +1,9 @@
 # construction_tracker.py
-from typing import List, Tuple, Optional, Any, Callable, AsyncGenerator
+from typing import List, Tuple, Optional, Any
 import threading
 from contextlib import contextmanager
 import inspect
+import functools
 
 
 class ConstructionTracker:
@@ -61,21 +62,6 @@ class ConstructionTracker:
             cls.set_parent(old_parent)
 
     @classmethod
-    def push_parent(cls, obj_id: int):
-        """Push object ID to parent stack"""
-        cls._parent_stack.append(obj_id)
-        cls.set_parent(obj_id)
-
-    @classmethod
-    def pop_parent(cls):
-        """Pop from parent stack"""
-        if cls._parent_stack:
-            cls._parent_stack.pop()
-            # Set new parent to previous item on stack or None
-            new_parent = cls._parent_stack[-1] if cls._parent_stack else None
-            cls.set_parent(new_parent)
-
-    @classmethod
     def get_hierarchy(cls) -> List[Tuple[int, str, Optional[int]]]:
         """Get the complete construction hierarchy as list of tuples"""
         return [(obj_id, class_name, parent_id)
@@ -94,9 +80,11 @@ class ConstructionTracker:
 
 def track_construction(cls):
     """Decorator to track object construction hierarchy"""
-    # Store the original __new__ method
-    original_new = getattr(cls, '__new__', object.__new__)
+    # Store the original __new__ and __init__ methods BEFORE modifying them
+    original_new = cls.__new__
+    original_init = cls.__init__
 
+    # Create a closure to capture the original init
     def new_new(cls, *args, **kwargs):
         # Get current parent BEFORE creating instance
         current_parent = ConstructionTracker.get_current_parent()
@@ -115,11 +103,11 @@ def track_construction(cls):
 
         return instance
 
+    # Create wrapper that calls the ORIGINAL init, not self.__class__.__init__
+    @functools.wraps(original_init)
     def new_init(self, *args, **kwargs):
-        # Call original __init__ if it exists
-        original_init = getattr(self.__class__, '__init__', None)
-        if original_init and original_init != new_init:
-            original_init(self, *args, **kwargs)
+        # Call the ORIGINAL init function
+        return original_init(self, *args, **kwargs)
 
     # Replace methods
     cls.__new__ = staticmethod(new_new)
@@ -128,104 +116,33 @@ def track_construction(cls):
     return cls
 
 
-# Helper function to wrap generator methods
-def with_parent_context(method):
-    """
-    Decorator for async generator methods that automatically sets
-    parent context based on self._construction_id
-    """
-    if inspect.isasyncgenfunction(method):
-        async def wrapper(self, *args, **kwargs):
-            # Get the construction ID of self
-            parent_id = getattr(self, '_construction_id', None)
+def track_yields(method):
+    @functools.wraps(method)
+    async def wrapper(self, *args, **kwargs):
+        parent_id = getattr(self, '_construction_id', None)
 
-            # Create the async generator
+        # Store the original parent to restore later
+        original_parent = ConstructionTracker.get_current_parent()
+
+        # Always set our ID as parent when this generator runs
+        ConstructionTracker.set_parent(parent_id)
+
+        try:
             gen = method(self, *args, **kwargs)
-
             try:
-                # Get first value from generator
                 value = await gen.__anext__()
-
                 while True:
-                    # Yield the value
                     try:
-                        # Send value back and get next value
-                        send_value = yield value
-
-                        # Process next value with parent context
-                        with ConstructionTracker.parent_context(parent_id):
-                            value = await gen.asend(send_value)
-
-                    except StopIteration:
+                        # Yield the current value
+                        result = yield value
+                        # Get the next value by sending the result
+                        value = await gen.asend(result)
+                    except StopAsyncIteration:
                         break
-
-            except StopAsyncIteration:
-                pass
             finally:
                 await gen.aclose()
+        finally:
+            # Restore original parent
+            ConstructionTracker.set_parent(original_parent)
 
-        # Mark as async generator
-        import types
-        wrapper = types.coroutine(wrapper)
-        return wrapper
-
-    else:
-        # For non-async generator methods
-        def wrapper(self, *args, **kwargs):
-            # Get the construction ID of self
-            parent_id = getattr(self, '_construction_id', None)
-
-            # Create the generator
-            gen = method(self, *args, **kwargs)
-
-            try:
-                # Get first value from generator
-                value = next(gen)
-
-                while True:
-                    # Yield the value
-                    try:
-                        send_value = yield value
-
-                        # Process next value with parent context
-                        with ConstructionTracker.parent_context(parent_id):
-                            value = gen.send(send_value)
-
-                    except StopIteration:
-                        break
-
-            except StopIteration:
-                pass
-            finally:
-                gen.close()
-
-        return wrapper
-
-
-# Helper to create auto-parent-yielding generators
-async def auto_parent_yield(generator_func):
-    """
-    Helper to automatically set parent context when yielding from a generator
-
-    Usage:
-        async def execute(self):
-            async for item in auto_parent_yield(self._my_generator):
-                yield item
-    """
-    # Get parent ID from self (assuming generator_func is a bound method)
-    if hasattr(generator_func, '__self__'):
-        parent_id = getattr(generator_func.__self__, '_construction_id', None)
-    else:
-        parent_id = None
-
-    # Execute the generator with parent context
-    gen = generator_func()
-    try:
-        while True:
-            with ConstructionTracker.parent_context(parent_id):
-                value = await gen.__anext__()
-            yield value
-    except StopAsyncIteration:
-        pass
-    finally:
-        await gen.aclose()
+    return wrapper

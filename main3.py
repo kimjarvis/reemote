@@ -2,6 +2,8 @@ import asyncio
 from inventory import get_inventory
 from execute import execute
 from response import validate_responses
+from construction_tracker import ConstructionTracker, track_construction, track_yields
+
 
 async def main():
     inventory = get_inventory()
@@ -23,7 +25,9 @@ async def main():
         print(f"Stderr: {result.stderr}")
         print(f"Changed: {result.changed}")
         print(f"Executed: {result.executed}")
-
+    # Print the construction hierarchy at the end
+    print("\nConstruction Hierarchy:")
+    ConstructionTracker.print()
 
 if __name__ == "__main__":
     asyncio.run(main())
