@@ -55,7 +55,7 @@ class Mkdir(ShellBasedCommand):
     Model = MkdirModel
 
     @staticmethod
-    async def _mkdir_callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
                 sftp_attrs = caller.get_sftp_attrs()
@@ -70,7 +70,7 @@ class Mkdir(ShellBasedCommand):
         model_instance = self.Model(**self._data)
 
         result = yield Command(local=True,
-                               callback=self._mkdir_callback,
+                               callback=self._callback,
                                caller=model_instance,
                                id=ConstructionTracker.get_current_id(),
                                parents=ConstructionTracker.get_parents(),
@@ -79,39 +79,6 @@ class Mkdir(ShellBasedCommand):
         self.mark_changed(result)
         return
 
-
-class IsdirModel(BaseModel):
-    path: str
-
-
-@track_construction
-class Isdir(ShellBasedCommand):
-    Model = IsdirModel
-
-    @staticmethod
-    async def _isdir_callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                return await sftp.isdir(caller.path)
-
-    @track_yields
-    async def execute(self) -> AsyncGenerator[Command, Response]:
-        # Convert dictionary to model instance
-        model_instance = self.Model(**self._data)
-
-        result = yield Command(local=True,
-                               callback=self._isdir_callback,
-                               caller=model_instance,
-                               id=ConstructionTracker.get_current_id(),
-                               parents=ConstructionTracker.get_parents(),
-                               **self.extra_kwargs)
-        result.output = result.cp.stdout
-        return
-
-
-# Create endpoint handler
-mkdir_handler = create_router_handler(MkdirModel, Mkdir)
-isdir_handler = create_router_handler(IsdirModel, Isdir)
 
 
 @router.get("/command/mkdir/", tags=["SFTP"])
@@ -145,9 +112,106 @@ async def shell_command(
     return await mkdir_handler(**params, common=common)
 
 
+
+class IsModel(BaseModel):
+    path: str
+
+@track_construction
+class Isdir(ShellBasedCommand):
+    Model = IsModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.isdir(caller.path)
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
+        model_instance = self.Model(**self._data)
+
+        result = yield Command(local=True,
+                               callback=self._callback,
+                               caller=model_instance,
+                               id=ConstructionTracker.get_current_id(),
+                               parents=ConstructionTracker.get_parents(),
+                               **self.extra_kwargs)
+        result.output = result.cp.stdout
+        return
+
+@track_construction
+class Isfile(ShellBasedCommand):
+    Model = IsModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.isfile(caller.path)
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
+        model_instance = self.Model(**self._data)
+
+        result = yield Command(local=True,
+                               callback=self._callback,
+                               caller=model_instance,
+                               id=ConstructionTracker.get_current_id(),
+                               parents=ConstructionTracker.get_parents(),
+                               **self.extra_kwargs)
+        result.output = result.cp.stdout
+        return
+
+@track_construction
+class Islink(ShellBasedCommand):
+    Model = IsModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.islink(caller.path)
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
+        model_instance = self.Model(**self._data)
+
+        result = yield Command(local=True,
+                               callback=self._callback,
+                               caller=model_instance,
+                               id=ConstructionTracker.get_current_id(),
+                               parents=ConstructionTracker.get_parents(),
+                               **self.extra_kwargs)
+        result.output = result.cp.stdout
+        return
+
+# Create endpoint handler
+mkdir_handler = create_router_handler(MkdirModel, Mkdir)
+isdir_handler = create_router_handler(IsModel, Isdir)
+isfile_handler = create_router_handler(IsModel, Isfile)
+islink_handler = create_router_handler(IsModel, Islink)
+
+
 @router.get("/fact/isdir/", tags=["SFTP"])
 async def shell_command(
         path: str = Query(..., description="Directory path"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
     return await isdir_handler(path=path, common=common)
+
+@router.get("/fact/isfile/", tags=["SFTP"])
+async def shell_command(
+        path: str = Query(..., description="File path"),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    return await isfile_handler(path=path, common=common)
+
+@router.get("/fact/islink/", tags=["SFTP"])
+async def shell_command(
+        path: str = Query(..., description="Link path"),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    return await islink_handler(path=path, common=common)
