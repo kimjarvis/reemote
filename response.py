@@ -22,7 +22,8 @@ class Response(BaseModel):
     op: Optional[Command] = Field(default=None, exclude=True)
     changed: bool = False
     executed: bool = False
-    output: List[Union[PackageInfo, Dict[str, Any]]] = []
+#    output: List[Union[PackageInfo, Dict[str, Any]]] = []
+    output: Union[List[PackageInfo],bool] = []
     error: Optional[str] = None
 
     # Fields from Command (r.op)

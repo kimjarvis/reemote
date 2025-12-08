@@ -22,10 +22,7 @@ class Mkdir(ShellBasedCommand):
 
     @staticmethod
     async def _mkdir_callback(host_info, global_info, command, cp, caller):
-        logging.debug("callback entry")
-
         """Static callback method for directory creation"""
-
         # Validate host_info with proper error messages
         required_keys = ['host', 'username', 'password']
         missing_keys = []
@@ -68,7 +65,6 @@ class Mkdir(ShellBasedCommand):
                 async with conn.start_sftp_client() as sftp:
                     # Create the remote directory
                     await sftp.mkdir(caller.path)
-                    logging.debug("callback exit")
                     return f"Successfully created directory {caller.path} on {host_info['host']}"
 
         except (OSError, asyncssh.Error) as exc:
@@ -77,8 +73,6 @@ class Mkdir(ShellBasedCommand):
 
     @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        logging.debug("execute entry")
-
         # Convert dictionary to model instance
         model_instance = self.Model(**self._data)
 
@@ -90,12 +84,45 @@ class Mkdir(ShellBasedCommand):
                                **self.extra_kwargs)
         # Directory creation is inherently a changing operation
         self.mark_changed(result)
-        logging.debug("execute exit")
+        return
+
+class IsdirModel(BaseModel):
+    path: str
+
+@track_construction
+class Isdir(ShellBasedCommand):
+    Model = IsdirModel
+
+    @staticmethod
+    async def _isdir_callback(host_info, global_info, command, cp, caller):
+        """Static callback method for checking if a path is a directory"""
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                # Check if the path refers to a directory
+                if caller.path:
+                    is_dir = await sftp.isdir(caller.path)
+                    return is_dir
+                else:
+                    raise ValueError("Path must be provided for isdir operation")
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
+        model_instance = self.Model(**self._data)
+
+        result = yield Command(local=True,
+                               callback=self._isdir_callback,
+                               caller=model_instance,
+                               id=ConstructionTracker.get_current_id(),
+                               parents=ConstructionTracker.get_parents(),
+                               **self.extra_kwargs)
+        result.output = result.cp.stdout
         return
 
 
 # Create endpoint handler
 mkdir_handler = create_router_handler(MkdirModel, Mkdir)
+isdir_handler = create_router_handler(IsdirModel, Isdir)
 
 
 @router.get("/command/mkdir/", tags=["SFTP"])
@@ -104,3 +131,11 @@ async def shell_command(
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
     return await mkdir_handler(path=path, common=common)
+
+
+@router.get("/fact/isdir/", tags=["SFTP"])
+async def shell_command(
+        path: str = Query(..., description="Directory path"),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    return await isdir_handler(path=path, common=common)

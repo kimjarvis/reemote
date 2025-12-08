@@ -22,7 +22,7 @@ class BaseCommand:
             self._extra_kwargs = {k: v for k, v in kwargs.items() if k not in model_fields}
             self._data = response["data"]
         else:
-            logging.error(f"Validation errors: {response['errors']}")
+            logging.error(f"Validation errors: {response['errors']}",exc_info=True)
             raise ValueError(f"Validation failed: {response['errors']}")
 
     @property

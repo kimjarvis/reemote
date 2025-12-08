@@ -146,7 +146,6 @@ class Package(ShellBasedCommand):
 
         if self.data["packages"] is not None:
             before_action = yield GetPackages()
-            logging.debug(f"Before action: {before_action}")
             if self.data["present"]:
                 install = yield Install(
                     packages=self.data["packages"],
