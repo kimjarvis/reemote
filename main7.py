@@ -1,4 +1,5 @@
 import asyncio
+import asyncssh
 from inventory import get_inventory
 from execute import execute
 from response import validate_responses
@@ -17,7 +18,8 @@ async def main():
     inventory = get_inventory()
     from commands.sftp import Mkdir
     responses = await execute(inventory, lambda: Mkdir(name="Make directory fred",
-                                                       path="/home/user/fred"))
+                                                       path="/home/user/h1",
+                                                       permissions=0o555))
     validated_responses = await validate_responses(responses)
     print(validated_responses)
 

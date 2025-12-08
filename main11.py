@@ -13,7 +13,6 @@ async def main():
         filemode="w",  # Overwrite the file each time
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
-    logging.debug("main7")
     inventory = get_inventory()
 
     responses = await execute(inventory, lambda: Isdir(path="/home/user/fred"))

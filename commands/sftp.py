@@ -1,20 +1,54 @@
 import asyncssh
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, Optional
 from fastapi import APIRouter, Query, Depends
-from pydantic import BaseModel
-
+from pydantic import BaseModel, Field
 from common.base_classes import ShellBasedCommand
 from command import Command
 from response import Response
 from common.router_utils import create_router_handler
 from common_params import CommonParams, common_params
-from construction_tracker import ConstructionTracker,track_construction, track_yields
+from construction_tracker import ConstructionTracker, track_construction, track_yields
 import logging
+import stat
+
 router = APIRouter()
 
 
 class MkdirModel(BaseModel):
     path: str
+    permissions: Optional[int] = Field(
+        None,
+        ge=0,
+        le=0o7777,
+        description="Directory permissions as octal integer (e.g., 0o755)"
+    )
+    uid: Optional[int] = Field(None, description="User ID")
+    gid: Optional[int] = Field(None, description="Group ID")
+    atime: Optional[float] = Field(None, description="Access time")
+    mtime: Optional[float] = Field(None, description="Modification time")
+
+    def get_sftp_attrs(self) -> Optional[asyncssh.SFTPAttrs]:
+        """Create SFTPAttrs object from provided attributes"""
+        attrs_dict = {}
+
+        if self.permissions is not None:
+            attrs_dict['permissions'] = self.permissions
+        if self.uid is not None:
+            attrs_dict['uid'] = self.uid
+        if self.gid is not None:
+            attrs_dict['gid'] = self.gid
+        if self.atime is not None:
+            attrs_dict['atime'] = self.atime
+        if self.mtime is not None:
+            attrs_dict['mtime'] = self.mtime
+
+        if attrs_dict:
+            # Add directory bit if permissions are provided
+            if 'permissions' in attrs_dict:
+                attrs_dict['permissions'] = attrs_dict['permissions'] | stat.S_IFDIR
+            return asyncssh.SFTPAttrs(**attrs_dict)
+        return None
+
 
 @track_construction
 class Mkdir(ShellBasedCommand):
@@ -22,54 +56,13 @@ class Mkdir(ShellBasedCommand):
 
     @staticmethod
     async def _mkdir_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for directory creation"""
-        # Validate host_info with proper error messages
-        required_keys = ['host', 'username', 'password']
-        missing_keys = []
-        invalid_keys = []
-
-        for key in required_keys:
-            if key not in host_info:
-                missing_keys.append(key)
-            elif host_info[key] is None:
-                invalid_keys.append(key)
-
-        if missing_keys:
-            raise ValueError(f"Missing required keys in host_info: {missing_keys}")
-        if invalid_keys:
-            raise ValueError(f"None values for keys in host_info: {invalid_keys}")
-
-        # Validate caller attributes
-        if caller.path is None:
-            raise ValueError("The 'path' attribute of the caller cannot be None.")
-
-        # Clean host_info by removing None values and keys that asyncssh doesn't expect
-        clean_host_info = {
-            'host': host_info['host'],
-            'username': host_info['username'],
-            'password': host_info['password']
-        }
-
-        # Add optional parameters only if they exist and are not None
-        optional_keys = ['port', 'known_hosts', 'client_keys', 'passphrase']
-        for key in optional_keys:
-            if key in host_info and host_info[key] is not None:
-                clean_host_info[key] = host_info[key]
-
-        # Validate caller - now it's MkdirModel instance
-        if not hasattr(caller, 'path') or caller.path is None:
-            raise ValueError("The 'path' attribute of the caller cannot be None.")
-
-        try:
-            async with asyncssh.connect(**clean_host_info) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    # Create the remote directory
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                sftp_attrs = caller.get_sftp_attrs()
+                if sftp_attrs:
+                    await sftp.mkdir(caller.path, sftp_attrs)
+                else:
                     await sftp.mkdir(caller.path)
-                    return f"Successfully created directory {caller.path} on {host_info['host']}"
-
-        except (OSError, asyncssh.Error) as exc:
-            # Provide more detailed error information
-            raise Exception(f"Failed to create directory {caller.path} on {host_info['host']}: {str(exc)}")
 
     @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
@@ -86,8 +79,10 @@ class Mkdir(ShellBasedCommand):
         self.mark_changed(result)
         return
 
+
 class IsdirModel(BaseModel):
     path: str
+
 
 @track_construction
 class Isdir(ShellBasedCommand):
@@ -95,15 +90,9 @@ class Isdir(ShellBasedCommand):
 
     @staticmethod
     async def _isdir_callback(host_info, global_info, command, cp, caller):
-        """Static callback method for checking if a path is a directory"""
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                # Check if the path refers to a directory
-                if caller.path:
-                    is_dir = await sftp.isdir(caller.path)
-                    return is_dir
-                else:
-                    raise ValueError("Path must be provided for isdir operation")
+                return await sftp.isdir(caller.path)
 
     @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
@@ -128,9 +117,32 @@ isdir_handler = create_router_handler(IsdirModel, Isdir)
 @router.get("/command/mkdir/", tags=["SFTP"])
 async def shell_command(
         path: str = Query(..., description="Directory path"),
+        permissions: Optional[int] = Query(
+            None,
+            ge=0,
+            le=0o7777,
+            description="Directory permissions as octal integer (e.g., 755)"
+        ),
+        uid: Optional[int] = Query(None, description="User ID"),
+        gid: Optional[int] = Query(None, description="Group ID"),
+        atime: Optional[float] = Query(None, description="Access time"),
+        mtime: Optional[float] = Query(None, description="Modification time"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
-    return await mkdir_handler(path=path, common=common)
+    # Build parameters dictionary
+    params = {"path": path}
+    if permissions is not None:
+        params["permissions"] = permissions
+    if uid is not None:
+        params["uid"] = uid
+    if gid is not None:
+        params["gid"] = gid
+    if atime is not None:
+        params["atime"] = atime
+    if mtime is not None:
+        params["mtime"] = mtime
+
+    return await mkdir_handler(**params, common=common)
 
 
 @router.get("/fact/isdir/", tags=["SFTP"])
