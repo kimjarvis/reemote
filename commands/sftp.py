@@ -1,15 +1,18 @@
+import stat
+from typing import AsyncGenerator, Optional
+
 import asyncssh
-from typing import Any, AsyncGenerator, Optional
 from fastapi import APIRouter, Query, Depends
 from pydantic import BaseModel, Field
-from common.base_classes import ShellBasedCommand
+
 from command import Command
-from response import Response
+from common.base_classes import ShellBasedCommand
 from common.router_utils import create_router_handler
 from common_params import CommonParams, common_params
 from construction_tracker import ConstructionTracker, track_construction, track_yields
-import logging
-import stat
+from response import Response
+
+from functools import partial
 
 router = APIRouter()
 
@@ -116,23 +119,29 @@ async def shell_command(
 class IsModel(BaseModel):
     path: str
 
-@track_construction
-class Isdir(ShellBasedCommand):
+
+class BaseFileCheck(ShellBasedCommand):
     Model = IsModel
 
-    @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    # Define the SFTP method name as a class attribute
+    sftp_method_name = None
+
+    @classmethod
+    async def _callback(cls, sftp_method_name, host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                return await sftp.isdir(caller.path)
+                method = getattr(sftp, sftp_method_name)
+                return await method(caller.path)
 
     @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        # Convert dictionary to model instance
         model_instance = self.Model(**self._data)
 
+        # Create a partial function with the method name baked in
+        callback = partial(self._callback, self.sftp_method_name)
+
         result = yield Command(local=True,
-                               callback=self._callback,
+                               callback=callback,
                                caller=model_instance,
                                id=ConstructionTracker.get_current_id(),
                                parents=ConstructionTracker.get_parents(),
@@ -140,53 +149,20 @@ class Isdir(ShellBasedCommand):
         result.output = result.cp.stdout
         return
 
-@track_construction
-class Isfile(ShellBasedCommand):
-    Model = IsModel
-
-    @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                return await sftp.isfile(caller.path)
-
-    @track_yields
-    async def execute(self) -> AsyncGenerator[Command, Response]:
-        # Convert dictionary to model instance
-        model_instance = self.Model(**self._data)
-
-        result = yield Command(local=True,
-                               callback=self._callback,
-                               caller=model_instance,
-                               id=ConstructionTracker.get_current_id(),
-                               parents=ConstructionTracker.get_parents(),
-                               **self.extra_kwargs)
-        result.output = result.cp.stdout
-        return
 
 @track_construction
-class Islink(ShellBasedCommand):
-    Model = IsModel
+class Isdir(BaseFileCheck):
+    sftp_method_name = "isdir"
 
-    @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                return await sftp.islink(caller.path)
 
-    @track_yields
-    async def execute(self) -> AsyncGenerator[Command, Response]:
-        # Convert dictionary to model instance
-        model_instance = self.Model(**self._data)
+@track_construction
+class Isfile(BaseFileCheck):
+    sftp_method_name = "isfile"
 
-        result = yield Command(local=True,
-                               callback=self._callback,
-                               caller=model_instance,
-                               id=ConstructionTracker.get_current_id(),
-                               parents=ConstructionTracker.get_parents(),
-                               **self.extra_kwargs)
-        result.output = result.cp.stdout
-        return
+
+@track_construction
+class Islink(BaseFileCheck):
+    sftp_method_name = "islink"
 
 # Create endpoint handler
 mkdir_handler = create_router_handler(MkdirModel, Mkdir)
