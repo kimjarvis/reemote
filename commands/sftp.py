@@ -8,6 +8,7 @@ from command import Command
 from response import Response
 from common.router_utils import create_router_handler
 from common_params import CommonParams, common_params
+from construction_tracker import ConstructionTracker,track_construction, track_yields
 import logging
 router = APIRouter()
 
@@ -15,7 +16,7 @@ router = APIRouter()
 class MkdirModel(BaseModel):
     path: str
 
-
+@track_construction
 class Mkdir(ShellBasedCommand):
     Model = MkdirModel
 
@@ -74,14 +75,19 @@ class Mkdir(ShellBasedCommand):
             # Provide more detailed error information
             raise Exception(f"Failed to create directory {caller.path} on {host_info['host']}: {str(exc)}")
 
-
+    @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
         logging.debug("execute entry")
 
         # Convert dictionary to model instance
         model_instance = self.Model(**self._data)
 
-        result = yield Command(name=f"{self}", local=True, callback=self._mkdir_callback, caller=model_instance)
+        result = yield Command(local=True,
+                               callback=self._mkdir_callback,
+                               caller=model_instance,
+                               id=ConstructionTracker.get_current_id(),
+                               parents=ConstructionTracker.get_parents(),
+                               **self.extra_kwargs)
         # Directory creation is inherently a changing operation
         self.mark_changed(result)
         logging.debug("execute exit")

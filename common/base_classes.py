@@ -18,11 +18,21 @@ class BaseCommand:
         if response["valid"]:
             # Get extra kwargs (those not in the Model's fields)
             model_fields = self.Model.__fields__.keys()
-            self.extra_kwargs = {k: v for k, v in kwargs.items() if k not in model_fields}
+            self._extra_kwargs = {k: v for k, v in kwargs.items() if k not in model_fields}
             self._data = response["data"]
         else:
             print(f"Validation errors: {response['errors']}")
             raise ValueError(f"Validation failed: {response['errors']}")
+
+    @property
+    def data(self):
+        """Getter for data to ensure compatibility with decorators"""
+        return getattr(self, '_data', {})
+
+    @property
+    def extra_kwargs(self):
+        """Getter for extra_kwargs to ensure compatibility with decorators"""
+        return getattr(self, '_extra_kwargs', {})
 
     async def execute(self) -> AsyncGenerator[Command, Response]:
         """To be implemented by subclasses"""
@@ -51,5 +61,3 @@ class ShellBasedCommand(BaseCommand):
         )
         self.mark_changed(result)
         return
-
-

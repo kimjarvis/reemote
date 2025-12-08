@@ -7,10 +7,8 @@ from asyncssh import SSHCompletedProcess
 from command import Command
 from typing import Iterable, Any, AsyncGenerator, List, Tuple, Dict, Callable
 from response import Response  # Changed import
-import logging
 
 async def run_command_on_local(operation: Command) -> Response:  # Changed return type
-    logging.debug("run_command_on_local entry")
     host_info = operation.host_info
     global_info = operation.global_info
     command = operation.command
@@ -137,8 +135,7 @@ async def run_command_on_host(operation: Command) -> Response:  # Changed return
         executed=executed
     )
 
-
-async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Response, Response | None]:  # Changed type hints
+async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Response, Response | None]:
     """
     Async version of pre-order generator traversal.
     Handles async generators and async execute() methods.
@@ -180,9 +177,8 @@ async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Re
                 # Do not yield or send any value to a just-started async generator.
                 # It will be primed on the next loop iteration via __anext__.
 
-            elif isinstance(value, Response):  # Changed type check
+            elif isinstance(value, Response):
                 # Pass through UnifiedResult objects
-                print("trace 00")
                 result = yield value
                 stack[-1] = (current_node, generator, result)
 
@@ -203,19 +199,14 @@ async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Re
                 stack[-1] = (stack[-1][0], stack[-1][1], return_value)
 
         except Exception as e:
-            print(f"Error in async node execution: {e}")
-            print(f"Current node: {current_node}")
-            print(f"Node type: {type(current_node)}")
-
             # Handle errors - yield a UnifiedResult object
             error_msg = f"Error in node execution: {e}"
-            result = yield Response(error=error_msg)  # Changed to UnifiedResult
+            result = yield Response(error=error_msg)
             stack.pop()
 
             # Send error to parent if exists
             if stack:
                 stack[-1] = (stack[-1][0], stack[-1][1], result)
-
 
 async def execute(inventory: Iterable[Tuple[Dict[str, Any], Dict[str, Any]]], root_obj_factory: Callable[[], Any]) -> List[Response]:  # Changed return type
     async def process_host(inventory_item: Tuple[Dict[str, Any], Dict[str, Any]], root_obj_factory: Callable[[], Any]) -> List[Response]:  # Changed return type

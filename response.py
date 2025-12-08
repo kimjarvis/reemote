@@ -49,6 +49,10 @@ class Response(BaseModel):
     stdout_bytes: Optional[bytes] = None
     stderr_bytes: Optional[bytes] = None
 
+    # New fields
+    id: Optional[int] = None
+    parent: Optional[int] = None
+
     # Pydantic v2 config
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -86,6 +90,8 @@ class Response(BaseModel):
             data['get_pty'] = getattr(op, 'get_pty', False)
             data['host_info'] = getattr(op, 'host_info', None)
             data['global_info'] = getattr(op, 'global_info', None)
+            # Populate id from op.id if available
+            data['id'] = getattr(op, 'id', data.get('id', None))
 
         super().__init__(**data)
 
@@ -190,6 +196,17 @@ class Response(BaseModel):
         else:
             return str(v)
 
+    @validator('id', 'parent', pre=True)
+    def validate_integer_fields(cls, v):
+        """Validate that id and parent are either None or integers."""
+        if v is None:
+            return None
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            # If it can't be converted to int, return None
+            return None
+
     def __str__(self) -> str:
         """String representation for debugging."""
         return self.__repr__()
@@ -209,7 +226,9 @@ class Response(BaseModel):
                 f"stdout={stdout!r}, "
                 f"stderr={stderr!r}, "
                 f"output={self.output!r}, "
-                f"error={self.error!r})")
+                f"error={self.error!r}, "
+                f"id={self.id!r}, "
+                f"parent={self.parent!r})")
 
 
 async def validate_responses(responses: list[Any]) -> list[Response]:
@@ -230,7 +249,9 @@ async def validate_responses(responses: list[Any]) -> list[Response]:
                     changed=getattr(r, 'changed', False),
                     executed=getattr(r, 'executed', False),
                     output=getattr(r, 'output', []),
-                    error=getattr(r, 'error', None)
+                    error=getattr(r, 'error', None),
+                    id=getattr(r, 'id', None),
+                    parent=getattr(r, 'parent', None)
                 )
                 validated_responses.append(unified_result)
         except Exception as e:
@@ -238,7 +259,9 @@ async def validate_responses(responses: list[Any]) -> list[Response]:
             # Create a minimal error result
             error_result = Response(
                 error=f"Failed to convert response: {str(e)}",
-                host=getattr(r, 'host', None) if hasattr(r, 'host') else None
+                host=getattr(r, 'host', None) if hasattr(r, 'host') else None,
+                id=getattr(r, 'id', None) if hasattr(r, 'id') else None,
+                parent=getattr(r, 'parent', None) if hasattr(r, 'parent') else None
             )
             validated_responses.append(error_result)
 

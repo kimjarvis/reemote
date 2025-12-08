@@ -1,16 +1,15 @@
 import asyncio
-from inventory import get_inventory
+
+from construction_tracker import ConstructionTracker
 from execute import execute
+from inventory import get_inventory
 from response import validate_responses
-from construction_tracker import ConstructionTracker, track_construction, track_yields
+
 
 async def main():
     inventory = get_inventory()
-    from commands.apt import Package
-    responses = await execute(inventory, lambda: Package(name="apt package tree",
-                                                         packages =["tree"],
-                                                         present = False,
-                                                         group="All",
+    from commands.apt import Update
+    responses = await execute(inventory, lambda: Update(name="apt package tree",
                                                          sudo=True))
     validated_responses = await validate_responses(responses)
     print(validated_responses)
