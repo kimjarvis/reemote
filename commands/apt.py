@@ -8,7 +8,7 @@ from common_params import CommonParams, common_params
 from response import Response
 from facts.parse_apt_list_installed import parse_apt_list_installed
 from construction_tracker import ConstructionTracker, track_construction, track_yields
-
+import logging
 router = APIRouter()
 
 
@@ -93,52 +93,6 @@ class Upgrade(ShellBasedCommand):
         self.mark_changed(result)
         return
 
-
-class PackageModel(BaseModel):
-    packages: list[str]
-    update: bool = False
-    upgrade: bool = False
-    present: bool = True
-
-@track_construction
-class Package(ShellBasedCommand):
-    """APT package command"""
-    Model = PackageModel
-
-    @track_yields
-    async def execute(self) -> AsyncGenerator[Command, Response]:
-        from commands.apt import GetPackages
-        before_update = yield GetPackages()
-        update = yield Update(guard=self.data["update"])
-        self.mark_unchanged(update)
-        after_update = yield GetPackages()
-        if before_update.output != after_update.output:
-            self.mark_changed(update)
-        upgrade = yield Upgrade(guard=self.data["upgrade"])
-        self.mark_unchanged(upgrade)
-        after_upgrade = yield GetPackages()
-        if after_update.output != after_upgrade.output:
-            self.mark_changed(upgrade)
-        install = yield Install(
-            guard=self.data["present"],
-            packages=self.data["packages"],
-            **self.extra_kwargs  # Pass sudo flag here
-        )
-        self.mark_unchanged(install)
-        remove = yield Remove(
-            guard=not self.data["present"],
-            packages=self.data["packages"],
-            **self.extra_kwargs  # Pass sudo flag here
-        )
-        self.mark_unchanged(remove)
-        after_opration = yield GetPackages()
-        if after_upgrade.output != after_opration.output:
-            if self.data["present"]:
-                self.mark_changed(install)
-            else:
-               self.mark_changed(remove)
-        return
-
 class GetPackagesModel(BaseModel):
     pass
 
@@ -159,9 +113,58 @@ class GetPackages(ShellBasedCommand):
 
         if result and hasattr(result, 'output'):
             result.output = parse_apt_list_installed(result.cp.stdout)
-            print(result.output)
-
         return
+
+
+class PackageModel(BaseModel):
+    packages: list[str]
+    update: bool = False
+    upgrade: bool = False
+    present: bool = True
+
+@track_construction
+class Package(ShellBasedCommand):
+    """APT package command"""
+    Model = PackageModel
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[GetPackages | Update | Upgrade | Install | Remove, Response]:
+        if self.data["update"]:
+            before_update = yield GetPackages()
+            update = yield Update(**self.extra_kwargs)
+            after_update = yield GetPackages()
+            if before_update[0].output == after_update[0].output:
+                self.mark_unchanged(update)
+
+        if self.data["upgrade"]:
+            before_upgrade = yield GetPackages()
+
+            upgrade = yield Upgrade(**self.extra_kwargs)
+            after_update = yield GetPackages()
+            if before_upgrade[0].output == after_upgrade[0].output:
+                self.mark_unchanged(upgrade)
+
+        if self.data["packages"] is not None:
+            before_action = yield GetPackages()
+            logging.debug(f"Before action: {before_action}")
+            if self.data["present"]:
+                install = yield Install(
+                    packages=self.data["packages"],
+                    **self.extra_kwargs
+                )
+                after_action = yield GetPackages()
+                if before_action[0].output == after_action[0].output:
+                    self.mark_unchanged(install)
+            else:
+                remove = yield Remove(
+                    packages=self.data["packages"],
+                    **self.extra_kwargs
+                )
+                after_action = yield GetPackages()
+                if before_action[0].output == after_action[0].output:
+                    self.mark_unchanged(remove)
+        return
+
 
 
 # Create endpoint handlers

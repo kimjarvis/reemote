@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com
 # This software is licensed under the MIT License. See the LICENSE file for details.
 #
+import logging
 from typing import Any, Dict, Tuple, Optional, List, Union, Generator
 from asyncssh import SSHCompletedProcess
 from pydantic import BaseModel, Field, validator, ConfigDict
@@ -51,7 +52,7 @@ class Response(BaseModel):
 
     # New fields
     id: Optional[int] = None
-    parent: Optional[int] = None
+    parents: Optional[List[Tuple[int, str]]] = None  # Changed from parent to parents
 
     # Pydantic v2 config
     model_config = ConfigDict(
@@ -92,8 +93,10 @@ class Response(BaseModel):
             data['global_info'] = getattr(op, 'global_info', None)
             # Populate id from op.id if available
             data['id'] = getattr(op, 'id', data.get('id', None))
+            data['parents'] = getattr(op, 'parents', data.get('parents', None))  # Changed from parent to parents
 
         super().__init__(**data)
+        logging.debug(f"{self}")
 
     @staticmethod
     def _bytes_to_str(value: Any) -> str:
@@ -130,7 +133,6 @@ class Response(BaseModel):
                 name = str(value)
             return f"<caller {name}>"
         return str(value)
-
 
     @validator('output', pre=True)
     def validate_output(cls, v):
@@ -196,9 +198,9 @@ class Response(BaseModel):
         else:
             return str(v)
 
-    @validator('id', 'parent', pre=True)
-    def validate_integer_fields(cls, v):
-        """Validate that id and parent are either None or integers."""
+    @validator('id', pre=True)
+    def validate_id(cls, v):
+        """Validate that id is either None or an integer."""
         if v is None:
             return None
         try:
@@ -206,6 +208,40 @@ class Response(BaseModel):
         except (ValueError, TypeError):
             # If it can't be converted to int, return None
             return None
+
+    @validator('parents', pre=True)
+    def validate_parents(cls, v):
+        """Validate that parents is either None or a list of (int, str) tuples."""
+        if v is None:
+            return None
+
+        if isinstance(v, list):
+            validated_list = []
+            for item in v:
+                if isinstance(item, tuple) and len(item) == 2:
+                    try:
+                        # Ensure first element is int, second is str
+                        parent_id = int(item[0]) if item[0] is not None else None
+                        parent_name = str(item[1]) if item[1] is not None else None
+                        if parent_id is not None and parent_name is not None:
+                            validated_list.append((parent_id, parent_name))
+                    except (ValueError, TypeError):
+                        # Skip invalid items
+                        continue
+            return validated_list if validated_list else None
+
+        # If it's not a list, try to convert from other formats
+        try:
+            # If it's a single tuple
+            if isinstance(v, tuple) and len(v) == 2:
+                parent_id = int(v[0]) if v[0] is not None else None
+                parent_name = str(v[1]) if v[1] is not None else None
+                if parent_id is not None and parent_name is not None:
+                    return [(parent_id, parent_name)]
+        except (ValueError, TypeError):
+            pass
+
+        return None
 
     def __str__(self) -> str:
         """String representation for debugging."""
@@ -228,7 +264,7 @@ class Response(BaseModel):
                 f"output={self.output!r}, "
                 f"error={self.error!r}, "
                 f"id={self.id!r}, "
-                f"parent={self.parent!r})")
+                f"parents={self.parents!r})")  # Changed from parent to parents
 
 
 async def validate_responses(responses: list[Any]) -> list[Response]:
@@ -251,17 +287,17 @@ async def validate_responses(responses: list[Any]) -> list[Response]:
                     output=getattr(r, 'output', []),
                     error=getattr(r, 'error', None),
                     id=getattr(r, 'id', None),
-                    parent=getattr(r, 'parent', None)
+                    parents=getattr(r, 'parents', None)  # Changed from parent to parents
                 )
                 validated_responses.append(unified_result)
         except Exception as e:
-            print(f"Error converting response: {e}")
+            logging.error(f"Error converting response: {e}", exc_info=True)
             # Create a minimal error result
             error_result = Response(
                 error=f"Failed to convert response: {str(e)}",
                 host=getattr(r, 'host', None) if hasattr(r, 'host') else None,
                 id=getattr(r, 'id', None) if hasattr(r, 'id') else None,
-                parent=getattr(r, 'parent', None) if hasattr(r, 'parent') else None
+                parents=getattr(r, 'parents', None) if hasattr(r, 'parents') else None  # Changed from parent to parents
             )
             validated_responses.append(error_result)
 

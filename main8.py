@@ -4,15 +4,14 @@ from inventory import get_inventory
 from execute import execute
 from response import validate_responses
 from construction_tracker import ConstructionTracker, track_construction, track_yields
-
+from commands.server import Shell
 
 @track_construction
 class Hello:
     @track_yields
     async def execute(self):
-        from commands.server import Shell
-
         a = yield Shell(cmd="pwd")
+        print(type(a))
         b = yield Shell(name="echo",
                         cmd="echo Hello World!",
                         group="All",
@@ -20,12 +19,19 @@ class Hello:
         c = yield Shell(cmd="ls -ltr")
 
 @track_construction
+class Parent:
+    @track_yields
+    async def execute(self):
+        a = yield Shell(cmd="hostname")
+        r = yield Hello()
+
+@track_construction
 class Root:
     @track_yields
     async def execute(self):
-        r = yield Hello()
-        print(r)
-
+        r = yield Parent()
+        for x in r:
+            print(x)
 
 async def main():
     # Clear construction tracker at the beginning
@@ -34,7 +40,7 @@ async def main():
     inventory = get_inventory()
     print(f"Inventory: {inventory}")
     responses = await execute(inventory, lambda: Root())
-    validated_responses = await validate_responses(responses)
+    # validated_responses = await validate_responses(responses)
     # print(validated_responses)
     #
     # # Each response is now a UnifiedResult with all fields available:

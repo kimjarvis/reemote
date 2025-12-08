@@ -1,6 +1,7 @@
 # Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com
 # This software is licensed under the MIT License. See the LICENSE file for details.
 #
+import logging
 import asyncssh
 import asyncio
 from asyncssh import SSHCompletedProcess
@@ -44,7 +45,6 @@ async def run_command_on_local(operation: Command) -> Response:  # Changed retur
             op=operation,
             executed=True
         )
-
 
 async def run_command_on_host(operation: Command) -> Response:  # Changed return type
     host_info = operation.host_info
@@ -135,6 +135,7 @@ async def run_command_on_host(operation: Command) -> Response:  # Changed return
         executed=executed
     )
 
+
 async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Response, Response | None]:
     """
     Async version of pre-order generator traversal.
@@ -170,15 +171,44 @@ async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Re
                 stack[-1] = (current_node, generator, result)
 
             elif hasattr(value, 'execute') and callable(value.execute):
-                # Found a nested operation with its own execute()
-                # Push it onto the stack. Do NOT send any value yet.
-                nested_gen = value.execute()
-                stack.append((value, nested_gen, None))
-                # Do not yield or send any value to a just-started async generator.
-                # It will be primed on the next loop iteration via __anext__.
+                # Special handling for Shell-like objects
+                # They yield Commands but we want results to go to parent
+                from commands.server import Shell
+                if isinstance(value, Shell):
+                    # Get the Command from Shell
+                    shell_gen = value.execute()
+                    try:
+                        # Get Command from Shell
+                        command = await shell_gen.__anext__()
+
+                        # Execute the Command
+                        result = yield command
+
+                        # Shell generator should be done now
+                        try:
+                            # Try to send result to Shell (it might not accept)
+                            await shell_gen.asend(result)
+                        except StopAsyncIteration:
+                            # Shell is done
+                            pass
+
+                        # Send result DIRECTLY back to parent (Hello)
+                        stack[-1] = (current_node, generator, result)
+
+                    except StopAsyncIteration:
+                        # Shell had no commands
+                        stack[-1] = (current_node, generator, None)
+                    finally:
+                        await shell_gen.aclose()
+
+                else:
+                    # Real nested operation (like Hello)
+                    # Push it onto the stack
+                    nested_gen = value.execute()
+                    stack.append((value, nested_gen, None))
 
             elif isinstance(value, Response):
-                # Pass through UnifiedResult objects
+                # Pass through Response objects
                 result = yield value
                 stack[-1] = (current_node, generator, result)
 
@@ -187,19 +217,27 @@ async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Re
 
         except StopAsyncIteration as e:
             # Async generator is done
-            # Capture the last value we attempted to send into this generator
-            last_sent = stack[-1][2] if stack else None
+            completed_node = stack[-1][0] if stack else None
+
+            # Get the collected results from the completed node
+            collected_results = getattr(completed_node, '_yielded_results', None)
+
             stack.pop()
+
             # If there's a parent generator, send back a meaningful value
             if stack:
-                # Prefer an explicit return value from the generator if provided;
-                # otherwise, propagate the last result we sent into the child.
-                explicit = e.value if hasattr(e, 'value') else None
-                return_value = explicit if explicit is not None else last_sent
+                # Check if we have collected results
+                if collected_results is not None:
+                    # Return the collected results
+                    return_value = collected_results
+                else:
+                    # No collected results, use last sent value
+                    return_value = send_value
+
                 stack[-1] = (stack[-1][0], stack[-1][1], return_value)
 
         except Exception as e:
-            # Handle errors - yield a UnifiedResult object
+            # Handle errors
             error_msg = f"Error in node execution: {e}"
             result = yield Response(error=error_msg)
             stack.pop()
@@ -253,9 +291,7 @@ async def execute(inventory: Iterable[Tuple[Dict[str, Any], Dict[str, Any]]], ro
 
         except Exception as e:
             # Handle any errors for this host
-            print(f"Error processing host {inventory_item[0]}: {e}")
-            import traceback
-            traceback.print_exc()
+            logging.error(f"Error processing host {inventory_item[0]}: {e}", exc_info=True)
 
         return responses
 

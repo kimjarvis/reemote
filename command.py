@@ -1,3 +1,4 @@
+import logging
 from typing import Dict, Optional, Callable
 from construction_tracker import track_construction, track_yields
 
@@ -55,7 +56,7 @@ class Command:
         self.su = su
         self.get_pty = get_pty
 
-        print(f"{self}")
+        logging.debug(f"{self}")
 
     def __str__(self) -> str:
         return repr(self)

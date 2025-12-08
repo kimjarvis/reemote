@@ -1,5 +1,5 @@
 # inventory.py
-
+import logging
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Tuple, Dict
@@ -111,5 +111,5 @@ def get_inventory() -> List[Tuple[Dict, Dict]]:
         return inventory
 
     except Exception as e:
-        print(f"Error fetching inventory: {e}")
+        logging.error(f"Error fetching inventory: {e}", exc_info=True)
         return []
