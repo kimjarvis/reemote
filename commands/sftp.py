@@ -116,6 +116,36 @@ async def shell_command(
     return await mkdir_handler(**params, common=common)
 
 
+class RmdirModel(BaseModel):
+    path: str
+
+@track_construction
+class Rmdir(ShellBasedCommand):
+    Model = RmdirModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                await sftp.rmdir(caller.path)
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
+        model_instance = self.Model(**self._data)
+
+        result = yield Command(local=True,
+                               callback=self._callback,
+                               caller=model_instance,
+                               id=ConstructionTracker.get_current_id(),
+                               parents=ConstructionTracker.get_parents(),
+                               **self.extra_kwargs)
+        # Directory creation is inherently a changing operation
+        self.mark_changed(result)
+        return
+
+
+
 
 class IsModel(BaseModel):
     path: str

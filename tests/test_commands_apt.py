@@ -62,12 +62,12 @@ async def test_apt_package():
     class Test_apt_package:
         @track_yields
         async def execute(self):
-            r = yield Package(name="initial remove package",
+            r = yield Package(name="1",
                               packages=["tree"],
                               present=False,
                               group="All",
                               sudo=True)
-            r = yield Package(name="install package",
+            r = yield Package(name="2",
                               packages=["tree"],
                               present=True,
                               group="All",
@@ -76,5 +76,7 @@ async def test_apt_package():
     """Test getting apt packages information without errors"""
     inventory = get_inventory()
     responses = await execute(inventory, lambda:  Test_apt_package())
-    # print(f"Package information: {responses}")
-    assert changed(responses)
+    validated_responses = await validate_responses(responses)
+    for r in validated_responses:
+        if r.name=="2":
+            assert r.changed

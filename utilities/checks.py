@@ -13,3 +13,7 @@ def changed(r):
         if x.changed:
             return True
     return False
+
+# Do we need this, should it be -1 ?
+def get_output(r):
+    return flatten(r)[0].output
