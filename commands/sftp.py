@@ -17,6 +17,239 @@ from response import Response
 
 router = APIRouter()
 
+from pathlib import PurePath
+from typing import Union, Sequence, Callable, Optional
+from pydantic import BaseModel
+
+
+class GetModel(BaseModel):
+    remotepaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]]
+    localpath: Optional[Union[PurePath, str, bytes]] = None
+    preserve: bool = False
+    recurse: bool = False
+    follow_symlinks: bool = False
+    sparse: bool = True
+    block_size: Optional[int] = -1
+    max_requests: Optional[int] = -1
+    progress_handler: Optional[Callable] = None
+    error_handler: Optional[Callable] = None
+
+
+@track_construction
+class Get(ShellBasedCommand):
+    Model = GetModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                await sftp.get(
+                    remotepaths=caller.remotepaths,
+                    localpath=caller.localpath,
+                    preserve=caller.preserve,
+                    recurse=caller.recurse,
+                    follow_symlinks=caller.follow_symlinks,
+                    sparse=caller.sparse,
+                    block_size=caller.block_size,
+                    max_requests=caller.max_requests,
+                    progress_handler=caller.progress_handler,
+                    error_handler=caller.error_handler
+                )
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
+        model_instance = self.Model(**self._data)
+
+        result = yield Command(local=True,
+                               callback=self._callback,
+                               caller=model_instance,
+                               id=ConstructionTracker.get_current_id(),
+                               parents=ConstructionTracker.get_parents(),
+                               **self.extra_kwargs)
+        self.mark_changed(result)
+        return
+
+get_handler = create_router_handler(GetModel, Get)
+
+@router.get("/commands/get/", tags=["SFTP"])
+async def shell_command(
+        remotepaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
+            ...,
+            description="The paths of the remote files or directories to download"
+        ),
+        localpath: Optional[Union[PurePath, str, bytes]] = Query(
+            None,
+            description="The path of the local file or directory to download into"
+        ),
+        preserve: bool = Query(
+            False,
+            description="Whether or not to preserve the original file attributes"
+        ),
+        recurse: bool = Query(
+            False,
+            description="Whether or not to recursively copy directories"
+        ),
+        follow_symlinks: bool = Query(
+            False,
+            description="Whether or not to follow symbolic links"
+        ),
+        sparse: bool = Query(
+            True,
+            description="Whether or not to do a sparse file copy where it is supported"
+        ),
+        block_size: Optional[int] = Query(
+            -1,
+            ge=-1,
+            description="The block size to use for file reads and writes"
+        ),
+        max_requests: Optional[int] = Query(
+            -1,
+            ge=-1,
+            description="The maximum number of parallel read or write requests"
+        ),
+        progress_handler: Optional[str] = Query(
+            None,
+            description="Callback function name for upload progress"
+        ),
+        error_handler: Optional[str] = Query(
+            None,
+            description="Callback function name for error handling"
+        ),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    return await get_handler(
+        remotepaths=remotepaths,
+        localpath=localpath,
+        preserve=preserve,
+        recurse=recurse,
+        follow_symlinks=follow_symlinks,
+        sparse=sparse,
+        block_size=block_size,
+        max_requests=max_requests,
+        progress_handler=progress_handler,
+        error_handler=error_handler,
+        common=common)
+
+
+
+
+
+
+
+
+
+
+class PutModel(BaseModel):
+    localpaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]]
+    remotepath: Optional[Union[PurePath, str, bytes]] = None
+    preserve: bool = False
+    recurse: bool = False
+    follow_symlinks: bool = False
+    sparse: bool = True
+    block_size: Optional[int] = -1
+    max_requests: Optional[int] = -1
+    progress_handler: Optional[Callable] = None
+    error_handler: Optional[Callable] = None
+
+
+@track_construction
+class Put(ShellBasedCommand):
+    Model = PutModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                await sftp.put(
+                    localpaths=caller.localpaths,
+                    remotepath=caller.remotepath,
+                    preserve=caller.preserve,
+                    recurse=caller.recurse,
+                    follow_symlinks=caller.follow_symlinks,
+                    sparse=caller.sparse,
+                    block_size=caller.block_size,
+                    max_requests=caller.max_requests,
+                    progress_handler=caller.progress_handler,
+                    error_handler=caller.error_handler
+                )
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
+        model_instance = self.Model(**self._data)
+
+        result = yield Command(local=True,
+                               callback=self._callback,
+                               caller=model_instance,
+                               id=ConstructionTracker.get_current_id(),
+                               parents=ConstructionTracker.get_parents(),
+                               **self.extra_kwargs)
+        self.mark_changed(result)
+        return
+
+put_handler = create_router_handler(PutModel, Put)
+
+@router.get("/commands/put/", tags=["SFTP"])
+async def shell_command(
+        localpaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
+            ...,
+            description="The paths of the local files or directories to upload"
+        ),
+        remotepath: Optional[Union[PurePath, str, bytes]] = Query(
+            None,
+            description="The path of the remote file or directory to upload into"
+        ),
+        preserve: bool = Query(
+            False,
+            description="Whether or not to preserve the original file attributes"
+        ),
+        recurse: bool = Query(
+            False,
+            description="Whether or not to recursively copy directories"
+        ),
+        follow_symlinks: bool = Query(
+            False,
+            description="Whether or not to follow symbolic links"
+        ),
+        sparse: bool = Query(
+            True,
+            description="Whether or not to do a sparse file copy where it is supported"
+        ),
+        block_size: Optional[int] = Query(
+            -1,
+            ge=-1,
+            description="The block size to use for file reads and writes"
+        ),
+        max_requests: Optional[int] = Query(
+            -1,
+            ge=-1,
+            description="The maximum number of parallel read or write requests"
+        ),
+        progress_handler: Optional[str] = Query(
+            None,
+            description="Callback function name for upload progress"
+        ),
+        error_handler: Optional[str] = Query(
+            None,
+            description="Callback function name for error handling"
+        ),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    return await put_handler(
+        localpaths=localpaths,
+        remotepath=remotepath,
+        preserve=preserve,
+        recurse=recurse,
+        follow_symlinks=follow_symlinks,
+        sparse=sparse,
+        block_size=block_size,
+        max_requests=max_requests,
+        progress_handler=progress_handler,
+        error_handler=error_handler,
+        common=common)
+
+
 
 class MkdirModel(BaseModel):
     path: Union[PurePath, str, bytes] = None
