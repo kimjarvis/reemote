@@ -406,6 +406,67 @@ async def get(
         ),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
+    """
+    # Download remote files
+
+    This method downloads one or more files or directories from
+    the remote system. Either a single remote path or a sequence
+    of remote paths to download can be provided.
+
+    When downloading a single file or directory, the local path can
+    be either the full path to download data into or the path to an
+    existing directory where the data should be placed. In the
+    latter case, the base file name from the remote path will be
+    used as the local name.
+
+    When downloading multiple files, the local path must refer to
+    an existing directory.
+
+    If no local path is provided, the file is downloaded
+    into the current local working directory.
+
+    If preserve is `True`, the access and modification times
+    and permissions of the original file are set on the
+    downloaded file.
+
+    If recurse is `True` and the remote path points at a
+    directory, the entire subtree under that directory is
+    downloaded.
+
+    If follow_symlinks is set to `True`, symbolic links found
+    on the remote system will have the contents of their target
+    downloaded rather than creating a local symbolic link. When
+    using this option during a recursive download, one needs to
+    watch out for links that result in loops.
+
+    The block_size argument specifies the size of read and write
+    requests issued when downloading the files, defaulting to
+    the maximum allowed by the server, or 16 KB if the server
+    doesn't advertise limits.
+
+    The max_requests argument specifies the maximum number of
+    parallel read or write requests issued, defaulting to a
+    value between 16 and 128 depending on the selected block
+    size to avoid excessive memory usage.
+
+    If progress_handler is specified, it will be called after
+    each block of a file is successfully downloaded. The arguments
+    passed to this handler will be the source path, destination
+    path, bytes downloaded so far, and total bytes in the file
+    being downloaded. If multiple source paths are provided or
+    recurse is set to `True`, the progress_handler will be
+    called consecutively on each file being downloaded.
+
+    If error_handler is specified and an error occurs during
+    the download, this handler will be called with the exception
+    instead of it being raised. This is intended to primarily be
+    used when multiple remote paths are provided or when recurse
+    is set to `True`, to allow error information to be collected
+    without aborting the download of the remaining files. The
+    error handler can raise an exception if it wants the download
+    to completely stop. Otherwise, after an error, the download
+    will continue starting with the next file.
+    """
     return await get_handler(
         remotepaths=remotepaths,
         localpath=localpath,
@@ -502,6 +563,67 @@ async def put(
         ),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
+    """
+    # Upload local files
+
+    This method uploads one or more files or directories to the
+    remote system. Either a single local path or a sequence of
+    local paths to upload can be provided.
+
+    When uploading a single file or directory, the remote path can
+    be either the full path to upload data into or the path to an
+    existing directory where the data should be placed. In the
+    latter case, the base file name from the local path will be
+    used as the remote name.
+
+    When uploading multiple files, the remote path must refer to
+    an existing directory.
+
+    If no remote path is provided, the file is uploaded into the
+    current remote working directory.
+
+    If preserve is `True`, the access and modification times
+    and permissions of the original file are set on the
+    uploaded file.
+
+    If recurse is `True` and the local path points at a
+    directory, the entire subtree under that directory is
+    uploaded.
+
+    If follow_symlinks is set to `True`, symbolic links found
+    on the local system will have the contents of their target
+    uploaded rather than creating a remote symbolic link. When
+    using this option during a recursive upload, one needs to
+    watch out for links that result in loops.
+
+    The block_size argument specifies the size of read and write
+    requests issued when uploading the files, defaulting to
+    the maximum allowed by the server, or 16 KB if the server
+    doesn't advertise limits.
+
+    The max_requests argument specifies the maximum number of
+    parallel read or write requests issued, defaulting to a
+    value between 16 and 128 depending on the selected block
+    size to avoid excessive memory usage.
+
+    If progress_handler is specified, it will be called after
+    each block of a file is successfully uploaded. The arguments
+    passed to this handler will be the source path, destination
+    path, bytes uploaded so far, and total bytes in the file
+    being uploaded. If multiple source paths are provided or
+    recurse is set to `True`, the progress_handler will be
+    called consecutively on each file being uploaded.
+
+    If error_handler is specified and an error occurs during
+    the upload, this handler will be called with the exception
+    instead of it being raised. This is intended to primarily be
+    used when multiple local paths are provided or when recurse
+    is set to `True`, to allow error information to be collected
+    without aborting the upload of the remaining files. The
+    error handler can raise an exception if it wants the upload
+    to completely stop. Otherwise, after an error, the upload
+    will continue starting with the next file.
+    """
     return await put_handler(
         localpaths=localpaths,
         remotepath=remotepath,
@@ -600,6 +722,12 @@ async def mkdir(
         mtime: Optional[float] = Query(None, description="Modification time"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
+    """
+    # Create a remote directory with the specified attributes
+
+    This method creates a new remote directory at the
+    specified path with the requested attributes.
+    """
     # Build parameters dictionary
     params = {"path": path}
     if permissions is not None:
@@ -663,6 +791,13 @@ async def stat(
         follow_symlinks: bool = Query(True, description="Whether or not to follow symbolic links"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
+    """# Get attributes of a remote file, directory, or symlink
+
+    This method queries the attributes of a remote file, directory,
+    or symlink. If the path provided is a symlink and follow_symlinks
+    is `True`, the returned attributes will correspond to the target
+    of the link.
+    """
     return await stat_handler(path=path, follow_symlinks=follow_symlinks, common=common)
 
 
@@ -703,6 +838,12 @@ async def rmdir(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
+    """
+    # Remove a remote directory
+
+    This method removes a remote directory. The directory
+    must be empty for the removal to succeed.
+    """
     return await rmdir_handler(path=path, common=common)
 
 
@@ -763,6 +904,7 @@ async def isdir(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
+    """# Return if the remote path refers to a directory"""
     return await isdir_handler(path=path, common=common)
 
 @router.get("/fact/isfile/", tags=["SFTP"])
@@ -770,6 +912,7 @@ async def isfile(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
+    """# Return if the remote path refers to a regular file"""
     return await isfile_handler(path=path, common=common)
 
 @router.get("/fact/islink/", tags=["SFTP"])
@@ -777,5 +920,6 @@ async def islink(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
+    """# Return if the remote path refers to a symbolic link"""
     return await islink_handler(path=path, common=common)
 

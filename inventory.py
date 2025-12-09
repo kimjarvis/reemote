@@ -98,7 +98,7 @@ def create_inventory(entry: Entry):
 
 @router.get("/entries/", tags=["Inventory"], response_model=List[Entry])
 def read_the_inventory():
-    """Read all entries from the database."""
+    """# Read all entries from the database"""
     cursor.execute("SELECT id, data FROM entries")  # Fetch both id and data
     rows = cursor.fetchall()
     entries = [{"id": row[0], "data": deserialize_data(row[1])} for row in rows]
@@ -106,7 +106,7 @@ def read_the_inventory():
 
 @router.get("/entries/{entry_id}", tags=["Inventory"], response_model=Entry)
 def get_an_inventory_entry(entry_id: int):
-    """Read a single entry by ID."""
+    """# Read a single entry by ID"""
     cursor.execute("SELECT id, data FROM entries WHERE id = ?", (entry_id,))
     row = cursor.fetchone()
     if row is None:
@@ -115,7 +115,7 @@ def get_an_inventory_entry(entry_id: int):
 
 @router.put("/entries/{entry_id}", tags=["Inventory"], response_model=Entry)
 def update_an_inventory_entry(entry_id: int, entry: Entry):
-    """Update an existing entry by ID."""
+    """# Update an existing entry by ID"""
     serialized_data = serialize_data(entry.data)
     cursor.execute("UPDATE entries SET data = ? WHERE id = ?", (serialized_data, entry_id))
     conn.commit()
@@ -125,7 +125,7 @@ def update_an_inventory_entry(entry_id: int, entry: Entry):
 
 @router.delete("/entries/{entry_id}", tags=["Inventory"])
 def delete_an_inventory_entry(entry_id: int):
-    """Delete an entry by ID."""
+    """# Delete an entry by ID"""
     cursor.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
     conn.commit()
     if cursor.rowcount == 0:
