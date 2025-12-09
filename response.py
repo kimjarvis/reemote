@@ -29,7 +29,6 @@ class Response(BaseModel):
     name: Optional[str] = None
     command: Optional[str] = None
     group: Optional[str] = None
-    guard: bool = True
     local: bool = False
     callback_str: Optional[str] = Field(None, alias="callback")
     caller_str: Optional[str] = Field(None, alias="caller")
@@ -82,7 +81,6 @@ class Response(BaseModel):
             data['name'] = getattr(op, 'name', None)
             data['command'] = getattr(op, 'command', None)
             data['group'] = getattr(op, 'group', None)
-            data['guard'] = getattr(op, 'guard', True)
             data['local'] = getattr(op, 'local', False)
             data['callback'] = self._callback_to_str(getattr(op, 'callback', None))
             data['caller'] = self._caller_to_str(getattr(op, 'caller', None))

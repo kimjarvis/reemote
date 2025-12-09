@@ -57,9 +57,6 @@ async def run_command_on_host(operation: Command) -> Response:  # Changed return
         else:
             conn = await asyncssh.connect(**host_info)
         async with conn as conn:
-            if not operation.guard:
-                pass
-            else:
                 if operation.sudo:
                     if global_info.get('sudo_password') is None:
                         full_command = f"sudo {command}"
