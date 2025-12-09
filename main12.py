@@ -25,7 +25,7 @@ async def main():
         print(f"Host: {result.host}")
         print(f"Command: {result.command}")
         print(f"Output: {result.output}")
-        print(f"Error: {result.error}")
+        # print(f"Error: {result.error}")
         print(f"Stdout: {result.stdout}")
         print(f"Stderr: {result.stderr}")
         print(f"Changed: {result.changed}")

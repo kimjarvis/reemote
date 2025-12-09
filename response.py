@@ -3,11 +3,12 @@
 #
 import logging
 from typing import Any, Dict, Tuple, Optional, List, Union, Generator
+
 from asyncssh import SSHCompletedProcess
 from pydantic import BaseModel, Field, validator, ConfigDict
-from command import Command
 from pydantic.json import pydantic_encoder
-import json
+
+from command import Command
 
 
 class PackageInfo(BaseModel):
@@ -21,9 +22,7 @@ class Response(BaseModel):
     host: Optional[str] = None
     op: Optional[Command] = Field(default=None, exclude=True)
     changed: bool = False
-#    output: List[Union[PackageInfo, Dict[str, Any]]] = []
     output: Optional[Any] = None  # Accept any type
-    error: Optional[str] = None
 
     # Fields from Command (r.op)
     name: Optional[str] = None
@@ -259,7 +258,6 @@ class Response(BaseModel):
                 f"stdout={stdout!r}, "
                 f"stderr={stderr!r}, "
                 f"output={self.output!r}, "
-                f"error={self.error!r}, "
                 f"id={self.id!r}, "
                 f"parents={self.parents!r})")  # Changed from parent to parents
 
@@ -281,7 +279,6 @@ async def validate_responses(responses: list[Any]) -> list[Response]:
                     op=getattr(r, 'op', None),
                     changed=getattr(r, 'changed', False),
                     output=getattr(r, 'output', []),
-                    error=getattr(r, 'error', None),
                     id=getattr(r, 'id', None),
                     parents=getattr(r, 'parents', None)  # Changed from parent to parents
                 )
@@ -290,7 +287,6 @@ async def validate_responses(responses: list[Any]) -> list[Response]:
             logging.error(f"Error converting response: {e}", exc_info=True)
             # Create a minimal error result
             error_result = Response(
-                error=f"Failed to convert response: {str(e)}",
                 host=getattr(r, 'host', None) if hasattr(r, 'host') else None,
                 id=getattr(r, 'id', None) if hasattr(r, 'id') else None,
                 parents=getattr(r, 'parents', None) if hasattr(r, 'parents') else None  # Changed from parent to parents
