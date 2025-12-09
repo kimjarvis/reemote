@@ -140,7 +140,7 @@ class Stat(ShellBasedCommand):
 
                 # Create a dictionary by extracting each field from the SFTPAttrs object
                 attrs_dict = {field: getattr(sftp_attrs, field) for field in fields}
-                print(attrs_dict)
+                # print(attrs_dict)
                 return attrs_dict
 
     @track_yields
@@ -154,7 +154,6 @@ class Stat(ShellBasedCommand):
                                id=ConstructionTracker.get_current_id(),
                                parents=ConstructionTracker.get_parents(),
                                **self.extra_kwargs)
-        result.output = result.stdout
         return
 
 stat_handler = create_router_handler(StatModel, Stat)
@@ -237,7 +236,7 @@ class BaseFileCheck(ShellBasedCommand):
                                id=ConstructionTracker.get_current_id(),
                                parents=ConstructionTracker.get_parents(),
                                **self.extra_kwargs)
-        result.output = result.cp.stdout
+        result.output = result.output[0]["value"]
         return
 
 

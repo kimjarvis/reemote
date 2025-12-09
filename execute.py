@@ -20,17 +20,20 @@ async def run_command_on_local(operation: Command) -> Response:  # Changed retur
     try:
         result = await operation.callback(host_info, global_info, command, cp, caller)
 
+        print(type(result))
+        print(result)
+
         # Set successful return codes for local operations
         cp.exit_status = 0
         cp.returncode = 0
-        cp.stdout = result
         executed = True
 
         return Response(
             cp=cp,
             host=host_info.get("host"),
             op=operation,
-            executed=executed
+            executed=executed,
+            output=result
         )
     except Exception as e:
         raw_error = str(e)

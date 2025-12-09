@@ -23,7 +23,7 @@ class Response(BaseModel):
     changed: bool = False
     executed: bool = False
 #    output: List[Union[PackageInfo, Dict[str, Any]]] = []
-    output: Union[List[PackageInfo],bool] = []
+    output: Optional[Any] = None  # Accept any type
     error: Optional[str] = None
 
     # Fields from Command (r.op)
