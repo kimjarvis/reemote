@@ -6,15 +6,16 @@ import logging
 from utilities.logging import reemote_logging
 from utilities.checks import flatten
 from construction_tracker import ConstructionTracker
-from commands.sftp import Isdir, Isfile, Mkdir, Rmdir, Stat, Get,Put
+from commands.sftp import Isdir, Isfile, Mkdir, Rmdir, Stat, Get,Put, Copy
 from construction_tracker import track_construction, track_yields
 
 @track_construction
 class Root:
     @track_yields
     async def execute(self):
-        # r = yield Put(localpaths="/home/kim/restpoc/main13.py",remotepath="/home/user/")
+        r = yield Put(localpaths="/home/kim/restpoc/main13.py",remotepath="/home/user/")
         r = yield Get(remotepaths="/home/user/main13.py",localpath="/tmp")
+        r = yield Copy(srcpaths="/home/user/main13.py",dstpath="/home/user/main14.py")
 
 async def main():
     logging.basicConfig(

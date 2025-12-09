@@ -22,9 +22,14 @@ from typing import Union, Sequence, Callable, Optional
 from pydantic import BaseModel
 
 
-class GetModel(BaseModel):
-    remotepaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]]
-    localpath: Optional[Union[PurePath, str, bytes]] = None
+
+
+
+
+
+
+class BaseSftpModel(BaseModel):
+    """Base model for SFTP operations."""
     preserve: bool = False
     recurse: bool = False
     follow_symlinks: bool = False
@@ -33,6 +38,128 @@ class GetModel(BaseModel):
     max_requests: Optional[int] = -1
     progress_handler: Optional[Callable] = None
     error_handler: Optional[Callable] = None
+
+
+class GetModel(BaseSftpModel):
+    """Model for SFTP get/retrieve operation."""
+    remotepaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]]
+    localpath: Optional[Union[PurePath, str, bytes]] = None
+
+
+class PutModel(BaseSftpModel):
+    """Model for SFTP put/upload operation."""
+    localpaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]]
+    remotepath: Optional[Union[PurePath, str, bytes]] = None
+
+
+class CopyModel(BaseSftpModel):
+    """Model for SFTP copy operation."""
+    srcpaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]]
+    dstpath: Optional[Union[PurePath, str, bytes]] = None
+    remote_only: bool = False
+
+
+@track_construction
+class Copy(ShellBasedCommand):
+    Model = CopyModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                await sftp.copy(
+                    srcpaths=caller.srcpaths,
+                    dstpath=caller.dstpath,
+                    preserve=caller.preserve,
+                    recurse=caller.recurse,
+                    follow_symlinks=caller.follow_symlinks,
+                    sparse=caller.sparse,
+                    block_size=caller.block_size,
+                    max_requests=caller.max_requests,
+                    progress_handler=caller.progress_handler,
+                    error_handler=caller.error_handler,
+                    remote_only=caller.remote_only
+                )
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
+        model_instance = self.Model(**self._data)
+
+        result = yield Command(local=True,
+                               callback=self._callback,
+                               caller=model_instance,
+                               id=ConstructionTracker.get_current_id(),
+                               parents=ConstructionTracker.get_parents(),
+                               **self.extra_kwargs)
+        self.mark_changed(result)
+        return
+
+copy_handler = create_router_handler(CopyModel, Copy)
+
+@router.get("/commands/copy/", tags=["SFTP"])
+async def shell_command(
+        srcpaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
+            ...,
+            description="The paths of the remote files or directories to copy"
+        ),
+        dstpath: Optional[Union[PurePath, str, bytes]] = Query(
+            None,
+            description="The path of the remote file or directory to copy into"
+        ),
+        preserve: bool = Query(
+            False,
+            description="Whether or not to preserve the original file attributes"
+        ),
+        recurse: bool = Query(
+            False,
+            description="Whether or not to recursively copy directories"
+        ),
+        follow_symlinks: bool = Query(
+            False,
+            description="Whether or not to follow symbolic links"
+        ),
+        sparse: bool = Query(
+            True,
+            description="Whether or not to do a sparse file copy where it is supported"
+        ),
+        block_size: Optional[int] = Query(
+            -1,
+            ge=-1,
+            description="The block size to use for file reads and writes"
+        ),
+        max_requests: Optional[int] = Query(
+            -1,
+            ge=-1,
+            description="The maximum number of parallel read or write requests"
+        ),
+        progress_handler: Optional[str] = Query(
+            None,
+            description="Callback function name for upload progress"
+        ),
+        error_handler: Optional[str] = Query(
+            None,
+            description="Callback function name for error handling"
+        ),
+        remote_only: bool = Query(
+            False,
+            description="Whether or not to only allow this to be a remote copy"
+        ),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    return await get_handler(
+        srcpaths=srcpaths,
+        dstpath=dstpath,
+        preserve=preserve,
+        recurse=recurse,
+        follow_symlinks=follow_symlinks,
+        sparse=sparse,
+        block_size=block_size,
+        max_requests=max_requests,
+        progress_handler=progress_handler,
+        error_handler=error_handler,
+        remote_only=remote_only,
+        common=common)
 
 
 @track_construction
@@ -130,28 +257,6 @@ async def shell_command(
         progress_handler=progress_handler,
         error_handler=error_handler,
         common=common)
-
-
-
-
-
-
-
-
-
-
-class PutModel(BaseModel):
-    localpaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]]
-    remotepath: Optional[Union[PurePath, str, bytes]] = None
-    preserve: bool = False
-    recurse: bool = False
-    follow_symlinks: bool = False
-    sparse: bool = True
-    block_size: Optional[int] = -1
-    max_requests: Optional[int] = -1
-    progress_handler: Optional[Callable] = None
-    error_handler: Optional[Callable] = None
-
 
 @track_construction
 class Put(ShellBasedCommand):
