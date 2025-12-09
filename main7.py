@@ -32,7 +32,6 @@ async def main():
         print(f"Stdout: {result.stdout}")
         print(f"Stderr: {result.stderr}")
         print(f"Changed: {result.changed}")
-        print(f"Executed: {result.executed}")
 
     # Print the construction hierarchy at the end
     print("\nConstruction Hierarchy:")

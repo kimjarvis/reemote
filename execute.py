@@ -14,7 +14,6 @@ async def run_command_on_local(operation: Command) -> Response:  # Changed retur
     global_info = operation.global_info
     command = operation.command
     cp = SSHCompletedProcess()
-    executed = False
     caller = operation.caller
 
     try:
@@ -26,13 +25,11 @@ async def run_command_on_local(operation: Command) -> Response:  # Changed retur
         # Set successful return codes for local operations
         cp.exit_status = 0
         cp.returncode = 0
-        executed = True
 
         return Response(
             cp=cp,
             host=host_info.get("host"),
             op=operation,
-            executed=executed,
             output=result
         )
     except Exception as e:
@@ -46,7 +43,6 @@ async def run_command_on_local(operation: Command) -> Response:  # Changed retur
             error=raw_error,
             host=host_info.get("host"),
             op=operation,
-            executed=True
         )
 
 async def run_command_on_host(operation: Command) -> Response:  # Changed return type
@@ -54,7 +50,6 @@ async def run_command_on_host(operation: Command) -> Response:  # Changed return
     global_info = operation.global_info
     command = operation.command
     cp = SSHCompletedProcess()
-    executed = False
 
     try:
         if operation.get_pty:
@@ -65,7 +60,6 @@ async def run_command_on_host(operation: Command) -> Response:  # Changed return
             if not operation.guard:
                 pass
             else:
-                executed = True
                 if operation.sudo:
                     if global_info.get('sudo_password') is None:
                         full_command = f"sudo {command}"
@@ -115,7 +109,6 @@ async def run_command_on_host(operation: Command) -> Response:  # Changed return
             error=error_msg,
             host=host_info.get("host"),
             op=operation,
-            executed=executed
         )
 
     except (OSError, asyncssh.Error) as e:
@@ -128,14 +121,12 @@ async def run_command_on_host(operation: Command) -> Response:  # Changed return
             error=raw_error,
             host=host_info.get("host"),
             op=operation,
-            executed=executed
         )
 
     return Response(  # Changed to UnifiedResult
         cp=cp,
         host=host_info.get("host"),
         op=operation,
-        executed=executed
     )
 
 

@@ -22,7 +22,6 @@ async def main():
         print(f"Stdout: {result.stdout}")
         print(f"Stderr: {result.stderr}")
         print(f"Changed: {result.changed}")
-        print(f"Executed: {result.executed}")
 
 if __name__ == "__main__":
     asyncio.run(main())

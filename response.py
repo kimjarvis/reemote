@@ -21,7 +21,6 @@ class Response(BaseModel):
     host: Optional[str] = None
     op: Optional[Command] = Field(default=None, exclude=True)
     changed: bool = False
-    executed: bool = False
 #    output: List[Union[PackageInfo, Dict[str, Any]]] = []
     output: Optional[Any] = None  # Accept any type
     error: Optional[str] = None
@@ -258,7 +257,6 @@ class Response(BaseModel):
                 f"name={self.name!r}, "
                 f"command={self.command!r}, "
                 f"changed={self.changed!r}, "
-                f"executed={self.executed!r}, "
                 f"return_code={return_code!r}, "
                 f"stdout={stdout!r}, "
                 f"stderr={stderr!r}, "
@@ -284,7 +282,6 @@ async def validate_responses(responses: list[Any]) -> list[Response]:
                     host=getattr(r, 'host', None),
                     op=getattr(r, 'op', None),
                     changed=getattr(r, 'changed', False),
-                    executed=getattr(r, 'executed', False),
                     output=getattr(r, 'output', []),
                     error=getattr(r, 'error', None),
                     id=getattr(r, 'id', None),
