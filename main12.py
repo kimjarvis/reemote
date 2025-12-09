@@ -5,20 +5,15 @@ from response import validate_responses
 from utilities.logging import reemote_logging
 from utilities.checks import flatten
 from construction_tracker import ConstructionTracker
-from commands.sftp import Isdir, Isfile, Mkdir, Rmdir
+from commands.sftp import Isdir, Isfile, Mkdir, Rmdir, Stat
 from construction_tracker import track_construction, track_yields
 
 @track_construction
 class Root:
     @track_yields
     async def execute(self):
-        r = yield Rmdir(path="/home/user/fred")
-        r = yield Isdir(path="/home/user/fred")
-        assert not flatten(r)[-1].output
         r = yield Mkdir(path="/home/user/fred")
-        r = yield Isdir(path="/home/user/fred")
-        assert flatten(r)[-1].output
-
+        r = yield Stat(path="/home/user/fred",follow_symlinks=True)
 
 async def main():
     reemote_logging()

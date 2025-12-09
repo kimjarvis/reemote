@@ -1,5 +1,8 @@
 import stat
-from typing import AsyncGenerator, Optional
+from functools import partial
+from pathlib import PurePath
+from typing import AsyncGenerator
+from typing import Union, Optional
 
 import asyncssh
 from fastapi import APIRouter, Query, Depends
@@ -12,13 +15,11 @@ from common_params import CommonParams, common_params
 from construction_tracker import ConstructionTracker, track_construction, track_yields
 from response import Response
 
-from functools import partial
-
 router = APIRouter()
 
 
 class MkdirModel(BaseModel):
-    path: str
+    path: Union[PurePath, str, bytes] = None
     permissions: Optional[int] = Field(
         None,
         ge=0,
@@ -87,7 +88,7 @@ mkdir_handler = create_router_handler(MkdirModel, Mkdir)
 
 @router.get("/command/mkdir/", tags=["SFTP"])
 async def shell_command(
-        path: str = Query(..., description="Directory path"),
+        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         permissions: Optional[int] = Query(
             None,
             ge=0,
@@ -115,9 +116,62 @@ async def shell_command(
 
     return await mkdir_handler(**params, common=common)
 
+class StatModel(BaseModel):
+    path: Union[PurePath, str, bytes] = None
+    follow_symlinks: bool = True
+
+@track_construction
+class Stat(ShellBasedCommand):
+    Model = StatModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                sftp_attrs = await sftp.stat(caller.path, follow_symlinks=caller.follow_symlinks)
+
+                fields = [
+                    'type', 'size', 'alloc_size', 'uid', 'gid', 'owner', 'group',
+                    'permissions', 'atime', 'atime_ns', 'crtime', 'crtime_ns',
+                    'mtime', 'mtime_ns', 'ctime', 'ctime_ns', 'acl', 'attrib_bits',
+                    'attrib_valid', 'text_hint', 'mime_type', 'nlink', 'untrans_name',
+                    'extended'
+                ]
+
+                # Create a dictionary by extracting each field from the SFTPAttrs object
+                attrs_dict = {field: getattr(sftp_attrs, field) for field in fields}
+                print(attrs_dict)
+                return attrs_dict
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
+        model_instance = self.Model(**self._data)
+
+        result = yield Command(local=True,
+                               callback=self._callback,
+                               caller=model_instance,
+                               id=ConstructionTracker.get_current_id(),
+                               parents=ConstructionTracker.get_parents(),
+                               **self.extra_kwargs)
+        result.output = result.stdout
+        return
+
+stat_handler = create_router_handler(StatModel, Stat)
+
+@router.get("/facts/stat/", tags=["SFTP"])
+async def shell_command(
+        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
+        follow_symlinks: bool = Query(True, description="Whether or not to follow symbolic links"),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    return await stat_handler(path=path, follow_symlinks=follow_symlinks, common=common)
+
+
+
 
 class RmdirModel(BaseModel):
-    path: str
+    path: Union[PurePath, str, bytes] = None
 
 @track_construction
 class Rmdir(ShellBasedCommand):
@@ -140,16 +194,22 @@ class Rmdir(ShellBasedCommand):
                                id=ConstructionTracker.get_current_id(),
                                parents=ConstructionTracker.get_parents(),
                                **self.extra_kwargs)
-        # Directory creation is inherently a changing operation
+        # Directory deletion is inherently a changing operation
         self.mark_changed(result)
         return
 
+rmdir_handler = create_router_handler(RmdirModel, Rmdir)
 
+@router.get("/commands/rmdir/", tags=["SFTP"])
+async def shell_command(
+        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    return await rmdir_handler(path=path, common=common)
 
 
 class IsModel(BaseModel):
-    path: str
-
+    path: Union[PurePath, str, bytes] = None
 
 class BaseFileCheck(ShellBasedCommand):
     Model = IsModel
@@ -202,21 +262,21 @@ islink_handler = create_router_handler(IsModel, Islink)
 
 @router.get("/fact/isdir/", tags=["SFTP"])
 async def shell_command(
-        path: str = Query(..., description="Directory path"),
+        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
     return await isdir_handler(path=path, common=common)
 
 @router.get("/fact/isfile/", tags=["SFTP"])
 async def shell_command(
-        path: str = Query(..., description="File path"),
+        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
     return await isfile_handler(path=path, common=common)
 
 @router.get("/fact/islink/", tags=["SFTP"])
 async def shell_command(
-        path: str = Query(..., description="Link path"),
+        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
     return await islink_handler(path=path, common=common)
