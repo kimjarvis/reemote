@@ -1,9 +1,9 @@
 # construction_tracker.py
-from typing import List, Tuple, Optional, Any
+import functools
+import logging
 import threading
 from contextlib import contextmanager
-import inspect
-import functools
+from typing import List, Tuple, Optional
 
 
 class ConstructionTracker:
@@ -155,6 +155,8 @@ def track_construction(cls):
 
 
 def track_yields(method):
+    """Decorator to track yields and collect results from async generators"""
+
     @functools.wraps(method)
     async def wrapper(self, *args, **kwargs):
         parent_id = getattr(self, '_construction_id', None)
@@ -165,22 +167,48 @@ def track_yields(method):
         # Always set our ID as parent when this generator runs
         ConstructionTracker.set_parent(parent_id)
 
+        # Initialize results collection on the instance
+        if not hasattr(self, '_yielded_results'):
+            self._yielded_results = []
+
+        # Clear any existing results
+        self._yielded_results.clear()
+
         try:
+            # Get the generator from the original method
             gen = method(self, *args, **kwargs)
+
             try:
+                # Prime the generator - get first yield value
                 value = await gen.__anext__()
+
                 while True:
                     try:
-                        # Yield the current value
+                        # Yield the value (Shell object, Hello instance, etc.)
                         result = yield value
-                        # Get the next value by sending the result
+
+                        # IMPORTANT: Store the result
+                        # This captures what comes back from executing the yielded value
+                        if result is not None:
+                            self._yielded_results.append(result)
+
+                        # Send the result back to get next yield value
                         value = await gen.asend(result)
+
                     except StopAsyncIteration:
+                        # Generator is done
                         break
+
             finally:
                 await gen.aclose()
+
+        except Exception as e:
+            # Handle any exceptions
+            logging.error(f"Error in {self.__class__.__name__}.execute(): {e}", exc_info=True)
+            raise
+
         finally:
-            # Restore original parent
+            # Restore original parent - THIS MUST BE IN OUTER FINALLY
             ConstructionTracker.set_parent(original_parent)
 
     return wrapper

@@ -1,28 +1,25 @@
 import asyncio
-import asyncssh
 from inventory import get_inventory
 from execute import execute
 from response import validate_responses
-import logging
+from utilities.logging import reemote_logging
+from utilities.checks import flatten
 from construction_tracker import ConstructionTracker
+from commands.sftp import Isdir, Isfile, Mkdir, Rmdir, Stat
+from construction_tracker import track_construction, track_yields
 
+@track_construction
+class Root:
+    @track_yields
+    async def execute(self):
+        r = yield Mkdir(path="/home/user/fred")
+        r = yield Stat(path="/home/user/fred",follow_symlinks=True)
 
 async def main():
-    logging.basicConfig(
-        level=logging.DEBUG,
-        filename="asyncssh_debug.log",  # Log file name
-        filemode="w",  # Overwrite the file each time
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    logging.debug("main7")
+    reemote_logging()
     inventory = get_inventory()
-    from commands.sftp import Mkdir
-    responses = await execute(inventory, lambda: Mkdir(name="Make directory fred",
-                                                       path="/home/user/h2",
-                                                       permissions=0o555))
+    responses = await execute(inventory, lambda: Root())
     validated_responses = await validate_responses(responses)
-    print(validated_responses)
-
     # Each response is now a UnifiedResult with all fields available:
     for result in validated_responses:
         print(f"Host: {result.host}")
@@ -33,11 +30,6 @@ async def main():
         print(f"Stderr: {result.stderr}")
         print(f"Changed: {result.changed}")
         print(f"Executed: {result.executed}")
-
-    # Print the construction hierarchy at the end
-    print("\nConstruction Hierarchy:")
-    ConstructionTracker.print()
-
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -1,106 +1,283 @@
-import asyncssh
-from typing import Any, AsyncGenerator
-from fastapi import APIRouter, Query, Depends
-from pydantic import BaseModel
+import stat
+from functools import partial
+from pathlib import PurePath
+from typing import AsyncGenerator
+from typing import Union, Optional
 
-from common.base_classes import ShellBasedCommand
+import asyncssh
+from fastapi import APIRouter, Query, Depends
+from pydantic import BaseModel, Field
+
 from command import Command
-from response import Response
+from common.base_classes import ShellBasedCommand
 from common.router_utils import create_router_handler
 from common_params import CommonParams, common_params
-from construction_tracker import ConstructionTracker,track_construction, track_yields
-import logging
+from construction_tracker import ConstructionTracker, track_construction, track_yields
+from response import Response
+
 router = APIRouter()
 
 
 class MkdirModel(BaseModel):
-    path: str
+    path: Union[PurePath, str, bytes] = None
+    permissions: Optional[int] = Field(
+        None,
+        ge=0,
+        le=0o7777,
+        description="Directory permissions as octal integer (e.g., 0o755)"
+    )
+    uid: Optional[int] = Field(None, description="User ID")
+    gid: Optional[int] = Field(None, description="Group ID")
+    atime: Optional[float] = Field(None, description="Access time")
+    mtime: Optional[float] = Field(None, description="Modification time")
+
+    def get_sftp_attrs(self) -> Optional[asyncssh.SFTPAttrs]:
+        """Create SFTPAttrs object from provided attributes"""
+        attrs_dict = {}
+
+        if self.permissions is not None:
+            attrs_dict['permissions'] = self.permissions
+        if self.uid is not None:
+            attrs_dict['uid'] = self.uid
+        if self.gid is not None:
+            attrs_dict['gid'] = self.gid
+        if self.atime is not None:
+            attrs_dict['atime'] = self.atime
+        if self.mtime is not None:
+            attrs_dict['mtime'] = self.mtime
+
+        if attrs_dict:
+            # Add directory bit if permissions are provided
+            if 'permissions' in attrs_dict:
+                attrs_dict['permissions'] = attrs_dict['permissions'] | stat.S_IFDIR
+            return asyncssh.SFTPAttrs(**attrs_dict)
+        return None
+
 
 @track_construction
 class Mkdir(ShellBasedCommand):
     Model = MkdirModel
 
     @staticmethod
-    async def _mkdir_callback(host_info, global_info, command, cp, caller):
-        logging.debug("callback entry")
-
-        """Static callback method for directory creation"""
-
-        # Validate host_info with proper error messages
-        required_keys = ['host', 'username', 'password']
-        missing_keys = []
-        invalid_keys = []
-
-        for key in required_keys:
-            if key not in host_info:
-                missing_keys.append(key)
-            elif host_info[key] is None:
-                invalid_keys.append(key)
-
-        if missing_keys:
-            raise ValueError(f"Missing required keys in host_info: {missing_keys}")
-        if invalid_keys:
-            raise ValueError(f"None values for keys in host_info: {invalid_keys}")
-
-        # Validate caller attributes
-        if caller.path is None:
-            raise ValueError("The 'path' attribute of the caller cannot be None.")
-
-        # Clean host_info by removing None values and keys that asyncssh doesn't expect
-        clean_host_info = {
-            'host': host_info['host'],
-            'username': host_info['username'],
-            'password': host_info['password']
-        }
-
-        # Add optional parameters only if they exist and are not None
-        optional_keys = ['port', 'known_hosts', 'client_keys', 'passphrase']
-        for key in optional_keys:
-            if key in host_info and host_info[key] is not None:
-                clean_host_info[key] = host_info[key]
-
-        # Validate caller - now it's MkdirModel instance
-        if not hasattr(caller, 'path') or caller.path is None:
-            raise ValueError("The 'path' attribute of the caller cannot be None.")
-
-        try:
-            async with asyncssh.connect(**clean_host_info) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    # Create the remote directory
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                sftp_attrs = caller.get_sftp_attrs()
+                if sftp_attrs:
+                    await sftp.mkdir(caller.path, sftp_attrs)
+                else:
                     await sftp.mkdir(caller.path)
-                    logging.debug("callback exit")
-                    return f"Successfully created directory {caller.path} on {host_info['host']}"
-
-        except (OSError, asyncssh.Error) as exc:
-            # Provide more detailed error information
-            raise Exception(f"Failed to create directory {caller.path} on {host_info['host']}: {str(exc)}")
 
     @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        logging.debug("execute entry")
-
         # Convert dictionary to model instance
         model_instance = self.Model(**self._data)
 
         result = yield Command(local=True,
-                               callback=self._mkdir_callback,
+                               callback=self._callback,
                                caller=model_instance,
                                id=ConstructionTracker.get_current_id(),
                                parents=ConstructionTracker.get_parents(),
                                **self.extra_kwargs)
         # Directory creation is inherently a changing operation
         self.mark_changed(result)
-        logging.debug("execute exit")
         return
-
 
 # Create endpoint handler
 mkdir_handler = create_router_handler(MkdirModel, Mkdir)
 
-
 @router.get("/command/mkdir/", tags=["SFTP"])
 async def shell_command(
-        path: str = Query(..., description="Directory path"),
+        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
+        permissions: Optional[int] = Query(
+            None,
+            ge=0,
+            le=0o7777,
+            description="Directory permissions as octal integer (e.g., 755)"
+        ),
+        uid: Optional[int] = Query(None, description="User ID"),
+        gid: Optional[int] = Query(None, description="Group ID"),
+        atime: Optional[float] = Query(None, description="Access time"),
+        mtime: Optional[float] = Query(None, description="Modification time"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
-    return await mkdir_handler(path=path, common=common)
+    # Build parameters dictionary
+    params = {"path": path}
+    if permissions is not None:
+        params["permissions"] = permissions
+    if uid is not None:
+        params["uid"] = uid
+    if gid is not None:
+        params["gid"] = gid
+    if atime is not None:
+        params["atime"] = atime
+    if mtime is not None:
+        params["mtime"] = mtime
+
+    return await mkdir_handler(**params, common=common)
+
+class StatModel(BaseModel):
+    path: Union[PurePath, str, bytes] = None
+    follow_symlinks: bool = True
+
+@track_construction
+class Stat(ShellBasedCommand):
+    Model = StatModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                sftp_attrs = await sftp.stat(caller.path, follow_symlinks=caller.follow_symlinks)
+
+                fields = [
+                    'type', 'size', 'alloc_size', 'uid', 'gid', 'owner', 'group',
+                    'permissions', 'atime', 'atime_ns', 'crtime', 'crtime_ns',
+                    'mtime', 'mtime_ns', 'ctime', 'ctime_ns', 'acl', 'attrib_bits',
+                    'attrib_valid', 'text_hint', 'mime_type', 'nlink', 'untrans_name',
+                    'extended'
+                ]
+
+                # Create a dictionary by extracting each field from the SFTPAttrs object
+                attrs_dict = {field: getattr(sftp_attrs, field) for field in fields}
+                print(attrs_dict)
+                return attrs_dict
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
+        model_instance = self.Model(**self._data)
+
+        result = yield Command(local=True,
+                               callback=self._callback,
+                               caller=model_instance,
+                               id=ConstructionTracker.get_current_id(),
+                               parents=ConstructionTracker.get_parents(),
+                               **self.extra_kwargs)
+        result.output = result.stdout
+        return
+
+stat_handler = create_router_handler(StatModel, Stat)
+
+@router.get("/facts/stat/", tags=["SFTP"])
+async def shell_command(
+        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
+        follow_symlinks: bool = Query(True, description="Whether or not to follow symbolic links"),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    return await stat_handler(path=path, follow_symlinks=follow_symlinks, common=common)
+
+
+
+
+class RmdirModel(BaseModel):
+    path: Union[PurePath, str, bytes] = None
+
+@track_construction
+class Rmdir(ShellBasedCommand):
+    Model = RmdirModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                await sftp.rmdir(caller.path)
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
+        model_instance = self.Model(**self._data)
+
+        result = yield Command(local=True,
+                               callback=self._callback,
+                               caller=model_instance,
+                               id=ConstructionTracker.get_current_id(),
+                               parents=ConstructionTracker.get_parents(),
+                               **self.extra_kwargs)
+        # Directory deletion is inherently a changing operation
+        self.mark_changed(result)
+        return
+
+rmdir_handler = create_router_handler(RmdirModel, Rmdir)
+
+@router.get("/commands/rmdir/", tags=["SFTP"])
+async def shell_command(
+        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    return await rmdir_handler(path=path, common=common)
+
+
+class IsModel(BaseModel):
+    path: Union[PurePath, str, bytes] = None
+
+class BaseFileCheck(ShellBasedCommand):
+    Model = IsModel
+
+    # Define the SFTP method name as a class attribute
+    sftp_method_name = None
+
+    @classmethod
+    async def _callback(cls, sftp_method_name, host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                method = getattr(sftp, sftp_method_name)
+                return await method(caller.path)
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        model_instance = self.Model(**self._data)
+
+        # Create a partial function with the method name baked in
+        callback = partial(self._callback, self.sftp_method_name)
+
+        result = yield Command(local=True,
+                               callback=callback,
+                               caller=model_instance,
+                               id=ConstructionTracker.get_current_id(),
+                               parents=ConstructionTracker.get_parents(),
+                               **self.extra_kwargs)
+        result.output = result.cp.stdout
+        return
+
+
+@track_construction
+class Isdir(BaseFileCheck):
+    sftp_method_name = "isdir"
+
+
+@track_construction
+class Isfile(BaseFileCheck):
+    sftp_method_name = "isfile"
+
+
+@track_construction
+class Islink(BaseFileCheck):
+    sftp_method_name = "islink"
+
+isdir_handler = create_router_handler(IsModel, Isdir)
+isfile_handler = create_router_handler(IsModel, Isfile)
+islink_handler = create_router_handler(IsModel, Islink)
+
+
+@router.get("/fact/isdir/", tags=["SFTP"])
+async def shell_command(
+        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    return await isdir_handler(path=path, common=common)
+
+@router.get("/fact/isfile/", tags=["SFTP"])
+async def shell_command(
+        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    return await isfile_handler(path=path, common=common)
+
+@router.get("/fact/islink/", tags=["SFTP"])
+async def shell_command(
+        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    return await islink_handler(path=path, common=common)
+
