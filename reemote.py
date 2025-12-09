@@ -8,25 +8,34 @@ from commands.sftp import router as sftp_router
 # Initialize FastAPI app
 app = FastAPI(
     title="Reemote",
-    description="API for server management",
-    version="0.0.18",
+    summary="An API for server management",
+    # description="An API for server management",
+    version="0.1.0",
     swagger_ui_parameters={"docExpansion": "none", "title": "Reemote - Swagger UI"},
     openapi_tags = [
         {
             "name": "Inventory",
-            "description": "Inventory CRUD operations"
+            "description": """
+The inventory specifies the servers on which Reemote operations act.  These CRUD operations facilitate inventory management.
+            """
         },
         {
             "name": "APT Package Manager",
-            "description": "APT Package Manager facts, commands and operations"
+            "description": """
+Manage software installed on the servers.
+            """
         },
         {
             "name": "Server",
-            "description": "Server facts, commands and operations"
+            "description": """
+Get information about the servers and issue shell commands. 
+            """
         },
         {
             "name": "SFTP",
-            "description": "SFTP commands"
+            "description": """
+Create files and directories on remote servers and transfer files to from servers.
+            """
         }
     ]
 )

@@ -176,7 +176,7 @@ get_packages_handler = create_router_handler(GetPackagesModel, GetPackages)
 
 
 @router.get("/command/install/", tags=["APT Package Manager"])
-async def install_packages(
+async def install(
     packages: list[str] = Query(..., description="List of package names"),
     common: CommonParams = Depends(common_params)
 ) -> list[dict]:
@@ -185,7 +185,7 @@ async def install_packages(
 
 
 @router.get("/command/remove/", tags=["APT Package Manager"])
-async def remove_packages(
+async def remove(
     packages: list[str] = Query(..., description="List of package names"),
     common: CommonParams = Depends(common_params)
 ) -> list[dict]:
@@ -194,14 +194,14 @@ async def remove_packages(
 
 
 @router.get("/command/update/", tags=["APT Package Manager"])
-async def update_packages(
+async def update(
     common: CommonParams = Depends(common_params)
 ) -> list[dict]:
     """Remove APT packages"""
     return await update_handler(common=common)
 
 @router.get("/command/upgrade/", tags=["APT Package Manager"])
-async def upgrade_packages(
+async def upgrade(
     common: CommonParams = Depends(common_params)
 ) -> list[dict]:
     """Remove APT packages"""
@@ -209,7 +209,7 @@ async def upgrade_packages(
 
 
 @router.get("/operation/package/", tags=["APT Package Manager"])
-async def package_operations(
+async def package(
     packages: list[str] = Query(..., description="List of package names"),
     present: bool = Query(True, description="Whether the packages should be present or not"),
     common: CommonParams = Depends(common_params)

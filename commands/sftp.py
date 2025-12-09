@@ -97,8 +97,9 @@ class Copy(ShellBasedCommand):
 
 copy_handler = create_router_handler(CopyModel, Copy)
 
-@router.get("/commands/copy/", tags=["SFTP"])
-async def shell_command(
+@router.get("/commands/copy/",
+            tags=["SFTP"])
+async def copy(
         srcpaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
             ...,
             description="The paths of the remote files or directories to copy"
@@ -147,7 +148,167 @@ async def shell_command(
         ),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
-    return await get_handler(
+    """
+    # Copy remote files to a new location
+
+    This method copies one or more files or directories on the
+    remote system to a new location. Either a single source path
+    or a sequence of source paths to copy can be provided.
+
+    When copying a single file or directory, the destination path
+    can be either the full path to copy data into or the path to
+    an existing directory where the data should be placed. In the
+    latter case, the base file name from the source path will be
+    used as the destination name.
+
+    When copying multiple files, the destination path must refer
+    to an existing remote directory.
+
+    If no destination path is provided, the file is copied into
+    the current remote working directory.
+
+    If preserve is `True`, the access and modification times
+    and permissions of the original file are set on the
+    copied file.
+
+    If recurse is `True` and the source path points at a
+    directory, the entire subtree under that directory is
+    copied.
+
+    If follow_symlinks is set to `True`, symbolic links found
+    in the source will have the contents of their target copied
+    rather than creating a copy of the symbolic link. When
+    using this option during a recursive copy, one needs to
+    watch out for links that result in loops.
+
+    The block_size argument specifies the size of read and write
+    requests issued when copying the files, defaulting to the
+    maximum allowed by the server, or 16 KB if the server
+    doesn't advertise limits.
+
+    The max_requests argument specifies the maximum number of
+    parallel read or write requests issued, defaulting to a
+    value between 16 and 128 depending on the selected block
+    size to avoid excessive memory usage.
+
+    If progress_handler is specified, it will be called after
+    each block of a file is successfully copied. The arguments
+    passed to this handler will be the source path, destination
+    path, bytes copied so far, and total bytes in the file
+    being copied. If multiple source paths are provided or
+    recurse is set to `True`, the progress_handler will be
+    called consecutively on each file being copied.
+
+    If error_handler is specified and an error occurs during
+    the copy, this handler will be called with the exception
+    instead of it being raised. This is intended to primarily be
+    used when multiple source paths are provided or when recurse
+    is set to `True`, to allow error information to be collected
+    without aborting the copy of the remaining files. The error
+    handler can raise an exception if it wants the copy to
+    completely stop. Otherwise, after an error, the copy will
+    continue starting with the next file.
+    """
+    return await copy_handler(
+        srcpaths=srcpaths,
+        dstpath=dstpath,
+        preserve=preserve,
+        recurse=recurse,
+        follow_symlinks=follow_symlinks,
+        sparse=sparse,
+        block_size=block_size,
+        max_requests=max_requests,
+        progress_handler=progress_handler,
+        error_handler=error_handler,
+        remote_only=remote_only,
+        common=common)
+
+
+@track_construction
+class Mcopy(Copy):  # Inherit from Copy class
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                await sftp.mcopy(
+                    srcpaths=caller.srcpaths,
+                    dstpath=caller.dstpath,
+                    preserve=caller.preserve,
+                    recurse=caller.recurse,
+                    follow_symlinks=caller.follow_symlinks,
+                    sparse=caller.sparse,
+                    block_size=caller.block_size,
+                    max_requests=caller.max_requests,
+                    progress_handler=caller.progress_handler,
+                    error_handler=caller.error_handler,
+                    remote_only=caller.remote_only
+                )
+
+mcopy_handler = create_router_handler(CopyModel, Mcopy)
+
+@router.get("/commands/mcopy/",
+            tags=["SFTP"])
+async def mcopy(
+        srcpaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
+            ...,
+            description="The paths of the remote files or directories to copy"
+        ),
+        dstpath: Optional[Union[PurePath, str, bytes]] = Query(
+            None,
+            description="The path of the remote file or directory to copy into"
+        ),
+        preserve: bool = Query(
+            False,
+            description="Whether or not to preserve the original file attributes"
+        ),
+        recurse: bool = Query(
+            False,
+            description="Whether or not to recursively copy directories"
+        ),
+        follow_symlinks: bool = Query(
+            False,
+            description="Whether or not to follow symbolic links"
+        ),
+        sparse: bool = Query(
+            True,
+            description="Whether or not to do a sparse file copy where it is supported"
+        ),
+        block_size: Optional[int] = Query(
+            -1,
+            ge=-1,
+            description="The block size to use for file reads and writes"
+        ),
+        max_requests: Optional[int] = Query(
+            -1,
+            ge=-1,
+            description="The maximum number of parallel read or write requests"
+        ),
+        progress_handler: Optional[str] = Query(
+            None,
+            description="Callback function name for upload progress"
+        ),
+        error_handler: Optional[str] = Query(
+            None,
+            description="Callback function name for error handling"
+        ),
+        remote_only: bool = Query(
+            False,
+            description="Whether or not to only allow this to be a remote copy"
+        ),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    """
+    # Copy remote files with glob pattern match
+
+    This method downloads files and directories from the remote
+    system matching one or more glob patterns.
+
+    The arguments to this method are identical to the copy
+    method, except that the remote paths specified can contain
+    wildcard patterns.
+    """
+    return await mcopy_handler(
         srcpaths=srcpaths,
         dstpath=dstpath,
         preserve=preserve,
@@ -200,7 +361,7 @@ class Get(ShellBasedCommand):
 get_handler = create_router_handler(GetModel, Get)
 
 @router.get("/commands/get/", tags=["SFTP"])
-async def shell_command(
+async def get(
         remotepaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
             ...,
             description="The paths of the remote files or directories to download"
@@ -296,7 +457,7 @@ class Put(ShellBasedCommand):
 put_handler = create_router_handler(PutModel, Put)
 
 @router.get("/commands/put/", tags=["SFTP"])
-async def shell_command(
+async def put(
         localpaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
             ...,
             description="The paths of the local files or directories to upload"
@@ -425,7 +586,7 @@ class Mkdir(ShellBasedCommand):
 mkdir_handler = create_router_handler(MkdirModel, Mkdir)
 
 @router.get("/command/mkdir/", tags=["SFTP"])
-async def shell_command(
+async def mkdir(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         permissions: Optional[int] = Query(
             None,
@@ -497,7 +658,7 @@ class Stat(ShellBasedCommand):
 stat_handler = create_router_handler(StatModel, Stat)
 
 @router.get("/facts/stat/", tags=["SFTP"])
-async def shell_command(
+async def stat(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         follow_symlinks: bool = Query(True, description="Whether or not to follow symbolic links"),
         common: CommonParams = Depends(common_params)
@@ -538,7 +699,7 @@ class Rmdir(ShellBasedCommand):
 rmdir_handler = create_router_handler(RmdirModel, Rmdir)
 
 @router.get("/commands/rmdir/", tags=["SFTP"])
-async def shell_command(
+async def rmdir(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
@@ -598,21 +759,21 @@ islink_handler = create_router_handler(IsModel, Islink)
 
 
 @router.get("/fact/isdir/", tags=["SFTP"])
-async def shell_command(
+async def isdir(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
     return await isdir_handler(path=path, common=common)
 
 @router.get("/fact/isfile/", tags=["SFTP"])
-async def shell_command(
+async def isfile(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
     return await isfile_handler(path=path, common=common)
 
 @router.get("/fact/islink/", tags=["SFTP"])
-async def shell_command(
+async def islink(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:

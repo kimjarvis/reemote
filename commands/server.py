@@ -46,7 +46,7 @@ class Shell(ShellBasedCommand):
 shell_handler = create_router_handler(ShellModel, Shell)
 
 @router.get("/command/shell/", tags=["Server"])
-async def shell_command(
+async def shell(
         cmd: str = Query(..., description="Shell command"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:

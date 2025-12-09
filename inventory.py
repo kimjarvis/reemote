@@ -47,8 +47,49 @@ def deserialize_data(serialized_data: str) -> List[Tuple[Dict, Dict]]:
 # CRUD Operations
 
 @router.post("/entries/", tags=["Inventory"], response_model=Entry)
-def create_entry(entry: Entry):
-    """Create a new entry in the database."""
+def create_inventory(entry: Entry):
+    """
+    # Create a new entry in the database
+
+    Inventory has type `List[Tuple[Dict, Dict]]`.
+
+    The first dictionary in the tuple contains parameters that are passed directly to *AsynchSSH*.
+
+    - `host` the target host
+    - `username` the ssh user name
+    - `password` the ssh password
+    - etc...
+
+    The second dictionary contains global parameters that are available in all classes.
+
+    This dictionary may contain sudo information.
+
+    - `sudo_user` the sudo user id.
+    - `sudo_password` the sudo password.
+    - etc...
+
+    ### Example Inventory
+
+    ```json
+    {
+      "id": 0,
+      "data": [
+        [
+            {
+            "host": "192.168.1.76",
+            "username": "user",
+            "password": "password"
+            },
+            {
+            "groups": ["all","local"],
+            "sudo_user": "user",
+            "sudo_password": "password"
+            }
+        ]
+      ]
+    }
+    ```
+    """
     serialized_data = serialize_data(entry.data)
     cursor.execute("INSERT INTO entries (data) VALUES (?)", (serialized_data,))
     conn.commit()
@@ -56,7 +97,7 @@ def create_entry(entry: Entry):
     return {"id": entry_id, "data": entry.data}
 
 @router.get("/entries/", tags=["Inventory"], response_model=List[Entry])
-def read_entries():
+def read_the_inventory():
     """Read all entries from the database."""
     cursor.execute("SELECT id, data FROM entries")  # Fetch both id and data
     rows = cursor.fetchall()
@@ -64,7 +105,7 @@ def read_entries():
     return entries
 
 @router.get("/entries/{entry_id}", tags=["Inventory"], response_model=Entry)
-def read_entry(entry_id: int):
+def get_an_inventory_entry(entry_id: int):
     """Read a single entry by ID."""
     cursor.execute("SELECT id, data FROM entries WHERE id = ?", (entry_id,))
     row = cursor.fetchone()
@@ -73,7 +114,7 @@ def read_entry(entry_id: int):
     return {"id": row[0], "data": deserialize_data(row[1])}
 
 @router.put("/entries/{entry_id}", tags=["Inventory"], response_model=Entry)
-def update_entry(entry_id: int, entry: Entry):
+def update_an_inventory_entry(entry_id: int, entry: Entry):
     """Update an existing entry by ID."""
     serialized_data = serialize_data(entry.data)
     cursor.execute("UPDATE entries SET data = ? WHERE id = ?", (serialized_data, entry_id))
@@ -83,7 +124,7 @@ def update_entry(entry_id: int, entry: Entry):
     return {"id": entry_id, "data": entry.data}
 
 @router.delete("/entries/{entry_id}", tags=["Inventory"])
-def delete_entry(entry_id: int):
+def delete_an_inventory_entry(entry_id: int):
     """Delete an entry by ID."""
     cursor.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
     conn.commit()
