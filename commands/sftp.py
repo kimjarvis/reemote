@@ -82,7 +82,8 @@ class Mkdir(ShellBasedCommand):
         self.mark_changed(result)
         return
 
-
+# Create endpoint handler
+mkdir_handler = create_router_handler(MkdirModel, Mkdir)
 
 @router.get("/command/mkdir/", tags=["SFTP"])
 async def shell_command(
@@ -164,8 +165,6 @@ class Isfile(BaseFileCheck):
 class Islink(BaseFileCheck):
     sftp_method_name = "islink"
 
-# Create endpoint handler
-mkdir_handler = create_router_handler(MkdirModel, Mkdir)
 isdir_handler = create_router_handler(IsModel, Isdir)
 isfile_handler = create_router_handler(IsModel, Isfile)
 islink_handler = create_router_handler(IsModel, Islink)
@@ -191,3 +190,4 @@ async def shell_command(
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
     return await islink_handler(path=path, common=common)
+

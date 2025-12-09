@@ -18,7 +18,7 @@ async def main():
     inventory = get_inventory()
     from commands.sftp import Mkdir
     responses = await execute(inventory, lambda: Mkdir(name="Make directory fred",
-                                                       path="/home/user/h1",
+                                                       path="/home/user/h2",
                                                        permissions=0o555))
     validated_responses = await validate_responses(responses)
     print(validated_responses)
