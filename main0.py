@@ -3,18 +3,24 @@ from inventory import get_inventory
 from execute import execute
 from response import validate_responses
 from utilities.logging import reemote_logging
-from construction_tracker import track_construction, track_yields
 
-@track_construction
-class Root:
-    @track_yields
+class Hello:
     async def execute(self):
         from commands.server import Shell
+        r = yield Shell(name="echo",
+                     cmd="echo Hello Kimbo!",
+                     group="All",
+                     sudo=False)
         r = yield Shell(name="echo",
                      cmd="echo Hello World!",
                      group="All",
                      sudo=False)
         print(f"> {r}")
+
+class Root:
+    async def execute(self):
+        r = yield Hello()
+        print(f"* {r}")
 
 async def main():
     reemote_logging()
@@ -32,7 +38,6 @@ async def main():
         print(f"Stdout: {result.stdout}")
         print(f"Stderr: {result.stderr}")
         print(f"Changed: {result.changed}")
-
 
 if __name__ == "__main__":
     asyncio.run(main())

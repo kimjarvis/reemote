@@ -17,6 +17,9 @@ async def run_command_on_local(operation: Command) -> Response:  # Changed retur
     caller = operation.caller
 
     try:
+        logging.debug(
+            f"run_command_on_local begin {operation}"
+        )
         result = await operation.callback(host_info, global_info, command, cp, caller)
 
         print(type(result))
@@ -26,21 +29,28 @@ async def run_command_on_local(operation: Command) -> Response:  # Changed retur
         cp.exit_status = 0
         cp.returncode = 0
 
-        return Response(
+        response = Response(
             cp=cp,
             host=host_info.get("host"),
             op=operation,
             output=result
         )
+        logging.debug(
+            f"run_command_on_local end {response}"
+        )
+        return response
     except Exception as e:
-        raw_error = str(e)
         cp = SSHCompletedProcess()
+        logging.error(
+            f"{e} {operation} {cp}",
+            exc_info=True
+        )
         cp.exit_status = 1
         cp.returncode = 1
         cp.stderr = raw_error  # Also set stderr for consistency
         return Response(
             cp=cp,
-            error=raw_error,
+            error=str(e),
             host=host_info.get("host"),
             op=operation,
         )
@@ -50,6 +60,10 @@ async def run_command_on_host(operation: Command) -> Response:  # Changed return
     global_info = operation.global_info
     command = operation.command
     cp = SSHCompletedProcess()
+
+    logging.debug(
+        f"run_command_on_host begin {host_info}, {global_info}, {command}"
+    )
 
     try:
         if operation.get_pty:
@@ -95,37 +109,47 @@ async def run_command_on_host(operation: Command) -> Response:  # Changed return
                 else:
                     cp = await conn.run(command, check=False)
     except asyncssh.ProcessError as exc:
-        raw_error = str(exc)
         cp = SSHCompletedProcess()
+        logging.error(
+            f"{e} {operation} {cp}",
+            exc_info=True
+        )
         cp.exit_status = exc.exit_status if hasattr(exc, 'exit_status') else 1
         cp.returncode = exc.exit_status if hasattr(exc, 'exit_status') else 1
         error_msg = f"Process on host {host_info.get('host')} exited with status {exc.exit_status}"
         cp.stderr = raw_error
         return Response(  # Changed to UnifiedResult
             cp=cp,
-            error=error_msg,
+            error=str(e),
             host=host_info.get("host"),
             op=operation,
         )
 
     except (OSError, asyncssh.Error) as e:
-        raw_error = str(e)
         cp = SSHCompletedProcess()
+        logging.error(
+            f"{e} {cp}",
+            exc_info=True
+        )
         cp.exit_status = 1
         cp.returncode = 1
         return Response(  # Changed to UnifiedResult
             cp=cp,
-            error=raw_error,
+            error=str(e),
             host=host_info.get("host"),
             op=operation,
         )
 
-    return Response(  # Changed to UnifiedResult
+
+    response = Response(  # Changed to UnifiedResult
         cp=cp,
         host=host_info.get("host"),
         op=operation,
     )
-
+    logging.debug(
+        f"run_command_on_host end {response}"
+    )
+    return response
 
 async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Response, Response | None]:
     """

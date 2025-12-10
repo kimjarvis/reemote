@@ -93,7 +93,6 @@ class Response(BaseModel):
             data['parents'] = getattr(op, 'parents', data.get('parents', None))  # Changed from parent to parents
 
         super().__init__(**data)
-        logging.debug(f"{self}")
 
     @staticmethod
     def _bytes_to_str(value: Any) -> str:

@@ -30,8 +30,6 @@ class Command:
         self.su = su
         self.get_pty = get_pty
 
-        logging.debug(f"{self}")
-
     def __str__(self) -> str:
         return repr(self)
 
