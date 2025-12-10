@@ -4,7 +4,7 @@ from inventory import get_inventory
 from execute import execute
 from response import validate_responses
 from utilities.checks import changed,flatten
-from construction_tracker import ConstructionTracker, track_construction, track_yields
+from construction_tracker import  track_construction, track_yields
 
 
 from commands.apt import Install, Remove, Update, Upgrade, GetPackages, Package

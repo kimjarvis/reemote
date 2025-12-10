@@ -3,7 +3,6 @@ from inventory import get_inventory
 from execute import execute
 from response import validate_responses
 import logging
-from construction_tracker import ConstructionTracker
 from commands.sftp import Isdir, Isfile
 
 

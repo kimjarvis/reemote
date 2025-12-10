@@ -2,7 +2,7 @@ import asyncio
 from inventory import get_inventory
 from execute import execute
 from response import validate_responses
-from construction_tracker import ConstructionTracker, track_construction, track_yields
+from construction_tracker import  track_construction, track_yields
 import logging
 from commands.apt import Package
 from utilities.checks import changed,flatten

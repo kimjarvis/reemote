@@ -10,7 +10,7 @@ from command import Command
 from common.base_classes import ShellBasedCommand
 from common.router_utils import create_router_handler
 from common_params import CommonParams, common_params
-from construction_tracker import ConstructionTracker, track_construction, track_yields
+from construction_tracker import  track_construction, track_yields
 from response import Response
 
 router = APIRouter()
@@ -83,8 +83,6 @@ class Scp(ShellBasedCommand):
         result = yield Command(local=True,
                                callback=self._callback,
                                caller=model_instance,
-                               id=ConstructionTracker.get_current_id(),
-                               parents=ConstructionTracker.get_parents(),
                                **self.extra_kwargs)
         self.mark_changed(result)
         return

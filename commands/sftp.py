@@ -10,7 +10,7 @@ from command import Command
 from common.base_classes import ShellBasedCommand
 from common.router_utils import create_router_handler
 from common_params import CommonParams, common_params
-from construction_tracker import ConstructionTracker, track_construction, track_yields
+from construction_tracker import  track_construction, track_yields
 from response import Response
 
 router = APIRouter()
@@ -87,8 +87,6 @@ class Copy(ShellBasedCommand):
         result = yield Command(local=True,
                                callback=self._callback,
                                caller=model_instance,
-                               id=ConstructionTracker.get_current_id(),
-                               parents=ConstructionTracker.get_parents(),
                                **self.extra_kwargs)
         self.mark_changed(result)
         return
@@ -350,8 +348,6 @@ class Get(ShellBasedCommand):
         result = yield Command(local=True,
                                callback=self._callback,
                                caller=model_instance,
-                               id=ConstructionTracker.get_current_id(),
-                               parents=ConstructionTracker.get_parents(),
                                **self.extra_kwargs)
         self.mark_changed(result)
         return
@@ -599,8 +595,6 @@ class Put(ShellBasedCommand):
         result = yield Command(local=True,
                                callback=self._callback,
                                caller=model_instance,
-                               id=ConstructionTracker.get_current_id(),
-                               parents=ConstructionTracker.get_parents(),
                                **self.extra_kwargs)
         self.mark_changed(result)
         return
@@ -878,8 +872,6 @@ class Mkdir(ShellBasedCommand):
         result = yield Command(local=True,
                                callback=self._callback,
                                caller=model_instance,
-                               id=ConstructionTracker.get_current_id(),
-                               parents=ConstructionTracker.get_parents(),
                                **self.extra_kwargs)
         # Directory creation is inherently a changing operation
         self.mark_changed(result)
@@ -959,8 +951,6 @@ class Stat(ShellBasedCommand):
         result = yield Command(local=True,
                                callback=self._callback,
                                caller=model_instance,
-                               id=ConstructionTracker.get_current_id(),
-                               parents=ConstructionTracker.get_parents(),
                                **self.extra_kwargs)
         return
 
@@ -1005,8 +995,6 @@ class Rmdir(ShellBasedCommand):
         result = yield Command(local=True,
                                callback=self._callback,
                                caller=model_instance,
-                               id=ConstructionTracker.get_current_id(),
-                               parents=ConstructionTracker.get_parents(),
                                **self.extra_kwargs)
         # Directory deletion is inherently a changing operation
         self.mark_changed(result)
@@ -1054,8 +1042,6 @@ class BaseFileCheck(ShellBasedCommand):
         result = yield Command(local=True,
                                callback=callback,
                                caller=model_instance,
-                               id=ConstructionTracker.get_current_id(),
-                               parents=ConstructionTracker.get_parents(),
                                **self.extra_kwargs)
         result.output = result.output[0]["value"]
         return

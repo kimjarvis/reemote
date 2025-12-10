@@ -7,7 +7,7 @@ from common.router_utils import create_router_handler
 from common_params import CommonParams, common_params
 from response import Response
 from facts.parse_apt_list_installed import parse_apt_list_installed
-from construction_tracker import ConstructionTracker, track_construction, track_yields
+from construction_tracker import  track_construction, track_yields
 import logging
 router = APIRouter()
 
@@ -26,8 +26,6 @@ class Install(ShellBasedCommand):
         cmd = f"apt-get install -y {' '.join(self.data['packages'])}"
         result = yield Command(
             command=cmd,
-            id=ConstructionTracker.get_current_id(),
-            parents=ConstructionTracker.get_parents(),
             **self.extra_kwargs
         )
         self.mark_changed(result)
@@ -46,8 +44,6 @@ class Remove(ShellBasedCommand):
         cmd = f"apt-get remove -y {' '.join(self.data['packages'])}"
         result = yield Command(
             command=cmd,
-            id=ConstructionTracker.get_current_id(),
-            parents=ConstructionTracker.get_parents(),
             **self.extra_kwargs
         )
         self.mark_changed(result)
@@ -66,8 +62,6 @@ class Update(ShellBasedCommand):
         cmd = f"apt-get update"
         result = yield Command(
             command=cmd,
-            id=ConstructionTracker.get_current_id(),
-            parents=ConstructionTracker.get_parents(),
             **self.extra_kwargs
         )
         self.mark_changed(result)
@@ -86,8 +80,6 @@ class Upgrade(ShellBasedCommand):
         cmd = f"apt-get upgrade"
         result = yield Command(
             command=cmd,
-            id=ConstructionTracker.get_current_id(),
-            parents=ConstructionTracker.get_parents(),
             **self.extra_kwargs
         )
         self.mark_changed(result)
@@ -106,8 +98,6 @@ class GetPackages(ShellBasedCommand):
         cmd = f"apt list --installed"
         result = yield Command(
             command=cmd,
-            id=ConstructionTracker.get_current_id(),
-            parents=ConstructionTracker.get_parents(),
             **self.extra_kwargs
         )
 
