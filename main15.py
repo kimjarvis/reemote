@@ -17,7 +17,6 @@ class A:
         print(f"{r}")
         r = yield Shell(name="echo",
                         cmd="echo A2",
-                        group="all",
                         sudo=False)
         print(f"A> {r}")
         print(f"A*> {get_structured_results(self)}")
