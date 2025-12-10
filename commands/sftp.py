@@ -225,7 +225,7 @@ async def copy(
 
 
 @track_construction
-class Mcopy(Copy):  # Inherit from Copy class
+class Mcopy(Copy):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
@@ -480,6 +480,98 @@ async def get(
         error_handler=error_handler,
         common=common)
 
+
+@track_construction
+class Mget(Get):
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                await sftp.mget(
+                    remotepaths=caller.remotepaths,
+                    localpath=caller.localpath,
+                    preserve=caller.preserve,
+                    recurse=caller.recurse,
+                    follow_symlinks=caller.follow_symlinks,
+                    sparse=caller.sparse,
+                    block_size=caller.block_size,
+                    max_requests=caller.max_requests,
+                    progress_handler=caller.progress_handler,
+                    error_handler=caller.error_handler
+                )
+
+mget_handler = create_router_handler(GetModel, Mget)
+
+@router.get("/commands/mget/", tags=["SFTP"])
+async def mget(
+        remotepaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
+            ...,
+            description="The paths of the remote files or directories to download"
+        ),
+        localpath: Optional[Union[PurePath, str, bytes]] = Query(
+            None,
+            description="The path of the local file or directory to download into"
+        ),
+        preserve: bool = Query(
+            False,
+            description="Whether or not to preserve the original file attributes"
+        ),
+        recurse: bool = Query(
+            False,
+            description="Whether or not to recursively copy directories"
+        ),
+        follow_symlinks: bool = Query(
+            False,
+            description="Whether or not to follow symbolic links"
+        ),
+        sparse: bool = Query(
+            True,
+            description="Whether or not to do a sparse file copy where it is supported"
+        ),
+        block_size: Optional[int] = Query(
+            -1,
+            ge=-1,
+            description="The block size to use for file reads and writes"
+        ),
+        max_requests: Optional[int] = Query(
+            -1,
+            ge=-1,
+            description="The maximum number of parallel read or write requests"
+        ),
+        progress_handler: Optional[str] = Query(
+            None,
+            description="Callback function name for upload progress"
+        ),
+        error_handler: Optional[str] = Query(
+            None,
+            description="Callback function name for error handling"
+        ),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    """# Download remote files with glob pattern match
+
+    This method downloads files and directories from the remote
+    system matching one or more glob patterns.
+
+    The arguments to this method are identical to the `get`
+    method, except that the remote paths specified can contain
+    wildcard patterns.
+    """
+    return await mget_handler(
+        remotepaths=remotepaths,
+        localpath=localpath,
+        preserve=preserve,
+        recurse=recurse,
+        follow_symlinks=follow_symlinks,
+        sparse=sparse,
+        block_size=block_size,
+        max_requests=max_requests,
+        progress_handler=progress_handler,
+        error_handler=error_handler,
+        common=common)
+
+
 @track_construction
 class Put(ShellBasedCommand):
     Model = PutModel
@@ -637,6 +729,97 @@ async def put(
         error_handler=error_handler,
         common=common)
 
+
+@track_construction
+class Mput(ShellBasedCommand):
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                await sftp.mput(
+                    localpaths=caller.localpaths,
+                    remotepath=caller.remotepath,
+                    preserve=caller.preserve,
+                    recurse=caller.recurse,
+                    follow_symlinks=caller.follow_symlinks,
+                    sparse=caller.sparse,
+                    block_size=caller.block_size,
+                    max_requests=caller.max_requests,
+                    progress_handler=caller.progress_handler,
+                    error_handler=caller.error_handler
+                )
+
+
+mput_handler = create_router_handler(PutModel, Mput)
+
+@router.get("/commands/mput/", tags=["SFTP"])
+async def mput(
+        localpaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
+            ...,
+            description="The paths of the local files or directories to upload"
+        ),
+        remotepath: Optional[Union[PurePath, str, bytes]] = Query(
+            None,
+            description="The path of the remote file or directory to upload into"
+        ),
+        preserve: bool = Query(
+            False,
+            description="Whether or not to preserve the original file attributes"
+        ),
+        recurse: bool = Query(
+            False,
+            description="Whether or not to recursively copy directories"
+        ),
+        follow_symlinks: bool = Query(
+            False,
+            description="Whether or not to follow symbolic links"
+        ),
+        sparse: bool = Query(
+            True,
+            description="Whether or not to do a sparse file copy where it is supported"
+        ),
+        block_size: Optional[int] = Query(
+            -1,
+            ge=-1,
+            description="The block size to use for file reads and writes"
+        ),
+        max_requests: Optional[int] = Query(
+            -1,
+            ge=-1,
+            description="The maximum number of parallel read or write requests"
+        ),
+        progress_handler: Optional[str] = Query(
+            None,
+            description="Callback function name for upload progress"
+        ),
+        error_handler: Optional[str] = Query(
+            None,
+            description="Callback function name for error handling"
+        ),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    """# Upload local files with glob pattern match
+
+    This method uploads files and directories to the remote
+    system matching one or more glob patterns.
+
+    The arguments to this method are identical to the :meth:`put`
+    method, except that the local paths specified can contain
+    wildcard patterns.
+    """
+    return await mput_handler(
+        localpaths=localpaths,
+        remotepath=remotepath,
+        preserve=preserve,
+        recurse=recurse,
+        follow_symlinks=follow_symlinks,
+        sparse=sparse,
+        block_size=block_size,
+        max_requests=max_requests,
+        progress_handler=progress_handler,
+        error_handler=error_handler,
+        common=common)
 
 
 class MkdirModel(BaseModel):

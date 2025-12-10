@@ -1,17 +1,12 @@
 # inventory.py
 import logging
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import List, Tuple, Dict
-import sqlite3
-import json
+
+from fastapi import APIRouter
 
 # Create an APIRouter instance
 router = APIRouter()
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import List, Tuple, Dict
+from fastapi import HTTPException
 import sqlite3
 import json
 
