@@ -2,18 +2,13 @@ import asyncio
 from inventory import get_inventory
 from execute import execute
 from response import validate_responses
-import logging
+from utilities.logging import reemote_logging
 from commands.sftp import Isdir, Isfile
 
 
 
 async def main():
-    logging.basicConfig(
-        level=logging.DEBUG,
-        filename="asyncssh_debug.log",  # Log file name
-        filemode="w",  # Overwrite the file each time
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    reemote_logging()
     inventory = get_inventory()
 
     responses = await execute(inventory, lambda: Isdir(path="/home/user/fred"))

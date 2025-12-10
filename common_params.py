@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Callable, List, Tuple
+from typing import Optional, Dict, Callable, List, Tuple, Any
 from pydantic import BaseModel, Field, validator
 import logging
 from construction_tracker import track_construction, track_yields
@@ -17,39 +17,34 @@ class CommonParams(BaseModel):
         validate_assignment = True
 
     def __repr__(self) -> str:
-        """Common parameters representation"""
-        params = []
-        if self.group and self.group != "all":
-            params.append(f"group={self.group!r}")
-        if self.name:
-            params.append(f"name={self.name!r}")
-        if self.sudo:
-            params.append(f"sudo={self.sudo!r}")
-        if self.su:
-            params.append(f"su={self.su!r}")
-        if self.get_pty:
-            params.append(f"get_pty={self.get_pty!r}")
-
-        if params:
-            return f"CommonParams({', '.join(params)})"
-        return "CommonParams()"
+        """Use detailed_repr for representation"""
+        return self.detailed_repr()
 
     def __str__(self) -> str:
         return self.__repr__()
 
-    def common_repr(self) -> str:
-        """Return just the common parameters string representation for use in subclasses"""
-        common_str = self.__repr__().replace("CommonParams(", "").replace(")", "")
-        if common_str:
-            return common_str
-        return ""
+    def detailed_repr(self) -> str:
+        """Show all fields including defaults"""
+        field_strings = []
+
+        # Always include all fields in detailed representation
+        if self.group is not None:
+            field_strings.append(f"group={self.group!r}")
+        if self.name is not None:
+            field_strings.append(f"name={self.name!r}")
+        field_strings.append(f"sudo={self.sudo!r}")
+        field_strings.append(f"su={self.su!r}")
+        field_strings.append(f"get_pty={self.get_pty!r}")
+
+        return f"CommonParams({', '.join(field_strings)})"
+
 
 def common_params(
-    group: Optional[str] = Query("all", description="Optional inventory group (defaults to 'all')"),
-    name: Optional[str] = Query(None, description="Optional name"),
-    sudo: bool = Query(False, description="Whether to use sudo"),
-    su: bool = Query(False, description="Whether to use su"),
-    get_pty: bool = Query(False, description="Whether to get a PTY")
+        group: Optional[str] = Query("all", description="Optional inventory group (defaults to 'all')"),
+        name: Optional[str] = Query(None, description="Optional name"),
+        sudo: bool = Query(False, description="Whether to use sudo"),
+        su: bool = Query(False, description="Whether to use su"),
+        get_pty: bool = Query(False, description="Whether to get a PTY")
 ) -> CommonParams:
     """FastAPI dependency for common parameters"""
     return CommonParams(group=group, name=name, sudo=sudo, su=su, get_pty=get_pty)

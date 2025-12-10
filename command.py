@@ -4,12 +4,15 @@ from common_params import CommonParams
 from construction_tracker import track_construction
 
 
+
 @track_construction
 class Command(CommonParams):
     """Command model with validation using Pydantic"""
 
-    # Required fields
-    command: str = Field(..., description="The command to execute")
+    command: Optional[str] = Field(
+        default=None,
+        description="The command to execute (optional)"
+    )
 
     # Optional fields with defaults
     local: bool = Field(default=False, description="Whether to run locally")
@@ -39,10 +42,13 @@ class Command(CommonParams):
 
     @validator('command')
     def command_not_empty(cls, v):
-        """Validate that command is not empty or whitespace only"""
-        if not v or not v.strip():
-            raise ValueError('Command cannot be empty')
-        return v.strip()
+        """Validate that if command is provided, it's not empty or whitespace only"""
+        if v is not None:
+            stripped = v.strip()
+            if not stripped:
+                raise ValueError('Command cannot be empty if provided')
+            return stripped
+        return v
 
     @validator('group')
     def group_not_empty_if_provided(cls, v):
@@ -52,49 +58,51 @@ class Command(CommonParams):
         return v
 
     def __repr__(self) -> str:
-        """Command representation that includes common parameters"""
-        # Start with the common parameters
-        common_str = self.common_repr()
-
-        # Build command-specific parameters
-        cmd_params = []
-
-        # Add required command field
-        if self.command:
-            cmd_params.append(f"command={self.command!r}")
-
-        # Add optional fields that have values
-        if self.id is not None:
-            cmd_params.append(f"id={self.id!r}")
-        if self.parents:
-            cmd_params.append(f"parents={self.parents!r}")
-        if self.local:
-            cmd_params.append(f"local={self.local!r}")
-        if self.callback:
-            # For callable, show a simple representation
-            callback_repr = f"<function {self.callback.__name__}>" if hasattr(self.callback, '__name__') else repr(
-                self.callback)
-            cmd_params.append(f"callback={callback_repr}")
-        if self.caller:
-            caller_repr = f"<{type(self.caller).__name__} object>" if hasattr(self.caller, '__class__') else repr(
-                self.caller)
-            cmd_params.append(f"caller={caller_repr}")
-        if self.host_info:
-            cmd_params.append(f"host_info={self.host_info!r}")
-        if self.global_info:
-            cmd_params.append(f"global_info={self.global_info!r}")
-
-        # Combine all parameters
-        all_params = []
-        if common_str:
-            all_params.append(common_str)
-        all_params.extend(cmd_params)
-
-        return f"Command({', '.join(all_params)})"
+        """Use detailed_repr for representation"""
+        return self.detailed_repr()
 
     def __str__(self) -> str:
         return self.__repr__()
 
     def detailed_repr(self) -> str:
-        """Alternative representation showing all fields including defaults"""
-        return super().__repr__()
+        """Show all fields including defaults"""
+        field_strings = []
+
+        # Add common parameters from parent
+        if self.group is not None:
+            field_strings.append(f"group={self.group!r}")
+        if self.name is not None:
+            field_strings.append(f"name={self.name!r}")
+        field_strings.append(f"sudo={self.sudo!r}")
+        field_strings.append(f"su={self.su!r}")
+        field_strings.append(f"get_pty={self.get_pty!r}")
+
+        # Add command-specific fields
+        if self.command is not None:
+            field_strings.append(f"command={self.command!r}")
+
+        field_strings.append(f"local={self.local!r}")
+
+        if self.callback is not None:
+            callback_repr = f"<function {self.callback.__name__}>" if hasattr(self.callback, '__name__') else repr(
+                self.callback)
+            field_strings.append(f"callback={callback_repr}")
+
+        if self.caller is not None:
+            caller_repr = f"<{type(self.caller).__name__} object>" if hasattr(self.caller, '__class__') else repr(
+                self.caller)
+            field_strings.append(f"caller={caller_repr}")
+
+        if self.id is not None:
+            field_strings.append(f"id={self.id!r}")
+
+        if self.parents is not None:
+            field_strings.append(f"parents={self.parents!r}")
+
+        if self.host_info is not None:
+            field_strings.append(f"host_info={self.host_info!r}")
+
+        if self.global_info is not None:
+            field_strings.append(f"global_info={self.global_info!r}")
+
+        return f"Command({', '.join(field_strings)})"

@@ -43,7 +43,6 @@ async def run_command_on_local(command: Command) -> Response:
         )
         cp.exit_status = 1
         cp.returncode = 1
-        cp.stderr = raw_error  # Also set stderr for consistency
         return Response(
             cp=cp,
             error=str(e),

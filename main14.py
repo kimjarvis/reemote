@@ -1,27 +1,19 @@
 import asyncio
-from inventory import get_inventory
-from execute import execute
-from response import validate_responses
-import logging
-from utilities.logging import reemote_logging
-from utilities.checks import flatten
-from construction_tracker import ConstructionTracker
-from commands.scp import Download
 from construction_tracker import track_construction, track_yields
+from execute import execute
+from inventory import get_inventory
+from response import validate_responses
+from utilities.logging import reemote_logging
+from commands.scp import Scp
 
 @track_construction
 class Root:
     @track_yields
     async def execute(self):
-        r = yield Download(srcpaths="/home/user/main*.py",dstpath="/tmp")
+        r = yield Scp(srcpaths="/home/user/main*.py",dstpath="/tmp")
 
 async def main():
-    logging.basicConfig(
-        level=logging.DEBUG,
-        filename="debug.log",  # Log file name
-        filemode="w",  # Overwrite the file each time
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    reemote_logging()
     inventory = get_inventory()
     responses = await execute(inventory, lambda: Root())
     validated_responses = await validate_responses(responses)

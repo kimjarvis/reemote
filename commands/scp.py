@@ -39,6 +39,13 @@ class Scp(ShellBasedCommand):
 
                 print(f"Connected successfully to destination host {host_info['host']}")
 
+                print(f"{host_info}, {global_info}")
+                print(f"{command.group}")
+                # Fix execute on local to ensure that the group specified on scp is in the global info.
+                # src_host should be the host name from host_info.
+                # This does nothing to ensure that the destination is unique in the inventory.
+                # But it allows the user to make it unique by using a unique group name.
+
                 # Prepare source paths with proper host prefixes
                 if isinstance(caller.srcpaths, list):
                     srcpaths = []
