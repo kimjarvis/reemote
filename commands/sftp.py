@@ -1,12 +1,10 @@
 import stat
 from functools import partial
-from pathlib import PurePath
 from typing import AsyncGenerator
-from typing import Union, Optional
 
 import asyncssh
 from fastapi import APIRouter, Query, Depends
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from command import Command
 from common.base_classes import ShellBasedCommand

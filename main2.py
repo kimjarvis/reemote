@@ -2,9 +2,10 @@ import asyncio
 from inventory import get_inventory
 from execute import execute
 from response import validate_responses
-
+from utilities.logging import reemote_logging
 
 async def main():
+    reemote_logging()
     inventory = get_inventory()
     from commands.server import Shell
     responses = await execute(inventory, lambda: Shell(name="echo",

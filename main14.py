@@ -2,27 +2,29 @@ import asyncio
 from inventory import get_inventory
 from execute import execute
 from response import validate_responses
+import logging
 from utilities.logging import reemote_logging
+from utilities.checks import flatten
+from construction_tracker import ConstructionTracker
+from commands.scp import Download
 from construction_tracker import track_construction, track_yields
 
 @track_construction
 class Root:
     @track_yields
     async def execute(self):
-        from commands.server import Shell
-        r = yield Shell(name="echo",
-                     cmd="echo Hello World!",
-                     group="All",
-                     sudo=False)
+        r = yield Download(srcpaths="/home/user/main*.py",dstpath="/tmp")
 
 async def main():
-    reemote_logging()
+    logging.basicConfig(
+        level=logging.DEBUG,
+        filename="debug.log",  # Log file name
+        filemode="w",  # Overwrite the file each time
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     inventory = get_inventory()
-    print(f"Inventory: {inventory}")
     responses = await execute(inventory, lambda: Root())
     validated_responses = await validate_responses(responses)
-    print(validated_responses)
-
     # Each response is now a UnifiedResult with all fields available:
     for result in validated_responses:
         print(f"Host: {result.host}")
@@ -31,7 +33,6 @@ async def main():
         print(f"Stdout: {result.stdout}")
         print(f"Stderr: {result.stderr}")
         print(f"Changed: {result.changed}")
-
 
 if __name__ == "__main__":
     asyncio.run(main())
