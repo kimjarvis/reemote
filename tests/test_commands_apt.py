@@ -17,7 +17,7 @@ async def test_apt_install():
         responses = await execute(inventory, lambda: Install(
             name="install tree",
             packages=["tree", "vim"],
-            group="All",
+            group="all",
             sudo=True
         ))
         validated_responses = await validate_responses(responses)
@@ -34,7 +34,7 @@ async def test_apt_remove():
         responses = await execute(inventory, lambda: Remove(
             name="remove tree",
             packages=["tree", "vim"],
-            group="All",
+            group="all",
             sudo=True
         ))
         validated_responses = await validate_responses(responses)
@@ -65,12 +65,12 @@ async def test_apt_package():
             r = yield Package(name="1",
                               packages=["tree"],
                               present=False,
-                              group="All",
+                              group="all",
                               sudo=True)
             r = yield Package(name="2",
                               packages=["tree"],
                               present=True,
-                              group="All",
+                              group="all",
                               sudo=True)
 
     """Test getting apt packages information without errors"""

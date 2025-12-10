@@ -15,7 +15,7 @@ async def test_server_shell():
     responses = await execute(inventory, lambda: Shell(
         name="echo",
         cmd="echo Hello World!",
-        group="All",
+        group="all",
         sudo=False
     ))
     validated_responses = await validate_responses(responses)
@@ -34,7 +34,7 @@ async def test_server_shell_nested():
             r = yield Shell(
                 name="echo",
                 cmd="echo Hello World!",
-                group="All",
+                group="all",
                 sudo=False
             )
 
@@ -57,7 +57,7 @@ async def test_server_shell_double_nested():
             r = yield Shell(
                 name="echo",
                 cmd="echo Hello World!",
-                group="All",
+                group="all",
                 sudo=False
             )
 

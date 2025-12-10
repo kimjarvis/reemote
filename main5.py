@@ -8,7 +8,7 @@ async def main():
     from commands.apt import Remove
     responses = await execute(inventory, lambda: Remove(name="remove tree",
                                                         packages =["tree","vim"],
-                                                        group="All",
+                                                        group="all",
                                                         sudo=True))
     validated_responses = await validate_responses(responses)
     print(validated_responses)

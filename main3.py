@@ -10,7 +10,7 @@ async def main():
     from commands.apt import Install
     responses = await execute(inventory, lambda: Install(name="install tree",
                                                          packages =["tree","vim"],
-                                                         group="All",
+                                                         group="all",
                                                          sudo=True))
     validated_responses = await validate_responses(responses)
     print(validated_responses)

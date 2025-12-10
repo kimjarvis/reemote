@@ -10,7 +10,7 @@ async def main():
     from commands.server import Shell
     responses = await execute(inventory, lambda: Shell(name="echo",
                      cmd="echo Hello World!",
-                     group="All",
+                     group="all",
                      sudo=False))
     validated_responses = await validate_responses(responses)
     print(validated_responses)

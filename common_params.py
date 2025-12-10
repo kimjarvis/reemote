@@ -1,16 +1,18 @@
-from fastapi import Depends, Query
+from typing import Optional
+from fastapi import Query
 from pydantic import BaseModel
 
+
 class CommonParams(BaseModel):
-    group: str | None = None  # Optional field with default value None
-    name: str | None = None  # Optional field with default value None
-    sudo: bool = False
-    su: bool = False
-    get_pty: bool = False
+    group: Optional[str] = "all"  # Default to "all"
+    name: Optional[str] = None    # Optional field
+    sudo: bool = False            # Default to False
+    su: bool = False              # Default to False
+    get_pty: bool = False         # Default to False
 
 def common_params(
-    group: str | None = Query(None, description="Optional inventory group"),
-    name: str | None = Query(None, description="Optional name"),
+    group: Optional[str] = Query("all", description="Optional inventory group (defaults to 'all')"),
+    name: Optional[str] = Query(None, description="Optional name"),
     sudo: bool = Query(False, description="Whether to use sudo"),
     su: bool = Query(False, description="Whether to use su"),
     get_pty: bool = Query(False, description="Whether to get a PTY")

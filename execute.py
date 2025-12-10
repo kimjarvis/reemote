@@ -61,16 +61,18 @@ async def run_command_on_host(operation: Command) -> Response:  # Changed return
     command = operation.command
     cp = SSHCompletedProcess()
 
-    logging.debug(
-        f"run_command_on_host begin {host_info}, {global_info}, {command}"
-    )
+    print("trace 00", operation.group, operation.global_info["groups"])
+    if operation.group in operation.global_info["groups"]:
 
-    try:
-        if operation.get_pty:
-            conn = await asyncssh.connect(**host_info, term_type='xterm')
-        else:
-            conn = await asyncssh.connect(**host_info)
-        async with conn as conn:
+        logging.debug(
+            f"run_command_on_host begin {host_info}, {global_info}, {command}"
+        )
+        try:
+            if operation.get_pty:
+                conn = await asyncssh.connect(**host_info, term_type='xterm')
+            else:
+                conn = await asyncssh.connect(**host_info)
+            async with conn as conn:
                 if operation.sudo:
                     if global_info.get('sudo_password') is None:
                         full_command = f"sudo {command}"
@@ -108,48 +110,48 @@ async def run_command_on_host(operation: Command) -> Response:  # Changed return
                     )
                 else:
                     cp = await conn.run(command, check=False)
-    except asyncssh.ProcessError as exc:
-        cp = SSHCompletedProcess()
-        logging.error(
-            f"{e} {operation} {cp}",
-            exc_info=True
-        )
-        cp.exit_status = exc.exit_status if hasattr(exc, 'exit_status') else 1
-        cp.returncode = exc.exit_status if hasattr(exc, 'exit_status') else 1
-        error_msg = f"Process on host {host_info.get('host')} exited with status {exc.exit_status}"
-        cp.stderr = raw_error
-        return Response(  # Changed to UnifiedResult
+        except asyncssh.ProcessError as exc:
+            cp = SSHCompletedProcess()
+            logging.error(
+                f"{e} {operation} {cp}",
+                exc_info=True
+            )
+            cp.exit_status = exc.exit_status if hasattr(exc, 'exit_status') else 1
+            cp.returncode = exc.exit_status if hasattr(exc, 'exit_status') else 1
+            error_msg = f"Process on host {host_info.get('host')} exited with status {exc.exit_status}"
+            cp.stderr = raw_error
+            return Response(  # Changed to UnifiedResult
+                cp=cp,
+                error=str(e),
+                host=host_info.get("host"),
+                op=operation,
+            )
+
+        except (OSError, asyncssh.Error) as e:
+            cp = SSHCompletedProcess()
+            logging.error(
+                f"{e} {cp}",
+                exc_info=True
+            )
+            cp.exit_status = 1
+            cp.returncode = 1
+            return Response(  # Changed to UnifiedResult
+                cp=cp,
+                error=str(e),
+                host=host_info.get("host"),
+                op=operation,
+            )
+
+
+        response = Response(  # Changed to UnifiedResult
             cp=cp,
-            error=str(e),
             host=host_info.get("host"),
             op=operation,
         )
-
-    except (OSError, asyncssh.Error) as e:
-        cp = SSHCompletedProcess()
-        logging.error(
-            f"{e} {cp}",
-            exc_info=True
+        logging.debug(
+            f"run_command_on_host end {response}"
         )
-        cp.exit_status = 1
-        cp.returncode = 1
-        return Response(  # Changed to UnifiedResult
-            cp=cp,
-            error=str(e),
-            host=host_info.get("host"),
-            op=operation,
-        )
-
-
-    response = Response(  # Changed to UnifiedResult
-        cp=cp,
-        host=host_info.get("host"),
-        op=operation,
-    )
-    logging.debug(
-        f"run_command_on_host end {response}"
-    )
-    return response
+        return response
 
 async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Response, Response | None]:
     """

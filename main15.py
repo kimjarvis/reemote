@@ -13,12 +13,11 @@ class A:
     @track_yields
     async def execute(self):
         r = yield Shell(name="echo",
-                        cmd="echo A1",
-                        group="All",
-                        sudo=False)
+                        cmd="echo A1")
+        print(f"{r}")
         r = yield Shell(name="echo",
                         cmd="echo A2",
-                        group="All",
+                        group="all",
                         sudo=False)
         print(f"A> {r}")
         print(f"A*> {get_structured_results(self)}")
@@ -30,11 +29,11 @@ class B:
     async def execute(self):
         r = yield Shell(name="echo",
                         cmd="echo B1",
-                        group="All",
+                        group="all",
                         sudo=False)
         r = yield Shell(name="echo",
                         cmd="echo B2!",
-                        group="All",
+                        group="all",
                         sudo=False)
         print(f"B> {r}")
         print(f"B*> {get_structured_results(self)}")
@@ -56,7 +55,7 @@ class C:
         print(f"C> {r}")
         r = yield Shell(name="echo",
                         cmd="echo C!",
-                        group="All",
+                        group="all",
                         sudo=False)
         print(f"C*> {get_structured_results(self)}")
 

@@ -14,12 +14,12 @@ class Root:
         r = yield Package(   name="initial remove package",
                              packages =["tree"],
                              present = False,
-                             group="All",
+                             group="all",
                              sudo=True)
         r = yield Package(   name="install package",
                              packages =["tree"],
                              present = True,
-                             group="All",
+                             group="all",
                              sudo=True)
         for x in flatten(r):
             print(x)

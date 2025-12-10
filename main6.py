@@ -24,7 +24,7 @@ async def main():
     responses = await execute(inventory, lambda: Package(name="apt package tree",
                                                          packages =["tree"],
                                                          present = False,
-                                                         group="All",
+                                                         group="all",
                                                          sudo=True))
     # validated_responses = await validate_responses(responses)
     # print(validated_responses)

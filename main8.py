@@ -14,7 +14,7 @@ class Hello:
         print(type(a))
         b = yield Shell(name="echo",
                         cmd="echo Hello World!",
-                        group="All",
+                        group="all",
                         sudo=False)
         c = yield Shell(cmd="ls -ltr")
 

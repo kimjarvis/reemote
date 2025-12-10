@@ -12,7 +12,7 @@ class Root:
         from commands.server import Shell
         r = yield Shell(name="echo",
                      cmd="echo Hello World!",
-                     group="All",
+                     group="all",
                      sudo=False)
         print(f"> {r}")
 
