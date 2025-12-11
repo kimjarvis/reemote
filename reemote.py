@@ -3,6 +3,7 @@ from commands.server import router as server_router
 from inventory import router as inventory_router  # Import the inventory router
 from commands.apt import router as apt_router
 from commands.sftp import router as sftp_router
+from commands.scp import router as scp_router
 
 
 # Initialize FastAPI app
@@ -32,6 +33,12 @@ Get information about the servers and issue shell commands.
             """
         },
         {
+            "name": "SCP",
+            "description": """
+Copy files and directories to and from remote servers.
+            """
+        },
+        {
             "name": "SFTP",
             "description": """
 Create files and directories on remote servers and transfer files to from servers.
@@ -45,5 +52,5 @@ Create files and directories on remote servers and transfer files to from server
 app.include_router(inventory_router, prefix="/inventory")
 app.include_router(apt_router, prefix="/apt")
 app.include_router(server_router, prefix="/server")
-
 app.include_router(sftp_router, prefix="/sftp")
+app.include_router(scp_router, prefix="/scp")
