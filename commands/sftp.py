@@ -1016,55 +1016,33 @@ async def rmdir(
     return await rmdir_handler(path=path, common=common)
 
 
-class IsModel(BaseModel):
+
+class IsdirModel(BaseModel):
     path: Union[PurePath, str, bytes] = None
 
-class BaseFileCheck(ShellBasedCommand):
-    Model = IsModel
+class Isdir(ShellBasedCommand):
+    Model = IsdirModel
 
     # Define the SFTP method name as a class attribute
     sftp_method_name = None
 
-    @classmethod
-    async def _callback(cls, sftp_method_name, host_info, global_info, command, cp, caller):
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                method = getattr(sftp, sftp_method_name)
-                return await method(caller.path)
+                cp.stdout = await sftp.isdir(caller.path)
 
     @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
         model_instance = self.Model(**self._data)
 
-        # Create a partial function with the method name baked in
-        callback = partial(self._callback, self.sftp_method_name)
-
-        result = yield Command(local=True,
-                               callback=callback,
+        yield Command(local=True,
+                               callback=self._callback,
                                caller=model_instance,
                                **self.extra_kwargs)
-        result.output = result.output[0]["value"]
-        return
 
-
-@track_construction
-class Isdir(BaseFileCheck):
-    sftp_method_name = "isdir"
-
-
-@track_construction
-class Isfile(BaseFileCheck):
-    sftp_method_name = "isfile"
-
-
-@track_construction
-class Islink(BaseFileCheck):
-    sftp_method_name = "islink"
-
-isdir_handler = create_router_handler(IsModel, Isdir)
-isfile_handler = create_router_handler(IsModel, Isfile)
-islink_handler = create_router_handler(IsModel, Islink)
-
+isdir_handler = create_router_handler(IsdirModel, Isdir)
 
 @router.get("/fact/isdir/", tags=["SFTP"])
 async def isdir(
@@ -1074,19 +1052,73 @@ async def isdir(
     """# Return if the remote path refers to a directory"""
     return await isdir_handler(path=path, common=common)
 
+class IsfileModel(BaseModel):
+    path: Union[PurePath, str, bytes] = None
+
+class Isfile(ShellBasedCommand):
+    Model = IsfileModel
+
+    # Define the SFTP method name as a class attribute
+    sftp_method_name = None
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                cp.stdout = await sftp.isfile(caller.path)
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
+        model_instance = self.Model(**self._data)
+
+        yield Command(local=True,
+                               callback=self._callback,
+                               caller=model_instance,
+                               **self.extra_kwargs)
+
+isfile_handler = create_router_handler(IsfileModel, Isfile)
+
 @router.get("/fact/isfile/", tags=["SFTP"])
 async def isfile(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
-    """# Return if the remote path refers to a regular file"""
+    """# Return if the remote path refers to a file"""
     return await isfile_handler(path=path, common=common)
+
+
+class IslinkModel(BaseModel):
+    path: Union[PurePath, str, bytes] = None
+
+class Islink(ShellBasedCommand):
+    Model = IslinkModel
+
+    # Define the SFTP method name as a class attribute
+    sftp_method_name = None
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                cp.stdout = await sftp.islink(caller.path)
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
+        model_instance = self.Model(**self._data)
+
+        yield Command(local=True,
+                               callback=self._callback,
+                               caller=model_instance,
+                               **self.extra_kwargs)
+
+islink_handler = create_router_handler(IslinkModel, Islink)
 
 @router.get("/fact/islink/", tags=["SFTP"])
 async def islink(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         common: CommonParams = Depends(common_params)
 ) -> list[dict]:
-    """# Return if the remote path refers to a symbolic link"""
+    """# Return if the remote path refers to a link"""
     return await islink_handler(path=path, common=common)
-

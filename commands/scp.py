@@ -1,14 +1,16 @@
 from typing import AsyncGenerator
 from typing import List
+
 import asyncssh
-from fastapi import APIRouter
+from fastapi import APIRouter, Query, Depends
+
 from command import Command
 from common.base_classes import ShellBasedCommand
-from construction_tracker import track_construction, track_yields
-from response import Response
 from common.router_utils import create_router_handler
-from fastapi import APIRouter, Query, Depends
 from common_params import CommonParams, common_params
+from construction_tracker import track_construction, track_yields
+from inventory import get_unique_host_user
+from response import Response
 
 router = APIRouter()
 
@@ -110,6 +112,10 @@ class Download(ShellBasedCommand):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
+
+        unique, host, user = get_unique_host_user(command.group)
+        if not unique:
+            raise ValueError(f"Group must identify a unique destination")
 
         await asyncssh.scp(
             srcpaths=[(host_info.get("host"), path) for path in caller.srcpaths],
