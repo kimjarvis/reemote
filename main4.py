@@ -2,11 +2,10 @@ import asyncio
 from inventory import get_inventory
 from execute import execute
 from response import Response, validate_responses, PackageInfo
-
+from commands.apt import GetPackages
 
 async def main():
     inventory = get_inventory()
-    from commands.apt import GetPackages
     responses = await execute(inventory, lambda: GetPackages(name="get packages"))
     validated_responses = await validate_responses(responses)
     print(validated_responses)

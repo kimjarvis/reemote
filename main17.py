@@ -12,15 +12,13 @@ class Root:
     async def execute(self):
         # r =  yield Put(localpaths="/home/kim/restpoc/main13.py", remotepath="/home/user/",group="101")
         # r =  yield Rmdir(path="/home/user/freddy",group="101")
-        r =  yield Isdir(path="/home/user/freddy",group="101")
-        r =  yield Isfile(path="/home/user/freddy.txt",group="101")
-        print(r)
+        r =  yield Isdir(path="/home/user/freddy")
+        # r =  yield Isfile(path="/home/user/freddy.txt",group="101")
 
 async def main():
     reemote_logging()
     responses = await execute(get_inventory(), lambda: Root())
     validated_responses = await validate_responses(responses)
-    print(validated_responses)
 
     # Each response is now a UnifiedResult with all fields available:
     for result in validated_responses:

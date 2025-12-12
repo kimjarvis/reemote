@@ -33,7 +33,7 @@ class Upload(ShellBasedCommand):
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
 
-        await asyncssh.scp(
+        return await asyncssh.scp(
             srcpaths=caller.srcpaths,
             dstpath=(host_info.get("host"), caller.dstpath),
             username=host_info.get("username"),
@@ -117,7 +117,7 @@ class Download(ShellBasedCommand):
         if not unique:
             raise ValueError(f"Group must identify a unique destination")
 
-        await asyncssh.scp(
+        return await asyncssh.scp(
             srcpaths=[(host_info.get("host"), path) for path in caller.srcpaths],
             dstpath=caller.dstpath,
             username=host_info.get("username"),

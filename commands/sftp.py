@@ -65,7 +65,7 @@ class Copy(ShellBasedCommand):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                await sftp.copy(
+                return await sftp.copy(
                     srcpaths=caller.srcpaths,
                     dstpath=caller.dstpath,
                     preserve=caller.preserve,
@@ -227,7 +227,7 @@ class Mcopy(Copy):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                await sftp.mcopy(
+                return await sftp.mcopy(
                     srcpaths=caller.srcpaths,
                     dstpath=caller.dstpath,
                     preserve=caller.preserve,
@@ -327,7 +327,7 @@ class Get(ShellBasedCommand):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                await sftp.get(
+                return await sftp.get(
                     remotepaths=caller.remotepaths,
                     localpath=caller.localpath,
                     preserve=caller.preserve,
@@ -482,7 +482,7 @@ class Mget(Get):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                await sftp.mget(
+                return await sftp.mget(
                     remotepaths=caller.remotepaths,
                     localpath=caller.localpath,
                     preserve=caller.preserve,
@@ -574,7 +574,7 @@ class Put(ShellBasedCommand):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                await sftp.put(
+                return await sftp.put(
                     localpaths=caller.localpaths,
                     remotepath=caller.remotepath,
                     preserve=caller.preserve,
@@ -723,13 +723,13 @@ async def put(
 
 
 @track_construction
-class Mput(ShellBasedCommand):
+class Mput(Put):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                await sftp.mput(
+                return await sftp.mput(
                     localpaths=caller.localpaths,
                     remotepath=caller.remotepath,
                     preserve=caller.preserve,
@@ -860,9 +860,9 @@ class Mkdir(ShellBasedCommand):
             async with conn.start_sftp_client() as sftp:
                 sftp_attrs = caller.get_sftp_attrs()
                 if sftp_attrs:
-                    await sftp.mkdir(caller.path, sftp_attrs)
+                    return await sftp.mkdir(caller.path, sftp_attrs)
                 else:
-                    await sftp.mkdir(caller.path)
+                    return await sftp.mkdir(caller.path)
 
     @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
@@ -985,7 +985,7 @@ class Rmdir(ShellBasedCommand):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                await sftp.rmdir(caller.path)
+                return await sftp.rmdir(caller.path)
 
     @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
@@ -1030,7 +1030,7 @@ class Isdir(ShellBasedCommand):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                cp.stdout = await sftp.isdir(caller.path)
+                return await sftp.isdir(caller.path)
 
     @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
@@ -1065,7 +1065,7 @@ class Isfile(ShellBasedCommand):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                cp.stdout = await sftp.isfile(caller.path)
+                return await sftp.isfile(caller.path)
 
     @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
@@ -1101,7 +1101,7 @@ class Islink(ShellBasedCommand):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                cp.stdout = await sftp.islink(caller.path)
+                return await sftp.islink(caller.path)
 
     @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:

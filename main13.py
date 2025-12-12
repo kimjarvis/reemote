@@ -5,7 +5,7 @@ from response import validate_responses
 import logging
 from utilities.logging import reemote_logging
 from utilities.checks import flatten
-from construction_tracker import ConstructionTracker
+from construction_tracker import track_construction, track_yields
 from commands.sftp import Isdir, Isfile, Mkdir, Rmdir, Stat, Get,Put, Copy , Mcopy, Mput, Mget
 from construction_tracker import track_construction, track_yields
 

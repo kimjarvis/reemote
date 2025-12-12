@@ -27,9 +27,6 @@ async def run_command_on_local(command: Command) -> Response:
         try:
             result = await command.callback(command.host_info, command.global_info, command, cp, command.caller)
 
-            print(type(result))
-            print(result)
-
             # Set successful return codes for local operations
             cp.exit_status = 0
             cp.returncode = 0
