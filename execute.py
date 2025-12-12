@@ -12,8 +12,14 @@ from response import Response  # Changed import
 async def run_command_on_local(command: Command) -> Response:
     cp = SSHCompletedProcess()
 
-    if command.group in command.global_info["groups"]:
-
+    if command.group not in command.global_info["groups"]:
+        return Response(
+            cp=cp,
+            host=command.host_info.get("host"),
+            op=command,
+            executed=False
+        )
+    else:
         logging.debug(
             f"run_command_on_local begin {command}"
         )
@@ -56,7 +62,14 @@ async def run_command_on_local(command: Command) -> Response:
 async def run_command_on_host(command: Command) -> Response:
     cp = SSHCompletedProcess()
 
-    if command.group in command.global_info["groups"]:
+    if command.group not in command.global_info["groups"]:
+        return Response(
+            cp=cp,
+            host=command.host_info.get("host"),
+            op=command,
+            executed=False
+        )
+    else:
 
         logging.debug(
             f"run_command_on_host begin {command.host_info}, {command.global_info}, {command.command}"

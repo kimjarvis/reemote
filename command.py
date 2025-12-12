@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Callable, List, Tuple, Any
+from typing import Optional, Dict, Callable, Any
 from pydantic import Field, validator  # Make sure Field is imported
 from common_params import CommonParams
 from construction_tracker import track_construction
@@ -18,11 +18,6 @@ class Command(CommonParams):
     local: bool = Field(default=False, description="Whether to run locally")
     callback: Optional[Callable] = Field(default=None, description="Optional callback function")
     caller: Optional[object] = Field(default=None, description="Caller object")
-    id: Optional[int] = Field(default=None, description="Command ID")
-    parents: Optional[List[Tuple[int, str]]] = Field(
-        default=None,
-        description="List of parent commands (id, name) pairs"
-    )
 
     # Fields that will be populated later (not in __init__)
     host_info: Optional[Dict[str, str]] = Field(
@@ -92,12 +87,6 @@ class Command(CommonParams):
             caller_repr = f"<{type(self.caller).__name__} object>" if hasattr(self.caller, '__class__') else repr(
                 self.caller)
             field_strings.append(f"caller={caller_repr}")
-
-        if self.id is not None:
-            field_strings.append(f"id={self.id!r}")
-
-        if self.parents is not None:
-            field_strings.append(f"parents={self.parents!r}")
 
         if self.host_info is not None:
             field_strings.append(f"host_info={self.host_info!r}")

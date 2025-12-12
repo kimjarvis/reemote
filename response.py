@@ -23,6 +23,7 @@ class Response(BaseModel):
     op: Optional[Command] = Field(default=None, exclude=True)
     changed: bool = False
     output: Optional[Any] = None  # Accept any type
+    executed: bool = True  # New field: indicates if the command was executed
 
     # Fields from Command (r.op)
     name: Optional[str] = None
@@ -47,10 +48,6 @@ class Response(BaseModel):
     exit_signal: Optional[Tuple[str, bool, str, str]] = None
     stdout_bytes: Optional[bytes] = None
     stderr_bytes: Optional[bytes] = None
-
-    # New fields
-    id: Optional[int] = None
-    parents: Optional[List[Tuple[int, str]]] = None  # Changed from parent to parents
 
     # Pydantic v2 config
     model_config = ConfigDict(
@@ -88,9 +85,6 @@ class Response(BaseModel):
             data['get_pty'] = getattr(op, 'get_pty', False)
             data['host_info'] = getattr(op, 'host_info', None)
             data['global_info'] = getattr(op, 'global_info', None)
-            # Populate id from op.id if available
-            data['id'] = getattr(op, 'id', data.get('id', None))
-            data['parents'] = getattr(op, 'parents', data.get('parents', None))  # Changed from parent to parents
 
         super().__init__(**data)
 
@@ -194,51 +188,6 @@ class Response(BaseModel):
         else:
             return str(v)
 
-    @validator('id', pre=True)
-    def validate_id(cls, v):
-        """Validate that id is either None or an integer."""
-        if v is None:
-            return None
-        try:
-            return int(v)
-        except (ValueError, TypeError):
-            # If it can't be converted to int, return None
-            return None
-
-    @validator('parents', pre=True)
-    def validate_parents(cls, v):
-        """Validate that parents is either None or a list of (int, str) tuples."""
-        if v is None:
-            return None
-
-        if isinstance(v, list):
-            validated_list = []
-            for item in v:
-                if isinstance(item, tuple) and len(item) == 2:
-                    try:
-                        # Ensure first element is int, second is str
-                        parent_id = int(item[0]) if item[0] is not None else None
-                        parent_name = str(item[1]) if item[1] is not None else None
-                        if parent_id is not None and parent_name is not None:
-                            validated_list.append((parent_id, parent_name))
-                    except (ValueError, TypeError):
-                        # Skip invalid items
-                        continue
-            return validated_list if validated_list else None
-
-        # If it's not a list, try to convert from other formats
-        try:
-            # If it's a single tuple
-            if isinstance(v, tuple) and len(v) == 2:
-                parent_id = int(v[0]) if v[0] is not None else None
-                parent_name = str(v[1]) if v[1] is not None else None
-                if parent_id is not None and parent_name is not None:
-                    return [(parent_id, parent_name)]
-        except (ValueError, TypeError):
-            pass
-
-        return None
-
     def __str__(self) -> str:
         """String representation for debugging."""
         return self.__repr__()
@@ -253,12 +202,11 @@ class Response(BaseModel):
                 f"name={self.name!r}, "
                 f"command={self.command!r}, "
                 f"changed={self.changed!r}, "
+                f"executed={self.executed!r}, "
                 f"return_code={return_code!r}, "
                 f"stdout={stdout!r}, "
                 f"stderr={stderr!r}, "
-                f"output={self.output!r}, "
-                f"id={self.id!r}, "
-                f"parents={self.parents!r})")  # Changed from parent to parents
+                f"output={self.output!r})")
 
 
 async def validate_responses(responses: list[Any]) -> list[Response]:
@@ -277,9 +225,8 @@ async def validate_responses(responses: list[Any]) -> list[Response]:
                     host=getattr(r, 'host', None),
                     op=getattr(r, 'op', None),
                     changed=getattr(r, 'changed', False),
-                    output=getattr(r, 'output', []),
-                    id=getattr(r, 'id', None),
-                    parents=getattr(r, 'parents', None)  # Changed from parent to parents
+                    executed=getattr(r, 'executed', True),  # Include executed field
+                    output=getattr(r, 'output', [])
                 )
                 validated_responses.append(unified_result)
         except Exception as e:
@@ -287,8 +234,7 @@ async def validate_responses(responses: list[Any]) -> list[Response]:
             # Create a minimal error result
             error_result = Response(
                 host=getattr(r, 'host', None) if hasattr(r, 'host') else None,
-                id=getattr(r, 'id', None) if hasattr(r, 'id') else None,
-                parents=getattr(r, 'parents', None) if hasattr(r, 'parents') else None  # Changed from parent to parents
+                executed=getattr(r, 'executed', True) if hasattr(r, 'executed') else True  # Include executed field
             )
             validated_responses.append(error_result)
 
