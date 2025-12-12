@@ -3,8 +3,9 @@ import logging
 from fastapi import APIRouter, HTTPException
 import sqlite3
 import json
-from typing import List, Tuple, Dict, Optional
-from pydantic import BaseModel, validator, RootModel
+from typing import List, Tuple, Dict, Optional, Any
+from pydantic import BaseModel, field_validator, RootModel
+from pydantic_core.core_schema import FieldValidationInfo
 
 # Create an APIRouter instance
 router = APIRouter()
@@ -33,8 +34,9 @@ conn.commit()
 class InventoryEntry(RootModel):
     root: List[Dict]
 
-    @validator('root')
-    def validate_entry_structure(cls, v):
+    @field_validator('root')
+    @classmethod
+    def validate_entry_structure(cls, v: List[Dict]) -> List[Dict]:
         if len(v) != 2:
             raise ValueError('Entry must contain exactly two dictionaries')
         if not all(isinstance(item, dict) for item in v):
@@ -42,7 +44,6 @@ class InventoryEntry(RootModel):
         if 'host' not in v[0]:
             raise ValueError("First dictionary must contain 'host' parameter")
         return v
-
 
 def serialize_data(data: List[Tuple[Dict, Dict]]) -> str:
     return json.dumps(data, default=str)

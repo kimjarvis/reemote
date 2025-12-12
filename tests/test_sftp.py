@@ -14,9 +14,9 @@ from utilities.logging import reemote_logging
 
 @pytest.mark.asyncio
 async def test_sftp():
-    # @track_construction
+    @track_construction
     class Root:
-        # @track_yields
+        @track_yields
         async def execute(self):
             r = yield Isfile(path="/tmp/a.txt", group="local")
             assert r.executed and r.output == [{'value': True}]

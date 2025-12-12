@@ -18,7 +18,7 @@ class BaseCommand:
         response = validate_parameters(self.Model, **kwargs)
         if response["valid"]:
             # Get extra kwargs (those not in the Model's fields)
-            model_fields = self.Model.__fields__.keys()
+            model_fields = self.Model.model_fields.keys()
             self._extra_kwargs = {k: v for k, v in kwargs.items() if k not in model_fields}
             self._data = response["data"]
         else:

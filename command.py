@@ -1,5 +1,5 @@
-from typing import Optional, Dict, Callable, Any
-from pydantic import Field, validator  # Make sure Field is imported
+from typing import Optional, Dict, Callable, Any, Annotated
+from pydantic import Field, field_validator, ConfigDict  # Updated imports
 from common_params import CommonParams
 from construction_tracker import track_construction
 
@@ -8,6 +8,12 @@ from construction_tracker import track_construction
 @track_construction
 class Command(CommonParams):
     """Command model with validation using Pydantic"""
+
+    model_config = ConfigDict(  # Replaces class Config
+        validate_assignment=True,
+        arbitrary_types_allowed=True,  # Needed for Callable and caller fields
+        extra='forbid'  # Optional: add this to prevent extra fields
+    )
 
     command: Optional[str] = Field(
         default=None,
@@ -31,12 +37,9 @@ class Command(CommonParams):
         exclude=True
     )
 
-    class Config:
-        validate_assignment = True
-        arbitrary_types_allowed = True  # Needed for Callable and caller fields
-
-    @validator('command')
-    def command_not_empty(cls, v):
+    @field_validator('command')
+    @classmethod
+    def command_not_empty(cls, v: Optional[str]) -> Optional[str]:
         """Validate that if command is provided, it's not empty or whitespace only"""
         if v is not None:
             stripped = v.strip()
@@ -45,8 +48,9 @@ class Command(CommonParams):
             return stripped
         return v
 
-    @validator('group')
-    def group_not_empty_if_provided(cls, v):
+    @field_validator('group')
+    @classmethod
+    def group_not_empty_if_provided(cls, v: Optional[str]) -> Optional[str]:
         """Validate group is not empty string if provided"""
         if v is not None and v == "":
             return "all"

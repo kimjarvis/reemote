@@ -5,8 +5,8 @@ import logging
 from typing import Any, Dict, Tuple, Optional, List, Union, Generator
 
 from asyncssh import SSHCompletedProcess
-from pydantic import BaseModel, Field, validator, ConfigDict
-from pydantic.json import pydantic_encoder
+from pydantic import BaseModel, Field, ConfigDict
+from pydantic import field_validator
 
 from command import Command
 
@@ -124,7 +124,9 @@ class Response(BaseModel):
             return f"<caller {name}>"
         return str(value)
 
-    @validator('output', pre=True)
+    # CHANGED: Pydantic V2 style validator
+    @field_validator('output', mode='before')
+    @classmethod
     def validate_output(cls, v):
         """Ensure output is always a list of dicts or PackageInfo objects."""
         if v is None:
@@ -177,7 +179,9 @@ class Response(BaseModel):
             except:
                 return "<unserializable>"
 
-    @validator('global_info', pre=True)
+    # CHANGED: Pydantic V2 style validator
+    @field_validator('global_info', mode='before')
+    @classmethod
     def validate_global_info(cls, v):
         if v is None:
             return None

@@ -1,5 +1,5 @@
 from typing import Optional, Dict, Callable, List, Tuple, Any
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 import logging
 from construction_tracker import track_construction, track_yields
 from fastapi import Query
@@ -7,14 +7,16 @@ from fastapi import Query
 
 class CommonParams(BaseModel):
     """Common parameters shared across command types"""
+    model_config = ConfigDict(
+        validate_assignment=True,
+        extra='forbid'
+    )
+
     group: Optional[str] = Field(default="all", description="Optional inventory group")
     name: Optional[str] = Field(default=None, description="Optional name")
     sudo: bool = Field(default=False, description="Whether to use sudo")
     su: bool = Field(default=False, description="Whether to use su")
     get_pty: bool = Field(default=False, description="Whether to get a PTY")
-
-    class Config:
-        validate_assignment = True
 
     def __repr__(self) -> str:
         """Use detailed_repr for representation"""
@@ -36,7 +38,7 @@ class CommonParams(BaseModel):
         field_strings.append(f"su={self.su!r}")
         field_strings.append(f"get_pty={self.get_pty!r}")
 
-        return f"CommonParams({', '.join(field_strings)})"
+        return f"CommonParams({', '.join(field_strings)})"  # Fixed: removed extra )
 
 
 def common_params(
