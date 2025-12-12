@@ -12,19 +12,16 @@ from commands.sftp import isfile, mkdir
 class Root:
     @track_yields
     async def execute(self):
-        # r = yield mkdir('/tmp/freddy',group="100")
-
         # r = yield Upload(
         #     srcpaths=['/etc/hosts','/etc/passwd'],
         #     dstpath='/home/user/'
         # )
-        r = yield isfile('/etc/hosts',group="100")
-        # print(r.output)
-        # r = yield Download(
-        #     srcpaths=['/home/user/hosts','/home/user/passwd'],
-        #     dstpath='/tmp/',
-        #     group="local"
-        # )
+        r = yield Download(
+            srcpaths=['/home/user/hosts','/home/user/passwd'],
+            dstpath='/tmp/',
+            group="101"
+        )
+        print(r)
 
 
 async def main():
