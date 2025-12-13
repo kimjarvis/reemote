@@ -115,7 +115,7 @@ class Download(ShellBasedCommand):
 
         unique, host, user = get_unique_host_user(command.group)
         if not unique:
-            raise ValueError(f"Group must identify a unique destination")
+            raise ValueError(f"group must identify a unique host")
 
         return await asyncssh.scp(
             srcpaths=[(host_info.get("host"), path) for path in caller.srcpaths],
@@ -183,6 +183,102 @@ async def download(
     return await download_handler(
         srcpaths=srcpaths,
         dstpath=dstpath,
+        preserve=preserve,
+        recurse=recurse,
+        block_size=block_size,
+        progress_handler=progress_handler,
+        error_handler=error_handler,
+        common=common)
+
+class CopyModel(ScpModel):
+    dstgroup: str = None
+
+@track_construction
+class Copy(ShellBasedCommand):
+    Model = CopyModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+
+        unique, host, user = get_unique_host_user(command.group)
+        if not unique:
+            raise ValueError(f"group must identify a unique host")
+
+        unique, dsthost, dstuser = get_unique_host_user(caller.dstgroup)
+        if not unique:
+            raise ValueError(f"dstgroup must identify a unique host")
+
+        return await asyncssh.scp(
+            srcpaths=[(host_info.get("host"), path) for path in caller.srcpaths],
+            dstpath=(dsthost, caller.dstpath),
+            username=dstuser,
+            preserve=caller.preserve,
+            recurse=caller.recurse,
+            block_size=caller.block_size,
+            progress_handler=caller.progress_handler,
+            error_handler=caller.error_handler,
+        )
+
+    @track_yields
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        # Convert dictionary to model instance
+        model_instance = self.Model(**self._data)
+
+        result = yield Command(local=True,
+                               callback=self._callback,
+                               caller=model_instance,
+                               **self.extra_kwargs)
+        self.mark_changed(result)
+        return
+
+copy_handler = create_router_handler(CopyModel, Copy)
+
+@router.get("/commands/copy/", tags=["SCP"])
+async def copy(
+        srcpaths: List[str] = Query(
+            ...,
+            description="The paths of the source files or directories to copy"
+        ),
+        dstpath: str = Query(
+            None,
+            description="The path of the destination file or directory to copy into"
+        ),
+        dstgroup: str = Query(
+            None,
+            description="The group of the host to copy to"
+        ),
+        preserve: bool = Query(
+            False,
+            description="Whether or not to preserve the original file attributes"
+        ),
+        recurse: bool = Query(
+            False,
+            description="Whether or not to recursively copy directories"
+        ),
+        block_size: int = Query(
+            16384,
+            ge=1,
+            description="The block size to use for file reads and writes"
+        ),
+        progress_handler: Optional[str] = Query(
+            None,
+            include_in_schema=False,  # This hides it from OpenAPI schema
+            description="Callback function name for download progress"
+        ),
+        error_handler: Optional[str] = Query(
+            None,
+            include_in_schema=False,  # This hides it from OpenAPI schema
+            description="Callback function name for error handling"
+        ),
+        common: CommonParams = Depends(common_params)
+) -> list[dict]:
+    """
+    will continue starting with the next file.
+    """
+    return await download_handler(
+        srcpaths=srcpaths,
+        dstpath=dstpath,
+        dstgroup=dstgroup,
         preserve=preserve,
         recurse=recurse,
         block_size=block_size,

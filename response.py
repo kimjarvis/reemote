@@ -87,6 +87,7 @@ class Response(BaseModel):
             data['global_info'] = getattr(op, 'global_info', None)
 
         super().__init__(**data)
+        logging.debug(f"{self}")
 
     @staticmethod
     def _bytes_to_str(value: Any) -> str:
@@ -203,6 +204,7 @@ class Response(BaseModel):
         stderr = self.cp.stderr if self.cp else self.stderr
 
         return (f"Response(host={self.host!r}, "
+                f"group={self.group!r}, "
                 f"name={self.name!r}, "
                 f"command={self.command!r}, "
                 f"changed={self.changed!r}, "

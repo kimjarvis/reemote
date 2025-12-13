@@ -1,10 +1,12 @@
-from fastapi import FastAPI
-from commands.server import router as server_router
-from inventory import router as inventory_router  # Import the inventory router
-from commands.apt import router as apt_router
-from commands.sftp import router as sftp_router
-from commands.scp import router as scp_router
+from pathlib import Path
 
+from fastapi import FastAPI
+
+from commands.apt import router as apt_router
+from commands.scp import router as scp_router
+from commands.server import router as server_router
+from commands.sftp import router as sftp_router
+from inventory import router as inventory_router  # Import the inventory router
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -54,3 +56,9 @@ app.include_router(apt_router, prefix="/apt")
 app.include_router(server_router, prefix="/server")
 app.include_router(sftp_router, prefix="/sftp")
 app.include_router(scp_router, prefix="/scp")
+
+# Startup event to create the data directory
+@app.on_event("startup")
+def create_data_directory():
+    data_dir = Path.home() / ".reemote"
+    data_dir.mkdir(exist_ok=True)

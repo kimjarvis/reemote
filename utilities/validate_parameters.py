@@ -31,7 +31,7 @@ def validate_parameters(
     elif isinstance(common, dict):
         common_dict = common
     else:
-        raise TypeError("`common` must be a CommonParams instance, dict, or None")
+        raise TypeError(f"`common` must be a CommonParams instance, dict, or None {type(common)} {common}")
 
     # Merge data (kwargs override common_dict)
     all_data = {**common_dict, **kwargs}

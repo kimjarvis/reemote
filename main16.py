@@ -1,17 +1,13 @@
-import asyncssh
 import asyncio
-import logging
 from pathlib import Path
+
+import asyncssh
+
+from utilities.logging import reemote_logging
 
 
 async def run_client():
-    logging.basicConfig(
-        level=logging.DEBUG,
-        filename="debug.log",
-        filemode="w",
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-
+    reemote_logging()
     try:
         # Explicit parameters
         await asyncssh.scp(

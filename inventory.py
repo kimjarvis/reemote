@@ -1,17 +1,22 @@
-# inventory.py
-import logging
-from fastapi import APIRouter, HTTPException
-import sqlite3
+import os
 import json
-from typing import List, Tuple, Dict, Optional, Any
-from pydantic import BaseModel, field_validator, RootModel
-from pydantic_core.core_schema import FieldValidationInfo
+import logging
+import sqlite3
+from typing import List, Tuple, Dict, Optional
+
+from fastapi import APIRouter, HTTPException
+from pydantic import field_validator, RootModel
 
 # Create an APIRouter instance
 router = APIRouter()
 
-# Database setup
-conn = sqlite3.connect("api_data.db", check_same_thread=False)
+# Ensure the ~/.reemote directory exists
+db_dir = os.path.expanduser("~/.reemote")
+os.makedirs(db_dir, exist_ok=True)
+
+# Connect to the SQLite database in the ~/.reemote directory
+db_path = os.path.join(db_dir, "reemote.db")
+conn = sqlite3.connect(db_path, check_same_thread=False)
 cursor = conn.cursor()
 
 # Create table if not exists

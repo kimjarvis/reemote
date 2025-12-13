@@ -1,11 +1,12 @@
 import asyncio
-from inventory import get_inventory
-from execute import execute
-from response import validate_responses
-from construction_tracker import  track_construction, track_yields
-import logging
+
 from commands.apt import Package
-from utilities.checks import changed,flatten
+from construction_tracker import track_construction, track_yields
+from execute import execute
+from inventory import get_inventory
+from utilities.checks import changed, flatten
+from utilities.logging import reemote_logging
+
 
 @track_construction
 class Root:
@@ -27,20 +28,7 @@ class Root:
             print("changed")
 
 async def main():
-    logging.basicConfig(
-        level=logging.DEBUG,
-        filename="debug.log",  # Log file name
-        filemode="w",  # Overwrite the file each time
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    # Create a named logger "reemote"
-    logger = logging.getLogger("reemote")
-    logger.setLevel(logging.DEBUG)  # Set desired log level for your logger
-
-    # Suppress asyncssh logs by setting its log level to WARNING or higher
-    logging.getLogger("asyncssh").setLevel(logging.WARNING)
-
-    logging.debug("we are logging!")
+    reemote_logging()
     inventory = get_inventory()
     responses = await execute(inventory, lambda: Root())
     assert(changed(responses))

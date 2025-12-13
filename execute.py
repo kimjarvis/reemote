@@ -11,6 +11,7 @@ from response import Response  # Changed import
 
 async def run_command_on_local(command: Command) -> Response:
     cp = SSHCompletedProcess()
+    logging.debug(f"{command}")
 
     if command.group not in command.global_info["groups"]:
         return Response(
@@ -20,10 +21,6 @@ async def run_command_on_local(command: Command) -> Response:
             executed=False
         )
     else:
-        logging.debug(
-            f"run_command_on_local begin {command}"
-        )
-
         try:
             result = await command.callback(command.host_info, command.global_info, command, cp, command.caller)
 
@@ -31,16 +28,12 @@ async def run_command_on_local(command: Command) -> Response:
             cp.exit_status = 0
             cp.returncode = 0
 
-            response = Response(
+            return Response(
                 cp=cp,
                 host=command.host_info.get("host"),
                 op=command,
                 output=result
             )
-            logging.debug(
-                f"run_command_on_local end {response}"
-            )
-            return response
         except Exception as e:
             cp = SSHCompletedProcess()
             logging.error(
@@ -58,6 +51,7 @@ async def run_command_on_local(command: Command) -> Response:
 
 async def run_command_on_host(command: Command) -> Response:
     cp = SSHCompletedProcess()
+    logging.debug(f"{command}")
 
     if command.group not in command.global_info["groups"]:
         return Response(
@@ -67,10 +61,6 @@ async def run_command_on_host(command: Command) -> Response:
             executed=False
         )
     else:
-
-        logging.debug(
-            f"run_command_on_host begin {command.host_info}, {command.global_info}, {command.command}"
-        )
         try:
             if command.get_pty:
                 conn = await asyncssh.connect(**command.host_info, term_type='xterm')
@@ -146,16 +136,11 @@ async def run_command_on_host(command: Command) -> Response:
                 op=command,
             )
 
-
-        response = Response(
+        return Response(
             cp=cp,
             host=command.host_info.get("host"),
             op=command,
         )
-        logging.debug(
-            f"run_command_on_host end {response}"
-        )
-        return response
 
 async def pre_order_generator_async(node: object) -> AsyncGenerator[Command | Response, Response | None]:
     """

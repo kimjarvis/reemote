@@ -1,20 +1,14 @@
 import asyncio
-import asyncssh
-from inventory import get_inventory
-from execute import execute
-from response import validate_responses
-import logging
+
 from construction_tracker import ConstructionTracker
+from execute import execute
+from inventory import get_inventory
+from response import validate_responses
+from utilities.logging import reemote_logging
 
 
 async def main():
-    logging.basicConfig(
-        level=logging.DEBUG,
-        filename="asyncssh_debug.log",  # Log file name
-        filemode="w",  # Overwrite the file each time
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    logging.debug("main7")
+    reemote_logging()
     inventory = get_inventory()
     from commands.sftp import Mkdir
     responses = await execute(inventory, lambda: Mkdir(name="Make directory fred",

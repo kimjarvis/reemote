@@ -1,13 +1,12 @@
 import asyncio
-from inventory import get_inventory
+
+from commands.sftp import Mput
+from construction_tracker import track_construction, track_yields
 from execute import execute
+from inventory import get_inventory
 from response import validate_responses
-import logging
 from utilities.logging import reemote_logging
-from utilities.checks import flatten
-from construction_tracker import track_construction, track_yields
-from commands.sftp import Isdir, Isfile, Mkdir, Rmdir, Stat, Get,Put, Copy , Mcopy, Mput, Mget
-from construction_tracker import track_construction, track_yields
+
 
 @track_construction
 class Root:
@@ -21,12 +20,7 @@ class Root:
         # r = yield Mget(remotepaths="/home/user/main1*.py",localpath="/tmp")
 
 async def main():
-    logging.basicConfig(
-        level=logging.DEBUG,
-        filename="debug.log",  # Log file name
-        filemode="w",  # Overwrite the file each time
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    reemote_logging()
     inventory = get_inventory()
     responses = await execute(inventory, lambda: Root())
     validated_responses = await validate_responses(responses)

@@ -5,7 +5,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import asyncio
-from commands.sftp import Isdir, Isfile, Mkdir, Stat, Get, Put, Copy, Mput
+from commands.sftp import isdir, isfile, mkdir, stat, get, put, copy, mput
 from construction_tracker import track_construction, track_yields
 from execute import execute
 from inventory import get_inventory
@@ -14,21 +14,20 @@ from utilities.logging import reemote_logging
 
 @pytest.mark.asyncio
 async def test_sftp():
-    # @track_construction
+    @track_construction
     class Root:
-        # @track_yields
+        @track_yields
         async def execute(self):
             print("Starting test...")
 
             print("trace 00")
-            r = yield Isfile(path="/tmp/a.txt", group="local")
+            r = yield await isfile(path="/tmp/a.txt", group="local")
             assert r.executed and r.output == [{'value': True}]
-
 
             # Put to the remote host
             print("trace 01")
-            r = yield Put(localpaths="/tmp/a.txt", remotepath="/home/user/", group="A")
-            r = yield Isfile(path="/home/user/a.txt", group="A")
+            r = yield await put(localpaths="/tmp/a.txt", remotepath="/home/user/", group="A")
+            r = yield await isfile(path="/home/user/a.txt", group="A")
             assert r.executed and r.output == [{'value': True}]
 
             # Get from the remote host
