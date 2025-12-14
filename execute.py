@@ -14,40 +14,54 @@ async def run_command_on_local(command: Command) -> Response:
     logging.debug(f"{command}")
 
     if command.group not in command.global_info["groups"]:
-        return Response(
-            cp=cp,
-            host=command.host_info.get("host"),
-            op=command,
-            executed=False
-        )
+        return Response.from_command(command,
+                                     host=command.host_info.get("host"),
+                                     executed=False)
     else:
         try:
-            result = await command.callback(command.host_info, command.global_info, command, cp, command.caller)
+            return Response.from_command(command,
+                                         host=command.host_info.get("host"),
+                                         output = await command.callback(
+                                             command.host_info,
+                                             command.global_info,
+                                             command,
+                                             cp,
+                                             command.caller)
+                                         )
 
-            # Set successful return codes for local operations
-            cp.exit_status = 0
-            cp.returncode = 0
-
-            return Response(
-                cp=cp,
-                host=command.host_info.get("host"),
-                op=command,
-                output=result
-            )
+            #
+            # # Set successful return codes for local operations
+            # cp.exit_status = 0
+            # cp.returncode = 0
+            #
+            # return Response(
+            #     cp=cp,
+            #     host=command.host_info.get("host"),
+            #     op=command,
+            #     output=result
+            # )
         except Exception as e:
-            cp = SSHCompletedProcess()
             logging.error(
-                f"{e} {command} {cp}",
+                f"{e} {command}",
                 exc_info=True
             )
-            cp.exit_status = 1
-            cp.returncode = 1
-            return Response(
-                cp=cp,
-                error=str(e),
-                host=command.host_info.get("host"),
-                op=command,
-            )
+            return Response.from_command(command,
+                                         host=command.host_info.get("host"),
+                                         error=str(e),
+                                         )
+            # cp = SSHCompletedProcess()
+            # logging.error(
+            #     f"{e} {command} {cp}",
+            #     exc_info=True
+            # )
+            # cp.exit_status = 1
+            # cp.returncode = 1
+            # return Response(
+            #     cp=cp,
+            #     error=str(e),
+            #     host=command.host_info.get("host"),
+            #     op=command,
+            # )
 
 async def run_command_on_host(command: Command) -> Response:
     cp = SSHCompletedProcess()

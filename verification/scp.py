@@ -19,7 +19,7 @@ class Root:
             srcpaths=['/etc/hosts','/etc/passwd'],
             dstpath='/home/user/',
         )
-        r = yield Isfile(path="/home/user/hosts",group="A")
+        r = yield Isfile(name="IsFile",path="/home/user/hosts",group="A")
         if r.executed:
             assert r.output == [{'value': True}], "File does not exist"
         print("download")

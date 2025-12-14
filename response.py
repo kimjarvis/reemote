@@ -89,6 +89,44 @@ class Response(BaseModel):
         super().__init__(**data)
         logging.debug(f"{self}")
 
+    @classmethod
+    def from_command(cls, command: Command, **kwargs) -> 'Response':
+        """
+        Create a Response from a Command object.
+
+        Args:
+            command: The Command object to copy information from
+            **kwargs: Additional parameters to pass to Response constructor
+
+        Returns:
+            Response instance with command fields copied
+        """
+        # Start with the command fields
+        data = {
+            'op': command,  # Include the command object itself
+            'name': getattr(command, 'name', None),
+            'command': getattr(command, 'command', None),
+            'group': getattr(command, 'group', None),
+            'local': getattr(command, 'local', False),
+            'sudo': getattr(command, 'sudo', False),
+            'su': getattr(command, 'su', False),
+            'get_pty': getattr(command, 'get_pty', False),
+            'host_info': getattr(command, 'host_info', None),
+            'global_info': getattr(command, 'global_info', None),
+        }
+
+        # Convert callback and caller to string representations
+        data['callback'] = cls._callback_to_str(getattr(command, 'callback', None))
+        data['caller'] = cls._caller_to_str(getattr(command, 'caller', None))
+
+        # Update with any additional kwargs
+        data.update(kwargs)
+
+        c = cls(**data)
+        logging.debug(f"{c}")
+        return c
+
+
     @staticmethod
     def _bytes_to_str(value: Any) -> str:
         """Convert bytes to string if needed."""
