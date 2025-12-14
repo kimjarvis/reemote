@@ -1,6 +1,7 @@
 import os
 import logging
 
+
 def reemote_logging():
     # Define the log file path and ensure the directory exists
     log_file = os.path.expanduser("~/.reemote/reemote.log")
@@ -11,7 +12,7 @@ def reemote_logging():
         level=logging.DEBUG,
         filename=log_file,  # Log file path
         filemode="w",  # Overwrite the file each time
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     # Create a named logger "reemote"

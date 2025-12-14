@@ -447,7 +447,7 @@ def get_unique_host_user(group: str) -> Tuple[bool, Optional[str], Optional[str]
     """
     Returns (true, host, username) if the group string exists within one of the groups lists
     in the inventory and the string only appears within the groups list of one host.
-    Otherwise returns (false, None, None).
+    Otherwise, returns (false, None, None).
 
     Args:
         group: The group string to search for

@@ -1,16 +1,13 @@
-from typing import Optional, Dict, Callable, List, Tuple, Any
-from pydantic import BaseModel, Field, field_validator, ConfigDict
-import logging
-from construction_tracker import track_construction, track_yields
+from typing import Optional
+
 from fastapi import Query
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CommonParams(BaseModel):
     """Common parameters shared across command types"""
-    model_config = ConfigDict(
-        validate_assignment=True,
-        extra='forbid'
-    )
+
+    model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     group: Optional[str] = Field(default="all", description="Optional inventory group")
     name: Optional[str] = Field(default=None, description="Optional name")
@@ -38,15 +35,17 @@ class CommonParams(BaseModel):
         field_strings.append(f"su={self.su!r}")
         field_strings.append(f"get_pty={self.get_pty!r}")
 
-        return f"CommonParams({', '.join(field_strings)})"  # Fixed: removed extra )
+        return f"CommonParams({', '.join(field_strings)})"
 
 
 def common_params(
-        group: Optional[str] = Query("all", description="Optional inventory group (defaults to 'all')"),
-        name: Optional[str] = Query(None, description="Optional name"),
-        sudo: bool = Query(False, description="Whether to use sudo"),
-        su: bool = Query(False, description="Whether to use su"),
-        get_pty: bool = Query(False, description="Whether to get a PTY")
+    group: Optional[str] = Query(
+        "all", description="Optional inventory group (defaults to 'all')"
+    ),
+    name: Optional[str] = Query(None, description="Optional name"),
+    sudo: bool = Query(False, description="Whether to use sudo"),
+    su: bool = Query(False, description="Whether to use su"),
+    get_pty: bool = Query(False, description="Whether to get a PTY"),
 ) -> CommonParams:
     """FastAPI dependency for common parameters"""
     return CommonParams(group=group, name=name, sudo=sudo, su=su, get_pty=get_pty)

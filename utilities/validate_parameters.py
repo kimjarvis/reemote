@@ -16,9 +16,9 @@ class ValidationFail(TypedDict):
 
 
 def validate_parameters(
-        Model: Type[BaseModel],
-        common: Optional[Union[CommonParams, Dict[str, Any]]] = None,
-        **kwargs: Any
+    model: Type[BaseModel],
+    common: Optional[Union[CommonParams, Dict[str, Any]]] = None,
+    **kwargs: Any,
 ) -> Union[ValidationOK, ValidationFail]:
     """
     Alternative explicit version with clear parameter separation
@@ -31,13 +31,15 @@ def validate_parameters(
     elif isinstance(common, dict):
         common_dict = common
     else:
-        raise TypeError(f"`common` must be a CommonParams instance, dict, or None {type(common)} {common}")
+        raise TypeError(
+            f"`common` must be a CommonParams instance, dict, or None {type(common)} {common}"
+        )
 
     # Merge data (kwargs override common_dict)
     all_data = {**common_dict, **kwargs}
 
     try:
-        parms = Model(**all_data)
+        parms = model(**all_data)
         return {
             "valid": True,
             "data": parms.model_dump(),

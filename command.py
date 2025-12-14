@@ -1,8 +1,9 @@
-from typing import Optional, Dict, Callable, Any, Annotated
-from pydantic import Field, field_validator, ConfigDict  # Updated imports
+from typing import Any, Callable, Dict, Optional
+
+from pydantic import ConfigDict, Field, field_validator  # Updated imports
+
 from common_params import CommonParams
 from construction_tracker import track_construction
-
 
 
 @track_construction
@@ -12,43 +13,40 @@ class Command(CommonParams):
     model_config = ConfigDict(  # Replaces class Config
         validate_assignment=True,
         arbitrary_types_allowed=True,  # Needed for Callable and caller fields
-        extra='forbid'  # Optional: add this to prevent extra fields
+        extra="forbid",  # Optional: add this to prevent extra fields
     )
 
     command: Optional[str] = Field(
-        default=None,
-        description="The command to execute (optional)"
+        default=None, description="The command to execute (optional)"
     )
 
     # Optional fields with defaults
     local: bool = Field(default=False, description="Whether to run locally")
-    callback: Optional[Callable] = Field(default=None, description="Optional callback function")
+    callback: Optional[Callable] = Field(
+        default=None, description="Optional callback function"
+    )
     caller: Optional[object] = Field(default=None, description="Caller object")
 
     # Fields that will be populated later (not in __init__)
     host_info: Optional[Dict[str, str]] = Field(
-        default=None,
-        description="Host information",
-        exclude=True
+        default=None, description="Host information", exclude=True
     )
     global_info: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Global information",
-        exclude=True
+        default=None, description="Global information", exclude=True
     )
 
-    @field_validator('command')
+    @field_validator("command")
     @classmethod
     def command_not_empty(cls, v: Optional[str]) -> Optional[str]:
         """Validate that if command is provided, it's not empty or whitespace only"""
         if v is not None:
             stripped = v.strip()
             if not stripped:
-                raise ValueError('Command cannot be empty if provided')
+                raise ValueError("Command cannot be empty if provided")
             return stripped
         return v
 
-    @field_validator('group')
+    @field_validator("group")
     @classmethod
     def group_not_empty_if_provided(cls, v: Optional[str]) -> Optional[str]:
         """Validate group is not empty string if provided"""
@@ -83,13 +81,19 @@ class Command(CommonParams):
         field_strings.append(f"local={self.local!r}")
 
         if self.callback is not None:
-            callback_repr = f"<function {self.callback.__name__}>" if hasattr(self.callback, '__name__') else repr(
-                self.callback)
+            callback_repr = (
+                f"<function {self.callback.__name__}>"
+                if hasattr(self.callback, "__name__")
+                else repr(self.callback)
+            )
             field_strings.append(f"callback={callback_repr}")
 
         if self.caller is not None:
-            caller_repr = f"<{type(self.caller).__name__} object>" if hasattr(self.caller, '__class__') else repr(
-                self.caller)
+            caller_repr = (
+                f"<{type(self.caller).__name__} object>"
+                if hasattr(self.caller, "__class__")
+                else repr(self.caller)
+            )
             field_strings.append(f"caller={caller_repr}")
 
         if self.host_info is not None:

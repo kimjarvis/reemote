@@ -1,5 +1,6 @@
 import stat
-from functools import partial
+import logging
+
 from typing import AsyncGenerator
 
 import asyncssh
@@ -13,17 +14,11 @@ from common_params import CommonParams, common_params
 from construction_tracker import  track_construction, track_yields
 from response import Response
 
-router = APIRouter()
-
 from pathlib import PurePath
 from typing import Union, Sequence, Callable, Optional
 from pydantic import BaseModel
 
-
-
-
-
-
+router = APIRouter()
 
 
 class BaseSftpModel(BaseModel):
@@ -948,11 +943,11 @@ class Stat(ShellBasedCommand):
         # Convert dictionary to model instance
         model_instance = self.Model(**self._data)
 
-        result = yield Command(local=True,
+        yield Command(local=True,
                                callback=self._callback,
                                caller=model_instance,
                                **self.extra_kwargs)
-        return
+
 
 stat_handler = create_router_handler(StatModel, Stat)
 
