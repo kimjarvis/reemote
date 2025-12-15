@@ -8,10 +8,8 @@ from utilities.logging import reemote_logging
 
 
 async def main():
-    reemote_logging()
-    inventory = get_inventory()
     from commands.sftp import Mkdir
-    responses = await execute(inventory, lambda: Mkdir(name="Make directory fred",
+    responses = await execute(lambda: Mkdir(name="Make directory fred",
                                                        path="/home/user/h2",
                                                        permissions=0o555))
     validated_responses = await validate_responses(responses)

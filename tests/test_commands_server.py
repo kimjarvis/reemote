@@ -10,9 +10,8 @@ async def test_server_shell():
     """Test basic apt install command execution without errors"""
 
     # Execute the test
-    inventory = get_inventory()
     from commands.server import Shell
-    responses = await execute(inventory, lambda: Shell(
+    responses = await execute(lambda: Shell(
         name="echo",
         cmd="echo Hello World!",
         group="all",
@@ -39,8 +38,7 @@ async def test_server_shell_nested():
             )
 
     # Execute the test
-    inventory = get_inventory()
-    responses = await execute(inventory, lambda: Root())
+    responses = await execute(lambda: Root())
     validated_responses = await validate_responses(responses)
 
     # Test passes if no exceptions were raised
@@ -66,8 +64,7 @@ async def test_server_shell_double_nested():
             yield Hello()
 
     # Execute the test
-    inventory = get_inventory()
-    responses = await execute(inventory, lambda: Root())
+    responses = await execute(lambda: Root())
     validated_responses = await validate_responses(responses)
 
     # Test passes if no exceptions were raised

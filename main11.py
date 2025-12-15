@@ -8,10 +8,7 @@ from commands.sftp import Isdir, Isfile
 
 
 async def main():
-    reemote_logging()
-    inventory = get_inventory()
-
-    responses = await execute(inventory, lambda: Isdir(path="/home/user/fred"))
+    responses = await execute(lambda: Isdir(path="/home/user/fred"))
     validated_responses = await validate_responses(responses)
 
     # Each response is now a UnifiedResult with all fields available:

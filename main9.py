@@ -4,12 +4,11 @@ from construction_tracker import ConstructionTracker
 from execute import execute
 from inventory import get_inventory
 from response import validate_responses
+from commands.apt import Update
 
 
 async def main():
-    inventory = get_inventory()
-    from commands.apt import Update
-    responses = await execute(inventory, lambda: Update(name="apt package tree",
+    responses = await execute(lambda: Update(name="apt package tree",
                                                          sudo=True))
     validated_responses = await validate_responses(responses)
     print(validated_responses)

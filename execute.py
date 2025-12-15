@@ -9,10 +9,11 @@ from asyncssh import SSHCompletedProcess
 from command import Command
 from typing import Iterable, Any, AsyncGenerator, List, Tuple, Dict, Callable
 from response import Response  # Changed import
-
+from config import Config
+from utilities.logging import reemote_logging
 
 async def run_command_on_local(command: Command) -> Response:
-    logging.debug(f"{command}")
+    logging.info(f"run on local - {command}")
 
     if command.group not in command.global_info["groups"]:
         return Response.from_command(
@@ -38,7 +39,7 @@ async def run_command_on_local(command: Command) -> Response:
 
 async def run_command_on_host(command: Command) -> Response:
     cp = SSHCompletedProcess()
-    logging.debug(f"{command}")
+    logging.info(f"run on host - {command}")
 
     if command.group not in command.global_info["groups"]:
         return Response.from_command(
@@ -227,7 +228,6 @@ async def pre_order_generator_async(
 
 
 async def execute(
-    inventory: Iterable[Tuple[Dict[str, Any], Dict[str, Any]]],
     root_obj_factory: Callable[[], Any],
 ) -> List[Response]:  # Changed return type
     async def process_host(
@@ -280,14 +280,17 @@ async def execute(
         except Exception as e:
             # Handle any errors for this host
             logging.error(
-                f"Error processing host {inventory_item[0]}: {e}", exc_info=True
+                f"Error processing host {inventory_item}: {e}", exc_info=True
             )
 
         return responses
 
+    config = Config()
+    reemote_logging()
+
     # Run all hosts in parallel
     tasks: List[asyncio.Task[List[Response]]] = []  # Changed type
-    for item in inventory:
+    for item in config.get_inventory_data():
         task = asyncio.create_task(process_host(item, root_obj_factory))
         tasks.append(task)
 

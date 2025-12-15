@@ -23,10 +23,8 @@ class Root:
         print(f"* {r}")
 
 async def main():
-    reemote_logging()
-    inventory = get_inventory()
     print(f"Inventory: {inventory}")
-    responses = await execute(inventory, lambda: Root())
+    responses = await execute(lambda: Root())
     validated_responses = await validate_responses(responses)
     print(validated_responses)
 

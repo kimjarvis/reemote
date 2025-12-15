@@ -12,13 +12,11 @@ from utilities.logging import reemote_logging
 class Root:
     @track_yields
     async def execute(self):
-        yield Mkdir(path="/home/user/fred2",group="A")
-        yield Stat(path="/home/user/fred2",group="A",follow_symlinks=True)
+        yield Mkdir(path="/home/user/fred3",group="A")
+        yield Stat(path="/home/user/fred3",group="A",follow_symlinks=True)
 
 async def main():
-    reemote_logging()
-    inventory = get_inventory()
-    responses = await execute(inventory, lambda: Root())
+    responses = await execute(lambda: Root())
     validated_responses = await validate_responses(responses)
     # Each response is now a UnifiedResult with all fields available:
     for result in validated_responses:

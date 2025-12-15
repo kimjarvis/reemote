@@ -1,11 +1,8 @@
 import asyncio
 
-from commands.sftp import Isdir, Isfile, Mkdir, Stat, Get, Put, Copy, Mput
+from commands.sftp import Copy, Get, Isdir, Isfile, Mkdir, Mput, Put, Stat
 from construction_tracker import track_construction, track_yields
 from execute import execute
-from inventory import get_inventory
-from response import validate_responses
-from utilities.logging import reemote_logging
 
 
 @track_construction
@@ -47,8 +44,11 @@ class Root:
         if r.executed and r.output == [{'value': True}]:
             print("ok")
 
-        # Make a new directory to receive the files
-        r = yield Mkdir(path="/tmp/txt/",group="local")
+        # Verify
+        r = yield Isdir(path="/tmp/txt",group="local")
+        if r.executed and r.output != [{'value': True}]:
+            # Make a new directory to receive the files
+            r = yield Mkdir(path="/tmp/txt/",group="local")
 
         # Verify
         r = yield Isdir(path="/tmp/txt",group="local")
@@ -61,24 +61,10 @@ class Root:
         if r.executed and r.output == [{'value': True}]:
             print("ok")
 
-        r = yield Stat(path="/home/user/a.txt",follow_symlinks=True,group="A")
-        if r.output[0]["value"]["permissions"] == 33204:
-            print("ok")
+        # r = yield Stat(path="/home/user/a.txt",follow_symlinks=True,group="A")
 
 async def main():
-    reemote_logging()
-    inventory = get_inventory()
-    responses = await execute(inventory, lambda: Root())
-    validated_responses = await validate_responses(responses)
-    # Each response is now a UnifiedResult with all fields available:
-    # for result in validated_responses:
-    #     print(f"Host: {result.host}")
-    #     print(f"Command: {result.command}")
-    #     print(f"Output: {result.output}")
-    #     print(f"Stdout: {result.stdout}")
-    #     print(f"Stderr: {result.stderr}")
-    #     print(f"Executed: {result.executed}")
-    #     print(f"Changed: {result.changed}")
+    await execute(lambda: Root())
 
 if __name__ == "__main__":
     asyncio.run(main())

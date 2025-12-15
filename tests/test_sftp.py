@@ -69,6 +69,4 @@ async def test_sftp():
             assert False
 
     # Execute the test
-    reemote_logging()
-    inventory = get_inventory()
-    await execute(inventory, lambda: Root())
+    await execute(lambda: Root())

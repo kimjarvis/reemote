@@ -2,11 +2,10 @@ import asyncio
 from inventory import get_inventory
 from execute import execute
 from response import validate_responses
+from commands.apt import Remove
 
 async def main():
-    inventory = get_inventory()
-    from commands.apt import Remove
-    responses = await execute(inventory, lambda: Remove(name="remove tree",
+    responses = await execute(lambda: Remove(name="remove tree",
                                                         packages =["tree","vim"],
                                                         group="all",
                                                         sudo=True))

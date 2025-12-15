@@ -28,9 +28,7 @@ class Root:
             print("changed")
 
 async def main():
-    reemote_logging()
-    inventory = get_inventory()
-    responses = await execute(inventory, lambda: Root())
+    responses = await execute(lambda: Root())
     assert(changed(responses))
 
 

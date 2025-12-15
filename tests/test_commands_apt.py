@@ -13,8 +13,7 @@ from commands.apt import Install, Remove, Update, Upgrade, GetPackages, Package
 async def test_apt_install():
     """Test that apt install command runs without errors"""
     try:
-        inventory = get_inventory()
-        responses = await execute(inventory, lambda: Install(
+        responses = await execute(lambda: Install(
             name="install tree",
             packages=["tree", "vim"],
             group="all",
@@ -30,8 +29,7 @@ async def test_apt_install():
 async def test_apt_remove():
     """Test that apt install command runs without errors"""
     try:
-        inventory = get_inventory()
-        responses = await execute(inventory, lambda: Remove(
+        responses = await execute(lambda: Remove(
             name="remove tree",
             packages=["tree", "vim"],
             group="all",
@@ -46,8 +44,7 @@ async def test_apt_remove():
 @pytest.mark.asyncio
 async def test_apt_get_packages():
     """Test getting apt packages information without errors"""
-    inventory = get_inventory()
-    responses = await execute(inventory, lambda: GetPackages(
+    responses = await execute(lambda: GetPackages(
         name="get packages"
     ))
 
@@ -74,8 +71,7 @@ async def test_apt_package():
                               sudo=True)
 
     """Test getting apt packages information without errors"""
-    inventory = get_inventory()
-    responses = await execute(inventory, lambda:  Test_apt_package())
+    responses = await execute(lambda:  Test_apt_package())
     validated_responses = await validate_responses(responses)
     for r in validated_responses:
         if r.name=="2":

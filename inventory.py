@@ -1,21 +1,20 @@
-import os
 import json
 import logging
-from typing import List, Tuple, Dict, Optional, Set
+import os
+from typing import Dict, List, Optional, Set, Tuple
 
 from fastapi import APIRouter, HTTPException
-from pydantic import field_validator, RootModel
+from pydantic import RootModel, field_validator
+
+from validate_inventory import (
+    check_host_uniqueness_across_database,
+    get_next_id,
+    validate_host_parameter,
+)
+from config import Config
 
 # Create an APIRouter instance
 router = APIRouter()
-
-# Ensure the ~/.reemote directory exists
-data_dir = os.path.expanduser("~/.reemote")
-os.makedirs(data_dir, exist_ok=True)
-
-# JSON file path
-json_path = os.path.join(data_dir, "reemote.json")
-
 
 # Define Pydantic root model for inventory entries using RootModel
 class InventoryEntry(RootModel):
@@ -33,147 +32,7 @@ class InventoryEntry(RootModel):
         return v
 
 
-def load_json_data() -> List[Dict]:
-    """
-    Load data from JSON file.
-    Returns a list of entries, each with id and data fields.
-    """
-    try:
-        if os.path.exists(json_path):
-            with open(json_path, "r") as f:
-                data = json.load(f)
-                # Ensure data is a list
-                if isinstance(data, list):
-                    return data
-                else:
-                    # If file exists but has invalid format, return empty list
-                    return []
-        return []
-    except json.JSONDecodeError:
-        # If JSON is corrupted, return empty list
-        logging.error(f"Error decoding JSON file: {json_path}")
-        return []
-    except Exception as e:
-        logging.error(f"Error loading JSON data: {e}")
-        return []
-
-
-def save_json_data(data: List[Dict]) -> None:
-    """
-    Save data to JSON file.
-    """
-    try:
-        with open(json_path, "w") as f:
-            json.dump(data, f, indent=2, default=str)
-    except Exception as e:
-        logging.error(f"Error saving JSON data: {e}")
-        raise
-
-
-def get_next_id(data: List[Dict]) -> int:
-    """
-    Get the next available ID for a new entry.
-    """
-    if not data:
-        return 1
-    max_id = max((entry.get("id", 0) for entry in data), default=0)
-    return max_id + 1
-
-
-def serialize_data(data: List[Tuple[Dict, Dict]]) -> str:
-    return json.dumps(data, default=str)
-
-
-def deserialize_data(serialized_data: str) -> List[Tuple[Dict, Dict]]:
-    return json.loads(serialized_data)
-
-
-def validate_host_parameter(data: List[Tuple[Dict, Dict]]) -> None:
-    """
-    Validate that each host parameter is present and unique across all entries.
-
-    Args:
-        data: The inventory data to validate
-
-    Raises:
-        HTTPException: If host parameter is missing or not unique
-    """
-    hosts_seen = set()
-
-    for item in data:
-        if not isinstance(item, (list, tuple)) or len(item) != 2:
-            raise HTTPException(
-                status_code=400,
-                detail="Each inventory item must be a tuple of two dictionaries",
-            )
-
-        host_params = item[0]
-
-        # Check if host parameter is present
-        if "host" not in host_params:
-            raise HTTPException(
-                status_code=400,
-                detail="The 'host' parameter is required in the first dictionary of each tuple",
-            )
-
-        host_value = host_params["host"]
-
-        # Check if host value is unique
-        if host_value in hosts_seen:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Host '{host_value}' is not unique. Each host must have a unique value.",
-            )
-
-        hosts_seen.add(host_value)
-
-
-def check_host_uniqueness_across_database(
-    hosts_to_check: Set[str], exclude_id: Optional[int] = None
-) -> None:
-    """
-    Check if any of the hosts already exist in the JSON data.
-
-    Args:
-        hosts_to_check: Set of host values to check for uniqueness
-        exclude_id: Optional entry ID to exclude from uniqueness check (for updates)
-
-    Raises:
-        HTTPException: If any host already exists in the JSON data
-    """
-    try:
-        data = load_json_data()
-        existing_hosts = set()
-
-        for entry in data:
-            # Skip the entry being updated
-            if exclude_id is not None and entry.get("id") == exclude_id:
-                continue
-
-            if (
-                "data" in entry
-                and isinstance(entry["data"], list)
-                and len(entry["data"]) == 2
-            ):
-                host_params = entry["data"][0]
-                if isinstance(host_params, dict) and "host" in host_params:
-                    existing_hosts.add(host_params["host"])
-
-        # Check for duplicates
-        duplicates = hosts_to_check.intersection(existing_hosts)
-        if duplicates:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Host(s) already exist: {', '.join(duplicates)}",
-            )
-
-    except Exception as e:
-        logging.error(f"Error checking host uniqueness: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Error validating host uniqueness")
-
-
 # CRUD Operations
-
 
 # Bulk create endpoint
 @router.post("/create/", tags=["Inventory"], response_model=Dict)
@@ -220,7 +79,8 @@ def bulk_create_inventory(entries: List[List[Dict]]):
     Returns a list of created entry IDs.
     """
     created_ids = []
-    data = load_json_data()
+    config = Config()
+    data = config.get_inventory()
 
     # Process each entry in the bulk data
     for entry_data in entries:
@@ -253,7 +113,7 @@ def bulk_create_inventory(entries: List[List[Dict]]):
         host_value = entry_data[0]["host"]
 
         # Check if this host already exists in the JSON data
-        check_host_uniqueness_across_database({host_value})
+        check_host_uniqueness_across_database({host_value},  data_as_list)
 
         # Generate new ID
         entry_id = get_next_id(data)
@@ -263,7 +123,8 @@ def bulk_create_inventory(entries: List[List[Dict]]):
         data.append({"id": entry_id, "data": entry_data})
 
     # Save all entries
-    save_json_data(data)
+    config.set_inventory(data)
+
 
     return {
         "message": f"Successfully created {len(created_ids)} entries",
@@ -309,11 +170,13 @@ def create_inventory(entry: InventoryEntry):
     # Extract the host value
     host_value = entry_data[0]["host"]
 
-    # Check if this host already exists in the JSON data
-    check_host_uniqueness_across_database({host_value})
-
     # Load existing data
-    data = load_json_data()
+    config = Config()
+    data = config.get_inventory()
+
+    # Check if this host already exists in the JSON data
+    check_host_uniqueness_across_database({host_value}, data_as_list)
+
 
     # Generate new ID
     entry_id = get_next_id(data)
@@ -322,7 +185,7 @@ def create_inventory(entry: InventoryEntry):
     data.append({"id": entry_id, "data": entry_data})
 
     # Save data
-    save_json_data(data)
+    config.set_inventory(data)
 
     return {"id": entry_id, "data": entry_data}
 
@@ -334,7 +197,8 @@ def read_the_inventory():
     Returns a list of entries, each with id and data fields.
     Data is a list of two dictionaries.
     """
-    return load_json_data()
+    config = Config()
+    return config.get_inventory()
 
 
 @router.get("/entries/{entry_id}", tags=["Inventory"], response_model=Dict)
@@ -344,7 +208,8 @@ def get_an_inventory_entry(entry_id: int):
     Returns the entry with the specified ID.
     Data is a list of two dictionaries.
     """
-    data = load_json_data()
+    config = Config()
+    data = config.get_inventory()
 
     for entry in data:
         if entry.get("id") == entry_id:
@@ -373,7 +238,8 @@ def update_an_inventory_entry(entry_id: int, entry: InventoryEntry):
     updated_host = entry_data[0]["host"]
 
     # Load existing data
-    data = load_json_data()
+    config = Config()
+    data = config.get_inventory()
 
     # Find the entry to update
     entry_found = False
@@ -393,7 +259,7 @@ def update_an_inventory_entry(entry_id: int, entry: InventoryEntry):
             # If host has changed, check if new host already exists in other entries
             if current_host != updated_host:
                 check_host_uniqueness_across_database(
-                    {updated_host}, exclude_id=entry_id
+                    {updated_host}, data_as_list,  exclude_id=entry_id
                 )
 
             # Update the entry
@@ -404,7 +270,7 @@ def update_an_inventory_entry(entry_id: int, entry: InventoryEntry):
         raise HTTPException(status_code=404, detail="Entry not found for update")
 
     # Save updated data
-    save_json_data(data)
+    config.set_inventory(data)
 
     return {"id": entry_id, "data": entry_data}
 
@@ -412,7 +278,8 @@ def update_an_inventory_entry(entry_id: int, entry: InventoryEntry):
 @router.delete("/entries/{entry_id}", tags=["Inventory"])
 def delete_an_inventory_entry(entry_id: int):
     """# Delete an entry by ID"""
-    data = load_json_data()
+    config = Config()
+    data = config.get_inventory()
 
     # Filter out the entry to delete
     filtered_data = [entry for entry in data if entry.get("id") != entry_id]
@@ -421,34 +288,11 @@ def delete_an_inventory_entry(entry_id: int):
         raise HTTPException(status_code=404, detail="Entry not found")
 
     # Save filtered data
-    save_json_data(filtered_data)
+    config.set_inventory(filtered_data)
 
     return {"message": "Entry deleted"}
 
 
-def get_inventory() -> List[Tuple[Dict, Dict]]:
-    """
-    Fetches the entire inventory from the JSON file and returns it as a Python object:
-    A list of tuples, where each tuple contains two dictionaries.
-    """
-    try:
-        data = load_json_data()
-        inventory = []
-
-        for entry in data:
-            if (
-                "data" in entry
-                and isinstance(entry["data"], list)
-                and len(entry["data"]) == 2
-            ):
-                # Convert list to tuple
-                inventory.append((entry["data"][0], entry["data"][1]))
-
-        return inventory
-
-    except Exception as e:
-        logging.error(f"Error fetching inventory: {e}", exc_info=True)
-        return []
 
 
 def get_unique_host_user(group: str) -> Tuple[bool, Optional[str], Optional[str]]:
@@ -465,7 +309,9 @@ def get_unique_host_user(group: str) -> Tuple[bool, Optional[str], Optional[str]
                                     (False, None, None) otherwise
     """
     try:
-        data = load_json_data()
+        config = Config()
+        data = config.get_inventory()
+
         group_host_mapping = {}
         host_username_mapping = {}
 

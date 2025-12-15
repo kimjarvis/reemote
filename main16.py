@@ -3,11 +3,7 @@ from pathlib import Path
 
 import asyncssh
 
-from utilities.logging import reemote_logging
-
-
 async def run_client():
-    reemote_logging()
     try:
         # Explicit parameters
         await asyncssh.scp(
@@ -21,7 +17,6 @@ async def run_client():
         print(f"Error: {type(exc).__name__}: {exc}")
         import traceback
         traceback.print_exc()
-
 
 asyncssh.set_debug_level(1)
 asyncio.run(run_client())

@@ -3,12 +3,11 @@ from inventory import get_inventory
 from execute import execute
 from response import validate_responses
 from utilities.logging import reemote_logging
+from commands.server import Shell
+
 
 async def main():
-    reemote_logging()
-    inventory = get_inventory()
-    from commands.server import Shell
-    responses = await execute(inventory, lambda: Shell(name="echo",
+    responses = await execute(lambda: Shell(name="echo",
                      cmd="echo Hello World!",
                      group="all",
                      sudo=False))

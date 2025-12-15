@@ -88,7 +88,7 @@ class Response(BaseModel):
             data["global_info"] = getattr(op, "global_info", None)
 
         super().__init__(**data)
-        logging.debug(f"{self}")
+        logging.info(f"constructor - {self}")
 
     @classmethod
     def from_command(cls, command: Command, **kwargs) -> "Response":
@@ -124,7 +124,7 @@ class Response(BaseModel):
         data.update(kwargs)
 
         c = cls(**data)
-        logging.debug(f"{c}")
+        logging.info(f"copy constructor - {c}")
         return c
 
     @staticmethod

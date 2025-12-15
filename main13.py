@@ -20,9 +20,7 @@ class Root:
         # r = yield Mget(remotepaths="/home/user/main1*.py",localpath="/tmp")
 
 async def main():
-    reemote_logging()
-    inventory = get_inventory()
-    responses = await execute(inventory, lambda: Root())
+    responses = await execute(lambda: Root())
     validated_responses = await validate_responses(responses)
     # Each response is now a UnifiedResult with all fields available:
     for result in validated_responses:

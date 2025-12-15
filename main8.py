@@ -37,9 +37,7 @@ async def main():
     # Clear construction tracker at the beginning
     ConstructionTracker.clear()
 
-    inventory = get_inventory()
-    print(f"Inventory: {inventory}")
-    responses = await execute(inventory, lambda: Root())
+    responses = await execute(lambda: Root())
     # validated_responses = await validate_responses(responses)
     # print(validated_responses)
     #

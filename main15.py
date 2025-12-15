@@ -1,11 +1,13 @@
 import asyncio
-from inventory import get_inventory
-from execute import execute
-from response import validate_responses
-from utilities.logging import reemote_logging
-from construction_tracker import track_construction, track_yields, clear_all_results, \
-    get_structured_results
+
 from commands.server import Shell
+from construction_tracker import (
+    clear_all_results,
+    get_structured_results,
+    track_construction,
+    track_yields,
+)
+from execute import execute
 
 
 @track_construction
@@ -60,22 +62,8 @@ class C:
 
 async def main():
     clear_all_results()
-    reemote_logging()
-    inventory = get_inventory()
-    print(f"Inventory: {inventory}")
-    responses = await execute(inventory, lambda: C())
-    validated_responses = await validate_responses(responses)
-    print(validated_responses)
-
-    # Each response is now a UnifiedResult with all fields available:
-    for result in validated_responses:
-        print(f"Host: {result.host}")
-        print(f"Command: {result.command}")
-        print(f"Output: {result.output}")
-        print(f"Stdout: {result.stdout}")
-        print(f"Stderr: {result.stderr}")
-        print(f"Changed: {result.changed}")
-
+    responses = await execute(lambda: C())
+    print(f"R {responses}")
 
 if __name__ == "__main__":
     asyncio.run(main())

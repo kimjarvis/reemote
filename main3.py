@@ -3,12 +3,11 @@ from inventory import get_inventory
 from execute import execute
 from response import validate_responses
 from construction_tracker import  track_construction, track_yields
+from commands.apt import Install
 
 
 async def main():
-    inventory = get_inventory()
-    from commands.apt import Install
-    responses = await execute(inventory, lambda: Install(name="install tree",
+    responses = await execute(lambda: Install(name="install tree",
                                                          packages =["tree","vim"],
                                                          group="all",
                                                          sudo=True))

@@ -1,12 +1,9 @@
 import asyncio
+
+from commands.scp import Copy, Download, Upload
 from construction_tracker import track_construction, track_yields
 from execute import execute
-from inventory import get_inventory
-from response import validate_responses
-from utilities.logging import reemote_logging
-from commands.scp import Upload, Download, Copy
-from pathlib import Path
-from commands.sftp import isfile, mkdir
+
 
 @track_construction
 class Root:
@@ -14,18 +11,21 @@ class Root:
     async def execute(self):
         print("upload")
         r = yield Upload(
+            name="upload",
             srcpaths=['/etc/hosts','/etc/passwd'],
             dstpath='/home/user/',
             # group="C"
         )
         print("download")
         r = yield Download(
+            name="download",
             srcpaths=['/home/user/hosts','/home/user/passwd'],
             dstpath='/tmp/',
             group="A"
         )
         print("copy")
         r = yield Copy(
+            name="copy",
             srcpaths=['/etc/hosts','/etc/passwd'],
             dstpath='/home/user/',
             group="A", # This is the source
@@ -36,18 +36,7 @@ class Root:
 
 
 async def main():
-    reemote_logging()
-    inventory = get_inventory()
-    responses = await execute(inventory, lambda: Root())
-    # validated_responses = await validate_responses(responses)
-    # # Each response is now a UnifiedResult with all fields available:
-    # for result in validated_responses:
-    #     print(f"Host: {result.host}")
-    #     print(f"Command: {result.command}")
-    #     print(f"Output: {result.output}")
-    #     print(f"Stdout: {result.stdout}")
-    #     print(f"Stderr: {result.stderr}")
-    #     print(f"Changed: {result.changed}")
+    await execute(lambda: Root())
 
 if __name__ == "__main__":
     asyncio.run(main())

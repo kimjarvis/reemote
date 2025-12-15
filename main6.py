@@ -6,10 +6,8 @@ from utilities.logging import reemote_logging
 from utilities.logging import reemote_logging
 
 async def main():
-    reemote_logging()
-    inventory = get_inventory()
     from commands.apt import Package
-    responses = await execute(inventory, lambda: Package(name="apt package tree",
+    responses = await execute(lambda: Package(name="apt package tree",
                                                          packages =["tree"],
                                                          present = False,
                                                          group="all",

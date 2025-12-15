@@ -12,6 +12,8 @@ from construction_tracker import track_construction, track_yields
 from inventory import get_unique_host_user
 from response import Response
 
+import logging
+
 router = APIRouter()
 
 from typing import Callable, Optional
@@ -114,6 +116,7 @@ class Download(ShellBasedCommand):
     async def _callback(host_info, global_info, command, cp, caller):
 
         unique, host, user = get_unique_host_user(command.group)
+
         if not unique:
             raise ValueError(f"group must identify a unique host")
 
