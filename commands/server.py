@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query, Depends
 from pydantic import BaseModel
 
 from command import Command
-from common.base_classes import ShellBasedCommand
+from common.base_classes import BaseCommand
 from common.router_utils import create_router_handler
 from common_params import CommonParams, common_params
 # from construction_tracker import track_construction, track_yields
@@ -19,7 +19,7 @@ class ShellModel(BaseModel):
 
 
 @track_construction
-class Shell(ShellBasedCommand):
+class Shell(BaseCommand):
     """Shell command implementation"""
     Model = ShellModel
 

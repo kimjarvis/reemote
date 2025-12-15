@@ -2,7 +2,7 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Query, Depends
 from pydantic import BaseModel
 from command import Command
-from common.base_classes import ShellBasedCommand
+from common.base_classes import BaseCommand
 from common.router_utils import create_router_handler
 from common_params import CommonParams, common_params
 from response import Response
@@ -17,7 +17,7 @@ class InstallModel(BaseModel):
     packages: list[str]
 
 @track_construction
-class Install(ShellBasedCommand):
+class Install(BaseCommand):
     """APT install command"""
     Model = InstallModel
 
@@ -35,7 +35,7 @@ class RemoveModel(BaseModel):
     packages: list[str]
 
 @track_construction
-class Remove(ShellBasedCommand):
+class Remove(BaseCommand):
     """APT remove command"""
     Model = RemoveModel
 
@@ -53,7 +53,7 @@ class UpdateModel(BaseModel):
     pass
 
 @track_construction
-class Update(ShellBasedCommand):
+class Update(BaseCommand):
     """APT remove command"""
     Model = UpdateModel
 
@@ -71,7 +71,7 @@ class UpgradeModel(BaseModel):
     pass
 
 @track_construction
-class Upgrade(ShellBasedCommand):
+class Upgrade(BaseCommand):
     """APT remove command"""
     Model = UpgradeModel
 
@@ -89,7 +89,7 @@ class GetPackagesModel(BaseModel):
     pass
 
 @track_construction
-class GetPackages(ShellBasedCommand):
+class GetPackages(BaseCommand):
     """Get installed packages fact"""
     Model = GetPackagesModel
 
@@ -113,7 +113,7 @@ class PackageModel(BaseModel):
     present: bool = True
 
 @track_construction
-class Package(ShellBasedCommand):
+class Package(BaseCommand):
     """APT package command"""
     Model = PackageModel
 

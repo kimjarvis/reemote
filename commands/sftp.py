@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from command import Command
-from common.base_classes import ShellBasedCommand
+from common.base_classes import BaseCommand
 from common.router_utils import create_router_handler
 from common_params import LocalParams, local_params
 from construction_tracker import track_construction, track_yields
@@ -50,7 +50,7 @@ class CopyModel(BaseSftpModel):
 
 
 @track_construction
-class Copy(ShellBasedCommand):
+class Copy(BaseCommand):
     Model = CopyModel
 
     @staticmethod
@@ -312,7 +312,7 @@ async def mcopy(
 
 
 @track_construction
-class Get(ShellBasedCommand):
+class Get(BaseCommand):
     Model = GetModel
 
     @staticmethod
@@ -559,7 +559,7 @@ async def mget(
 
 
 @track_construction
-class Put(ShellBasedCommand):
+class Put(BaseCommand):
     Model = PutModel
 
     @staticmethod
@@ -845,7 +845,7 @@ class MkdirModel(BaseModel):
 
 
 @track_construction
-class Mkdir(ShellBasedCommand):
+class Mkdir(BaseCommand):
     Model = MkdirModel
 
     @staticmethod
@@ -919,7 +919,7 @@ class StatModel(BaseModel):
     # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
 
 @track_construction
-class Stat(ShellBasedCommand):
+class Stat(BaseCommand):
     Model = StatModel
 
     @staticmethod
@@ -978,7 +978,7 @@ class RmdirModel(BaseModel):
     # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
 
 @track_construction
-class Rmdir(ShellBasedCommand):
+class Rmdir(BaseCommand):
     Model = RmdirModel
 
     @staticmethod
@@ -1022,7 +1022,7 @@ class IsdirModel(BaseModel):
 
     # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
 
-class Isdir(ShellBasedCommand):
+class Isdir(BaseCommand):
     Model = IsdirModel
 
     # Define the SFTP method name as a class attribute
@@ -1059,7 +1059,7 @@ class IsfileModel(BaseModel):
 
     # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
 
-class Isfile(ShellBasedCommand):
+class Isfile(BaseCommand):
     Model = IsfileModel
 
     # Define the SFTP method name as a class attribute
@@ -1097,7 +1097,7 @@ class IslinkModel(BaseModel):
 
     # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
 
-class Islink(ShellBasedCommand):
+class Islink(BaseCommand):
     Model = IslinkModel
 
     # Define the SFTP method name as a class attribute

@@ -50,16 +50,3 @@ class BaseCommand:
             result.changed = False
 
 
-class ShellBasedCommand(BaseCommand):
-    """Base class for commands that wrap Shell commands"""
-
-    async def execute_shell_command(self, cmd: str) -> AsyncGenerator[Command, Response]:
-        """Execute a shell command and mark as changed"""
-        from commands.server import Shell
-        result = yield Command(
-            command=cmd,
-            **self.extra_kwargs
-        )
-        self.mark_changed(result)
-        return
-

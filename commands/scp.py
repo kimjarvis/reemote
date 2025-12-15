@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 
 from command import Command
-from common.base_classes import ShellBasedCommand
+from common.base_classes import BaseCommand
 from common.router_utils import create_router_handler
 from common_params import LocalParams, local_params
 from construction_tracker import track_construction, track_yields
@@ -32,7 +32,7 @@ class ScpModel(BaseModel):
     # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
 
 @track_construction
-class Upload(ShellBasedCommand):
+class Upload(BaseCommand):
     Model = ScpModel
 
     @staticmethod
@@ -112,7 +112,7 @@ async def upload(
         common=common)
 
 @track_construction
-class Download(ShellBasedCommand):
+class Download(BaseCommand):
     Model = ScpModel
 
     @staticmethod
@@ -200,7 +200,7 @@ class CopyModel(ScpModel):
     dstgroup: str = None
 
 @track_construction
-class Copy(ShellBasedCommand):
+class Copy(BaseCommand):
     Model = CopyModel
 
     @staticmethod
