@@ -12,13 +12,13 @@ class Root:
     """
     @track_yields
     async def execute(self):
-        r = yield Isfile(path="/tmp/a.txt",group="local")
+        r = yield Isfile(path="/tmp/a.txt",group="local",name="local Isfile /tmp/a.txt")
         if r.executed and r.output == [{'value': True}]:
             print("ok")
 
         # Put to the remote host
-        r = yield Put(localpaths="/tmp/a.txt",remotepath="/home/user/",group="A")
-        r = yield Isfile(path="/home/user/a.txt",group="A")
+        r = yield Put(localpaths="/tmp/a.txt",remotepath="/home/user/",group="A",name="A Put /home/user")
+        r = yield Isfile(path="/home/user/a.txt",group="A",name="local Isfile /tmp/a.txt")
         if r.executed and r.output == [{'value': True}]:
             print("ok")
 
@@ -45,18 +45,18 @@ class Root:
             print("ok")
 
         # Verify
-        r = yield Isdir(path="/tmp/txt",group="local")
+        r = yield Isdir(path="/tmp/txt",group="local",name="local Isdir /tmp/txt")
         if r.executed and r.output != [{'value': True}]:
             # Make a new directory to receive the files
-            r = yield Mkdir(path="/tmp/txt/",group="local")
+            r = yield Mkdir(path="/tmp/txt/",group="local",name="local Mkdir /tmp/txt/")
 
         # Verify
-        r = yield Isdir(path="/tmp/txt",group="local")
+        r = yield Isdir(path="/tmp/txt",group="local",name="local Isdir /tmp/txt")
         if r.executed and r.output == [{'value': True}]:
             print("ok")
 
         # Get from the remote host
-        r = yield Get(remotepaths="/home/user/*.txt",localpath="/tmp/txt",group="A")
+        r = yield Get(remotepaths="/home/user/b.txt",localpath="/tmp/txt",group="A",name="A Get /home/user/*.txt /tmp/txt")
         r = yield Isfile(path="/tmp/txt/b.txt",group="local")
         if r.executed and r.output == [{'value': True}]:
             print("ok")

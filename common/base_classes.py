@@ -62,3 +62,4 @@ class ShellBasedCommand(BaseCommand):
         )
         self.mark_changed(result)
         return
+

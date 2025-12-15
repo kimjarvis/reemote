@@ -1,23 +1,24 @@
-from typing import AsyncGenerator
-from typing import List
+import logging
+from typing import AsyncGenerator, List
 
 import asyncssh
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, ConfigDict
 
 from command import Command
 from common.base_classes import ShellBasedCommand
 from common.router_utils import create_router_handler
-from common_params import CommonParams, common_params
+from common_params import LocalParams, local_params
 from construction_tracker import track_construction, track_yields
 from inventory import get_unique_host_user
 from response import Response
 
-import logging
-
 router = APIRouter()
 
 from typing import Callable, Optional
+
 from pydantic import BaseModel
+
 
 class ScpModel(BaseModel):
     srcpaths: List[str] = None
@@ -27,6 +28,8 @@ class ScpModel(BaseModel):
     block_size: int = 16384
     progress_handler: Optional[Callable] = None
     error_handler: Optional[Callable] = None
+
+    # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
 
 @track_construction
 class Upload(ShellBasedCommand):
@@ -93,7 +96,7 @@ async def upload(
             include_in_schema=False,  # This hides it from OpenAPI schema
             description="Callback function name for error handling"
         ),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """
     will continue starting with the next file.
@@ -178,7 +181,7 @@ async def download(
             include_in_schema=False,  # This hides it from OpenAPI schema
             description="Callback function name for error handling"
         ),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """
     will continue starting with the next file.
@@ -273,7 +276,7 @@ async def copy(
             include_in_schema=False,  # This hides it from OpenAPI schema
             description="Callback function name for error handling"
         ),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """
     will continue starting with the next file.

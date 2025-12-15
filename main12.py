@@ -3,29 +3,17 @@ import asyncio
 from commands.sftp import Mkdir, Stat
 from construction_tracker import track_construction, track_yields
 from execute import execute
-from inventory import get_inventory
-from response import validate_responses
-from utilities.logging import reemote_logging
 
 
 @track_construction
 class Root:
     @track_yields
     async def execute(self):
-        yield Mkdir(path="/home/user/fred3",group="A")
-        yield Stat(path="/home/user/fred3",group="A",follow_symlinks=True)
+        yield Mkdir(path="/home/user/fred93",group="A")
+        yield Stat(path="/home/user/fred93",group="A",follow_symlinks=True)
 
 async def main():
-    responses = await execute(lambda: Root())
-    validated_responses = await validate_responses(responses)
-    # Each response is now a UnifiedResult with all fields available:
-    for result in validated_responses:
-        print(f"Host: {result.host}")
-        print(f"Command: {result.command}")
-        print(f"Output: {result.output}")
-        print(f"Stdout: {result.stdout}")
-        print(f"Stderr: {result.stderr}")
-        print(f"Changed: {result.changed}")
+    await execute(lambda: Root())
 
 if __name__ == "__main__":
     asyncio.run(main())

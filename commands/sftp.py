@@ -1,22 +1,18 @@
-import stat
 import logging
-
-from typing import AsyncGenerator
+import stat
+from pathlib import PurePath
+from typing import AsyncGenerator, Callable, Optional, Sequence, Union
 
 import asyncssh
-from fastapi import APIRouter, Query, Depends
-from pydantic import Field
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, ConfigDict, Field
 
 from command import Command
 from common.base_classes import ShellBasedCommand
 from common.router_utils import create_router_handler
-from common_params import CommonParams, common_params
-from construction_tracker import  track_construction, track_yields
+from common_params import LocalParams, local_params
+from construction_tracker import track_construction, track_yields
 from response import Response
-
-from pathlib import PurePath
-from typing import Union, Sequence, Callable, Optional
-from pydantic import BaseModel
 
 router = APIRouter()
 
@@ -32,6 +28,7 @@ class BaseSftpModel(BaseModel):
     progress_handler: Optional[Callable] = None
     error_handler: Optional[Callable] = None
 
+    model_config = ConfigDict(extra='forbid')  # Forbid extra fields
 
 class GetModel(BaseSftpModel):
     """Model for SFTP get/retrieve operation."""
@@ -137,7 +134,7 @@ async def copy(
             False,
             description="Whether or not to only allow this to be a remote copy"
         ),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """
     # Copy remote files to a new location
@@ -287,7 +284,7 @@ async def mcopy(
             False,
             description="Whether or not to only allow this to be a remote copy"
         ),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """
     # Copy remote files with glob pattern match
@@ -393,7 +390,7 @@ async def get(
             None,
             description="Callback function name for error handling"
         ),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """
     # Download remote files
@@ -536,7 +533,7 @@ async def mget(
             None,
             description="Callback function name for error handling"
         ),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """# Download remote files with glob pattern match
 
@@ -640,7 +637,7 @@ async def put(
             None,
             description="Callback function name for error handling"
         ),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """
     # Upload local files
@@ -784,7 +781,7 @@ async def mput(
             None,
             description="Callback function name for error handling"
         ),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """# Upload local files with glob pattern match
 
@@ -821,6 +818,8 @@ class MkdirModel(BaseModel):
     gid: Optional[int] = Field(None, description="Group ID")
     atime: Optional[float] = Field(None, description="Access time")
     mtime: Optional[float] = Field(None, description="Modification time")
+
+    # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
 
     def get_sftp_attrs(self) -> Optional[asyncssh.SFTPAttrs]:
         """Create SFTPAttrs object from provided attributes"""
@@ -864,6 +863,8 @@ class Mkdir(ShellBasedCommand):
         # Convert dictionary to model instance
         model_instance = self.Model(**self._data)
 
+        print(f"debug {self.extra_kwargs}")
+
         result = yield Command(local=True,
                                callback=self._callback,
                                caller=model_instance,
@@ -888,7 +889,7 @@ async def mkdir(
         gid: Optional[int] = Query(None, description="Group ID"),
         atime: Optional[float] = Query(None, description="Access time"),
         mtime: Optional[float] = Query(None, description="Modification time"),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """
     # Create a remote directory with the specified attributes
@@ -914,6 +915,8 @@ async def mkdir(
 class StatModel(BaseModel):
     path: Union[PurePath, str, bytes] = None
     follow_symlinks: bool = True
+
+    # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
 
 @track_construction
 class Stat(ShellBasedCommand):
@@ -955,7 +958,7 @@ stat_handler = create_router_handler(StatModel, Stat)
 async def stat(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         follow_symlinks: bool = Query(True, description="Whether or not to follow symbolic links"),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """# Get attributes of a remote file, directory, or symlink
 
@@ -971,6 +974,8 @@ async def stat(
 
 class RmdirModel(BaseModel):
     path: Union[PurePath, str, bytes] = None
+
+    # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
 
 @track_construction
 class Rmdir(ShellBasedCommand):
@@ -1000,7 +1005,7 @@ rmdir_handler = create_router_handler(RmdirModel, Rmdir)
 @router.get("/commands/rmdir/", tags=["SFTP"])
 async def rmdir(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """
     # Remove a remote directory
@@ -1014,6 +1019,8 @@ async def rmdir(
 
 class IsdirModel(BaseModel):
     path: Union[PurePath, str, bytes] = None
+
+    # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
 
 class Isdir(ShellBasedCommand):
     Model = IsdirModel
@@ -1042,13 +1049,15 @@ isdir_handler = create_router_handler(IsdirModel, Isdir)
 @router.get("/fact/isdir/", tags=["SFTP"])
 async def isdir(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """# Return if the remote path refers to a directory"""
     return await isdir_handler(path=path, common=common)
 
 class IsfileModel(BaseModel):
     path: Union[PurePath, str, bytes] = None
+
+    # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
 
 class Isfile(ShellBasedCommand):
     Model = IsfileModel
@@ -1077,7 +1086,7 @@ isfile_handler = create_router_handler(IsfileModel, Isfile)
 @router.get("/fact/isfile/", tags=["SFTP"])
 async def isfile(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """# Return if the remote path refers to a file"""
     return await isfile_handler(path=path, common=common)
@@ -1085,6 +1094,8 @@ async def isfile(
 
 class IslinkModel(BaseModel):
     path: Union[PurePath, str, bytes] = None
+
+    # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
 
 class Islink(ShellBasedCommand):
     Model = IslinkModel
@@ -1113,7 +1124,7 @@ islink_handler = create_router_handler(IslinkModel, Islink)
 @router.get("/fact/islink/", tags=["SFTP"])
 async def islink(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
-        common: CommonParams = Depends(common_params)
+        common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """# Return if the remote path refers to a link"""
     return await islink_handler(path=path, common=common)
