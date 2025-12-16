@@ -126,7 +126,7 @@ class Response(BaseModel):
         data.update(kwargs)
 
         c = cls(**data)
-        logging.info(f"copy constructor - {c}")
+        logging.info(f"{c}")
         return c
 
     @staticmethod
@@ -216,19 +216,26 @@ class Response(BaseModel):
         stdout = self.cp.stdout if self.cp else self.stdout
         stderr = self.cp.stderr if self.cp else self.stderr
 
-        return (
-            f"Response(host={self.host!r}, "
-            f"group={self.group!r}, "
-            f"name={self.name!r}, "
-            f"call={self.call!r}, "
-            f"command={self.command!r}, "
-            f"changed={self.changed!r}, "
-            f"executed={self.executed!r}, "
-            f"return_code={return_code!r}, "
-            f"stdout={stdout!r}, "
-            f"stderr={stderr!r}, "
-            f"output={self.output!r})"
-        )
+        if self.executed and self.local:
+            return(
+                f"Response(host={self.host!r}, "
+                f"call={self.call!r}, "
+                f"output={self.output!r})"
+            )
+        else:
+            return (
+                f"Response(host={self.host!r}, "
+                f"group={self.group!r}, "
+                f"name={self.name!r}, "
+                f"call={self.call!r}, "
+                f"command={self.command!r}, "
+                f"changed={self.changed!r}, "
+                f"executed={self.executed!r}, "
+                f"return_code={return_code!r}, "
+                f"stdout={stdout!r}, "
+                f"stderr={stderr!r}, "
+                f"output={self.output!r})"
+            )
 
 
 async def validate_responses(responses: list[Any]) -> list[Response]:

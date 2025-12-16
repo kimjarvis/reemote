@@ -13,7 +13,7 @@ from config import Config
 from utilities.logging import reemote_logging
 
 async def run_command_on_local(command: Command) -> Response:
-    logging.info(f"run on local - {command}")
+    # logging.info(f"run on local - {command}")
 
     if command.group not in command.global_info["groups"]:
         return Response.from_command(

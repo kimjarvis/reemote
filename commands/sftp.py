@@ -863,8 +863,6 @@ class Mkdir(BaseCommand):
         # Convert dictionary to model instance
         model_instance = self.Model(**self._data)
 
-        print(f"debug {self.extra_kwargs}")
-
         result = yield Command(local=True,
                                callback=self._callback,
                                caller=model_instance,
@@ -1116,12 +1114,10 @@ class Isdir(Local):
             async with conn.start_sftp_client() as sftp:
                 return await sftp.isdir(str(caller.path))
 
-isdir_handler = create_router_handler(IsdirModel, Isdir)
-
 @router.get("/fact/isdir/", tags=["SFTP"])
 async def isdir(
         path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
         common: LocalParams = Depends(local_params)
 ) -> list[dict]:
     """# Return if the remote path refers to a directory"""
-    return await isdir_handler(path=path, common=common)
+    return await create_router_handler(IsdirModel, Isdir)(path=path, common=common)
