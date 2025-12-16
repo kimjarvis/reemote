@@ -1,38 +1,31 @@
-import logging
-from typing import AsyncGenerator, List
+from typing import Callable, List, Optional
 
 import asyncssh
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import Field
 
-from command import Command
-from common.base_classes import BaseCommand
 from common.router_utils import create_router_handler
-from local_params import LocalParams, local_params
-from construction_tracker import track_construction, track_yields
+from construction_tracker import track_construction
 from inventory import get_unique_host_user
-from response import Response
+from local_params import LocalModel, LocalParams, local_params
 
 router = APIRouter()
 
-from typing import Callable, Optional
-
-from pydantic import BaseModel
-
-
-class ScpModel(BaseModel):
-    srcpaths: List[str] = None
-    dstpath: str = None
+class ScpModel(LocalParams):
+    srcpaths: List[str] = Field(
+        ...,  # Required field
+    )
+    dstpath: str = Field(
+        ...,  # Required field
+    )
     preserve: bool = False
     recurse: bool = False
     block_size: int = 16384
     progress_handler: Optional[Callable] = None
     error_handler: Optional[Callable] = None
 
-    # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
-
 @track_construction
-class Upload(BaseCommand):
+class Upload(LocalModel):
     Model = ScpModel
 
     @staticmethod
@@ -48,20 +41,6 @@ class Upload(BaseCommand):
             progress_handler=caller.progress_handler,
             error_handler=caller.error_handler,
         )
-
-    @track_yields
-    async def execute(self) -> AsyncGenerator[Command, Response]:
-        # Convert dictionary to model instance
-        model_instance = self.Model(**self._data)
-
-        result = yield Command(local=True,
-                               callback=self._callback,
-                               caller=model_instance,
-                               **self.extra_kwargs)
-        self.mark_changed(result)
-        return
-
-upload_handler = create_router_handler(ScpModel, Upload)
 
 @router.get("/commands/upload/", tags=["SCP"])
 async def upload(
@@ -101,7 +80,7 @@ async def upload(
     """
     will continue starting with the next file.
     """
-    return await upload_handler(
+    return await create_router_handler(ScpModel, Upload)(
         srcpaths=srcpaths,
         dstpath=dstpath,
         preserve=preserve,
@@ -112,7 +91,7 @@ async def upload(
         common=common)
 
 @track_construction
-class Download(BaseCommand):
+class Download(LocalModel):
     Model = ScpModel
 
     @staticmethod
@@ -133,20 +112,6 @@ class Download(BaseCommand):
             progress_handler=caller.progress_handler,
             error_handler=caller.error_handler,
         )
-
-    @track_yields
-    async def execute(self) -> AsyncGenerator[Command, Response]:
-        # Convert dictionary to model instance
-        model_instance = self.Model(**self._data)
-
-        result = yield Command(local=True,
-                               callback=self._callback,
-                               caller=model_instance,
-                               **self.extra_kwargs)
-        self.mark_changed(result)
-        return
-
-download_handler = create_router_handler(ScpModel, Download)
 
 @router.get("/commands/download/", tags=["SCP"])
 async def download(
@@ -186,7 +151,7 @@ async def download(
     """
     will continue starting with the next file.
     """
-    return await download_handler(
+    return await create_router_handler(ScpModel, Download)(
         srcpaths=srcpaths,
         dstpath=dstpath,
         preserve=preserve,
@@ -200,7 +165,7 @@ class CopyModel(ScpModel):
     dstgroup: str = None
 
 @track_construction
-class Copy(BaseCommand):
+class Copy(LocalModel):
     Model = CopyModel
 
     @staticmethod
@@ -224,20 +189,6 @@ class Copy(BaseCommand):
             progress_handler=caller.progress_handler,
             error_handler=caller.error_handler,
         )
-
-    @track_yields
-    async def execute(self) -> AsyncGenerator[Command, Response]:
-        # Convert dictionary to model instance
-        model_instance = self.Model(**self._data)
-
-        result = yield Command(local=True,
-                               callback=self._callback,
-                               caller=model_instance,
-                               **self.extra_kwargs)
-        self.mark_changed(result)
-        return
-
-copy_handler = create_router_handler(CopyModel, Copy)
 
 @router.get("/commands/copy/", tags=["SCP"])
 async def copy(
@@ -281,7 +232,7 @@ async def copy(
     """
     will continue starting with the next file.
     """
-    return await download_handler(
+    return await create_router_handler(ScpModel, Copy)(
         srcpaths=srcpaths,
         dstpath=dstpath,
         dstgroup=dstgroup,

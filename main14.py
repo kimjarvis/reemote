@@ -29,7 +29,7 @@ class Root:
             srcpaths=['/etc/hosts','/etc/passwd'],
             dstpath='/home/user/',
             group="A", # This is the source
-            dstgroup="B"
+            dstgroup="A"
         )
 
         print(r)

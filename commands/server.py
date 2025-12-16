@@ -6,9 +6,6 @@ from shell_params import RemoteModel, RemoteParams, remote_params
 
 router = APIRouter()
 
-
-# router = APIRouter()
-
 class ShellModel(RemoteParams):
     cmd: str = Field(
         ...,  # Required field
