@@ -33,6 +33,7 @@ class Response(BaseModel):
     local: bool = False
     callback_str: Optional[str] = Field(None, alias="callback")
     caller_str: Optional[str] = Field(None, alias="caller")
+    call: Optional[str] = Field(None, alias="call")
     sudo: bool = False
     su: bool = False
     get_pty: bool = False
@@ -81,6 +82,7 @@ class Response(BaseModel):
             data["local"] = getattr(op, "local", False)
             data["callback"] = self._callback_to_str(getattr(op, "callback", None))
             data["caller"] = self._caller_to_str(getattr(op, "caller", None))
+            data["call"] = self._caller_to_str(getattr(op, "call", None))
             data["sudo"] = getattr(op, "sudo", False)
             data["su"] = getattr(op, "su", False)
             data["get_pty"] = getattr(op, "get_pty", False)
@@ -88,7 +90,7 @@ class Response(BaseModel):
             data["global_info"] = getattr(op, "global_info", None)
 
         super().__init__(**data)
-        logging.info(f"constructor - {self}")
+        # logging.info(f"constructor - {self}")
 
     @classmethod
     def from_command(cls, command: Command, **kwargs) -> "Response":
@@ -246,6 +248,7 @@ class Response(BaseModel):
             f"Response(host={self.host!r}, "
             f"group={self.group!r}, "
             f"name={self.name!r}, "
+            f"call={self.call!r}, "
             f"command={self.command!r}, "
             f"changed={self.changed!r}, "
             f"executed={self.executed!r}, "

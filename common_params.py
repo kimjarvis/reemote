@@ -1,8 +1,8 @@
 from typing import Optional
-
+from typing import AsyncGenerator
 from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field
-
+from construction_tracker import track_yields
 
 class CommonParams(BaseModel):
     """Common parameters shared across command types"""
@@ -51,39 +51,3 @@ def common_params(
     return CommonParams(group=group, name=name, sudo=sudo, su=su, get_pty=get_pty)
 
 
-class LocalParams(BaseModel):
-    """Common parameters shared across command types"""
-
-    model_config = ConfigDict(validate_assignment=True, extra="forbid")
-
-    group: Optional[str] = Field(default="all", description="Optional inventory group")
-    name: Optional[str] = Field(default=None, description="Optional name")
-
-    def __repr__(self) -> str:
-        """Use detailed_repr for representation"""
-        return self.detailed_repr()
-
-    def __str__(self) -> str:
-        return self.__repr__()
-
-    def detailed_repr(self) -> str:
-        """Show all fields including defaults"""
-        field_strings = []
-
-        # Always include all fields in detailed representation
-        if self.group is not None:
-            field_strings.append(f"group={self.group!r}")
-        if self.name is not None:
-            field_strings.append(f"name={self.name!r}")
-
-        return f"CommonParams({', '.join(field_strings)})"
-
-
-def local_params(
-    group: Optional[str] = Query(
-        "all", description="Optional inventory group (defaults to 'all')"
-    ),
-    name: Optional[str] = Query(None, description="Optional name"),
-) -> LocalParams:
-    """FastAPI dependency for common parameters"""
-    return LocalParams(group=group, name=name)

@@ -19,6 +19,9 @@ class Command(CommonParams):
     command: Optional[str] = Field(
         default=None, description="The command to execute (optional)"
     )
+    call: Optional[str] = Field(
+        default=None, description="The caller"
+    )
 
     # Optional fields with defaults
     local: bool = Field(default=False, description="Whether to run locally")
@@ -77,6 +80,9 @@ class Command(CommonParams):
         # Add command-specific fields
         if self.command is not None:
             field_strings.append(f"command={self.command!r}")
+        # Add command-specific fields
+        if self.call is not None:
+            field_strings.append(f"call={self.call!r}")
 
         field_strings.append(f"local={self.local!r}")
 

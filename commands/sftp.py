@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from command import Command
 from common.base_classes import BaseCommand
 from common.router_utils import create_router_handler
-from common_params import LocalParams, local_params
+from local_params import LocalParams, local_params, Local
 from construction_tracker import track_construction, track_yields
 from response import Response
 
@@ -1017,42 +1017,6 @@ async def rmdir(
 
 
 
-class IsdirModel(BaseModel):
-    path: Union[PurePath, str, bytes] = None
-
-    # model_config = ConfigDict(extra='forbid')  # Forbid extra fields
-
-class Isdir(BaseCommand):
-    Model = IsdirModel
-
-    # Define the SFTP method name as a class attribute
-    sftp_method_name = None
-
-    @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                return await sftp.isdir(caller.path)
-
-    @track_yields
-    async def execute(self) -> AsyncGenerator[Command, Response]:
-        # Convert dictionary to model instance
-        model_instance = self.Model(**self._data)
-
-        yield Command(local=True,
-                               callback=self._callback,
-                               caller=model_instance,
-                               **self.extra_kwargs)
-
-isdir_handler = create_router_handler(IsdirModel, Isdir)
-
-@router.get("/fact/isdir/", tags=["SFTP"])
-async def isdir(
-        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
-        common: LocalParams = Depends(local_params)
-) -> list[dict]:
-    """# Return if the remote path refers to a directory"""
-    return await isdir_handler(path=path, common=common)
 
 class IsfileModel(BaseModel):
     path: Union[PurePath, str, bytes] = None
@@ -1128,3 +1092,36 @@ async def islink(
 ) -> list[dict]:
     """# Return if the remote path refers to a link"""
     return await islink_handler(path=path, common=common)
+
+
+class IsdirModel(LocalParams):
+    """Model for Isdir command, combining LocalParams with path"""
+    path: Union[PurePath, str, bytes] = Field(
+        ...,  # Required field
+        description="Path to check if it's a directory"
+    )
+
+    def __init__(self, **data):
+        # Ensure path is converted to PurePath if it's a string/bytes
+        if 'path' in data and isinstance(data['path'], (str, bytes)):
+            data['path'] = PurePath(data['path'])
+        super().__init__(**data)
+
+class Isdir(Local):
+    Model = IsdirModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.isdir(str(caller.path))
+
+isdir_handler = create_router_handler(IsdirModel, Isdir)
+
+@router.get("/fact/isdir/", tags=["SFTP"])
+async def isdir(
+        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
+        common: LocalParams = Depends(local_params)
+) -> list[dict]:
+    """# Return if the remote path refers to a directory"""
+    return await isdir_handler(path=path, common=common)
