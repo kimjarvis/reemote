@@ -165,34 +165,6 @@ class Response(BaseModel):
             return f"<caller {name}>"
         return str(value)
 
-    # CHANGED: Pydantic V2 style validator
-    @field_validator("output", mode="before")
-    @classmethod
-    def validate_output(cls, v):
-        """Ensure output is always a list of dicts or PackageInfo objects."""
-        if v is None:
-            return []
-        if isinstance(v, list):
-            validated_list = []
-            for item in v:
-                if isinstance(item, dict):
-                    # Check if this looks like a PackageInfo
-                    if "name" in item and "version" in item:
-                        validated_list.append(PackageInfo(**item))
-                    else:
-                        # Convert all values to JSON-serializable types
-                        serializable_dict = {}
-                        for key, value in item.items():
-                            serializable_dict[key] = cls._make_json_serializable(value)
-                        validated_list.append(serializable_dict)
-                elif isinstance(item, PackageInfo):
-                    validated_list.append(item)
-                else:
-                    validated_list.append({"value": cls._make_json_serializable(item)})
-            return validated_list
-        else:
-            return [{"value": cls._make_json_serializable(v)}]
-
     @staticmethod
     def _make_json_serializable(value: Any) -> Any:
         """Convert non-JSON-serializable types to serializable ones."""

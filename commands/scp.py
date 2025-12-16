@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict
 from command import Command
 from common.base_classes import BaseCommand
 from common.router_utils import create_router_handler
-from common_params import LocalParams, local_params
+from local_params import LocalParams, local_params
 from construction_tracker import track_construction, track_yields
 from inventory import get_unique_host_user
 from response import Response

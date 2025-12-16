@@ -57,8 +57,6 @@ class Local:
         # All validation happens here
         model_instance = self.Model(**self._data)
 
-        print(f"debug {model_instance}")
-
         yield Command(
             local=True,
             callback=self._callback,
