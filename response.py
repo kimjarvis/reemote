@@ -220,6 +220,7 @@ class Response(BaseModel):
             return(
                 f"Response(host={self.host!r}, "
                 f"call={self.call!r}, "
+                f"changed={self.changed!r}, "                
                 f"output={self.output!r})"
             )
         else:

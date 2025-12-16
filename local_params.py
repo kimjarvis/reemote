@@ -5,10 +5,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from construction_tracker import track_yields
 from command import Command
 from response import Response
+from typing import ClassVar
 
 class LocalParams(BaseModel):
     """Common parameters shared across command types"""
-
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     group: Optional[str] = Field(default="all", description="Optional inventory group")
