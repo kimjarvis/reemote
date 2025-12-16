@@ -90,7 +90,7 @@ class Response(BaseModel):
             data["global_info"] = getattr(op, "global_info", None)
 
         super().__init__(**data)
-        # logging.info(f"constructor - {self}")
+        logging.info(f"{self}")
 
     @classmethod
     def from_command(cls, command: Command, **kwargs) -> "Response":

@@ -39,7 +39,7 @@ async def run_command_on_local(command: Command) -> Response:
 
 async def run_command_on_host(command: Command) -> Response:
     cp = SSHCompletedProcess()
-    logging.info(f"run on host - {command}")
+    # logging.info(f"run on host - {command}")
 
     if command.group not in command.global_info["groups"]:
         return Response.from_command(

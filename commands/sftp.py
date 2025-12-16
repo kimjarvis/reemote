@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import Field, field_validator
 
 from common.router_utils import create_router_handler
-from local_params import Local, LocalParams, local_params
+from local_params import LocalModel, LocalParams, local_params
 
 router = APIRouter()
 
@@ -61,7 +61,7 @@ class CopyModel(LocalParams):
 class McopyModel(CopyModel):
     pass
 
-class Copy(Local):
+class Copy(LocalModel):
     Model = CopyModel
 
     @staticmethod
@@ -82,7 +82,7 @@ class Copy(Local):
                     remote_only = caller.remote_only
                 )
 
-class Mcopy(Local):
+class Mcopy(LocalModel):
     Model = McopyModel
 
     @staticmethod
@@ -285,7 +285,7 @@ class MgetModel(GetModel):
     pass
 
 
-class Get(Local):
+class Get(LocalModel):
     Model = GetModel
 
     @staticmethod
@@ -305,7 +305,7 @@ class Get(Local):
                     error_handler=caller.error_handler
                 )
 
-class Mget(Local):
+class Mget(LocalModel):
     Model = MgetModel
 
     @staticmethod
@@ -501,7 +501,7 @@ class MputModel(PutModel):
     pass
 
 
-class Put(Local):
+class Put(LocalModel):
     Model = PutModel
 
     @staticmethod
@@ -521,7 +521,7 @@ class Put(Local):
                     error_handler=caller.error_handler
                 )
 
-class Mput(Local):
+class Mput(LocalModel):
     Model = MputModel
 
     @staticmethod
@@ -726,7 +726,7 @@ class MkdirModel(LocalParams):
             data['path'] = PurePath(data['path'])
         super().__init__(**data)
 
-class Mkdir(Local):
+class Mkdir(LocalModel):
     Model = MkdirModel
 
     @staticmethod
@@ -800,7 +800,7 @@ class StatModel(LocalParams):
             data['path'] = PurePath(data['path'])
         super().__init__(**data)
 
-class Stat(Local):
+class Stat(LocalModel):
     Model = StatModel
 
     @staticmethod
@@ -861,7 +861,7 @@ class RmdirModel(LocalParams):
             data['path'] = PurePath(data['path'])
         super().__init__(**data)
 
-class Rmdir(Local):
+class Rmdir(LocalModel):
     Model = RmdirModel
 
     @staticmethod
@@ -906,7 +906,7 @@ class IslinkModel(LocalParams):
             data['path'] = PurePath(data['path'])
         super().__init__(**data)
 
-class Islink(Local):
+class Islink(LocalModel):
     Model = IslinkModel
 
     @staticmethod
@@ -951,7 +951,7 @@ class IsfileModel(LocalParams):
             data['path'] = PurePath(data['path'])
         super().__init__(**data)
 
-class Isfile(Local):
+class Isfile(LocalModel):
     Model = IsfileModel
 
     @staticmethod
@@ -990,7 +990,7 @@ class IsdirModel(LocalParams):
                 raise ValueError(f"Cannot convert {v} to PurePath.")
         return v
 
-class Isdir(Local):
+class Isdir(LocalModel):
     Model = IsdirModel
 
     @staticmethod
