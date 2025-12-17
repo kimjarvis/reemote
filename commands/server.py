@@ -3,16 +3,16 @@ from pydantic import Field
 from typing import AsyncGenerator
 from command import Command
 from common.router_utils import create_router_handler
-from remote_params import RemoteModel, RemoteParams, remote_params
+from remote_model import Remote, RemoteModel, remote_params
 from response import Response
 router = APIRouter()
 
-class ShellModel(RemoteParams):
+class ShellModel(RemoteModel):
     cmd: str = Field(
         ...,  # Required field
     )
 
-class Shell(RemoteModel):
+class Shell(Remote):
     Model = ShellModel
 
     async def execute(self) -> AsyncGenerator[Command, Response]:
@@ -24,10 +24,10 @@ class Shell(RemoteModel):
             **self.common_kwargs
         )
 
-@router.get("/server/shell/", tags=["Server"])
+@router.get("/server/shell/", tags=["Server Commands"])
 async def shell(
         cmd: str = Query(..., description="Shell command"),
-        common: RemoteParams = Depends(remote_params)
+        common: RemoteModel = Depends(remote_params)
 ) -> list[dict]:
     """# Execute a shell command on the remote host"""
     return await create_router_handler(ShellModel, Shell)(cmd=cmd, common=common)

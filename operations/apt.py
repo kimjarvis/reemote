@@ -1,7 +1,7 @@
 from typing import AsyncGenerator
 from fastapi import APIRouter, Query, Depends
-from common_params import CommonParams, common_params
-from remote_params import RemoteParams, RemoteModel
+from common_model import CommonModel, common_params
+from remote_model import RemoteModel, Remote
 from response import Response
 from construction_tracker import track_construction, track_yields
 from commands.apt import Install, Remove, Update, Upgrade
@@ -10,14 +10,14 @@ from utilities.checks import mark_changed, mark_unchanged
 
 router = APIRouter()
 
-class PackageModel(RemoteParams):
+class PackageModel(RemoteModel):
     packages: list[str]
     update: bool = False
     upgrade: bool = False
     present: bool = True
 
 @track_construction
-class Package(RemoteModel):
+class Package(Remote):
     """APT package command"""
     Model = PackageModel
 
@@ -60,11 +60,11 @@ class Package(RemoteModel):
         return
 
 
-@router.get("/operation/package/", tags=["APT Package Manager"])
+@router.get("/operation/package/", tags=["APT Package Manager Operations"])
 async def package(
     packages: list[str] = Query(..., description="List of package names"),
     present: bool = Query(True, description="Whether the packages should be present or not"),
-    common: CommonParams = Depends(common_params)
+    common: CommonModel = Depends(common_params)
 ) -> list[dict]:
     """# Manage installed APT packages"""
     return await package_handler(packages=packages, present=present, common=common)

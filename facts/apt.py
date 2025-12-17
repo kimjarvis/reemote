@@ -2,8 +2,8 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Query, Depends
 from command import Command
 from common.router_utils import create_router_handler
-from common_params import CommonParams, common_params
-from remote_params import RemoteParams, RemoteModel
+from common_model import CommonModel, common_params
+from remote_model import RemoteModel, Remote
 from response import Response
 from facts.parse_apt_list_installed import parse_apt_list_installed
 from construction_tracker import track_construction, track_yields
@@ -12,12 +12,12 @@ import logging
 router = APIRouter()
 
 
-class GetPackagesModel(RemoteParams):
+class GetPackagesModel(RemoteModel):
     pass
 
 
 @track_construction
-class GetPackages(RemoteModel):
+class GetPackages(Remote):
     """Get installed packages fact"""
 
     Model = GetPackagesModel
@@ -34,8 +34,8 @@ class GetPackages(RemoteModel):
         return
 
 
-@router.get("/fact/get_packages/", tags=["APT Package Manager"])
-async def get_packages(common: CommonParams = Depends(common_params)) -> list[dict]:
+@router.get("/fact/get_packages/", tags=["APT Package Manager Facts"])
+async def get_packages(common: CommonModel = Depends(common_params)) -> list[dict]:
     """# Get installed APT packages"""
     return await create_router_handler(GetPackagesModel, GetPackages)(
         cmd=cmd, common=common

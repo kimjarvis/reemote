@@ -2,7 +2,7 @@
 from typing import Type, Dict, Any, Callable
 from fastapi import APIRouter, Query, Depends, HTTPException
 from pydantic import BaseModel
-from common_params import CommonParams, common_params
+from common_model import CommonModel, common_params
 from execute import execute
 from response import validate_responses
 from utilities.validate_parameters import validate_parameters
@@ -17,7 +17,7 @@ def create_router_handler(
     """Create a standardized router handler function"""
 
     async def handler(
-            common: CommonParams = Depends(common_params),
+            common: CommonModel = Depends(common_params),
             **kwargs
     ) -> list[Any]:
         # Validate parameters

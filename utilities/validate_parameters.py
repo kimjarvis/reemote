@@ -2,8 +2,8 @@ from typing import Any, Union, Dict, Type, TypedDict
 from typing import Optional
 from pydantic import BaseModel
 from pydantic import ValidationError
-from common_params import CommonParams
-from local_params import LocalParams
+from common_model import CommonModel
+from local_model import LocalModel
 
 
 class ValidationOK(TypedDict):
@@ -18,7 +18,7 @@ class ValidationFail(TypedDict):
 
 def validate_parameters(
     model: Type[BaseModel],
-    common: Optional[Union[CommonParams, LocalParams, Dict[str, Any]]] = None,
+    common: Optional[Union[CommonModel, LocalModel, Dict[str, Any]]] = None,
     **kwargs: Any,
 ) -> Union[ValidationOK, ValidationFail]:
     """

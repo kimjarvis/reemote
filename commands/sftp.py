@@ -7,12 +7,12 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import Field, field_validator
 
 from common.router_utils import create_router_handler
-from local_params import LocalModel, LocalParams, local_params
+from local_model import Local, LocalModel, local_params
 
 router = APIRouter()
 
 
-class CopyModel(LocalParams):
+class CopyModel(LocalModel):
     srcpaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]]  = Field(
         ...,  # Required field
     )
@@ -61,7 +61,7 @@ class CopyModel(LocalParams):
 class McopyModel(CopyModel):
     pass
 
-class Copy(LocalModel):
+class Copy(Local):
     Model = CopyModel
 
     @staticmethod
@@ -82,7 +82,7 @@ class Copy(LocalModel):
                     remote_only = caller.remote_only
                 )
 
-class Mcopy(LocalModel):
+class Mcopy(Local):
     Model = McopyModel
 
     @staticmethod
@@ -104,7 +104,7 @@ class Mcopy(LocalModel):
                 )
 
 @router.get("/commands/copy/",
-            tags=["SFTP"])
+            tags=["SFTP Commands"])
 async def copy(
         srcpaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
             ...,
@@ -152,7 +152,7 @@ async def copy(
             False,
             description="Whether or not to only allow this to be a remote copy"
         ),
-        common: LocalParams = Depends(local_params)
+        common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Copy remote files to a new location"""
     return await create_router_handler(CopyModel, Copy)(
@@ -170,7 +170,7 @@ async def copy(
         common=common)
 
 @router.get("/commands/mcopy/",
-            tags=["SFTP"])
+            tags=["SFTP Commands"])
 async def mcopy(
         srcpaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
             ...,
@@ -218,7 +218,7 @@ async def mcopy(
             False,
             description="Whether or not to only allow this to be a remote copy"
         ),
-        common: LocalParams = Depends(local_params)
+        common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Copy remote files to a new location"""
     return await create_router_handler(CopyModel, Mcopy)(
@@ -236,7 +236,7 @@ async def mcopy(
         common=common)
 
 
-class GetModel(LocalParams):
+class GetModel(LocalModel):
     remotepaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]] = Field(
         ...,  # Required field
     )
@@ -285,7 +285,7 @@ class MgetModel(GetModel):
     pass
 
 
-class Get(LocalModel):
+class Get(Local):
     Model = GetModel
 
     @staticmethod
@@ -305,7 +305,7 @@ class Get(LocalModel):
                     error_handler=caller.error_handler
                 )
 
-class Mget(LocalModel):
+class Mget(Local):
     Model = MgetModel
 
     @staticmethod
@@ -327,7 +327,7 @@ class Mget(LocalModel):
 
 
 
-@router.get("/commands/get/", tags=["SFTP"])
+@router.get("/commands/get/", tags=["SFTP Commands"])
 async def get(
         remotepaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
             ...,
@@ -371,7 +371,7 @@ async def get(
             None,
             description="Callback function name for error handling"
         ),
-        common: LocalParams = Depends(local_params)
+        common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Download remote files"""
     return await create_router_handler(GetModel, Get)(
@@ -388,7 +388,7 @@ async def get(
         common=common)
 
 
-@router.get("/commands/mget/", tags=["SFTP"])
+@router.get("/commands/mget/", tags=["SFTP Commands"])
 async def mget(
         remotepaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
             ...,
@@ -432,7 +432,7 @@ async def mget(
             None,
             description="Callback function name for error handling"
         ),
-        common: LocalParams = Depends(local_params)
+        common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Download remote files with glob pattern match"""
     return await create_router_handler(GetModel, Mget)(
@@ -452,7 +452,7 @@ async def mget(
 
 
 
-class PutModel(LocalParams):
+class PutModel(LocalModel):
     localpaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]] = Field(
         ...,  # Required field
     )
@@ -501,7 +501,7 @@ class MputModel(PutModel):
     pass
 
 
-class Put(LocalModel):
+class Put(Local):
     Model = PutModel
 
     @staticmethod
@@ -521,7 +521,7 @@ class Put(LocalModel):
                     error_handler=caller.error_handler
                 )
 
-class Mput(LocalModel):
+class Mput(Local):
     Model = MputModel
 
     @staticmethod
@@ -542,7 +542,7 @@ class Mput(LocalModel):
                     error_handler=caller.error_handler
                 )
 
-@router.get("/command/put/", tags=["SFTP"])
+@router.get("/command/put/", tags=["SFTP Commands"])
 async def put(
         localpaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
             ...,
@@ -586,7 +586,7 @@ async def put(
             None,
             description="Callback function name for error handling"
         ),
-        common: LocalParams = Depends(local_params)
+        common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Upload local files"""
     return await create_router_handler(PutModel, Put)(
@@ -603,7 +603,7 @@ async def put(
         common=common)
 
 
-@router.get("/command/mput/", tags=["SFTP"])
+@router.get("/command/mput/", tags=["SFTP Commands"])
 async def mput(
         localpaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
             ...,
@@ -647,7 +647,7 @@ async def mput(
             None,
             description="Callback function name for error handling"
         ),
-        common: LocalParams = Depends(local_params)
+        common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Upload local files with glob pattern match"""
     return await create_router_handler(PutModel, Mput)(
@@ -666,7 +666,7 @@ async def mput(
 
 
 
-class MkdirModel(LocalParams):
+class MkdirModel(LocalModel):
     path: Union[PurePath, str, bytes] = Field(
         ...,  # Required field
     )
@@ -726,7 +726,7 @@ class MkdirModel(LocalParams):
             data['path'] = PurePath(data['path'])
         super().__init__(**data)
 
-class Mkdir(LocalModel):
+class Mkdir(Local):
     Model = MkdirModel
 
     @staticmethod
@@ -739,7 +739,7 @@ class Mkdir(LocalModel):
                 else:
                     return await sftp.mkdir(caller.path)
 
-@router.get("/command/mkdir/", tags=["SFTP"])
+@router.get("/command/mkdir/", tags=["SFTP Commands"])
 async def mkdir(
     path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     permissions: Optional[int] = Query(
@@ -752,7 +752,7 @@ async def mkdir(
     gid: Optional[int] = Query(None, description="Group ID"),
     atime: Optional[float] = Query(None, description="Access time"),
     mtime: Optional[float] = Query(None, description="Modification time"),
-    common: LocalParams = Depends(local_params)
+    common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Create a remote directory with the specified attributes"""
     params = {"path": path}
@@ -770,7 +770,7 @@ async def mkdir(
     return await create_router_handler(MkdirModel, Mkdir)(**params, common=common)
 
 
-class StatModel(LocalParams):
+class StatModel(LocalModel):
     path: Union[PurePath, str, bytes] = Field(
         ...,  # Required field
     )
@@ -800,7 +800,7 @@ class StatModel(LocalParams):
             data['path'] = PurePath(data['path'])
         super().__init__(**data)
 
-class Stat(LocalModel):
+class Stat(Local):
     Model = StatModel
 
     @staticmethod
@@ -823,18 +823,18 @@ class Stat(LocalModel):
                 return attrs_dict
 
 
-@router.get("/fact/stat/", tags=["SFTP"])
+@router.get("/fact/stat/", tags=["SFTP Commands"])
 async def stat(
         path: Union[PurePath, str, bytes] = Query(..., description="The path of the remote file or directory to get attributes for"),
         follow_symlinks: bool = Query(True, description="Whether or not to follow symbolic links"),
-        common: LocalParams = Depends(local_params)
+        common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Get attributes of a remote file, directory, or symlink"""
     return await create_router_handler(StatModel, Stat)(path=path, follow_symlinks=follow_symlinks, common=common)
 
 
 
-class RmdirModel(LocalParams):
+class RmdirModel(LocalModel):
     path: Union[PurePath, str, bytes] = Field(
         ...,  # Required field
     )
@@ -861,7 +861,7 @@ class RmdirModel(LocalParams):
             data['path'] = PurePath(data['path'])
         super().__init__(**data)
 
-class Rmdir(LocalModel):
+class Rmdir(Local):
     Model = RmdirModel
 
     @staticmethod
@@ -870,139 +870,12 @@ class Rmdir(LocalModel):
             async with conn.start_sftp_client() as sftp:
                 return await sftp.rmdir(str(caller.path))
 
-@router.get("/command/rmdir/", tags=["SFTP"])
+@router.get("/command/rmdir/", tags=["SFTP Commands"])
 async def islink(
         path: Union[PurePath, str, bytes] = Query(..., description="The path of the remote directory to remove"),
-        common: LocalParams = Depends(local_params)
+        common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Remove a remote directory"""
     return await create_router_handler(RmdirModel, Rmdir)(path=path, common=common)
 
 
-class IslinkModel(LocalParams):
-    path: Union[PurePath, str, bytes] = Field(
-        ...,  # Required field
-    )
-
-    @field_validator('path', mode='before')
-    @classmethod
-    def ensure_path_is_purepath(cls, v):
-        """
-        Ensure the 'path' field is converted to a PurePath object.
-        This runs before the field is validated by Pydantic.
-        """
-        if v is None:
-            raise ValueError("path cannot be None.")
-        if not isinstance(v, PurePath):
-            try:
-                return PurePath(v)
-            except TypeError:
-                raise ValueError(f"Cannot convert {v} to PurePath.")
-        return v
-
-    def __init__(self, **data):
-        # Ensure path is converted to PurePath if it's a string/bytes
-        if 'path' in data and isinstance(data['path'], (str, bytes)):
-            data['path'] = PurePath(data['path'])
-        super().__init__(**data)
-
-class Islink(LocalModel):
-    Model = IslinkModel
-
-    @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                return await sftp.islink(str(caller.path))
-
-@router.get("/fact/islink/", tags=["SFTP"])
-async def islink(
-        path: Union[PurePath, str, bytes] = Query(..., description="Path to check if it's a link"),
-        common: LocalParams = Depends(local_params)
-) -> list[dict]:
-    """# Return if the remote path refers to a symbolic link"""
-    return await create_router_handler(IslinkModel, Islink)(path=path, common=common)
-
-
-class IsfileModel(LocalParams):
-    path: Union[PurePath, str, bytes] = Field(
-        ...,  # Required field
-    )
-
-    @field_validator('path', mode='before')
-    @classmethod
-    def ensure_path_is_purepath(cls, v):
-        """
-        Ensure the 'path' field is converted to a PurePath object.
-        This runs before the field is validated by Pydantic.
-        """
-        if v is None:
-            raise ValueError("path cannot be None.")
-        if not isinstance(v, PurePath):
-            try:
-                return PurePath(v)
-            except TypeError:
-                raise ValueError(f"Cannot convert {v} to PurePath.")
-        return v
-
-    def __init__(self, **data):
-        # Ensure path is converted to PurePath if it's a string/bytes
-        if 'path' in data and isinstance(data['path'], (str, bytes)):
-            data['path'] = PurePath(data['path'])
-        super().__init__(**data)
-
-class Isfile(LocalModel):
-    Model = IsfileModel
-
-    @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                return await sftp.isfile(str(caller.path))
-
-@router.get("/fact/isfile/", tags=["SFTP"])
-async def isfile(
-        path: Union[PurePath, str, bytes] = Query(..., description="Path to check if it's a file"),
-        common: LocalParams = Depends(local_params)
-) -> list[dict]:
-    """# Return if the remote path refers to a file"""
-    return await create_router_handler(IsfileModel, Isfile)(path=path, common=common)
-
-
-class IsdirModel(LocalParams):
-    path: Union[PurePath, str, bytes] = Field(
-        ...,  # Required field
-    )
-
-    @field_validator('path', mode='before')
-    @classmethod
-    def ensure_path_is_purepath(cls, v):
-        """
-        Ensure the 'path' field is converted to a PurePath object.
-        This runs before the field is validated by Pydantic.
-        """
-        if v is None:
-            raise ValueError("path cannot be None.")
-        if not isinstance(v, PurePath):
-            try:
-                return PurePath(v)
-            except TypeError:
-                raise ValueError(f"Cannot convert {v} to PurePath.")
-        return v
-
-class Isdir(LocalModel):
-    Model = IsdirModel
-
-    @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                return await sftp.isdir(str(caller.path))
-
-@router.get("/fact/isdir/", tags=["SFTP"])
-async def isdir(
-        path: Union[PurePath, str, bytes] = Query(..., description="Path to check if it's a directory"),
-        common: LocalParams = Depends(local_params)
-) -> list[dict]:
-    """# Return if the remote path refers to a directory"""
-    return await create_router_handler(IsdirModel, Isdir)(path=path, common=common)

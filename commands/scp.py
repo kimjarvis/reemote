@@ -7,11 +7,11 @@ from pydantic import Field
 from common.router_utils import create_router_handler
 from construction_tracker import track_construction
 from inventory import get_unique_host_user
-from local_params import LocalModel, LocalParams, local_params
+from local_model import Local, LocalModel, local_params
 
 router = APIRouter()
 
-class ScpModel(LocalParams):
+class ScpModel(LocalModel):
     srcpaths: List[str] = Field(
         ...,  # Required field
     )
@@ -25,7 +25,7 @@ class ScpModel(LocalParams):
     error_handler: Optional[Callable] = None
 
 @track_construction
-class Upload(LocalModel):
+class Upload(Local):
     Model = ScpModel
 
     @staticmethod
@@ -42,7 +42,7 @@ class Upload(LocalModel):
             error_handler=caller.error_handler,
         )
 
-@router.get("/commands/upload/", tags=["SCP"])
+@router.get("/commands/upload/", tags=["SCP Commands"])
 async def upload(
         srcpaths: List[str] = Query(
             ...,
@@ -75,7 +75,7 @@ async def upload(
             include_in_schema=False,  # This hides it from OpenAPI schema
             description="Callback function name for error handling"
         ),
-        common: LocalParams = Depends(local_params)
+        common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """
     will continue starting with the next file.
@@ -91,7 +91,7 @@ async def upload(
         common=common)
 
 @track_construction
-class Download(LocalModel):
+class Download(Local):
     Model = ScpModel
 
     @staticmethod
@@ -113,7 +113,7 @@ class Download(LocalModel):
             error_handler=caller.error_handler,
         )
 
-@router.get("/commands/download/", tags=["SCP"])
+@router.get("/commands/download/", tags=["SCP Commands"])
 async def download(
         srcpaths: List[str] = Query(
             ...,
@@ -146,7 +146,7 @@ async def download(
             include_in_schema=False,  # This hides it from OpenAPI schema
             description="Callback function name for error handling"
         ),
-        common: LocalParams = Depends(local_params)
+        common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """
     will continue starting with the next file.
@@ -165,7 +165,7 @@ class CopyModel(ScpModel):
     dstgroup: str = None
 
 @track_construction
-class Copy(LocalModel):
+class Copy(Local):
     Model = CopyModel
 
     @staticmethod
@@ -190,7 +190,7 @@ class Copy(LocalModel):
             error_handler=caller.error_handler,
         )
 
-@router.get("/commands/copy/", tags=["SCP"])
+@router.get("/commands/copy/", tags=["SCP Commands"])
 async def copy(
         srcpaths: List[str] = Query(
             ...,
@@ -227,7 +227,7 @@ async def copy(
             include_in_schema=False,  # This hides it from OpenAPI schema
             description="Callback function name for error handling"
         ),
-        common: LocalParams = Depends(local_params)
+        common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """
     will continue starting with the next file.

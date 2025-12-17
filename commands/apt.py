@@ -2,20 +2,20 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Query, Depends
 from command import Command
 from common.router_utils import create_router_handler
-from common_params import CommonParams, common_params
-from remote_params import RemoteParams, RemoteModel
+from common_model import CommonModel, common_params
+from remote_model import RemoteModel, Remote
 from response import Response
 from construction_tracker import track_construction, track_yields
 
 router = APIRouter()
 
 
-class InstallModel(RemoteParams):
+class InstallModel(RemoteModel):
     packages: list[str]
 
 
 @track_construction
-class Install(RemoteModel):
+class Install(Remote):
     """APT install command"""
 
     Model = InstallModel
@@ -28,10 +28,10 @@ class Install(RemoteModel):
         )
 
 
-@router.get("/command/install/", tags=["APT Package Manager"])
+@router.get("/command/install/", tags=["APT Package Manager Commands"])
 async def install(
     packages: list[str] = Query(..., description="List of package names"),
-    common: CommonParams = Depends(common_params),
+    common: CommonModel = Depends(common_params),
 ) -> list[dict]:
     """# Install APT packages"""
     return await create_router_handler(InstallModel, Install)(
@@ -39,12 +39,12 @@ async def install(
     )
 
 
-class RemoveModel(RemoteParams):
+class RemoveModel(RemoteModel):
     packages: list[str]
 
 
 @track_construction
-class Remove(RemoteModel):
+class Remove(Remote):
     """APT install command"""
 
     Model = RemoveModel
@@ -57,10 +57,10 @@ class Remove(RemoteModel):
         )
 
 
-@router.get("/command/remove/", tags=["APT Package Manager"])
+@router.get("/command/remove/", tags=["APT Package Manager Commands"])
 async def remove(
     packages: list[str] = Query(..., description="List of package names"),
-    common: CommonParams = Depends(common_params),
+    common: CommonModel = Depends(common_params),
 ) -> list[dict]:
     """# Remove APT packages"""
     return await create_router_handler(RemoveModel, Remove)(
@@ -68,12 +68,12 @@ async def remove(
     )
 
 
-class UpdateModel(RemoteParams):
+class UpdateModel(RemoteModel):
     pass
 
 
 @track_construction
-class Update(RemoteModel):
+class Update(Remote):
     """APT install command"""
 
     Model = UpdateModel
@@ -86,18 +86,18 @@ class Update(RemoteModel):
         )
 
 
-@router.get("/command/update/", tags=["APT Package Manager"])
-async def update(common: CommonParams = Depends(common_params)) -> list[dict]:
+@router.get("/command/update/", tags=["APT Package Manager Commands"])
+async def update(common: CommonModel = Depends(common_params)) -> list[dict]:
     """# Refresh the package index files from their sources"""
     return await create_router_handler(UpdateModel, Update)(common=common)
 
 
-class UpgradeModel(RemoteParams):
+class UpgradeModel(RemoteModel):
     pass
 
 
 @track_construction
-class Upgrade(RemoteModel):
+class Upgrade(Remote):
     """APT install command"""
 
     Model = UpgradeModel
@@ -110,7 +110,7 @@ class Upgrade(RemoteModel):
         )
 
 
-@router.get("/command/upgrade/", tags=["APT Package Manager"])
-async def upgrade(common: CommonParams = Depends(common_params)) -> list[dict]:
+@router.get("/command/upgrade/", tags=["APT Package Manager Commands"])
+async def upgrade(common: CommonModel = Depends(common_params)) -> list[dict]:
     """# Install available updates for all installed packages"""
     return await create_router_handler(UpgradeModel, Upgrade)(common=common)

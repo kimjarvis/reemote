@@ -4,7 +4,7 @@ from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field
 from construction_tracker import track_yields
 
-class CommonParams(BaseModel):
+class CommonModel(BaseModel):
     """Common parameters shared across command types"""
 
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
@@ -46,8 +46,8 @@ def common_params(
     sudo: bool = Query(False, description="Whether to use sudo"),
     su: bool = Query(False, description="Whether to use su"),
     get_pty: bool = Query(False, description="Whether to get a PTY"),
-) -> CommonParams:
+) -> CommonModel:
     """FastAPI dependency for common parameters"""
-    return CommonParams(group=group, name=name, sudo=sudo, su=su, get_pty=get_pty)
+    return CommonModel(group=group, name=name, sudo=sudo, su=su, get_pty=get_pty)
 
 

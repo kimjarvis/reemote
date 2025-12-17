@@ -6,12 +6,15 @@ from construction_tracker import track_yields
 from command import Command
 from response import Response
 
-class LocalParams(BaseModel):
+class RemoteModel(BaseModel):
     """Common parameters shared across command types"""
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     group: Optional[str] = "all"
     name: Optional[str] = None
+    sudo: bool = False
+    su: bool = False
+    get_pty: bool = False
 
     def __repr__(self) -> str:
         """Use detailed_repr for representation"""
@@ -36,26 +39,26 @@ class LocalParams(BaseModel):
         return f"{class_name}({', '.join(field_reprs)})"
 
 # Used by api
-def local_params(
+def remote_params(
     group: Optional[str] = Query(
         "all", description="Optional inventory group (defaults to 'all')"
     ),
     name: Optional[str] = Query(None, description="Optional name"),
-) -> LocalParams:
+    sudo: bool = Query(False, description="Whether to use sudo"),
+    su: bool = Query(False, description="Whether to use su"),
+    get_pty: bool = Query(False, description="Whether to get a PTY"),
+) -> RemoteModel:
     """FastAPI dependency for common parameters"""
-    return LocalParams(group=group, name=name)
+    return RemoteModel(group=group, name=name, sudo=sudo, su=su, get_pty=get_pty)
 
-class LocalModel:
+class Remote:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
+        # Define the fields that are considered "common" based on RemoteParams
+        common_fields = set(RemoteModel.model_fields.keys())
 
-    @track_yields
-    async def execute(self) -> AsyncGenerator[Command, Response]:
-        model_instance = self.Model(**self.kwargs)
+        # Separate kwargs into common_kwargs and extra_kwargs
+        self.common_kwargs = {key: value for key, value in kwargs.items() if key in common_fields}
+        self.extra_kwargs = {key: value for key, value in kwargs.items() if key not in common_fields}
 
-        yield Command(
-            local=True,
-            callback=self._callback,
-            call=str(model_instance),
-            caller=model_instance
-        )
+
