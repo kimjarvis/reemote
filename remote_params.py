@@ -53,17 +53,12 @@ def remote_params(
 
 class RemoteModel:
     def __init__(self, **kwargs):
-        # Pass all kwargs directly to be validated by the model
-        self._data = kwargs
-        self.extra_kwargs = {}
+        self.kwargs = kwargs
+        # Define the fields that are considered "common" based on RemoteParams
+        common_fields = set(RemoteParams.model_fields.keys())
 
-    @track_yields
-    async def execute(self) -> AsyncGenerator[Command, Response]:
-        # All validation happens here
-        model_instance = self.Model(**self._data)
+        # Separate kwargs into common_kwargs and extra_kwargs
+        self.common_kwargs = {key: value for key, value in kwargs.items() if key in common_fields}
+        self.extra_kwargs = {key: value for key, value in kwargs.items() if key not in common_fields}
 
-        yield Command(
-            command=model_instance.cmd,
-            call=str(model_instance),
-            **self.extra_kwargs
-        )
+

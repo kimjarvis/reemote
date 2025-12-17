@@ -1,4 +1,5 @@
 from response import Response
+from typing import List
 
 def flatten(obj):
     if isinstance(obj, Response):
@@ -17,3 +18,13 @@ def changed(r):
 # Do we need this, should it be -1 ?
 def get_output(r):
     return flatten(r)[0].output
+
+def mark_changed(result: List[Response]) -> None:
+    """Helper to mark result as changed if it exists"""
+    if result and hasattr(result, 'changed'):
+        result.changed = True
+
+def mark_unchanged(result: List[Response]) -> None:
+    """Helper to mark result as changed if it exists"""
+    if result and hasattr(result, 'changed'):
+        result.changed = False

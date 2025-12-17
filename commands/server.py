@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
-
+from typing import AsyncGenerator
+from command import Command
 from common.router_utils import create_router_handler
-from shell_params import RemoteModel, RemoteParams, remote_params
-
+from remote_params import RemoteModel, RemoteParams, remote_params
+from response import Response
 router = APIRouter()
 
 class ShellModel(RemoteParams):
@@ -13,6 +14,15 @@ class ShellModel(RemoteParams):
 
 class Shell(RemoteModel):
     Model = ShellModel
+
+    async def execute(self) -> AsyncGenerator[Command, Response]:
+        model_instance = self.Model(**self.kwargs)
+
+        yield Command(
+            command = model_instance.cmd,
+            call = str(model_instance),
+            **self.common_kwargs
+        )
 
 @router.get("/server/shell/", tags=["Server"])
 async def shell(

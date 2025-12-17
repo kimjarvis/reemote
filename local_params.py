@@ -47,19 +47,15 @@ def local_params(
 
 class LocalModel:
     def __init__(self, **kwargs):
-        # Pass all kwargs directly to be validated by the model
-        self._data = kwargs
-        self.extra_kwargs = {}
+        self.kwargs = kwargs
 
     @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        # All validation happens here
-        model_instance = self.Model(**self._data)
+        model_instance = self.Model(**self.kwargs)
 
         yield Command(
             local=True,
             callback=self._callback,
             call=str(model_instance),
-            caller=model_instance,
-            **self.extra_kwargs
+            caller=model_instance
         )
