@@ -81,16 +81,7 @@ def track_yields(method):
 
 
 def get_structured_results(caller=None):
-    """Get structured results"""
-    if caller and hasattr(caller, '__class__'):
-        class_name = caller.__class__.__name__
-        if class_name == 'C':
-            return _ROOT_HIERARCHY.copy()
-        elif class_name in ['A', 'B']:
-            return getattr(caller, '_execution_results', [])
-
-    # Default: return root hierarchy
-    return _ROOT_HIERARCHY.copy()
+    return getattr(caller, '_execution_results', [])
 
 
 def clear_all_results():

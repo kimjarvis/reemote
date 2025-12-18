@@ -290,6 +290,7 @@ async def execute(
 
     # Run all hosts in parallel
     tasks: List[asyncio.Task[List[Response]]] = []  # Changed type
+
     for item in config.get_inventory():
         task = asyncio.create_task(process_host(item, root_obj_factory))
         tasks.append(task)

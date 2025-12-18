@@ -1,4 +1,4 @@
-site_name: Reemote
+site_name: Reemote1
 theme:
   name: material
 markdown_extensions:
@@ -6,3 +6,10 @@ markdown_extensions:
   - pymdownx.superfences
 nav:
   - Home: index.md
+  - Installation: installation.md
+  - Getting Started: getting_started.md
+  - File System Tutorial: reemote_file_system_tutorial.md
+  - Package Manager Tutorial: packge_manager_tutorial.md
+  - Server Control Tutorial: server_control_tutorial.md
+  - API Documentation: https://tpfsystems.com  
+

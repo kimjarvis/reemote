@@ -3,7 +3,7 @@ from typing import Any, Callable, Dict, Optional
 from pydantic import ConfigDict, Field, field_validator  # Updated imports
 
 from reemote.common_model import CommonModel
-from construction_tracker import track_construction
+from reemote.construction_tracker import track_construction
 
 
 @track_construction

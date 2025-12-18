@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
 from reemote.router_utils import create_router_handler
-from construction_tracker import track_construction
+from reemote.construction_tracker import track_construction
 from reemote.local_model import Local, LocalModel, local_params
 
 router = APIRouter()

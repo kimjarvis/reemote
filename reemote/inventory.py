@@ -77,7 +77,6 @@ def create_inventory(inventory: List[List[Dict]]) -> Dict:
     validate_inventory_structure(inventory)
 
     config = Config()
-
     # Save the updated inventory back to the configuration
     config.set_inventory(inventory)
 
