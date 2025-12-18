@@ -1,5 +1,4 @@
 import asyncio
-from reemote.inventory import get_inventory
 from reemote.execute import execute
 from reemote.response import validate_responses
 from reemote.commands.apt import Install

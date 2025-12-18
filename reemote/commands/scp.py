@@ -6,7 +6,6 @@ from pydantic import Field
 
 from reemote.router_utils import create_router_handler
 from construction_tracker import track_construction
-from reemote.inventory import get_unique_host_user
 from reemote.local_model import Local, LocalModel, local_params
 
 router = APIRouter()
@@ -23,6 +22,7 @@ class ScpModel(LocalModel):
     block_size: int = 16384
     progress_handler: Optional[Callable] = None
     error_handler: Optional[Callable] = None
+
 
 @track_construction
 class Upload(Local):
@@ -97,11 +97,6 @@ class Download(Local):
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
 
-        unique, host, user = get_unique_host_user(command.group)
-
-        if not unique:
-            raise ValueError(f"group must identify a unique host")
-
         return await asyncssh.scp(
             srcpaths=[(host_info.get("host"), path) for path in caller.srcpaths],
             dstpath=caller.dstpath,
@@ -162,7 +157,9 @@ async def download(
         common=common)
 
 class CopyModel(ScpModel):
-    dstgroup: str = None
+    dsthost: str = Field(
+        ...,  # Required field
+    )
 
 @track_construction
 class Copy(Local):
@@ -171,18 +168,10 @@ class Copy(Local):
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
 
-        unique, host, user = get_unique_host_user(command.group)
-        if not unique:
-            raise ValueError(f"group must identify a unique host")
-
-        unique, dsthost, dstuser = get_unique_host_user(caller.dstgroup)
-        if not unique:
-            raise ValueError(f"dstgroup must identify a unique host")
-
         return await asyncssh.scp(
             srcpaths=[(host_info.get("host"), path) for path in caller.srcpaths],
-            dstpath=(dsthost, caller.dstpath),
-            username=dstuser,
+            dstpath=(caller.dsthost, caller.dstpath),
+            username=host_info.get("username"),
             preserve=caller.preserve,
             recurse=caller.recurse,
             block_size=caller.block_size,

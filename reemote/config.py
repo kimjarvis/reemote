@@ -4,9 +4,6 @@ from typing import Any, Dict, List, Union
 from typing import List, Tuple, Dict, Optional, Set
 import logging
 
-# Import validation functions
-from reemote.validate_inventory import validate_host_parameter, check_host_uniqueness_across_database
-
 class Config:
     # Default data directory (can be overridden)
     data_dir = Path.home() / ".reemote"
@@ -103,31 +100,6 @@ class Config:
 
         return inventory_data
 
-    def get_inventory_data(self) -> List[Tuple[Dict, Dict]]:
-        """
-        Fetches the entire inventory from the JSON file and returns it as a Python object:
-        A list of tuples, where each tuple contains two dictionaries.
-        """
-        try:
-            data = self.get_inventory()
-
-            inventory = []
-
-            for entry in data:
-                if (
-                        "data" in entry
-                        and isinstance(entry["data"], list)
-                        and len(entry["data"]) == 2
-                ):
-                    # Convert list to tuple
-                    inventory.append((entry["data"][0], entry["data"][1]))
-
-            return inventory
-
-        except Exception as e:
-            logging.error(f"Error fetching inventory: {e}", exc_info=True)
-            return []
-
     def set_inventory(self, inventory_data: List) -> None:
         """Write inventory data to the current inventory file."""
         inventory_path = self.get_inventory_path()
@@ -135,8 +107,8 @@ class Config:
         # Ensure the directory exists
         Path(inventory_path).parent.mkdir(parents=True, exist_ok=True)
 
-        # Validate the data before writing
-        self._validate_inventory_json1(inventory_data)
+        # # Validate the data before writing
+        # self._validate_inventory_json1(inventory_data)
 
         # Write the JSON content to the file
         with open(inventory_path, "w") as f:
@@ -161,8 +133,8 @@ class Config:
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON in inventory file: {e}")
 
-        # Validate inventory structure using imported functions
-        self._validate_inventory_json1(inventory_data)
+        # # Validate inventory structure using imported functions
+        # self._validate_inventory_json1(inventory_data)
 
         # Update config with new path
         config_data = self._read_config()
@@ -208,74 +180,3 @@ class Config:
         except (json.JSONDecodeError, FileNotFoundError):
             return False
 
-    @staticmethod
-    def _validate_inventory_json1(inventory_data: Any) -> None:
-        """
-        Validate inventory JSON structure.
-
-        Args:
-            inventory_data: Parsed inventory JSON data
-
-        Raises:
-            ValueError: If inventory data is invalid
-        """
-        # Check if it's a list
-        if not isinstance(inventory_data, list):
-            raise ValueError("Inventory must be a list of entries")
-
-        # Track all hosts and IDs for uniqueness checks
-        all_hosts = set()
-        all_ids = set()
-
-        # Validate each entry
-        for entry in inventory_data:
-            # Check entry is a dictionary with id and data
-            if not isinstance(entry, dict):
-                raise ValueError("Each inventory entry must be a dictionary")
-
-            # Check for required top-level keys
-            if "id" not in entry:
-                raise ValueError("Each entry must contain 'id' key")
-            if "data" not in entry:
-                raise ValueError("Each entry must contain 'data' key")
-
-            # Validate id is int
-            if not isinstance(entry["id"], int):
-                raise ValueError("Entry 'id' must be an integer")
-
-            # Check for unique ID
-            entry_id = entry["id"]
-            if entry_id in all_ids:
-                raise ValueError(f"Duplicate ID found: {entry_id}. All IDs must be unique.")
-            all_ids.add(entry_id)
-
-            # Validate data is a list of 2 items (2-tuple as list)
-            if not isinstance(entry["data"], list) or len(entry["data"]) != 2:
-                raise ValueError("Entry 'data' must be a list of 2 items")
-
-            # Each item in data should be a dictionary
-            if not isinstance(entry["data"][0], dict) or not isinstance(entry["data"][1], dict):
-                raise ValueError("Each data item must be a dictionary")
-
-            # First dictionary must contain host
-            required_keys = ["host"]
-            for key in required_keys:
-                if key not in entry["data"][0]:
-                    raise ValueError(f"First dictionary in data must contain '{key}' key")
-
-            # Second dictionary must contain groups
-            required_keys = ["groups"]
-            for key in required_keys:
-                if key not in entry["data"][1]:
-                    raise ValueError(f"Second dictionary in data must contain '{key}' key")
-
-            # Add host to the set for uniqueness check
-            host_value = entry["data"][0]["host"]
-            all_hosts.add(host_value)
-
-            # Validate using the imported functions
-            data_as_list = [(entry["data"][0], entry["data"][1])]
-            validate_host_parameter(data_as_list)
-
-            # Check host uniqueness across all entries
-            check_host_uniqueness_across_database(all_hosts,data_as_list)

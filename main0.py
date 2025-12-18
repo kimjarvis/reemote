@@ -1,5 +1,4 @@
 import asyncio
-from reemote.inventory import get_inventory
 from reemote.execute import execute
 from reemote.response import validate_responses
 
@@ -23,7 +22,6 @@ class Root:
         print(f"* {r}")
 
 async def main():
-    print(f"Inventory: {inventory}")
     responses = await execute(lambda: Root())
     validated_responses = await validate_responses(responses)
     print(validated_responses)

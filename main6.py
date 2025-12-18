@@ -1,7 +1,6 @@
 import asyncio
 
 from reemote.execute import execute
-from reemote.inventory import get_inventory
 
 
 async def main():

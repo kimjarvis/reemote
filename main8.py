@@ -1,6 +1,5 @@
 # main.py
 import asyncio
-from reemote.inventory import get_inventory
 from reemote.execute import execute
 from construction_tracker import  track_construction, track_yields
 from reemote.commands.server import Shell

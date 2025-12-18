@@ -8,7 +8,8 @@ from reemote.commands.scp import router as commands_scp_router
 from reemote.commands.server import router as commands_server_router
 from reemote.commands.sftp import router as commands_sftp_router
 from reemote.facts.sftp import router as facts_sftp_router
-from reemote.inventory import router as inventory_router  # Import the inventory router
+from reemote.inventory import router as inventory_router
+
 
 import argparse
 from reemote.config import Config

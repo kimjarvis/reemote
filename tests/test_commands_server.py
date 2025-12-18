@@ -1,7 +1,6 @@
 import pytest
 
 from reemote.execute import execute
-from reemote.inventory import get_inventory
 from reemote.response import validate_responses
 
 

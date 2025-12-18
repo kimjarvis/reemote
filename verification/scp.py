@@ -4,7 +4,6 @@ from reemote.commands.scp import Upload, Download, Copy
 from reemote.commands.sftp import Isfile
 from construction_tracker import track_construction, track_yields
 from reemote.execute import execute
-from reemote.inventory import get_inventory
 
 
 @track_construction

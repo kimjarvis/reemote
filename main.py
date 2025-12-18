@@ -1,8 +1,12 @@
 import asyncio
-from reemote.inventory import get_inventory
 from reemote.execute import execute
-from reemote.response import validate_responses
-from construction_tracker import track_construction, track_yields
+from construction_tracker import (
+    clear_all_results,
+    get_structured_results,
+    track_construction,
+    track_yields,
+)
+
 
 @track_construction
 class Hello:
@@ -18,6 +22,7 @@ class Hello:
                      group="all",
                      sudo=False)
         print(f"> {r}")
+        print(f"& {get_structured_results(self)}")
 
 @track_construction
 class Root:
@@ -25,21 +30,11 @@ class Root:
     async def execute(self):
         r = yield Hello()
         print(f"* {r}")
+        print(f"! {get_structured_results(self)}")
 
 async def main():
-    print(f"Inventory: {inventory}")
-    responses = await execute(lambda: Root())
-    validated_responses = await validate_responses(responses)
-    print(validated_responses)
-
-    # Each response is now a UnifiedResult with all fields available:
-    for result in validated_responses:
-        print(f"Host: {result.host}")
-        print(f"Command: {result.command}")
-        print(f"Output: {result.output}")
-        print(f"Stdout: {result.stdout}")
-        print(f"Stderr: {result.stderr}")
-        print(f"Changed: {result.changed}")
+    clear_all_results()
+    await execute(lambda: Root())
 
 if __name__ == "__main__":
     asyncio.run(main())

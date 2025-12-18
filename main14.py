@@ -14,22 +14,21 @@ class Root:
             name="upload",
             srcpaths=['/etc/hosts','/etc/passwd'],
             dstpath='/home/user/',
-            # group="C"
         )
         print("download")
         r = yield Download(
             name="download",
             srcpaths=['/home/user/hosts','/home/user/passwd'],
             dstpath='/tmp/',
-            group="A"
+            group="A" # This is the source, where execute runs it
         )
         print("copy")
         r = yield Copy(
             name="copy",
             srcpaths=['/etc/hosts','/etc/passwd'],
             dstpath='/home/user/',
-            group="A", # This is the source
-            dstgroup="A"
+            group="A", # This is the source, where execute runs it
+            dsthost="192.168.1.24"
         )
 
         print(r)
