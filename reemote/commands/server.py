@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 from typing import AsyncGenerator
-from command import Command
-from common.router_utils import create_router_handler
-from remote_model import Remote, RemoteModel, remote_params
-from response import Response
+from reemote.command import Command
+from reemote.router_utils import create_router_handler
+from reemote.remote_model import Remote, RemoteModel, remote_params
+from reemote.response import Response
 router = APIRouter()
 
 class ShellModel(RemoteModel):

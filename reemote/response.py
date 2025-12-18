@@ -9,7 +9,7 @@ from asyncssh import SSHCompletedProcess
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic import field_validator
 
-from command import Command
+from reemote.command import Command
 
 
 class PackageInfo(BaseModel):

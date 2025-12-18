@@ -6,11 +6,11 @@ import sys
 import asyncssh
 import asyncio
 from asyncssh import SSHCompletedProcess
-from command import Command
-from typing import Iterable, Any, AsyncGenerator, List, Tuple, Dict, Callable
-from response import Response  # Changed import
-from config import Config
-from utilities.logging import reemote_logging
+from reemote.command import Command
+from typing import Any, AsyncGenerator, List, Tuple, Dict, Callable
+from reemote.response import Response  # Changed import
+from reemote.config import Config
+from reemote.logging import reemote_logging
 
 async def run_command_on_local(command: Command) -> Response:
     # logging.info(f"run on local - {command}")
@@ -150,7 +150,7 @@ async def pre_order_generator_async(
             elif hasattr(value, "execute") and callable(value.execute):
                 # Special handling for Shell-like objects
                 # They yield Commands, but we want results to go to parent
-                from commands.server import Shell
+                from reemote.commands.server import Shell
 
                 if isinstance(value, Shell):
                     # Get the Command from Shell

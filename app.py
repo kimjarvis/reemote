@@ -1,17 +1,17 @@
 import sys
 from fastapi import FastAPI
 
-from commands.apt import router as commands_apt_router
-from facts.apt import router as facts_apt_router
-from operations.apt import router as operations_apt_router
-from commands.scp import router as commands_scp_router
-from commands.server import router as commands_server_router
-from commands.sftp import router as commands_sftp_router
-from facts.sftp import router as facts_sftp_router
-from inventory import router as inventory_router  # Import the inventory router
+from reemote.commands.apt import router as commands_apt_router
+from reemote.facts.apt import router as facts_apt_router
+from reemote.operations.apt import router as operations_apt_router
+from reemote.commands.scp import router as commands_scp_router
+from reemote.commands.server import router as commands_server_router
+from reemote.commands.sftp import router as commands_sftp_router
+from reemote.facts.sftp import router as facts_sftp_router
+from reemote.inventory import router as inventory_router  # Import the inventory router
 
 import argparse
-from config import Config
+from reemote.config import Config
 
 # Filter out FastAPI/Starlette server arguments
 app_args = [

@@ -1,11 +1,11 @@
 # common/router_utils.py
-from typing import Type, Dict, Any, Callable
-from fastapi import APIRouter, Query, Depends, HTTPException
+from typing import Type, Any, Callable
+from fastapi import Depends, HTTPException
 from pydantic import BaseModel
-from common_model import CommonModel, common_params
-from execute import execute
-from response import validate_responses
-from utilities.validate_parameters import validate_parameters
+from reemote.common_model import CommonModel, common_params
+from reemote.execute import execute
+from reemote.response import validate_responses
+from reemote.validate_parameters import validate_parameters
 
 
 def create_router_handler(
@@ -52,19 +52,3 @@ def create_router_handler(
 
     return handler
 
-
-def register_command(
-        router: APIRouter,
-        path: str,
-        model: Type[BaseModel],
-        command_class: Type,
-        tags: list[str],
-        **query_params
-) -> None:
-    """Register a command endpoint with a router"""
-
-    # Dynamically create the endpoint handler
-    endpoint_func = create_router_handler(model, command_class)
-
-    # Add the endpoint to the router with the query parameters
-    router.get(path, tags=tags)(endpoint_func)

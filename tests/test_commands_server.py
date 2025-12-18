@@ -1,8 +1,8 @@
 import pytest
 
-from execute import execute
-from inventory import get_inventory
-from response import validate_responses
+from reemote.execute import execute
+from reemote.inventory import get_inventory
+from reemote.response import validate_responses
 
 
 @pytest.mark.asyncio
@@ -10,7 +10,7 @@ async def test_server_shell():
     """Test basic apt install command execution without errors"""
 
     # Execute the test
-    from commands.server import Shell
+    from reemote.commands.server import Shell
     responses = await execute(lambda: Shell(
         name="echo",
         cmd="echo Hello World!",
@@ -29,7 +29,7 @@ async def test_server_shell_nested():
     # Define the Root class locally within the test
     class Root:
         async def execute(self):
-            from commands.server import Shell
+            from reemote.commands.server import Shell
             r = yield Shell(
                 name="echo",
                 cmd="echo Hello World!",
@@ -51,7 +51,7 @@ async def test_server_shell_double_nested():
     # Define the classes locally within the test
     class Hello:
         async def execute(self):
-            from commands.server import Shell
+            from reemote.commands.server import Shell
             r = yield Shell(
                 name="echo",
                 cmd="echo Hello World!",

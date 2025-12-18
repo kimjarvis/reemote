@@ -1,6 +1,6 @@
 import asyncio
-from execute import execute
-from commands.server import Shell
+from reemote.execute import execute
+from reemote.commands.server import Shell
 
 async def main():
     await execute(lambda: Shell(name="test", sudo = True, cmd="ls /root"))

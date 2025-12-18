@@ -1,7 +1,5 @@
-import json
 import logging
-import os
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException
 from pydantic import RootModel, field_validator
@@ -11,7 +9,7 @@ from validate_inventory import (
     get_next_id,
     validate_host_parameter,
 )
-from config import Config
+from reemote.config import Config
 
 # Create an APIRouter instance
 router = APIRouter()

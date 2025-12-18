@@ -1,13 +1,11 @@
 import pytest
-import asyncio
-from inventory import get_inventory
-from execute import execute
-from response import validate_responses
-from utilities.checks import changed,flatten
+from reemote.inventory import get_inventory
+from reemote.execute import execute
+from reemote.response import validate_responses
 from construction_tracker import  track_construction, track_yields
 
 
-from commands.apt import Install, Remove, Update, Upgrade, GetPackages, Package
+from reemote.commands.apt import Install, Remove, GetPackages, Package
 
 @pytest.mark.asyncio
 async def test_apt_install():

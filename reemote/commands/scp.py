@@ -4,10 +4,10 @@ import asyncssh
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
-from common.router_utils import create_router_handler
+from reemote.router_utils import create_router_handler
 from construction_tracker import track_construction
-from inventory import get_unique_host_user
-from local_model import Local, LocalModel, local_params
+from reemote.inventory import get_unique_host_user
+from reemote.local_model import Local, LocalModel, local_params
 
 router = APIRouter()
 

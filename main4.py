@@ -1,8 +1,8 @@
 import asyncio
-from inventory import get_inventory
-from execute import execute
-from response import Response, validate_responses, PackageInfo
-from commands.apt import GetPackages
+from reemote.inventory import get_inventory
+from reemote.execute import execute
+from reemote.response import validate_responses, PackageInfo
+from reemote.commands.apt import GetPackages
 
 async def main():
     responses = await execute(lambda: GetPackages(name="get packages"))

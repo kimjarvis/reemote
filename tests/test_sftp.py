@@ -4,12 +4,10 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import asyncio
-from commands.sftp import isdir, isfile, mkdir, stat, get, put, copy, mput
+from reemote.commands.sftp import isdir, isfile, put
 from construction_tracker import track_construction, track_yields
-from execute import execute
-from inventory import get_inventory
-from utilities.logging import reemote_logging
+from reemote.execute import execute
+from reemote.inventory import get_inventory
 
 
 @pytest.mark.asyncio

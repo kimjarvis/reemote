@@ -1,10 +1,10 @@
 import asyncio
 
 from construction_tracker import ConstructionTracker
-from execute import execute
-from inventory import get_inventory
-from response import validate_responses
-from commands.apt import Update
+from reemote.execute import execute
+from reemote.inventory import get_inventory
+from reemote.response import validate_responses
+from reemote.commands.apt import Update
 
 
 async def main():

@@ -1,9 +1,9 @@
 import asyncio
 
-from operations.apt import Package
+from reemote.operations.apt import Package
 from construction_tracker import track_construction, track_yields
-from execute import execute
-from utilities.checks import changed, flatten
+from reemote.execute import execute
+from reemote.checks import changed, flatten
 
 
 @track_construction

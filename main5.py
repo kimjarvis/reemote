@@ -1,8 +1,8 @@
 import asyncio
-from inventory import get_inventory
-from execute import execute
-from response import validate_responses
-from commands.apt import Remove
+from reemote.inventory import get_inventory
+from reemote.execute import execute
+from reemote.response import validate_responses
+from reemote.commands.apt import Remove
 
 async def main():
     responses = await execute(lambda: Remove(name="remove tree",

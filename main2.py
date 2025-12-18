@@ -1,9 +1,8 @@
 import asyncio
-from inventory import get_inventory
-from execute import execute
-from response import validate_responses
-from utilities.logging import reemote_logging
-from commands.server import Shell
+from reemote.inventory import get_inventory
+from reemote.execute import execute
+from reemote.response import validate_responses
+from reemote.commands.server import Shell
 
 
 async def main():

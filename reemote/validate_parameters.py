@@ -2,8 +2,8 @@ from typing import Any, Union, Dict, Type, TypedDict
 from typing import Optional
 from pydantic import BaseModel
 from pydantic import ValidationError
-from common_model import CommonModel
-from local_model import LocalModel
+from reemote.common_model import CommonModel
+from reemote.local_model import LocalModel
 
 
 class ValidationOK(TypedDict):

@@ -1,8 +1,8 @@
 import asyncio
 
-from commands.scp import Copy, Download, Upload
+from reemote.commands.scp import Copy, Download, Upload
 from construction_tracker import track_construction, track_yields
-from execute import execute
+from reemote.execute import execute
 
 
 @track_construction

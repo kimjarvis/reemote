@@ -1,14 +1,13 @@
 import asyncio
 
 from construction_tracker import ConstructionTracker
-from execute import execute
-from inventory import get_inventory
-from response import validate_responses
-from utilities.logging import reemote_logging
+from reemote.execute import execute
+from reemote.inventory import get_inventory
+from reemote.response import validate_responses
 
 
 async def main():
-    from commands.sftp import Mkdir
+    from reemote.commands.sftp import Mkdir
     responses = await execute(lambda: Mkdir(name="Make directory fred",
                                                        path="/home/user/h2",
                                                        permissions=0o555))

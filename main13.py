@@ -1,7 +1,7 @@
 import asyncio
-from commands.sftp import Put, Get, Copy, Mcopy, Mput, Mget
+from reemote.commands.sftp import Put, Get, Copy, Mcopy, Mput, Mget
 from construction_tracker import track_construction, track_yields
-from execute import execute
+from reemote.execute import execute
 
 @track_construction
 class Root:

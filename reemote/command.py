@@ -2,7 +2,7 @@ from typing import Any, Callable, Dict, Optional
 
 from pydantic import ConfigDict, Field, field_validator  # Updated imports
 
-from common_model import CommonModel
+from reemote.common_model import CommonModel
 from construction_tracker import track_construction
 
 

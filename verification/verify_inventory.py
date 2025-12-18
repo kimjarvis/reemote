@@ -5,18 +5,17 @@ Test program for config.py functionality - UPDATED VERSION
 
 import os
 import json
-import tempfile
 import shutil
 from pathlib import Path
 import sys
-from config import Config
+from reemote.config import Config
 
 # Add the parent directory to sys.path to import config
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the actual inventory module
 try:
-    from inventory import validate_host_parameter, check_host_uniqueness_across_database
+    from reemote.inventory import validate_host_parameter, check_host_uniqueness_across_database
 
     HAS_INVENTORY_MODULE = True
 except ImportError:

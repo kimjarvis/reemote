@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from config import Config
+from reemote.config import Config
 
 # Import the Config class (adjust import as needed)
 # from your_module import Config

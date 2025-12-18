@@ -1,12 +1,11 @@
 import asyncio
 
-from execute import execute
-from inventory import get_inventory
-from utilities.logging import reemote_logging
-from utilities.logging import reemote_logging
+from reemote.execute import execute
+from reemote.inventory import get_inventory
+
 
 async def main():
-    from commands.apt import Package
+    from reemote.commands.apt import Package
     responses = await execute(lambda: Package(name="apt package tree",
                                                          packages =["tree"],
                                                          present = False,

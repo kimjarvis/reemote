@@ -5,7 +5,7 @@ from typing import List, Tuple, Dict, Optional, Set
 import logging
 
 # Import validation functions
-from validate_inventory import validate_host_parameter, check_host_uniqueness_across_database
+from reemote.validate_inventory import validate_host_parameter, check_host_uniqueness_across_database
 
 class Config:
     # Default data directory (can be overridden)

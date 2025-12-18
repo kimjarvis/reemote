@@ -1,8 +1,7 @@
 import asyncio
-from execute import execute
-from commands.apt import Install, Remove, Update, Upgrade
-from facts.apt import GetPackages
-
+from reemote.execute import execute
+from reemote.facts.apt import GetPackages
+from reemote.commands.apt import Update
 
 async def main():
     # await execute(
@@ -11,7 +10,7 @@ async def main():
     #     )
     # )
     # await execute(lambda: Remove(packages=["tree", "vim"], group="all", sudo=True))
-    # await execute(lambda: Update(sudo=True))
+    await execute(lambda: Update(sudo=True))
     # await execute(lambda: Upgrade(sudo=True))
     r=await execute(lambda: GetPackages())
     print(r[-1].output)

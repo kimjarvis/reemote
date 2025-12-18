@@ -1,13 +1,13 @@
 import asyncio
 
-from commands.server import Shell
+from reemote.commands.server import Shell
 from construction_tracker import (
     clear_all_results,
     get_structured_results,
     track_construction,
     track_yields,
 )
-from execute import execute
+from reemote.execute import execute
 
 
 @track_construction

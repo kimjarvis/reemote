@@ -1,12 +1,12 @@
 from typing import AsyncGenerator
 from fastapi import APIRouter, Query, Depends
-from common_model import CommonModel, common_params
-from remote_model import RemoteModel, Remote
-from response import Response
+from reemote.common_model import CommonModel, common_params
+from reemote.remote_model import RemoteModel, Remote
+from reemote.response import Response
 from construction_tracker import track_construction, track_yields
-from commands.apt import Install, Remove, Update, Upgrade
-from facts.apt import GetPackages
-from utilities.checks import mark_changed, mark_unchanged
+from reemote.commands.apt import Install, Remove, Update, Upgrade
+from reemote.facts.apt import GetPackages
+from reemote.checks import mark_unchanged
 
 router = APIRouter()
 
