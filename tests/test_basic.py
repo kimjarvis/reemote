@@ -13,6 +13,7 @@ from reemote.facts.sftp import Isdir
 from reemote.command import Command
 from reemote.commands.system import Callback, Return
 
+
 # Autouse fixture that runs before each test
 @pytest.fixture(autouse=True)
 def setup_inventory():
@@ -39,27 +40,22 @@ def setup_inventory():
 async def test_shell():
     class Root:
         async def execute(self):
-            print("Starting test...")
-            r = yield Shell(cmd="echo Hello", group="192.168.1.24")
-            print(r)
+            yield Shell(cmd="echo Hello", group="192.168.1.24")
 
-    # Execute the test
     await execute(lambda: Root())
+
 
 @pytest.mark.asyncio
 async def test_callback():
     async def _callback(host_info, global_info, command, cp, caller):
-        print(host_info.get("host"),caller.value)
-        print(command)
-        pass
+        assert command.value == "test callback"
 
     class Root:
         async def execute(self):
-            print("Starting test...")
-            r = yield Callback(callback=_callback, group="192.168.1.24", value="test callback")
-            print("r",r)
+            yield Callback(
+                callback=_callback, group="192.168.1.24", value="test callback"
+            )
 
-    # Execute the test
     await execute(lambda: Root())
 
 
@@ -69,15 +65,14 @@ async def test_return():
         async def execute(self):
             a = yield Shell(cmd="echo Hello")
             b = yield Shell(cmd="echo World")
-            yield Return(value=[a,b])
+            yield Return(value=[a, b])
 
     class Parent:
         async def execute(self):
-            print("Starting test...")
-            r = yield Child()
-            print("r", r.value)
+            response = yield Child()
+            assert strip(response.value[0].stdout) == "Hello"
+            assert strip(response.value[1].stdout) == "World"
 
-    # Execute the test
     await execute(lambda: Parent())
 
 
@@ -85,10 +80,7 @@ async def test_return():
 async def test_isdir():
     class Root:
         async def execute(self):
-            print("Starting test...")
             r = yield Isdir(path="/home/user", group="192.168.1.24")
-            print("r",r)
+            assert r.output
 
-    # Execute the test
     await execute(lambda: Root())
-

@@ -82,7 +82,7 @@ class Response(BaseModel):
             data["callback"] = self._callback_to_str(getattr(op, "callback", None))
             data["caller"] = self._caller_to_str(getattr(op, "caller", None))
             data["call"] = self._caller_to_str(getattr(op, "call", None))
-            data["value"] = self._caller_to_str(getattr(op, "value", None))
+            data["value"] = getattr(op, "value", None)
             data["sudo"] = getattr(op, "sudo", False)
             data["su"] = getattr(op, "su", False)
             data["get_pty"] = getattr(op, "get_pty", False)
@@ -117,11 +117,6 @@ class Response(BaseModel):
             "host_info": None,
             "global_info": None,
         }
-
-        # Convert callback and caller to string representations
-        data["callback"] = cls._callback_to_str(getattr(command, "callback", None))
-        data["caller"] = cls._caller_to_str(getattr(command, "caller", None))
-        data["value"] = cls._caller_to_str(getattr(command, "value", None))
 
         # Update with any additional kwargs
         data.update(kwargs)

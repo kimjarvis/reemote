@@ -24,6 +24,7 @@ class Callback(Local):
 
         yield Command(
             type=ConnectionType.LOCAL,
+            value=model_instance.value,
             callback=model_instance.callback,
             call=str(model_instance),
             caller=model_instance,

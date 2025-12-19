@@ -95,6 +95,8 @@ class Command(CommonModel):
             field_strings.append(f"call={self.call!r}")
 
         field_strings.append(f"type={self.type!r}")
+        if self.call is not None:
+            field_strings.append(f"value={self.value!r}")
 
         if self.callback is not None:
             callback_repr = (
