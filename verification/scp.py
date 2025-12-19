@@ -15,8 +15,7 @@ class Root:
             dstpath='/home/user/',
         )
         r = yield Isfile(name="IsFile",path="/home/user/hosts",group="A")
-        if r.executed:
-            assert r.output == [{'value': True}], "File does not exist"
+        assert r.output == [{'value': True}], "File does not exist"
         print("download")
         r = yield Download(
             name="Download",
@@ -25,8 +24,7 @@ class Root:
             group="A"
         )
         r = yield Isfile(path="/tmp/hosts",group="local")
-        if r.executed:
-            assert r.output == [{'value': True}], "File does not exist"
+        assert r.output == [{'value': True}], "File does not exist"
         print("copy")
         r = yield Copy(
             name="Copy",
@@ -36,22 +34,10 @@ class Root:
             dstgroup="B"
         )
         r = yield Isfile(path="/home/user/hosts",group="B")
-        if r.executed:
-            assert r.output == [{'value': True}], "File does not exist"
+        assert r.output == [{'value': True}], "File does not exist"
 
 async def main():
-    responses = await execute(lambda: Root())
-    # validated_responses = await validate_responses(responses)
-    # Each response is now a UnifiedResult with all fields available:
-    # for result in validated_responses:
-    #     print(f"Host: {result.host}")
-    #     print(f"Name: {result.name}")
-    #     print(f"Command: {result.command}")
-    #     print(f"Output: {result.output}")
-    #     print(f"Stdout: {result.stdout}")
-    #     print(f"Stderr: {result.stderr}")
-    #     print(f"Executed: {result.executed}")
-    #     print(f"Changed: {result.changed}")
+    await execute(lambda: Root())
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -15,12 +15,7 @@ from reemote.logging import reemote_logging
 async def run_command_on_local(command: Command) -> Response:
     # logging.info(f"run on local - {command}")
 
-    if command.group not in command.global_info["groups"]:
-        pass
-        # return Response.from_command(
-        #     command, host=command.host_info.get("host"), executed=False
-        # )
-    else:
+    if command.group in command.global_info["groups"]:
         try:
             return Response.from_command(
                 command,
@@ -42,12 +37,7 @@ async def run_command_on_host(command: Command) -> Response:
     cp = SSHCompletedProcess()
     # logging.info(f"run on host - {command}")
 
-    if command.group not in command.global_info["groups"]:
-        pass
-        # return Response.from_command(
-        #     command, host=command.host_info.get("host"), executed=False
-        # )
-    else:
+    if command.group in command.global_info["groups"]:
         try:
             if command.get_pty:
                 conn = await asyncssh.connect(**command.host_info, term_type="xterm")

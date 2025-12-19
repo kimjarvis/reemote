@@ -24,7 +24,6 @@ class Response(BaseModel):
     op: Optional[Command] = Field(default=None, exclude=True)
     changed: bool = False
     output: Optional[Any] = None  # Accept any type
-    executed: bool = True  # New field: indicates if the command was executed
 
     # Fields from Command (r.op)
     name: Optional[str] = None
@@ -216,7 +215,7 @@ class Response(BaseModel):
         stdout = self.cp.stdout if self.cp else self.stdout
         stderr = self.cp.stderr if self.cp else self.stderr
 
-        if self.executed and self.local:
+        if self.local:
             return(
                 f"Response(host={self.host!r}, "
                 f"call={self.call!r}, "
@@ -231,7 +230,6 @@ class Response(BaseModel):
                 f"call={self.call!r}, "
                 f"command={self.command!r}, "
                 f"changed={self.changed!r}, "
-                f"executed={self.executed!r}, "
                 f"return_code={return_code!r}, "
                 f"stdout={stdout!r}, "
                 f"stderr={stderr!r}, "
@@ -255,7 +253,6 @@ async def validate_responses(responses: list[Any]) -> list[Response]:
                     host=getattr(r, "host", None),
                     op=getattr(r, "op", None),
                     changed=getattr(r, "changed", False),
-                    executed=getattr(r, "executed", True),  # Include executed field
                     output=getattr(r, "output", []),
                 )
                 validated_responses.append(unified_result)
@@ -264,9 +261,6 @@ async def validate_responses(responses: list[Any]) -> list[Response]:
             # Create a minimal error result
             error_result = Response(
                 host=getattr(r, "host", None) if hasattr(r, "host") else None,
-                executed=getattr(r, "executed", True)
-                if hasattr(r, "executed")
-                else True,  # Include executed field
             )
             validated_responses.append(error_result)
 
