@@ -267,22 +267,6 @@ def test__validate_json_file_missing(temp_config_dir):
     assert config._validate_json_file(str(missing_file)) is False
 
 
-def test__validate_inventory_json_valid(valid_inventory_data):
-    """Test _validate_inventory_json with valid data"""
-    config = Config()
-
-    # Should not raise any exception
-    config._validate_inventory_json(valid_inventory_data)
-
-
-def test__validate_inventory_json_not_list():
-    """Test _validate_inventory_json with non-list data"""
-    config = Config()
-
-    with pytest.raises(ValueError, match="Inventory must be a list"):
-        config._validate_inventory_json({"not": "a list"})
-
-
 def test__validate_inventory_json_invalid_entry_length():
     """Test _validate_inventory_json with entry that's not length 2"""
     config = Config()

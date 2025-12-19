@@ -16,9 +16,10 @@ async def run_command_on_local(command: Command) -> Response:
     # logging.info(f"run on local - {command}")
 
     if command.group not in command.global_info["groups"]:
-        return Response.from_command(
-            command, host=command.host_info.get("host"), executed=False
-        )
+        pass
+        # return Response.from_command(
+        #     command, host=command.host_info.get("host"), executed=False
+        # )
     else:
         try:
             return Response.from_command(
@@ -42,9 +43,10 @@ async def run_command_on_host(command: Command) -> Response:
     # logging.info(f"run on host - {command}")
 
     if command.group not in command.global_info["groups"]:
-        return Response.from_command(
-            command, host=command.host_info.get("host"), executed=False
-        )
+        pass
+        # return Response.from_command(
+        #     command, host=command.host_info.get("host"), executed=False
+        # )
     else:
         try:
             if command.get_pty:
