@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
 from pydantic import ConfigDict, Field, field_validator  # Updated imports
@@ -5,7 +6,10 @@ from pydantic import ConfigDict, Field, field_validator  # Updated imports
 from reemote.common_model import CommonModel
 
 
-
+class ConnectionType(Enum):
+    LOCAL = 1
+    REMOTE = 2
+    PASSTHROUGH = 3
 
 class Command(CommonModel):
     """Command model with validation using Pydantic"""
@@ -24,7 +28,10 @@ class Command(CommonModel):
     )
 
     # Optional fields with defaults
-    local: bool = Field(default=False, description="Whether to run locally")
+    type: ConnectionType = Field(
+        default=ConnectionType.REMOTE,
+        description="The connection type to use"
+    )
     callback: Optional[Callable] = Field(
         default=None, description="Optional callback function"
     )
@@ -36,6 +43,9 @@ class Command(CommonModel):
     )
     global_info: Optional[Dict[str, Any]] = Field(
         default=None, description="Global information", exclude=True
+    )
+    value: Optional[Any] = Field(
+        default=None, description="Value to pass to response", exclude=True
     )
 
     @field_validator("command")
@@ -84,7 +94,7 @@ class Command(CommonModel):
         if self.call is not None:
             field_strings.append(f"call={self.call!r}")
 
-        field_strings.append(f"local={self.local!r}")
+        field_strings.append(f"type={self.type!r}")
 
         if self.callback is not None:
             callback_repr = (

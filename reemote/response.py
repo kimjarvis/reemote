@@ -9,8 +9,7 @@ from asyncssh import SSHCompletedProcess
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic import field_validator
 
-from reemote.command import Command
-
+from reemote.command import Command, ConnectionType
 
 class PackageInfo(BaseModel):
     name: str
@@ -24,12 +23,13 @@ class Response(BaseModel):
     op: Optional[Command] = Field(default=None, exclude=True)
     changed: bool = False
     output: Optional[Any] = None  # Accept any type
+    value: Optional[Any] = None  # Accept any type
 
     # Fields from Command (r.op)
     name: Optional[str] = None
     command: Optional[str] = None
     group: Optional[str] = None
-    local: bool = False
+    type: ConnectionType = None
     callback_str: Optional[str] = Field(None, alias="callback")
     caller_str: Optional[str] = Field(None, alias="caller")
     call: Optional[str] = Field(None, alias="call")
@@ -78,10 +78,11 @@ class Response(BaseModel):
             data["name"] = getattr(op, "name", None)
             data["command"] = getattr(op, "command", None)
             data["group"] = getattr(op, "group", None)
-            data["local"] = getattr(op, "local", False)
+            data["type"] = getattr(op, "type", None)
             data["callback"] = self._callback_to_str(getattr(op, "callback", None))
             data["caller"] = self._caller_to_str(getattr(op, "caller", None))
             data["call"] = self._caller_to_str(getattr(op, "call", None))
+            data["value"] = self._caller_to_str(getattr(op, "value", None))
             data["sudo"] = getattr(op, "sudo", False)
             data["su"] = getattr(op, "su", False)
             data["get_pty"] = getattr(op, "get_pty", False)
@@ -120,6 +121,7 @@ class Response(BaseModel):
         # Convert callback and caller to string representations
         data["callback"] = cls._callback_to_str(getattr(command, "callback", None))
         data["caller"] = cls._caller_to_str(getattr(command, "caller", None))
+        data["value"] = cls._caller_to_str(getattr(command, "value", None))
 
         # Update with any additional kwargs
         data.update(kwargs)
@@ -215,14 +217,20 @@ class Response(BaseModel):
         stdout = self.cp.stdout if self.cp else self.stdout
         stderr = self.cp.stderr if self.cp else self.stderr
 
-        if self.local:
+        if self.type == ConnectionType.PASSTHROUGH:
+            return(
+                f"Response(host={self.host!r}, "
+                f"call={self.call!r}, "
+                f"value={self.value!r})"
+            )
+        elif  self.type == ConnectionType.LOCAL:
             return(
                 f"Response(host={self.host!r}, "
                 f"call={self.call!r}, "
                 f"changed={self.changed!r}, "                
                 f"output={self.output!r})"
             )
-        else:
+        elif self.type == ConnectionType.REMOTE:
             return (
                 f"Response(host={self.host!r}, "
                 f"group={self.group!r}, "
@@ -235,6 +243,8 @@ class Response(BaseModel):
                 f"stderr={stderr!r}, "
                 f"output={self.output!r})"
             )
+        else:
+            raise ValueError(f"Invalid connection type: {self.type}")
 
 
 async def validate_responses(responses: list[Any]) -> list[Response]:

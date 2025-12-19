@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
-from typing import AsyncGenerator, Callable
-from reemote.command import Command, Any
+from typing import AsyncGenerator, Callable, Any
+from reemote.command import Command, ConnectionType
 from reemote.router_handler import router_handler
 from reemote.remote_model import Remote, RemoteModel, remote_params
 from reemote.response import Response
@@ -23,7 +23,7 @@ class Callback(Local):
         model_instance = self.Model(**self.kwargs)
 
         yield Command(
-            local=True,
+            type=ConnectionType.LOCAL,
             callback=model_instance.callback,
             call=str(model_instance),
             caller=model_instance,
@@ -43,8 +43,8 @@ class Return(Local):
         model_instance = self.Model(**self.kwargs)
 
         yield Command(
-            local=True,
-            callback=model_instance.callback,
+            type=ConnectionType.PASSTHROUGH,
+            value=model_instance.value,
             call=str(model_instance),
             caller=model_instance,
             group=model_instance.group,

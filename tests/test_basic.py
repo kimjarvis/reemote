@@ -11,7 +11,7 @@ from reemote.execute import execute
 from reemote.commands.server import Shell
 from reemote.facts.sftp import Isdir
 from reemote.command import Command
-from reemote.commands.system import Callback
+from reemote.commands.system import Callback, Return
 
 # Autouse fixture that runs before each test
 @pytest.fixture(autouse=True)
@@ -69,13 +69,13 @@ async def test_return():
         async def execute(self):
             a = yield Shell(cmd="echo Hello")
             b = yield Shell(cmd="echo World")
-            # yield Return()
+            yield Return(value=[a,b])
 
     class Parent:
         async def execute(self):
             print("Starting test...")
             r = yield Child()
-            print("r", r)
+            print("r", r.value)
 
     # Execute the test
     await execute(lambda: Parent())

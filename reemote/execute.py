@@ -6,15 +6,24 @@ import sys
 import asyncssh
 import asyncio
 from asyncssh import SSHCompletedProcess
-from reemote.command import Command
+from reemote.command import Command, ConnectionType
 from typing import Any, AsyncGenerator, List, Tuple, Dict, Callable
 from reemote.response import Response  # Changed import
 from reemote.config import Config
 from reemote.logging import reemote_logging
 
-async def run_command_on_local(command: Command) -> Response:
-    # logging.info(f"run on local - {command}")
+async def pass_through_command(command: Command) -> Response:
+    if command.group in command.global_info["groups"]:
+        try:
+            return Response.from_command(
+                command,
+                host=command.host_info.get("host"),
+            )
+        except Exception as e:
+            logging.error(f"{e} {command}", exc_info=True)
+            sys.exit(1)
 
+async def run_command_on_local(command: Command) -> Response:
     if command.group in command.global_info["groups"]:
         try:
             return Response.from_command(
@@ -35,7 +44,6 @@ async def run_command_on_local(command: Command) -> Response:
 
 async def run_command_on_host(command: Command) -> Response:
     cp = SSHCompletedProcess()
-    # logging.info(f"run on host - {command}")
 
     if command.group in command.global_info["groups"]:
         try:
@@ -245,10 +253,14 @@ async def execute(
                         operation.host_info, operation.global_info = inventory_item
 
                         # Execute the command
-                        if operation.local:
+                        if operation.type==ConnectionType.LOCAL:
                             result = await run_command_on_local(operation)
-                        else:
+                        elif operation.type==ConnectionType.REMOTE:
                             result = await run_command_on_host(operation)
+                        elif operation.type==ConnectionType.PASSTHROUGH:
+                            result = await pass_through_command(operation)
+                        else:
+                            raise ValueError(f"Unsupported connection type: {operation.type}")
 
                         responses.append(result)
 

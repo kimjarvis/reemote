@@ -2,7 +2,7 @@ from typing import Optional
 from typing import AsyncGenerator
 from fastapi import Query
 from pydantic import BaseModel, ConfigDict
-from reemote.command import Command
+from reemote.command import Command, ConnectionType
 from reemote.response import Response
 
 class LocalModel(BaseModel):
@@ -52,7 +52,7 @@ class Local:
         model_instance = self.Model(**self.kwargs)
 
         yield Command(
-            local=True,
+            type=ConnectionType.LOCAL,
             callback=self._callback,
             call=str(model_instance),
             caller=model_instance
