@@ -1,14 +1,13 @@
-# common/router_utils.py
+# common/router_handler.py
 from typing import Type, Any, Callable
 from fastapi import Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from reemote.common_model import CommonModel, common_params
 from reemote.execute import execute
 from reemote.response import validate_responses
-from reemote.validate_parameters import validate_parameters
 
 
-def create_router_handler(
+def router_handler(
         model: Type[BaseModel],
         command_class: Type,
         response_type: Any = None,
@@ -20,13 +19,8 @@ def create_router_handler(
             common: CommonModel = Depends(common_params),
             **kwargs
     ) -> list[Any]:
-        # Validate parameters
-        result = validate_parameters(model, common=common, **kwargs)
-
-        if not result["valid"]:
-            raise HTTPException(status_code=422, detail=result["errors"])
-
-        # Normalize common to dict (inlined from normalise_common)
+        # Validate parameters (inlined from validate_parameters)
+        # Normalize common to dict
         if common is None:
             common_dict = {}
         elif isinstance(common, BaseModel):
@@ -36,10 +30,16 @@ def create_router_handler(
         else:
             raise TypeError("`common` must be a CommonParams instance, dict, or None")
 
-        # Prepare all data
-        all_data = {**kwargs, **common_dict}
+        # Merge data (kwargs override common_dict)
+        all_data = {**common_dict, **kwargs}
 
-        # Execute the command
+        # Validate using the model
+        try:
+            parms = model(**all_data)
+        except ValidationError as e:
+            raise HTTPException(status_code=422, detail=e.errors())
+
+        # Execute the command with the validated data
         responses = await execute(lambda: command_class(**all_data))
 
         # Validate and return responses
@@ -51,4 +51,3 @@ def create_router_handler(
         return [response.dict() for response in validated_responses]
 
     return handler
-

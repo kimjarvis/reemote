@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 from typing import AsyncGenerator
 from reemote.command import Command
-from reemote.router_utils import create_router_handler
+from reemote.router_handler import router_handler
 from reemote.remote_model import Remote, RemoteModel, remote_params
 from reemote.response import Response
 router = APIRouter()
@@ -30,4 +30,4 @@ async def shell(
         common: RemoteModel = Depends(remote_params)
 ) -> list[dict]:
     """# Execute a shell command on the remote host"""
-    return await create_router_handler(ShellModel, Shell)(cmd=cmd, common=common)
+    return await router_handler(ShellModel, Shell)(cmd=cmd, common=common)

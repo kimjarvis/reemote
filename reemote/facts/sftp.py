@@ -5,7 +5,7 @@ import asyncssh
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field, field_validator
 
-from reemote.router_utils import create_router_handler
+from reemote.router_handler import router_handler
 from reemote.local_model import Local, LocalModel, local_params
 
 router = APIRouter()
@@ -53,7 +53,7 @@ async def islink(
         common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Return if the remote path refers to a symbolic link"""
-    return await create_router_handler(IslinkModel, Islink)(path=path, common=common)
+    return await router_handler(IslinkModel, Islink)(path=path, common=common)
 
 
 class IsfileModel(LocalModel):
@@ -98,7 +98,7 @@ async def isfile(
         common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Return if the remote path refers to a file"""
-    return await create_router_handler(IsfileModel, Isfile)(path=path, common=common)
+    return await router_handler(IsfileModel, Isfile)(path=path, common=common)
 
 
 class IsdirModel(LocalModel):
@@ -137,4 +137,4 @@ async def isdir(
         common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Return if the remote path refers to a directory"""
-    return await create_router_handler(IsdirModel, Isdir)(path=path, common=common)
+    return await router_handler(IsdirModel, Isdir)(path=path, common=common)

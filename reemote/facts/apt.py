@@ -1,7 +1,7 @@
 from typing import AsyncGenerator
 from fastapi import APIRouter, Depends
 from reemote.command import Command
-from reemote.router_utils import create_router_handler
+from reemote.router_handler import router_handler
 from reemote.common_model import CommonModel, common_params
 from reemote.remote_model import RemoteModel, Remote
 from reemote.response import Response
@@ -36,6 +36,6 @@ class GetPackages(Remote):
 @router.get("/fact/get_packages/", tags=["APT Package Manager Facts"])
 async def get_packages(common: CommonModel = Depends(common_params)) -> list[dict]:
     """# Get installed APT packages"""
-    return await create_router_handler(GetPackagesModel, GetPackages)(
+    return await router_handler(GetPackagesModel, GetPackages)(
         cmd=cmd, common=common
     )

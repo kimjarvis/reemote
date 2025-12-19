@@ -6,7 +6,7 @@ import asyncssh
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field, field_validator
 
-from reemote.router_utils import create_router_handler
+from reemote.router_handler import router_handler
 from reemote.local_model import Local, LocalModel, local_params
 
 router = APIRouter()
@@ -155,7 +155,7 @@ async def copy(
         common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Copy remote files to a new location"""
-    return await create_router_handler(CopyModel, Copy)(
+    return await router_handler(CopyModel, Copy)(
         srcpaths=srcpaths,
         dstpath=dstpath,
         preserve=preserve,
@@ -221,7 +221,7 @@ async def mcopy(
         common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Copy remote files to a new location"""
-    return await create_router_handler(CopyModel, Mcopy)(
+    return await router_handler(CopyModel, Mcopy)(
         srcpaths=srcpaths,
         dstpath=dstpath,
         preserve=preserve,
@@ -374,7 +374,7 @@ async def get(
         common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Download remote files"""
-    return await create_router_handler(GetModel, Get)(
+    return await router_handler(GetModel, Get)(
         remotepaths=remotepaths,
         localpath=localpath,
         preserve=preserve,
@@ -435,7 +435,7 @@ async def mget(
         common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Download remote files with glob pattern match"""
-    return await create_router_handler(GetModel, Mget)(
+    return await router_handler(GetModel, Mget)(
         remotepaths=remotepaths,
         localpath=localpath,
         preserve=preserve,
@@ -589,7 +589,7 @@ async def put(
         common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Upload local files"""
-    return await create_router_handler(PutModel, Put)(
+    return await router_handler(PutModel, Put)(
         localpaths=localpaths,
         remotepath=remotepath,
         preserve=preserve,
@@ -650,7 +650,7 @@ async def mput(
         common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Upload local files with glob pattern match"""
-    return await create_router_handler(PutModel, Mput)(
+    return await router_handler(PutModel, Mput)(
         localpaths=localpaths,
         remotepath=remotepath,
         preserve=preserve,
@@ -767,7 +767,7 @@ async def mkdir(
     if mtime is not None:
         params["mtime"] = mtime
 
-    return await create_router_handler(MkdirModel, Mkdir)(**params, common=common)
+    return await router_handler(MkdirModel, Mkdir)(**params, common=common)
 
 
 class StatModel(LocalModel):
@@ -830,7 +830,7 @@ async def stat(
         common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Get attributes of a remote file, directory, or symlink"""
-    return await create_router_handler(StatModel, Stat)(path=path, follow_symlinks=follow_symlinks, common=common)
+    return await router_handler(StatModel, Stat)(path=path, follow_symlinks=follow_symlinks, common=common)
 
 
 
@@ -876,6 +876,6 @@ async def islink(
         common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Remove a remote directory"""
-    return await create_router_handler(RmdirModel, Rmdir)(path=path, common=common)
+    return await router_handler(RmdirModel, Rmdir)(path=path, common=common)
 
 

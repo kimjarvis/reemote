@@ -4,7 +4,7 @@ import asyncssh
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
-from reemote.router_utils import create_router_handler
+from reemote.router_handler import router_handler
 from reemote.construction_tracker import track_construction
 from reemote.local_model import Local, LocalModel, local_params
 
@@ -80,7 +80,7 @@ async def upload(
     """
     will continue starting with the next file.
     """
-    return await create_router_handler(ScpModel, Upload)(
+    return await router_handler(ScpModel, Upload)(
         srcpaths=srcpaths,
         dstpath=dstpath,
         preserve=preserve,
@@ -146,7 +146,7 @@ async def download(
     """
     will continue starting with the next file.
     """
-    return await create_router_handler(ScpModel, Download)(
+    return await router_handler(ScpModel, Download)(
         srcpaths=srcpaths,
         dstpath=dstpath,
         preserve=preserve,
@@ -221,7 +221,7 @@ async def copy(
     """
     will continue starting with the next file.
     """
-    return await create_router_handler(ScpModel, Copy)(
+    return await router_handler(ScpModel, Copy)(
         srcpaths=srcpaths,
         dstpath=dstpath,
         dstgroup=dstgroup,
