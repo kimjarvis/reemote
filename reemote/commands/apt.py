@@ -5,7 +5,6 @@ from reemote.router_handler import router_handler
 from reemote.common_model import CommonModel, common_params
 from reemote.remote_model import RemoteModel, Remote
 from reemote.response import Response
-from reemote.construction_tracker import track_construction
 
 router = APIRouter()
 
@@ -14,7 +13,6 @@ class InstallModel(RemoteModel):
     packages: list[str]
 
 
-@track_construction
 class Install(Remote):
     """APT install command"""
 
@@ -43,7 +41,7 @@ class RemoveModel(RemoteModel):
     packages: list[str]
 
 
-@track_construction
+
 class Remove(Remote):
     """APT install command"""
 
@@ -72,7 +70,6 @@ class UpdateModel(RemoteModel):
     pass
 
 
-@track_construction
 class Update(Remote):
     """APT install command"""
 
@@ -96,7 +93,7 @@ class UpgradeModel(RemoteModel):
     pass
 
 
-@track_construction
+
 class Upgrade(Remote):
     """APT install command"""
 

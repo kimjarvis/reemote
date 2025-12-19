@@ -2,13 +2,10 @@ import asyncio
 
 from reemote.commands.scp import Upload, Download, Copy
 from reemote.commands.sftp import Isfile
-from reemote.construction_tracker import track_construction, track_yields
 from reemote.execute import execute
 
 
-@track_construction
 class Root:
-    @track_yields
     async def execute(self):
         print("upload")
         # Implement sftp remove file

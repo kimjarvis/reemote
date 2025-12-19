@@ -1,6 +1,5 @@
 import asyncio
 
-from reemote.construction_tracker import ConstructionTracker
 from reemote.execute import execute
 from reemote.response import validate_responses
 from reemote.commands.apt import Update
@@ -21,9 +20,6 @@ async def main():
         print(f"Stderr: {result.stderr}")
         print(f"Changed: {result.changed}")
 
-    # Print the construction hierarchy at the end
-    print("\nConstruction Hierarchy:")
-    ConstructionTracker.print()
 
 if __name__ == "__main__":
     asyncio.run(main())

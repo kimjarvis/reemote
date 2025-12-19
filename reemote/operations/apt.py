@@ -3,7 +3,6 @@ from fastapi import APIRouter, Query, Depends
 from reemote.common_model import CommonModel, common_params
 from reemote.remote_model import RemoteModel, Remote
 from reemote.response import Response
-from reemote.construction_tracker import track_construction, track_yields
 from reemote.commands.apt import Install, Remove, Update, Upgrade
 from reemote.facts.apt import GetPackages
 from reemote.checks import mark_unchanged
@@ -16,12 +15,10 @@ class PackageModel(RemoteModel):
     upgrade: bool = False
     present: bool = True
 
-@track_construction
 class Package(Remote):
     """APT package command"""
     Model = PackageModel
 
-    @track_yields
     async def execute(self) -> AsyncGenerator[GetPackages | Update | Upgrade | Install | Remove, Response]:
         if self.extra_kwargs.get("update"):
             before_update = yield GetPackages()

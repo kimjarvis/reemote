@@ -5,15 +5,12 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from reemote.commands.sftp import isdir, isfile, put
-from reemote.construction_tracker import track_construction, track_yields
 from reemote.execute import execute
 
 
-@pytest.mark.asyncio
+
 async def test_sftp():
-    @track_construction
     class Root:
-        @track_yields
         async def execute(self):
             print("Starting test...")
 

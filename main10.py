@@ -1,14 +1,11 @@
 import asyncio
 
 from reemote.operations.apt import Package
-from reemote.construction_tracker import track_construction, track_yields
 from reemote.execute import execute
 from reemote.checks import changed, flatten
 
 
-@track_construction
 class Root:
-    @track_yields
     async def execute(self):
         r = yield Package(
             name="initial remove package",

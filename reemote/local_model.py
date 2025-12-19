@@ -2,7 +2,6 @@ from typing import Optional
 from typing import AsyncGenerator
 from fastapi import Query
 from pydantic import BaseModel, ConfigDict
-from reemote.construction_tracker import track_yields
 from reemote.command import Command
 from reemote.response import Response
 
@@ -49,7 +48,6 @@ class Local:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
 
-    @track_yields
     async def execute(self) -> AsyncGenerator[Command, Response]:
         model_instance = self.Model(**self.kwargs)
 

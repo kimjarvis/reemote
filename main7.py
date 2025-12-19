@@ -1,6 +1,5 @@
 import asyncio
 
-from reemote.construction_tracker import ConstructionTracker
 from reemote.execute import execute
 from reemote.response import validate_responses
 
@@ -8,7 +7,7 @@ from reemote.response import validate_responses
 async def main():
     from reemote.commands.sftp import Mkdir
     responses = await execute(lambda: Mkdir(name="Make directory fred",
-                                                       path="/home/user/h2",
+                                                       path="/home/user/h5",
                                                        permissions=0o555))
     validated_responses = await validate_responses(responses)
     print(validated_responses)
@@ -22,9 +21,6 @@ async def main():
         print(f"Stderr: {result.stderr}")
         print(f"Changed: {result.changed}")
 
-    # Print the construction hierarchy at the end
-    print("\nConstruction Hierarchy:")
-    ConstructionTracker.print()
 
 
 if __name__ == "__main__":

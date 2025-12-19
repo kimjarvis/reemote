@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
 from reemote.router_handler import router_handler
-from reemote.construction_tracker import track_construction
 from reemote.local_model import Local, LocalModel, local_params
 
 router = APIRouter()
@@ -24,7 +23,6 @@ class ScpModel(LocalModel):
     error_handler: Optional[Callable] = None
 
 
-@track_construction
 class Upload(Local):
     Model = ScpModel
 
@@ -90,7 +88,6 @@ async def upload(
         error_handler=error_handler,
         common=common)
 
-@track_construction
 class Download(Local):
     Model = ScpModel
 
@@ -161,7 +158,6 @@ class CopyModel(ScpModel):
         ...,  # Required field
     )
 
-@track_construction
 class Copy(Local):
     Model = CopyModel
 

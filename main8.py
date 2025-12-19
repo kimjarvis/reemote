@@ -1,12 +1,9 @@
 # main.py
 import asyncio
 from reemote.execute import execute
-from reemote.construction_tracker import  track_construction, track_yields
 from reemote.commands.server import Shell
 
-@track_construction
 class Hello:
-    @track_yields
     async def execute(self):
         a = yield Shell(cmd="pwd")
         print(type(a))
@@ -16,16 +13,12 @@ class Hello:
                         sudo=False)
         c = yield Shell(cmd="ls -ltr")
 
-@track_construction
 class Parent:
-    @track_yields
     async def execute(self):
         a = yield Shell(cmd="hostname")
         r = yield Hello()
 
-@track_construction
 class Root:
-    @track_yields
     async def execute(self):
         r = yield Parent()
         for x in r:
@@ -33,7 +26,7 @@ class Root:
 
 async def main():
     # Clear construction tracker at the beginning
-    ConstructionTracker.clear()
+
 
     responses = await execute(lambda: Root())
     # validated_responses = await validate_responses(responses)
@@ -50,9 +43,6 @@ async def main():
     #     print(f"Changed: {result.changed}")
     #     print(f"Executed: {result.executed}")
     #
-    # # Print the construction hierarchy at the end
-    # print("\nConstruction Hierarchy:")
-    # ConstructionTracker.print()
 
 
 if __name__ == "__main__":

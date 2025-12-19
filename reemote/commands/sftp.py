@@ -1,4 +1,4 @@
-import stat
+import stat as stat_module
 from pathlib import PurePath
 from typing import Callable, Optional, Sequence, Union
 
@@ -715,7 +715,7 @@ class MkdirModel(LocalModel):
         if attrs_dict:
             # Add directory bit if permissions are provided
             if 'permissions' in attrs_dict:
-                attrs_dict['permissions'] = attrs_dict['permissions'] | stat.S_IFDIR
+                attrs_dict['permissions'] = attrs_dict['permissions'] | stat_module.S_IFDIR
             return asyncssh.SFTPAttrs(**attrs_dict)
         return None
 

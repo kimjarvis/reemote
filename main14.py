@@ -1,13 +1,10 @@
 import asyncio
 
 from reemote.commands.scp import Copy, Download, Upload
-from reemote.construction_tracker import track_construction, track_yields
 from reemote.execute import execute
 
 
-@track_construction
 class Root:
-    @track_yields
     async def execute(self):
         print("upload")
         r = yield Upload(

@@ -1,7 +1,6 @@
 import pytest
 from reemote.execute import execute
 from reemote.response import validate_responses
-from reemote.construction_tracker import  track_construction, track_yields
 
 
 from reemote.commands.apt import Install, Remove, GetPackages, Package
@@ -52,9 +51,7 @@ async def test_apt_get_packages():
 
 @pytest.mark.asyncio
 async def test_apt_package():
-    @track_construction
     class Test_apt_package:
-        @track_yields
         async def execute(self):
             r = yield Package(name="1",
                               packages=["tree"],

@@ -1,11 +1,8 @@
 import asyncio
-from reemote.commands.sftp import Isdir, Isfile
-from reemote.construction_tracker import track_construction, track_yields
+from reemote.facts.sftp import Isdir, Isfile
 from reemote.execute import execute
 
-@track_construction
 class Root:
-    @track_yields
     async def execute(self):
         # r =  yield Put(localpaths="/home/kim/restpoc/main13.py", remotepath="/home/user/",group="101")
         # r =  yield Rmdir(path="/home/user/freddy",group="101")

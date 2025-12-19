@@ -20,9 +20,6 @@ async def main():
         print(f"Stdout: {result.stdout}")
         print(f"Stderr: {result.stderr}")
         print(f"Changed: {result.changed}")
-    # Print the construction hierarchy at the end
-    print("\nConstruction Hierarchy:")
-    ConstructionTracker.print()
 
 if __name__ == "__main__":
     asyncio.run(main())

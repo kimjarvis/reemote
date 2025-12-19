@@ -3,10 +3,10 @@ from typing import Any, Callable, Dict, Optional
 from pydantic import ConfigDict, Field, field_validator  # Updated imports
 
 from reemote.common_model import CommonModel
-from reemote.construction_tracker import track_construction
 
 
-@track_construction
+
+
 class Command(CommonModel):
     """Command model with validation using Pydantic"""
 

@@ -6,7 +6,6 @@ from reemote.common_model import CommonModel, common_params
 from reemote.remote_model import RemoteModel, Remote
 from reemote.response import Response
 from reemote.facts.parse_apt_list_installed import parse_apt_list_installed
-from reemote.construction_tracker import track_construction
 
 router = APIRouter()
 
@@ -15,7 +14,7 @@ class GetPackagesModel(RemoteModel):
     pass
 
 
-@track_construction
+
 class GetPackages(Remote):
     """Get installed packages fact"""
 

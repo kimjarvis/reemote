@@ -1,7 +1,7 @@
 import asyncio
 from reemote.execute import execute
 from reemote.response import validate_responses, PackageInfo
-from reemote.commands.apt import GetPackages
+from reemote.facts.apt import GetPackages
 
 async def main():
     responses = await execute(lambda: GetPackages(name="get packages"))
