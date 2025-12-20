@@ -138,3 +138,65 @@ async def isdir(
 ) -> list[dict]:
     """# Return if the remote path refers to a directory"""
     return await router_handler(IsdirModel, Isdir)(path=path, common=common)
+
+class StatModel(LocalModel):
+    path: Union[PurePath, str, bytes] = Field(
+        ...,  # Required field
+    )
+    follow_symlinks: bool = Field(
+        True,  # Default value
+    )
+
+    @field_validator('path', mode='before')
+    @classmethod
+    def ensure_path_is_purepath(cls, v):
+        """
+        Ensure the 'path' field is converted to a PurePath object.
+        This runs before the field is validated by Pydantic.
+        """
+        if v is None:
+            raise ValueError("path cannot be None.")
+        if not isinstance(v, PurePath):
+            try:
+                return PurePath(v)
+            except TypeError:
+                raise ValueError(f"Cannot convert {v} to PurePath.")
+        return v
+
+    def __init__(self, **data):
+        # Ensure path is converted to PurePath if it's a string/bytes
+        if 'path' in data and isinstance(data['path'], (str, bytes)):
+            data['path'] = PurePath(data['path'])
+        super().__init__(**data)
+
+class Stat(Local):
+    Model = StatModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                sftp_attrs = await sftp.stat(caller.path, follow_symlinks=caller.follow_symlinks)
+
+                fields = [
+                    'type', 'size', 'alloc_size', 'uid', 'gid', 'owner', 'group',
+                    'permissions', 'atime', 'atime_ns', 'crtime', 'crtime_ns',
+                    'mtime', 'mtime_ns', 'ctime', 'ctime_ns', 'acl', 'attrib_bits',
+                    'attrib_valid', 'text_hint', 'mime_type', 'nlink', 'untrans_name',
+                    'extended'
+                ]
+
+                # Create a dictionary by extracting each field from the SFTPAttrs object
+                attrs_dict = {field: getattr(sftp_attrs, field) for field in fields}
+                # print(attrs_dict)
+                return attrs_dict
+
+
+@router.get("/fact/stat/", tags=["SFTP Facts"])
+async def stat(
+        path: Union[PurePath, str, bytes] = Query(..., description="The path of the remote file or directory to get attributes for"),
+        follow_symlinks: bool = Query(True, description="Whether or not to follow symbolic links"),
+        common: LocalModel = Depends(local_params)
+) -> list[dict]:
+    """# Get attributes of a remote file, directory, or symlink"""
+    return await router_handler(StatModel, Stat)(path=path, follow_symlinks=follow_symlinks, common=common)

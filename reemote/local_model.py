@@ -1,3 +1,5 @@
+import logging
+from reemote.logging import reemote_logging
 from typing import Optional
 from typing import AsyncGenerator
 from fastapi import Query
@@ -55,5 +57,6 @@ class Local:
             type=ConnectionType.LOCAL,
             callback=self._callback,
             call=str(model_instance),
-            caller=model_instance
+            caller=model_instance,
+            group=model_instance.group,
         )

@@ -5,12 +5,14 @@ import logging
 import sys
 import asyncssh
 import asyncio
+import inspect
 from asyncssh import SSHCompletedProcess
 from reemote.command import Command, ConnectionType
 from typing import Any, AsyncGenerator, List, Tuple, Dict, Callable
 from reemote.response import Response  # Changed import
 from reemote.config import Config
 from reemote.logging import reemote_logging
+
 
 async def pass_through_command(command: Command) -> Response:
     if command.group in command.global_info["groups"]:
@@ -23,8 +25,10 @@ async def pass_through_command(command: Command) -> Response:
             logging.error(f"{e} {command}", exc_info=True)
             sys.exit(1)
 
+
 async def run_command_on_local(command: Command) -> Response:
     if command.group in command.global_info["groups"]:
+        print(f"debug 00 {command.group} {command.host_info.get("host")}")
         try:
             return Response.from_command(
                 command,
@@ -123,9 +127,18 @@ async def pre_order_generator_async(
 
     # Start with the root node
     if hasattr(node, "execute") and callable(node.execute):
-        gen = node.execute()
-        # For async generators, we can't call next() immediately
-        stack.append((node, gen, None))
+        # Check if execute is an async generator function
+        if inspect.isasyncgenfunction(node.execute):
+            gen = node.execute()
+            stack.append((node, gen, None))
+        else:
+            # It's a regular async function (coroutine)
+            # We'll execute it and return its result
+            result = await node.execute()
+            # Yield a special marker to indicate completion
+            yield None
+            # The caller should recognize None as a sentinel and stop
+            return
     else:
         raise TypeError(f"Node must have an execute() method: {type(node)}")
 
@@ -148,42 +161,19 @@ async def pre_order_generator_async(
                 stack[-1] = (current_node, generator, result)
 
             elif hasattr(value, "execute") and callable(value.execute):
-                # Special handling for Shell-like objects
-                # They yield Commands, but we want results to go to parent
-                from reemote.commands.server import Shell
+                # Nested operation (like Child, Shell, or Return)
+                # Execute it and push onto stack
+                nested_execute = value.execute()
 
-                if isinstance(value, Shell):
-                    # Get the Command from Shell
-                    shell_gen = value.execute()
-                    try:
-                        # Get Command from Shell
-                        command = await shell_gen.__anext__()
-
-                        # Execute the Command
-                        result = yield command
-
-                        # Shell generator should be done now
-                        try:
-                            # Try to send result to Shell (it might not accept)
-                            await shell_gen.asend(result)
-                        except StopAsyncIteration:
-                            # Shell is done
-                            pass
-
-                        # Send result DIRECTLY back to parent (Hello)
-                        stack[-1] = (current_node, generator, result)
-
-                    except StopAsyncIteration:
-                        # Shell had no commands
-                        stack[-1] = (current_node, generator, None)
-                    finally:
-                        await shell_gen.aclose()
-
-                else:
-                    # Real nested operation (like Hello)
-                    # Push it onto the stack
-                    nested_gen = value.execute()
+                # Check if it's an async generator
+                if inspect.isasyncgenfunction(value.execute):
+                    nested_gen = nested_execute
                     stack.append((value, nested_gen, None))
+                else:
+                    # It's a coroutine - execute it immediately
+                    result = await nested_execute
+                    # Send result back to parent
+                    stack[-1] = (current_node, generator, result)
 
             elif isinstance(value, Response):
                 # Pass through Response objects
@@ -191,40 +181,25 @@ async def pre_order_generator_async(
                 stack[-1] = (current_node, generator, result)
 
             else:
+                # Unsupported type
                 raise TypeError(
                     f"Unsupported yield type from async generator: {type(value)}"
                 )
 
-        except StopAsyncIteration:
+        except StopAsyncIteration as e:
             # Async generator is done
-            completed_node = stack[-1][0] if stack else None
-
-            # Get the collected results from the completed node
-            collected_results = getattr(completed_node, "_yielded_results", None)
+            # Get the return value if any
+            return_value = e.value if hasattr(e, "value") else send_value
 
             stack.pop()
 
-            # If there's a parent generator, send back a meaningful value
+            # If there's a parent generator, send back the return value
             if stack:
-                # Check if we have collected results
-                if collected_results is not None:
-                    # Return the collected results
-                    return_value = collected_results
-                else:
-                    # No collected results, use last sent value
-                    return_value = send_value
-
                 stack[-1] = (stack[-1][0], stack[-1][1], return_value)
 
         except Exception as e:
-            # Handle errors
-            error_msg = f"Error in node execution: {e}"
-            result = yield Response(error=error_msg)
-            stack.pop()
-
-            # Send error to parent if exists
-            if stack:
-                stack[-1] = (stack[-1][0], stack[-1][1], result)
+            logging.error(f"{e}", exc_info=True)
+            raise
 
 
 async def execute(
@@ -233,8 +208,8 @@ async def execute(
     async def process_host(
         inventory_item: Tuple[Dict[str, Any], Dict[str, Any]],
         obj_factory: Callable[[], Any],
-    ) -> List[Response]:  # Changed return type
-        responses: List[Response] = []  # Changed type
+    ) -> List[Response]:
+        responses: List[Response] = []
 
         # Create a new instance for this host using the factory
         host_instance = obj_factory()
@@ -243,8 +218,13 @@ async def execute(
         gen = pre_order_generator_async(host_instance)
 
         try:
-            # Prime the async generator - get first value
-            operation = await gen.__anext__()
+            # Start the generator
+            operation = None
+            try:
+                operation = await gen.__anext__()
+            except StopAsyncIteration:
+                # Generator completed immediately (no commands to execute)
+                return responses
 
             while True:
                 try:
@@ -253,21 +233,23 @@ async def execute(
                         operation.host_info, operation.global_info = inventory_item
 
                         # Execute the command
-                        if operation.type==ConnectionType.LOCAL:
+                        if operation.type == ConnectionType.LOCAL:
                             result = await run_command_on_local(operation)
-                        elif operation.type==ConnectionType.REMOTE:
+                        elif operation.type == ConnectionType.REMOTE:
                             result = await run_command_on_host(operation)
-                        elif operation.type==ConnectionType.PASSTHROUGH:
+                        elif operation.type == ConnectionType.PASSTHROUGH:
                             result = await pass_through_command(operation)
                         else:
-                            raise ValueError(f"Unsupported connection type: {operation.type}")
+                            raise ValueError(
+                                f"Unsupported connection type: {operation.type}"
+                            )
 
                         responses.append(result)
 
                         # Send result back and get next operation
                         operation = await gen.asend(result)
 
-                    elif isinstance(operation, Response):  # Changed type check
+                    elif isinstance(operation, Response):
                         responses.append(operation)
                         result = operation
                         operation = await gen.asend(result)
@@ -283,9 +265,8 @@ async def execute(
 
         except Exception as e:
             # Handle any errors for this host
-            logging.error(
-                f"Error processing host {inventory_item}: {e}", exc_info=True
-            )
+            logging.error(f"Error processing host {inventory_item}: {e}", exc_info=True)
+            raise
 
         return responses
 
