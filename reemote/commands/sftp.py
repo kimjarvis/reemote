@@ -241,7 +241,7 @@ class GetModel(LocalModel):
     remotepaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]] = Field(
         ...,  # Required field
     )
-    localpath: Optional[Union[PurePath, str, bytes]]  = Field(
+    localpath: Union[PurePath, str, bytes]  = Field(
         ...,  # Required field
     )
 
@@ -334,8 +334,8 @@ async def get(
             ...,
             description="The paths of the remote files or directories to download"
         ),
-        localpath: Optional[Union[PurePath, str, bytes]] = Query(
-            None,
+        localpath: Union[PurePath, str, bytes] = Query(
+            ...,
             description="The path of the local file or directory to download into"
         ),
         preserve: bool = Query(
@@ -395,8 +395,8 @@ async def mget(
             ...,
             description="The paths of the remote files or directories to download"
         ),
-        localpath: Optional[Union[PurePath, str, bytes]] = Query(
-            None,
+        localpath: Union[PurePath, str, bytes] = Query(
+            ...,
             description="The path of the local file or directory to download into"
         ),
         preserve: bool = Query(
@@ -457,7 +457,7 @@ class PutModel(LocalModel):
     localpaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]] = Field(
         ...,  # Required field
     )
-    remotepath: Optional[Union[PurePath, str, bytes]] = Field(
+    remotepath: Union[PurePath, str, bytes] = Field(
         ...,  # Required field
     )
 
@@ -549,8 +549,8 @@ async def put(
             ...,
             description="The paths of the local files or directories to upload"
         ),
-        remotepath: Optional[Union[PurePath, str, bytes]] = Query(
-            None,
+        remotepath: Union[PurePath, str, bytes] = Query(
+            ...,
             description="The path of the remote file or directory to upload into"
         ),
         preserve: bool = Query(
@@ -610,8 +610,8 @@ async def mput(
             ...,
             description="The paths of the local files or directories to upload"
         ),
-        remotepath: Optional[Union[PurePath, str, bytes]] = Query(
-            None,
+        remotepath: Union[PurePath, str, bytes] = Query(
+            ...,
             description="The path of the remote file or directory to upload into"
         ),
         preserve: bool = Query(
@@ -760,29 +760,9 @@ async def mkdir(
 
 
 
-class RmdirModel(LocalModel):
-    path: Union[PurePath, str, bytes] = Field(
-        ...,  # Required field
-    )
-
-    @field_validator('path', mode='before')
-    @classmethod
-    def ensure_path_is_purepath(cls, v):
-        """
-        Ensure the 'path' field is converted to a PurePath object.
-        This runs before the field is validated by Pydantic.
-        """
-        if v is None:
-            raise ValueError("path cannot be None.")
-        if not isinstance(v, PurePath):
-            try:
-                return PurePath(v)
-            except TypeError:
-                raise ValueError(f"Cannot convert {v} to PurePath.")
-        return v
 
 class Rmdir(Local):
-    Model = RmdirModel
+    Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
@@ -791,18 +771,14 @@ class Rmdir(Local):
                 return await sftp.rmdir(str(caller.path))
 
 @router.get("/command/rmdir/", tags=["SFTP Commands"])
-async def islink(
-        path: Union[PurePath, str, bytes] = Query(..., description="The path of the remote directory to remove"),
-        common: LocalModel = Depends(local_params)
+async def rmdir(
+        common: LocalPathModel = Depends(local_path_params)
 ) -> list[dict]:
     """# Remove a remote directory"""
-    return await router_handler(RmdirModel, Rmdir)(path=path, common=common)
+    return await router_handler(LocalPathModel, Rmdir)(common=common)
 
 
-class ChmodModel(LocalModel):
-    path: Union[PurePath, str, bytes] = Field(
-        ...,  # Required field
-    )
+class ChmodModel(LocalPathModel):
     permissions: Optional[int] = Field(
         None,
         ge=0,
@@ -810,22 +786,6 @@ class ChmodModel(LocalModel):
         description="Directory permissions as octal integer (e.g., 0o755)"
     )
     follow_symlinks: bool = False
-
-    @field_validator('path', mode='before')
-    @classmethod
-    def ensure_path_is_purepath(cls, v):
-        """
-        Ensure the 'path' field is converted to a PurePath object.
-        This runs before the field is validated by Pydantic.
-        """
-        if v is None:
-            raise ValueError("path cannot be None.")
-        if not isinstance(v, PurePath):
-            try:
-                return PurePath(v)
-            except TypeError:
-                raise ValueError(f"Cannot convert {v} to PurePath.")
-        return v
 
 class Chmod(Local):
     Model = ChmodModel
@@ -836,10 +796,8 @@ class Chmod(Local):
             async with conn.start_sftp_client() as sftp:
                 return await sftp.chmod(path=caller.path, mode=caller.permissions, follow_symlinks=caller.follow_symlinks)
 
-
 @router.get("/command/chmod/", tags=["SFTP Commands"])
 async def chmod(
-    path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     permissions: Optional[int] = Query(
         None,
         ge=0,
@@ -850,39 +808,20 @@ async def chmod(
         False,
         description="Whether or not to follow symbolic links"
     ),
-    common: LocalModel = Depends(local_params)
+    common: LocalPathModel = Depends(local_path_params)
 ) -> list[dict]:
     """# Change the permissions of a remote file, directory, or symlink"""
-    return await router_handler(ChmodModel, Chmod)(path=path,
+    return await router_handler(ChmodModel, Chmod)(
                                                    permissions=permissions,
                                                    follow_symlinks=follow_symlinks,
                                                    common=common)
 
 
-class ChownModel(LocalModel):
-    path: Union[PurePath, str, bytes] = Field(
-        ...,  # Required field
-    )
+class ChownModel(LocalPathModel):
     # todo: These descriptions are never used
     uid: Optional[int] = Field(None, description="User ID")
     gid: Optional[int] = Field(None, description="Group ID")
     follow_symlinks: bool = False
-
-    @field_validator('path', mode='before')
-    @classmethod
-    def ensure_path_is_purepath(cls, v):
-        """
-        Ensure the 'path' field is converted to a PurePath object.
-        This runs before the field is validated by Pydantic.
-        """
-        if v is None:
-            raise ValueError("path cannot be None.")
-        if not isinstance(v, PurePath):
-            try:
-                return PurePath(v)
-            except TypeError:
-                raise ValueError(f"Cannot convert {v} to PurePath.")
-        return v
 
 class Chown(Local):
     Model = ChownModel
@@ -899,17 +838,16 @@ class Chown(Local):
 
 @router.get("/command/chown/", tags=["SFTP Commands"])
 async def chown(
-    path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     follow_symlinks: bool = Query(
         False,
         description="Whether or not to follow symbolic links"
     ),
     uid: Optional[int] = Query(None, description="User ID"),
     gid: Optional[int] = Query(None, description="Group ID"),
-    common: LocalModel = Depends(local_params)
+    common: LocalPathModel = Depends(local_path_params)
 ) -> list[dict]:
     """# Change the owner of a remote file, directory, or symlink"""
-    return await router_handler(ChownModel, Chown)(path=path,
+    return await router_handler(ChownModel, Chown)(
                                                    uid=uid,
                                                    gid=gid,
                                                    follow_symlinks=follow_symlinks,
@@ -919,30 +857,11 @@ async def chown(
 
 
 
-class UtimeModel(LocalModel):
-    path: Union[PurePath, str, bytes] = Field(
-        ...,  # Required field
-    )
+class UtimeModel(LocalPathModel):
     # todo: These descriptions are never used
     atime: int
     mtime: int
     follow_symlinks: bool = False
-
-    @field_validator('path', mode='before')
-    @classmethod
-    def ensure_path_is_purepath(cls, v):
-        """
-        Ensure the 'path' field is converted to a PurePath object.
-        This runs before the field is validated by Pydantic.
-        """
-        if v is None:
-            raise ValueError("path cannot be None.")
-        if not isinstance(v, PurePath):
-            try:
-                return PurePath(v)
-            except TypeError:
-                raise ValueError(f"Cannot convert {v} to PurePath.")
-        return v
 
     @root_validator(skip_on_failure=True)
     @classmethod
@@ -970,17 +889,16 @@ class Utime(Local):
 
 @router.get("/command/utime/", tags=["SFTP Commands"])
 async def utime(
-    path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     follow_symlinks: bool = Query(
         False,
         description="Whether or not to follow symbolic links"
     ),
     atime: Optional[int] = Query(None, description="Access time, as seconds relative to the UNIX epoch"),
     mtime: Optional[int] = Query(None, description="Modify time, as seconds relative to the UNIX epoch"),
-    common: LocalModel = Depends(local_params)
+    common: LocalPathModel = Depends(local_path_params)
 ) -> list[dict]:
     """# Change the timestamps of a remote file, directory, or symlink"""
-    return await router_handler(UtimeModel, Utime)(path=path,
+    return await router_handler(UtimeModel, Utime)(
                                                    atime=atime,
                                                    mtime=mtime,
                                                    follow_symlinks=follow_symlinks,
