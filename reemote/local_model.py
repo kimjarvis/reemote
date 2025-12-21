@@ -1,42 +1,20 @@
-import logging
-from reemote.logging import reemote_logging
 from typing import Optional
-from typing import AsyncGenerator
-from fastapi import Query
+from typing import AsyncGenerator, Union
 from pydantic import BaseModel, ConfigDict
 from reemote.command import Command, ConnectionType
 from reemote.response import Response
 
+from pathlib import PurePath
+
+from fastapi import Query
+from pydantic import Field, field_validator
+
 class LocalModel(BaseModel):
-    """Common parameters shared across command types"""
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     group: Optional[str] = "all"
     name: Optional[str] = None
 
-    def __repr__(self) -> str:
-        """Use detailed_repr for representation"""
-        return self.detailed_repr()
-
-    def __str__(self) -> str:
-        return self.__repr__()
-
-    def detailed_repr(self) -> str:
-        """Generate a detailed representation dynamically for any derived class."""
-        # Get all fields as a dictionary
-        fields_dict = self.model_dump()
-
-        # Format fields for display
-        field_reprs = [f"{name}={value!r}" for name, value in fields_dict.items()]
-
-        # Get class name and remove "Model" suffix if present
-        class_name = self.__class__.__name__
-        if class_name.endswith("Model"):
-            class_name = class_name[:-5]  # Remove "Model" (5 characters)
-
-        return f"{class_name}({', '.join(field_reprs)})"
-
-# Used by api
 def local_params(
     group: Optional[str] = Query(
         "all", description="Optional inventory group (defaults to 'all')"
@@ -45,6 +23,36 @@ def local_params(
 ) -> LocalModel:
     """FastAPI dependency for common parameters"""
     return LocalModel(group=group, name=name)
+
+
+class LocalPathModel(LocalModel):
+    path: Union[PurePath, str, bytes] = Field(
+        ...,  # Required field
+    )
+
+    @field_validator('path', mode='before')
+    @classmethod
+    def ensure_path_is_purepath(cls, v):
+        """
+        Ensure the 'path' field is converted to a PurePath object.
+        This runs before the field is validated by Pydantic.
+        """
+        if v is None:
+            raise ValueError("path cannot be None.")
+        if not isinstance(v, PurePath):
+            try:
+                return PurePath(v)
+            except TypeError:
+                raise ValueError(f"Cannot convert {v} to PurePath.")
+        return v
+
+def local_path_params(
+        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
+) -> LocalPathModel:
+    """FastAPI dependency for common parameters"""
+    return LocalPathModel(path=path)
+
+
 
 class Local:
     def __init__(self, **kwargs):

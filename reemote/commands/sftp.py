@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator, ValidationError, root_va
 
 from reemote.router_handler import router_handler
 from reemote.local_model import Local, LocalModel, local_params
+from reemote.local_model import LocalPathModel, local_path_params
 
 router = APIRouter()
 
@@ -666,10 +667,7 @@ async def mput(
 
 
 
-class MkdirModel(LocalModel):
-    path: Union[PurePath, str, bytes] = Field(
-        ...,  # Required field
-    )
+class MkdirModel(LocalPathModel):
     permissions: Optional[int] = Field(
         None,
         ge=0,
@@ -679,22 +677,6 @@ class MkdirModel(LocalModel):
     gid: Optional[int] = Field(None, description="Group ID")
     atime: Optional[float] = Field(None, description="Access time")
     mtime: Optional[float] = Field(None, description="Modification time")
-
-    @field_validator('path', mode='before')
-    @classmethod
-    def ensure_path_is_purepath(cls, v):
-        """
-        Ensure the 'path' field is converted to a PurePath object.
-        This runs before the field is validated by Pydantic.
-        """
-        if v is None:
-            raise ValueError("path cannot be None.")
-        if not isinstance(v, PurePath):
-            try:
-                return PurePath(v)
-            except TypeError:
-                raise ValueError(f"Cannot convert {v} to PurePath.")
-        return v
 
     @root_validator(skip_on_failure=True)
     @classmethod
@@ -747,7 +729,6 @@ class Mkdir(Local):
 
 @router.get("/command/mkdir/", tags=["SFTP Commands"])
 async def mkdir(
-    path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     permissions: Optional[int] = Query(
         None,
         ge=0,
@@ -758,7 +739,7 @@ async def mkdir(
     gid: Optional[int] = Query(None, description="Group ID"),
     atime: Optional[float] = Query(None, description="Access time"),
     mtime: Optional[float] = Query(None, description="Modification time"),
-    common: LocalModel = Depends(local_params)
+    common: LocalPathModel = Depends(local_path_params)
 ) -> list[dict]:
     """# Create a remote directory with the specified attributes"""
     params = {"path": path}
