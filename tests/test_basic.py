@@ -96,10 +96,10 @@ async def test_mkdir():
 
     class Root:
         async def execute(self):
-            r = yield Isdir(path="/home/user/freddy", group="192.168.1.24")
+            r = yield Isdir(path="/home/user/freddy")
             if r and r.output:
-                yield Rmdir(path="/home/user/freddy", group="192.168.1.24")
-            r1 = yield Mkdir(path="/home/user/freddy", group="192.168.1.24")
+                yield Rmdir(path="/home/user/freddy")
+            r1 = yield Mkdir(path="/home/user/freddy", permissions=0o700)
             if r1:
                 print(r1)
 
@@ -112,6 +112,7 @@ async def test_stat():
 
     class Root:
         async def execute(self):
+            # todo: remove debug message
             r = yield Stat(path="/home/user/freddy")
             if r and r.output:
                 print(r.output)
@@ -126,7 +127,14 @@ async def test_directory():
     class Child:
         async def execute(self):
             print("debut 00")
-            yield Directory(present=True, path="/home/user/freddy", group="192.168.1.24", permissions=0o777)
+            yield Directory(
+                present=True,
+                path="/home/user/freddy",
+                # group="192.168.1.24",
+                permissions=0o700,
+                # atime=0xDEADCAFE,
+                # mtime=0xACAFEDAD,
+            )
 
     class Parent:
         async def execute(self):
@@ -136,14 +144,45 @@ async def test_directory():
 
     await execute(lambda: Parent())
 
+
 @pytest.mark.asyncio
-async def test_stat():
+async def test_chmod():
     from reemote.commands.sftp import Chmod
 
     class Root:
         async def execute(self):
-            r = yield Chmod(path="/home/user/freddy", permissions=0o773)
+            # todo: make sure directory exists, with default permissions
+            # r = yield Chmod(path="/home/user/freddy", permissions=0o773)
+            r = yield Chmod(path="/home/user/freddy", permissions=511)
             if r and r.output:
                 print(r.output)
+            # todo: assert the permissions (same for chown, utime)
+
+    await execute(lambda: Root())
+
+
+@pytest.mark.asyncio
+async def test_chown():
+    from reemote.commands.sftp import Chown
+
+    # todo: note that this isn't supported on SFTPv3, we need a system version
+    class Root:
+        async def execute(self):
+            # todo: remove test output from commands
+            r = yield Chown(path="/home/user/freddy", uid=1001)
+            if r and r.output:
+                print(r.output)
+
+    await execute(lambda: Root())
+
+
+@pytest.mark.asyncio
+async def test_utime():
+    from reemote.commands.sftp import Utime
+
+    # todo: note that this isn't supported on SFTPv3, we need a system version
+    class Root:
+        async def execute(self):
+            yield Utime(path="/home/user/freddy", atime=0xDEADCAFE, mtime=0xACAFEDAD)
 
     await execute(lambda: Root())

@@ -4,7 +4,7 @@ from typing import Callable, Optional, Sequence, Union
 
 import asyncssh
 from fastapi import APIRouter, Depends, Query
-from pydantic import Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ValidationError, root_validator
 
 from reemote.router_handler import router_handler
 from reemote.local_model import Local, LocalModel, local_params
@@ -674,13 +674,11 @@ class MkdirModel(LocalModel):
         None,
         ge=0,
         le=0o7777,
-        description="Directory permissions as octal integer (e.g., 0o755)"
     )
     uid: Optional[int] = Field(None, description="User ID")
     gid: Optional[int] = Field(None, description="Group ID")
     atime: Optional[float] = Field(None, description="Access time")
     mtime: Optional[float] = Field(None, description="Modification time")
-    # todo: follow_symlinks
 
     @field_validator('path', mode='before')
     @classmethod
@@ -698,6 +696,18 @@ class MkdirModel(LocalModel):
                 raise ValueError(f"Cannot convert {v} to PurePath.")
         return v
 
+    @root_validator(skip_on_failure=True)
+    @classmethod
+    def check_atime_and_mtime(cls, values):
+        """Ensure that if `atime` is specified, `mtime` is also specified."""
+        atime = values.get('atime')
+        mtime = values.get('mtime')
+
+        if atime is not None and mtime is None:
+            raise ValueError("If `atime` is specified, `mtime` must also be specified.")
+        return values
+
+    # todo: rename to get_attributes
     def get_sftp_attrs(self) -> Optional[asyncssh.SFTPAttrs]:
         """Create SFTPAttrs object from provided attributes"""
         attrs_dict = {}
@@ -720,13 +730,6 @@ class MkdirModel(LocalModel):
             return asyncssh.SFTPAttrs(**attrs_dict)
         return None
 
-    # todo: do we need this ?
-    def __init__(self, **data):
-        # Ensure path is converted to PurePath if it's a string/bytes
-        if 'path' in data and isinstance(data['path'], (str, bytes)):
-            data['path'] = PurePath(data['path'])
-        super().__init__(**data)
-
 class Mkdir(Local):
     Model = MkdirModel
 
@@ -736,9 +739,11 @@ class Mkdir(Local):
             async with conn.start_sftp_client() as sftp:
                 sftp_attrs = caller.get_sftp_attrs()
                 if sftp_attrs:
-                    return await sftp.mkdir(caller.path, sftp_attrs)
+                    print(f"debug 05 {sftp_attrs}")
+                    return await sftp.mkdir(path=caller.path, attrs=sftp_attrs)
                 else:
-                    return await sftp.mkdir(caller.path)
+                    print(f"debug 06 {sftp_attrs}")
+                    return await sftp.mkdir(path=caller.path)
 
 @router.get("/command/mkdir/", tags=["SFTP Commands"])
 async def mkdir(
@@ -795,12 +800,6 @@ class RmdirModel(LocalModel):
                 raise ValueError(f"Cannot convert {v} to PurePath.")
         return v
 
-    def __init__(self, **data):
-        # Ensure path is converted to PurePath if it's a string/bytes
-        if 'path' in data and isinstance(data['path'], (str, bytes)):
-            data['path'] = PurePath(data['path'])
-        super().__init__(**data)
-
 class Rmdir(Local):
     Model = RmdirModel
 
@@ -847,12 +846,6 @@ class ChmodModel(LocalModel):
                 raise ValueError(f"Cannot convert {v} to PurePath.")
         return v
 
-    def __init__(self, **data):
-        # Ensure path is converted to PurePath if it's a string/bytes
-        if 'path' in data and isinstance(data['path'], (str, bytes)):
-            data['path'] = PurePath(data['path'])
-        super().__init__(**data)
-
 class Chmod(Local):
     Model = ChmodModel
 
@@ -862,8 +855,9 @@ class Chmod(Local):
             async with conn.start_sftp_client() as sftp:
                 return await sftp.chmod(path=caller.path, mode=caller.permissions, follow_symlinks=caller.follow_symlinks)
 
+
 @router.get("/command/chmod/", tags=["SFTP Commands"])
-async def mkdir(
+async def chmod(
     path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     permissions: Optional[int] = Query(
         None,
@@ -882,3 +876,147 @@ async def mkdir(
                                                    permissions=permissions,
                                                    follow_symlinks=follow_symlinks,
                                                    common=common)
+
+
+class ChownModel(LocalModel):
+    path: Union[PurePath, str, bytes] = Field(
+        ...,  # Required field
+    )
+    # todo: These descriptions are never used
+    uid: Optional[int] = Field(None, description="User ID")
+    gid: Optional[int] = Field(None, description="Group ID")
+    follow_symlinks: bool = False
+
+    @field_validator('path', mode='before')
+    @classmethod
+    def ensure_path_is_purepath(cls, v):
+        """
+        Ensure the 'path' field is converted to a PurePath object.
+        This runs before the field is validated by Pydantic.
+        """
+        if v is None:
+            raise ValueError("path cannot be None.")
+        if not isinstance(v, PurePath):
+            try:
+                return PurePath(v)
+            except TypeError:
+                raise ValueError(f"Cannot convert {v} to PurePath.")
+        return v
+
+class Chown(Local):
+    Model = ChownModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.chown(path=caller.path,
+                                        uid=caller.uid,
+                                        gid=caller.gid,
+                                        follow_symlinks=caller.follow_symlinks)
+
+
+@router.get("/command/chown/", tags=["SFTP Commands"])
+async def chown(
+    path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
+    follow_symlinks: bool = Query(
+        False,
+        description="Whether or not to follow symbolic links"
+    ),
+    uid: Optional[int] = Query(None, description="User ID"),
+    gid: Optional[int] = Query(None, description="Group ID"),
+    common: LocalModel = Depends(local_params)
+) -> list[dict]:
+    """# Change the owner of a remote file, directory, or symlink"""
+    return await router_handler(ChownModel, Chown)(path=path,
+                                                   uid=uid,
+                                                   gid=gid,
+                                                   follow_symlinks=follow_symlinks,
+                                                   common=common)
+
+
+
+
+
+class UtimeModel(LocalModel):
+    path: Union[PurePath, str, bytes] = Field(
+        ...,  # Required field
+    )
+    # todo: These descriptions are never used
+    atime: int
+    mtime: int
+    follow_symlinks: bool = False
+
+    @field_validator('path', mode='before')
+    @classmethod
+    def ensure_path_is_purepath(cls, v):
+        """
+        Ensure the 'path' field is converted to a PurePath object.
+        This runs before the field is validated by Pydantic.
+        """
+        if v is None:
+            raise ValueError("path cannot be None.")
+        if not isinstance(v, PurePath):
+            try:
+                return PurePath(v)
+            except TypeError:
+                raise ValueError(f"Cannot convert {v} to PurePath.")
+        return v
+
+    @root_validator(skip_on_failure=True)
+    @classmethod
+    def check_atime_and_mtime(cls, values):
+        """Ensure that if `atime` is specified, `mtime` is also specified."""
+        atime = values.get('atime')
+        mtime = values.get('mtime')
+
+        if atime is not None and mtime is None:
+            raise ValueError("If `atime` is specified, `mtime` must also be specified.")
+        return values
+
+
+class Utime(Local):
+    Model = UtimeModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.utime(path=caller.path,
+                                        times=(caller.atime, caller.mtime),
+                                        follow_symlinks=caller.follow_symlinks)
+
+
+@router.get("/command/utime/", tags=["SFTP Commands"])
+async def utime(
+    path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
+    follow_symlinks: bool = Query(
+        False,
+        description="Whether or not to follow symbolic links"
+    ),
+    atime: Optional[int] = Query(None, description="Access time, as seconds relative to the UNIX epoch"),
+    mtime: Optional[int] = Query(None, description="Modify time, as seconds relative to the UNIX epoch"),
+    common: LocalModel = Depends(local_params)
+) -> list[dict]:
+    """# Change the timestamps of a remote file, directory, or symlink"""
+    return await router_handler(UtimeModel, Utime)(path=path,
+                                                   atime=atime,
+                                                   mtime=mtime,
+                                                   follow_symlinks=follow_symlinks,
+                                                   common=common)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

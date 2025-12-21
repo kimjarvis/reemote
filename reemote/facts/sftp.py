@@ -178,13 +178,18 @@ class Stat(Local):
             async with conn.start_sftp_client() as sftp:
                 sftp_attrs = await sftp.stat(caller.path, follow_symlinks=caller.follow_symlinks)
 
-                fields = ['uid', 'gid', 'permissions', 'atime', 'mtime', 'size']
+                # Extract each field from the SFTPAttrs object and create the dictionary
+                attrs_dict = {
+                    'uid': getattr(sftp_attrs, 'uid'),
+                    'gid': getattr(sftp_attrs, 'gid'),
+                    'permissions': getattr(sftp_attrs, 'permissions') & 0o777,
+                    'atime': getattr(sftp_attrs, 'atime'),
+                    'mtime': getattr(sftp_attrs, 'mtime'),
+                    'size': getattr(sftp_attrs, 'size')
+                }
 
-                # Create a dictionary by extracting each field from the SFTPAttrs object
-                attrs_dict = {field: getattr(sftp_attrs, field) for field in fields}
                 # print(attrs_dict)
                 return attrs_dict
-
 
 @router.get("/fact/stat/", tags=["SFTP Facts"])
 async def stat(
