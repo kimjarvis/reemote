@@ -126,7 +126,7 @@ async def test_directory():
     class Child:
         async def execute(self):
             print("debut 00")
-            yield Directory(present=True, path="/home/user/freddy", group="192.168.1.24")
+            yield Directory(present=True, path="/home/user/freddy", group="192.168.1.24", permissions=0o777)
 
     class Parent:
         async def execute(self):
@@ -135,3 +135,15 @@ async def test_directory():
             print(response)
 
     await execute(lambda: Parent())
+
+@pytest.mark.asyncio
+async def test_stat():
+    from reemote.commands.sftp import Chmod
+
+    class Root:
+        async def execute(self):
+            r = yield Chmod(path="/home/user/freddy", permissions=0o773)
+            if r and r.output:
+                print(r.output)
+
+    await execute(lambda: Root())

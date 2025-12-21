@@ -32,3 +32,6 @@ class Directory(Local):
                 print("debug 04")
                 r = yield Stat(path="/home/user/freddy", group=model_instance.group)
                 print(r)
+                if model_instance.permissions is not None:
+                    if r.output["permissions"] != model_instance.permissions:
+                        print("permissions are not the same")

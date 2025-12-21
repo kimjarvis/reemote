@@ -178,13 +178,7 @@ class Stat(Local):
             async with conn.start_sftp_client() as sftp:
                 sftp_attrs = await sftp.stat(caller.path, follow_symlinks=caller.follow_symlinks)
 
-                fields = [
-                    'type', 'size', 'alloc_size', 'uid', 'gid', 'owner', 'group',
-                    'permissions', 'atime', 'atime_ns', 'crtime', 'crtime_ns',
-                    'mtime', 'mtime_ns', 'ctime', 'ctime_ns', 'acl', 'attrib_bits',
-                    'attrib_valid', 'text_hint', 'mime_type', 'nlink', 'untrans_name',
-                    'extended'
-                ]
+                fields = ['uid', 'gid', 'permissions', 'atime', 'mtime', 'size']
 
                 # Create a dictionary by extracting each field from the SFTPAttrs object
                 attrs_dict = {field: getattr(sftp_attrs, field) for field in fields}

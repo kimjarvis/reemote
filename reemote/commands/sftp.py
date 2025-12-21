@@ -680,6 +680,7 @@ class MkdirModel(LocalModel):
     gid: Optional[int] = Field(None, description="Group ID")
     atime: Optional[float] = Field(None, description="Access time")
     mtime: Optional[float] = Field(None, description="Modification time")
+    # todo: follow_symlinks
 
     @field_validator('path', mode='before')
     @classmethod
@@ -719,7 +720,7 @@ class MkdirModel(LocalModel):
             return asyncssh.SFTPAttrs(**attrs_dict)
         return None
 
-
+    # todo: do we need this ?
     def __init__(self, **data):
         # Ensure path is converted to PurePath if it's a string/bytes
         if 'path' in data and isinstance(data['path'], (str, bytes)):
@@ -746,7 +747,7 @@ async def mkdir(
         None,
         ge=0,
         le=0o7777,
-        description="Directory permissions as octal integer (e.g., 755)"
+        description="Directory permissions as integer"
     ),
     uid: Optional[int] = Query(None, description="User ID"),
     gid: Optional[int] = Query(None, description="Group ID"),
@@ -818,3 +819,66 @@ async def islink(
     return await router_handler(RmdirModel, Rmdir)(path=path, common=common)
 
 
+class ChmodModel(LocalModel):
+    path: Union[PurePath, str, bytes] = Field(
+        ...,  # Required field
+    )
+    permissions: Optional[int] = Field(
+        None,
+        ge=0,
+        le=0o7777,
+        description="Directory permissions as octal integer (e.g., 0o755)"
+    )
+    follow_symlinks: bool = False
+
+    @field_validator('path', mode='before')
+    @classmethod
+    def ensure_path_is_purepath(cls, v):
+        """
+        Ensure the 'path' field is converted to a PurePath object.
+        This runs before the field is validated by Pydantic.
+        """
+        if v is None:
+            raise ValueError("path cannot be None.")
+        if not isinstance(v, PurePath):
+            try:
+                return PurePath(v)
+            except TypeError:
+                raise ValueError(f"Cannot convert {v} to PurePath.")
+        return v
+
+    def __init__(self, **data):
+        # Ensure path is converted to PurePath if it's a string/bytes
+        if 'path' in data and isinstance(data['path'], (str, bytes)):
+            data['path'] = PurePath(data['path'])
+        super().__init__(**data)
+
+class Chmod(Local):
+    Model = ChmodModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.chmod(path=caller.path, mode=caller.permissions, follow_symlinks=caller.follow_symlinks)
+
+@router.get("/command/chmod/", tags=["SFTP Commands"])
+async def mkdir(
+    path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
+    permissions: Optional[int] = Query(
+        None,
+        ge=0,
+        le=0o7777,
+        description="Directory permissions as integer"
+    ),
+    follow_symlinks: bool = Query(
+        False,
+        description="Whether or not to follow symbolic links"
+    ),
+    common: LocalModel = Depends(local_params)
+) -> list[dict]:
+    """# Change the permissions of a remote file, directory, or symlink"""
+    return await router_handler(ChmodModel, Chmod)(path=path,
+                                                   permissions=permissions,
+                                                   follow_symlinks=follow_symlinks,
+                                                   common=common)
