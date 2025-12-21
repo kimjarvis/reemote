@@ -44,7 +44,11 @@ class Command(CommonModel):
     global_info: Optional[Dict[str, Any]] = Field(
         default=None, description="Global information", exclude=True
     )
+    # Return only
     value: Optional[Any] = Field(
+        default=None, description="Value to pass to response", exclude=True
+    )
+    changed: Optional[Any] = Field(
         default=None, description="Value to pass to response", exclude=True
     )
 
@@ -95,8 +99,10 @@ class Command(CommonModel):
             field_strings.append(f"call={self.call!r}")
 
         field_strings.append(f"type={self.type!r}")
-        if self.call is not None:
+        if self.value is not None:
             field_strings.append(f"value={self.value!r}")
+        if self.changed is not None:
+            field_strings.append(f"changed={self.changed!r}")
 
         if self.callback is not None:
             callback_repr = (

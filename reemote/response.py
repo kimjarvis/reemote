@@ -21,9 +21,9 @@ class Response(BaseModel):
     cp: Optional[SSHCompletedProcess] = Field(default=None, exclude=True)
     host: Optional[str] = None
     op: Optional[Command] = Field(default=None, exclude=True)
-    changed: bool = False
     output: Optional[Any] = None  # Accept any type
     value: Optional[Any] = None  # Accept any type
+    changed: Optional[bool] = None
 
     # Fields from Command (r.op)
     name: Optional[str] = None
@@ -83,6 +83,7 @@ class Response(BaseModel):
             data["caller"] = self._caller_to_str(getattr(op, "caller", None))
             data["call"] = self._caller_to_str(getattr(op, "call", None))
             data["value"] = getattr(op, "value", None)
+            data["changed"] = getattr(op, "changed", None)
             data["sudo"] = getattr(op, "sudo", False)
             data["su"] = getattr(op, "su", False)
             data["get_pty"] = getattr(op, "get_pty", False)
@@ -216,6 +217,7 @@ class Response(BaseModel):
             return(
                 f"Response(host={self.host!r}, "
                 f"call={self.call!r}, "
+                f"changed={self.changed!r}, "                
                 f"value={self.value!r})"
             )
         elif  self.type == ConnectionType.LOCAL:

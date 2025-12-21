@@ -33,6 +33,7 @@ class Callback(Local):
 
 class ReturnModel(LocalModel):
     value: Any
+    changed: bool
 
 class Return(Local):
     Model = ReturnModel
@@ -46,6 +47,7 @@ class Return(Local):
         yield Command(
             type=ConnectionType.PASSTHROUGH,
             value=model_instance.value,
+            changed=model_instance.changed,
             call=str(model_instance),
             caller=model_instance,
             group=model_instance.group,

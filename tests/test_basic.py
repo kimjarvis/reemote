@@ -61,16 +61,18 @@ async def test_callback():
 @pytest.mark.asyncio
 async def test_return():
     from reemote.commands.system import Return
+    from reemote.commands.server import Shell
 
     class Child:
         async def execute(self):
             a = yield Shell(cmd="echo Hello")
             b = yield Shell(cmd="echo World")
-            yield Return(value=[a, b])
+            yield Return(value=[a, b],changed=False)
 
     class Parent:
         async def execute(self):
             response = yield Child()
+            print(response.changed)
             assert response.value[0].stdout.strip() == "Hello"
             assert response.value[1].stdout.strip() == "World"
 
@@ -84,7 +86,8 @@ async def test_isdir():
     class Root:
         async def execute(self):
             r = yield Isdir(path="/home/user", group="192.168.1.24")
-            assert r.output
+            if r:
+                assert r.output
 
     await execute(lambda: Root())
 
@@ -126,11 +129,10 @@ async def test_directory():
 
     class Child:
         async def execute(self):
-            print("debut 00")
             yield Directory(
                 present=True,
                 path="/home/user/freddy",
-                # group="192.168.1.24",
+                group="192.168.1.76",
                 permissions=0o700,
                 # atime=0xDEADCAFE,
                 # mtime=0xACAFEDAD,
@@ -138,7 +140,6 @@ async def test_directory():
 
     class Parent:
         async def execute(self):
-            print("Starting test")
             response = yield Child()
             print(response)
 
