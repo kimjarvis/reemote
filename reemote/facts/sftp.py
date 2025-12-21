@@ -11,7 +11,7 @@ from reemote.local_model import Local, LocalModel, local_params
 router = APIRouter()
 
 
-class IslinkModel(LocalModel):
+class LocalPathModel(LocalModel):
     path: Union[PurePath, str, bytes] = Field(
         ...,  # Required field
     )
@@ -32,14 +32,8 @@ class IslinkModel(LocalModel):
                 raise ValueError(f"Cannot convert {v} to PurePath.")
         return v
 
-    def __init__(self, **data):
-        # Ensure path is converted to PurePath if it's a string/bytes
-        if 'path' in data and isinstance(data['path'], (str, bytes)):
-            data['path'] = PurePath(data['path'])
-        super().__init__(**data)
-
 class Islink(Local):
-    Model = IslinkModel
+    Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
@@ -53,38 +47,11 @@ async def islink(
         common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Return if the remote path refers to a symbolic link"""
-    return await router_handler(IslinkModel, Islink)(path=path, common=common)
+    return await router_handler(LocalPathModel, Islink)(path=path, common=common)
 
-
-class IsfileModel(LocalModel):
-    path: Union[PurePath, str, bytes] = Field(
-        ...,  # Required field
-    )
-
-    @field_validator('path', mode='before')
-    @classmethod
-    def ensure_path_is_purepath(cls, v):
-        """
-        Ensure the 'path' field is converted to a PurePath object.
-        This runs before the field is validated by Pydantic.
-        """
-        if v is None:
-            raise ValueError("path cannot be None.")
-        if not isinstance(v, PurePath):
-            try:
-                return PurePath(v)
-            except TypeError:
-                raise ValueError(f"Cannot convert {v} to PurePath.")
-        return v
-
-    def __init__(self, **data):
-        # Ensure path is converted to PurePath if it's a string/bytes
-        if 'path' in data and isinstance(data['path'], (str, bytes)):
-            data['path'] = PurePath(data['path'])
-        super().__init__(**data)
 
 class Isfile(Local):
-    Model = IsfileModel
+    Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
@@ -98,32 +65,10 @@ async def isfile(
         common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Return if the remote path refers to a file"""
-    return await router_handler(IsfileModel, Isfile)(path=path, common=common)
-
-
-class IsdirModel(LocalModel):
-    path: Union[PurePath, str, bytes] = Field(
-        ...,  # Required field
-    )
-
-    @field_validator('path', mode='before')
-    @classmethod
-    def ensure_path_is_purepath(cls, v):
-        """
-        Ensure the 'path' field is converted to a PurePath object.
-        This runs before the field is validated by Pydantic.
-        """
-        if v is None:
-            raise ValueError("path cannot be None.")
-        if not isinstance(v, PurePath):
-            try:
-                return PurePath(v)
-            except TypeError:
-                raise ValueError(f"Cannot convert {v} to PurePath.")
-        return v
+    return await router_handler(LocalPathModel, Isfile)(path=path, common=common)
 
 class Isdir(Local):
-    Model = IsdirModel
+    Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
@@ -137,37 +82,12 @@ async def isdir(
         common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Return if the remote path refers to a directory"""
-    return await router_handler(IsdirModel, Isdir)(path=path, common=common)
+    return await router_handler(LocalPathModel, Isdir)(path=path, common=common)
 
-class StatModel(LocalModel):
-    path: Union[PurePath, str, bytes] = Field(
-        ...,  # Required field
-    )
+class StatModel(LocalPathModel):
     follow_symlinks: bool = Field(
         True,  # Default value
     )
-
-    @field_validator('path', mode='before')
-    @classmethod
-    def ensure_path_is_purepath(cls, v):
-        """
-        Ensure the 'path' field is converted to a PurePath object.
-        This runs before the field is validated by Pydantic.
-        """
-        if v is None:
-            raise ValueError("path cannot be None.")
-        if not isinstance(v, PurePath):
-            try:
-                return PurePath(v)
-            except TypeError:
-                raise ValueError(f"Cannot convert {v} to PurePath.")
-        return v
-
-    def __init__(self, **data):
-        # Ensure path is converted to PurePath if it's a string/bytes
-        if 'path' in data and isinstance(data['path'], (str, bytes)):
-            data['path'] = PurePath(data['path'])
-        super().__init__(**data)
 
 class Stat(Local):
     Model = StatModel
