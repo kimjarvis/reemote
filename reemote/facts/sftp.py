@@ -84,6 +84,133 @@ async def isdir(
     """# Return if the remote path refers to a directory"""
     return await router_handler(LocalPathModel, Isdir)(path=path, common=common)
 
+
+class Getsize(Local):
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.getsize(str(caller.path))
+
+@router.get("/fact/getsize/", tags=["SFTP Facts"])
+async def getsize(
+        path: Union[PurePath, str, bytes] = Query(..., description="Return the size of a remote file or directory"),
+        common: LocalModel = Depends(local_params)
+) -> list[dict]:
+    """# Return the size of a remote file or directory"""
+    return await router_handler(LocalPathModel, Getsize)(path=path, common=common)
+
+
+class Getatime(Local):
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.getatime(str(caller.path))
+
+@router.get("/fact/getatime/", tags=["SFTP Facts"])
+async def getatime(
+        path: Union[PurePath, str, bytes] = Query(..., description="Return the last access time of a remote file or directory"),
+        common: LocalModel = Depends(local_params)
+) -> list[dict]:
+    """# Return the last access time of a remote file or directory"""
+    return await router_handler(LocalPathModel, Getatime)(path=path, common=common)
+
+
+class Getatime_ns(Local):
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.getatime_ns(str(caller.path))
+
+@router.get("/fact/getatime_ns/", tags=["SFTP Facts"])
+async def getatime_ns(
+        path: Union[PurePath, str, bytes] = Query(..., description="Return the last access time of a remote file or directory"),
+        common: LocalModel = Depends(local_params)
+) -> list[dict]:
+    """# Return the last access time of a remote file or directory"""
+    return await router_handler(LocalPathModel, Getatime_ns)(path=path, common=common)
+
+class Getmtime(Local):
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.getmtime(str(caller.path))
+
+@router.get("/fact/getmtime/", tags=["SFTP Facts"])
+async def getmtime(
+        path: Union[PurePath, str, bytes] = Query(..., description="Return the last modification time of a remote file or directory"),
+        common: LocalModel = Depends(local_params)
+) -> list[dict]:
+    """# Return the last modification time of a remote file or directory"""
+    return await router_handler(LocalPathModel, Getmtime)(path=path, common=common)
+
+
+class Getmtime__ns(Local):
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.getmtime_ns(str(caller.path))
+
+@router.get("/fact/getmtime_ns/", tags=["SFTP Facts"])
+async def getmtime(
+        path: Union[PurePath, str, bytes] = Query(..., description="Return the last modification time of a remote file or directory"),
+        common: LocalModel = Depends(local_params)
+) -> list[dict]:
+    """# Return the last modification time of a remote file or directory"""
+    return await router_handler(LocalPathModel, Getmtime_ns)(path=path, common=common)
+
+
+
+class Getcrtime(Local):
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.getcrtime(str(caller.path))
+
+@router.get("/fact/getcrtime/", tags=["SFTP Facts"])
+async def getcrtime(
+        path: Union[PurePath, str, bytes] = Query(..., description="Return the creation time of a remote file or directory"),
+        common: LocalModel = Depends(local_params)
+) -> list[dict]:
+    """# Return the creation time of a remote file or directory"""
+    return await router_handler(LocalPathModel, Getcrtime)(path=path, common=common)
+
+class Getcrtime_ns(Local):
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.getcrtime_ns(str(caller.path))
+
+@router.get("/fact/getcrtime_ns/", tags=["SFTP Facts"])
+async def getcrtime_ns(
+        path: Union[PurePath, str, bytes] = Query(..., description="Return the creation time of a remote file or directory"),
+        common: LocalModel = Depends(local_params)
+) -> list[dict]:
+    """# Return the creation time of a remote file or directory"""
+    return await router_handler(LocalPathModel, Getcrtime_ns)(path=path, common=common)
+
+
+
 class StatModel(LocalPathModel):
     follow_symlinks: bool = Field(
         True,  # Default value
