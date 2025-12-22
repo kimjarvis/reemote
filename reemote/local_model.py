@@ -46,13 +46,6 @@ class LocalPathModel(LocalModel):
                 raise ValueError(f"Cannot convert {v} to PurePath.")
         return v
 
-def local_path_params(
-        path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
-) -> LocalPathModel:
-    """FastAPI dependency for common parameters"""
-    return LocalPathModel(path=path)
-
-
 
 class Local:
     def __init__(self, **kwargs):

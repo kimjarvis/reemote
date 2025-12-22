@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator, ValidationError, root_va
 
 from reemote.router_handler import router_handler
 from reemote.local_model import Local, LocalModel, local_params
-from reemote.local_model import LocalPathModel, local_path_params
+from reemote.local_model import LocalPathModel
 
 router = APIRouter()
 
@@ -729,6 +729,7 @@ class Mkdir(Local):
 
 @router.get("/command/mkdir/", tags=["SFTP Commands"])
 async def mkdir(
+    path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     permissions: Optional[int] = Query(
         None,
         ge=0,
@@ -739,7 +740,7 @@ async def mkdir(
     gid: Optional[int] = Query(None, description="Group ID"),
     atime: Optional[float] = Query(None, description="Access time"),
     mtime: Optional[float] = Query(None, description="Modification time"),
-    common: LocalPathModel = Depends(local_path_params)
+    common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Create a remote directory with the specified attributes"""
     params = {"path": path}
@@ -771,11 +772,12 @@ class Rmdir(Local):
                 return await sftp.rmdir(str(caller.path))
 
 @router.get("/command/rmdir/", tags=["SFTP Commands"])
-async def rmdir(
-        common: LocalPathModel = Depends(local_path_params)
+async def islink(
+        path: Union[PurePath, str, bytes] = Query(..., description="The path of the remote directory to remove"),
+        common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Remove a remote directory"""
-    return await router_handler(LocalPathModel, Rmdir)(common=common)
+    return await router_handler(RmdirModel, Rmdir)(path=path, common=common)
 
 
 class ChmodModel(LocalPathModel):
@@ -798,6 +800,7 @@ class Chmod(Local):
 
 @router.get("/command/chmod/", tags=["SFTP Commands"])
 async def chmod(
+    path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     permissions: Optional[int] = Query(
         None,
         ge=0,
@@ -808,16 +811,19 @@ async def chmod(
         False,
         description="Whether or not to follow symbolic links"
     ),
-    common: LocalPathModel = Depends(local_path_params)
+    common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Change the permissions of a remote file, directory, or symlink"""
-    return await router_handler(ChmodModel, Chmod)(
+    return await router_handler(ChmodModel, Chmod)(path=path,
                                                    permissions=permissions,
                                                    follow_symlinks=follow_symlinks,
                                                    common=common)
 
 
 class ChownModel(LocalPathModel):
+    path: Union[PurePath, str, bytes] = Field(
+        ...,  # Required field
+    )
     # todo: These descriptions are never used
     uid: Optional[int] = Field(None, description="User ID")
     gid: Optional[int] = Field(None, description="Group ID")
@@ -838,16 +844,17 @@ class Chown(Local):
 
 @router.get("/command/chown/", tags=["SFTP Commands"])
 async def chown(
+    path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     follow_symlinks: bool = Query(
         False,
         description="Whether or not to follow symbolic links"
     ),
     uid: Optional[int] = Query(None, description="User ID"),
     gid: Optional[int] = Query(None, description="Group ID"),
-    common: LocalPathModel = Depends(local_path_params)
+    common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Change the owner of a remote file, directory, or symlink"""
-    return await router_handler(ChownModel, Chown)(
+    return await router_handler(ChownModel, Chown)(path=path,
                                                    uid=uid,
                                                    gid=gid,
                                                    follow_symlinks=follow_symlinks,
@@ -858,6 +865,9 @@ async def chown(
 
 
 class UtimeModel(LocalPathModel):
+    path: Union[PurePath, str, bytes] = Field(
+        ...,  # Required field
+    )
     # todo: These descriptions are never used
     atime: int
     mtime: int
@@ -889,16 +899,17 @@ class Utime(Local):
 
 @router.get("/command/utime/", tags=["SFTP Commands"])
 async def utime(
+    path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     follow_symlinks: bool = Query(
         False,
         description="Whether or not to follow symbolic links"
     ),
     atime: Optional[int] = Query(None, description="Access time, as seconds relative to the UNIX epoch"),
     mtime: Optional[int] = Query(None, description="Modify time, as seconds relative to the UNIX epoch"),
-    common: LocalPathModel = Depends(local_path_params)
+    common: LocalModel = Depends(local_params)
 ) -> list[dict]:
     """# Change the timestamps of a remote file, directory, or symlink"""
-    return await router_handler(UtimeModel, Utime)(
+    return await router_handler(UtimeModel, Utime)(path=path,
                                                    atime=atime,
                                                    mtime=mtime,
                                                    follow_symlinks=follow_symlinks,
