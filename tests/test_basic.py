@@ -224,3 +224,39 @@ async def test_get_cwd():
 #             yield Remove(path="/home/user/a.txt", group="192.168.1.24")
 #
 #     await execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_open():
+    from reemote.commands.sftp import Open
+
+    class Root:
+        async def execute(self):
+            r = yield Open(path="/home/user/b.txt",mode='w')
+            if r:
+                print(r,type(r.output))
+                await r.output.write("Your data here")
+                await r.output.close()
+
+    await execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_read():
+    from reemote.facts.sftp import Read
+
+    class Root:
+        async def execute(self):
+            r = yield Read(path="/home/user/b.txt")
+            if r:
+                print(r,type(r.output))
+
+    await execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_write():
+    from reemote.commands.sftp import Write
+
+    class Root:
+        async def execute(self):
+            yield Write(path="/home/user/d.txt", text="Hello World!")
+
+    await execute(lambda: Root())

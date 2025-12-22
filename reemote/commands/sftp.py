@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, field_validator, ValidationError, root_va
 from reemote.router_handler import router_handler
 from reemote.models import LocalModel, localmodel, LocalPathModel
 from reemote.local import Local
+from asyncssh.sftp import FXF_READ, FXF_WRITE
 
 router = APIRouter()
 
@@ -1007,7 +1008,7 @@ class Remove(Local):
 
 
 @router.get("/command/remove/", tags=["SFTP Commands"])
-async def chdir(
+async def remove(
     path: Union[PurePath, str, bytes] = Query(..., description="The path of the remote file or link to remove"),
     common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
@@ -1020,6 +1021,120 @@ async def chdir(
 
 
 
+
+
+
+
+
+
+class WriteModel(LocalPathModel):
+    text: str = Field(..., description="The text to write to the remote file")
+    mode: Union[int, str] = Field('w', description="Mode")
+    permissions: Optional[int] = Field(
+        None,
+        ge=0,
+        le=0o7777,
+    )
+    uid: Optional[int] = Field(None, description="User ID")
+    gid: Optional[int] = Field(None, description="Group ID")
+    atime: Optional[float] = Field(None, description="Access time")
+    mtime: Optional[float] = Field(None, description="Modification time")
+    encoding: Optional[str] = Field('utf-8', description="The Unicode encoding to use for data read and written to the remote file")
+    errors: Optional[str] = Field('strict', description="The error-handling mode if an invalid Unicode byte sequence is detected, defaulting to ‘strict’ which raises an exception")
+    block_size: Optional[int] = Field(-1, description="The block size to use for read and write requests")
+    max_requests: Optional[int] = Field(-1, description="The maximum number of parallel read or write requests")
+
+
+    @root_validator(skip_on_failure=True)
+    @classmethod
+    def check_atime_and_mtime(cls, values):
+        """Ensure that if `atime` is specified, `mtime` is also specified."""
+        atime = values.get('atime')
+        mtime = values.get('mtime')
+
+        if atime is not None and mtime is None:
+            raise ValueError("If `atime` is specified, `mtime` must also be specified.")
+        return values
+
+    # todo: rename to get_attributes
+    def get_sftp_attrs(self) -> Optional[asyncssh.SFTPAttrs]:
+        """Create SFTPAttrs object from provided attributes"""
+        attrs_dict = {}
+
+        if self.permissions is not None:
+            attrs_dict['permissions'] = self.permissions
+        if self.uid is not None:
+            attrs_dict['uid'] = self.uid
+        if self.gid is not None:
+            attrs_dict['gid'] = self.gid
+        if self.atime is not None:
+            attrs_dict['atime'] = self.atime
+        if self.mtime is not None:
+            attrs_dict['mtime'] = self.mtime
+
+        return asyncssh.SFTPAttrs(**attrs_dict)
+
+class Write(Local):
+    Model = WriteModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                sftp_attrs = caller.get_sftp_attrs()
+                sftp_attrs = caller.get_sftp_attrs()
+                f = await sftp.open(path=caller.path, pflags_or_mode=caller.mode , attrs=sftp_attrs if sftp_attrs else None,
+                                   encoding=caller.encoding, errors=caller.errors,
+                                   block_size=caller.block_size, max_requests=caller.max_requests)
+                content = await f.write(caller.text)
+                f.close()
+
+
+@router.get("/command/write/", tags=["SFTP Commands"])
+async def write(
+    text: str = Query(..., description="The text to write to the remote file"),
+    path: Union[PurePath, str, bytes] = Query(..., description="The name of the remote file to open"),
+    mode: Union[int, str] = Query('w', description="Mode"),
+    permissions: Optional[int] = Query(
+        None,
+        ge=0,
+        le=0o7777,
+        description="File permissions as integer"
+    ),
+    uid: Optional[int] = Query(None, description="User ID"),
+    gid: Optional[int] = Query(None, description="Group ID"),
+    atime: Optional[float] = Query(None, description="Access time"),
+    mtime: Optional[float] = Query(None, description="Modification time"),
+    encoding: Optional[str] = Query('utf-8', description="The Unicode encoding to use for data read and written to the remote file"),
+    errors: Optional[str] = Query('strict', description="The error-handling mode if an invalid Unicode byte sequence is detected, defaulting to ‘strict’ which raises an exception"),
+    block_size: Optional[int] = Query(-1, description="The block size to use for read and write requests"),
+    max_requests: Optional[int] = Query(-1, description="The maximum number of parallel read or write requests"),
+    common: LocalModel = Depends(localmodel)
+) -> list[dict]:
+    """# Open a remote file"""
+    params = {"path": path}
+    params["text"] = text
+    if mode is not None:
+        params["mode"] = mode
+    if permissions is not None:
+        params["permissions"] = permissions
+    if uid is not None:
+        params["uid"] = uid
+    if gid is not None:
+        params["gid"] = gid
+    if atime is not None:
+        params["atime"] = atime
+    if mtime is not None:
+        params["mtime"] = mtime
+    if encoding is not None:
+        params["encoding"] = encoding
+    if errors is not None:
+        params["errors"] = errors
+    if block_size is not None:
+        params["block_size"] = block_size
+    if max_requests is not None:
+        params["max_requests"] = max_requests
+    return await router_handler(WriteModel, Write)(**params, common=common)
 
 
 
