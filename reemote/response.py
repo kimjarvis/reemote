@@ -251,18 +251,17 @@ async def validate_responses(responses: list[Any]) -> list[Response]:
     for r in responses:
         try:
             if isinstance(r, Response):
-                # Already a UnifiedResult, just add it
+                # Already a response, just add it
                 validated_responses.append(r)
             else:
-                # Convert to UnifiedResult
-                unified_result = Response(
+                response = Response(
                     cp=getattr(r, "cp", None),
                     host=getattr(r, "host", None),
                     op=getattr(r, "op", None),
                     changed=getattr(r, "changed", False),
                     output=getattr(r, "output", []),
                 )
-                validated_responses.append(unified_result)
+                validated_responses.append(response)
         except Exception as e:
             logging.error(f"Error converting response: {e}", exc_info=True)
             # Create a minimal error result
