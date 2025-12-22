@@ -916,11 +916,104 @@ async def utime(
                                                    common=common)
 
 
+class ChdirModel(LocalPathModel):
+    path: Union[PurePath, str, bytes] = Field(
+        ...,  # Required field
+    )
+
+
+class Chdir(Local):
+    Model = ChdirModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.chdir(path=caller.path)
+
+
+@router.get("/command/chdir/", tags=["SFTP Commands"])
+async def chdir(
+    path: Union[PurePath, str, bytes] = Query(..., description="The path to set as the new remote working directory"),
+    common: LocalModel = Depends(localmodel)
+) -> list[dict]:
+    """# Change the current remote working directory"""
+    return await router_handler(ChdirModel, Chdir)(path=path,
+                                                   common=common)
+
+
+
+class RenameModel(LocalModel):
+    oldpath: Union[PurePath, str, bytes] = Field(
+        ...,  # Required field
+    )
+    newpath: Union[PurePath, str, bytes] = Field(
+        ...,  # Required field
+    )
+
+    @field_validator('oldpath', 'newpath',  mode='before')
+    @classmethod
+    def ensure_path_is_purepath(cls, v):
+        """
+        Ensure the 'path' field is converted to a PurePath object.
+        This runs before the field is validated by Pydantic.
+        """
+        if v is None:
+            raise ValueError("path cannot be None.")
+        if not isinstance(v, PurePath):
+            try:
+                return PurePath(v)
+            except TypeError:
+                raise ValueError(f"Cannot convert {v} to PurePath.")
+        return v
+
+
+class Rename(Local):
+    Model = RenameModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.rename(oldpath=caller.oldpath,newpath=caller.newpath)
+
+
+@router.get("/command/rename/", tags=["SFTP Commands"])
+async def rename(
+    oldpath: Union[PurePath, str, bytes] = Query(..., description="The path of the remote file, directory, or link to rename"),
+    newpath: Union[PurePath, str, bytes] = Query(...,
+                                                     description="The new name for this file, directory, or link"),
+    common: LocalModel = Depends(localmodel)
+
+) -> list[dict]:
+    """# Rename a remote file, directory, or link"""
+    return await router_handler(RenameModel, Rename)(oldpath=oldpath,
+                                                   newpath=newpath,
+                                                   common=common)
 
 
 
 
 
+class Remove(Local):
+    # todo: remove unnecessary models where its only path
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.remove(path=caller.path)
+
+
+@router.get("/command/remove/", tags=["SFTP Commands"])
+async def chdir(
+    path: Union[PurePath, str, bytes] = Query(..., description="The path of the remote file or link to remove"),
+    common: LocalModel = Depends(localmodel)
+) -> list[dict]:
+    """# Remove a remote file"""
+    return await router_handler(LocalPathModel, Remove)(path=path,
+                                                   common=common)
 
 
 

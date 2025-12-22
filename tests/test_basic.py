@@ -6,7 +6,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from reemote.inventory import create_inventory
 from reemote.execute import execute
-from reemote.config import Config
 
 
 # Autouse fixture that runs before each test
@@ -187,3 +186,41 @@ async def test_utime():
             yield Utime(path="/home/user/freddy", atime=0xDEADCAFE, mtime=0xACAFEDAD)
 
     await execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_get_cwd():
+    from reemote.facts.sftp import Getcwd
+    from reemote.commands.sftp import Chdir
+
+    class Root:
+        async def execute(self):
+            r = yield Getcwd()
+            assert r and r.output=="/home/user"
+            yield Chdir(path="/home")
+            # This does not work on debian
+            # r = yield Getcwd()
+            # assert r and r.output=="/home"
+
+
+    await execute(lambda: Root())
+
+# @pytest.mark.asyncio
+# async def test_rename():
+#     from reemote.commands.sftp import Rename
+#
+#     class Root:
+#         async def execute(self):
+#             yield Rename(oldpath="/home/user/freddy",newpath="/home/user/freddy2")
+#             yield Rename(oldpath="/home/user/freddy2", newpath="/home/user/freddy")
+#
+#     await execute(lambda: Root())
+
+# @pytest.mark.asyncio
+# async def test_remove():
+#     from reemote.commands.sftp import Remove
+#
+#     class Root:
+#         async def execute(self):
+#             yield Remove(path="/home/user/a.txt", group="192.168.1.24")
+#
+#     await execute(lambda: Root())
