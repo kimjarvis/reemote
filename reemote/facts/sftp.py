@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import Field, field_validator
 
 from reemote.router_handler import router_handler
-from reemote.local_model import Local, LocalModel, local_params
-from reemote.local_model import LocalPathModel
+from reemote.models import LocalModel, localmodel, LocalPathModel
+from reemote.local import Local
 
 router = APIRouter()
 
@@ -25,7 +25,7 @@ class Islink(Local):
 @router.get("/fact/islink/", tags=["SFTP Facts"])
 async def islink(
         path: Union[PurePath, str, bytes] = Query(..., description="Path to check if it's a link"),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Return if the remote path refers to a symbolic link"""
     return await router_handler(LocalPathModel, Islink)(path=path, common=common)
@@ -42,7 +42,7 @@ class Isfile(Local):
 @router.get("/fact/isfile/", tags=["SFTP Facts"])
 async def isfile(
         path: Union[PurePath, str, bytes] = Query(..., description="Path to check if it's a file"),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Return if the remote path refers to a file"""
     return await router_handler(LocalPathModel, Isfile)(path=path, common=common)
@@ -60,7 +60,7 @@ class Isdir(Local):
 @router.get("/fact/isdir/", tags=["SFTP Facts"])
 async def isdir(
         path: Union[PurePath, str, bytes] = Query(..., description="Path to check if it's a directory"),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Return if the remote path refers to a directory"""
     return await router_handler(LocalPathModel, Isdir)(path=path, common=common)
@@ -79,7 +79,7 @@ class Getsize(Local):
 @router.get("/fact/getsize/", tags=["SFTP Facts"])
 async def getsize(
         path: Union[PurePath, str, bytes] = Query(..., description="Return the size of a remote file or directory"),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Return the size of a remote file or directory"""
     return await router_handler(LocalPathModel, Getsize)(path=path, common=common)
@@ -98,7 +98,7 @@ class Getatime(Local):
 @router.get("/fact/getatime/", tags=["SFTP Facts"])
 async def getatime(
         path: Union[PurePath, str, bytes] = Query(..., description="Return the last access time of a remote file or directory"),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Return the last access time of a remote file or directory"""
     return await router_handler(LocalPathModel, Getatime)(path=path, common=common)
@@ -116,7 +116,7 @@ class Getatime_ns(Local):
 @router.get("/fact/getatime_ns/", tags=["SFTP Facts"])
 async def getatime_ns(
         path: Union[PurePath, str, bytes] = Query(..., description="Return the last access time of a remote file or directory"),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Return the last access time of a remote file or directory"""
     return await router_handler(LocalPathModel, Getatime_ns)(path=path, common=common)
@@ -134,7 +134,7 @@ class Getmtime(Local):
 @router.get("/fact/getmtime/", tags=["SFTP Facts"])
 async def getmtime(
         path: Union[PurePath, str, bytes] = Query(..., description="Return the last modification time of a remote file or directory"),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Return the last modification time of a remote file or directory"""
     return await router_handler(LocalPathModel, Getmtime)(path=path, common=common)
@@ -152,7 +152,7 @@ class Getmtime_ns(Local):
 @router.get("/fact/getmtime_ns/", tags=["SFTP Facts"])
 async def getmtime(
         path: Union[PurePath, str, bytes] = Query(..., description="Return the last modification time of a remote file or directory"),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Return the last modification time of a remote file or directory"""
     return await router_handler(LocalPathModel, Getmtime_ns)(path=path, common=common)
@@ -171,7 +171,7 @@ class Getcrtime(Local):
 @router.get("/fact/getcrtime/", tags=["SFTP Facts"])
 async def getcrtime(
         path: Union[PurePath, str, bytes] = Query(..., description="Return the creation time of a remote file or directory"),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Return the creation time of a remote file or directory"""
     return await router_handler(LocalPathModel, Getcrtime)(path=path, common=common)
@@ -189,7 +189,7 @@ class Getcrtime_ns(Local):
 @router.get("/fact/getcrtime_ns/", tags=["SFTP Facts"])
 async def getcrtime_ns(
         path: Union[PurePath, str, bytes] = Query(..., description="Return the creation time of a remote file or directory"),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Return the creation time of a remote file or directory"""
     return await router_handler(LocalPathModel, Getcrtime_ns)(path=path, common=common)
@@ -206,7 +206,7 @@ class Getcwd(Local):
 
 @router.get("/fact/getcwd/", tags=["SFTP Facts"])
 async def getcwd(
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Return the current remote working directory"""
     return await router_handler(LocalModel, Getcwd)(common=common)
@@ -243,7 +243,7 @@ class Stat(Local):
 async def stat(
         path: Union[PurePath, str, bytes] = Query(..., description="The path of the remote file or directory to get attributes for"),
         follow_symlinks: bool = Query(True, description="Whether or not to follow symbolic links"),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Get attributes of a remote file, directory, or symlink"""
     return await router_handler(StatModel, Stat)(path=path, follow_symlinks=follow_symlinks, common=common)

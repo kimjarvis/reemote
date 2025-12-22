@@ -1,7 +1,7 @@
 from typing import AsyncGenerator
 from fastapi import APIRouter, Query, Depends
-from reemote.common_model import CommonModel, common_params
-from reemote.remote_model import RemoteModel, Remote
+from reemote.models import CommonModel, commonmodel, RemoteModel
+from reemote.remote import Remote
 from reemote.response import Response
 from reemote.commands.apt import Install, Remove, Update, Upgrade
 from reemote.facts.apt import GetPackages
@@ -61,7 +61,7 @@ class Package(Remote):
 async def package(
     packages: list[str] = Query(..., description="List of package names"),
     present: bool = Query(True, description="Whether the packages should be present or not"),
-    common: CommonModel = Depends(common_params)
+    common: CommonModel = Depends(commonmodel)
 ) -> list[dict]:
     """# Manage installed APT packages"""
     return await package_handler(packages=packages, present=present, common=common)

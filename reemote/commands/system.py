@@ -3,9 +3,11 @@ from pydantic import Field
 from typing import AsyncGenerator, Callable, Any
 from reemote.command import Command, ConnectionType
 from reemote.router_handler import router_handler
-from reemote.remote_model import Remote, RemoteModel, remote_params
 from reemote.response import Response
-from reemote.local_model import Local, LocalModel
+from reemote.models import LocalModel, RemoteModel, remotemodel
+from reemote.remote import Remote
+from reemote.local import Local
+
 
 class CallbackModel(LocalModel):
     callback: Callable = Field(

@@ -2,8 +2,8 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Query, Depends
 from reemote.command import Command
 from reemote.router_handler import router_handler
-from reemote.common_model import CommonModel, common_params
-from reemote.remote_model import RemoteModel, Remote
+from reemote.models import CommonModel, commonmodel, RemoteModel
+from reemote.remote import Remote
 from reemote.response import Response
 
 router = APIRouter()
@@ -29,7 +29,7 @@ class Install(Remote):
 @router.get("/command/install/", tags=["APT Package Manager Commands"])
 async def install(
     packages: list[str] = Query(..., description="List of package names"),
-    common: CommonModel = Depends(common_params),
+    common: CommonModel = Depends(commonmodel),
 ) -> list[dict]:
     """# Install APT packages"""
     return await router_handler(InstallModel, Install)(
@@ -58,7 +58,7 @@ class Remove(Remote):
 @router.get("/command/remove/", tags=["APT Package Manager Commands"])
 async def remove(
     packages: list[str] = Query(..., description="List of package names"),
-    common: CommonModel = Depends(common_params),
+    common: CommonModel = Depends(commonmodel),
 ) -> list[dict]:
     """# Remove APT packages"""
     return await router_handler(RemoveModel, Remove)(
@@ -84,7 +84,7 @@ class Update(Remote):
 
 
 @router.get("/command/update/", tags=["APT Package Manager Commands"])
-async def update(common: CommonModel = Depends(common_params)) -> list[dict]:
+async def update(common: CommonModel = Depends(commonmodel)) -> list[dict]:
     """# Refresh the package index files from their sources"""
     return await router_handler(UpdateModel, Update)(common=common)
 
@@ -108,6 +108,6 @@ class Upgrade(Remote):
 
 
 @router.get("/command/upgrade/", tags=["APT Package Manager Commands"])
-async def upgrade(common: CommonModel = Depends(common_params)) -> list[dict]:
+async def upgrade(common: CommonModel = Depends(commonmodel)) -> list[dict]:
     """# Install available updates for all installed packages"""
     return await router_handler(UpgradeModel, Upgrade)(common=common)

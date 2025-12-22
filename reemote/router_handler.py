@@ -2,7 +2,7 @@
 from typing import Type, Any, Callable
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, ValidationError
-from reemote.common_model import CommonModel, common_params
+from reemote.models import CommonModel, commonmodel
 from reemote.execute import execute
 from reemote.response import validate_responses
 
@@ -16,7 +16,7 @@ def router_handler(
     """Create a standardized router handler function"""
 
     async def handler(
-            common: CommonModel = Depends(common_params),
+            common: CommonModel = Depends(commonmodel),
             **kwargs
     ) -> list[Any]:
         # Validate parameters (inlined from validate_parameters)

@@ -1,6 +1,6 @@
 from pydantic import Field
 from typing import AsyncGenerator
-from reemote.local_model import Local
+from reemote.local import Local
 from reemote.response import Response
 
 from reemote.commands.sftp import Mkdir, MkdirModel

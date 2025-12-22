@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field, field_validator, ValidationError, root_validator
 
 from reemote.router_handler import router_handler
-from reemote.local_model import Local, LocalModel, local_params
-from reemote.local_model import LocalPathModel
+from reemote.models import LocalModel, localmodel, LocalPathModel
+from reemote.local import Local
 
 router = APIRouter()
 
@@ -153,7 +153,7 @@ async def copy(
             False,
             description="Whether or not to only allow this to be a remote copy"
         ),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Copy remote files to a new location"""
     return await router_handler(CopyModel, Copy)(
@@ -219,7 +219,7 @@ async def mcopy(
             False,
             description="Whether or not to only allow this to be a remote copy"
         ),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Copy remote files to a new location"""
     return await router_handler(CopyModel, Mcopy)(
@@ -372,7 +372,7 @@ async def get(
             None,
             description="Callback function name for error handling"
         ),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Download remote files"""
     return await router_handler(GetModel, Get)(
@@ -433,7 +433,7 @@ async def mget(
             None,
             description="Callback function name for error handling"
         ),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Download remote files with glob pattern match"""
     return await router_handler(GetModel, Mget)(
@@ -587,7 +587,7 @@ async def put(
             None,
             description="Callback function name for error handling"
         ),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Upload local files"""
     return await router_handler(PutModel, Put)(
@@ -648,7 +648,7 @@ async def mput(
             None,
             description="Callback function name for error handling"
         ),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Upload local files with glob pattern match"""
     return await router_handler(PutModel, Mput)(
@@ -740,7 +740,7 @@ async def mkdir(
     gid: Optional[int] = Query(None, description="Group ID"),
     atime: Optional[float] = Query(None, description="Access time"),
     mtime: Optional[float] = Query(None, description="Modification time"),
-    common: LocalModel = Depends(local_params)
+    common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Create a remote directory with the specified attributes"""
     params = {"path": path}
@@ -774,7 +774,7 @@ class Rmdir(Local):
 @router.get("/command/rmdir/", tags=["SFTP Commands"])
 async def islink(
         path: Union[PurePath, str, bytes] = Query(..., description="The path of the remote directory to remove"),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Remove a remote directory"""
     return await router_handler(RmdirModel, Rmdir)(path=path, common=common)
@@ -811,7 +811,7 @@ async def chmod(
         False,
         description="Whether or not to follow symbolic links"
     ),
-    common: LocalModel = Depends(local_params)
+    common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Change the permissions of a remote file, directory, or symlink"""
     return await router_handler(ChmodModel, Chmod)(path=path,
@@ -851,7 +851,7 @@ async def chown(
     ),
     uid: Optional[int] = Query(None, description="User ID"),
     gid: Optional[int] = Query(None, description="Group ID"),
-    common: LocalModel = Depends(local_params)
+    common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Change the owner of a remote file, directory, or symlink"""
     return await router_handler(ChownModel, Chown)(path=path,
@@ -906,7 +906,7 @@ async def utime(
     ),
     atime: Optional[int] = Query(None, description="Access time, as seconds relative to the UNIX epoch"),
     mtime: Optional[int] = Query(None, description="Modify time, as seconds relative to the UNIX epoch"),
-    common: LocalModel = Depends(local_params)
+    common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Change the timestamps of a remote file, directory, or symlink"""
     return await router_handler(UtimeModel, Utime)(path=path,

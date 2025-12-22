@@ -3,7 +3,8 @@ from pydantic import Field
 from typing import AsyncGenerator
 from reemote.command import Command
 from reemote.router_handler import router_handler
-from reemote.remote_model import Remote, RemoteModel, remote_params
+from reemote.models import RemoteModel, remotemodel
+from reemote.remote import Remote
 from reemote.response import Response
 router = APIRouter()
 
@@ -27,7 +28,7 @@ class Shell(Remote):
 @router.get("/server/shell/", tags=["Server Commands"])
 async def shell(
         cmd: str = Query(..., description="Shell command"),
-        common: RemoteModel = Depends(remote_params)
+        common: RemoteModel = Depends(remotemodel)
 ) -> list[dict]:
     """# Execute a shell command on the remote host"""
     return await router_handler(ShellModel, Shell)(cmd=cmd, common=common)

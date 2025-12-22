@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
 from reemote.router_handler import router_handler
-from reemote.local_model import Local, LocalModel, local_params
+from reemote.models import LocalModel, localmodel
+from reemote.local import Local
 
 router = APIRouter()
 
@@ -73,7 +74,7 @@ async def upload(
             include_in_schema=False,  # This hides it from OpenAPI schema
             description="Callback function name for error handling"
         ),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """
     will continue starting with the next file.
@@ -138,7 +139,7 @@ async def download(
             include_in_schema=False,  # This hides it from OpenAPI schema
             description="Callback function name for error handling"
         ),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """
     will continue starting with the next file.
@@ -212,7 +213,7 @@ async def copy(
             include_in_schema=False,  # This hides it from OpenAPI schema
             description="Callback function name for error handling"
         ),
-        common: LocalModel = Depends(local_params)
+        common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """
     will continue starting with the next file.
