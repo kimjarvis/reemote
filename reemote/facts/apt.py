@@ -27,8 +27,8 @@ class GetPackages(Remote):
             **self.common_kwargs,
         )
 
-        if result and hasattr(result, "output"):
-            result.output = parse_apt_list_installed(result.cp.stdout)
+        if result and hasattr(result, "value"):
+            result.value = parse_apt_list_installed(result.cp.stdout)
         return
 
 

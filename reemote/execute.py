@@ -19,6 +19,7 @@ async def pass_through_command(command: Command) -> Response:
         try:
             return Response.from_command(
                 command,
+                value=command.value,
                 host=command.host_info.get("host"),
             )
         except Exception as e:
@@ -33,7 +34,7 @@ async def run_command_on_local(command: Command) -> Response:
             return Response.from_command(
                 command,
                 host=command.host_info.get("host"),
-                output=await command.callback(
+                value=await command.callback(
                     command.host_info,
                     command.global_info,
                     command,

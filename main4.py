@@ -12,12 +12,12 @@ async def main():
     for result in validated_responses:
         print(f"Host: {result.host}")
         print(f"Command: {result.command}")
-        print(f"Output: {result.output}")
+        print(f"Output: {result.value}")
         print(f"Stdout: {result.stdout}")
         print(f"Stderr: {result.stderr}")
         print(f"Changed: {result.changed}")
         # Access package info
-        for item in result.output:
+        for item in result.value:
             if isinstance(item, PackageInfo):
                 print(f"{item.name}: {item.version}")
             elif isinstance(item, dict):

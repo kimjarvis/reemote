@@ -24,7 +24,7 @@ class Package(Remote):
             before_update = yield GetPackages()
             update = yield Update(**self.common_kwargs)
             after_update = yield GetPackages()
-            if before_update[0].output == after_update[0].output:
+            if before_update[0].value == after_update[0].value:
                 mark_unchanged(update)
 
         if self.extra_kwargs.get("upgrade"):
@@ -32,7 +32,7 @@ class Package(Remote):
 
             upgrade = yield Upgrade(**self.common_kwargs)
             after_update = yield GetPackages()
-            if before_upgrade[0].output == after_upgrade[0].output:
+            if before_upgrade[0].value == after_upgrade[0].value:
                 mark_unchanged(upgrade)
 
         if "packages" in self.extra_kwargs:
@@ -44,7 +44,7 @@ class Package(Remote):
                     **self.common_kwargs
                 )
                 after_action = yield GetPackages()
-                if before_action.output == after_action.output:
+                if before_action.value == after_action.value:
                     mark_unchanged(install)
             else:
                 remove = yield Remove(
@@ -52,7 +52,7 @@ class Package(Remote):
                     **self.common_kwargs
                 )
                 after_action = yield GetPackages()
-                if before_action.output == after_action.output:
+                if before_action.value == after_action.value:
                     mark_unchanged(remove)
         return
 

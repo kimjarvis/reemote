@@ -15,7 +15,7 @@ class Root:
             dstpath='/home/user/',
         )
         r = yield Isfile(name="IsFile",path="/home/user/hosts",group="A")
-        assert r.output == [{'value': True}], "File does not exist"
+        assert r.value == [{'value': True}], "File does not exist"
         print("download")
         r = yield Download(
             name="Download",
@@ -24,7 +24,7 @@ class Root:
             group="A"
         )
         r = yield Isfile(path="/tmp/hosts",group="local")
-        assert r.output == [{'value': True}], "File does not exist"
+        assert r.value == [{'value': True}], "File does not exist"
         print("copy")
         r = yield Copy(
             name="Copy",
@@ -34,7 +34,7 @@ class Root:
             dstgroup="B"
         )
         r = yield Isfile(path="/home/user/hosts",group="B")
-        assert r.output == [{'value': True}], "File does not exist"
+        assert r.value == [{'value': True}], "File does not exist"
 
 async def main():
     await execute(lambda: Root())

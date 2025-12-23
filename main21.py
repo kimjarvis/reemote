@@ -13,7 +13,7 @@ async def main():
     await execute(lambda: Update(sudo=True))
     # await execute(lambda: Upgrade(sudo=True))
     r=await execute(lambda: GetPackages())
-    print(r[-1].output)
+    print(r[-1].value)
 
 if __name__ == "__main__":
     asyncio.run(main())

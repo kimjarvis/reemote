@@ -71,7 +71,9 @@ async def test_return():
     class Parent:
         async def execute(self):
             response = yield Child()
+            print(response)
             print(response.changed)
+            print(response.value)
             assert response.value[0].stdout.strip() == "Hello"
             assert response.value[1].stdout.strip() == "World"
 
@@ -85,8 +87,9 @@ async def test_isdir():
     class Root:
         async def execute(self):
             r = yield Isdir(path="/home/user", group="192.168.1.24")
+            print(r)
             if r:
-                assert r.output
+                assert r.value
 
     await execute(lambda: Root())
 
@@ -99,7 +102,7 @@ async def test_mkdir():
     class Root:
         async def execute(self):
             r = yield Isdir(path="/home/user/freddy")
-            if r and r.output:
+            if r and r.value:
                 yield Rmdir(path="/home/user/freddy")
             r1 = yield Mkdir(path="/home/user/freddy", permissions=0o700)
             if r1:
@@ -116,8 +119,8 @@ async def test_stat():
         async def execute(self):
             # todo: remove debug message
             r = yield Stat(path="/home/user/freddy")
-            if r and r.output:
-                print(r.output)
+            if r and r.value:
+                print(r.value)
 
     await execute(lambda: Root())
 
@@ -154,8 +157,8 @@ async def test_chmod():
             # todo: make sure directory exists, with default permissions
             # r = yield Chmod(path="/home/user/freddy", permissions=0o773)
             r = yield Chmod(path="/home/user/freddy", permissions=511)
-            if r and r.output:
-                print(r.output)
+            if r and r.value:
+                print(r.value)
             # todo: assert the permissions (same for chown, utime)
 
     await execute(lambda: Root())
@@ -168,10 +171,10 @@ async def test_chown():
     # todo: note that this isn't supported on SFTPv3, we need a system version
     class Root:
         async def execute(self):
-            # todo: remove test output from commands
+            # todo: remove test value from commands
             r = yield Chown(path="/home/user/freddy", uid=1001)
-            if r and r.output:
-                print(r.output)
+            if r and r.value:
+                print(r.value)
 
     await execute(lambda: Root())
 
@@ -195,11 +198,11 @@ async def test_get_cwd():
     class Root:
         async def execute(self):
             r = yield Getcwd()
-            assert r and r.output=="/home/user"
+            assert r and r.value == "/home/user"
             yield Chdir(path="/home")
             # This does not work on debian
             # r = yield Getcwd()
-            # assert r and r.output=="/home"
+            # assert r and r.value=="/home"
 
 
     await execute(lambda: Root())
@@ -226,20 +229,6 @@ async def test_get_cwd():
 #     await execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_open():
-    from reemote.commands.sftp import Open
-
-    class Root:
-        async def execute(self):
-            r = yield Open(path="/home/user/b.txt",mode='w')
-            if r:
-                print(r,type(r.output))
-                await r.output.write("Your data here")
-                await r.output.close()
-
-    await execute(lambda: Root())
-
-@pytest.mark.asyncio
 async def test_read():
     from reemote.facts.sftp import Read
 
@@ -247,7 +236,7 @@ async def test_read():
         async def execute(self):
             r = yield Read(path="/home/user/b.txt")
             if r:
-                print(r,type(r.output))
+                print(r, type(r.value))
 
     await execute(lambda: Root())
 

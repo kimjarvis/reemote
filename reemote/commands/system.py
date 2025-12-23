@@ -45,7 +45,7 @@ class Return(Local):
 
     async def execute(self) -> AsyncGenerator[Command, Response]:
         model_instance = self.Model(**self.kwargs)
-
+        print("debug 00")
         yield Command(
             type=ConnectionType.PASSTHROUGH,
             value=model_instance.value,

@@ -1,4 +1,4 @@
-def parse_apt_list_installed(output):
+def parse_apt_list_installed(value):
     """Parses the output of 'apt list --installed' into a list of dictionaries.
 
     This helper function processes the raw string output from the
@@ -8,7 +8,7 @@ def parse_apt_list_installed(output):
     corresponding version number.
 
     Args:
-        output (str): The raw string output from the `apt list --installed`
+        value (str): The raw string output from the `apt list --installed`
             command.
 
     Returns:
@@ -16,7 +16,7 @@ def parse_apt_list_installed(output):
             represents an installed package and contains 'name' and 'version'
             keys. Example: `[{'name': 'zlib1g', 'version': '1:1.2.11.dfsg-2'}]`.
     """
-    lines = output.strip().split('\n')
+    lines = value.strip().split('\n')
     packages = []
 
     for line in lines:

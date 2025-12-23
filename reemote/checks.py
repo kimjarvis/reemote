@@ -16,8 +16,8 @@ def changed(r):
     return False
 
 # Do we need this, should it be -1 ?
-def get_output(r):
-    return flatten(r)[0].output
+def get_value(r):
+    return flatten(r)[0].value
 
 def mark_changed(result: List[Response]) -> None:
     """Helper to mark result as changed if it exists"""

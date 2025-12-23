@@ -21,8 +21,8 @@ class Response(BaseModel):
     cp: Optional[SSHCompletedProcess] = Field(default=None, exclude=True)
     host: Optional[str] = None
     op: Optional[Command] = Field(default=None, exclude=True)
-    output: Optional[Any] = None  # Accept any type
     value: Optional[Any] = None  # Accept any type
+    # value: Optional[Any] = None  # Accept any type
     changed: Optional[bool] = None
 
     # Fields from Command (r.op)
@@ -82,7 +82,7 @@ class Response(BaseModel):
             data["callback"] = self._callback_to_str(getattr(op, "callback", None))
             data["caller"] = self._caller_to_str(getattr(op, "caller", None))
             data["call"] = self._caller_to_str(getattr(op, "call", None))
-            data["value"] = getattr(op, "value", None)
+
             data["changed"] = getattr(op, "changed", None)
             data["sudo"] = getattr(op, "sudo", False)
             data["su"] = getattr(op, "su", False)
@@ -218,14 +218,27 @@ class Response(BaseModel):
                 f"Response(host={self.host!r}, "
                 f"call={self.call!r}, "
                 f"changed={self.changed!r}, "                
+                # f"value={self.value!r})"
                 f"value={self.value!r})"
             )
         elif  self.type == ConnectionType.LOCAL:
             return(
+                # f"Response(host={self.host!r}, "
+                # f"call={self.call!r}, "
+                # f"changed={self.changed!r}, "
+                # f"value={self.value!r})"
+
                 f"Response(host={self.host!r}, "
+                f"group={self.group!r}, "
+                f"name={self.name!r}, "
                 f"call={self.call!r}, "
-                f"changed={self.changed!r}, "                
-                f"output={self.output!r})"
+                f"command={self.command!r}, "
+                f"changed={self.changed!r}, "
+                f"return_code={return_code!r}, "
+                f"stdout={stdout!r}, "
+                f"stderr={stderr!r}, "
+                f"value={self.value!r})"
+
             )
         elif self.type == ConnectionType.REMOTE:
             return (
@@ -238,7 +251,7 @@ class Response(BaseModel):
                 f"return_code={return_code!r}, "
                 f"stdout={stdout!r}, "
                 f"stderr={stderr!r}, "
-                f"output={self.output!r})"
+                f"value={self.value!r})"
             )
         else:
             raise ValueError(f"Invalid connection type: {self.type}")
@@ -259,7 +272,7 @@ async def validate_responses(responses: list[Any]) -> list[Response]:
                     host=getattr(r, "host", None),
                     op=getattr(r, "op", None),
                     changed=getattr(r, "changed", False),
-                    output=getattr(r, "output", []),
+                    value=getattr(r, "value", []),
                 )
                 validated_responses.append(response)
         except Exception as e:
