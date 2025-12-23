@@ -29,7 +29,6 @@ async def pass_through_command(command: Command) -> Response:
 
 async def run_command_on_local(command: Command) -> Response:
     if command.group in command.global_info["groups"]:
-        print(f"debug 00 {command.group} {command.host_info.get("host")}")
         try:
             return Response.from_command(
                 command,

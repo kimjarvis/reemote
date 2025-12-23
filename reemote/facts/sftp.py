@@ -268,8 +268,8 @@ class ReadModel(LocalPathModel):
     )
     uid: Optional[int] = Field(None, description="User ID")
     gid: Optional[int] = Field(None, description="Group ID")
-    atime: Optional[float] = Field(None, description="Access time")
-    mtime: Optional[float] = Field(None, description="Modification time")
+    atime: Optional[int] = Field(None, description="Access time")
+    mtime: Optional[int] = Field(None, description="Modification time")
     encoding: Optional[str] = Field('utf-8', description="The Unicode encoding to use for data read and written to the remote file")
     errors: Optional[str] = Field('strict', description="The error-handling mode if an invalid Unicode byte sequence is detected, defaulting to ‘strict’ which raises an exception")
     block_size: Optional[int] = Field(-1, description="The block size to use for read and write requests")
@@ -330,8 +330,8 @@ async def read(
     ),
     uid: Optional[int] = Query(None, description="User ID"),
     gid: Optional[int] = Query(None, description="Group ID"),
-    atime: Optional[float] = Query(None, description="Access time"),
-    mtime: Optional[float] = Query(None, description="Modification time"),
+    atime: Optional[int] = Query(None, description="Access time"),
+    mtime: Optional[int] = Query(None, description="Modification time"),
     encoding: Optional[str] = Query('utf-8', description="The Unicode encoding to use for data read and written to the remote file"),
     errors: Optional[str] = Query('strict', description="The error-handling mode if an invalid Unicode byte sequence is detected, defaulting to ‘strict’ which raises an exception"),
     block_size: Optional[int] = Query(-1, description="The block size to use for read and write requests"),

@@ -31,7 +31,11 @@ class Directory(Local):
                 yield Rmdir(path=model_instance.path, group=model_instance.group)
                 changed = True
             elif model_instance.present and not isdir.value:
-                yield Mkdir(path=model_instance.path, group=model_instance.group)
+                yield Mkdir(path=model_instance.path,
+                            permissions=model_instance.permissions,
+                            atime=model_instance.atime,
+                            mtime=model_instance.mtime,
+                            group=model_instance.group)
                 changed = True
             elif model_instance.present and isdir.value:
                 r = yield Stat(path="/home/user/freddy", group=model_instance.group)
@@ -52,7 +56,7 @@ class Directory(Local):
                         group=model_instance.group,
                     )
                     changed = True
-                if model_instance.uid and r.value["uid"] != model_instance.gid:
+                if model_instance.uid and r.value["gid"] != model_instance.gid:
                     yield Chown(
                         path=model_instance.path,
                         gid=model_instance.gid,

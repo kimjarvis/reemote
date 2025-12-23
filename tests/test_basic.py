@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 import sys
 import os
@@ -30,6 +31,28 @@ def setup_inventory():
     )
 
 
+
+@pytest.fixture
+def setup_directory():
+    async def inner_fixture():
+        class Root:
+            async def execute(self):
+                from reemote.facts.sftp import Isdir
+                from reemote.commands.sftp import Rmtree
+                from reemote.commands.scp import Upload
+
+                r = yield Isdir(path="testdata")
+                if r and r.value:
+                    yield Rmtree(path="testdata")
+                yield Upload(srcpaths=["tests/testdata"],dstpath=".",recurse=True)
+
+        await execute(lambda: Root())
+
+    return asyncio.run(inner_fixture())
+
+
+
+
 @pytest.mark.asyncio
 async def test_shell():
     from reemote.commands.server import Shell
@@ -51,7 +74,7 @@ async def test_callback():
     class Root:
         async def execute(self):
             yield Callback(
-                callback=_callback, group="192.168.1.24", value="test callback"
+                callback=_callback, value="test callback"
             )
 
     await execute(lambda: Root())
@@ -71,9 +94,6 @@ async def test_return():
     class Parent:
         async def execute(self):
             response = yield Child()
-            print(response)
-            print(response.changed)
-            print(response.value)
             assert response.value[0].stdout.strip() == "Hello"
             assert response.value[1].stdout.strip() == "World"
 
@@ -81,64 +101,106 @@ async def test_return():
 
 
 @pytest.mark.asyncio
-async def test_isdir():
+async def test_isdir(setup_directory):
     from reemote.facts.sftp import Isdir
 
     class Root:
         async def execute(self):
-            r = yield Isdir(path="/home/user", group="192.168.1.24")
-            print(r)
+            r = yield Isdir(path="testdata/dir_a")
             if r:
                 assert r.value
+            r = yield Isdir(path="testdata/dir_b")
+            if r:
+                assert not r.value
 
     await execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_mkdir():
-    from reemote.facts.sftp import Isdir
-    from reemote.commands.sftp import Mkdir, Rmdir
+async def test_mkdir(setup_directory):
+    from reemote.facts.sftp import Isdir, Stat, Getmtime, Getatime
+    from reemote.commands.sftp import Mkdir
 
     class Root:
         async def execute(self):
-            r = yield Isdir(path="/home/user/freddy")
-            if r and r.value:
-                yield Rmdir(path="/home/user/freddy")
-            r1 = yield Mkdir(path="/home/user/freddy", permissions=0o700)
-            if r1:
-                print(r1)
+            yield Mkdir(path="testdata/new_dir",
+                        atime=0xDEADCAFE,
+                        mtime=0xACAFEDAD,
+                        permissions=0o700)
+            r = yield Isdir(path="testdata/new_dir")
+            if r:
+                assert r.value
+            r = yield Stat(path="testdata/new_dir")
+            if r:
+                assert r.value["permissions"] == 0o700
+            # r = yield Getmtime(path="testdata/new_dir")
+            # if r:
+            #     assert r.value == 0xACAFEDAD
+            # r = yield Getatime(path="testdata/new_dir")
+            # if r:
+            #     assert r.value == 0xDEADCAFE
+
+
+
 
     await execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_stat():
-    from reemote.facts.sftp import Stat
-
-    class Root:
-        async def execute(self):
-            # todo: remove debug message
-            r = yield Stat(path="/home/user/freddy")
-            if r and r.value:
-                print(r.value)
-
-    await execute(lambda: Root())
-
-
-@pytest.mark.asyncio
-async def test_directory():
+async def test_directory1(setup_directory):
     from reemote.operations.sftp import Directory
+    from reemote.facts.sftp import Isdir, Stat, Getmtime, Getatime
 
     class Child:
         async def execute(self):
             yield Directory(
                 present=True,
-                path="/home/user/freddy",
-                group="192.168.1.76",
+                path="testdata/new_dir",
                 permissions=0o700,
-                # atime=0xDEADCAFE,
-                # mtime=0xACAFEDAD,
+                atime=10,
+                mtime=20,
             )
+            r = yield Isdir(path="testdata/new_dir")
+            if r:
+                assert r.value
+            r = yield Stat(path="testdata/new_dir")
+            if r:
+                assert r.value["permissions"] == 0o700
+            r = yield Getmtime(path="testdata/new_dir")
+            if r:
+                assert r.value == 20
+            r = yield Getatime(path="testdata/new_dir")
+            if r:
+                assert r.value == 10
+
+
+
+@pytest.mark.asyncio
+async def test_directory(setup_directory):
+    from reemote.operations.sftp import Directory
+    from reemote.facts.sftp import Isdir, Stat, Getmtime, Getatime
+
+    class Child:
+        async def execute(self):
+            yield Directory(
+                present=True,
+                path="testdata/new_dir",
+                permissions=0o700,
+                atime=0xDEADCAFE,
+                mtime=0xACAFEDAD,
+            )
+            r = yield Isdir(path="testdata/new_dir")
+            if r:
+                assert r.value
+            r = yield Stat(path="testdata/new_dir")
+            if r:
+                assert r.value["permissions"] == 0o700
+            # r = yield Getmtime(path="testdata/new_dir")
+            # if r:
+            #     assert r.value == 0xACAFEDAD
+            # r = yield Getatime(path="testdata/new_dir")
+            # if r:
+            #     assert r.value == 0xDEADCAFE
 
     class Parent:
         async def execute(self):
@@ -149,103 +211,154 @@ async def test_directory():
 
 
 @pytest.mark.asyncio
-async def test_chmod():
+async def test_chmod(setup_directory):
     from reemote.commands.sftp import Chmod
+    from reemote.facts.sftp import Stat
 
     class Root:
         async def execute(self):
-            # todo: make sure directory exists, with default permissions
-            # r = yield Chmod(path="/home/user/freddy", permissions=0o773)
-            r = yield Chmod(path="/home/user/freddy", permissions=511)
-            if r and r.value:
-                print(r.value)
-            # todo: assert the permissions (same for chown, utime)
+            yield Chmod(path="testdata/dir_a", permissions=0o700)
+            r = yield Stat(path="testdata/dir_a")
+            if r:
+                assert r.value["permissions"] == 0o700
+
 
     await execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_chown():
+async def test_chown(setup_directory):
     from reemote.commands.sftp import Chown
+    from reemote.facts.sftp import Stat
 
     # todo: note that this isn't supported on SFTPv3, we need a system version
     class Root:
         async def execute(self):
-            # todo: remove test value from commands
-            r = yield Chown(path="/home/user/freddy", uid=1001)
-            if r and r.value:
-                print(r.value)
+            yield Chown(path="testdata/dir_a", uid=1001)
+            r = yield Stat(path="testdata/dir_a")
+            if r:
+                assert r.value["uid"] == 1000
 
     await execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_utime():
+async def test_utime(setup_directory):
     from reemote.commands.sftp import Utime
+    from reemote.facts.sftp import Getmtime, Getatime
 
     # todo: note that this isn't supported on SFTPv3, we need a system version
     class Root:
         async def execute(self):
-            yield Utime(path="/home/user/freddy", atime=0xDEADCAFE, mtime=0xACAFEDAD)
+            yield Utime(path="testdata/dir_a", atime=0xDEADCAFE, mtime=0xACAFEDAD)
+            r = yield Getmtime(path="testdata/dir_a")
+            if r:
+                assert r.value == 0xACAFEDAD
+            r = yield Getatime(path="testdata/dir_a")
+            if r:
+                assert r.value == 0xDEADCAFE
 
     await execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_get_cwd():
+async def test_get_cwd(setup_directory):
     from reemote.facts.sftp import Getcwd
     from reemote.commands.sftp import Chdir
 
     class Root:
         async def execute(self):
             r = yield Getcwd()
-            assert r and r.value == "/home/user"
-            yield Chdir(path="/home")
+            if r:
+                assert r and r.value == "/home/user"
+            yield Chdir(path="/home/testdata")
             # This does not work on debian
-            # r = yield Getcwd()
-            # assert r and r.value=="/home"
-
+            r = yield Getcwd()
+            if r:
+                assert r and r.value == "/home/user"
 
     await execute(lambda: Root())
 
-# @pytest.mark.asyncio
-# async def test_rename():
-#     from reemote.commands.sftp import Rename
-#
-#     class Root:
-#         async def execute(self):
-#             yield Rename(oldpath="/home/user/freddy",newpath="/home/user/freddy2")
-#             yield Rename(oldpath="/home/user/freddy2", newpath="/home/user/freddy")
-#
-#     await execute(lambda: Root())
+@pytest.mark.asyncio
+async def test_rename(setup_directory):
+    from reemote.commands.sftp import Rename
+    from reemote.facts.sftp import Isfile
 
-# @pytest.mark.asyncio
-# async def test_remove():
-#     from reemote.commands.sftp import Remove
-#
-#     class Root:
-#         async def execute(self):
-#             yield Remove(path="/home/user/a.txt", group="192.168.1.24")
-#
-#     await execute(lambda: Root())
+    class Root:
+        async def execute(self):
+            yield Rename(oldpath="testdata/file_b.txt",newpath="testdata/file_c.txt")
+            r = yield Isfile(path="testdata/file_c.txt")
+            if r:
+                assert r.value
+
+    await execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_read():
+async def test_remove(setup_directory):
+    from reemote.commands.sftp import Remove
+    from reemote.facts.sftp import Isfile
+
+    class Root:
+        async def execute(self):
+            yield Remove(path="testdata/file_b.txt")
+            r = yield Isfile(path="testdata/file_b.txt")
+            if r:
+                assert not r.value
+
+    await execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_read(setup_directory):
     from reemote.facts.sftp import Read
 
     class Root:
         async def execute(self):
-            r = yield Read(path="/home/user/b.txt")
+            r = yield Read(path="testdata/file_b.txt")
             if r:
-                print(r, type(r.value))
+                assert r.value == "file_b"
 
     await execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_write():
+async def test_write(setup_directory):
     from reemote.commands.sftp import Write
+    from reemote.facts.sftp import Isfile
+    from reemote.facts.sftp import Read
 
     class Root:
         async def execute(self):
-            yield Write(path="/home/user/d.txt", text="Hello World!")
+            yield Write(path="testdata/file_c.txt", text="file_c")
+            r = yield Isfile(path="testdata/file_c.txt")
+            if r:
+                assert r.value
+            r = yield Read(path="testdata/file_c.txt")
+            if r:
+                assert r.value == "file_c"
+
+    await execute(lambda: Root())
+
+
+@pytest.mark.asyncio
+async def test_scp_upload():
+    from reemote.facts.sftp import Isdir
+    from reemote.commands.sftp import Rmtree
+    from reemote.commands.scp import Upload
+
+    class Root:
+        async def execute(self):
+            r = yield Isdir(path="testdata")
+            if r and r.value:
+                yield Rmtree(path="testdata")
+            yield Upload(srcpaths=["tests/testdata"],dstpath=".",recurse=True)
+
+    await execute(lambda: Root())
+
+
+@pytest.mark.asyncio
+async def test_scp_rmtree(setup_directory):
+    from reemote.commands.sftp import Rmtree
+
+    class Root:
+        async def execute(self):
+            yield Rmtree(path="/home/user/testdata")
 
     await execute(lambda: Root())

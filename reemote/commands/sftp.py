@@ -530,7 +530,6 @@ class Mput(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                print("debug mput")
                 return await sftp.mput(
                     localpaths=caller.localpaths,
                     remotepath=caller.remotepath,
@@ -676,8 +675,8 @@ class MkdirModel(LocalPathModel):
     )
     uid: Optional[int] = Field(None, description="User ID")
     gid: Optional[int] = Field(None, description="Group ID")
-    atime: Optional[float] = Field(None, description="Access time")
-    mtime: Optional[float] = Field(None, description="Modification time")
+    atime: Optional[int] = Field(None, description="Access time")
+    mtime: Optional[int] = Field(None, description="Modification time")
 
     @root_validator(skip_on_failure=True)
     @classmethod
@@ -721,12 +720,9 @@ class Mkdir(Local):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
                 sftp_attrs = caller.get_sftp_attrs()
-                if sftp_attrs:
-                    print(f"debug 05 {sftp_attrs}")
-                    return await sftp.mkdir(path=caller.path, attrs=sftp_attrs)
-                else:
-                    print(f"debug 06 {sftp_attrs}")
-                    return await sftp.mkdir(path=caller.path)
+                print(f"debug: {caller.path} {sftp_attrs}")
+                await sftp.mkdir(path=caller.path, attrs=sftp_attrs if sftp_attrs else None)
+
 
 @router.get("/command/mkdir/", tags=["SFTP Commands"])
 async def mkdir(
@@ -739,8 +735,8 @@ async def mkdir(
     ),
     uid: Optional[int] = Query(None, description="User ID"),
     gid: Optional[int] = Query(None, description="Group ID"),
-    atime: Optional[float] = Query(None, description="Access time"),
-    mtime: Optional[float] = Query(None, description="Modification time"),
+    atime: Optional[int] = Query(None, description="Access time"),
+    mtime: Optional[int] = Query(None, description="Modification time"),
     common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Create a remote directory with the specified attributes"""
@@ -778,7 +774,27 @@ async def islink(
         common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
     """# Remove a remote directory"""
-    return await router_handler(RmdirModel, Rmdir)(path=path, common=common)
+    return await router_handler(LocalPathModel, Rmdir)(path=path, common=common)
+
+
+class Rmtree(Local):
+    # todo: There are other parameters
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.rmtree(str(caller.path))
+
+@router.get("/command/rmtree/", tags=["SFTP Commands"])
+async def islink(
+        path: Union[PurePath, str, bytes] = Query(..., description="The path of the parent directory to remove"),
+        common: LocalModel = Depends(localmodel)
+) -> list[dict]:
+    """# Recursively delete a directory tree"""
+    return await router_handler(LocalPathModel, Rmtree)(path=path, common=common)
+
 
 
 class ChmodModel(LocalPathModel):
@@ -1037,8 +1053,8 @@ class WriteModel(LocalPathModel):
     )
     uid: Optional[int] = Field(None, description="User ID")
     gid: Optional[int] = Field(None, description="Group ID")
-    atime: Optional[float] = Field(None, description="Access time")
-    mtime: Optional[float] = Field(None, description="Modification time")
+    atime: Optional[int] = Field(None, description="Access time")
+    mtime: Optional[int] = Field(None, description="Modification time")
     encoding: Optional[str] = Field('utf-8', description="The Unicode encoding to use for data read and written to the remote file")
     errors: Optional[str] = Field('strict', description="The error-handling mode if an invalid Unicode byte sequence is detected, defaulting to ‘strict’ which raises an exception")
     block_size: Optional[int] = Field(-1, description="The block size to use for read and write requests")
@@ -1082,7 +1098,6 @@ class Write(Local):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
                 sftp_attrs = caller.get_sftp_attrs()
-                sftp_attrs = caller.get_sftp_attrs()
                 f = await sftp.open(path=caller.path, pflags_or_mode=caller.mode , attrs=sftp_attrs if sftp_attrs else None,
                                    encoding=caller.encoding, errors=caller.errors,
                                    block_size=caller.block_size, max_requests=caller.max_requests)
@@ -1103,8 +1118,8 @@ async def write(
     ),
     uid: Optional[int] = Query(None, description="User ID"),
     gid: Optional[int] = Query(None, description="Group ID"),
-    atime: Optional[float] = Query(None, description="Access time"),
-    mtime: Optional[float] = Query(None, description="Modification time"),
+    atime: Optional[int] = Query(None, description="Access time"),
+    mtime: Optional[int] = Query(None, description="Modification time"),
     encoding: Optional[str] = Query('utf-8', description="The Unicode encoding to use for data read and written to the remote file"),
     errors: Optional[str] = Query('strict', description="The error-handling mode if an invalid Unicode byte sequence is detected, defaulting to ‘strict’ which raises an exception"),
     block_size: Optional[int] = Query(-1, description="The block size to use for read and write requests"),

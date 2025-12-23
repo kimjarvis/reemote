@@ -38,7 +38,6 @@ class Package(Remote):
         if "packages" in self.extra_kwargs:
             before_action = yield GetPackages()
             if self.extra_kwargs.get("present"):
-                print(f"debug 00 {self.extra_kwargs} {self.extra_kwargs.get("packages")}")
                 install = yield Install(
                     packages=self.extra_kwargs.get("packages"),
                     **self.common_kwargs
