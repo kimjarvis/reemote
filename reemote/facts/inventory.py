@@ -1,13 +1,12 @@
-from typing import List, Dict, Any
-from fastapi import APIRouter, Query
-from pydantic import BaseModel
-from reemote.config import Config
+from fastapi import Query
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import HTTPException
 from reemote.config import Config
 from typing import List, Dict, Any
-from pydantic import BaseModel, RootModel, field_validator
+from pydantic import BaseModel
 from reemote.commands.inventory import ErrorResponse
+from fastapi import FastAPI, Query, Response
+from fastapi.routing import APIRouter
 
 
 router = APIRouter()
@@ -24,19 +23,18 @@ def isentry(host: str) -> bool:
             return True
     return False
 
+
 @router.get(
     "/isentry",
     tags=["Inventory Facts"],
-    response_model=IsEntryResponse,
+    response_model=None,  # No response model since we're returning raw values
 )
 async def isentry_route(
     host: str = Query(..., description="Host name"),
-) -> IsEntryResponse:
+):
     exists = isentry(host)
-    if exists:
-        return IsEntryResponse(value=True)
-    else:
-        return IsEntryResponse(value=False)
+    return Response(content=str(exists), media_type="text/plain")
+
 
 class GetEntryResponse(BaseModel):
     """Response model for inventory creation endpoint"""
