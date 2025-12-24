@@ -67,9 +67,6 @@ router = APIRouter()
 # CRUD Operations
 
 
-def read_inventory() -> List[List[Dict]]:
-    config = Config()
-    return config.get_inventory()
 
 
 def create_inventory(inventory: List[List[Dict]]) -> Dict:
@@ -109,18 +106,6 @@ def add_entry(entry: List[Dict]) -> Dict:
         "data": entry,
     }
 
-def get_entry(host: str) -> Dict:
-    config = Config()
-    inventory = config.get_inventory()
-
-    for entry in inventory:
-        if entry[0].get("host") == host:
-            return {
-                "status": "success",
-                "message": "Inventory entry found",
-                "data": entry,
-            }
-    raise ValueError(f"Entry for host not found: {host}")
 
 
 def delete_entry(host: str) -> Dict:
@@ -144,27 +129,6 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
-@router.get(
-    "/entries/",
-    tags=["Inventory"],
-    response_model=List[List[Dict]],
-    responses={
-        400: {
-            "model": ErrorResponse,
-            "description": "Validation error - Invalid inventory structure",
-        },
-        500: {"model": ErrorResponse, "description": "Internal server error"},
-    },
-)
-def read_the_inventory():
-    try:
-        return read_inventory()
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logging.error(f"Error getting inventory: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
 
 class InventoryCreateResponse(BaseModel):
     """Response model for inventory creation endpoint"""
@@ -176,7 +140,7 @@ class InventoryCreateResponse(BaseModel):
 
 @router.post(
     "/create/",
-    tags=["Inventory"],
+    tags=["Inventory Commands"],
     response_model=InventoryCreateResponse,
     responses={
         400: {
@@ -249,7 +213,7 @@ class EntryCreateResponse(BaseModel):
 
 @router.post(
     "/entries/",
-    tags=["Inventory"],
+    tags=["Inventory Commands"],
     response_model=InventoryCreateResponse,
     responses={
         400: {
@@ -294,32 +258,6 @@ def add_inventory_entry(entry: InventoryEntry):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-class GetEntryResponse(BaseModel):
-    """Response model for inventory creation endpoint"""
-
-    status: str
-    message: str
-    data: List[Dict[str, Any]]  # Generic description without details
-
-
-@router.get(
-    "/entries/{host}",
-    tags=["Inventory"],
-    response_model=GetEntryResponse,
-    responses={
-        500: {"model": ErrorResponse, "description": "Internal server error"},
-    },
-)
-def get_inventory_entry(host: str):
-    try:
-        result = get_entry(host)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logging.error(f"Error getting inventory entry: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
 
 class DeleteEntryResponse(BaseModel):
     """Response model for inventory creation endpoint"""
@@ -330,7 +268,7 @@ class DeleteEntryResponse(BaseModel):
 
 @router.delete(
     "/entries/{host}",
-    tags=["Inventory"],
+    tags=["Inventory Commands"],
     response_model=DeleteEntryResponse,
     responses={
         500: {"model": ErrorResponse, "description": "Internal server error"},

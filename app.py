@@ -40,7 +40,7 @@ app = FastAPI(
     swagger_ui_parameters={"docExpansion": "none", "title": "Reemote - Swagger UI"},
     openapi_tags=[
         {
-            "name": "Inventory",
+            "name": "Inventory Commands",
             "description": """
 The inventory specifies the servers on which operations act.  These CRUD operations facilitate inventory management.
             """,
@@ -96,8 +96,8 @@ Get information about files and directories on servers.
 
 
 # Include the inventory router under a specific prefix (optional)
-app.include_router(inventory_router, prefix="/inventory")
-app.include_router(facts_inventory_router, prefix="/facts/inventory")
+app.include_router(inventory_router, prefix="/inventory/commands")
+app.include_router(facts_inventory_router, prefix="/inventory/facts")
 app.include_router(commands_apt_router, prefix="/commands/apt")
 app.include_router(facts_apt_router, prefix="/facts/apt")
 app.include_router(operations_apt_router, prefix="/operations/apt")
