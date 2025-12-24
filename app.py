@@ -8,8 +8,8 @@ from reemote.commands.scp import router as commands_scp_router
 from reemote.commands.server import router as commands_server_router
 from reemote.commands.sftp import router as commands_sftp_router
 from reemote.facts.sftp import router as facts_sftp_router
-from reemote.inventory import router as inventory_router
-
+from reemote.commands.inventory import router as inventory_router
+from reemote.facts.inventory import router as facts_inventory_router
 
 import argparse
 from reemote.config import Config
@@ -44,6 +44,12 @@ app = FastAPI(
             "description": """
 The inventory specifies the servers on which operations act.  These CRUD operations facilitate inventory management.
             """,
+        },
+        {
+            "name": "Inventory Facts",
+            "description": """
+Get information about the Inventory.
+                    """,
         },
         {
             "name": "APT Package Manager Commands",
@@ -91,6 +97,7 @@ Get information about files and directories on servers.
 
 # Include the inventory router under a specific prefix (optional)
 app.include_router(inventory_router, prefix="/inventory")
+app.include_router(facts_inventory_router, prefix="/facts/inventory")
 app.include_router(commands_apt_router, prefix="/commands/apt")
 app.include_router(facts_apt_router, prefix="/facts/apt")
 app.include_router(operations_apt_router, prefix="/operations/apt")

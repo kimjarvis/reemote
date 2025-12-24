@@ -5,13 +5,13 @@ Remote is used for controlling a remote server.  In this tutorial we have two se
 ```bash
 ssh user@192.168.0.26
 ```
-We can use the `remote` command to connect to the server and execute a shell command.   
+We can use the `remote` command to connect to the server and execute a shell command.
 
 ```python
 import asyncio
 from reemote.execute import execute
 from reemote.commands.server import Shell
-from reemote.inventory import create_inventory
+from reemote.commands.inventory import create_inventory
 
 
 async def main():
@@ -46,6 +46,7 @@ async def main():
     for r in response:
         print(r.stdout)
 
+
 if __name__ == "__main__":
     asyncio.run(main())
 ```
@@ -67,7 +68,7 @@ can be edited manually or modified using the RestAPI.  The program can be run ag
 import asyncio
 from reemote.execute import execute
 from reemote.commands.server import Shell
-from reemote.inventory import create_inventory
+from reemote.commands.inventory import create_inventory
 
 
 async def main():
@@ -75,19 +76,20 @@ async def main():
     for r in response:
         print(r.stdout)
 
+
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
 The execute function executes the shell command on each server in the inventory asynchronously.  It returns a list of responses.  The response object contains the return code, stdout and stderr of the command.
 
-Commands can be composed.   In this example, the order of execution is determined by the order of the yield statements in the two classes.  Execution proceeds asynchronously. 
+Commands can be composed.   In this example, the order of execution is determined by the order of the yield statements in the two classes.  Execution proceeds asynchronously.
 
 ```python
 import asyncio
 from reemote.execute import execute
 from reemote.commands.server import Shell
-from reemote.inventory import create_inventory
+from reemote.commands.inventory import create_inventory
 
 
 class Message:
@@ -135,7 +137,7 @@ This exemple demonstrates synchronous execution.  The order in which the two ser
 import asyncio
 from reemote.execute import execute
 from reemote.commands.server import Shell
-from reemote.inventory import create_inventory
+from reemote.commands.inventory import create_inventory
 
 
 class Message:
@@ -157,6 +159,7 @@ async def main():
     response = await execute(lambda: Root())
     for r in response:
         print(r.stdout)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

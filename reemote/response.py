@@ -275,29 +275,18 @@ class Response(BaseModel):
 
 
 async def validate_responses(responses: list[Any]) -> list[Response]:
-    """Convert any response-like objects to UnifiedResult instances."""
+    """
+    Validate that all items in the list are instances of Response.
+    Raises a ValueError if any item is not a valid Response instance.
+    """
     validated_responses = []
 
     for r in responses:
-        try:
-            if isinstance(r, Response):
-                # Already a response, just add it
-                validated_responses.append(r)
-            else:
-                response = Response(
-                    cp=getattr(r, "cp", None),
-                    host=getattr(r, "host", None),
-                    op=getattr(r, "op", None),
-                    changed=getattr(r, "changed", False),
-                    value=getattr(r, "value", []),
-                )
-                validated_responses.append(response)
-        except Exception as e:
-            logging.error(f"Error converting response: {e}", exc_info=True)
-            # Create a minimal error result
-            error_result = Response(
-                host=getattr(r, "host", None) if hasattr(r, "host") else None,
-            )
-            validated_responses.append(error_result)
+        if not isinstance(r, Response):
+            raise ValueError(f"Invalid response type: expected Response, got {type(r).__name__}")
+
+        # Validate the existing Response instance
+        validated_response = Response.model_validate(r)
+        validated_responses.append(validated_response)
 
     return validated_responses

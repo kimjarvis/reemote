@@ -109,7 +109,6 @@ def add_entry(entry: List[Dict]) -> Dict:
         "data": entry,
     }
 
-
 def get_entry(host: str) -> Dict:
     config = Config()
     inventory = config.get_inventory()

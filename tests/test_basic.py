@@ -5,7 +5,7 @@ import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from reemote.inventory import create_inventory
+from reemote.commands.inventory import create_inventory
 from reemote.execute import execute
 
 
@@ -118,7 +118,7 @@ async def test_isdir(setup_directory):
 
 @pytest.mark.asyncio
 async def test_mkdir(setup_directory):
-    from reemote.facts.sftp import Isdir, Stat, Getmtime, Getatime
+    from reemote.facts.sftp import Isdir, Stat
     from reemote.commands.sftp import Mkdir
 
     class Root:
@@ -178,7 +178,7 @@ async def test_directory1(setup_directory):
 @pytest.mark.asyncio
 async def test_directory(setup_directory):
     from reemote.operations.sftp import Directory
-    from reemote.facts.sftp import Isdir, Stat, Getmtime, Getatime
+    from reemote.facts.sftp import Isdir, Stat
 
     class Child:
         async def execute(self):
@@ -365,10 +365,8 @@ async def test_scp_rmtree(setup_directory):
 
 
 @pytest.mark.asyncio
-async def test_mkdir_1(setup_directory):
-    from reemote.facts.sftp import Isdir
+async def test_catching_sftp_failures(setup_directory):
     from reemote.commands.sftp import Mkdir
-    from asyncssh.sftp import SFTPFailure
 
     class Root:
         async def execute(self):
@@ -379,3 +377,35 @@ async def test_mkdir_1(setup_directory):
     # with pytest.raises(SFTPFailure):  # Verify the SFTPFailure is raised
     #     await execute(lambda: Root())
     await execute(lambda: Root())
+
+
+@pytest.mark.asyncio
+async def test_unreachable_host(setup_directory):
+    from reemote.facts.sftp import Isdir
+    from reemote.commands.sftp import Mkdir, Rmdir
+    from reemote.commands.inventory import add_entry, delete_entry
+    from reemote.facts.inventory import isentry
+
+    class Root:
+        async def execute(self):
+                r = yield Isdir(path="/home/user/dir_e")
+                if r and r.value:
+                    yield Rmdir(path="/home/user/dir_e")
+                yield Mkdir(path="/home/user/dir_e")
+
+    if isentry("192.168.1.33"):
+        delete_entry("192.168.1.33")
+    add_entry(
+            [
+                {"host": "192.168.1.33", "username": "user", "password": "password"},
+                {
+                    "groups": ["all", "192.168.1.33"],
+                },
+            ],
+    )
+    with pytest.raises(OSError):  # Or use asyncssh.Error if applicable
+        await execute(lambda: Root())
+    if isentry("192.168.1.33"):
+        delete_entry("192.168.1.33")
+
+

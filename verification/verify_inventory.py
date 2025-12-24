@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the actual inventory module
 try:
-    from reemote.inventory import validate_host_parameter, check_host_uniqueness_across_database
+    from reemote.commands.inventory import validate_host_parameter, check_host_uniqueness_across_database
 
     HAS_INVENTORY_MODULE = True
 except ImportError:

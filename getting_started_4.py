@@ -1,7 +1,6 @@
 import asyncio
 from reemote.execute import execute
 from reemote.commands.server import Shell
-from reemote.inventory import create_inventory
 
 
 class Message:

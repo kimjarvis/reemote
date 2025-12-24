@@ -754,7 +754,7 @@ class Rmdir(Local):
 
 
 @router.get("/command/rmdir/", tags=["SFTP Commands"])
-async def islink(
+async def rmdir(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote directory to remove"
     ),
