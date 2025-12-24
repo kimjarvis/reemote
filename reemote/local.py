@@ -5,6 +5,10 @@ from reemote.response import Response
 
 
 class Local:
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.child = cls.__name__  # Set the 'child' field to the name of the subclass
+
     def __init__(self, **kwargs):
         self.kwargs = kwargs
 
@@ -14,7 +18,7 @@ class Local:
         yield Command(
             type=ConnectionType.LOCAL,
             callback=self._callback,
-            call=str(model_instance),
+            call=self.__class__.child+"("+str(model_instance)+")",
             caller=model_instance,
             group=model_instance.group,
         )

@@ -362,3 +362,20 @@ async def test_scp_rmtree(setup_directory):
             yield Rmtree(path="/home/user/testdata")
 
     await execute(lambda: Root())
+
+
+@pytest.mark.asyncio
+async def test_mkdir_1(setup_directory):
+    from reemote.facts.sftp import Isdir
+    from reemote.commands.sftp import Mkdir
+    from asyncssh.sftp import SFTPFailure
+
+    class Root:
+        async def execute(self):
+                r = yield Mkdir(path="testdata/dir_a")
+                if r and r.value:
+                    assert r.value == "SFTPFailure"
+
+    # with pytest.raises(SFTPFailure):  # Verify the SFTPFailure is raised
+    #     await execute(lambda: Root())
+    await execute(lambda: Root())

@@ -24,26 +24,25 @@ async def pass_through_command(command: Command) -> Response:
             )
         except Exception as e:
             logging.error(f"{e} {command}", exc_info=True)
-            sys.exit(1)
+            raise
 
 
 async def run_command_on_local(command: Command) -> Response:
     if command.group in command.global_info["groups"]:
-        try:
-            return Response.from_command(
+        logging.info(f"{command}")
+        response = Response.from_command(
+            command,
+            host=command.host_info.get("host"),
+            value=await command.callback(
+                command.host_info,
+                command.global_info,
                 command,
-                host=command.host_info.get("host"),
-                value=await command.callback(
-                    command.host_info,
-                    command.global_info,
-                    command,
-                    SSHCompletedProcess(),
-                    command.caller,
-                ),
-            )
-        except Exception as e:
-            logging.error(f"{e} {command}", exc_info=True)
-            sys.exit(1)
+                SSHCompletedProcess(),
+                command.caller,
+            ),
+        )
+        logging.info(f"{response}")
+        return response
 
 
 async def run_command_on_host(command: Command) -> Response:
@@ -107,7 +106,7 @@ async def run_command_on_host(command: Command) -> Response:
                     cp = await conn.run(command.command, check=False)
         except (asyncssh.ProcessError, OSError, asyncssh.Error) as e:
             logging.error(f"{e} {command}", exc_info=True)
-            sys.exit(1)
+            raise
         return Response(
             cp=cp,
             host=command.host_info.get("host"),
@@ -264,8 +263,9 @@ async def execute(
                     break
 
         except Exception as e:
-            # Handle any errors for this host
-            logging.error(f"Error processing host {inventory_item}: {e}", exc_info=True)
+            # Handle any fatal errors for this host
+            print(f"Error on host {inventory_item[0]["host"]}: {e.__class__.__name__}")
+            logging.error(f"{inventory_item[0]["host"]}: {e.__class__.__name__}")
             raise
 
         return responses

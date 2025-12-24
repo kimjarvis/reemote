@@ -22,8 +22,9 @@ class Response(BaseModel):
     host: Optional[str] = None
     op: Optional[Command] = Field(default=None, exclude=True)
     value: Optional[Any] = None  # Accept any type
-    # value: Optional[Any] = None  # Accept any type
-    changed: Optional[bool] = None
+    changed: Optional[bool] = True
+    # executed: Optional[bool] = True
+    # success: Optional[bool] = True
 
     # Fields from Command (r.op)
     name: Optional[str] = None
@@ -83,15 +84,14 @@ class Response(BaseModel):
             data["caller"] = self._caller_to_str(getattr(op, "caller", None))
             data["call"] = self._caller_to_str(getattr(op, "call", None))
 
-            data["changed"] = getattr(op, "changed", None)
-            data["sudo"] = getattr(op, "sudo", False)
-            data["su"] = getattr(op, "su", False)
-            data["get_pty"] = getattr(op, "get_pty", False)
-            data["host_info"] = getattr(op, "host_info", None)
-            data["global_info"] = getattr(op, "global_info", None)
+        # data["changed"] = getattr(op, "changed", None) ??
+        data["sudo"] = getattr(op, "sudo", False)
+        data["su"] = getattr(op, "su", False)
+        data["get_pty"] = getattr(op, "get_pty", False)
+        data["host_info"] = getattr(op, "host_info", None)
+        data["global_info"] = getattr(op, "global_info", None)
 
         super().__init__(**data)
-        logging.info(f"{self}")
 
     @classmethod
     def from_command(cls, command: Command, **kwargs) -> "Response":
@@ -121,10 +121,7 @@ class Response(BaseModel):
 
         # Update with any additional kwargs
         data.update(kwargs)
-
-        c = cls(**data)
-        logging.info(f"{c}")
-        return c
+        return cls(**data)
 
     @staticmethod
     def _bytes_to_str(value: Any) -> str:
@@ -188,7 +185,7 @@ class Response(BaseModel):
                 return str(value)
             except (TypeError, ValueError) as e:
                 logging.error(f"{e}", exc_info=True)
-                sys.exit(1)
+                raise
 
     # CHANGED: Pydantic V2 style validator
     @field_validator("global_info", mode="before")
@@ -216,6 +213,8 @@ class Response(BaseModel):
         if self.type == ConnectionType.PASSTHROUGH:
             return(
                 f"Response(host={self.host!r}, "
+                # f"executed={self.executed!r}, "
+                # f"success={self.success!r}, "
                 f"call={self.call!r}, "
                 f"changed={self.changed!r}, "                
                 # f"value={self.value!r})"
@@ -231,6 +230,8 @@ class Response(BaseModel):
                 f"Response(host={self.host!r}, "
                 f"group={self.group!r}, "
                 f"name={self.name!r}, "
+                # f"executed={self.executed!r}, "
+                # f"success={self.success!r}, "
                 f"call={self.call!r}, "
                 f"command={self.command!r}, "
                 f"changed={self.changed!r}, "
@@ -245,6 +246,8 @@ class Response(BaseModel):
                 f"Response(host={self.host!r}, "
                 f"group={self.group!r}, "
                 f"name={self.name!r}, "
+                # f"executed={self.executed!r}, "
+                # f"success={self.success!r}, "
                 f"call={self.call!r}, "
                 f"command={self.command!r}, "
                 f"changed={self.changed!r}, "
@@ -254,7 +257,21 @@ class Response(BaseModel):
                 f"value={self.value!r})"
             )
         else:
-            raise ValueError(f"Invalid connection type: {self.type}")
+            return (
+                f"invalid !!! "
+                f"Response(host={self.host!r}, "
+                f"group={self.group!r}, "
+                f"name={self.name!r}, "
+                # f"executed={self.executed!r}, "
+                # f"success={self.success!r}, "
+                f"call={self.call!r}, "
+                f"command={self.command!r}, "
+                f"changed={self.changed!r}, "
+                f"return_code={return_code!r}, "
+                f"stdout={stdout!r}, "
+                f"stderr={stderr!r}, "
+                f"value={self.value!r})"
+            )
 
 
 async def validate_responses(responses: list[Any]) -> list[Response]:

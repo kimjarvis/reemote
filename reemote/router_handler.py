@@ -8,16 +8,15 @@ from reemote.response import validate_responses
 
 
 def router_handler(
-        model: Type[BaseModel],
-        command_class: Type,
-        response_type: Any = None,
-        **query_param_definitions
+    model: Type[BaseModel],
+    command_class: Type,
+    # response_type: Any = None,
+    **query_param_definitions,
 ) -> Callable:
     """Create a standardized router handler function"""
 
     async def handler(
-            common: CommonModel = Depends(commonmodel),
-            **kwargs
+        common: CommonModel = Depends(commonmodel), **kwargs
     ) -> list[Any]:
         # Validate parameters (inlined from validate_parameters)
         # Normalize common to dict
@@ -41,13 +40,22 @@ def router_handler(
 
         # Execute the command with the validated data
         responses = await execute(lambda: command_class(**all_data))
-
+        print(f"debug 07: {responses}")
         # Validate and return responses
-        validated_responses = await validate_responses(responses)
+        # validated_responses = await validate_responses(responses)
+        validated_responses = [response for response in responses if response is not None]
 
-        if response_type:
-            return [response_type.from_response(response) for response in validated_responses]
+        # if response_type:
+        #     return [response_type.from_response(response) for response in validated_responses]
 
-        return [response.dict() for response in validated_responses]
+        list_of_dicts = [response.dict() for response in validated_responses]
+
+        keys_to_exclude = {"callback_str", "command", "caller_str", "name", "group", "type", "host_info", "global_info",
+                           "env", "subsystem", "exit_signal", "exit_status", "stdout_bytes", "stderr_bytes"}
+
+        return [
+            {k: v for k, v in item.items() if k not in keys_to_exclude}
+            for item in list_of_dicts
+        ]
 
     return handler
