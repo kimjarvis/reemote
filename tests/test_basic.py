@@ -489,3 +489,34 @@ async def test_lexists(setup_directory):
             assert r and r.value
 
     await execute(lambda: Root())
+
+
+@pytest.mark.asyncio
+async def test_symlink(setup_directory):
+    from reemote.commands.sftp import Symlink
+    from reemote.facts.sftp import Islink
+
+    class Root:
+        async def execute(self):
+            yield Symlink(file_path="testdata/file_b.txt", link_path="testdata/link_b.txt")
+            r = yield Islink(path="testdata/link_b.txt")
+            assert r and r.value
+
+    await execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_unlink(setup_directory):
+    from reemote.commands.sftp import Symlink, Unlink
+    from reemote.facts.sftp import Islink
+
+    class Root:
+        async def execute(self):
+            yield Symlink(file_path="testdata/file_b.txt", link_path="testdata/link_b.txt")
+            r = yield Islink(path="testdata/link_b.txt")
+            assert r and r.value
+            r = yield Unlink(path="testdata/link_b.txt")
+            print(r)
+            r = yield Islink(path="testdata/link_b.txt")
+            assert r and not r.value
+
+    await execute(lambda: Root())

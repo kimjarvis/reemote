@@ -827,7 +827,7 @@ class Rmtree(Local):
 
 
 @router.get("/command/rmtree/", tags=["SFTP Commands"])
-async def islink(
+async def rmtree(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the parent directory to remove"
     ),
@@ -1294,6 +1294,49 @@ async def link(
 ) -> list[dict]:
     """# Rename a remote file, directory, or link"""
     return await router_handler(LinkModel, Link)(
-        file_path=link_path, link_path=link_path, common=common
+        file_path=file_path, link_path=link_path, common=common
     )
 
+
+class Symlink(Local):
+    Model = LinkModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    return await sftp.symlink(
+                        oldpath=caller.file_path, newpath=caller.link_path
+                    )
+        except Exception as e:
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
+
+@router.get("/command/symlink/", tags=["SFTP Commands"])
+async def symlink(
+    file_path: Union[PurePath, str, bytes] = Query(
+        ..., description="The path the link should point to"
+    ),
+    link_path: Union[PurePath, str, bytes] = Query(
+        ..., description="The path of where to create the remote symbolic link"
+    ),
+    common: LocalModel = Depends(localmodel),
+) -> list[dict]:
+    """# Create a remote symbolic link"""
+    return await router_handler(LinkModel, Symlink)(
+        file_path=file_path, link_path=link_path, common=common
+    )
+
+class Unlink(Remove):
+    pass
+
+@router.get("/command/unlink/", tags=["SFTP Commands"])
+async def remove(
+    path: Union[PurePath, str, bytes] = Query(
+        ..., description="The path of the remote link to remove"
+    ),
+    common: LocalModel = Depends(localmodel),
+) -> list[dict]:
+    """# Remove a remote link"""
+    return await router_handler(LocalPathModel, Remove)(path=path, common=common)
