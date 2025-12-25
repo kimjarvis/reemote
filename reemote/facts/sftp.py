@@ -361,4 +361,54 @@ async def read(
     return await router_handler(ReadModel, Read)(**params, common=common)
 
 
+class Listdir(Local):
+    Model = LocalPathModel
 
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.listdir(str(caller.path))
+
+
+@router.get("/fact/listdir/", tags=["SFTP Facts"])
+async def listdir(
+        path: Union[PurePath, str, bytes] = Query(..., description="Read the names of the files in a remote directory"),
+        common: LocalModel = Depends(localmodel)
+) -> list[dict]:
+    """# Return if the remote path refers to a directory"""
+    return await router_handler(LocalPathModel, Listdir)(path=path, common=common)
+
+
+class Readdir(Local):
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                sftp_names = await sftp.readdir(str(caller.path))
+
+                list = []
+                for name in sftp_names:
+                    list.append(
+                    {
+                        'filename': name.filename,
+                        'longname': name.longname,
+                        'uid': getattr(name.attrs, 'uid'),
+                        'gid': getattr(name.attrs, 'gid'),
+                        'permissions': getattr(name.attrs, 'permissions'),
+                        'atime': getattr(name.attrs, 'atime'),
+                        'mtime': getattr(name.attrs, 'mtime'),
+                        'size': getattr(name.attrs, 'size')
+                    }
+                    )
+                return list
+
+@router.get("/fact/readdir/", tags=["SFTP Facts"])
+async def readdir(
+        path: Union[PurePath, str, bytes] = Query(..., description="Read the contents of a remote directory"),
+        common: LocalModel = Depends(localmodel)
+) -> list[dict]:
+    """# Return if the remote path refers to a directory"""
+    return await router_handler(LocalPathModel, Readdir)(path=path, common=common)

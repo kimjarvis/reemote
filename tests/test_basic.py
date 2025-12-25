@@ -409,3 +409,30 @@ async def test_unreachable_host(setup_directory):
         delete_entry("192.168.1.33")
 
 
+@pytest.mark.asyncio
+async def test_listdir(setup_directory):
+    from reemote.facts.sftp import Listdir
+
+    class Root:
+        async def execute(self):
+            r = yield Listdir(path="testdata")
+            if r:
+                assert sorted(r.value) == sorted(['file_b.txt', '..', '.', 'dir_a'])
+
+    await execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_readdir(setup_directory):
+    from reemote.facts.sftp import Readdir
+
+    class Root:
+        async def execute(self):
+            r = yield Readdir(path="testdata")
+            if r:
+                for entry in r.value:
+                    if entry["filename"]=="file_b.txt":
+                        assert entry["permissions"] == 33204
+
+    await execute(lambda: Root())
+
+
