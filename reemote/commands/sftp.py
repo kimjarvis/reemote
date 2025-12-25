@@ -1296,3 +1296,4 @@ async def link(
     return await router_handler(LinkModel, Link)(
         file_path=link_path, link_path=link_path, common=common
     )
+

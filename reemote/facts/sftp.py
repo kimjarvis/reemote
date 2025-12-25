@@ -376,7 +376,7 @@ async def listdir(
         path: Union[PurePath, str, bytes] = Query(..., description="Read the names of the files in a remote directory"),
         common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
-    """# Return if the remote path refers to a directory"""
+    """# Read the names of the files in a remote directory"""
     return await router_handler(LocalPathModel, Listdir)(path=path, common=common)
 
 
@@ -407,8 +407,27 @@ class Readdir(Local):
 
 @router.get("/fact/readdir/", tags=["SFTP Facts"])
 async def readdir(
-        path: Union[PurePath, str, bytes] = Query(..., description="Read the contents of a remote directory"),
+        path: Union[PurePath, str, bytes] = Query(..., description=" The path of the remote directory to read"),
         common: LocalModel = Depends(localmodel)
 ) -> list[dict]:
-    """# Return if the remote path refers to a directory"""
+    """# Read the contents of a remote directory"""
     return await router_handler(LocalPathModel, Readdir)(path=path, common=common)
+
+
+class Exists(Local):
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.exists(str(caller.path))
+
+
+@router.get("/fact/exists/", tags=["SFTP Facts"])
+async def exists(
+        path: Union[PurePath, str, bytes] = Query(..., description="The remote path to check"),
+        common: LocalModel = Depends(localmodel)
+) -> list[dict]:
+    """# Return if the remote path exists and isn’t a broken symbolic link"""
+    return await router_handler(LocalPathModel, Exists)(path=path, common=common)

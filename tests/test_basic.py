@@ -466,3 +466,15 @@ async def test_link(setup_directory):
                 assert r.value == "file_b"
 
     await execute(lambda: Root())
+
+
+@pytest.mark.asyncio
+async def test_exists(setup_directory):
+    from reemote.facts.sftp import Exists
+
+    class Root:
+        async def execute(self):
+            r = yield Exists(path="testdata/file_b.txt")
+            assert r and r.value
+
+    await execute(lambda: Root())
