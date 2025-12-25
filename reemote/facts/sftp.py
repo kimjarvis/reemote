@@ -391,3 +391,35 @@ async def exists(
 ) -> list[dict]:
     """# Return if the remote path exists, without following symbolic links"""
     return await router_handler(LocalPathModel, Lexists)(path=path, common=common)
+
+
+
+class Lstat(Local):
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                sftp_attrs = await sftp.lstat(caller.path)
+
+                # Extract each field from the SFTPAttrs object and create the dictionary
+                attrs_dict = {
+                    'uid': getattr(sftp_attrs, 'uid'),
+                    'gid': getattr(sftp_attrs, 'gid'),
+                    'permissions': getattr(sftp_attrs, 'permissions') & 0o777,
+                    'atime': getattr(sftp_attrs, 'atime'),
+                    'mtime': getattr(sftp_attrs, 'mtime'),
+                    'size': getattr(sftp_attrs, 'size')
+                }
+
+                # print(attrs_dict)
+                return attrs_dict
+
+@router.get("/fact/lstat/", tags=["SFTP Facts"])
+async def lstat(
+        path: Union[PurePath, str, bytes] = Query(..., description="The path of the remote file, directory, or link to get attributes for"),
+        common: LocalModel = Depends(localmodel)
+) -> list[dict]:
+    """# Get attributes of a remote file, directory, or symlink"""
+    return await router_handler(LocalPathModel, Lstat)(path=path, common=common)
