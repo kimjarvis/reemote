@@ -1239,3 +1239,60 @@ async def write(
     if max_requests is not None:
         params["max_requests"] = max_requests
     return await router_handler(WriteModel, Write)(**params, common=common)
+
+
+
+class LinkModel(LocalModel):
+    file_path: Union[PurePath, str, bytes] = Field(
+        ...,  # Required field
+    )
+    link_path: Union[PurePath, str, bytes] = Field(
+        ...,  # Required field
+    )
+
+    @field_validator("file_path", "link_path", mode="before")
+    @classmethod
+    def ensure_path_is_purepath(cls, v):
+        """
+        Ensure the 'path' field is converted to a PurePath object.
+        This runs before the field is validated by Pydantic.
+        """
+        if v is None:
+            raise ValueError("path cannot be None.")
+        if not isinstance(v, PurePath):
+            try:
+                return PurePath(v)
+            except TypeError:
+                raise ValueError(f"Cannot convert {v} to PurePath.")
+        return v
+
+
+class Link(Local):
+    Model = LinkModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    return await sftp.link(
+                        oldpath=caller.file_path, newpath=caller.link_path
+                    )
+        except Exception as e:
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
+
+@router.get("/command/link/", tags=["SFTP Commands"])
+async def link(
+    file_path: Union[PurePath, str, bytes] = Query(
+        ..., description="The path of the remote file the hard link should point to"
+    ),
+    link_path: Union[PurePath, str, bytes] = Query(
+        ..., description="The path of where to create the remote hard link"
+    ),
+    common: LocalModel = Depends(localmodel),
+) -> list[dict]:
+    """# Rename a remote file, directory, or link"""
+    return await router_handler(LinkModel, Link)(
+        file_path=link_path, link_path=link_path, common=common
+    )

@@ -451,3 +451,18 @@ async def test_mkdirs(setup_directory):
                 assert r.value
 
     await execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_link(setup_directory):
+    from reemote.commands.sftp import Link
+    from reemote.facts.sftp import Read
+
+    class Root:
+        async def execute(self):
+            r = yield Link(file_path="testdata/file_b.txt",link_path="testdata/link_b.txt")
+            print(r)
+            r = yield Read(path="testdata/link_b.txt")
+            if r:
+                assert r.value == "file_b"
+
+    await execute(lambda: Root())
