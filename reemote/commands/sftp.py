@@ -794,7 +794,7 @@ class Rmdir(Local):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    return await sftp.rmdir(str(caller.path))
+                    return await sftp.rmdir(caller.path)
         except Exception as e:
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
@@ -820,7 +820,7 @@ class Rmtree(Local):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    return await sftp.rmtree(str(caller.path))
+                    return await sftp.rmtree(caller.path)
         except Exception as e:
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"

@@ -478,3 +478,14 @@ async def test_exists(setup_directory):
             assert r and r.value
 
     await execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_lexists(setup_directory):
+    from reemote.facts.sftp import Lexists
+
+    class Root:
+        async def execute(self):
+            r = yield Lexists(path="testdata/file_b.txt")
+            assert r and r.value
+
+    await execute(lambda: Root())

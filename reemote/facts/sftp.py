@@ -22,7 +22,7 @@ class Islink(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                return await sftp.islink(str(caller.path))
+                return await sftp.islink(caller.path)
 
 
 @router.get("/fact/islink/", tags=["SFTP Facts"])
@@ -40,7 +40,7 @@ class Isfile(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                return await sftp.isfile(str(caller.path))
+                return await sftp.isfile(caller.path)
 
 @router.get("/fact/isfile/", tags=["SFTP Facts"])
 async def isfile(
@@ -57,7 +57,7 @@ class Isdir(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                return await sftp.isdir(str(caller.path))
+                return await sftp.isdir(caller.path)
 
 
 @router.get("/fact/isdir/", tags=["SFTP Facts"])
@@ -77,7 +77,7 @@ class Getsize(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                return await sftp.getsize(str(caller.path))
+                return await sftp.getsize(caller.path)
 
 @router.get("/fact/getsize/", tags=["SFTP Facts"])
 async def getsize(
@@ -95,7 +95,7 @@ class Getatime(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                return await sftp.getatime(str(caller.path))
+                return await sftp.getatime(caller.path)
 
 
 @router.get("/fact/getatime/", tags=["SFTP Facts"])
@@ -114,7 +114,7 @@ class Getatime_ns(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                return await sftp.getatime_ns(str(caller.path))
+                return await sftp.getatime_ns(caller.path)
 
 @router.get("/fact/getatime_ns/", tags=["SFTP Facts"])
 async def getatime_ns(
@@ -132,7 +132,7 @@ class Getmtime(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                return await sftp.getmtime(str(caller.path))
+                return await sftp.getmtime(caller.path)
 
 @router.get("/fact/getmtime/", tags=["SFTP Facts"])
 async def getmtime(
@@ -150,7 +150,7 @@ class Getmtime_ns(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                return await sftp.getmtime_ns(str(caller.path))
+                return await sftp.getmtime_ns(caller.path)
 
 @router.get("/fact/getmtime_ns/", tags=["SFTP Facts"])
 async def getmtime(
@@ -168,7 +168,7 @@ class Getcrtime(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                return await sftp.getcrtime(str(caller.path))
+                return await sftp.getcrtime(caller.path)
 
 
 @router.get("/fact/getcrtime/", tags=["SFTP Facts"])
@@ -187,7 +187,7 @@ class Getcrtime_ns(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                return await sftp.getcrtime_ns(str(caller.path))
+                return await sftp.getcrtime_ns(caller.path)
 
 @router.get("/fact/getcrtime_ns/", tags=["SFTP Facts"])
 async def getcrtime_ns(
@@ -261,48 +261,10 @@ async def stat(
 
 
 class ReadModel(LocalPathModel):
-    permissions: Optional[int] = Field(
-        None,
-        ge=0,
-        le=0o7777,
-    )
-    uid: Optional[int] = Field(None, description="User ID")
-    gid: Optional[int] = Field(None, description="Group ID")
-    atime: Optional[int] = Field(None, description="Access time")
-    mtime: Optional[int] = Field(None, description="Modification time")
     encoding: Optional[str] = Field('utf-8', description="The Unicode encoding to use for data read and written to the remote file")
     errors: Optional[str] = Field('strict', description="The error-handling mode if an invalid Unicode byte sequence is detected, defaulting to ‘strict’ which raises an exception")
     block_size: Optional[int] = Field(-1, description="The block size to use for read and write requests")
     max_requests: Optional[int] = Field(-1, description="The maximum number of parallel read or write requests")
-
-    @root_validator(skip_on_failure=True)
-    @classmethod
-    def check_atime_and_mtime(cls, values):
-        """Ensure that if `atime` is specified, `mtime` is also specified."""
-        atime = values.get('atime')
-        mtime = values.get('mtime')
-
-        if atime is not None and mtime is None:
-            raise ValueError("If `atime` is specified, `mtime` must also be specified.")
-        return values
-
-    # todo: rename to get_attributes
-    def get_sftp_attrs(self) -> Optional[asyncssh.SFTPAttrs]:
-        """Create SFTPAttrs object from provided attributes"""
-        attrs_dict = {}
-
-        if self.permissions is not None:
-            attrs_dict['permissions'] = self.permissions
-        if self.uid is not None:
-            attrs_dict['uid'] = self.uid
-        if self.gid is not None:
-            attrs_dict['gid'] = self.gid
-        if self.atime is not None:
-            attrs_dict['atime'] = self.atime
-        if self.mtime is not None:
-            attrs_dict['mtime'] = self.mtime
-
-        return asyncssh.SFTPAttrs(**attrs_dict)
 
 class Read(Local):
     Model = ReadModel
@@ -311,8 +273,7 @@ class Read(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                sftp_attrs = caller.get_sftp_attrs()
-                f = await sftp.open(path=caller.path, pflags_or_mode=FXF_READ , attrs=sftp_attrs if sftp_attrs else None,
+                f = await sftp.open(path=caller.path, pflags_or_mode=FXF_READ,
                                    encoding=caller.encoding, errors=caller.errors,
                                    block_size=caller.block_size, max_requests=caller.max_requests)
                 content = await f.read()
@@ -322,16 +283,6 @@ class Read(Local):
 @router.get("/command/read/", tags=["SFTP Facts"])
 async def read(
     path: Union[PurePath, str, bytes] = Query(..., description="The name of the remote file to read"),
-    permissions: Optional[int] = Query(
-        None,
-        ge=0,
-        le=0o7777,
-        description="File permissions as integer"
-    ),
-    uid: Optional[int] = Query(None, description="User ID"),
-    gid: Optional[int] = Query(None, description="Group ID"),
-    atime: Optional[int] = Query(None, description="Access time"),
-    mtime: Optional[int] = Query(None, description="Modification time"),
     encoding: Optional[str] = Query('utf-8', description="The Unicode encoding to use for data read and written to the remote file"),
     errors: Optional[str] = Query('strict', description="The error-handling mode if an invalid Unicode byte sequence is detected, defaulting to ‘strict’ which raises an exception"),
     block_size: Optional[int] = Query(-1, description="The block size to use for read and write requests"),
@@ -340,16 +291,6 @@ async def read(
 ) -> list[dict]:
     """# Read a remote file"""
     params = {"path": path}
-    if permissions is not None:
-        params["permissions"] = permissions
-    if uid is not None:
-        params["uid"] = uid
-    if gid is not None:
-        params["gid"] = gid
-    if atime is not None:
-        params["atime"] = atime
-    if mtime is not None:
-        params["mtime"] = mtime
     if encoding is not None:
         params["encoding"] = encoding
     if errors is not None:
@@ -368,7 +309,7 @@ class Listdir(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                return await sftp.listdir(str(caller.path))
+                return await sftp.listdir(caller.path)
 
 
 @router.get("/fact/listdir/", tags=["SFTP Facts"])
@@ -387,7 +328,7 @@ class Readdir(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                sftp_names = await sftp.readdir(str(caller.path))
+                sftp_names = await sftp.readdir(caller.path)
 
                 list = []
                 for name in sftp_names:
@@ -421,7 +362,7 @@ class Exists(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                return await sftp.exists(str(caller.path))
+                return await sftp.exists(caller.path)
 
 
 @router.get("/fact/exists/", tags=["SFTP Facts"])
@@ -431,3 +372,22 @@ async def exists(
 ) -> list[dict]:
     """# Return if the remote path exists and isn’t a broken symbolic link"""
     return await router_handler(LocalPathModel, Exists)(path=path, common=common)
+
+
+class Lexists(Local):
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.lexists(caller.path)
+
+
+@router.get("/fact/lexists/", tags=["SFTP Facts"])
+async def exists(
+        path: Union[PurePath, str, bytes] = Query(..., description="The remote path to check"),
+        common: LocalModel = Depends(localmodel)
+) -> list[dict]:
+    """# Return if the remote path exists, without following symbolic links"""
+    return await router_handler(LocalPathModel, Lexists)(path=path, common=common)
