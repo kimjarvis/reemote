@@ -436,3 +436,18 @@ async def test_readdir(setup_directory):
     await execute(lambda: Root())
 
 
+
+@pytest.mark.asyncio
+async def test_mkdirs(setup_directory):
+    from reemote.commands.sftp import Makedirs
+    from reemote.facts.sftp import Isdir
+
+    class Root:
+        async def execute(self):
+            r = yield Makedirs(path="testdata/x/y")
+            r = yield Isdir(path="testdata/x/y")
+            print(r)
+            if r:
+                assert r.value
+
+    await execute(lambda: Root())
