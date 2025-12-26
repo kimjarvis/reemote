@@ -423,3 +423,21 @@ async def lstat(
 ) -> list[dict]:
     """# Get attributes of a remote file, directory, or symlink"""
     return await router_handler(LocalPathModel, Lstat)(path=path, common=common)
+
+class Readlink(Local):
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.readlink(caller.path)
+
+
+@router.get("/fact/readlink/", tags=["SFTP Facts"])
+async def readlink(
+        path: Union[PurePath, str, bytes] = Query(..., description=" The path of the remote symbolic link to follow"),
+        common: LocalModel = Depends(localmodel)
+) -> list[dict]:
+    """# Return the target of a remote symbolic link"""
+    return await router_handler(LocalPathModel, Readlink)(path=path, common=common)

@@ -521,9 +521,6 @@ async def test_unlink(setup_directory):
 
     await execute(lambda: Root())
 
-
-
-
 @pytest.mark.asyncio
 async def test_lstat(setup_directory):
     from reemote.facts.sftp import Lstat
@@ -536,5 +533,19 @@ async def test_lstat(setup_directory):
             if r:
                 assert r.value["permissions"] == 0o777
 
+    await execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_readlink(setup_directory):
+    from reemote.commands.sftp import Symlink
+    from reemote.facts.sftp import Readlink
+
+    class Root:
+        async def execute(self):
+            yield Symlink(file_path="testdata/file_b.txt", link_path="testdata/link_b.txt")
+            r = yield Readlink(path="testdata/link_b.txt")
+            print(r)
+            assert r and r.value == "testdata/file_b.txt"
 
     await execute(lambda: Root())
+
