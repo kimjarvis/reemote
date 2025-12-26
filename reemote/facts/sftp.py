@@ -120,7 +120,7 @@ async def getatime(
     return await router_handler(LocalPathModel, Getatime)(path=path, common=common)
 
 
-class Getatime_ns(Local):
+class GetatimeNs(Local):
     Model = LocalPathModel
 
     @staticmethod
@@ -130,15 +130,15 @@ class Getatime_ns(Local):
                 return await sftp.getatime_ns(caller.path)
 
 
-@router.get("/fact/getatime_ns/", tags=["SFTP Facts"])
-async def getatime_ns(
+@router.get("/fact/getatimens/", tags=["SFTP Facts"])
+async def getatimens(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the last access time of a remote file or directory"
     ),
     common: LocalModel = Depends(localmodel),
 ) -> list[dict]:
     """# Return the last access time of a remote file or directory"""
-    return await router_handler(LocalPathModel, Getatime_ns)(path=path, common=common)
+    return await router_handler(LocalPathModel, GetatimeNs)(path=path, common=common)
 
 
 class Getmtime(Local):
@@ -163,7 +163,7 @@ async def getmtime(
     return await router_handler(LocalPathModel, Getmtime)(path=path, common=common)
 
 
-class Getmtime_ns(Local):
+class GetmtimeNs(Local):
     Model = LocalPathModel
 
     @staticmethod
@@ -173,8 +173,8 @@ class Getmtime_ns(Local):
                 return await sftp.getmtime_ns(caller.path)
 
 
-@router.get("/fact/getmtime_ns/", tags=["SFTP Facts"])
-async def getmtime(
+@router.get("/fact/getmtimens/", tags=["SFTP Facts"])
+async def getmtimens(
     path: Union[PurePath, str, bytes] = Query(
         ...,
         description="Return the last modification time of a remote file or directory",
@@ -182,7 +182,7 @@ async def getmtime(
     common: LocalModel = Depends(localmodel),
 ) -> list[dict]:
     """# Return the last modification time of a remote file or directory"""
-    return await router_handler(LocalPathModel, Getmtime_ns)(path=path, common=common)
+    return await router_handler(LocalPathModel, GetmtimeNs)(path=path, common=common)
 
 
 class Getcrtime(Local):
@@ -206,7 +206,7 @@ async def getcrtime(
     return await router_handler(LocalPathModel, Getcrtime)(path=path, common=common)
 
 
-class Getcrtime_ns(Local):
+class GetcrtimeNs(Local):
     Model = LocalPathModel
 
     @staticmethod
@@ -216,15 +216,15 @@ class Getcrtime_ns(Local):
                 return await sftp.getcrtime_ns(caller.path)
 
 
-@router.get("/fact/getcrtime_ns/", tags=["SFTP Facts"])
-async def getcrtime_ns(
+@router.get("/fact/getcrtimens/", tags=["SFTP Facts"])
+async def getcrtimens(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the creation time of a remote file or directory"
     ),
     common: LocalModel = Depends(localmodel),
 ) -> list[dict]:
     """# Return the creation time of a remote file or directory"""
-    return await router_handler(LocalPathModel, Getcrtime_ns)(path=path, common=common)
+    return await router_handler(LocalPathModel, GetcrtimeNs)(path=path, common=common)
 
 
 class Getcwd(Local):
@@ -249,6 +249,17 @@ class StatModel(LocalPathModel):
     )
 
 
+def sftp_attrs_to_dict(sftp_attrs):
+    return {
+                "uid": getattr(sftp_attrs, "uid"),
+                "gid": getattr(sftp_attrs, "gid"),
+                "permissions": getattr(sftp_attrs, "permissions") & 0o777,
+                "atime": getattr(sftp_attrs, "atime"),
+                "mtime": getattr(sftp_attrs, "mtime"),
+                "size": getattr(sftp_attrs, "size"),
+            }
+
+
 class Stat(Local):
     Model = StatModel
 
@@ -259,19 +270,7 @@ class Stat(Local):
                 sftp_attrs = await sftp.stat(
                     caller.path, follow_symlinks=caller.follow_symlinks
                 )
-
-                # Extract each field from the SFTPAttrs object and create the dictionary
-                attrs_dict = {
-                    "uid": getattr(sftp_attrs, "uid"),
-                    "gid": getattr(sftp_attrs, "gid"),
-                    "permissions": getattr(sftp_attrs, "permissions") & 0o777,
-                    "atime": getattr(sftp_attrs, "atime"),
-                    "mtime": getattr(sftp_attrs, "mtime"),
-                    "size": getattr(sftp_attrs, "size"),
-                }
-
-                # print(attrs_dict)
-                return attrs_dict
+                return sftp_attrs_to_dict(sftp_attrs)
 
 
 @router.get("/fact/stat/", tags=["SFTP Facts"])
@@ -382,7 +381,7 @@ async def listdir(
     """# Read the names of the files in a remote directory"""
     return await router_handler(LocalPathModel, Listdir)(path=path, common=common)
 
-def sftp_names_to_list(sftp_names):
+def sftp_names_to_dict(sftp_names):
     list = []
     for name in sftp_names:
         list.append(
@@ -408,7 +407,7 @@ class Readdir(Local):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
                 sftp_names = await sftp.readdir(caller.path)
-                return sftp_names_to_list(sftp_names)
+                return sftp_names_to_dict(sftp_names)
 
 
 
@@ -473,19 +472,7 @@ class Lstat(Local):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
                 sftp_attrs = await sftp.lstat(caller.path)
-
-                # Extract each field from the SFTPAttrs object and create the dictionary
-                attrs_dict = {
-                    "uid": getattr(sftp_attrs, "uid"),
-                    "gid": getattr(sftp_attrs, "gid"),
-                    "permissions": getattr(sftp_attrs, "permissions") & 0o777,
-                    "atime": getattr(sftp_attrs, "atime"),
-                    "mtime": getattr(sftp_attrs, "mtime"),
-                    "size": getattr(sftp_attrs, "size"),
-                }
-
-                # print(attrs_dict)
-                return attrs_dict
+                return sftp_attrs_to_dict(sftp_attrs)
 
 
 @router.get("/fact/lstat/", tags=["SFTP Facts"])
@@ -541,7 +528,7 @@ async def glob(
     """# Match remote files against glob patterns"""
     return await router_handler(LocalPathModel, Glob)(path=path, common=common)
 
-class Glob_sftpname(Local):
+class GlobSftpName(Local):
     Model = LocalPathModel
 
     @staticmethod
@@ -549,16 +536,78 @@ class Glob_sftpname(Local):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
                 sftp_names = await sftp.glob_sftpname(caller.path)
-                return sftp_names_to_list(sftp_names)
+                return sftp_names_to_dict(sftp_names)
 
 
 
-@router.get("/fact/glob_sftpname/", tags=["SFTP Facts"])
-async def glob_sftpname(
+@router.get("/fact/globsftpname/", tags=["SFTP Facts"])
+async def globsftpname(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Glob patterns to try and match remote files against"
     ),
     common: LocalModel = Depends(localmodel),
 ) -> list[dict]:
     """# Match glob patterns and return SFTPNames"""
-    return await router_handler(LocalPathModel, Glob_sftpname)(path=path, common=common)
+    return await router_handler(LocalPathModel, GlobSftpName)(path=path, common=common)
+
+def sftp_vfs_attrs_to_dict(sftp_vfs_attrs):
+    return {
+                "bsize": getattr(sftp_vfs_attrs, "bsize"),
+                "frsize": getattr(sftp_vfs_attrs, "frsize"),
+                "blocks": getattr(sftp_vfs_attrs, "blocks"),
+                "bfree": getattr(sftp_vfs_attrs, "bfree"),
+                "bavail": getattr(sftp_vfs_attrs, "bavail"),
+                "files": getattr(sftp_vfs_attrs, "files"),
+                "ffree": getattr(sftp_vfs_attrs, "ffree"),
+                "favail": getattr(sftp_vfs_attrs, "favail"),
+                "fsid": getattr(sftp_vfs_attrs, "fsid"),
+                "flags": getattr(sftp_vfs_attrs, "flags"),
+                "namemax": getattr(sftp_vfs_attrs, "namemax"),
+            }
+
+class StatVfs(Local):
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                sftp_vfs_attrs = await sftp.statvfs(
+                    caller.path
+                )
+                return sftp_vfs_attrs_to_dict(sftp_vfs_attrs)
+
+
+@router.get("/fact/statvfs/", tags=["SFTP Facts"])
+async def statvfs(
+    path: Union[PurePath, str, bytes] = Query(
+        ...,
+        description="The path of the remote file system to get attributes for",
+    ),
+    common: LocalModel = Depends(localmodel),
+) -> list[dict]:
+    """# Get attributes of a remote file system"""
+    return await router_handler(StatModel, StatVfs)(
+        path=path, follow_symlinks=follow_symlinks, common=common
+    )
+
+
+class Realpath(Local):
+    Model = LocalPathModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.realpath(caller.path)
+
+
+@router.get("/fact/realpath/", tags=["SFTP Facts"])
+async def realpath(
+    path: Union[PurePath, str, bytes] = Query(
+        ..., description="The path of the remote directory to canonicalize"
+    ),
+    common: LocalModel = Depends(localmodel),
+) -> list[dict]:
+    """# Return the canonical version of a remote path"""
+    return await router_handler(LocalPathModel, Islink)(path=path, common=common)

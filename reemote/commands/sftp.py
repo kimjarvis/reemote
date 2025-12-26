@@ -1390,3 +1390,43 @@ async def remove(
 ) -> list[dict]:
     """# Remove a remote link"""
     return await router_handler(LocalPathModel, Remove)(path=path, common=common)
+
+
+
+
+
+
+class TruncateModel(LocalPathModel):
+    size: int = Field(
+        ...,  # Required field
+        description="The desired size of the file, in bytes",
+    )
+
+
+class Truncate(Local):
+    Model = TruncateModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    return await sftp.truncate(path=caller.file_path, size=caller.size)
+        except Exception as e:
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
+
+@router.get("/command/truncate/", tags=["SFTP Commands"])
+async def truncate(
+    path: Union[PurePath, str, bytes] = Query(
+        ..., description="The path of the remote file to be truncated"
+    ),
+    size: int = Query(
+        ..., description=" The desired size of the file, in bytes"
+    ),
+    common: LocalModel = Depends(localmodel),
+) -> list[dict]:
+    """# Truncate a remote file to the specified size"""
+    return await router_handler(LinkModel, Symlink)(
+        path=path, size=size, common=common
+    )

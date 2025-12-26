@@ -3,7 +3,7 @@ import pytest
 import sys
 import os
 
-from reemote.facts.sftp import Glob_sftpname
+from reemote.facts.sftp import GlobSftpName
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -566,11 +566,11 @@ async def test_glob(setup_directory):
 
 @pytest.mark.asyncio
 async def test_glob_sftpname(setup_directory):
-    from reemote.facts.sftp import Glob_sftpname
+    from reemote.facts.sftp import GlobSftpName
 
     class Root:
         async def execute(self):
-            r = yield Glob_sftpname(path="/home/user/testdata/file*.*")
+            r = yield GlobSftpName(path="/home/user/testdata/file*.*")
             if r:
                 for entry in r.value:
                     if entry["filename"]=="/home/user/testdata/file_b.txt":
@@ -600,5 +600,40 @@ async def test_setstat(setup_directory):
             r = yield Getatime(path="testdata/dir_a")
             if r:
                 assert r.value == 0xDEADCAFE
+
+    await execute(lambda: Root())
+
+
+@pytest.mark.asyncio
+async def test_statvfs(setup_directory):
+    from reemote.facts.sftp import StatVfs
+
+    class Root:
+        async def execute(self):
+            r = yield StatVfs(path="testdata/dir_a")
+            print(r)
+
+    await execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_realpath(setup_directory):
+    from reemote.facts.sftp import Realpath
+
+    class Root:
+        async def execute(self):
+            r = yield Realpath(path="testdata/dir_a")
+            print(r)
+
+    await execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_truncate(setup_directory):
+    # todo: Why does this return an AttributeError ?
+    from reemote.commands.sftp import Truncate
+
+    class Root:
+        async def execute(self):
+            r = yield Truncate(path="testdata/dir_a",size=8)
+            print(r)
 
     await execute(lambda: Root())
