@@ -3,6 +3,8 @@ import pytest
 import sys
 import os
 
+from reemote.facts.sftp import Glob_sftpname
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from reemote.commands.inventory import create_inventory
@@ -549,3 +551,54 @@ async def test_readlink(setup_directory):
 
     await execute(lambda: Root())
 
+@pytest.mark.asyncio
+async def test_glob(setup_directory):
+    from reemote.facts.sftp import Glob
+
+    class Root:
+        async def execute(self):
+            r = yield Glob(path="/home/user/testdata/file*.*")
+            print(r)
+            assert r and r.value == ['/home/user/testdata/file_b.txt']
+
+    await execute(lambda: Root())
+
+
+@pytest.mark.asyncio
+async def test_glob_sftpname(setup_directory):
+    from reemote.facts.sftp import Glob_sftpname
+
+    class Root:
+        async def execute(self):
+            r = yield Glob_sftpname(path="/home/user/testdata/file*.*")
+            if r:
+                for entry in r.value:
+                    if entry["filename"]=="/home/user/testdata/file_b.txt":
+                        assert entry["permissions"] == 33204
+
+    await execute(lambda: Root())
+
+
+@pytest.mark.asyncio
+async def test_setstat(setup_directory):
+    from reemote.commands.sftp import Setstat
+    from reemote.facts.sftp import Stat, Getmtime, Getatime
+
+    class Root:
+        async def execute(self):
+            yield Setstat(path="testdata/dir_a",
+                        atime=0xDEADCAFE,
+                        mtime=0xACAFEDAD,
+                        permissions=0o700)
+            r = yield Stat(path="testdata/dir_a")
+            print(r)
+            if r:
+                assert r.value["permissions"] == 0o700
+            r = yield Getmtime(path="testdata/dir_a")
+            if r:
+                assert r.value == 0xACAFEDAD
+            r = yield Getatime(path="testdata/dir_a")
+            if r:
+                assert r.value == 0xDEADCAFE
+
+    await execute(lambda: Root())

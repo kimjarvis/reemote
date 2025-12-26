@@ -738,6 +738,56 @@ async def mkdir(
     return await router_handler(MkdirModel, Mkdir)(**params, common=common)
 
 
+
+
+class Setstat(Local):
+    Model = MkdirModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    sftp_attrs = caller.get_sftp_attrs()
+                    if sftp_attrs:
+                        await sftp.setstat(
+                            path=caller.path, attrs=sftp_attrs
+                        )
+        except Exception as e:
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
+
+
+@router.get("/command/setstat/", tags=["SFTP Commands"])
+async def mkdir(
+    path: Union[PurePath, str, bytes] = Query(..., description="The path of the remote file or directory to set attributes for"),
+    permissions: Optional[int] = Query(
+        None, ge=0, le=0o7777, description="Directory permissions as integer"
+    ),
+    uid: Optional[int] = Query(None, description="User ID"),
+    gid: Optional[int] = Query(None, description="Group ID"),
+    atime: Optional[int] = Query(None, description="Access time"),
+    mtime: Optional[int] = Query(None, description="Modification time"),
+    common: LocalModel = Depends(localmodel),
+) -> list[dict]:
+    """# Set attributes of a remote file, directory, or symlink"""
+    params = {"path": path}
+    if permissions is not None:
+        params["permissions"] = permissions
+    if uid is not None:
+        params["uid"] = uid
+    if gid is not None:
+        params["gid"] = gid
+    if atime is not None:
+        params["atime"] = atime
+    if mtime is not None:
+        params["mtime"] = mtime
+    return await router_handler(MkdirModel, Setstat)(**params, common=common)
+
+
+
+
+
 class Makedirs(Local):
     Model = MkdirModel
 
