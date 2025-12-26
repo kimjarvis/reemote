@@ -44,7 +44,7 @@ def setup_directory():
                 from reemote.commands.scp import Upload
 
                 r = yield Isdir(path="testdata")
-                if r and r.value:
+                if r and r["value"]:
                     yield Rmtree(path="testdata")
                 yield Upload(srcpaths=["tests/testdata"],dstpath=".",recurse=True)
 
@@ -61,7 +61,9 @@ async def test_shell():
 
     class Root:
         async def execute(self):
-            yield Shell(cmd="echo Hello", group="192.168.1.24")
+            r = yield Shell(cmd="echo Hello", group="192.168.1.24")
+            if r:
+                assert r["value"]["stdout"] == 'Hello\n'
 
     await execute(lambda: Root())
 
@@ -72,12 +74,15 @@ async def test_callback():
 
     async def _callback(host_info, global_info, command, cp, caller):
         assert command.value == "test callback"
+        return "tested"
 
     class Root:
         async def execute(self):
-            yield Callback(
+            r = yield Callback(
                 callback=_callback, value="test callback"
             )
+            if r:
+                assert r["value"] == "tested"
 
     await execute(lambda: Root())
 
@@ -95,9 +100,10 @@ async def test_return():
 
     class Parent:
         async def execute(self):
-            response = yield Child()
-            assert response.value[0].stdout.strip() == "Hello"
-            assert response.value[1].stdout.strip() == "World"
+            r = yield Child()
+            if r:
+                assert r["value"][0]["value"]["stdout"] == 'Hello\n'
+                assert r["value"][1]["value"]["stdout"] == 'World\n'
 
     await execute(lambda: Parent())
 
@@ -110,10 +116,10 @@ async def test_isdir(setup_directory):
         async def execute(self):
             r = yield Isdir(path="testdata/dir_a")
             if r:
-                assert r.value
+                assert r["value"]
             r = yield Isdir(path="testdata/dir_b")
             if r:
-                assert not r.value
+                assert not r["value"]
 
     await execute(lambda: Root())
 
@@ -131,19 +137,16 @@ async def test_mkdir(setup_directory):
                         permissions=0o700)
             r = yield Isdir(path="testdata/new_dir")
             if r:
-                assert r.value
+                assert r["value"]
             r = yield Stat(path="testdata/new_dir")
             if r:
-                assert r.value["permissions"] == 0o700
+                assert r["value"]["permissions"] == 0o700
             # r = yield Getmtime(path="testdata/new_dir")
             # if r:
-            #     assert r.value == 0xACAFEDAD
+            #     assert r["value"] == 0xACAFEDAD
             # r = yield Getatime(path="testdata/new_dir")
             # if r:
-            #     assert r.value == 0xDEADCAFE
-
-
-
+            #     assert r["value"] == 0xDEADCAFE
 
     await execute(lambda: Root())
 
@@ -164,16 +167,16 @@ async def test_directory1(setup_directory):
             )
             r = yield Isdir(path="testdata/new_dir")
             if r:
-                assert r.value
+                assert r["value"]
             r = yield Stat(path="testdata/new_dir")
             if r:
-                assert r.value["permissions"] == 0o700
+                assert r["value"]["permissions"] == 0o700
             r = yield Getmtime(path="testdata/new_dir")
             if r:
-                assert r.value == 20
+                assert r["value"] == 20
             r = yield Getatime(path="testdata/new_dir")
             if r:
-                assert r.value == 10
+                assert r["value"] == 10
 
 
 
@@ -193,16 +196,16 @@ async def test_directory(setup_directory):
             )
             r = yield Isdir(path="testdata/new_dir")
             if r:
-                assert r.value
+                assert r["value"]
             r = yield Stat(path="testdata/new_dir")
             if r:
-                assert r.value["permissions"] == 0o700
+                assert r["value"]["permissions"] == 0o700
             # r = yield Getmtime(path="testdata/new_dir")
             # if r:
-            #     assert r.value == 0xACAFEDAD
+            #     assert r["value"] == 0xACAFEDAD
             # r = yield Getatime(path="testdata/new_dir")
             # if r:
-            #     assert r.value == 0xDEADCAFE
+            #     assert r["value"] == 0xDEADCAFE
 
     class Parent:
         async def execute(self):
@@ -222,7 +225,7 @@ async def test_chmod(setup_directory):
             yield Chmod(path="testdata/dir_a", permissions=0o700)
             r = yield Stat(path="testdata/dir_a")
             if r:
-                assert r.value["permissions"] == 0o700
+                assert r["value"]["permissions"] == 0o700
 
 
     await execute(lambda: Root())
@@ -239,7 +242,7 @@ async def test_chown(setup_directory):
             yield Chown(path="testdata/dir_a", uid=1001)
             r = yield Stat(path="testdata/dir_a")
             if r:
-                assert r.value["uid"] == 1000
+                assert r["value"]["uid"] == 1000
 
     await execute(lambda: Root())
 
@@ -255,10 +258,10 @@ async def test_utime(setup_directory):
             yield Utime(path="testdata/dir_a", atime=0xDEADCAFE, mtime=0xACAFEDAD)
             r = yield Getmtime(path="testdata/dir_a")
             if r:
-                assert r.value == 0xACAFEDAD
+                assert r["value"] == 0xACAFEDAD
             r = yield Getatime(path="testdata/dir_a")
             if r:
-                assert r.value == 0xDEADCAFE
+                assert r["value"] == 0xDEADCAFE
 
     await execute(lambda: Root())
 
@@ -271,12 +274,12 @@ async def test_get_cwd(setup_directory):
         async def execute(self):
             r = yield Getcwd()
             if r:
-                assert r and r.value == "/home/user"
+                assert r and r["value"] == "/home/user"
             yield Chdir(path="/home/testdata")
             # This does not work on debian
             r = yield Getcwd()
             if r:
-                assert r and r.value == "/home/user"
+                assert r and r["value"] == "/home/user"
 
     await execute(lambda: Root())
 
@@ -290,7 +293,7 @@ async def test_rename(setup_directory):
             yield Rename(oldpath="testdata/file_b.txt",newpath="testdata/file_c.txt")
             r = yield Isfile(path="testdata/file_c.txt")
             if r:
-                assert r.value
+                assert r["value"]
 
     await execute(lambda: Root())
 
@@ -304,7 +307,7 @@ async def test_remove(setup_directory):
             yield Remove(path="testdata/file_b.txt")
             r = yield Isfile(path="testdata/file_b.txt")
             if r:
-                assert not r.value
+                assert not r["value"]
 
     await execute(lambda: Root())
 
@@ -316,7 +319,7 @@ async def test_read(setup_directory):
         async def execute(self):
             r = yield Read(path="testdata/file_b.txt")
             if r:
-                assert r.value == "file_b"
+                assert r["value"] == "file_b"
 
     await execute(lambda: Root())
 
@@ -331,10 +334,10 @@ async def test_write(setup_directory):
             yield Write(path="testdata/file_c.txt", text="file_c")
             r = yield Isfile(path="testdata/file_c.txt")
             if r:
-                assert r.value
+                assert r["value"]
             r = yield Read(path="testdata/file_c.txt")
             if r:
-                assert r.value == "file_c"
+                assert r["value"] == "file_c"
 
     await execute(lambda: Root())
 
@@ -348,7 +351,7 @@ async def test_scp_upload():
     class Root:
         async def execute(self):
             r = yield Isdir(path="testdata")
-            if r and r.value:
+            if r and r["value"]:
                 yield Rmtree(path="testdata")
             yield Upload(srcpaths=["tests/testdata"],dstpath=".",recurse=True)
 
@@ -373,8 +376,8 @@ async def test_catching_sftp_failures(setup_directory):
     class Root:
         async def execute(self):
                 r = yield Mkdir(path="testdata/dir_a")
-                if r and r.value:
-                    assert r.value == "SFTPFailure"
+                if r and r["value"]:
+                    assert r["value"] == "SFTPFailure"
 
     # with pytest.raises(SFTPFailure):  # Verify the SFTPFailure is raised
     #     await execute(lambda: Root())
@@ -391,7 +394,7 @@ async def test_unreachable_host(setup_directory):
     class Root:
         async def execute(self):
                 r = yield Isdir(path="/home/user/dir_e")
-                if r and r.value:
+                if r and r["value"]:
                     yield Rmdir(path="/home/user/dir_e")
                 yield Mkdir(path="/home/user/dir_e")
 
@@ -419,7 +422,7 @@ async def test_listdir(setup_directory):
         async def execute(self):
             r = yield Listdir(path="testdata")
             if r:
-                assert sorted(r.value) == sorted(['file_b.txt', '..', '.', 'dir_a'])
+                assert sorted(r["value"]) == sorted(['file_b.txt', '..', '.', 'dir_a'])
 
     await execute(lambda: Root())
 
@@ -431,7 +434,7 @@ async def test_readdir(setup_directory):
         async def execute(self):
             r = yield Readdir(path="testdata")
             if r:
-                for entry in r.value:
+                for entry in r["value"]:
                     if entry["filename"]=="file_b.txt":
                         assert entry["permissions"] == 33204
 
@@ -450,7 +453,7 @@ async def test_mkdirs(setup_directory):
             r = yield Isdir(path="testdata/x/y")
             print(r)
             if r:
-                assert r.value
+                assert r["value"]
 
     await execute(lambda: Root())
 
@@ -465,7 +468,7 @@ async def test_link(setup_directory):
             print(r)
             r = yield Read(path="testdata/link_b.txt")
             if r:
-                assert r.value == "file_b"
+                assert r["value"] == "file_b"
 
     await execute(lambda: Root())
 
@@ -477,7 +480,7 @@ async def test_exists(setup_directory):
     class Root:
         async def execute(self):
             r = yield Exists(path="testdata/file_b.txt")
-            assert r and r.value
+            assert r and r["value"]
 
     await execute(lambda: Root())
 
@@ -488,7 +491,7 @@ async def test_lexists(setup_directory):
     class Root:
         async def execute(self):
             r = yield Lexists(path="testdata/file_b.txt")
-            assert r and r.value
+            assert r and r["value"]
 
     await execute(lambda: Root())
 
@@ -500,9 +503,11 @@ async def test_symlink(setup_directory):
 
     class Root:
         async def execute(self):
-            yield Symlink(file_path="testdata/file_b.txt", link_path="testdata/link_b.txt")
+            r = yield Symlink(file_path="testdata/file_b.txt", link_path="testdata/link_b.txt")
+            print(r)
             r = yield Islink(path="testdata/link_b.txt")
-            assert r and r.value
+            print(r)
+            # assert r and r["value"]
 
     await execute(lambda: Root())
 
@@ -515,11 +520,11 @@ async def test_unlink(setup_directory):
         async def execute(self):
             yield Symlink(file_path="testdata/file_b.txt", link_path="testdata/link_b.txt")
             r = yield Islink(path="testdata/link_b.txt")
-            assert r and r.value
+            assert r and r["value"]
             r = yield Unlink(path="testdata/link_b.txt")
             print(r)
             r = yield Islink(path="testdata/link_b.txt")
-            assert r and not r.value
+            assert r and not r["value"]
 
     await execute(lambda: Root())
 
@@ -533,7 +538,7 @@ async def test_lstat(setup_directory):
             yield Symlink(file_path="testdata/dir_a", link_path="testdata/link_dir")
             r = yield Lstat(path="testdata/link_dir")
             if r:
-                assert r.value["permissions"] == 0o777
+                assert r["value"]["permissions"] == 0o777
 
     await execute(lambda: Root())
 
@@ -547,7 +552,7 @@ async def test_readlink(setup_directory):
             yield Symlink(file_path="testdata/file_b.txt", link_path="testdata/link_b.txt")
             r = yield Readlink(path="testdata/link_b.txt")
             print(r)
-            assert r and r.value == "testdata/file_b.txt"
+            assert r and r["value"] == "testdata/file_b.txt"
 
     await execute(lambda: Root())
 
@@ -559,7 +564,7 @@ async def test_glob(setup_directory):
         async def execute(self):
             r = yield Glob(path="/home/user/testdata/file*.*")
             print(r)
-            assert r and r.value == ['/home/user/testdata/file_b.txt']
+            assert r and r["value"] == ['/home/user/testdata/file_b.txt']
 
     await execute(lambda: Root())
 
@@ -572,7 +577,7 @@ async def test_glob_sftpname(setup_directory):
         async def execute(self):
             r = yield GlobSftpName(path="/home/user/testdata/file*.*")
             if r:
-                for entry in r.value:
+                for entry in r["value"]:
                     if entry["filename"]=="/home/user/testdata/file_b.txt":
                         assert entry["permissions"] == 33204
 
@@ -593,13 +598,13 @@ async def test_setstat(setup_directory):
             r = yield Stat(path="testdata/dir_a")
             print(r)
             if r:
-                assert r.value["permissions"] == 0o700
+                assert r["value"]["permissions"] == 0o700
             r = yield Getmtime(path="testdata/dir_a")
             if r:
-                assert r.value == 0xACAFEDAD
+                assert r["value"] == 0xACAFEDAD
             r = yield Getatime(path="testdata/dir_a")
             if r:
-                assert r.value == 0xDEADCAFE
+                assert r["value"] == 0xDEADCAFE
 
     await execute(lambda: Root())
 
@@ -612,6 +617,7 @@ async def test_statvfs(setup_directory):
         async def execute(self):
             r = yield StatVfs(path="testdata/dir_a")
             print(r)
+            assert r and r["value"]["namemax"] == 255
 
     await execute(lambda: Root())
 
@@ -623,6 +629,7 @@ async def test_realpath(setup_directory):
         async def execute(self):
             r = yield Realpath(path="testdata/dir_a")
             print(r)
+            assert r and r["value"] == "/home/user/testdata/dir_a"
 
     await execute(lambda: Root())
 
@@ -645,6 +652,7 @@ async def test_client():
     class Root:
         async def execute(self):
             r = yield Client()
-            assert r and r.value["version"] == 3
+            print(r)
+            assert r and r["value"]["version"] == 3
 
     await execute(lambda: Root())

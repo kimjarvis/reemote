@@ -12,41 +12,47 @@ from typing import Any, AsyncGenerator, List, Tuple, Dict, Callable
 from reemote.response import Response  # Changed import
 from reemote.config import Config
 from reemote.logging import reemote_logging
+from reemote.response import ssh_completed_process_to_dict
 
 
-async def pass_through_command(command: Command) -> Response:
+async def pass_through_command(command: Command) -> dict[str, str | None | Any] | None:
     if command.group in command.global_info["groups"]:
         try:
-            return Response.from_command(
-                command,
-                value=command.value,
-                host=command.host_info.get("host"),
-            )
+            return {
+                "host": command.host_info.get("host"),
+                "value": command.value,
+                "call": command.call,
+                "changed": command.changed,
+                "error": command.error,
+            }
         except Exception as e:
             logging.error(f"{e} {command}", exc_info=True)
             raise
+    return None
 
 
-async def run_command_on_local(command: Command) -> Response:
+async def run_command_on_local(command: Command) -> dict[str, str | None | Any] | None:
     if command.group in command.global_info["groups"]:
         logging.info(f"{command}")
-        response = Response.from_command(
-            command,
-            host=command.host_info.get("host"),
-            value=await command.callback(
+        r = {
+            "host": command.host_info.get("host"),
+            "value": await command.callback(
                 command.host_info,
                 command.global_info,
                 command,
                 SSHCompletedProcess(),
-                command.caller,
-            ),
-        )
-        logging.info(f"{response}")
-        return response
-
+                command.caller),
+            "call": command.call,
+            "changed": command.changed,
+            "error": command.error,
+            }
+        logging.info(f"{r}")
+        return r
+    return None
 
 async def run_command_on_host(command: Command) -> Response:
     cp = SSHCompletedProcess()
+    logging.info(f"{command}")
 
     if command.group in command.global_info["groups"]:
         try:
@@ -107,11 +113,15 @@ async def run_command_on_host(command: Command) -> Response:
         except (asyncssh.ProcessError, OSError, asyncssh.Error) as e:
             logging.error(f"{e} {command}", exc_info=True)
             raise
-        return Response(
-            cp=cp,
-            host=command.host_info.get("host"),
-            op=command,
-        )
+        r = {
+            "value": ssh_completed_process_to_dict(cp),
+            "host": command.host_info.get("host"),
+            "call": command.call,
+            "changed": command.changed
+        }
+        logging.info(f"{r}")
+        return r
+    return None
 
 
 async def pre_order_generator_async(
@@ -231,7 +241,6 @@ async def execute(
                         # Set inventory info
                         operation.host_info, operation.global_info = inventory_item
 
-                        # Execute the command
                         if operation.type == ConnectionType.LOCAL:
                             result = await run_command_on_local(operation)
                         elif operation.type == ConnectionType.REMOTE:
@@ -264,8 +273,8 @@ async def execute(
 
         except Exception as e:
             # Handle any fatal errors for this host
-            print(f"Error on host {inventory_item[0]["host"]}: {e.__class__.__name__}")
-            logging.error(f"{inventory_item[0]["host"]}: {e.__class__.__name__}")
+            print(f"Error on host {inventory_item[0]['host']}: {e.__class__.__name__}")
+            logging.error(f"{inventory_item[0]['host']}: {e.__class__.__name__}")
             raise
 
         return responses

@@ -48,8 +48,11 @@ class Command(CommonModel):
     value: Optional[Any] = Field(
         default=None, description="Value to pass to response", exclude=True
     )
-    changed: Optional[Any] = Field(
-        default=None, description="Value to pass to response", exclude=True
+    changed: Optional[bool] = Field(
+        default=True, description="Whether the host changed", exclude=True
+    )
+    error: Optional[bool] = Field(
+        default=False, description="Whether there was an error", exclude=True
     )
 
     @field_validator("command")
@@ -71,59 +74,74 @@ class Command(CommonModel):
             return "all"
         return v
 
-    def __repr__(self) -> str:
-        """Use detailed_repr for representation"""
-        return self.detailed_repr()
+def command_to_dict(command):
+    return {
+        "group": getattr(command, "group", "all"),
+        "name": getattr(command, "name", None),
+        "sudo": getattr(command, "sudo", False),
+        "su": getattr(command, "su", False),
+        "get_pty": getattr(command, "get_pty", False),
+        "command": getattr(command, "command", None),
+        "call": getattr(command, "call", None),
+        "type": getattr(command, "type", None),
+        "callback": getattr(command, "callback", None),
+        "caller": getattr(command, "caller", None),
+    }
 
-    def __str__(self) -> str:
-        return self.__repr__()
 
-    def detailed_repr(self) -> str:
-        """Show all fields including defaults"""
-        field_strings = []
-
-        # Add common parameters from parent
-        if self.group is not None:
-            field_strings.append(f"group={self.group!r}")
-        if self.name is not None:
-            field_strings.append(f"name={self.name!r}")
-        field_strings.append(f"sudo={self.sudo!r}")
-        field_strings.append(f"su={self.su!r}")
-        field_strings.append(f"get_pty={self.get_pty!r}")
-
-        # Add command-specific fields
-        if self.command is not None:
-            field_strings.append(f"command={self.command!r}")
-        # Add command-specific fields
-        if self.call is not None:
-            field_strings.append(f"call={self.call!r}")
-
-        field_strings.append(f"type={self.type!r}")
-        if self.value is not None:
-            field_strings.append(f"value={self.value!r}")
-        if self.changed is not None:
-            field_strings.append(f"changed={self.changed!r}")
-
-        if self.callback is not None:
-            callback_repr = (
-                f"<function {self.callback.__name__}>"
-                if hasattr(self.callback, "__name__")
-                else repr(self.callback)
-            )
-            field_strings.append(f"callback={callback_repr}")
-
-        if self.caller is not None:
-            caller_repr = (
-                f"<{type(self.caller).__name__} object>"
-                if hasattr(self.caller, "__class__")
-                else repr(self.caller)
-            )
-            field_strings.append(f"caller={caller_repr}")
-
-        if self.host_info is not None:
-            field_strings.append(f"host_info={self.host_info!r}")
-
-        if self.global_info is not None:
-            field_strings.append(f"global_info={self.global_info!r}")
-
-        return f"Command({', '.join(field_strings)})"
+    # def __repr__(self) -> str:
+    #     """Use detailed_repr for representation"""
+    #     return self.detailed_repr()
+    #
+    # def __str__(self) -> str:
+    #     return self.__repr__()
+    #
+    # def detailed_repr(self) -> str:
+    #     """Show all fields including defaults"""
+    #     field_strings = []
+    #
+    #     # Add common parameters from parent
+    #     if self.group is not None:
+    #         field_strings.append(f"group={self.group!r}")
+    #     if self.name is not None:
+    #         field_strings.append(f"name={self.name!r}")
+    #     field_strings.append(f"sudo={self.sudo!r}")
+    #     field_strings.append(f"su={self.su!r}")
+    #     field_strings.append(f"get_pty={self.get_pty!r}")
+    #
+    #     # Add command-specific fields
+    #     if self.command is not None:
+    #         field_strings.append(f"command={self.command!r}")
+    #     # Add command-specific fields
+    #     if self.call is not None:
+    #         field_strings.append(f"call={self.call!r}")
+    #
+    #     field_strings.append(f"type={self.type!r}")
+    #     if self.value is not None:
+    #         field_strings.append(f"value={self.value!r}")
+    #     if self.changed is not None:
+    #         field_strings.append(f"changed={self.changed!r}")
+    #
+    #     if self.callback is not None:
+    #         callback_repr = (
+    #             f"<function {self.callback.__name__}>"
+    #             if hasattr(self.callback, "__name__")
+    #             else repr(self.callback)
+    #         )
+    #         field_strings.append(f"callback={callback_repr}")
+    #
+    #     if self.caller is not None:
+    #         caller_repr = (
+    #             f"<{type(self.caller).__name__} object>"
+    #             if hasattr(self.caller, "__class__")
+    #             else repr(self.caller)
+    #         )
+    #         field_strings.append(f"caller={caller_repr}")
+    #
+    #     if self.host_info is not None:
+    #         field_strings.append(f"host_info={self.host_info!r}")
+    #
+    #     if self.global_info is not None:
+    #         field_strings.append(f"global_info={self.global_info!r}")
+    #
+    #     return f"Command({', '.join(field_strings)})"

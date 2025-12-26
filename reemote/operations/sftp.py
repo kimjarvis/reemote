@@ -25,23 +25,23 @@ class Directory(Local):
         changed = False
         isdir = yield Isdir(path=model_instance.path, group=model_instance.group)
         if isdir:
-            if not model_instance.present and not isdir.value:
+            if not model_instance.present and not isdir["value"]:
                 changed = False
-            elif not model_instance.present and isdir.value:
+            elif not model_instance.present and isdir["value"]:
                 yield Rmdir(path=model_instance.path, group=model_instance.group)
                 changed = True
-            elif model_instance.present and not isdir.value:
+            elif model_instance.present and not isdir["value"]:
                 yield Mkdir(path=model_instance.path,
                             permissions=model_instance.permissions,
                             atime=model_instance.atime,
                             mtime=model_instance.mtime,
                             group=model_instance.group)
                 changed = True
-            elif model_instance.present and isdir.value:
+            elif model_instance.present and isdir["value"]:
                 r = yield Stat(path="/home/user/freddy", group=model_instance.group)
                 if (
                     model_instance.permissions
-                    and r.value["permissions"] != model_instance.permissions
+                    and r["value"]["permissions"] != model_instance.permissions
                 ):
                     yield Chmod(
                         path=model_instance.path,
@@ -49,21 +49,21 @@ class Directory(Local):
                         group=model_instance.group,
                     )
                     changed = True
-                if model_instance.uid and r.value["uid"] != model_instance.uid:
+                if model_instance.uid and r["value"]["uid"] != model_instance.uid:
                     yield Chown(
                         path=model_instance.path,
                         uid=model_instance.uid,
                         group=model_instance.group,
                     )
                     changed = True
-                if model_instance.uid and r.value["gid"] != model_instance.gid:
+                if model_instance.uid and r["value"]["gid"] != model_instance.gid:
                     yield Chown(
                         path=model_instance.path,
                         gid=model_instance.gid,
                         group=model_instance.group,
                     )
                     changed = True
-                if model_instance.atime and r.value["atime"] != model_instance.atime:
+                if model_instance.atime and r["value"]["atime"] != model_instance.atime:
                     yield Utime(
                         path=model_instance.path,
                         atime=model_instance.atime,
