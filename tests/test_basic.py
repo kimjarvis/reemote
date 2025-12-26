@@ -637,3 +637,14 @@ async def test_truncate(setup_directory):
             print(r)
 
     await execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_client():
+    from reemote.facts.sftp import Client
+
+    class Root:
+        async def execute(self):
+            r = yield Client()
+            assert r and r.value["version"] == 3
+
+    await execute(lambda: Root())

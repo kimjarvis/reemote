@@ -611,3 +611,30 @@ async def realpath(
 ) -> list[dict]:
     """# Return the canonical version of a remote path"""
     return await router_handler(LocalPathModel, Islink)(path=path, common=common)
+
+
+
+class Client(Local):
+    Model = LocalModel
+
+    @staticmethod
+    async def _callback(host_info, global_info, command, cp, caller):
+        async with asyncssh.connect(**host_info) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return {
+                    "version" : sftp.version,
+                    "logger": sftp.logger,
+                    "max_packet_len": sftp.limits.max_packet_len,
+                    "max_read_len": sftp.limits.max_read_len,
+                    "max_write_len": sftp.limits.max_write_len,
+                    "max_open_handles": sftp.limits.max_open_handles,
+                    "supports_remote_copy": sftp.supports_remote_copy
+                }
+
+
+@router.get("/fact/client/", tags=["SFTP Facts"])
+async def realpath(
+    common: LocalModel = Depends(localmodel),
+) -> list[dict]:
+    """# Return the canonical version of a remote path"""
+    return await router_handler(LocalModel, Client)(common=common)
