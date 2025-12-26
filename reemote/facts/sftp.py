@@ -1,15 +1,15 @@
 from pathlib import PurePath
-from typing import Union, Optional
+from typing import List, Union, Optional
 
 import asyncssh
 from fastapi import APIRouter, Depends, Query
-from pydantic import Field, field_validator
+from fastapi.responses import PlainTextResponse
 
 from reemote.router_handler import router_handler
 from reemote.models import LocalModel, localmodel, LocalPathModel
 from reemote.local import Local
 from asyncssh.sftp import FXF_READ
-from pydantic import BaseModel, Field, field_validator, ValidationError, root_validator
+from pydantic import BaseModel, Field
 
 
 router = APIRouter()
@@ -251,13 +251,13 @@ class StatModel(LocalPathModel):
 
 def sftp_attrs_to_dict(sftp_attrs):
     return {
-                "uid": getattr(sftp_attrs, "uid"),
-                "gid": getattr(sftp_attrs, "gid"),
-                "permissions": getattr(sftp_attrs, "permissions") & 0o777,
-                "atime": getattr(sftp_attrs, "atime"),
-                "mtime": getattr(sftp_attrs, "mtime"),
-                "size": getattr(sftp_attrs, "size"),
-            }
+        "uid": getattr(sftp_attrs, "uid"),
+        "gid": getattr(sftp_attrs, "gid"),
+        "permissions": getattr(sftp_attrs, "permissions") & 0o777,
+        "atime": getattr(sftp_attrs, "atime"),
+        "mtime": getattr(sftp_attrs, "mtime"),
+        "size": getattr(sftp_attrs, "size"),
+    }
 
 
 class Stat(Local):
@@ -381,6 +381,7 @@ async def listdir(
     """# Read the names of the files in a remote directory"""
     return await router_handler(LocalPathModel, Listdir)(path=path, common=common)
 
+
 def sftp_names_to_dict(sftp_names):
     list = []
     for name in sftp_names:
@@ -398,6 +399,15 @@ def sftp_names_to_dict(sftp_names):
         )
     return list
 
+class SFTPFileAttributes(BaseModel):
+    filename: Union[str, bytes] = Field(..., description="Filename")
+    longname: Union[str, bytes] = Field(..., description="Expanded form of filename and attributes")
+    uid: int = Field(..., description="User ID of the file owner")
+    gid: int = Field(..., description="Group ID of the file owner")
+    permissions: int = Field(..., description="File permissions (mode)")
+    atime: int = Field(..., description="Last access time of the file")
+    mtime: int = Field(..., description="Last modification time of the file")
+    size: int = Field(..., description="Size of the file in bytes")
 
 class Readdir(Local):
     Model = LocalPathModel
@@ -408,7 +418,6 @@ class Readdir(Local):
             async with conn.start_sftp_client() as sftp:
                 sftp_names = await sftp.readdir(caller.path)
                 return sftp_names_to_dict(sftp_names)
-
 
 
 @router.get("/fact/readdir/", tags=["SFTP Facts"])
@@ -528,6 +537,7 @@ async def glob(
     """# Match remote files against glob patterns"""
     return await router_handler(LocalPathModel, Glob)(path=path, common=common)
 
+
 class GlobSftpName(Local):
     Model = LocalPathModel
 
@@ -539,31 +549,46 @@ class GlobSftpName(Local):
                 return sftp_names_to_dict(sftp_names)
 
 
-
-@router.get("/fact/globsftpname/", tags=["SFTP Facts"])
+@router.get("/fact/globsftpname/", tags=["SFTP Facts"], response_model=List[SFTPFileAttributes])
 async def globsftpname(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Glob patterns to try and match remote files against"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> List[SFTPFileAttributes]:
     """# Match glob patterns and return SFTPNames"""
     return await router_handler(LocalPathModel, GlobSftpName)(path=path, common=common)
 
+
 def sftp_vfs_attrs_to_dict(sftp_vfs_attrs):
     return {
-                "bsize": getattr(sftp_vfs_attrs, "bsize"),
-                "frsize": getattr(sftp_vfs_attrs, "frsize"),
-                "blocks": getattr(sftp_vfs_attrs, "blocks"),
-                "bfree": getattr(sftp_vfs_attrs, "bfree"),
-                "bavail": getattr(sftp_vfs_attrs, "bavail"),
-                "files": getattr(sftp_vfs_attrs, "files"),
-                "ffree": getattr(sftp_vfs_attrs, "ffree"),
-                "favail": getattr(sftp_vfs_attrs, "favail"),
-                "fsid": getattr(sftp_vfs_attrs, "fsid"),
-                "flags": getattr(sftp_vfs_attrs, "flags"),
-                "namemax": getattr(sftp_vfs_attrs, "namemax"),
-            }
+        "bsize": getattr(sftp_vfs_attrs, "bsize"),
+        "frsize": getattr(sftp_vfs_attrs, "frsize"),
+        "blocks": getattr(sftp_vfs_attrs, "blocks"),
+        "bfree": getattr(sftp_vfs_attrs, "bfree"),
+        "bavail": getattr(sftp_vfs_attrs, "bavail"),
+        "files": getattr(sftp_vfs_attrs, "files"),
+        "ffree": getattr(sftp_vfs_attrs, "ffree"),
+        "favail": getattr(sftp_vfs_attrs, "favail"),
+        "fsid": getattr(sftp_vfs_attrs, "fsid"),
+        "flags": getattr(sftp_vfs_attrs, "flags"),
+        "namemax": getattr(sftp_vfs_attrs, "namemax"),
+    }
+
+# Define the Pydantic model for the response schema (without examples)
+class SFTPVFSAttrsResponse(BaseModel):
+    bsize: int = Field(..., description="File system block size (I/O size)")
+    frsize: int = Field(..., description="Fundamental block size (allocation size)")
+    blocks: int = Field(..., description="Total data blocks (in frsize units)")
+    bfree: int = Field(..., description="Free data blocks")
+    bavail: int = Field(..., description="Available data blocks (for non-root)")
+    files: int = Field(..., description="Total file inodes")
+    ffree: int = Field(..., description="Free file inodes")
+    favail: int = Field(..., description="Available file inodes (for non-root)")
+    fsid: int = Field(..., description="File system id")
+    flags: int = Field(..., description="File system flags (read-only, no-setuid)")
+    namemax: int = Field(..., description="Maximum filename length")
+
 
 class StatVfs(Local):
     Model = LocalPathModel
@@ -572,20 +597,18 @@ class StatVfs(Local):
     async def _callback(host_info, global_info, command, cp, caller):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
-                sftp_vfs_attrs = await sftp.statvfs(
-                    caller.path
-                )
+                sftp_vfs_attrs = await sftp.statvfs(caller.path)
                 return sftp_vfs_attrs_to_dict(sftp_vfs_attrs)
 
 
-@router.get("/fact/statvfs/", tags=["SFTP Facts"])
+@router.get("/fact/statvfs/", tags=["SFTP Facts"], response_model=SFTPVFSAttrsResponse)
 async def statvfs(
     path: Union[PurePath, str, bytes] = Query(
         ...,
         description="The path of the remote file system to get attributes for",
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> dict:
     """# Get attributes of a remote file system"""
     return await router_handler(StatModel, StatVfs)(
         path=path, follow_symlinks=follow_symlinks, common=common
@@ -602,16 +625,15 @@ class Realpath(Local):
                 return await sftp.realpath(caller.path)
 
 
-@router.get("/fact/realpath/", tags=["SFTP Facts"])
+@router.get("/fact/realpath/", tags=["SFTP Facts"], response_class=PlainTextResponse)
 async def realpath(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote directory to canonicalize"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> str:
     """# Return the canonical version of a remote path"""
     return await router_handler(LocalPathModel, Islink)(path=path, common=common)
-
 
 
 class Client(Local):
@@ -622,19 +644,32 @@ class Client(Local):
         async with asyncssh.connect(**host_info) as conn:
             async with conn.start_sftp_client() as sftp:
                 return {
-                    "version" : sftp.version,
+                    "version": sftp.version,
                     "logger": sftp.logger,
                     "max_packet_len": sftp.limits.max_packet_len,
                     "max_read_len": sftp.limits.max_read_len,
                     "max_write_len": sftp.limits.max_write_len,
                     "max_open_handles": sftp.limits.max_open_handles,
-                    "supports_remote_copy": sftp.supports_remote_copy
+                    "supports_remote_copy": sftp.supports_remote_copy,
                 }
 
 
-@router.get("/fact/client/", tags=["SFTP Facts"])
-async def realpath(
+# Define a Pydantic model for the response schema
+class SFTPInfo(BaseModel):
+    version: str = Field(description="SFTP version associated with this SFTP session")
+    logger: str = Field(description="Logger associated with this SFTP client")
+    max_packet_len: int = Field(description="Max allowed size of an SFTP packet")
+    max_read_len: int = Field(description="Max allowed size of an SFTP read request")
+    max_write_len: int = Field(description="Max allowed size of an SFTP write request")
+    max_open_handles: int = Field(description="Max allowed number of open file handles")
+    supports_remote_copy: bool = Field(
+        description="Return whether or not SFTP remote copy is supported"
+    )
+
+
+@router.get("/fact/client/", tags=["SFTP Facts"], response_model=SFTPInfo)
+async def client(
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
-    """# Return the canonical version of a remote path"""
+) -> dict:
+    """# Return sftp client information"""
     return await router_handler(LocalModel, Client)(common=common)
