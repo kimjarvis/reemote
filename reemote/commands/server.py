@@ -7,6 +7,7 @@ from reemote.models import RemoteModel, remotemodel
 from reemote.remote import Remote
 from reemote.response import Response, SSHCompletedProcessModel
 from pydantic import BaseModel, Field
+from reemote.response import ResponseModel
 router = APIRouter()
 
 
@@ -17,15 +18,10 @@ class ShellModel(RemoteModel):
         ...,  # Required field
     )
 
-class ShellResponse(BaseModel):
-    host: str = Field(..., description="The host the command was executed on")
+class ShellResponse(ResponseModel):
     value: SSHCompletedProcessModel = Field(
         default=None,
         description="The results from the executed command."
-    )
-    call: str = Field(
-        default=None,
-        description="The caller object"
     )
 
 class Shell(Remote):

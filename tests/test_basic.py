@@ -64,6 +64,7 @@ async def test_shell():
             r = yield Shell(cmd="echo Hello", group="192.168.1.24")
             if r:
                 assert r["value"]["stdout"] == 'Hello\n'
+                assert r["changed"]
 
     await execute(lambda: Root())
 
@@ -83,6 +84,7 @@ async def test_callback():
             )
             if r:
                 assert r["value"] == "tested"
+                assert r["changed"]
 
     await execute(lambda: Root())
 
@@ -117,6 +119,7 @@ async def test_isdir(setup_directory):
             r = yield Isdir(path="testdata/dir_a")
             if r:
                 assert r["value"]
+                assert not r["changed"]
             r = yield Isdir(path="testdata/dir_b")
             if r:
                 assert not r["value"]
@@ -131,10 +134,12 @@ async def test_mkdir(setup_directory):
 
     class Root:
         async def execute(self):
-            yield Mkdir(path="testdata/new_dir",
+            r = yield Mkdir(path="testdata/new_dir",
                         atime=0xDEADCAFE,
                         mtime=0xACAFEDAD,
                         permissions=0o700)
+            if r:
+                assert r["changed"]
             r = yield Isdir(path="testdata/new_dir")
             if r:
                 assert r["value"]
@@ -385,7 +390,7 @@ async def test_catching_sftp_failures(setup_directory):
 
 
 @pytest.mark.asyncio
-async def test_unreachable_host(setup_directory):
+async def test_unreachable_host_sftp_command(setup_directory):
     from reemote.facts.sftp import Isdir
     from reemote.commands.sftp import Mkdir, Rmdir
     from reemote.commands.inventory import add_entry, delete_entry
@@ -661,7 +666,7 @@ async def test_client():
 
 
 @pytest.mark.asyncio
-async def test_unreachable_host_stat(setup_directory):
+async def test_unreachable_host_sftp_fact(setup_directory):
     from reemote.facts.sftp import StatVfs
     from reemote.commands.inventory import add_entry, delete_entry
     from reemote.facts.inventory import isentry
@@ -669,7 +674,6 @@ async def test_unreachable_host_stat(setup_directory):
     class Root:
         async def execute(self):
             r = yield StatVfs(path="testdata/dir_a")
-            print(r)
 
     if isentry("192.168.1.33"):
         delete_entry("192.168.1.33")
