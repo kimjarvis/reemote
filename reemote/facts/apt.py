@@ -32,7 +32,7 @@ class GetPackages(Remote):
         return
 
 
-@router.get("/fact/get_packages/", tags=["APT Package Manager Facts"])
+@router.get("/get_packages", tags=["APT Package Manager Facts"])
 async def get_packages(common: CommonModel = Depends(commonmodel)) -> list[dict]:
     """# Get installed APT packages"""
     return await router_handler(GetPackagesModel, GetPackages)(

@@ -36,7 +36,7 @@ class Shell(Remote):
             **self.common_kwargs
         )
 
-@router.get("/server/shell/", tags=["Server Commands"], response_model=List[ShellResponse])
+@router.get("/shell", tags=["Server Commands"], response_model=List[ShellResponse])
 async def shell(
         cmd: str = Query(..., description="Shell command"),
         common: RemoteModel = Depends(remotemodel)

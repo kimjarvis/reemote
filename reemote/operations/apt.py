@@ -56,7 +56,7 @@ class Package(Remote):
         return
 
 
-@router.get("/operation/package/", tags=["APT Package Manager Operations"])
+@router.get("/package", tags=["APT Package Manager Operations"])
 async def package(
     packages: list[str] = Query(..., description="List of package names"),
     present: bool = Query(True, description="Whether the packages should be present or not"),

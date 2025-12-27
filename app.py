@@ -98,13 +98,13 @@ Get information about files and directories on servers.
 # Include the inventory router under a specific prefix (optional)
 app.include_router(inventory_router, prefix="/inventory/commands")
 app.include_router(facts_inventory_router, prefix="/inventory/facts")
-app.include_router(commands_apt_router, prefix="/commands/apt")
-app.include_router(facts_apt_router, prefix="/facts/apt")
-app.include_router(operations_apt_router, prefix="/operations/apt")
-app.include_router(commands_server_router, prefix="/commands/server")
+app.include_router(commands_apt_router, prefix="/apt/commands")
+app.include_router(facts_apt_router, prefix="/apt/facts")
+app.include_router(operations_apt_router, prefix="/apt/operations")
+app.include_router(commands_server_router, prefix="/server/commands")
 app.include_router(commands_sftp_router, prefix="/sftp/commands")
 app.include_router(facts_sftp_router, prefix="/sftp/facts")
-app.include_router(commands_scp_router, prefix="/commands/scp")
+app.include_router(commands_scp_router, prefix="/scp/commands")
 
 
 @app.on_event("startup")

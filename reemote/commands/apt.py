@@ -26,7 +26,7 @@ class Install(Remote):
         )
 
 
-@router.get("/command/install/", tags=["APT Package Manager Commands"])
+@router.get("/install", tags=["APT Package Manager Commands"])
 async def install(
     packages: list[str] = Query(..., description="List of package names"),
     common: CommonModel = Depends(commonmodel),
@@ -55,7 +55,7 @@ class Remove(Remote):
         )
 
 
-@router.get("/command/remove/", tags=["APT Package Manager Commands"])
+@router.get("/remove", tags=["APT Package Manager Commands"])
 async def remove(
     packages: list[str] = Query(..., description="List of package names"),
     common: CommonModel = Depends(commonmodel),
@@ -83,7 +83,7 @@ class Update(Remote):
         )
 
 
-@router.get("/command/update/", tags=["APT Package Manager Commands"])
+@router.get("/update", tags=["APT Package Manager Commands"])
 async def update(common: CommonModel = Depends(commonmodel)) -> list[dict]:
     """# Refresh the package index files from their sources"""
     return await router_handler(UpdateModel, Update)(common=common)
@@ -107,7 +107,7 @@ class Upgrade(Remote):
         )
 
 
-@router.get("/command/upgrade/", tags=["APT Package Manager Commands"])
+@router.get("/upgrade", tags=["APT Package Manager Commands"])
 async def upgrade(common: CommonModel = Depends(commonmodel)) -> list[dict]:
     """# Install available updates for all installed packages"""
     return await router_handler(UpgradeModel, Upgrade)(common=common)

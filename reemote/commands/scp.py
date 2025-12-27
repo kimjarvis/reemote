@@ -47,7 +47,7 @@ class Upload(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/commands/upload/", tags=["SCP Commands"], response_model=List[ResponseModel])
+@router.get("/upload", tags=["SCP Commands"], response_model=List[ResponseModel])
 async def upload(
         srcpaths: List[str] = Query(
             ...,
@@ -114,7 +114,7 @@ class Download(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/commands/download/", tags=["SCP Commands"], response_model=List[ResponseModel])
+@router.get("/download", tags=["SCP Commands"], response_model=List[ResponseModel])
 async def download(
         srcpaths: List[str] = Query(
             ...,
@@ -186,7 +186,7 @@ class Copy(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/commands/copy/", tags=["SCP Commands"], response_model=List[ResponseModel])
+@router.get("/copy", tags=["SCP Commands"], response_model=List[ResponseModel])
 async def copy(
         srcpaths: List[str] = Query(
             ...,
