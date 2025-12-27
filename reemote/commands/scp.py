@@ -1,3 +1,4 @@
+import logging
 from typing import Callable, List, Optional
 
 import asyncssh
@@ -7,6 +8,7 @@ from pydantic import Field
 from reemote.router_handler import router_handler
 from reemote.models import LocalModel, localmodel
 from reemote.local import Local
+from reemote.response import ResponseModel
 
 router = APIRouter()
 
@@ -29,26 +31,30 @@ class Upload(Local):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
+        try:
+            return await asyncssh.scp(
+                srcpaths=caller.srcpaths,
+                dstpath=(host_info.get("host"), caller.dstpath),
+                username=host_info.get("username"),
+                preserve=caller.preserve,
+                recurse=caller.recurse,
+                block_size=caller.block_size,
+                progress_handler=caller.progress_handler,
+                error_handler=caller.error_handler,
+            )
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-        return await asyncssh.scp(
-            srcpaths=caller.srcpaths,
-            dstpath=(host_info.get("host"), caller.dstpath),
-            username=host_info.get("username"),
-            preserve=caller.preserve,
-            recurse=caller.recurse,
-            block_size=caller.block_size,
-            progress_handler=caller.progress_handler,
-            error_handler=caller.error_handler,
-        )
-
-@router.get("/commands/upload/", tags=["SCP Commands"])
+@router.get("/commands/upload/", tags=["SCP Commands"], response_model=List[ResponseModel])
 async def upload(
         srcpaths: List[str] = Query(
             ...,
             description="The paths of the source files or directories to copy"
         ),
         dstpath: str = Query(
-            None,
+            ...,
             description="The path of the destination file or directory to copy into"
         ),
         preserve: bool = Query(
@@ -75,10 +81,8 @@ async def upload(
             description="Callback function name for error handling"
         ),
         common: LocalModel = Depends(localmodel)
-) -> list[dict]:
-    """
-    will continue starting with the next file.
-    """
+) -> List[ResponseModel]:
+    """# Upload files to the host"""
     return await router_handler(ScpModel, Upload)(
         srcpaths=srcpaths,
         dstpath=dstpath,
@@ -94,19 +98,23 @@ class Download(Local):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
+        try:
+            return await asyncssh.scp(
+                srcpaths=[(host_info.get("host"), path) for path in caller.srcpaths],
+                dstpath=caller.dstpath,
+                username=host_info.get("username"),
+                preserve=caller.preserve,
+                recurse=caller.recurse,
+                block_size=caller.block_size,
+                progress_handler=caller.progress_handler,
+                error_handler=caller.error_handler,
+            )
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-        return await asyncssh.scp(
-            srcpaths=[(host_info.get("host"), path) for path in caller.srcpaths],
-            dstpath=caller.dstpath,
-            username=host_info.get("username"),
-            preserve=caller.preserve,
-            recurse=caller.recurse,
-            block_size=caller.block_size,
-            progress_handler=caller.progress_handler,
-            error_handler=caller.error_handler,
-        )
-
-@router.get("/commands/download/", tags=["SCP Commands"])
+@router.get("/commands/download/", tags=["SCP Commands"], response_model=List[ResponseModel])
 async def download(
         srcpaths: List[str] = Query(
             ...,
@@ -140,10 +148,8 @@ async def download(
             description="Callback function name for error handling"
         ),
         common: LocalModel = Depends(localmodel)
-) -> list[dict]:
-    """
-    will continue starting with the next file.
-    """
+) -> List[ResponseModel]:
+    """# Download files from the host"""
     return await router_handler(ScpModel, Download)(
         srcpaths=srcpaths,
         dstpath=dstpath,
@@ -164,19 +170,23 @@ class Copy(Local):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
+        try:
+            return await asyncssh.scp(
+                srcpaths=[(host_info.get("host"), path) for path in caller.srcpaths],
+                dstpath=(caller.dsthost, caller.dstpath),
+                username=host_info.get("username"),
+                preserve=caller.preserve,
+                recurse=caller.recurse,
+                block_size=caller.block_size,
+                progress_handler=caller.progress_handler,
+                error_handler=caller.error_handler,
+            )
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-        return await asyncssh.scp(
-            srcpaths=[(host_info.get("host"), path) for path in caller.srcpaths],
-            dstpath=(caller.dsthost, caller.dstpath),
-            username=host_info.get("username"),
-            preserve=caller.preserve,
-            recurse=caller.recurse,
-            block_size=caller.block_size,
-            progress_handler=caller.progress_handler,
-            error_handler=caller.error_handler,
-        )
-
-@router.get("/commands/copy/", tags=["SCP Commands"])
+@router.get("/commands/copy/", tags=["SCP Commands"], response_model=List[ResponseModel])
 async def copy(
         srcpaths: List[str] = Query(
             ...,
@@ -186,7 +196,7 @@ async def copy(
             None,
             description="The path of the destination file or directory to copy into"
         ),
-        dstgroup: str = Query(
+        dsthost: str = Query(
             None,
             description="The group of the host to copy to"
         ),
@@ -214,14 +224,12 @@ async def copy(
             description="Callback function name for error handling"
         ),
         common: LocalModel = Depends(localmodel)
-) -> list[dict]:
-    """
-    will continue starting with the next file.
-    """
+) -> List[ResponseModel]:
+    """# Copy files between hosts"""
     return await router_handler(ScpModel, Copy)(
         srcpaths=srcpaths,
         dstpath=dstpath,
-        dstgroup=dstgroup,
+        dsthost=dsthost,
         preserve=preserve,
         recurse=recurse,
         block_size=block_size,

@@ -31,7 +31,7 @@ class Root:
             srcpaths=['/etc/hosts','/etc/passwd'],
             dstpath='/home/user/',
             group="A", # This is the source
-            dstgroup="B"
+            dsthost="192.168.1.24"
         )
         r = yield Isfile(path="/home/user/hosts",group="B")
         assert r.value == [{'value': True}], "File does not exist"
