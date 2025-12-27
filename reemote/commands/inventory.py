@@ -60,6 +60,11 @@ def validate_inventory_structure(inventory: List[List[Dict]]) -> None:
             raise ValueError(f"Duplicate host value found: {host_value}")
         seen_hosts.add(host_value)
 
+class ErrorResponse(BaseModel):
+    """Error response model"""
+
+    detail: str
+
 
 # Create an APIRouter instance
 router = APIRouter()
@@ -82,53 +87,6 @@ def create_inventory(inventory: List[List[Dict]]) -> Dict:
         "message": "Inventory created",
         "data": inventory,
     }
-
-
-def add_entry(entry: List[Dict]) -> Dict:
-    # Validate the structure of the individual entry
-    validate_inventory_entry(entry)
-
-    config = Config()
-    inventory = config.get_inventory()
-
-    # Append the new entry to the inventory list
-    inventory.append(entry)
-
-    # Validate the updated inventory structure
-    validate_inventory_structure(inventory)
-
-    # Save the updated inventory back to the configuration
-    config.set_inventory(inventory)
-
-    return {
-        "status": "success",
-        "message": "Inventory entry created",
-        "data": entry,
-    }
-
-
-
-def delete_entry(host: str) -> Dict:
-    config = Config()
-    inventory = config.get_inventory()
-
-    for entry in inventory:
-        if entry[0].get("host") == host:
-            new_inv = [entry for entry in inventory if entry[0].get("host") != host]
-            config.set_inventory(new_inv)
-            return {
-                "status": "success",
-                "message": "Inventory entry deleted",
-            }
-    raise ValueError(f"Entry for host not found: {host}")
-
-
-class ErrorResponse(BaseModel):
-    """Error response model"""
-
-    detail: str
-
-
 
 class InventoryCreateResponse(BaseModel):
     """Response model for inventory creation endpoint"""
@@ -203,12 +161,41 @@ def create_the_inventory(inv: List[List[Dict]]):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+
+
+
+
+
+
 class EntryCreateResponse(BaseModel):
     """Response model for inventory creation endpoint"""
 
     status: str
     message: str
     data: List[Dict[str, Any]]  # Generic description without details
+
+
+def add_entry(entry: List[Dict]) -> Dict:
+    # Validate the structure of the individual entry
+    validate_inventory_entry(entry)
+
+    config = Config()
+    inventory = config.get_inventory()
+
+    # Append the new entry to the inventory list
+    inventory.append(entry)
+
+    # Validate the updated inventory structure
+    validate_inventory_structure(inventory)
+
+    # Save the updated inventory back to the configuration
+    config.set_inventory(inventory)
+
+    return {
+        "status": "success",
+        "message": "Inventory entry created",
+        "data": entry,
+    }
 
 
 @router.post(
@@ -258,13 +245,25 @@ def add_inventory_entry(entry: InventoryEntry):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-
 class DeleteEntryResponse(BaseModel):
     """Response model for inventory creation endpoint"""
 
     status: str
     message: str
 
+def delete_entry(host: str) -> Dict:
+    config = Config()
+    inventory = config.get_inventory()
+
+    for entry in inventory:
+        if entry[0].get("host") == host:
+            new_inv = [entry for entry in inventory if entry[0].get("host") != host]
+            config.set_inventory(new_inv)
+            return {
+                "status": "success",
+                "message": "Inventory entry deleted",
+            }
+    raise ValueError(f"Entry for host not found: {host}")
 
 @router.delete(
     "/entries/{host}",
@@ -283,3 +282,16 @@ def delete_inventory_entry(host: str):
     except Exception as e:
         logging.error(f"Error deleting inventory entry: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+
+
+
+
+
+
+
+
+
+
+
