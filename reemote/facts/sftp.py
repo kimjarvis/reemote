@@ -3,8 +3,6 @@ from typing import List, Union, Optional, Any
 import logging
 import asyncssh
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import PlainTextResponse
-
 from reemote.router_handler import router_handler
 from reemote.models import LocalModel, localmodel, LocalPathModel
 from reemote.local import Local
@@ -13,29 +11,31 @@ from pydantic import BaseModel, Field, field_validator
 from pydantic import BaseModel, Field, field_validator, TypeAdapter, ConfigDict, field_serializer, ValidationInfo
 from typing import Optional, List
 from fastapi import Depends
+from reemote.response import ResponseModel
 
 
 router = APIRouter()
 
 
-class IslinkResponse(BaseModel):
-    host: str = Field(default="", description="The host the command was executed on")
-    value: bool = Field(default=False, description="Whether the path is a link")
-    call: str = Field(default="", description="The caller object")
-    changed: bool = Field(default=False, description="Whether the host changed")
+class IslinkResponse(ResponseModel):
+    value: Union[str,  bool ] = Field(default=False, description="Whether or not the path is a link, or an error message")
 
 class Islink(Local):
     Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.islink(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.islink(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/islink/", tags=["SFTP Facts"], response_model=List[IslinkResponse])
+@router.get("/islink", tags=["SFTP Facts"], response_model=List[IslinkResponse])
 async def islink(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Path to check if it's a link"
@@ -45,24 +45,25 @@ async def islink(
     """# Return if the remote path refers to a symbolic link"""
     return await router_handler(LocalPathModel, Islink)(path=path, common=common)
 
-class IsfileResponse(BaseModel):
-    host: str = Field(default="", description="The host the command was executed on")
-    value: bool = Field(default=False, description="Whether the path is a file")
-    call: str = Field(default="", description="The caller object")
-    changed: bool = Field(default=False, description="Whether the host changed")
+class IsfileResponse(ResponseModel):
+    value: Union[str,  bool] = Field(default=False, description="Whether or not the path is a file, or an error message")
 
 class Isfile(Local):
     Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.isfile(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.isfile(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/isfile/", tags=["SFTP Facts"], response_model=List[IsfileResponse])
+@router.get("/isfile", tags=["SFTP Facts"], response_model=List[IsfileResponse])
 async def isfile(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Path to check if it's a file"
@@ -73,24 +74,25 @@ async def isfile(
     return await router_handler(LocalPathModel, Isfile)(path=path, common=common)
 
 
-class IsdirResponse(BaseModel):
-    host: str = Field(default="", description="The host the command was executed on")
-    value: bool = Field(default=False, description="Whether the path is a directory")
-    call: str = Field(default="", description="The caller object")
-    changed: bool = Field(default=False, description="Whether the host changed")
+class IsdirResponse(ResponseModel):
+    value: Union[str,  bool] = Field(default=False, description="Whether or not the path is a directory, or an error message")
 
 class Isdir(Local):
     Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.isdir(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.isdir(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/isdir/", tags=["SFTP Facts"], response_model=List[IsdirResponse])
+@router.get("/isdir", tags=["SFTP Facts"], response_model=List[IsdirResponse])
 async def isdir(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Path to check if it's a directory"
@@ -101,24 +103,25 @@ async def isdir(
     return await router_handler(LocalPathModel, Isdir)(path=path, common=common)
 
 
-class GetsizeResponse(BaseModel):
-    host: str = Field(default="", description="The host the command was executed on")
-    value: int = Field(default=0, description="Size of the remove file or directory in bytes")
-    call: str = Field(default="",description="The caller object")
-    changed: bool = Field(default=False, description="Whether the host changed")
+class GetsizeResponse(ResponseModel):
+    value: Union[str,  int] = Field(default=0, description="Size of the remove file or directory in bytes, or an error message")
 
 class Getsize(Local):
     Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.getsize(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.getsize(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/getsize/", tags=["SFTP Facts"], response_model=List[GetsizeResponse])
+@router.get("/getsize", tags=["SFTP Facts"], response_model=List[GetsizeResponse])
 async def getsize(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the size of a remote file or directory"
@@ -128,24 +131,25 @@ async def getsize(
     """# Return the size of a remote file or directory"""
     return await router_handler(LocalPathModel, Getsize)(path=path, common=common)
 
-class GettimeResponse(BaseModel):
-    host: str = Field(default="", description="The host the command was executed on")
-    value: int = Field(default=0, description="The time in seconds since start of epoch")
-    call: str = Field(default="",description="The caller object")
-    changed: bool = Field(default=False, description="Whether the host changed")
+class GettimeResponse(ResponseModel):
+    value: Union[str,  int ]= Field(default=0, description="The time in seconds since start of epoch, or an error message")
 
 class Getatime(Local):
     Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.getatime(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.getatime(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/getatime/", tags=["SFTP Facts"],response_model=List[GettimeResponse])
+@router.get("/getatime", tags=["SFTP Facts"],response_model=List[GettimeResponse])
 async def getatime(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the last access time of a remote file or directory"
@@ -155,25 +159,25 @@ async def getatime(
     """# Return the last access time of a remote file or directory"""
     return await router_handler(LocalPathModel, Getatime)(path=path, common=common)
 
-class GettimensResponse(BaseModel):
-    host: str = Field(default="", description="The host the command was executed on")
-    value: int = Field(default=0, description="The time in nano seconds since start of epoch")
-    call: str = Field(default="",description="The caller object")
-    changed: bool = Field(default=False, description="Whether the host changed")
-
+class GettimensResponse(ResponseModel):
+    value: Union[str,  int ]= Field(default=0, description="The time in nano seconds since start of epoch, or an error message")
 
 class GetatimeNs(Local):
     Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.getatime_ns(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.getatime_ns(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/getatimens/", tags=["SFTP Facts"], response_model=List[GettimensResponse])
+@router.get("/getatimens", tags=["SFTP Facts"], response_model=List[GettimensResponse])
 async def getatimens(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the last access time of a remote file or directory"
@@ -189,12 +193,17 @@ class Getmtime(Local):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                return await sftp.getmtime(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.getmtime(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/getmtime/", tags=["SFTP Facts"], response_model=List[GettimeResponse])
+@router.get("/getmtime", tags=["SFTP Facts"], response_model=List[GettimeResponse])
 async def getmtime(
     path: Union[PurePath, str, bytes] = Query(
         ...,
@@ -211,13 +220,17 @@ class GetmtimeNs(Local):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.getmtime_ns(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.getmtime_ns(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/getmtimens/", tags=["SFTP Facts"], response_model=List[GettimensResponse])
+@router.get("/getmtimens", tags=["SFTP Facts"], response_model=List[GettimensResponse])
 async def getmtimens(
     path: Union[PurePath, str, bytes] = Query(
         ...,
@@ -234,13 +247,17 @@ class Getcrtime(Local):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.getcrtime(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.getcrtime(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/getcrtime/", tags=["SFTP Facts"], response_model=List[GettimeResponse])
+@router.get("/getcrtime", tags=["SFTP Facts"], response_model=List[GettimeResponse])
 async def getcrtime(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the creation time of a remote file or directory"
@@ -256,13 +273,17 @@ class GetcrtimeNs(Local):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.getcrtime_ns(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.getcrtime_ns(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/getcrtimens/", tags=["SFTP Facts"], response_model=List[GettimensResponse])
+@router.get("/getcrtimens", tags=["SFTP Facts"], response_model=List[GettimensResponse])
 async def getcrtimens(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the creation time of a remote file or directory"
@@ -273,25 +294,25 @@ async def getcrtimens(
     return await router_handler(LocalPathModel, GetcrtimeNs)(path=path, common=common)
 
 
-class GetcwdResponse(BaseModel):
-    host: str = Field(default="", description="The host the command was executed on")
-    value: str = Field(default=0, description="The path of the current working directory")
-    call: str = Field(default="",description="The caller object")
-    changed: bool = Field(default=False, description="Whether the host changed")
-
+class GetcwdResponse(ResponseModel):
+    value: str = Field(default="", description="The path of the current working directory, or an error message")
 
 class Getcwd(Local):
     Model = LocalModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.getcwd()
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.getcwd()
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/getcwd/", tags=["SFTP Facts"], response_model=List[GetcwdResponse])
+@router.get("/getcwd", tags=["SFTP Facts"], response_model=List[GetcwdResponse])
 async def getcwd(common: LocalModel = Depends(localmodel)) -> List[GetcwdResponse]:
     """# Return the current remote working directory"""
     return await router_handler(LocalModel, Getcwd)(common=common)
@@ -311,12 +332,8 @@ class StatAttrs(BaseModel):
     size: int = Field(default=0, description="File size in bytes")
 
 
-class StatResponse(BaseModel):
-    host: str = Field(default="", description="The host the command was executed on")
-    value: StatAttrs = Field(description="SFTP file attributes")
-    call: str = Field(default="",description="The caller object")
-    changed: bool = Field(default=False, description="Whether the host changed")
-
+class StatResponse(ResponseModel):
+    value: Union[str,  StatAttrs] = Field(default="", description="SFTP file attributes, or an error message")
 
 def sftp_attrs_to_dict(sftp_attrs):
     return {
@@ -334,16 +351,20 @@ class Stat(Local):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                sftp_attrs = await sftp.stat(
-                    caller.path, follow_symlinks=caller.follow_symlinks
-                )
-                return sftp_attrs_to_dict(sftp_attrs)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    sftp_attrs = await sftp.stat(
+                        caller.path, follow_symlinks=caller.follow_symlinks
+                    )
+                    return sftp_attrs_to_dict(sftp_attrs)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/stat/", tags=["SFTP Facts"], response_model=List[StatResponse])
+@router.get("/stat", tags=["SFTP Facts"], response_model=List[StatResponse])
 async def stat(
     path: Union[PurePath, str, bytes] = Query(
         ...,
@@ -378,12 +399,8 @@ class ReadModel(LocalPathModel):
         -1, description="The maximum number of parallel read or write requests"
     )
 
-class ReadResponse(BaseModel):
-    host: str = Field(default="", description="The host the command was executed on")
-    value: str = Field(description="File contents")
-    call: str = Field(default="",description="The caller object")
-    changed: bool = Field(default=False, description="Whether or not the host changed")
-    error: bool = Field(default=False, description="Whether or not there was an error")
+class ReadResponse(ResponseModel):
+    value: str = Field(default="", description="File contents, or an error message")
 
 class Read(Local):
     Model = ReadModel
@@ -411,14 +428,14 @@ class Read(Local):
             return f"{e.__class__.__name__}"
 
 
-@router.get("/command/read/", tags=["SFTP Facts"], response_model=List[ReadResponse])
+@router.get("/read", tags=["SFTP Facts"], response_model=List[ReadResponse])
 async def read(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The name of the remote file to read"
     ),
     encoding: Optional[str] = Query(
         "utf-8",
-        description="The Unicode encoding to use for data read fromthe remote file",
+        description="The Unicode encoding to use for data read from the remote file",
     ),
     errors: Optional[str] = Query(
         "strict",
@@ -445,24 +462,31 @@ async def read(
     return await router_handler(ReadModel, Read)(**params, common=common)
 
 
+class ListdirResponse(ResponseModel):
+    value: Union[str,  List[str]] = Field(default="", description="List of files in directory, or an error message")
+
 class Listdir(Local):
     Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.listdir(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.listdir(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/listdir/", tags=["SFTP Facts"])
+@router.get("/listdir", tags=["SFTP Facts"], response_model=List[ListdirResponse])
 async def listdir(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Read the names of the files in a remote directory"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> List[ListdirResponse]:
     """# Read the names of the files in a remote directory"""
     return await router_handler(LocalPathModel, Listdir)(path=path, common=common)
 
@@ -485,56 +509,69 @@ def sftp_names_to_dict(sftp_names):
     return list
 
 class SFTPFileAttributes(BaseModel):
-    filename: Union[str, bytes] = Field(..., description="Filename")
-    longname: Union[str, bytes] = Field(..., description="Expanded form of filename and attributes")
-    uid: int = Field(..., description="User ID of the file owner")
-    gid: int = Field(..., description="Group ID of the file owner")
-    permissions: int = Field(..., description="File permissions (mode)")
-    atime: int = Field(..., description="Last access time of the file")
-    mtime: int = Field(..., description="Last modification time of the file")
-    size: int = Field(..., description="Size of the file in bytes")
+    filename: Union[str, bytes] = Field(default="",description="Filename")
+    longname: Union[str, bytes] = Field(default="",description="Expanded form of filename and attributes")
+    uid: int = Field(default=0,description="User ID of the file owner")
+    gid: int = Field(default=0,description="Group ID of the file owner")
+    permissions: int = Field(default=0,description="File permissions (mode)")
+    atime: int = Field(default=0,description="Last access time of the file")
+    mtime: int = Field(default=0,description="Last modification time of the file")
+    size: int = Field(default=0,description="Size of the file in bytes")
+
+class ReaddirResponse(ResponseModel):
+    value: Union[str,  List[SFTPFileAttributes]] = Field(default="", description="List of file entries, or an error message")
 
 class Readdir(Local):
     Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                sftp_names = await sftp.readdir(caller.path)
-                return sftp_names_to_dict(sftp_names)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    sftp_names = await sftp.readdir(caller.path)
+                    return sftp_names_to_dict(sftp_names)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/readdir/", tags=["SFTP Facts"])
+@router.get("/readdir", tags=["SFTP Facts"], response_model=List[ReaddirResponse])
 async def readdir(
     path: Union[PurePath, str, bytes] = Query(
         ..., description=" The path of the remote directory to read"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> List[ReaddirResponse]:
     """# Read the contents of a remote directory"""
     return await router_handler(LocalPathModel, Readdir)(path=path, common=common)
 
+class ExistsResponse(ResponseModel):
+    value: Union[str,  bool ]= Field(default=False, description="Whether or not the remote path exists, or an error message")
 
 class Exists(Local):
     Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.exists(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.exists(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/exists/", tags=["SFTP Facts"])
+@router.get("/exists", tags=["SFTP Facts"], response_model=List[ExistsResponse])
 async def exists(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The remote path to check"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> List[ExistsResponse]:
     """# Return if the remote path exists and isn’t a broken symbolic link"""
     return await router_handler(LocalPathModel, Exists)(path=path, common=common)
 
@@ -544,19 +581,23 @@ class Lexists(Local):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.lexists(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.lexists(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/lexists/", tags=["SFTP Facts"])
-async def exists(
+@router.get("/lexists", tags=["SFTP Facts"], response_model=List[ExistsResponse])
+async def lexists(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The remote path to check"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> List[ExistsResponse]:
     """# Return if the remote path exists, without following symbolic links"""
     return await router_handler(LocalPathModel, Lexists)(path=path, common=common)
 
@@ -566,14 +607,18 @@ class Lstat(Local):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                sftp_attrs = await sftp.lstat(caller.path)
-                return sftp_attrs_to_dict(sftp_attrs)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    sftp_attrs = await sftp.lstat(caller.path)
+                    return sftp_attrs_to_dict(sftp_attrs)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/lstat/", tags=["SFTP Facts"], response_model=List[StatResponse])
+@router.get("/lstat", tags=["SFTP Facts"], response_model=List[StatResponse])
 async def lstat(
     path: Union[PurePath, str, bytes] = Query(
         ...,
@@ -585,46 +630,60 @@ async def lstat(
     return await router_handler(LocalPathModel, Lstat)(path=path, common=common)
 
 
+class ReadlinkResponse(ResponseModel):
+    value: str = Field(default="", description="Target of the remote symbolic link, or an error message")
+
 class Readlink(Local):
     Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.readlink(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.readlink(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/readlink/", tags=["SFTP Facts"])
+@router.get("/readlink", tags=["SFTP Facts"], response_model=List[ReadlinkResponse])
 async def readlink(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote symbolic link to follow"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> List[ReadlinkResponse]:
     """# Return the target of a remote symbolic link"""
     return await router_handler(LocalPathModel, Readlink)(path=path, common=common)
 
+
+class GlobResponse(ResponseModel):
+    value: Union[str,  List[str]] = Field(default="", description="File paths matching the pattern, or an error message")
 
 class Glob(Local):
     Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.glob(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.glob(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/glob/", tags=["SFTP Facts"])
+@router.get("/glob", tags=["SFTP Facts"], response_model=List[GlobResponse])
 async def glob(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Glob patterns to try and match remote files against"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> List[GlobResponse]:
     """# Match remote files against glob patterns"""
     return await router_handler(LocalPathModel, Glob)(path=path, common=common)
 
@@ -634,14 +693,18 @@ class GlobSftpName(Local):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                sftp_names = await sftp.glob_sftpname(caller.path)
-                return sftp_names_to_dict(sftp_names)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    sftp_names = await sftp.glob_sftpname(caller.path)
+                    return sftp_names_to_dict(sftp_names)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/globsftpname/", tags=["SFTP Facts"], response_model=List[SFTPFileAttributes])
+@router.get("/globsftpname", tags=["SFTP Facts"], response_model=List[SFTPFileAttributes])
 async def globsftpname(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Glob patterns to try and match remote files against"
@@ -669,37 +732,39 @@ def sftp_vfs_attrs_to_dict(sftp_vfs_attrs):
 
 # Define the Pydantic model for the response schema (without examples)
 class SFTPVFSAttrsResponse(BaseModel):
-    bsize: int = Field(..., description="File system block size (I/O size)")
-    frsize: int = Field(..., description="Fundamental block size (allocation size)")
-    blocks: int = Field(..., description="Total data blocks (in frsize units)")
-    bfree: int = Field(..., description="Free data blocks")
-    bavail: int = Field(..., description="Available data blocks (for non-root)")
-    files: int = Field(..., description="Total file inodes")
-    ffree: int = Field(..., description="Free file inodes")
-    favail: int = Field(..., description="Available file inodes (for non-root)")
-    fsid: int = Field(..., description="File system id")
-    flags: int = Field(..., description="File system flags (read-only, no-setuid)")
-    namemax: int = Field(..., description="Maximum filename length")
+    bsize: int = Field(default=0,description="File system block size (I/O size)")
+    frsize: int = Field(default=0,description="Fundamental block size (allocation size)")
+    blocks: int = Field(default=0,description="Total data blocks (in frsize units)")
+    bfree: int = Field(default=0,description="Free data blocks")
+    bavail: int = Field(default=0,description="Available data blocks (for non-root)")
+    files: int = Field(default=0,description="Total file inodes")
+    ffree: int = Field(default=0,description="Free file inodes")
+    favail: int = Field(default=0,description="Available file inodes (for non-root)")
+    fsid: int = Field(default=0,description="File system id")
+    flags: int = Field(default=0,description="File system flags (read-only, no-setuid)")
+    namemax: int = Field(default=0,description="Maximum filename length")
 
 
-class StatVfsResponse(BaseModel):
-     host: str = Field(..., description="The host the command was executed on")
-     value: SFTPVFSAttrsResponse = Field(..., description="The response containing file system attributes")
-     call: str = Field(..., description="The caller object")
-     changed: bool = Field(default=False, description="Whether the host changed")
+class StatVfsResponse(ResponseModel):
+     value: Union[str,  SFTPVFSAttrsResponse] = Field(default="", description="The response containing file system attributes, or an error message")
 
 class StatVfs(Local):
     Model = LocalPathModel
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                sftp_vfs_attrs = await sftp.statvfs(caller.path)
-                command.changed = False
-                return sftp_vfs_attrs_to_dict(sftp_vfs_attrs)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    sftp_vfs_attrs = await sftp.statvfs(caller.path)
+                    command.changed = False
+                    return sftp_vfs_attrs_to_dict(sftp_vfs_attrs)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-@router.get("/fact/statvfs/", tags=["SFTP Facts"], response_model=List[StatVfsResponse])
+@router.get("/statvfs", tags=["SFTP Facts"], response_model=List[StatVfsResponse])
 async def statvfs(
     path: Union[PurePath, str, bytes] = Query(
         ...,
@@ -713,11 +778,8 @@ async def statvfs(
     )
 
 
-class RealpathResponse(BaseModel):
-    host: str = Field(..., description="The host the command was executed on")
-    value: str = Field(..., description="Canonicalized directory path")
-    call: str = Field(..., description="The caller object")
-    changed: bool = Field(default=False, description="Whether the host changed")
+class RealpathResponse(ResponseModel):
+    value: str = Field(default="", description="Canonicalized directory path, or an error message")
 
 
 class Realpath(Local):
@@ -725,13 +787,17 @@ class Realpath(Local):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return await sftp.realpath(caller.path)
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return await sftp.realpath(caller.path)
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
-
-@router.get("/fact/realpath/", tags=["SFTP Facts"], response_model=List[RealpathResponse])
+@router.get("/realpath", tags=["SFTP Facts"], response_model=List[RealpathResponse])
 async def realpath(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote directory to canonicalize"
@@ -747,40 +813,41 @@ class Client(Local):
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
-        async with asyncssh.connect(**host_info) as conn:
-            async with conn.start_sftp_client() as sftp:
-                command.changed = False
-                return {
-                    "version": sftp.version,
-                    # "logger": sftp.logger,
-                    "max_packet_len": sftp.limits.max_packet_len,
-                    "max_read_len": sftp.limits.max_read_len,
-                    "max_write_len": sftp.limits.max_write_len,
-                    "max_open_handles": sftp.limits.max_open_handles,
-                    "supports_remote_copy": sftp.supports_remote_copy,
-                }
-
+        try:
+            async with asyncssh.connect(**host_info) as conn:
+                async with conn.start_sftp_client() as sftp:
+                    command.changed = False
+                    return {
+                        "version": sftp.version,
+                        # "logger": sftp.logger,
+                        "max_packet_len": sftp.limits.max_packet_len,
+                        "max_read_len": sftp.limits.max_read_len,
+                        "max_write_len": sftp.limits.max_write_len,
+                        "max_open_handles": sftp.limits.max_open_handles,
+                        "supports_remote_copy": sftp.supports_remote_copy,
+                    }
+        except Exception as e:
+            command.error = True
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            return f"{e.__class__.__name__}"
 
 class SFTPInfo(BaseModel):
-    version: int = Field(description="SFTP version associated with this SFTP session")
+    version: int = Field(default=0,description="SFTP version associated with this SFTP session")
     # logger: Optional[asyncssh.logging.SSHLogger] = Field(
     #     None, description="Logger associated with this SFTP client"
     # )
-    max_packet_len: int = Field(description="Max allowed size of an SFTP packet")
-    max_read_len: int = Field(description="Max allowed size of an SFTP read request")
-    max_write_len: int = Field(description="Max allowed size of an SFTP write request")
-    max_open_handles: int = Field(description="Max allowed number of open file handles")
-    supports_remote_copy: bool = Field(
+    max_packet_len: int = Field(default=0,description="Max allowed size of an SFTP packet")
+    max_read_len: int = Field(default=0,description="Max allowed size of an SFTP read request")
+    max_write_len: int = Field(default=0,description="Max allowed size of an SFTP write request")
+    max_open_handles: int = Field(default=0,description="Max allowed number of open file handles")
+    supports_remote_copy: bool = Field(default=0,
         description="Return whether or not SFTP remote copy is supported"
     )
 
-class ClientResponse(BaseModel):
-    host: str = Field(..., description="The host the command was executed on")
-    value: SFTPInfo = Field(..., description="SFTP Information")
-    call: str = Field(..., description="The caller object")
-    changed: bool = Field(default=False, description="Whether the host changed")
+class ClientResponse(ResponseModel):
+    value: Union[str,  SFTPInfo] = Field(default="", description="SFTP Information, or an error message")
 
-@router.get("/fact/client/", tags=["SFTP Facts"], response_model=List[ClientResponse])
+@router.get("/client", tags=["SFTP Facts"], response_model=List[ClientResponse])
 async def client(
     common: LocalModel = Depends(localmodel),
 ) -> List[ClientResponse]:

@@ -11,6 +11,7 @@ from reemote.router_handler import router_handler
 from reemote.models import LocalModel, localmodel, LocalPathModel
 from reemote.local import Local
 from reemote.response import Response
+from reemote.response import ResponseModel
 
 router = APIRouter()
 
@@ -93,6 +94,7 @@ class Copy(Local):
                         remote_only=caller.remote_only,
                     )
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
@@ -119,11 +121,12 @@ class Mcopy(Local):
                         remote_only=caller.remote_only,
                     )
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
-@router.get("/commands/copy/", tags=["SFTP Commands"])
+@router.get("/copy", tags=["SFTP Commands"], response_model=ResponseModel)
 async def copy(
     srcpaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
         ..., description="The paths of the remote files or directories to copy"
@@ -178,7 +181,7 @@ async def copy(
     )
 
 
-@router.get("/commands/mcopy/", tags=["SFTP Commands"])
+@router.get("/mcopy", tags=["SFTP Commands"], response_model=ResponseModel)
 async def mcopy(
     srcpaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
         ..., description="The paths of the remote files or directories to copy"
@@ -309,6 +312,7 @@ class Get(Local):
                         error_handler=caller.error_handler,
                     )
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
@@ -334,11 +338,12 @@ class Mget(Local):
                         error_handler=caller.error_handler,
                     )
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
-@router.get("/commands/get/", tags=["SFTP Commands"])
+@router.get("/get", tags=["SFTP Commands"], response_model=ResponseModel)
 async def get(
     remotepaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
         ..., description="The paths of the remote files or directories to download"
@@ -389,7 +394,7 @@ async def get(
     )
 
 
-@router.get("/commands/mget/", tags=["SFTP Commands"])
+@router.get("/mget", tags=["SFTP Commands"], response_model=ResponseModel)
 async def mget(
     remotepaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
         ..., description="The paths of the remote files or directories to download"
@@ -516,6 +521,7 @@ class Put(Local):
                         error_handler=caller.error_handler,
                     )
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
@@ -541,11 +547,12 @@ class Mput(Local):
                         error_handler=caller.error_handler,
                     )
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
-@router.get("/command/put/", tags=["SFTP Commands"])
+@router.get("/put/", tags=["SFTP Commands"], response_model=ResponseModel)
 async def put(
     localpaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
         ..., description="The paths of the local files or directories to upload"
@@ -596,7 +603,7 @@ async def put(
     )
 
 
-@router.get("/command/mput/", tags=["SFTP Commands"])
+@router.get("/mput", tags=["SFTP Commands"], response_model=ResponseModel)
 async def mput(
     localpaths: Union[PurePath, str, bytes, list[Union[PurePath, str, bytes]]] = Query(
         ..., description="The paths of the local files or directories to upload"
@@ -707,11 +714,12 @@ class Mkdir(Local):
                     else:
                         await sftp.mkdir(path=caller.path)
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
-@router.get("/command/mkdir/", tags=["SFTP Commands"])
+@router.get("/mkdir", tags=["SFTP Commands"], response_model=ResponseModel)
 async def mkdir(
     path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     permissions: Optional[int] = Query(
@@ -754,11 +762,12 @@ class Setstat(Local):
                             path=caller.path, attrs=sftp_attrs
                         )
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
-@router.get("/command/setstat/", tags=["SFTP Commands"])
+@router.get("/setstat", tags=["SFTP Commands"], response_model=ResponseModel)
 async def mkdir(
     path: Union[PurePath, str, bytes] = Query(..., description="The path of the remote file or directory to set attributes for"),
     permissions: Optional[int] = Query(
@@ -804,12 +813,13 @@ class Makedirs(Local):
                     else:
                         await sftp.makedirs(path=caller.path)
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
 
-@router.get("/command/makedirs/", tags=["SFTP Commands"])
+@router.get("/makedirs", tags=["SFTP Commands"], response_model=ResponseModel)
 async def mkdirs(
     path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     permissions: Optional[int] = Query(
@@ -846,11 +856,12 @@ class Rmdir(Local):
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.rmdir(caller.path)
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
-@router.get("/command/rmdir/", tags=["SFTP Commands"])
+@router.get("/rmdir", tags=["SFTP Commands"], response_model=ResponseModel)
 async def rmdir(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote directory to remove"
@@ -872,11 +883,12 @@ class Rmtree(Local):
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.rmtree(caller.path)
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
-@router.get("/command/rmtree/", tags=["SFTP Commands"])
+@router.get("/rmtree", tags=["SFTP Commands"], response_model=ResponseModel)
 async def rmtree(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the parent directory to remove"
@@ -911,11 +923,12 @@ class Chmod(Local):
                         follow_symlinks=caller.follow_symlinks,
                     )
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
-@router.get("/command/chmod/", tags=["SFTP Commands"])
+@router.get("/chmod", tags=["SFTP Commands"], response_model=ResponseModel)
 async def chmod(
     path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     permissions: Optional[int] = Query(
@@ -960,11 +973,12 @@ class Chown(Local):
                         follow_symlinks=caller.follow_symlinks,
                     )
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
-@router.get("/command/chown/", tags=["SFTP Commands"])
+@router.get("/chown", tags=["SFTP Commands"], response_model=ResponseModel)
 async def chown(
     path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     follow_symlinks: bool = Query(
@@ -1014,11 +1028,12 @@ class Utime(Local):
                         follow_symlinks=caller.follow_symlinks,
                     )
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
-@router.get("/command/utime/", tags=["SFTP Commands"])
+@router.get("/utime", tags=["SFTP Commands"], response_model=ResponseModel)
 async def utime(
     path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     follow_symlinks: bool = Query(
@@ -1058,11 +1073,12 @@ class Chdir(Local):
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.chdir(path=caller.path)
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
-@router.get("/command/chdir/", tags=["SFTP Commands"])
+@router.get("/chdir", tags=["SFTP Commands"], response_model=ResponseModel)
 async def chdir(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path to set as the new remote working directory"
@@ -1110,11 +1126,12 @@ class Rename(Local):
                         oldpath=caller.oldpath, newpath=caller.newpath
                     )
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
-@router.get("/command/rename/", tags=["SFTP Commands"])
+@router.get("/rename", tags=["SFTP Commands"], response_model=ResponseModel)
 async def rename(
     oldpath: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote file, directory, or link to rename"
@@ -1141,11 +1158,12 @@ class Remove(Local):
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.remove(path=caller.path)
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
-@router.get("/command/remove/", tags=["SFTP Commands"])
+@router.get("/remove", tags=["SFTP Commands"], response_model=ResponseModel)
 async def remove(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote file or link to remove"
@@ -1231,11 +1249,12 @@ class Write(Local):
                     content = await f.write(caller.text)
                     f.close()
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
-@router.get("/command/write/", tags=["SFTP Commands"])
+@router.get("/write", tags=["SFTP Commands"], response_model=ResponseModel)
 async def write(
     text: str = Query(..., description="The text to write to the remote file"),
     path: Union[PurePath, str, bytes] = Query(
@@ -1329,10 +1348,11 @@ class Link(Local):
                         oldpath=caller.file_path, newpath=caller.link_path
                     )
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/command/link/", tags=["SFTP Commands"])
+@router.get("/link", tags=["SFTP Commands"], response_model=ResponseModel)
 async def link(
     file_path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote file the hard link should point to"
@@ -1360,10 +1380,11 @@ class Symlink(Local):
                         oldpath=caller.file_path, newpath=caller.link_path
                     )
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/command/symlink/", tags=["SFTP Commands"])
+@router.get("/symlink", tags=["SFTP Commands"], response_model=ResponseModel)
 async def symlink(
     file_path: Union[PurePath, str, bytes] = Query(
         ..., description="The path the link should point to"
@@ -1381,7 +1402,7 @@ async def symlink(
 class Unlink(Remove):
     pass
 
-@router.get("/command/unlink/", tags=["SFTP Commands"])
+@router.get("/unlink", tags=["SFTP Commands"], response_model=ResponseModel)
 async def remove(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote link to remove"
@@ -1413,10 +1434,11 @@ class Truncate(Local):
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.truncate(path=caller.file_path, size=caller.size)
         except Exception as e:
+            command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/command/truncate/", tags=["SFTP Commands"])
+@router.get("/truncate", tags=["SFTP Commands"], response_model=ResponseModel)
 async def truncate(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote file to be truncated"

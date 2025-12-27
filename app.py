@@ -102,8 +102,8 @@ app.include_router(commands_apt_router, prefix="/commands/apt")
 app.include_router(facts_apt_router, prefix="/facts/apt")
 app.include_router(operations_apt_router, prefix="/operations/apt")
 app.include_router(commands_server_router, prefix="/commands/server")
-app.include_router(commands_sftp_router, prefix="/commands/sftp")
-app.include_router(facts_sftp_router, prefix="/facts/sftp")
+app.include_router(commands_sftp_router, prefix="/sftp/commands")
+app.include_router(facts_sftp_router, prefix="/sftp/facts")
 app.include_router(commands_scp_router, prefix="/commands/scp")
 
 

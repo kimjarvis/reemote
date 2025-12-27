@@ -408,10 +408,12 @@ async def test_unreachable_host(setup_directory):
                 },
             ],
     )
-    with pytest.raises(OSError):  # Or use asyncssh.Error if applicable
-        await execute(lambda: Root())
+    # with pytest.raises(OSError):  # Or use asyncssh.Error if applicable
+    rl = await execute(lambda: Root())
+    assert any("error" in r for r in rl)
     if isentry("192.168.1.33"):
         delete_entry("192.168.1.33")
+
 
 
 @pytest.mark.asyncio
@@ -656,3 +658,31 @@ async def test_client():
             assert r and r["value"]["version"] == 3
 
     await execute(lambda: Root())
+
+
+@pytest.mark.asyncio
+async def test_unreachable_host_stat(setup_directory):
+    from reemote.facts.sftp import StatVfs
+    from reemote.commands.inventory import add_entry, delete_entry
+    from reemote.facts.inventory import isentry
+
+    class Root:
+        async def execute(self):
+            r = yield StatVfs(path="testdata/dir_a")
+            print(r)
+
+    if isentry("192.168.1.33"):
+        delete_entry("192.168.1.33")
+    add_entry(
+            [
+                {"host": "192.168.1.33", "username": "user", "password": "password"},
+                {
+                    "groups": ["all", "192.168.1.33"],
+                },
+            ],
+    )
+    # with pytest.raises(OSError):  # Or use asyncssh.Error if applicable
+    rl = await execute(lambda: Root())
+    assert any("error" in r for r in rl)
+    if isentry("192.168.1.33"):
+        delete_entry("192.168.1.33")
