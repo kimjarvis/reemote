@@ -1,6 +1,6 @@
 import asyncio
 from reemote.facts.sftp import Isdir, Isfile
-from reemote.execute import execute
+from reemote.execute import endpoint_execute
 
 class Root:
     async def execute(self):
@@ -10,7 +10,7 @@ class Root:
         # r =  yield Isfile(path="/home/user/freddy.txt",group="101")
 
 async def main():
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 if __name__ == "__main__":
     asyncio.run(main())

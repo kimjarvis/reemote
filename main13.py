@@ -1,6 +1,6 @@
 import asyncio
 from reemote.commands.sftp import Put, Get, Copy, Mcopy, Mput, Mget
-from reemote.execute import execute
+from reemote.execute import endpoint_execute
 
 
 class Root:
@@ -18,7 +18,7 @@ class Root:
 
 
 async def main():
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 if __name__ == "__main__":

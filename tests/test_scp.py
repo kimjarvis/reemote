@@ -3,36 +3,40 @@ import pytest
 import sys
 import os
 
-from reemote.facts.sftp import GlobSftpName
-
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from reemote.commands.inventory import create_inventory
-from reemote.execute import execute
+from reemote.inventory import Inventory
+from reemote.execute import endpoint_execute
+from reemote.config import Config
 
 
 # Autouse fixture that runs before each test
 @pytest.fixture(autouse=True)
 def setup_inventory():
-    """Create inventory before each test"""
-    create_inventory(
-        [
-            [
-                {"host": "192.168.1.24", "username": "user", "password": "password"},
-                {
-                    "groups": ["all", "192.168.1.24"],
+    inventory = Inventory(
+        hosts=[
+            {
+                "connection": {
+                    "host": "192.168.1.24",
+                    "username": "user",
+                    "password": "password",
                 },
-            ],
-            [
-                {"host": "192.168.1.76", "username": "user", "password": "password"},
-                {
-                    "groups": ["all", "192.168.1.76"],
+                "host_vars": {"sudo_user": "user"},
+                "groups": ["all", "192.168.1.24"],
+            },
+            {
+                "connection": {
+                    "host": "192.168.1.76",
+                    "username": "user",
+                    "password": "password",
                 },
-            ],
+                "host_vars": {"sudo_user": "user"},
+                "groups": ["all", "192.168.1.76"],
+            },
         ]
     )
-
-
+    config = Config()
+    config.set_inventory(inventory.to_json_serializable())
 
 @pytest.fixture
 def setup_directory():
@@ -48,13 +52,13 @@ def setup_directory():
                     yield Rmtree(path="testdata")
                 yield Upload(srcpaths=["tests/testdata"],dstpath=".",recurse=True)
 
-        await execute(lambda: Root())
+        await endpoint_execute(lambda: Root())
 
     return asyncio.run(inner_fixture())
 
 
 @pytest.mark.asyncio
-async def test_download(setup_directory):
+async def test_download(setup_inventory,setup_directory):
     import os
     from reemote.commands.scp import Download
 
@@ -66,11 +70,11 @@ async def test_download(setup_directory):
 
     if os.path.exists(file_path):
         os.remove(file_path)
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
     assert os.path.exists(file_path)
 
 @pytest.mark.asyncio
-async def test_copy(setup_directory):
+async def test_copy(setup_inventory, setup_directory):
     from reemote.commands.scp import Copy
     from reemote.commands.sftp import Remove
     from reemote.facts.sftp import Isfile
@@ -86,4 +90,4 @@ async def test_copy(setup_directory):
                 if r1:
                     assert r1["value"]
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())

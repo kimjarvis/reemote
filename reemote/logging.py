@@ -2,14 +2,15 @@ import logging
 from reemote.config import Config
 
 
-def reemote_logging():
-    config = Config()
-
+def reemote_logging(filepath: str = None):
+    if not filepath:
+        config = Config()
+        filepath=config.get_logging()
 
     # Configure logging
     logging.basicConfig(
         level=logging.DEBUG,
-        filename=config.get_logging(),
+        filename=filepath,
         filemode="w",  # Overwrite the file each time
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )

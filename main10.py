@@ -1,7 +1,7 @@
 import asyncio
 
 from reemote.operations.apt import Package
-from reemote.execute import execute
+from reemote.execute import endpoint_execute
 from reemote.checks import changed, flatten
 
 
@@ -28,8 +28,7 @@ class Root:
 
 
 async def main():
-    responses = await execute(lambda: Root())
-    # assert changed(responses)
+    await endpoint_execute(lambda: Root())
 
 
 if __name__ == "__main__":

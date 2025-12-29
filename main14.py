@@ -1,7 +1,7 @@
 import asyncio
 
 from reemote.commands.scp import Copy, Download, Upload
-from reemote.execute import execute
+from reemote.execute import endpoint_execute
 
 
 class Root:
@@ -32,7 +32,7 @@ class Root:
 
 
 async def main():
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 if __name__ == "__main__":
     asyncio.run(main())

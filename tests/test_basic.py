@@ -3,35 +3,39 @@ import pytest
 import sys
 import os
 
-from reemote.facts.sftp import GlobSftpName
-
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from reemote.commands.inventory import create_inventory
-from reemote.execute import execute
-
+from reemote.inventory import Inventory
+from reemote.execute import endpoint_execute
+from reemote.config import Config
 
 # Autouse fixture that runs before each test
 @pytest.fixture(autouse=True)
 def setup_inventory():
-    """Create inventory before each test"""
-    create_inventory(
-        [
-            [
-                {"host": "192.168.1.24", "username": "user", "password": "password"},
-                {
-                    "groups": ["all", "192.168.1.24"],
+    inventory = Inventory(
+        hosts=[
+            {
+                "connection": {
+                    "host": "192.168.1.24",
+                    "username": "user",
+                    "password": "password",
                 },
-            ],
-            [
-                {"host": "192.168.1.76", "username": "user", "password": "password"},
-                {
-                    "groups": ["all", "192.168.1.76"],
+                "host_vars": {"sudo_user": "user"},
+                "groups": ["all", "192.168.1.24"],
+            },
+            {
+                "connection": {
+                    "host": "192.168.1.76",
+                    "username": "user",
+                    "password": "password",
                 },
-            ],
+                "host_vars": {"sudo_user": "user"},
+                "groups": ["all", "192.168.1.76"],
+            },
         ]
     )
-
+    config = Config()
+    config.set_inventory(inventory.to_json_serializable())
 
 
 @pytest.fixture
@@ -48,7 +52,7 @@ def setup_directory():
                     yield Rmtree(path="testdata")
                 yield Upload(srcpaths=["tests/testdata"],dstpath=".",recurse=True)
 
-        await execute(lambda: Root())
+        await endpoint_execute(lambda: Root())
 
     return asyncio.run(inner_fixture())
 
@@ -56,7 +60,7 @@ def setup_directory():
 
 
 @pytest.mark.asyncio
-async def test_shell():
+async def test_shell(setup_inventory):
     from reemote.commands.server import Shell
 
     class Root:
@@ -66,11 +70,11 @@ async def test_shell():
                 assert r["value"]["stdout"] == 'Hello\n'
                 assert r["changed"]
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_callback():
+async def test_callback(setup_inventory):
     from reemote.commands.system import Callback
 
     async def _callback(host_info, global_info, command, cp, caller):
@@ -86,11 +90,11 @@ async def test_callback():
                 assert r["value"] == "tested"
                 assert r["changed"]
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_return():
+async def test_return(setup_inventory):
     from reemote.commands.system import Return
     from reemote.commands.server import Shell
 
@@ -107,11 +111,11 @@ async def test_return():
                 assert r["value"][0]["value"]["stdout"] == 'Hello\n'
                 assert r["value"][1]["value"]["stdout"] == 'World\n'
 
-    await execute(lambda: Parent())
+    await endpoint_execute(lambda: Parent())
 
 
 @pytest.mark.asyncio
-async def test_isdir(setup_directory):
+async def test_isdir(setup_inventory,setup_directory):
     from reemote.facts.sftp import Isdir
 
     class Root:
@@ -124,11 +128,11 @@ async def test_isdir(setup_directory):
             if r:
                 assert not r["value"]
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_mkdir(setup_directory):
+async def test_mkdir(setup_inventory, setup_directory):
     from reemote.facts.sftp import Isdir, Stat
     from reemote.commands.sftp import Mkdir
 
@@ -153,11 +157,11 @@ async def test_mkdir(setup_directory):
             # if r:
             #     assert r["value"] == 0xDEADCAFE
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_directory1(setup_directory):
+async def test_directory1(setup_inventory, setup_directory):
     from reemote.operations.sftp import Directory
     from reemote.facts.sftp import Isdir, Stat, Getmtime, Getatime
 
@@ -186,7 +190,7 @@ async def test_directory1(setup_directory):
 
 
 @pytest.mark.asyncio
-async def test_directory(setup_directory):
+async def test_directory(setup_inventory, setup_directory):
     from reemote.operations.sftp import Directory
     from reemote.facts.sftp import Isdir, Stat
 
@@ -217,11 +221,11 @@ async def test_directory(setup_directory):
             response = yield Child()
             print(response)
 
-    await execute(lambda: Parent())
+    await endpoint_execute(lambda: Parent())
 
 
 @pytest.mark.asyncio
-async def test_chmod(setup_directory):
+async def test_chmod(setup_inventory, setup_directory):
     from reemote.commands.sftp import Chmod
     from reemote.facts.sftp import Stat
 
@@ -233,11 +237,11 @@ async def test_chmod(setup_directory):
                 assert r["value"]["permissions"] == 0o700
 
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_chown(setup_directory):
+async def test_chown(setup_inventory, setup_directory):
     from reemote.commands.sftp import Chown
     from reemote.facts.sftp import Stat
 
@@ -249,11 +253,11 @@ async def test_chown(setup_directory):
             if r:
                 assert r["value"]["uid"] == 1000
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_utime(setup_directory):
+async def test_utime(setup_inventory, setup_directory):
     from reemote.commands.sftp import Utime
     from reemote.facts.sftp import Getmtime, Getatime
 
@@ -268,10 +272,10 @@ async def test_utime(setup_directory):
             if r:
                 assert r["value"] == 0xDEADCAFE
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_get_cwd(setup_directory):
+async def test_get_cwd(setup_inventory, setup_directory):
     from reemote.facts.sftp import Getcwd
     from reemote.commands.sftp import Chdir
 
@@ -286,10 +290,10 @@ async def test_get_cwd(setup_directory):
             if r:
                 assert r and r["value"] == "/home/user"
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_rename(setup_directory):
+async def test_rename(setup_inventory, setup_directory):
     from reemote.commands.sftp import Rename
     from reemote.facts.sftp import Isfile
 
@@ -300,10 +304,10 @@ async def test_rename(setup_directory):
             if r:
                 assert r["value"]
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_remove(setup_directory):
+async def test_remove(setup_inventory, setup_directory):
     from reemote.commands.sftp import Remove
     from reemote.facts.sftp import Isfile
 
@@ -314,10 +318,10 @@ async def test_remove(setup_directory):
             if r:
                 assert not r["value"]
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_read(setup_directory):
+async def test_read(setup_inventory, setup_directory):
     from reemote.facts.sftp import Read
 
     class Root:
@@ -326,10 +330,10 @@ async def test_read(setup_directory):
             if r:
                 assert r["value"] == "file_b"
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_write(setup_directory):
+async def test_write(setup_inventory, setup_directory):
     from reemote.commands.sftp import Write
     from reemote.facts.sftp import Isfile
     from reemote.facts.sftp import Read
@@ -344,7 +348,7 @@ async def test_write(setup_directory):
             if r:
                 assert r["value"] == "file_c"
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
@@ -360,22 +364,22 @@ async def test_scp_upload():
                 yield Rmtree(path="testdata")
             yield Upload(srcpaths=["tests/testdata"],dstpath=".",recurse=True)
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_scp_rmtree(setup_directory):
+async def test_scp_rmtree(setup_inventory, setup_directory):
     from reemote.commands.sftp import Rmtree
 
     class Root:
         async def execute(self):
             yield Rmtree(path="/home/user/testdata")
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_catching_sftp_failures(setup_directory):
+async def test_catching_sftp_failures(setup_inventory, setup_directory):
     from reemote.commands.sftp import Mkdir
 
     class Root:
@@ -385,16 +389,15 @@ async def test_catching_sftp_failures(setup_directory):
                     assert r["value"] == "SFTPFailure"
 
     # with pytest.raises(SFTPFailure):  # Verify the SFTPFailure is raised
-    #     await execute(lambda: Root())
-    await execute(lambda: Root())
+    #     await endpoint_execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
+
 
 
 @pytest.mark.asyncio
-async def test_unreachable_host_sftp_command(setup_directory):
+async def test_unreachable_host_sftp_command(setup_inventory, setup_directory):
     from reemote.facts.sftp import Isdir
     from reemote.commands.sftp import Mkdir, Rmdir
-    from reemote.commands.inventory import add_entry, delete_entry
-    from reemote.facts.inventory import isentry
 
     class Root:
         async def execute(self):
@@ -403,26 +406,42 @@ async def test_unreachable_host_sftp_command(setup_directory):
                     yield Rmdir(path="/home/user/dir_e")
                 yield Mkdir(path="/home/user/dir_e")
 
-    if isentry("192.168.1.33"):
-        delete_entry("192.168.1.33")
-    add_entry(
-            [
-                {"host": "192.168.1.33", "username": "user", "password": "password"},
-                {
-                    "groups": ["all", "192.168.1.33"],
+
+    inventory = Inventory(
+        hosts=[
+            {
+                "connection": {
+                    "host": "192.168.1.24",
+                    "username": "user",
+                    "password": "password",
                 },
-            ],
+                "host_vars": {"sudo_user": "user"},
+                "groups": ["all", "192.168.1.24"],
+            },
+            {
+                "connection": {
+                    "host": "192.168.1.1",
+                    "username": "user",
+                    "password": "password",
+                },
+                "host_vars": {"sudo_user": "user"},
+                "groups": ["all", "192.168.1.1"],
+            },
+        ]
     )
-    # with pytest.raises(OSError):  # Or use asyncssh.Error if applicable
-    rl = await execute(lambda: Root())
+    config = Config()
+    config.set_inventory(inventory.to_json_serializable())
+
+
+    rl = await endpoint_execute(lambda: Root())
     assert any("error" in r for r in rl)
-    if isentry("192.168.1.33"):
-        delete_entry("192.168.1.33")
+
+
 
 
 
 @pytest.mark.asyncio
-async def test_listdir(setup_directory):
+async def test_listdir(setup_inventory, setup_directory):
     from reemote.facts.sftp import Listdir
 
     class Root:
@@ -431,10 +450,10 @@ async def test_listdir(setup_directory):
             if r:
                 assert sorted(r["value"]) == sorted(['file_b.txt', '..', '.', 'dir_a'])
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_readdir(setup_directory):
+async def test_readdir(setup_inventory, setup_directory):
     from reemote.facts.sftp import Readdir
 
     class Root:
@@ -445,12 +464,12 @@ async def test_readdir(setup_directory):
                     if entry["filename"]=="file_b.txt":
                         assert entry["permissions"] == 33204
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 
 @pytest.mark.asyncio
-async def test_mkdirs(setup_directory):
+async def test_mkdirs(setup_inventory, setup_directory):
     from reemote.commands.sftp import Makedirs
     from reemote.facts.sftp import Isdir
 
@@ -462,10 +481,10 @@ async def test_mkdirs(setup_directory):
             if r:
                 assert r["value"]
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_link(setup_directory):
+async def test_link(setup_inventory, setup_directory):
     from reemote.commands.sftp import Link
     from reemote.facts.sftp import Read
 
@@ -477,11 +496,11 @@ async def test_link(setup_directory):
             if r:
                 assert r["value"] == "file_b"
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_exists(setup_directory):
+async def test_exists(setup_inventory, setup_directory):
     from reemote.facts.sftp import Exists
 
     class Root:
@@ -489,10 +508,10 @@ async def test_exists(setup_directory):
             r = yield Exists(path="testdata/file_b.txt")
             assert r and r["value"]
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_lexists(setup_directory):
+async def test_lexists(setup_inventory, setup_directory):
     from reemote.facts.sftp import Lexists
 
     class Root:
@@ -500,11 +519,11 @@ async def test_lexists(setup_directory):
             r = yield Lexists(path="testdata/file_b.txt")
             assert r and r["value"]
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_symlink(setup_directory):
+async def test_symlink(setup_inventory, setup_directory):
     from reemote.commands.sftp import Symlink
     from reemote.facts.sftp import Islink
 
@@ -516,10 +535,10 @@ async def test_symlink(setup_directory):
             print(r)
             # assert r and r["value"]
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_unlink(setup_directory):
+async def test_unlink(setup_inventory, setup_directory):
     from reemote.commands.sftp import Symlink, Unlink
     from reemote.facts.sftp import Islink
 
@@ -533,10 +552,10 @@ async def test_unlink(setup_directory):
             r = yield Islink(path="testdata/link_b.txt")
             assert r and not r["value"]
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_lstat(setup_directory):
+async def test_lstat(setup_inventory, setup_directory):
     from reemote.facts.sftp import Lstat
     from reemote.commands.sftp import Symlink
 
@@ -547,10 +566,10 @@ async def test_lstat(setup_directory):
             if r:
                 assert r["value"]["permissions"] == 0o777
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_readlink(setup_directory):
+async def test_readlink(setup_inventory, setup_directory):
     from reemote.commands.sftp import Symlink
     from reemote.facts.sftp import Readlink
 
@@ -561,10 +580,10 @@ async def test_readlink(setup_directory):
             print(r)
             assert r and r["value"] == "testdata/file_b.txt"
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_glob(setup_directory):
+async def test_glob(setup_inventory, setup_directory):
     from reemote.facts.sftp import Glob
 
     class Root:
@@ -573,11 +592,11 @@ async def test_glob(setup_directory):
             print(r)
             assert r and r["value"] == ['/home/user/testdata/file_b.txt']
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_glob_sftpname(setup_directory):
+async def test_glob_sftpname(setup_inventory, setup_directory):
     from reemote.facts.sftp import GlobSftpName
 
     class Root:
@@ -588,11 +607,11 @@ async def test_glob_sftpname(setup_directory):
                     if entry["filename"]=="/home/user/testdata/file_b.txt":
                         assert entry["permissions"] == 33204
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_setstat(setup_directory):
+async def test_setstat(setup_inventory, setup_directory):
     from reemote.commands.sftp import Setstat
     from reemote.facts.sftp import Stat, Getmtime, Getatime
 
@@ -613,11 +632,11 @@ async def test_setstat(setup_directory):
             if r:
                 assert r["value"] == 0xDEADCAFE
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_statvfs(setup_directory):
+async def test_statvfs(setup_inventory, setup_directory):
     from reemote.facts.sftp import StatVfs
 
     class Root:
@@ -626,10 +645,10 @@ async def test_statvfs(setup_directory):
             print(r)
             assert r and r["value"]["namemax"] == 255
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_realpath(setup_directory):
+async def test_realpath(setup_inventory, setup_directory):
     from reemote.facts.sftp import Realpath
 
     class Root:
@@ -638,10 +657,10 @@ async def test_realpath(setup_directory):
             print(r)
             assert r and r["value"] == "/home/user/testdata/dir_a"
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_truncate(setup_directory):
+async def test_truncate(setup_inventory, setup_directory):
     # todo: Why does this return an AttributeError ?
     from reemote.commands.sftp import Truncate
 
@@ -650,7 +669,7 @@ async def test_truncate(setup_directory):
             r = yield Truncate(path="testdata/dir_a",size=8)
             print(r)
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
 async def test_client():
@@ -662,31 +681,41 @@ async def test_client():
             print(r)
             assert r and r["value"]["version"] == 3
 
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio
-async def test_unreachable_host_sftp_fact(setup_directory):
+async def test_unreachable_host_sftp_fact(setup_inventory, setup_directory):
     from reemote.facts.sftp import StatVfs
-    from reemote.commands.inventory import add_entry, delete_entry
-    from reemote.facts.inventory import isentry
 
     class Root:
         async def execute(self):
             r = yield StatVfs(path="testdata/dir_a")
 
-    if isentry("192.168.1.33"):
-        delete_entry("192.168.1.33")
-    add_entry(
-            [
-                {"host": "192.168.1.33", "username": "user", "password": "password"},
-                {
-                    "groups": ["all", "192.168.1.33"],
+    inventory = Inventory(
+        hosts=[
+            {
+                "connection": {
+                    "host": "192.168.1.24",
+                    "username": "user",
+                    "password": "password",
                 },
-            ],
+                "host_vars": {"sudo_user": "user"},
+                "groups": ["all", "192.168.1.24"],
+            },
+            {
+                "connection": {
+                    "host": "192.168.1.1",
+                    "username": "user",
+                    "password": "password",
+                },
+                "host_vars": {"sudo_user": "user"},
+                "groups": ["all", "192.168.1.1"],
+            },
+        ]
     )
-    # with pytest.raises(OSError):  # Or use asyncssh.Error if applicable
-    rl = await execute(lambda: Root())
+    config = Config()
+    config.set_inventory(inventory.to_json_serializable())
+
+    rl = await endpoint_execute(lambda: Root())
     assert any("error" in r for r in rl)
-    if isentry("192.168.1.33"):
-        delete_entry("192.168.1.33")

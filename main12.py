@@ -1,7 +1,8 @@
 import asyncio
 
-from reemote.commands.sftp import Mkdir, Stat
-from reemote.execute import execute
+from reemote.commands.sftp import Mkdir
+from reemote.facts.sftp import Stat
+from reemote.execute import endpoint_execute
 
 
 
@@ -11,7 +12,7 @@ class Root:
         yield Stat(path="/home/user/fred93",group="A",follow_symlinks=True)
 
 async def main():
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 if __name__ == "__main__":
     asyncio.run(main())

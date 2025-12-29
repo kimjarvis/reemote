@@ -13,7 +13,8 @@ from reemote.response import Response  # Changed import
 from reemote.config import Config
 from reemote.logging import reemote_logging
 from reemote.response import ssh_completed_process_to_dict
-
+from reemote.inventory import get_inventory_item, Inventory
+import json
 
 async def pass_through_command(command: Command) -> dict[str, str | None | Any] | None:
     if command.group in command.global_info["groups"]:
@@ -211,73 +212,94 @@ async def pre_order_generator_async(
             raise
 
 
+
+async def process_host(
+    inventory_item: Tuple[Dict[str, Any], Dict[str, Any]],
+    obj_factory: Callable[[], Any],
+) -> List[Response]:
+    responses: List[Response] = []
+
+    # Create a new instance for this host using the factory
+    host_instance = obj_factory()
+
+    # Create async pre-order generator
+    gen = pre_order_generator_async(host_instance)
+
+    # Start the generator
+    operation = None
+    try:
+        operation = await gen.__anext__()
+    except StopAsyncIteration:
+        # Generator completed immediately (no commands to execute)
+        return responses
+
+    while True:
+        try:
+            if isinstance(operation, Command):
+                # Set inventory info
+                # operation.host_info, operation.global_info = inventory_item
+                operation.host_info, operation.global_info = get_inventory_item(inventory_item)
+
+                if operation.type == ConnectionType.LOCAL:
+                    result = await run_command_on_local(operation)
+                elif operation.type == ConnectionType.REMOTE:
+                    result = await run_command_on_host(operation)
+                elif operation.type == ConnectionType.PASSTHROUGH:
+                    result = await pass_through_command(operation)
+                else:
+                    raise ValueError(
+                        f"Unsupported connection type: {operation.type}"
+                    )
+
+                responses.append(result)
+
+                # Send result back and get next operation
+                operation = await gen.asend(result)
+
+            elif isinstance(operation, Response):
+                responses.append(operation)
+                result = operation
+                operation = await gen.asend(result)
+
+            else:
+                raise TypeError(
+                    f"Unsupported type from async generator: {type(operation)}"
+                )
+
+        except StopAsyncIteration:
+            # Async generator is done
+            break
+
+    return responses
+
 async def execute(
     root_obj_factory: Callable[[], Any],
+    inventory: Inventory,
+    logfile: str,
 ) -> List[Response]:  # Changed return type
-    async def process_host(
-        inventory_item: Tuple[Dict[str, Any], Dict[str, Any]],
-        obj_factory: Callable[[], Any],
-    ) -> List[Response]:
-        responses: List[Response] = []
 
-        # Create a new instance for this host using the factory
-        host_instance = obj_factory()
+    reemote_logging(logfile)
 
-        # Create async pre-order generator
-        gen = pre_order_generator_async(host_instance)
+    # Run all hosts in parallel
+    tasks: List[asyncio.Task[List[Response]]] = []  # Changed type
 
-        try:
-            # Start the generator
-            operation = None
-            try:
-                operation = await gen.__anext__()
-            except StopAsyncIteration:
-                # Generator completed immediately (no commands to execute)
-                return responses
+    for item in inventory.to_json_serializable()["hosts"]:
+        task = asyncio.create_task(process_host(item, root_obj_factory))
+        tasks.append(task)
 
-            while True:
-                try:
-                    if isinstance(operation, Command):
-                        # Set inventory info
-                        operation.host_info, operation.global_info = inventory_item
+    # Wait for all hosts to complete
+    all_responses: List[List[Response]] = await asyncio.gather(*tasks)  # Changed type
 
-                        if operation.type == ConnectionType.LOCAL:
-                            result = await run_command_on_local(operation)
-                        elif operation.type == ConnectionType.REMOTE:
-                            result = await run_command_on_host(operation)
-                        elif operation.type == ConnectionType.PASSTHROUGH:
-                            result = await pass_through_command(operation)
-                        else:
-                            raise ValueError(
-                                f"Unsupported connection type: {operation.type}"
-                            )
+    # Flatten the list of lists
+    response: List[Response] = []  # Changed type
+    for host_responses in all_responses:
+        response.extend(host_responses)
 
-                        responses.append(result)
+    return response
 
-                        # Send result back and get next operation
-                        operation = await gen.asend(result)
-
-                    elif isinstance(operation, Response):
-                        responses.append(operation)
-                        result = operation
-                        operation = await gen.asend(result)
-
-                    else:
-                        raise TypeError(
-                            f"Unsupported type from async generator: {type(operation)}"
-                        )
-
-                except StopAsyncIteration:
-                    # Async generator is done
-                    break
-
-        except Exception as e:
-            # Handle any fatal errors for this host
-            print(f"Error on host {inventory_item[0]['host']}: {e.__class__.__name__}")
-            logging.error(f"{inventory_item[0]['host']}: {e.__class__.__name__}")
-            raise
-
-        return responses
+async def endpoint_execute(
+    root_obj_factory: Callable[[], Any],
+) -> List[Response]:  # Changed return type
 
     config = Config()
     reemote_logging()
@@ -285,7 +307,7 @@ async def execute(
     # Run all hosts in parallel
     tasks: List[asyncio.Task[List[Response]]] = []  # Changed type
 
-    for item in config.get_inventory():
+    for item in config.get_inventory()["hosts"]:
         task = asyncio.create_task(process_host(item, root_obj_factory))
         tasks.append(task)
 

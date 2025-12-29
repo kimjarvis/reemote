@@ -1,6 +1,5 @@
 import asyncio
-from reemote.execute import execute
-from reemote.commands.sftp import Mkdir
+from reemote.execute import endpoint_execute
 
 class Root:
     async def execute(self):
@@ -11,7 +10,7 @@ class Root:
         print(r)
 
 async def main():
-    await execute(lambda: Root())
+    await endpoint_execute(lambda: Root())
 
 if __name__ == "__main__":
     asyncio.run(main())

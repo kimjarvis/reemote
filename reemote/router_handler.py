@@ -3,7 +3,7 @@ from typing import Type, Any, Callable
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, ValidationError
 from reemote.models import CommonModel, commonmodel
-from reemote.execute import execute
+from reemote.execute import endpoint_execute
 from reemote.response import validate_responses
 
 
@@ -39,7 +39,7 @@ def router_handler(
             raise HTTPException(status_code=422, detail=e.errors())
 
         # Execute the command with the validated data
-        responses = await execute(lambda: command_class(**all_data))
+        responses = await endpoint_execute(lambda: command_class(**all_data))
 
         # Validate and return responses
         # validated_responses = await validate_responses(responses)

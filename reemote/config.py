@@ -1,8 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Union
-from typing import List, Tuple, Dict, Optional, Set
-import logging
+from typing import Any, Dict, List
 
 class Config:
     # Default data directory (can be overridden)
@@ -79,13 +77,17 @@ class Config:
         config_data = self._read_config()
         return config_data.get("inventory", str(self.default_inventory_path))
 
-    def get_inventory(self) -> List:
-        """Read and return the inventory from the current inventory file."""
+    def get_inventory(self) -> Dict[str, Any]:
+        """
+        Read and return the inventory from the current inventory file.
+        The inventory is expected to be a dictionary with a 'hosts' key containing a list of hosts.
+        """
         inventory_path = self.get_inventory_path()
 
         # Ensure the file exists to avoid errors
         if not Path(inventory_path).exists():
-            raise FileNotFoundError(f"Inventory file not found: {inventory_path}")
+            # Return an empty inventory if the file does not exist
+            return {"hosts": []}
 
         # Read and parse the JSON content from the file
         with open(inventory_path, "r") as f:
@@ -94,10 +96,12 @@ class Config:
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON in inventory file: {e}")
 
-        # Return the inventory data as a list
-        if not isinstance(inventory_data, list):
-            raise TypeError("Inventory data is not in the expected list format.")
-
+        # # Validate the structure of the inventory data
+        # if not isinstance(inventory_data, dict):
+        #     raise TypeError("Inventory data is not in the expected dictionary format.")
+        # if "hosts" not in inventory_data or not isinstance(inventory_data["hosts"], list):
+        #     raise TypeError("Inventory data is missing the 'hosts' key or it is not a list.")
+        # print(inventory_data)
         return inventory_data
 
     def set_inventory(self, inventory_data: List) -> None:

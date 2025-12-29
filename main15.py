@@ -1,7 +1,7 @@
 import asyncio
 
 from reemote.commands.server import Shell
-from reemote.execute import execute
+from reemote.execute import endpoint_execute
 
 
 class A:
@@ -46,7 +46,7 @@ class C:
                         sudo=False)
 
 async def main():
-    responses = await execute(lambda: C())
+    responses = await endpoint_execute(lambda: C())
     print(f"R {responses}")
 
 if __name__ == "__main__":
