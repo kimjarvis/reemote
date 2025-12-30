@@ -6,8 +6,10 @@ from reemote.router_handler import router_handler
 from reemote.models import RemoteModel, remotemodel
 from reemote.remote import Remote
 from reemote.response import Response, SSHCompletedProcessModel
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, RootModel
+from pydantic import ValidationError
 from reemote.response import ResponseModel, ShellResponse
+from reemote.command import command_to_dict
 router = APIRouter()
 
 
@@ -18,11 +20,14 @@ class ShellModel(RemoteModel):
         ...,  # Required field
     )
 
+class ShellResponseModel(RootModel[List[ShellResponse]]):
+    pass
+
 class Shell(Remote):
     Model = ShellModel
 
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        model_instance = self.Model(**self.kwargs)
+        model_instance = self.Model.model_validate(self.kwargs)
 
         yield Command(
             command = model_instance.cmd,
@@ -30,7 +35,7 @@ class Shell(Remote):
             **self.common_kwargs
         )
 
-@router.put("/shell", tags=["Server Commands"], response_model=List[ShellResponse])
+@router.put("/shell", tags=["Server Commands"], response_model=ShellResponseModel)
 async def shell(
         cmd: str = Query(..., description="Shell command"),
         common: RemoteModel = Depends(remotemodel)

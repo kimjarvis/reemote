@@ -16,6 +16,7 @@ class CommonModel(BaseModel):
     su: bool = Field(default=False, description="Whether to use su")
     get_pty: bool = Field(default=False, description="Whether to get a PTY")
 
+
 def common_parameters_to_dict(common_parameters):
     return {
         "group": getattr(common_parameters, "group", "all"),
@@ -24,28 +25,6 @@ def common_parameters_to_dict(common_parameters):
         "su": getattr(common_parameters, "su", False),
         "get_pty": getattr(common_parameters, "get_pty", False),
     }
-
-    # def __repr__(self) -> str:
-    #     """Use detailed_repr for representation"""
-    #     return self.detailed_repr()
-    #
-    # def __str__(self) -> str:
-    #     return self.__repr__()
-    #
-    # def detailed_repr(self) -> str:
-    #     """Show all fields including defaults"""
-    #     field_strings = []
-    #
-    #     # Always include all fields in detailed representation
-    #     if self.group is not None:
-    #         field_strings.append(f"group={self.group!r}")
-    #     if self.name is not None:
-    #         field_strings.append(f"name={self.name!r}")
-    #     field_strings.append(f"sudo={self.sudo!r}")
-    #     field_strings.append(f"su={self.su!r}")
-    #     field_strings.append(f"get_pty={self.get_pty!r}")
-    #
-    #     return f"CommonParams({', '.join(field_strings)})"
 
 
 def commonmodel(
@@ -65,19 +44,17 @@ class LocalModel(BaseModel):
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     group: Optional[str] = Field(
-        default="all",
-        description="The inventory host group. Defaults to 'all'."
+        default="all", description="The inventory host group. Defaults to 'all'."
     )
-    name: Optional[str] = Field(
-        default=None,
-        description="Optional name."
-    )
+    name: Optional[str] = Field(default=None, description="Optional name.")
+
 
 def local_to_dict(local):
     return {
         "group": getattr(local, "group", "all"),
         "name": getattr(local, "name", None),
     }
+
 
 def localmodel(
     group: Optional[str] = Query(
@@ -94,13 +71,9 @@ class LocalPathModel(LocalModel):
         ...,  # Required field
     )
 
-    @field_validator('path', mode='before')
+    @field_validator("path", mode="before")
     @classmethod
     def ensure_path_is_purepath(cls, v):
-        """
-        Ensure the 'path' field is converted to a PurePath object.
-        This runs before the field is validated by Pydantic.
-        """
         if v is None:
             raise ValueError("path cannot be None.")
         if not isinstance(v, PurePath):
@@ -113,28 +86,17 @@ class LocalPathModel(LocalModel):
 
 class RemoteModel(BaseModel):
     """Common parameters shared across command types"""
+
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     group: Optional[str] = Field(
-        default="all",
-        description="Optional inventory group (defaults to 'all')."
+        default="all", description="Optional inventory group (defaults to 'all')."
     )
-    name: Optional[str] = Field(
-        default=None,
-        description="Optional name."
-    )
-    sudo: bool = Field(
-        default=False,
-        description="Execute command with sudo."
-    )
-    su: bool = Field(
-        default=False,
-        description="Execute command with su."
-    )
-    get_pty: bool = Field(
-        default=False,
-        description="Use a pseudo terminal."
-    )
+    name: Optional[str] = Field(default=None, description="Optional name.")
+    sudo: bool = Field(default=False, description="Execute command with sudo.")
+    su: bool = Field(default=False, description="Execute command with su.")
+    get_pty: bool = Field(default=False, description="Use a pseudo terminal.")
+
 
 def remote_to_dict(self):
     return {
@@ -144,28 +106,6 @@ def remote_to_dict(self):
         "su": getattr(self, "su", False),
         "get_pty": getattr(self, "get_pty", False),
     }
-
-    # def __repr__(self) -> str:
-    #     """Use detailed_repr for representation"""
-    #     return self.detailed_repr()
-    #
-    # def __str__(self) -> str:
-    #     return self.__repr__()
-    #
-    # def detailed_repr(self) -> str:
-    #     """Generate a detailed representation dynamically for any derived class."""
-    #     # Get all fields as a dictionary
-    #     fields_dict = self.model_dump()
-    #
-    #     # Format fields for display
-    #     field_reprs = [f"{name}={value!r}" for name, value in fields_dict.items()]
-    #
-    #     # Get class name and remove "Model" suffix if present
-    #     class_name = self.__class__.__name__
-    #     if class_name.endswith("Model"):
-    #         class_name = class_name[:-5]  # Remove "Model" (5 characters)
-    #
-    #     return f"{class_name}({', '.join(field_reprs)})"
 
 
 def remotemodel(
@@ -179,5 +119,3 @@ def remotemodel(
 ) -> RemoteModel:
     """FastAPI dependency for common parameters"""
     return RemoteModel(group=group, name=name, sudo=sudo, su=su, get_pty=get_pty)
-
-

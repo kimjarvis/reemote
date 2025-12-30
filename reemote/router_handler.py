@@ -4,7 +4,6 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel, ValidationError
 from reemote.models import CommonModel, commonmodel
 from reemote.execute import endpoint_execute
-from reemote.response import validate_responses
 
 
 def router_handler(
