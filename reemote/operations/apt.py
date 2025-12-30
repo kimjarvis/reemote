@@ -26,7 +26,8 @@ class Package(Remote):
     async def execute(
         self,
     ) -> AsyncGenerator[GetPackages | Update | Install | Remove, Response]:
-        model_instance = self.Model(**self.kwargs)
+        model_instance = self.Model.model_validate(self.kwargs)
+
         r = yield GetPackages(sudo=True)
         print(r)
         r = yield Update()

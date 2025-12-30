@@ -1,15 +1,17 @@
-from fastapi import APIRouter, Depends, Query
-from pydantic import Field
 from typing import AsyncGenerator, List
+
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field, RootModel, ValidationError
+
 from reemote.command import Command
-from reemote.router_handler import router_handler
 from reemote.models import RemoteModel, remotemodel
 from reemote.remote import Remote
-from reemote.response import Response, SSHCompletedProcessModel
-from pydantic import BaseModel, Field, RootModel
-from pydantic import ValidationError
-from reemote.response import ResponseModel, ShellResponse
-from reemote.command import command_to_dict
+from reemote.response import (
+    Response,
+    ShellResponse,
+)
+from reemote.router_handler import router_handler
+
 router = APIRouter()
 
 

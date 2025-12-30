@@ -13,7 +13,7 @@ class Local:
         self.kwargs = kwargs
 
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        model_instance = self.Model(**self.kwargs)
+        model_instance = self.Model.model_validate(self.kwargs)
 
         yield Command(
             type=ConnectionType.LOCAL,

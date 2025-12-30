@@ -21,7 +21,8 @@ class Directory(Local):
     ) -> AsyncGenerator[
         Isdir | Rmdir | Mkdir | Stat | Chmod | Chown | Utime | Return, Response
     ]:
-        model_instance = self.Model(**self.kwargs)
+        model_instance = self.Model.model_validate(self.kwargs)
+
         changed = False
         isdir = yield Isdir(path=model_instance.path, group=model_instance.group)
         if isdir:

@@ -18,11 +18,8 @@ class CallbackModel(LocalModel):
 class Callback(Local):
     Model = CallbackModel
 
-    def __init__(self, **kwargs):
-        self.kwargs = kwargs
-
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        model_instance = self.Model(**self.kwargs)
+        model_instance = self.Model.model_validate(self.kwargs)
 
         yield Command(
             type=ConnectionType.LOCAL,
@@ -40,11 +37,9 @@ class ReturnModel(LocalModel):
 class Return(Local):
     Model = ReturnModel
 
-    def __init__(self, **kwargs):
-        self.kwargs = kwargs
-
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        model_instance = self.Model(**self.kwargs)
+        model_instance = self.Model.model_validate(self.kwargs)
+
         yield Command(
             type=ConnectionType.PASSTHROUGH,
             value=model_instance.value,

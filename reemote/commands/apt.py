@@ -18,7 +18,7 @@ class Install(Remote):
     Model = InstallModel
 
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        model_instance = self.Model(**self.kwargs)
+        model_instance = self.Model.model_validate(self.kwargs)
 
         yield Command(
             command=f"apt-get install -y {' '.join(model_instance.packages)}",
@@ -48,7 +48,7 @@ class Remove(Remote):
     Model = RemoveModel
 
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        model_instance = self.Model(**self.kwargs)
+        model_instance = self.Model.model_validate(self.kwargs)
 
         yield Command(
             command=f"apt-get remove -y {' '.join(model_instance.packages)}",
@@ -72,7 +72,7 @@ async def remove(
 
 class Update(Remote):
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        model_instance = self.Model(**self.kwargs)
+        model_instance = self.Model.model_validate(self.kwargs)
 
         yield Command(
             command="apt-get update",
@@ -95,7 +95,7 @@ async def update(
 
 class Upgrade(Remote):
     async def execute(self) -> AsyncGenerator[Command, Response]:
-        model_instance = self.Model(**self.kwargs)
+        model_instance = self.Model.model_validate(self.kwargs)
 
         yield Command(
             command="apt-get upgrade",
