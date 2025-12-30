@@ -25,7 +25,7 @@ class Callback(Local):
             type=ConnectionType.LOCAL,
             value=model_instance.value,
             callback=model_instance.callback,
-            call=str(model_instance),
+            call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,
         )
@@ -44,7 +44,7 @@ class Return(Local):
             type=ConnectionType.PASSTHROUGH,
             value=model_instance.value,
             changed=model_instance.changed,
-            call=str(model_instance),
+            call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,
         )

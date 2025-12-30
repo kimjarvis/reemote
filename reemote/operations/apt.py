@@ -28,10 +28,27 @@ class Package(Remote):
     ) -> AsyncGenerator[GetPackages | Update | Install | Remove, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
 
-        r = yield GetPackages(sudo=True)
-        print(r)
-        r = yield Update()
-        print(r)
+        pre = yield GetPackages(sudo=True)
+
+        if model_instance.update:
+            yield Update(**self.common_kwargs)
+
+        if model_instance.packages:
+            if model_instance.present:
+                yield Install(
+                    packages=model_instance.packages, **self.common_kwargs
+                )
+            else:
+                yield Remove(
+                    packages=model_instance.packages, **self.common_kwargs
+                )
+
+        post = yield GetPackages()
+
+        changed = pre["value"] != post["value"]
+
+        yield Return(changed=changed, value=None)
+
         return
 
 

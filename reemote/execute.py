@@ -67,7 +67,7 @@ async def run_command_on_host(command: Command) -> Response:
                         full_command = f"sudo {command.command}"
                     else:
                         full_command = f"echo {command.global_info['sudo_password']} | sudo -S {command.command}"
-                    cp = await conn.run(full_command, check=False)
+                    cp = await conn.run(full_command, check=False) # true -> check if command was successful, exception if not
                 elif command.su:
                     full_command = (
                         f"su {command.global_info['su_user']} -c '{command.command}'"

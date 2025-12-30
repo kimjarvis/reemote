@@ -15,7 +15,8 @@ async def main():
             sudo=True,
         )
     )
-    print(r)
+    for x in r:
+        print(x)
 
 
 if __name__ == "__main__":

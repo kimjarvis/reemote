@@ -12,7 +12,7 @@ async def main():
     class Root:
         async def execute(self):
             r = yield Install(
-                name="install tree", packages=["tree", "vim"], group="all", sudo=True
+                name="install tree", packages=["tree", "vim"], group="all", sudo=True, get_pty=True
             )
             print(r)
             # if r:

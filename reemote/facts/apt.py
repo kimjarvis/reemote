@@ -33,9 +33,11 @@ class GetPackagesResponse(ResponseModel):
 
 class GetPackages(Remote):
     async def execute(self) -> AsyncGenerator[Command, Response]:
+        model_instance = self.Model.model_validate(self.kwargs)
+
         result = yield Command(
-            command=f"apt list --installed | head -3",
-            call=str(self.Model(**self.kwargs)),
+            command=f"apt list --installed",
+            call=self.__class__.child + "(" + str(model_instance) + ")",
             **self.common_kwargs,
         )
         parsed_packages = parse_apt_list_installed(result["value"]["stdout"])

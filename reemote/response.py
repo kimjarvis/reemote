@@ -6,10 +6,10 @@ from pydantic import Field
 from pydantic import BaseModel
 
 class SSHCompletedProcessModel(BaseModel):
-    env: Optional[Dict[str, str]] = Field(
-        default=None,
-        description="The environment the client requested to be set for the process."
-    )
+    # env: Optional[Dict[str, str]] = Field(
+    #     default=None,
+    #     description="The environment the client requested to be set for the process."
+    # )
     command: Optional[str] = Field(
         default=None,
         description="The command the client requested the process to execute (if any)."
@@ -41,7 +41,7 @@ class SSHCompletedProcessModel(BaseModel):
 
 def ssh_completed_process_to_dict(ssh_completed_process):
     return {
-        "env": getattr(ssh_completed_process, "env", None),
+        # "env": getattr(ssh_completed_process, "env", None),
         "command": getattr(ssh_completed_process, "command", None),
         "subsystem": getattr(ssh_completed_process, "subsystem", None),
         "exit_status": getattr(ssh_completed_process, "exit_status", None),

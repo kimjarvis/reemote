@@ -20,4 +20,4 @@ def reemote_logging(filepath: str = None):
     logger.setLevel(logging.DEBUG)  # Set desired log level for your logger
 
     # Suppress asyncssh logs by setting its log level to WARNING or higher
-    logging.getLogger("asyncssh").setLevel(logging.WARNING)
+    # logging.getLogger("asyncssh").setLevel(logging.WARNING)
