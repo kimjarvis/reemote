@@ -354,3 +354,7 @@ class ResponseModel(BaseModel):
     error: bool = Field(default=False, description="Whether or not there was an error")
     value: str = Field(default="", description="Error message")
 
+class ShellResponse(ResponseModel):
+    value: SSHCompletedProcessModel = Field(
+        default=None, description="The results from the executed command."
+    )

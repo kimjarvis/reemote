@@ -4,11 +4,23 @@ from reemote.commands.apt import Install
 
 
 async def main():
-    await endpoint_execute(
-        lambda: Install(
-            name="install tree", packages=["tree", "vim"], group="all", sudo=True
-        )
-    )
+    # await endpoint_execute(
+    #     lambda: Install(
+    #         name="install tree", packages=["tree", "vim"], group="all", sudo=True
+    #     )
+    # )
+    class Root:
+        async def execute(self):
+            r = yield Install(
+                name="install tree", packages=["tree", "vim"], group="all", sudo=True
+            )
+            print(r)
+            # if r:
+            #     assert r["value"]["stdout"] == 'Hello\n'
+            #     assert r["changed"]
+
+    await endpoint_execute(lambda: Root())
+
 
 
 if __name__ == "__main__":

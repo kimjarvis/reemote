@@ -2,6 +2,8 @@ from reemote.models import RemoteModel
 
 
 class Remote:
+    Model = RemoteModel
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         cls.child = cls.__name__  # Set the 'child' field to the name of the subclass

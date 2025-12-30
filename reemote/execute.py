@@ -115,10 +115,11 @@ async def run_command_on_host(command: Command) -> Response:
             logging.error(f"{e} {command}", exc_info=True)
             raise
         r = {
-            "value": ssh_completed_process_to_dict(cp),
             "host": command.host_info.get("host"),
+            "value": ssh_completed_process_to_dict(cp),
             "call": command.call,
-            "changed": command.changed
+            "changed": command.changed,
+            "error": command.error,
         }
         logging.info(f"{r}")
         return r

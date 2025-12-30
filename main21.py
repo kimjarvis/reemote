@@ -10,11 +10,10 @@ async def main():
     #     )
     # )
     # await execute(lambda: Remove(packages=["tree", "vim"], group="all", sudo=True))
-    await endpoint_execute(lambda: Update(sudo=True))
+    # await endpoint_execute(lambda: Update(sudo=True))
     # await execute(lambda: Upgrade(sudo=True))
-    r=await endpoint_execute(lambda: GetPackages())
-    if r:
-        print(r[-1]["value"])
+    r = await endpoint_execute(lambda: GetPackages())
+    print(r)
 
 if __name__ == "__main__":
     asyncio.run(main())

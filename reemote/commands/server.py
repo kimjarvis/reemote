@@ -7,7 +7,7 @@ from reemote.models import RemoteModel, remotemodel
 from reemote.remote import Remote
 from reemote.response import Response, SSHCompletedProcessModel
 from pydantic import BaseModel, Field
-from reemote.response import ResponseModel
+from reemote.response import ResponseModel, ShellResponse
 router = APIRouter()
 
 
@@ -16,12 +16,6 @@ router = APIRouter()
 class ShellModel(RemoteModel):
     cmd: str = Field(
         ...,  # Required field
-    )
-
-class ShellResponse(ResponseModel):
-    value: SSHCompletedProcessModel = Field(
-        default=None,
-        description="The results from the executed command."
     )
 
 class Shell(Remote):
@@ -36,7 +30,7 @@ class Shell(Remote):
             **self.common_kwargs
         )
 
-@router.get("/shell", tags=["Server Commands"], response_model=List[ShellResponse])
+@router.put("/shell", tags=["Server Commands"], response_model=List[ShellResponse])
 async def shell(
         cmd: str = Query(..., description="Shell command"),
         common: RemoteModel = Depends(remotemodel)

@@ -5,15 +5,17 @@ from reemote.operations.apt import Package
 
 
 async def main():
-    await endpoint_execute(
+    r = await endpoint_execute(
         lambda: Package(
             name="apt package tree",
             packages=["tree"],
+            update=True,
             present=False,
             group="all",
             sudo=True,
         )
     )
+    print(r)
 
 
 if __name__ == "__main__":
