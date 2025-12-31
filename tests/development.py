@@ -3,22 +3,28 @@ import pytest
 from reemote.execute import endpoint_execute
 
 @pytest.mark.asyncio
-async def test_return(setup_inventory):
-    from reemote.commands.system import Return
-    from reemote.commands.server import Shell
+async def test_directory1(setup_inventory, setup_directory):
+    from reemote.operations.sftp import Directory
+    from reemote.facts.sftp import Isdir, Stat, Getmtime, Getatime
 
     class Child:
         async def execute(self):
-            a = yield Shell(cmd="echo Hello")
-            b = yield Shell(cmd="echo World")
-            yield Return(value=[a, b],changed=True)
-
-    class Parent:
-        async def execute(self):
-            r = yield Child()
+            yield Directory(
+                present=True,
+                path="testdata/new_dir",
+                permissions=0o700,
+                atime=10,
+                mtime=20,
+            )
+            r = yield Isdir(path="testdata/new_dir")
             if r:
-                assert r["value"][0]["value"]["stdout"] == 'Hello\n'
-                assert r["value"][1]["value"]["stdout"] == 'World\n'
-                assert r["changed"]
-
-    await endpoint_execute(lambda: Parent())
+                assert r["value"]
+            r = yield Stat(path="testdata/new_dir")
+            if r:
+                assert r["value"]["permissions"] == 0o700
+            r = yield Getmtime(path="testdata/new_dir")
+            if r:
+                assert r["value"] == 20
+            r = yield Getatime(path="testdata/new_dir")
+            if r:
+                assert r["value"] == 10

@@ -8,6 +8,7 @@ from reemote.commands.scp import router as commands_scp_router
 from reemote.commands.server import router as commands_server_router
 from reemote.commands.sftp import router as commands_sftp_router
 from reemote.facts.sftp import router as facts_sftp_router
+from reemote.operations.sftp import router as operations_sftp_router
 from reemote.inventory import router as inventory_management_router
 
 import argparse
@@ -84,6 +85,12 @@ Create files and directories on remote servers and transfer files to from server
 Get information about files and directories on servers.
                 """,
         },
+        {
+            "name": "SFTP Operations",
+            "description": """
+Get information about files and directories on servers.
+                    """,
+        },
     ],
 )
 
@@ -96,6 +103,8 @@ app.include_router(facts_apt_router, prefix="/apt/facts")
 app.include_router(operations_apt_router, prefix="/apt/operations")
 app.include_router(commands_server_router, prefix="/server/commands")
 app.include_router(commands_sftp_router, prefix="/sftp/commands")
+app.include_router(operations_sftp_router, prefix="/sftp/operations")
+
 app.include_router(facts_sftp_router, prefix="/sftp/facts")
 app.include_router(commands_scp_router, prefix="/scp/commands")
 
