@@ -19,7 +19,7 @@ def setup_inventory():
                     "username": "user",
                     "password": "password",
                 },
-                "host_vars": {"sudo_user": "user"},
+                "host_vars": {"sudo_user": "user", "sudo_password": "password"},
                 "groups": ["all", "192.168.1.24"],
             },
             {
@@ -28,7 +28,7 @@ def setup_inventory():
                     "username": "user",
                     "password": "password",
                 },
-                "host_vars": {"sudo_user": "user"},
+                "host_vars": {"sudo_user": "user", "sudo_password": "password"},
                 "groups": ["all", "192.168.1.76"],
             },
         ]
@@ -49,7 +49,7 @@ def setup_directory():
                 r = yield Isdir(path="testdata")
                 if r and r["value"]:
                     yield Rmtree(path="testdata")
-                yield Upload(srcpaths=["tests/testdata"],dstpath=".",recurse=True)
+                yield Upload(srcpaths=["tests/testdata"], dstpath=".", recurse=True)
 
         await endpoint_execute(lambda: Root())
 

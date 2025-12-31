@@ -1,9 +1,9 @@
 # Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com
 # This software is licensed under the MIT License. See the LICENSE file for details.
 #
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union, List
 from pydantic import Field
-from pydantic import BaseModel
+from pydantic import BaseModel, RootModel
 
 class SSHCompletedProcessModel(BaseModel):
     # env: Optional[Dict[str, str]] = Field(
@@ -70,7 +70,10 @@ class ResponseModel(BaseModel):
 
 
 
-class ShellResponse(ResponseModel):
+class ShellResponseElement(ResponseModel):
     value: SSHCompletedProcessModel = Field(
         default=None, description="The results from the executed command."
     )
+
+class ShellResponseModel(RootModel[List[ShellResponseElement]]):
+    pass

@@ -5,17 +5,17 @@ from reemote.router_handler import router_handler
 from reemote.models import CommonModel, commonmodel, RemoteModel
 from reemote.remote import Remote
 from reemote.response import Response
-from reemote.response import ShellResponse
+from reemote.response import ShellResponseModel
 
 router = APIRouter()
 
 
-class InstallModel(RemoteModel):
+class InstallRequestModel(RemoteModel):
     packages: list[str]
 
 
 class Install(Remote):
-    Model = InstallModel
+    Model = InstallRequestModel
 
     async def execute(self) -> AsyncGenerator[Command, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
@@ -27,17 +27,17 @@ class Install(Remote):
         )
 
 
-@router.get(
+@router.post(
     "/install",
     tags=["APT Package Manager Commands"],
-    response_model=List[ShellResponse],
+    response_model=ShellResponseModel,
 )
 async def install(
     packages: list[str] = Query(..., description="List of package names"),
     common: CommonModel = Depends(commonmodel),
-) -> list[dict]:
+) -> ShellResponseModel:
     """# Install APT packages"""
-    return await router_handler(InstallModel, Install)(packages=packages, common=common)
+    return await router_handler(InstallRequestModel, Install)(packages=packages, common=common)
 
 
 class RemoveModel(RemoteModel):
@@ -57,15 +57,15 @@ class Remove(Remote):
         )
 
 
-@router.get(
+@router.post(
     "/remove",
     tags=["APT Package Manager Commands"],
-    response_model=List[ShellResponse],
+    response_model=ShellResponseModel,
 )
 async def remove(
     packages: list[str] = Query(..., description="List of package names"),
     common: CommonModel = Depends(commonmodel),
-) -> list[dict]:
+) -> ShellResponseModel:
     """# Remove APT packages"""
     return await router_handler(RemoveModel, Remove)(packages=packages, common=common)
 
@@ -81,14 +81,14 @@ class Update(Remote):
         )
 
 
-@router.get(
+@router.post(
     "/update",
     tags=["APT Package Manager Commands"],
-    response_model=List[ShellResponse],
+    response_model=ShellResponseModel,
 )
 async def update(
     common: CommonModel = Depends(commonmodel),
-) -> list[dict]:
+) -> ShellResponseModel:
     """# Update APT packages"""
     return await router_handler(RemoteModel, Update)(common=common)
 
@@ -104,13 +104,13 @@ class Upgrade(Remote):
         )
 
 
-@router.get(
+@router.post(
     "/upgrade",
     tags=["APT Package Manager Commands"],
-    response_model=List[ShellResponse],
+    response_model=ShellResponseModel,
 )
 async def upgrade(
     common: CommonModel = Depends(commonmodel),
-) -> list[dict]:
+) -> ShellResponseModel:
     """# Upgrade APT packages"""
     return await router_handler(RemoteModel, Upgrade)(common=common)

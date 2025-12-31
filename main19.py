@@ -1,6 +1,6 @@
 import asyncio
 from reemote.execute import endpoint_execute
-from reemote.commands.server import Shell
+from reemote.server import Shell
 
 async def main():
     responses = await endpoint_execute(lambda: Shell(cmd="echo Hello World!"))

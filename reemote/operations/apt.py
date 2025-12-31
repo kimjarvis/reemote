@@ -15,13 +15,13 @@ from reemote.commands.server import Shell
 router = APIRouter()
 
 
-class PackageModel(RemoteModel):
+class PackageRequestModel(RemoteModel):
     packages: list[str]
     update: bool = Field(default=False, description="Whether or not to update the package list")
     present: bool = Field(default=True, description="Whether or not the packages should be present")
 
 class Package(Remote):
-    Model = PackageModel
+    Model = PackageRequestModel
 
     async def execute(
         self,
@@ -52,7 +52,7 @@ class Package(Remote):
         return
 
 
-@router.get("/package", tags=["APT Package Manager Operations"])
+@router.put("/package", tags=["APT Package Manager Operations"])
 async def package(
     packages: list[str] = Query(..., description="List of package names"),
     present: bool = Query(
@@ -62,7 +62,7 @@ async def package(
     common: CommonModel = Depends(commonmodel),
 ) -> list[dict]:
     """# Manage installed APT packages"""
-    return await router_handler(PackageModel, Package)(
+    return await router_handler(PackageRequestModel, Package)(
         common=common,
         packages=packages,
         present=present,

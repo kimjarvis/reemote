@@ -8,39 +8,36 @@ from reemote.models import RemoteModel, remotemodel
 from reemote.remote import Remote
 from reemote.response import (
     Response,
-    ShellResponse,
+    ShellResponseModel,
 )
 from reemote.router_handler import router_handler
 
 router = APIRouter()
 
 
-
-
-class ShellModel(RemoteModel):
+class ShellRequestModel(RemoteModel):
     cmd: str = Field(
         ...,  # Required field
     )
 
-class ShellResponseModel(RootModel[List[ShellResponse]]):
-    pass
 
 class Shell(Remote):
-    Model = ShellModel
+    Model = ShellRequestModel
 
     async def execute(self) -> AsyncGenerator[Command, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
 
         yield Command(
-            command = model_instance.cmd,
+            command=model_instance.cmd,
             call=self.__class__.child + "(" + str(model_instance) + ")",
-            **self.common_kwargs
+            **self.common_kwargs,
         )
 
-@router.put("/shell", tags=["Server Commands"], response_model=ShellResponseModel)
+
+@router.post("/shell", tags=["Server Commands"], response_model=ShellResponseModel)
 async def shell(
-        cmd: str = Query(..., description="Shell command"),
-        common: RemoteModel = Depends(remotemodel)
-) -> List[ShellResponse]:
+    cmd: str = Query(..., description="Shell command"),
+    common: RemoteModel = Depends(remotemodel),
+) -> ShellResponseModel:
     """# Execute a shell command on the remote host"""
-    return await router_handler(ShellModel, Shell)(cmd=cmd, common=common)
+    return await router_handler(ShellRequestModel, Shell)(cmd=cmd, common=common)

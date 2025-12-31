@@ -9,14 +9,15 @@ from reemote.remote import Remote
 from reemote.local import Local
 
 
-class CallbackModel(LocalModel):
+class CallbackRequestModel(LocalModel):
     callback: Callable = Field(
         ...,  # Required field
     )
     value: Any
 
+
 class Callback(Local):
-    Model = CallbackModel
+    Model = CallbackRequestModel
 
     async def execute(self) -> AsyncGenerator[Command, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
@@ -30,12 +31,14 @@ class Callback(Local):
             group=model_instance.group,
         )
 
-class ReturnModel(LocalModel):
+
+class ReturnRequestModel(LocalModel):
     value: Any
     changed: bool
 
+
 class Return(Local):
-    Model = ReturnModel
+    Model = ReturnRequestModel
 
     async def execute(self) -> AsyncGenerator[Command, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
