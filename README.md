@@ -4,8 +4,8 @@ POC for RestAPI FastAPI pydantic
 Run the script
 
 ```bash
-cd ~/restpoc
-uv run python -m uvicorn reemote:app --reload --port 8001
+cd ~/reemote
+uv run python -m uvicorn app:app --reload --port 8001
 ```
 
 Docs
