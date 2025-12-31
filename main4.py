@@ -1,6 +1,6 @@
 import asyncio
 from reemote.execute import endpoint_execute
-from reemote.commands.apt import Remove
+from reemote.api.apt import Remove
 
 
 async def main():

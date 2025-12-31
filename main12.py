@@ -1,7 +1,7 @@
 import asyncio
 
 from reemote.commands.sftp import Mkdir
-from reemote.facts.sftp import Stat
+from reemote.api.sftp import Stat
 from reemote.execute import endpoint_execute
 
 

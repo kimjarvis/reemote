@@ -1,6 +1,6 @@
 import asyncio
 
-from reemote.commands.scp import Copy, Download, Upload
+from reemote.api.scp import Copy, Download, Upload
 from reemote.execute import endpoint_execute
 
 

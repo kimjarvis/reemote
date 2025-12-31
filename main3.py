@@ -1,6 +1,6 @@
 import asyncio
 from reemote.execute import endpoint_execute
-from reemote.commands.apt import Install
+from reemote.api.apt import Install
 
 
 async def main():

@@ -1,15 +1,11 @@
 import sys
 from fastapi import FastAPI
 
-from reemote.commands.apt import router as commands_apt_router
-from reemote.facts.apt import router as facts_apt_router
-from reemote.operations.apt import router as operations_apt_router
-from reemote.commands.scp import router as commands_scp_router
-from reemote.commands.server import router as commands_server_router
-from reemote.commands.sftp import router as commands_sftp_router
-from reemote.facts.sftp import router as facts_sftp_router
-from reemote.operations.sftp import router as operations_sftp_router
-from reemote.inventory import router as inventory_management_router
+from reemote.api.apt import router as apt_router
+from reemote.api.scp import router as scp_router
+from reemote.api.server import router as server_router
+from reemote.api.sftp import router as sftp_router
+from reemote.api.inventory import router as inventory_router
 
 import argparse
 from reemote.config import Config
@@ -46,67 +42,40 @@ Inventory management.
             """,
         },
         {
-            "name": "APT Package Manager Commands",
+            "name": "Server Operations",
             "description": """
-Manage software installed on the servers.
-            """,
-        },
-        {
-            "name": "APT Package Manager Facts",
-            "description": """
-Manage software installed on the servers.
+Get information about the servers and issue shell commands. 
                     """,
         },
         {
-            "name": "APT Package Manager Operations",
-            "description": """Manage software installed on the servers.""",
-        },
-        {
-            "name": "Server Commands",
+            "name": "APT Package Manager",
             "description": """
-Get information about the servers and issue shell commands. 
+Manage software installed on the servers.
             """,
         },
         {
-            "name": "SCP Commands",
+            "name": "SCP Operations",
             "description": """
 Copy files and directories to and from remote servers.
             """,
         },
         {
-            "name": "SFTP Commands",
+            "name": "SFTP",
             "description": """
 Create files and directories on remote servers and transfer files to from servers.
-            """,
-        },
-        {
-            "name": "SFTP Facts",
-            "description": """
-Get information about files and directories on servers.
-                """,
-        },
-        {
-            "name": "SFTP Operations",
-            "description": """
-Get information about files and directories on servers.
                     """,
         },
     ],
 )
 
-# Include the inventory router under a specific prefix (optional)
-app.include_router(inventory_management_router, prefix="/inventory/management")
 
-# Include the inventory router under a specific prefix (optional)
-app.include_router(commands_apt_router, prefix="/apt/commands")
-app.include_router(facts_apt_router, prefix="/apt/facts")
-app.include_router(operations_apt_router, prefix="/apt/operations")
-app.include_router(commands_server_router, prefix="/server/commands")
-app.include_router(commands_sftp_router, prefix="/sftp/commands")
-app.include_router(operations_sftp_router, prefix="/sftp/operations")
+app.include_router(inventory_router, prefix="/inventory")
+app.include_router(server_router, prefix="/server")
 
-app.include_router(facts_sftp_router, prefix="/sftp/facts")
-app.include_router(commands_scp_router, prefix="/scp/commands")
+app.include_router(apt_router, prefix="/apt")
+
+app.include_router(sftp_router, prefix="/sftp")
+app.include_router(scp_router, prefix="/scp")
 
 
 @app.on_event("startup")

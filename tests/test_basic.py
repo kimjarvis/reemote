@@ -5,7 +5,7 @@ from reemote.execute import endpoint_execute
 
 @pytest.mark.asyncio
 async def test_shell(setup_inventory):
-    from reemote.commands.server import Shell
+    from reemote.api.server import Shell
 
     class Root:
         async def execute(self):
@@ -19,7 +19,7 @@ async def test_shell(setup_inventory):
 
 @pytest.mark.asyncio
 async def test_callback(setup_inventory):
-    from reemote.commands.system import Callback
+    from reemote.api.system import Callback
 
     async def _callback(host_info, global_info, command, cp, caller):
         assert command.value == "test callback"
@@ -39,8 +39,8 @@ async def test_callback(setup_inventory):
 
 @pytest.mark.asyncio
 async def test_return(setup_inventory):
-    from reemote.commands.system import Return
-    from reemote.commands.server import Shell
+    from reemote.api.system import Return
+    from reemote.api.server import Shell
 
     class Child:
         async def execute(self):
@@ -60,7 +60,7 @@ async def test_return(setup_inventory):
 
 @pytest.mark.asyncio
 async def test_isdir(setup_inventory,setup_directory):
-    from reemote.facts.sftp import Isdir
+    from reemote.api.sftp import Isdir
 
     class Root:
         async def execute(self):
@@ -78,7 +78,7 @@ async def test_isdir(setup_inventory,setup_directory):
 
 @pytest.mark.asyncio
 async def test_mkdir(setup_inventory, setup_directory):
-    from reemote.facts.sftp import Isdir, Stat
+    from reemote.api.sftp import Isdir, Stat
     from reemote.commands.sftp import Mkdir
 
     class Root:
@@ -108,7 +108,7 @@ async def test_mkdir(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_directory1(setup_inventory, setup_directory):
     from reemote.operations.sftp import Directory
-    from reemote.facts.sftp import Isdir, Stat, Getmtime, Getatime
+    from reemote.api.sftp import Isdir, Stat, Getmtime
 
     class Root:
         async def execute(self):
@@ -138,7 +138,7 @@ async def test_directory1(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_directory(setup_inventory, setup_directory):
     from reemote.operations.sftp import Directory
-    from reemote.facts.sftp import Isdir, Stat
+    from reemote.api.sftp import Isdir, Stat
 
     class Child:
         async def execute(self):
@@ -173,7 +173,7 @@ async def test_directory(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_chmod(setup_inventory, setup_directory):
     from reemote.commands.sftp import Chmod
-    from reemote.facts.sftp import Stat
+    from reemote.api.sftp import Stat
 
     class Root:
         async def execute(self):
@@ -189,7 +189,7 @@ async def test_chmod(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_chown(setup_inventory, setup_directory):
     from reemote.commands.sftp import Chown
-    from reemote.facts.sftp import Stat
+    from reemote.api.sftp import Stat
 
     # todo: note that this isn't supported on SFTPv3, we need a system version
     class Root:
@@ -205,7 +205,7 @@ async def test_chown(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_utime(setup_inventory, setup_directory):
     from reemote.commands.sftp import Utime
-    from reemote.facts.sftp import Getmtime, Getatime
+    from reemote.api.sftp import Getmtime, Getatime
 
     # todo: note that this isn't supported on SFTPv3, we need a system version
     class Root:
@@ -222,7 +222,7 @@ async def test_utime(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_get_cwd(setup_inventory, setup_directory):
-    from reemote.facts.sftp import Getcwd
+    from reemote.api.sftp import Getcwd
     from reemote.commands.sftp import Chdir
 
     class Root:
@@ -241,7 +241,7 @@ async def test_get_cwd(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_rename(setup_inventory, setup_directory):
     from reemote.commands.sftp import Rename
-    from reemote.facts.sftp import Isfile
+    from reemote.api.sftp import Isfile
 
     class Root:
         async def execute(self):
@@ -255,7 +255,7 @@ async def test_rename(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_remove(setup_inventory, setup_directory):
     from reemote.commands.sftp import Remove
-    from reemote.facts.sftp import Isfile
+    from reemote.api.sftp import Isfile
 
     class Root:
         async def execute(self):
@@ -268,7 +268,7 @@ async def test_remove(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_read(setup_inventory, setup_directory):
-    from reemote.facts.sftp import Read
+    from reemote.api.sftp import Read
 
     class Root:
         async def execute(self):
@@ -281,8 +281,8 @@ async def test_read(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_write(setup_inventory, setup_directory):
     from reemote.commands.sftp import Write
-    from reemote.facts.sftp import Isfile
-    from reemote.facts.sftp import Read
+    from reemote.api.sftp import Isfile
+    from reemote.api.sftp import Read
 
     class Root:
         async def execute(self):
@@ -299,9 +299,9 @@ async def test_write(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_scp_upload():
-    from reemote.facts.sftp import Isdir
+    from reemote.api.sftp import Isdir
     from reemote.commands.sftp import Rmtree
-    from reemote.commands.scp import Upload
+    from reemote.api.scp import Upload
 
     class Root:
         async def execute(self):
@@ -344,7 +344,7 @@ async def test_catching_sftp_failures(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_listdir(setup_inventory, setup_directory):
-    from reemote.facts.sftp import Listdir
+    from reemote.api.sftp import Listdir
 
     class Root:
         async def execute(self):
@@ -356,7 +356,7 @@ async def test_listdir(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_readdir(setup_inventory, setup_directory):
-    from reemote.facts.sftp import Readdir
+    from reemote.api.sftp import Readdir
 
     class Root:
         async def execute(self):
@@ -373,13 +373,12 @@ async def test_readdir(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_mkdirs(setup_inventory, setup_directory):
     from reemote.commands.sftp import Makedirs
-    from reemote.facts.sftp import Isdir
+    from reemote.api.sftp import Isdir
 
     class Root:
         async def execute(self):
-            r = yield Makedirs(path="testdata/x/y")
+            yield Makedirs(path="testdata/x/y")
             r = yield Isdir(path="testdata/x/y")
-            print(r)
             if r:
                 assert r["value"]
 
@@ -388,12 +387,11 @@ async def test_mkdirs(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_link(setup_inventory, setup_directory):
     from reemote.commands.sftp import Link
-    from reemote.facts.sftp import Read
+    from reemote.api.sftp import Read
 
     class Root:
         async def execute(self):
-            r = yield Link(file_path="testdata/file_b.txt",link_path="testdata/link_b.txt")
-            print(r)
+            yield Link(file_path="testdata/file_b.txt",link_path="testdata/link_b.txt")
             r = yield Read(path="testdata/link_b.txt")
             if r:
                 assert r["value"] == "file_b"
@@ -403,7 +401,7 @@ async def test_link(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_exists(setup_inventory, setup_directory):
-    from reemote.facts.sftp import Exists
+    from reemote.api.sftp import Exists
 
     class Root:
         async def execute(self):
@@ -414,7 +412,7 @@ async def test_exists(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_lexists(setup_inventory, setup_directory):
-    from reemote.facts.sftp import Lexists
+    from reemote.api.sftp import Lexists
 
     class Root:
         async def execute(self):
@@ -427,30 +425,27 @@ async def test_lexists(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_symlink(setup_inventory, setup_directory):
     from reemote.commands.sftp import Symlink
-    from reemote.facts.sftp import Islink
-
-    class Root:
-        async def execute(self):
-            r = yield Symlink(file_path="testdata/file_b.txt", link_path="testdata/link_b.txt")
-            print(r)
-            r = yield Islink(path="testdata/link_b.txt")
-            print(r)
-            # assert r and r["value"]
-
-    await endpoint_execute(lambda: Root())
-
-@pytest.mark.asyncio
-async def test_unlink(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Symlink, Unlink
-    from reemote.facts.sftp import Islink
+    from reemote.api.sftp import Islink
 
     class Root:
         async def execute(self):
             yield Symlink(file_path="testdata/file_b.txt", link_path="testdata/link_b.txt")
             r = yield Islink(path="testdata/link_b.txt")
             assert r and r["value"]
-            r = yield Unlink(path="testdata/link_b.txt")
-            print(r)
+
+    await endpoint_execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_unlink(setup_inventory, setup_directory):
+    from reemote.commands.sftp import Symlink, Unlink
+    from reemote.api.sftp import Islink
+
+    class Root:
+        async def execute(self):
+            yield Symlink(file_path="testdata/file_b.txt", link_path="testdata/link_b.txt")
+            r = yield Islink(path="testdata/link_b.txt")
+            assert r and r["value"]
+            yield Unlink(path="testdata/link_b.txt")
             r = yield Islink(path="testdata/link_b.txt")
             assert r and not r["value"]
 
@@ -458,7 +453,7 @@ async def test_unlink(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_lstat(setup_inventory, setup_directory):
-    from reemote.facts.sftp import Lstat
+    from reemote.api.sftp import Lstat
     from reemote.commands.sftp import Symlink
 
     class Root:
@@ -473,25 +468,23 @@ async def test_lstat(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_readlink(setup_inventory, setup_directory):
     from reemote.commands.sftp import Symlink
-    from reemote.facts.sftp import Readlink
+    from reemote.api.sftp import Readlink
 
     class Root:
         async def execute(self):
             yield Symlink(file_path="testdata/file_b.txt", link_path="testdata/link_b.txt")
             r = yield Readlink(path="testdata/link_b.txt")
-            print(r)
             assert r and r["value"] == "testdata/file_b.txt"
 
     await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
 async def test_glob(setup_inventory, setup_directory):
-    from reemote.facts.sftp import Glob
+    from reemote.api.sftp import Glob
 
     class Root:
         async def execute(self):
             r = yield Glob(path="/home/user/testdata/file*.*")
-            print(r)
             assert r and r["value"] == ['/home/user/testdata/file_b.txt']
 
     await endpoint_execute(lambda: Root())
@@ -499,7 +492,7 @@ async def test_glob(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_glob_sftpname(setup_inventory, setup_directory):
-    from reemote.facts.sftp import GlobSftpName
+    from reemote.api.sftp import GlobSftpName
 
     class Root:
         async def execute(self):
@@ -515,7 +508,7 @@ async def test_glob_sftpname(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_setstat(setup_inventory, setup_directory):
     from reemote.commands.sftp import Setstat
-    from reemote.facts.sftp import Stat, Getmtime, Getatime
+    from reemote.api.sftp import Stat, Getmtime, Getatime
 
     class Root:
         async def execute(self):
@@ -524,7 +517,6 @@ async def test_setstat(setup_inventory, setup_directory):
                         mtime=0xACAFEDAD,
                         permissions=0o700)
             r = yield Stat(path="testdata/dir_a")
-            print(r)
             if r:
                 assert r["value"]["permissions"] == 0o700
             r = yield Getmtime(path="testdata/dir_a")
@@ -539,24 +531,22 @@ async def test_setstat(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_statvfs(setup_inventory, setup_directory):
-    from reemote.facts.sftp import StatVfs
+    from reemote.api.sftp import StatVfs
 
     class Root:
         async def execute(self):
             r = yield StatVfs(path="testdata/dir_a")
-            print(r)
             assert r and r["value"]["namemax"] == 255
 
     await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
 async def test_realpath(setup_inventory, setup_directory):
-    from reemote.facts.sftp import Realpath
+    from reemote.api.sftp import Realpath
 
     class Root:
         async def execute(self):
             r = yield Realpath(path="testdata/dir_a")
-            print(r)
             assert r and r["value"] == "/home/user/testdata/dir_a"
 
     await endpoint_execute(lambda: Root())
@@ -569,18 +559,16 @@ async def test_truncate(setup_inventory, setup_directory):
     class Root:
         async def execute(self):
             r = yield Truncate(path="testdata/dir_a",size=8)
-            print(r)
 
     await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
 async def test_client():
-    from reemote.facts.sftp import Client
+    from reemote.api.sftp import Client
 
     class Root:
         async def execute(self):
             r = yield Client()
-            print(r)
             assert r and r["value"]["version"] == 3
 
     await endpoint_execute(lambda: Root())

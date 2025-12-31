@@ -1,6 +1,6 @@
 import asyncio
 from reemote.execute import endpoint_execute
-from reemote.facts.sftp import Isdir
+from reemote.api.sftp import Isdir
 
 
 async def main():

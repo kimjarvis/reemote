@@ -1,10 +1,10 @@
 import asyncio
-from reemote.inventory import Inventory, InventoryItem
+from reemote.api.inventory import Inventory
 from reemote.execute import execute
 
 
 async def main():
-    from reemote.commands.server import Shell
+    from reemote.api.server import Shell
 
     inventory = Inventory(
         hosts=[

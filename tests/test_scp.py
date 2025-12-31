@@ -10,9 +10,9 @@ def setup_scp_directory():
     async def inner_fixture():
         class Root:
             async def execute(self):
-                from reemote.commands.scp import Upload
+                from reemote.api.scp import Upload
                 from reemote.commands.sftp import Rmtree
-                from reemote.facts.sftp import Isdir
+                from reemote.api.sftp import Isdir
 
                 r = yield Isdir(path="testdata_scp")
                 if r and r["value"]:
@@ -30,7 +30,7 @@ def setup_scp_directory():
 async def test_download(setup_inventory, setup_scp_directory):
     import os
 
-    from reemote.commands.scp import Download
+    from reemote.api.scp import Download
 
     class Root:
         async def execute(self):
@@ -50,9 +50,9 @@ async def test_download(setup_inventory, setup_scp_directory):
 
 @pytest.mark.asyncio
 async def test_copy(setup_inventory, setup_scp_directory):
-    from reemote.commands.scp import Copy
+    from reemote.api.scp import Copy
     from reemote.commands.sftp import Remove
-    from reemote.facts.sftp import Isfile
+    from reemote.api.sftp import Isfile
 
     class Root:
         async def execute(self):

@@ -3,7 +3,7 @@ from reemote.execute import endpoint_execute
 
 class Root:
     async def execute(self):
-        from reemote.commands.scp import Copy
+        from reemote.api.scp import Copy
 
         r = yield Copy(srcpaths=["/home/user/testdata/file_b.txt"], dstpath="/home/user/testdata/file_c.txt",
                        group="192.168.1.24", dsthost="192.168.1.76")

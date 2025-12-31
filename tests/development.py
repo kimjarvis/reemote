@@ -1,11 +1,10 @@
 import pytest
 
-from reemote.execute import endpoint_execute
 
 @pytest.mark.asyncio
 async def test_directory1(setup_inventory, setup_directory):
     from reemote.operations.sftp import Directory
-    from reemote.facts.sftp import Isdir, Stat, Getmtime, Getatime
+    from reemote.api.sftp import Isdir, Stat, Getmtime, Getatime
 
     class Child:
         async def execute(self):

@@ -1,8 +1,8 @@
 import pytest
 
-from reemote.commands.apt import Install, Remove, Update, Upgrade
-from reemote.facts.apt import GetPackages
-from reemote.operations.apt import Package
+from reemote.api.apt import Install, Remove, Update, Upgrade
+from reemote.api.apt import GetPackages
+from reemote.api.apt import Package
 from reemote.execute import endpoint_execute
 
 
@@ -84,22 +84,3 @@ async def test_packages(setup_inventory):
 
     await endpoint_execute(lambda: Root())
 
-
-#
-# @pytest.mark.asyncio
-# async def test_apt_package():
-#     class Test_apt_package:
-#         async def execute(self):
-#             r = yield Package(
-#                 name="1", packages=["tree"], present=False, group="all", sudo=True
-#             )
-#             r = yield Package(
-#                 name="2", packages=["tree"], present=True, group="all", sudo=True
-#             )
-#
-#     """Test getting apt packages information without errors"""
-#     responses = await execute(lambda: Test_apt_package())
-#     validated_responses = await validate_responses(responses)
-#     for r in validated_responses:
-#         if r.name == "2":
-#             assert r.changed

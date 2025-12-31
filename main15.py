@@ -1,6 +1,6 @@
 import asyncio
 
-from reemote.commands.server import Shell
+from reemote.api.server import Shell
 from reemote.execute import endpoint_execute
 
 

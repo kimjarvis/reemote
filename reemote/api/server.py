@@ -1,7 +1,7 @@
-from typing import AsyncGenerator, List
+from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field, RootModel, ValidationError
+from pydantic import Field
 
 from reemote.command import Command
 from reemote.models import RemoteModel, remotemodel
@@ -34,7 +34,7 @@ class Shell(Remote):
         )
 
 
-@router.post("/shell", tags=["Server Commands"], response_model=ShellResponseModel)
+@router.post("/shell", tags=["Server Operations"], response_model=ShellResponseModel)
 async def shell(
     cmd: str = Query(..., description="Shell command"),
     common: RemoteModel = Depends(remotemodel),

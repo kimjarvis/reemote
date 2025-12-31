@@ -1,28 +1,17 @@
-from pydantic import Field
-from typing import AsyncGenerator, Union
+from typing import Union
 from reemote.local import Local
-from reemote.response import Response
 from reemote.models import LocalModel, localmodel, LocalPathModel
-from reemote.commands.sftp import Mkdir, MkdirModel
-from reemote.facts.sftp import Isdir, Stat
+from reemote.commands.sftp import Mkdir
+from reemote.api.sftp import Isdir, Stat
 from reemote.commands.sftp import Rmdir, Chmod, Chown, Utime
-from reemote.commands.system import Return
-from reemote.response import ResponseModel
 
 from pathlib import PurePath
 from typing import AsyncGenerator, Optional
 from fastapi import APIRouter, Query, Depends
-from reemote.models import CommonModel, commonmodel, RemoteModel
-from reemote.remote import Remote
 from reemote.response import Response
-from reemote.commands.apt import Install, Remove, Update, Upgrade
-from reemote.facts.apt import GetPackages
-from reemote.checks import mark_unchanged
-from reemote.commands.system import Return
-from pydantic import BaseModel, Field, field_validator
-from reemote.response import ResponseElement, ResponseModel
-from reemote.router_handler import router_handler
-from reemote.commands.server import Shell
+from reemote.api.system import Return
+from pydantic import Field
+from reemote.response import ResponseModel
 from reemote.router_handler import router_handler_put
 
 router = APIRouter()
@@ -100,7 +89,7 @@ class Directory(Local):
             yield Return(value=None, changed=changed)
 
 
-@router.put("/directory", tags=["SFTP Operations"], response_model=ResponseModel)
+@router.put("/directory", tags=["SFTP"], response_model=ResponseModel)
 async def directory(
     path: Union[PurePath, str, bytes] = Query(..., description="Directory path"),
     present: Optional[bool] = Query(...,

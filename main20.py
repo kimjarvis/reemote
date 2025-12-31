@@ -1,6 +1,6 @@
 import asyncio
 from reemote.execute import endpoint_execute
-from reemote.facts.sftp import StatVfs
+from reemote.api.sftp import StatVfs
 
 async def main():
     r = await endpoint_execute(lambda: StatVfs(path="/home/user/testdata"))

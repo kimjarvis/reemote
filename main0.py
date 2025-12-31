@@ -4,7 +4,7 @@ from reemote.execute import endpoint_execute
 
 class Hello:
     async def execute(self):
-        from reemote.commands.server import Shell
+        from reemote.api.server import Shell
 
         r = yield Shell(name="echo", cmd="echo Hello Kimbo!", group="all", sudo=False)
         r = yield Shell(name="echo", cmd="echo Hello World!", group="all", sudo=False)

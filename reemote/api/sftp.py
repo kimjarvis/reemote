@@ -35,7 +35,7 @@ class Islink(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/islink", tags=["SFTP Facts"], response_model=List[IslinkResponse])
+@router.get("/islink", tags=["SFTP"], response_model=List[IslinkResponse])
 async def islink(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Path to check if it's a link"
@@ -63,7 +63,7 @@ class Isfile(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/isfile", tags=["SFTP Facts"], response_model=List[IsfileResponse])
+@router.get("/isfile", tags=["SFTP"], response_model=List[IsfileResponse])
 async def isfile(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Path to check if it's a file"
@@ -92,7 +92,7 @@ class Isdir(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/isdir", tags=["SFTP Facts"], response_model=List[IsdirResponse])
+@router.get("/isdir", tags=["SFTP"], response_model=List[IsdirResponse])
 async def isdir(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Path to check if it's a directory"
@@ -121,7 +121,7 @@ class Getsize(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/getsize", tags=["SFTP Facts"], response_model=List[GetsizeResponse])
+@router.get("/getsize", tags=["SFTP"], response_model=List[GetsizeResponse])
 async def getsize(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the size of a remote file or directory"
@@ -149,7 +149,7 @@ class Getatime(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/getatime", tags=["SFTP Facts"],response_model=List[GettimeResponse])
+@router.get("/getatime", tags=["SFTP"],response_model=List[GettimeResponse])
 async def getatime(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the last access time of a remote file or directory"
@@ -177,7 +177,7 @@ class GetatimeNs(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/getatimens", tags=["SFTP Facts"], response_model=List[GettimensResponse])
+@router.get("/getatimens", tags=["SFTP"], response_model=List[GettimensResponse])
 async def getatimens(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the last access time of a remote file or directory"
@@ -203,7 +203,7 @@ class Getmtime(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/getmtime", tags=["SFTP Facts"], response_model=List[GettimeResponse])
+@router.get("/getmtime", tags=["SFTP"], response_model=List[GettimeResponse])
 async def getmtime(
     path: Union[PurePath, str, bytes] = Query(
         ...,
@@ -230,7 +230,7 @@ class GetmtimeNs(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/getmtimens", tags=["SFTP Facts"], response_model=List[GettimensResponse])
+@router.get("/getmtimens", tags=["SFTP"], response_model=List[GettimensResponse])
 async def getmtimens(
     path: Union[PurePath, str, bytes] = Query(
         ...,
@@ -257,7 +257,7 @@ class Getcrtime(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/getcrtime", tags=["SFTP Facts"], response_model=List[GettimeResponse])
+@router.get("/getcrtime", tags=["SFTP"], response_model=List[GettimeResponse])
 async def getcrtime(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the creation time of a remote file or directory"
@@ -283,7 +283,7 @@ class GetcrtimeNs(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/getcrtimens", tags=["SFTP Facts"], response_model=List[GettimensResponse])
+@router.get("/getcrtimens", tags=["SFTP"], response_model=List[GettimensResponse])
 async def getcrtimens(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the creation time of a remote file or directory"
@@ -312,7 +312,7 @@ class Getcwd(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/getcwd", tags=["SFTP Facts"], response_model=List[GetcwdResponse])
+@router.get("/getcwd", tags=["SFTP"], response_model=List[GetcwdResponse])
 async def getcwd(common: LocalModel = Depends(localmodel)) -> List[GetcwdResponse]:
     """# Return the current remote working directory"""
     return await router_handler(LocalModel, Getcwd)(common=common)
@@ -364,7 +364,7 @@ class Stat(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/stat", tags=["SFTP Facts"], response_model=List[StatResponse])
+@router.get("/stat", tags=["SFTP"], response_model=List[StatResponse])
 async def stat(
     path: Union[PurePath, str, bytes] = Query(
         ...,
@@ -428,7 +428,7 @@ class Read(Local):
             return f"{e.__class__.__name__}"
 
 
-@router.get("/read", tags=["SFTP Facts"], response_model=List[ReadResponse])
+@router.get("/read", tags=["SFTP"], response_model=List[ReadResponse])
 async def read(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The name of the remote file to read"
@@ -480,7 +480,7 @@ class Listdir(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/listdir", tags=["SFTP Facts"], response_model=List[ListdirResponse])
+@router.get("/listdir", tags=["SFTP"], response_model=List[ListdirResponse])
 async def listdir(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Read the names of the files in a remote directory"
@@ -537,7 +537,7 @@ class Readdir(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/readdir", tags=["SFTP Facts"], response_model=List[ReaddirResponse])
+@router.get("/readdir", tags=["SFTP"], response_model=List[ReaddirResponse])
 async def readdir(
     path: Union[PurePath, str, bytes] = Query(
         ..., description=" The path of the remote directory to read"
@@ -565,7 +565,7 @@ class Exists(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/exists", tags=["SFTP Facts"], response_model=List[ExistsResponse])
+@router.get("/exists", tags=["SFTP"], response_model=List[ExistsResponse])
 async def exists(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The remote path to check"
@@ -591,7 +591,7 @@ class Lexists(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/lexists", tags=["SFTP Facts"], response_model=List[ExistsResponse])
+@router.get("/lexists", tags=["SFTP"], response_model=List[ExistsResponse])
 async def lexists(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The remote path to check"
@@ -618,7 +618,7 @@ class Lstat(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/lstat", tags=["SFTP Facts"], response_model=List[StatResponse])
+@router.get("/lstat", tags=["SFTP"], response_model=List[StatResponse])
 async def lstat(
     path: Union[PurePath, str, bytes] = Query(
         ...,
@@ -648,7 +648,7 @@ class Readlink(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/readlink", tags=["SFTP Facts"], response_model=List[ReadlinkResponse])
+@router.get("/readlink", tags=["SFTP"], response_model=List[ReadlinkResponse])
 async def readlink(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote symbolic link to follow"
@@ -677,7 +677,7 @@ class Glob(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/glob", tags=["SFTP Facts"], response_model=List[GlobResponse])
+@router.get("/glob", tags=["SFTP"], response_model=List[GlobResponse])
 async def glob(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Glob patterns to try and match remote files against"
@@ -704,7 +704,7 @@ class GlobSftpName(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/globsftpname", tags=["SFTP Facts"], response_model=List[SFTPFileAttributes])
+@router.get("/globsftpname", tags=["SFTP"], response_model=List[SFTPFileAttributes])
 async def globsftpname(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Glob patterns to try and match remote files against"
@@ -764,7 +764,7 @@ class StatVfs(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/statvfs", tags=["SFTP Facts"], response_model=List[StatVfsResponse])
+@router.get("/statvfs", tags=["SFTP"], response_model=List[StatVfsResponse])
 async def statvfs(
     path: Union[PurePath, str, bytes] = Query(
         ...,
@@ -797,7 +797,7 @@ class Realpath(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/realpath", tags=["SFTP Facts"], response_model=List[RealpathResponse])
+@router.get("/realpath", tags=["SFTP"], response_model=List[RealpathResponse])
 async def realpath(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote directory to canonicalize"
@@ -847,7 +847,7 @@ class SFTPInfo(BaseModel):
 class ClientResponse(ResponseElement):
     value: Union[str,  SFTPInfo] = Field(default="", description="SFTP Information, or an error message")
 
-@router.get("/client", tags=["SFTP Facts"], response_model=List[ClientResponse])
+@router.get("/client", tags=["SFTP"], response_model=List[ClientResponse])
 async def client(
     common: LocalModel = Depends(localmodel),
 ) -> List[ClientResponse]:

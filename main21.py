@@ -1,7 +1,7 @@
 import asyncio
 from reemote.execute import endpoint_execute
-from reemote.facts.apt import GetPackages
-from reemote.commands.apt import Update
+from reemote.api.apt import GetPackages
+
 
 async def main():
     # await execute(

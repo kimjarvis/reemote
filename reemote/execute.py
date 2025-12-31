@@ -2,7 +2,6 @@
 # This software is licensed under the MIT License. See the LICENSE file for details.
 #
 import logging
-import sys
 import asyncssh
 import asyncio
 import inspect
@@ -13,8 +12,8 @@ from reemote.response import Response  # Changed import
 from reemote.config import Config
 from reemote.logging import reemote_logging
 from reemote.response import ssh_completed_process_to_dict
-from reemote.inventory import get_inventory_item, Inventory
-import json
+from reemote.api.inventory import get_inventory_item, Inventory
+
 
 async def pass_through_command(command: Command) -> dict[str, str | None | Any] | None:
     if command.group in command.global_info["groups"]:

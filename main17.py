@@ -1,5 +1,5 @@
 import asyncio
-from reemote.facts.sftp import Isdir, Isfile
+from reemote.api.sftp import Isdir
 from reemote.execute import endpoint_execute
 
 class Root:

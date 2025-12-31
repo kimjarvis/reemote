@@ -1,7 +1,7 @@
 import asyncio
 from reemote.execute import endpoint_execute
 from reemote.operations.sftp import Directory
-from reemote.facts.sftp import Isdir, Stat, Getmtime, Getatime
+from reemote.api.sftp import Isdir, Stat, Getmtime, Getatime
 
 
 class Root:

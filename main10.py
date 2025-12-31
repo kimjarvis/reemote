@@ -1,6 +1,6 @@
 import asyncio
 
-from reemote.operations.apt import Package
+from reemote.api.apt import Package
 from reemote.execute import endpoint_execute
 from reemote.checks import changed, flatten
 
