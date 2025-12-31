@@ -11,7 +11,7 @@ We can use the `remote` command to connect to the server and execute a shell com
 import asyncio
 from reemote.execute import execute
 from reemote.api.server import Shell
-from reemote.commands.inventory import create_inventory
+from reemote.api.inventory  import create_inventory
 
 
 async def main():
@@ -68,7 +68,7 @@ can be edited manually or modified using the RestAPI.  The program can be run ag
 import asyncio
 from reemote.execute import execute
 from reemote.api.server import Shell
-from reemote.commands.inventory import create_inventory
+from reemote.api.inventory  import create_inventory
 
 
 async def main():
@@ -89,7 +89,7 @@ Commands can be composed.   In this example, the order of execution is determine
 import asyncio
 from reemote.execute import execute
 from reemote.api.server import Shell
-from reemote.commands.inventory import create_inventory
+from reemote.api.inventory  import create_inventory
 
 
 class Message:
@@ -137,7 +137,7 @@ This exemple demonstrates synchronous execution.  The order in which the two ser
 import asyncio
 from reemote.execute import execute
 from reemote.api.server import Shell
-from reemote.commands.inventory import create_inventory
+from reemote.api.inventory  import create_inventory
 
 
 class Message:

@@ -1,7 +1,7 @@
 import asyncio
 from reemote.execute import execute
 from reemote.api.server import Shell
-from reemote.commands.inventory import create_inventory
+from reemote.api.inventory  import create_inventory
 
 
 async def main():
