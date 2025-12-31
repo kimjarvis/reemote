@@ -8,7 +8,7 @@ from pydantic import Field
 from reemote.router_handler import router_handler
 from reemote.models import LocalModel, localmodel
 from reemote.local import Local
-from reemote.response import ResponseModel
+from reemote.response import ResponseElement, ResponseModel
 
 router = APIRouter()
 
@@ -47,7 +47,7 @@ class Upload(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/upload", tags=["SCP Commands"], response_model=List[ResponseModel])
+@router.get("/upload", tags=["SCP Commands"], response_model=ResponseModel)
 async def upload(
         srcpaths: List[str] = Query(
             ...,
@@ -81,7 +81,7 @@ async def upload(
             description="Callback function name for error handling"
         ),
         common: LocalModel = Depends(localmodel)
-) -> List[ResponseModel]:
+) -> ResponseModel:
     """# Upload files to the host"""
     return await router_handler(ScpModel, Upload)(
         srcpaths=srcpaths,
@@ -114,7 +114,7 @@ class Download(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/download", tags=["SCP Commands"], response_model=List[ResponseModel])
+@router.get("/download", tags=["SCP Commands"], response_model=ResponseModel)
 async def download(
         srcpaths: List[str] = Query(
             ...,
@@ -148,7 +148,7 @@ async def download(
             description="Callback function name for error handling"
         ),
         common: LocalModel = Depends(localmodel)
-) -> List[ResponseModel]:
+) -> ResponseModel:
     """# Download files from the host"""
     return await router_handler(ScpModel, Download)(
         srcpaths=srcpaths,
@@ -186,7 +186,7 @@ class Copy(Local):
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
-@router.get("/copy", tags=["SCP Commands"], response_model=List[ResponseModel])
+@router.get("/copy", tags=["SCP Commands"], response_model=ResponseModel)
 async def copy(
         srcpaths: List[str] = Query(
             ...,
@@ -224,7 +224,7 @@ async def copy(
             description="Callback function name for error handling"
         ),
         common: LocalModel = Depends(localmodel)
-) -> List[ResponseModel]:
+) -> ResponseModel:
     """# Copy files between hosts"""
     return await router_handler(ScpModel, Copy)(
         srcpaths=srcpaths,

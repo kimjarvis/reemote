@@ -8,9 +8,10 @@ from reemote.facts.apt import GetPackages
 from reemote.checks import mark_unchanged
 from reemote.commands.system import Return
 from pydantic import BaseModel, Field, field_validator
-from reemote.response import ResponseModel
+from reemote.response import ResponseElement, ResponseModel
 from reemote.router_handler import router_handler
 from reemote.commands.server import Shell
+from reemote.router_handler import router_handler_put
 
 router = APIRouter()
 
@@ -52,7 +53,9 @@ class Package(Remote):
         return
 
 
-@router.put("/package", tags=["APT Package Manager Operations"])
+
+@router.put("/package", tags=["APT Package Manager Operations"], response_model=ResponseModel)
+# @router.put("/package", tags=["APT Package Manager Operations"])
 async def package(
     packages: list[str] = Query(..., description="List of package names"),
     present: bool = Query(
@@ -60,9 +63,9 @@ async def package(
     ),
     update: bool = Query(False, description="Whether or not to update the package list"),
     common: CommonModel = Depends(commonmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Manage installed APT packages"""
-    return await router_handler(PackageRequestModel, Package)(
+    return await router_handler_put(PackageRequestModel, Package)(
         common=common,
         packages=packages,
         present=present,

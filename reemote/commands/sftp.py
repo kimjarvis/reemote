@@ -11,6 +11,7 @@ from reemote.router_handler import router_handler
 from reemote.models import LocalModel, localmodel, LocalPathModel
 from reemote.local import Local
 from reemote.response import Response
+from reemote.response import ResponseElement
 from reemote.response import ResponseModel
 
 router = APIRouter()
@@ -163,7 +164,7 @@ async def copy(
         False, description="Whether or not to only allow this to be a remote copy"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Copy remote files to a new location"""
     return await router_handler(CopyModel, Copy)(
         srcpaths=srcpaths,
@@ -218,7 +219,7 @@ async def mcopy(
         False, description="Whether or not to only allow this to be a remote copy"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Copy remote files to a new location"""
     return await router_handler(CopyModel, Mcopy)(
         srcpaths=srcpaths,
@@ -377,7 +378,7 @@ async def get(
         None, description="Callback function name for error handling"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Download remote files"""
     return await router_handler(GetModel, Get)(
         remotepaths=remotepaths,
@@ -428,7 +429,7 @@ async def mget(
         None, description="Callback function name for error handling"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Download remote files with glob pattern match"""
     return await router_handler(GetModel, Mget)(
         remotepaths=remotepaths,
@@ -586,7 +587,7 @@ async def put(
         None, description="Callback function name for error handling"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Upload local files"""
     return await router_handler(PutModel, Put)(
         localpaths=localpaths,
@@ -637,7 +638,7 @@ async def mput(
         None, description="Callback function name for error handling"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Upload local files with glob pattern match"""
     return await router_handler(PutModel, Mput)(
         localpaths=localpaths,
@@ -730,7 +731,7 @@ async def mkdir(
     atime: Optional[int] = Query(None, description="Access time"),
     mtime: Optional[int] = Query(None, description="Modification time"),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Create a remote directory with the specified attributes"""
     params = {"path": path}
     if permissions is not None:
@@ -778,7 +779,7 @@ async def mkdir(
     atime: Optional[int] = Query(None, description="Access time"),
     mtime: Optional[int] = Query(None, description="Modification time"),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Set attributes of a remote file, directory, or symlink"""
     params = {"path": path}
     if permissions is not None:
@@ -830,7 +831,7 @@ async def mkdirs(
     atime: Optional[int] = Query(None, description="Access time"),
     mtime: Optional[int] = Query(None, description="Modification time"),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Create a remote directory with the specified attributes"""
     params = {"path": path}
     if permissions is not None:
@@ -867,7 +868,7 @@ async def rmdir(
         ..., description="The path of the remote directory to remove"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Remove a remote directory"""
     return await router_handler(LocalPathModel, Rmdir)(path=path, common=common)
 
@@ -894,7 +895,7 @@ async def rmtree(
         ..., description="The path of the parent directory to remove"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Recursively delete a directory tree"""
     return await router_handler(LocalPathModel, Rmtree)(path=path, common=common)
 
@@ -938,7 +939,7 @@ async def chmod(
         False, description="Whether or not to follow symbolic links"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Change the permissions of a remote file, directory, or symlink"""
     return await router_handler(ChmodModel, Chmod)(
         path=path,
@@ -987,7 +988,7 @@ async def chown(
     uid: Optional[int] = Query(None, description="User ID"),
     gid: Optional[int] = Query(None, description="Group ID"),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Change the owner of a remote file, directory, or symlink"""
     return await router_handler(ChownModel, Chown)(
         path=path, uid=uid, gid=gid, follow_symlinks=follow_symlinks, common=common
@@ -1046,7 +1047,7 @@ async def utime(
         None, description="Modify time, as seconds relative to the UNIX epoch"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Change the timestamps of a remote file, directory, or symlink"""
     return await router_handler(UtimeModel, Utime)(
         path=path,
@@ -1084,7 +1085,7 @@ async def chdir(
         ..., description="The path to set as the new remote working directory"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Change the current remote working directory"""
     return await router_handler(ChdirModel, Chdir)(path=path, common=common)
 
@@ -1140,7 +1141,7 @@ async def rename(
         ..., description="The new name for this file, directory, or link"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Rename a remote file, directory, or link"""
     return await router_handler(RenameModel, Rename)(
         oldpath=oldpath, newpath=newpath, common=common
@@ -1169,7 +1170,7 @@ async def remove(
         ..., description="The path of the remote file or link to remove"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Remove a remote file"""
     return await router_handler(LocalPathModel, Remove)(path=path, common=common)
 
@@ -1283,7 +1284,7 @@ async def write(
         -1, description="The maximum number of parallel read or write requests"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Open a remote file"""
     params = {"path": path}
     params["text"] = text
@@ -1361,7 +1362,7 @@ async def link(
         ..., description="The path of where to create the remote hard link"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Rename a remote file, directory, or link"""
     return await router_handler(LinkModel, Link)(
         file_path=file_path, link_path=link_path, common=common
@@ -1393,7 +1394,7 @@ async def symlink(
         ..., description="The path of where to create the remote symbolic link"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Create a remote symbolic link"""
     return await router_handler(LinkModel, Symlink)(
         file_path=file_path, link_path=link_path, common=common
@@ -1408,7 +1409,7 @@ async def remove(
         ..., description="The path of the remote link to remove"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Remove a remote link"""
     return await router_handler(LocalPathModel, Remove)(path=path, common=common)
 
@@ -1447,7 +1448,7 @@ async def truncate(
         ..., description=" The desired size of the file, in bytes"
     ),
     common: LocalModel = Depends(localmodel),
-) -> list[dict]:
+) -> ResponseModel:
     """# Truncate a remote file to the specified size"""
     return await router_handler(LinkModel, Symlink)(
         path=path, size=size, common=common

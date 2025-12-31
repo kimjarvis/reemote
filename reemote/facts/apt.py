@@ -4,7 +4,7 @@ from reemote.command import Command
 from reemote.router_handler import router_handler
 from reemote.models import CommonModel, commonmodel, RemoteModel
 from reemote.remote import Remote
-from reemote.response import Response, ResponseModel
+from reemote.response import Response, ResponseElement
 from reemote.facts.parse_apt_list_installed import parse_apt_list_installed
 from pydantic import BaseModel, Field, field_validator
 router = APIRouter()
@@ -27,7 +27,7 @@ class PackageList(BaseModel):
     packages: List[Package] = Field(..., description="A list of packages with their names and versions")
 
 
-class GetPackagesResponse(ResponseModel):
+class GetPackagesResponse(ResponseElement):
     value: Union[str, PackageList] = Field(default="",
                                                     description="The response containing package versions, or an error message")
 
@@ -38,6 +38,7 @@ class GetPackages(Remote):
         result = yield Command(
             command=f"apt list --installed",
             call=self.__class__.child + "(" + str(model_instance) + ")",
+            changed=False,
             **self.common_kwargs,
         )
         parsed_packages = parse_apt_list_installed(result["value"]["stdout"])

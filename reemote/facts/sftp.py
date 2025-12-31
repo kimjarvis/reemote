@@ -11,13 +11,13 @@ from pydantic import BaseModel, Field, field_validator
 from pydantic import BaseModel, Field, field_validator, TypeAdapter, ConfigDict, field_serializer, ValidationInfo
 from typing import Optional, List
 from fastapi import Depends
-from reemote.response import ResponseModel
+from reemote.response import ResponseElement
 
 
 router = APIRouter()
 
 
-class IslinkResponse(ResponseModel):
+class IslinkResponse(ResponseElement):
     value: Union[str,  bool ] = Field(default=False, description="Whether or not the path is a link, or an error message")
 
 class Islink(Local):
@@ -45,7 +45,7 @@ async def islink(
     """# Return if the remote path refers to a symbolic link"""
     return await router_handler(LocalPathModel, Islink)(path=path, common=common)
 
-class IsfileResponse(ResponseModel):
+class IsfileResponse(ResponseElement):
     value: Union[str,  bool] = Field(default=False, description="Whether or not the path is a file, or an error message")
 
 class Isfile(Local):
@@ -74,7 +74,7 @@ async def isfile(
     return await router_handler(LocalPathModel, Isfile)(path=path, common=common)
 
 
-class IsdirResponse(ResponseModel):
+class IsdirResponse(ResponseElement):
     value: Union[str,  bool] = Field(default=False, description="Whether or not the path is a directory, or an error message")
 
 class Isdir(Local):
@@ -103,7 +103,7 @@ async def isdir(
     return await router_handler(LocalPathModel, Isdir)(path=path, common=common)
 
 
-class GetsizeResponse(ResponseModel):
+class GetsizeResponse(ResponseElement):
     value: Union[str,  int] = Field(default=0, description="Size of the remove file or directory in bytes, or an error message")
 
 class Getsize(Local):
@@ -131,7 +131,7 @@ async def getsize(
     """# Return the size of a remote file or directory"""
     return await router_handler(LocalPathModel, Getsize)(path=path, common=common)
 
-class GettimeResponse(ResponseModel):
+class GettimeResponse(ResponseElement):
     value: Union[str,  int ]= Field(default=0, description="The time in seconds since start of epoch, or an error message")
 
 class Getatime(Local):
@@ -159,7 +159,7 @@ async def getatime(
     """# Return the last access time of a remote file or directory"""
     return await router_handler(LocalPathModel, Getatime)(path=path, common=common)
 
-class GettimensResponse(ResponseModel):
+class GettimensResponse(ResponseElement):
     value: Union[str,  int ]= Field(default=0, description="The time in nano seconds since start of epoch, or an error message")
 
 class GetatimeNs(Local):
@@ -294,7 +294,7 @@ async def getcrtimens(
     return await router_handler(LocalPathModel, GetcrtimeNs)(path=path, common=common)
 
 
-class GetcwdResponse(ResponseModel):
+class GetcwdResponse(ResponseElement):
     value: str = Field(default="", description="The path of the current working directory, or an error message")
 
 class Getcwd(Local):
@@ -332,7 +332,7 @@ class StatAttrs(BaseModel):
     size: int = Field(default=0, description="File size in bytes")
 
 
-class StatResponse(ResponseModel):
+class StatResponse(ResponseElement):
     value: Union[str,  StatAttrs] = Field(default="", description="SFTP file attributes, or an error message")
 
 def sftp_attrs_to_dict(sftp_attrs):
@@ -399,7 +399,7 @@ class ReadModel(LocalPathModel):
         -1, description="The maximum number of parallel read or write requests"
     )
 
-class ReadResponse(ResponseModel):
+class ReadResponse(ResponseElement):
     value: str = Field(default="", description="File contents, or an error message")
 
 class Read(Local):
@@ -462,7 +462,7 @@ async def read(
     return await router_handler(ReadModel, Read)(**params, common=common)
 
 
-class ListdirResponse(ResponseModel):
+class ListdirResponse(ResponseElement):
     value: Union[str,  List[str]] = Field(default="", description="List of files in directory, or an error message")
 
 class Listdir(Local):
@@ -518,7 +518,7 @@ class SFTPFileAttributes(BaseModel):
     mtime: int = Field(default=0,description="Last modification time of the file")
     size: int = Field(default=0,description="Size of the file in bytes")
 
-class ReaddirResponse(ResponseModel):
+class ReaddirResponse(ResponseElement):
     value: Union[str,  List[SFTPFileAttributes]] = Field(default="", description="List of file entries, or an error message")
 
 class Readdir(Local):
@@ -547,7 +547,7 @@ async def readdir(
     """# Read the contents of a remote directory"""
     return await router_handler(LocalPathModel, Readdir)(path=path, common=common)
 
-class ExistsResponse(ResponseModel):
+class ExistsResponse(ResponseElement):
     value: Union[str,  bool ]= Field(default=False, description="Whether or not the remote path exists, or an error message")
 
 class Exists(Local):
@@ -630,7 +630,7 @@ async def lstat(
     return await router_handler(LocalPathModel, Lstat)(path=path, common=common)
 
 
-class ReadlinkResponse(ResponseModel):
+class ReadlinkResponse(ResponseElement):
     value: str = Field(default="", description="Target of the remote symbolic link, or an error message")
 
 class Readlink(Local):
@@ -659,7 +659,7 @@ async def readlink(
     return await router_handler(LocalPathModel, Readlink)(path=path, common=common)
 
 
-class GlobResponse(ResponseModel):
+class GlobResponse(ResponseElement):
     value: Union[str,  List[str]] = Field(default="", description="File paths matching the pattern, or an error message")
 
 class Glob(Local):
@@ -745,7 +745,7 @@ class SFTPVFSAttrsResponse(BaseModel):
     namemax: int = Field(default=0,description="Maximum filename length")
 
 
-class StatVfsResponse(ResponseModel):
+class StatVfsResponse(ResponseElement):
      value: Union[str,  SFTPVFSAttrsResponse] = Field(default="", description="The response containing file system attributes, or an error message")
 
 class StatVfs(Local):
@@ -778,7 +778,7 @@ async def statvfs(
     )
 
 
-class RealpathResponse(ResponseModel):
+class RealpathResponse(ResponseElement):
     value: str = Field(default="", description="Canonicalized directory path, or an error message")
 
 
@@ -844,7 +844,7 @@ class SFTPInfo(BaseModel):
         description="Return whether or not SFTP remote copy is supported"
     )
 
-class ClientResponse(ResponseModel):
+class ClientResponse(ResponseElement):
     value: Union[str,  SFTPInfo] = Field(default="", description="SFTP Information, or an error message")
 
 @router.get("/client", tags=["SFTP Facts"], response_model=List[ClientResponse])

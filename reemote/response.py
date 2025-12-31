@@ -61,16 +61,19 @@ class Response(BaseModel):
     value: Optional[Any] = None  # Accept any type
 
 
-class ResponseModel(BaseModel):
+class ResponseElement(BaseModel):
     host: str = Field(default="", description="The host the command was executed on")
     call: str = Field(default="", description="The caller object")
     changed: bool = Field(default=False, description="Whether the host changed")
     error: bool = Field(default=False, description="Whether or not there was an error")
-    value: str = Field(default="", description="Error message")
+    value: Optional[str] = Field(default=None, description="Error message")
+
+class ResponseModel(RootModel[List[ResponseElement]]):
+    pass
 
 
 
-class ShellResponseElement(ResponseModel):
+class ShellResponseElement(ResponseElement):
     value: SSHCompletedProcessModel = Field(
         default=None, description="The results from the executed command."
     )
