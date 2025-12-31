@@ -60,7 +60,7 @@ Copy files and directories to and from remote servers.
             """,
         },
         {
-            "name": "SFTP",
+            "name": "SFTP Operations",
             "description": """
 Create files and directories on remote servers and transfer files to from servers.
                     """,

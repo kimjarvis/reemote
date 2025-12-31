@@ -1,6 +1,6 @@
 import asyncio
 from reemote.execute import endpoint_execute
-from reemote.commands.sftp import Mkdir
+from reemote.api.sftp import Mkdir
 
 class Root:
     async def execute(self):

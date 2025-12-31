@@ -7,7 +7,7 @@ from reemote.execute import endpoint_execute
 
 @pytest.mark.asyncio
 async def test_copy(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Copy
+    from reemote.api.sftp import Copy
     from reemote.api.sftp import Isfile
 
     class Root:
@@ -21,7 +21,7 @@ async def test_copy(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_mcopy(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Copy, Mkdir, Mcopy
+    from reemote.api.sftp import Copy, Mkdir, Mcopy
     from reemote.api.sftp import Isfile
 
     class Root:
@@ -39,7 +39,7 @@ async def test_mcopy(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_get(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Get
+    from reemote.api.sftp import Get
     import os
 
     class Root:
@@ -52,7 +52,7 @@ async def test_get(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_mget(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Mget
+    from reemote.api.sftp import Mget
     import os
 
     class Root:
@@ -65,7 +65,7 @@ async def test_mget(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_put(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Put
+    from reemote.api.sftp import Put
     from reemote.api.sftp import Isfile
 
     class Root:
@@ -80,7 +80,7 @@ async def test_put(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_mput(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Mput
+    from reemote.api.sftp import Mput
     from reemote.api.sftp import Isfile
 
     class Root:

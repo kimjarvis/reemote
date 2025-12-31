@@ -38,7 +38,7 @@ def setup_inventory():
 @pytest.mark.asyncio
 async def test_unreachable_host_sftp_command(setup_inventory, setup_directory):
     from reemote.api.sftp import Isdir
-    from reemote.commands.sftp import Mkdir, Rmdir
+    from reemote.api.sftp import Mkdir, Rmdir
 
     class Root:
         async def execute(self):
@@ -85,7 +85,7 @@ def setup_directory():
         class Root:
             async def execute(self):
                 from reemote.api.sftp import Isdir
-                from reemote.commands.sftp import Rmtree
+                from reemote.api.sftp import Rmtree
                 from reemote.api.scp import Upload
 
                 r = yield Isdir(path="testdata")

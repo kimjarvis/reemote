@@ -11,7 +11,7 @@ def setup_scp_directory():
         class Root:
             async def execute(self):
                 from reemote.api.scp import Upload
-                from reemote.commands.sftp import Rmtree
+                from reemote.api.sftp import Rmtree
                 from reemote.api.sftp import Isdir
 
                 r = yield Isdir(path="testdata_scp")
@@ -51,7 +51,7 @@ async def test_download(setup_inventory, setup_scp_directory):
 @pytest.mark.asyncio
 async def test_copy(setup_inventory, setup_scp_directory):
     from reemote.api.scp import Copy
-    from reemote.commands.sftp import Remove
+    from reemote.api.sftp import Remove
     from reemote.api.sftp import Isfile
 
     class Root:

@@ -41,7 +41,7 @@ def setup_directory():
         class Root:
             async def execute(self):
                 from reemote.api.sftp import Isdir
-                from reemote.commands.sftp import Rmtree
+                from reemote.api.sftp import Rmtree
                 from reemote.api.scp import Upload
 
                 r = yield Isdir(path="testdata")

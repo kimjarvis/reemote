@@ -1,6 +1,6 @@
 import asyncio
 from reemote.execute import endpoint_execute
-from reemote.operations.sftp import Directory
+from reemote.api.sftp import Directory
 from reemote.api.sftp import Isdir, Stat, Getmtime, Getatime
 
 

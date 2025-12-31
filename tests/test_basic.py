@@ -79,7 +79,7 @@ async def test_isdir(setup_inventory,setup_directory):
 @pytest.mark.asyncio
 async def test_mkdir(setup_inventory, setup_directory):
     from reemote.api.sftp import Isdir, Stat
-    from reemote.commands.sftp import Mkdir
+    from reemote.api.sftp import Mkdir
 
     class Root:
         async def execute(self):
@@ -107,7 +107,7 @@ async def test_mkdir(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_directory1(setup_inventory, setup_directory):
-    from reemote.operations.sftp import Directory
+    from reemote.api.sftp import Directory
     from reemote.api.sftp import Isdir, Stat, Getmtime
 
     class Root:
@@ -137,7 +137,7 @@ async def test_directory1(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_directory(setup_inventory, setup_directory):
-    from reemote.operations.sftp import Directory
+    from reemote.api.sftp import Directory
     from reemote.api.sftp import Isdir, Stat
 
     class Child:
@@ -172,7 +172,7 @@ async def test_directory(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_chmod(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Chmod
+    from reemote.api.sftp import Chmod
     from reemote.api.sftp import Stat
 
     class Root:
@@ -188,7 +188,7 @@ async def test_chmod(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_chown(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Chown
+    from reemote.api.sftp import Chown
     from reemote.api.sftp import Stat
 
     # todo: note that this isn't supported on SFTPv3, we need a system version
@@ -204,7 +204,7 @@ async def test_chown(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_utime(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Utime
+    from reemote.api.sftp import Utime
     from reemote.api.sftp import Getmtime, Getatime
 
     # todo: note that this isn't supported on SFTPv3, we need a system version
@@ -223,7 +223,7 @@ async def test_utime(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_get_cwd(setup_inventory, setup_directory):
     from reemote.api.sftp import Getcwd
-    from reemote.commands.sftp import Chdir
+    from reemote.api.sftp import Chdir
 
     class Root:
         async def execute(self):
@@ -240,7 +240,7 @@ async def test_get_cwd(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_rename(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Rename
+    from reemote.api.sftp import Rename
     from reemote.api.sftp import Isfile
 
     class Root:
@@ -254,7 +254,7 @@ async def test_rename(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_remove(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Remove
+    from reemote.api.sftp import Remove
     from reemote.api.sftp import Isfile
 
     class Root:
@@ -280,7 +280,7 @@ async def test_read(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_write(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Write
+    from reemote.api.sftp import Write
     from reemote.api.sftp import Isfile
     from reemote.api.sftp import Read
 
@@ -300,7 +300,7 @@ async def test_write(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_scp_upload():
     from reemote.api.sftp import Isdir
-    from reemote.commands.sftp import Rmtree
+    from reemote.api.sftp import Rmtree
     from reemote.api.scp import Upload
 
     class Root:
@@ -315,7 +315,7 @@ async def test_scp_upload():
 
 @pytest.mark.asyncio
 async def test_scp_rmtree(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Rmtree
+    from reemote.api.sftp import Rmtree
 
     class Root:
         async def execute(self):
@@ -326,7 +326,7 @@ async def test_scp_rmtree(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_catching_sftp_failures(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Mkdir
+    from reemote.api.sftp import Mkdir
 
     class Root:
         async def execute(self):
@@ -372,7 +372,7 @@ async def test_readdir(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_mkdirs(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Makedirs
+    from reemote.api.sftp import Makedirs
     from reemote.api.sftp import Isdir
 
     class Root:
@@ -386,7 +386,7 @@ async def test_mkdirs(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_link(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Link
+    from reemote.api.sftp import Link
     from reemote.api.sftp import Read
 
     class Root:
@@ -424,7 +424,7 @@ async def test_lexists(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_symlink(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Symlink
+    from reemote.api.sftp import Symlink
     from reemote.api.sftp import Islink
 
     class Root:
@@ -437,7 +437,7 @@ async def test_symlink(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_unlink(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Symlink, Unlink
+    from reemote.api.sftp import Symlink, Unlink
     from reemote.api.sftp import Islink
 
     class Root:
@@ -454,7 +454,7 @@ async def test_unlink(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_lstat(setup_inventory, setup_directory):
     from reemote.api.sftp import Lstat
-    from reemote.commands.sftp import Symlink
+    from reemote.api.sftp import Symlink
 
     class Root:
         async def execute(self):
@@ -467,7 +467,7 @@ async def test_lstat(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_readlink(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Symlink
+    from reemote.api.sftp import Symlink
     from reemote.api.sftp import Readlink
 
     class Root:
@@ -507,7 +507,7 @@ async def test_glob_sftpname(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_setstat(setup_inventory, setup_directory):
-    from reemote.commands.sftp import Setstat
+    from reemote.api.sftp import Setstat
     from reemote.api.sftp import Stat, Getmtime, Getatime
 
     class Root:
@@ -554,7 +554,7 @@ async def test_realpath(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_truncate(setup_inventory, setup_directory):
     # todo: Why does this return an AttributeError ?
-    from reemote.commands.sftp import Truncate
+    from reemote.api.sftp import Truncate
 
     class Root:
         async def execute(self):

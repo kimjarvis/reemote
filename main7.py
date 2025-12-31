@@ -4,7 +4,7 @@ from reemote.execute import endpoint_execute
 
 
 async def main():
-    from reemote.commands.sftp import Mkdir
+    from reemote.api.sftp import Mkdir
 
     await endpoint_execute(
         lambda: Mkdir(

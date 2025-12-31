@@ -1,5 +1,5 @@
 import asyncio
-from reemote.commands.sftp import Put, Get, Copy, Mcopy, Mput, Mget
+from reemote.api.sftp import Put, Get, Copy, Mcopy, Mput, Mget
 from reemote.execute import endpoint_execute
 
 
