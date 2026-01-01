@@ -1,16 +1,23 @@
-# restpoc
-POC for RestAPI FastAPI pydantic
+# Reemote
 
-Run the script
+An API for controlling remote systems.
+
+# Installation
+
+Install the module with pip:
 
 ```bash
-cd ~/reemote
-uv run python -m uvicorn app:app --reload --port 8001
+pip install reemote
 ```
 
-Docs
-http://127.0.0.1:8001/redoc
+The optional ReST API can be started with:
 
-Swagger UI
-http://127.0.0.1:8001/docs
+```bash
+reemote --port=8001 
+```
+
+All parameter are passed to (uvicorn)[https://uvicorn.dev/#command-line-options] except:
+
+* `--inventory`: An inventory file (optional).
+* `--logging`: The logging file (optional).
 

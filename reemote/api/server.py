@@ -26,7 +26,6 @@ class Shell(Remote):
 
     async def execute(self) -> AsyncGenerator[Command, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
-
         yield Command(
             command=model_instance.cmd,
             call=self.__class__.child + "(" + str(model_instance) + ")",

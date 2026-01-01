@@ -30,8 +30,7 @@ args, _ = parser.parse_known_args(app_args)
 # Initialize FastAPI app
 app = FastAPI(
     title="Reemote",
-    summary="An API for server management",
-    # description="An API for server management",
+    summary="An API for controlling remote systems.",
     version="0.1.0",
     swagger_ui_parameters={"docExpansion": "none", "title": "Reemote - Swagger UI"},
     openapi_tags=[
@@ -82,9 +81,9 @@ app.include_router(scp_router, prefix="/scp")
 def initialize():
     config = Config()
 
-    # Apply configurations if arguments were provided
-    if args.logging:
-        config.set_logging(args.logging)
-
-    if args.inventory:
-        config.set_inventory_path(args.inventory)
+    # # Apply configurations if arguments were provided
+    # if args.logging:
+    #     config.set_logging(args.logging)
+    #
+    # if args.inventory:
+    #     config.set_inventory_path(args.inventory)

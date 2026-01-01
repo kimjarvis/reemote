@@ -730,7 +730,7 @@ wheels = [
 ]
 
 [[package]]
-name = "restpoc"
+name = "reemote"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
@@ -741,6 +741,7 @@ dependencies = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+    { name = "uvicorn" },
 ]
 
 [package.metadata]
@@ -752,6 +753,7 @@ requires-dist = [
     { name = "pytest", specifier = ">=9.0.1" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "ruff", specifier = ">=0.14.9" },
+    { name = "uvicorn", specifier = ">=0.38.0" },
 ]
 
 [[package]]

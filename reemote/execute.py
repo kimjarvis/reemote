@@ -10,7 +10,7 @@ from reemote.command import Command, ConnectionType
 from typing import Any, AsyncGenerator, List, Tuple, Dict, Callable
 from reemote.response import Response  # Changed import
 from reemote.config import Config
-from reemote.logging import reemote_logging
+from reemote.reemote_logging import reemote_logging
 from reemote.response import ssh_completed_process_to_dict
 from reemote.api.inventory import get_inventory_item, Inventory
 
