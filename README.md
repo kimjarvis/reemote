@@ -13,7 +13,7 @@ pip install reemote
 The server for the optional ReST API can be started locally with:
 
 ```bash
-reemote --port=8001 
+reemote --port=8006 
 ```
 
 Parameter are passed to [uvicorn](https://uvicorn.dev/#command-line-options) except:

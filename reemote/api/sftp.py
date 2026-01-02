@@ -11,6 +11,7 @@ from pydantic import (
     Field,
     field_validator,
     root_validator,
+    model_validator,
 )
 
 from reemote.api.system import Return
@@ -474,7 +475,7 @@ class Read(Local):
                         max_requests=caller.max_requests,
                     )
                     content = await f.read()
-                    f.close()
+                    await f.close()
                     return content
         except Exception as e:
             command.error = True
@@ -1614,7 +1615,7 @@ class MkdirModel(LocalPathModel):
     atime: Optional[int] = Field(None, description="Access time")
     mtime: Optional[int] = Field(None, description="Modification time")
 
-    @root_validator(skip_on_failure=True)
+    @model_validator(mode='before')
     @classmethod
     def check_atime_and_mtime(cls, values):
         """Ensure that if `atime` is specified, `mtime` is also specified."""
@@ -1948,7 +1949,7 @@ class UtimeModel(LocalPathModel):
     mtime: int
     follow_symlinks: bool = False
 
-    @root_validator(skip_on_failure=True)
+    @model_validator(mode='before')
     @classmethod
     def check_atime_and_mtime(cls, values):
         """Ensure that if `atime` is specified, `mtime` is also specified."""
@@ -2146,7 +2147,7 @@ class WriteModel(LocalPathModel):
         -1, description="The maximum number of parallel read or write requests"
     )
 
-    @root_validator(skip_on_failure=True)
+    @model_validator(mode='before')
     @classmethod
     def check_atime_and_mtime(cls, values):
         """Ensure that if `atime` is specified, `mtime` is also specified."""
@@ -2192,7 +2193,7 @@ class Write(Local):
                         max_requests=caller.max_requests,
                     )
                     content = await f.write(caller.text)
-                    f.close()
+                    await f.close()
         except Exception as e:
             command.error = True
             logging.error(f"{host_info['host']}: {e.__class__.__name__}")

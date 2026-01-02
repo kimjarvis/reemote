@@ -1,9 +1,17 @@
-site_name: Reemote1
+site_name: Reemote
+site_description: An API for controlling remote systems.
+site_url: https://https://reemote.org/
+
+repo_name: kimjarvis/reemote
+repo_url: https://https://github.com/kimjarvis/reemote
+
 theme:
   name: material
+
 markdown_extensions:
   - pymdownx.highlight
   - pymdownx.superfences
+
 nav:
   - Home: index.md
   - Installation: installation.md
@@ -11,5 +19,15 @@ nav:
   - File System Tutorial: reemote_file_system_tutorial.md
   - Package Manager Tutorial: packge_manager_tutorial.md
   - Server Control Tutorial: server_control_tutorial.md
-  - API Documentation: https://tpfsystems.com  
-
+  - API Documentation: https://tpfsystems.com
+  - Examples:
+      - Hello World:
+          - examples/hello_world/readme.md
+      - Inventory Classes:
+          - examples/inventory_classes/readme.md
+      - Inventory Dictionary:
+          - examples/inventory_dictionary/readme.md
+      - Composition:
+          - examples/compositon/readme.md
+      - Concurrency:
+          - examples/concurrency/readme.md

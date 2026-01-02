@@ -1,6 +1,6 @@
 # Getting Started
 
-Remote is used for controlling a remote server.  In this tutorial we have two servers "192.168.0.24" and "192.168.1.76" we can access the server, via ssh, using the username "user" and the password "password".
+Remote is used for controlling a remote server.  In this tutorial we have two servers "192.168.0.24" and "server104" we can access the server, via ssh, using the username "user" and the password "password".
 
 ```bash
 ssh user@192.168.0.26
@@ -18,7 +18,7 @@ async def main():
     create_inventory([
         [
             {
-                "host": "192.168.1.24",
+                "host": "server105",
                 "username": "user",
                 "password": "password"
             },
@@ -30,7 +30,7 @@ async def main():
         ],
         [
             {
-                "host": "192.168.1.76",
+                "host": "server104",
                 "username": "user",
                 "password": "password"
             },

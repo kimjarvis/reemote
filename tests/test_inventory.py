@@ -13,21 +13,21 @@ def setup_inventory():
         hosts=[
             {
                 "connection": {
-                    "host": "192.168.1.24",
+                    "host": "server105",
                     "username": "user",
                     "password": "password",
                 },
                 "host_vars": {"sudo_user": "user"},
-                "groups": ["all", "192.168.1.24"],
+                "groups": ["all", "server105"],
             },
             {
                 "connection": {
-                    "host": "192.168.1.76",
+                    "host": "server104",
                     "username": "user",
                     "password": "password",
                 },
                 "host_vars": {"sudo_user": "user"},
-                "groups": ["all", "192.168.1.76"],
+                "groups": ["all", "server104"],
             },
         ]
     )
@@ -52,12 +52,12 @@ async def test_unreachable_host_sftp_command(setup_inventory, setup_directory):
         hosts=[
             {
                 "connection": {
-                    "host": "192.168.1.24",
+                    "host": "server105",
                     "username": "user",
                     "password": "password",
                 },
                 "host_vars": {"sudo_user": "user"},
-                "groups": ["all", "192.168.1.24"],
+                "groups": ["all", "server105"],
             },
             {
                 "connection": {
@@ -110,12 +110,12 @@ async def test_unreachable_host_sftp_fact(setup_inventory, setup_directory):
         hosts=[
             {
                 "connection": {
-                    "host": "192.168.1.24",
+                    "host": "server105",
                     "username": "user",
                     "password": "password",
                 },
                 "host_vars": {"sudo_user": "user"},
-                "groups": ["all", "192.168.1.24"],
+                "groups": ["all", "server105"],
             },
             {
                 "connection": {

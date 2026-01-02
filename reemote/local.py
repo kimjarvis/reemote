@@ -14,7 +14,6 @@ class Local:
 
     async def execute(self) -> AsyncGenerator[Command, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
-
         yield Command(
             type=ConnectionType.LOCAL,
             callback=self._callback,

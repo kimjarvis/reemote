@@ -4,31 +4,25 @@ import pytest
 
 from reemote.config import Config
 from reemote.execute import endpoint_execute
-from reemote.api.inventory import Inventory
+from reemote.api.inventory import Inventory, InventoryItem, Connection
 
 
 @pytest.fixture
 def setup_inventory():
     inventory = Inventory(
         hosts=[
-            {
-                "connection": {
-                    "host": "192.168.1.24",
-                    "username": "user",
-                    "password": "password",
-                },
-                "host_vars": {"sudo_user": "user", "sudo_password": "password"},
-                "groups": ["all", "192.168.1.24"],
-            },
-            {
-                "connection": {
-                    "host": "192.168.1.76",
-                    "username": "user",
-                    "password": "password",
-                },
-                "host_vars": {"sudo_user": "user", "sudo_password": "password"},
-                "groups": ["all", "192.168.1.76"],
-            },
+            InventoryItem(
+                connection=Connection(
+                    host="server104", username="user", password="password"
+                ),
+                groups=["all", "server104"],
+            ),
+            InventoryItem(
+                connection=Connection(
+                    host="server105", username="user", password="password"
+                ),
+                groups=["all", "server105"],
+            ),
         ]
     )
     config = Config()
