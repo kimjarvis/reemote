@@ -28,6 +28,5 @@ npx @redocly/cli build-docs openapi.json
 Move the file into the site folder.
 
 ```bash
-cp redoc-static.html ../site/redoc-static.html
-mv redoc-static.html ../redoc-static.html
+mv redoc-static.html ../site/redoc-static.html
 ```

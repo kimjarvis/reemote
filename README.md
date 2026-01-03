@@ -25,6 +25,4 @@ Parameter, such as the port number, are passed to [uvicorn](https://uvicorn.dev/
 
 ## Documentation
 
-[Home page](https://reemote.org/)
-
-[API Documentation](redoc-static.html)
+[Reemote home page](https://reemote.org/)
