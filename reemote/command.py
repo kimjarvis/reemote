@@ -66,25 +66,12 @@ class Command(CommonModel):
             return stripped
         return v
 
-    @field_validator("group")
-    @classmethod
-    def group_not_empty_if_provided(cls, v: Optional[str]) -> Optional[str]:
-        """Validate group is not empty string if provided"""
-        if v is not None and v == "":
-            return "all"
-        return v
+    # @field_validator("group")
+    # @classmethod
+    # def group_not_empty_if_provided(cls, v: Optional[str]) -> Optional[str]:
+    #     """Validate group is not empty string if provided"""
+    #     if v is not None and v == "":
+    #         return "all"
+    #     return v
 
-def command_to_dict(command):
-    return {
-        "group": getattr(command, "group", "all"),
-        "name": getattr(command, "name", None),
-        "sudo": getattr(command, "sudo", False),
-        "su": getattr(command, "su", False),
-        "get_pty": getattr(command, "get_pty", False),
-        "command": getattr(command, "command", None),
-        "call": getattr(command, "call", None),
-        "type": getattr(command, "type", None),
-        "callback": getattr(command, "callback", None),
-        "caller": getattr(command, "caller", None),
-    }
 

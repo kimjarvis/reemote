@@ -11,7 +11,6 @@ async def main():
                 connection=Connection(
                     host="server104", username="user", password="password"
                 ),
-                groups=["all"],
             ),
         ]
     )

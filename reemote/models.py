@@ -10,21 +10,13 @@ class CommonModel(BaseModel):
 
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
-    group: Optional[str] = Field(default="all", description="Optional inventory group")
+    group: Optional[str] = Field(default=None, description="Optional inventory group")
     name: Optional[str] = Field(default=None, description="Optional name")
     sudo: bool = Field(default=False, description="Whether to use sudo")
     su: bool = Field(default=False, description="Whether to use su")
     get_pty: bool = Field(default=False, description="Whether to get a PTY")
 
 
-def common_parameters_to_dict(common_parameters):
-    return {
-        "group": getattr(common_parameters, "group", "all"),
-        "name": getattr(common_parameters, "name", None),
-        "sudo": getattr(common_parameters, "sudo", False),
-        "su": getattr(common_parameters, "su", False),
-        "get_pty": getattr(common_parameters, "get_pty", False),
-    }
 
 
 def commonmodel(
@@ -48,12 +40,6 @@ class LocalModel(BaseModel):
     )
     name: Optional[str] = Field(default=None, description="Optional name.")
 
-
-def local_to_dict(local):
-    return {
-        "group": getattr(local, "group", "all"),
-        "name": getattr(local, "name", None),
-    }
 
 
 def localmodel(
@@ -97,15 +83,6 @@ class RemoteModel(BaseModel):
     su: bool = Field(default=False, description="Execute command with su.")
     get_pty: bool = Field(default=False, description="Use a pseudo terminal.")
 
-
-def remote_to_dict(self):
-    return {
-        "group": getattr(self, "group", "all"),
-        "name": getattr(self, "name", None),
-        "sudo": getattr(self, "sudo", False),
-        "su": getattr(self, "su", False),
-        "get_pty": getattr(self, "get_pty", False),
-    }
 
 
 def remotemodel(
