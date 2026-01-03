@@ -19,9 +19,9 @@ Inventory management.
             """,
         },
         {
-            "name": "Server Operations",
+            "name": "Shell Operations",
             "description": """
-Get information about the servers and issue shell commands. 
+Get information about the servers and issue shell commands.
                     """,
         },
         {

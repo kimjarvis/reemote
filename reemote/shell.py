@@ -16,9 +16,7 @@ router = APIRouter()
 
 
 class ShellRequestModel(RemoteModel):
-    cmd: str = Field(
-        ...,  # Required field
-    )
+    cmd: str = Field(...)
 
 
 class Shell(Remote):
@@ -33,9 +31,9 @@ class Shell(Remote):
         )
 
 
-@router.post("/shell", tags=["Server Operations"], response_model=ShellResponseModel)
+@router.post("/shell", tags=["Shell Operations"], response_model=ShellResponseModel)
 async def shell(
-    cmd: str = Query(..., description="Shell command"),
+    cmd: str = Query(..., description="Shell command",example="192"),
     common: RemoteModel = Depends(remotemodel),
 ) -> ShellResponseModel:
     """# Execute a shell command on the remote host"""

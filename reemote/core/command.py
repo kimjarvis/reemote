@@ -66,12 +66,5 @@ class Command(CommonModel):
             return stripped
         return v
 
-    # @field_validator("group")
-    # @classmethod
-    # def group_not_empty_if_provided(cls, v: Optional[str]) -> Optional[str]:
-    #     """Validate group is not empty string if provided"""
-    #     if v is not None and v == "":
-    #         return "all"
-    #     return v
 
 
