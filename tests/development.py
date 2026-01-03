@@ -3,8 +3,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_directory1(setup_inventory, setup_directory):
-    from reemote.api.sftp import Directory
-    from reemote.api.sftp import Isdir, Stat, Getmtime, Getatime
+    from reemote.sftp import Directory
+    from reemote.sftp import Isdir, Stat, Getmtime, Getatime
 
     class Child:
         async def execute(self):

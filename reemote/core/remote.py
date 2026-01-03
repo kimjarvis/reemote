@@ -1,4 +1,4 @@
-from reemote.models import RemoteModel
+from reemote.core.models import RemoteModel
 
 
 class Remote:

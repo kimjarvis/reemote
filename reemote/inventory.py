@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Body, Path
 from pydantic import BaseModel, ValidationError, model_validator, Field
 from typing import List, Dict, Any
-from reemote.config import Config
+from reemote.core.config import Config
 
 # Define the router
 router = APIRouter()

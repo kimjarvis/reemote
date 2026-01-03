@@ -1,5 +1,4 @@
 import os
-import asyncio
 
 import pytest
 
@@ -8,7 +7,7 @@ from reemote.execute import endpoint_execute
 
 @pytest.mark.asyncio
 async def test_download(setup_inventory, setup_directory):
-    from reemote.api.scp import Download
+    from reemote.scp import Download
 
     class Root:
         async def execute(self):
@@ -28,9 +27,9 @@ async def test_download(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_copy(setup_inventory, setup_directory):
-    from reemote.api.scp import Copy
-    from reemote.api.sftp import Remove
-    from reemote.api.sftp import Isfile
+    from reemote.scp import Copy
+    from reemote.sftp import Remove
+    from reemote.sftp import Isfile
 
     class Root:
         async def execute(self):

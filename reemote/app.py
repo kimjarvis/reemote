@@ -1,10 +1,10 @@
 from fastapi import FastAPI
 
-from reemote.api.apt import router as apt_router
-from reemote.api.scp import router as scp_router
-from reemote.api.server import router as server_router
-from reemote.api.sftp import router as sftp_router
-from reemote.api.inventory import router as inventory_router
+from reemote.apt import router as apt_router
+from reemote.scp import router as scp_router
+from reemote.shell import router as server_router
+from reemote.sftp import router as sftp_router
+from reemote.inventory import router as inventory_router
 
 app = FastAPI(
     title="Reemote",

@@ -1,15 +1,15 @@
 from typing import AsyncGenerator, Union
-from reemote.response import ResponseElement, Response
-from reemote.parse_apt_list_installed import parse_apt_list_installed
+from reemote.core.response import ResponseElement, Response
+from reemote.core.parse_apt_list_installed import parse_apt_list_installed
 from fastapi import APIRouter, Query, Depends
-from reemote.command import Command
-from reemote.router_handler import router_handler
-from reemote.models import CommonModel, commonmodel, RemoteModel
-from reemote.remote import Remote
-from reemote.response import ShellResponseModel
-from reemote.api.system import Return
-from reemote.response import ResponseModel
-from reemote.router_handler import router_handler_put
+from reemote.core.command import Command
+from reemote.core.router_handler import router_handler
+from reemote.core.models import CommonModel, commonmodel, RemoteModel
+from reemote.core.remote import Remote
+from reemote.core.response import ShellResponseModel
+from reemote.system import Return
+from reemote.core.response import ResponseModel
+from reemote.core.router_handler import router_handler_put
 from pydantic import BaseModel, Field
 from typing import List
 

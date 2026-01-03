@@ -3,14 +3,14 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
-from reemote.command import Command
-from reemote.models import RemoteModel, remotemodel
-from reemote.remote import Remote
-from reemote.response import (
+from reemote.core.command import Command
+from reemote.core.models import RemoteModel, remotemodel
+from reemote.core.remote import Remote
+from reemote.core.response import (
     Response,
     ShellResponseModel,
 )
-from reemote.router_handler import router_handler
+from reemote.core.router_handler import router_handler
 
 router = APIRouter()
 

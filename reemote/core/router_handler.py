@@ -1,7 +1,7 @@
 from typing import Type, Any, Callable, List, Dict
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, ValidationError
-from reemote.models import CommonModel, commonmodel
+from reemote.core.models import CommonModel, commonmodel
 from reemote.execute import endpoint_execute
 
 

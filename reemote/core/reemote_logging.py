@@ -1,5 +1,5 @@
 import logging
-from reemote.config import Config
+from reemote.core.config import Config
 
 
 def reemote_logging(filepath: str = None):

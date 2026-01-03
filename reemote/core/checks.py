@@ -1,4 +1,4 @@
-from reemote.response import Response
+from reemote.core.response import Response
 from typing import List
 
 def flatten(obj):

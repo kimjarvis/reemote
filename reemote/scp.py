@@ -5,10 +5,10 @@ import asyncssh
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
-from reemote.router_handler import router_handler
-from reemote.models import LocalModel, localmodel
-from reemote.local import Local
-from reemote.response import ResponseElement, ResponseModel
+from reemote.core.router_handler import router_handler
+from reemote.core.models import LocalModel, localmodel
+from reemote.core.local import Local
+from reemote.core.response import ResponseModel
 
 router = APIRouter()
 

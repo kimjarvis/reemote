@@ -6,13 +6,13 @@ import asyncssh
 import asyncio
 import inspect
 from asyncssh import SSHCompletedProcess
-from reemote.command import Command, ConnectionType
+from reemote.core.command import Command, ConnectionType
 from typing import Any, AsyncGenerator, List, Tuple, Dict, Callable
-from reemote.response import Response  # Changed import
-from reemote.config import Config
-from reemote.reemote_logging import reemote_logging
-from reemote.response import ssh_completed_process_to_dict
-from reemote.api.inventory import get_inventory_item, Inventory
+from reemote.core.response import Response  # Changed import
+from reemote.core.config import Config
+from reemote.core.reemote_logging import reemote_logging
+from reemote.core.response import ssh_completed_process_to_dict
+from reemote.inventory import get_inventory_item, Inventory
 
 
 async def pass_through_command(command: Command) -> dict[str, str | None | Any] | None:

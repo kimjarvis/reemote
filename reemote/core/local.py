@@ -1,7 +1,7 @@
 from typing import AsyncGenerator
 
-from reemote.command import Command, ConnectionType
-from reemote.response import Response
+from reemote.core.command import Command, ConnectionType
+from reemote.core.response import Response
 
 
 class Local:

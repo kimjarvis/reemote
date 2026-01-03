@@ -1,8 +1,8 @@
 import pytest
 
-from reemote.api.apt import Install, Remove, Update, Upgrade
-from reemote.api.apt import GetPackages
-from reemote.api.apt import Package
+from reemote.apt import Install, Remove, Update, Upgrade
+from reemote.apt import GetPackages
+from reemote.apt import Package
 from reemote.execute import endpoint_execute
 
 

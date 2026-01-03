@@ -3,7 +3,7 @@ from typing import Any, Callable, Dict, Optional
 
 from pydantic import ConfigDict, Field, field_validator  # Updated imports
 
-from reemote.models import CommonModel
+from reemote.core.models import CommonModel
 
 
 class ConnectionType(Enum):

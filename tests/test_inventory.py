@@ -2,9 +2,9 @@ import asyncio
 
 import pytest
 
-from reemote.config import Config
+from reemote.core.config import Config
 from reemote.execute import endpoint_execute
-from reemote.api.inventory import Inventory
+from reemote.inventory import Inventory
 
 
 @pytest.fixture(autouse=True)
@@ -37,8 +37,8 @@ def setup_inventory():
 
 @pytest.mark.asyncio
 async def test_unreachable_host_sftp_command(setup_inventory, setup_directory):
-    from reemote.api.sftp import Isdir
-    from reemote.api.sftp import Mkdir, Rmdir
+    from reemote.sftp import Isdir
+    from reemote.sftp import Mkdir, Rmdir
 
     class Root:
         async def execute(self):
@@ -84,9 +84,9 @@ def setup_directory():
     async def inner_fixture():
         class Root:
             async def execute(self):
-                from reemote.api.sftp import Isdir
-                from reemote.api.sftp import Rmtree
-                from reemote.api.scp import Upload
+                from reemote.sftp import Isdir
+                from reemote.sftp import Rmtree
+                from reemote.scp import Upload
 
                 r = yield Isdir(path="testdata")
                 if r and r["value"]:
@@ -100,7 +100,7 @@ def setup_directory():
 
 @pytest.mark.asyncio
 async def test_unreachable_host_sftp_fact(setup_inventory, setup_directory):
-    from reemote.api.sftp import StatVfs
+    from reemote.sftp import StatVfs
 
     class Root:
         async def execute(self):

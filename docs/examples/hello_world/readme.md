@@ -5,8 +5,8 @@ These examples demonstrate the execution of a shell command on a server and the 
 ```python
 import asyncio
 from reemote.execute import execute
-from reemote.api.server import Shell
-from reemote.api.inventory import Inventory, InventoryItem, Connection
+from reemote.shell import Shell
+from reemote.inventory import Inventory, InventoryItem, Connection
 
 
 async def main():

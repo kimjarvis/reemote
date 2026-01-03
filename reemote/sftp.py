@@ -10,15 +10,14 @@ from pydantic import (
     BaseModel,
     Field,
     field_validator,
-    root_validator,
     model_validator,
 )
 
-from reemote.api.system import Return
-from reemote.local import Local
-from reemote.models import LocalModel, LocalPathModel, localmodel
-from reemote.response import Response, ResponseElement, ResponseModel
-from reemote.router_handler import router_handler, router_handler_put
+from reemote.system import Return
+from reemote.core.local import Local
+from reemote.core.models import LocalModel, LocalPathModel, localmodel
+from reemote.core.response import Response, ResponseElement, ResponseModel
+from reemote.core.router_handler import router_handler, router_handler_put
 
 router = APIRouter()
 

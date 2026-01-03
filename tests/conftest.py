@@ -2,9 +2,9 @@ import asyncio
 
 import pytest
 
-from reemote.config import Config
+from reemote.core.config import Config
 from reemote.execute import endpoint_execute
-from reemote.api.inventory import Inventory, InventoryItem, Connection
+from reemote.inventory import Inventory, InventoryItem, Connection
 
 
 @pytest.fixture
@@ -34,9 +34,9 @@ def setup_directory():
     async def inner_fixture():
         class Root:
             async def execute(self):
-                from reemote.api.sftp import Isdir
-                from reemote.api.sftp import Rmtree
-                from reemote.api.scp import Upload
+                from reemote.sftp import Isdir
+                from reemote.sftp import Rmtree
+                from reemote.scp import Upload
 
                 r = yield Isdir(path="testdata")
                 if r and r["value"]:

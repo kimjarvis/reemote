@@ -1,12 +1,9 @@
-from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 from typing import AsyncGenerator, Callable, Any
-from reemote.command import Command, ConnectionType
-from reemote.router_handler import router_handler
-from reemote.response import Response
-from reemote.models import LocalModel, RemoteModel, remotemodel
-from reemote.remote import Remote
-from reemote.local import Local
+from reemote.core.command import Command, ConnectionType
+from reemote.core.response import Response
+from reemote.core.models import LocalModel
+from reemote.core.local import Local
 
 
 class CallbackRequestModel(LocalModel):
