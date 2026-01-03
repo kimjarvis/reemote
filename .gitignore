@@ -1,4 +1,7 @@
-*.db
+openapi.json
+uv.lock
+.idea/
+*.dbs
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

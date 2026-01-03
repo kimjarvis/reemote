@@ -1,8 +1,15 @@
 [project]
 name = "reemote"
 version = "0.1.0"
-description = "Add your description here"
+description = "An API for controlling remote systems."
 readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Kim Jarvis", email = "kim.jarvis@tpfsystems.com"}
+]
+maintainers = [
+    {name = "Kim Jarvis", email = "kim.jarvis@tpfsystems.com"}
+]
 requires-python = ">=3.13"
 dependencies = [
     "asyncssh>=2.21.1",
@@ -16,6 +23,11 @@ dependencies = [
     "ruff>=0.14.9",
     "uvicorn>=0.38.0",
 ]
+[project.urls]
+Homepage = "http://reemote.org/"
+Documentation = "https://reemote.org/"
+"Source Code" = "https://github.com/kimjarvis/reemote"
+"Bug Tracker" = "https://github.com/kimjarvis/reemote/issues"
 
 [project.scripts]
 reemote = "reemote.module:main"

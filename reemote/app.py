@@ -1,4 +1,3 @@
-import sys
 from fastapi import FastAPI
 
 from reemote.api.apt import router as apt_router
@@ -7,27 +6,6 @@ from reemote.api.server import router as server_router
 from reemote.api.sftp import router as sftp_router
 from reemote.api.inventory import router as inventory_router
 
-import argparse
-from reemote.config import Config
-
-# Filter out FastAPI/Starlette server arguments
-app_args = [
-    arg
-    for arg in sys.argv[1:]
-    if not arg.startswith("--reload") and not arg.startswith("--port")
-]
-
-parser = argparse.ArgumentParser(description="Server configuration")
-
-# Add arguments
-parser.add_argument("--logging", "-l", type=str, help="Set the logging file path")
-
-parser.add_argument("--inventory", "-i", type=str, help="Set the inventory file path")
-
-# Parse only the filtered arguments
-args, _ = parser.parse_known_args(app_args)
-
-# Initialize FastAPI app
 app = FastAPI(
     title="Reemote",
     summary="An API for controlling remote systems.",
@@ -76,14 +54,3 @@ app.include_router(apt_router, prefix="/apt")
 app.include_router(sftp_router, prefix="/sftp")
 app.include_router(scp_router, prefix="/scp")
 
-
-@app.on_event("startup")
-def initialize():
-    config = Config()
-
-    # # Apply configurations if arguments were provided
-    # if args.logging:
-    #     config.set_logging(args.logging)
-    #
-    # if args.inventory:
-    #     config.set_inventory_path(args.inventory)

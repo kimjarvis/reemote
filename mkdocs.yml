@@ -15,11 +15,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Installation: installation.md
-  - Getting Started: getting_started.md
-  - File System Tutorial: reemote_file_system_tutorial.md
-  - Package Manager Tutorial: packge_manager_tutorial.md
-  - Server Control Tutorial: server_control_tutorial.md
-  - API Documentation: https://tpfsystems.com
+  - API Documentation: redoc-static.html
   - Examples:
       - Hello World:
           - examples/hello_world/readme.md

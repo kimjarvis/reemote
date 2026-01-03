@@ -2,7 +2,7 @@
 
 An API for controlling remote systems.
 
-# Installation
+## Installation
 
 Install the module with pip:
 
@@ -21,3 +21,8 @@ Parameter are passed to [uvicorn](https://uvicorn.dev/#command-line-options) exc
 * `--inventory`: The inventory file (optional).
 * `--logging`: The logging file (optional).
 
+## Documentation
+
+(Home page)[https://reemote.org/]
+
+(API Documentation)[redoc-static.html]
