@@ -25,9 +25,7 @@ async def main():
             yield Child()
             yield Shell(cmd="echo World!")
 
-    responses = await execute(
-        lambda: Root(), inventory=inventory, logfile="logfile.log"
-    )
+    responses = await execute(lambda: Root(), inventory=inventory)
     for response in responses:
         print(response["value"]["stdout"])
 

@@ -31,12 +31,8 @@ async def main():
         async def execute(self):
             yield Shell(cmd="echo Bye!!!")
 
-    responses = await execute(
-        lambda: First(), inventory=inventory, logfile="logfile.log"
-    )
-    responses.extend(
-        await execute(lambda: Second(), inventory=inventory, logfile="logfile.log")
-    )
+    responses = await execute(lambda: First(), inventory=inventory)
+    responses.extend(await execute(lambda: Second(), inventory=inventory))
     for response in responses:
         print(response["value"]["stdout"])
 

@@ -46,11 +46,12 @@ async def run_command_on_local(command: Command) -> dict[str, str | None | Any] 
                     command.global_info,
                     command,
                     SSHCompletedProcess(),
-                    command.caller),
+                    command.caller,
+                ),
                 "call": command.call,
                 "changed": command.changed,
                 "error": command.error,
-                }
+            }
             logging.info(f"{result}")
             return result
         except Exception as e:
@@ -58,7 +59,10 @@ async def run_command_on_local(command: Command) -> dict[str, str | None | Any] 
             raise
     return None
 
-async def run_command_on_host(command: Command) -> dict[str, str | None | bool | Any] | None:
+
+async def run_command_on_host(
+    command: Command,
+) -> dict[str, str | None | bool | Any] | None:
     cp = SSHCompletedProcess()
     if not command.group or command.group in command.global_info["groups"]:
         logging.info(f"{command.call}")
@@ -73,7 +77,9 @@ async def run_command_on_host(command: Command) -> dict[str, str | None | bool |
                         full_command = f"sudo {command.command}"
                     else:
                         full_command = f"echo {command.global_info['sudo_password']} | sudo -S {command.command}"
-                    cp = await conn.run(full_command, check=False) # true -> check if command was successful, exception if not
+                    cp = await conn.run(
+                        full_command, check=False
+                    )  # true -> check if command was successful, exception if not
                 elif command.su:
                     full_command = (
                         f"su {command.global_info['su_user']} -c '{command.command}'"
@@ -219,7 +225,6 @@ async def pre_order_generator_async(
             raise
 
 
-
 async def process_host(
     inventory_item: Tuple[Dict[str, Any], Dict[str, Any]],
     obj_factory: Callable[[], Any],
@@ -245,7 +250,9 @@ async def process_host(
             if isinstance(operation, Command):
                 # Set inventory info
                 # operation.host_info, operation.global_info = inventory_item
-                operation.host_info, operation.global_info = get_inventory_item(inventory_item)
+                operation.host_info, operation.global_info = get_inventory_item(
+                    inventory_item
+                )
 
                 if operation.type == ConnectionType.LOCAL:
                     result = await run_command_on_local(operation)
@@ -254,9 +261,7 @@ async def process_host(
                 elif operation.type == ConnectionType.PASSTHROUGH:
                     result = await pass_through_command(operation)
                 else:
-                    raise ValueError(
-                        f"Unsupported connection type: {operation.type}"
-                    )
+                    raise ValueError(f"Unsupported connection type: {operation.type}")
 
                 responses.append(result)
 
@@ -279,51 +284,40 @@ async def process_host(
 
     return responses
 
+
+async def process_inventory(
+    inventory: dict,
+    root_obj_factory: Callable[[], Any],
+) -> List[Response]:
+    # Run all hosts in parallel
+    tasks: List[asyncio.Task[List[Response]]] = []
+
+    for item in inventory["hosts"]:
+        task = asyncio.create_task(process_host(item, root_obj_factory))
+        tasks.append(task)
+
+    # Wait for all hosts to complete
+    all_responses: List[List[Response]] = await asyncio.gather(*tasks)
+
+    # Flatten the list of lists
+    response: List[Response] = []
+    for host_responses in all_responses:
+        response.extend(host_responses)
+
+    return response
+
+
 async def execute(
     root_obj_factory: Callable[[], Any],
     inventory: Inventory,
-    logfile: str,
-) -> List[Response]:  # Changed return type
+) -> List[Response]:
+    return await process_inventory(inventory.to_json_serializable(), root_obj_factory)
 
-    reemote_logging(logfile)
-
-    # Run all hosts in parallel
-    tasks: List[asyncio.Task[List[Response]]] = []  # Changed type
-
-    for item in inventory.to_json_serializable()["hosts"]:
-        task = asyncio.create_task(process_host(item, root_obj_factory))
-        tasks.append(task)
-
-    # Wait for all hosts to complete
-    all_responses: List[List[Response]] = await asyncio.gather(*tasks)  # Changed type
-
-    # Flatten the list of lists
-    response: List[Response] = []  # Changed type
-    for host_responses in all_responses:
-        response.extend(host_responses)
-
-    return response
 
 async def endpoint_execute(
     root_obj_factory: Callable[[], Any],
-) -> List[Response]:  # Changed return type
-
+) -> List[Response]:
     config = Config()
     reemote_logging()
 
-    # Run all hosts in parallel
-    tasks: List[asyncio.Task[List[Response]]] = []  # Changed type
-
-    for item in config.get_inventory()["hosts"]:
-        task = asyncio.create_task(process_host(item, root_obj_factory))
-        tasks.append(task)
-
-    # Wait for all hosts to complete
-    all_responses: List[List[Response]] = await asyncio.gather(*tasks)  # Changed type
-
-    # Flatten the list of lists
-    response: List[Response] = []  # Changed type
-    for host_responses in all_responses:
-        response.extend(host_responses)
-
-    return response
+    return await process_inventory(config.get_inventory(), root_obj_factory)
