@@ -10,7 +10,6 @@ from reemote.core.command import Command, ConnectionType
 from typing import Any, AsyncGenerator, List, Tuple, Dict, Callable
 from reemote.core.response import Response  # Changed import
 from reemote.core.config import Config
-from reemote.core.reemote_logging import reemote_logging
 from reemote.core.response import ssh_completed_process_to_dict
 from reemote.inventory import get_inventory_item, Inventory
 
@@ -318,6 +317,23 @@ async def endpoint_execute(
     root_obj_factory: Callable[[], Any],
 ) -> List[Response]:
     config = Config()
-    reemote_logging()
+
+    # Inline the reemote_logging logic here
+    filepath = config.get_logging()
+
+    # Configure logging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        filename=filepath,
+        filemode="w",  # Overwrite the file each time
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+    # Create a named logger "reemote"
+    logger = logging.getLogger("reemote")
+    logger.setLevel(logging.DEBUG)  # Set desired log level for your logger
+
+    # Suppress asyncssh logs by setting its log level to WARNING or higher
+    logging.getLogger("asyncssh").setLevel(logging.WARNING)
 
     return await process_inventory(config.get_inventory(), root_obj_factory)
