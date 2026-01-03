@@ -6,27 +6,30 @@ from reemote.execute import endpoint_execute
 
 
 @pytest.mark.asyncio
-async def test_download(setup_inventory, setup_directory):
+async def test_scp_download(setup_inventory, setup_directory):
     from reemote.scp import Download
 
     class Root:
         async def execute(self):
-            yield Download(
+            r = yield Download(
                 srcpaths=["/home/user/testdata/file_b.txt"],
                 dstpath="/tmp/",
                 group="server105",
             )
+            if r:
+                assert not r["error"]
 
     file_path = "/tmp/file_b.txt"
 
     if os.path.exists(file_path):
         os.remove(file_path)
-    await endpoint_execute(lambda: Root())
+    r = await endpoint_execute(lambda: Root())
+    assert len([item for item in r if item is not None]) == 1
     assert os.path.exists(file_path)
 
 
 @pytest.mark.asyncio
-async def test_copy(setup_inventory, setup_directory):
+async def test_scp_copy(setup_inventory, setup_directory):
     from reemote.scp import Copy
     from reemote.sftp import Remove
     from reemote.sftp import Isfile
@@ -43,10 +46,12 @@ async def test_copy(setup_inventory, setup_directory):
                 dsthost="server104",
             )
             if r:
+                assert not r["error"]
                 r1 = yield Isfile(
                     path="/home/user/testdata/file_c.txt", group="server104"
                 )
                 if r1:
                     assert r1["value"]
 
-    await endpoint_execute(lambda: Root())
+    r = await endpoint_execute(lambda: Root())
+    assert len([item for item in r if item is not None]) == 3

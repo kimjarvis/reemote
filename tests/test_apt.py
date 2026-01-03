@@ -7,7 +7,7 @@ from reemote.execute import endpoint_execute
 
 
 @pytest.mark.asyncio
-async def test_apt_install(setup_inventory):
+async def test_apt_apt_install(setup_inventory):
     class Root:
         async def execute(self):
             r = yield Install(
@@ -16,11 +16,11 @@ async def test_apt_install(setup_inventory):
             if r:
                 assert r["changed"]
 
-    await endpoint_execute(lambda: Root())
-
+    r = await endpoint_execute(lambda: Root())
+    assert len(r) == 2
 
 @pytest.mark.asyncio
-async def test_apt_remove(setup_inventory):
+async def test_apt_apt_remove(setup_inventory):
     class Root:
         async def execute(self):
             r = yield Remove(
@@ -29,11 +29,11 @@ async def test_apt_remove(setup_inventory):
             if r:
                 assert r["changed"]
 
-    await endpoint_execute(lambda: Root())
-
+    r = await endpoint_execute(lambda: Root())
+    assert len(r) == 2
 
 @pytest.mark.asyncio
-async def test_apt_update(setup_inventory):
+async def test_apt_apt_update(setup_inventory):
     class Root:
         async def execute(self):
             r = yield Update(
@@ -42,22 +42,22 @@ async def test_apt_update(setup_inventory):
             if r:
                 assert r["changed"]
 
-    await endpoint_execute(lambda: Root())
-
+    r = await endpoint_execute(lambda: Root())
+    assert len(r) == 2
 
 @pytest.mark.asyncio
-async def test_apt_upgrade(setup_inventory):
+async def test_apt_apt_upgrade(setup_inventory):
     class Root:
         async def execute(self):
             r = yield Upgrade(sudo=True)
             if r:
                 assert r["changed"]
 
-    await endpoint_execute(lambda: Root())
-
+    r = await endpoint_execute(lambda: Root())
+    assert len(r) == 2
 
 @pytest.mark.asyncio
-async def test_apt_get_packages(setup_inventory):
+async def test_apt_apt_get_packages(setup_inventory):
     class Root:
         async def execute(self):
             r = yield GetPackages(name="get packages")
@@ -65,11 +65,11 @@ async def test_apt_get_packages(setup_inventory):
             if r:
                 assert not r["changed"]
 
-    await endpoint_execute(lambda: Root())
-
+    r = await endpoint_execute(lambda: Root())
+    assert len(r) == 2
 
 @pytest.mark.asyncio
-async def test_packages(setup_inventory):
+async def test_apt_packages(setup_inventory):
     class Root:
         async def execute(self):
             r = yield Package(
@@ -83,4 +83,3 @@ async def test_packages(setup_inventory):
             print(r)
 
     await endpoint_execute(lambda: Root())
-

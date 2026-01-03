@@ -4,21 +4,22 @@ from reemote.execute import endpoint_execute
 
 
 @pytest.mark.asyncio
-async def test_copy(setup_inventory, setup_directory):
+async def test_sftp_copy(setup_inventory, setup_directory):
     from reemote.sftp import Copy
     from reemote.sftp import Isfile
 
     class Root:
         async def execute(self):
-            yield Copy(srcpaths="testdata/file_b.txt", dstpath="testdata/dir_a")
+            r = yield Copy(srcpaths="testdata/file_b.txt", dstpath="testdata/dir_a")
+            assert r and not r["error"]
             r = yield Isfile(path="testdata/dir_a/file_b.txt")
             assert r and r["value"]
 
-    await endpoint_execute(lambda: Root())
-
+    r = await endpoint_execute(lambda: Root())
+    assert len(r) == 4
 
 @pytest.mark.asyncio
-async def test_mcopy(setup_inventory, setup_directory):
+async def test_sftp_mcopy(setup_inventory, setup_directory):
     from reemote.sftp import Copy, Mkdir, Mcopy
     from reemote.sftp import Isfile
 
@@ -36,7 +37,7 @@ async def test_mcopy(setup_inventory, setup_directory):
 
 
 @pytest.mark.asyncio
-async def test_get(setup_inventory, setup_directory):
+async def test_sftp_get(setup_inventory, setup_directory):
     from reemote.sftp import Get
     import os
 
@@ -49,7 +50,7 @@ async def test_get(setup_inventory, setup_directory):
 
 
 @pytest.mark.asyncio
-async def test_mget(setup_inventory, setup_directory):
+async def test_sftp_mget(setup_inventory, setup_directory):
     from reemote.sftp import Mget
     import os
 
@@ -62,7 +63,7 @@ async def test_mget(setup_inventory, setup_directory):
 
 
 @pytest.mark.asyncio
-async def test_put(setup_inventory, setup_directory):
+async def test_sftp_put(setup_inventory, setup_directory):
     from reemote.sftp import Put
     from reemote.sftp import Isfile
 
@@ -77,7 +78,7 @@ async def test_put(setup_inventory, setup_directory):
     await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_mput(setup_inventory, setup_directory):
+async def test_sftp_mput(setup_inventory, setup_directory):
     from reemote.sftp import Mput
     from reemote.sftp import Isfile
 

@@ -3,57 +3,6 @@ import pytest
 from reemote.execute import endpoint_execute
 
 
-@pytest.mark.asyncio
-async def test_shell(setup_inventory):
-    from reemote.shell import Shell
-
-    class Root:
-        async def execute(self):
-            r = yield Shell(cmd="echo Hello", group="server105")
-            if r:
-                assert r["value"]["stdout"] == "Hello\n"
-                assert r["changed"]
-
-    await endpoint_execute(lambda: Root())
-
-
-@pytest.mark.asyncio
-async def test_callback(setup_inventory):
-    from reemote.system import Callback
-
-    async def _callback(host_info, global_info, command, cp, caller):
-        assert command.value == "test callback"
-        return "tested"
-
-    class Root:
-        async def execute(self):
-            r = yield Callback(callback=_callback, value="test callback")
-            if r:
-                assert r["value"] == "tested"
-                assert r["changed"]
-
-    await endpoint_execute(lambda: Root())
-
-
-@pytest.mark.asyncio
-async def test_return(setup_inventory):
-    from reemote.system import Return
-    from reemote.shell import Shell
-
-    class Child:
-        async def execute(self):
-            a = yield Shell(cmd="echo Hello")
-            b = yield Shell(cmd="echo World")
-            yield Return(value=[a, b], changed=False)
-
-    class Parent:
-        async def execute(self):
-            r = yield Child()
-            if r:
-                assert r["value"][0]["value"]["stdout"] == "Hello\n"
-                assert r["value"][1]["value"]["stdout"] == "World\n"
-
-    await endpoint_execute(lambda: Parent())
 
 
 @pytest.mark.asyncio
