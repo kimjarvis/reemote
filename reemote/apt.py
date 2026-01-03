@@ -17,7 +17,7 @@ from typing import List
 router = APIRouter()
 
 
-class GetPackagesModel(RemoteModel):
+class GetPackagesRequestModel(RemoteModel):
     pass
 
 
@@ -40,6 +40,8 @@ class GetPackagesResponse(ResponseElement):
 
 
 class GetPackages(Remote):
+    Model = GetPackagesRequestModel
+
     async def execute(self) -> AsyncGenerator[Command, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
 
@@ -52,7 +54,9 @@ class GetPackages(Remote):
         parsed_packages = parse_apt_list_installed(result["value"]["stdout"])
 
         # Convert the parsed list of dictionaries into a PackageList
-        package_list = PackageList(packages=[PackageModel(**pkg) for pkg in parsed_packages])
+        package_list = PackageList(
+            packages=[PackageModel(**pkg) for pkg in parsed_packages]
+        )
 
         # Wrap the PackageList in a GetPackagesResponse
         result["value"] = package_list
@@ -132,7 +136,13 @@ async def remove(
     return await router_handler(RemoveModel, Remove)(packages=packages, common=common)
 
 
+class UpdateRequestModel(RemoteModel):
+    pass
+
+
 class Update(Remote):
+    Model = UpdateRequestModel
+
     async def execute(self) -> AsyncGenerator[Command, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
 
@@ -155,7 +165,13 @@ async def update(
     return await router_handler(RemoteModel, Update)(common=common)
 
 
+class UpgradeRequestModel(RemoteModel):
+    pass
+
+
 class Upgrade(Remote):
+    Model = UpgradeRequestModel
+
     async def execute(self) -> AsyncGenerator[Command, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
 

@@ -336,6 +336,9 @@ async def getcrtimens(
     return await router_handler(LocalPathModel, GetcrtimeNs)(path=path, common=common)
 
 
+class GetcwdRequest(LocalModel):
+    pass
+
 class GetcwdResponse(ResponseElement):
     value: str = Field(
         default="",
@@ -344,7 +347,7 @@ class GetcwdResponse(ResponseElement):
 
 
 class Getcwd(Local):
-    Model = LocalModel
+    Model = GetcwdRequest
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
@@ -903,8 +906,11 @@ async def realpath(
     return await router_handler(LocalPathModel, Realpath)(path=path, common=common)
 
 
+class ClientResponse(LocalModel):
+    pass
+
 class Client(Local):
-    Model = LocalModel
+    Model = ClientResponse
 
     @staticmethod
     async def _callback(host_info, global_info, command, cp, caller):
