@@ -23,6 +23,6 @@ Parameter are passed to [uvicorn](https://uvicorn.dev/#command-line-options) exc
 
 ## Documentation
 
-(Home page)[https://reemote.org/]
+[Home page](https://reemote.org/)
 
-(API Documentation)[redoc-static.html]
+[API Documentation](redoc-static.html)
