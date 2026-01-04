@@ -16,8 +16,7 @@ async def main():
     )
 
     responses = await execute(
-        lambda: Shell(cmd="echo Hello World!"),
-        inventory=inventory,
+        lambda: Shell(cmd="echo Hello World!"), inventory=inventory
     )
     for response in responses:
         print(response["value"]["stdout"])
