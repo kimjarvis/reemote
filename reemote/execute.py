@@ -296,15 +296,31 @@ async def process_inventory(
         tasks.append(task)
 
     # Wait for all hosts to complete
-    all_responses: List[List[Response]] = await asyncio.gather(*tasks)
 
-    # Flatten the list of lists
-    response: List[Response] = []
-    for host_responses in all_responses:
-        response.extend(host_responses)
+    from typing import List
+
+    # Wait for all hosts to complete
+    all_responses: List[Any] = await asyncio.gather(*tasks)
+
+    # Recursively flatten the nested lists and filter out None objects
+    def recursive_flatten_and_filter(data):
+        if isinstance(data, list):  # If it's a list, recurse into its elements
+            for item in data:
+                yield from recursive_flatten_and_filter(item)
+        elif data is not None:  # If it's not None, yield it
+            yield data
+
+    # Flatten and filter the responses
+    flattened_responses = list(recursive_flatten_and_filter(all_responses))
+
+    # Extract the last item for each host
+    unique_hosts = set(item['host'] for item in flattened_responses)  # Get unique hosts
+    response = [
+        next(item for item in reversed(flattened_responses) if item['host'] == host)
+        for host in unique_hosts
+    ]
 
     return response
-
 
 async def execute(
     root_obj_factory: Callable[[], Any],

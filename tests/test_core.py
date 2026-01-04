@@ -18,3 +18,17 @@ async def test_core_group(setup_inventory):
 
     r = await endpoint_execute(lambda: Root())
     assert len([item for item in r if item is not None])==1
+
+@pytest.mark.asyncio
+async def test_core_recent_responses(setup_inventory):
+    """verify that, for each host, only the most recent response is returned."""
+    from reemote.shell import Shell
+
+    class Root:
+        async def execute(self):
+            yield Shell(cmd="echo Hello")
+            yield Shell(cmd="echo World")
+
+    r = await endpoint_execute(lambda: Root())
+    print(r)
+

@@ -16,7 +16,7 @@ async def test_sftp_copy(setup_inventory, setup_directory):
             assert r and r["value"]
 
     r = await endpoint_execute(lambda: Root())
-    assert len(r) == 4
+    assert len(r) == 2
 
 @pytest.mark.asyncio
 async def test_sftp_mcopy(setup_inventory, setup_directory):

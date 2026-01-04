@@ -42,4 +42,4 @@ async def test_return(setup_inventory):
                 assert r["value"][1]["value"]["stdout"] == "World\n"
 
     r = await endpoint_execute(lambda: Parent())
-    assert len(r) == 6
+    assert len(r) == 2

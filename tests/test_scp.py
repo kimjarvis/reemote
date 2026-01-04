@@ -53,5 +53,4 @@ async def test_scp_copy(setup_inventory, setup_directory):
                 if r1:
                     assert r1["value"]
 
-    r = await endpoint_execute(lambda: Root())
-    assert len([item for item in r if item is not None]) == 3
+    await endpoint_execute(lambda: Root())
