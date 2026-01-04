@@ -12,7 +12,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-
+from reemote.core.command import Command
 from reemote.system import Return
 from reemote.core.local import Local
 from reemote.core.models import LocalModel, LocalPathModel, localmodel
@@ -33,9 +33,9 @@ class Islink(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.islink(command.caller.path)
@@ -67,9 +67,9 @@ class Isfile(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.isfile(command.caller.path)
@@ -101,9 +101,9 @@ class Isdir(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.isdir(command.caller.path)
@@ -135,9 +135,9 @@ class Getsize(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.getsize(command.caller.path)
@@ -169,9 +169,9 @@ class Getatime(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.getatime(command.caller.path)
@@ -203,9 +203,9 @@ class GetatimeNs(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.getatime_ns(command.caller.path)
@@ -230,9 +230,9 @@ class Getmtime(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.getmtime(command.caller.path)
@@ -258,9 +258,9 @@ class GetmtimeNs(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.getmtime_ns(command.caller.path)
@@ -286,9 +286,9 @@ class Getcrtime(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.getcrtime(command.caller.path)
@@ -313,9 +313,9 @@ class GetcrtimeNs(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.getcrtime_ns(command.caller.path)
@@ -350,9 +350,9 @@ class Getcwd(Local):
     Model = GetcwdRequest
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.getcwd()
@@ -406,9 +406,9 @@ class Stat(Local):
     Model = StatModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     sftp_attrs = await sftp.stat(
@@ -463,9 +463,9 @@ class Read(Local):
     Model = ReadModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     f = await sftp.open(
@@ -529,9 +529,9 @@ class Listdir(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.listdir(command.caller.path)
@@ -593,9 +593,9 @@ class Readdir(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     sftp_names = await sftp.readdir(command.caller.path)
@@ -628,9 +628,9 @@ class Exists(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.exists(command.caller.path)
@@ -655,9 +655,9 @@ class Lexists(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.lexists(command.caller.path)
@@ -682,9 +682,9 @@ class Lstat(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     sftp_attrs = await sftp.lstat(command.caller.path)
@@ -718,9 +718,9 @@ class Readlink(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.readlink(command.caller.path)
@@ -751,9 +751,9 @@ class Glob(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.glob(command.caller.path)
@@ -778,9 +778,9 @@ class GlobSftpName(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     sftp_names = await sftp.glob_sftpname(command.caller.path)
@@ -848,9 +848,9 @@ class StatVfs(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     sftp_vfs_attrs = await sftp.statvfs(command.caller.path)
                     command.changed = False
@@ -883,9 +883,9 @@ class Realpath(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return await sftp.realpath(command.caller.path)
@@ -913,9 +913,9 @@ class Client(Local):
     Model = ClientResponse
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     return {
@@ -1031,9 +1031,9 @@ class Copy(Local):
     Model = CopyRequestModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.copy(
                         srcpaths=command.caller.srcpaths,
@@ -1058,9 +1058,9 @@ class Mcopy(Local):
     Model = McopyModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.mcopy(
                         srcpaths=command.caller.srcpaths,
@@ -1250,9 +1250,9 @@ class Get(Local):
     Model = GetModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.get(
                         remotepaths=command.caller.remotepaths,
@@ -1276,9 +1276,9 @@ class Mget(Local):
     Model = MgetModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.mget(
                         remotepaths=command.caller.remotepaths,
@@ -1459,9 +1459,9 @@ class Put(Local):
     Model = PutModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.put(
                         localpaths=command.caller.localpaths,
@@ -1485,9 +1485,9 @@ class Mput(Local):
     Model = MputModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.mput(
                         localpaths=command.caller.localpaths,
@@ -1658,9 +1658,9 @@ class Mkdir(Local):
     Model = MkdirModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     sftp_attrs = command.caller.get_sftp_attrs()
                     if sftp_attrs:
@@ -1706,9 +1706,9 @@ class Setstat(Local):
     Model = MkdirModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     sftp_attrs = command.caller.get_sftp_attrs()
                     if sftp_attrs:
@@ -1753,9 +1753,9 @@ class Makedirs(Local):
     Model = MkdirModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     sftp_attrs = command.caller.get_sftp_attrs()
                     if sftp_attrs:
@@ -1801,9 +1801,9 @@ class Rmdir(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.rmdir(command.caller.path)
         except Exception as e:
@@ -1828,9 +1828,9 @@ class Rmtree(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.rmtree(command.caller.path)
         except Exception as e:
@@ -1864,9 +1864,9 @@ class Chmod(Local):
     Model = ChmodModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.chmod(
                         path=command.caller.path,
@@ -1913,9 +1913,9 @@ class Chown(Local):
     Model = ChownModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.chown(
                         path=command.caller.path,
@@ -1969,9 +1969,9 @@ class Utime(Local):
     Model = UtimeModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.utime(
                         path=command.caller.path,
@@ -2018,9 +2018,9 @@ class Chdir(Local):
     Model = ChdirModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.chdir(path=command.caller.path)
         except Exception as e:
@@ -2069,9 +2069,9 @@ class Rename(Local):
     Model = RenameModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.rename(
                         oldpath=command.caller.oldpath, newpath=command.caller.newpath
@@ -2103,9 +2103,9 @@ class Remove(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.remove(path=command.caller.path)
         except Exception as e:
@@ -2183,9 +2183,9 @@ class Write(Local):
     Model = WriteModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     sftp_attrs = command.caller.get_sftp_attrs()
                     f = await sftp.open(
@@ -2290,9 +2290,9 @@ class Link(Local):
     Model = LinkModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.link(
                         oldpath=command.caller.file_path, newpath=command.caller.link_path
@@ -2323,9 +2323,9 @@ class Symlink(Local):
     Model = LinkModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.symlink(
                         oldpath=command.caller.file_path, newpath=command.caller.link_path
@@ -2378,9 +2378,9 @@ class Truncate(Local):
     Model = TruncateModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
-            async with asyncssh.connect(**host_info) as conn:
+            async with asyncssh.connect(**command.inventory_item.connection.to_json_serializable()) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.truncate(path=command.caller.file_path, size=command.caller.size)
         except Exception as e:

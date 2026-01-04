@@ -8,8 +8,9 @@ from reemote.execute import endpoint_execute
 @pytest.mark.asyncio
 async def test_system_callback(setup_inventory):
     from reemote.system import Callback
+    from reemote.core.command import Command
 
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         assert command.value == "test callback"
         return "tested"
 

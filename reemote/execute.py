@@ -40,14 +40,7 @@ async def run_command_on_local(command: Command) -> dict[str, str | None | Any] 
         try:
             result = {
                 "host": command.inventory_item.connection.host,
-                "value": await command.callback(
-                    command.host_info,
-                    command.global_info,
-                    command.inventory_item,
-                    command,
-                    SSHCompletedProcess(),
-                    command.caller,
-                ),
+                "value": await command.callback(command),
                 "call": command.call,
                 "changed": command.changed,
                 "error": command.error,
@@ -69,9 +62,14 @@ async def run_command_on_host(
         logging.info(f"{command.call}")
         try:
             if command.get_pty:
-                conn = await asyncssh.connect(**command.inventory_item.connection.to_json_serializable(), term_type="xterm")
+                conn = await asyncssh.connect(
+                    **command.inventory_item.connection.to_json_serializable(),
+                    term_type="xterm",
+                )
             else:
-                conn = await asyncssh.connect(**command.inventory_item.connection.to_json_serializable())
+                conn = await asyncssh.connect(
+                    **command.inventory_item.connection.to_json_serializable()
+                )
             async with conn as conn:
                 if command.sudo:
                     if command.inventory_item.host_vars.get("sudo_password") is None:
@@ -82,9 +80,7 @@ async def run_command_on_host(
                         full_command, check=False
                     )  # true -> check if command was successful, exception if not
                 elif command.su:
-                    full_command = (
-                        f"su {command.inventory_item.host_vars['su_user']} -c '{command.command}'"
-                    )
+                    full_command = f"su {command.inventory_item.host_vars['su_user']} -c '{command.command}'"
                     if command.inventory_item.host_vars["su_user"] == "root":
                         async with conn.create_process(
                             full_command,
@@ -308,13 +304,14 @@ async def process_inventory(
     flattened_responses = list(recursive_flatten_and_filter(all_responses))
 
     # Extract the last item for each host
-    unique_hosts = set(item['host'] for item in flattened_responses)  # Get unique hosts
+    unique_hosts = set(item["host"] for item in flattened_responses)  # Get unique hosts
     response = [
-        next(item for item in reversed(flattened_responses) if item['host'] == host)
+        next(item for item in reversed(flattened_responses) if item["host"] == host)
         for host in unique_hosts
     ]
 
     return response
+
 
 async def execute(
     root_obj_factory: Callable[[], Any],

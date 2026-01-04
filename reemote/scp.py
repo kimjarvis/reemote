@@ -9,6 +9,7 @@ from reemote.core.router_handler import router_handler
 from reemote.core.models import LocalModel, localmodel
 from reemote.core.local import Local
 from reemote.core.response import ResponseModel
+from reemote.core.command import Command
 
 router = APIRouter()
 
@@ -30,7 +31,7 @@ class Upload(Local):
     Model = ScpModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
             return await asyncssh.scp(
                 srcpaths=command.caller.srcpaths,
@@ -97,7 +98,7 @@ class Download(Local):
     Model = ScpModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
             return await asyncssh.scp(
                 srcpaths=[(command.inventory_item.connection.host, path) for path in command.caller.srcpaths],
@@ -169,7 +170,7 @@ class Copy(Local):
     Model = CopyModel
 
     @staticmethod
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(command: Command):
         try:
             return await asyncssh.scp(
                 srcpaths=[(command.inventory_item.connection.host, path) for path in command.caller.srcpaths],
