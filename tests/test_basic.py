@@ -12,7 +12,6 @@ async def test_isdir(setup_inventory, setup_directory):
     class Root:
         async def execute(self):
             r = yield Isdir(path="testdata/dir_a")
-            print(r)
             if r:
                 assert r["value"]
                 assert not r["changed"]
@@ -113,8 +112,7 @@ async def test_directory(setup_inventory, setup_directory):
 
     class Parent:
         async def execute(self):
-            response = yield Child()
-            print(response)
+            yield Child()
 
     await endpoint_execute(lambda: Parent())
 
@@ -328,7 +326,8 @@ async def test_mkdirs(setup_inventory, setup_directory):
     class Root:
         async def execute(self):
             r = yield Makedirs(path="testdata/x/y")
-            print(r)
+            if r:
+                assert not r["error"]
             r = yield Isdir(path="testdata/x/y")
             if r:
                 assert r["value"]
