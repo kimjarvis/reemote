@@ -11,7 +11,7 @@ from typing import Any, AsyncGenerator, List, Tuple, Dict, Callable
 from reemote.core.response import Response  # Changed import
 from reemote.core.config import Config
 from reemote.core.response import ssh_completed_process_to_dict
-from reemote.inventory import get_inventory_item, Inventory
+from reemote.inventory import Inventory
 
 
 async def pass_through_command(command: Command) -> dict[str, str | None | Any] | None:
@@ -243,9 +243,6 @@ async def process_host(
     while True:
         try:
             if isinstance(command, Command):
-                command.host_info, command.global_info = get_inventory_item(
-                    inventory_item
-                )
                 command.inventory_item = inventory_item
 
                 if command.type == ConnectionType.LOCAL:

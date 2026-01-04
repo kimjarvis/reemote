@@ -287,17 +287,3 @@ async def get_inventory():
         return InventoryGetResponse(
             error=True, value={"hosts": []}, description=f"Unexpected error: {e}"
         )
-
-
-def get_inventory_item(inventory_item: dict) -> tuple:
-    # Extract the connection dictionary
-    connection = inventory_item.get("connection", {})
-
-    # Extract the host_vars dictionary
-    host_vars = inventory_item.get("host_vars", {})
-
-    # Add the groups to the host_vars dictionary
-    groups = inventory_item.get("groups", [])
-    host_vars["groups"] = groups
-
-    return connection, host_vars

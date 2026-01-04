@@ -38,13 +38,6 @@ class Command(CommonModel):
     )
     caller: Optional[object] = Field(default=None, description="Caller object")
 
-    # Fields that will be populated later (not in __init__)
-    host_info: Optional[Dict[str, str]] = Field(
-        default=None, description="Host information", exclude=True
-    )
-    global_info: Optional[Dict[str, Any]] = Field(
-        default=None, description="Global information", exclude=True
-    )
     inventory_item: Optional[InventoryItem] = Field(
         default=None, description="Inventory item", exclude=True
     )
