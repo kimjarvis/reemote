@@ -15,11 +15,11 @@ from reemote.inventory import get_inventory_item, Inventory
 
 
 async def pass_through_command(command: Command) -> dict[str, str | None | Any] | None:
-    if not command.group or command.group in command.inventory_item.groups:
+    if not command.group or command.group in command.global_info["groups"]:
         logging.info(f"{command.call}")
         try:
             result = {
-                "host": command.inventory_item.connection.host,
+                "host": command.host_info.get("host"),
                 "value": command.value,
                 "call": command.call,
                 "changed": command.changed,
@@ -35,15 +35,14 @@ async def pass_through_command(command: Command) -> dict[str, str | None | Any] 
 
 
 async def run_command_on_local(command: Command) -> dict[str, str | None | Any] | None:
-    if not command.group or command.group in command.inventory_item.groups:
+    if not command.group or command.group in command.global_info["groups"]:
         logging.info(f"{command.call}")
         try:
             result = {
-                "host": command.inventory_item.connection.host,
+                "host": command.host_info.get("host"),
                 "value": await command.callback(
                     command.host_info,
                     command.global_info,
-                    command.inventory_item,
                     command,
                     SSHCompletedProcess(),
                     command.caller,
@@ -64,28 +63,27 @@ async def run_command_on_host(
     command: Command,
 ) -> dict[str, str | None | bool | Any] | None:
     cp = SSHCompletedProcess()
-    print(command.inventory_item)
-    if not command.group or command.group in command.inventory_item.groups:
+    if not command.group or command.group in command.global_info["groups"]:
         logging.info(f"{command.call}")
         try:
             if command.get_pty:
-                conn = await asyncssh.connect(**command.inventory_item.connection.to_json_serializable(), term_type="xterm")
+                conn = await asyncssh.connect(**command.host_info, term_type="xterm")
             else:
-                conn = await asyncssh.connect(**command.inventory_item.connection.to_json_serializable())
+                conn = await asyncssh.connect(**command.host_info)
             async with conn as conn:
                 if command.sudo:
-                    if command.inventory_item.host_vars.get("sudo_password") is None:
+                    if command.global_info.get("sudo_password") is None:
                         full_command = f"sudo {command.command}"
                     else:
-                        full_command = f"echo {command.inventory_item.host_vars['sudo_password']} | sudo -S {command.command}"
+                        full_command = f"echo {command.global_info['sudo_password']} | sudo -S {command.command}"
                     cp = await conn.run(
                         full_command, check=False
                     )  # true -> check if command was successful, exception if not
                 elif command.su:
                     full_command = (
-                        f"su {command.inventory_item.host_vars['su_user']} -c '{command.command}'"
+                        f"su {command.global_info['su_user']} -c '{command.command}'"
                     )
-                    if command.inventory_item.host_vars["su_user"] == "root":
+                    if command.global_info["su_user"] == "root":
                         async with conn.create_process(
                             full_command,
                             term_type="xterm",
@@ -96,7 +94,7 @@ async def run_command_on_host(
                             try:
                                 await process.stdout.readuntil("Password:")
                                 process.stdin.write(
-                                    f"{command.inventory_item.host_vars['su_password']}\n"
+                                    f"{command.global_info['su_password']}\n"
                                 )
                             except asyncio.TimeoutError:
                                 pass
@@ -128,7 +126,7 @@ async def run_command_on_host(
             logging.error(f"{e} {command}", exc_info=True)
             raise
         result = {
-            "host": command.inventory_item.connection.host,
+            "host": command.host_info.get("host"),
             "value": ssh_completed_process_to_dict(cp),
             "call": command.call,
             "changed": command.changed,

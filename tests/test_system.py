@@ -9,7 +9,7 @@ from reemote.execute import endpoint_execute
 async def test_system_callback(setup_inventory):
     from reemote.system import Callback
 
-    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
+    async def _callback(host_info, global_info, command, cp, caller):
         assert command.value == "test callback"
         return "tested"
 
