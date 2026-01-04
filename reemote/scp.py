@@ -33,14 +33,14 @@ class Upload(Local):
     async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             return await asyncssh.scp(
-                srcpaths=caller.srcpaths,
-                dstpath=(command.inventory_item.connection.host, caller.dstpath),
+                srcpaths=command.caller.srcpaths,
+                dstpath=(command.inventory_item.connection.host, command.caller.dstpath),
                 username=command.inventory_item.connection.username,
-                preserve=caller.preserve,
-                recurse=caller.recurse,
-                block_size=caller.block_size,
-                progress_handler=caller.progress_handler,
-                error_handler=caller.error_handler,
+                preserve=command.caller.preserve,
+                recurse=command.caller.recurse,
+                block_size=command.caller.block_size,
+                progress_handler=command.caller.progress_handler,
+                error_handler=command.caller.error_handler,
             )
         except Exception as e:
             command.error = True
@@ -100,14 +100,14 @@ class Download(Local):
     async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             return await asyncssh.scp(
-                srcpaths=[(command.inventory_item.connection.host, path) for path in caller.srcpaths],
-                dstpath=caller.dstpath,
+                srcpaths=[(command.inventory_item.connection.host, path) for path in command.caller.srcpaths],
+                dstpath=command.caller.dstpath,
                 username=command.inventory_item.connection.username,
-                preserve=caller.preserve,
-                recurse=caller.recurse,
-                block_size=caller.block_size,
-                progress_handler=caller.progress_handler,
-                error_handler=caller.error_handler,
+                preserve=command.caller.preserve,
+                recurse=command.caller.recurse,
+                block_size=command.caller.block_size,
+                progress_handler=command.caller.progress_handler,
+                error_handler=command.caller.error_handler,
             )
         except Exception as e:
             command.error = True
@@ -172,14 +172,14 @@ class Copy(Local):
     async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             return await asyncssh.scp(
-                srcpaths=[(command.inventory_item.connection.host, path) for path in caller.srcpaths],
-                dstpath=(caller.dsthost, caller.dstpath),
+                srcpaths=[(command.inventory_item.connection.host, path) for path in command.caller.srcpaths],
+                dstpath=(command.caller.dsthost, command.caller.dstpath),
                 username=command.inventory_item.connection.username,
-                preserve=caller.preserve,
-                recurse=caller.recurse,
-                block_size=caller.block_size,
-                progress_handler=caller.progress_handler,
-                error_handler=caller.error_handler,
+                preserve=command.caller.preserve,
+                recurse=command.caller.recurse,
+                block_size=command.caller.block_size,
+                progress_handler=command.caller.progress_handler,
+                error_handler=command.caller.error_handler,
             )
         except Exception as e:
             command.error = True

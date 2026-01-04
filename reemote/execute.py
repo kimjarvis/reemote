@@ -111,7 +111,7 @@ async def run_command_on_host(
                         ) as process:
                             await process.stdout.readuntil("Password:")
                             process.stdin.write(
-                                f"{command.global_info['su_password']}\n"
+                                f"{command.inventory_item.host_vars['su_password']}\n"
                             )
                             stdout, stderr = await process.communicate()
 

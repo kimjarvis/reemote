@@ -38,7 +38,7 @@ class Islink(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.islink(caller.path)
+                    return await sftp.islink(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -72,7 +72,7 @@ class Isfile(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.isfile(caller.path)
+                    return await sftp.isfile(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -106,7 +106,7 @@ class Isdir(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.isdir(caller.path)
+                    return await sftp.isdir(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -140,7 +140,7 @@ class Getsize(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.getsize(caller.path)
+                    return await sftp.getsize(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -174,7 +174,7 @@ class Getatime(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.getatime(caller.path)
+                    return await sftp.getatime(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -208,7 +208,7 @@ class GetatimeNs(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.getatime_ns(caller.path)
+                    return await sftp.getatime_ns(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -235,7 +235,7 @@ class Getmtime(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.getmtime(caller.path)
+                    return await sftp.getmtime(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -263,7 +263,7 @@ class GetmtimeNs(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.getmtime_ns(caller.path)
+                    return await sftp.getmtime_ns(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -291,7 +291,7 @@ class Getcrtime(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.getcrtime(caller.path)
+                    return await sftp.getcrtime(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -318,7 +318,7 @@ class GetcrtimeNs(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.getcrtime_ns(caller.path)
+                    return await sftp.getcrtime_ns(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -412,7 +412,7 @@ class Stat(Local):
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     sftp_attrs = await sftp.stat(
-                        caller.path, follow_symlinks=caller.follow_symlinks
+                        command.caller.path, follow_symlinks=command.caller.follow_symlinks
                     )
                     return sftp_attrs_to_dict(sftp_attrs)
         except Exception as e:
@@ -469,12 +469,12 @@ class Read(Local):
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
                     f = await sftp.open(
-                        path=caller.path,
+                        path=command.caller.path,
                         pflags_or_mode=FXF_READ,
-                        encoding=caller.encoding,
-                        errors=caller.errors,
-                        block_size=caller.block_size,
-                        max_requests=caller.max_requests,
+                        encoding=command.caller.encoding,
+                        errors=command.caller.errors,
+                        block_size=command.caller.block_size,
+                        max_requests=command.caller.max_requests,
                     )
                     content = await f.read()
                     await f.close()
@@ -534,7 +534,7 @@ class Listdir(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.listdir(caller.path)
+                    return await sftp.listdir(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -598,7 +598,7 @@ class Readdir(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    sftp_names = await sftp.readdir(caller.path)
+                    sftp_names = await sftp.readdir(command.caller.path)
                     return sftp_names_to_dict(sftp_names)
         except Exception as e:
             command.error = True
@@ -633,7 +633,7 @@ class Exists(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.exists(caller.path)
+                    return await sftp.exists(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -660,7 +660,7 @@ class Lexists(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.lexists(caller.path)
+                    return await sftp.lexists(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -687,7 +687,7 @@ class Lstat(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    sftp_attrs = await sftp.lstat(caller.path)
+                    sftp_attrs = await sftp.lstat(command.caller.path)
                     return sftp_attrs_to_dict(sftp_attrs)
         except Exception as e:
             command.error = True
@@ -723,7 +723,7 @@ class Readlink(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.readlink(caller.path)
+                    return await sftp.readlink(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -756,7 +756,7 @@ class Glob(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.glob(caller.path)
+                    return await sftp.glob(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -783,7 +783,7 @@ class GlobSftpName(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    sftp_names = await sftp.glob_sftpname(caller.path)
+                    sftp_names = await sftp.glob_sftpname(command.caller.path)
                     return sftp_names_to_dict(sftp_names)
         except Exception as e:
             command.error = True
@@ -852,7 +852,7 @@ class StatVfs(Local):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    sftp_vfs_attrs = await sftp.statvfs(caller.path)
+                    sftp_vfs_attrs = await sftp.statvfs(command.caller.path)
                     command.changed = False
                     return sftp_vfs_attrs_to_dict(sftp_vfs_attrs)
         except Exception as e:
@@ -888,7 +888,7 @@ class Realpath(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     command.changed = False
-                    return await sftp.realpath(caller.path)
+                    return await sftp.realpath(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -1036,17 +1036,17 @@ class Copy(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.copy(
-                        srcpaths=caller.srcpaths,
-                        dstpath=caller.dstpath,
-                        preserve=caller.preserve,
-                        recurse=caller.recurse,
-                        follow_symlinks=caller.follow_symlinks,
-                        sparse=caller.sparse,
-                        block_size=caller.block_size,
-                        max_requests=caller.max_requests,
-                        progress_handler=caller.progress_handler,
-                        error_handler=caller.error_handler,
-                        remote_only=caller.remote_only,
+                        srcpaths=command.caller.srcpaths,
+                        dstpath=command.caller.dstpath,
+                        preserve=command.caller.preserve,
+                        recurse=command.caller.recurse,
+                        follow_symlinks=command.caller.follow_symlinks,
+                        sparse=command.caller.sparse,
+                        block_size=command.caller.block_size,
+                        max_requests=command.caller.max_requests,
+                        progress_handler=command.caller.progress_handler,
+                        error_handler=command.caller.error_handler,
+                        remote_only=command.caller.remote_only,
                     )
         except Exception as e:
             command.error = True
@@ -1063,17 +1063,17 @@ class Mcopy(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.mcopy(
-                        srcpaths=caller.srcpaths,
-                        dstpath=caller.dstpath,
-                        preserve=caller.preserve,
-                        recurse=caller.recurse,
-                        follow_symlinks=caller.follow_symlinks,
-                        sparse=caller.sparse,
-                        block_size=caller.block_size,
-                        max_requests=caller.max_requests,
-                        progress_handler=caller.progress_handler,
-                        error_handler=caller.error_handler,
-                        remote_only=caller.remote_only,
+                        srcpaths=command.caller.srcpaths,
+                        dstpath=command.caller.dstpath,
+                        preserve=command.caller.preserve,
+                        recurse=command.caller.recurse,
+                        follow_symlinks=command.caller.follow_symlinks,
+                        sparse=command.caller.sparse,
+                        block_size=command.caller.block_size,
+                        max_requests=command.caller.max_requests,
+                        progress_handler=command.caller.progress_handler,
+                        error_handler=command.caller.error_handler,
+                        remote_only=command.caller.remote_only,
                     )
         except Exception as e:
             command.error = True
@@ -1255,16 +1255,16 @@ class Get(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.get(
-                        remotepaths=caller.remotepaths,
-                        localpath=caller.localpath,
-                        preserve=caller.preserve,
-                        recurse=caller.recurse,
-                        follow_symlinks=caller.follow_symlinks,
-                        sparse=caller.sparse,
-                        block_size=caller.block_size,
-                        max_requests=caller.max_requests,
-                        progress_handler=caller.progress_handler,
-                        error_handler=caller.error_handler,
+                        remotepaths=command.caller.remotepaths,
+                        localpath=command.caller.localpath,
+                        preserve=command.caller.preserve,
+                        recurse=command.caller.recurse,
+                        follow_symlinks=command.caller.follow_symlinks,
+                        sparse=command.caller.sparse,
+                        block_size=command.caller.block_size,
+                        max_requests=command.caller.max_requests,
+                        progress_handler=command.caller.progress_handler,
+                        error_handler=command.caller.error_handler,
                     )
         except Exception as e:
             command.error = True
@@ -1281,16 +1281,16 @@ class Mget(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.mget(
-                        remotepaths=caller.remotepaths,
-                        localpath=caller.localpath,
-                        preserve=caller.preserve,
-                        recurse=caller.recurse,
-                        follow_symlinks=caller.follow_symlinks,
-                        sparse=caller.sparse,
-                        block_size=caller.block_size,
-                        max_requests=caller.max_requests,
-                        progress_handler=caller.progress_handler,
-                        error_handler=caller.error_handler,
+                        remotepaths=command.caller.remotepaths,
+                        localpath=command.caller.localpath,
+                        preserve=command.caller.preserve,
+                        recurse=command.caller.recurse,
+                        follow_symlinks=command.caller.follow_symlinks,
+                        sparse=command.caller.sparse,
+                        block_size=command.caller.block_size,
+                        max_requests=command.caller.max_requests,
+                        progress_handler=command.caller.progress_handler,
+                        error_handler=command.caller.error_handler,
                     )
         except Exception as e:
             command.error = True
@@ -1464,16 +1464,16 @@ class Put(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.put(
-                        localpaths=caller.localpaths,
-                        remotepath=caller.remotepath,
-                        preserve=caller.preserve,
-                        recurse=caller.recurse,
-                        follow_symlinks=caller.follow_symlinks,
-                        sparse=caller.sparse,
-                        block_size=caller.block_size,
-                        max_requests=caller.max_requests,
-                        progress_handler=caller.progress_handler,
-                        error_handler=caller.error_handler,
+                        localpaths=command.caller.localpaths,
+                        remotepath=command.caller.remotepath,
+                        preserve=command.caller.preserve,
+                        recurse=command.caller.recurse,
+                        follow_symlinks=command.caller.follow_symlinks,
+                        sparse=command.caller.sparse,
+                        block_size=command.caller.block_size,
+                        max_requests=command.caller.max_requests,
+                        progress_handler=command.caller.progress_handler,
+                        error_handler=command.caller.error_handler,
                     )
         except Exception as e:
             command.error = True
@@ -1490,16 +1490,16 @@ class Mput(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.mput(
-                        localpaths=caller.localpaths,
-                        remotepath=caller.remotepath,
-                        preserve=caller.preserve,
-                        recurse=caller.recurse,
-                        follow_symlinks=caller.follow_symlinks,
-                        sparse=caller.sparse,
-                        block_size=caller.block_size,
-                        max_requests=caller.max_requests,
-                        progress_handler=caller.progress_handler,
-                        error_handler=caller.error_handler,
+                        localpaths=command.caller.localpaths,
+                        remotepath=command.caller.remotepath,
+                        preserve=command.caller.preserve,
+                        recurse=command.caller.recurse,
+                        follow_symlinks=command.caller.follow_symlinks,
+                        sparse=command.caller.sparse,
+                        block_size=command.caller.block_size,
+                        max_requests=command.caller.max_requests,
+                        progress_handler=command.caller.progress_handler,
+                        error_handler=command.caller.error_handler,
                     )
         except Exception as e:
             command.error = True
@@ -1662,13 +1662,13 @@ class Mkdir(Local):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    sftp_attrs = caller.get_sftp_attrs()
+                    sftp_attrs = command.caller.get_sftp_attrs()
                     if sftp_attrs:
                         await sftp.mkdir(
-                            path=caller.path, attrs=sftp_attrs if sftp_attrs else None
+                            path=command.caller.path, attrs=sftp_attrs if sftp_attrs else None
                         )
                     else:
-                        await sftp.mkdir(path=caller.path)
+                        await sftp.mkdir(path=command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -1710,9 +1710,9 @@ class Setstat(Local):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    sftp_attrs = caller.get_sftp_attrs()
+                    sftp_attrs = command.caller.get_sftp_attrs()
                     if sftp_attrs:
-                        await sftp.setstat(path=caller.path, attrs=sftp_attrs)
+                        await sftp.setstat(path=command.caller.path, attrs=sftp_attrs)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -1757,13 +1757,13 @@ class Makedirs(Local):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    sftp_attrs = caller.get_sftp_attrs()
+                    sftp_attrs = command.caller.get_sftp_attrs()
                     if sftp_attrs:
                         await sftp.makedirs(
-                            path=caller.path, attrs=sftp_attrs if sftp_attrs else None
+                            path=command.caller.path, attrs=sftp_attrs if sftp_attrs else None
                         )
                     else:
-                        await sftp.makedirs(path=caller.path)
+                        await sftp.makedirs(path=command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -1805,7 +1805,7 @@ class Rmdir(Local):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    return await sftp.rmdir(caller.path)
+                    return await sftp.rmdir(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -1832,7 +1832,7 @@ class Rmtree(Local):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    return await sftp.rmtree(caller.path)
+                    return await sftp.rmtree(command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -1869,9 +1869,9 @@ class Chmod(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.chmod(
-                        path=caller.path,
-                        mode=caller.permissions,
-                        follow_symlinks=caller.follow_symlinks,
+                        path=command.caller.path,
+                        mode=command.caller.permissions,
+                        follow_symlinks=command.caller.follow_symlinks,
                     )
         except Exception as e:
             command.error = True
@@ -1918,10 +1918,10 @@ class Chown(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.chown(
-                        path=caller.path,
-                        uid=caller.uid,
-                        gid=caller.gid,
-                        follow_symlinks=caller.follow_symlinks,
+                        path=command.caller.path,
+                        uid=command.caller.uid,
+                        gid=command.caller.gid,
+                        follow_symlinks=command.caller.follow_symlinks,
                     )
         except Exception as e:
             command.error = True
@@ -1974,9 +1974,9 @@ class Utime(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.utime(
-                        path=caller.path,
-                        times=(caller.atime, caller.mtime),
-                        follow_symlinks=caller.follow_symlinks,
+                        path=command.caller.path,
+                        times=(command.caller.atime, command.caller.mtime),
+                        follow_symlinks=command.caller.follow_symlinks,
                     )
         except Exception as e:
             command.error = True
@@ -2022,7 +2022,7 @@ class Chdir(Local):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    return await sftp.chdir(path=caller.path)
+                    return await sftp.chdir(path=command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -2074,7 +2074,7 @@ class Rename(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.rename(
-                        oldpath=caller.oldpath, newpath=caller.newpath
+                        oldpath=command.caller.oldpath, newpath=command.caller.newpath
                     )
         except Exception as e:
             command.error = True
@@ -2107,7 +2107,7 @@ class Remove(Local):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    return await sftp.remove(path=caller.path)
+                    return await sftp.remove(path=command.caller.path)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
@@ -2187,17 +2187,17 @@ class Write(Local):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    sftp_attrs = caller.get_sftp_attrs()
+                    sftp_attrs = command.caller.get_sftp_attrs()
                     f = await sftp.open(
-                        path=caller.path,
-                        pflags_or_mode=caller.mode,
+                        path=command.caller.path,
+                        pflags_or_mode=command.caller.mode,
                         attrs=sftp_attrs if sftp_attrs else None,
-                        encoding=caller.encoding,
-                        errors=caller.errors,
-                        block_size=caller.block_size,
-                        max_requests=caller.max_requests,
+                        encoding=command.caller.encoding,
+                        errors=command.caller.errors,
+                        block_size=command.caller.block_size,
+                        max_requests=command.caller.max_requests,
                     )
-                    content = await f.write(caller.text)
+                    content = await f.write(command.caller.text)
                     await f.close()
         except Exception as e:
             command.error = True
@@ -2295,7 +2295,7 @@ class Link(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.link(
-                        oldpath=caller.file_path, newpath=caller.link_path
+                        oldpath=command.caller.file_path, newpath=command.caller.link_path
                     )
         except Exception as e:
             command.error = True
@@ -2328,7 +2328,7 @@ class Symlink(Local):
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.symlink(
-                        oldpath=caller.file_path, newpath=caller.link_path
+                        oldpath=command.caller.file_path, newpath=command.caller.link_path
                     )
         except Exception as e:
             command.error = True
@@ -2382,7 +2382,7 @@ class Truncate(Local):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    return await sftp.truncate(path=caller.file_path, size=caller.size)
+                    return await sftp.truncate(path=command.caller.file_path, size=command.caller.size)
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
