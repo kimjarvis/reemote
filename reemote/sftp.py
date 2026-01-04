@@ -41,7 +41,7 @@ class Islink(Local):
                     return await sftp.islink(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -75,7 +75,7 @@ class Isfile(Local):
                     return await sftp.isfile(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -109,7 +109,7 @@ class Isdir(Local):
                     return await sftp.isdir(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -143,7 +143,7 @@ class Getsize(Local):
                     return await sftp.getsize(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -177,7 +177,7 @@ class Getatime(Local):
                     return await sftp.getatime(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -211,7 +211,7 @@ class GetatimeNs(Local):
                     return await sftp.getatime_ns(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -238,7 +238,7 @@ class Getmtime(Local):
                     return await sftp.getmtime(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -266,7 +266,7 @@ class GetmtimeNs(Local):
                     return await sftp.getmtime_ns(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -294,7 +294,7 @@ class Getcrtime(Local):
                     return await sftp.getcrtime(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -321,7 +321,7 @@ class GetcrtimeNs(Local):
                     return await sftp.getcrtime_ns(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -358,7 +358,7 @@ class Getcwd(Local):
                     return await sftp.getcwd()
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -417,7 +417,7 @@ class Stat(Local):
                     return sftp_attrs_to_dict(sftp_attrs)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -481,7 +481,7 @@ class Read(Local):
                     return content
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -537,7 +537,7 @@ class Listdir(Local):
                     return await sftp.listdir(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -602,7 +602,7 @@ class Readdir(Local):
                     return sftp_names_to_dict(sftp_names)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -636,7 +636,7 @@ class Exists(Local):
                     return await sftp.exists(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -663,7 +663,7 @@ class Lexists(Local):
                     return await sftp.lexists(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -691,7 +691,7 @@ class Lstat(Local):
                     return sftp_attrs_to_dict(sftp_attrs)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -726,7 +726,7 @@ class Readlink(Local):
                     return await sftp.readlink(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -759,7 +759,7 @@ class Glob(Local):
                     return await sftp.glob(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -787,7 +787,7 @@ class GlobSftpName(Local):
                     return sftp_names_to_dict(sftp_names)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -857,7 +857,7 @@ class StatVfs(Local):
                     return sftp_vfs_attrs_to_dict(sftp_vfs_attrs)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -891,7 +891,7 @@ class Realpath(Local):
                     return await sftp.realpath(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -929,7 +929,7 @@ class Client(Local):
                     }
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -1050,7 +1050,7 @@ class Copy(Local):
                     )
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -1077,7 +1077,7 @@ class Mcopy(Local):
                     )
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -1268,7 +1268,7 @@ class Get(Local):
                     )
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -1294,7 +1294,7 @@ class Mget(Local):
                     )
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -1477,7 +1477,7 @@ class Put(Local):
                     )
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -1503,7 +1503,7 @@ class Mput(Local):
                     )
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -1671,7 +1671,7 @@ class Mkdir(Local):
                         await sftp.mkdir(path=caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -1715,7 +1715,7 @@ class Setstat(Local):
                         await sftp.setstat(path=caller.path, attrs=sftp_attrs)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -1766,7 +1766,7 @@ class Makedirs(Local):
                         await sftp.makedirs(path=caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -1808,7 +1808,7 @@ class Rmdir(Local):
                     return await sftp.rmdir(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -1835,7 +1835,7 @@ class Rmtree(Local):
                     return await sftp.rmtree(caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -1875,7 +1875,7 @@ class Chmod(Local):
                     )
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -1925,7 +1925,7 @@ class Chown(Local):
                     )
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -1980,7 +1980,7 @@ class Utime(Local):
                     )
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -2025,7 +2025,7 @@ class Chdir(Local):
                     return await sftp.chdir(path=caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -2078,7 +2078,7 @@ class Rename(Local):
                     )
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -2110,7 +2110,7 @@ class Remove(Local):
                     return await sftp.remove(path=caller.path)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -2201,7 +2201,7 @@ class Write(Local):
                     await f.close()
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -2299,7 +2299,7 @@ class Link(Local):
                     )
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -2332,7 +2332,7 @@ class Symlink(Local):
                     )
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
@@ -2385,7 +2385,7 @@ class Truncate(Local):
                     return await sftp.truncate(path=caller.file_path, size=caller.size)
         except Exception as e:
             command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 
