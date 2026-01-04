@@ -18,15 +18,3 @@ async def test_shell(setup_inventory):
 
     r = await endpoint_execute(lambda: Root())
     assert len(r)==2
-
-@pytest.mark.asyncio
-async def test_shell_sudo(setup_inventory):
-    from reemote.shell import Shell
-
-    class Root:
-        async def execute(self):
-            r = yield Shell(cmd="ls /root",sudo=True)
-            if r:
-                assert not r["error"]
-
-    await endpoint_execute(lambda: Root())

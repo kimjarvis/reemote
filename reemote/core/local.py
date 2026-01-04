@@ -35,5 +35,5 @@ class Local:
 
     @staticmethod
     @abstractmethod
-    async def _callback(host_info: Any, global_info: Any, command: Any, cp: Any, caller: Any) -> None:
+    async def _callback(host_info: Any, global_info: Any, inventory_item: Any, group: Any,command: Any, cp: Any, caller: Any) -> None:
         pass
