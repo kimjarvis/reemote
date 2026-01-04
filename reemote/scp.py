@@ -34,8 +34,8 @@ class Upload(Local):
         try:
             return await asyncssh.scp(
                 srcpaths=caller.srcpaths,
-                dstpath=(host_info.get("host"), caller.dstpath),
-                username=host_info.get("username"),
+                dstpath=(command.inventory_item.connection.host, caller.dstpath),
+                username=command.inventory_item.connection.username,
                 preserve=caller.preserve,
                 recurse=caller.recurse,
                 block_size=caller.block_size,
@@ -44,7 +44,7 @@ class Upload(Local):
             )
         except Exception as e:
             command.error = True
-            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 @router.post("/upload", tags=["SCP Operations"], response_model=ResponseModel)
@@ -100,9 +100,9 @@ class Download(Local):
     async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             return await asyncssh.scp(
-                srcpaths=[(host_info.get("host"), path) for path in caller.srcpaths],
+                srcpaths=[(command.inventory_item.connection.host, path) for path in caller.srcpaths],
                 dstpath=caller.dstpath,
-                username=host_info.get("username"),
+                username=command.inventory_item.connection.username,
                 preserve=caller.preserve,
                 recurse=caller.recurse,
                 block_size=caller.block_size,
@@ -111,7 +111,7 @@ class Download(Local):
             )
         except Exception as e:
             command.error = True
-            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 @router.post("/download", tags=["SCP Operations"], response_model=ResponseModel)
@@ -172,9 +172,9 @@ class Copy(Local):
     async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             return await asyncssh.scp(
-                srcpaths=[(host_info.get("host"), path) for path in caller.srcpaths],
+                srcpaths=[(command.inventory_item.connection.host, path) for path in caller.srcpaths],
                 dstpath=(caller.dsthost, caller.dstpath),
-                username=host_info.get("username"),
+                username=command.inventory_item.connection.username,
                 preserve=caller.preserve,
                 recurse=caller.recurse,
                 block_size=caller.block_size,
@@ -183,7 +183,7 @@ class Copy(Local):
             )
         except Exception as e:
             command.error = True
-            logging.error(f"{host_info['host']}: {e.__class__.__name__}")
+            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 @router.post("/copy", tags=["SCP Operations"], response_model=ResponseModel)
