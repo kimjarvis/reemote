@@ -33,7 +33,7 @@ class Islink(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -67,7 +67,7 @@ class Isfile(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -101,7 +101,7 @@ class Isdir(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -135,7 +135,7 @@ class Getsize(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -169,7 +169,7 @@ class Getatime(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -203,7 +203,7 @@ class GetatimeNs(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -230,7 +230,7 @@ class Getmtime(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -258,7 +258,7 @@ class GetmtimeNs(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -286,7 +286,7 @@ class Getcrtime(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -313,7 +313,7 @@ class GetcrtimeNs(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -350,7 +350,7 @@ class Getcwd(Local):
     Model = GetcwdRequest
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -406,7 +406,7 @@ class Stat(Local):
     Model = StatModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -463,7 +463,7 @@ class Read(Local):
     Model = ReadModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -529,7 +529,7 @@ class Listdir(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -593,7 +593,7 @@ class Readdir(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -628,7 +628,7 @@ class Exists(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -655,7 +655,7 @@ class Lexists(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -682,7 +682,7 @@ class Lstat(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -718,7 +718,7 @@ class Readlink(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -751,7 +751,7 @@ class Glob(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -778,7 +778,7 @@ class GlobSftpName(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -848,7 +848,7 @@ class StatVfs(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -883,7 +883,7 @@ class Realpath(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -913,7 +913,7 @@ class Client(Local):
     Model = ClientResponse
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -1031,7 +1031,7 @@ class Copy(Local):
     Model = CopyRequestModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -1058,7 +1058,7 @@ class Mcopy(Local):
     Model = McopyModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -1250,7 +1250,7 @@ class Get(Local):
     Model = GetModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -1276,7 +1276,7 @@ class Mget(Local):
     Model = MgetModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -1459,7 +1459,7 @@ class Put(Local):
     Model = PutModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -1485,7 +1485,7 @@ class Mput(Local):
     Model = MputModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -1658,7 +1658,7 @@ class Mkdir(Local):
     Model = MkdirModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -1706,7 +1706,7 @@ class Setstat(Local):
     Model = MkdirModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -1753,7 +1753,7 @@ class Makedirs(Local):
     Model = MkdirModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -1801,7 +1801,7 @@ class Rmdir(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -1828,7 +1828,7 @@ class Rmtree(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -1864,7 +1864,7 @@ class Chmod(Local):
     Model = ChmodModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -1913,7 +1913,7 @@ class Chown(Local):
     Model = ChownModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -1969,7 +1969,7 @@ class Utime(Local):
     Model = UtimeModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -2018,7 +2018,7 @@ class Chdir(Local):
     Model = ChdirModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -2069,7 +2069,7 @@ class Rename(Local):
     Model = RenameModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -2103,7 +2103,7 @@ class Remove(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -2183,7 +2183,7 @@ class Write(Local):
     Model = WriteModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -2290,7 +2290,7 @@ class Link(Local):
     Model = LinkModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -2323,7 +2323,7 @@ class Symlink(Local):
     Model = LinkModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
@@ -2378,7 +2378,7 @@ class Truncate(Local):
     Model = TruncateModel
 
     @staticmethod
-    async def _callback(host_info, global_info, command, cp, caller):
+    async def _callback(host_info, global_info, inventory_item, command, cp, caller):
         try:
             async with asyncssh.connect(**host_info) as conn:
                 async with conn.start_sftp_client() as sftp:
