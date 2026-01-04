@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, Optional
 from pydantic import ConfigDict, Field, field_validator  # Updated imports
 
 from reemote.core.models import CommonModel
+from reemote.inventory import InventoryItem
 
 
 class ConnectionType(Enum):
@@ -43,6 +44,9 @@ class Command(CommonModel):
     )
     global_info: Optional[Dict[str, Any]] = Field(
         default=None, description="Global information", exclude=True
+    )
+    inventory_item: Optional[InventoryItem] = Field(
+        default=None, description="Inventory item", exclude=True
     )
     # Return only
     value: Optional[Any] = Field(

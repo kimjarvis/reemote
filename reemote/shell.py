@@ -33,7 +33,7 @@ class Shell(Remote):
 
 @router.post("/shell", tags=["Shell Operations"], response_model=ShellResponseModel)
 async def shell(
-    cmd: str = Query(..., description="Shell command",example="192"),
+    cmd: str = Query(..., description="Shell command",examples=["echo Hello World!","ls -ltr"]),
     common: RemoteModel = Depends(remotemodel),
 ) -> ShellResponseModel:
     """# Execute a shell command on the remote host"""

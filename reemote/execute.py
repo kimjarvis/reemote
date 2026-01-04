@@ -236,45 +236,37 @@ async def process_host(
     # Create async pre-order generator
     gen = pre_order_generator_async(host_instance)
 
-    # Start the generator
-    operation = None
     try:
-        operation = await gen.__anext__()
+        command = await gen.__anext__()
     except StopAsyncIteration:
         # Generator completed immediately (no commands to execute)
         return responses
 
     while True:
         try:
-            if isinstance(operation, Command):
-                # Set inventory info
-                # operation.host_info, operation.global_info = inventory_item
-                operation.host_info, operation.global_info = get_inventory_item(
+            if isinstance(command, Command):
+                command.host_info, command.global_info = get_inventory_item(
                     inventory_item
                 )
+                command.inventory_item = inventory_item
 
-                if operation.type == ConnectionType.LOCAL:
-                    result = await run_command_on_local(operation)
-                elif operation.type == ConnectionType.REMOTE:
-                    result = await run_command_on_host(operation)
-                elif operation.type == ConnectionType.PASSTHROUGH:
-                    result = await pass_through_command(operation)
+                if command.type == ConnectionType.LOCAL:
+                    result = await run_command_on_local(command)
+                elif command.type == ConnectionType.REMOTE:
+                    result = await run_command_on_host(command)
+                elif command.type == ConnectionType.PASSTHROUGH:
+                    result = await pass_through_command(command)
                 else:
-                    raise ValueError(f"Unsupported connection type: {operation.type}")
+                    raise ValueError(f"Unsupported connection type: {command.type}")
 
                 responses.append(result)
 
-                # Send result back and get next operation
-                operation = await gen.asend(result)
-
-            elif isinstance(operation, Response):
-                responses.append(operation)
-                result = operation
-                operation = await gen.asend(result)
+                # Send result back and get next command
+                command = await gen.asend(result)
 
             else:
                 raise TypeError(
-                    f"Unsupported type from async generator: {type(operation)}"
+                    f"Unsupported type from async generator: {type(command)}"
                 )
 
         except StopAsyncIteration:
