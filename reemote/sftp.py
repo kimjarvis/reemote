@@ -2474,40 +2474,20 @@ class Directory(Local):
 
 @router.put("/directory", tags=["SFTP Operations"], response_model=ResponseModel)
 async def directory(
-    path: Union[PurePath, str, bytes] = Query(..., description="Directory path", examples=["testdata/new_dir"]),
+    path: Union[PurePath, str, bytes] = Query(..., description="Directory path on the remote host", examples=["/home/user","testdata/new_dir"]),
     present: Optional[bool] = Query(...,
         description="Whether the directory should be present or not"
     ),
     permissions: Optional[int] = Query(
         None, ge=0, le=0o7777, description="Directory permissions as integer", examples=["0o644"]
     ),
-    uid: Optional[int] = Query(None, description="User ID"),
-    gid: Optional[int] = Query(None, description="Group ID"),
-    atime: Optional[int] = Query(None, description="Access time", examples=["0xDEADCAFE"]),
-    mtime: Optional[int] = Query(None, description="Modification time", examples=["0xACAFEDAD"]),
+    uid: Optional[int] = Query(None, description="User ID, user must exist on the remote host"),
+    gid: Optional[int] = Query(None, description="Group ID, user must exist on the remote host"),
+    atime: Optional[int] = Query(None, description="Access time in seconds since epoch", examples=["0xDEADCAFE"]),
+    mtime: Optional[int] = Query(None, description="Modification time in seconds since epoch", examples=["0xACAFEDAD"]),
     common: LocalModel = Depends(localmodel),
 ) -> ResponseModel:
-    """# Manage APT packages
-
-    ```python
-        yield Directory(
-            present=True,
-            path="testdata/new_dir",
-            permissions=0o644,
-            atime=0xDEADCAFE,
-            mtime=0xACAFEDAD,
-        )
-    ```
-
-    ```json
-    {
-        'host': 'server104',
-        'value': None,
-        'changed': True,
-        'error': False
-    }
-    ```
-    """
+    """# Ensure directory exists"""
     params = {"path": path, "present": present}
     if permissions is not None:
         params["permissions"] = permissions

@@ -54,7 +54,7 @@ def localmodel(
 
 class LocalPathModel(LocalModel):
     path: Union[PurePath, str, bytes] = Field(
-        ...,  # Required field
+        ..., examples=["/home/user", "testdata"]
     )
 
     @field_validator("path", mode="before")

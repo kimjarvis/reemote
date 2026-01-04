@@ -21,7 +21,6 @@ async def pass_through_command(command: Command) -> dict[str, str | None | Any] 
             result = {
                 "host": command.inventory_item.connection.host,
                 "value": command.value,
-                "call": command.call,
                 "changed": command.changed,
                 "error": command.error,
             }
@@ -41,7 +40,6 @@ async def run_command_on_local(command: Command) -> dict[str, str | None | Any] 
             result = {
                 "host": command.inventory_item.connection.host,
                 "value": await command.callback(command),
-                "call": command.call,
                 "changed": command.changed,
                 "error": command.error,
             }
@@ -126,7 +124,6 @@ async def run_command_on_host(
         result = {
             "host": command.inventory_item.connection.host,
             "value": ssh_completed_process_to_dict(cp),
-            "call": command.call,
             "changed": command.changed,
             "error": command.error,
         }
