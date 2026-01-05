@@ -5,7 +5,7 @@ from reemote.execute import endpoint_execute
 
 @pytest.mark.asyncio
 async def test_shell(setup_inventory):
-    from reemote.shell import Shell
+    from reemote.host import Shell
 
     class Root:
         async def execute(self):
@@ -20,7 +20,7 @@ async def test_shell(setup_inventory):
 
 @pytest.mark.asyncio
 async def test_shell_sudo(setup_inventory):
-    from reemote.shell import Shell
+    from reemote.host import Shell
 
     class Root:
         async def execute(self):
@@ -32,14 +32,13 @@ async def test_shell_sudo(setup_inventory):
 
 @pytest.mark.asyncio
 async def test_get_context(setup_inventory):
-    from reemote.shell import Getcontext
+    from reemote.host import Getcontext
 
     class Root:
         async def execute(self):
             r = yield Getcontext()
             if r:
                 assert not r["error"]
-            print(r)
 
     r = await endpoint_execute(lambda: Root())
     assert len(r)==2

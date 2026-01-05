@@ -61,7 +61,6 @@ async def test_apt_apt_get_packages(setup_inventory):
     class Root:
         async def execute(self):
             r = yield GetPackages(name="get packages")
-            print(r)
             if r:
                 assert not r["changed"]
 
@@ -80,6 +79,5 @@ async def test_apt_packages(setup_inventory):
                 group="all",
                 sudo=True,
             )
-            print(r)
 
     await endpoint_execute(lambda: Root())

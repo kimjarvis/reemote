@@ -5,9 +5,10 @@ import pytest
 from reemote.core.config import Config
 from reemote.execute import endpoint_execute
 from reemote.inventory import Inventory
+from reemote.core.inventory_model import InventoryItem, Connection, Session
 
 @pytest.mark.asyncio
-async def test_get_inventory():
+async def test_inventory_get():
     from reemote.inventory import Getinventory
 
     class Root:
@@ -21,6 +22,38 @@ async def test_get_inventory():
 
     r = await endpoint_execute(lambda: Root())
     assert len(r) == 2
+
+@pytest.mark.asyncio
+async def test_inventory_environment_variables(setup_inventory):
+    from reemote.host import Shell
+
+    class Root:
+        async def execute(self):
+            r = yield Shell(cmd="echo $TESTVAR")
+            print(r)
+
+    inventory = Inventory(
+        hosts=[
+            InventoryItem(
+                connection=Connection(
+                    host="server104", username="user", password="password"
+                ),
+                session=Session(env={"TESTVAR" : "test"}),
+                groups=["all"],
+            ),
+            InventoryItem(
+                connection=Connection(
+                    host="server105", username="user", password="password"
+                ),
+                session=Session(env={"TESTVAR": "test"}),
+                groups=["all"],
+            ),
+        ]
+    )
+    config = Config()
+    config.set_inventory(inventory.to_json_serializable())
+
+    await endpoint_execute(lambda: Root())
 
 
 @pytest.mark.asyncio

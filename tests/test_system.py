@@ -44,7 +44,7 @@ async def test_system_callback(setup_inventory):
 @pytest.mark.asyncio
 async def test_return(setup_inventory):
     from reemote.system import Return
-    from reemote.shell import Shell
+    from reemote.host import Shell
 
     class Child:
         async def execute(self):

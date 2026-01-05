@@ -56,7 +56,6 @@ async def run_command_on_host(
     command: Command,
 ) -> dict[str, str | None | bool | Any] | None:
     cp = SSHCompletedProcess()
-    print(command.inventory_item)
     if not command.group or command.group in command.inventory_item.groups:
         logging.info(f"{command.call}")
         try:
@@ -70,8 +69,10 @@ async def run_command_on_host(
                     else:
                         full_command = f"echo {command.inventory_item.authentication.sudo_password} | sudo -S {command.command}"
                     cp = await conn.run(
-                        full_command, check=False
-                    )  # true -> check if command was successful, exception if not
+                        full_command,
+                        check=False,
+                        **command.inventory_item.session.to_json_serializable(),
+                    )
                 elif command.su:
                     full_command = f"su {command.inventory_item.authentication.su_user} -c '{command.command}'"
                     if command.inventory_item.authentication.su_user == "root":
@@ -103,7 +104,6 @@ async def run_command_on_host(
                                 f"{command.inventory_item.authentication.su_password}\n"
                             )
                             stdout, stderr = await process.communicate()
-
                     cp = SSHCompletedProcess(
                         command=full_command,
                         exit_status=process.exit_status,
@@ -112,7 +112,11 @@ async def run_command_on_host(
                         stderr=stderr,
                     )
                 else:
-                    cp = await conn.run(command.command, check=False)
+                    cp = await conn.run(
+                        command.command,
+                        **command.inventory_item.session.to_json_serializable(),
+                        check=False,
+                    )
         except (asyncssh.ProcessError, OSError, asyncssh.Error) as e:
             logging.error(f"{e} {command}", exc_info=True)
             raise

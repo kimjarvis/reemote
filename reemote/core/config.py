@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 class Config:
     # Default data directory (can be overridden)
-    data_dir = Path.home() / ".reemote"
+    data_dir = Path.home() / ".config/reemote"
 
     @property
     def config_path(self) -> Path:
@@ -96,12 +96,6 @@ class Config:
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON in inventory file: {e}")
 
-        # # Validate the structure of the inventory data
-        # if not isinstance(inventory_data, dict):
-        #     raise TypeError("Inventory data is not in the expected dictionary format.")
-        # if "hosts" not in inventory_data or not isinstance(inventory_data["hosts"], list):
-        #     raise TypeError("Inventory data is missing the 'hosts' key or it is not a list.")
-        # print(inventory_data)
         return inventory_data
 
     def set_inventory(self, inventory_data: List) -> None:

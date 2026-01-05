@@ -52,7 +52,7 @@ class Session(BaseModel):
         return self.model_dump()
 
 
-class InventoryAuthenication(BaseModel):
+class Authenication(BaseModel):
     sudo_password: Optional[str] = Field(
         "", description="The ssh password for authenticating with the remote host."
     )
@@ -67,11 +67,13 @@ class InventoryItem(BaseModel):
     connection: Connection = Field(
         ..., description="The connection details for the remote host."
     )
-    authentication: Optional[InventoryAuthenication] = Field(
-        None, description="The authentication details for the remote host."
+    authentication: Optional[Authenication] = Field(
+        default_factory=Authenication,
+        description="The authentication details for the remote host."
     )
     session: Optional[Session] = Field(
-        None, description="The session details for the remote host."
+        default_factory=Session,
+        description="The session details for the remote host."
     )
     groups: List[str] = Field(
         [], description="The groups to which the remote host belongs."

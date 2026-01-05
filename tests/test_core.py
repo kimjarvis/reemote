@@ -5,12 +5,11 @@ from reemote.execute import endpoint_execute
 
 @pytest.mark.asyncio
 async def test_core_group(setup_inventory):
-    from reemote.shell import Shell
+    from reemote.host import Shell
 
     class Root:
         async def execute(self):
             r = yield Shell(cmd="echo Hello",group="server104")
-            print(r)
             if r:
                 assert r["value"]["stdout"] == "Hello\n"
                 assert r["changed"]
@@ -22,7 +21,7 @@ async def test_core_group(setup_inventory):
 @pytest.mark.asyncio
 async def test_core_recent_responses(setup_inventory):
     """verify that, for each host, only the most recent response is returned."""
-    from reemote.shell import Shell
+    from reemote.host import Shell
 
     class Root:
         async def execute(self):
@@ -30,5 +29,4 @@ async def test_core_recent_responses(setup_inventory):
             yield Shell(cmd="echo World")
 
     r = await endpoint_execute(lambda: Root())
-    print(r)
 
