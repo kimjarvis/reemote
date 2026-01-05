@@ -271,6 +271,10 @@ async def process_inventory(
     inventory: dict,
     root_obj_factory: Callable[[], Any],
 ) -> List[Any]:
+    # Return an empty list if inventory is empty
+    if not inventory:
+        return []
+
     # Run all hosts in parallel
     tasks = []
 
