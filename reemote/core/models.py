@@ -14,7 +14,6 @@ class CommonModel(BaseModel):
     name: Optional[str] = Field(default=None, description="Optional name")
     sudo: bool = Field(default=False, description="Whether to use sudo")
     su: bool = Field(default=False, description="Whether to use su")
-    get_pty: bool = Field(default=False, description="Whether to get a PTY")
 
 
 
@@ -26,10 +25,9 @@ def commonmodel(
     name: Optional[str] = Query(None, description="Optional name"),
     sudo: bool = Query(False, description="Whether to use sudo"),
     su: bool = Query(False, description="Whether to use su"),
-    get_pty: bool = Query(False, description="Whether to get a PTY"),
 ) -> CommonModel:
     """FastAPI dependency for common parameters"""
-    return CommonModel(group=group, name=name, sudo=sudo, su=su, get_pty=get_pty)
+    return CommonModel(group=group, name=name, sudo=sudo, su=su)
 
 
 class LocalModel(BaseModel):
@@ -81,7 +79,6 @@ class RemoteModel(BaseModel):
     name: Optional[str] = Field(default=None, description="Optional name.")
     sudo: bool = Field(default=False, description="Execute command with sudo.")
     su: bool = Field(default=False, description="Execute command with su.")
-    get_pty: bool = Field(default=False, description="Use a pseudo terminal.")
 
 
 
@@ -92,7 +89,6 @@ def remotemodel(
     name: Optional[str] = Query(None, description="Optional name"),
     sudo: bool = Query(False, description="Whether to use sudo"),
     su: bool = Query(False, description="Whether to use su"),
-    get_pty: bool = Query(False, description="Whether to get a PTY"),
 ) -> RemoteModel:
     """FastAPI dependency for common parameters"""
-    return RemoteModel(group=group, name=name, sudo=sudo, su=su, get_pty=get_pty)
+    return RemoteModel(group=group, name=name, sudo=sudo, su=su)

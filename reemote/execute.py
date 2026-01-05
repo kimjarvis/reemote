@@ -8,6 +8,7 @@ import inspect
 from asyncssh import SSHCompletedProcess
 from reemote.core.command import Command, ConnectionType
 from typing import Any, AsyncGenerator, List, Tuple, Dict, Callable
+
 # from reemote.core.response import Response  # Removed to avoid circularity if any
 from reemote.core.config import Config
 from reemote.core.response import ssh_completed_process_to_dict
@@ -59,15 +60,9 @@ async def run_command_on_host(
     if not command.group or command.group in command.inventory_item.groups:
         logging.info(f"{command.call}")
         try:
-            if command.get_pty:
-                conn = await asyncssh.connect(
-                    **command.inventory_item.connection.to_json_serializable(),
-                    term_type="xterm",
-                )
-            else:
-                conn = await asyncssh.connect(
-                    **command.inventory_item.connection.to_json_serializable()
-                )
+            conn = await asyncssh.connect(
+                **command.inventory_item.connection.to_json_serializable()
+            )
             async with conn as conn:
                 if command.sudo:
                     if command.inventory_item.authentication.sudo_password is None:
@@ -82,7 +77,7 @@ async def run_command_on_host(
                     if command.inventory_item.authentication.su_user == "root":
                         async with conn.create_process(
                             full_command,
-                            term_type="xterm",
+                            **command.inventory_item.session.to_json_serializable(),
                             stdin=asyncssh.PIPE,
                             stdout=asyncssh.PIPE,
                             stderr=asyncssh.PIPE,
@@ -98,7 +93,7 @@ async def run_command_on_host(
                     else:
                         async with conn.create_process(
                             full_command,
-                            term_type="xterm",
+                            **command.inventory_item.session.to_json_serializable(),
                             stdin=asyncssh.PIPE,
                             stdout=asyncssh.PIPE,
                             stderr=asyncssh.PIPE,

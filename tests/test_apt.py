@@ -37,7 +37,7 @@ async def test_apt_apt_update(setup_inventory):
     class Root:
         async def execute(self):
             r = yield Update(
-                group="all", name=None, sudo=False, su=False, get_pty=False
+                group="all", name=None, sudo=False, su=False
             )
             if r:
                 assert r["changed"]
