@@ -10,7 +10,6 @@ async def test_shell(setup_inventory):
     class Root:
         async def execute(self):
             r = yield Shell(cmd="echo Hello")
-            print(r)
             if r:
                 assert r["value"]["stdout"] == "Hello\n"
                 assert r["changed"]
@@ -30,3 +29,17 @@ async def test_shell_sudo(setup_inventory):
                 assert not r["error"]
 
     await endpoint_execute(lambda: Root())
+
+@pytest.mark.asyncio
+async def test_get_context(setup_inventory):
+    from reemote.shell import Getcontext
+
+    class Root:
+        async def execute(self):
+            r = yield Getcontext()
+            if r:
+                assert not r["error"]
+            print(r)
+
+    r = await endpoint_execute(lambda: Root())
+    assert len(r)==2

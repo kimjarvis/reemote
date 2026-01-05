@@ -8,10 +8,10 @@ import inspect
 from asyncssh import SSHCompletedProcess
 from reemote.core.command import Command, ConnectionType
 from typing import Any, AsyncGenerator, List, Tuple, Dict, Callable
-from reemote.core.response import Response  # Changed import
+# from reemote.core.response import Response  # Removed to avoid circularity if any
 from reemote.core.config import Config
 from reemote.core.response import ssh_completed_process_to_dict
-from reemote.inventory import Inventory
+from reemote.core.inventory_model import Inventory
 
 
 async def pass_through_command(command: Command) -> dict[str, str | None | Any] | None:
@@ -134,7 +134,7 @@ async def run_command_on_host(
 
 async def pre_order_generator_async(
     node: object,
-) -> AsyncGenerator[Command | Response, Response | None]:
+) -> AsyncGenerator[Command | Any, Any | None]:
     """
     Async version of pre-order generator traversal.
     Handles async generators and async execute() methods.
@@ -192,8 +192,8 @@ async def pre_order_generator_async(
                     # Send result back to parent
                     stack[-1] = (current_node, generator, result)
 
-            elif isinstance(value, Response):
-                # Pass through Response objects
+            elif isinstance(value, dict):
+                # Pass through dict objects (previously Response)
                 result = yield value
                 stack[-1] = (current_node, generator, result)
 
@@ -222,8 +222,8 @@ async def pre_order_generator_async(
 async def process_host(
     inventory_item: Tuple[Dict[str, Any], Dict[str, Any]],
     obj_factory: Callable[[], Any],
-) -> List[Response]:
-    responses: List[Response] = []
+) -> List[Any]:
+    responses: List[Any] = []
 
     # Create a new instance for this host using the factory
     host_instance = obj_factory()
@@ -271,17 +271,13 @@ async def process_host(
 async def process_inventory(
     inventory: dict,
     root_obj_factory: Callable[[], Any],
-) -> List[Response]:
+) -> List[Any]:
     # Run all hosts in parallel
-    tasks: List[asyncio.Task[List[Response]]] = []
+    tasks = []
 
     for item in inventory["hosts"]:
         task = asyncio.create_task(process_host(item, root_obj_factory))
         tasks.append(task)
-
-    # Wait for all hosts to complete
-
-    from typing import List
 
     # Wait for all hosts to complete
     all_responses: List[Any] = await asyncio.gather(*tasks)
@@ -310,13 +306,13 @@ async def process_inventory(
 async def execute(
     root_obj_factory: Callable[[], Any],
     inventory: Inventory,
-) -> List[Response]:
+) -> List[Any]:
     return await process_inventory(inventory.to_json_serializable(), root_obj_factory)
 
 
 async def endpoint_execute(
     root_obj_factory: Callable[[], Any],
-) -> List[Response]:
+) -> List[Any]:
     config = Config()
 
     # Inline the reemote_logging logic here

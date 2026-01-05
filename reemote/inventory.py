@@ -1,97 +1,19 @@
-from fastapi import APIRouter, Body, Path
+from fastapi import APIRouter, Body, Path, Depends
 from pydantic import BaseModel, ValidationError, model_validator, Field
 from typing import List, Dict, Any
 from reemote.core.config import Config
+from reemote.core.inventory_model import Connection, InventoryItem, Inventory
+from reemote.core.remote import Remote
+from reemote.system import Callback
+from reemote.core.command import Command
+from reemote.core.router_handler import router_handler
+from reemote.core.models import LocalModel, localmodel
+
 
 # Define the router
 router = APIRouter()
 
 
-class Connection(BaseModel):
-    host: str = Field(
-        ..., description="The hostname or IP address of the remote server."
-    )
-    # model_config = {"extra": "allow"}
-
-    # Allow arbitrary additional fields
-    model_config = {
-        "extra": "allow",
-        "json_schema_extra": {
-            "properties": {
-                "host": {
-                    "description": "The hostname or IP address of the remote server."
-                },
-                "username": {
-                    "description": "The ssh username for authenticating with the remote server."
-                },
-                "password": {
-                    "description": "The ssh password for authenticating with the remote server."
-                },
-                "port": {
-                    "description": "The ssh port number for connecting to the remote server."
-                },
-            },
-            "required": ["host"],
-            "additionalProperties": {
-                "type": "string",
-                "description": "Additional asyncssh.SSHClientConnectionOptions for the connection.",
-            },
-        },
-    }
-
-    def to_json_serializable(self):
-        """
-        Convert the Connection object to a plain dictionary.
-        """
-        return self.model_dump()
-
-
-class InventoryItem(BaseModel):
-    connection: Connection = Field(
-        ..., description="The ssh connection details for the remote server."
-    )
-    host_vars: Dict[str, Any] = Field(
-        {}, description="Additional variables to be set for the remote server."
-    )
-    groups: List[str] = Field(
-        [], description="The groups to which the remote server belongs."
-    )
-
-    def to_json_serializable(self):
-        """
-        Convert the InventoryItem object to a plain dictionary.
-        """
-        return {
-            "connection": self.connection.to_json_serializable(),
-            "host_vars": self.host_vars,
-            "groups": self.groups,
-        }
-
-
-class Inventory(BaseModel):
-    hosts: List[InventoryItem] = Field(
-        default_factory=list,
-        description="A list of inventory items representing remote servers.",
-    )
-
-    @model_validator(mode="after")
-    def check_unique_hosts(self):
-        """
-        Validate that each 'host' in the inventory is unique.
-        """
-        seen_hosts = set()
-        for item in self.hosts:
-            host = item.connection.host
-            if host in seen_hosts:
-                raise ValueError(f"Duplicate host found: {host}")
-            seen_hosts.add(host)
-        return self
-
-    def to_json_serializable(self):
-        """
-        Convert the Inventory object to a plain dictionary suitable for json.dump().
-        """
-        return {"hosts": [item.to_json_serializable() for item in self.hosts]}
 
 
 class InventoryCreateResponse(BaseModel):
@@ -247,43 +169,28 @@ async def delete_host(
         # Handle any other unexpected errors
         return InventoryDeleteResponse(error=True, value=f"Unexpected error: {e}")
 
-
 class InventoryGetResponse(BaseModel):
-    """Response model for inventory retrieval endpoint"""
-
     error: bool
-    value: Dict[str, List[Dict[str, Any]]]  # Inventory structure: {"hosts": [...]}
+    value: Inventory
 
+async def inventory_get_callback(command: Command):
+    return Config().get_inventory()
+
+class Getinventory(Remote):
+    Model = LocalModel
+
+    async def execute(self):
+        yield Callback(callback=inventory_get_callback)
 
 @router.get(
-    "/entries/",
+    "/get",
     tags=["Inventory Management"],
-    response_model=InventoryGetResponse,
+    response_model=List[InventoryGetResponse],
 )
-async def get_inventory():
+async def get_inventory(
+    common: LocalModel = Depends(localmodel)
+) -> List[InventoryGetResponse]:
     """# Retrieve the inventory"""
-    try:
-        # Load the current inventory from the configuration
-        config = Config()
-        inventory_data = config.get_inventory() or {"hosts": []}
-
-        # Ensure the inventory data has a "hosts" key with a list
-        if (
-            not isinstance(inventory_data, dict)
-            or "hosts" not in inventory_data
-            or not isinstance(inventory_data["hosts"], list)
-        ):
-            raise ValueError("Inventory data is not in the expected format.")
-
-        # Return the inventory in the response
-        return InventoryGetResponse(error=False, value=inventory_data)
-    except ValueError as e:
-        # Handle custom validation errors (e.g., invalid inventory format)
-        return InventoryGetResponse(
-            error=True, value={"hosts": []}, description=f"Error: {e}"
-        )
-    except Exception as e:
-        # Handle any other unexpected errors
-        return InventoryGetResponse(
-            error=True, value={"hosts": []}, description=f"Unexpected error: {e}"
-        )
+    return await router_handler(LocalModel, Getinventory)(
+        common=common
+    )

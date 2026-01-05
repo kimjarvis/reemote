@@ -6,37 +6,29 @@ from reemote.core.config import Config
 from reemote.execute import endpoint_execute
 from reemote.inventory import Inventory
 
+@pytest.mark.asyncio
+async def test_get_inventory():
+    from reemote.inventory import Getinventory
 
-@pytest.fixture(autouse=True)
-def setup_inventory():
-    inventory = Inventory(
-        hosts=[
-            {
-                "connection": {
-                    "host": "server105",
-                    "username": "user",
-                    "password": "password",
-                },
-                "host_vars": {"sudo_user": "user"},
-                "groups": ["all", "server105"],
-            },
-            {
-                "connection": {
-                    "host": "server104",
-                    "username": "user",
-                    "password": "password",
-                },
-                "host_vars": {"sudo_user": "user"},
-                "groups": ["all", "server104"],
-            },
-        ]
-    )
-    config = Config()
-    config.set_inventory(inventory.to_json_serializable())
+    class Root:
+        async def execute(self):
+            r = yield Getinventory()
+            print(f"debug 00 {r}")
+            print(f"debug 01 {r["value"]}")
+            print(f"debug 02 {type(r["value"]["hosts"])}")
+
+            if r:
+                assert any(
+                    host['connection']['host'] == 'server104' for host in r['value']['hosts']), "server104 not found"
+                assert any(
+                    host['connection']['host'] == 'server105' for host in r['value']['hosts']), "server105 not found"
+
+    r = await endpoint_execute(lambda: Root())
+    assert len(r) == 2
 
 
 @pytest.mark.asyncio
-async def test_inventory_unreachable_host_sftp_command(setup_inventory, setup_directory):
+async def test_inventory_unreachable_host_sftp_command():
     from reemote.sftp import Isdir
     from reemote.sftp import Mkdir, Rmdir
 
@@ -77,7 +69,7 @@ async def test_inventory_unreachable_host_sftp_command(setup_inventory, setup_di
 
 
 @pytest.mark.asyncio
-async def test_inventory_unreachable_host_sftp_fact(setup_inventory, setup_directory):
+async def test_inventory_unreachable_host_sftp_fact():
     from reemote.sftp import StatVfs
 
     class Root:

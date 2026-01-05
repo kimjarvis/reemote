@@ -1,5 +1,5 @@
 from pydantic import Field
-from typing import AsyncGenerator, Callable, Any
+from typing import AsyncGenerator, Callable, Any, Optional
 from reemote.core.command import Command, ConnectionType
 from reemote.core.response import Response
 from reemote.core.models import LocalModel
@@ -10,7 +10,7 @@ class CallbackRequestModel(LocalModel):
     callback: Callable = Field(
         ...,  # Required field
     )
-    value: Any
+    value: Any = None  # Optional field with a default value
 
 
 class Callback(Local):

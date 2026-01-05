@@ -1,7 +1,7 @@
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from reemote.core.command import Command
 from reemote.core.models import RemoteModel, remotemodel
@@ -11,6 +11,9 @@ from reemote.core.response import (
     ShellResponseModel,
 )
 from reemote.core.router_handler import router_handler
+from reemote.system import Callback
+from reemote.core.models import LocalModel, localmodel
+
 
 router = APIRouter()
 
@@ -31,10 +34,39 @@ class Shell(Remote):
         )
 
 
-@router.post("/shell", tags=["Shell Operations"], response_model=ShellResponseModel)
+@router.post("/shell", tags=["Host Operations"], response_model=ShellResponseModel)
 async def shell(
     cmd: str = Query(..., description="Shell command",examples=["echo Hello World!","ls -ltr"]),
     common: RemoteModel = Depends(remotemodel),
 ) -> ShellResponseModel:
     """# Execute a shell command on the remote host"""
     return await router_handler(ShellRequestModel, Shell)(cmd=cmd, common=common)
+
+
+
+
+class ContextGetResponse(BaseModel):
+    error: bool
+    value: Command
+
+async def context_get_callback(command: Command):
+    return command
+
+class Getcontext(Remote):
+    Model = LocalModel
+
+    async def execute(self):
+        yield Callback(callback=context_get_callback)
+
+@router.get(
+    "/getcontext",
+    tags=["Host Operations"],
+    response_model=List[ContextGetResponse],
+)
+async def get_context(
+    common: LocalModel = Depends(localmodel)
+) -> List[ContextGetResponse]:
+    """# Retrieve the context"""
+    return await router_handler(LocalModel, Getcontext)(
+        common=common
+    )

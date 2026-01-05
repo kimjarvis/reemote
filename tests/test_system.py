@@ -3,6 +3,23 @@ import pytest
 from reemote.execute import endpoint_execute
 
 
+@pytest.mark.asyncio
+async def test_system_callback(setup_inventory):
+    from reemote.system import Callback
+    from reemote.core.command import Command
+
+    async def _callback(command: Command):
+        return "tested"
+
+    class Root:
+        async def execute(self):
+            r = yield Callback(callback=_callback)
+            if r:
+                assert r["value"] == "tested"
+                assert r["changed"]
+
+    r = await endpoint_execute(lambda: Root())
+    assert len(r) == 2
 
 
 @pytest.mark.asyncio

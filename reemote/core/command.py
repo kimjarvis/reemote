@@ -4,13 +4,14 @@ from typing import Any, Callable, Dict, Optional
 from pydantic import ConfigDict, Field, field_validator  # Updated imports
 
 from reemote.core.models import CommonModel
-from reemote.inventory import InventoryItem
+from reemote.core.inventory_model import InventoryItem
 
 
 class ConnectionType(Enum):
     LOCAL = 1
     REMOTE = 2
     PASSTHROUGH = 3
+
 
 class Command(CommonModel):
     """Command model with validation using Pydantic"""
@@ -22,24 +23,25 @@ class Command(CommonModel):
     )
 
     command: Optional[str] = Field(
-        default=None, description="The command to execute (optional)"
+        default=None, description="The command to execute (optional)", exclude=True
     )
-    call: Optional[str] = Field(
-        default=None, description="The caller"
-    )
+    call: Optional[str] = Field(default=None, description="The caller", exclude=True)
 
     # Optional fields with defaults
     type: ConnectionType = Field(
         default=ConnectionType.REMOTE,
-        description="The connection type to use"
+        description="The connection type to use",
+        exclude=True,
     )
     callback: Optional[Callable] = Field(
-        default=None, description="Optional callback function"
+        default=None, description="Optional callback function", exclude=True
     )
-    caller: Optional[object] = Field(default=None, description="Caller object")
+    caller: Optional[object] = Field(
+        default=None, description="Caller object", exclude=True
+    )
 
     inventory_item: Optional[InventoryItem] = Field(
-        default=None, description="Inventory item", exclude=True
+        default=None, description="Inventory item"
     )
     # Return only
     value: Optional[Any] = Field(
@@ -63,5 +65,5 @@ class Command(CommonModel):
             return stripped
         return v
 
-
-
+    def to_json_serializable(self) -> Dict[str, Any]:
+        return self.model_dump()

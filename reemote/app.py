@@ -19,27 +19,27 @@ Inventory management.
             """,
         },
         {
-            "name": "Shell Operations",
+            "name": "Host Operations",
             "description": """
-Get information about the servers and issue shell commands.
+Get information about the hosts and issue shell commands.
                     """,
         },
         {
             "name": "APT Package Manager",
             "description": """
-Manage software installed on the servers.
+Manage software installed on the hosts.
             """,
         },
         {
             "name": "SCP Operations",
             "description": """
-Copy files and directories to and from remote servers.
+Copy files and directories to and from remote hosts.
             """,
         },
         {
             "name": "SFTP Operations",
             "description": """
-Create files and directories on remote servers and transfer files to from servers.
+Create files and directories on remote hosts and transfer files to from hosts.
                     """,
         },
     ],
@@ -47,7 +47,7 @@ Create files and directories on remote servers and transfer files to from server
 
 
 app.include_router(inventory_router, prefix="/inventory")
-app.include_router(server_router, prefix="/server")
+app.include_router(server_router, prefix="/host")
 
 app.include_router(apt_router, prefix="/apt")
 
