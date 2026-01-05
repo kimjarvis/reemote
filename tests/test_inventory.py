@@ -13,10 +13,6 @@ async def test_get_inventory():
     class Root:
         async def execute(self):
             r = yield Getinventory()
-            print(f"debug 00 {r}")
-            print(f"debug 01 {r["value"]}")
-            print(f"debug 02 {type(r["value"]["hosts"])}")
-
             if r:
                 assert any(
                     host['connection']['host'] == 'server104' for host in r['value']['hosts']), "server104 not found"
@@ -47,7 +43,6 @@ async def test_inventory_unreachable_host_sftp_command():
                     "username": "user",
                     "password": "password",
                 },
-                "host_vars": {"sudo_user": "user"},
                 "groups": ["all", "server105"],
             },
             {
@@ -56,7 +51,6 @@ async def test_inventory_unreachable_host_sftp_command():
                     "username": "user",
                     "password": "password",
                 },
-                "host_vars": {"sudo_user": "user"},
                 "groups": ["all", "192.168.1.1"],
             },
         ]
@@ -84,7 +78,6 @@ async def test_inventory_unreachable_host_sftp_fact():
                     "username": "user",
                     "password": "password",
                 },
-                "host_vars": {"sudo_user": "user"},
                 "groups": ["all", "server105"],
             },
             {
@@ -93,7 +86,6 @@ async def test_inventory_unreachable_host_sftp_fact():
                     "username": "user",
                     "password": "password",
                 },
-                "host_vars": {"sudo_user": "user"},
                 "groups": ["all", "192.168.1.1"],
             },
         ]

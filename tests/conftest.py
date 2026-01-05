@@ -1,10 +1,11 @@
 import asyncio
 
 import pytest
+from starlette.middleware.authentication import AuthenticationMiddleware
 
 from reemote.core.config import Config
 from reemote.execute import endpoint_execute
-from reemote.inventory import Inventory, InventoryItem, Connection
+from reemote.core.inventory_model import Inventory, InventoryItem, Connection, InventoryAuthenication, Session
 
 
 @pytest.fixture
@@ -15,12 +16,20 @@ def setup_inventory():
                 connection=Connection(
                     host="server104", username="user", password="password"
                 ),
+                session=Session(
+                    term_type="xterm"
+                ),
+                authentication=InventoryAuthenication(sudo_password="user"),
                 groups=["all", "server104"],
             ),
             InventoryItem(
                 connection=Connection(
                     host="server105", username="user", password="password"
                 ),
+                session=Session(
+                    term_type="xterm"
+                ),
+                authentication=InventoryAuthenication(sudo_password="user"),
                 groups=["all", "server105"],
             ),
         ]

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Body, Path
 from pydantic import BaseModel, ValidationError, model_validator, Field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from reemote.core.config import Config
 
 
@@ -8,9 +8,6 @@ class Connection(BaseModel):
     host: str = Field(
         ..., description="The hostname or IP address of the remote host."
     )
-    # model_config = {"extra": "allow"}
-
-    # Allow arbitrary additional fields
     model_config = {
         "extra": "allow",
         "json_schema_extra": {
@@ -31,38 +28,57 @@ class Connection(BaseModel):
             "required": ["host"],
             "additionalProperties": {
                 "type": "string",
-                "description": "Additional asyncssh.SSHClientConnectionOptions for the connection.",
+                "description": "Parameters to pass to Asyncssh connect().",
             },
         },
     }
 
     def to_json_serializable(self):
-        """
-        Convert the Connection object to a plain dictionary.
-        """
         return self.model_dump()
 
 
+class Session(BaseModel):
+    model_config = {
+        "extra": "allow",
+        "json_schema_extra": {
+            "additionalProperties": {
+                "type": "string",
+                "description": "Parameters to pass to Asyncssh create_session().",
+            },
+        },
+    }
+
+    def to_json_serializable(self):
+        return self.model_dump()
+
+
+class InventoryAuthenication(BaseModel):
+    sudo_password: Optional[str] = Field(
+        "", description="The ssh password for authenticating with the remote host."
+    )
+    su_user: Optional[str] = Field(
+        "", description="The su user for authenticating with the remote host."
+    )
+    su_password: Optional[str] = Field(
+        "", description="The su password for authenticating with the remote host."
+    )
+
 class InventoryItem(BaseModel):
     connection: Connection = Field(
-        ..., description="The ssh connection details for the remote host."
+        ..., description="The connection details for the remote host."
     )
-    host_vars: Dict[str, Any] = Field(
-        {}, description="Additional variables to be set for the remote host."
+    authentication: Optional[InventoryAuthenication] = Field(
+        None, description="The authentication details for the remote host."
+    )
+    session: Optional[Session] = Field(
+        None, description="The session details for the remote host."
     )
     groups: List[str] = Field(
         [], description="The groups to which the remote host belongs."
     )
 
-    def to_json_serializable(self):
-        """
-        Convert the InventoryItem object to a plain dictionary.
-        """
-        return {
-            "connection": self.connection.to_json_serializable(),
-            "host_vars": self.host_vars,
-            "groups": self.groups,
-        }
+    def to_json_serializable(self) -> Dict[str, Any]:
+        return self.model_dump()
 
 class Inventory(BaseModel):
     hosts: List[InventoryItem] = Field(

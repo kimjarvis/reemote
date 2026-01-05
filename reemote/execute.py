@@ -70,16 +70,16 @@ async def run_command_on_host(
                 )
             async with conn as conn:
                 if command.sudo:
-                    if command.inventory_item.host_vars.get("sudo_password") is None:
+                    if command.inventory_item.authentication.sudo_password is None:
                         full_command = f"sudo {command.command}"
                     else:
-                        full_command = f"echo {command.inventory_item.host_vars['sudo_password']} | sudo -S {command.command}"
+                        full_command = f"echo {command.inventory_item.authentication.sudo_password} | sudo -S {command.command}"
                     cp = await conn.run(
                         full_command, check=False
                     )  # true -> check if command was successful, exception if not
                 elif command.su:
-                    full_command = f"su {command.inventory_item.host_vars['su_user']} -c '{command.command}'"
-                    if command.inventory_item.host_vars["su_user"] == "root":
+                    full_command = f"su {command.inventory_item.authentication.su_user} -c '{command.command}'"
+                    if command.inventory_item.authentication.su_user == "root":
                         async with conn.create_process(
                             full_command,
                             term_type="xterm",
@@ -90,7 +90,7 @@ async def run_command_on_host(
                             try:
                                 await process.stdout.readuntil("Password:")
                                 process.stdin.write(
-                                    f"{command.inventory_item.host_vars['su_password']}\n"
+                                    f"{command.inventory_item.authentication.su_password}\n"
                                 )
                             except asyncio.TimeoutError:
                                 pass
@@ -105,7 +105,7 @@ async def run_command_on_host(
                         ) as process:
                             await process.stdout.readuntil("Password:")
                             process.stdin.write(
-                                f"{command.inventory_item.host_vars['su_password']}\n"
+                                f"{command.inventory_item.authentication.su_password}\n"
                             )
                             stdout, stderr = await process.communicate()
 
