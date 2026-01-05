@@ -1,6 +1,6 @@
 from pathlib import PurePath
 from typing import Optional, Union, Dict, Any
-
+from fastapi import Body
 from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from reemote.core.inventory_model import Connection, InventoryItem, Inventory, Session
@@ -51,14 +51,14 @@ class RemoteModel(BaseModel):
     name: Optional[str] = Field(default=None, description="Optional name.")
     sudo: bool = Field(default=False, description="Execute command with sudo.")
     su: bool = Field(default=False, description="Execute command with su.")
-    # connection: Optional[Dict[str, Any]] = Field(
-    #     default_factory=Connection,
-    #     description="Optional connection arguments to pass to Asyncssh create_session().",
-    # )
-    # session: Optional[Dict[str, Any]] = Field(
-    #     default_factory=Session,
-    #     description="Optional session arguments to pass to Asyncssh create_session().",
-    # )
+    connection: Optional[Dict[str, Any]] = Field(
+        default={},
+        description="Optional connection arguments to pass to Asyncssh create_session().",
+    )
+    session: Optional[Dict[str, Any]] = Field(
+        default={},
+        description="Optional session arguments to pass to Asyncssh create_session().",
+    )
 
 
 def remotemodel(
@@ -68,15 +68,14 @@ def remotemodel(
     name: Optional[str] = Query(None, description="Optional name"),
     sudo: bool = Query(False, description="Whether to use sudo"),
     su: bool = Query(False, description="Whether to use su"),
-    # connection: Optional[Dict[str, Any]] = Query(
-    #     default_factory=Connection,
-    #     description="Optional connection arguments to pass to Asyncssh create_session().",
-    # ),
-    # session: Optional[Dict[str, Any]] = Query(
-    #     default_factory=Session,
-    #     description="Optional session arguments to pass to Asyncssh create_session().",
-    # ),
+    connection: Optional[Dict[str, Any]] = Body(
+        default={},
+        description="Optional connection arguments to pass to Asyncssh create_session().",
+    ),
+    session: Optional[Dict[str, Any]] = Body(
+        default={},
+        description="Optional session arguments to pass to Asyncssh create_session().",
+    ),
 ) -> RemoteModel:
     """FastAPI dependency for common parameters"""
-    # return RemoteModel(group=group, name=name, sudo=sudo, su=su, connection=connection, session=session)
-    return RemoteModel(group=group, name=name, sudo=sudo, su=su)
+    return RemoteModel(group=group, name=name, sudo=sudo, su=su, connection=connection, session=session)
