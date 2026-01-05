@@ -5,6 +5,36 @@ from reemote.core.models import RemoteModel, remotemodel
 from reemote.execute import endpoint_execute
 
 
+def _process_common_arguments(
+    common: CommonModel | None,
+) -> Dict[str, Any]:
+    """Helper function to process `common` arguments."""
+    if common is None:
+        return {}
+    elif isinstance(common, BaseModel):
+        return common.model_dump()
+    elif isinstance(common, dict):
+        return common
+    else:
+        raise TypeError("`common` must be a CommonParams instance, dict, or None")
+
+
+async def _validate_and_execute(
+    model: Type[BaseModel],
+    command_class: Type,
+    all_arguments: Dict[str, Any],
+) -> List[Any]:
+    """Helper function to validate input and execute the command."""
+    try:
+        model(**all_arguments)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors())
+
+    # Execute the command with the validated data
+    responses = await endpoint_execute(lambda: command_class(**all_arguments))
+    return responses
+
+
 def router_handler(
     model: Type[BaseModel],
     command_class: Type,
@@ -12,26 +42,24 @@ def router_handler(
     async def handler(
         common: RemoteModel = Depends(remotemodel), **kwargs
     ) -> list[Any]:
-        # Inline _process_common_arguments logic
-        if common is None:
-            common_dict = {}
-        elif isinstance(common, BaseModel):
-            common_dict = common.model_dump()
-        elif isinstance(common, dict):
-            common_dict = common
-        else:
-            raise TypeError("`common` must be a CommonParams instance, dict, or None")
-
+        common_dict = _process_common_arguments(common)
         all_arguments = {**common_dict, **kwargs}
+        responses = await _validate_and_execute(model, command_class, all_arguments)
+        return responses
 
-        # Inline _validate_and_execute logic
-        try:
-            model(**all_arguments)
-        except ValidationError as e:
-            raise HTTPException(status_code=422, detail=e.errors())
+    return handler
 
-        # Execute the command with the validated data
-        responses = await endpoint_execute(lambda: command_class(**all_arguments))
+
+def router_handler_put(
+    model: Type[BaseModel],
+    command_class: Type,
+) -> Callable:
+    async def handler(
+        common: CommonModel = Depends(commonmodel), **kwargs
+    ) -> list[Any]:
+        common_dict = _process_common_arguments(common)
+        all_arguments = {**common_dict, **kwargs}
+        responses = await _validate_and_execute(model, command_class, all_arguments)
 
         # Process responses
         out = []

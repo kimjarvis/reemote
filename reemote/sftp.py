@@ -17,7 +17,7 @@ from reemote.system import Return
 from reemote.core.local import Local
 from reemote.core.models import LocalModel, LocalPathModel, localmodel
 from reemote.core.response import Response, ResponseElement, ResponseModel
-from reemote.core.router_handler import router_handler, router_handler
+from reemote.core.router_handler import router_handler, router_handler_put
 
 router = APIRouter()
 
@@ -2499,7 +2499,7 @@ async def directory(
         params["atime"] = atime
     if mtime is not None:
         params["mtime"] = mtime
-    return await router_handler(DirectoryRequestModel, Directory)(
+    return await router_handler_put(DirectoryRequestModel, Directory)(
         **params,
         common=common,
     )
