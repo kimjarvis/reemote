@@ -28,7 +28,7 @@ class Connection(BaseModel):
             "required": ["host"],
             "additionalProperties": {
                 "type": "string",
-                "description": "Parameters to pass to Asyncssh connect().",
+                "description": "Arguments to pass to Asyncssh connect().",
             },
         },
     }
@@ -43,7 +43,7 @@ class Session(BaseModel):
         "json_schema_extra": {
             "additionalProperties": {
                 "type": "string",
-                "description": "Parameters to pass to Asyncssh create_session().",
+                "description": "Arguments to pass to Asyncssh create_session().",
             },
         },
     }

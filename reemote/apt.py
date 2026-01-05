@@ -4,7 +4,7 @@ from reemote.core.parse_apt_list_installed import parse_apt_list_installed
 from fastapi import APIRouter, Query, Depends
 from reemote.core.command import Command
 from reemote.core.router_handler import router_handler
-from reemote.core.models import CommonModel, commonmodel, RemoteModel
+from reemote.core.models import RemoteModel, remotemodel, RemoteModel
 from reemote.core.remote import Remote
 from reemote.core.response import ShellResponseModel
 from reemote.system import Return
@@ -69,7 +69,7 @@ class GetPackages(Remote):
     tags=["APT Package Manager"],
     response_model=List[GetPackagesResponse],
 )
-async def get_packages(common: CommonModel = Depends(commonmodel)) -> list[dict]:
+async def get_packages(common: RemoteModel = Depends(remotemodel)) -> list[dict]:
     """# Get installed APT packages"""
     return await router_handler(RemoteModel, GetPackages)(common=common)
 
@@ -98,7 +98,7 @@ class Install(Remote):
 )
 async def install(
     packages: list[str] = Query(..., description="List of package names"),
-    common: CommonModel = Depends(commonmodel),
+    common: RemoteModel = Depends(remotemodel),
 ) -> ShellResponseModel:
     """# Install APT packages"""
     return await router_handler(InstallRequestModel, Install)(
@@ -130,7 +130,7 @@ class Remove(Remote):
 )
 async def remove(
     packages: list[str] = Query(..., description="List of package names"),
-    common: CommonModel = Depends(commonmodel),
+    common: RemoteModel = Depends(remotemodel),
 ) -> ShellResponseModel:
     """# Remove APT packages"""
     return await router_handler(RemoveModel, Remove)(packages=packages, common=common)
@@ -159,7 +159,7 @@ class Update(Remote):
     response_model=ShellResponseModel,
 )
 async def update(
-    common: CommonModel = Depends(commonmodel),
+    common: RemoteModel = Depends(remotemodel),
 ) -> ShellResponseModel:
     """# Update APT packages"""
     return await router_handler(RemoteModel, Update)(common=common)
@@ -188,7 +188,7 @@ class Upgrade(Remote):
     response_model=ShellResponseModel,
 )
 async def upgrade(
-    common: CommonModel = Depends(commonmodel),
+    common: RemoteModel = Depends(remotemodel),
 ) -> ShellResponseModel:
     """# Upgrade APT packages"""
     return await router_handler(RemoteModel, Upgrade)(common=common)
@@ -241,7 +241,7 @@ async def package(
     update: bool = Query(
         False, description="Whether or not to update the package list"
     ),
-    common: CommonModel = Depends(commonmodel),
+    common: RemoteModel = Depends(remotemodel),
 ) -> ResponseModel:
     """# Manage installed APT packages"""
     return await router_handler(PackageRequestModel, Package)(

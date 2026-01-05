@@ -3,7 +3,7 @@ from typing import Any, Callable, Dict, Optional
 
 from pydantic import ConfigDict, Field, field_validator  # Updated imports
 
-from reemote.core.models import CommonModel
+from reemote.core.models import RemoteModel
 from reemote.core.inventory_model import InventoryItem
 
 
@@ -13,7 +13,7 @@ class ConnectionType(Enum):
     PASSTHROUGH = 3
 
 
-class Command(CommonModel):
+class Command(RemoteModel):
     """Command model with validation using Pydantic"""
 
     model_config = ConfigDict(  # Replaces class Config
