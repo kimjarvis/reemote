@@ -9,7 +9,7 @@ from reemote.core.remote import Remote
 from reemote.core.response import ShellResponseModel
 from reemote.system import Return
 from reemote.core.response import ResponseModel
-from reemote.core.router_handler import router_handler_put
+from reemote.core.router_handler import router_handler
 from pydantic import BaseModel, Field
 from typing import List
 
@@ -244,7 +244,7 @@ async def package(
     common: CommonModel = Depends(commonmodel),
 ) -> ResponseModel:
     """# Manage installed APT packages"""
-    return await router_handler_put(PackageRequestModel, Package)(
+    return await router_handler(PackageRequestModel, Package)(
         common=common,
         packages=packages,
         present=present,
