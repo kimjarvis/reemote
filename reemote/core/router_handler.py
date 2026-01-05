@@ -6,7 +6,7 @@ from reemote.execute import endpoint_execute
 
 
 def _process_common_arguments(
-    common: CommonModel | None,
+    common: RemoteModel | None,
 ) -> Dict[str, Any]:
     """Helper function to process `common` arguments."""
     if common is None:
@@ -55,7 +55,7 @@ def router_handler_put(
     command_class: Type,
 ) -> Callable:
     async def handler(
-        common: CommonModel = Depends(commonmodel), **kwargs
+        common: RemoteModel = Depends(remotemodel), **kwargs
     ) -> list[Any]:
         common_dict = _process_common_arguments(common)
         all_arguments = {**common_dict, **kwargs}
