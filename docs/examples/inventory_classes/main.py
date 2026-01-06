@@ -12,13 +12,7 @@ async def main():
                     host="server104", username="user", password="password"
                 ),
                 groups=["all"],
-            ),
-            InventoryItem(
-                connection=Connection(
-                    host="server105", username="user", password="password"
-                ),
-                groups=["all"],
-            ),
+            )
         ]
     )
 

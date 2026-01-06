@@ -46,11 +46,11 @@ Create files and directories on remote hosts and transfer files to from hosts.
 )
 
 
-app.include_router(inventory_router, prefix="/inventory")
-app.include_router(server_router, prefix="/host")
+app.include_router(inventory_router, prefix="/reemote/inventory")
+app.include_router(server_router, prefix="/reemote/host")
 
-app.include_router(apt_router, prefix="/apt")
+app.include_router(apt_router, prefix="/reemote/apt")
 
-app.include_router(sftp_router, prefix="/sftp")
-app.include_router(scp_router, prefix="/scp")
+app.include_router(sftp_router, prefix="/reemote/sftp")
+app.include_router(scp_router, prefix="/reemote/scp")
 

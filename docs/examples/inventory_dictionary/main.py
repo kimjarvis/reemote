@@ -13,20 +13,7 @@ async def main():
                     "username": "user",
                     "password": "password",
                 },
-                "groups": [
-                    "all",
-                ],
-            },
-            {
-                "connection": {
-                    "host": "server105",
-                    "username": "user",
-                    "password": "password",
-                },
-                "groups": [
-                    "all",
-                ],
-            },
+            }
         ]
     )
 

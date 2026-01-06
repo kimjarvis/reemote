@@ -16,7 +16,7 @@ from reemote.core.inventory_model import Inventory
 
 
 async def pass_through_command(command: Command) -> dict[str, str | None | Any] | None:
-    if not command.group or command.group in command.inventory_item.groups:
+    if not command.group or "all" in command.group or command.group in command.inventory_item.groups:
         logging.info(f"{command.call}")
         try:
             result = {
@@ -35,7 +35,7 @@ async def pass_through_command(command: Command) -> dict[str, str | None | Any] 
 
 
 async def run_command_on_local(command: Command) -> dict[str, str | None | Any] | None:
-    if not command.group or command.group in command.inventory_item.groups:
+    if not command.group or "all" in command.group or command.group in command.inventory_item.groups:
         logging.info(f"{command.call}")
         try:
             result = {
@@ -56,7 +56,7 @@ async def run_command_on_host(
     command: Command,
 ) -> dict[str, str | None | bool | Any] | None:
     cp = SSHCompletedProcess()
-    if not command.group or command.group in command.inventory_item.groups:
+    if not command.group or "all" in command.group or command.group in command.inventory_item.groups:
         logging.info(f"{command.call}")
         try:
             conn = await asyncssh.connect(
@@ -240,7 +240,6 @@ async def process_host(
         try:
             if isinstance(command, Command):
                 command.inventory_item = inventory_item
-
                 if command.type == ConnectionType.LOCAL:
                     result = await run_command_on_local(command)
                 elif command.type == ConnectionType.REMOTE:
@@ -271,11 +270,9 @@ async def process_inventory(
     inventory: dict,
     root_obj_factory: Callable[[], Any],
 ) -> List[Any]:
-    # Return an empty list if inventory is empty
     if not inventory:
         return []
 
-    # Run all hosts in parallel
     tasks = []
 
     for item in inventory["hosts"]:
@@ -334,6 +331,6 @@ async def endpoint_execute(
     logger.setLevel(logging.DEBUG)  # Set desired log level for your logger
 
     # Suppress asyncssh logs by setting its log level to WARNING or higher
-    logging.getLogger("asyncssh").setLevel(logging.WARNING)
+    # logging.getLogger("asyncssh").setLevel(logging.WARNING)
 
     return await process_inventory(config.get_inventory(), root_obj_factory)
