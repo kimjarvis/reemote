@@ -115,7 +115,7 @@ class InventoryDeleteResponse(BaseModel):
 
 
 @router.delete(
-    "/entries/{host}",
+    "/delete/{host}",
     tags=["Inventory Management"],
     response_model=InventoryDeleteResponse,
 )
