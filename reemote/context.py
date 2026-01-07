@@ -1,9 +1,9 @@
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
-from pydantic import ConfigDict, Field, field_validator  # Updated imports
+from pydantic import BaseModel, ConfigDict, Field, field_validator  # Updated imports
 
-from reemote.core.models import RemoteModel
+from reemote.core.remote import RemoteModel
 from reemote.core.inventory_model import InventoryItem
 
 
