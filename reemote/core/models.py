@@ -3,7 +3,6 @@ from typing import Optional, Union, Dict, Any
 from fastapi import Body
 from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from reemote.core.inventory_model import Connection, InventoryItem, Inventory, Session
 
 class LocalModel(BaseModel):
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
