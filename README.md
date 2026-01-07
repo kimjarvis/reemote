@@ -14,7 +14,7 @@ pip install reemote
 
 ## Installing the ReST API
 
-The optional ReST API can be installed with pipx:
+The optional ReST API can be installed with pipx.
 
 ```bash
 python3 -m venv myenv
@@ -22,9 +22,9 @@ source myenv/bin/activate
 pipx install reemote
 ```
 
-## Starting the ReST API 
+## Starting the ReST API server
 
-The server can be started locally with:
+The server runs on the local host.
 
 ```bash
 reemote --port=8001 
