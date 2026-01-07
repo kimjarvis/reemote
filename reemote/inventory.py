@@ -7,7 +7,7 @@ from reemote.core.remote import Remote
 from reemote.system import Callback
 from reemote.context import Context
 from reemote.core.router_handler import router_handler
-from reemote.core.models import LocalModel, localmodel
+from reemote.core.local import LocalModel, localmodel
 
 # Re-export
 from reemote.core.inventory_model import Session

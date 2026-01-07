@@ -4,41 +4,6 @@ from fastapi import Body
 from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-class LocalModel(BaseModel):
-    model_config = ConfigDict(validate_assignment=True, extra="forbid")
-
-    group: Optional[str] = Field(
-        default="all", description="The inventory host group. Defaults to 'all'."
-    )
-    name: Optional[str] = Field(default=None, description="Optional name.")
-
-
-def localmodel(
-    group: Optional[str] = Query(
-        "all", description="Optional inventory group (defaults to 'all')"
-    ),
-    name: Optional[str] = Query(None, description="Optional name"),
-) -> LocalModel:
-    """FastAPI dependency for common parameters"""
-    return LocalModel(group=group, name=name)
-
-
-class LocalPathModel(LocalModel):
-    path: Union[PurePath, str, bytes] = Field(..., examples=["/home/user", "testdata"])
-
-    @field_validator("path", mode="before")
-    @classmethod
-    def ensure_path_is_purepath(cls, v):
-        if v is None:
-            raise ValueError("path cannot be None.")
-        if not isinstance(v, PurePath):
-            try:
-                return PurePath(v)
-            except TypeError:
-                raise ValueError(f"Cannot convert {v} to PurePath.")
-        return v
-
-
 class RemoteModel(BaseModel):
     """Common parameters shared across command types"""
 

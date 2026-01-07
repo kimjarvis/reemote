@@ -12,7 +12,7 @@ from reemote.core.response import (
 )
 from reemote.core.router_handler import router_handler
 from reemote.system import Callback
-from reemote.core.models import LocalModel, localmodel
+from reemote.core.local import LocalModel, localmodel
 
 
 router = APIRouter()

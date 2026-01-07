@@ -15,7 +15,7 @@ from pydantic import (
 from reemote.context import Context
 from reemote.system import Return
 from reemote.core.local import Local
-from reemote.core.models import LocalModel, LocalPathModel, localmodel
+from reemote.core.local import LocalModel, LocalPathModel, localmodel
 from reemote.core.response import Response, ResponseElement, ResponseModel
 from reemote.core.router_handler import router_handler, router_handler_put
 
