@@ -1,4 +1,3 @@
-# examples/hello_world.py
 import asyncio
 from reemote.execute import execute
 from reemote.host import Shell
@@ -21,12 +20,14 @@ async def main():
         ]
     )
 
+    # examples/hello_world_response.py
     responses = await execute(
         lambda: Shell(cmd="echo Hello World!"), inventory=inventory
     )
-    for response in responses:
-        print(response["value"]["stdout"])
-
+    # Convert to formatted JSON
+    import json
+    formatted_json = json.dumps(responses, indent=4)
+    print(formatted_json)
 
 if __name__ == "__main__":
     asyncio.run(main())

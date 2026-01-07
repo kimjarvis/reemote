@@ -13,7 +13,7 @@ markdown_extensions:
   - pymdownx.superfences
 
 nav:
-  - Home: index.md
   - Installation: installation.md
+  - Tutorial: tutorial.md
   - Inventory: inventory.md
   - API Documentation: redoc-static.html
