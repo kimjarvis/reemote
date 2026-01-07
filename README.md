@@ -6,7 +6,7 @@ For a detailed description refer to the [Reemote home page](https://reemote.org/
 
 ## Installation
 
-Install with pip:
+Install the module with pip:
 
 ```bash
 pip install reemote
