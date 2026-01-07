@@ -15,15 +15,5 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Installation: installation.md
+  - Inventory: inventory.md
   - API Documentation: redoc-static.html
-  - Examples:
-      - Hello World:
-          - examples/hello_world/readme.md
-      - Inventory Classes:
-          - examples/inventory_classes/readme.md
-      - Inventory Dictionary:
-          - examples/inventory_dictionary/readme.md
-      - Composition:
-          - examples/compositon/readme.md
-      - Concurrency:
-          - examples/concurrency/readme.md

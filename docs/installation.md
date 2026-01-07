@@ -1,4 +1,4 @@
-# Installation
+## Installation
 
 Install the module with pip:
 
@@ -6,13 +6,27 @@ Install the module with pip:
 pip install reemote
 ```
 
-The server for the optional ReST API can be started locally with:
+## Installing the ReST API
+
+The optional ReST API can be installed with pipx.
+
+```bash
+python3 -m venv myenv
+source myenv/bin/activate
+pipx install reemote
+```
+
+## Starting the ReST API server
+
+The server runs on the local host.
 
 ```bash
 reemote --port=8001 
 ```
 
-Parameter are passed to [uvicorn](https://uvicorn.dev/#command-line-options) except:
+Parameter, such as the port number, are passed to [uvicorn](https://uvicorn.dev/#command-line-options) except:
 
-* `--inventory`: The inventory file (optional).
-* `--logging`: The logging file (optional).
+* `--inventory`: The inventory file path (optional).
+* `--logging`: The logging file path (optional).
+
+When the server is running the API documentation can be found at http://localhost:8001/redoc and the Swagger UI can be found a http://localhost:8001/docs.
