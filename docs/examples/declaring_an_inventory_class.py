@@ -1,19 +1,18 @@
+# examples/declaring_an_inventory_class.py
 import asyncio
 from reemote.execute import execute
 from reemote.host import Shell
-from reemote.inventory import Inventory
+from reemote.inventory import Inventory, InventoryItem, Connection
 
 
 async def main():
     inventory = Inventory(
         hosts=[
-            {
-                "connection": {
-                    "host": "server104",
-                    "username": "user",
-                    "password": "password",
-                },
-            }
+            InventoryItem(
+                connection=Connection(
+                    host="server104", username="user", password="password"
+                ),
+            )
         ]
     )
 

@@ -5,7 +5,7 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 
 from reemote.core.config import Config
 from reemote.execute import endpoint_execute
-from reemote.core.inventory_model import Inventory, InventoryItem, Connection, Authenication, Session
+from reemote.core.inventory_model import Inventory, InventoryItem, Connection, Authentication, Session
 
 
 @pytest.fixture
@@ -16,14 +16,14 @@ def setup_inventory():
                 connection=Connection(
                     host="server104", username="user", password="password"
                 ),
-                authentication=Authenication(sudo_password="password"),
+                authentication=Authentication(sudo_password="password"),
                 groups=["all", "server104"],
             ),
             InventoryItem(
                 connection=Connection(
                     host="server105", username="user", password="password"
                 ),
-                authentication=Authenication(sudo_password="password"),
+                authentication=Authentication(sudo_password="password"),
                 groups=["all", "server105"],
             ),
         ]

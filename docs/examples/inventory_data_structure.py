@@ -1,7 +1,14 @@
+# examples/inventory_data_structure.py
 import asyncio
 from reemote.execute import execute
 from reemote.host import Shell
-from reemote.inventory import Inventory, InventoryItem, Connection
+from reemote.core.inventory_model import (
+    Inventory,
+    InventoryItem,
+    Connection,
+    Session,
+    Authentication,
+)
 
 
 async def main():
@@ -11,19 +18,22 @@ async def main():
                 connection=Connection(
                     host="server104", username="user", password="password"
                 ),
-                groups=["all"],
+                groups=["all", "servers"],
             ),
             InventoryItem(
                 connection=Connection(
                     host="server105", username="user", password="password"
                 ),
-                groups=["all"],
+                session=Session(term_type="xterm"),
+                authentication=Authentication(sudo_password="password"),
+                groups=["all", "databases"],
             ),
         ]
     )
 
     responses = await execute(
-        lambda: Shell(cmd="echo Hello World!"), inventory=inventory
+        lambda: Shell(cmd="cat /etc/shadow", sudo=True, group="databases"),
+        inventory=inventory,
     )
     for response in responses:
         print(response["value"]["stdout"])
