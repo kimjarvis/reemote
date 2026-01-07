@@ -10,7 +10,9 @@ from reemote.core.router_handler import router_handler
 from reemote.core.models import LocalModel, localmodel
 
 # Re-export
-
+from reemote.core.inventory_model import Session
+from reemote.core.inventory_model import Connection
+from reemote.core.inventory_model import Authentication
 
 # Define the router
 router = APIRouter()

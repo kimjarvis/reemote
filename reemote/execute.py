@@ -15,70 +15,70 @@ from reemote.core.response import ssh_completed_process_to_dict
 from reemote.core.inventory_model import Inventory
 
 
-async def pass_through_command(command: Context) -> dict[str, str | None | Any] | None:
-    if not command.group or "all" in command.group or command.group in command.inventory_item.groups:
-        logging.info(f"{command.call}")
+async def pass_through_command(context: Context) -> dict[str, str | None | Any] | None:
+    if not context.group or "all" in context.group or context.group in context.inventory_item.groups:
+        logging.info(f"{context.call}")
         try:
             result = {
-                "host": command.inventory_item.connection.host,
-                "value": command.value,
-                "changed": command.changed,
-                "error": command.error,
+                "host": context.inventory_item.connection.host,
+                "value": context.value,
+                "changed": context.changed,
+                "error": context.error,
             }
 
             logging.info(f"{result}")
             return result
         except Exception as e:
-            logging.error(f"{e} {command}", exc_info=True)
+            logging.error(f"{e} {context}", exc_info=True)
             raise
     return None
 
 
-async def run_command_on_local(command: Context) -> dict[str, str | None | Any] | None:
-    if not command.group or "all" in command.group or command.group in command.inventory_item.groups:
-        logging.info(f"{command.call}")
+async def run_command_on_local(context: Context) -> dict[str, str | None | Any] | None:
+    if not context.group or "all" in context.group or context.group in context.inventory_item.groups:
+        logging.info(f"{context.call}")
         try:
             result = {
-                "host": command.inventory_item.connection.host,
-                "value": await command.callback(command),
-                "changed": command.changed,
-                "error": command.error,
+                "host": context.inventory_item.connection.host,
+                "value": await context.callback(context),
+                "changed": context.changed,
+                "error": context.error,
             }
             logging.info(f"{result}")
             return result
         except Exception as e:
-            logging.error(f"{e} {command}", exc_info=True)
+            logging.error(f"{e} {context}", exc_info=True)
             raise
     return None
 
 
 async def run_command_on_host(
-    command: Context,
+    context: Context,
 ) -> dict[str, str | None | bool | Any] | None:
     cp = SSHCompletedProcess()
-    if not command.group or "all" in command.group or command.group in command.inventory_item.groups:
-        logging.info(f"{command.call}")
+    if not context.group or "all" in context.group or context.group in context.inventory_item.groups:
+        logging.info(f"{context.call}")
         try:
             conn = await asyncssh.connect(
-                **command.inventory_item.connection.to_json_serializable()
+                **context.inventory_item.connection.to_json_serializable()
             )
             async with conn as conn:
-                if command.sudo:
-                    if command.inventory_item.authentication.sudo_password is None:
-                        full_command = f"sudo {command.command}"
+                if context.sudo:
+                    if context.inventory_item.authentication.sudo_password is None:
+                        full_command = f"sudo {context.command}"
                     else:
-                        full_command = f"echo {command.inventory_item.authentication.sudo_password} | sudo -S {command.command}"
+                        full_command = f"echo {context.inventory_item.authentication.sudo_password} | sudo -S {context.command}"
                     cp = await conn.run(
                         full_command,
                         check=False,
-                        **command.inventory_item.session.to_json_serializable(),
+                        **context.inventory_item.session.to_json_serializable(),
                     )
-                elif command.su:
-                    full_command = f"su {command.inventory_item.authentication.su_user} -c '{command.command}'"
-                    if command.inventory_item.authentication.su_user == "root":
+                elif context.su:
+                    full_command = f"su {context.inventory_item.authentication.su_user} -c '{context.command}'"
+                    if context.inventory_item.authentication.su_user == "root":
                         async with conn.create_process(
                             full_command,
-                            **command.inventory_item.session.to_json_serializable(),
+                            **context.inventory_item.session.to_json_serializable(),
                             stdin=asyncssh.PIPE,
                             stdout=asyncssh.PIPE,
                             stderr=asyncssh.PIPE,
@@ -86,7 +86,7 @@ async def run_command_on_host(
                             try:
                                 await process.stdout.readuntil("Password:")
                                 process.stdin.write(
-                                    f"{command.inventory_item.authentication.su_password}\n"
+                                    f"{context.inventory_item.authentication.su_password}\n"
                                 )
                             except asyncio.TimeoutError:
                                 pass
@@ -94,14 +94,14 @@ async def run_command_on_host(
                     else:
                         async with conn.create_process(
                             full_command,
-                            **command.inventory_item.session.to_json_serializable(),
+                            **context.inventory_item.session.to_json_serializable(),
                             stdin=asyncssh.PIPE,
                             stdout=asyncssh.PIPE,
                             stderr=asyncssh.PIPE,
                         ) as process:
                             await process.stdout.readuntil("Password:")
                             process.stdin.write(
-                                f"{command.inventory_item.authentication.su_password}\n"
+                                f"{context.inventory_item.authentication.su_password}\n"
                             )
                             stdout, stderr = await process.communicate()
                     cp = SSHCompletedProcess(
@@ -113,18 +113,18 @@ async def run_command_on_host(
                     )
                 else:
                     cp = await conn.run(
-                        command.command,
-                        **command.inventory_item.session.to_json_serializable(),
+                        context.command,
+                        **context.inventory_item.session.to_json_serializable(),
                         check=False,
                     )
         except (asyncssh.ProcessError, OSError, asyncssh.Error) as e:
-            logging.error(f"{e} {command}", exc_info=True)
+            logging.error(f"{e} {context}", exc_info=True)
             raise
         result = {
-            "host": command.inventory_item.connection.host,
+            "host": context.inventory_item.connection.host,
             "value": ssh_completed_process_to_dict(cp),
-            "changed": command.changed,
-            "error": command.error,
+            "changed": context.changed,
+            "error": context.error,
         }
         logging.info(f"{result}")
         return result
@@ -231,32 +231,32 @@ async def process_host(
     gen = pre_order_generator_async(host_instance)
 
     try:
-        command = await gen.__anext__()
+        context = await gen.__anext__()
     except StopAsyncIteration:
-        # Generator completed immediately (no commands to execute)
+        # Generator completed immediately (no context to execute)
         return responses
 
     while True:
         try:
-            if isinstance(command, Context):
-                command.inventory_item = inventory_item
-                if command.type == ConnectionType.LOCAL:
-                    result = await run_command_on_local(command)
-                elif command.type == ConnectionType.REMOTE:
-                    result = await run_command_on_host(command)
-                elif command.type == ConnectionType.PASSTHROUGH:
-                    result = await pass_through_command(command)
+            if isinstance(context, Context):
+                context.inventory_item = inventory_item
+                if context.type == ConnectionType.LOCAL:
+                    result = await run_command_on_local(context)
+                elif context.type == ConnectionType.REMOTE:
+                    result = await run_command_on_host(context)
+                elif context.type == ConnectionType.PASSTHROUGH:
+                    result = await pass_through_command(context)
                 else:
-                    raise ValueError(f"Unsupported connection type: {command.type}")
+                    raise ValueError(f"Unsupported connection type: {context.type}")
 
                 responses.append(result)
 
                 # Send result back and get next command
-                command = await gen.asend(result)
+                context = await gen.asend(result)
 
             else:
                 raise TypeError(
-                    f"Unsupported type from async generator: {type(command)}"
+                    f"Unsupported type from async generator: {type(context)}"
                 )
 
         except StopAsyncIteration:

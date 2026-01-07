@@ -98,21 +98,21 @@ class Download(Local):
     Model = ScpModel
 
     @staticmethod
-    async def _callback(command: Context):
+    async def _callback(context: Context):
         try:
             return await asyncssh.scp(
-                srcpaths=[(command.inventory_item.connection.host, path) for path in command.caller.srcpaths],
-                dstpath=command.caller.dstpath,
-                username=command.inventory_item.connection.username,
-                preserve=command.caller.preserve,
-                recurse=command.caller.recurse,
-                block_size=command.caller.block_size,
-                progress_handler=command.caller.progress_handler,
-                error_handler=command.caller.error_handler,
+                srcpaths=[(context.inventory_item.connection.host, path) for path in context.caller.srcpaths],
+                dstpath=context.caller.dstpath,
+                username=context.inventory_item.connection.username,
+                preserve=context.caller.preserve,
+                recurse=context.caller.recurse,
+                block_size=context.caller.block_size,
+                progress_handler=context.caller.progress_handler,
+                error_handler=context.caller.error_handler,
             )
         except Exception as e:
-            command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            context.error = True
+            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 @router.post("/download", tags=["SCP Operations"], response_model=ResponseModel)
@@ -170,21 +170,21 @@ class Copy(Local):
     Model = CopyModel
 
     @staticmethod
-    async def _callback(command: Context):
+    async def _callback(context: Context):
         try:
             return await asyncssh.scp(
-                srcpaths=[(command.inventory_item.connection.host, path) for path in command.caller.srcpaths],
-                dstpath=(command.caller.dsthost, command.caller.dstpath),
-                username=command.inventory_item.connection.username,
-                preserve=command.caller.preserve,
-                recurse=command.caller.recurse,
-                block_size=command.caller.block_size,
-                progress_handler=command.caller.progress_handler,
-                error_handler=command.caller.error_handler,
+                srcpaths=[(context.inventory_item.connection.host, path) for path in context.caller.srcpaths],
+                dstpath=(context.caller.dsthost, context.caller.dstpath),
+                username=context.inventory_item.connection.username,
+                preserve=context.caller.preserve,
+                recurse=context.caller.recurse,
+                block_size=context.caller.block_size,
+                progress_handler=context.caller.progress_handler,
+                error_handler=context.caller.error_handler,
             )
         except Exception as e:
-            command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
+            context.error = True
+            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
             return f"{e.__class__.__name__}"
 
 @router.post("/copy", tags=["SCP Operations"], response_model=ResponseModel)

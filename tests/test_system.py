@@ -27,8 +27,8 @@ async def test_system_callback(setup_inventory):
     from reemote.system import Callback
     from reemote.context import Context
 
-    async def _callback(command: Context):
-        assert command.value == "test callback"
+    async def _callback(context: Context):
+        assert context.value == "test callback"
         return "tested"
 
     class Root:
