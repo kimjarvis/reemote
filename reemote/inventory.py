@@ -5,14 +5,13 @@ from reemote.core.config import Config
 from reemote.core.inventory_model import Connection, InventoryItem, Inventory
 from reemote.core.remote import Remote
 from reemote.system import Callback
-from reemote.core.command import Command
+from reemote.core.context import Context
 from reemote.core.router_handler import router_handler
 from reemote.core.models import LocalModel, localmodel
 
 
 # Define the router
 router = APIRouter()
-
 
 
 
@@ -173,7 +172,7 @@ class InventoryGetResponse(BaseModel):
     error: bool
     value: Inventory
 
-async def inventory_get_callback(command: Command):
+async def inventory_get_callback(context: Context):
     return Config().get_inventory()
 
 class Getinventory(Remote):

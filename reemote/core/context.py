@@ -13,9 +13,7 @@ class ConnectionType(Enum):
     PASSTHROUGH = 3
 
 
-class Command(RemoteModel):
-    """Command model with validation using Pydantic"""
-
+class Context(RemoteModel):
     model_config = ConfigDict(  # Replaces class Config
         validate_assignment=True,
         arbitrary_types_allowed=True,  # Needed for Callable and caller fields

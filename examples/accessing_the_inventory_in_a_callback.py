@@ -1,7 +1,7 @@
 import asyncio
 from reemote.execute import execute
 from reemote.system import Callback
-from reemote.core.command import Command
+from reemote.core.context import Context
 from reemote.inventory import Inventory, InventoryItem, Connection
 
 
@@ -17,8 +17,8 @@ async def main():
     )
 
     # examples/accessing_the_inventory_in_a_callback.py
-    async def _callback(command: Command):
-        return command.inventory_item.connection.username
+    async def _callback(context: Context):
+        return context.inventory_item.connection.username
 
     class Root:
         async def execute(self):

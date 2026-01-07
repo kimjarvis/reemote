@@ -177,8 +177,8 @@ The context is passed in the callback parameter.
 For example, this code snippet accesses the inventory item in the callback command parameter. 
 ```python
     # examples/accessing_the_inventory_in_a_callback.py
-    async def _callback(command: Command):
-        return command.inventory_item.connection.username
+    async def _callback(context: Context):
+        return context.inventory_item.connection.username
 
     class Root:
         async def execute(self):

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import AsyncGenerator
 from reemote.core.models import RemoteModel
+from reemote.core.context import Context
 
 
 class Remote:
@@ -25,5 +26,5 @@ class Remote:
         self.extra_kwargs = {key: value for key, value in kwargs.items() if key not in common_fields}
 
     @abstractmethod
-    async def execute(self) -> AsyncGenerator["Command", "Response"]:
+    async def execute(self) -> AsyncGenerator["Context", "Response"]:
         pass

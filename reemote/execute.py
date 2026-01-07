@@ -6,7 +6,7 @@ import asyncssh
 import asyncio
 import inspect
 from asyncssh import SSHCompletedProcess
-from reemote.core.command import Command, ConnectionType
+from reemote.core.context import Context, ConnectionType
 from typing import Any, AsyncGenerator, List, Tuple, Dict, Callable
 
 # from reemote.core.response import Response  # Removed to avoid circularity if any
@@ -15,7 +15,7 @@ from reemote.core.response import ssh_completed_process_to_dict
 from reemote.core.inventory_model import Inventory
 
 
-async def pass_through_command(command: Command) -> dict[str, str | None | Any] | None:
+async def pass_through_command(command: Context) -> dict[str, str | None | Any] | None:
     if not command.group or "all" in command.group or command.group in command.inventory_item.groups:
         logging.info(f"{command.call}")
         try:
@@ -34,7 +34,7 @@ async def pass_through_command(command: Command) -> dict[str, str | None | Any] 
     return None
 
 
-async def run_command_on_local(command: Command) -> dict[str, str | None | Any] | None:
+async def run_command_on_local(command: Context) -> dict[str, str | None | Any] | None:
     if not command.group or "all" in command.group or command.group in command.inventory_item.groups:
         logging.info(f"{command.call}")
         try:
@@ -53,7 +53,7 @@ async def run_command_on_local(command: Command) -> dict[str, str | None | Any] 
 
 
 async def run_command_on_host(
-    command: Command,
+    command: Context,
 ) -> dict[str, str | None | bool | Any] | None:
     cp = SSHCompletedProcess()
     if not command.group or "all" in command.group or command.group in command.inventory_item.groups:
@@ -133,7 +133,7 @@ async def run_command_on_host(
 
 async def pre_order_generator_async(
     node: object,
-) -> AsyncGenerator[Command | Any, Any | None]:
+) -> AsyncGenerator[Context | Any, Any | None]:
     """
     Async version of pre-order generator traversal.
     Handles async generators and async execute() methods.
@@ -170,7 +170,7 @@ async def pre_order_generator_async(
                 value = await generator.asend(send_value)
 
             # Process the yielded value
-            if isinstance(value, Command):
+            if isinstance(value, Context):
                 # Yield the command for execution
                 result = yield value
                 # Store result to send back
@@ -238,7 +238,7 @@ async def process_host(
 
     while True:
         try:
-            if isinstance(command, Command):
+            if isinstance(command, Context):
                 command.inventory_item = inventory_item
                 if command.type == ConnectionType.LOCAL:
                     result = await run_command_on_local(command)

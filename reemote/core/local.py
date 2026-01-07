@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import AsyncGenerator, Any
 
-from reemote.core.command import Command, ConnectionType
+from reemote.core.context import Context, ConnectionType
 from reemote.core.response import Response
 from reemote.core.models import LocalModel
 
@@ -23,9 +23,9 @@ class Local:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
 
-    async def execute(self) -> AsyncGenerator[Command, Response]:
+    async def execute(self) -> AsyncGenerator[Context, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
-        yield Command(
+        yield Context(
             type=ConnectionType.LOCAL,
             callback=self._callback,
             call=self.__class__.child + "(" + str(model_instance) + ")",
@@ -35,5 +35,5 @@ class Local:
 
     @staticmethod
     @abstractmethod
-    async def _callback(command: Command) -> None:
+    async def _callback(context: Context) -> None:
         pass

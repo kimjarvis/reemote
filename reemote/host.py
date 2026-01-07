@@ -3,7 +3,7 @@ from typing import AsyncGenerator, List
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from reemote.core.command import Command
+from reemote.core.context import Context
 from reemote.core.models import RemoteModel, remotemodel
 from reemote.core.remote import Remote
 from reemote.core.response import (
@@ -25,9 +25,9 @@ class ShellRequestModel(RemoteModel):
 class Shell(Remote):
     Model = ShellRequestModel
 
-    async def execute(self) -> AsyncGenerator[Command, Response]:
+    async def execute(self) -> AsyncGenerator[Context, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
-        yield Command(
+        yield Context(
             command=model_instance.cmd,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             **self.common_kwargs,
@@ -47,10 +47,10 @@ async def shell(
 
 class ContextGetResponse(BaseModel):
     error: bool
-    value: Command
+    value: Context
 
-async def context_get_callback(command: Command):
-    return command
+async def context_get_callback(context: Context):
+    return context
 
 class Getcontext(Remote):
     Model = LocalModel

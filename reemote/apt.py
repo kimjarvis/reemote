@@ -2,7 +2,7 @@ from typing import AsyncGenerator, Union
 from reemote.core.response import ResponseElement, Response
 from reemote.core.parse_apt_list_installed import parse_apt_list_installed
 from fastapi import APIRouter, Query, Depends
-from reemote.core.command import Command
+from reemote.core.context import Context
 from reemote.core.router_handler import router_handler
 from reemote.core.models import RemoteModel, remotemodel, RemoteModel
 from reemote.core.remote import Remote
@@ -42,10 +42,10 @@ class GetPackagesResponse(ResponseElement):
 class GetPackages(Remote):
     Model = GetPackagesRequestModel
 
-    async def execute(self) -> AsyncGenerator[Command, Response]:
+    async def execute(self) -> AsyncGenerator[Context, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
 
-        result = yield Command(
+        result = yield Context(
             command=f"apt list --installed",
             call=self.__class__.child + "(" + str(model_instance) + ")",
             changed=False,
@@ -81,10 +81,10 @@ class InstallRequestModel(RemoteModel):
 class Install(Remote):
     Model = InstallRequestModel
 
-    async def execute(self) -> AsyncGenerator[Command, Response]:
+    async def execute(self) -> AsyncGenerator[Context, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
 
-        yield Command(
+        yield Context(
             command=f"apt-get install -y {' '.join(model_instance.packages)}",
             call=self.__class__.child + "(" + str(model_instance) + ")",
             **self.common_kwargs,
@@ -113,10 +113,10 @@ class RemoveModel(RemoteModel):
 class Remove(Remote):
     Model = RemoveModel
 
-    async def execute(self) -> AsyncGenerator[Command, Response]:
+    async def execute(self) -> AsyncGenerator[Context, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
 
-        yield Command(
+        yield Context(
             command=f"apt-get remove -y {' '.join(model_instance.packages)}",
             call=self.__class__.child + "(" + str(model_instance) + ")",
             **self.common_kwargs,
@@ -143,10 +143,10 @@ class UpdateRequestModel(RemoteModel):
 class Update(Remote):
     Model = UpdateRequestModel
 
-    async def execute(self) -> AsyncGenerator[Command, Response]:
+    async def execute(self) -> AsyncGenerator[Context, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
 
-        yield Command(
+        yield Context(
             command="apt-get update",
             call=self.__class__.child + "(" + str(model_instance) + ")",
             **self.common_kwargs,
@@ -172,10 +172,10 @@ class UpgradeRequestModel(RemoteModel):
 class Upgrade(Remote):
     Model = UpgradeRequestModel
 
-    async def execute(self) -> AsyncGenerator[Command, Response]:
+    async def execute(self) -> AsyncGenerator[Context, Response]:
         model_instance = self.Model.model_validate(self.kwargs)
 
-        yield Command(
+        yield Context(
             command="apt-get upgrade",
             call=self.__class__.child + "(" + str(model_instance) + ")",
             **self.common_kwargs,
