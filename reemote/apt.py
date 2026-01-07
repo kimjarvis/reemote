@@ -2,9 +2,9 @@ from typing import AsyncGenerator, Union
 from reemote.core.response import ResponseElement, Response
 from reemote.core.parse_apt_list_installed import parse_apt_list_installed
 from fastapi import APIRouter, Query, Depends
-from reemote.core.context import Context
+from reemote.context import Context
 from reemote.core.router_handler import router_handler
-from reemote.core.models import RemoteModel, remotemodel, RemoteModel
+from reemote.core.models import remotemodel, RemoteModel
 from reemote.core.remote import Remote
 from reemote.core.response import ShellResponseModel
 from reemote.system import Return

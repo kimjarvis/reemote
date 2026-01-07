@@ -1,18 +1,19 @@
 from fastapi import APIRouter, Body, Path, Depends
-from pydantic import BaseModel, ValidationError, model_validator, Field
-from typing import List, Dict, Any
-from reemote.core.config import Config
-from reemote.core.inventory_model import Connection, InventoryItem, Inventory
+from pydantic import BaseModel, ValidationError
+from typing import List
+from reemote.config import Config
+from reemote.core.inventory_model import InventoryItem, Inventory
 from reemote.core.remote import Remote
 from reemote.system import Callback
-from reemote.core.context import Context
+from reemote.context import Context
 from reemote.core.router_handler import router_handler
 from reemote.core.models import LocalModel, localmodel
+
+# Re-export
 
 
 # Define the router
 router = APIRouter()
-
 
 
 class InventoryCreateResponse(BaseModel):

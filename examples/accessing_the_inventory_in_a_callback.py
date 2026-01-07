@@ -1,7 +1,7 @@
 import asyncio
 from reemote.execute import execute
 from reemote.system import Callback
-from reemote.core.context import Context
+from reemote.context import Context
 from reemote.inventory import Inventory, InventoryItem, Connection
 
 

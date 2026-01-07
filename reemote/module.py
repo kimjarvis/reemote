@@ -1,7 +1,7 @@
 import argparse
 import os
 import uvicorn
-from reemote.core.config import Config
+from reemote.config import Config
 
 
 def validate_file_path(path, arg_name):

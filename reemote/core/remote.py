@@ -1,7 +1,7 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import AsyncGenerator
 from reemote.core.models import RemoteModel
-from reemote.core.context import Context
+from reemote.context import Context
 
 
 class Remote:

@@ -6,7 +6,7 @@ from reemote.execute import endpoint_execute
 @pytest.mark.asyncio
 async def test_system_callback(setup_inventory):
     from reemote.system import Callback
-    from reemote.core.context import Context
+    from reemote.context import Context
 
     async def _callback(context: Context):
         return "tested"
@@ -25,7 +25,7 @@ async def test_system_callback(setup_inventory):
 @pytest.mark.asyncio
 async def test_system_callback(setup_inventory):
     from reemote.system import Callback
-    from reemote.core.context import Context
+    from reemote.context import Context
 
     async def _callback(command: Context):
         assert command.value == "test callback"

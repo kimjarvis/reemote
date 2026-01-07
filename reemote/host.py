@@ -3,7 +3,7 @@ from typing import AsyncGenerator, List
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from reemote.core.context import Context
+from reemote.context import Context
 from reemote.core.models import RemoteModel, remotemodel
 from reemote.core.remote import Remote
 from reemote.core.response import (

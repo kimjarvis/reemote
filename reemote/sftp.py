@@ -12,7 +12,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from reemote.core.context import Context
+from reemote.context import Context
 from reemote.system import Return
 from reemote.core.local import Local
 from reemote.core.models import LocalModel, LocalPathModel, localmodel

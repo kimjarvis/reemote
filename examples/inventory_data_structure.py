@@ -2,7 +2,7 @@
 import asyncio
 from reemote.execute import execute
 from reemote.host import Shell
-from reemote.core.inventory_model import (
+from reemote.inventory import (
     Inventory,
     InventoryItem,
     Connection,

@@ -1,7 +1,7 @@
-from abc import ABC, abstractmethod
-from typing import AsyncGenerator, Any
+from abc import abstractmethod
+from typing import AsyncGenerator
 
-from reemote.core.context import Context, ConnectionType
+from reemote.context import Context, ConnectionType
 from reemote.core.response import Response
 from reemote.core.models import LocalModel
 

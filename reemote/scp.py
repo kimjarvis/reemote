@@ -9,7 +9,7 @@ from reemote.core.router_handler import router_handler
 from reemote.core.models import LocalModel, localmodel
 from reemote.core.local import Local
 from reemote.core.response import ResponseModel
-from reemote.core.context import Context
+from reemote.context import Context
 
 router = APIRouter()
 

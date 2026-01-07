@@ -1,7 +1,5 @@
-from fastapi import APIRouter, Body, Path
-from pydantic import BaseModel, ValidationError, model_validator, Field
+from pydantic import BaseModel, model_validator, Field
 from typing import List, Dict, Any, Optional
-from reemote.core.config import Config
 
 
 class Connection(BaseModel):

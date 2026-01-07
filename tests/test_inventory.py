@@ -1,11 +1,9 @@
-import asyncio
-
 import pytest
 
-from reemote.core.config import Config
+from reemote.config import Config
 from reemote.execute import endpoint_execute
 from reemote.inventory import Inventory
-from reemote.core.inventory_model import InventoryItem, Connection, Session
+from reemote.inventory import InventoryItem, Connection, Session
 
 @pytest.mark.asyncio
 async def test_inventory_get():

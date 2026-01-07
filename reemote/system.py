@@ -1,6 +1,6 @@
 from pydantic import Field
-from typing import AsyncGenerator, Callable, Any, Optional
-from reemote.core.context import Context, ConnectionType
+from typing import AsyncGenerator, Callable, Any
+from reemote.context import Context, ConnectionType
 from reemote.core.response import Response
 from reemote.core.models import LocalModel
 from reemote.core.local import Local

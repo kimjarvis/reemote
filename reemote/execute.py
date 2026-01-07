@@ -6,11 +6,11 @@ import asyncssh
 import asyncio
 import inspect
 from asyncssh import SSHCompletedProcess
-from reemote.core.context import Context, ConnectionType
+from reemote.context import Context, ConnectionType
 from typing import Any, AsyncGenerator, List, Tuple, Dict, Callable
 
 # from reemote.core.response import Response  # Removed to avoid circularity if any
-from reemote.core.config import Config
+from reemote.config import Config
 from reemote.core.response import ssh_completed_process_to_dict
 from reemote.core.inventory_model import Inventory
 

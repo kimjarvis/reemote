@@ -1,11 +1,10 @@
 import asyncio
 
 import pytest
-from starlette.middleware.authentication import AuthenticationMiddleware
 
-from reemote.core.config import Config
+from reemote.config import Config
 from reemote.execute import endpoint_execute
-from reemote.core.inventory_model import Inventory, InventoryItem, Connection, Authentication, Session
+from reemote.inventory import Inventory, InventoryItem, Connection, Authentication, Session
 
 
 @pytest.fixture
