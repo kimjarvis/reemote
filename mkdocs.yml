@@ -1,9 +1,9 @@
 site_name: Reemote
 site_description: An API for controlling remote systems.
-site_url: https://https://reemote.org/
+site_url: https://reemote.org/
 
 repo_name: kimjarvis/reemote
-repo_url: https://https://github.com/kimjarvis/reemote
+repo_url: https://github.com/kimjarvis/reemote
 
 theme:
   name: material
@@ -13,6 +13,7 @@ markdown_extensions:
   - pymdownx.superfences
 
 nav:
+  - Use cases: index.md
   - Installation: installation.md
   - Inventory: inventory.md
   - Deployment: deployment.md

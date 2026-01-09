@@ -24,7 +24,7 @@ pipx install reemote
 
 ## Starting the ReST API server
 
-The server runs on the local host.
+To start the server on the local host:
 
 ```bash
 reemote --port=8001 
@@ -35,4 +35,4 @@ Parameter, such as the port number, are passed to [uvicorn](https://uvicorn.dev/
 * `--inventory`: The inventory file path (optional).
 * `--logging`: The logging file path (optional).
 
-When the server is running the API documentation can be found at http://localhost:8001/redoc and the Swagger UI can be found a http://localhost:8001/docs.
+When the server is running, the Swagger UI can be found a http://localhost:8001/docs and API documentation can be found at http://localhost:8001/redoc. 
