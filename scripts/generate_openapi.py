@@ -1,4 +1,3 @@
-from fastapi import FastAPI
 import json
 
 from reemote.app import app

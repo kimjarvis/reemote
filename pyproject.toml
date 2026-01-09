@@ -3,7 +3,7 @@ name = "reemote"
 version = "0.1.2"
 description = "An API for controlling remote systems."
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Kim Jarvis", email = "kim.jarvis@tpfsystems.com"}
 ]
@@ -23,6 +23,11 @@ dependencies = [
     "ruff>=0.14.9",
     "uvicorn>=0.38.0",
 ]
+
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
 [project.urls]
 Homepage = "http://reemote.org/"
 Documentation = "https://reemote.org/"
