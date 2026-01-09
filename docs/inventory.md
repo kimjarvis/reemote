@@ -8,7 +8,7 @@ Inventory can be created and managed using both the Reemote Python API and the R
 The Reemote Python API presents a single operation called `Inventory` to create inventory.
 ### Declaring an inventory class
 
-This script demonstrate the execution of a shell command on a host and the collection of the results.  The script executes the shell command `echo Hello World!` on all of the hosts in the inventory and prints the response `Hello World!`.  The shell command is executed from user on host `server104`.  The username `user` and password `passswors` are used to connect to the server via SSH.  
+This script demonstrate the execution of a shell command on a host and the collection of the results.  The script executes the shell command `echo Hello World!` on all of the hosts in the inventory and prints the response `Hello World!`.  The shell command is executed from user on host `server104`.  The username `user` and password `passsword` are used to connect to the server via SSH.  
 
 ```python
 # examples/declaring_an_inventory_class.py
@@ -177,8 +177,8 @@ The context is passed in the callback parameter.
 For example, this code snippet accesses the inventory item in the callback command parameter. 
 ```python
     # examples/accessing_the_inventory_in_a_callback.py
-    async def _callback(context: Context):
-        return context.inventory_item.connection.username
+    async def _callback(command: Command):
+        return command.inventory_item.connection.username
 
     class Root:
         async def execute(self):
@@ -194,9 +194,9 @@ This prints `user` on the console.
 The Reemote REST API presents end points to create an inventory, get the inventory content, and to add hosts to or delete hosts from the inventory.
 ### The create endpoint
 
-The Inventory for the ReST API can be created using the `reemote/inventory/create` end point.  
+The Inventory for the REST API can be created using the `reemote/inventory/create` end point.  
 
-For example, this curl command creates an inventory item to access the host `server104`.  Subsequent accesses to the ReST API will use this inventory.   
+For example, this curl command creates an inventory item to access the host `server104`.  Subsequent accesses to the REST API will use this inventory.   
 
 ```bash
 curl -X 'POST' \
@@ -252,7 +252,7 @@ reemote --inventory=/home/user/inventory.json
 ```
 ### The get endpoint
 
-The Inventory for the ReST API can be retrieved using the `reemote/inventory/get` end point.  For example, this curl command returns the inventory in json format.
+The Inventory for the REST API can be retrieved using the `reemote/inventory/get` end point.  For example, this curl command returns the inventory in json format.
 ```bash
 curl -X 'GET' \ 'http://127.0.0.1:8001/reemote/inventory/get?group=all' \ -H 'accept: application/json'
 ```

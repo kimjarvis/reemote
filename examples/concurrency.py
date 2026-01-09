@@ -1,7 +1,9 @@
+# examples/concurrency.py
 import asyncio
 from reemote.execute import execute
 from reemote.host import Shell
 from reemote.inventory import Inventory, InventoryItem, Connection
+from reemote.system import Return
 
 
 async def main():
@@ -22,19 +24,20 @@ async def main():
         ]
     )
 
-    class First:
+    import time
+
+    class Root:
         async def execute(self):
+            start_time = time.time()
             yield Shell(cmd="echo Hello")
             yield Shell(cmd="echo World!")
+            end_time = time.time()
+            yield Return(value=(start_time, end_time))
 
-    class Second:
-        async def execute(self):
-            yield Shell(cmd="echo Bye!!!")
-
-    responses = await execute(lambda: First(), inventory=inventory)
-    responses.extend(await execute(lambda: Second(), inventory=inventory))
+    await execute(lambda: Shell(cmd="echo Ready?"), inventory=inventory)
+    responses = await execute(lambda: Root(), inventory=inventory)
     for response in responses:
-        print(response["value"]["stdout"])
+        print(response["value"])
 
 
 if __name__ == "__main__":

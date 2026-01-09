@@ -30,8 +30,8 @@ class Callback(Local):
 
 
 class ReturnRequestModel(LocalModel):
-    value: Any
-    changed: bool
+    value: Any = None
+    changed: bool = True
 
 
 class Return(Local):
