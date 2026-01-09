@@ -9,7 +9,7 @@ from reemote.inventory import router as inventory_router
 app = FastAPI(
     title="Reemote",
     summary="An API for controlling remote systems.",
-    version="0.1.1",
+    version="0.1.2",
     swagger_ui_parameters={"docExpansion": "none", "title": "Reemote - Swagger UI"},
     openapi_tags=[
         {
