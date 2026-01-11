@@ -26,7 +26,7 @@ class Update(Remote):
         return
 
 
-@router.post(
+@router.put(
     "/update",
     tags=["APT Package Manager"],
     response_model=ResponseModel,

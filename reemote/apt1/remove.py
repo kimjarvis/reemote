@@ -1,6 +1,6 @@
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from reemote.context import Context
 from reemote.core.remote import Remote, RemoteModel, remotemodel
@@ -12,14 +12,18 @@ from reemote.system import Return
 router = APIRouter()
 
 
-class _Upgrade(Remote):
-    Model = RemoteModel
+class RemoveRequestModel(RemoteModel):
+    packages: list[str]
+
+
+class _Remove(Remote):
+    Model = RemoveRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
         model_instance = self.Model.model_validate(self.kwargs)
 
         result = yield Context(
-            command="apt-get upgrade",
+            command=f"apt-get remove -y {' '.join(model_instance.packages)}",
             call=self.__class__.child + "(" + str(model_instance) + ")",
             **self.common_kwargs,
         )
@@ -28,29 +32,31 @@ class _Upgrade(Remote):
         return
 
 
-class Upgrade(Remote):
-    Model = RemoteModel
+class Remove(Remote):
+    Model = RemoveRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
-
         pre = yield GetPackages()
-        yield _Upgrade(
-            **self.common_kwargs,
-        )
+        result = yield _Remove(**self.kwargs)
         post = yield GetPackages()
 
         changed = pre["value"] != post["value"]
 
-        yield Return(changed=changed, value=None)
+        yield Return(changed=changed, value=result["value"])
 
         return
 
 
 @router.put(
-    "/upgrade",
+    "/remove",
     tags=["APT Package Manager"],
     response_model=ResponseModel,
 )
-async def upgrade(common: RemoteModel = Depends(remotemodel)) -> RemoteModel:
-    """# Upgrade APT packages"""
-    return await router_handler(RemoteModel, Upgrade)(common=common)
+async def remove(
+    common: RemoveRequestModel = Depends(remotemodel),
+    packages: list[str] = Query(..., description="List of package names"),
+) -> RemoveRequestModel:
+    """# Remove APT packages"""
+    return await router_handler(RemoveRequestModel, Remove)(
+        common=common, packages=packages
+    )
