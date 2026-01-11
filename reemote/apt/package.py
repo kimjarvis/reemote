@@ -2,7 +2,7 @@ from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Query
 
-from reemote.apt1 import GetPackages, Install, Remove
+from reemote.apt import GetPackages, Install, Remove
 from reemote.context import Context
 from reemote.core.remote import Remote, RemoteModel, remotemodel
 from reemote.core.response import ResponseModel

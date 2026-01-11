@@ -6,7 +6,7 @@ from reemote.context import Context
 from reemote.core.remote import Remote, RemoteModel, remotemodel
 from reemote.core.response import ResponseModel
 from reemote.core.router_handler import router_handler
-from reemote.apt1.getpackages import GetPackages
+from reemote.apt.getpackages import GetPackages
 from reemote.system import Return
 
 router = APIRouter()

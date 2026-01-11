@@ -59,7 +59,7 @@ async def test_inventory_environment_variables(setup_inventory):
 
 @pytest.mark.asyncio
 async def test_connection_error():
-    from reemote.apt1 import Update
+    from reemote.apt import Update
 
     class Root:
         async def execute(self) -> AsyncGenerator[Context, ResponseModel]:

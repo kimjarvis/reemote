@@ -11,8 +11,8 @@ from reemote.execute import endpoint_execute
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 @pytest.mark.asyncio
-async def test_apt_apt_getpackages(setup_inventory):
-    from reemote.apt1 import GetPackages
+async def test_apt_getpackages(setup_inventory):
+    from reemote.apt import GetPackages
 
     class Root:
         async def execute(self) -> AsyncGenerator[Context, ResponseElement]:
@@ -26,8 +26,8 @@ async def test_apt_apt_getpackages(setup_inventory):
 
 
 @pytest.mark.asyncio
-async def test_apt_apt_update(setup_inventory):
-    from reemote.apt1 import Update
+async def test_apt_update(setup_inventory):
+    from reemote.apt import Update
 
     class Root:
         async def execute(self) -> AsyncGenerator[Context, ResponseElement]:
@@ -40,8 +40,8 @@ async def test_apt_apt_update(setup_inventory):
     assert len(r) == 2
 
 @pytest.mark.asyncio
-async def test_apt_apt_upgrade(setup_inventory):
-    from reemote.apt1 import Upgrade
+async def test_apt_upgrade(setup_inventory):
+    from reemote.apt import Upgrade
 
     class Root:
         async def execute(self):
@@ -52,8 +52,8 @@ async def test_apt_apt_upgrade(setup_inventory):
     assert len(r) == 2
 
 @pytest.mark.asyncio
-async def test_apt_apt_install(setup_inventory):
-    from reemote.apt1 import Install
+async def test_apt_install(setup_inventory):
+    from reemote.apt import Install
 
     class Root:
         @staticmethod
@@ -67,8 +67,8 @@ async def test_apt_apt_install(setup_inventory):
     assert len(r) == 2
 
 @pytest.mark.asyncio
-async def test_apt_apt_remove(setup_inventory):
-    from reemote.apt1 import Remove
+async def test_apt_remove(setup_inventory):
+    from reemote.apt import Remove
 
     class Root:
         async def execute(self):
@@ -83,7 +83,7 @@ async def test_apt_apt_remove(setup_inventory):
 
 @pytest.mark.asyncio
 async def test_apt_package(setup_inventory):
-    from reemote.apt1 import Package
+    from reemote.apt import Package
 
     class Root:
         async def execute(self):
