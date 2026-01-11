@@ -3,7 +3,7 @@ from pydantic import BaseModel, ValidationError
 from typing import List
 from reemote.config import Config
 from reemote.core.inventory_model import InventoryItem, Inventory
-from reemote.core.remote import Remote
+from reemote.core.request import Request
 from reemote.system import Callback
 from reemote.context import Context
 from reemote.core.router_handler import router_handler
@@ -178,7 +178,7 @@ class InventoryGetResponse(BaseModel):
 async def inventory_get_callback(context: Context):
     return Config().get_inventory()
 
-class Getinventory(Remote):
+class Getinventory(Request):
     Model = LocalModel
 
     async def execute(self):

@@ -3,7 +3,7 @@ from typing import AsyncGenerator, List, Union
 from fastapi import APIRouter, Depends
 
 from reemote.context import Context
-from reemote.core.remote import Remote, RemoteModel, remotemodel
+from reemote.core.request import Request, RequestModel, requestmodel
 from reemote.core.router_handler import router_handler
 from pydantic import BaseModel, Field, RootModel
 
@@ -73,8 +73,8 @@ class GetPackagesResponseElement(BaseModel):
 class GetPackagesResponse(RootModel):
     root: List[GetPackagesResponseElement]
 
-class GetPackages(Remote):
-    Model = RemoteModel
+class GetPackages(Request):
+    Model = RequestModel
 
     async def execute(self) -> AsyncGenerator[Context, GetPackagesResponse]:
         model_instance = self.Model.model_validate(self.kwargs)
@@ -103,6 +103,6 @@ class GetPackages(Remote):
     tags=["APT Package Manager"],
     response_model=GetPackagesResponse,
 )
-async def getpackages(common: RemoteModel = Depends(remotemodel)) -> GetPackagesResponse:
+async def getpackages(common: RequestModel = Depends(requestmodel)) -> GetPackagesResponse:
     """# Get installed APT packages"""
-    return await router_handler(RemoteModel, GetPackages)(common=common)
+    return await router_handler(RequestModel, GetPackages)(common=common)

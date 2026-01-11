@@ -3,7 +3,7 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Depends, Query
 
 from reemote.context import Context
-from reemote.core.remote import Remote, RemoteModel, remotemodel
+from reemote.core.request import Request, RequestModel, requestmodel
 from reemote.core.response import ResponseModel
 from reemote.core.router_handler import router_handler
 from reemote.apt.getpackages import GetPackages
@@ -12,11 +12,11 @@ from reemote.system import Return
 router = APIRouter()
 
 
-class RemoveRequestModel(RemoteModel):
+class RemoveRequestModel(RequestModel):
     packages: list[str]
 
 
-class _Remove(Remote):
+class _Remove(Request):
     Model = RemoveRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
@@ -32,7 +32,7 @@ class _Remove(Remote):
         return
 
 
-class Remove(Remote):
+class Remove(Request):
     Model = RemoveRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
@@ -53,7 +53,7 @@ class Remove(Remote):
     response_model=ResponseModel,
 )
 async def remove(
-    common: RemoveRequestModel = Depends(remotemodel),
+    common: RemoveRequestModel = Depends(requestmodel),
     packages: list[str] = Query(..., description="List of package names"),
 ) -> RemoveRequestModel:
     """# Remove APT packages"""

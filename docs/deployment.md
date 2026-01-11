@@ -208,7 +208,7 @@ The `execute` method yields its last response.  So, class `Child` yields the res
 In this example `Root()` has no parameters.  In the next section we will describe how to pass parameters.
 ### Parameters
 
-Lets look at an example deployment with a custom class `Greet` that has a parameter `name`. 
+Lets look at an example deployment with a custom class `Greet` that has a parameter `name`.
 
 ```python
 # examples/compostion_parameters.py
@@ -221,7 +221,7 @@ from reemote.host import Shell
 from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.context import Context
 from reemote.core.response import Response
-from reemote.core.remote import Remote
+from reemote.core.request import Request
 
 
 async def main():
@@ -240,7 +240,7 @@ async def main():
             default="no one", description="The name of the person to greet"
         )
 
-    class Greet(Remote):
+    class Greet(Request):
         Model = GreetRequest
 
         async def execute(self) -> AsyncGenerator[Context, Response]:

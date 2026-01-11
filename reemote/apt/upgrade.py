@@ -3,7 +3,7 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Depends
 
 from reemote.context import Context
-from reemote.core.remote import Remote, RemoteModel, remotemodel
+from reemote.core.request import Request, RequestModel, requestmodel
 from reemote.core.response import ResponseModel
 from reemote.core.router_handler import router_handler
 from reemote.apt.getpackages import GetPackages
@@ -12,8 +12,8 @@ from reemote.system import Return
 router = APIRouter()
 
 
-class _Upgrade(Remote):
-    Model = RemoteModel
+class _Upgrade(Request):
+    Model = RequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
         model_instance = self.Model.model_validate(self.kwargs)
@@ -28,8 +28,8 @@ class _Upgrade(Remote):
         return
 
 
-class Upgrade(Remote):
-    Model = RemoteModel
+class Upgrade(Request):
+    Model = RequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
 
@@ -51,6 +51,6 @@ class Upgrade(Remote):
     tags=["APT Package Manager"],
     response_model=ResponseModel,
 )
-async def upgrade(common: RemoteModel = Depends(remotemodel)) -> RemoteModel:
+async def upgrade(common: RequestModel = Depends(requestmodel)) -> RequestModel:
     """# Upgrade APT packages"""
-    return await router_handler(RemoteModel, Upgrade)(common=common)
+    return await router_handler(RequestModel, Upgrade)(common=common)

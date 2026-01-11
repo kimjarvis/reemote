@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from reemote.context import Context
-from reemote.core.remote import RemoteModel, remotemodel
-from reemote.core.remote import Remote
+from reemote.core.request import RequestModel, requestmodel
+from reemote.core.request import Request
 from reemote.core.response import (
     Response,
     ShellResponseModel,
@@ -18,11 +18,11 @@ from reemote.core.local import LocalModel, localmodel
 router = APIRouter()
 
 
-class ShellRequestModel(RemoteModel):
+class ShellRequestModel(RequestModel):
     cmd: str = Field(...)
 
 
-class Shell(Remote):
+class Shell(Request):
     Model = ShellRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, Response]:
@@ -37,7 +37,7 @@ class Shell(Remote):
 @router.post("/shell", tags=["Host Operations"], response_model=ShellResponseModel)
 async def shell(
     cmd: str = Query(..., description="Shell command",examples=["echo Hello World!","ls -ltr"]),
-    common: RemoteModel = Depends(remotemodel),
+    common: RequestModel = Depends(requestmodel),
 ) -> ShellResponseModel:
     """# Execute a shell command on the remote host"""
     return await router_handler(ShellRequestModel, Shell)(cmd=cmd, common=common)
@@ -52,7 +52,7 @@ class ContextGetResponse(BaseModel):
 async def context_get_callback(context: Context):
     return context
 
-class Getcontext(Remote):
+class Getcontext(Request):
     Model = LocalModel
 
     async def execute(self):

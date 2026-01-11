@@ -4,7 +4,7 @@ from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class RemoteModel(BaseModel):
+class RequestModel(BaseModel):
     """Common parameters shared across command types"""
 
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
@@ -17,20 +17,20 @@ class RemoteModel(BaseModel):
     su: bool = Field(default=False, description="Execute command with su.")
 
 
-def remotemodel(
+def requestmodel(
     group: Optional[str] = Query(
         "all", description="Optional inventory group (defaults to 'all')"
     ),
     name: Optional[str] = Query(None, description="Optional name"),
     sudo: bool = Query(False, description="Whether to use sudo"),
     su: bool = Query(False, description="Whether to use su"),
-) -> RemoteModel:
+) -> RequestModel:
     """FastAPI dependency for common parameters"""
-    return RemoteModel(group=group, name=name, sudo=sudo, su=su)
+    return RequestModel(group=group, name=name, sudo=sudo, su=su)
 
 
-class Remote:
-    Model = RemoteModel
+class Request:
+    Model = RequestModel
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -40,7 +40,7 @@ class Remote:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         # Define the fields that are considered "common" based on RemoteParams
-        common_fields = set(RemoteModel.model_fields.keys())
+        common_fields = set(RequestModel.model_fields.keys())
 
         # Separate kwargs into common_kwargs and extra_kwargs
         self.common_kwargs = {
