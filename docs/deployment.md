@@ -220,7 +220,7 @@ from reemote.execute import execute
 from reemote.host import Shell
 from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.context import Context
-from reemote.core.response import Response
+from reemote.core.response import ResponseModel
 from reemote.core.request import Request
 
 
@@ -243,7 +243,7 @@ async def main():
     class Greet(Request):
         Model = GreetRequest
 
-        async def execute(self) -> AsyncGenerator[Context, Response]:
+        async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
             model_instance = self.Model.model_validate(self.kwargs)
             yield Shell(cmd=f"echo Hello {model_instance.name}")
 

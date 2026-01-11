@@ -1,7 +1,7 @@
 from pydantic import Field
 from typing import AsyncGenerator, Callable, Any
 from reemote.context import Context, ConnectionType
-from reemote.core.response import Response
+from reemote.core.response import ResponseModel
 from reemote.core.local import LocalModel
 from reemote.core.local import Local
 
@@ -16,7 +16,7 @@ class CallbackRequestModel(LocalModel):
 class Callback(Local):
     Model = CallbackRequestModel
 
-    async def execute(self) -> AsyncGenerator[Context, Response]:
+    async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
         model_instance = self.Model.model_validate(self.kwargs)
 
         yield Context(
@@ -37,7 +37,7 @@ class ReturnRequestModel(LocalModel):
 class Return(Local):
     Model = ReturnRequestModel
 
-    async def execute(self) -> AsyncGenerator[Context, Response]:
+    async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
         model_instance = self.Model.model_validate(self.kwargs)
 
         yield Context(

@@ -16,7 +16,7 @@ from reemote.context import Context
 from reemote.system import Return
 from reemote.core.local import Local
 from reemote.core.local import LocalModel, LocalPathModel, localmodel
-from reemote.core.response import Response, ResponseElement, ResponseModel
+from reemote.core.response import ResponseElement, ResponseModel
 from reemote.core.router_handler import router_handler, router_handler_put
 
 router = APIRouter()
@@ -2416,7 +2416,7 @@ class Directory(Local):
     async def execute(
         self,
     ) -> AsyncGenerator[
-        Isdir | Rmdir | Mkdir | Stat | Chmod | Chown | Utime | Return, Response
+        Isdir | Rmdir | Mkdir | Stat | Chmod | Chown | Utime | Return, ResponseModel
     ]:
         model_instance = self.Model.model_validate(self.kwargs)
 

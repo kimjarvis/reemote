@@ -9,11 +9,21 @@ from typing import Any, AsyncGenerator, Callable, Dict, List, Tuple
 import asyncssh
 from asyncssh import SSHCompletedProcess
 
-# from reemote.core.response import Response  # Removed to avoid circularity if any
 from reemote.config import Config
 from reemote.context import ConnectionType, Context
 from reemote.core.inventory_model import Inventory
-from reemote.core.response import ssh_completed_process_to_dict
+
+def ssh_completed_process_to_dict(ssh_completed_process):
+    return {
+        # "env": getattr(ssh_completed_process, "env", None),
+        "command": getattr(ssh_completed_process, "command", None),
+        "subsystem": getattr(ssh_completed_process, "subsystem", None),
+        "exit_status": getattr(ssh_completed_process, "exit_status", None),
+        "exit_signal": getattr(ssh_completed_process, "exit_signal", None),
+        "returncode": getattr(ssh_completed_process, "returncode", None),
+        "stdout": getattr(ssh_completed_process, "stdout", None),
+        "stderr": getattr(ssh_completed_process, "stderr", None),
+    }
 
 
 async def pass_through_command(context: Context) -> dict[str, str | None | Any] | None:
