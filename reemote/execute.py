@@ -1,18 +1,19 @@
 # Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com
 # This software is licensed under the MIT License. See the LICENSE file for details.
 #
-import logging
-import asyncssh
 import asyncio
 import inspect
+import logging
+from typing import Any, AsyncGenerator, Callable, Dict, List, Tuple
+
+import asyncssh
 from asyncssh import SSHCompletedProcess
-from reemote.context import Context, ConnectionType
-from typing import Any, AsyncGenerator, List, Tuple, Dict, Callable
 
 # from reemote.core.response import Response  # Removed to avoid circularity if any
 from reemote.config import Config
-from reemote.core.response import ssh_completed_process_to_dict
+from reemote.context import ConnectionType, Context
 from reemote.core.inventory_model import Inventory
+from reemote.core.response import ssh_completed_process_to_dict
 
 
 async def pass_through_command(context: Context) -> dict[str, str | None | Any] | None:
@@ -117,9 +118,16 @@ async def run_command_on_host(
                         **context.inventory_item.session.to_json_serializable(),
                         check=False,
                     )
-        except (asyncssh.ProcessError, OSError, asyncssh.Error) as e:
-            logging.error(f"{e} {context}", exc_info=True)
-            raise
+        except Exception as e:
+            context.error = True
+            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            result = {
+                "host": context.inventory_item.connection.host,
+                "value": f"{e.__class__.__name__}",
+                "changed": False,
+                "error": True,
+            }
+            return result
         result = {
             "host": context.inventory_item.connection.host,
             "value": ssh_completed_process_to_dict(cp),

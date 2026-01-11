@@ -6,6 +6,11 @@ from reemote.host import router as server_router
 from reemote.sftp import router as sftp_router
 from reemote.inventory import router as inventory_router
 
+from reemote.apt1.update import router as apt1_update_router
+from reemote.apt1.getpackages import router as apt1_getpackages_router
+from reemote.apt1.upgrade import router as apt1_upgrade_router
+from reemote.apt1.install import router as apt1_install_router
+
 app = FastAPI(
     title="Reemote",
     summary="An API for controlling remote systems.",
@@ -50,7 +55,10 @@ app.include_router(inventory_router, prefix="/reemote/inventory")
 app.include_router(server_router, prefix="/reemote/host")
 
 app.include_router(apt_router, prefix="/reemote/apt")
-
+app.include_router(apt1_update_router, prefix="/reemote/apt")
+app.include_router(apt1_upgrade_router, prefix="/reemote/apt")
+app.include_router(apt1_getpackages_router, prefix="/reemote/apt")
+app.include_router(apt1_install_router, prefix="/reemote/apt")
 app.include_router(sftp_router, prefix="/reemote/sftp")
 app.include_router(scp_router, prefix="/reemote/scp")
 

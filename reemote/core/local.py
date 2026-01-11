@@ -2,7 +2,7 @@ from abc import abstractmethod
 from typing import AsyncGenerator
 
 from reemote.context import Context, ConnectionType
-from reemote.core.response import Response
+from reemote.core.response import ResponseElement
 
 from pathlib import PurePath
 from typing import Optional, Union
@@ -51,18 +51,12 @@ class Local:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
-        # Check if the subclass overrides the 'Model' field
-        if cls.Model is Local.Model:  # If it's still the same as the base class
-            raise NotImplementedError(
-                f"Class {cls.__name__} must override the 'Model' class field."
-            )
-
         cls.child = cls.__name__  # Set the 'child' field to the name of the subclass
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
 
-    async def execute(self) -> AsyncGenerator[Context, Response]:
+    async def execute(self) -> AsyncGenerator[Context, ResponseElement]:
         model_instance = self.Model.model_validate(self.kwargs)
         yield Context(
             type=ConnectionType.LOCAL,

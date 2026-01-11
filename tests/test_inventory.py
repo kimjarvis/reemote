@@ -1,9 +1,12 @@
 import pytest
+from typing import AsyncGenerator
 
 from reemote.config import Config
 from reemote.execute import endpoint_execute
 from reemote.inventory import Inventory
 from reemote.inventory import InventoryItem, Connection, Session
+from reemote.context import Context
+from reemote.core.response import ResponseModel
 
 @pytest.mark.asyncio
 async def test_inventory_get():
@@ -53,6 +56,40 @@ async def test_inventory_environment_variables(setup_inventory):
 
     await endpoint_execute(lambda: Root())
 
+
+@pytest.mark.asyncio
+async def test_connection_error():
+    from reemote.apt1 import Update
+
+    class Root:
+        async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
+            r = yield Update(group="all", name=None, sudo=False, su=False)
+
+    inventory = Inventory(
+        hosts=[
+            {
+                "connection": {
+                    "host": "server105",
+                    "username": "user",
+                    "password": "password",
+                },
+                "groups": ["all", "server105"],
+            },
+            {
+                "connection": {
+                    "host": "192.168.1.1",
+                    "username": "user",
+                    "password": "password",
+                },
+                "groups": ["all", "192.168.1.1"],
+            },
+        ]
+    )
+    config = Config()
+    config.set_inventory(inventory.to_json_serializable())
+
+    rl = await endpoint_execute(lambda: Root())
+    assert any("error" in r for r in rl)
 
 @pytest.mark.asyncio
 async def test_inventory_unreachable_host_sftp_command():
