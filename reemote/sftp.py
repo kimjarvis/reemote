@@ -15,11 +15,27 @@ from pydantic import (
 from reemote.context import Context
 from reemote.system import Return
 from reemote.core.local import Local
-from reemote.core.local import LocalModel, LocalPathModel, localmodel
+from reemote.core.local import LocalModel, localmodel
 from reemote.core.response import ResponseElement, ResponseModel
 from reemote.core.router_handler import router_handler, router_handler_put
 
 router = APIRouter()
+
+
+class LocalPathModel(LocalModel):
+    path: Union[PurePath, str, bytes] = Field(..., examples=["/home/user", "testdata"])
+
+    @field_validator("path", mode="before")
+    @classmethod
+    def ensure_path_is_purepath(cls, v):
+        if v is None:
+            raise ValueError("path cannot be None.")
+        if not isinstance(v, PurePath):
+            try:
+                return PurePath(v)
+            except TypeError:
+                raise ValueError(f"Cannot convert {v} to PurePath.")
+        return v
 
 
 class IslinkResponse(ResponseElement):
@@ -33,15 +49,19 @@ class Islink(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.islink(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -51,7 +71,7 @@ async def islink(
         ..., description="Path to check if it's a link"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[IslinkResponse]:
+) -> LocalPathModel:
     """# Return if the remote path refers to a symbolic link"""
     return await router_handler(LocalPathModel, Islink)(path=path, common=common)
 
@@ -67,15 +87,19 @@ class Isfile(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.isfile(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -85,7 +109,7 @@ async def isfile(
         ..., description="Path to check if it's a file"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[IsfileResponse]:
+) -> LocalPathModel:
     """# Return if the remote path refers to a file"""
     return await router_handler(LocalPathModel, Isfile)(path=path, common=common)
 
@@ -101,15 +125,19 @@ class Isdir(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.isdir(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -119,7 +147,7 @@ async def isdir(
         ..., description="Path to check if it's a directory"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[IsdirResponse]:
+) -> LocalPathModel:
     """# Return if the remote path refers to a directory"""
     return await router_handler(LocalPathModel, Isdir)(path=path, common=common)
 
@@ -135,15 +163,19 @@ class Getsize(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.getsize(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -153,7 +185,7 @@ async def getsize(
         ..., description="Return the size of a remote file or directory"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[GetsizeResponse]:
+) -> LocalPathModel:
     """# Return the size of a remote file or directory"""
     return await router_handler(LocalPathModel, Getsize)(path=path, common=common)
 
@@ -169,15 +201,19 @@ class Getatime(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.getatime(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -187,7 +223,7 @@ async def getatime(
         ..., description="Return the last access time of a remote file or directory"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[GettimeResponse]:
+) -> LocalPathModel:
     """# Return the last access time of a remote file or directory"""
     return await router_handler(LocalPathModel, Getatime)(path=path, common=common)
 
@@ -203,25 +239,31 @@ class GetatimeNs(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.getatime_ns(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
-@router.get("/getatimens", tags=["SFTP Operations"], response_model=List[GettimensResponse])
+@router.get(
+    "/getatimens", tags=["SFTP Operations"], response_model=List[GettimensResponse]
+)
 async def getatimens(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the last access time of a remote file or directory"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[GettimensResponse]:
+) -> LocalPathModel:
     """# Return the last access time of a remote file or directory"""
     return await router_handler(LocalPathModel, GetatimeNs)(path=path, common=common)
 
@@ -230,15 +272,19 @@ class Getmtime(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.getmtime(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -249,7 +295,7 @@ async def getmtime(
         description="Return the last modification time of a remote file or directory",
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[GettimeResponse]:
+) -> LocalPathModel:
     """# Return the last modification time of a remote file or directory"""
     return await router_handler(LocalPathModel, Getmtime)(path=path, common=common)
 
@@ -258,26 +304,32 @@ class GetmtimeNs(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.getmtime_ns(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
-@router.get("/getmtimens", tags=["SFTP Operations"], response_model=List[GettimensResponse])
+@router.get(
+    "/getmtimens", tags=["SFTP Operations"], response_model=List[GettimensResponse]
+)
 async def getmtimens(
     path: Union[PurePath, str, bytes] = Query(
         ...,
         description="Return the last modification time of a remote file or directory",
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[GettimensResponse]:
+) -> LocalPathModel:
     """# Return the last modification time of a remote file or directory"""
     return await router_handler(LocalPathModel, GetmtimeNs)(path=path, common=common)
 
@@ -286,25 +338,31 @@ class Getcrtime(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.getcrtime(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
-@router.get("/getcrtime", tags=["SFTP Operations"], response_model=List[GettimeResponse])
+@router.get(
+    "/getcrtime", tags=["SFTP Operations"], response_model=List[GettimeResponse]
+)
 async def getcrtime(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the creation time of a remote file or directory"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[GettimeResponse]:
+) -> LocalPathModel:
     """# Return the creation time of a remote file or directory"""
     return await router_handler(LocalPathModel, Getcrtime)(path=path, common=common)
 
@@ -313,31 +371,35 @@ class GetcrtimeNs(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.getcrtime_ns(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
-@router.get("/getcrtimens", tags=["SFTP Operations"], response_model=List[GettimensResponse])
+@router.get(
+    "/getcrtimens", tags=["SFTP Operations"], response_model=List[GettimensResponse]
+)
 async def getcrtimens(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the creation time of a remote file or directory"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[GettimensResponse]:
+) -> LocalPathModel:
     """# Return the creation time of a remote file or directory"""
     return await router_handler(LocalPathModel, GetcrtimeNs)(path=path, common=common)
 
 
-class GetcwdRequest(LocalModel):
-    pass
 
 class GetcwdResponse(ResponseElement):
     value: str = Field(
@@ -347,23 +409,27 @@ class GetcwdResponse(ResponseElement):
 
 
 class Getcwd(Local):
-    Model = GetcwdRequest
+    Model = LocalModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.getcwd()
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
 @router.get("/getcwd", tags=["SFTP Operations"], response_model=List[GetcwdResponse])
-async def getcwd(common: LocalModel = Depends(localmodel)) -> List[GetcwdResponse]:
+async def getcwd(common: LocalModel = Depends(localmodel)) -> LocalModel:
     """# Return the current remote working directory"""
     return await router_handler(LocalModel, Getcwd)(common=common)
 
@@ -406,18 +472,23 @@ class Stat(Local):
     Model = StatModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     sftp_attrs = await sftp.stat(
-                        context.caller.path, follow_symlinks=context.caller.follow_symlinks
+                        context.caller.path,
+                        follow_symlinks=context.caller.follow_symlinks,
                     )
                     return sftp_attrs_to_dict(sftp_attrs)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -431,7 +502,7 @@ async def stat(
         True, description="Whether or not to follow symbolic links"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[StatResponse]:
+) -> StatModel:
     """# Get attributes of a remote file, directory, or symlink"""
     return await router_handler(StatModel, Stat)(
         path=path, follow_symlinks=follow_symlinks, common=common
@@ -463,9 +534,11 @@ class Read(Local):
     Model = ReadModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     f = await sftp.open(
@@ -481,7 +554,9 @@ class Read(Local):
                     return content
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -505,7 +580,7 @@ async def read(
         -1, description="The maximum number of parallel read requests"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[ReadResponse]:
+) -> ReadModel:
     """# Read a remote file"""
     params = {"path": path}
     if encoding is not None:
@@ -529,15 +604,19 @@ class Listdir(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.listdir(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -547,7 +626,7 @@ async def listdir(
         ..., description="Read the names of the files in a remote directory"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[ListdirResponse]:
+) -> LocalPathModel:
     """# Read the names of the files in a remote directory"""
     return await router_handler(LocalPathModel, Listdir)(path=path, common=common)
 
@@ -593,16 +672,20 @@ class Readdir(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     sftp_names = await sftp.readdir(context.caller.path)
                     return sftp_names_to_dict(sftp_names)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -612,7 +695,7 @@ async def readdir(
         ..., description=" The path of the remote directory to read"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[ReaddirResponse]:
+) -> LocalPathModel:
     """# Read the contents of a remote directory"""
     return await router_handler(LocalPathModel, Readdir)(path=path, common=common)
 
@@ -628,15 +711,19 @@ class Exists(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.exists(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -646,7 +733,7 @@ async def exists(
         ..., description="The remote path to check"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[ExistsResponse]:
+) -> LocalPathModel:
     """# Return if the remote path exists and isn’t a broken symbolic link"""
     return await router_handler(LocalPathModel, Exists)(path=path, common=common)
 
@@ -655,15 +742,19 @@ class Lexists(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.lexists(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -673,7 +764,7 @@ async def lexists(
         ..., description="The remote path to check"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[ExistsResponse]:
+) -> LocalPathModel:
     """# Return if the remote path exists, without following symbolic links"""
     return await router_handler(LocalPathModel, Lexists)(path=path, common=common)
 
@@ -682,16 +773,20 @@ class Lstat(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     sftp_attrs = await sftp.lstat(context.caller.path)
                     return sftp_attrs_to_dict(sftp_attrs)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -702,7 +797,7 @@ async def lstat(
         description="The path of the remote file, directory, or link to get attributes for",
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[StatResponse]:
+) -> LocalPathModel:
     """# Get attributes of a remote file, directory, or symlink"""
     return await router_handler(LocalPathModel, Lstat)(path=path, common=common)
 
@@ -718,25 +813,31 @@ class Readlink(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.readlink(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
-@router.get("/readlink", tags=["SFTP Operations"], response_model=List[ReadlinkResponse])
+@router.get(
+    "/readlink", tags=["SFTP Operations"], response_model=List[ReadlinkResponse]
+)
 async def readlink(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote symbolic link to follow"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[ReadlinkResponse]:
+) -> LocalPathModel:
     """# Return the target of a remote symbolic link"""
     return await router_handler(LocalPathModel, Readlink)(path=path, common=common)
 
@@ -751,15 +852,19 @@ class Glob(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.glob(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -769,7 +874,7 @@ async def glob(
         ..., description="Glob patterns to try and match remote files against"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[GlobResponse]:
+) -> LocalPathModel:
     """# Match remote files against glob patterns"""
     return await router_handler(LocalPathModel, Glob)(path=path, common=common)
 
@@ -778,26 +883,32 @@ class GlobSftpName(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     sftp_names = await sftp.glob_sftpname(context.caller.path)
                     return sftp_names_to_dict(sftp_names)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
-@router.get("/globsftpname", tags=["SFTP Operations"], response_model=List[SFTPFileAttributes])
+@router.get(
+    "/globsftpname", tags=["SFTP Operations"], response_model=List[SFTPFileAttributes]
+)
 async def globsftpname(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Glob patterns to try and match remote files against"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[SFTPFileAttributes]:
+) -> LocalPathModel:
     """# Match glob patterns and return SFTPNames"""
     return await router_handler(LocalPathModel, GlobSftpName)(path=path, common=common)
 
@@ -848,16 +959,20 @@ class StatVfs(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     sftp_vfs_attrs = await sftp.statvfs(context.caller.path)
                     context.changed = False
                     return sftp_vfs_attrs_to_dict(sftp_vfs_attrs)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -868,7 +983,7 @@ async def statvfs(
         description="The path of the remote file system to get attributes for",
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[StatVfsResponse]:
+) -> LocalPathModel:
     """# Get attributes of a remote file system"""
     return await router_handler(StatModel, StatVfs)(path=path, common=common)
 
@@ -883,25 +998,31 @@ class Realpath(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return await sftp.realpath(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
-@router.get("/realpath", tags=["SFTP Operations"], response_model=List[RealpathResponse])
+@router.get(
+    "/realpath", tags=["SFTP Operations"], response_model=List[RealpathResponse]
+)
 async def realpath(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote directory to canonicalize"
     ),
     common: LocalModel = Depends(localmodel),
-) -> List[RealpathResponse]:
+) -> LocalPathModel:
     """# Return the canonical version of a remote path"""
     return await router_handler(LocalPathModel, Realpath)(path=path, common=common)
 
@@ -909,13 +1030,16 @@ async def realpath(
 class ClientResponse(LocalModel):
     pass
 
+
 class Client(Local):
-    Model = ClientResponse
+    Model = LocalModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     context.changed = False
                     return {
@@ -929,7 +1053,9 @@ class Client(Local):
                     }
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -966,7 +1092,7 @@ class ClientResponse(ResponseElement):
 @router.get("/client", tags=["SFTP Operations"], response_model=List[ClientResponse])
 async def client(
     common: LocalModel = Depends(localmodel),
-) -> List[ClientResponse]:
+) -> LocalModel:
     """# Return sftp client information"""
     return await router_handler(LocalModel, Client)(common=common)
 
@@ -1023,17 +1149,15 @@ class CopyRequestModel(LocalModel):
             raise ValueError(f"Cannot convert {v} to PurePath.")
 
 
-class McopyModel(CopyRequestModel):
-    pass
-
-
 class Copy(Local):
     Model = CopyRequestModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.copy(
                         srcpaths=context.caller.srcpaths,
@@ -1050,17 +1174,21 @@ class Copy(Local):
                     )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
 class Mcopy(Local):
-    Model = McopyModel
+    Model = CopyRequestModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.mcopy(
                         srcpaths=context.caller.srcpaths,
@@ -1077,7 +1205,9 @@ class Mcopy(Local):
                     )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -1118,7 +1248,7 @@ async def copy(
         False, description="Whether or not to only allow this to be a remote copy"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> CopyRequestModel:
     """# Copy remote files to a new location"""
     return await router_handler(CopyRequestModel, Copy)(
         srcpaths=srcpaths,
@@ -1173,7 +1303,7 @@ async def mcopy(
         False, description="Whether or not to only allow this to be a remote copy"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> CopyRequestModel:
     """# Copy remote files to a new location"""
     return await router_handler(CopyRequestModel, Mcopy)(
         srcpaths=srcpaths,
@@ -1242,17 +1372,16 @@ class GetModel(LocalModel):
             raise ValueError(f"Cannot convert {v} to PurePath.")
 
 
-class MgetModel(GetModel):
-    pass
-
 
 class Get(Local):
     Model = GetModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.get(
                         remotepaths=context.caller.remotepaths,
@@ -1268,17 +1397,21 @@ class Get(Local):
                     )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
 class Mget(Local):
-    Model = MgetModel
+    Model = GetModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.mget(
                         remotepaths=context.caller.remotepaths,
@@ -1294,7 +1427,9 @@ class Mget(Local):
                     )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -1332,7 +1467,7 @@ async def get(
         None, description="Callback function name for error handling"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> GetModel:
     """# Download remote files"""
     return await router_handler(GetModel, Get)(
         remotepaths=remotepaths,
@@ -1383,7 +1518,7 @@ async def mget(
         None, description="Callback function name for error handling"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> GetModel:
     """# Download remote files with glob pattern match"""
     return await router_handler(GetModel, Mget)(
         remotepaths=remotepaths,
@@ -1451,17 +1586,16 @@ class PutModel(LocalModel):
             raise ValueError(f"Cannot convert {v} to PurePath.")
 
 
-class MputModel(PutModel):
-    pass
-
 
 class Put(Local):
     Model = PutModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.put(
                         localpaths=context.caller.localpaths,
@@ -1477,17 +1611,21 @@ class Put(Local):
                     )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
 class Mput(Local):
-    Model = MputModel
+    Model = PutModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.mput(
                         localpaths=context.caller.localpaths,
@@ -1503,7 +1641,9 @@ class Mput(Local):
                     )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -1541,7 +1681,7 @@ async def put(
         None, description="Callback function name for error handling"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> PutModel:
     """# Upload local files"""
     return await router_handler(PutModel, Put)(
         localpaths=localpaths,
@@ -1592,7 +1732,7 @@ async def mput(
         None, description="Callback function name for error handling"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> PutModel:
     """# Upload local files with glob pattern match"""
     return await router_handler(PutModel, Mput)(
         localpaths=localpaths,
@@ -1620,7 +1760,7 @@ class MkdirModel(LocalPathModel):
     atime: Optional[int] = Field(None, description="Access time")
     mtime: Optional[int] = Field(None, description="Modification time")
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def check_atime_and_mtime(cls, values):
         """Ensure that if `atime` is specified, `mtime` is also specified."""
@@ -1658,20 +1798,25 @@ class Mkdir(Local):
     Model = MkdirModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     sftp_attrs = context.caller.get_sftp_attrs()
                     if sftp_attrs:
                         await sftp.mkdir(
-                            path=context.caller.path, attrs=sftp_attrs if sftp_attrs else None
+                            path=context.caller.path,
+                            attrs=sftp_attrs if sftp_attrs else None,
                         )
                     else:
                         await sftp.mkdir(path=context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -1686,7 +1831,7 @@ async def mkdir(
     atime: Optional[int] = Query(None, description="Access time"),
     mtime: Optional[int] = Query(None, description="Modification time"),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> MkdirModel:
     """# Create a remote directory with the specified attributes"""
     params = {"path": path}
     if permissions is not None:
@@ -1706,16 +1851,20 @@ class Setstat(Local):
     Model = MkdirModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     sftp_attrs = context.caller.get_sftp_attrs()
                     if sftp_attrs:
                         await sftp.setstat(path=context.caller.path, attrs=sftp_attrs)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -1733,7 +1882,7 @@ async def mkdir(
     atime: Optional[int] = Query(None, description="Access time"),
     mtime: Optional[int] = Query(None, description="Modification time"),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> MkdirModel:
     """# Set attributes of a remote file, directory, or symlink"""
     params = {"path": path}
     if permissions is not None:
@@ -1753,20 +1902,25 @@ class Makedirs(Local):
     Model = MkdirModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     sftp_attrs = context.caller.get_sftp_attrs()
                     if sftp_attrs:
                         await sftp.makedirs(
-                            path=context.caller.path, attrs=sftp_attrs if sftp_attrs else None
+                            path=context.caller.path,
+                            attrs=sftp_attrs if sftp_attrs else None,
                         )
                     else:
                         await sftp.makedirs(path=context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -1781,7 +1935,7 @@ async def mkdirs(
     atime: Optional[int] = Query(None, description="Access time"),
     mtime: Optional[int] = Query(None, description="Modification time"),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> MkdirModel:
     """# Create a remote directory with the specified attributes"""
     params = {"path": path}
     if permissions is not None:
@@ -1801,14 +1955,18 @@ class Rmdir(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.rmdir(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -1818,7 +1976,7 @@ async def rmdir(
         ..., description="The path of the remote directory to remove"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> LocalPathModel:
     """# Remove a remote directory"""
     return await router_handler(LocalPathModel, Rmdir)(path=path, common=common)
 
@@ -1828,14 +1986,18 @@ class Rmtree(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.rmtree(context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -1845,7 +2007,7 @@ async def rmtree(
         ..., description="The path of the parent directory to remove"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> LocalPathModel:
     """# Recursively delete a directory tree"""
     return await router_handler(LocalPathModel, Rmtree)(path=path, common=common)
 
@@ -1864,9 +2026,11 @@ class Chmod(Local):
     Model = ChmodModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.chmod(
                         path=context.caller.path,
@@ -1875,7 +2039,9 @@ class Chmod(Local):
                     )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -1889,7 +2055,7 @@ async def chmod(
         False, description="Whether or not to follow symbolic links"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> ChmodModel:
     """# Change the permissions of a remote file, directory, or symlink"""
     return await router_handler(ChmodModel, Chmod)(
         path=path,
@@ -1913,9 +2079,11 @@ class Chown(Local):
     Model = ChownModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.chown(
                         path=context.caller.path,
@@ -1925,7 +2093,9 @@ class Chown(Local):
                     )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -1938,7 +2108,7 @@ async def chown(
     uid: Optional[int] = Query(None, description="User ID"),
     gid: Optional[int] = Query(None, description="Group ID"),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> ChownModel:
     """# Change the owner of a remote file, directory, or symlink"""
     return await router_handler(ChownModel, Chown)(
         path=path, uid=uid, gid=gid, follow_symlinks=follow_symlinks, common=common
@@ -1954,7 +2124,7 @@ class UtimeModel(LocalPathModel):
     mtime: int
     follow_symlinks: bool = False
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def check_atime_and_mtime(cls, values):
         """Ensure that if `atime` is specified, `mtime` is also specified."""
@@ -1969,9 +2139,11 @@ class Utime(Local):
     Model = UtimeModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.utime(
                         path=context.caller.path,
@@ -1980,7 +2152,9 @@ class Utime(Local):
                     )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -1997,7 +2171,7 @@ async def utime(
         None, description="Modify time, as seconds relative to the UNIX epoch"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> UtimeModel:
     """# Change the timestamps of a remote file, directory, or symlink"""
     return await router_handler(UtimeModel, Utime)(
         path=path,
@@ -2008,24 +2182,22 @@ async def utime(
     )
 
 
-class ChdirModel(LocalPathModel):
-    path: Union[PurePath, str, bytes] = Field(
-        ...,  # Required field
-    )
-
-
 class Chdir(Local):
-    Model = ChdirModel
+    Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.chdir(path=context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -2035,9 +2207,9 @@ async def chdir(
         ..., description="The path to set as the new remote working directory"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> LocalPathModel:
     """# Change the current remote working directory"""
-    return await router_handler(ChdirModel, Chdir)(path=path, common=common)
+    return await router_handler(LocalPathModel, Chdir)(path=path, common=common)
 
 
 class RenameModel(LocalModel):
@@ -2069,16 +2241,20 @@ class Rename(Local):
     Model = RenameModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.rename(
                         oldpath=context.caller.oldpath, newpath=context.caller.newpath
                     )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -2091,7 +2267,7 @@ async def rename(
         ..., description="The new name for this file, directory, or link"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> RenameModel:
     """# Rename a remote file, directory, or link"""
     return await router_handler(RenameModel, Rename)(
         oldpath=oldpath, newpath=newpath, common=common
@@ -2103,14 +2279,18 @@ class Remove(Local):
     Model = LocalPathModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.remove(path=context.caller.path)
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -2120,7 +2300,7 @@ async def remove(
         ..., description="The path of the remote file or link to remove"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> LocalPathModel:
     """# Remove a remote file"""
     return await router_handler(LocalPathModel, Remove)(path=path, common=common)
 
@@ -2152,7 +2332,7 @@ class WriteModel(LocalPathModel):
         -1, description="The maximum number of parallel read or write requests"
     )
 
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
     def check_atime_and_mtime(cls, values):
         """Ensure that if `atime` is specified, `mtime` is also specified."""
@@ -2183,9 +2363,11 @@ class Write(Local):
     Model = WriteModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     sftp_attrs = context.caller.get_sftp_attrs()
                     f = await sftp.open(
@@ -2201,7 +2383,9 @@ class Write(Local):
                     await f.close()
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -2234,7 +2418,7 @@ async def write(
         -1, description="The maximum number of parallel read or write requests"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> WriteModel:
     """# Open a remote file"""
     params = {"path": path}
     params["text"] = text
@@ -2290,16 +2474,21 @@ class Link(Local):
     Model = LinkModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.link(
-                        oldpath=context.caller.file_path, newpath=context.caller.link_path
+                        oldpath=context.caller.file_path,
+                        newpath=context.caller.link_path,
                     )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -2312,7 +2501,7 @@ async def link(
         ..., description="The path of where to create the remote hard link"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> LinkModel:
     """# Rename a remote file, directory, or link"""
     return await router_handler(LinkModel, Link)(
         file_path=file_path, link_path=link_path, common=common
@@ -2323,16 +2512,21 @@ class Symlink(Local):
     Model = LinkModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.symlink(
-                        oldpath=context.caller.file_path, newpath=context.caller.link_path
+                        oldpath=context.caller.file_path,
+                        newpath=context.caller.link_path,
                     )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -2345,7 +2539,7 @@ async def symlink(
         ..., description="The path of where to create the remote symbolic link"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> LinkModel:
     """# Create a remote symbolic link"""
     return await router_handler(LinkModel, Symlink)(
         file_path=file_path, link_path=link_path, common=common
@@ -2362,7 +2556,7 @@ async def remove(
         ..., description="The path of the remote link to remove"
     ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> LocalPathModel:
     """# Remove a remote link"""
     return await router_handler(LocalPathModel, Remove)(path=path, common=common)
 
@@ -2378,14 +2572,20 @@ class Truncate(Local):
     Model = TruncateModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def _callback(context: Context) -> None:
         try:
-            async with asyncssh.connect(**context.inventory_item.connection.to_json_serializable()) as conn:
+            async with asyncssh.connect(
+                **context.inventory_item.connection.to_json_serializable()
+            ) as conn:
                 async with conn.start_sftp_client() as sftp:
-                    return await sftp.truncate(path=context.caller.file_path, size=context.caller.size)
+                    return await sftp.truncate(
+                        path=context.caller.file_path, size=context.caller.size
+                    )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(
+                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
+            )
             return f"{e.__class__.__name__}"
 
 
@@ -2396,9 +2596,9 @@ async def truncate(
     ),
     size: int = Query(..., description=" The desired size of the file, in bytes"),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> TruncateModel:
     """# Truncate a remote file to the specified size"""
-    return await router_handler(LinkModel, Symlink)(path=path, size=size, common=common)
+    return await router_handler(TruncateModel, Truncate)(path=path, size=size, common=common)
 
 
 class DirectoryRequestModel(LocalPathModel):
@@ -2429,11 +2629,13 @@ class Directory(Local):
                 yield Rmdir(path=model_instance.path, group=model_instance.group)
                 changed = True
             elif model_instance.present and not isdir["value"]:
-                yield Mkdir(path=model_instance.path,
-                            permissions=model_instance.permissions,
-                            atime=model_instance.atime,
-                            mtime=model_instance.mtime,
-                            group=model_instance.group)
+                yield Mkdir(
+                    path=model_instance.path,
+                    permissions=model_instance.permissions,
+                    atime=model_instance.atime,
+                    mtime=model_instance.mtime,
+                    group=model_instance.group,
+                )
                 changed = True
             elif model_instance.present and isdir["value"]:
                 r = yield Stat(path="/home/user/freddy", group=model_instance.group)
@@ -2474,19 +2676,37 @@ class Directory(Local):
 
 @router.put("/directory", tags=["SFTP Operations"], response_model=ResponseModel)
 async def directory(
-    path: Union[PurePath, str, bytes] = Query(..., description="Directory path on the remote host", examples=["/home/user","testdata/new_dir"]),
-    present: Optional[bool] = Query(...,
-        description="Whether the directory should be present or not"
+    path: Union[PurePath, str, bytes] = Query(
+        ...,
+        description="Directory path on the remote host",
+        examples=["/home/user", "testdata/new_dir"],
+    ),
+    present: Optional[bool] = Query(
+        ..., description="Whether the directory should be present or not"
     ),
     permissions: Optional[int] = Query(
-        None, ge=0, le=0o7777, description="Directory permissions as integer", examples=["0o644"]
+        None,
+        ge=0,
+        le=0o7777,
+        description="Directory permissions as integer",
+        examples=["0o644"],
     ),
-    uid: Optional[int] = Query(None, description="User ID, user must exist on the remote host"),
-    gid: Optional[int] = Query(None, description="Group ID, user must exist on the remote host"),
-    atime: Optional[int] = Query(None, description="Access time in seconds since epoch", examples=["0xDEADCAFE"]),
-    mtime: Optional[int] = Query(None, description="Modification time in seconds since epoch", examples=["0xACAFEDAD"]),
+    uid: Optional[int] = Query(
+        None, description="User ID, user must exist on the remote host"
+    ),
+    gid: Optional[int] = Query(
+        None, description="Group ID, user must exist on the remote host"
+    ),
+    atime: Optional[int] = Query(
+        None, description="Access time in seconds since epoch", examples=["0xDEADCAFE"]
+    ),
+    mtime: Optional[int] = Query(
+        None,
+        description="Modification time in seconds since epoch",
+        examples=["0xACAFEDAD"],
+    ),
     common: LocalModel = Depends(localmodel),
-) -> ResponseModel:
+) -> DirectoryRequestModel:
     """# Ensure directory exists"""
     params = {"path": path, "present": present}
     if permissions is not None:

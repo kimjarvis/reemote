@@ -29,20 +29,6 @@ def localmodel(
     return LocalModel(group=group, name=name)
 
 
-class LocalPathModel(LocalModel):
-    path: Union[PurePath, str, bytes] = Field(..., examples=["/home/user", "testdata"])
-
-    @field_validator("path", mode="before")
-    @classmethod
-    def ensure_path_is_purepath(cls, v):
-        if v is None:
-            raise ValueError("path cannot be None.")
-        if not isinstance(v, PurePath):
-            try:
-                return PurePath(v)
-            except TypeError:
-                raise ValueError(f"Cannot convert {v} to PurePath.")
-        return v
 
 
 class Local:
