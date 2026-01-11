@@ -9,7 +9,7 @@ from reemote.core.request import Request
 from reemote.core.response import ResponseModel, ResponseElement, ResponseModel
 from reemote.core.router_handler import router_handler
 from reemote.system import Callback
-from reemote.core.local import LocalModel, localmodel
+from reemote.core.local import LocalRequestModel, localrequestmodel
 
 
 router = APIRouter()
@@ -95,7 +95,7 @@ async def context_get_callback(context: Context):
 
 
 class Getcontext(Request):
-    Model = LocalModel
+    Model = LocalRequestModel
 
     async def execute(self):
         yield Callback(callback=context_get_callback)
@@ -107,7 +107,7 @@ class Getcontext(Request):
     response_model=List[ContextGetResponse],
 )
 async def get_context(
-    common: LocalModel = Depends(localmodel),
+    common: LocalRequestModel = Depends(localrequestmodel),
 ) -> List[ContextGetResponse]:
     """# Retrieve the context"""
-    return await router_handler(LocalModel, Getcontext)(common=common)
+    return await router_handler(LocalRequestModel, Getcontext)(common=common)

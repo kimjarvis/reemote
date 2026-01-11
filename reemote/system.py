@@ -2,11 +2,11 @@ from pydantic import Field
 from typing import AsyncGenerator, Callable, Any
 from reemote.context import Context, ConnectionType
 from reemote.core.response import ResponseModel
-from reemote.core.local import LocalModel
+from reemote.core.local import LocalRequestModel
 from reemote.core.local import Local
 
 
-class CallbackRequestModel(LocalModel):
+class CallbackRequestModel(LocalRequestModel):
     callback: Callable = Field(
         ...,  # Required field
     )
@@ -29,7 +29,7 @@ class Callback(Local):
         )
 
 
-class ReturnRequestModel(LocalModel):
+class ReturnRequestModel(LocalRequestModel):
     value: Any = None
     changed: bool = True
 

@@ -7,7 +7,7 @@ from reemote.core.request import Request
 from reemote.system import Callback
 from reemote.context import Context
 from reemote.core.router_handler import router_handler
-from reemote.core.local import LocalModel, localmodel
+from reemote.core.local import LocalRequestModel, localrequestmodel
 
 # Re-export
 from reemote.core.inventory_model import Session
@@ -179,7 +179,7 @@ async def inventory_get_callback(context: Context):
     return Config().get_inventory()
 
 class Getinventory(Request):
-    Model = LocalModel
+    Model = LocalRequestModel
 
     async def execute(self):
         yield Callback(callback=inventory_get_callback)
@@ -190,9 +190,9 @@ class Getinventory(Request):
     response_model=List[InventoryGetResponse],
 )
 async def get_inventory(
-    common: LocalModel = Depends(localmodel)
+    common: LocalRequestModel = Depends(localrequestmodel)
 ) -> List[InventoryGetResponse]:
     """# Retrieve the inventory"""
-    return await router_handler(LocalModel, Getinventory)(
+    return await router_handler(LocalRequestModel, Getinventory)(
         common=common
     )

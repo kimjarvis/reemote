@@ -10,7 +10,7 @@ from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class LocalModel(BaseModel):
+class LocalRequestModel(BaseModel):
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     group: Optional[str] = Field(
@@ -19,20 +19,20 @@ class LocalModel(BaseModel):
     name: Optional[str] = Field(default=None, description="Optional name.")
 
 
-def localmodel(
+def localrequestmodel(
     group: Optional[str] = Query(
         "all", description="Optional inventory group (defaults to 'all')"
     ),
     name: Optional[str] = Query(None, description="Optional name"),
-) -> LocalModel:
+) -> LocalRequestModel:
     """FastAPI dependency for common parameters"""
-    return LocalModel(group=group, name=name)
+    return LocalRequestModel(group=group, name=name)
 
 
 
 
 class Local:
-    Model = LocalModel
+    Model = LocalRequestModel
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)

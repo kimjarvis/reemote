@@ -6,14 +6,14 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
 from reemote.core.router_handler import router_handler
-from reemote.core.local import LocalModel, localmodel
+from reemote.core.local import LocalRequestModel, localrequestmodel
 from reemote.core.local import Local
 from reemote.core.response import ResponseModel
 from reemote.context import Context
 
 router = APIRouter()
 
-class ScpModel(LocalModel):
+class ScpRequestModel(LocalRequestModel):
     srcpaths: List[str] = Field(
         ...,  # Required field
     )
@@ -28,7 +28,7 @@ class ScpModel(LocalModel):
 
 
 class Upload(Local):
-    Model = ScpModel
+    Model = ScpRequestModel
 
     @staticmethod
     async def _callback(context: Context):
@@ -81,10 +81,10 @@ async def upload(
             include_in_schema=False,  # This hides it from OpenAPI schema
             description="Callback function name for error handling"
         ),
-        common: LocalModel = Depends(localmodel)
-) -> ResponseModel:
+        common: LocalRequestModel = Depends(localrequestmodel)
+) -> ScpRequestModel:
     """# Upload files to the host"""
-    return await router_handler(ScpModel, Upload)(
+    return await router_handler(ScpRequestModel, Upload)(
         srcpaths=srcpaths,
         dstpath=dstpath,
         preserve=preserve,
@@ -95,7 +95,7 @@ async def upload(
         common=common)
 
 class Download(Local):
-    Model = ScpModel
+    Model = ScpRequestModel
 
     @staticmethod
     async def _callback(context: Context):
@@ -148,10 +148,10 @@ async def download(
             include_in_schema=False,  # This hides it from OpenAPI schema
             description="Callback function name for error handling"
         ),
-        common: LocalModel = Depends(localmodel)
-) -> ResponseModel:
+        common: LocalRequestModel = Depends(localrequestmodel)
+) -> ScpRequestModel:
     """# Download files from the host"""
-    return await router_handler(ScpModel, Download)(
+    return await router_handler(ScpRequestModel, Download)(
         srcpaths=srcpaths,
         dstpath=dstpath,
         preserve=preserve,
@@ -161,13 +161,13 @@ async def download(
         error_handler=error_handler,
         common=common)
 
-class CopyModel(ScpModel):
+class CopyRequestModel(ScpRequestModel):
     dsthost: str = Field(
         ...,  # Required field
     )
 
 class Copy(Local):
-    Model = CopyModel
+    Model = CopyRequestModel
 
     @staticmethod
     async def _callback(command: Context):
@@ -224,10 +224,10 @@ async def copy(
             include_in_schema=False,  # This hides it from OpenAPI schema
             description="Callback function name for error handling"
         ),
-        common: LocalModel = Depends(localmodel)
-) -> ResponseModel:
+        common: LocalRequestModel = Depends(localrequestmodel)
+) -> CopyRequestModel:
     """# Copy files between hosts"""
-    return await router_handler(ScpModel, Copy)(
+    return await router_handler(ScpRequestModel, Copy)(
         srcpaths=srcpaths,
         dstpath=dstpath,
         dsthost=dsthost,
