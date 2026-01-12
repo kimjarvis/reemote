@@ -89,6 +89,7 @@ async def test_connection_error():
     config.set_inventory(inventory.to_json_serializable())
 
     rl = await endpoint_execute(lambda: Root())
+    print(rl)
     assert any("error" in r for r in rl)
 
 @pytest.mark.asyncio

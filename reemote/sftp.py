@@ -60,9 +60,8 @@ class Islink(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/islink", tags=["SFTP Operations"], response_model=List[IslinkResponse])
@@ -98,9 +97,8 @@ class Isfile(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/isfile", tags=["SFTP Operations"], response_model=List[IsfileResponse])
@@ -136,9 +134,8 @@ class Isdir(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/isdir", tags=["SFTP Operations"], response_model=List[IsdirResponse])
@@ -174,9 +171,8 @@ class Getsize(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/getsize", tags=["SFTP Operations"], response_model=List[GetsizeResponse])
@@ -212,9 +208,8 @@ class Getatime(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/getatime", tags=["SFTP Operations"], response_model=List[GettimeResponse])
@@ -250,9 +245,8 @@ class GetatimeNs(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get(
@@ -283,9 +277,8 @@ class Getmtime(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/getmtime", tags=["SFTP Operations"], response_model=List[GettimeResponse])
@@ -315,9 +308,8 @@ class GetmtimeNs(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get(
@@ -349,9 +341,8 @@ class Getcrtime(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get(
@@ -382,9 +373,8 @@ class GetcrtimeNs(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get(
@@ -423,9 +413,8 @@ class Getcwd(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/getcwd", tags=["SFTP Operations"], response_model=List[GetcwdResponse])
@@ -487,9 +476,8 @@ class Stat(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/stat", tags=["SFTP Operations"], response_model=List[StatResponse])
@@ -555,9 +543,8 @@ class Read(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/read", tags=["SFTP Operations"], response_model=List[ReadResponse])
@@ -615,9 +602,8 @@ class Listdir(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/listdir", tags=["SFTP Operations"], response_model=List[ListdirResponse])
@@ -684,9 +670,8 @@ class Readdir(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/readdir", tags=["SFTP Operations"], response_model=List[ReaddirResponse])
@@ -722,9 +707,8 @@ class Exists(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/exists", tags=["SFTP Operations"], response_model=List[ExistsResponse])
@@ -753,9 +737,8 @@ class Lexists(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/lexists", tags=["SFTP Operations"], response_model=List[ExistsResponse])
@@ -785,9 +768,8 @@ class Lstat(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/lstat", tags=["SFTP Operations"], response_model=List[StatResponse])
@@ -824,9 +806,8 @@ class Readlink(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get(
@@ -863,9 +844,8 @@ class Glob(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/glob", tags=["SFTP Operations"], response_model=List[GlobResponse])
@@ -895,9 +875,8 @@ class GlobSftpName(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get(
@@ -971,9 +950,8 @@ class StatVfs(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get("/statvfs", tags=["SFTP Operations"], response_model=List[StatVfsResponse])
@@ -1009,9 +987,8 @@ class Realpath(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.get(
@@ -1054,9 +1031,8 @@ class Client(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 class SFTPInfo(BaseModel):
@@ -1175,9 +1151,8 @@ class Copy(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 class Mcopy(Local):
@@ -1206,9 +1181,8 @@ class Mcopy(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/copy", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1398,9 +1372,8 @@ class Get(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 class Mget(Local):
@@ -1428,9 +1401,8 @@ class Mget(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/get", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1612,9 +1584,8 @@ class Put(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 class Mput(Local):
@@ -1642,9 +1613,8 @@ class Mput(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/put/", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1815,9 +1785,8 @@ class Mkdir(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/mkdir", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1863,9 +1832,8 @@ class Setstat(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/setstat", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1919,9 +1887,8 @@ class Makedirs(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/makedirs", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1965,9 +1932,8 @@ class Rmdir(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/rmdir", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1996,9 +1962,8 @@ class Rmtree(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/rmtree", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2040,9 +2005,8 @@ class Chmod(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/chmod", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2094,9 +2058,8 @@ class Chown(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/chown", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2153,9 +2116,8 @@ class Utime(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/utime", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2196,9 +2158,8 @@ class Chdir(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/chdir", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2253,9 +2214,8 @@ class Rename(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/rename", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2289,9 +2249,8 @@ class Remove(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/remove", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2384,9 +2343,8 @@ class Write(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/write", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2487,9 +2445,8 @@ class Link(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/link", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2525,9 +2482,8 @@ class Symlink(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/symlink", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2584,9 +2540,8 @@ class Truncate(Local):
         except Exception as e:
             context.error = True
             logging.error(
-                f"{context.inventory_item.connection.host}: {e.__class__.__name__}"
-            )
-            return f"{e.__class__.__name__}"
+               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/truncate", tags=["SFTP Operations"], response_model=ResponseModel)

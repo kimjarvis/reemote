@@ -130,10 +130,11 @@ async def run_command_on_host(
                     )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
+            logging.error(f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}")
+            print("debug", e)
             result = {
                 "host": context.inventory_item.connection.host,
-                "value": f"{e.__class__.__name__}",
+                "value": f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}",
                 "changed": False,
                 "error": True,
             }

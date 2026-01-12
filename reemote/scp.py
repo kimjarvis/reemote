@@ -45,8 +45,8 @@ class Upload(Local):
             )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
-            return f"{e.__class__.__name__}"
+            logging.error(f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}")
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 @router.post("/upload", tags=["SCP Operations"], response_model=ResponseModel)
 async def upload(
@@ -112,8 +112,8 @@ class Download(Local):
             )
         except Exception as e:
             context.error = True
-            logging.error(f"{context.inventory_item.connection.host}: {e.__class__.__name__}")
-            return f"{e.__class__.__name__}"
+            logging.error(f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}")
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 @router.post("/download", tags=["SCP Operations"], response_model=ResponseModel)
 async def download(
@@ -185,7 +185,7 @@ class Copy(Local):
         except Exception as e:
             command.error = True
             logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
-            return f"{e.__class__.__name__}"
+            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 @router.post("/copy", tags=["SCP Operations"], response_model=ResponseModel)
 async def copy(
