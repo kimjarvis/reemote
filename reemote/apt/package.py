@@ -13,7 +13,6 @@ router = APIRouter()
 
 class PackageRequestModel(RequestModel):
     packages: list[str]
-    update: bool
     present: bool
 
 class Package(Request):
@@ -44,9 +43,6 @@ async def package(
     present: bool = Query(
         True, description="Whether the packages should be present or not"
     ),
-    update: bool = Query(
-        False, description="Whether or not to update the package list"
-    ),
     common: PackageRequestModel = Depends(requestmodel),
 ) -> PackageRequestModel:
     """# Manage installed APT packages"""
@@ -54,5 +50,4 @@ async def package(
         common=common,
         packages=packages,
         present=present,
-        update=update,
     )

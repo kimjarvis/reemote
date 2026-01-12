@@ -47,7 +47,7 @@ class Remove(Request):
         return
 
 
-@router.put(
+@router.post(
     "/remove",
     tags=["APT Package Manager"],
     response_model=ResponseModel,

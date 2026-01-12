@@ -16,7 +16,7 @@ class InstallRequestModel(RequestModel):
     packages: list[str]
 
 
-class _Install(Request):
+class Install(Request):
     Model = InstallRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
@@ -32,22 +32,7 @@ class _Install(Request):
         return
 
 
-class Install(Request):
-    Model = InstallRequestModel
-
-    async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
-        pre = yield GetPackages()
-        result = yield _Install(**self.kwargs)
-        post = yield GetPackages()
-
-        changed = pre["value"] != post["value"]
-
-        yield Return(changed=changed, value=result["value"])
-
-        return
-
-
-@router.put(
+@router.post(
     "/install",
     tags=["APT Package Manager"],
     response_model=ResponseModel,

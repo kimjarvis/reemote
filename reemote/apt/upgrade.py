@@ -6,13 +6,11 @@ from reemote.context import Context
 from reemote.core.request import Request, RequestModel, requestmodel
 from reemote.core.response import ResponseModel
 from reemote.core.router_handler import router_handler
-from reemote.apt.getpackages import GetPackages
-from reemote.system import Return
 
 router = APIRouter()
 
 
-class _Upgrade(Request):
+class Upgrade(Request):
     Model = RequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
@@ -28,25 +26,7 @@ class _Upgrade(Request):
         return
 
 
-class Upgrade(Request):
-    Model = RequestModel
-
-    async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
-
-        pre = yield GetPackages()
-        yield _Upgrade(
-            **self.common_kwargs,
-        )
-        post = yield GetPackages()
-
-        changed = pre["value"] != post["value"]
-
-        yield Return(changed=changed, value=None)
-
-        return
-
-
-@router.put(
+@router.post(
     "/upgrade",
     tags=["APT Package Manager"],
     response_model=ResponseModel,

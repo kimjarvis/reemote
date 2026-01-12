@@ -90,7 +90,6 @@ async def test_apt_package(setup_inventory):
             r = yield Package(
                 name="apt package tree",
                 packages=["tree"],
-                update=True,
                 present=True,
                 group="all",
                 sudo=True,
