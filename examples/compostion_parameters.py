@@ -8,7 +8,7 @@ from reemote.host import Shell
 from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.context import Context
 from reemote.core.response import ResponseModel
-from reemote.core.request import Request
+from reemote.operation import Operation
 
 
 async def main():
@@ -27,7 +27,7 @@ async def main():
             default="no one", description="The name of the person to greet"
         )
 
-    class Greet(Request):
+    class Greet(Operation):
         Model = GreetRequest
 
         async def execute(self) -> AsyncGenerator[Context, ResponseModel]:

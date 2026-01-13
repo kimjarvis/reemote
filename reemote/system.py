@@ -2,19 +2,24 @@ from pydantic import Field
 from typing import AsyncGenerator, Callable, Any
 from reemote.context import Context, ConnectionType
 from reemote.core.response import ResponseModel
-from reemote.core.local import LocalRequestModel
-from reemote.core.local import Local
+from reemote.callback import CommonCallbackRequestModel
+from reemote.callback import Callback
 
 
-class CallRequestModel(LocalRequestModel):
+class CallRequestModel(CommonCallbackRequestModel):
     callback: Callable = Field(
         ...,  # Required field
     )
     value: Any = None  # Optional field with a default value
 
 
-class Call(Local):
+class Call(Callback):
     Model = CallRequestModel
+
+    @staticmethod
+    async def callback(context: Context) -> None:
+        # dummy  callback
+        pass
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
         model_instance = self.Model.model_validate(self.kwargs)
@@ -29,13 +34,18 @@ class Call(Local):
         )
 
 
-class ReturnRequestModel(LocalRequestModel):
+class ReturnRequestModel(CommonCallbackRequestModel):
     value: Any = None
     changed: bool = True
 
 
-class Return(Local):
+class Return(Callback):
     Model = ReturnRequestModel
+
+    @staticmethod
+    async def callback(context: Context) -> None:
+        # dummy  callback
+        pass
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
         model_instance = self.Model.model_validate(self.kwargs)

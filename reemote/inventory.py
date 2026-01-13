@@ -3,11 +3,11 @@ from pydantic import BaseModel, ValidationError
 from typing import List
 from reemote.config import Config
 from reemote.core.inventory_model import InventoryItem, Inventory
-from reemote.core.request import Request
+from reemote.operation import Operation
 from reemote.system import Call
 from reemote.context import Context
 from reemote.core.router_handler import router_handler
-from reemote.core.local import LocalRequestModel, localrequestmodel
+from reemote.callback import CommonCallbackRequestModel, common_callback_request
 
 # Re-export
 from reemote.core.inventory_model import Session
@@ -178,8 +178,8 @@ class InventoryGetResponse(BaseModel):
 async def inventory_getcallback(context: Context):
     return Config().get_inventory()
 
-class Getinventory(Request):
-    Model = LocalRequestModel
+class Getinventory(Operation):
+    Model = CommonCallbackRequestModel
 
     async def execute(self):
         yield Call(callback=inventory_getcallback)
@@ -190,9 +190,9 @@ class Getinventory(Request):
     response_model=List[InventoryGetResponse],
 )
 async def get_inventory(
-    common: LocalRequestModel = Depends(localrequestmodel)
+    common: CommonCallbackRequestModel = Depends(common_callback_request)
 ) -> List[InventoryGetResponse]:
     """# Retrieve the inventory"""
-    return await router_handler(LocalRequestModel, Getinventory)(
+    return await router_handler(CommonCallbackRequestModel, Getinventory)(
         common=common
     )

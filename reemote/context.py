@@ -3,7 +3,7 @@ from typing import Any, Callable, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator  # Updated imports
 
-from reemote.core.request import RequestModel
+from reemote.operation import CommonOperationRequestModel
 from reemote.core.inventory_model import InventoryItem
 
 
@@ -13,7 +13,7 @@ class ConnectionType(Enum):
     PASSTHROUGH = 3
 
 
-class Context(RequestModel):
+class Context(CommonOperationRequestModel):
     model_config = ConfigDict(  # Replaces class Config
         validate_assignment=True,
         arbitrary_types_allowed=True,  # Needed for Callable and caller fields

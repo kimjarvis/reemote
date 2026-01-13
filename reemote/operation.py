@@ -1,10 +1,10 @@
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import Optional
 from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class RequestModel(BaseModel):
+class CommonOperationRequestModel(BaseModel):
     """Common parameters shared across command types"""
 
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
@@ -17,30 +17,30 @@ class RequestModel(BaseModel):
     su: bool = Field(default=False, description="Execute command with su.")
 
 
-def requestmodel(
+def common_operation_request(
     group: Optional[str] = Query(
         "all", description="Optional inventory group (defaults to 'all')"
     ),
     name: Optional[str] = Query(None, description="Optional name"),
     sudo: bool = Query(False, description="Whether to use sudo"),
     su: bool = Query(False, description="Whether to use su"),
-) -> RequestModel:
+) -> CommonOperationRequestModel:
     """FastAPI dependency for common parameters"""
-    return RequestModel(group=group, name=name, sudo=sudo, su=su)
+    return CommonOperationRequestModel(group=group, name=name, sudo=sudo, su=su)
 
-class AbstractRequest(BaseModel):
+class AbstractOperationRequest(BaseModel):
     """Abstract class for local commands"""
     dummy: bool = True
 
 
-class Request:
-    Model = AbstractRequest
+class Operation(ABC):
+    Model = AbstractOperationRequest
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
         # Check if the subclass overrides the 'Model' field
-        if cls.Model is Request.Model:  # If it's still the same as the base class
+        if cls.Model is Operation.Model:  # If it's still the same as the base class
             raise NotImplementedError(f"Class {cls.__name__} must override the 'Model' class field.")
 
         cls.child = cls.__name__  # Set the 'child' field to the name of the subclass
@@ -48,7 +48,7 @@ class Request:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         # Define the fields that are considered "common" based on RemoteParams
-        common_fields = set(RequestModel.model_fields.keys())
+        common_fields = set(CommonOperationRequestModel.model_fields.keys())
 
         # Separate kwargs into common_kwargs and extra_kwargs
         self.common_kwargs = {

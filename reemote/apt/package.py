@@ -4,18 +4,18 @@ from fastapi import APIRouter, Depends, Query
 
 from reemote.apt import GetPackages, Install, Remove
 from reemote.context import Context
-from reemote.core.request import Request, RequestModel, requestmodel
+from reemote.operation import Operation, CommonOperationRequestModel, common_operation_request
 from reemote.core.response import ResponseModel
 from reemote.core.router_handler import router_handler
 from reemote.system import Return
 
 router = APIRouter()
 
-class PackageRequestModel(RequestModel):
+class PackageRequestModel(CommonOperationRequestModel):
     packages: list[str]
     present: bool
 
-class Package(Request):
+class Package(Operation):
     Model = PackageRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
@@ -41,7 +41,7 @@ async def package(
     present: bool = Query(
         True, description="Whether the packages should be present or not"
     ),
-    common: PackageRequestModel = Depends(requestmodel),
+    common: PackageRequestModel = Depends(common_operation_request),
 ) -> PackageRequestModel:
     """# Manage installed APT packages"""
     return await router_handler(PackageRequestModel, Package)(

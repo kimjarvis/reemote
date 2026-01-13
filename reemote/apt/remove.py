@@ -3,20 +3,22 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Depends, Query
 
 from reemote.context import Context
-from reemote.core.request import Request, RequestModel, requestmodel
+from reemote.operation import (
+    Operation,
+    CommonOperationRequestModel,
+    common_operation_request,
+)
 from reemote.core.response import ResponseModel
 from reemote.core.router_handler import router_handler
-from reemote.apt.getpackages import GetPackages
-from reemote.system import Return
 
 router = APIRouter()
 
 
-class RemoveRequestModel(RequestModel):
+class RemoveRequestModel(CommonOperationRequestModel):
     packages: list[str]
 
 
-class _Remove(Request):
+class Remove(Operation):
     Model = RemoveRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
@@ -31,27 +33,13 @@ class _Remove(Request):
             result["value"] = None
 
 
-class Remove(Request):
-    Model = RemoveRequestModel
-
-    async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
-        pre = yield GetPackages()
-        result = yield _Remove(**self.kwargs)
-        post = yield GetPackages()
-
-        changed = pre["value"] != post["value"]
-
-        yield Return(changed=changed, value=result["value"])
-
-
-
 @router.post(
     "/remove",
     tags=["APT Package Manager"],
     response_model=ResponseModel,
 )
 async def remove(
-    common: RemoveRequestModel = Depends(requestmodel),
+    common: RemoveRequestModel = Depends(common_operation_request),
     packages: list[str] = Query(..., description="List of package names"),
 ) -> RemoveRequestModel:
     """# Remove APT packages"""

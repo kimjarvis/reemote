@@ -4,18 +4,18 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from pydantic import BaseModel, RootModel
 from reemote.context import Context
-from reemote.core.request import RequestModel, requestmodel
-from reemote.core.request import Request
+from reemote.operation import CommonOperationRequestModel, common_operation_request
+from reemote.operation import Operation
 from reemote.core.response import ResponseModel, ResponseElement, ResponseModel
 from reemote.core.router_handler import router_handler
 from reemote.system import Call
-from reemote.core.local import LocalRequestModel, localrequestmodel
+from reemote.callback import CommonCallbackRequestModel, common_callback_request
 
 
 router = APIRouter()
 
 
-class ShellRequestModel(RequestModel):
+class ShellRequestModel(CommonOperationRequestModel):
     cmd: str = Field(...)
 
 class SSHCompletedProcessModel(BaseModel):
@@ -62,7 +62,7 @@ class ShellResponseModel(RootModel[List[ShellResponseElement]]):
     pass
 
 
-class Shell(Request):
+class Shell(Operation):
     Model = ShellRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
@@ -79,7 +79,7 @@ async def shell(
     cmd: str = Query(
         ..., description="Shell command", examples=["echo Hello World!", "ls -ltr"]
     ),
-    common: RequestModel = Depends(requestmodel),
+    common: CommonOperationRequestModel = Depends(common_operation_request),
 ) -> ShellResponseModel:
     """# Execute a shell command on the remote host"""
     return await router_handler(ShellRequestModel, Shell)(cmd=cmd, common=common)
@@ -94,8 +94,8 @@ async def context_getcallback(context: Context):
     return context
 
 
-class Getcontext(Request):
-    Model = LocalRequestModel
+class Getcontext(Operation):
+    Model = CommonCallbackRequestModel
 
     async def execute(self):
         yield Call(callback=context_getcallback)
@@ -107,7 +107,7 @@ class Getcontext(Request):
     response_model=List[ContextGetResponse],
 )
 async def get_context(
-    common: LocalRequestModel = Depends(localrequestmodel),
+    common: CommonCallbackRequestModel = Depends(common_callback_request),
 ) -> List[ContextGetResponse]:
     """# Retrieve the context"""
-    return await router_handler(LocalRequestModel, Getcontext)(common=common)
+    return await router_handler(CommonCallbackRequestModel, Getcontext)(common=common)

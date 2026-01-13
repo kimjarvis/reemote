@@ -1,4 +1,4 @@
-from abc import abstractmethod
+from abc import ABC, abstractmethod
 from typing import AsyncGenerator
 
 from reemote.context import Context, ConnectionType
@@ -10,7 +10,7 @@ from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class LocalRequestModel(BaseModel):
+class CommonCallbackRequestModel(BaseModel):
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     group: Optional[str] = Field(
@@ -19,28 +19,28 @@ class LocalRequestModel(BaseModel):
     name: Optional[str] = Field(default=None, description="Optional name.")
 
 
-def localrequestmodel(
+def common_callback_request(
     group: Optional[str] = Query(
         "all", description="Optional inventory group (defaults to 'all')"
     ),
     name: Optional[str] = Query(None, description="Optional name"),
-) -> LocalRequestModel:
+) -> CommonCallbackRequestModel:
     """FastAPI dependency for common parameters"""
-    return LocalRequestModel(group=group, name=name)
+    return CommonCallbackRequestModel(group=group, name=name)
 
 
-class AbstractLocal(BaseModel):
+class AbstractCallbackRequest(BaseModel):
     """Abstract class for local commands"""
     dummy: bool = True
 
-class Local:
-    Model = AbstractLocal
+class Callback(ABC):
+    Model = AbstractCallbackRequest
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
         # Check if the subclass overrides the 'Model' field
-        if cls.Model is Local.Model:  # If it's still the same as the base class
+        if cls.Model is Callback.Model:  # If it's still the same as the base class
             raise NotImplementedError(
                 f"Class {cls.__name__} must override the 'Model' class field."
             )

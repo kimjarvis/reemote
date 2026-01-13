@@ -3,20 +3,22 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Depends, Query
 
 from reemote.context import Context
-from reemote.core.request import Request, RequestModel, requestmodel
+from reemote.operation import (
+    Operation,
+    CommonOperationRequestModel,
+    common_operation_request,
+)
 from reemote.core.response import ResponseModel
 from reemote.core.router_handler import router_handler
-from reemote.apt.getpackages import GetPackages
-from reemote.system import Return
 
 router = APIRouter()
 
 
-class InstallRequestModel(RequestModel):
+class InstallRequestModel(CommonOperationRequestModel):
     packages: list[str]
 
 
-class Install(Request):
+class Install(Operation):
     Model = InstallRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
@@ -37,7 +39,7 @@ class Install(Request):
     response_model=ResponseModel,
 )
 async def install(
-    common: InstallRequestModel = Depends(requestmodel),
+    common: InstallRequestModel = Depends(common_operation_request),
     packages: list[str] = Query(..., description="List of package names"),
 ) -> InstallRequestModel:
     """# Install APT packages"""
