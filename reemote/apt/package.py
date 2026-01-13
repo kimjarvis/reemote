@@ -32,8 +32,6 @@ class Package(Request):
 
         yield Return(changed=changed, value=result["value"])
 
-        return
-
 
 
 

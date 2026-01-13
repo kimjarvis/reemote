@@ -94,7 +94,6 @@ class GetPackages(Request):
             # Wrap the PackageList in a GetPackagesResponse
             result["value"] = package_list
 
-        return
 
 
 

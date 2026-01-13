@@ -28,7 +28,7 @@ class UpgradePackages(Request):
 
         yield Return(changed=changed, value=None)
 
-        return
+
 
 
 @router.put(

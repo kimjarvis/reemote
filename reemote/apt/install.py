@@ -29,7 +29,6 @@ class Install(Request):
         )
         if not result["error"]:
             result["value"] = None
-        return
 
 
 @router.post(

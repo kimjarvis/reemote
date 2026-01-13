@@ -29,7 +29,6 @@ class _Remove(Request):
         )
         if not result["error"]:
             result["value"] = None
-        return
 
 
 class Remove(Request):
@@ -44,7 +43,6 @@ class Remove(Request):
 
         yield Return(changed=changed, value=result["value"])
 
-        return
 
 
 @router.post(
