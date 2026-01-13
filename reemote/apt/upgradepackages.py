@@ -14,7 +14,7 @@ from reemote.apt.upgrade import Upgrade
 router = APIRouter()
 
 class UpgradePackages(Operation):
-    Model = CommonOperationRequestModel
+    request_model = CommonOperationRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
 

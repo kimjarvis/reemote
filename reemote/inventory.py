@@ -179,7 +179,7 @@ async def inventory_getcallback(context: Context):
     return Config().get_inventory()
 
 class Getinventory(Operation):
-    Model = CommonCallbackRequestModel
+    request_model = CommonCallbackRequestModel
 
     async def execute(self):
         yield Call(callback=inventory_getcallback)

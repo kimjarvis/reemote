@@ -241,7 +241,7 @@ async def main():
         )
 
     class Greet(Operation):
-        Model = GreetRequest
+        request_model = GreetRequest
 
         async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
             model_instance = self.Model.model_validate(self.kwargs)

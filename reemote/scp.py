@@ -29,7 +29,7 @@ class ScpRequestModel(CommonCallbackRequestModel):
 
 
 class Upload(Callback):
-    Model = ScpRequestModel
+    request_model = ScpRequestModel
 
     @staticmethod
     async def callback(context: Context):
@@ -88,7 +88,7 @@ async def upload(
 
 
 class Download(Callback):
-    Model = ScpRequestModel
+    request_model = ScpRequestModel
 
     @staticmethod
     async def callback(context: Context):
@@ -156,7 +156,7 @@ class CopyRequestModel(ScpRequestModel):
 
 
 class Copy(Callback):
-    Model = CopyRequestModel
+    request_model = CopyRequestModel
 
     @staticmethod
     async def callback(command: Context):

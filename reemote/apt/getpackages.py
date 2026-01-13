@@ -74,10 +74,10 @@ class GetPackagesResponse(RootModel):
     root: List[GetPackagesResponseElement]
 
 class GetPackages(Operation):
-    Model = CommonOperationRequestModel
+    request_model = CommonOperationRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, GetPackagesResponse]:
-        model_instance = self.Model.model_validate(self.kwargs)
+        model_instance = self.request_model.model_validate(self.kwargs)
 
         result = yield Context(
             command=f"apt list --installed",

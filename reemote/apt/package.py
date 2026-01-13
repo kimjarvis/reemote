@@ -16,10 +16,10 @@ class PackageRequestModel(CommonOperationRequestModel):
     present: bool
 
 class Package(Operation):
-    Model = PackageRequestModel
+    request_model = PackageRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
-        model_instance = self.Model.model_validate(self.kwargs)
+        model_instance = self.request_model.model_validate(self.kwargs)
 
         pre = yield GetPackages()
         if model_instance.present:

@@ -14,7 +14,7 @@ class CallRequestModel(CommonCallbackRequestModel):
 
 
 class Call(Callback):
-    Model = CallRequestModel
+    request_model = CallRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -22,7 +22,7 @@ class Call(Callback):
         pass
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
-        model_instance = self.Model.model_validate(self.kwargs)
+        model_instance = self.request_model.model_validate(self.kwargs)
 
         yield Context(
             type=ConnectionType.LOCAL,
@@ -40,7 +40,7 @@ class ReturnRequestModel(CommonCallbackRequestModel):
 
 
 class Return(Callback):
-    Model = ReturnRequestModel
+    request_model = ReturnRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -48,7 +48,7 @@ class Return(Callback):
         pass
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
-        model_instance = self.Model.model_validate(self.kwargs)
+        model_instance = self.request_model.model_validate(self.kwargs)
 
         yield Context(
             type=ConnectionType.PASSTHROUGH,

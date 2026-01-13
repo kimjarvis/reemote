@@ -45,7 +45,7 @@ class IslinkResponse(ResponseElement):
 
 
 class Islink(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -76,7 +76,7 @@ class IsfileResponse(ResponseElement):
 
 
 class Isfile(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -107,7 +107,7 @@ class IsdirResponse(ResponseElement):
 
 
 class Isdir(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -138,7 +138,7 @@ class GetsizeResponse(ResponseElement):
 
 
 class Getsize(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -169,7 +169,7 @@ class GettimeResponse(ResponseElement):
 
 
 class Getatime(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -200,7 +200,7 @@ class GettimensResponse(ResponseElement):
 
 
 class GetatimeNs(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -226,7 +226,7 @@ async def getatimens(
 
 
 class Getmtime(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -251,7 +251,7 @@ async def getmtime(
 
 
 class GetmtimeNs(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -278,7 +278,7 @@ async def getmtimens(
 
 
 class Getcrtime(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -304,7 +304,7 @@ async def getcrtime(
 
 
 class GetcrtimeNs(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -337,7 +337,7 @@ class GetcwdResponse(ResponseElement):
 
 
 class Getcwd(Callback):
-    Model = CommonCallbackRequestModel
+    request_model = CommonCallbackRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -392,7 +392,7 @@ def sftp_attrs_to_dict(sftp_attrs):
 
 
 class Stat(Callback):
-    Model = StatRequestModel
+    request_model = StatRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -447,7 +447,7 @@ class ReadResponse(ResponseElement):
 
 
 class Read(Callback):
-    Model = ReadRequestModel
+    request_model = ReadRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -510,7 +510,7 @@ class ListdirResponse(ResponseElement):
 
 
 class Listdir(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -571,7 +571,7 @@ class ReaddirResponse(ResponseElement):
 
 
 class Readdir(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -603,7 +603,7 @@ class ExistsResponse(ResponseElement):
 
 
 class Exists(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -627,7 +627,7 @@ async def exists(
 
 
 class Lexists(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -651,7 +651,7 @@ async def lexists(
 
 
 class Lstat(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -684,7 +684,7 @@ class ReadlinkResponse(ResponseElement):
 
 
 class Readlink(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -716,7 +716,7 @@ class GlobResponse(ResponseElement):
 
 
 class Glob(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -740,7 +740,7 @@ async def glob(
 
 
 class GlobSftpName(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -811,7 +811,7 @@ class StatVfsResponse(ResponseElement):
 
 
 class StatVfs(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -843,7 +843,7 @@ class RealpathResponse(ResponseElement):
 
 
 class Realpath(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -873,7 +873,7 @@ class ClientResponse(CommonCallbackRequestModel):
 
 
 class Client(Callback):
-    Model = CommonCallbackRequestModel
+    request_model = CommonCallbackRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -984,7 +984,7 @@ class CopyRequestModel(CommonCallbackRequestModel):
 
 
 class Copy(Callback):
-    Model = CopyRequestModel
+    request_model = CopyRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1008,7 +1008,7 @@ class Copy(Callback):
 
 
 class Mcopy(Callback):
-    Model = CopyRequestModel
+    request_model = CopyRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1193,7 +1193,7 @@ class GetRequestModel(CommonCallbackRequestModel):
 
 
 class Get(Callback):
-    Model = GetRequestModel
+    request_model = GetRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1216,7 +1216,7 @@ class Get(Callback):
 
 
 class Mget(Callback):
-    Model = GetRequestModel
+    request_model = GetRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1392,7 +1392,7 @@ class PutRequestModel(CommonCallbackRequestModel):
 
 
 class Put(Callback):
-    Model = PutRequestModel
+    request_model = PutRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1415,7 +1415,7 @@ class Put(Callback):
 
 
 class Mput(Callback):
-    Model = PutRequestModel
+    request_model = PutRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1585,7 +1585,7 @@ class MkdirRequestModel(PathRequestModel):
 
 
 class Mkdir(Callback):
-    Model = MkdirRequestModel
+    request_model = MkdirRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1631,7 +1631,7 @@ async def mkdir(
 
 
 class Setstat(Callback):
-    Model = MkdirRequestModel
+    request_model = MkdirRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1675,7 +1675,7 @@ async def mkdir(
 
 
 class Makedirs(Callback):
-    Model = MkdirRequestModel
+    request_model = MkdirRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1721,7 +1721,7 @@ async def mkdirs(
 
 
 class Rmdir(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1745,7 +1745,7 @@ async def rmdir(
 
 class Rmtree(Callback):
     # todo: There are other parameters
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1778,7 +1778,7 @@ class ChmodRequestModel(PathRequestModel):
 
 
 class Chmod(Callback):
-    Model = ChmodRequestModel
+    request_model = ChmodRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1824,7 +1824,7 @@ class ChownRequestModel(PathRequestModel):
 
 
 class Chown(Callback):
-    Model = ChownRequestModel
+    request_model = ChownRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1877,7 +1877,7 @@ class UtimeRequestModel(PathRequestModel):
 
 
 class Utime(Callback):
-    Model = UtimeRequestModel
+    request_model = UtimeRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1917,7 +1917,7 @@ async def utime(
 
 
 class Chdir(Callback):
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1965,7 +1965,7 @@ class RenameRequestModel(CommonCallbackRequestModel):
 
 
 class Rename(Callback):
-    Model = RenameRequestModel
+    request_model = RenameRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -1996,7 +1996,7 @@ async def rename(
 
 class Remove(Callback):
     # todo: remove unnecessary models where its only path
-    Model = PathRequestModel
+    request_model = PathRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -2073,7 +2073,7 @@ class WriteRequestModel(PathRequestModel):
 
 
 class Write(Callback):
-    Model = WriteRequestModel
+    request_model = WriteRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -2177,7 +2177,7 @@ class LinkRequestModel(CommonCallbackRequestModel):
 
 
 class Link(Callback):
-    Model = LinkRequestModel
+    request_model = LinkRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -2208,7 +2208,7 @@ async def link(
 
 
 class Symlink(Callback):
-    Model = LinkRequestModel
+    request_model = LinkRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -2261,7 +2261,7 @@ class TruncateRequestModel(PathRequestModel):
 
 
 class Truncate(Callback):
-    Model = TruncateRequestModel
+    request_model = TruncateRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -2298,7 +2298,7 @@ class DirectoryRequestModel(PathRequestModel):
 
 
 class Directory(Callback):
-    Model = DirectoryRequestModel
+    request_model = DirectoryRequestModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -2310,7 +2310,7 @@ class Directory(Callback):
     ) -> AsyncGenerator[
         Isdir | Rmdir | Mkdir | Stat | Chmod | Chown | Utime | Return, ResponseModel
     ]:
-        model_instance = self.Model.model_validate(self.kwargs)
+        model_instance = self.request_model.model_validate(self.kwargs)
 
         changed = False
         isdir = yield Isdir(path=model_instance.path, group=model_instance.group)

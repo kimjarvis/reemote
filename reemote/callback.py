@@ -34,13 +34,13 @@ class AbstractCallbackRequest(BaseModel):
     dummy: bool = True
 
 class Callback(ABC):
-    Model = AbstractCallbackRequest
+    request_model = AbstractCallbackRequest
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
         # Check if the subclass overrides the 'Model' field
-        if cls.Model is Callback.Model:  # If it's still the same as the base class
+        if cls.request_model is Callback.request_model:  # If it's still the same as the base class
             raise NotImplementedError(
                 f"Class {cls.__name__} must override the 'Model' class field."
             )
@@ -51,7 +51,7 @@ class Callback(ABC):
         self.kwargs = kwargs
 
     async def execute(self) -> AsyncGenerator[Context, ResponseElement]:
-        model_instance = self.Model.model_validate(self.kwargs)
+        model_instance = self.request_model.model_validate(self.kwargs)
         yield Context(
             type=ConnectionType.LOCAL,
             callback=self.callback,

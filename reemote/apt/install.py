@@ -19,10 +19,10 @@ class InstallRequestModel(CommonOperationRequestModel):
 
 
 class Install(Operation):
-    Model = InstallRequestModel
+    request_model = InstallRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
-        model_instance = self.Model.model_validate(self.kwargs)
+        model_instance = self.request_model.model_validate(self.kwargs)
 
         result = yield Context(
             command=f"apt-get install -y {' '.join(model_instance.packages)}",

@@ -11,10 +11,10 @@ router = APIRouter()
 
 
 class Upgrade(Operation):
-    Model = CommonOperationRequestModel
+    request_model = CommonOperationRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
-        model_instance = self.Model.model_validate(self.kwargs)
+        model_instance = self.request_model.model_validate(self.kwargs)
 
         result = yield Context(
             command="apt-get upgrade",

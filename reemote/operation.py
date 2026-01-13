@@ -34,13 +34,13 @@ class AbstractOperationRequest(BaseModel):
 
 
 class Operation(ABC):
-    Model = AbstractOperationRequest
+    request_model = AbstractOperationRequest
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
         # Check if the subclass overrides the 'Model' field
-        if cls.Model is Operation.Model:  # If it's still the same as the base class
+        if cls.request_model is Operation.request_model:  # If it's still the same as the base class
             raise NotImplementedError(f"Class {cls.__name__} must override the 'Model' class field.")
 
         cls.child = cls.__name__  # Set the 'child' field to the name of the subclass

@@ -63,10 +63,10 @@ class ShellResponseModel(RootModel[List[ShellResponseElement]]):
 
 
 class Shell(Operation):
-    Model = ShellRequestModel
+    request_model = ShellRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
-        model_instance = self.Model.model_validate(self.kwargs)
+        model_instance = self.request_model.model_validate(self.kwargs)
         yield Context(
             command=model_instance.cmd,
             call=self.__class__.child + "(" + str(model_instance) + ")",
@@ -95,7 +95,7 @@ async def context_getcallback(context: Context):
 
 
 class Getcontext(Operation):
-    Model = CommonCallbackRequestModel
+    request_model = CommonCallbackRequestModel
 
     async def execute(self):
         yield Call(callback=context_getcallback)
