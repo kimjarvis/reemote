@@ -28,12 +28,20 @@ def requestmodel(
     """FastAPI dependency for common parameters"""
     return RequestModel(group=group, name=name, sudo=sudo, su=su)
 
+class AbstractRequest(BaseModel):
+    """Abstract class for local commands"""
+    dummy: bool = True
+
 
 class Request:
-    Model = RequestModel
+    Model = AbstractRequest
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
+
+        # Check if the subclass overrides the 'Model' field
+        if cls.Model is Request.Model:  # If it's still the same as the base class
+            raise NotImplementedError(f"Class {cls.__name__} must override the 'Model' class field.")
 
         cls.child = cls.__name__  # Set the 'child' field to the name of the subclass
 
