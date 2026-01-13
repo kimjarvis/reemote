@@ -54,7 +54,7 @@ class Local:
         model_instance = self.Model.model_validate(self.kwargs)
         yield Context(
             type=ConnectionType.LOCAL,
-            callback=self._callback,
+            callback=self.callback,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,
@@ -62,5 +62,5 @@ class Local:
 
     @staticmethod
     @abstractmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         pass

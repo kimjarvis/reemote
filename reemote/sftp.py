@@ -48,7 +48,7 @@ class Islink(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -79,7 +79,7 @@ class Isfile(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -110,7 +110,7 @@ class Isdir(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -141,7 +141,7 @@ class Getsize(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -172,7 +172,7 @@ class Getatime(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -203,7 +203,7 @@ class GetatimeNs(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -229,7 +229,7 @@ class Getmtime(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -254,7 +254,7 @@ class GetmtimeNs(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -281,7 +281,7 @@ class Getcrtime(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -307,7 +307,7 @@ class GetcrtimeNs(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -340,7 +340,7 @@ class Getcwd(Local):
     Model = LocalRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -395,7 +395,7 @@ class Stat(Local):
     Model = StatRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -450,7 +450,7 @@ class Read(Local):
     Model = ReadRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -513,7 +513,7 @@ class Listdir(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -574,7 +574,7 @@ class Readdir(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -606,7 +606,7 @@ class Exists(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -630,7 +630,7 @@ class Lexists(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -654,7 +654,7 @@ class Lstat(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -687,7 +687,7 @@ class Readlink(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -719,7 +719,7 @@ class Glob(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -743,7 +743,7 @@ class GlobSftpName(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -814,7 +814,7 @@ class StatVfs(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -846,7 +846,7 @@ class Realpath(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -876,7 +876,7 @@ class Client(Local):
     Model = LocalRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -987,7 +987,7 @@ class Copy(Local):
     Model = CopyRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1011,7 +1011,7 @@ class Mcopy(Local):
     Model = CopyRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1196,7 +1196,7 @@ class Get(Local):
     Model = GetRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1219,7 +1219,7 @@ class Mget(Local):
     Model = GetRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1395,7 +1395,7 @@ class Put(Local):
     Model = PutRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1418,7 +1418,7 @@ class Mput(Local):
     Model = PutRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1588,7 +1588,7 @@ class Mkdir(Local):
     Model = MkdirRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1634,7 +1634,7 @@ class Setstat(Local):
     Model = MkdirRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1678,7 +1678,7 @@ class Makedirs(Local):
     Model = MkdirRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1724,7 +1724,7 @@ class Rmdir(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1748,7 +1748,7 @@ class Rmtree(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1781,7 +1781,7 @@ class Chmod(Local):
     Model = ChmodRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1827,7 +1827,7 @@ class Chown(Local):
     Model = ChownRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1880,7 +1880,7 @@ class Utime(Local):
     Model = UtimeRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1920,7 +1920,7 @@ class Chdir(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1968,7 +1968,7 @@ class Rename(Local):
     Model = RenameRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
@@ -1999,7 +1999,7 @@ class Remove(Local):
     Model = PathRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
             async with asyncssh.connect(
                 **context.inventory_item.connection.to_json_serializable()
             ) as conn:
@@ -2076,7 +2076,7 @@ class Write(Local):
     Model = WriteRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
             async with asyncssh.connect(
                 **context.inventory_item.connection.to_json_serializable()
             ) as conn:
@@ -2180,7 +2180,7 @@ class Link(Local):
     Model = LinkRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
             async with asyncssh.connect(
                 **context.inventory_item.connection.to_json_serializable()
             ) as conn:
@@ -2211,7 +2211,7 @@ class Symlink(Local):
     Model = LinkRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
             async with asyncssh.connect(
                 **context.inventory_item.connection.to_json_serializable()
             ) as conn:
@@ -2264,7 +2264,7 @@ class Truncate(Local):
     Model = TruncateRequestModel
 
     @staticmethod
-    async def _callback(context: Context) -> None:
+    async def callback(context: Context) -> None:
             async with asyncssh.connect(
                 **context.inventory_item.connection.to_json_serializable()
             ) as conn:

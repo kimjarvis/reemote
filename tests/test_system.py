@@ -4,16 +4,16 @@ from reemote.execute import endpoint_execute
 
 
 @pytest.mark.asyncio
-async def test_system_callback(setup_inventory):
+async def test_systemcallback(setup_inventory):
     from reemote.system import Callback
     from reemote.context import Context
 
-    async def _callback(context: Context):
+    async def callback(context: Context):
         return "tested"
 
     class Root:
         async def execute(self):
-            r = yield Callback(callback=_callback)
+            r = yield Callback(callback=callback)
             if r:
                 assert r["value"] == "tested"
                 assert r["changed"]
@@ -23,17 +23,17 @@ async def test_system_callback(setup_inventory):
 
 
 @pytest.mark.asyncio
-async def test_system_callback(setup_inventory):
+async def test_systemcallback(setup_inventory):
     from reemote.system import Callback
     from reemote.context import Context
 
-    async def _callback(context: Context):
+    async def callback(context: Context):
         assert context.value == "test callback"
         return "tested"
 
     class Root:
         async def execute(self):
-            r = yield Callback(callback=_callback, value="test callback")
+            r = yield Callback(callback=callback, value="test callback")
             if r:
                 assert r["value"] == "tested"
                 assert r["changed"]

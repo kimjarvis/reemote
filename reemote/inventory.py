@@ -175,14 +175,14 @@ class InventoryGetResponse(BaseModel):
     error: bool
     value: Inventory
 
-async def inventory_get_callback(context: Context):
+async def inventory_getcallback(context: Context):
     return Config().get_inventory()
 
 class Getinventory(Request):
     Model = LocalRequestModel
 
     async def execute(self):
-        yield Callback(callback=inventory_get_callback)
+        yield Callback(callback=inventory_getcallback)
 
 @router.get(
     "/get",

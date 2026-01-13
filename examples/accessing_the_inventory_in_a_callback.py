@@ -16,13 +16,13 @@ async def main():
         ]
     )
 
-    # examples/accessing_the_inventory_in_a_callback.py
-    async def _callback(context: Context):
+    # examples/accessing_the_inventory_in_acallback.py
+    async def callback(context: Context):
         return context.inventory_item.connection.username
 
     class Root:
         async def execute(self):
-            response = yield Callback(callback=_callback)
+            response = yield Callback(callback=callback)
             print(response["value"])
 
     await execute(lambda: Root(), inventory=inventory)

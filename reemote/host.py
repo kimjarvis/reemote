@@ -90,7 +90,7 @@ class ContextGetResponse(BaseModel):
     value: Context
 
 
-async def context_get_callback(context: Context):
+async def context_getcallback(context: Context):
     return context
 
 
@@ -98,7 +98,7 @@ class Getcontext(Request):
     Model = LocalRequestModel
 
     async def execute(self):
-        yield Callback(callback=context_get_callback)
+        yield Callback(callback=context_getcallback)
 
 
 @router.get(

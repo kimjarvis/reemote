@@ -32,7 +32,7 @@ class Upload(Local):
     Model = ScpRequestModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def callback(context: Context):
         return await asyncssh.scp(
             srcpaths=context.caller.srcpaths,
             dstpath=(context.inventory_item.connection.host, context.caller.dstpath),
@@ -91,7 +91,7 @@ class Download(Local):
     Model = ScpRequestModel
 
     @staticmethod
-    async def _callback(context: Context):
+    async def callback(context: Context):
         return await asyncssh.scp(
             srcpaths=[
                 (context.inventory_item.connection.host, path)
@@ -159,7 +159,7 @@ class Copy(Local):
     Model = CopyRequestModel
 
     @staticmethod
-    async def _callback(command: Context):
+    async def callback(command: Context):
         return await asyncssh.scp(
             srcpaths=[
                 (command.inventory_item.connection.host, path)

@@ -176,13 +176,13 @@ The context is passed in the callback parameter.
 
 For example, this code snippet accesses the inventory item in the callback command parameter. 
 ```python
-    # examples/accessing_the_inventory_in_a_callback.py
-    async def _callback(command: Command):
+    # examples/accessing_the_inventory_in_acallback.py
+    async def callback(command: Command):
         return command.inventory_item.connection.username
 
     class Root:
         async def execute(self):
-            response = yield Callback(callback=_callback)
+            response = yield Callback(callback=callback)
             print(response["value"])
 
     await execute(lambda: Root(), inventory=inventory)
