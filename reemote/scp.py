@@ -13,6 +13,7 @@ from reemote.context import Context
 
 router = APIRouter()
 
+
 class ScpRequestModel(LocalRequestModel):
     srcpaths: List[str] = Field(
         ...,  # Required field
@@ -32,56 +33,46 @@ class Upload(Local):
 
     @staticmethod
     async def _callback(context: Context):
-        try:
-            return await asyncssh.scp(
-                srcpaths=context.caller.srcpaths,
-                dstpath=(context.inventory_item.connection.host, context.caller.dstpath),
-                username=context.inventory_item.connection.username,
-                preserve=context.caller.preserve,
-                recurse=context.caller.recurse,
-                block_size=context.caller.block_size,
-                progress_handler=context.caller.progress_handler,
-                error_handler=context.caller.error_handler,
-            )
-        except Exception as e:
-            context.error = True
-            logging.error(f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}")
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        return await asyncssh.scp(
+            srcpaths=context.caller.srcpaths,
+            dstpath=(context.inventory_item.connection.host, context.caller.dstpath),
+            username=context.inventory_item.connection.username,
+            preserve=context.caller.preserve,
+            recurse=context.caller.recurse,
+            block_size=context.caller.block_size,
+            progress_handler=context.caller.progress_handler,
+            error_handler=context.caller.error_handler,
+        )
+
 
 @router.post("/upload", tags=["SCP Operations"], response_model=ResponseModel)
 async def upload(
-        srcpaths: List[str] = Query(
-            ...,
-            description="The paths of the source files or directories to copy"
-        ),
-        dstpath: str = Query(
-            ...,
-            description="The path of the destination file or directory to copy into"
-        ),
-        preserve: bool = Query(
-            False,
-            description="Whether or not to preserve the original file attributes"
-        ),
-        recurse: bool = Query(
-            False,
-            description="Whether or not to recursively copy directories"
-        ),
-        block_size: int = Query(
-            16384,
-            ge=1,
-            description="The block size to use for file reads and writes"
-        ),
-        progress_handler: Optional[str] = Query(
-            None,
-            include_in_schema=False,  # This hides it from OpenAPI schema
-            description="Callback function name for download progress"
-        ),
-        error_handler: Optional[str] = Query(
-            None,
-            include_in_schema=False,  # This hides it from OpenAPI schema
-            description="Callback function name for error handling"
-        ),
-        common: LocalRequestModel = Depends(localrequestmodel)
+    srcpaths: List[str] = Query(
+        ..., description="The paths of the source files or directories to copy"
+    ),
+    dstpath: str = Query(
+        ..., description="The path of the destination file or directory to copy into"
+    ),
+    preserve: bool = Query(
+        False, description="Whether or not to preserve the original file attributes"
+    ),
+    recurse: bool = Query(
+        False, description="Whether or not to recursively copy directories"
+    ),
+    block_size: int = Query(
+        16384, ge=1, description="The block size to use for file reads and writes"
+    ),
+    progress_handler: Optional[str] = Query(
+        None,
+        include_in_schema=False,  # This hides it from OpenAPI schema
+        description="Callback function name for download progress",
+    ),
+    error_handler: Optional[str] = Query(
+        None,
+        include_in_schema=False,  # This hides it from OpenAPI schema
+        description="Callback function name for error handling",
+    ),
+    common: LocalRequestModel = Depends(localrequestmodel),
 ) -> ScpRequestModel:
     """# Upload files to the host"""
     return await router_handler(ScpRequestModel, Upload)(
@@ -92,63 +83,58 @@ async def upload(
         block_size=block_size,
         progress_handler=progress_handler,
         error_handler=error_handler,
-        common=common)
+        common=common,
+    )
+
 
 class Download(Local):
     Model = ScpRequestModel
 
     @staticmethod
     async def _callback(context: Context):
-        try:
-            return await asyncssh.scp(
-                srcpaths=[(context.inventory_item.connection.host, path) for path in context.caller.srcpaths],
-                dstpath=context.caller.dstpath,
-                username=context.inventory_item.connection.username,
-                preserve=context.caller.preserve,
-                recurse=context.caller.recurse,
-                block_size=context.caller.block_size,
-                progress_handler=context.caller.progress_handler,
-                error_handler=context.caller.error_handler,
-            )
-        except Exception as e:
-            context.error = True
-            logging.error(f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}")
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        return await asyncssh.scp(
+            srcpaths=[
+                (context.inventory_item.connection.host, path)
+                for path in context.caller.srcpaths
+            ],
+            dstpath=context.caller.dstpath,
+            username=context.inventory_item.connection.username,
+            preserve=context.caller.preserve,
+            recurse=context.caller.recurse,
+            block_size=context.caller.block_size,
+            progress_handler=context.caller.progress_handler,
+            error_handler=context.caller.error_handler,
+        )
+
 
 @router.post("/download", tags=["SCP Operations"], response_model=ResponseModel)
 async def download(
-        srcpaths: List[str] = Query(
-            ...,
-            description="The paths of the source files or directories to copy"
-        ),
-        dstpath: str = Query(
-            None,
-            description="The path of the destination file or directory to copy into"
-        ),
-        preserve: bool = Query(
-            False,
-            description="Whether or not to preserve the original file attributes"
-        ),
-        recurse: bool = Query(
-            False,
-            description="Whether or not to recursively copy directories"
-        ),
-        block_size: int = Query(
-            16384,
-            ge=1,
-            description="The block size to use for file reads and writes"
-        ),
-        progress_handler: Optional[str] = Query(
-            None,
-            include_in_schema=False,  # This hides it from OpenAPI schema
-            description="Callback function name for download progress"
-        ),
-        error_handler: Optional[str] = Query(
-            None,
-            include_in_schema=False,  # This hides it from OpenAPI schema
-            description="Callback function name for error handling"
-        ),
-        common: LocalRequestModel = Depends(localrequestmodel)
+    srcpaths: List[str] = Query(
+        ..., description="The paths of the source files or directories to copy"
+    ),
+    dstpath: str = Query(
+        None, description="The path of the destination file or directory to copy into"
+    ),
+    preserve: bool = Query(
+        False, description="Whether or not to preserve the original file attributes"
+    ),
+    recurse: bool = Query(
+        False, description="Whether or not to recursively copy directories"
+    ),
+    block_size: int = Query(
+        16384, ge=1, description="The block size to use for file reads and writes"
+    ),
+    progress_handler: Optional[str] = Query(
+        None,
+        include_in_schema=False,  # This hides it from OpenAPI schema
+        description="Callback function name for download progress",
+    ),
+    error_handler: Optional[str] = Query(
+        None,
+        include_in_schema=False,  # This hides it from OpenAPI schema
+        description="Callback function name for error handling",
+    ),
+    common: LocalRequestModel = Depends(localrequestmodel),
 ) -> ScpRequestModel:
     """# Download files from the host"""
     return await router_handler(ScpRequestModel, Download)(
@@ -159,72 +145,65 @@ async def download(
         block_size=block_size,
         progress_handler=progress_handler,
         error_handler=error_handler,
-        common=common)
+        common=common,
+    )
+
 
 class CopyRequestModel(ScpRequestModel):
     dsthost: str = Field(
         ...,  # Required field
     )
 
+
 class Copy(Local):
     Model = CopyRequestModel
 
     @staticmethod
     async def _callback(command: Context):
-        try:
-            return await asyncssh.scp(
-                srcpaths=[(command.inventory_item.connection.host, path) for path in command.caller.srcpaths],
-                dstpath=(command.caller.dsthost, command.caller.dstpath),
-                username=command.inventory_item.connection.username,
-                preserve=command.caller.preserve,
-                recurse=command.caller.recurse,
-                block_size=command.caller.block_size,
-                progress_handler=command.caller.progress_handler,
-                error_handler=command.caller.error_handler,
-            )
-        except Exception as e:
-            command.error = True
-            logging.error(f"{command.inventory_item.connection.host}: {e.__class__.__name__}")
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        return await asyncssh.scp(
+            srcpaths=[
+                (command.inventory_item.connection.host, path)
+                for path in command.caller.srcpaths
+            ],
+            dstpath=(command.caller.dsthost, command.caller.dstpath),
+            username=command.inventory_item.connection.username,
+            preserve=command.caller.preserve,
+            recurse=command.caller.recurse,
+            block_size=command.caller.block_size,
+            progress_handler=command.caller.progress_handler,
+            error_handler=command.caller.error_handler,
+        )
+
 
 @router.post("/copy", tags=["SCP Operations"], response_model=ResponseModel)
 async def copy(
-        srcpaths: List[str] = Query(
-            ...,
-            description="The paths of the source files or directories to copy"
-        ),
-        dstpath: str = Query(
-            None,
-            description="The path of the destination file or directory to copy into"
-        ),
-        dsthost: str = Query(
-            None,
-            description="The group of the host to copy to"
-        ),
-        preserve: bool = Query(
-            False,
-            description="Whether or not to preserve the original file attributes"
-        ),
-        recurse: bool = Query(
-            False,
-            description="Whether or not to recursively copy directories"
-        ),
-        block_size: int = Query(
-            16384,
-            ge=1,
-            description="The block size to use for file reads and writes"
-        ),
-        progress_handler: Optional[str] = Query(
-            None,
-            include_in_schema=False,  # This hides it from OpenAPI schema
-            description="Callback function name for download progress"
-        ),
-        error_handler: Optional[str] = Query(
-            None,
-            include_in_schema=False,  # This hides it from OpenAPI schema
-            description="Callback function name for error handling"
-        ),
-        common: LocalRequestModel = Depends(localrequestmodel)
+    srcpaths: List[str] = Query(
+        ..., description="The paths of the source files or directories to copy"
+    ),
+    dstpath: str = Query(
+        None, description="The path of the destination file or directory to copy into"
+    ),
+    dsthost: str = Query(None, description="The group of the host to copy to"),
+    preserve: bool = Query(
+        False, description="Whether or not to preserve the original file attributes"
+    ),
+    recurse: bool = Query(
+        False, description="Whether or not to recursively copy directories"
+    ),
+    block_size: int = Query(
+        16384, ge=1, description="The block size to use for file reads and writes"
+    ),
+    progress_handler: Optional[str] = Query(
+        None,
+        include_in_schema=False,  # This hides it from OpenAPI schema
+        description="Callback function name for download progress",
+    ),
+    error_handler: Optional[str] = Query(
+        None,
+        include_in_schema=False,  # This hides it from OpenAPI schema
+        description="Callback function name for error handling",
+    ),
+    common: LocalRequestModel = Depends(localrequestmodel),
 ) -> CopyRequestModel:
     """# Copy files between hosts"""
     return await router_handler(ScpRequestModel, Copy)(
@@ -236,4 +215,5 @@ async def copy(
         block_size=block_size,
         progress_handler=progress_handler,
         error_handler=error_handler,
-        common=common)
+        common=common,
+    )
