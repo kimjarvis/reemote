@@ -21,57 +21,40 @@ class ResponseModel(RootModel[List[ResponseElement]]):
     pass
 
 
-class GetResponseElement(BaseModel):
+class ResponseElement1(BaseModel):
     host: str = Field(
         default="",
         description="The ip address or name of the host the operation was executed on.",
     )
     error: bool = Field(
         default=False,
-        description="Whether or not there was an error.  When True the value contains a ssh connectivity error message.",
+        description="Whether or not there was an error establishing the ssh connectivity with the host.",
     )
+    message: Any = Field(
+        default="",
+        description="Connectivity error message.",
+    )
+
+class GetResponseElement(ResponseElement1):
     value: Any = Field(
         default=None,
-        description="Class specific information from the target host or, when error is True, a ssh connectivity error message.",
+        description="Class specific information from the target host.",
     )
 
 class GetResponseModel(RootModel[List[GetResponseElement]]):
     pass
 
-class PostResponseElement(BaseModel):
-    host: str = Field(
-        default="",
-        description="The ip address or name of the host the operation was executed on.",
-    )
-    error: bool = Field(
-        default=False,
-        description="Whether or not there was an error.  When True the value contains a ssh connectivity error message.",
-    )
-    value: Union[str, None] = Field(
-        default=None,
-        description="When error is `True`, a ssh connectivity error message.",
-    )
+class PostResponseElement(ResponseElement1):
+    pass
 
 class PostResponseModel(RootModel[List[PostResponseElement]]):
     pass
 
-class PullResponseElement(BaseModel):
-    host: str = Field(
-        default="",
-        description="The ip address or name of the host the operation was executed on.",
-    )
+class PutResponseElement(ResponseElement1):
     changed: bool = Field(
         default=True,
         description="Whether or not the host was changed by the operation.",
     )
-    error: bool = Field(
-        default=False,
-        description="Whether or not there was an error.  When True the value contains a ssh connectivity error message.",
-    )
-    value: Union[str, None] = Field(
-        default=None,
-        description="When error is `True`, a ssh connectivity error message.",
-    )
 
-class PullResponseModel(RootModel[List[PullResponseElement]]):
+class PutResponseModel(RootModel[List[PutResponseElement]]):
     pass
