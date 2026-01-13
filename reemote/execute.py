@@ -27,7 +27,7 @@ def ssh_completed_process_to_dict(ssh_completed_process):
     }
 
 
-async def pass_through_command(context: Context) -> dict[str, str | None | Any] | None:
+async def run_passthrough(context: Context) -> dict[str, str | None | Any] | None:
     if not context.group or "all" in context.group or context.group in context.inventory_item.groups:
         logging.info(f"{context.call}")
         result = {
@@ -42,7 +42,7 @@ async def pass_through_command(context: Context) -> dict[str, str | None | Any] 
     return None
 
 
-async def run_command_on_local(context: Context) -> dict[str, str | None | Any] | None:
+async def run_callback(context: Context) -> dict[str, str | None | Any] | None:
     # todo: move exception back up
     if not context.group or "all" in context.group or context.group in context.inventory_item.groups:
         logging.info(f"{context.inventory_item.connection.host:<16} - {context.call}")
@@ -68,7 +68,7 @@ async def run_command_on_local(context: Context) -> dict[str, str | None | Any] 
             return result
 
 
-async def run_command_on_host(
+async def run_operation(
     context: Context,
 ) -> dict[str, str | None | bool | Any] | None:
     cp = SSHCompletedProcess()
@@ -264,11 +264,11 @@ async def process_host(
             if isinstance(context, Context):
                 context.inventory_item = inventory_item
                 if context.type == ConnectionType.LOCAL:
-                    result = await run_command_on_local(context)
+                    result = await run_callback(context)
                 elif context.type == ConnectionType.REMOTE:
-                    result = await run_command_on_host(context)
+                    result = await run_operation(context)
                 elif context.type == ConnectionType.PASSTHROUGH:
-                    result = await pass_through_command(context)
+                    result = await run_passthrough(context)
                 else:
                     raise ValueError(f"Unsupported connection type: {context.type}")
 
