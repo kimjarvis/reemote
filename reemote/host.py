@@ -8,7 +8,7 @@ from reemote.core.request import RequestModel, requestmodel
 from reemote.core.request import Request
 from reemote.core.response import ResponseModel, ResponseElement, ResponseModel
 from reemote.core.router_handler import router_handler
-from reemote.system import Callback
+from reemote.system import Call
 from reemote.core.local import LocalRequestModel, localrequestmodel
 
 
@@ -98,7 +98,7 @@ class Getcontext(Request):
     Model = LocalRequestModel
 
     async def execute(self):
-        yield Callback(callback=context_getcallback)
+        yield Call(callback=context_getcallback)
 
 
 @router.get(

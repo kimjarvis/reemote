@@ -6,15 +6,15 @@ from reemote.core.local import LocalRequestModel
 from reemote.core.local import Local
 
 
-class CallbackRequestModel(LocalRequestModel):
+class CallRequestModel(LocalRequestModel):
     callback: Callable = Field(
         ...,  # Required field
     )
     value: Any = None  # Optional field with a default value
 
 
-class Callback(Local):
-    Model = CallbackRequestModel
+class Call(Local):
+    Model = CallRequestModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
         model_instance = self.Model.model_validate(self.kwargs)

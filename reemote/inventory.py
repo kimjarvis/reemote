@@ -4,7 +4,7 @@ from typing import List
 from reemote.config import Config
 from reemote.core.inventory_model import InventoryItem, Inventory
 from reemote.core.request import Request
-from reemote.system import Callback
+from reemote.system import Call
 from reemote.context import Context
 from reemote.core.router_handler import router_handler
 from reemote.core.local import LocalRequestModel, localrequestmodel
@@ -182,7 +182,7 @@ class Getinventory(Request):
     Model = LocalRequestModel
 
     async def execute(self):
-        yield Callback(callback=inventory_getcallback)
+        yield Call(callback=inventory_getcallback)
 
 @router.get(
     "/get",
