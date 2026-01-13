@@ -77,11 +77,11 @@ async def test_connection_error():
             },
             {
                 "connection": {
-                    "host": "192.168.1.1",
+                    "host": "unreachablehost",
                     "username": "user",
                     "password": "password",
                 },
-                "groups": ["all", "192.168.1.1"],
+                "groups": ["all", "unreachablehost"],
             },
         ]
     )
@@ -93,7 +93,7 @@ async def test_connection_error():
     assert any("error" in r for r in rl)
 
 @pytest.mark.asyncio
-async def test_inventory_unreachable_host_sftp_command():
+async def test_inventory_unreachablehost_host_sftp_command():
     from reemote.sftp import Isdir
     from reemote.sftp import Mkdir, Rmdir
 
@@ -116,11 +116,11 @@ async def test_inventory_unreachable_host_sftp_command():
             },
             {
                 "connection": {
-                    "host": "192.168.1.1",
+                    "host": "unreachablehost",
                     "username": "user",
                     "password": "password",
                 },
-                "groups": ["all", "192.168.1.1"],
+                "groups": ["all", "unreachablehost"],
             },
         ]
     )
@@ -132,7 +132,7 @@ async def test_inventory_unreachable_host_sftp_command():
 
 
 @pytest.mark.asyncio
-async def test_inventory_unreachable_host_sftp_fact():
+async def test_inventory_unreachablehost_host_sftp_fact():
     from reemote.sftp import StatVfs
 
     class Root:
@@ -151,11 +151,11 @@ async def test_inventory_unreachable_host_sftp_fact():
             },
             {
                 "connection": {
-                    "host": "192.168.1.1",
+                    "host": "unreachablehost",
                     "username": "user",
                     "password": "password",
                 },
-                "groups": ["all", "192.168.1.1"],
+                "groups": ["all", "unreachablehost"],
             },
         ]
     )

@@ -1,4 +1,3 @@
-import logging
 import stat as stat_module
 from pathlib import PurePath
 from typing import AsyncGenerator, Callable, List, Optional, Sequence, Union
@@ -50,18 +49,12 @@ class Islink(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.islink(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.islink(context.caller.path)
 
 
 @router.get("/islink", tags=["SFTP Operations"], response_model=List[IslinkResponse])
@@ -87,18 +80,12 @@ class Isfile(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.isfile(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.isfile(context.caller.path)
 
 
 @router.get("/isfile", tags=["SFTP Operations"], response_model=List[IsfileResponse])
@@ -124,18 +111,12 @@ class Isdir(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.isdir(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.isdir(context.caller.path)
 
 
 @router.get("/isdir", tags=["SFTP Operations"], response_model=List[IsdirResponse])
@@ -161,18 +142,12 @@ class Getsize(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.getsize(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.getsize(context.caller.path)
 
 
 @router.get("/getsize", tags=["SFTP Operations"], response_model=List[GetsizeResponse])
@@ -198,18 +173,12 @@ class Getatime(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.getatime(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.getatime(context.caller.path)
 
 
 @router.get("/getatime", tags=["SFTP Operations"], response_model=List[GettimeResponse])
@@ -235,18 +204,12 @@ class GetatimeNs(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.getatime_ns(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.getatime_ns(context.caller.path)
 
 
 @router.get(
@@ -267,18 +230,12 @@ class Getmtime(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.getmtime(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.getmtime(context.caller.path)
 
 
 @router.get("/getmtime", tags=["SFTP Operations"], response_model=List[GettimeResponse])
@@ -298,18 +255,12 @@ class GetmtimeNs(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.getmtime_ns(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.getmtime_ns(context.caller.path)
 
 
 @router.get(
@@ -331,18 +282,12 @@ class Getcrtime(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.getcrtime(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.getcrtime(context.caller.path)
 
 
 @router.get(
@@ -363,18 +308,12 @@ class GetcrtimeNs(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.getcrtime_ns(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.getcrtime_ns(context.caller.path)
 
 
 @router.get(
@@ -390,7 +329,6 @@ async def getcrtimens(
     return await router_handler(PathRequestModel, GetcrtimeNs)(path=path, common=common)
 
 
-
 class GetcwdResponse(ResponseElement):
     value: str = Field(
         default="",
@@ -403,22 +341,18 @@ class Getcwd(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.getcwd()
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.getcwd()
 
 
 @router.get("/getcwd", tags=["SFTP Operations"], response_model=List[GetcwdResponse])
-async def getcwd(common: LocalRequestModel = Depends(localrequestmodel)) -> LocalRequestModel:
+async def getcwd(
+    common: LocalRequestModel = Depends(localrequestmodel),
+) -> LocalRequestModel:
     """# Return the current remote working directory"""
     return await router_handler(LocalRequestModel, Getcwd)(common=common)
 
@@ -462,22 +396,16 @@ class Stat(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    sftp_attrs = await sftp.stat(
-                        context.caller.path,
-                        follow_symlinks=context.caller.follow_symlinks,
-                    )
-                    return sftp_attrs_to_dict(sftp_attrs)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                sftp_attrs = await sftp.stat(
+                    context.caller.path,
+                    follow_symlinks=context.caller.follow_symlinks,
+                )
+                return sftp_attrs_to_dict(sftp_attrs)
 
 
 @router.get("/stat", tags=["SFTP Operations"], response_model=List[StatResponse])
@@ -523,28 +451,22 @@ class Read(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    f = await sftp.open(
-                        path=context.caller.path,
-                        pflags_or_mode=FXF_READ,
-                        encoding=context.caller.encoding,
-                        errors=context.caller.errors,
-                        block_size=context.caller.block_size,
-                        max_requests=context.caller.max_requests,
-                    )
-                    content = await f.read()
-                    await f.close()
-                    return content
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                f = await sftp.open(
+                    path=context.caller.path,
+                    pflags_or_mode=FXF_READ,
+                    encoding=context.caller.encoding,
+                    errors=context.caller.errors,
+                    block_size=context.caller.block_size,
+                    max_requests=context.caller.max_requests,
+                )
+                content = await f.read()
+                await f.close()
+                return content
 
 
 @router.get("/read", tags=["SFTP Operations"], response_model=List[ReadResponse])
@@ -592,18 +514,12 @@ class Listdir(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.listdir(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.listdir(context.caller.path)
 
 
 @router.get("/listdir", tags=["SFTP Operations"], response_model=List[ListdirResponse])
@@ -659,19 +575,13 @@ class Readdir(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    sftp_names = await sftp.readdir(context.caller.path)
-                    return sftp_names_to_dict(sftp_names)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                sftp_names = await sftp.readdir(context.caller.path)
+                return sftp_names_to_dict(sftp_names)
 
 
 @router.get("/readdir", tags=["SFTP Operations"], response_model=List[ReaddirResponse])
@@ -697,18 +607,12 @@ class Exists(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.exists(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.exists(context.caller.path)
 
 
 @router.get("/exists", tags=["SFTP Operations"], response_model=List[ExistsResponse])
@@ -727,18 +631,12 @@ class Lexists(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.lexists(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.lexists(context.caller.path)
 
 
 @router.get("/lexists", tags=["SFTP Operations"], response_model=List[ExistsResponse])
@@ -757,19 +655,13 @@ class Lstat(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    sftp_attrs = await sftp.lstat(context.caller.path)
-                    return sftp_attrs_to_dict(sftp_attrs)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                sftp_attrs = await sftp.lstat(context.caller.path)
+                return sftp_attrs_to_dict(sftp_attrs)
 
 
 @router.get("/lstat", tags=["SFTP Operations"], response_model=List[StatResponse])
@@ -796,18 +688,12 @@ class Readlink(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.readlink(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.readlink(context.caller.path)
 
 
 @router.get(
@@ -834,18 +720,12 @@ class Glob(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.glob(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.glob(context.caller.path)
 
 
 @router.get("/glob", tags=["SFTP Operations"], response_model=List[GlobResponse])
@@ -864,19 +744,13 @@ class GlobSftpName(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    sftp_names = await sftp.glob_sftpname(context.caller.path)
-                    return sftp_names_to_dict(sftp_names)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                sftp_names = await sftp.glob_sftpname(context.caller.path)
+                return sftp_names_to_dict(sftp_names)
 
 
 @router.get(
@@ -889,7 +763,9 @@ async def globsftpname(
     common: LocalRequestModel = Depends(localrequestmodel),
 ) -> PathRequestModel:
     """# Match glob patterns and return SFTPNames"""
-    return await router_handler(PathRequestModel, GlobSftpName)(path=path, common=common)
+    return await router_handler(PathRequestModel, GlobSftpName)(
+        path=path, common=common
+    )
 
 
 def sftp_vfs_attrs_to_dict(sftp_vfs_attrs):
@@ -939,19 +815,13 @@ class StatVfs(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    sftp_vfs_attrs = await sftp.statvfs(context.caller.path)
-                    context.changed = False
-                    return sftp_vfs_attrs_to_dict(sftp_vfs_attrs)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                sftp_vfs_attrs = await sftp.statvfs(context.caller.path)
+                context.changed = False
+                return sftp_vfs_attrs_to_dict(sftp_vfs_attrs)
 
 
 @router.get("/statvfs", tags=["SFTP Operations"], response_model=List[StatVfsResponse])
@@ -977,18 +847,12 @@ class Realpath(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return await sftp.realpath(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return await sftp.realpath(context.caller.path)
 
 
 @router.get(
@@ -1013,26 +877,20 @@ class Client(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    context.changed = False
-                    return {
-                        "version": sftp.version,
-                        # "logger": sftp.logger,
-                        "max_packet_len": sftp.limits.max_packet_len,
-                        "max_read_len": sftp.limits.max_read_len,
-                        "max_write_len": sftp.limits.max_write_len,
-                        "max_open_handles": sftp.limits.max_open_handles,
-                        "supports_remote_copy": sftp.supports_remote_copy,
-                    }
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                context.changed = False
+                return {
+                    "version": sftp.version,
+                    # "logger": sftp.logger,
+                    "max_packet_len": sftp.limits.max_packet_len,
+                    "max_read_len": sftp.limits.max_read_len,
+                    "max_write_len": sftp.limits.max_write_len,
+                    "max_open_handles": sftp.limits.max_open_handles,
+                    "supports_remote_copy": sftp.supports_remote_copy,
+                }
 
 
 class SFTPInfo(BaseModel):
@@ -1130,29 +988,23 @@ class Copy(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    return await sftp.copy(
-                        srcpaths=context.caller.srcpaths,
-                        dstpath=context.caller.dstpath,
-                        preserve=context.caller.preserve,
-                        recurse=context.caller.recurse,
-                        follow_symlinks=context.caller.follow_symlinks,
-                        sparse=context.caller.sparse,
-                        block_size=context.caller.block_size,
-                        max_requests=context.caller.max_requests,
-                        progress_handler=context.caller.progress_handler,
-                        error_handler=context.caller.error_handler,
-                        remote_only=context.caller.remote_only,
-                    )
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.copy(
+                    srcpaths=context.caller.srcpaths,
+                    dstpath=context.caller.dstpath,
+                    preserve=context.caller.preserve,
+                    recurse=context.caller.recurse,
+                    follow_symlinks=context.caller.follow_symlinks,
+                    sparse=context.caller.sparse,
+                    block_size=context.caller.block_size,
+                    max_requests=context.caller.max_requests,
+                    progress_handler=context.caller.progress_handler,
+                    error_handler=context.caller.error_handler,
+                    remote_only=context.caller.remote_only,
+                )
 
 
 class Mcopy(Local):
@@ -1160,29 +1012,23 @@ class Mcopy(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    return await sftp.mcopy(
-                        srcpaths=context.caller.srcpaths,
-                        dstpath=context.caller.dstpath,
-                        preserve=context.caller.preserve,
-                        recurse=context.caller.recurse,
-                        follow_symlinks=context.caller.follow_symlinks,
-                        sparse=context.caller.sparse,
-                        block_size=context.caller.block_size,
-                        max_requests=context.caller.max_requests,
-                        progress_handler=context.caller.progress_handler,
-                        error_handler=context.caller.error_handler,
-                        remote_only=context.caller.remote_only,
-                    )
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.mcopy(
+                    srcpaths=context.caller.srcpaths,
+                    dstpath=context.caller.dstpath,
+                    preserve=context.caller.preserve,
+                    recurse=context.caller.recurse,
+                    follow_symlinks=context.caller.follow_symlinks,
+                    sparse=context.caller.sparse,
+                    block_size=context.caller.block_size,
+                    max_requests=context.caller.max_requests,
+                    progress_handler=context.caller.progress_handler,
+                    error_handler=context.caller.error_handler,
+                    remote_only=context.caller.remote_only,
+                )
 
 
 @router.post("/copy", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1346,34 +1192,27 @@ class GetRequestModel(LocalRequestModel):
             raise ValueError(f"Cannot convert {v} to PurePath.")
 
 
-
 class Get(Local):
     Model = GetRequestModel
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    return await sftp.get(
-                        remotepaths=context.caller.remotepaths,
-                        localpath=context.caller.localpath,
-                        preserve=context.caller.preserve,
-                        recurse=context.caller.recurse,
-                        follow_symlinks=context.caller.follow_symlinks,
-                        sparse=context.caller.sparse,
-                        block_size=context.caller.block_size,
-                        max_requests=context.caller.max_requests,
-                        progress_handler=context.caller.progress_handler,
-                        error_handler=context.caller.error_handler,
-                    )
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.get(
+                    remotepaths=context.caller.remotepaths,
+                    localpath=context.caller.localpath,
+                    preserve=context.caller.preserve,
+                    recurse=context.caller.recurse,
+                    follow_symlinks=context.caller.follow_symlinks,
+                    sparse=context.caller.sparse,
+                    block_size=context.caller.block_size,
+                    max_requests=context.caller.max_requests,
+                    progress_handler=context.caller.progress_handler,
+                    error_handler=context.caller.error_handler,
+                )
 
 
 class Mget(Local):
@@ -1381,28 +1220,22 @@ class Mget(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    return await sftp.mget(
-                        remotepaths=context.caller.remotepaths,
-                        localpath=context.caller.localpath,
-                        preserve=context.caller.preserve,
-                        recurse=context.caller.recurse,
-                        follow_symlinks=context.caller.follow_symlinks,
-                        sparse=context.caller.sparse,
-                        block_size=context.caller.block_size,
-                        max_requests=context.caller.max_requests,
-                        progress_handler=context.caller.progress_handler,
-                        error_handler=context.caller.error_handler,
-                    )
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.mget(
+                    remotepaths=context.caller.remotepaths,
+                    localpath=context.caller.localpath,
+                    preserve=context.caller.preserve,
+                    recurse=context.caller.recurse,
+                    follow_symlinks=context.caller.follow_symlinks,
+                    sparse=context.caller.sparse,
+                    block_size=context.caller.block_size,
+                    max_requests=context.caller.max_requests,
+                    progress_handler=context.caller.progress_handler,
+                    error_handler=context.caller.error_handler,
+                )
 
 
 @router.post("/get", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1558,34 +1391,27 @@ class PutRequestModel(LocalRequestModel):
             raise ValueError(f"Cannot convert {v} to PurePath.")
 
 
-
 class Put(Local):
     Model = PutRequestModel
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    return await sftp.put(
-                        localpaths=context.caller.localpaths,
-                        remotepath=context.caller.remotepath,
-                        preserve=context.caller.preserve,
-                        recurse=context.caller.recurse,
-                        follow_symlinks=context.caller.follow_symlinks,
-                        sparse=context.caller.sparse,
-                        block_size=context.caller.block_size,
-                        max_requests=context.caller.max_requests,
-                        progress_handler=context.caller.progress_handler,
-                        error_handler=context.caller.error_handler,
-                    )
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.put(
+                    localpaths=context.caller.localpaths,
+                    remotepath=context.caller.remotepath,
+                    preserve=context.caller.preserve,
+                    recurse=context.caller.recurse,
+                    follow_symlinks=context.caller.follow_symlinks,
+                    sparse=context.caller.sparse,
+                    block_size=context.caller.block_size,
+                    max_requests=context.caller.max_requests,
+                    progress_handler=context.caller.progress_handler,
+                    error_handler=context.caller.error_handler,
+                )
 
 
 class Mput(Local):
@@ -1593,28 +1419,22 @@ class Mput(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    return await sftp.mput(
-                        localpaths=context.caller.localpaths,
-                        remotepath=context.caller.remotepath,
-                        preserve=context.caller.preserve,
-                        recurse=context.caller.recurse,
-                        follow_symlinks=context.caller.follow_symlinks,
-                        sparse=context.caller.sparse,
-                        block_size=context.caller.block_size,
-                        max_requests=context.caller.max_requests,
-                        progress_handler=context.caller.progress_handler,
-                        error_handler=context.caller.error_handler,
-                    )
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.mput(
+                    localpaths=context.caller.localpaths,
+                    remotepath=context.caller.remotepath,
+                    preserve=context.caller.preserve,
+                    recurse=context.caller.recurse,
+                    follow_symlinks=context.caller.follow_symlinks,
+                    sparse=context.caller.sparse,
+                    block_size=context.caller.block_size,
+                    max_requests=context.caller.max_requests,
+                    progress_handler=context.caller.progress_handler,
+                    error_handler=context.caller.error_handler,
+                )
 
 
 @router.post("/put/", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1769,24 +1589,18 @@ class Mkdir(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    sftp_attrs = context.caller.get_sftp_attrs()
-                    if sftp_attrs:
-                        await sftp.mkdir(
-                            path=context.caller.path,
-                            attrs=sftp_attrs if sftp_attrs else None,
-                        )
-                    else:
-                        await sftp.mkdir(path=context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                sftp_attrs = context.caller.get_sftp_attrs()
+                if sftp_attrs:
+                    await sftp.mkdir(
+                        path=context.caller.path,
+                        attrs=sftp_attrs if sftp_attrs else None,
+                    )
+                else:
+                    await sftp.mkdir(path=context.caller.path)
 
 
 @router.post("/mkdir", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1821,19 +1635,13 @@ class Setstat(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    sftp_attrs = context.caller.get_sftp_attrs()
-                    if sftp_attrs:
-                        await sftp.setstat(path=context.caller.path, attrs=sftp_attrs)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                sftp_attrs = context.caller.get_sftp_attrs()
+                if sftp_attrs:
+                    await sftp.setstat(path=context.caller.path, attrs=sftp_attrs)
 
 
 @router.post("/setstat", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1871,24 +1679,18 @@ class Makedirs(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    sftp_attrs = context.caller.get_sftp_attrs()
-                    if sftp_attrs:
-                        await sftp.makedirs(
-                            path=context.caller.path,
-                            attrs=sftp_attrs if sftp_attrs else None,
-                        )
-                    else:
-                        await sftp.makedirs(path=context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                sftp_attrs = context.caller.get_sftp_attrs()
+                if sftp_attrs:
+                    await sftp.makedirs(
+                        path=context.caller.path,
+                        attrs=sftp_attrs if sftp_attrs else None,
+                    )
+                else:
+                    await sftp.makedirs(path=context.caller.path)
 
 
 @router.post("/makedirs", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1923,17 +1725,11 @@ class Rmdir(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    return await sftp.rmdir(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.rmdir(context.caller.path)
 
 
 @router.post("/rmdir", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1953,17 +1749,11 @@ class Rmtree(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    return await sftp.rmtree(context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.rmtree(context.caller.path)
 
 
 @router.post("/rmtree", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -1992,21 +1782,15 @@ class Chmod(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    return await sftp.chmod(
-                        path=context.caller.path,
-                        mode=context.caller.permissions,
-                        follow_symlinks=context.caller.follow_symlinks,
-                    )
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.chmod(
+                    path=context.caller.path,
+                    mode=context.caller.permissions,
+                    follow_symlinks=context.caller.follow_symlinks,
+                )
 
 
 @router.post("/chmod", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2044,22 +1828,16 @@ class Chown(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    return await sftp.chown(
-                        path=context.caller.path,
-                        uid=context.caller.uid,
-                        gid=context.caller.gid,
-                        follow_symlinks=context.caller.follow_symlinks,
-                    )
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.chown(
+                    path=context.caller.path,
+                    uid=context.caller.uid,
+                    gid=context.caller.gid,
+                    follow_symlinks=context.caller.follow_symlinks,
+                )
 
 
 @router.post("/chown", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2103,21 +1881,15 @@ class Utime(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    return await sftp.utime(
-                        path=context.caller.path,
-                        times=(context.caller.atime, context.caller.mtime),
-                        follow_symlinks=context.caller.follow_symlinks,
-                    )
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.utime(
+                    path=context.caller.path,
+                    times=(context.caller.atime, context.caller.mtime),
+                    follow_symlinks=context.caller.follow_symlinks,
+                )
 
 
 @router.post("/utime", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2149,17 +1921,11 @@ class Chdir(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    return await sftp.chdir(path=context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.chdir(path=context.caller.path)
 
 
 @router.post("/chdir", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2203,19 +1969,13 @@ class Rename(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
-            async with asyncssh.connect(
-                **context.inventory_item.connection.to_json_serializable()
-            ) as conn:
-                async with conn.start_sftp_client() as sftp:
-                    return await sftp.rename(
-                        oldpath=context.caller.oldpath, newpath=context.caller.newpath
-                    )
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+        async with asyncssh.connect(
+            **context.inventory_item.connection.to_json_serializable()
+        ) as conn:
+            async with conn.start_sftp_client() as sftp:
+                return await sftp.rename(
+                    oldpath=context.caller.oldpath, newpath=context.caller.newpath
+                )
 
 
 @router.post("/rename", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2240,17 +2000,11 @@ class Remove(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
             async with asyncssh.connect(
                 **context.inventory_item.connection.to_json_serializable()
             ) as conn:
                 async with conn.start_sftp_client() as sftp:
                     return await sftp.remove(path=context.caller.path)
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/remove", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2323,7 +2077,6 @@ class Write(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
             async with asyncssh.connect(
                 **context.inventory_item.connection.to_json_serializable()
             ) as conn:
@@ -2340,11 +2093,6 @@ class Write(Local):
                     )
                     content = await f.write(context.caller.text)
                     await f.close()
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/write", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2433,7 +2181,6 @@ class Link(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
             async with asyncssh.connect(
                 **context.inventory_item.connection.to_json_serializable()
             ) as conn:
@@ -2442,11 +2189,6 @@ class Link(Local):
                         oldpath=context.caller.file_path,
                         newpath=context.caller.link_path,
                     )
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/link", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2470,7 +2212,6 @@ class Symlink(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
             async with asyncssh.connect(
                 **context.inventory_item.connection.to_json_serializable()
             ) as conn:
@@ -2479,11 +2220,6 @@ class Symlink(Local):
                         oldpath=context.caller.file_path,
                         newpath=context.caller.link_path,
                     )
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/symlink", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2529,7 +2265,6 @@ class Truncate(Local):
 
     @staticmethod
     async def _callback(context: Context) -> None:
-        try:
             async with asyncssh.connect(
                 **context.inventory_item.connection.to_json_serializable()
             ) as conn:
@@ -2537,11 +2272,6 @@ class Truncate(Local):
                     return await sftp.truncate(
                         path=context.caller.file_path, size=context.caller.size
                     )
-        except Exception as e:
-            context.error = True
-            logging.error(
-               f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"            )
-            return f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
 
 
 @router.post("/truncate", tags=["SFTP Operations"], response_model=ResponseModel)
@@ -2553,7 +2283,9 @@ async def truncate(
     common: LocalRequestModel = Depends(localrequestmodel),
 ) -> TruncateRequestModel:
     """# Truncate a remote file to the specified size"""
-    return await router_handler(TruncateRequestModel, Truncate)(path=path, size=size, common=common)
+    return await router_handler(TruncateRequestModel, Truncate)(
+        path=path, size=size, common=common
+    )
 
 
 class DirectoryRequestModel(PathRequestModel):

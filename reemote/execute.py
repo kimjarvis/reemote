@@ -4,6 +4,7 @@
 import asyncio
 import inspect
 import logging
+from sys import exception
 from typing import Any, AsyncGenerator, Callable, Dict, List, Tuple
 
 import asyncssh
@@ -29,38 +30,42 @@ def ssh_completed_process_to_dict(ssh_completed_process):
 async def pass_through_command(context: Context) -> dict[str, str | None | Any] | None:
     if not context.group or "all" in context.group or context.group in context.inventory_item.groups:
         logging.info(f"{context.call}")
-        try:
-            result = {
-                "host": context.inventory_item.connection.host,
-                "value": context.value,
-                "changed": context.changed,
-                "error": context.error,
-            }
+        result = {
+            "host": context.inventory_item.connection.host,
+            "value": context.value,
+            "changed": context.changed,
+            "error": context.error,
+        }
 
-            logging.info(f"{result}")
-            return result
-        except Exception as e:
-            logging.error(f"{e} {context}", exc_info=True)
-            raise
+        logging.info(f"{result}")
+        return result
     return None
 
 
 async def run_command_on_local(context: Context) -> dict[str, str | None | Any] | None:
+    # todo: move exception back up
     if not context.group or "all" in context.group or context.group in context.inventory_item.groups:
-        logging.info(f"{context.call}")
+        logging.info(f"{context.inventory_item.connection.host:<16} - {context.call}")
         try:
+            value = await context.callback(context)
             result = {
                 "host": context.inventory_item.connection.host,
-                "value": await context.callback(context),
+                "value": value,
                 "changed": context.changed,
                 "error": context.error,
             }
-            logging.info(f"{result}")
+            logging.info(f"{result["host"]:<16} - {result}")
             return result
         except Exception as e:
-            logging.error(f"{e} {context}", exc_info=True)
-            raise
-    return None
+            context.error = True
+            result = {
+                "host": context.inventory_item.connection.host,
+                "value": f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}",
+                "changed": context.changed,
+                "error": context.error,
+            }
+            logging.error(f"{result["host"]:<16} - {result}")
+            return result
 
 
 async def run_command_on_host(
@@ -68,7 +73,7 @@ async def run_command_on_host(
 ) -> dict[str, str | None | bool | Any] | None:
     cp = SSHCompletedProcess()
     if not context.group or "all" in context.group or context.group in context.inventory_item.groups:
-        logging.info(f"{context.call}")
+        logging.info(f"{context.inventory_item.connection.host:<16} - {context.call}")
         try:
             conn = await asyncssh.connect(
                 **context.inventory_item.connection.to_json_serializable()
@@ -128,25 +133,24 @@ async def run_command_on_host(
                         **context.inventory_item.session.to_json_serializable(),
                         check=False,
                     )
+            result = {
+                "host": context.inventory_item.connection.host,
+                "value": ssh_completed_process_to_dict(cp),
+                "changed": context.changed,
+                "error": context.error,
+            }
+            logging.info(f"{result["host"]:<16} - {result}")
+            return result
         except Exception as e:
             context.error = True
-            logging.error(f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}")
-            print("debug", e)
             result = {
                 "host": context.inventory_item.connection.host,
                 "value": f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}",
                 "changed": False,
                 "error": True,
             }
+            logging.error(f"{result["host"]:<16} - {result}")
             return result
-        result = {
-            "host": context.inventory_item.connection.host,
-            "value": ssh_completed_process_to_dict(cp),
-            "changed": context.changed,
-            "error": context.error,
-        }
-        logging.info(f"{result}")
-        return result
     return None
 
 

@@ -283,10 +283,8 @@ async def test_catching_sftp_failures(setup_inventory, setup_directory):
         async def execute(self):
             r = yield Mkdir(path="testdata/dir_a")
             if r and r["value"]:
-                assert r["value"] == "SFTPFailure"
+                assert "SFTPFailure" in r["value"]
 
-    # with pytest.raises(SFTPFailure):  # Verify the SFTPFailure is raised
-    #     await endpoint_execute(lambda: Root())
     await endpoint_execute(lambda: Root())
 
 
