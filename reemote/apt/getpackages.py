@@ -2,7 +2,8 @@ from typing import AsyncGenerator, List, Union
 
 from fastapi import APIRouter, Depends
 
-from reemote.context import Context
+from reemote.context import Context, HttpMethod
+from reemote.core.response import ResponseElement
 from reemote.operation import Operation, CommonOperationRequestModel, common_operation_request
 from reemote.core.router_handler import router_handler
 from pydantic import BaseModel, Field, RootModel
@@ -63,7 +64,7 @@ class PackageModel(BaseModel):
     version: str = Field(..., description="The version of the package")
 
 
-class GetPackagesResponseElement(BaseModel):
+class GetPackagesResponseElement(ResponseElement):
     value: Union[str, List[PackageModel]] = Field(
         default="",
         description="The response containing package versions, or an error message"
@@ -75,6 +76,7 @@ class GetPackagesResponse(RootModel):
 
 class GetPackages(Operation):
     request_model = CommonOperationRequestModel
+    response_model = GetPackagesResponse
 
     async def execute(self) -> AsyncGenerator[Context, GetPackagesResponse]:
         model_instance = self.request_model.model_validate(self.kwargs)
@@ -83,6 +85,7 @@ class GetPackages(Operation):
             command=f"apt list --installed",
             call=self.__class__.child + "(" + str(model_instance) + ")",
             changed=False,
+            method=HttpMethod.GET,
             **self.common_kwargs,
         )
         parsed_packages = parse_apt_list_installed(result["value"]["stdout"])

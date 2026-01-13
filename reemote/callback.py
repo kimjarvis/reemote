@@ -1,13 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
-from reemote.context import Context, ConnectionType
-from reemote.core.response import ResponseElement
-
-from pathlib import PurePath
-from typing import Optional, Union
 from fastapi import Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
+
+from reemote.context import ConnectionType, Context
+from reemote.core.response import AbstractResponseModel
 
 
 class CommonCallbackRequestModel(BaseModel):
@@ -29,18 +27,23 @@ def common_callback_request(
     return CommonCallbackRequestModel(group=group, name=name)
 
 
-class AbstractCallbackRequest(BaseModel):
+class AbstractCallback(BaseModel):
     """Abstract class for local commands"""
+
     dummy: bool = True
 
+
 class Callback(ABC):
-    request_model = AbstractCallbackRequest
+    request_model = AbstractCallback
+    response_model = AbstractResponseModel
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
         # Check if the subclass overrides the 'Model' field
-        if cls.request_model is Callback.request_model:  # If it's still the same as the base class
+        if (
+            cls.request_model is Callback.request_model
+        ):  # If it's still the same as the base class
             raise NotImplementedError(
                 f"Class {cls.__name__} must override the 'Model' class field."
             )
@@ -50,10 +53,10 @@ class Callback(ABC):
     def __init__(self, **kwargs):
         self.kwargs = kwargs
 
-    async def execute(self) -> AsyncGenerator[Context, ResponseElement]:
+    async def execute(self) -> AsyncGenerator[Context, AbstractResponseModel]:
         model_instance = self.request_model.model_validate(self.kwargs)
         yield Context(
-            type=ConnectionType.LOCAL,
+            type=ConnectionType.CALLBACK,
             callback=self.callback,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,

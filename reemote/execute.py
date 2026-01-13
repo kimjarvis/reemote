@@ -4,14 +4,13 @@
 import asyncio
 import inspect
 import logging
-from sys import exception
 from typing import Any, AsyncGenerator, Callable, Dict, List, Tuple
 
 import asyncssh
 from asyncssh import SSHCompletedProcess
 
 from reemote.config import Config
-from reemote.context import ConnectionType, Context
+from reemote.context import ConnectionType, Context, HttpMethod
 from reemote.core.inventory_model import Inventory
 
 def ssh_completed_process_to_dict(ssh_completed_process):
@@ -30,12 +29,27 @@ def ssh_completed_process_to_dict(ssh_completed_process):
 async def run_passthrough(context: Context) -> dict[str, str | None | Any] | None:
     if not context.group or "all" in context.group or context.group in context.inventory_item.groups:
         logging.info(f"{context.call}")
-        result = {
-            "host": context.inventory_item.connection.host,
-            "value": context.value,
-            "changed": context.changed,
-            "error": context.error,
-        }
+        match context.method:
+            case HttpMethod.GET:
+                result = {
+                    "host": context.inventory_item.connection.host,
+                    "error": context.error,
+                    "message": "",
+                    "value": context.value,
+                }
+            case HttpMethod.POST:
+                result = {
+                    "host": context.inventory_item.connection.host,
+                    "error": context.error,
+                    "message": "",
+                }
+            case HttpMethod.PUT:
+                result = {
+                    "host": context.inventory_item.connection.host,
+                    "error": context.error,
+                    "message": "",
+                    "changed": context.changed,
+                }
 
         logging.info(f"{result}")
         return result
@@ -263,9 +277,9 @@ async def process_host(
         try:
             if isinstance(context, Context):
                 context.inventory_item = inventory_item
-                if context.type == ConnectionType.LOCAL:
+                if context.type == ConnectionType.CALLBACK:
                     result = await run_callback(context)
-                elif context.type == ConnectionType.REMOTE:
+                elif context.type == ConnectionType.OPERATION:
                     result = await run_operation(context)
                 elif context.type == ConnectionType.PASSTHROUGH:
                     result = await run_passthrough(context)

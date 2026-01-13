@@ -2,7 +2,7 @@ from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends
 
-from reemote.context import Context
+from reemote.context import Context, HttpMethod
 from reemote.operation import Operation, CommonOperationRequestModel, common_operation_request
 from reemote.core.response import ResponseModel
 from reemote.core.router_handler import router_handler
@@ -15,6 +15,7 @@ router = APIRouter()
 
 class UpgradePackages(Operation):
     request_model = CommonOperationRequestModel
+    response_model = ResponseModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
 
@@ -26,7 +27,7 @@ class UpgradePackages(Operation):
 
         changed = pre["value"] != post["value"]
 
-        yield Return(changed=changed, value=None)
+        yield Return(method=HttpMethod.PUT, changed=changed, value=None)
 
 
 

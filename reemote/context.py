@@ -8,12 +8,18 @@ from reemote.core.inventory_model import InventoryItem
 
 
 class ConnectionType(Enum):
-    LOCAL = 1
-    REMOTE = 2
+    CALLBACK = 1
+    OPERATION = 2
     PASSTHROUGH = 3
+
+class HttpMethod(Enum):
+    GET = 1
+    PUT = 2
+    POST = 3
 
 
 class Context(CommonOperationRequestModel):
+    # todo: all these fields should be requiered
     model_config = ConfigDict(  # Replaces class Config
         validate_assignment=True,
         arbitrary_types_allowed=True,  # Needed for Callable and caller fields
@@ -27,8 +33,13 @@ class Context(CommonOperationRequestModel):
 
     # Optional fields with defaults
     type: ConnectionType = Field(
-        default=ConnectionType.REMOTE,
+        default=ConnectionType.OPERATION,
         description="The connection type to use",
+        exclude=True,
+    )
+    method: HttpMethod = Field(
+        default=HttpMethod.POST,
+        description="The HTTP method to use",
         exclude=True,
     )
     callback: Optional[Callable] = Field(

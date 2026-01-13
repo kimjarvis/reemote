@@ -21,28 +21,22 @@ async def test_systemcallback(setup_inventory):
     r = await endpoint_execute(lambda: Root())
     assert len(r) == 2
 
+@pytest.mark.asyncio
+async def test_return_get(setup_inventory):
+    from reemote.system import Return
+    r = await endpoint_execute(lambda: Return(value=1))
+    assert all(d.get('value') == 1 for d in r), "Not all dictionaries have value"
 
 @pytest.mark.asyncio
-async def test_systemcallback(setup_inventory):
-    from reemote.system import Call
-    from reemote.context import Context
+async def test_return_get(setup_inventory):
+    from reemote.system import Return
+    from reemote.context import HttpMethod
+    r = await endpoint_execute(lambda: Return(method=HttpMethod.PUT,changed=True))
+    assert all(d.get('changed') for d in r), "Not all dictionaries have changed==True"
 
-    async def callback(context: Context):
-        assert context.value == "test callback"
-        return "tested"
-
-    class Root:
-        async def execute(self):
-            r = yield Call(callback=callback, value="test callback")
-            if r:
-                assert r["value"] == "tested"
-                assert r["changed"]
-
-    r = await endpoint_execute(lambda: Root())
-    assert len(r) == 2
 
 @pytest.mark.asyncio
-async def test_return(setup_inventory):
+async def test_return_use(setup_inventory):
     from reemote.system import Return
     from reemote.host import Shell
 
@@ -50,7 +44,7 @@ async def test_return(setup_inventory):
         async def execute(self):
             a = yield Shell(cmd="echo Hello")
             b = yield Shell(cmd="echo World")
-            yield Return(value=[a, b], changed=False)
+            yield Return(value=[a, b])
 
     class Parent:
         async def execute(self):

@@ -2,7 +2,7 @@ from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Query
 
-from reemote.context import Context
+from reemote.context import Context, HttpMethod
 from reemote.operation import (
     Operation,
     CommonOperationRequestModel,
@@ -20,6 +20,7 @@ class InstallRequestModel(CommonOperationRequestModel):
 
 class Install(Operation):
     request_model = InstallRequestModel
+    response_model = ResponseModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
         model_instance = self.request_model.model_validate(self.kwargs)
@@ -27,6 +28,7 @@ class Install(Operation):
         result = yield Context(
             command=f"apt-get install -y {' '.join(model_instance.packages)}",
             call=self.__class__.child + "(" + str(model_instance) + ")",
+            method=HttpMethod.POST,
             **self.common_kwargs,
         )
         if not result["error"]:

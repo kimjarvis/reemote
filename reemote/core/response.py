@@ -35,6 +35,9 @@ class ResponseElement1(BaseModel):
         description="Connectivity error message.",
     )
 
+class AbstractResponseModel(RootModel[List[ResponseElement1]]):
+    pass
+
 class GetResponseElement(ResponseElement1):
     value: Any = Field(
         default=None,
