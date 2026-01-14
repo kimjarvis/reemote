@@ -12,7 +12,6 @@ router = APIRouter()
 
 class Upgrade(Operation):
     request_model = CommonOperationRequestModel
-    response_model = ResponseModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
         model_instance = self.request_model.model_validate(self.kwargs)

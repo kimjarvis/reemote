@@ -17,7 +17,6 @@ class PackageRequestModel(CommonOperationRequestModel):
 
 class Package(Operation):
     request_model = PackageRequestModel
-    response_model = ResponseModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
         model_instance = self.request_model.model_validate(self.kwargs)

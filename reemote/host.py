@@ -3,7 +3,7 @@ from typing import AsyncGenerator, List, Optional, Tuple, Union
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from pydantic import BaseModel, RootModel
-from reemote.context import Context
+from reemote.context import Context, HttpMethod
 from reemote.operation import CommonOperationRequestModel, common_operation_request
 from reemote.operation import Operation
 from reemote.core.response import ResponseModel, ResponseElement, ResponseModel
@@ -65,11 +65,12 @@ class ShellResponseModel(RootModel[List[ShellResponseElement]]):
 class Shell(Operation):
     request_model = ShellRequestModel
 
-    async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
+    async def execute(self) -> AsyncGenerator[Context, ShellResponseModel]:
         model_instance = self.request_model.model_validate(self.kwargs)
         yield Context(
             command=model_instance.cmd,
             call=self.__class__.child + "(" + str(model_instance) + ")",
+            method = HttpMethod.POST,
             **self.common_kwargs,
         )
 

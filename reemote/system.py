@@ -16,7 +16,6 @@ class CallRequestModel(CommonCallbackRequestModel):
 
 class Call(Callback):
     request_model = CallRequestModel
-    response_model = AbstractResponseModel
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -38,10 +37,10 @@ class Call(Callback):
 
 class ReturnRequestModel(CommonCallbackRequestModel):
     value: Optional[Any] = None
+    method: HttpMethod
     changed: Optional[bool] = None
     error: Optional[bool] = None
     message: Optional[str] = None
-    method: HttpMethod = HttpMethod.GET
 
     @model_validator(mode="after")
     def validate_method_specific_rules(self) -> "ReturnRequestModel":
@@ -75,7 +74,7 @@ class ReturnRequestModel(CommonCallbackRequestModel):
 
 class Return(Callback):
     request_model = ReturnRequestModel
-    response_model = AbstractResponseModel
+
 
     @staticmethod
     async def callback(context: Context) -> None:

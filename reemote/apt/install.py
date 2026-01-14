@@ -20,7 +20,6 @@ class InstallRequestModel(CommonOperationRequestModel):
 
 class Install(Operation):
     request_model = InstallRequestModel
-    response_model = ResponseModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
         model_instance = self.request_model.model_validate(self.kwargs)

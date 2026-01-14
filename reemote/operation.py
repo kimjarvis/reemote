@@ -4,8 +4,6 @@ from typing import Optional
 from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from reemote.core.response import AbstractResponseModel
-
 
 class CommonOperationRequestModel(BaseModel):
     """Common parameters shared across command types"""
@@ -40,7 +38,7 @@ class AbstractOperation(BaseModel):
 
 class Operation(ABC):
     request_model = AbstractOperation
-    response_model = AbstractResponseModel
+
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)

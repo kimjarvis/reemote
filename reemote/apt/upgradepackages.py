@@ -15,7 +15,6 @@ router = APIRouter()
 
 class UpgradePackages(Operation):
     request_model = CommonOperationRequestModel
-    response_model = ResponseModel
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
 

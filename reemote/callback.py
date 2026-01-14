@@ -35,7 +35,6 @@ class AbstractCallback(BaseModel):
 
 class Callback(ABC):
     request_model = AbstractCallback
-    response_model = AbstractResponseModel
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)

@@ -20,7 +20,6 @@ class RemoveRequestModel(CommonOperationRequestModel):
 
 class Remove(Operation):
     request_model = RemoveRequestModel
-    response_model = ResponseModel
 
 
     async def execute(self) -> AsyncGenerator[Context, ResponseModel]:

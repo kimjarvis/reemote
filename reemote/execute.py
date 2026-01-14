@@ -26,31 +26,36 @@ def ssh_completed_process_to_dict(ssh_completed_process):
     }
 
 
+def get_result(context: Context) -> dict[str, str | None | Any]:
+    # No error here.
+    print(context.method)
+    match context.method:
+        case HttpMethod.GET:
+            result = {
+                "host": context.inventory_item.connection.host,
+                "error": context.error,
+                "message": context.value if context.error else "",
+                "value": context.value if not context.error else "",
+            }
+        case HttpMethod.POST:
+            result = {
+                "host": context.inventory_item.connection.host,
+                "error": context.error,
+                "message": context.value if context.error else "",
+            }
+        case HttpMethod.PUT:
+            result = {
+                "host": context.inventory_item.connection.host,
+                "error": context.error,
+                "message": context.value if context.error else "",
+                "changed": context.changed,
+            }
+    return result
+
 async def run_passthrough(context: Context) -> dict[str, str | None | Any] | None:
     if not context.group or "all" in context.group or context.group in context.inventory_item.groups:
         logging.info(f"{context.call}")
-        match context.method:
-            case HttpMethod.GET:
-                result = {
-                    "host": context.inventory_item.connection.host,
-                    "error": context.error,
-                    "message": "",
-                    "value": context.value,
-                }
-            case HttpMethod.POST:
-                result = {
-                    "host": context.inventory_item.connection.host,
-                    "error": context.error,
-                    "message": "",
-                }
-            case HttpMethod.PUT:
-                result = {
-                    "host": context.inventory_item.connection.host,
-                    "error": context.error,
-                    "message": "",
-                    "changed": context.changed,
-                }
-
+        result = get_result(context)
         logging.info(f"{result}")
         return result
     return None
