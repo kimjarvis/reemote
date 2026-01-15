@@ -3,6 +3,7 @@ from pydantic import BaseModel, ValidationError
 from typing import List
 from reemote.config import Config
 from reemote.core.inventory_model import InventoryItem, Inventory
+from pydantic import BaseModel, RootModel
 from reemote.operation import Operation
 from reemote.system import Call
 from reemote.context import Context
@@ -18,51 +19,41 @@ from reemote.core.inventory_model import Authentication
 router = APIRouter()
 
 
-class InventoryCreateResponse(BaseModel):
+class InventoryResponse(BaseModel):
     """Response model for inventory creation endpoint"""
 
     error: bool
-    value: str
+    message: str
 
 
 @router.post(
     "/create/",
     tags=["Inventory Management"],
-    response_model=InventoryCreateResponse,
+    response_model=InventoryResponse,
 )
 async def create_inventory(inventory_data: Inventory = Body(...)):
     """# Create an inventory"""
     try:
-        # No need to revalidate the Inventory object; it's already validated by FastAPI
         config = Config()
-        inventory = (
-            inventory_data.to_json_serializable()
-        )  # Use the method on the Inventory object
+        inventory = inventory_data.to_json_serializable()
         config.set_inventory(inventory)
-        # If successful, return a success response
-        return InventoryCreateResponse(
-            error=False, value="Inventory created successfully."
-        )
+        return InventoryResponse(error=False, message="Inventory created successfully.")
     except ValidationError as e:
-        # Handle Pydantic validation errors
-        return InventoryCreateResponse(error=True, value=f"Validation error: {e}")
+        return InventoryResponse(error=True, message=f"Validation error: {e}")
     except ValueError as e:
-        # Handle custom validation errors (e.g., duplicate hosts)
-        return InventoryCreateResponse(error=True, value=f"Error: {e}")
+        return InventoryResponse(error=True, message=f"Value error: {e}")
     except Exception as e:
-        # Handle any other unexpected errors
-        return InventoryCreateResponse(error=True, value=f"Unexpected error: {e}")
+        return InventoryResponse(error=True, message=f"Unexpected error: {e}")
 
 
 @router.post(
     "/add/",
     tags=["Inventory Management"],
-    response_model=InventoryCreateResponse,
+    response_model=InventoryResponse,
 )
 async def add_host(new_host: InventoryItem = Body(...)):
     """# Add a new host to the inventory"""
     try:
-        # Load the current inventory from the configuration
         config = Config()
         inventory_data = (
             config.get_inventory() or {}
@@ -95,31 +86,28 @@ async def add_host(new_host: InventoryItem = Body(...)):
         config.set_inventory(inventory.to_json_serializable())
 
         # Return a success response
-        return InventoryCreateResponse(
-            error=False, value=f"Host added successfully: {new_host.connection.host}"
+        return InventoryResponse(
+            error=False, message=f"Host added successfully: {new_host.connection.host}"
         )
     except ValidationError as e:
-        # Handle Pydantic validation errors
-        return InventoryCreateResponse(error=True, value=f"Validation error: {e}")
+        return InventoryResponse(error=True, message=f"Validation error: {e}")
     except ValueError as e:
-        # Handle custom validation errors (e.g., duplicate hosts or invalid inventory format)
-        return InventoryCreateResponse(error=True, value=f"Error: {e}")
+        return InventoryResponse(error=True, message=f"Value error: {e}")
     except Exception as e:
-        # Handle any other unexpected errors
-        return InventoryCreateResponse(error=True, value=f"Unexpected error: {e}")
+        return InventoryResponse(error=True, message=f"Unexpected error: {e}")
 
 
 class InventoryDeleteResponse(BaseModel):
     """Response model for inventory deletion endpoint"""
 
     error: bool
-    value: str
+    message: str
 
 
 @router.delete(
     "/delete/{host}",
     tags=["Inventory Management"],
-    response_model=InventoryDeleteResponse,
+    response_model=InventoryResponse,
 )
 async def delete_host(
     host: str = Path(
@@ -158,41 +146,56 @@ async def delete_host(
         config.set_inventory(inventory.to_json_serializable())
 
         # Return a success response
-        return InventoryDeleteResponse(
-            error=False, value=f"Host deleted successfully: {host}"
+        return InventoryResponse(
+            error=False, message=f"Host deleted successfully: {host}"
         )
     except ValidationError as e:
-        # Handle Pydantic validation errors
-        return InventoryDeleteResponse(error=True, value=f"Validation error: {e}")
+        return InventoryResponse(error=True, message=f"Validation error: {e}")
     except ValueError as e:
-        # Handle custom validation errors (e.g., host not found or invalid inventory format)
-        return InventoryDeleteResponse(error=True, value=f"Error: {e}")
+        return InventoryResponse(error=True, message=f"Value error: {e}")
     except Exception as e:
-        # Handle any other unexpected errors
-        return InventoryDeleteResponse(error=True, value=f"Unexpected error: {e}")
+        return InventoryResponse(error=True, message=f"Unexpected error: {e}")
 
-class InventoryGetResponse(BaseModel):
-    error: bool
+
+class GetInventoryResponseElement(BaseModel):
     value: Inventory
+    error: bool
+    message: str
 
-async def inventory_getcallback(context: Context):
-    return Config().get_inventory()
-
-class Getinventory(Operation):
-    request_model = CommonCallbackRequestModel
-
-    async def execute(self):
-        yield Call(callback=inventory_getcallback)
 
 @router.get(
     "/get",
     tags=["Inventory Management"],
-    response_model=List[InventoryGetResponse],
+    response_model=GetInventoryResponseElement,  # Directly use the response element
 )
-async def get_inventory(
-    common: CommonCallbackRequestModel = Depends(common_callback_request)
-) -> List[InventoryGetResponse]:
+async def getinventory():
     """# Retrieve the inventory"""
-    return await router_handler(CommonCallbackRequestModel, Getinventory)(
-        common=common
-    )
+    try:
+        # Load the current inventory from the configuration
+        config = Config()
+        inventory_data = config.get_inventory() or {"hosts": []}
+
+        # Ensure the inventory data has a "hosts" key with a list
+        if (
+            not isinstance(inventory_data, dict)
+            or "hosts" not in inventory_data
+            or not isinstance(inventory_data["hosts"], list)
+        ):
+            raise ValueError("Inventory data is not in the expected format.")
+
+        # Return a single GetInventoryResponseElement
+        return GetInventoryResponseElement(
+            error=False,
+            value=Inventory(hosts=inventory_data["hosts"]),
+            message="Success",
+        )
+
+    except ValueError as e:
+        return GetInventoryResponseElement(
+            error=True, value=Inventory(hosts=[]), message=f"Error: {e}"
+        )
+
+    except Exception as e:
+        return GetInventoryResponseElement(
+            error=True, value=Inventory(hosts=[]), message=f"Unexpected error: {e}"
+        )
