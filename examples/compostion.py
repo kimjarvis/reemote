@@ -4,6 +4,7 @@ from reemote.execute import execute
 from reemote.host import Shell
 from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.system import Return
+from reemote.context import Method
 
 
 async def main():
@@ -25,8 +26,11 @@ async def main():
         async def execute(self):
             hello_response = yield Child()
             world_response = yield Shell(cmd="echo World!")
-            yield Return(value=hello_response["value"]["stdout"] + world_response["value"]["stdout"])
-
+            yield Return(
+                method=Method.GET,
+                value=hello_response["value"]["stdout"]
+                + world_response["value"]["stdout"],
+            )
 
     responses = await execute(lambda: Root(), inventory=inventory)
     for response in responses:

@@ -3,13 +3,15 @@ from typing import AsyncGenerator, List, Optional, Tuple, Union
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from pydantic import BaseModel, RootModel
-from reemote.context import Context, HttpMethod
+from reemote.context import Context, Method
 from reemote.operation import CommonOperationRequestModel, common_operation_request
 from reemote.operation import Operation
 from reemote.core.response import ResponseModel, ResponseElement, ResponseModel
 from reemote.core.router_handler import router_handler
 from reemote.system import Call
 from reemote.callback import CommonCallbackRequestModel, common_callback_request
+from reemote.core.response import GetResponseModel
+from reemote.callback import Callback
 
 
 router = APIRouter()
@@ -17,6 +19,7 @@ router = APIRouter()
 
 class ShellRequestModel(CommonOperationRequestModel):
     cmd: str = Field(...)
+
 
 class SSHCompletedProcessModel(BaseModel):
     # env: Optional[Dict[str, str]] = Field(
@@ -52,6 +55,7 @@ class SSHCompletedProcessModel(BaseModel):
         description="The output sent by the process to stderr (if not redirected).",
     )
 
+
 class ShellResponseElement(ResponseElement):
     value: SSHCompletedProcessModel = Field(
         default=None, description="The results from the executed command."
@@ -70,7 +74,7 @@ class Shell(Operation):
         yield Context(
             command=model_instance.cmd,
             call=self.__class__.child + "(" + str(model_instance) + ")",
-            method = HttpMethod.POST,
+            method=Method.POST,
             **self.common_kwargs,
         )
 
@@ -86,29 +90,20 @@ async def shell(
     return await router_handler(ShellRequestModel, Shell)(cmd=cmd, common=common)
 
 
-class ContextGetResponse(BaseModel):
-    error: bool
-    value: Context
+class Getcontext(Callback):
+    request_model = CommonOperationRequestModel
 
-
-async def context_getcallback(context: Context):
-    return context
-
-
-class Getcontext(Operation):
-    request_model = CommonCallbackRequestModel
-
-    async def execute(self):
-        yield Call(callback=context_getcallback)
+    @staticmethod
+    async def callback(context: Context) -> None:
+        return context
 
 
 @router.get(
     "/getcontext",
     tags=["Host Operations"],
-    response_model=List[ContextGetResponse],
+    response_model=GetResponseModel,
 )
 async def get_context(
     common: CommonCallbackRequestModel = Depends(common_callback_request),
-) -> List[ContextGetResponse]:
-    """# Retrieve the context"""
-    return await router_handler(CommonCallbackRequestModel, Getcontext)(common=common)
+) -> BaseModel:
+    return await router_handler(CommonOperationRequestModel, Getcontext)(common=common)

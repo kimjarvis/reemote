@@ -1,7 +1,7 @@
 import pytest
 
 from reemote.execute import endpoint_execute
-from reemote.context import HttpMethod
+from reemote.context import Method
 
 @pytest.mark.asyncio
 async def test_systemcallback(setup_inventory):
@@ -24,14 +24,14 @@ async def test_systemcallback(setup_inventory):
 @pytest.mark.asyncio
 async def test_return_get(setup_inventory):
     from reemote.system import Return
-    r = await endpoint_execute(lambda: Return(method=HttpMethod.GET,value=1))
+    r = await endpoint_execute(lambda: Return(method=Method.GET, value=1))
     assert all(d.get('value') == 1 for d in r), "Not all dictionaries have value"
 
 @pytest.mark.asyncio
 async def test_return_get1(setup_inventory):
     from reemote.system import Return
-    from reemote.context import HttpMethod
-    r = await endpoint_execute(lambda: Return(method=HttpMethod.PUT,changed=True))
+    from reemote.context import Method
+    r = await endpoint_execute(lambda: Return(method=Method.PUT, changed=True))
     assert all(d.get('changed') for d in r), "Not all dictionaries have changed==True"
 
 
@@ -44,7 +44,7 @@ async def test_return_use(setup_inventory):
         async def execute(self):
             a = yield Shell(cmd="echo Hello")
             b = yield Shell(cmd="echo World")
-            yield Return(value=[a, b], method=HttpMethod.GET)
+            yield Return(value=[a, b], method=Method.GET)
 
     class Parent:
         async def execute(self):

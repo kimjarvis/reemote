@@ -3,7 +3,7 @@ from typing import Any, AsyncGenerator, Callable, Optional
 from pydantic import Field, model_validator
 
 from reemote.callback import Callback, CommonCallbackRequestModel
-from reemote.context import ConnectionType, Context, HttpMethod
+from reemote.context import ConnectionType, Context, Method
 from reemote.core.response import AbstractResponseModel
 
 
@@ -37,7 +37,7 @@ class Call(Callback):
 
 class ReturnRequestModel(CommonCallbackRequestModel):
     value: Optional[Any] = None
-    method: HttpMethod
+    method: Method
     changed: Optional[bool] = None
     error: Optional[bool] = None
     message: Optional[str] = None
@@ -51,19 +51,19 @@ class ReturnRequestModel(CommonCallbackRequestModel):
         value_provided = "value" in raw_data
         changed_provided = "changed" in raw_data
 
-        if self.method == HttpMethod.GET:
+        if self.method == Method.GET:
             if not value_provided or self.value is None:
                 raise ValueError("value is required when method is GET")
             if changed_provided and self.changed is not None:
                 raise ValueError("changed must not be specified when method is GET")
 
-        elif self.method == HttpMethod.POST:
+        elif self.method == Method.POST:
             if value_provided and self.value is not None:
                 raise ValueError("value must not be specified when method is POST")
             if changed_provided and self.changed is not None:
                 raise ValueError("changed must not be specified when method is POST")
 
-        elif self.method == HttpMethod.PUT:
+        elif self.method == Method.PUT:
             if value_provided and self.value is not None:
                 raise ValueError("value must not be specified when method is PUT")
             if not changed_provided and self.changed is None:

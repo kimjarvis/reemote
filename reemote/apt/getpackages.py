@@ -2,7 +2,7 @@ from typing import AsyncGenerator, List, Union
 
 from fastapi import APIRouter, Depends
 
-from reemote.context import Context, HttpMethod
+from reemote.context import Context, Method
 from reemote.core.response import ResponseElement
 from reemote.operation import Operation, CommonOperationRequestModel, common_operation_request
 from reemote.core.router_handler import router_handler
@@ -84,7 +84,7 @@ class GetPackages(Operation):
             command=f"apt list --installed",
             call=self.__class__.child + "(" + str(model_instance) + ")",
             changed=False,
-            method=HttpMethod.GET,
+            method=Method.GET,
             **self.common_kwargs,
         )
         parsed_packages = parse_apt_list_installed(result["value"]["stdout"])

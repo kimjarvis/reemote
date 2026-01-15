@@ -8,8 +8,8 @@ from reemote.host import Shell
 from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.context import Context
 from reemote.core.response import ResponseModel
-from reemote.operation import Operation
-
+from reemote.operation import Operation, CommonOperationRequestModel
+from setup_logging import setup_logging
 
 async def main():
     inventory = Inventory(
@@ -22,17 +22,24 @@ async def main():
         ]
     )
 
-    class GreetRequest(BaseModel):
-        name: str = Field(
-            default="no one", description="The name of the person to greet"
-        )
 
     class Greet(Operation):
-        request_model = GreetRequest
+        class GreetRequest(CommonOperationRequestModel):
+            name: str = Field(
+                default="Nobody", description="The name of the person to greet"
+            )
 
         async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
-            model_instance = self.Model.model_validate(self.kwargs)
+            model_instance = self.GreetRequest.model_validate(self.kwargs)
             yield Shell(cmd=f"echo Hello {model_instance.name}")
+
+
+    setup_logging()
+
+    responses = await execute(lambda: Greet(), inventory=inventory)
+    for response in responses:
+        print(response["value"]["stdout"])
+
 
     responses = await execute(lambda: Greet(name="Joe"), inventory=inventory)
     for response in responses:

@@ -11,7 +11,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from reemote.context import Context, HttpMethod
+from reemote.context import Context, Method
 from reemote.system import Return
 from reemote.callback import Callback
 from reemote.callback import CommonCallbackRequestModel, common_callback_request
@@ -2363,7 +2363,7 @@ class Directory(Callback):
                         group=model_instance.group,
                     )
                     changed = True
-            yield Return(method=HttpMethod.PUT,value=None, changed=changed)
+            yield Return(method=Method.PUT, value=None, changed=changed)
 
 
 @router.put("/directory", tags=["SFTP Operations"], response_model=ResponseModel)

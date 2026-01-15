@@ -2,7 +2,7 @@ from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends
 
-from reemote.context import Context, HttpMethod
+from reemote.context import Context, Method
 from reemote.operation import Operation, CommonOperationRequestModel, common_operation_request
 from reemote.core.response import ResponseModel
 from reemote.core.router_handler import router_handler
@@ -19,7 +19,7 @@ class Upgrade(Operation):
         result = yield Context(
             command="apt-get upgrade",
             call=self.__class__.child + "(" + str(model_instance) + ")",
-            method=HttpMethod.POST,
+            method=Method.POST,
             **self.common_kwargs,
         )
         if not result["error"]:

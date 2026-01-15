@@ -12,7 +12,7 @@ class ConnectionType(Enum):
     OPERATION = 2
     PASSTHROUGH = 3
 
-class HttpMethod(Enum):
+class Method(Enum):
     GET = 1
     PUT = 2
     POST = 3
@@ -37,8 +37,8 @@ class Context(CommonOperationRequestModel):
         description="The connection type to use",
         exclude=True,
     )
-    method: HttpMethod = Field(
-        default=HttpMethod.POST,
+    method: Method = Field(
+        default=Method.POST,
         description="The HTTP method to use",
         exclude=True,
     )

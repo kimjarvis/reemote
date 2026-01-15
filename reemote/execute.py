@@ -10,7 +10,7 @@ import asyncssh
 from asyncssh import SSHCompletedProcess
 
 from reemote.config import Config
-from reemote.context import ConnectionType, Context, HttpMethod
+from reemote.context import ConnectionType, Context, Method
 from reemote.core.inventory_model import Inventory
 
 def ssh_completed_process_to_dict(ssh_completed_process):
@@ -28,22 +28,22 @@ def ssh_completed_process_to_dict(ssh_completed_process):
 
 def get_result(context: Context) -> dict[str, str | None | Any]:
     # No error here.
-    print(context.method)
+    # print(context.method)
     match context.method:
-        case HttpMethod.GET:
+        case Method.GET:
             result = {
                 "host": context.inventory_item.connection.host,
                 "error": context.error,
                 "message": context.value if context.error else "",
                 "value": context.value if not context.error else "",
             }
-        case HttpMethod.POST:
+        case Method.POST:
             result = {
                 "host": context.inventory_item.connection.host,
                 "error": context.error,
                 "message": context.value if context.error else "",
             }
-        case HttpMethod.PUT:
+        case Method.PUT:
             result = {
                 "host": context.inventory_item.connection.host,
                 "error": context.error,
@@ -373,6 +373,6 @@ async def endpoint_execute(
     logger.setLevel(logging.DEBUG)  # Set desired log level for your logger
 
     # Suppress asyncssh logs by setting its log level to WARNING or higher
-    # logging.getLogger("asyncssh").setLevel(logging.WARNING)
+    logging.getLogger("asyncssh").setLevel(logging.WARNING)
 
     return await process_inventory(config.get_inventory(), root_obj_factory)
