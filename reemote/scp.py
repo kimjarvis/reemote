@@ -1,14 +1,13 @@
-import logging
 from typing import Callable, List, Optional
 
 import asyncssh
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
-from reemote.core.router_handler import router_handler
+from reemote.router_handler import router_handler
 from reemote.callback import CommonCallbackRequestModel, common_callback_request
 from reemote.callback import Callback
-from reemote.core.response import ResponseModel
+from reemote.response import ResponseModel
 from reemote.context import Context
 
 router = APIRouter()

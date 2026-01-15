@@ -5,7 +5,7 @@ from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from reemote.context import ConnectionType, Context
-from reemote.core.response import AbstractResponseModel
+from reemote.response import AbstractResponseModel
 
 
 class CommonCallbackRequestModel(BaseModel):

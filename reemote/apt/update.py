@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends
 
 from reemote.context import Context, Method
 from reemote.operation import Operation, CommonOperationRequestModel, common_operation_request
-from reemote.core.response import ResponseModel
-from reemote.core.router_handler import router_handler
+from reemote.response import ResponseModel
+from reemote.router_handler import router_handler
 
 router = APIRouter()
 

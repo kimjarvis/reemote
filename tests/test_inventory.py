@@ -6,7 +6,7 @@ from reemote.execute import endpoint_execute
 from reemote.inventory import Inventory
 from reemote.inventory import InventoryItem, Connection, Session
 from reemote.context import Context
-from reemote.core.response import ResponseModel
+from reemote.response import ResponseModel
 
 
 @pytest.mark.asyncio

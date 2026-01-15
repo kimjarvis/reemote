@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, Query
 from reemote.apt import GetPackages, Install, Remove
 from reemote.context import Context, Method
 from reemote.operation import Operation, CommonOperationRequestModel, common_operation_request
-from reemote.core.response import ResponseModel
-from reemote.core.router_handler import router_handler
+from reemote.response import ResponseModel
+from reemote.router_handler import router_handler
 from reemote.system import Return
 
 router = APIRouter()

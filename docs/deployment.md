@@ -220,7 +220,7 @@ from reemote.execute import execute
 from reemote.host import Shell
 from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.context import Context
-from reemote.core.response import ResponseModel
+from reemote.response import ResponseModel
 from reemote.operation import Operation
 
 

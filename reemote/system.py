@@ -4,7 +4,7 @@ from pydantic import Field, model_validator
 
 from reemote.callback import Callback, CommonCallbackRequestModel
 from reemote.context import ConnectionType, Context, Method
-from reemote.core.response import AbstractResponseModel
+from reemote.response import AbstractResponseModel
 
 
 class CallRequestModel(CommonCallbackRequestModel):

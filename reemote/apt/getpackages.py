@@ -3,9 +3,9 @@ from typing import AsyncGenerator, List, Union
 from fastapi import APIRouter, Depends
 
 from reemote.context import Context, Method
-from reemote.core.response import ResponseElement
+from reemote.response import ResponseElement
 from reemote.operation import Operation, CommonOperationRequestModel, common_operation_request
-from reemote.core.router_handler import router_handler
+from reemote.router_handler import router_handler
 from pydantic import BaseModel, Field, RootModel
 
 router = APIRouter()

@@ -5,7 +5,7 @@ from typing import AsyncGenerator
 import pytest
 
 from reemote.context import Context
-from reemote.core.response import ResponseElement
+from reemote.response import ResponseElement
 from reemote.execute import endpoint_execute
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
