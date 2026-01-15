@@ -2,9 +2,8 @@ from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator  # Updated imports
-
+from reemote.inventory import InventoryItem
 from reemote.operation import CommonOperationRequestModel
-from reemote.core.inventory_model import InventoryItem
 
 
 class ConnectionType(Enum):
@@ -52,7 +51,6 @@ class Context(CommonOperationRequestModel):
     inventory_item: Optional[InventoryItem] = Field(
         default=None, description="Inventory item"
     )
-    # Return only
     value: Optional[Any] = Field(
         default=None, description="Value to pass to response", exclude=True
     )

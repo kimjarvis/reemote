@@ -92,7 +92,7 @@ In the example below, the inventory describes two hosts `server104` and `server1
 import asyncio
 from reemote.execute import execute
 from reemote.host import Shell
-from reemote.core.inventory_model import (
+from reemote.inventory import (
     Inventory,
     InventoryItem,
     Connection,

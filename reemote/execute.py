@@ -11,7 +11,7 @@ from asyncssh import SSHCompletedProcess
 
 from reemote.config import Config
 from reemote.context import ConnectionType, Context, Method
-from reemote.core.inventory_model import Inventory
+from reemote.inventory import Inventory
 
 def ssh_completed_process_to_dict(ssh_completed_process):
     return {

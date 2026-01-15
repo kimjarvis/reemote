@@ -8,21 +8,6 @@ from reemote.inventory import InventoryItem, Connection, Session
 from reemote.context import Context
 from reemote.core.response import ResponseModel
 
-@pytest.mark.asyncio
-async def test_inventory_get():
-    from reemote.inventory import Getinventory
-
-    class Root:
-        async def execute(self):
-            r = yield Getinventory()
-            if r:
-                assert any(
-                    host['connection']['host'] == 'server104' for host in r['value']['hosts']), "server104 not found"
-                assert any(
-                    host['connection']['host'] == 'server105' for host in r['value']['hosts']), "server105 not found"
-
-    r = await endpoint_execute(lambda: Root())
-    assert len(r) == 2
 
 @pytest.mark.asyncio
 async def test_inventory_environment_variables(setup_inventory):

@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from reemote.scp import router as scp_router
 from reemote.host import router as server_router
 from reemote.sftp import router as sftp_router
-from reemote.inventory import router as inventory_router
+from reemote.inventory_api import router as inventory_router
 
 from reemote.apt.update import router as apt_update_router
 from reemote.apt.getpackages import router as apt_getpackages_router
