@@ -2,7 +2,7 @@ from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Query
 
-from reemote.context import Context, Method
+from reemote.context import Context, Method, ContextType
 from reemote.operation import (
     Operation,
     CommonOperationRequestModel,
@@ -28,6 +28,7 @@ class Remove(Operation):
         result = yield Context(
             command=f"apt-get remove -y {' '.join(model_instance.packages)}",
             call=self.__class__.child + "(" + str(model_instance) + ")",
+            type=ContextType.OPERATION,
             method=Method.POST,
             **self.common_kwargs,
         )

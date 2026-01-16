@@ -6,7 +6,7 @@ from reemote.inventory import InventoryItem
 from reemote.operation import CommonOperationRequestModel
 
 
-class ConnectionType(Enum):
+class ContextType(Enum):
     CALLBACK = 1
     OPERATION = 2
     PASSTHROUGH = 3
@@ -31,8 +31,8 @@ class Context(CommonOperationRequestModel):
     call: Optional[str] = Field(default=None, description="The caller", exclude=True)
 
     # Optional fields with defaults
-    type: ConnectionType = Field(
-        default=ConnectionType.OPERATION,
+    type: ContextType = Field(
+        default=None,
         description="The connection type to use",
         exclude=True,
     )

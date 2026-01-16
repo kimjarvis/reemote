@@ -4,7 +4,7 @@ from typing import AsyncGenerator, Optional
 from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field
 
-from reemote.context import ConnectionType, Context
+from reemote.context import ContextType, Context
 from reemote.response import AbstractResponseModel
 
 
@@ -55,7 +55,7 @@ class Callback(ABC):
     async def execute(self) -> AsyncGenerator[Context, AbstractResponseModel]:
         model_instance = self.request_model.model_validate(self.kwargs)
         yield Context(
-            type=ConnectionType.CALLBACK,
+            type=ContextType.CALLBACK,
             callback=self.callback,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,

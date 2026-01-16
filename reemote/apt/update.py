@@ -2,7 +2,7 @@ from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends
 
-from reemote.context import Context, Method
+from reemote.context import Context, Method, ContextType
 from reemote.operation import Operation, CommonOperationRequestModel, common_operation_request
 from reemote.response import ResponseModel
 from reemote.router_handler import router_handler
@@ -19,6 +19,7 @@ class Update(Operation):
         result = yield Context(
             command="apt-get update",
             call=self.__class__.child + "(" + str(model_instance) + ")",
+            type=ContextType.OPERATION,
             method=Method.POST,
             **self.common_kwargs,
         )

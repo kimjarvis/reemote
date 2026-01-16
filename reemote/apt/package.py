@@ -3,7 +3,7 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Depends, Query
 
 from reemote.apt import GetPackages, Install, Remove
-from reemote.context import Context, Method
+from reemote.context import Context, Method, ContextType
 from reemote.operation import Operation, CommonOperationRequestModel, common_operation_request
 from reemote.response import ResponseModel
 from reemote.router_handler import router_handler

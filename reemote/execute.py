@@ -10,7 +10,7 @@ import asyncssh
 from asyncssh import SSHCompletedProcess
 
 from reemote.config import Config
-from reemote.context import ConnectionType, Context, Method
+from reemote.context import ContextType, Context, Method
 from reemote.inventory import Inventory
 
 def ssh_completed_process_to_dict(ssh_completed_process):
@@ -50,6 +50,8 @@ def get_result(context: Context) -> dict[str, str | None | Any]:
                 "message": context.value if context.error else "",
                 "changed": context.changed,
             }
+        case _:
+            raise ValueError(f"Unsupported context method: {context.method}")
     return result
 
 async def run_passthrough(context: Context) -> dict[str, str | None | Any] | None:
@@ -282,14 +284,15 @@ async def process_host(
         try:
             if isinstance(context, Context):
                 context.inventory_item = inventory_item
-                if context.type == ConnectionType.CALLBACK:
-                    result = await run_callback(context)
-                elif context.type == ConnectionType.OPERATION:
-                    result = await run_operation(context)
-                elif context.type == ConnectionType.PASSTHROUGH:
-                    result = await run_passthrough(context)
-                else:
-                    raise ValueError(f"Unsupported connection type: {context.type}")
+                match context.type:
+                    case ContextType.CALLBACK:
+                        result = await run_callback(context)
+                    case ContextType.OPERATION:
+                        result = await run_operation(context)
+                    case ContextType.PASSTHROUGH:
+                        result = await run_passthrough(context)
+                    case _:
+                        raise ValueError(f"Unsupported connection type: {context.type}")
 
                 responses.append(result)
 

@@ -3,7 +3,7 @@ from typing import AsyncGenerator, List, Optional, Tuple, Union
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 from pydantic import BaseModel, RootModel
-from reemote.context import Context, Method
+from reemote.context import Context, Method, ContextType
 from reemote.operation import CommonOperationRequestModel, common_operation_request
 from reemote.operation import Operation
 from reemote.response import ResponseElement
@@ -73,6 +73,7 @@ class Shell(Operation):
         yield Context(
             command=model_instance.cmd,
             call=self.__class__.child + "(" + str(model_instance) + ")",
+            type=ContextType.OPERATION,
             method=Method.POST,
             **self.common_kwargs,
         )

@@ -2,7 +2,7 @@ from typing import AsyncGenerator, List, Union
 
 from fastapi import APIRouter, Depends
 
-from reemote.context import Context, Method
+from reemote.context import Context, Method, ContextType
 from reemote.response import ResponseElement
 from reemote.operation import Operation, CommonOperationRequestModel, common_operation_request
 from reemote.router_handler import router_handler
@@ -83,6 +83,7 @@ class GetPackages(Operation):
         result = yield Context(
             command=f"apt list --installed",
             call=self.__class__.child + "(" + str(model_instance) + ")",
+            type=ContextType.OPERATION,
             changed=False,
             method=Method.GET,
             **self.common_kwargs,
@@ -96,8 +97,7 @@ class GetPackages(Operation):
             # Wrap the PackageList in a GetPackagesResponse
             result["value"] = package_list
 
-
-
+        GetPackagesResponseElement(root=result)
 
 @router.get(
     "/getpackages",

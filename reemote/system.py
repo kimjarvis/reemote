@@ -3,7 +3,7 @@ from typing import Any, AsyncGenerator, Callable, Optional
 from pydantic import Field, model_validator
 
 from reemote.callback import Callback, CommonCallbackRequestModel
-from reemote.context import ConnectionType, Context, Method
+from reemote.context import ContextType, Context, Method
 from reemote.response import AbstractResponseModel
 
 
@@ -26,7 +26,7 @@ class Call(Callback):
         model_instance = self.request_model.model_validate(self.kwargs)
 
         yield Context(
-            type=ConnectionType.CALLBACK,
+            type=ContextType.CALLBACK,
             value=model_instance.value,
             callback=model_instance.callback,
             call=self.__class__.child + "(" + str(model_instance) + ")",
@@ -85,7 +85,7 @@ class Return(Callback):
         model_instance = self.request_model.model_validate(self.kwargs)
 
         yield Context(
-            type=ConnectionType.PASSTHROUGH,
+            type=ContextType.PASSTHROUGH,
             method=model_instance.method,
             value=model_instance.value,
             changed=model_instance.changed,
