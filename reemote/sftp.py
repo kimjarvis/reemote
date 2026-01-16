@@ -15,8 +15,8 @@ from reemote.context import Context, Method
 from reemote.system import Return
 from reemote.callback import Callback
 from reemote.callback import CommonCallbackRequestModel, common_callback_request
-from reemote.response import ResponseElement, ResponseModel
-from reemote.router_handler import router_handler, router_handler_put
+from reemote.response import ResponseElement, ResponseModel, PutResponseModel, GetResponseModel, PostResponseModel
+from reemote.router_handler import router_handler
 
 router = APIRouter()
 
@@ -2313,14 +2313,14 @@ class Directory(Callback):
         model_instance = self.request_model.model_validate(self.kwargs)
 
         changed = False
-        isdir = yield Isdir(path=model_instance.path, group=model_instance.group)
-        if isdir:
-            if not model_instance.present and not isdir["value"]:
+        is_a_dir = yield Isdir(path=model_instance.path, group=model_instance.group)
+        if is_a_dir:
+            if not model_instance.present and not is_a_dir["value"]:
                 changed = False
-            elif not model_instance.present and isdir["value"]:
+            elif not model_instance.present and is_a_dir["value"]:
                 yield Rmdir(path=model_instance.path, group=model_instance.group)
                 changed = True
-            elif model_instance.present and not isdir["value"]:
+            elif model_instance.present and not is_a_dir["value"]:
                 yield Mkdir(
                     path=model_instance.path,
                     permissions=model_instance.permissions,
@@ -2329,7 +2329,7 @@ class Directory(Callback):
                     group=model_instance.group,
                 )
                 changed = True
-            elif model_instance.present and isdir["value"]:
+            elif model_instance.present and is_a_dir["value"]:
                 r = yield Stat(path="/home/user/freddy", group=model_instance.group)
                 if (
                     model_instance.permissions
@@ -2363,10 +2363,10 @@ class Directory(Callback):
                         group=model_instance.group,
                     )
                     changed = True
-            yield Return(method=Method.PUT, value=None, changed=changed)
+            yield Return(method=Method.PUT, changed=changed)
 
 
-@router.put("/directory", tags=["SFTP Operations"], response_model=ResponseModel)
+@router.put("/directory", tags=["SFTP Operations"], response_model=PutResponseModel)
 async def directory(
     path: Union[PurePath, str, bytes] = Query(
         ...,
@@ -2411,7 +2411,7 @@ async def directory(
         params["atime"] = atime
     if mtime is not None:
         params["mtime"] = mtime
-    return await router_handler_put(DirectoryRequestModel, Directory)(
+    return await router_handler(DirectoryRequestModel, Directory)(
         **params,
         common=common,
     )

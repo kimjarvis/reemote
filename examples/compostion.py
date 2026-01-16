@@ -5,6 +5,7 @@ from reemote.host import Shell
 from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.system import Return
 from reemote.context import Method
+from setup_logging import setup_logging
 
 
 async def main():
@@ -31,6 +32,8 @@ async def main():
                 value=hello_response["value"]["stdout"]
                 + world_response["value"]["stdout"],
             )
+
+    setup_logging()
 
     responses = await execute(lambda: Root(), inventory=inventory)
     for response in responses:

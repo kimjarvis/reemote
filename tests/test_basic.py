@@ -60,13 +60,14 @@ async def test_directory1(setup_inventory, setup_directory):
 
     class Root:
         async def execute(self):
-            yield Directory(
+            r = yield Directory(
                 present=True,
                 path="testdata/new_dir",
                 permissions=0o700,
                 atime=10,
                 mtime=20,
             )
+            print(r)
             r = yield Isdir(path="testdata/new_dir")
             if r:
                 assert r["value"]
