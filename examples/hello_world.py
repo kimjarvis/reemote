@@ -1,7 +1,7 @@
 # examples/hello_world.py
 import asyncio
 from reemote.execute import execute
-from reemote.host import Shell
+from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
 
 
@@ -22,7 +22,7 @@ async def main():
     )
 
     responses = await execute(
-        lambda: Shell(cmd="echo Hello World!"), inventory=inventory
+        lambda: GetFact(cmd="echo Hello World!"), inventory=inventory
     )
     for response in responses:
         print(response["value"]["stdout"])

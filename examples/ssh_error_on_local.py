@@ -1,7 +1,7 @@
 # examples/ssh_error_on_request.py
 import asyncio
 from reemote.execute import execute
-from reemote.sftp import Isdir
+from reemote.sftp1 import Isdir
 from reemote.inventory import Inventory, InventoryItem, Connection
 import logging
 

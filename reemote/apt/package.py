@@ -4,28 +4,36 @@ from fastapi import APIRouter, Depends, Query
 
 from reemote.apt import GetPackages, Install, Remove
 from reemote.context import Context, Method, ContextType
-from reemote.operation import Operation, CommonOperationRequestModel, common_operation_request
-from reemote.response import ResponseModel
+from reemote.operation import (
+    Operation,
+    CommonOperationRequestModel,
+    common_operation_request,
+)
+from reemote.response import PutResponseModel
 from reemote.router_handler import router_handler
 from reemote.system import Return
 
 router = APIRouter()
 
+
 class PackageRequestModel(CommonOperationRequestModel):
     packages: list[str]
     present: bool
 
-class Package(Operation):
-    request_model = PackageRequestModel
 
-    async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
-        model_instance = self.request_model.model_validate(self.kwargs)
+class Package(Operation):
+    async def execute(self) -> AsyncGenerator[Context, PutResponseModel]:
+        model_instance = PackageRequestModel.model_validate(self.kwargs)
 
         pre = yield GetPackages()
         if model_instance.present:
-            result = yield Install(**self.common_kwargs, packages=model_instance.packages)
+            result = yield Install(
+                **self.common_kwargs, packages=model_instance.packages
+            )
         else:
-            result = yield Remove(**self.common_kwargs, packages=model_instance.packages)
+            result = yield Remove(
+                **self.common_kwargs, packages=model_instance.packages
+            )
         post = yield GetPackages()
 
         changed = pre["value"] != post["value"]
@@ -33,9 +41,7 @@ class Package(Operation):
         yield Return(method=Method.PUT, changed=changed, value=result["value"])
 
 
-
-
-@router.put("/package", tags=["APT Package Manager"], response_model=ResponseModel)
+@router.put("/package", tags=["APT Package Manager"], response_model=PutResponseModel)
 async def package(
     packages: list[str] = Query(..., description="List of package names"),
     present: bool = Query(

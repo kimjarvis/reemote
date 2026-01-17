@@ -4,7 +4,7 @@ from typing import AsyncGenerator
 from pydantic import Field
 
 from reemote.execute import execute
-from reemote.host import Shell
+from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.context import Context
 from reemote.response import ResponseModel
@@ -31,7 +31,7 @@ async def main():
 
         async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
             model_instance = self.GreetRequest.model_validate(self.kwargs)
-            yield Shell(cmd=f"echo Hello {model_instance.name}")
+            yield GetFact(cmd=f"echo Hello {model_instance.name}")
 
 
     setup_logging()

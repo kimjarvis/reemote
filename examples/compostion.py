@@ -1,7 +1,7 @@
 # examples/compostion.py
 import asyncio
 from reemote.execute import execute
-from reemote.host import Shell
+from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.system import Return
 from reemote.context import Method
@@ -21,12 +21,12 @@ async def main():
 
     class Child:
         async def execute(self):
-            yield Shell(cmd="echo Hello")
+            yield GetFact(cmd="echo Hello")
 
     class Root:
         async def execute(self):
             hello_response = yield Child()
-            world_response = yield Shell(cmd="echo World!")
+            world_response = yield GetFact(cmd="echo World!")
             yield Return(
                 method=Method.GET,
                 value=hello_response["value"]["stdout"]

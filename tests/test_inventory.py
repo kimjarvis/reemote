@@ -11,11 +11,11 @@ from reemote.response import ResponseModel
 
 @pytest.mark.asyncio
 async def test_inventory_environment_variables(setup_inventory):
-    from reemote.host import Shell
+    from reemote.core import GetFact
 
     class Root:
         async def execute(self):
-            r = yield Shell(cmd="echo $TESTVAR")
+            r = yield GetFact(cmd="echo $TESTVAR")
             print(r)
 
     inventory = Inventory(
@@ -79,7 +79,7 @@ async def test_connection_error():
 
 @pytest.mark.asyncio
 async def test_inventory_unreachablehost_host_sftp_command():
-    from reemote.sftp import Isdir
+    from reemote.sftp1 import Isdir
     from reemote.sftp import Mkdir, Rmdir
 
     class Root:

@@ -10,13 +10,18 @@ from pydantic import (
     Field,
     field_validator,
     model_validator,
+    RootModel,
 )
 from reemote.context import Context, Method
 from reemote.system import Return
 from reemote.callback import Callback
 from reemote.callback import CommonCallbackRequestModel, common_callback_request
-from reemote.response import ResponseElement, ResponseModel, PutResponseModel, GetResponseModel, PostResponseModel
+from reemote.response import ResponseElement, ResponseModel
+from reemote.response import PutResponseElement, PutResponseModel
+from reemote.response import PostResponseElement, PostResponseModel
+from reemote.response import GetResponseElement, GetResponseModel
 from reemote.router_handler import router_handler
+from reemote.sftp1 import Isdir
 
 router = APIRouter()
 
@@ -99,35 +104,7 @@ async def isfile(
     return await router_handler(PathRequestModel, Isfile)(path=path, common=common)
 
 
-class IsdirResponse(ResponseElement):
-    value: Union[str, bool] = Field(
-        default=False,
-        description="Whether or not the path is a directory, or an error message",
-    )
 
-
-class Isdir(Callback):
-    request_model = PathRequestModel
-
-    @staticmethod
-    async def callback(context: Context) -> None:
-        async with asyncssh.connect(
-            **context.inventory_item.connection.to_json_serializable()
-        ) as conn:
-            async with conn.start_sftp_client() as sftp:
-                context.changed = False
-                return await sftp.isdir(context.caller.path)
-
-
-@router.get("/isdir", tags=["SFTP Operations"], response_model=List[IsdirResponse])
-async def isdir(
-    path: Union[PurePath, str, bytes] = Query(
-        ..., description="Path to check if it's a directory"
-    ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
-) -> PathRequestModel:
-    """# Return if the remote path refers to a directory"""
-    return await router_handler(PathRequestModel, Isdir)(path=path, common=common)
 
 
 class GetsizeResponse(ResponseElement):
@@ -332,7 +309,7 @@ async def getcrtimens(
 class GetcwdResponse(ResponseElement):
     value: str = Field(
         default="",
-        description="The path of the current working directory, or an error message",
+        description="The path of the current working directory.",
     )
 
 
@@ -505,7 +482,7 @@ async def read(
 
 class ListdirResponse(ResponseElement):
     value: Union[str, List[str]] = Field(
-        default="", description="List of files in directory, or an error message"
+        default="", description="List of files in directory."
     )
 
 

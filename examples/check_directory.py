@@ -1,6 +1,7 @@
+# examples/hello_world.py
 import asyncio
 from reemote.execute import execute
-from reemote.core import GetFact
+from reemote.sftp1 import Isdir
 from reemote.inventory import Inventory, InventoryItem, Connection
 
 
@@ -12,16 +13,18 @@ async def main():
                     host="server104", username="user", password="password"
                 )
             ),
+            InventoryItem(
+                connection=Connection(
+                    host="server105", username="user", password="password"
+                )
+            ),
         ]
     )
 
-    # examples/accessing_the_host_name_or_address.py
-    class Root:
-        async def execute(self):
-            response = yield GetFact(cmd="echo Hello World!")
-            print(response["host"])
-
-    await execute(lambda: Root(), inventory=inventory)
+    responses = await execute(
+        lambda: Isdir(path="/home/user/fjfj/hh"), inventory=inventory
+    )
+    print(responses)
 
 
 if __name__ == "__main__":

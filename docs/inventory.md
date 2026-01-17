@@ -8,13 +8,13 @@ Inventory can be created and managed using both the Reemote Python API and the R
 The Reemote Python API presents a single operation called `Inventory` to create inventory.
 ### Declaring an inventory class
 
-This script demonstrate the execution of a shell command on a host and the collection of the results.  The script executes the shell command `echo Hello World!` on all of the hosts in the inventory and prints the response `Hello World!`.  The shell command is executed from user on host `server104`.  The username `user` and password `passsword` are used to connect to the server via SSH.  
+This script demonstrate the execution of a shell command on a host and the collection of the results.  The script executes the shell command `echo Hello World!` on all of the hosts in the inventory and prints the response `Hello World!`.  The shell command is executed from user on host `server104`.  The username `user` and password `passsword` are used to connect to the server via SSH.
 
 ```python
 # examples/declaring_an_inventory_class.py
 import asyncio
 from reemote.execute import execute
-from reemote.host import Shell
+from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
 
 
@@ -30,7 +30,7 @@ async def main():
     )
 
     responses = await execute(
-        lambda: Shell(cmd="echo Hello World!"),
+        lambda: GetFact(cmd="echo Hello World!"),
         inventory=inventory,
     )
     for response in responses:
@@ -85,13 +85,13 @@ The authentication inventory element contains the sudo and su authentication opt
 The groups inventory element is used to group hosts by function.  Operations specify a host group to act on.  By default every host is a member of the group `all`.
 #### Inventory element example
 
-In the example below, the inventory describes two hosts `server104` and `server104`.  The Connection inventory element describes the ssh connection options.  Both hosts have the ssh username `user` and ssh password `password`. `server104` is in the host group `servers` and `server105` is in the host group `databases`.  The shell command group option specifies group `databases`.  So, the shell command will only be executed on servers in this group.  In this case `server105` is the only member of the group `databases` so the command will only be executed on that host.  The Session inventory element specifies that the terminal type will be set to `xterm` for all ssh sessions with this host.  The Authentication inventory element specifies the sudo password.  The shell command requires sudo, so its sudo option is set to `True`.  When the command is executed the sudo password, from the authentication inventory element, will be used. 
+In the example below, the inventory describes two hosts `server104` and `server104`.  The Connection inventory element describes the ssh connection options.  Both hosts have the ssh username `user` and ssh password `password`. `server104` is in the host group `servers` and `server105` is in the host group `databases`.  The shell command group option specifies group `databases`.  So, the shell command will only be executed on servers in this group.  In this case `server105` is the only member of the group `databases` so the command will only be executed on that host.  The Session inventory element specifies that the terminal type will be set to `xterm` for all ssh sessions with this host.  The Authentication inventory element specifies the sudo password.  The shell command requires sudo, so its sudo option is set to `True`.  When the command is executed the sudo password, from the authentication inventory element, will be used.
 
 ```python
 # examples/inventory_data_structure.py
 import asyncio
 from reemote.execute import execute
-from reemote.host import Shell
+from reemote.core import GetFact
 from reemote.inventory import (
     Inventory,
     InventoryItem,
@@ -122,7 +122,7 @@ async def main():
     )
 
     responses = await execute(
-        lambda: Shell(cmd="cat /etc/shadow", sudo=True, group="databases"),
+        lambda: GetFact(cmd="cat /etc/shadow", sudo=True, group="databases"),
         inventory=inventory,
     )
     for response in responses:

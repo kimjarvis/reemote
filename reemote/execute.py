@@ -56,9 +56,9 @@ def get_result(context: Context) -> dict[str, str | None | Any]:
 
 async def run_passthrough(context: Context) -> dict[str, str | None | Any] | None:
     if not context.group or "all" in context.group or context.group in context.inventory_item.groups:
-        logging.info(f"{context.call}")
+        logging.info(f"{context.inventory_item.connection.host:<16} - {context.call}")
         result = get_result(context)
-        logging.info(f"{result}")
+        logging.info(f"{result["host"]:<16} - {result}")
         return result
     return None
 
@@ -68,23 +68,14 @@ async def run_callback(context: Context) -> dict[str, str | None | Any] | None:
     if not context.group or "all" in context.group or context.group in context.inventory_item.groups:
         logging.info(f"{context.inventory_item.connection.host:<16} - {context.call}")
         try:
-            value = await context.callback(context)
-            result = {
-                "host": context.inventory_item.connection.host,
-                "value": value,
-                "changed": context.changed,
-                "error": context.error,
-            }
+            context.value = await context.callback(context)
+            result = get_result(context)
             logging.info(f"{result["host"]:<16} - {result}")
             return result
         except Exception as e:
             context.error = True
-            result = {
-                "host": context.inventory_item.connection.host,
-                "value": f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}",
-                "changed": context.changed,
-                "error": context.error,
-            }
+            context.value =  f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+            result = get_result(context)
             logging.error(f"{result["host"]:<16} - {result}")
             return result
 
@@ -154,22 +145,14 @@ async def run_operation(
                         **context.inventory_item.session.to_json_serializable(),
                         check=False,
                     )
-            result = {
-                "host": context.inventory_item.connection.host,
-                "value": ssh_completed_process_to_dict(cp),
-                "changed": context.changed,
-                "error": context.error,
-            }
+            context.value = ssh_completed_process_to_dict(cp)
+            result = get_result(context)
             logging.info(f"{result["host"]:<16} - {result}")
             return result
         except Exception as e:
             context.error = True
-            result = {
-                "host": context.inventory_item.connection.host,
-                "value": f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}",
-                "changed": False,
-                "error": True,
-            }
+            context.value = f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
+            result = get_result(context)
             logging.error(f"{result["host"]:<16} - {result}")
             return result
     return None

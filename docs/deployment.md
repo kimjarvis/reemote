@@ -6,7 +6,7 @@ Reemote is an API for controlling remote systems.  Lets look at an example deplo
 # examples/hello_world.py
 import asyncio
 from reemote.execute import execute
-from reemote.host import Shell
+from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
 
 
@@ -27,7 +27,7 @@ async def main():
     )
 
     responses = await execute(
-        lambda: Shell(cmd="echo Hello World!"), inventory=inventory
+        lambda: GetFact(cmd="echo Hello World!"), inventory=inventory
     )
     for response in responses:
         print(response["value"]["stdout"])
@@ -152,7 +152,7 @@ Lets look at an example deployment in which commands are composed.
 # examples/composition.py
 import asyncio
 from reemote.execute import execute
-from reemote.host import Shell
+from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.system import Return
 
@@ -170,14 +170,13 @@ async def main():
 
     class Child:
         async def execute(self):
-            yield Shell(cmd="echo Hello")
+            yield GetFact(cmd="echo Hello")
 
     class Root:
         async def execute(self):
             hello_response = yield Child()
-            world_response = yield Shell(cmd="echo World!")
+            world_response = yield GetFact(cmd="echo World!")
             yield Return(value=hello_response["value"]["stdout"] + world_response["value"]["stdout"])
-
 
     responses = await execute(lambda: Root(), inventory=inventory)
     for response in responses:
@@ -217,7 +216,7 @@ from typing import AsyncGenerator
 from pydantic import BaseModel, Field
 
 from reemote.execute import execute
-from reemote.host import Shell
+from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.context import Context
 from reemote.response import ResponseModel
@@ -245,7 +244,7 @@ async def main():
 
         async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
             model_instance = self.Model.model_validate(self.kwargs)
-            yield Shell(cmd=f"echo Hello {model_instance.name}")
+            yield GetFact(cmd=f"echo Hello {model_instance.name}")
 
     responses = await execute(lambda: Greet(name="Joe"), inventory=inventory)
     for response in responses:
@@ -275,7 +274,7 @@ Lets look at an example that demonstrates both serial and concurrent execution.
 # examples/concurrency.py
 import asyncio
 from reemote.execute import execute
-from reemote.host import Shell
+from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.system import Return
 
@@ -300,12 +299,12 @@ async def main():
 
     class Root:
         async def execute(self):
-            hello_response = yield Shell(cmd="echo Hello")
-            world_response = yield Shell(cmd="echo World!")
+            hello_response = yield GetFact(cmd="echo Hello")
+            world_response = yield GetFact(cmd="echo World!")
             yield Return(value=[hello_response, world_response])
 
     main_responses = await execute(
-        lambda: Shell(cmd="echo Ready?"),
+        lambda: GetFact(cmd="echo Ready?"),
         inventory=inventory,
     )
     for item in main_responses:

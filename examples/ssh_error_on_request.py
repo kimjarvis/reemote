@@ -1,7 +1,7 @@
 # examples/ssh_error_on_request.py
 import asyncio
 from reemote.execute import execute
-from reemote.host import Shell
+from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
 import logging
 
@@ -38,7 +38,7 @@ async def main():
 
 
     responses = await execute(
-        lambda: Shell(cmd="echo Hello World!"), inventory=inventory
+        lambda: GetFact(cmd="echo Hello World!"), inventory=inventory
     )
     print(responses)
 

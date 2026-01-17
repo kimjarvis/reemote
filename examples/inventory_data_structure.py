@@ -1,7 +1,7 @@
 # examples/inventory_data_structure.py
 import asyncio
 from reemote.execute import execute
-from reemote.host import Shell
+from reemote.core import GetFact
 from reemote.inventory import (
     Inventory,
     InventoryItem,
@@ -32,7 +32,7 @@ async def main():
     )
 
     responses = await execute(
-        lambda: Shell(cmd="cat /etc/shadow", sudo=True, group="databases"),
+        lambda: GetFact(cmd="cat /etc/shadow", sudo=True, group="databases"),
         inventory=inventory,
     )
     for response in responses:

@@ -35,6 +35,7 @@ class AbstractCallback(BaseModel):
 
 class Callback(ABC):
     request_model = AbstractCallback
+    response_model = AbstractCallback
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -54,13 +55,14 @@ class Callback(ABC):
 
     async def execute(self) -> AsyncGenerator[Context, AbstractResponseModel]:
         model_instance = self.request_model.model_validate(self.kwargs)
-        yield Context(
+        result = yield Context(
             type=ContextType.CALLBACK,
             callback=self.callback,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,
         )
+        self.response_model.model_validate(result)
 
     @staticmethod
     @abstractmethod

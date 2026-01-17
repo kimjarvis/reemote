@@ -3,18 +3,20 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Depends
 
 from reemote.context import Context, Method, ContextType
-from reemote.operation import Operation, CommonOperationRequestModel, common_operation_request
-from reemote.response import ResponseModel
+from reemote.operation import (
+    Operation,
+    CommonOperationRequestModel,
+    common_operation_request,
+)
+from reemote.response import PutResponseModel, PutResponseElement
 from reemote.router_handler import router_handler
 
 router = APIRouter()
 
 
 class Update(Operation):
-    request_model = CommonOperationRequestModel
-
-    async def execute(self) -> AsyncGenerator[Context, ResponseModel]:
-        model_instance = self.request_model.model_validate(self.kwargs)
+    async def execute(self) -> AsyncGenerator[Context, PutResponseModel]:
+        model_instance = CommonOperationRequestModel.model_validate(self.kwargs)
 
         result = yield Context(
             command="apt-get update",
@@ -26,13 +28,16 @@ class Update(Operation):
         if not result["error"]:
             result["value"] = None
 
+        PutResponseElement(root=result)
 
 
 @router.post(
     "/update",
     tags=["APT Package Manager"],
-    response_model=ResponseModel,
+    response_model=PutResponseModel,
 )
-async def update(common: CommonOperationRequestModel = Depends(common_operation_request)) -> CommonOperationRequestModel:
+async def update(
+    common: CommonOperationRequestModel = Depends(common_operation_request),
+) -> CommonOperationRequestModel:
     """# Update APT packages"""
     return await router_handler(CommonOperationRequestModel, Update)(common=common)

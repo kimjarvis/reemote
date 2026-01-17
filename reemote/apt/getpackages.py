@@ -4,11 +4,16 @@ from fastapi import APIRouter, Depends
 
 from reemote.context import Context, Method, ContextType
 from reemote.response import ResponseElement
-from reemote.operation import Operation, CommonOperationRequestModel, common_operation_request
+from reemote.operation import (
+    Operation,
+    CommonOperationRequestModel,
+    common_operation_request,
+)
 from reemote.router_handler import router_handler
 from pydantic import BaseModel, Field, RootModel
 
 router = APIRouter()
+
 
 def parse_apt_list_installed(value):
     """Parses the output of 'apt list --installed' into a list of dictionaries.
@@ -28,31 +33,31 @@ def parse_apt_list_installed(value):
             represents an installed package and contains 'name' and 'version'
             keys. Example: `[{'name': 'zlib1g', 'version': '1:1.2.11.dfsg-2'}]`.
     """
-    lines = value.strip().split('\n')
+    lines = value.strip().split("\n")
     packages = []
 
     for line in lines:
         line = line.strip()
-        if not line or line.startswith('Listing...'):
+        if not line or line.startswith("Listing..."):
             continue
 
         # Split package name from the rest using first '/'
-        if '/' not in line:
+        if "/" not in line:
             continue
 
-        name_part, rest = line.split('/', 1)
+        name_part, rest = line.split("/", 1)
         name = name_part.strip()
 
         # Find the first space — version starts right after it
-        space_index = rest.find(' ')
+        space_index = rest.find(" ")
         if space_index == -1:
             continue
 
         # Extract everything after the first space
-        after_space = rest[space_index + 1:]
+        after_space = rest[space_index + 1 :]
 
         # Version is everything until the next space or '['
-        version = after_space.split(' ', 1)[0].split('[', 1)[0].rstrip(',')
+        version = after_space.split(" ", 1)[0].split("[", 1)[0].rstrip(",")
 
         packages.append({"name": name, "version": version})
 
@@ -67,18 +72,17 @@ class PackageModel(BaseModel):
 class GetPackagesResponseElement(ResponseElement):
     value: Union[str, List[PackageModel]] = Field(
         default="",
-        description="The response containing package versions, or an error message"
+        description="The response containing package versions, or an error message",
     )
 
 
 class GetPackagesResponse(RootModel):
     root: List[GetPackagesResponseElement]
 
-class GetPackages(Operation):
-    request_model = CommonOperationRequestModel
 
+class GetPackages(Operation):
     async def execute(self) -> AsyncGenerator[Context, GetPackagesResponse]:
-        model_instance = self.request_model.model_validate(self.kwargs)
+        model_instance = CommonOperationRequestModel.model_validate(self.kwargs)
 
         result = yield Context(
             command=f"apt list --installed",
@@ -99,11 +103,14 @@ class GetPackages(Operation):
 
         GetPackagesResponseElement(root=result)
 
+
 @router.get(
     "/getpackages",
     tags=["APT Package Manager"],
     response_model=GetPackagesResponse,
 )
-async def getpackages(common: CommonOperationRequestModel = Depends(common_operation_request)) -> GetPackagesResponse:
+async def getpackages(
+    common: CommonOperationRequestModel = Depends(common_operation_request),
+) -> GetPackagesResponse:
     """# Get installed APT packages"""
     return await router_handler(CommonOperationRequestModel, GetPackages)(common=common)

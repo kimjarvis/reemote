@@ -36,7 +36,7 @@ def setup_directory():
     async def inner_fixture():
         class Root:
             async def execute(self):
-                from reemote.sftp import Isdir
+                from reemote.sftp1 import Isdir
                 from reemote.sftp import Rmtree
                 from reemote.scp import Upload
 

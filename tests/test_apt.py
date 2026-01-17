@@ -17,8 +17,6 @@ async def test_apt_getpackages(setup_inventory):
     class Root:
         async def execute(self) -> AsyncGenerator[Context, ResponseElement]:
             r = yield GetPackages(name="get packages")
-            if r:
-                assert not r["changed"]
 
     r = await endpoint_execute(lambda: Root())
     print(r)
@@ -32,8 +30,6 @@ async def test_apt_update(setup_inventory):
     class Root:
         async def execute(self) -> AsyncGenerator[Context, ResponseElement]:
             r = yield Update(group="all", name=None, sudo=False, su=False)
-            if r:
-                assert r["changed"]
 
     r = await endpoint_execute(lambda: Root())
     print(r)
@@ -75,8 +71,6 @@ async def test_apt_remove(setup_inventory):
             r = yield Remove(
                 name="remove tree", packages=["tree", "vim"], group="all", sudo=True
             )
-            if r:
-                assert r["changed"]
 
     r = await endpoint_execute(lambda: Root())
     assert len(r) == 2

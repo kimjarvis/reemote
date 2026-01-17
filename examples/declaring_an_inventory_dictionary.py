@@ -1,6 +1,6 @@
 import asyncio
 from reemote.execute import execute
-from reemote.host import Shell
+from reemote.core import GetFact
 from reemote.inventory import Inventory
 
 
@@ -19,7 +19,7 @@ async def main():
     )
 
     responses = await execute(
-        lambda: Shell(cmd="echo Hello World!"),
+        lambda: GetFact(cmd="echo Hello World!"),
         inventory=inventory,
     )
     for response in responses:
