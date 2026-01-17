@@ -44,13 +44,13 @@ class GetResponseElement(ResponseElement1):
         description="Class specific information from the target host.",
     )
 
-class GetResponseModel(RootModel[List[GetResponseElement]]):
+class GetResponse(RootModel[List[GetResponseElement]]):
     pass
 
 class PostResponseElement(ResponseElement1):
     pass
 
-class PostResponseModel(RootModel[List[PostResponseElement]]):
+class PostResponse(RootModel[List[PostResponseElement]]):
     pass
 
 class PutResponseElement(ResponseElement1):
@@ -59,5 +59,5 @@ class PutResponseElement(ResponseElement1):
         description="Whether or not the host was changed by the operation.",
     )
 
-class PutResponseModel(RootModel[List[PutResponseElement]]):
+class PutResponse(RootModel[List[PutResponseElement]]):
     pass

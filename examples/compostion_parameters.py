@@ -8,7 +8,7 @@ from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.context import Context
 from reemote.response import ResponseModel
-from reemote.operation import Operation, CommonOperationRequestModel
+from reemote.operation import Operation, CommonOperationRequest
 from setup_logging import setup_logging
 
 async def main():
@@ -24,7 +24,7 @@ async def main():
 
 
     class Greet(Operation):
-        class GreetRequest(CommonOperationRequestModel):
+        class GreetRequest(CommonOperationRequest):
             name: str = Field(
                 default="Nobody", description="The name of the person to greet"
             )

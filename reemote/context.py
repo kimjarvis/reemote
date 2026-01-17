@@ -3,7 +3,7 @@ from typing import Any, Callable, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator  # Updated imports
 from reemote.inventory import InventoryItem
-from reemote.operation import CommonOperationRequestModel
+from reemote.operation import CommonOperationRequest
 
 
 class ContextType(Enum):
@@ -17,7 +17,7 @@ class Method(Enum):
     POST = 3
 
 
-class Context(CommonOperationRequestModel):
+class Context(CommonOperationRequest):
     # todo: all these fields should be requiered
     model_config = ConfigDict(  # Replaces class Config
         validate_assignment=True,

@@ -2,12 +2,12 @@ from typing import Any, AsyncGenerator, Callable, Optional
 
 from pydantic import Field, model_validator
 
-from reemote.callback import Callback, CommonCallbackRequestModel
+from reemote.callback import Callback, CommonCallbackRequest
 from reemote.context import ContextType, Context, Method
 from reemote.response import AbstractResponseModel
 
 
-class CallRequestModel(CommonCallbackRequestModel):
+class CallRequestModel(CommonCallbackRequest):
     callback: Callable = Field(
         ...,  # Required field
     )
@@ -35,7 +35,7 @@ class Call(Callback):
         )
 
 
-class ReturnRequestModel(CommonCallbackRequestModel):
+class ReturnRequestModel(CommonCallbackRequest):
     value: Optional[Any] = None
     method: Method
     changed: Optional[bool] = None

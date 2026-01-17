@@ -9,10 +9,10 @@ from pydantic import (
 )
 from reemote.context import Context, Method
 from reemote.callback import Callback
-from reemote.callback import CommonCallbackRequestModel, common_callback_request
+from reemote.callback import CommonCallbackRequest, common_callback_request
 from reemote.response import GetResponseElement
 from reemote.router_handler import router_handler
-from reemote.sftp1.common import PathRequestModel
+from reemote.sftp1.common import PathRequest
 
 router = APIRouter()
 
@@ -23,12 +23,13 @@ class IsdirResponseElement(GetResponseElement):
         description="Whether or not the path is a directory.",
     )
 
-# todo: move into class
+
 class IsdirResponse(RootModel):
     root: List[IsdirResponseElement]
 
+
 class Isdir(Callback):
-    request_model = PathRequestModel
+    request_model = PathRequest
     response_model = IsdirResponseElement
 
     @staticmethod
@@ -47,7 +48,7 @@ async def isdir(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Path to check if it's a directory"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
-) -> PathRequestModel:
+    common: CommonCallbackRequest = Depends(common_callback_request),
+) -> PathRequest:
     """# Return if the remote path refers to a directory"""
-    return await router_handler(PathRequestModel, Isdir)(path=path, common=common)
+    return await router_handler(PathRequest, Isdir)(path=path, common=common)

@@ -6,7 +6,7 @@ from reemote.context import Context, Method, ContextType
 from reemote.response import ResponseElement
 from reemote.operation import (
     Operation,
-    CommonOperationRequestModel,
+    CommonOperationRequest,
     common_operation_request,
 )
 from reemote.router_handler import router_handler
@@ -82,7 +82,7 @@ class GetPackagesResponse(RootModel):
 
 class GetPackages(Operation):
     async def execute(self) -> AsyncGenerator[Context, GetPackagesResponse]:
-        model_instance = CommonOperationRequestModel.model_validate(self.kwargs)
+        model_instance = CommonOperationRequest.model_validate(self.kwargs)
 
         result = yield Context(
             command=f"apt list --installed",
@@ -110,7 +110,7 @@ class GetPackages(Operation):
     response_model=GetPackagesResponse,
 )
 async def getpackages(
-    common: CommonOperationRequestModel = Depends(common_operation_request),
+    common: CommonOperationRequest = Depends(common_operation_request),
 ) -> GetPackagesResponse:
     """# Get installed APT packages"""
-    return await router_handler(CommonOperationRequestModel, GetPackages)(common=common)
+    return await router_handler(CommonOperationRequest, GetPackages)(common=common)

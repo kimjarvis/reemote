@@ -4,23 +4,20 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 from pydantic import BaseModel, RootModel
 from reemote.context import Context, Method, ContextType
-from reemote.operation import CommonOperationRequestModel, common_operation_request
+from reemote.operation import CommonOperationRequest, common_operation_request
 from reemote.operation import Operation
-from reemote.response import ResponseElement
 from reemote.router_handler import router_handler
-from reemote.callback import CommonCallbackRequestModel, common_callback_request
-from reemote.response import GetResponseModel, GetResponseElement
-from reemote.callback import Callback
+from reemote.response import GetResponseElement
 
 
 router = APIRouter()
 
 
-class GetFactRequestModel(CommonOperationRequestModel):
+class GetFactRequest(CommonOperationRequest):
     cmd: str = Field(...)
 
 
-class SSHCompletedProcessModel(BaseModel):
+class SSHCompletedProcess(BaseModel):
     # env: Optional[Dict[str, str]] = Field(
     #     default=None,
     #     description="The environment the client requested to be set for the process."
@@ -56,38 +53,41 @@ class SSHCompletedProcessModel(BaseModel):
 
 
 class GetFactResponseElement(GetResponseElement):
-    value: SSHCompletedProcessModel = Field(
+    value: SSHCompletedProcess = Field(
         default=None, description="The results from the executed command."
     )
 
 
 # todo: move into class
-class GetFactResponseModel(RootModel[List[GetFactResponseElement]]):
+class GetFactResponse(RootModel[List[GetFactResponseElement]]):
     pass
 
 
-# todo: Two types of shell, get and put ?
+# todo: Two types of shell, get and put, where is the put ?
 class GetFact(Operation):
-    request_model = GetFactRequestModel  # todo: remove
-
-    async def execute(self) -> AsyncGenerator[Context, GetFactResponseModel]:
-        model_instance = self.request_model.model_validate(self.kwargs)
-        yield Context(
+    async def execute(self) -> AsyncGenerator[Context, GetFactResponse]:
+        model_instance = GetFactRequest.model_validate(self.kwargs)
+        result = yield Context(
             command=model_instance.cmd,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             type=ContextType.OPERATION,
             method=Method.GET,
             **self.common_kwargs,
         )
-        # todo: validate
+        GetFactResponseElement(root=result)
 
 
-@router.post("/getfact", tags=["Core Operations"], response_model=GetFactResponseModel)
+
+@router.post(
+    "/getfact",
+    tags=["Core Operations"],
+    response_model=GetFactResponse,
+)
 async def getfact(
     cmd: str = Query(
         ..., description="Shell command", examples=["echo Hello World!", "ls -ltr"]
     ),
-    common: CommonOperationRequestModel = Depends(common_operation_request),
-) -> GetFactResponseModel:
-    """# Execute a shell command to get information from the remote host """
-    return await router_handler(GetFactRequestModel, GetFact)(cmd=cmd, common=common)
+    common: CommonOperationRequest = Depends(common_operation_request),
+) -> GetFactResponse:
+    """# Execute a shell command to get information from the remote host"""
+    return await router_handler(GetFactRequest, GetFact)(cmd=cmd, common=common)

@@ -16,6 +16,7 @@ async def test_isdir(setup_inventory, setup_directory):
     class Root:
         async def execute(self):
             r = yield Isdir(path="testdata/dir_a")
+            print(r)
             if r:
                 assert r["value"]
             r = yield Isdir(path="testdata/dir_b")

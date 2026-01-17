@@ -15,18 +15,18 @@ from pydantic import (
 from reemote.context import Context, Method
 from reemote.system import Return
 from reemote.callback import Callback
-from reemote.callback import CommonCallbackRequestModel, common_callback_request
+from reemote.callback import CommonCallbackRequest, common_callback_request
 from reemote.response import ResponseElement, ResponseModel
-from reemote.response import PutResponseElement, PutResponseModel
-from reemote.response import PostResponseElement, PostResponseModel
-from reemote.response import GetResponseElement, GetResponseModel
+from reemote.response import PutResponseElement, PutResponse
+from reemote.response import PostResponseElement, PostResponse
+from reemote.response import GetResponseElement, GetResponse
 from reemote.router_handler import router_handler
 from reemote.sftp1 import Isdir
 
 router = APIRouter()
 
 
-class PathRequestModel(CommonCallbackRequestModel):
+class PathRequestModel(CommonCallbackRequest):
     path: Union[PurePath, str, bytes] = Field(..., examples=["/home/user", "testdata"])
 
     @field_validator("path", mode="before")
@@ -67,7 +67,7 @@ async def islink(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Path to check if it's a link"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Return if the remote path refers to a symbolic link"""
     return await router_handler(PathRequestModel, Islink)(path=path, common=common)
@@ -98,7 +98,7 @@ async def isfile(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Path to check if it's a file"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Return if the remote path refers to a file"""
     return await router_handler(PathRequestModel, Isfile)(path=path, common=common)
@@ -132,7 +132,7 @@ async def getsize(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the size of a remote file or directory"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Return the size of a remote file or directory"""
     return await router_handler(PathRequestModel, Getsize)(path=path, common=common)
@@ -163,7 +163,7 @@ async def getatime(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the last access time of a remote file or directory"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Return the last access time of a remote file or directory"""
     return await router_handler(PathRequestModel, Getatime)(path=path, common=common)
@@ -196,7 +196,7 @@ async def getatimens(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the last access time of a remote file or directory"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Return the last access time of a remote file or directory"""
     return await router_handler(PathRequestModel, GetatimeNs)(path=path, common=common)
@@ -221,7 +221,7 @@ async def getmtime(
         ...,
         description="Return the last modification time of a remote file or directory",
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Return the last modification time of a remote file or directory"""
     return await router_handler(PathRequestModel, Getmtime)(path=path, common=common)
@@ -248,7 +248,7 @@ async def getmtimens(
         ...,
         description="Return the last modification time of a remote file or directory",
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Return the last modification time of a remote file or directory"""
     return await router_handler(PathRequestModel, GetmtimeNs)(path=path, common=common)
@@ -274,7 +274,7 @@ async def getcrtime(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the creation time of a remote file or directory"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Return the creation time of a remote file or directory"""
     return await router_handler(PathRequestModel, Getcrtime)(path=path, common=common)
@@ -300,7 +300,7 @@ async def getcrtimens(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Return the creation time of a remote file or directory"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Return the creation time of a remote file or directory"""
     return await router_handler(PathRequestModel, GetcrtimeNs)(path=path, common=common)
@@ -314,7 +314,7 @@ class GetcwdResponse(ResponseElement):
 
 
 class Getcwd(Callback):
-    request_model = CommonCallbackRequestModel
+    request_model = CommonCallbackRequest
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -328,10 +328,10 @@ class Getcwd(Callback):
 
 @router.get("/getcwd", tags=["SFTP Operations"], response_model=List[GetcwdResponse])
 async def getcwd(
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
-) -> CommonCallbackRequestModel:
+    common: CommonCallbackRequest = Depends(common_callback_request),
+) -> CommonCallbackRequest:
     """# Return the current remote working directory"""
-    return await router_handler(CommonCallbackRequestModel, Getcwd)(common=common)
+    return await router_handler(CommonCallbackRequest, Getcwd)(common=common)
 
 
 class StatRequestModel(PathRequestModel):
@@ -394,7 +394,7 @@ async def stat(
     follow_symlinks: bool = Query(
         True, description="Whether or not to follow symbolic links"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> StatRequestModel:
     """# Get attributes of a remote file, directory, or symlink"""
     return await router_handler(StatRequestModel, Stat)(
@@ -465,7 +465,7 @@ async def read(
     max_requests: Optional[int] = Query(
         -1, description="The maximum number of parallel read requests"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> ReadRequestModel:
     """# Read a remote file"""
     params = {"path": path}
@@ -504,7 +504,7 @@ async def listdir(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Read the names of the files in a remote directory"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Read the names of the files in a remote directory"""
     return await router_handler(PathRequestModel, Listdir)(path=path, common=common)
@@ -566,7 +566,7 @@ async def readdir(
     path: Union[PurePath, str, bytes] = Query(
         ..., description=" The path of the remote directory to read"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Read the contents of a remote directory"""
     return await router_handler(PathRequestModel, Readdir)(path=path, common=common)
@@ -597,7 +597,7 @@ async def exists(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The remote path to check"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Return if the remote path exists and isn’t a broken symbolic link"""
     return await router_handler(PathRequestModel, Exists)(path=path, common=common)
@@ -621,7 +621,7 @@ async def lexists(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The remote path to check"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Return if the remote path exists, without following symbolic links"""
     return await router_handler(PathRequestModel, Lexists)(path=path, common=common)
@@ -647,7 +647,7 @@ async def lstat(
         ...,
         description="The path of the remote file, directory, or link to get attributes for",
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Get attributes of a remote file, directory, or symlink"""
     return await router_handler(PathRequestModel, Lstat)(path=path, common=common)
@@ -680,7 +680,7 @@ async def readlink(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote symbolic link to follow"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Return the target of a remote symbolic link"""
     return await router_handler(PathRequestModel, Readlink)(path=path, common=common)
@@ -710,7 +710,7 @@ async def glob(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Glob patterns to try and match remote files against"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Match remote files against glob patterns"""
     return await router_handler(PathRequestModel, Glob)(path=path, common=common)
@@ -737,7 +737,7 @@ async def globsftpname(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="Glob patterns to try and match remote files against"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Match glob patterns and return SFTPNames"""
     return await router_handler(PathRequestModel, GlobSftpName)(
@@ -807,7 +807,7 @@ async def statvfs(
         ...,
         description="The path of the remote file system to get attributes for",
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Get attributes of a remote file system"""
     return await router_handler(StatRequestModel, StatVfs)(path=path, common=common)
@@ -839,18 +839,18 @@ async def realpath(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote directory to canonicalize"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Return the canonical version of a remote path"""
     return await router_handler(PathRequestModel, Realpath)(path=path, common=common)
 
 
-class ClientResponse(CommonCallbackRequestModel):
+class ClientResponse(CommonCallbackRequest):
     pass
 
 
 class Client(Callback):
-    request_model = CommonCallbackRequestModel
+    request_model = CommonCallbackRequest
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -902,13 +902,13 @@ class ClientResponse(ResponseElement):
 
 @router.get("/client", tags=["SFTP Operations"], response_model=List[ClientResponse])
 async def client(
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
-) -> CommonCallbackRequestModel:
+    common: CommonCallbackRequest = Depends(common_callback_request),
+) -> CommonCallbackRequest:
     """# Return sftp client information"""
-    return await router_handler(CommonCallbackRequestModel, Client)(common=common)
+    return await router_handler(CommonCallbackRequest, Client)(common=common)
 
 
-class CopyRequestModel(CommonCallbackRequestModel):
+class CopyRequestModel(CommonCallbackRequest):
     srcpaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]] = (
         Field(
             ...,  # Required field
@@ -1044,7 +1044,7 @@ async def copy(
     remote_only: bool = Query(
         False, description="Whether or not to only allow this to be a remote copy"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> CopyRequestModel:
     """# Copy remote files to a new location"""
     return await router_handler(CopyRequestModel, Copy)(
@@ -1099,7 +1099,7 @@ async def mcopy(
     remote_only: bool = Query(
         False, description="Whether or not to only allow this to be a remote copy"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> CopyRequestModel:
     """# Copy remote files to a new location"""
     return await router_handler(CopyRequestModel, Mcopy)(
@@ -1118,7 +1118,7 @@ async def mcopy(
     )
 
 
-class GetRequestModel(CommonCallbackRequestModel):
+class GetRequestModel(CommonCallbackRequest):
     remotepaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]] = (
         Field(
             ...,  # Required field
@@ -1248,7 +1248,7 @@ async def get(
     error_handler: Optional[str] = Query(
         None, description="Callback function name for error handling"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> GetRequestModel:
     """# Download remote files"""
     return await router_handler(GetRequestModel, Get)(
@@ -1299,7 +1299,7 @@ async def mget(
     error_handler: Optional[str] = Query(
         None, description="Callback function name for error handling"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> GetRequestModel:
     """# Download remote files with glob pattern match"""
     return await router_handler(GetRequestModel, Mget)(
@@ -1317,7 +1317,7 @@ async def mget(
     )
 
 
-class PutRequestModel(CommonCallbackRequestModel):
+class PutRequestModel(CommonCallbackRequest):
     localpaths: Union[PurePath, str, bytes, Sequence[Union[PurePath, str, bytes]]] = (
         Field(
             ...,  # Required field
@@ -1447,7 +1447,7 @@ async def put(
     error_handler: Optional[str] = Query(
         None, description="Callback function name for error handling"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PutRequestModel:
     """# Upload local files"""
     return await router_handler(PutRequestModel, Put)(
@@ -1498,7 +1498,7 @@ async def mput(
     error_handler: Optional[str] = Query(
         None, description="Callback function name for error handling"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PutRequestModel:
     """# Upload local files with glob pattern match"""
     return await router_handler(PutRequestModel, Mput)(
@@ -1590,7 +1590,7 @@ async def mkdir(
     gid: Optional[int] = Query(None, description="Group ID"),
     atime: Optional[int] = Query(None, description="Access time"),
     mtime: Optional[int] = Query(None, description="Modification time"),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> MkdirRequestModel:
     """# Create a remote directory with the specified attributes"""
     params = {"path": path}
@@ -1634,7 +1634,7 @@ async def mkdir(
     gid: Optional[int] = Query(None, description="Group ID"),
     atime: Optional[int] = Query(None, description="Access time"),
     mtime: Optional[int] = Query(None, description="Modification time"),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> MkdirRequestModel:
     """# Set attributes of a remote file, directory, or symlink"""
     params = {"path": path}
@@ -1680,7 +1680,7 @@ async def mkdirs(
     gid: Optional[int] = Query(None, description="Group ID"),
     atime: Optional[int] = Query(None, description="Access time"),
     mtime: Optional[int] = Query(None, description="Modification time"),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> MkdirRequestModel:
     """# Create a remote directory with the specified attributes"""
     params = {"path": path}
@@ -1714,7 +1714,7 @@ async def rmdir(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote directory to remove"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Remove a remote directory"""
     return await router_handler(PathRequestModel, Rmdir)(path=path, common=common)
@@ -1738,7 +1738,7 @@ async def rmtree(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the parent directory to remove"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Recursively delete a directory tree"""
     return await router_handler(PathRequestModel, Rmtree)(path=path, common=common)
@@ -1779,7 +1779,7 @@ async def chmod(
     follow_symlinks: bool = Query(
         False, description="Whether or not to follow symbolic links"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> ChmodRequestModel:
     """# Change the permissions of a remote file, directory, or symlink"""
     return await router_handler(ChmodRequestModel, Chmod)(
@@ -1825,7 +1825,7 @@ async def chown(
     ),
     uid: Optional[int] = Query(None, description="User ID"),
     gid: Optional[int] = Query(None, description="Group ID"),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> ChownRequestModel:
     """# Change the owner of a remote file, directory, or symlink"""
     return await router_handler(ChownRequestModel, Chown)(
@@ -1881,7 +1881,7 @@ async def utime(
     mtime: Optional[int] = Query(
         None, description="Modify time, as seconds relative to the UNIX epoch"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> UtimeRequestModel:
     """# Change the timestamps of a remote file, directory, or symlink"""
     return await router_handler(UtimeRequestModel, Utime)(
@@ -1910,13 +1910,13 @@ async def chdir(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path to set as the new remote working directory"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Change the current remote working directory"""
     return await router_handler(PathRequestModel, Chdir)(path=path, common=common)
 
 
-class RenameRequestModel(CommonCallbackRequestModel):
+class RenameRequestModel(CommonCallbackRequest):
     oldpath: Union[PurePath, str, bytes] = Field(
         ...,  # Required field
     )
@@ -1963,7 +1963,7 @@ async def rename(
     newpath: Union[PurePath, str, bytes] = Query(
         ..., description="The new name for this file, directory, or link"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> RenameRequestModel:
     """# Rename a remote file, directory, or link"""
     return await router_handler(RenameRequestModel, Rename)(
@@ -1989,7 +1989,7 @@ async def remove(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote file or link to remove"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Remove a remote file"""
     return await router_handler(PathRequestModel, Remove)(path=path, common=common)
@@ -2100,7 +2100,7 @@ async def write(
     max_requests: Optional[int] = Query(
         -1, description="The maximum number of parallel read or write requests"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> WriteRequestModel:
     """# Open a remote file"""
     params = {"path": path}
@@ -2128,7 +2128,7 @@ async def write(
     return await router_handler(WriteRequestModel, Write)(**params, common=common)
 
 
-class LinkRequestModel(CommonCallbackRequestModel):
+class LinkRequestModel(CommonCallbackRequest):
     file_path: Union[PurePath, str, bytes] = Field(
         ...,  # Required field
     )
@@ -2176,7 +2176,7 @@ async def link(
     link_path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of where to create the remote hard link"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> LinkRequestModel:
     """# Rename a remote file, directory, or link"""
     return await router_handler(LinkRequestModel, Link)(
@@ -2207,7 +2207,7 @@ async def symlink(
     link_path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of where to create the remote symbolic link"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> LinkRequestModel:
     """# Create a remote symbolic link"""
     return await router_handler(LinkRequestModel, Symlink)(
@@ -2224,7 +2224,7 @@ async def remove(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote link to remove"
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequestModel:
     """# Remove a remote link"""
     return await router_handler(PathRequestModel, Remove)(path=path, common=common)
@@ -2257,7 +2257,7 @@ async def truncate(
         ..., description="The path of the remote file to be truncated"
     ),
     size: int = Query(..., description=" The desired size of the file, in bytes"),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> TruncateRequestModel:
     """# Truncate a remote file to the specified size"""
     return await router_handler(TruncateRequestModel, Truncate)(
@@ -2343,7 +2343,7 @@ class Directory(Callback):
             yield Return(method=Method.PUT, changed=changed)
 
 
-@router.put("/directory", tags=["SFTP Operations"], response_model=PutResponseModel)
+@router.put("/directory", tags=["SFTP Operations"], response_model=PutResponse)
 async def directory(
     path: Union[PurePath, str, bytes] = Query(
         ...,
@@ -2374,7 +2374,7 @@ async def directory(
         description="Modification time in seconds since epoch",
         examples=["0xACAFEDAD"],
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> DirectoryRequestModel:
     """# Ensure directory exists"""
     params = {"path": path, "present": present}

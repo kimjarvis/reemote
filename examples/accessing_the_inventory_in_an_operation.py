@@ -1,6 +1,6 @@
 import asyncio
 from reemote.execute import execute
-from reemote.host import Getcontext
+from reemote.core.getcontext import GetContext
 from reemote.inventory import Inventory, InventoryItem, Connection
 
 
@@ -18,7 +18,7 @@ async def main():
     # examples/accessing_the_inventory_in_an_operation.py
     class Root:
         async def execute(self):
-            response = yield Getcontext()
+            response = yield GetContext()
             context = response["value"]
             print(context.inventory_item.connection.username)
 

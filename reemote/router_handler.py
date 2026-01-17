@@ -1,7 +1,7 @@
 from typing import Type, Any, Callable, List, Dict
 from fastapi import Depends, HTTPException
 from pydantic import BaseModel, ValidationError
-from reemote.operation import CommonOperationRequestModel, common_operation_request
+from reemote.operation import CommonOperationRequest, common_operation_request
 from reemote.execute import endpoint_execute
 
 
@@ -10,7 +10,7 @@ def router_handler(
     command_class: Type,
 ) -> Callable:
     async def handler(
-        common: CommonOperationRequestModel = Depends(common_operation_request), **kwargs
+        common: CommonOperationRequest = Depends(common_operation_request), **kwargs
     ) -> list[Any]:
         # Inline logic for _process_common_arguments
         if common is None:

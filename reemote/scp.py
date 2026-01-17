@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
 from reemote.router_handler import router_handler
-from reemote.callback import CommonCallbackRequestModel, common_callback_request
+from reemote.callback import CommonCallbackRequest, common_callback_request
 from reemote.callback import Callback
 from reemote.response import ResponseModel
 from reemote.context import Context
@@ -13,7 +13,7 @@ from reemote.context import Context
 router = APIRouter()
 
 
-class ScpRequestModel(CommonCallbackRequestModel):
+class ScpRequestModel(CommonCallbackRequest):
     srcpaths: List[str] = Field(
         ...,  # Required field
     )
@@ -71,7 +71,7 @@ async def upload(
         include_in_schema=False,  # This hides it from OpenAPI schema
         description="Callback function name for error handling",
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> ScpRequestModel:
     """# Upload files to the host"""
     return await router_handler(ScpRequestModel, Upload)(
@@ -133,7 +133,7 @@ async def download(
         include_in_schema=False,  # This hides it from OpenAPI schema
         description="Callback function name for error handling",
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> ScpRequestModel:
     """# Download files from the host"""
     return await router_handler(ScpRequestModel, Download)(
@@ -202,7 +202,7 @@ async def copy(
         include_in_schema=False,  # This hides it from OpenAPI schema
         description="Callback function name for error handling",
     ),
-    common: CommonCallbackRequestModel = Depends(common_callback_request),
+    common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> CopyRequestModel:
     """# Copy files between hosts"""
     return await router_handler(ScpRequestModel, Copy)(

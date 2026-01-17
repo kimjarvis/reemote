@@ -5,10 +5,10 @@ from fastapi import APIRouter, Depends
 from reemote.context import Context, Method
 from reemote.operation import (
     Operation,
-    CommonOperationRequestModel,
+    CommonOperationRequest,
     common_operation_request,
 )
-from reemote.response import PutResponseModel, PutResponseElement
+from reemote.response import PutResponse, PutResponseElement
 from reemote.router_handler import router_handler
 from reemote.apt.getpackages import GetPackages
 from reemote.system import Return
@@ -19,8 +19,8 @@ router = APIRouter()
 
 
 class UpgradePackages(Operation):
-    async def execute(self) -> AsyncGenerator[Context, PutResponseModel]:
-        model_instance = CommonOperationRequestModel.model_validate(self.kwargs)
+    async def execute(self) -> AsyncGenerator[Context, PutResponse]:
+        model_instance = CommonOperationRequest.model_validate(self.kwargs)
 
         pre = yield GetPackages()
         yield Upgrade(
@@ -36,12 +36,12 @@ class UpgradePackages(Operation):
 @router.put(
     "/upgradepackages",
     tags=["APT Package Manager"],
-    response_model=PutResponseModel,
+    response_model=PutResponse,
 )
 async def upgradepackages(
-    common: CommonOperationRequestModel = Depends(common_operation_request),
-) -> CommonOperationRequestModel:
+    common: CommonOperationRequest = Depends(common_operation_request),
+) -> CommonOperationRequest:
     """# Upgrade APT packages"""
-    return await router_handler(CommonOperationRequestModel, UpgradePackages)(
+    return await router_handler(CommonOperationRequest, UpgradePackages)(
         common=common
     )

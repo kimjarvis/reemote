@@ -31,11 +31,11 @@ async def test_getfact_sudo(setup_inventory):
 
 @pytest.mark.asyncio
 async def test_get_context(setup_inventory):
-    from reemote.host import Getcontext
+    from reemote.core.getcontext import GetContext
 
     class Root:
         async def execute(self):
-            r = yield Getcontext()
+            r = yield GetContext()
             if r:
                 assert not r["error"]
             print(r)

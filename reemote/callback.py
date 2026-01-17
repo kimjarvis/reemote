@@ -8,7 +8,7 @@ from reemote.context import ContextType, Context
 from reemote.response import AbstractResponseModel
 
 
-class CommonCallbackRequestModel(BaseModel):
+class CommonCallbackRequest(BaseModel):
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
 
     group: Optional[str] = Field(
@@ -22,9 +22,9 @@ def common_callback_request(
         "all", description="Optional inventory group (defaults to 'all')"
     ),
     name: Optional[str] = Query(None, description="Optional name"),
-) -> CommonCallbackRequestModel:
+) -> CommonCallbackRequest:
     """FastAPI dependency for common parameters"""
-    return CommonCallbackRequestModel(group=group, name=name)
+    return CommonCallbackRequest(group=group, name=name)
 
 
 class AbstractCallback(BaseModel):

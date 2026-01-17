@@ -6,12 +6,12 @@ from pydantic import (
     Field,
     field_validator,
 )
-from reemote.callback import CommonCallbackRequestModel
+from reemote.callback import CommonCallbackRequest
 
 router = APIRouter()
 
 
-class PathRequestModel(CommonCallbackRequestModel):
+class PathRequest(CommonCallbackRequest):
     path: Union[PurePath, str, bytes] = Field(..., examples=["/home/user", "testdata"])
 
     @field_validator("path", mode="before")

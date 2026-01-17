@@ -5,7 +5,7 @@ from fastapi import Query
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class CommonOperationRequestModel(BaseModel):
+class CommonOperationRequest(BaseModel):
     """Common parameters shared across command types"""
 
     model_config = ConfigDict(validate_assignment=True, extra="forbid")
@@ -25,9 +25,9 @@ def common_operation_request(
     name: Optional[str] = Query(None, description="Optional name"),
     sudo: bool = Query(False, description="Whether to use sudo"),
     su: bool = Query(False, description="Whether to use su"),
-) -> CommonOperationRequestModel:
+) -> CommonOperationRequest:
     """FastAPI dependency for common parameters"""
-    return CommonOperationRequestModel(group=group, name=name, sudo=sudo, su=su)
+    return CommonOperationRequest(group=group, name=name, sudo=sudo, su=su)
 
 
 class AbstractOperation(BaseModel):
@@ -56,7 +56,7 @@ class Operation(ABC):
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         # Define the fields that are considered "common" based on RemoteParams
-        common_fields = set(CommonOperationRequestModel.model_fields.keys())
+        common_fields = set(CommonOperationRequest.model_fields.keys())
 
         # Separate kwargs into common_kwargs and extra_kwargs
         self.common_kwargs = {

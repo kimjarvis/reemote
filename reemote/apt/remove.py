@@ -5,22 +5,22 @@ from fastapi import APIRouter, Depends, Query
 from reemote.context import Context, Method, ContextType
 from reemote.operation import (
     Operation,
-    CommonOperationRequestModel,
+    CommonOperationRequest,
     common_operation_request,
 )
-from reemote.response import PostResponseModel, PostResponseElement
+from reemote.response import PostResponse, PostResponseElement
 from reemote.router_handler import router_handler
 
 router = APIRouter()
 
 
-class RemoveRequestModel(CommonOperationRequestModel):
+class RemoveRequest(CommonOperationRequest):
     packages: list[str]
 
 
 class Remove(Operation):
-    async def execute(self) -> AsyncGenerator[Context, PostResponseModel]:
-        model_instance = RemoveRequestModel.model_validate(self.kwargs)
+    async def execute(self) -> AsyncGenerator[Context, PostResponse]:
+        model_instance = RemoveRequest.model_validate(self.kwargs)
 
         result = yield Context(
             command=f"apt-get remove -y {' '.join(model_instance.packages)}",
@@ -38,13 +38,13 @@ class Remove(Operation):
 @router.post(
     "/remove",
     tags=["APT Package Manager"],
-    response_model=PostResponseModel,
+    response_model=PostResponse,
 )
 async def remove(
-    common: RemoveRequestModel = Depends(common_operation_request),
+    common: RemoveRequest = Depends(common_operation_request),
     packages: list[str] = Query(..., description="List of package names"),
-) -> RemoveRequestModel:
+) -> RemoveRequest:
     """# Remove APT packages"""
-    return await router_handler(RemoveRequestModel, Remove)(
+    return await router_handler(RemoveRequest, Remove)(
         common=common, packages=packages
     )
