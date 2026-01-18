@@ -1,4 +1,4 @@
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
@@ -19,10 +19,10 @@ class Install(Operation):
     class Request(CommonOperationRequest):
         packages: list[str] = Field(..., description="List of package names")
 
-    class Response(PostResponse):
+    class Response(PostResponseElement):
         pass
 
-    async def execute(self) -> AsyncGenerator[Context, Response]:
+    async def execute(self) -> AsyncGenerator[Context, List[Response]]:
         model_instance = self.Request.model_validate(self.kwargs)
 
         result = yield Context(
@@ -32,12 +32,13 @@ class Install(Operation):
             method=Method.POST,
             **self.common_kwargs,
         )
-        PostResponseElement(root=result)
+        self.Response(root=result)
 
+    @staticmethod
     @router.post(
         "/install",
         tags=["APT Package Manager"],
-        response_model=Response,
+        response_model=List[Response],
     )
     async def install(
         common: Request = Depends(common_operation_request),
