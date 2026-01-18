@@ -1,8 +1,7 @@
-from typing import AsyncGenerator, List, Optional, Tuple, Union
+from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
-from pydantic import BaseModel, RootModel
 from reemote.context import Context, Method, ContextType
 from reemote.operation import CommonOperationRequest, common_operation_request
 from reemote.operation import Operation

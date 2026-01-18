@@ -39,7 +39,6 @@ class AbstractOperation(BaseModel):
 class Operation(ABC):
     # request_model = AbstractOperation
 
-
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 

@@ -8,7 +8,7 @@ from reemote.operation import (
     CommonOperationRequest,
     common_operation_request,
 )
-from reemote.response import PutResponse, PutResponseElement
+from reemote.response import PutResponseElement
 from reemote.router_handler import router_handler
 from reemote.apt.getpackages import GetPackages
 from reemote.core import ReturnPut
@@ -25,9 +25,8 @@ class UpgradePackages(Operation):
     class Response(PutResponseElement):
         pass
 
-
     async def execute(self) -> AsyncGenerator[Context, List[Response]]:
-        model_instance = self.Request.model_validate(self.kwargs)
+        self.Request.model_validate(self.kwargs)
 
         pre = yield GetPackages()
         yield Upgrade(

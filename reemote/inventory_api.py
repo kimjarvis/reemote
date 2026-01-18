@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Body, Path, Depends
+from fastapi import APIRouter, Body, Path
 from pydantic import BaseModel, ValidationError
 from reemote.inventory import Inventory, InventoryItem
 from reemote.config import Config

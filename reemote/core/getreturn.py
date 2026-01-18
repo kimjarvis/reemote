@@ -12,7 +12,6 @@ router = APIRouter()
 
 
 class GetReturn(Callback):
-
     class Response(PutResponse):
         pass
 

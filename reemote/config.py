@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+
 class Config:
     # Default data directory (can be overridden)
     data_dir = Path.home() / ".config/reemote"
@@ -127,7 +128,7 @@ class Config:
         # Load and validate inventory data
         with open(inventory_path, "r") as f:
             try:
-                inventory_data = json.load(f)
+                json.load(f)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON in inventory file: {e}")
 
@@ -177,4 +178,3 @@ class Config:
             return True
         except (json.JSONDecodeError, FileNotFoundError):
             return False
-

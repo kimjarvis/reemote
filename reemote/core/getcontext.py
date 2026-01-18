@@ -11,10 +11,11 @@ from reemote.context import Context, Method
 from reemote.operation import (
     CommonOperationRequest,
 )
-from reemote.response import GetResponse, GetResponseElement
+from reemote.response import GetResponseElement
 from reemote.router_handler import router_handler
 
 router = APIRouter()
+
 
 class GetContextResponseElement(GetResponseElement):
     value: Context = Field(
@@ -22,8 +23,10 @@ class GetContextResponseElement(GetResponseElement):
         description="The operational context.",
     )
 
+
 class GetContextResponse(RootModel):
     root: List[GetContextResponseElement]
+
 
 class GetContext(Callback):
     request_model = CommonOperationRequest

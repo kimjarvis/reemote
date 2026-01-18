@@ -10,16 +10,13 @@ from pydantic import (
     Field,
     field_validator,
     model_validator,
-    RootModel,
 )
 from reemote.context import Context, Method
 from reemote.core import ReturnPut
 from reemote.callback import Callback
 from reemote.callback import CommonCallbackRequest, common_callback_request
 from reemote.response import ResponseElement, ResponseModel
-from reemote.response import PutResponseElement, PutResponse
-from reemote.response import PostResponseElement, PostResponse
-from reemote.response import GetResponseElement, GetResponse
+from reemote.response import PutResponse
 from reemote.router_handler import router_handler
 from reemote.sftp1 import Isdir
 
@@ -102,9 +99,6 @@ async def isfile(
 ) -> PathRequestModel:
     """# Return if the remote path refers to a file"""
     return await router_handler(PathRequestModel, Isfile)(path=path, common=common)
-
-
-
 
 
 class GetsizeResponse(ResponseElement):
@@ -845,8 +839,8 @@ async def realpath(
     return await router_handler(PathRequestModel, Realpath)(path=path, common=common)
 
 
-class ClientResponse(CommonCallbackRequest):
-    pass
+# class ClientResponse(CommonCallbackRequest):
+#     pass
 
 
 class Client(Callback):
@@ -1622,7 +1616,7 @@ class Setstat(Callback):
 
 
 @router.post("/setstat", tags=["SFTP Operations"], response_model=ResponseModel)
-async def mkdir(
+async def setstat(
     path: Union[PurePath, str, bytes] = Query(
         ...,
         description="The path of the remote file or directory to set attributes for",
@@ -2068,7 +2062,7 @@ class Write(Callback):
                     block_size=context.caller.block_size,
                     max_requests=context.caller.max_requests,
                 )
-                content = await f.write(context.caller.text)
+                await f.write(context.caller.text)
                 await f.close()
 
 
@@ -2220,7 +2214,7 @@ class Unlink(Remove):
 
 
 @router.post("/unlink", tags=["SFTP Operations"], response_model=ResponseModel)
-async def remove(
+async def unlink(
     path: Union[PurePath, str, bytes] = Query(
         ..., description="The path of the remote link to remove"
     ),

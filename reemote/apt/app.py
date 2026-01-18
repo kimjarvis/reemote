@@ -21,7 +21,7 @@ apt_router.include_router(apt_upgrade_router, prefix="/reemote/apt")
 apt_router.include_router(apt_upgradepackages_router, prefix="/reemote/apt")
 
 # Export the router and the OpenAPI tag definition
-__all__ = ['apt_router', 'APT_TAG']
+__all__ = ["apt_router", "APT_TAG"]
 
 # Define the OpenAPI tag for APT
 APT_TAG = {

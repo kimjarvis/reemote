@@ -1,12 +1,12 @@
-from typing import List, Any, AsyncGenerator, Callable, Optional
+from typing import List, AsyncGenerator, Optional
 from fastapi import APIRouter, Depends, Query
-from pydantic import Field, model_validator, BaseModel
+from pydantic import Field
 
 from reemote.callback import Callback, CommonCallbackRequest
 from reemote.context import ContextType, Context, Method
 from reemote.response import PutResponse
 from reemote.router_handler import router_handler
-from reemote.callback import CommonCallbackRequest, common_callback_request
+from reemote.callback import common_callback_request
 
 router = APIRouter()
 

@@ -16,10 +16,9 @@ class Session(BaseModel):
     def to_json_serializable(self):
         return self.model_dump()
 
+
 class Connection(BaseModel):
-    host: str = Field(
-        ..., description="The hostname or IP address of the remote host."
-    )
+    host: str = Field(..., description="The hostname or IP address of the remote host.")
     model_config = {
         "extra": "allow",
         "json_schema_extra": {
@@ -49,8 +48,6 @@ class Connection(BaseModel):
         return self.model_dump()
 
 
-
-
 class Authentication(BaseModel):
     sudo_password: Optional[str] = Field(
         "", description="The ssh password for authenticating with the remote host."
@@ -69,11 +66,10 @@ class InventoryItem(BaseModel):
     )
     authentication: Optional[Authentication] = Field(
         default_factory=Authentication,
-        description="The authentication details for the remote host."
+        description="The authentication details for the remote host.",
     )
     session: Optional[Session] = Field(
-        default_factory=Session,
-        description="The session details for the remote host."
+        default_factory=Session, description="The session details for the remote host."
     )
     groups: List[str] = Field(
         [], description="The groups to which the remote host belongs."
@@ -81,6 +77,7 @@ class InventoryItem(BaseModel):
 
     def to_json_serializable(self) -> Dict[str, Any]:
         return self.model_dump()
+
 
 class Inventory(BaseModel):
     hosts: List[InventoryItem] = Field(
@@ -106,5 +103,3 @@ class Inventory(BaseModel):
         Convert the Inventory object to a plain dictionary suitable for json.dump().
         """
         return {"hosts": [item.to_json_serializable() for item in self.hosts]}
-
-

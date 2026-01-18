@@ -77,7 +77,6 @@ class GetFact(Operation):
         GetFactResponseElement(root=result)
 
 
-
 @router.get(
     "/getfact",
     tags=["Core Operations"],

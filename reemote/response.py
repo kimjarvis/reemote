@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com
 # This software is distributed under the MIT License. See the LICENSE file for details.
 #
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, List, Union
 
 from pydantic import BaseModel, Field, RootModel
 
@@ -35,8 +35,10 @@ class ResponseElement1(BaseModel):
         description="Connectivity error message.",
     )
 
+
 class AbstractResponseModel(RootModel[List[ResponseElement1]]):
     pass
+
 
 class GetResponseElement(ResponseElement1):
     value: Any = Field(
@@ -44,20 +46,25 @@ class GetResponseElement(ResponseElement1):
         description="Class specific information from the target host.",
     )
 
+
 class GetResponse(RootModel[List[GetResponseElement]]):
     pass
+
 
 class PostResponseElement(ResponseElement1):
     pass
 
+
 class PostResponse(RootModel[List[PostResponseElement]]):
     pass
+
 
 class PutResponseElement(ResponseElement1):
     changed: bool = Field(
         default=True,
         description="Whether or not the host was changed by the operation.",
     )
+
 
 class PutResponse(RootModel[List[PutResponseElement]]):
     pass

@@ -1,4 +1,4 @@
-from typing import AsyncGenerator, List, Union
+from typing import AsyncGenerator, List
 
 from fastapi import APIRouter, Depends
 
@@ -10,15 +10,16 @@ from reemote.operation import (
     common_operation_request,
 )
 from reemote.router_handler import router_handler
-from pydantic import BaseModel, Field, RootModel
+from pydantic import BaseModel, Field
 
 router = APIRouter()
+
 
 class GetPackages(Operation):
     class Request(CommonOperationRequest):
         pass
 
-    def parse_apt_list_installed(self,value):
+    def parse_apt_list_installed(self, value):
         """Parses the output of 'apt list --installed' into a list of dictionaries.
 
         This helper function processes the raw string output from the
@@ -66,11 +67,9 @@ class GetPackages(Operation):
 
         return packages
 
-
     class PackageModel(BaseModel):
         name: str = Field(..., description="The name of the package")
         version: str = Field(..., description="The version of the package")
-
 
     class Response(GetResponseElement):
         value: List["GetPackages.PackageModel"] = Field(
@@ -78,13 +77,11 @@ class GetPackages(Operation):
             description="List of package versions.",
         )
 
-
-
     async def execute(self) -> AsyncGenerator[Context, List[Response]]:
         model_instance = self.Request.model_validate(self.kwargs)
 
         result = yield Context(
-            command=f"apt list --installed",
+            command="apt list --installed",
             call=self.__class__.child + "(" + str(model_instance) + ")",
             type=ContextType.OPERATION,
             changed=False,
@@ -99,7 +96,6 @@ class GetPackages(Operation):
             result["value"] = package_list
 
         self.Response(root=result)
-
 
     @router.get(
         "/getpackages",

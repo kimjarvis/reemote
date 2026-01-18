@@ -3,13 +3,13 @@ from pydantic import Field
 from fastapi import APIRouter, Depends, Query
 
 from reemote.apt import GetPackages, Install, Remove
-from reemote.context import Context, Method, ContextType
+from reemote.context import Context, Method
 from reemote.operation import (
     Operation,
     CommonOperationRequest,
     common_operation_request,
 )
-from reemote.response import PutResponse, PutResponseElement
+from reemote.response import PutResponseElement
 from reemote.router_handler import router_handler
 from reemote.core import ReturnPut
 
@@ -31,13 +31,9 @@ class Package(Operation):
 
         pre = yield GetPackages()
         if model_instance.present:
-            result = yield Install(
-                **self.common_kwargs, packages=model_instance.packages
-            )
+            yield Install(**self.common_kwargs, packages=model_instance.packages)
         else:
-            result = yield Remove(
-                **self.common_kwargs, packages=model_instance.packages
-            )
+            yield Remove(**self.common_kwargs, packages=model_instance.packages)
         post = yield GetPackages()
 
         changed = pre["value"] != post["value"]

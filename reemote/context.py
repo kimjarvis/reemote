@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator  # Updated imports
+from pydantic import ConfigDict, Field, field_validator  # Updated imports
 from reemote.inventory import InventoryItem
 from reemote.operation import CommonOperationRequest
 
@@ -10,6 +10,7 @@ class ContextType(Enum):
     CALLBACK = 1
     OPERATION = 2
     PASSTHROUGH = 3
+
 
 class Method(Enum):
     GET = 1
