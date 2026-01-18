@@ -1,11 +1,12 @@
 from typing import AsyncGenerator
-from pydantic import Field
-from fastapi import APIRouter, Depends, Query
 
-from reemote.context import Context, Method, ContextType
+from fastapi import APIRouter, Depends, Query
+from pydantic import Field
+
+from reemote.context import Context, ContextType, Method
 from reemote.operation import (
-    Operation,
     CommonOperationRequest,
+    Operation,
     common_operation_request,
 )
 from reemote.response import PostResponse, PostResponseElement
@@ -14,13 +15,15 @@ from reemote.router_handler import router_handler
 router = APIRouter()
 
 
-class InstallRequest(CommonOperationRequest):
-    packages: list[str] = Field(..., description="List of package names")
-
-
 class Install(Operation):
-    async def execute(self) -> AsyncGenerator[Context, PostResponse]:
-        model_instance = InstallRequest.model_validate(self.kwargs)
+    class Request(CommonOperationRequest):
+        packages: list[str] = Field(..., description="List of package names")
+
+    class Response(PostResponse):
+        pass
+
+    async def execute(self) -> AsyncGenerator[Context, Response]:
+        model_instance = self.Request.model_validate(self.kwargs)
 
         result = yield Context(
             command=f"apt-get install -y {' '.join(model_instance.packages)}",
@@ -31,17 +34,16 @@ class Install(Operation):
         )
         PostResponseElement(root=result)
 
-
-@router.post(
-    "/install",
-    tags=["APT Package Manager"],
-    response_model=PostResponse,
-)
-async def install(
-    common: InstallRequest = Depends(common_operation_request),
-    packages: list[str] = Query(..., description="List of package names"),
-) -> InstallRequest:
-    """# Install APT packages"""
-    return await router_handler(InstallRequest, Install)(
-        common=common, packages=packages
+    @router.post(
+        "/install",
+        tags=["APT Package Manager"],
+        response_model=Response,
     )
+    async def install(
+        common: Request = Depends(common_operation_request),
+        packages: list[str] = Query(..., description="List of package names"),
+    ) -> Request:
+        """# Install APT packages"""
+        return await router_handler(Install.Request, Install)(
+            common=common, packages=packages
+        )
