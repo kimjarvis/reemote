@@ -46,21 +46,21 @@ async def test_get_context(setup_inventory):
 
 @pytest.mark.asyncio
 async def test_return1(setup_inventory):
-    from reemote.core import Return
+    from reemote.core import GetReturn
     from reemote.context import Method
-    r = await endpoint_execute(lambda: Return(method=Method.GET, value=1, group="server104"))
+    r = await endpoint_execute(lambda: GetReturn(value=1, group="server104"))
     assert len(r) == 1
 
 
 @pytest.mark.asyncio
 async def test_call1(setup_inventory):
-    from reemote.core.call import Call
+    from reemote.core.getcall import GetCall
     from reemote.context import Context
 
     async def callback(context: Context):
         return "tested"
 
-    r = await endpoint_execute(lambda: Call(callback=callback,group="server104"))
+    r = await endpoint_execute(lambda: GetCall(callback=callback, group="server104"))
     assert len(r) == 1
     assert r[0]["value"] == "tested"
 
@@ -85,7 +85,7 @@ async def test_call2(setup_inventory):
 
 @pytest.mark.asyncio
 async def test_systemcallback(setup_inventory):
-    from reemote.core.call import Call
+    from reemote.core.getcall import GetCall
     from reemote.context import Context
 
     async def callback(context: Context):
@@ -93,7 +93,7 @@ async def test_systemcallback(setup_inventory):
 
     class Root:
         async def execute(self):
-            r = yield Call(callback=callback)
+            r = yield GetCall(callback=callback)
             print(r)
             if r:
                 assert r["value"] == "tested"
@@ -130,23 +130,21 @@ async def test_core_recent_responses(setup_inventory):
     r = await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_return_get(setup_inventory):
-    from reemote.core import Return
-    from reemote.context import Method
-    r = await endpoint_execute(lambda: Return(method=Method.GET, value=1))
+async def test_returnfact(setup_inventory):
+    from reemote.core import GetReturn
+    r = await endpoint_execute(lambda: GetReturn(value=1))
     assert all(d.get('value') == 1 for d in r), "Not all dictionaries have value"
 
 @pytest.mark.asyncio
-async def test_return_get1(setup_inventory):
-    from reemote.core import Return
-    from reemote.context import Method
-    r = await endpoint_execute(lambda: Return(method=Method.PUT, changed=True))
+async def test_return2(setup_inventory):
+    from reemote.core import ReturnPut
+    r = await endpoint_execute(lambda: ReturnPut(changed=True))
     assert all(d.get('changed') for d in r), "Not all dictionaries have changed==True"
 
 
 @pytest.mark.asyncio
 async def test_return_use(setup_inventory):
-    from reemote.core import Return
+    from reemote.core import GetReturn
     from reemote.core import GetFact
     from reemote.context import Method
 
@@ -154,7 +152,7 @@ async def test_return_use(setup_inventory):
         async def execute(self):
             a = yield GetFact(cmd="echo Hello")
             b = yield GetFact(cmd="echo World")
-            yield Return(value=[a, b], method=Method.GET)
+            yield GetReturn(value=[a, b])
 
     class Parent:
         async def execute(self):

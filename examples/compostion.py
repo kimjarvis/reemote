@@ -3,7 +3,7 @@ import asyncio
 from reemote.execute import execute
 from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
-from reemote.core import Return
+from reemote.core import ReturnPut
 from reemote.context import Method
 from setup_logging import setup_logging
 
@@ -27,7 +27,7 @@ async def main():
         async def execute(self):
             hello_response = yield Child()
             world_response = yield GetFact(cmd="echo World!")
-            yield Return(
+            yield ReturnPut(
                 method=Method.GET,
                 value=hello_response["value"]["stdout"]
                 + world_response["value"]["stdout"],

@@ -3,7 +3,7 @@ from typing import AsyncGenerator, List, Union
 from fastapi import APIRouter, Depends
 
 from reemote.context import Context, Method, ContextType
-from reemote.response import ResponseElement
+from reemote.response import GetResponseElement
 from reemote.operation import (
     Operation,
     CommonOperationRequest,
@@ -72,7 +72,7 @@ class GetPackages(Operation):
         version: str = Field(..., description="The version of the package")
 
 
-    class Response(ResponseElement):
+    class Response(GetResponseElement):
         value: List["GetPackages.PackageModel"] = Field(
             default=[],
             description="List of package versions.",

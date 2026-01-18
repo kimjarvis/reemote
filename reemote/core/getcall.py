@@ -23,7 +23,7 @@ class CallResponse(BaseModel):
     """The response type is method dependent."""
     pass
 
-class Call(Callback):
+class GetCall(Callback):
     request_model = CallRequest
 
     @staticmethod
@@ -35,10 +35,10 @@ class Call(Callback):
         model_instance = self.request_model.model_validate(self.kwargs)
 
         yield Context(
-            type=ContextType.CALLBACK,
+            type=ContextType.CALLBACK, # todo: This could be passthrough
             value=model_instance.value,
             callback=model_instance.callback,
-            method=Method.GET,
+            method=Method.GET, # todo: This should be a method that makes sense for the callback
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,
@@ -58,6 +58,6 @@ async def call(
     **This interface is provided to document the Python API only.  It is not meaningful to call this HTTP endpoint.**
     """
     # todo: If this is always a return from put then the response model should be Putresponse
-    return await router_handler(CallRequest, Call)(value=value,
-                                                   callback=callback,
-                                                   common=common,)
+    return await router_handler(CallRequest, GetCall)(value=value,
+                                                      callback=callback,
+                                                      common=common, )

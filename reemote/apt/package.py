@@ -11,7 +11,7 @@ from reemote.operation import (
 )
 from reemote.response import PutResponse, PutResponseElement
 from reemote.router_handler import router_handler
-from reemote.core import Return
+from reemote.core import ReturnPut
 
 router = APIRouter()
 
@@ -41,7 +41,7 @@ class Package(Operation):
         post = yield GetPackages()
 
         changed = pre["value"] != post["value"]
-        yield Return(method=Method.PUT, changed=changed)
+        yield ReturnPut(method=Method.PUT, changed=changed)
 
     @staticmethod
     @router.put("/package", tags=["APT Package Manager"], response_model=List[Response])

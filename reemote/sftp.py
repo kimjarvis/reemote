@@ -13,7 +13,7 @@ from pydantic import (
     RootModel,
 )
 from reemote.context import Context, Method
-from reemote.core import Return
+from reemote.core import ReturnPut
 from reemote.callback import Callback
 from reemote.callback import CommonCallbackRequest, common_callback_request
 from reemote.response import ResponseElement, ResponseModel
@@ -2285,7 +2285,7 @@ class Directory(Callback):
     async def execute(
         self,
     ) -> AsyncGenerator[
-        Isdir | Rmdir | Mkdir | Stat | Chmod | Chown | Utime | Return, ResponseModel
+        Isdir | Rmdir | Mkdir | Stat | Chmod | Chown | Utime | ReturnPut, ResponseModel
     ]:
         model_instance = self.request_model.model_validate(self.kwargs)
 
@@ -2340,7 +2340,7 @@ class Directory(Callback):
                         group=model_instance.group,
                     )
                     changed = True
-            yield Return(method=Method.PUT, changed=changed)
+            yield ReturnPut(method=Method.PUT, changed=changed)
 
 
 @router.put("/directory", tags=["SFTP Operations"], response_model=PutResponse)

@@ -1,6 +1,6 @@
 import asyncio
 from reemote.execute import execute
-from reemote.core.call import Call
+from reemote.core.getcall import GetCall
 from reemote.context import Context
 from reemote.inventory import Inventory, InventoryItem, Connection
 
@@ -22,7 +22,7 @@ async def main():
 
     class Root:
         async def execute(self):
-            response = yield Call(callback=callback)
+            response = yield GetCall(callback=callback)
             print(response["value"])
 
     await execute(lambda: Root(), inventory=inventory)
