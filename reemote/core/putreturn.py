@@ -24,7 +24,6 @@ class ReturnPut(Callback):
 
     @staticmethod
     async def callback(context: Context) -> None:
-        # dummy  callback # todo: this should be passthrough
         pass
 
     async def execute(self) -> AsyncGenerator[Context, List[Response]]:
@@ -40,14 +39,14 @@ class ReturnPut(Callback):
         )
 
     @staticmethod
-    @router.put("/return", tags=["Core Operations"], response_model=Response)
-    async def _return(
+    @router.put("/putreturn", tags=["Core Operations"], response_model=Response)
+    async def putreturn(
         changed: Optional[bool] = Query(
             default=None, description="Whether the operation changed the host."
         ),
         common: CommonCallbackRequest = Depends(common_callback_request),
     ) -> Request:
-        """# Return return a changed indication"""
+        """# Return a changed indication"""
         # todo: This is always a return from put, it has "changed"
         return await router_handler(ReturnPut.Request, ReturnPut)(
             changed=changed,

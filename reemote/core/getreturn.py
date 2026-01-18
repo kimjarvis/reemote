@@ -1,12 +1,12 @@
-from typing import List, Any, AsyncGenerator, Optional
+from typing import Any, AsyncGenerator, List, Optional
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
-from reemote.callback import Callback
-from reemote.context import ContextType, Context, Method
+from reemote.callback import Callback, CommonCallbackRequest, common_callback_request
+from reemote.context import Context, ContextType, Method
 from reemote.response import PutResponse
 from reemote.router_handler import router_handler
-from reemote.callback import CommonCallbackRequest, common_callback_request
 
 router = APIRouter()
 
@@ -22,7 +22,6 @@ class GetReturn(Callback):
 
     @staticmethod
     async def callback(context: Context) -> None:
-        # dummy  callback
         pass
 
     async def execute(self) -> AsyncGenerator[Context, List[Response]]:
@@ -39,11 +38,11 @@ class GetReturn(Callback):
 
     @staticmethod
     @router.get(
-        "/return",
+        "/getreturn",
         tags=["Core Operations"],
         response_model=List[Response],
     )
-    async def _return(
+    async def getreturn(
         value: Optional[Any] = Query(default=None, description="The value to return."),
         common: CommonCallbackRequest = Depends(common_callback_request),
     ) -> Request:

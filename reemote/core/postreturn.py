@@ -1,17 +1,16 @@
-from typing import List, AsyncGenerator
+from typing import AsyncGenerator, List
+
 from fastapi import APIRouter, Depends
 
-
-from reemote.callback import Callback, CommonCallbackRequest
-from reemote.context import ContextType, Context, Method
+from reemote.callback import Callback, CommonCallbackRequest, common_callback_request
+from reemote.context import Context, ContextType, Method
 from reemote.response import PostResponse
 from reemote.router_handler import router_handler
-from reemote.callback import common_callback_request
 
 router = APIRouter()
 
 
-class ReturnPut(Callback):
+class PostReturn(Callback):
     class Response(PostResponse):
         pass
 
@@ -22,7 +21,6 @@ class ReturnPut(Callback):
 
     @staticmethod
     async def callback(context: Context) -> None:
-        # dummy  callback # todo: this should be passthrough
         pass
 
     async def execute(self) -> AsyncGenerator[Context, List[Response]]:
@@ -37,11 +35,15 @@ class ReturnPut(Callback):
         )
 
     @staticmethod
-    @router.post("/return", tags=["Core Operations"], response_model=Response)
+    @router.post(
+        "/postreturn",
+        tags=["Core Operations"],
+        response_model=Response,
+    )
     async def postreturn(
         common: CommonCallbackRequest = Depends(common_callback_request),
     ) -> Request:
-        """# Return"""
-        return await router_handler(ReturnPut.Request, ReturnPut)(
+        """# Return without value or changed indication"""
+        return await router_handler(PostReturn.Request, PostReturn)(
             common=common,
         )
