@@ -74,7 +74,7 @@ class Return(Callback):
         )
 
 
-@router.put("/return", tags=["Core Operations"], response_model=ReturnResponse)
+@router.get("/return", tags=["Core Operations"], response_model=ReturnResponse)
 async def _return(
         value: Optional[Any] = Query(default=None, description="The value to return."),
         method: Method = Query(..., description="The HTTP method."),
