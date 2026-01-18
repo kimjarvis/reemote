@@ -11,7 +11,7 @@ from reemote.operation import (
 )
 from reemote.response import PutResponse
 from reemote.router_handler import router_handler
-from reemote.system import Return
+from reemote.core import Return
 
 router = APIRouter()
 

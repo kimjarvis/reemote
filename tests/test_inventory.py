@@ -84,10 +84,7 @@ async def test_inventory_unreachablehost_host_sftp_command():
 
     class Root:
         async def execute(self):
-            r = yield Isdir(path="/home/user/dir_e")
-            if r and r["value"]:
-                yield Rmdir(path="/home/user/dir_e")
-            yield Mkdir(path="/home/user/dir_e")
+            yield Isdir(path="/home/user/dir_e")
 
     inventory = Inventory(
         hosts=[

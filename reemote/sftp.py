@@ -13,7 +13,7 @@ from pydantic import (
     RootModel,
 )
 from reemote.context import Context, Method
-from reemote.system import Return
+from reemote.core import Return
 from reemote.callback import Callback
 from reemote.callback import CommonCallbackRequest, common_callback_request
 from reemote.response import ResponseElement, ResponseModel

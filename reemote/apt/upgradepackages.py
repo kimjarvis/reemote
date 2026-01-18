@@ -11,7 +11,7 @@ from reemote.operation import (
 from reemote.response import PutResponse, PutResponseElement
 from reemote.router_handler import router_handler
 from reemote.apt.getpackages import GetPackages
-from reemote.system import Return
+from reemote.core import Return
 
 from reemote.apt.upgrade import Upgrade
 

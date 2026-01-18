@@ -154,7 +154,7 @@ import asyncio
 from reemote.execute import execute
 from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
-from reemote.system import Return
+from reemote.core import Return
 
 
 async def main():
@@ -276,7 +276,7 @@ import asyncio
 from reemote.execute import execute
 from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
-from reemote.system import Return
+from reemote.core import Return
 
 
 async def main():

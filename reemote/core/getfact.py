@@ -78,7 +78,7 @@ class GetFact(Operation):
 
 
 
-@router.post(
+@router.get(
     "/getfact",
     tags=["Core Operations"],
     response_model=GetFactResponse,
@@ -88,6 +88,6 @@ async def getfact(
         ..., description="Shell command", examples=["echo Hello World!", "ls -ltr"]
     ),
     common: CommonOperationRequest = Depends(common_operation_request),
-) -> GetFactResponse:
+) -> GetFactRequest:
     """# Execute a shell command to get information from the remote host"""
     return await router_handler(GetFactRequest, GetFact)(cmd=cmd, common=common)
