@@ -9,7 +9,7 @@ from reemote.operation import (
     Operation,
     common_operation_request,
 )
-from reemote.response import PostResponse, PostResponseElement
+from reemote.response import PostResponseElement
 from reemote.router_handler import router_handler
 
 router = APIRouter()

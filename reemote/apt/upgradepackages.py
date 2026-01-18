@@ -1,4 +1,4 @@
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List
 
 from fastapi import APIRouter, Depends
 
@@ -19,8 +19,15 @@ router = APIRouter()
 
 
 class UpgradePackages(Operation):
-    async def execute(self) -> AsyncGenerator[Context, PutResponse]:
-        model_instance = CommonOperationRequest.model_validate(self.kwargs)
+    class Request(CommonOperationRequest):
+        pass
+
+    class Response(PutResponseElement):
+        pass
+
+
+    async def execute(self) -> AsyncGenerator[Context, List[Response]]:
+        model_instance = self.Request.model_validate(self.kwargs)
 
         pre = yield GetPackages()
         yield Upgrade(
@@ -30,18 +37,18 @@ class UpgradePackages(Operation):
 
         changed = pre["value"] != post["value"]
 
-        yield Return(method=Method.PUT, changed=changed, value=None)
+        yield Return(method=Method.PUT, changed=changed)
 
-
-@router.put(
-    "/upgradepackages",
-    tags=["APT Package Manager"],
-    response_model=PutResponse,
-)
-async def upgradepackages(
-    common: CommonOperationRequest = Depends(common_operation_request),
-) -> CommonOperationRequest:
-    """# Upgrade APT packages"""
-    return await router_handler(CommonOperationRequest, UpgradePackages)(
-        common=common
+    @staticmethod
+    @router.put(
+        "/upgradepackages",
+        tags=["APT Package Manager"],
+        response_model=List[Response],
     )
+    async def upgradepackages(
+        common: CommonOperationRequest = Depends(common_operation_request),
+    ) -> CommonOperationRequest:
+        """# Upgrade APT packages"""
+        return await router_handler(UpgradePackages.Request, UpgradePackages)(
+            common=common
+        )

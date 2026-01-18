@@ -1,4 +1,4 @@
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List
 
 from fastapi import APIRouter, Depends
 
@@ -8,15 +8,21 @@ from reemote.operation import (
     CommonOperationRequest,
     common_operation_request,
 )
-from reemote.response import PostResponse, PostResponseElement
+from reemote.response import PostResponseElement
 from reemote.router_handler import router_handler
 
 router = APIRouter()
 
 
 class Upgrade(Operation):
-    async def execute(self) -> AsyncGenerator[Context, PostResponse]:
-        model_instance = CommonOperationRequest.model_validate(self.kwargs)
+    class Request(CommonOperationRequest):
+        pass
+
+    class Response(PostResponseElement):
+        pass
+
+    async def execute(self) -> AsyncGenerator[Context, List[Response]]:
+        model_instance = self.Request.model_validate(self.kwargs)
 
         result = yield Context(
             command="apt-get upgrade",
@@ -25,19 +31,15 @@ class Upgrade(Operation):
             method=Method.POST,
             **self.common_kwargs,
         )
-        if not result["error"]:
-            result["value"] = None
+        self.Response(root=result)
 
-        PostResponseElement(root=result)
-
-
-@router.post(
-    "/upgrade",
-    tags=["APT Package Manager"],
-    response_model=PostResponse,
-)
-async def upgrade(
-    common: CommonOperationRequest = Depends(common_operation_request),
-) -> CommonOperationRequest:
-    """# Upgrade APT packages"""
-    return await router_handler(CommonOperationRequest, Upgrade)(common=common)
+    @router.post(
+        "/upgrade",
+        tags=["APT Package Manager"],
+        response_model=List[Response],
+    )
+    async def upgrade(
+        common: CommonOperationRequest = Depends(common_operation_request),
+    ) -> CommonOperationRequest:
+        """# Upgrade APT packages"""
+        return await router_handler(Upgrade.Request, Upgrade)(common=common)

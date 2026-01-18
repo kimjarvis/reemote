@@ -1,26 +1,29 @@
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import Field
 
-from reemote.context import Context, Method, ContextType
+from reemote.context import Context, ContextType, Method
 from reemote.operation import (
-    Operation,
     CommonOperationRequest,
+    Operation,
     common_operation_request,
 )
-from reemote.response import PostResponse, PostResponseElement
+from reemote.response import PostResponseElement
 from reemote.router_handler import router_handler
 
 router = APIRouter()
 
 
-class RemoveRequest(CommonOperationRequest):
-    packages: list[str]
-
-
 class Remove(Operation):
-    async def execute(self) -> AsyncGenerator[Context, PostResponse]:
-        model_instance = RemoveRequest.model_validate(self.kwargs)
+    class Request(CommonOperationRequest):
+        packages: list[str] = Field(..., description="List of package names")
+
+    class Response(PostResponseElement):
+        pass
+
+    async def execute(self) -> AsyncGenerator[Context, List[Response]]:
+        model_instance = self.Request.model_validate(self.kwargs)
 
         result = yield Context(
             command=f"apt-get remove -y {' '.join(model_instance.packages)}",
@@ -29,22 +32,19 @@ class Remove(Operation):
             method=Method.POST,
             **self.common_kwargs,
         )
-        if not result["error"]:
-            result["value"] = None
+        self.Response(root=result)
 
-        PostResponseElement(root=result)
-
-
-@router.post(
-    "/remove",
-    tags=["APT Package Manager"],
-    response_model=PostResponse,
-)
-async def remove(
-    common: RemoveRequest = Depends(common_operation_request),
-    packages: list[str] = Query(..., description="List of package names"),
-) -> RemoveRequest:
-    """# Remove APT packages"""
-    return await router_handler(RemoveRequest, Remove)(
-        common=common, packages=packages
+    @staticmethod
+    @router.post(
+        "/remove",
+        tags=["APT Package Manager"],
+        response_model=List[Response],
     )
+    async def remove(
+        common: Request = Depends(common_operation_request),
+        packages: list[str] = Query(..., description="List of package names"),
+    ) -> Request:
+        """# Remove APT packages"""
+        return await router_handler(Remove.Request, Remove)(
+            common=common, packages=packages
+        )

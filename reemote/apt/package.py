@@ -1,4 +1,4 @@
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List
 from pydantic import Field
 from fastapi import APIRouter, Depends, Query
 
@@ -9,23 +9,25 @@ from reemote.operation import (
     CommonOperationRequest,
     common_operation_request,
 )
-from reemote.response import PutResponse
+from reemote.response import PutResponse, PutResponseElement
 from reemote.router_handler import router_handler
 from reemote.core import Return
 
 router = APIRouter()
 
 
-class PackageRequest(CommonOperationRequest):
-    packages: list[str] = Field(..., description="List of package names")
-    present: bool = Field(
-        True, description="Whether the packages should be present or not"
-    )
-
-
 class Package(Operation):
-    async def execute(self) -> AsyncGenerator[Context, PutResponse]:
-        model_instance = PackageRequest.model_validate(self.kwargs)
+    class Request(CommonOperationRequest):
+        packages: list[str] = Field(..., description="List of package names.")
+        present: bool = Field(
+            ..., description="Whether the packages should be present or not."
+        )
+
+    class Response(PutResponseElement):
+        pass
+
+    async def execute(self) -> AsyncGenerator[Context, List[Response]]:
+        model_instance = self.Request.model_validate(self.kwargs)
 
         pre = yield GetPackages()
         if model_instance.present:
@@ -39,21 +41,20 @@ class Package(Operation):
         post = yield GetPackages()
 
         changed = pre["value"] != post["value"]
-
         yield Return(method=Method.PUT, changed=changed)
 
-
-@router.put("/package", tags=["APT Package Manager"], response_model=PutResponse)
-async def package(
-    packages: list[str] = Query(..., description="List of package names"),
-    present: bool = Query(
-        True, description="Whether the packages should be present or not"
-    ),
-    common: PackageRequest = Depends(common_operation_request),
-) -> PackageRequest:
-    """# Manage installed APT packages"""
-    return await router_handler(PackageRequest, Package)(
-        common=common,
-        packages=packages,
-        present=present,
-    )
+    @staticmethod
+    @router.put("/package", tags=["APT Package Manager"], response_model=List[Response])
+    async def package(
+        packages: list[str] = Query(..., description="List of package names."),
+        present: bool = Query(
+            ..., description="Whether the packages should be present or not."
+        ),
+        common: Request = Depends(common_operation_request),
+    ) -> Request:
+        """# Manage installed APT packages"""
+        return await router_handler(Package.Request, Package)(
+            common=common,
+            packages=packages,
+            present=present,
+        )
