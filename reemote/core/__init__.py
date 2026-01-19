@@ -4,6 +4,8 @@ from reemote.core.return_put import return_put
 from reemote.core.return_get import return_get
 from reemote.core.return_post import return_post
 from reemote.core.call_get import call_get
+from reemote.core.call_put import call_put
+from reemote.core.call_post import call_post
 
 __all__ = [
     "GetFact",
@@ -12,4 +14,6 @@ __all__ = [
     "return_post",
     "return_get",
     "call_get",
+    "call_put",
+    "call_post",
 ]

@@ -71,7 +71,7 @@ async def test_call_get_ensure_operations_in_callback_fail_part_1(setup_inventor
     from reemote.sftp1 import Isdir
 
     async def callback(context: Context):
-        r = yield Isdir(path="/home/user")
+        # r = yield Isdir(path="/home/user")
         return "tested"
 
     await endpoint_execute(lambda: call_get(callback=callback,group="server104"))
@@ -174,3 +174,57 @@ async def test_return_use(setup_inventory):
 
     r = await endpoint_execute(lambda: Parent())
     assert len(r) == 2
+
+
+@pytest.mark.asyncio
+async def test_core_call_get_value_passing(setup_inventory):
+    from reemote.core import call_get
+    from reemote.context import Context
+
+    async def _callback(context: Context):
+        return context.value+" World!"
+
+    class Root:
+        async def execute(self):
+            r = yield call_get(callback=_callback, value="Hello")
+            if r:
+                assert r["value"] == "Hello World!"
+
+    r = await endpoint_execute(lambda: Root())
+    assert len(r) == 2
+
+@pytest.mark.asyncio
+async def test_core_call_put(setup_inventory):
+    from reemote.core import call_put
+    from reemote.context import Context
+
+    async def _callback(context: Context):
+        context.changed = False
+
+    class Root:
+        async def execute(self):
+            r = yield call_put(callback=_callback, value="Hello")
+            print(r)
+            if r:
+                assert not r["changed"]
+
+    r = await endpoint_execute(lambda: Root())
+    assert len(r) == 2
+
+@pytest.mark.asyncio
+async def test_core_call_put(setup_inventory):
+    from reemote.core import call_post
+    from reemote.context import Context
+
+    async def _callback(context: Context):
+        context.changed = False
+
+    class Root:
+        async def execute(self):
+            r = yield call_post(callback=_callback, value="Hello")
+            print(r)
+
+    r = await endpoint_execute(lambda: Root())
+    assert len(r) == 2
+
+

@@ -5,7 +5,7 @@ from pydantic import Field
 
 from reemote.callback import Callback, CommonCallbackRequest, common_callback_request
 from reemote.context import Context, ContextType, Method
-from reemote.response import GetResponseElement
+from reemote.response import PostResponseElement
 from reemote.router_handler import router_handler
 
 
@@ -13,8 +13,8 @@ from reemote.router_handler import router_handler
 router = APIRouter()
 
 
-class call_get(Callback):
-    class Response(GetResponseElement):
+class call_post(Callback):
+    class Response(PostResponseElement):
         pass
 
 
@@ -37,19 +37,19 @@ class call_get(Callback):
             type=ContextType.CALLBACK,
             value=model_instance.value,
             callback=model_instance.callback,
-            method=Method.GET,
+            method=Method.POST,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,
         )
 
     @staticmethod
-    @router.get(
-        "/call_get",
+    @router.post(
+        "/call_post",
         tags=["Core Operations"],
         response_model=List[Response],
     )
-    async def call_get(
+    async def call_post(
         callback: Any = Query(..., description="Callable callback function."),
         value: Optional[Any] = Query(
             default=None, description="The value to pass to the callback function."
@@ -60,7 +60,7 @@ class call_get(Callback):
 
         This is a python coroutine. The REST API endpoint is provided for documentation purposes, it cannot be called directly.
         """
-        return await router_handler(call_get.Request, call_get)(
+        return await router_handler(call_post.Request, call_post)(
             value=value,
             callback=callback,
             common=common,

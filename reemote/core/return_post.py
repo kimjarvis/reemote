@@ -38,7 +38,7 @@ class return_post(Callback):
     @router.post(
         "/return_post",
         tags=["Core Operations"],
-        response_model=Response,
+        response_model=List[Response],
     )
     async def return_post(
         common: CommonCallbackRequest = Depends(common_callback_request),

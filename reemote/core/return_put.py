@@ -39,7 +39,7 @@ class return_put(Callback):
         )
 
     @staticmethod
-    @router.put("/return_put", tags=["Core Operations"], response_model=Response)
+    @router.put("/return_put", tags=["Core Operations"], response_model=Response,)
     async def return_put(
         changed: Optional[bool] = Query(
             default=None, description="Whether the operation changed the host."

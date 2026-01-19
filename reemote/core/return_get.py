@@ -20,6 +20,7 @@ class return_get(Callback):
 
     request_model = Request
 
+    # todo: needed ?
     @staticmethod
     async def callback(context: Context) -> None:
         pass
