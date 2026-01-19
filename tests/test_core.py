@@ -46,38 +46,49 @@ async def test_get_context(setup_inventory):
 
 @pytest.mark.asyncio
 async def test_return1(setup_inventory):
-    from reemote.core import GetReturn
+    from reemote.core import return_get
     from reemote.context import Method
-    r = await endpoint_execute(lambda: GetReturn(value=1, group="server104"))
+    r = await endpoint_execute(lambda: return_get(value=1, group="server104"))
     assert len(r) == 1
 
 
 @pytest.mark.asyncio
-async def test_call1(setup_inventory):
-    from reemote.core.getcall import GetCall
+async def test_call_get(setup_inventory):
+    from reemote.core.call_get import call_get
     from reemote.context import Context
 
     async def callback(context: Context):
         return "tested"
 
-    r = await endpoint_execute(lambda: GetCall(callback=callback, group="server104"))
+    r = await endpoint_execute(lambda: call_get(callback=callback, group="server104"))
     assert len(r) == 1
     assert r[0]["value"] == "tested"
 
 @pytest.mark.asyncio
-async def test_call2(setup_inventory):
-    invalid_code="""
-    from reemote.system import Call
+async def test_call_get_ensure_operations_in_callback_fail_part_1(setup_inventory):
+    from reemote.core import call_get
     from reemote.context import Context
     from reemote.sftp1 import Isdir
 
     async def callback(context: Context):
         r = yield Isdir(path="/home/user")
-        print(r)
         return "tested"
 
-    await endpoint_execute(lambda: Call(callback=callback,group="server104"))
-    print(r)
+    await endpoint_execute(lambda: call_get(callback=callback,group="server104"))
+
+@pytest.mark.asyncio
+async def test_call_get_ensure_operations_in_callback_fail_part_2(setup_inventory):
+    # Ensure that operations cannot be called from within a callback
+    invalid_code="""
+    from reemote.core import call_get
+    from reemote.context import Context
+    from reemote.sftp1 import Isdir
+
+    async def callback(context: Context):
+        r = yield Isdir(path="/home/user")
+        return "tested"
+
+    await endpoint_execute(lambda: Call(callback=call_get,group="server104"))
     """
     with pytest.raises(SyntaxError):
         exec(invalid_code)
@@ -85,7 +96,7 @@ async def test_call2(setup_inventory):
 
 @pytest.mark.asyncio
 async def test_systemcallback(setup_inventory):
-    from reemote.core.getcall import GetCall
+    from reemote.core.call_get import call_get
     from reemote.context import Context
 
     async def callback(context: Context):
@@ -93,7 +104,7 @@ async def test_systemcallback(setup_inventory):
 
     class Root:
         async def execute(self):
-            r = yield GetCall(callback=callback)
+            r = yield call_get(callback=callback)
             print(r)
             if r:
                 assert r["value"] == "tested"
@@ -131,20 +142,20 @@ async def test_core_recent_responses(setup_inventory):
 
 @pytest.mark.asyncio
 async def test_returnfact(setup_inventory):
-    from reemote.core import GetReturn
-    r = await endpoint_execute(lambda: GetReturn(value=1))
+    from reemote.core import return_get
+    r = await endpoint_execute(lambda: return_get(value=1))
     assert all(d.get('value') == 1 for d in r), "Not all dictionaries have value"
 
 @pytest.mark.asyncio
 async def test_return2(setup_inventory):
-    from reemote.core import ReturnPut
-    r = await endpoint_execute(lambda: ReturnPut(changed=True))
+    from reemote.core import return_put
+    r = await endpoint_execute(lambda: return_put(changed=True))
     assert all(d.get('changed') for d in r), "Not all dictionaries have changed==True"
 
 
 @pytest.mark.asyncio
 async def test_return_use(setup_inventory):
-    from reemote.core import GetReturn
+    from reemote.core import return_get
     from reemote.core import GetFact
     from reemote.context import Method
 
@@ -152,7 +163,7 @@ async def test_return_use(setup_inventory):
         async def execute(self):
             a = yield GetFact(cmd="echo Hello")
             b = yield GetFact(cmd="echo World")
-            yield GetReturn(value=[a, b])
+            yield return_get(value=[a, b])
 
     class Parent:
         async def execute(self):

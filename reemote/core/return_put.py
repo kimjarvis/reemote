@@ -4,15 +4,15 @@ from pydantic import Field
 
 from reemote.callback import Callback, CommonCallbackRequest
 from reemote.context import ContextType, Context, Method
-from reemote.response import PutResponse
+from reemote.response import PutResponseElement
 from reemote.router_handler import router_handler
 from reemote.callback import common_callback_request
 
 router = APIRouter()
 
 
-class ReturnPut(Callback):
-    class Response(PutResponse):
+class return_put(Callback):
+    class Response(PutResponseElement):
         pass
 
     class Request(CommonCallbackRequest):
@@ -39,8 +39,8 @@ class ReturnPut(Callback):
         )
 
     @staticmethod
-    @router.put("/putreturn", tags=["Core Operations"], response_model=Response)
-    async def putreturn(
+    @router.put("/return_put", tags=["Core Operations"], response_model=Response)
+    async def return_put(
         changed: Optional[bool] = Query(
             default=None, description="Whether the operation changed the host."
         ),
@@ -48,7 +48,7 @@ class ReturnPut(Callback):
     ) -> Request:
         """# Return a changed indication"""
         # todo: This is always a return from put, it has "changed"
-        return await router_handler(ReturnPut.Request, ReturnPut)(
+        return await router_handler(return_put.Request, return_put)(
             changed=changed,
             common=common,
         )

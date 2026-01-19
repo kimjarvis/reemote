@@ -154,7 +154,7 @@ import asyncio
 from reemote.execute import execute
 from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
-from reemote.core import ReturnPut
+from reemote.core import return_put
 
 
 async def main():
@@ -176,7 +176,7 @@ async def main():
         async def execute(self):
             hello_response = yield Child()
             world_response = yield GetFact(cmd="echo World!")
-            yield ReturnPut(value=hello_response["value"]["stdout"] + world_response["value"]["stdout"])
+            yield return_put(value=hello_response["value"]["stdout"] + world_response["value"]["stdout"])
 
     responses = await execute(lambda: Root(), inventory=inventory)
     for response in responses:
@@ -276,7 +276,7 @@ import asyncio
 from reemote.execute import execute
 from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
-from reemote.core import ReturnPut
+from reemote.core import return_put
 
 
 async def main():
@@ -301,7 +301,7 @@ async def main():
         async def execute(self):
             hello_response = yield GetFact(cmd="echo Hello")
             world_response = yield GetFact(cmd="echo World!")
-            yield ReturnPut(value=[hello_response, world_response])
+            yield return_put(value=[hello_response, world_response])
 
     main_responses = await execute(
         lambda: GetFact(cmd="echo Ready?"),

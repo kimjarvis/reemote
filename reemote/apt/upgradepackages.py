@@ -11,7 +11,7 @@ from reemote.operation import (
 from reemote.response import PutResponseElement
 from reemote.router_handler import router_handler
 from reemote.apt.getpackages import GetPackages
-from reemote.core import ReturnPut
+from reemote.core import return_put
 
 from reemote.apt.upgrade import Upgrade
 
@@ -36,7 +36,7 @@ class UpgradePackages(Operation):
 
         changed = pre["value"] != post["value"]
 
-        yield ReturnPut(method=Method.PUT, changed=changed)
+        yield return_put(method=Method.PUT, changed=changed)
 
     @staticmethod
     @router.put(

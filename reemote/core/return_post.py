@@ -4,14 +4,14 @@ from fastapi import APIRouter, Depends
 
 from reemote.callback import Callback, CommonCallbackRequest, common_callback_request
 from reemote.context import Context, ContextType, Method
-from reemote.response import PostResponse
+from reemote.response import PostResponseElement
 from reemote.router_handler import router_handler
 
 router = APIRouter()
 
 
-class PostReturn(Callback):
-    class Response(PostResponse):
+class return_post(Callback):
+    class Response(PostResponseElement):
         pass
 
     class Request(CommonCallbackRequest):
@@ -36,14 +36,14 @@ class PostReturn(Callback):
 
     @staticmethod
     @router.post(
-        "/postreturn",
+        "/return_post",
         tags=["Core Operations"],
         response_model=Response,
     )
-    async def postreturn(
+    async def return_post(
         common: CommonCallbackRequest = Depends(common_callback_request),
     ) -> Request:
         """# Return without value or changed indication"""
-        return await router_handler(PostReturn.Request, PostReturn)(
+        return await router_handler(return_post.Request, return_post)(
             common=common,
         )

@@ -3,7 +3,7 @@ import asyncio
 from reemote.execute import execute
 from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
-from reemote.core import ReturnPut
+from reemote.core import return_put
 
 
 async def main():
@@ -32,7 +32,7 @@ async def main():
             yield GetFact(cmd="echo Hello")
             yield GetFact(cmd="echo World!")
             end_time = time.time()
-            yield ReturnPut(value=(start_time, end_time))
+            yield return_put(value=(start_time, end_time))
 
     await execute(lambda: GetFact(cmd="echo Ready?"), inventory=inventory)
     responses = await execute(lambda: Root(), inventory=inventory)
