@@ -5,11 +5,10 @@ import asyncssh
 from fastapi import APIRouter, Depends, Query
 from pydantic import (
     Field,
-    RootModel,
 )
+
+from reemote.callback import Callback, CommonCallbackRequest, common_callback_request
 from reemote.context import Context, Method
-from reemote.callback import Callback
-from reemote.callback import CommonCallbackRequest, common_callback_request
 from reemote.response import GetResponseElement
 from reemote.router_handler import router_handler
 from reemote.sftp1.common import PathRequest
@@ -17,20 +16,18 @@ from reemote.sftp1.common import PathRequest
 router = APIRouter()
 
 
-class IsdirResponseElement(GetResponseElement):
-    value: bool = Field(
-        default=False,
-        description="Whether or not the path is a directory.",
-    )
+class is_dir(Callback):
+    class Request(PathRequest):
+        pass
 
+    class Response(GetResponseElement):
+        value: bool = Field(
+            default=False,
+            description="Whether or not the path is a directory.",
+        )
 
-class IsdirResponse(RootModel):
-    root: List[IsdirResponseElement]
-
-
-class Isdir(Callback):
-    request_model = PathRequest
-    response_model = IsdirResponseElement
+    request_model = Request
+    response_model = Response
 
     @staticmethod
     async def callback(context: Context) -> None:
@@ -42,13 +39,17 @@ class Isdir(Callback):
                 context.method = Method.GET
                 return await sftp.isdir(context.caller.path)
 
-
-@router.get("/isdir", tags=["SFTP Operations"], response_model=IsdirResponse)
-async def isdir(
-    path: Union[PurePath, str, bytes] = Query(
-        ..., description="Path to check if it's a directory"
-    ),
-    common: CommonCallbackRequest = Depends(common_callback_request),
-) -> PathRequest:
-    """# Return if the remote path refers to a directory"""
-    return await router_handler(PathRequest, Isdir)(path=path, common=common)
+    @staticmethod
+    @router.get(
+        "/is_dir",
+        tags=["SFTP Operations"],
+        response_model=List[Response],
+    )
+    async def is_dir(
+        path: Union[PurePath, str, bytes] = Query(
+            ..., description="Path to check if it's a directory"
+        ),
+        common: CommonCallbackRequest = Depends(common_callback_request),
+    ) -> Request:
+        """# Return if the remote path refers to a directory"""
+        return await router_handler(is_dir.Request, is_dir)(path=path, common=common)

@@ -37,7 +37,7 @@ class Package(Operation):
         post = yield GetPackages()
 
         changed = pre["value"] != post["value"]
-        yield return_put(method=Method.PUT, changed=changed)
+        yield return_put(changed=changed)
 
     @staticmethod
     @router.put("/package", tags=["APT Package Manager"], response_model=List[Response])

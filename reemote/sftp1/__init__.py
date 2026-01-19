@@ -1,5 +1,5 @@
-from reemote.sftp1.isdir import Isdir
+from reemote.sftp1.isdir import is_dir
 
 __all__ = [
-    "Isdir",
+    "is_dir",
 ]

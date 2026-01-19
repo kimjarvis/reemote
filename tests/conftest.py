@@ -1,10 +1,10 @@
 import asyncio
+import subprocess
 
 import pytest
 
 from reemote.config import Config
-from reemote.execute import endpoint_execute
-from reemote.inventory import Inventory, InventoryItem, Connection, Authentication, Session
+from reemote.inventory import Authentication, Connection, Inventory, InventoryItem
 
 
 @pytest.fixture
@@ -34,17 +34,39 @@ def setup_inventory():
 @pytest.fixture
 def setup_directory():
     async def inner_fixture():
-        class Root:
-            async def execute(self):
-                from reemote.sftp1 import Isdir
-                from reemote.sftp import Rmtree
-                from reemote.scp import Upload
+        """
+        Asynchronous inner fixture to rsync the tests/testdata directory to remote hosts.
+        """
+        # Define source, target, and remote hosts
+        source_directory = "tests/testdata"  # Ensure no trailing slash
+        target_directory = "/home/user/"  # Ensure trailing slash for clarity
+        remote_hosts = ["server104", "server105"]
 
-                r = yield Isdir(path="testdata")
-                if r and r["value"]:
-                    yield Rmtree(path="testdata")
-                yield Upload(srcpaths=["tests/testdata"], dstpath=".", recurse=True)
+        async def rsync_to_remote_hosts(source_dir, target_dir, hosts):
+            """
+            Rsyncs a directory to multiple remote hosts asynchronously.
+            """
+            for host in hosts:
+                # Build the rsync command
+                command = [
+                    "rsync",
+                    "-rltv",  # Recursive, copy symlinks, preserve times, verbose
+                    source_dir,
+                    f"{host}:{target_dir}",
+                ]
+                try:
+                    # Execute the rsync command
+                    print(f"Syncing to {host}...")
+                    await asyncio.to_thread(subprocess.run, command, check=True)
+                    print(f"Successfully synced to {host}.")
+                except subprocess.CalledProcessError as e:
+                    print(f"Failed to sync to {host}: {e}")
+                    raise  # Re-raise the exception to fail the test session
 
-        await endpoint_execute(lambda: Root())
+        # Perform the rsync operation
+        print("Setting up rsync for test session...")
+        await rsync_to_remote_hosts(source_directory, target_directory, remote_hosts)
+        print("Rsync setup complete.")
 
+    # Run the asynchronous inner fixture using asyncio
     return asyncio.run(inner_fixture())

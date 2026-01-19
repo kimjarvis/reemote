@@ -1,7 +1,7 @@
 # examples/hello_world.py
 import asyncio
 from reemote.execute import execute
-from reemote.sftp1 import Isdir
+from reemote.sftp1 import is_dir
 from reemote.inventory import Inventory, InventoryItem, Connection
 
 
@@ -22,7 +22,7 @@ async def main():
     )
 
     responses = await execute(
-        lambda: Isdir(path="/home/user/fjfj/hh"), inventory=inventory
+        lambda: is_dir(path="/home/user/fjfj/hh"), inventory=inventory
     )
     print(responses)
 

@@ -68,7 +68,7 @@ async def test_call_get(setup_inventory):
 async def test_call_get_ensure_operations_in_callback_fail_part_1(setup_inventory):
     from reemote.core import call_get
     from reemote.context import Context
-    from reemote.sftp1 import Isdir
+    from reemote.sftp1 import is_dir
 
     async def callback(context: Context):
         # r = yield Isdir(path="/home/user")
