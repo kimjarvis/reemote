@@ -30,8 +30,6 @@ class call_put(Callback):
     async def callback(context: Context) -> None:
         pass
 
-    print("debug 00")
-
     async def execute(self) -> AsyncGenerator[Context, List[Response]]:
         model_instance = self.request_model.model_validate(self.kwargs)
 
