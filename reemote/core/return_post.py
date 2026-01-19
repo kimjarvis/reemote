@@ -29,6 +29,7 @@ class return_post(Callback):
         yield Context(
             type=ContextType.PASSTHROUGH,
             method=Method.POST,
+            callback=self.callback,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,

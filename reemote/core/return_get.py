@@ -23,15 +23,16 @@ class return_get(Callback):
     # todo: needed ?
     @staticmethod
     async def callback(context: Context) -> None:
-        pass
+        return context.value
 
     async def execute(self) -> AsyncGenerator[Context, List[Response]]:
         model_instance = self.request_model.model_validate(self.kwargs)
 
         yield Context(
             type=ContextType.PASSTHROUGH,
-            method=Method.GET,
             value=model_instance.value,
+            callback=self.callback,
+            method=Method.GET,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,

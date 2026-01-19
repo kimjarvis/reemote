@@ -32,6 +32,7 @@ class return_put(Callback):
         yield Context(
             type=ContextType.PASSTHROUGH,
             method=Method.PUT,
+            callback=self.callback,
             changed=model_instance.changed,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,

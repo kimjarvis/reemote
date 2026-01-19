@@ -34,7 +34,7 @@ class call_post(Callback):
         model_instance = self.request_model.model_validate(self.kwargs)
 
         yield Context(
-            type=ContextType.CALLBACK,
+            type=ContextType.PASSTHROUGH,
             value=model_instance.value,
             callback=model_instance.callback,
             method=Method.POST,

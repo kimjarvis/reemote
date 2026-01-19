@@ -63,6 +63,7 @@ async def run_passthrough(context: Context) -> dict[str, str | None | Any] | Non
         or context.group in context.inventory_item.groups
     ):
         logging.info(f"{context.inventory_item.connection.host:<16} - {context.call}")
+        context.value = await context.callback(context)
         result = get_result(context)
         logging.info(f"{result['host']:<16} - {result}")
         return result

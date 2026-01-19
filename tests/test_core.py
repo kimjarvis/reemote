@@ -61,6 +61,7 @@ async def test_call_get(setup_inventory):
         return "tested"
 
     r = await endpoint_execute(lambda: call_get(callback=callback, group="server104"))
+    print(r)
     assert len(r) == 1
     assert r[0]["value"] == "tested"
 
@@ -141,7 +142,7 @@ async def test_core_recent_responses(setup_inventory):
     r = await endpoint_execute(lambda: Root())
 
 @pytest.mark.asyncio
-async def test_returnfact(setup_inventory):
+async def test_return_get_4(setup_inventory):
     from reemote.core import return_get
     r = await endpoint_execute(lambda: return_get(value=1))
     assert all(d.get('value') == 1 for d in r), "Not all dictionaries have value"
