@@ -18,7 +18,7 @@ from reemote.callback import CommonCallbackRequest, common_callback_request
 from reemote.response import ResponseElement, ResponseModel
 from reemote.response import PutResponse
 from reemote.router_handler import router_handler
-from reemote.sftp1 import is_dir
+from reemote.sftp1 import Is_dir
 
 router = APIRouter()
 
@@ -2279,12 +2279,12 @@ class Directory(Callback):
     async def execute(
         self,
     ) -> AsyncGenerator[
-        is_dir | Rmdir | Mkdir | Stat | Chmod | Chown | Utime | return_put, ResponseModel
+        Is_dir | Rmdir | Mkdir | Stat | Chmod | Chown | Utime | return_put, ResponseModel
     ]:
         model_instance = self.request_model.model_validate(self.kwargs)
 
         changed = False
-        is_a_dir = yield is_dir(path=model_instance.path, group=model_instance.group)
+        is_a_dir = yield Is_dir(path=model_instance.path, group=model_instance.group)
         if is_a_dir:
             if not model_instance.present and not is_a_dir["value"]:
                 changed = False

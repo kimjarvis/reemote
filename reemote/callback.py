@@ -27,6 +27,9 @@ def common_callback_request(
     return CommonCallbackRequest(group=group, name=name)
 
 
+from abc import ABC, abstractmethod
+from typing import AsyncGenerator
+
 class AbstractCallback(BaseModel):
     """Abstract class for local commands"""
 
@@ -34,19 +37,35 @@ class AbstractCallback(BaseModel):
 
 
 class Callback(ABC):
-    request_model = AbstractCallback
-    response_model = AbstractCallback
+    request_model = None  # Placeholder for subclasses to override
+    response_model = None  # Placeholder for subclasses to override
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
-        # Check if the subclass overrides the 'Model' field
-        if (
-            cls.request_model is Callback.request_model
-        ):  # If it's still the same as the base class
-            raise NotImplementedError(
-                f"Class {cls.__name__} must override the 'Model' class field."
-            )
+        # # Ensure 'request_model' is defined and is a callable (class)
+        # if cls.request_model is None or not callable(cls.request_model):
+        #     raise TypeError(
+        #         f"Class {cls.__name__} must define 'request_model' as a callable (class)."
+        #     )
+        #
+        # # Ensure 'response_model' is defined and is a callable (class)
+        # if cls.response_model is None or not callable(cls.response_model):
+        #     raise TypeError(
+        #         f"Class {cls.__name__} must define 'response_model' as a callable (class)."
+        #     )
+        #
+        # # Ensure 'callback' method is implemented in the child class
+        # if "callback" not in cls.__dict__ or not callable(cls.callback):
+        #     raise NotImplementedError(
+        #         f"Class {cls.__name__} must implement the 'callback' method."
+        #     )
+        #
+        # # Ensure 'execute' method is NOT overridden in the child class
+        # if "execute" in cls.__dict__:
+        #     raise RuntimeError(
+        #         f"Class {cls.__name__} must not override the 'execute' method."
+        #     )
 
         cls.child = cls.__name__  # Set the 'child' field to the name of the subclass
 

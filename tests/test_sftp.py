@@ -7,15 +7,15 @@ from reemote.execute import endpoint_execute
 
 @pytest.mark.asyncio
 async def test_isdir(setup_inventory, setup_directory):
-    from reemote.sftp1 import is_dir
+    from reemote.sftp1 import Is_dir
 
     class Root:
         async def execute(self):
-            r = yield is_dir(path="testdata/dir_a")
+            r = yield Is_dir(path="testdata/dir_a")
             print(r)
             if r:
                 assert r["value"]
-            r = yield is_dir(path="testdata/dir_b")
+            r = yield Is_dir(path="testdata/dir_b")
             if r:
                 assert not r["value"]
 
@@ -24,7 +24,7 @@ async def test_isdir(setup_inventory, setup_directory):
 
 @pytest.mark.asyncio
 async def test_mkdir(setup_inventory, setup_directory):
-    from reemote.sftp1 import is_dir
+    from reemote.sftp1 import Is_dir
     from reemote.sftp import Stat
     from reemote.sftp import Mkdir
 
@@ -38,7 +38,7 @@ async def test_mkdir(setup_inventory, setup_directory):
             )
             if r:
                 assert r["changed"]
-            r = yield is_dir(path="testdata/new_dir")
+            r = yield Is_dir(path="testdata/new_dir")
             if r:
                 assert r["value"]
             r = yield Stat(path="testdata/new_dir")
@@ -57,7 +57,7 @@ async def test_mkdir(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_directory1(setup_inventory, setup_directory):
     from reemote.sftp import Directory
-    from reemote.sftp1 import is_dir
+    from reemote.sftp1 import Is_dir
     from reemote.sftp import Stat
     from reemote.sftp import Getmtime
 
@@ -71,7 +71,7 @@ async def test_directory1(setup_inventory, setup_directory):
                 mtime=20,
             )
             print(r)
-            r = yield is_dir(path="testdata/new_dir")
+            r = yield Is_dir(path="testdata/new_dir")
             if r:
                 assert r["value"]
             r = yield Stat(path="testdata/new_dir")
@@ -90,7 +90,7 @@ async def test_directory1(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_directory(setup_inventory, setup_directory):
     from reemote.sftp import Directory
-    from reemote.sftp1 import is_dir
+    from reemote.sftp1 import Is_dir
     from reemote.sftp import Stat
 
     class Child:
@@ -102,7 +102,7 @@ async def test_directory(setup_inventory, setup_directory):
                 atime=0xDEADCAFE,
                 mtime=0xACAFEDAD,
             )
-            r = yield is_dir(path="testdata/new_dir")
+            r = yield Is_dir(path="testdata/new_dir")
             if r:
                 assert r["value"]
             r = yield Stat(path="testdata/new_dir")
@@ -310,14 +310,14 @@ async def test_sftp_readdir(setup_inventory, setup_directory):
 @pytest.mark.asyncio
 async def test_sftp_mkdirs(setup_inventory, setup_directory):
     from reemote.sftp import Makedirs
-    from reemote.sftp1 import is_dir
+    from reemote.sftp1 import Is_dir
 
     class Root:
         async def execute(self):
             r = yield Makedirs(path="testdata/x/y")
             if r:
                 assert not r["error"]
-            r = yield is_dir(path="testdata/x/y")
+            r = yield Is_dir(path="testdata/x/y")
             if r:
                 assert r["value"]
 

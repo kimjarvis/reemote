@@ -16,40 +16,36 @@ from reemote.sftp1.common import PathRequest
 router = APIRouter()
 
 
-class is_dir(Callback):
-    class Request(PathRequest):
-        pass
+class Is_dirResponse(GetResponseElement):
+    value: bool = Field(
+        default=False,
+        description="Whether or not the path is a directory.",
+    )
 
-    class Response(GetResponseElement):
-        value: bool = Field(
-            default=False,
-            description="Whether or not the path is a directory.",
-        )
-
-    request_model = Request
-    response_model = Response
+class Is_dir(Callback):
+    request_model = PathRequest
+    response_model = Is_dirResponse
 
     @staticmethod
     async def callback(context: Context) -> None:
+        context.response_type=Is_dirResponse
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
         ) as conn:
             async with conn.start_sftp_client() as sftp:
-                context.changed = False
                 context.method = Method.GET
                 return await sftp.isdir(context.caller.path)
 
-    @staticmethod
-    @router.get(
-        "/is_dir",
-        tags=["SFTP Operations"],
-        response_model=List[Response],
-    )
-    async def is_dir(
-        path: Union[PurePath, str, bytes] = Query(
-            ..., description="Path to check if it's a directory"
-        ),
-        common: CommonCallbackRequest = Depends(common_callback_request),
-    ) -> Request:
-        """# Return if the remote path refers to a directory"""
-        return await router_handler(is_dir.Request, is_dir)(path=path, common=common)
+@router.get(
+    "/is_dir",
+    tags=["SFTP Operations"],
+    response_model=List[Is_dirResponse],
+)
+async def is_dir(
+    path: Union[PurePath, str, bytes] = Query(
+        ..., description="Path to check if it's a directory"
+    ),
+    common: CommonCallbackRequest = Depends(common_callback_request),
+) -> PathRequest:
+    """# Return if the remote path refers to a directory"""
+    return await router_handler(PathRequest, Is_dir)(path=path, common=common)

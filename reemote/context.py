@@ -61,6 +61,9 @@ class Context(CommonOperationRequest):
     error: Optional[bool] = Field(
         default=False, description="Whether there was an error", exclude=True
     )
+    response_type: Optional[Callable] = Field(
+        default=None, description="The type of the response object", exclude=True
+    )
 
     @field_validator("command")
     @classmethod

@@ -38,6 +38,7 @@ def get_result(context: Context) -> dict[str, str | None | Any]:
                 "message": context.value if context.error else "",
                 "value": context.value if not context.error else "",
             }
+            result=context.response_type(**result)
         case Method.POST:
             result = {
                 "host": context.inventory_item.connection.host,
@@ -65,7 +66,7 @@ async def run_passthrough(context: Context) -> dict[str, str | None | Any] | Non
         logging.info(f"{context.inventory_item.connection.host:<16} - {context.call}")
         context.value = await context.callback(context)
         result = get_result(context)
-        logging.info(f"{result['host']:<16} - {result}")
+        # logging.info(f"{result['host']:<16} - {result}")
         return result
     return None
 
@@ -81,13 +82,13 @@ async def run_callback(context: Context) -> dict[str, str | None | Any] | None:
         try:
             context.value = await context.callback(context)
             result = get_result(context)
-            logging.info(f"{result['host']:<16} - {result}")
+            # logging.info(f"{result['host']:<16} - {result}")
             return result
         except Exception as e:
             context.error = True
             context.value = f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
             result = get_result(context)
-            logging.error(f"{result['host']:<16} - {result}")
+            # logging.error(f"{result['host']:<16} - {result}")
             return result
 
 
@@ -337,9 +338,9 @@ async def process_inventory(
     flattened_responses = list(recursive_flatten_and_filter(all_responses))
 
     # Extract the last item for each host
-    unique_hosts = set(item["host"] for item in flattened_responses)  # Get unique hosts
+    unique_hosts = set(item.host for item in flattened_responses)
     response = [
-        next(item for item in reversed(flattened_responses) if item["host"] == host)
+        next(item for item in reversed(flattened_responses) if item.host == host)
         for host in unique_hosts
     ]
 

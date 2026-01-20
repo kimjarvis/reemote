@@ -1,7 +1,7 @@
 # examples/ssh_error_on_request.py
 import asyncio
 from reemote.execute import execute
-from reemote.sftp1 import is_dir
+from reemote.sftp1 import Is_dir
 from reemote.inventory import Inventory, InventoryItem, Connection
 import logging
 
@@ -38,7 +38,7 @@ async def main():
 
 
     responses = await execute(
-        lambda: is_dir(path="/home/user"), inventory=inventory
+        lambda: Is_dir(path="/home/user"), inventory=inventory
     )
     print(responses)
 
