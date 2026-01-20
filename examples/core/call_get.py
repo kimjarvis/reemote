@@ -1,8 +1,12 @@
-# examples/core.py
+# examples/core/call_get.py
 import asyncio
+import sys
+import os
+
+# Add the parent directory to sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from setup_logging import setup_logging
-
 from reemote.execute import execute
 from reemote.inventory import Connection, Inventory, InventoryItem
 
@@ -17,6 +21,8 @@ async def example_core_call_get(inventory):
     responses = await execute(lambda: core1.CallGet(callback=callback, value="Hello ", group="server104"), inventory)
     for item in responses:
         assert item.value == "Hello World!", "The callback should append 'World!' to the input value"
+
+    return responses
 
 async def main():
     inventory = Inventory(
@@ -36,7 +42,18 @@ async def main():
         ]
     )
     setup_logging()
-    await example_core_call_get(inventory)
+    r = await example_core_call_get(inventory)
+    responses={
+        200: {
+            "description": "Successful Response",
+            "content": {
+                "application/json": {
+                    "example": [item.model_dump() for item in r]
+                }
+            }
+        }
+    }
+    print(responses)
 
 if __name__ == "__main__":
     asyncio.run(main())

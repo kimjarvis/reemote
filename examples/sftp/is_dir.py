@@ -1,8 +1,12 @@
-# examples/core.py
+# examples/sftp/is_dir.py
 import asyncio
+import sys
+import os
+
+# Add the parent directory to sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from setup_logging import setup_logging
-
 from reemote.execute import execute
 from reemote.inventory import Connection, Inventory, InventoryItem
 
@@ -10,7 +14,7 @@ from reemote.inventory import Connection, Inventory, InventoryItem
 async def example_sftp_is_dir(inventory):
     from reemote import sftp1
 
-    responses = await execute(lambda: sftp1.IsDir(path="."), inventory)
+    responses = await execute(lambda: sftp1.IsDir(path=".."), inventory)
     for item in responses:
         assert item.value, "The coroutine should report that the current working directory exists on the host."
 

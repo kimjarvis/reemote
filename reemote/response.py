@@ -22,6 +22,17 @@ class ResponseModel(RootModel[List[ResponseElement]]):
 
 
 class ResponseElement1(BaseModel):
+    model_config = {
+        "title": "ResponseElement1",
+        "json_schema_extra": {
+            "example": {
+                "host": "server104",
+                "error": False,
+                "message": "",
+            },
+            "description": "Basic response from endpoint."
+        }
+    }
     host: str = Field(
         default="",
         description="The ip address or name of the host the operation was executed on.",
@@ -35,16 +46,6 @@ class ResponseElement1(BaseModel):
         description="Connectivity error message.",
     )
 
-    class Config:
-        title = "ResponseElement1"
-        json_schema_extra = {
-            "example": {
-                "host": "server104",
-                "error": False,
-                "message": "",
-            },
-            "description": "Basic response from endpoint."
-        }
 
 
 class AbstractResponseModel(RootModel[List[ResponseElement1]]):
@@ -52,6 +53,15 @@ class AbstractResponseModel(RootModel[List[ResponseElement1]]):
 
 
 class GetResponseElement(ResponseElement1):
+    model_config = {
+        "title": "GetResponseElement",
+        "json_schema_extra": {
+            "example": {
+                "value": "Class specific value",
+            },
+            "description": "Basic response from endpoint."
+        }
+    }
     value: Any = Field(
         default=None,
         description="Class specific information from the target host.",
@@ -63,7 +73,15 @@ class GetResponse(RootModel[List[GetResponseElement]]):
 
 
 class PostResponseElement(ResponseElement1):
-    pass
+    model_config = {
+        "title": "PostResponseElement",
+        "json_schema_extra": {
+            "example": {
+                "value": "Class specific value",
+            },
+            "description": "Basic response from endpoint."
+        }
+    }
 
 
 class PostResponse(RootModel[List[PostResponseElement]]):

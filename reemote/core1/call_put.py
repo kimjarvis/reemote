@@ -9,22 +9,22 @@ from reemote.passthrough import (
     Passthrough,
     common_passthrough_request,
 )
-from reemote.response import GetResponseElement
+from reemote.response import PutResponseElement
 from reemote.router_handler import router_handler1
 
 router = APIRouter()
 
 
-class CallGetRequest(CommonPassthroughRequest):
+class CallPutRequest(CommonPassthroughRequest):
     model_config = {
-        "title": "CallGetRequest",
+        "title": "CallPutRequest",
         "json_schema_extra": {
             "example": {
                 **CommonPassthroughRequest.model_config["json_schema_extra"]["example"],
                 "callback": "f(x)",
                 "value": True,
             },
-            "description": "Response from the CallGet API.",
+            "description": "Response from the CallPut API.",
         },
     }
 
@@ -34,12 +34,12 @@ class CallGetRequest(CommonPassthroughRequest):
     )
 
 
-class CallGet(Passthrough):
-    request_schema = CallGetRequest
-    response_schema = GetResponseElement
-    method = Method.GET
+class CallPut(Passthrough):
+    request_schema = CallPutRequest
+    response_schema = PutResponseElement
+    method = Method.PUT
 
-    async def execute(self) -> AsyncGenerator[Context, List[GetResponseElement]]:
+    async def execute(self) -> AsyncGenerator[Context, List[PutResponseElement]]:
         model_instance = self.request_schema.model_validate(self.kwargs)
 
         yield Context(
@@ -54,10 +54,10 @@ class CallGet(Passthrough):
         )
 
 
-@router.get(
-    "/call_get",
+@router.put(
+    "/call_put",
     tags=["Core Operations"],
-    response_model=List[GetResponseElement],
+    response_model=List[PutResponseElement],
     responses={
         200: {
             "description": "Successful Response",
@@ -68,7 +68,7 @@ class CallGet(Passthrough):
                             "host": "server104",
                             "error": False,
                             "message": "",
-                            "value": "Hello World!",
+                            "changed": False,
                         }
                     ]
                 }
@@ -76,21 +76,21 @@ class CallGet(Passthrough):
         }
     },
 )
-async def call_get(
+async def call_put(
     callback: Any = Query(..., description="Callable callback function."),
     value: Optional[Any] = Query(
         default=None, description="The value to pass to the callback function."
     ),
     common: CommonPassthroughRequest = Depends(common_passthrough_request),
-) -> CallGetRequest:
-    """# Call a coroutine that returns a value
+) -> CallPutRequest:
+    """# Call a coroutine that returns a changed indication
 
     *This REST API cannot be called.*
 
     ## Python API
 
-    - Coroutine: `CallGet`
-    - Response schema: `[GetResponseElement]`
+    - Coroutine: `CallPut`
+    - Response schema: `[PutResponseElement]`
 
     Python API example:
 
@@ -99,14 +99,14 @@ async def call_get(
     from reemote import core1
 
     async def callback(context: Context):
-        return context.value + "World!"
+        context.changed = context.value
 
-    responses = await execute(lambda: core1.CallGet(callback=callback, value="Hello ", group="server104"), inventory)
+    responses = await execute(lambda: core1.CallPut(callback=callback, value=False, group="server104"), inventory)
     for item in responses:
-        assert item.value == "Hello World!", "The callback should append 'World!' to the input value"
+        assert item.changed == False, "The callback should return its argument"
     ```
     """
-    return await (router_handler1(CallGet))(
+    return await (router_handler1(CallPut))(
         value=value,
         callback=callback,
         common=common,

@@ -10,7 +10,7 @@ import asyncssh
 from asyncssh import SSHCompletedProcess
 
 from reemote.config import Config
-from reemote.context import ContextType, Context, Method
+from reemote.context import Context, ContextType, Method
 from reemote.inventory import Inventory
 
 
@@ -28,30 +28,33 @@ def ssh_completed_process_to_dict(ssh_completed_process):
 
 
 def get_result(context: Context) -> dict[str, str | None | Any]:
-    # No error here.
-    # print(context.method)
     match context.method:
         case Method.GET:
-            result = {
-                "host": context.inventory_item.connection.host,
-                "error": context.error,
-                "message": context.value if context.error else "",
-                "value": context.value if not context.error else "",
-            }
-            result=context.response_schema(**result)
+            result = context.response_schema(
+                **{
+                    "host": context.inventory_item.connection.host,
+                    "error": context.error,
+                    "message": context.value if context.error else "",
+                    "value": context.value if not context.error else "",
+                }
+            )
         case Method.POST:
-            result = {
-                "host": context.inventory_item.connection.host,
-                "error": context.error,
-                "message": context.value if context.error else "",
-            }
+            result = context.response_schema(
+                **{
+                    "host": context.inventory_item.connection.host,
+                    "error": context.error,
+                    "message": context.value if context.error else "",
+                }
+            )
         case Method.PUT:
-            result = {
-                "host": context.inventory_item.connection.host,
-                "error": context.error,
-                "message": context.value if context.error else "",
-                "changed": context.changed,
-            }
+            result = context.response_schema(
+                **{
+                    "host": context.inventory_item.connection.host,
+                    "error": context.error,
+                    "message": context.value if context.error else "",
+                    "changed": context.changed,
+                }
+            )
         case _:
             raise ValueError(f"Unsupported context method: {context.method}")
     return result
@@ -65,6 +68,7 @@ async def run_passthrough(context: Context) -> dict[str, str | None | Any] | Non
     ):
         logging.info(f"{context.inventory_item.connection.host:<16} - {context.call}")
         context.value = await context.callback(context)
+        logging.debug(context)
         result = get_result(context)
         # logging.info(f"{result['host']:<16} - {result}")
         return result

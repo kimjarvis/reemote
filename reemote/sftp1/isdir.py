@@ -26,8 +26,7 @@ class IsDirResponse(GetResponseElement):
         title = "IsDirResponse"
         json_schema_extra = {
             "example": {
-                **GetResponseElement.Config.json_schema_extra["example"],
-                "value": True,
+                **GetResponseElement.model_config["json_schema_extra"]["example"],
             },
             "description": "Response from the is_dir endpoint.",
         }
