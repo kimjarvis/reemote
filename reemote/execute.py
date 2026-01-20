@@ -38,7 +38,7 @@ def get_result(context: Context) -> dict[str, str | None | Any]:
                 "message": context.value if context.error else "",
                 "value": context.value if not context.error else "",
             }
-            result=context.response_type(**result)
+            result=context.response_schema(**result)
         case Method.POST:
             result = {
                 "host": context.inventory_item.connection.host,

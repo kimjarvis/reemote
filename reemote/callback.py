@@ -37,8 +37,8 @@ class AbstractCallback(BaseModel):
 
 
 class Callback(ABC):
-    request_model = None  # Placeholder for subclasses to override
-    response_model = None  # Placeholder for subclasses to override
+    request_schema = None  # Placeholder for subclasses to override
+    response_schema = None  # Placeholder for subclasses to override
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -73,7 +73,7 @@ class Callback(ABC):
         self.kwargs = kwargs
 
     async def execute(self) -> AsyncGenerator[Context, AbstractResponseModel]:
-        model_instance = self.request_model.model_validate(self.kwargs)
+        model_instance = self.request_schema.model_validate(self.kwargs)
         result = yield Context(
             type=ContextType.CALLBACK,
             callback=self.callback,
@@ -81,7 +81,7 @@ class Callback(ABC):
             caller=model_instance,
             group=model_instance.group,
         )
-        self.response_model.model_validate(result)
+        self.response_schema.model_validate(result)
 
     @staticmethod
     @abstractmethod

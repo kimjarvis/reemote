@@ -2,16 +2,17 @@ import pytest
 
 from reemote.execute import endpoint_execute
 
+
 @pytest.mark.asyncio
 async def test_call_get(setup_inventory):
-    from reemote.core.call_get import call_get
     from reemote.context import Context
+    from reemote.core.call_get import CallGet
 
     async def callback(context: Context):
-        return "tested"
+        return context.value + "World!"
 
-    r = await endpoint_execute(lambda: call_get(callback=callback, group="server104"))
-    print(r)
-    assert len(r) == 1
-    assert r[0].value == "tested"
-
+    responses = await endpoint_execute(lambda: CallGet(callback=callback, value="Hello ", group="server104",))
+    print(responses)
+    assert len(responses) == 1
+    for item in responses:
+        assert item.value == "Hello World!"

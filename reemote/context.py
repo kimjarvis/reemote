@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Type
 
 from pydantic import ConfigDict, Field, field_validator  # Updated imports
 from reemote.inventory import InventoryItem
@@ -61,7 +61,7 @@ class Context(CommonOperationRequest):
     error: Optional[bool] = Field(
         default=False, description="Whether there was an error", exclude=True
     )
-    response_type: Optional[Callable] = Field(
+    response_schema: Optional[Callable] = Field(
         default=None, description="The type of the response object", exclude=True
     )
 
