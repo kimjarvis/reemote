@@ -9,13 +9,23 @@ from reemote.response import AbstractResponseModel
 
 
 class CommonPassthroughRequest(BaseModel):
-    model_config = ConfigDict(validate_assignment=True, extra="forbid")
+    model_config = {
+        "validate_assignment": True,
+        "extra": "forbid",
+        "json_schema_extra": {
+            "example": {
+                "group": "database_hosts",
+                "name": "Perform on all Database Hosts",
+            },
+            "description": "Basic response from endpoint."
+        },
+        "title": "CommonPassthroughRequest"
+    }
 
     group: Optional[str] = Field(
-        default="all", description="The inventory host group. Defaults to 'all'."
+        default="all", description="The inventory host group. Defaults to 'all'.", examples=["database_hosts", "web_servers"]
     )
-    name: Optional[str] = Field(default=None, description="Optional name.")
-
+    name: Optional[str] = Field(default=None, description="Optional descriptive name.")
 
 def common_passthrough_request(
     group: Optional[str] = Query(

@@ -3,19 +3,37 @@ from typing import Any, AsyncGenerator, Callable, List, Optional
 from fastapi import APIRouter, Depends, Query
 from pydantic import Field
 
-from reemote.passthrough import Passthrough, CommonPassthroughRequest, common_passthrough_request
 from reemote.context import Context, ContextType, Method
-from reemote.response import GetResponseElement, GetResponse
-from reemote.router_handler import router_handler
+from reemote.passthrough import (
+    CommonPassthroughRequest,
+    Passthrough,
+    common_passthrough_request,
+)
+from reemote.response import GetResponseElement
+from reemote.router_handler import router_handler1
 
 router = APIRouter()
 
 
 class CallGetRequest(CommonPassthroughRequest):
+    model_config = {
+        "title": "CallGetRequest",
+        "json_schema_extra": {
+            "example": {
+                **CommonPassthroughRequest.model_config["json_schema_extra"]["example"],
+                "callback": "f(x)",
+                "value": True,
+            },
+            "description": "Response from the CallGet API.",
+        }
+    }
+
     callback: Callable = Field(..., description="Callable callback function.")
     value: Optional[Any] = Field(
         default=None, description="The value to pass to the callback function."
     )
+
+
 
 class CallGet(Passthrough):
     request_schema=CallGetRequest
@@ -48,22 +66,25 @@ async def call_get(
     ),
     common: CommonPassthroughRequest = Depends(common_passthrough_request),
 ) -> CallGetRequest:
-    """# CallGet - Call a coroutine that returns a value
+    """# Call a coroutine that returns a value
 
-    *The REST API endpoint is provided for documentation purposes, it cannot be called directly.*
+    *This REST API cannot be called.*
 
-    Response schema: [reemote.response.GetResponseElement]
+    ## Python API
+
+    - Coroutine: `CallGet`
+    - Response schema: `[GetResponseElement]`
 
     Python API example:
 
     ```python
     from reemote.context import Context
-    from reemote.core.call_get import CallGet
+    from reemote import core1
 
     async def callback(context: Context):
         return context.value + "World!"
 
-    responses = await execute(lambda: CallGet(callback=callback, value="Hello ", group="server104"), inventory)
+    responses = await execute(lambda: core1.CallGet(callback=callback, value="Hello ", group="server104"), inventory)
     for item in responses:
         assert item.value == "Hello World!"
     ```

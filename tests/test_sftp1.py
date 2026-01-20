@@ -14,16 +14,15 @@ testdata
 
 @pytest.mark.asyncio
 async def test_sftp_is_dir(setup_inventory, setup_directory):
-    from reemote.sftp import Is_dir
-    r = await endpoint_execute(lambda: Is_dir(path="testdata/dir_a"))
-    print(r)
+    from reemote.sftp import IsDir
+    r = await endpoint_execute(lambda: IsDir(path="testdata/dir_a"))
     assert all(d.value for d in r)
-    r = await endpoint_execute(lambda: Is_dir(path="testdata/dir_x"))
+    r = await endpoint_execute(lambda: IsDir(path="testdata/dir_x"))
     assert all(not d.value for d in r), "dir_x does not exist"
-    r = await endpoint_execute(lambda: Is_dir(path="testdata/file_b.txt"))
+    r = await endpoint_execute(lambda: IsDir(path="testdata/file_b.txt"))
     assert all(not d.value for d in r)
-    r = await endpoint_execute(lambda: Is_dir(path="testdata/link_a"))
+    r = await endpoint_execute(lambda: IsDir(path="testdata/link_a"))
     assert all(d.value for d in r), "link_a is a link to a directory not a directory"
-    r = await endpoint_execute(lambda: Is_dir(path="testdata/dir_a/link_b"))
+    r = await endpoint_execute(lambda: IsDir(path="testdata/dir_a/link_b"))
     assert all(not d.value for d in r), "link_b is a link to a file not a directory"
 

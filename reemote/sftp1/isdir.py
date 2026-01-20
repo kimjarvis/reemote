@@ -16,20 +16,31 @@ from reemote.sftp1.common import PathRequest
 router = APIRouter()
 
 
-class Is_dirResponse(GetResponseElement):
+class IsDirResponse(GetResponseElement):
     value: bool = Field(
         default=False,
         description="Whether or not the path is a directory.",
     )
 
-class Is_dir(Callback):
+    class Config:
+        title = "IsDirResponse"
+        json_schema_extra = {
+            "example": {
+                **GetResponseElement.Config.json_schema_extra["example"],
+                "value": True,
+            },
+            "description": "Response from the is_dir endpoint.",
+        }
+
+
+class IsDir(Callback):
     request_schema = PathRequest
-    response_schema = Is_dirResponse
+    response_schema = IsDirResponse
     method = Method.GET
 
     @classmethod
     async def callback(cls, context: Context) -> None:
-        context.response_schema=cls.response_schema
+        context.response_schema = cls.response_schema
         context.method = cls.method
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
@@ -37,10 +48,34 @@ class Is_dir(Callback):
             async with conn.start_sftp_client() as sftp:
                 return await sftp.isdir(context.caller.path)
 
+
 @router.get(
     "/is_dir",
     tags=["SFTP Operations"],
-    response_model=List[Is_dirResponse],
+    response_model=List[IsDirResponse],
+    responses={
+        200: {
+            "description": "Successful Response",
+            "content": {
+                "application/json": {
+                    "example": [
+                        {
+                            "host": "server105",
+                            "error": False,
+                            "message": "",
+                            "value": True,
+                        },
+                        {
+                            "host": "server104",
+                            "error": False,
+                            "message": "",
+                            "value": True,
+                        },
+                    ]
+                }
+            },
+        }
+    },
 )
 async def is_dir(
     path: Union[PurePath, str, bytes] = Query(
@@ -48,5 +83,21 @@ async def is_dir(
     ),
     common: CommonCallbackRequest = Depends(common_callback_request),
 ) -> PathRequest:
-    """# Return if the remote path refers to a directory"""
-    return await (router_handler1(Is_dir))(path=path, common=common)
+    """# Return if the remote path refers to a directory
+
+    ## Python API
+
+    - Coroutine: `IsDir`
+    - Response schema: `[IsDirResponse]`
+
+    Python API example:
+
+    ```python
+    from reemote import sftp1
+
+    responses = await execute(lambda: sftp1.IsDir(path="."), inventory)
+    for item in responses:
+        assert item.value, "The coroutine should report that the current working directory exists on the host."
+    ```
+    """
+    return await (router_handler1(IsDir))(path=path, common=common)

@@ -7,16 +7,14 @@ from reemote.execute import execute
 from reemote.inventory import Connection, Inventory, InventoryItem
 
 
-async def example_core_call_get(inventory):
-    from reemote.context import Context
-    from reemote import core1
+async def example_sftp_is_dir(inventory):
+    from reemote import sftp1
 
-    async def callback(context: Context):
-        return context.value + "World!"
-
-    responses = await execute(lambda: core1.CallGet(callback=callback, value="Hello ", group="server104"), inventory)
+    responses = await execute(lambda: sftp1.IsDir(path="."), inventory)
     for item in responses:
-        assert item.value == "Hello World!", "The callback should append 'World!' to the input value"
+        assert item.value, "The coroutine should report that the current working directory exists on the host."
+
+    return responses
 
 async def main():
     inventory = Inventory(
@@ -36,7 +34,19 @@ async def main():
         ]
     )
     setup_logging()
-    await example_core_call_get(inventory)
+    r = await example_sftp_is_dir(inventory)
+    responses={
+        200: {
+            "description": "Successful Response",
+            "content": {
+                "application/json": {
+                    "example": [item.model_dump() for item in r]
+                }
+            }
+        }
+    }
+    print(responses)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

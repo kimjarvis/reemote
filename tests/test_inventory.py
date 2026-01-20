@@ -79,12 +79,12 @@ async def test_connection_error():
 
 @pytest.mark.asyncio
 async def test_inventory_unreachablehost_host_sftp_command():
-    from reemote.sftp1 import Is_dir
+    from reemote.sftp1 import IsDir
     from reemote.sftp import Mkdir, Rmdir
 
     class Root:
         async def execute(self):
-            yield Is_dir(path="/home/user/dir_e")
+            yield IsDir(path="/home/user/dir_e")
 
     inventory = Inventory(
         hosts=[

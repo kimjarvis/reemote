@@ -6,13 +6,13 @@ from reemote.execute import endpoint_execute
 
 @pytest.mark.asyncio
 async def test_scp_upload():
-    from reemote.sftp1 import Is_dir
+    from reemote.sftp1 import IsDir
     from reemote.sftp import Rmtree
     from reemote.scp import Upload
 
     class Root:
         async def execute(self):
-            r = yield Is_dir(path="testdata")
+            r = yield IsDir(path="testdata")
             if r and r["value"]:
                 yield Rmtree(path="testdata")
             yield Upload(srcpaths=["tests/testdata"], dstpath=".", recurse=True)

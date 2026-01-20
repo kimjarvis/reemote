@@ -35,6 +35,17 @@ class ResponseElement1(BaseModel):
         description="Connectivity error message.",
     )
 
+    class Config:
+        title = "ResponseElement1"
+        json_schema_extra = {
+            "example": {
+                "host": "server104",
+                "error": False,
+                "message": "",
+            },
+            "description": "Basic response from endpoint."
+        }
+
 
 class AbstractResponseModel(RootModel[List[ResponseElement1]]):
     pass
