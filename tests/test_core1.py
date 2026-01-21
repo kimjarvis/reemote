@@ -4,15 +4,15 @@ from reemote.execute import endpoint_execute
 
 
 @pytest.mark.asyncio
-async def test_call_get(setup_inventory):
+async def test_get_call(setup_inventory):
     from reemote.context import Context
-    from reemote.core1.call_get import CallGet
+    from reemote.core1.get.call import Call
 
     async def callback(context: Context):
         return context.value + "World!"
 
     responses = await endpoint_execute(
-        lambda: CallGet(
+        lambda: Call(
             callback=callback,
             value="Hello ",
             group="server104",
@@ -24,15 +24,15 @@ async def test_call_get(setup_inventory):
 
 
 @pytest.mark.asyncio
-async def test_call_put(setup_inventory):
+async def test_put_call(setup_inventory):
     from reemote.context import Context
-    from reemote.core1.call_put import CallPut
+    from reemote.core1.put.call import Call
 
     async def callback(context: Context):
         context.changed = context.value
 
     responses = await endpoint_execute(
-        lambda: CallPut(
+        lambda: Call(
             callback=callback,
             value=True,
             group="server104",
@@ -42,7 +42,7 @@ async def test_call_put(setup_inventory):
     for item in responses:
         assert item.changed
     responses = await endpoint_execute(
-        lambda: CallPut(
+        lambda: Call(
             callback=callback,
             value=False,
             group="server104",
@@ -53,15 +53,15 @@ async def test_call_put(setup_inventory):
 
 
 @pytest.mark.asyncio
-async def test_call_post(setup_inventory):
+async def test_post_call(setup_inventory):
     from reemote.context import Context
-    from reemote.core1.call_post import CallPost
+    from reemote.core1.post.call import Call
 
     async def callback(context: Context):
         context.changed = context.value
 
     responses = await endpoint_execute(
-        lambda: CallPost(
+        lambda: Call(
             callback=callback,
             value=True,
             group="server104",

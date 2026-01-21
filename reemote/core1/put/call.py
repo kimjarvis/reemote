@@ -1,7 +1,6 @@
 from typing import Any, AsyncGenerator, Callable, List, Optional
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import Field
 
 from reemote.context import Context, ContextType, Method
 from reemote.passthrough import (
@@ -9,37 +8,23 @@ from reemote.passthrough import (
     Passthrough,
     common_passthrough_request,
 )
-from reemote.response import PostResponseElement
+from reemote.response import PutResponseElement
 from reemote.router_handler import router_handler1
 
 router = APIRouter()
 
 
-class CallPostRequest(CommonPassthroughRequest):
-    model_config = {
-        "title": "CallPostRequest",
-        "json_schema_extra": {
-            "example": {
-                **CommonPassthroughRequest.model_config["json_schema_extra"]["example"],
-                "callback": "f(x)",
-                "value": True,
-            },
-            "description": "Response from the CallPost API.",
-        },
-    }
-
-    callback: Callable = Field(..., description="Callable callback function.")
-    value: Optional[Any] = Field(
-        default=None, description="The value to pass to the callback function."
-    )
+class CorePutCallRequest(CommonPassthroughRequest):
+    callback: Callable
+    value: Optional[Any]
 
 
-class CallPost(Passthrough):
-    request_schema = CallPostRequest
-    response_schema = PostResponseElement
-    method = Method.POST
+class Call(Passthrough):
+    request_schema = CorePutCallRequest
+    response_schema = PutResponseElement
+    method = Method.PUT
 
-    async def execute(self) -> AsyncGenerator[Context, List[PostResponseElement]]:
+    async def execute(self) -> AsyncGenerator[Context, List[PutResponseElement]]:
         model_instance = self.request_schema.model_validate(self.kwargs)
 
         yield Context(
@@ -54,36 +39,44 @@ class CallPost(Passthrough):
         )
 
 
-@router.post(
-    "/call_post",
+@router.put(
+    "/call",
     tags=["Core Operations"],
-    response_model=List[PostResponseElement],
+    response_model=List[PutResponseElement],
     responses={
         200: {
             "description": "Successful Response",
             "content": {
                 "application/json": {
-                    "example": [{"host": "server104", "error": False, "message": ""}]
+                    "example": [
+                        {
+                            "host": "server104",
+                            "error": False,
+                            "message": "",
+                            "changed": False,
+                        }
+                    ]
                 }
             },
         }
     },
 )
-async def call_post(
-    callback: Any = Query(..., description="Callable callback function."),
+async def put_call(
+    callback: Any = Query(
+        ...,
+        description="Callable callback function.",
+        examples=["callback"],
+    ),
     value: Optional[Any] = Query(
-        default=None, description="The value to pass to the callback function."
+        default=None,
+        description="The value to pass to the callback function.",
+        examples=["True"],
     ),
     common: CommonPassthroughRequest = Depends(common_passthrough_request),
-) -> CallPostRequest:
+) -> CorePutCallRequest:
     """# Call a coroutine that returns a changed indication
 
     *This REST API cannot be called.*
-
-    ## Python API
-
-    - Coroutine: `CallPost`
-    - Response schema: `[PostResponseElement]`
 
     Python API example:
 
@@ -94,12 +87,12 @@ async def call_post(
     async def callback(context: Context):
         context.changed = context.value
 
-    responses = await execute(lambda: core1.CallPost(callback=callback, value=False, group="server104"), inventory)
+    responses = await execute(lambda: core1.CallPut(callback=callback, value=False, group="server104"), inventory)
     for item in responses:
         assert item.changed == False, "The callback should return its argument"
     ```
     """
-    return await (router_handler1(CallPost))(
+    return await (router_handler1(Call))(
         value=value,
         callback=callback,
         common=common,

@@ -1,24 +1,24 @@
-# examples/core/call_post.py
+# examples/core/call.py
 import asyncio
-import sys
 import os
+import sys
 
-# Add the parent directory to sys.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+# Add the grandparent directory to sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from setup_logging import setup_logging
+
 from reemote.execute import execute
 from reemote.inventory import Connection, Inventory, InventoryItem
 
 
-async def example_core_call_post(inventory):
-    from reemote.context import Context
+async def example_core_post_call(inventory):
     from reemote import core1
+    from reemote.context import Context
 
     async def callback(context: Context):
         pass
 
-    responses = await execute(lambda: core1.CallPost(callback=callback, value="start", group="server104"), inventory)
+    responses = await execute(lambda: core1.post.Call(callback=callback, value="Hello", group="server104"), inventory)
 
     return responses
 
@@ -40,7 +40,7 @@ async def main():
         ]
     )
     setup_logging()
-    r = await example_core_call_post(inventory)
+    r = await example_core_post_call(inventory)
     responses={
         200: {
             "description": "Successful Response",

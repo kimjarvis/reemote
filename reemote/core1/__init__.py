@@ -1,9 +1,7 @@
-from .call_get import CallGet
-from .call_put import CallPut
-from .call_post import CallPost
+from . import get, put, post
 
 __all__ = [
-    "CallGet",
-    "CallPut",
-    "CallPost",
+    "get",  # Expose the 'get' submodule
+    "put",  # Expose the 'put' submodule
+    "post",  # Expose the 'post' submodule
 ]

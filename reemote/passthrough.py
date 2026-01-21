@@ -12,26 +12,15 @@ class CommonPassthroughRequest(BaseModel):
     model_config = {
         "validate_assignment": True,
         "extra": "forbid",
-        "json_schema_extra": {
-            "example": {
-                "group": "database_hosts",
-                "name": "Perform on all Database Hosts",
-            },
-            "description": "Basic response from endpoint."
-        },
-        "title": "CommonPassthroughRequest"
     }
-
-    group: Optional[str] = Field(
-        default="all", description="The inventory host group. Defaults to 'all'.", examples=["database_hosts", "web_servers"]
-    )
-    name: Optional[str] = Field(default=None, description="Optional descriptive name.")
+    group: Optional[str] = None
+    name: Optional[str] = None
 
 def common_passthrough_request(
     group: Optional[str] = Query(
-        "all", description="Optional inventory group (defaults to 'all')"
+        "all", description="Optional inventory group (defaults to 'all')", examples=["'server104'"]
     ),
-    name: Optional[str] = Query(None, description="Optional name"),
+    name: Optional[str] = Query(None, description="Optional name", examples=["'A descriptive name'"]),
 ) -> CommonPassthroughRequest:
     """FastAPI dependency for common parameters"""
     return CommonPassthroughRequest(group=group, name=name)

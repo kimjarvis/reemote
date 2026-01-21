@@ -53,8 +53,8 @@ async def test_return1(setup_inventory):
 
 
 @pytest.mark.asyncio
-async def test_call_get(setup_inventory):
-    from reemote.core.call_get import CallGet
+async def test_get_call(setup_inventory):
+    from reemote.core.get_call import CallGet
     from reemote.context import Context
 
     async def callback(context: Context):
@@ -66,7 +66,7 @@ async def test_call_get(setup_inventory):
     assert r[0]["value"] == "tested"
 
 @pytest.mark.asyncio
-async def test_call_get_ensure_operations_in_callback_fail_part_1(setup_inventory):
+async def test_get_call_ensure_operations_in_callback_fail_part_1(setup_inventory):
     from reemote.core import CallGet
     from reemote.context import Context
     from reemote.sftp1 import IsDir
@@ -78,10 +78,10 @@ async def test_call_get_ensure_operations_in_callback_fail_part_1(setup_inventor
     await endpoint_execute(lambda: CallGet(callback=callback, group="server104"))
 
 @pytest.mark.asyncio
-async def test_call_get_ensure_operations_in_callback_fail_part_2(setup_inventory):
+async def test_get_call_ensure_operations_in_callback_fail_part_2(setup_inventory):
     # Ensure that operations cannot be called from within a callback
     invalid_code="""
-    from reemote.core import call_get
+    from reemote.core import get_call
     from reemote.context import Context
     from reemote.sftp1 import Isdir
 
@@ -89,7 +89,7 @@ async def test_call_get_ensure_operations_in_callback_fail_part_2(setup_inventor
         r = yield Isdir(path="/home/user")
         return "tested"
 
-    await endpoint_execute(lambda: Call(callback=call_get,group="server104"))
+    await endpoint_execute(lambda: Call(callback=get_call,group="server104"))
     """
     with pytest.raises(SyntaxError):
         exec(invalid_code)
@@ -97,7 +97,7 @@ async def test_call_get_ensure_operations_in_callback_fail_part_2(setup_inventor
 
 @pytest.mark.asyncio
 async def test_systemcallback(setup_inventory):
-    from reemote.core.call_get import CallGet
+    from reemote.core.get_call import CallGet
     from reemote.context import Context
 
     async def callback(context: Context):
@@ -178,7 +178,7 @@ async def test_return_use(setup_inventory):
 
 
 @pytest.mark.asyncio
-async def test_core_call_get_value_passing(setup_inventory):
+async def test_core_get_call_value_passing(setup_inventory):
     from reemote.core import CallGet
     from reemote.context import Context
 
@@ -195,8 +195,8 @@ async def test_core_call_get_value_passing(setup_inventory):
     assert len(r) == 2
 
 @pytest.mark.asyncio
-async def test_core_call_put(setup_inventory):
-    from reemote.core import call_put
+async def test_core_put_call(setup_inventory):
+    from reemote.core import put_call
     from reemote.context import Context
 
     async def _callback(context: Context):
@@ -204,7 +204,7 @@ async def test_core_call_put(setup_inventory):
 
     class Root:
         async def execute(self):
-            r = yield call_put(callback=_callback, value="Hello")
+            r = yield put_call(callback=_callback, value="Hello")
             print(r)
             if r:
                 assert not r["changed"]
@@ -213,8 +213,8 @@ async def test_core_call_put(setup_inventory):
     assert len(r) == 2
 
 @pytest.mark.asyncio
-async def test_core_call_put(setup_inventory):
-    from reemote.core import call_post
+async def test_core_put_call(setup_inventory):
+    from reemote.core import post_call
     from reemote.context import Context
 
     async def _callback(context: Context):
@@ -222,7 +222,7 @@ async def test_core_call_put(setup_inventory):
 
     class Root:
         async def execute(self):
-            r = yield call_post(callback=_callback, value="Hello")
+            r = yield post_call(callback=_callback, value="Hello")
             print(r)
 
     r = await endpoint_execute(lambda: Root())

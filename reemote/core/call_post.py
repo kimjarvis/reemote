@@ -13,7 +13,7 @@
 # router = APIRouter()
 #
 #
-# class call_post(Callback):
+# class post_call(Callback):
 #     class Response(PostResponseElement):
 #         pass
 #
@@ -45,11 +45,11 @@
 #
 #     @staticmethod
 #     @router.post(
-#         "/call_post",
+#         "/post_call",
 #         tags=["Core Operations"],
 #         response_model=List[Response],
 #     )
-#     async def call_post(
+#     async def post_call(
 #         callback: Any = Query(..., description="Callable callback function."),
 #         value: Optional[Any] = Query(
 #             default=None, description="The value to pass to the callback function."
@@ -60,7 +60,7 @@
 #
 #         This is a python coroutine. The REST API endpoint is provided for documentation purposes, it cannot be called directly.
 #         """
-#         return await router_handler(call_post.Request, call_post)(
+#         return await router_handler(post_call.Request, post_call)(
 #             value=value,
 #             callback=callback,
 #             common=common,
