@@ -14,7 +14,7 @@ testdata
 
 @pytest.mark.asyncio
 async def test_sftp_is_dir(setup_inventory, setup_directory):
-    from reemote.sftp import IsDir
+    from reemote.sftp1.get.IsDir import IsDir
     r = await endpoint_execute(lambda: IsDir(path="testdata/dir_a"))
     assert all(d.value for d in r)
     r = await endpoint_execute(lambda: IsDir(path="testdata/dir_x"))

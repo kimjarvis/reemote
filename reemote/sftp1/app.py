@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from reemote.sftp1.isdir import router as sftp_isdir_router
+from reemote.sftp1.get.IsDir import router as sftp_isdir_router
 
 sftp_router = APIRouter()
 

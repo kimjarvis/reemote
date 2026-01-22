@@ -1,5 +1,7 @@
-from reemote.sftp1.isdir import IsDir
+from . import get, put, post
 
 __all__ = [
-    "IsDir",
+    "get",  # Expose the 'get' submodule
+    "put",  # Expose the 'put' submodule
+    "post",  # Expose the 'post' submodule
 ]

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 
 from reemote.scp import router as scp_router
 from reemote.inventory_api import router as inventory_router
-from reemote.sftp1.isdir import router as sftp_isdir_router
+from reemote.sftp1.get.IsDir import router as sftp_isdir_router
 
 
 from reemote.apt.app import apt_router, APT_TAG
