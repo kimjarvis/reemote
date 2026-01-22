@@ -57,28 +57,6 @@ class IsDir(Callback):
         response_model=List[IsDirResponse],
         responses={
             # block insert sftp/IsDir_example_responses.py -4
-            "200": {
-                "description": "Successful Response",
-                "content": {
-                    "application/json": {
-                        "sftp_IsDir": [
-                            {
-                                "host": "server104",
-                                "error": False,
-                                "message": "",
-                                "value": True
-                            },
-                            {
-                                "host": "server105",
-                                "error": False,
-                                "message": "",
-                                "value": True
-                            }
-                        ]
-                    }
-                }
-            }
-            # block end
         },
     )
     async def is_dir(
@@ -91,16 +69,6 @@ class IsDir(Callback):
 
         ```python
             # Example usage sftp/IsDir_example.py
-                from reemote import sftp1
-            
-                responses = await execute(lambda: sftp1.get.IsDir(path=".."), inventory)
-                for item in responses:
-                    assert item.value, (
-                        "The coroutine should report that the current working directory exists on the host."
-                    )
-            
-            
-            # block end
         ```
         """
         return await (router_handler1(IsDir))(
