@@ -9,7 +9,7 @@ from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.context import Context
 from reemote.response import ResponseModel
 from reemote.operation import Operation, CommonOperationRequest
-from setup_logging import setup_logging
+from scripts.setup_logging import setup_logging
 
 async def main():
     inventory = Inventory(

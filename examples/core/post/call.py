@@ -46,7 +46,7 @@ async def main():
             "description": "Successful Response",
             "content": {
                 "application/json": {
-                    "example": [item.model_dump() for item in r]
+                    "sftp_IsDir": [item.model_dump() for item in r]
                 }
             }
         }

@@ -5,7 +5,7 @@ from reemote.core import GetFact
 from reemote.inventory import Inventory, InventoryItem, Connection
 from reemote.core import return_put
 from reemote.context import Method
-from setup_logging import setup_logging
+from scripts.setup_logging import setup_logging
 
 
 async def main():

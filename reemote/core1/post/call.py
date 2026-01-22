@@ -47,7 +47,7 @@ class Call(Passthrough):
                 "description": "Successful Response",
                 "content": {
                     "application/json": {
-                        "example": [
+                        "sftp_IsDir": [
                             {"host": "server104", "error": False, "message": ""}
                         ]
                     }
@@ -72,7 +72,7 @@ class Call(Passthrough):
 
         *This REST API cannot be called.*
 
-        Python API example:
+        Python API sftp_IsDir:
 
         ```python
         from reemote.context import Context

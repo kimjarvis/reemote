@@ -25,7 +25,7 @@ class ResponseElement1(BaseModel):
     model_config = {
         "title": "ResponseElement1",
         "json_schema_extra": {
-            "example": {
+            "sftp_IsDir": {
                 "host": "server104",
                 "error": False,
                 "message": "",
@@ -56,7 +56,7 @@ class GetResponseElement(ResponseElement1):
     model_config = {
         "title": "GetResponseElement",
         "json_schema_extra": {
-            "example": {
+            "sftp_IsDir": {
                 "value": "Class specific value",
             },
             "description": "Basic response from endpoint."
@@ -76,7 +76,7 @@ class PostResponseElement(ResponseElement1):
     model_config = {
         "title": "PostResponseElement",
         "json_schema_extra": {
-            "example": {
+            "sftp_IsDir": {
                 "value": "Class specific value",
             },
             "description": "Basic response from endpoint."
