@@ -61,9 +61,9 @@ async def main():
 
     filename_no_ext = os.path.splitext(os.path.basename(__file__))[0]
     # Call the function to write the body to a flat file
-    generate_example(example, filename=f"{filename_no_ext}_example.py")
+    generate_example(example, file=__file__)
     # Generate the responses.txt file
-    generate_responses(responses, filename=f"{filename_no_ext}_example_responses.py")
+    generate_responses(responses, file=__file__)
 
     print(responses)
 
