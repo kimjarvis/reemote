@@ -26,7 +26,7 @@ async def test_sftp_is_dir(setup_inventory, setup_directory):
     r = await endpoint_execute(lambda: IsDir(path="testdata/dir_a/link_b"))
     assert all(not d.value for d in r), "link_b is a link to a file not a directory"
 
-# block insert sftp/get/IsDir_test.generated
+# block insert examples/sftp/get/IsDir_test.generated
 @pytest.mark.asyncio
 async def test_sftp_is_dir(setup_inventory, setup_directory):
     from reemote.execute import execute

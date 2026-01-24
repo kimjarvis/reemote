@@ -1,4 +1,5 @@
-# examples/sftp/IsDir.py
+
+# block insert examples/example_prefix.txt
 import asyncio
 import os
 import sys
@@ -9,7 +10,7 @@ from scripts.generate_responses import generate_responses
 from scripts.generate_test import generate_test
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+# block end
 
 async def example(inventory):
     from reemote.execute import execute
@@ -23,7 +24,7 @@ async def example(inventory):
 
     return responses
 
-
+# block insert examples/example_suffix.txt
 async def main():
     responses = await execute_example(example)
     generate_example(example, file=__file__)
@@ -33,3 +34,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+# block end
+
+
+

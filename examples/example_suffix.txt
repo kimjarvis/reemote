@@ -1,0 +1,9 @@
+async def main():
+    responses = await execute_example(example)
+    generate_example(example, file=__file__)
+    generate_test(example, file=__file__)
+    generate_responses(responses, file=__file__)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

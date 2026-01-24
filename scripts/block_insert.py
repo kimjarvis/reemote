@@ -1,3 +1,4 @@
+# block insert copyright_header
 # Copyright (C) 2026 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -11,6 +12,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# block end
 import argparse
 import re
 from pathlib import Path

@@ -56,7 +56,7 @@ class IsDir(Callback):
         tags=["SFTP Operations"],
         response_model=List[IsDirResponse],
         responses={
-            # block insert sftp/get/IsDir_responses.generated -4
+            # block insert examples/sftp/get/IsDir_responses.generated -4
             "200": {
                 "description": "Successful Response",
                 "content": {
@@ -89,7 +89,7 @@ class IsDir(Callback):
     ) -> Request:
         """# Return if the remote path refers to a directory
 
-        <!-- block insert sftp/get/IsDir_example.generated -->
+        <!-- block insert examples/sftp/get/IsDir_example.generated -->
         
         ## IsDir Python API
         

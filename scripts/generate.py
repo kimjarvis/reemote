@@ -4,7 +4,7 @@ from block_insert import block_insert
 
 async def main():
     await IsDir()
-    block_insert(source_path="~/reemote", insert_path="~/reemote/examples")
+    block_insert(source_path="~/reemote/", insert_path="~/reemote/")
 
 
 if __name__ == "__main__":
