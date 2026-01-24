@@ -91,7 +91,7 @@ class IsDir(Callback):
 
         <!-- block insert examples/sftp/get/IsDir_example.generated -->
         
-        ## IsDir Python API
+        ## sftp.get.IsDir()
         
         Example:
         

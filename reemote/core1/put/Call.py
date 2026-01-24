@@ -44,21 +44,23 @@ class Call(Passthrough):
     tags=["Core Operations"],
     response_model=List[PutResponseElement],
     responses={
-        200: {
+        # block insert examples/core/put/Call_responses.generated -4
+        "200": {
             "description": "Successful Response",
             "content": {
                 "application/json": {
-                    "sftp_IsDir": [
+                    "example": [
                         {
                             "host": "server104",
                             "error": False,
                             "message": "",
-                            "changed": False,
+                            "changed": True
                         }
                     ]
                 }
-            },
+            }
         }
+        # block end
     },
 )
 async def put_call(
@@ -78,19 +80,29 @@ async def put_call(
 
     *This REST API cannot be called.*
 
-    Python API sftp_IsDir:
-
+    <!-- block insert examples/core/put/Call_example.generated -->
+    
+    ## core.put.Call()
+    
+    Example:
+    
     ```python
-    from reemote.context import Context
-    from reemote import core1
-
-    async def callback(context: Context):
-        context.changed = context.value
-
-    responses = await execute(lambda: core1.CallPut(callback=callback, value=False, group="server104"), inventory)
-    for item in responses:
-        assert item.changed == False, "The callback should return its argument"
+    async def example(inventory):
+        from reemote.execute import execute
+        from reemote import core1
+        from reemote.context import Context
+    
+        async def callback(context: Context):
+            # Make a change to the host
+            context.changed = True
+    
+        responses = await execute(lambda: core1.put.Call(callback=callback, value="Hello", group="server104"), inventory)
+        for item in responses:
+            assert item.changed == True, "Expected the coroutine to set the changed indicator"
+    
+        return responses
     ```
+    <!-- block end -->
     """
     return await (router_handler1(Call))(
         value=value,

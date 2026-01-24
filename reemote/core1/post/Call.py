@@ -43,16 +43,22 @@ class Call(Passthrough):
         tags=["Core Operations"],
         response_model=List[PostResponseElement],
         responses={
-            200: {
+            # block insert examples/core/post/Call_responses.generated -4
+            "200": {
                 "description": "Successful Response",
                 "content": {
                     "application/json": {
-                        "sftp_IsDir": [
-                            {"host": "server104", "error": False, "message": ""}
+                        "example": [
+                            {
+                                "host": "server104",
+                                "error": False,
+                                "message": ""
+                            }
                         ]
                     }
-                },
+                }
             }
+            # block end
         },
     )
     async def post_call(
@@ -72,19 +78,27 @@ class Call(Passthrough):
 
         *This REST API cannot be called.*
 
-        Python API sftp_IsDir:
-
+        <!-- block insert examples/core/post/Call_example.generated -->
+        
+        ## core.post.Call()
+        
+        Example:
+        
         ```python
-        from reemote.context import Context
-        from reemote import core1
-
-        async def callback(context: Context):
-            context.changed = context.value
-
-        responses = await execute(lambda: core1.CallPost(callback=callback, value=False, group="server104"), inventory)
-        for item in responses:
-            assert item.changed == False, "The callback should return its argument"
+        async def example(inventory):
+            from reemote.execute import execute
+            from reemote import core1
+            from reemote.context import Context
+        
+            async def callback(context: Context):
+                # Make a change to the host
+                pass
+        
+            responses = await execute(lambda: core1.post.Call(callback=callback, value="Hello", group="server104"), inventory)
+        
+            return responses
         ```
+        <!-- block end -->
         """
         return await (router_handler1(Call))(
             value=value,

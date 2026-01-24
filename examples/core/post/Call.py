@@ -1,4 +1,3 @@
-
 # block insert examples/example_prefix.txt
 import asyncio
 import os
@@ -14,13 +13,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 async def example(inventory):
     from reemote.execute import execute
-    from reemote import sftp1
+    from reemote import core1
+    from reemote.context import Context
 
-    responses = await execute(lambda: sftp1.get.IsDir(path=".."), inventory)
-    for item in responses:
-        assert item.value, (
-            "Expected the coroutine to report that the current working directory exists on all hosts."
-        )
+    async def callback(context: Context):
+        # Make a change to the host
+        pass
+
+    responses = await execute(lambda: core1.post.Call(callback=callback, value="Hello", group="server104"), inventory)
 
     return responses
 
@@ -35,6 +35,5 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 # block end
-
 
 

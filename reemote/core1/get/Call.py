@@ -43,21 +43,23 @@ class Call(Passthrough):
         tags=["Core Operations"],
         response_model=List[GetResponseElement],
         responses={
-            200: {
+            # block insert examples/core/get/Call_responses.generated -4
+            "200": {
                 "description": "Successful Response",
                 "content": {
                     "application/json": {
-                        "sftp_IsDir": [
+                        "example": [
                             {
                                 "host": "server104",
                                 "error": False,
                                 "message": "",
-                                "changed": False,
+                                "value": "Hello World!"
                             }
                         ]
                     }
-                },
+                }
             }
+            # block end
         },
     )
     async def get_call(
@@ -73,23 +75,32 @@ class Call(Passthrough):
         ),
         common: CommonPassthroughRequest = Depends(common_passthrough_request),
     ) -> Request:
-        """# Call a coroutine that returns a changed indication
+        """# Call a coroutine that returns value
 
         *This REST API cannot be called.*
 
-        Python API sftp_IsDir:
-
+        <!-- block insert examples/core/get/Call_example.generated -->
+        
+        ## core.get.Call()
+        
+        Example:
+        
         ```python
-        from reemote.context import Context
-        from reemote import core1
-
-        async def callback(context: Context):
-            context.changed = context.value
-
-        responses = await execute(lambda: core1.CallGet(callback=callback, value=False, group="server104"), inventory)
-        for item in responses:
-            assert item.changed == False, "The callback should return its argument"
+        async def example(inventory):
+            from reemote.execute import execute
+            from reemote import core1
+            from reemote.context import Context
+        
+            async def callback(context: Context):
+                return context.value + "World!"
+        
+            responses = await execute(lambda: core1.get.Call(callback=callback, value="Hello ", group="server104"), inventory)
+            for item in responses:
+                assert item.value == "Hello World!", "Expected the coroutine to yield 'World!' appended to the input value"
+        
+            return responses
         ```
+        <!-- block end -->
         """
         return await (router_handler1(Call))(
             value=value,

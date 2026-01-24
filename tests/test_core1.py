@@ -6,7 +6,7 @@ from reemote.execute import endpoint_execute
 @pytest.mark.asyncio
 async def test_get_call(setup_inventory):
     from reemote.context import Context
-    from reemote.core1.get.call import Call
+    from reemote.core1.get.Call import Call
 
     async def callback(context: Context):
         return context.value + "World!"
@@ -26,7 +26,7 @@ async def test_get_call(setup_inventory):
 @pytest.mark.asyncio
 async def test_put_call(setup_inventory):
     from reemote.context import Context
-    from reemote.core1.put.call import Call
+    from reemote.core1.put.Call import Call
 
     async def callback(context: Context):
         context.changed = context.value
@@ -55,7 +55,7 @@ async def test_put_call(setup_inventory):
 @pytest.mark.asyncio
 async def test_post_call(setup_inventory):
     from reemote.context import Context
-    from reemote.core1.post.call import Call
+    from reemote.core1.post.Call import Call
 
     async def callback(context: Context):
         context.changed = context.value
