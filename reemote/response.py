@@ -1,6 +1,3 @@
-# Copyright (c) 2025 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com
-# This software is distributed under the MIT License. See the LICENSE file for details.
-#
 from typing import Any, List, Union
 
 from pydantic import BaseModel, Field, RootModel

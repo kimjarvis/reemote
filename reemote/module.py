@@ -1,7 +1,44 @@
 import argparse
 import os
+import sys
 import uvicorn
 from reemote.config import Config
+
+
+def print_license() -> None:
+    """
+    Prints the content of the LICENSE file located one directory up from the program.
+    """
+    # Construct the path to the LICENSE file (one directory up)
+    license_path = os.path.join(os.path.dirname(__file__), "..", "LICENSE")
+
+    # Check if the LICENSE file exists
+    if not os.path.isfile(license_path):
+        print("Error: LICENSE file not found.")
+        return
+
+    # Read and print the content of the LICENSE file
+    with open(license_path, "r", encoding="utf-8") as license_file:
+        print(license_file.read())
+    # Exit the program after printing the license
+    sys.exit(0)
+
+
+def print_gpl_notice() -> None:
+    """
+    Prints the GPL v3 notice for interactive programs with predefined details.
+    """
+    program_name = "reemote"
+    author_name = "Kim Jarvis"
+    year = "2026"
+
+    notice = (
+        f"{program_name}  Copyright (C) {year}  {author_name}\n"
+        "This program comes with ABSOLUTELY NO WARRANTY.\n"
+        "This is free software, and you are welcome to redistribute it\n"
+        f"under certain conditions; type `{program_name} --license` for details."
+    )
+    print(notice)
 
 
 def validate_file_path(path, arg_name):
@@ -56,9 +93,20 @@ def main():
     parser.add_argument(
         "--inventory", "-i", type=str, help="Set the inventory file path"
     )
+    parser.add_argument(
+        "--license",
+        action="store_true",
+        help="Print the content of the LICENSE file to the console."
+    )
 
     # Parse known arguments (reemote-specific) and collect unknown arguments (for uvicorn)
     args, extra_args = parser.parse_known_args()
+
+    # If --license is provided, print the license
+    if args.license:
+        print_license()
+    print_gpl_notice()
+
 
     # Initialize Config object
     config = Config()
