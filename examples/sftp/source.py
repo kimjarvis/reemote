@@ -56,28 +56,7 @@ class IsDir(Callback):
         tags=["SFTP Operations"],
         response_model=List[IsDirResponse],
         responses={
-            # block insert sftp/IsDir_example_responses.py -4
-            "200": {
-                "description": "Successful Response",
-                "content": {
-                    "application/json": {
-                        "sftp_IsDir": [
-                            {
-                                "host": "server105",
-                                "error": False,
-                                "message": "",
-                                "value": True
-                            },
-                            {
-                                "host": "server104",
-                                "error": False,
-                                "message": "",
-                                "value": True
-                            }
-                        ]
-                    }
-                }
-            }
+            # block insert sftp/IsDir_responses.generated -4
         },
     )
     async def is_dir(
