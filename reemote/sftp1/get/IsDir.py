@@ -61,15 +61,15 @@ class IsDir(Callback):
                 "description": "Successful Response",
                 "content": {
                     "application/json": {
-                        "sftp_IsDir": [
+                        "example": [
                             {
-                                "host": "server104",
+                                "host": "server105",
                                 "error": False,
                                 "message": "",
                                 "value": True
                             },
                             {
-                                "host": "server105",
+                                "host": "server104",
                                 "error": False,
                                 "message": "",
                                 "value": True
@@ -89,19 +89,25 @@ class IsDir(Callback):
     ) -> Request:
         """# Return if the remote path refers to a directory
 
+        <!-- block insert sftp/IsDir_example.generated -->
+        ## IsDir.py Python API
+        
+        Example:
+        
         ```python
-            # Example usage sftp/IsDir_example.generated
-                from reemote import sftp1
-            
-                responses = await execute(lambda: sftp1.get.IsDir(path=".."), inventory)
-                for item in responses:
-                    assert item.value, (
-                        "The coroutine should report that the current working directory exists on the host."
-                    )
-            
-            
-            # block end
+        async def example(inventory):
+            from reemote.execute import execute
+            from reemote import sftp1
+        
+            responses = await execute(lambda: sftp1.get.IsDir(path=".."), inventory)
+            for item in responses:
+                assert item.value, (
+                    "The coroutine should report that the current working directory exists on the host."
+                )
+        
+            return responses
         ```
+        <!-- block end -->
         """
         return await (router_handler1(IsDir))(
             path=path,

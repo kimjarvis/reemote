@@ -14,11 +14,19 @@ def generate_responses(responses: Dict, file: str):
     path = f"{directory}/{stem}_responses.generated"
     print(f"writing {path}")
 
+    # print(responses)
+
+    # Replace key to create a fastapi example
+    json_dict = responses[200]['content']['application/json']
+    old_key = next(iter(json_dict))
+    json_dict['example'] = json_dict.pop(old_key)
+
     # Convert the responses dictionary to a formatted JSON string with indent=4
     json_str = json.dumps(responses, indent=4)
 
     # Replace "false" with "False" and "true" with "True"
     json_str = json_str.replace("false", "False").replace("true", "True")
+
 
     # Write the modified JSON string to the file
     with open(path, "w") as f:
