@@ -89,8 +89,8 @@ async def put_call(
     ```python
     async def example(inventory):
         from reemote.execute import execute
-        from reemote import core1
         from reemote.context import Context
+        from reemote import core1
     
         async def callback(context: Context):
             # Make a change to the host

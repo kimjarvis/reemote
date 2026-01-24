@@ -88,8 +88,8 @@ class Call(Passthrough):
         ```python
         async def example(inventory):
             from reemote.execute import execute
-            from reemote import core1
             from reemote.context import Context
+            from reemote import core1
         
             async def callback(context: Context):
                 return context.value + "World!"

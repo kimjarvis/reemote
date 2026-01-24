@@ -4,7 +4,7 @@ from reemote.execute import endpoint_execute
 
 # block insert examples/sftp/get/IsDir_test.generated
 @pytest.mark.asyncio
-async def test_sftp_get_IsDir_example(setup_inventory, setup_directory):
+async def test_sftp_get_isdir_example(setup_inventory, setup_directory):
     from reemote.execute import execute
     from reemote import sftp1
 

@@ -26,7 +26,7 @@ def generate_test(func: Callable, file: str):
     # Write the remaining lines to the flat file, overwriting the file
     with open(path, "w") as f:  # Write mode to overwrite the file
         f.write("@pytest.mark.asyncio\n")
-        f.write(f"async def test_{grandparent}_{parent}_{stem}_example(setup_inventory, setup_directory):\n")
+        f.write(f"async def test_{grandparent}_{parent}_{stem.lower()}_example(setup_inventory, setup_directory):\n")
         for line in source_lines:
             # Apply replacements if the line contains 'responses = await execute'
             if "responses = await execute" in line:

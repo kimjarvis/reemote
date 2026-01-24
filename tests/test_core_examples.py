@@ -4,10 +4,10 @@ from reemote.execute import endpoint_execute
 
 # block insert examples/core/get/Call_test.generated
 @pytest.mark.asyncio
-async def test_core_get_Call_example(setup_inventory, setup_directory):
+async def test_core_get_call_example(setup_inventory, setup_directory):
     from reemote.execute import execute
-    from reemote import core1
     from reemote.context import Context
+    from reemote import core1
 
     async def callback(context: Context):
         return context.value + "World!"
@@ -21,10 +21,10 @@ async def test_core_get_Call_example(setup_inventory, setup_directory):
 
 # block insert examples/core/post/Call_test.generated
 @pytest.mark.asyncio
-async def test_core_post_Call_example(setup_inventory, setup_directory):
+async def test_core_post_call_example(setup_inventory, setup_directory):
     from reemote.execute import execute
-    from reemote import core1
     from reemote.context import Context
+    from reemote import core1
 
     async def callback(context: Context):
         # Make a change to the host
@@ -37,10 +37,10 @@ async def test_core_post_Call_example(setup_inventory, setup_directory):
 
 # block insert examples/core/put/Call_test.generated
 @pytest.mark.asyncio
-async def test_core_put_Call_example(setup_inventory, setup_directory):
+async def test_core_put_call_example(setup_inventory, setup_directory):
     from reemote.execute import execute
-    from reemote import core1
     from reemote.context import Context
+    from reemote import core1
 
     async def callback(context: Context):
         # Make a change to the host
@@ -52,5 +52,21 @@ async def test_core_put_Call_example(setup_inventory, setup_directory):
 
     return responses
 # block end
+
+# block insert examples/core/get/Fact_test.generated
+@pytest.mark.asyncio
+async def test_core_get_fact_example(setup_inventory, setup_directory):
+    from reemote.execute import execute
+    from reemote import core1
+
+    responses = await endpoint_execute(lambda: core1.get.Fact(cmd='echo Hello World!'))
+
+    for item in responses:
+        assert item.value.stdout == "Hello World!\n", "Expected the coroutine to yield the output of the command"
+
+    return responses
+# block end
+
+
 
 

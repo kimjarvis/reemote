@@ -40,6 +40,7 @@ def ssh_completed_process_to_dict(ssh_completed_process):
 
 
 def get_result(context: Context) -> dict[str, str | None | Any]:
+    print("debug 00",context)
     match context.method:
         case Method.GET:
             result = context.response_schema(
@@ -179,13 +180,13 @@ async def run_operation(
                     )
             context.value = ssh_completed_process_to_dict(cp)
             result = get_result(context)
-            logging.info(f"{result['host']:<16} - {result}")
+            # logging.info(f"{result['host']:<16} - {result}")
             return result
         except Exception as e:
             context.error = True
             context.value = f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
             result = get_result(context)
-            logging.error(f"{result['host']:<16} - {result}")
+            # logging.error(f"{result['host']:<16} - {result}")
             return result
     return None
 

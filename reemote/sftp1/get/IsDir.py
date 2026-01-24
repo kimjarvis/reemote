@@ -22,16 +22,6 @@ class IsDirResponse(GetResponseElement):
         description="Whether or not the path is a directory.",
     )
 
-    class Config:
-        title = "IsDirResponse"
-        json_schema_extra = {
-            "sftp_IsDir": {
-                **GetResponseElement.model_config["json_schema_extra"]["sftp_IsDir"],
-            },
-            "description": "Response from the is_dir endpoint.",
-        }
-
-
 class IsDir(Callback):
     class Request(PathRequest):
         pass

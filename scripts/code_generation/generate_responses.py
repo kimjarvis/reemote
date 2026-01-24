@@ -25,7 +25,7 @@ def generate_responses(responses: Dict, file: str):
     json_str = json.dumps(responses, indent=4)
 
     # Replace "false" with "False" and "true" with "True"
-    json_str = json_str.replace("false", "False").replace("true", "True")
+    json_str = json_str.replace("false", "False").replace("true", "True").replace("null", "None")
 
 
     # Write the modified JSON string to the file
