@@ -15,7 +15,7 @@ async def example(inventory):
     from reemote.execute import execute
     from reemote import sftp1
 
-    responses = await execute(lambda: sftp1.get.IsDir(path="."), inventory)
+    responses = await execute(lambda: sftp1.get.IsDir(path=".."), inventory)
     for item in responses:
         assert item.value, (
             "Expected the coroutine to report that the current working directory exists on all hosts."

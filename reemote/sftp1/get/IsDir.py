@@ -56,7 +56,29 @@ class IsDir(Callback):
         tags=["SFTP Operations"],
         response_model=List[IsDirResponse],
         responses={
-            # block insert sftp/IsDir_responses.generated -4
+            # block insert sftp/get/IsDir_responses.generated -4
+            "200": {
+                "description": "Successful Response",
+                "content": {
+                    "application/json": {
+                        "example": [
+                            {
+                                "host": "server104",
+                                "error": False,
+                                "message": "",
+                                "value": True
+                            },
+                            {
+                                "host": "server105",
+                                "error": False,
+                                "message": "",
+                                "value": True
+                            }
+                        ]
+                    }
+                }
+            }
+            # block end
         },
     )
     async def is_dir(
@@ -67,7 +89,26 @@ class IsDir(Callback):
     ) -> Request:
         """# Return if the remote path refers to a directory
 
-        <!-- block insert sftp/IsDir_example.generated -->
+        <!-- block insert sftp/get/IsDir_example.generated -->
+        
+        ## IsDir Python API
+        
+        Example:
+        
+        ```python
+        async def example(inventory):
+            from reemote.execute import execute
+            from reemote import sftp1
+        
+            responses = await execute(lambda: sftp1.get.IsDir(path=".."), inventory)
+            for item in responses:
+                assert item.value, (
+                    "Expected the coroutine to report that the current working directory exists on all hosts."
+                )
+        
+            return responses
+        ```
+        <!-- block end -->
         """
         return await (router_handler1(IsDir))(
             path=path,

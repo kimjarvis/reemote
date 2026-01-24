@@ -1,5 +1,5 @@
 import asyncio
-from examples.sftp.IsDir import main as IsDir
+from examples.sftp.get.IsDir import main as IsDir
 from block_insert import block_insert
 
 async def main():
