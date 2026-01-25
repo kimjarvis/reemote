@@ -81,7 +81,7 @@ class Call(Passthrough):
 
         <!-- block insert examples/core/get/Call_example.generated -->
         
-        ## core.get.Call()
+        ## core.get.Call
         
         Example:
         

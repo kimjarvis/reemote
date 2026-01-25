@@ -82,7 +82,7 @@ class Return(Passthrough):
 
         <!-- block insert examples/core/put/Return_example.generated -->
         
-        ## core.put.Return()
+        ## core.put.Return
         
         Example:
         

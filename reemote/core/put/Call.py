@@ -82,7 +82,7 @@ async def call(
 
     <!-- block insert examples/core/put/Call_example.generated -->
     
-    ## core.put.Call()
+    ## core.put.Call
     
     Example:
     

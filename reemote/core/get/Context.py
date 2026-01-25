@@ -126,7 +126,7 @@ class Context(Passthrough):
 
         <!-- block insert examples/core/get/Context_example.generated -->
         
-        ## core.get.Context()
+        ## core.get.Context
         
         Example:
         

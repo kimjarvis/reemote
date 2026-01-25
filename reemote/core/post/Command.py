@@ -74,7 +74,7 @@ class Command(Operation):
 
         <!-- block insert examples/core/post/Command_example.generated -->
         
-        ## core.post.Command()
+        ## core.post.Command
         
         Example:
         

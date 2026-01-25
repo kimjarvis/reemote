@@ -22,7 +22,7 @@ def generate_example(func: Callable, file: str):
     # Write the remaining lines to the flat file, overwriting the file
     with open(path, "w") as f:  # Write mode to overwrite the file
         f.write("\n")
-        f.write(f"## {grandparent}.{parent}.{stem}()\n\n")
+        f.write(f"## {grandparent}.{parent}.{stem}\n\n")
         f.write("Example:\n\n")
         f.write("```python\n")
         for line in source_lines:

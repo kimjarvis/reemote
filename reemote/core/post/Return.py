@@ -78,7 +78,7 @@ class Return(Passthrough):
 
         <!-- block insert examples/core/post/Return_example.generated -->
         
-        ## core.post.Return()
+        ## core.post.Return
         
         Example:
         

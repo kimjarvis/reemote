@@ -80,7 +80,7 @@ class Call(Passthrough):
 
         <!-- block insert examples/core/post/Call_example.generated -->
         
-        ## core.post.Call()
+        ## core.post.Call
         
         Example:
         

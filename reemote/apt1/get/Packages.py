@@ -108,7 +108,7 @@ class Packages(Operation):
                     "application/json": {
                         "example": [
                             {
-                                "host": "server104",
+                                "host": "server105",
                                 "error": False,
                                 "message": "",
                                 "value": [
@@ -127,7 +127,7 @@ class Packages(Operation):
                                 ]
                             },
                             {
-                                "host": "server105",
+                                "host": "server104",
                                 "error": False,
                                 "message": "",
                                 "value": [
@@ -159,7 +159,7 @@ class Packages(Operation):
 
         <!-- block insert examples/apt/get/Packages_example.generated -->
         
-        ## apt.get.Packages()
+        ## apt.get.Packages
         
         Example:
         
@@ -170,8 +170,8 @@ class Packages(Operation):
         
             responses = await execute(lambda: apt1.get.Packages(), inventory)
         
-            assert all(any(item.name == "adduser" for item in response.value.root) for response in responses), \
-                "Expected the coroutine to return a list of packages containing the package adduser on each host"
+            adduser_present = all(any(item.name == "adduser" for item in response.value.root) for response in responses)
+            assert adduser_present == True, "Expected the coroutine to return a list of packages containing the package adduser on each host"
         
             return responses
         ```

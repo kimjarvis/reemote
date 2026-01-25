@@ -78,7 +78,7 @@ class IsDir(Callback):
 
         <!-- block insert examples/sftp/get/IsDir_example.generated -->
         
-        ## sftp.get.IsDir()
+        ## sftp.get.IsDir
         
         Example:
         

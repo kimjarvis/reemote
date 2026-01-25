@@ -137,7 +137,7 @@ class Fact(Operation):
 
         <!-- block insert examples/core/get/Fact_example.generated -->
         
-        ## core.get.Fact()
+        ## core.get.Fact
         
         Example:
         
