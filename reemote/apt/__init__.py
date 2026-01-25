@@ -1,4 +1,3 @@
-from reemote.apt.getpackages import GetPackages
 from reemote.apt.update import Update
 from reemote.apt.upgrade import Upgrade
 from reemote.apt.install import Install
@@ -7,7 +6,6 @@ from reemote.apt.remove import Remove
 
 __all__ = [
     "Update",
-    "GetPackages",
     "Upgrade",
     "Install",
     "Remove",

@@ -1,0 +1,160 @@
+from typing import AsyncGenerator, List, Optional, Tuple, Union
+
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field, RootModel
+
+from reemote.context import Context, ContextType, Method
+from reemote.operation import (
+    CommonOperationRequest,
+    Operation,
+    common_operation_request,
+)
+from reemote.response import GetResponseElement
+from reemote.router_handler import router_handler1
+
+router = APIRouter()
+
+
+
+
+class SSHCompletedProcess(BaseModel):
+    # env: Optional[Dict[str, str]] = Field(
+    #     default=None,
+    #     description="The environment the client requested to be set for the process."
+    # )
+    command: Optional[str] = Field(
+        default=None,
+        description="The command the client requested the process to execute (if any).",
+    )
+    subsystem: Optional[str] = Field(
+        default=None,
+        description="The subsystem the client requested the process to open (if any).",
+    )
+    exit_status: int = Field(
+        description="The exit status returned, or -1 if an exit signal is sent."
+    )
+    exit_signal: Optional[Tuple[str, bool, str, str]] = Field(
+        default=None,
+        description="The exit signal sent (if any) in the form of a tuple containing "
+        "the signal name, a bool for whether a core dump occurred, a message "
+        "associated with the signal, and the language the message was in.",
+    )
+    returncode: int = Field(
+        description="The exit status returned, or negative of the signal number when an exit signal is sent."
+    )
+    stdout: Union[str, bytes, None] = Field(
+        default=None,
+        description="The output sent by the process to stdout (if not redirected).",
+    )
+    stderr: Union[str, bytes, None] = Field(
+        default=None,
+        description="The output sent by the process to stderr (if not redirected).",
+    )
+
+
+class FactResponse(GetResponseElement):
+    value: SSHCompletedProcess = Field(
+        default=None, description="The results from the executed command."
+    )
+
+
+
+class Packages(Operation):
+    class Request(CommonOperationRequest):
+        cmd: str = Field(...)
+
+    request_schema = Request
+    response_schema = FactResponse
+    method = Method.GET
+
+
+    async def execute(self) -> AsyncGenerator[Context, List[FactResponse]]:
+        model_instance = self.request_schema.model_validate(self.kwargs)
+        result = yield Context(
+            command=model_instance.cmd,
+            call=self.__class__.child + "(" + str(model_instance) + ")",
+            type=ContextType.OPERATION,
+            method=self.method,
+            response_schema=self.response_schema,
+            **self.common_kwargs,
+        )
+        self.__class__.response_schema(root=result)
+
+    @staticmethod
+    @router.get(
+        "/packages",
+        tags=["APT Package Manager"],
+        response_model=List[FactResponse],
+        responses={
+            # block insert examples/apt/get/Packages_responses.generated -4
+            "200": {
+                "description": "Successful Response",
+                "content": {
+                    "application/json": {
+                        "example": [
+                            {
+                                "host": "server104",
+                                "error": False,
+                                "message": "",
+                                "value": {
+                                    "command": "echo Hello World!",
+                                    "subsystem": None,
+                                    "exit_status": 0,
+                                    "exit_signal": None,
+                                    "returncode": 0,
+                                    "stdout": "Hello World!\n",
+                                    "stderr": ""
+                                }
+                            },
+                            {
+                                "host": "server105",
+                                "error": False,
+                                "message": "",
+                                "value": {
+                                    "command": "echo Hello World!",
+                                    "subsystem": None,
+                                    "exit_status": 0,
+                                    "exit_signal": None,
+                                    "returncode": 0,
+                                    "stdout": "Hello World!\n",
+                                    "stderr": ""
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+            # block end
+        },
+    )
+    async def packages(
+        cmd: str = Query(
+            ..., description="Shell command", examples=["echo Hello World!", "ls -ltr"]
+        ),
+        common: CommonOperationRequest = Depends(common_operation_request),
+    ) -> Request:
+        """# Execute a shell command to get information from the remote host
+
+        <!-- block insert examples/apt/get/Packages_example.generated -->
+        
+        ## apt.get.Packages()
+        
+        Example:
+        
+        ```python
+        async def example(inventory):
+            from reemote.execute import execute
+            from reemote import apt1
+        
+            responses = await execute(lambda: apt1.get.Packages(cmd='echo Hello World!'), inventory)
+        
+            print(responses)
+        
+            return responses
+        ```
+        <!-- block end -->
+        """
+        return await (router_handler1(Fact))(
+            cmd=cmd,
+            common=common,
+        )
