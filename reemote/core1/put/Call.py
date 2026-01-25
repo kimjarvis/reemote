@@ -63,7 +63,7 @@ class Call(Passthrough):
         # block end
     },
 )
-async def put_call(
+async def call(
     callback: Any = Query(
         ...,
         description="Callable callback function.",

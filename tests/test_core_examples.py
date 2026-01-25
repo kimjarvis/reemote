@@ -108,4 +108,17 @@ async def test_core_post_return_example(setup_inventory, setup_directory):
     return responses
 # block end
 
+# block insert examples/core/put/Return_test.generated
+@pytest.mark.asyncio
+async def test_core_put_return_example(setup_inventory, setup_directory):
+    from reemote import core1
+    from reemote.context import Context
+    from reemote.execute import execute
+
+    responses = await endpoint_execute(lambda: core1.put.Return(changed=True))
+    assert all(response.changed for response in responses), "Expected the coroutine to return with changed equal to True"
+
+    return responses
+# block end
+
 

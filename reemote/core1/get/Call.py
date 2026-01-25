@@ -62,7 +62,7 @@ class Call(Passthrough):
             # block end
         },
     )
-    async def get_call(
+    async def call(
         callback: Any = Query(
             ...,
             description="Callable callback function.",
