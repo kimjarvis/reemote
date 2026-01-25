@@ -16,3 +16,18 @@ async def test_apt_get_packages_example(setup_inventory, setup_directory):
 
     return responses
 # block end
+
+# block insert examples/apt/put/Packages_test.generated
+@pytest.mark.asyncio
+async def test_apt_put_packages_example(setup_inventory, setup_directory):
+    from reemote.execute import execute
+    from reemote import apt1
+
+    responses = await endpoint_execute(lambda: apt1.put.Packages())
+
+    print(responses)
+
+    return responses
+# block end
+
+

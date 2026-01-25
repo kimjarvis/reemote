@@ -10,6 +10,7 @@ from examples.core.post.Return import main as post_return
 from examples.core.put.Return import main as put_return
 from examples.core.post.Command import main as post_command
 from examples.apt.get.Packages import main as get_packages
+from examples.apt.put.Packages import main as put_packages
 
 from block_insert import block_insert
 
@@ -24,7 +25,8 @@ async def main():
     # await post_return()
     # await put_return()
     # await post_command()
-    await get_packages()
+    # await get_packages()
+    await put_packages()
     block_insert(source_path="~/reemote/", insert_path="~/reemote/")
 
 

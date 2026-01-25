@@ -93,15 +93,15 @@ class Packages(Operation):
         if not response.error:
             parsed_packages = parse_apt_list_installed(response.value.stdout)
             package_list = PackageList.model_validate(parsed_packages)
-            yield core.get.Return(value=package_list)
+            yield core.put.Return(changed=True)
 
     @staticmethod
-    @router.get(
+    @router.put(
         "/packages",
         tags=["APT Package Manager"],
         response_model=List[PackagesResponse],
         responses={
-            # block insert examples/apt/get/Packages_responses.generated -4
+            # block insert examples/apt/put/Packages_responses.generated -4
             "200": {
                 "description": "Successful Response",
                 "content": {
@@ -111,39 +111,13 @@ class Packages(Operation):
                                 "host": "server105",
                                 "error": False,
                                 "message": "",
-                                "value": [
-                                    {
-                                        "name": "adduser",
-                                        "version": "3.152"
-                                    },
-                                    {
-                                        "name": "apparmor",
-                                        "version": "4.1.0-1"
-                                    },
-                                    {
-                                        "name": "apt-listchanges",
-                                        "version": "4.8"
-                                    }
-                                ]
+                                "changed": True
                             },
                             {
                                 "host": "server104",
                                 "error": False,
                                 "message": "",
-                                "value": [
-                                    {
-                                        "name": "adduser",
-                                        "version": "3.152"
-                                    },
-                                    {
-                                        "name": "apparmor",
-                                        "version": "4.1.0-1"
-                                    },
-                                    {
-                                        "name": "apt-listchanges",
-                                        "version": "4.8"
-                                    }
-                                ]
+                                "changed": True
                             }
                         ]
                     }
@@ -157,9 +131,9 @@ class Packages(Operation):
     ) -> Request:
         """# Get a list of installed packages and versions
 
-        <!-- block insert examples/apt/get/Packages_example.generated -->
+        <!-- block insert examples/apt/put/Packages_example.generated -->
         
-        ## apt.get.Packages
+        ## apt.put.Packages
         
         Example:
         
@@ -168,10 +142,9 @@ class Packages(Operation):
             from reemote.execute import execute
             from reemote import apt1
         
-            responses = await execute(lambda: apt1.get.Packages(), inventory)
+            responses = await execute(lambda: apt1.put.Packages(), inventory)
         
-            adduser_present = all(any(item.name == "adduser" for item in response.value.root) for response in responses)
-            assert adduser_present == True, "Expected the coroutine to return a list of packages containing the package adduser on each host"
+            print(responses)
         
             return responses
         ```
