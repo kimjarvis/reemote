@@ -17,11 +17,8 @@ async def example(inventory):
 
     responses = await execute(lambda: apt1.get.Packages(), inventory)
 
-    assert any(
-        response.value[i].name == "adduser"
-        for response in responses
-        for i in range(len(response.value))
-    ), "Expected the coroutine to return a list of packages containing adduser"
+    assert all(any(item.name == "adduser" for item in response.value.root) for response in responses), \
+        "Expected the coroutine to return a list of packages containing the package adduser on each host"
 
     return responses
 

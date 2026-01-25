@@ -1,8 +1,9 @@
 from typing import AsyncGenerator, List, Optional, Tuple, Union
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field, RootModel
+from pydantic import BaseModel, Field, RootModel, ValidationError
 
+from reemote import core
 from reemote.context import Context, ContextType, Method
 from reemote.operation import (
     CommonOperationRequest,
@@ -11,8 +12,6 @@ from reemote.operation import (
 )
 from reemote.response import GetResponseElement
 from reemote.router_handler import router_handler1
-
-from reemote import core
 
 router = APIRouter()
 
@@ -74,7 +73,8 @@ class PackageList(RootModel):
 
 class PackagesResponse(GetResponseElement):
     value: PackageList = Field(
-        default=[],
+        # default=[],
+        default_factory=lambda: PackageList(root=[]),
         description="List of package versions.",
     )
 
@@ -92,10 +92,8 @@ class Packages(Operation):
         response = yield core.get.Fact(cmd="apt list --installed | head -4")
         if not response.error:
             parsed_packages = parse_apt_list_installed(response.value.stdout)
-            package_list = [PackageListItem(**pkg) for pkg in parsed_packages]
-            PackageList(root=package_list)
+            package_list = PackageList.model_validate(parsed_packages)
             return_value = yield core.get.Return(value=package_list)
-            self.__class__.response_schema(root=return_value)
 
     @staticmethod
     @router.get(
@@ -157,7 +155,7 @@ class Packages(Operation):
     async def packages(
         common: CommonOperationRequest = Depends(common_operation_request),
     ) -> Request:
-        """# Get installed APT packages
+        """# Get a list of installed packages and versions
 
         <!-- block insert examples/apt/get/Packages_example.generated -->
         
@@ -172,11 +170,8 @@ class Packages(Operation):
         
             responses = await execute(lambda: apt1.get.Packages(), inventory)
         
-            assert any(
-                response.value[i].name == "adduser"
-                for response in responses
-                for i in range(len(response.value))
-            ), "Expected the coroutine to return a list of packages containing adduser"
+            assert all(any(item.name == "adduser" for item in response.value.root) for response in responses), \
+                "Expected the coroutine to return a list of packages containing the package adduser on each host"
         
             return responses
         ```

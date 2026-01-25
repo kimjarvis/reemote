@@ -11,11 +11,8 @@ async def test_apt_get_packages_example(setup_inventory, setup_directory):
 
     responses = await endpoint_execute(lambda: apt1.get.Packages())
 
-    assert any(
-        response.value[i].name == "adduser"
-        for response in responses
-        for i in range(len(response.value))
-    ), "Expected the coroutine to return a list of packages containing adduser"
+    assert all(any(item.name == "adduser" for item in response.value.root) for response in responses), \
+        "Expected the coroutine to return a list of packages containing the package adduser on each host"
 
     return responses
 # block end
