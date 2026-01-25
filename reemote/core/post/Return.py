@@ -1,13 +1,13 @@
-from typing import AsyncGenerator, List, Optional, Tuple, Union
+from typing import AsyncGenerator, List, Any, Optional
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field, RootModel
 
-from reemote.context import Context, ContextType, Method
-from reemote.operation import (
-    CommonOperationRequest,
-    Operation,
-    common_operation_request,
+from reemote.context import Context as _Context
+from reemote.context import ContextType, Method
+from reemote.passthrough import (
+    CommonPassthroughRequest,
+    Passthrough,
+    common_passthrough_request,
 )
 from reemote.response import PostResponseElement
 from reemote.router_handler import router_handler1
@@ -15,33 +15,40 @@ from reemote.router_handler import router_handler1
 router = APIRouter()
 
 
-class Command(Operation):
-    class Request(CommonOperationRequest):
-        cmd: str = Field(...)
+class Return(Passthrough):
+    class Request(CommonPassthroughRequest):
+        pass
 
     request_schema = Request
     response_schema = PostResponseElement
     method = Method.POST
 
-    async def execute(self) -> AsyncGenerator[Context, List[PostResponseElement]]:
+    @classmethod
+    async def callback(cls, context: _Context) -> None:
+        context.response_schema = cls.response_schema
+        context.method = cls.method
+        return context.value
+
+    async def execute(self) -> AsyncGenerator[_Context, List[PostResponseElement]]:
         model_instance = self.request_schema.model_validate(self.kwargs)
-        result = yield Context(
-            command=model_instance.cmd,
-            call=self.__class__.child + "(" + str(model_instance) + ")",
-            type=ContextType.OPERATION,
+
+        yield _Context(
+            type=ContextType.PASSTHROUGH,
+            callback=self.callback,
             method=self.method,
             response_schema=self.response_schema,
-            **self.common_kwargs,
+            call=self.__class__.child + "(" + str(model_instance) + ")",
+            caller=model_instance,
+            group=model_instance.group,
         )
-        self.__class__.response_schema(root=result)
 
     @staticmethod
     @router.post(
-        "/command",
+        "/return",
         tags=["Core Operations"],
         response_model=List[PostResponseElement],
         responses={
-            # block insert examples/core/post/Command_responses.generated -4
+            # block insert examples/core/post/Return_responses.generated -4
             "200": {
                 "description": "Successful Response",
                 "content": {
@@ -64,32 +71,29 @@ class Command(Operation):
             # block end
         },
     )
-    async def command(
-        cmd: str = Query(
-            ..., description="Shell command", examples=["systemctl start firewalld"]
-        ),
-        common: CommonOperationRequest = Depends(common_operation_request),
+    async def _return(
+        common: CommonPassthroughRequest = Depends(common_passthrough_request),
     ) -> Request:
-        """# Execute a shell command on the remote host
+        """# Return the operational context
 
-        <!-- block insert examples/core/post/Command_example.generated -->
+        <!-- block insert examples/core/post/Return_example.generated -->
         
-        ## core.post.Command()
+        ## core.post.Return()
         
         Example:
         
         ```python
         async def example(inventory):
+            from reemote import core
+            from reemote.context import Context
             from reemote.execute import execute
-            from reemote import core1
         
-            responses = await execute(lambda: core1.post.Command(cmd='systemctl start firewalld'), inventory)
+            responses = await execute(lambda: core.post.Return(), inventory)
         
             return responses
         ```
         <!-- block end -->
         """
-        return await (router_handler1(Command))(
-            cmd=cmd,
+        return await (router_handler1(Return))(
             common=common,
         )

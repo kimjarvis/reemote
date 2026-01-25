@@ -13,11 +13,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 async def example(inventory):
-    from reemote import core1
+    from reemote import core
     from reemote.context import Context
     from reemote.execute import execute
 
-    responses = await execute(lambda: core1.get.Return(value=1), inventory)
+    responses = await execute(lambda: core.get.Return(value=1), inventory)
     assert all(response.value == 1 for response in responses), "Expected the coroutine to return the value"
 
     return responses

@@ -14,13 +14,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 async def example(inventory):
     from reemote.execute import execute
     from reemote.context import Context
-    from reemote import core1
+    from reemote import core
 
     async def callback(context: Context):
         # Make a change to the host
         pass
 
-    responses = await execute(lambda: core1.post.Call(callback=callback, value="Hello", group="server104"), inventory)
+    responses = await execute(lambda: core.post.Call(callback=callback, value="Hello", group="server104"), inventory)
 
     return responses
 

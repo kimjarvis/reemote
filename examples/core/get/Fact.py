@@ -13,9 +13,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 async def example(inventory):
     from reemote.execute import execute
-    from reemote import core1
+    from reemote import core
 
-    responses = await execute(lambda: core1.get.Fact(cmd='echo Hello World!'), inventory)
+    responses = await execute(lambda: core.get.Fact(cmd='echo Hello World!'), inventory)
 
     for item in responses:
         assert "Hello World" in item.value.stdout, "Expected the coroutine to yield the output of the command"

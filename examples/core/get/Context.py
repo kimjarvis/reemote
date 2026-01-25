@@ -15,9 +15,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 async def example(inventory):
     from reemote.execute import execute
     from reemote.context import Context
-    from reemote import core1
+    from reemote import core
 
-    responses = await execute(lambda: core1.get.Context(), inventory)
+    responses = await execute(lambda: core.get.Context(), inventory)
 
     for response in responses:
         assert response.host in ["server104", "server105"]

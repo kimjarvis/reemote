@@ -9,7 +9,7 @@ from reemote.passthrough import (
     Passthrough,
     common_passthrough_request,
 )
-from reemote.response import PutResponseElement
+from reemote.response import GetResponseElement
 from reemote.router_handler import router_handler1
 
 router = APIRouter()
@@ -17,24 +17,24 @@ router = APIRouter()
 
 class Return(Passthrough):
     class Request(CommonPassthroughRequest):
-        changed: bool = None
+        value: Any = None
 
     request_schema = Request
-    response_schema = PutResponseElement
-    method = Method.PUT
+    response_schema = GetResponseElement
+    method = Method.GET
 
     @classmethod
     async def callback(cls, context: _Context) -> None:
         context.response_schema = cls.response_schema
         context.method = cls.method
-        return
+        return context.value
 
-    async def execute(self) -> AsyncGenerator[_Context, List[PutResponseElement]]:
+    async def execute(self) -> AsyncGenerator[_Context, List[GetResponseElement]]:
         model_instance = self.request_schema.model_validate(self.kwargs)
 
         yield _Context(
             type=ContextType.PASSTHROUGH,
-            changed=model_instance.changed,
+            value=model_instance.value,
             callback=self.callback,
             method=self.method,
             response_schema=self.response_schema,
@@ -44,12 +44,12 @@ class Return(Passthrough):
         )
 
     @staticmethod
-    @router.put(
+    @router.get(
         "/return",
         tags=["Core Operations"],
-        response_model=List[PutResponseElement],
+        response_model=List[GetResponseElement],
         responses={
-            # block insert examples/core/put/Return_responses.generated -4
+            # block insert examples/core/get/Return_responses.generated -4
             "200": {
                 "description": "Successful Response",
                 "content": {
@@ -59,13 +59,13 @@ class Return(Passthrough):
                                 "host": "server105",
                                 "error": False,
                                 "message": "",
-                                "changed": True
+                                "value": 1
                             },
                             {
                                 "host": "server104",
                                 "error": False,
                                 "message": "",
-                                "changed": True
+                                "value": 1
                             }
                         ]
                     }
@@ -75,31 +75,31 @@ class Return(Passthrough):
         },
     )
     async def _return(
-        changed: bool = Query(..., description="Whether or not the operation changed the host."),
+        value: Any = Query(..., description="The value to return."),
         common: CommonPassthroughRequest = Depends(common_passthrough_request),
     ) -> Request:
         """# Return the operational context
 
-        <!-- block insert examples/core/put/Return_example.generated -->
+        <!-- block insert examples/core/get/Return_example.generated -->
         
-        ## core.put.Return()
+        ## core.get.Return()
         
         Example:
         
         ```python
         async def example(inventory):
-            from reemote import core1
+            from reemote import core
             from reemote.context import Context
             from reemote.execute import execute
         
-            responses = await execute(lambda: core1.put.Return(changed=True), inventory)
-            assert all(response.changed for response in responses), "Expected the coroutine to return with changed equal to True"
+            responses = await execute(lambda: core.get.Return(value=1), inventory)
+            assert all(response.value == 1 for response in responses), "Expected the coroutine to return the value"
         
             return responses
         ```
         <!-- block end -->
         """
         return await (router_handler1(Return))(
-            changed=changed,
+            value=value,
             common=common,
         )

@@ -14,13 +14,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 async def example(inventory):
     from reemote.execute import execute
     from reemote.context import Context
-    from reemote import core1
+    from reemote import core
 
     async def callback(context: Context):
         # Make a change to the host
         context.changed = True
 
-    responses = await execute(lambda: core1.put.Call(callback=callback, value="Hello", group="server104"), inventory)
+    responses = await execute(lambda: core.put.Call(callback=callback, value="Hello", group="server104"), inventory)
     for item in responses:
         assert item.changed == True, "Expected the coroutine to set the changed indicator"
 

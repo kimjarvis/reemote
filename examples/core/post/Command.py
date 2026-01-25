@@ -13,9 +13,9 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 async def example(inventory):
     from reemote.execute import execute
-    from reemote import core1
+    from reemote import core
 
-    responses = await execute(lambda: core1.post.Command(cmd='systemctl start firewalld'), inventory)
+    responses = await execute(lambda: core.post.Command(cmd='systemctl start firewalld'), inventory)
 
     return responses
 

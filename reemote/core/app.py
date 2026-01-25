@@ -1,14 +1,14 @@
 from fastapi import APIRouter
 
-from reemote.core1.get.Fact import router as core_get_fact_router
-from reemote.core1.get.Context import router as core_get_context_router
-from reemote.core1.get.Return import router as core_get_return_router
-from reemote.core1.post.Return import router as core_post_return_router
-from reemote.core1.put.Return import router as core_put_return_router
-from reemote.core1.get.Call import router as core_get_call_router
-from reemote.core1.put.Call import router as core_put_call_router
-from reemote.core1.post.Call import router as core_post_call_router
-from reemote.core1.post.Command import router as core_post_command_router
+from reemote.core.get.Fact import router as core_get_fact_router
+from reemote.core.get.Context import router as core_get_context_router
+from reemote.core.get.Return import router as core_get_return_router
+from reemote.core.post.Return import router as core_post_return_router
+from reemote.core.put.Return import router as core_put_return_router
+from reemote.core.get.Call import router as core_get_call_router
+from reemote.core.put.Call import router as core_put_call_router
+from reemote.core.post.Call import router as core_post_call_router
+from reemote.core.post.Command import router as core_post_command_router
 
 core_router = APIRouter()
 
