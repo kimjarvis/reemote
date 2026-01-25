@@ -122,3 +122,15 @@ async def test_core_put_return_example(setup_inventory, setup_directory):
 # block end
 
 
+# block insert examples/core/post/Command_test.generated
+@pytest.mark.asyncio
+async def test_core_post_command_example(setup_inventory, setup_directory):
+    from reemote.execute import execute
+    from reemote import core1
+
+    responses = await endpoint_execute(lambda: core1.post.Command(cmd='systemctl start firewalld'))
+
+    return responses
+# block end
+
+
