@@ -15,9 +15,13 @@ async def example(inventory):
     from reemote.execute import execute
     from reemote import apt1
 
-    responses = await execute(lambda: apt1.get.Packages(cmd='echo Hello World!'), inventory)
+    responses = await execute(lambda: apt1.get.Packages(), inventory)
 
-    print(responses)
+    assert any(
+        response.value[i].name == "adduser"
+        for response in responses
+        for i in range(len(response.value))
+    ), "Expected the coroutine to return a list of packages containing adduser"
 
     return responses
 

@@ -12,79 +12,96 @@ from reemote.operation import (
 from reemote.response import GetResponseElement
 from reemote.router_handler import router_handler1
 
+from reemote import core
+
 router = APIRouter()
 
+def parse_apt_list_installed(value):
+    """Parses the output of 'apt list --installed' into a list of dictionaries.
+
+    This helper function processes the raw string output from the
+    `apt list --installed` command. It iterates through each line,
+    skipping the "Listing..." header and any empty lines. For each valid
+    package line, it accurately extracts the package name and its
+    corresponding version number.
+
+    Args:
+        value (str): The raw string output from the `apt list --installed`
+            command.
+
+    Returns:
+        list[dict]: A list of dictionaries, where each dictionary
+            represents an installed package and contains 'name' and 'version'
+            keys. Example: `[{'name': 'zlib1g', 'version': '1:1.2.11.dfsg-2'}]`.
+    """
+    lines = value.strip().split("\n")
+    packages = []
+
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("Listing..."):
+            continue
+
+        # Split package name from the rest using first '/'
+        if "/" not in line:
+            continue
+
+        name_part, rest = line.split("/", 1)
+        name = name_part.strip()
+
+        # Find the first space — version starts right after it
+        space_index = rest.find(" ")
+        if space_index == -1:
+            continue
+
+        # Extract everything after the first space
+        after_space = rest[space_index + 1 :]
+
+        # Version is everything until the next space or '['
+        version = after_space.split(" ", 1)[0].split("[", 1)[0].rstrip(",")
+
+        packages.append({"name": name, "version": version})
+
+    return packages
 
 
+class PackageListItem(BaseModel):
+    name: str = Field(..., description="The name of the package")
+    version: str = Field(..., description="The version of the package")
 
-class SSHCompletedProcess(BaseModel):
-    # env: Optional[Dict[str, str]] = Field(
-    #     default=None,
-    #     description="The environment the client requested to be set for the process."
-    # )
-    command: Optional[str] = Field(
-        default=None,
-        description="The command the client requested the process to execute (if any).",
-    )
-    subsystem: Optional[str] = Field(
-        default=None,
-        description="The subsystem the client requested the process to open (if any).",
-    )
-    exit_status: int = Field(
-        description="The exit status returned, or -1 if an exit signal is sent."
-    )
-    exit_signal: Optional[Tuple[str, bool, str, str]] = Field(
-        default=None,
-        description="The exit signal sent (if any) in the form of a tuple containing "
-        "the signal name, a bool for whether a core dump occurred, a message "
-        "associated with the signal, and the language the message was in.",
-    )
-    returncode: int = Field(
-        description="The exit status returned, or negative of the signal number when an exit signal is sent."
-    )
-    stdout: Union[str, bytes, None] = Field(
-        default=None,
-        description="The output sent by the process to stdout (if not redirected).",
-    )
-    stderr: Union[str, bytes, None] = Field(
-        default=None,
-        description="The output sent by the process to stderr (if not redirected).",
-    )
+class PackageList(RootModel):
+    root: List[PackageListItem]
 
-
-class FactResponse(GetResponseElement):
-    value: SSHCompletedProcess = Field(
-        default=None, description="The results from the executed command."
+class PackagesResponse(GetResponseElement):
+    value: PackageList = Field(
+        default=[],
+        description="List of package versions.",
     )
-
 
 
 class Packages(Operation):
     class Request(CommonOperationRequest):
-        cmd: str = Field(...)
+        pass
 
     request_schema = Request
-    response_schema = FactResponse
+    response_schema = PackagesResponse
     method = Method.GET
 
-
-    async def execute(self) -> AsyncGenerator[Context, List[FactResponse]]:
+    async def execute(self) -> AsyncGenerator[Context, List[PackagesResponse]]:
         model_instance = self.request_schema.model_validate(self.kwargs)
-        result = yield Context(
-            command=model_instance.cmd,
-            call=self.__class__.child + "(" + str(model_instance) + ")",
-            type=ContextType.OPERATION,
-            method=self.method,
-            response_schema=self.response_schema,
-            **self.common_kwargs,
-        )
-        self.__class__.response_schema(root=result)
+        response = yield core.get.Fact(cmd="apt list --installed | head -4")
+        if not response.error:
+            parsed_packages = parse_apt_list_installed(response.value.stdout)
+            package_list = [PackageListItem(**pkg) for pkg in parsed_packages]
+            PackageList(root=package_list)
+            return_value = yield core.get.Return(value=package_list)
+            self.__class__.response_schema(root=return_value)
 
     @staticmethod
     @router.get(
         "/packages",
         tags=["APT Package Manager"],
-        response_model=List[FactResponse],
+        response_model=List[PackagesResponse],
         responses={
             # block insert examples/apt/get/Packages_responses.generated -4
             "200": {
@@ -96,29 +113,39 @@ class Packages(Operation):
                                 "host": "server104",
                                 "error": False,
                                 "message": "",
-                                "value": {
-                                    "command": "echo Hello World!",
-                                    "subsystem": None,
-                                    "exit_status": 0,
-                                    "exit_signal": None,
-                                    "returncode": 0,
-                                    "stdout": "Hello World!\n",
-                                    "stderr": ""
-                                }
+                                "value": [
+                                    {
+                                        "name": "adduser",
+                                        "version": "3.152"
+                                    },
+                                    {
+                                        "name": "apparmor",
+                                        "version": "4.1.0-1"
+                                    },
+                                    {
+                                        "name": "apt-listchanges",
+                                        "version": "4.8"
+                                    }
+                                ]
                             },
                             {
                                 "host": "server105",
                                 "error": False,
                                 "message": "",
-                                "value": {
-                                    "command": "echo Hello World!",
-                                    "subsystem": None,
-                                    "exit_status": 0,
-                                    "exit_signal": None,
-                                    "returncode": 0,
-                                    "stdout": "Hello World!\n",
-                                    "stderr": ""
-                                }
+                                "value": [
+                                    {
+                                        "name": "adduser",
+                                        "version": "3.152"
+                                    },
+                                    {
+                                        "name": "apparmor",
+                                        "version": "4.1.0-1"
+                                    },
+                                    {
+                                        "name": "apt-listchanges",
+                                        "version": "4.8"
+                                    }
+                                ]
                             }
                         ]
                     }
@@ -128,12 +155,9 @@ class Packages(Operation):
         },
     )
     async def packages(
-        cmd: str = Query(
-            ..., description="Shell command", examples=["echo Hello World!", "ls -ltr"]
-        ),
         common: CommonOperationRequest = Depends(common_operation_request),
     ) -> Request:
-        """# Execute a shell command to get information from the remote host
+        """# Get installed APT packages
 
         <!-- block insert examples/apt/get/Packages_example.generated -->
         
@@ -146,15 +170,18 @@ class Packages(Operation):
             from reemote.execute import execute
             from reemote import apt1
         
-            responses = await execute(lambda: apt1.get.Packages(cmd='echo Hello World!'), inventory)
+            responses = await execute(lambda: apt1.get.Packages(), inventory)
         
-            print(responses)
+            assert any(
+                response.value[i].name == "adduser"
+                for response in responses
+                for i in range(len(response.value))
+            ), "Expected the coroutine to return a list of packages containing adduser"
         
             return responses
         ```
         <!-- block end -->
         """
-        return await (router_handler1(Fact))(
-            cmd=cmd,
+        return await (router_handler1(Packages))(
             common=common,
         )
