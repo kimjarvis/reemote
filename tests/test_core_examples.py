@@ -83,4 +83,17 @@ async def test_core_get_context_example(setup_inventory, setup_directory):
     return responses
 # block end
 
+# block insert examples/core/get/Return_test.generated
+@pytest.mark.asyncio
+async def test_core_get_return_example(setup_inventory, setup_directory):
+    from reemote import core1
+    from reemote.context import Context
+    from reemote.execute import execute
+
+    responses = await endpoint_execute(lambda: core1.get.Return(value=1))
+    assert all(response.value == 1 for response in responses), "Expected the coroutine to return the value"
+
+    return responses
+# block end
+
 
