@@ -6,6 +6,7 @@ from examples.core.put.Call import main as put_Call
 from examples.core.get.Fact import main as get_Fact
 from examples.core.get.Context import main as get_Context
 from examples.core.get.Return import main as get_Return
+from examples.core.post.Return import main as post_return
 
 from block_insert import block_insert
 
@@ -17,6 +18,7 @@ async def main():
     await get_Fact()
     await get_Context()
     await get_Return()
+    await post_return()
     block_insert(source_path="~/reemote/", insert_path="~/reemote/")
 
 

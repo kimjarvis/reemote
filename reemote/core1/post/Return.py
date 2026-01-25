@@ -9,7 +9,7 @@ from reemote.passthrough import (
     Passthrough,
     common_passthrough_request,
 )
-from reemote.response import GetResponseElement
+from reemote.response import PostResponseElement
 from reemote.router_handler import router_handler1
 
 router = APIRouter()
@@ -17,11 +17,11 @@ router = APIRouter()
 
 class Return(Passthrough):
     class Request(CommonPassthroughRequest):
-        value: Any = None
+        pass
 
     request_schema = Request
-    response_schema = GetResponseElement
-    method = Method.GET
+    response_schema = PostResponseElement
+    method = Method.POST
 
     @classmethod
     async def callback(cls, context: _Context) -> None:
@@ -29,12 +29,11 @@ class Return(Passthrough):
         context.method = cls.method
         return context.value
 
-    async def execute(self) -> AsyncGenerator[_Context, List[GetResponseElement]]:
+    async def execute(self) -> AsyncGenerator[_Context, List[PostResponseElement]]:
         model_instance = self.request_schema.model_validate(self.kwargs)
 
         yield _Context(
             type=ContextType.PASSTHROUGH,
-            value=model_instance.value,
             callback=self.callback,
             method=self.method,
             response_schema=self.response_schema,
@@ -44,12 +43,12 @@ class Return(Passthrough):
         )
 
     @staticmethod
-    @router.get(
+    @router.post(
         "/return",
         tags=["Core Operations"],
-        response_model=List[GetResponseElement],
+        response_model=List[PostResponseElement],
         responses={
-            # block insert examples/core/get/Return_responses.generated -4
+            # block insert examples/core/post/Return_responses.generated -4
             "200": {
                 "description": "Successful Response",
                 "content": {
@@ -58,14 +57,12 @@ class Return(Passthrough):
                             {
                                 "host": "server104",
                                 "error": False,
-                                "message": "",
-                                "value": 1
+                                "message": ""
                             },
                             {
                                 "host": "server105",
                                 "error": False,
-                                "message": "",
-                                "value": 1
+                                "message": ""
                             }
                         ]
                     }
@@ -75,14 +72,13 @@ class Return(Passthrough):
         },
     )
     async def _return(
-        value: Any = Query(default=None, description="The value to return."),
         common: CommonPassthroughRequest = Depends(common_passthrough_request),
     ) -> Request:
         """# Return the operational context
 
-        <!-- block insert examples/core/get/Return_example.generated -->
+        <!-- block insert examples/core/post/Return_example.generated -->
         
-        ## core.get.Return()
+        ## core.post.Return()
         
         Example:
         
@@ -92,14 +88,12 @@ class Return(Passthrough):
             from reemote.context import Context
             from reemote.execute import execute
         
-            responses = await execute(lambda: core1.get.Return(value=1), inventory)
-            assert all(response.value == 1 for response in responses), "Expected the coroutine to return the value"
+            responses = await execute(lambda: core1.post.Return(), inventory)
         
             return responses
         ```
         <!-- block end -->
         """
         return await (router_handler1(Return))(
-            value=value,
             common=common,
         )

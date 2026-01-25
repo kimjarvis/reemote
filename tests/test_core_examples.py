@@ -96,4 +96,16 @@ async def test_core_get_return_example(setup_inventory, setup_directory):
     return responses
 # block end
 
+# block insert examples/core/post/Return_test.generated
+@pytest.mark.asyncio
+async def test_core_post_return_example(setup_inventory, setup_directory):
+    from reemote import core1
+    from reemote.context import Context
+    from reemote.execute import execute
+
+    responses = await endpoint_execute(lambda: core1.post.Return())
+
+    return responses
+# block end
+
 
