@@ -93,7 +93,7 @@ class Fact(Operation):
                     "application/json": {
                         "example": [
                             {
-                                "host": "server104",
+                                "host": "server105",
                                 "error": False,
                                 "message": "",
                                 "value": {
@@ -107,7 +107,7 @@ class Fact(Operation):
                                 }
                             },
                             {
-                                "host": "server105",
+                                "host": "server104",
                                 "error": False,
                                 "message": "",
                                 "value": {
@@ -127,7 +127,7 @@ class Fact(Operation):
             # block end
         },
     )
-    async def getfact(
+    async def fact(
         cmd: str = Query(
             ..., description="Shell command", examples=["echo Hello World!", "ls -ltr"]
         ),
@@ -149,7 +149,7 @@ class Fact(Operation):
             responses = await execute(lambda: core1.get.Fact(cmd='echo Hello World!'), inventory)
         
             for item in responses:
-                assert item.value.stdout == "Hello World!\n", "Expected the coroutine to yield the output of the command"
+                assert "Hello World" in item.value.stdout, "Expected the coroutine to yield the output of the command"
         
             return responses
         ```

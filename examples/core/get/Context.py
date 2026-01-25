@@ -11,16 +11,19 @@ from scripts.code_generation.generate_test import generate_test
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # block end
 
+
 async def example(inventory):
     from reemote.execute import execute
+    from reemote.context import Context
     from reemote import core1
 
-    responses = await execute(lambda: core1.get.Fact(cmd='echo Hello World!'), inventory)
+    responses = await execute(lambda: core1.get.Context1(), inventory)
 
-    for item in responses:
-        assert "Hello World" in item.value.stdout, "Expected the coroutine to yield the output of the command"
+    for response in responses:
+        assert response.host in ["server104", "server105"]
 
     return responses
+
 
 
 # block insert examples/example_suffix.txt

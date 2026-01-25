@@ -81,6 +81,14 @@ class Callback(ABC):
             caller=model_instance,
             group=model_instance.group,
         )
+        print("debug 03",result)
+        print("debug 04",Context(
+            type=ContextType.CALLBACK,
+            callback=self.callback,
+            call=self.__class__.child + "(" + str(model_instance) + ")",
+            caller=model_instance,
+            group=model_instance.group,
+        ))
         self.response_schema.model_validate(result)
 
     @staticmethod

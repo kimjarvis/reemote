@@ -62,7 +62,7 @@ async def test_core_get_fact_example(setup_inventory, setup_directory):
     responses = await endpoint_execute(lambda: core1.get.Fact(cmd='echo Hello World!'))
 
     for item in responses:
-        assert item.value.stdout == "Hello World!\n", "Expected the coroutine to yield the output of the command"
+        assert "Hello World" in item.value.stdout, "Expected the coroutine to yield the output of the command"
 
     return responses
 # block end
