@@ -1,31 +1,25 @@
-from pathlib import PurePath
-from typing import List, Union
-from typing import Any, AsyncGenerator, Callable, List, Optional
+from typing import AsyncGenerator, List
 
-import asyncssh
-from fastapi import APIRouter, Depends, Query
-from pydantic import (
-    Field,
-)
+from fastapi import APIRouter, Depends
 
+from reemote.context import Context as _Context
+from reemote.context import ContextType, Method
 from reemote.passthrough import (
     CommonPassthroughRequest,
     Passthrough,
     common_passthrough_request,
 )
-from reemote.context import Method
-from reemote.context import Context, ContextType
 from reemote.response import GetResponseElement
 from reemote.router_handler import router_handler1
-from reemote.operation import CommonOperationRequest
 
 router = APIRouter()
 
 
 class ContextResponse(GetResponseElement):
-    value: Context = None
+    value: _Context = None
 
-class Context1(Passthrough):
+
+class Context(Passthrough):
     class Request(CommonPassthroughRequest):
         pass
 
@@ -34,15 +28,15 @@ class Context1(Passthrough):
     method = Method.GET
 
     @classmethod
-    async def callback(cls, context: Context) -> None:
+    async def callback(cls, context: _Context) -> None:
         context.response_schema = cls.response_schema
         context.method = cls.method
         return context
 
-    async def execute(self) -> AsyncGenerator[Context, List[GetResponseElement]]:
+    async def execute(self) -> AsyncGenerator[_Context, List[GetResponseElement]]:
         model_instance = self.request_schema.model_validate(self.kwargs)
 
-        yield Context(
+        yield _Context(
             type=ContextType.PASSTHROUGH,
             callback=self.callback,
             method=self.method,
@@ -142,7 +136,7 @@ class Context1(Passthrough):
             from reemote.context import Context
             from reemote import core1
         
-            responses = await execute(lambda: core1.get.Context1(), inventory)
+            responses = await execute(lambda: core1.get.Context(), inventory)
         
             for response in responses:
                 assert response.host in ["server104", "server105"]
@@ -151,6 +145,6 @@ class Context1(Passthrough):
         ```
         <!-- block end -->
         """
-        return await (router_handler1(Context1))(
+        return await (router_handler1(Context))(
             common=common,
         )

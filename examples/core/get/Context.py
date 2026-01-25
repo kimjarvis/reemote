@@ -17,7 +17,7 @@ async def example(inventory):
     from reemote.context import Context
     from reemote import core1
 
-    responses = await execute(lambda: core1.get.Context1(), inventory)
+    responses = await execute(lambda: core1.get.Context(), inventory)
 
     for response in responses:
         assert response.host in ["server104", "server105"]

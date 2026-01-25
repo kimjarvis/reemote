@@ -1,6 +1,6 @@
 from .Call import Call
 from .Fact import Fact
-from .Context1 import Context1
+from .Context import Context
 
-__all__ = ['Call','Fact','Context1']
+__all__ = ['Call','Fact', 'Context']
 

@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from reemote.core1.get.Fact import router as core_get_fact_router
-from reemote.core1.get.Context1 import router as core_get_context_router
+from reemote.core1.get.Context import router as core_get_context_router
 from reemote.core.return_put import router as core_return_put_router
 from reemote.core.return_get import router as core_return_get_router
 from reemote.core.return_post import router as core_return_post_router
