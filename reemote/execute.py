@@ -40,13 +40,6 @@ def ssh_completed_process_to_dict(ssh_completed_process):
 
 
 def get_result(context: Context) -> dict[str, str | None | Any]:
-    print("debug 00",context)
-    print("debug 01",{
-                    "host": context.inventory_item.connection.host,
-                    "error": context.error,
-                    "message": context.value if context.error else "",
-                    "value": context.value if not context.error else "",
-    })
     if context.response_schema is None:
         print("debug 02 The value of response_schema is None.")
     match context.method:

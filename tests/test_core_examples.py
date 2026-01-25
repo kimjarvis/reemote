@@ -68,5 +68,19 @@ async def test_core_get_fact_example(setup_inventory, setup_directory):
 # block end
 
 
+# block insert examples/core/get/Context_test.generated
+@pytest.mark.asyncio
+async def test_core_get_context_example(setup_inventory, setup_directory):
+    from reemote.execute import execute
+    from reemote.context import Context
+    from reemote import core1
+
+    responses = await endpoint_execute(lambda: core1.get.Context())
+
+    for response in responses:
+        assert response.host in ["server104", "server105"]
+
+    return responses
+# block end
 
 
