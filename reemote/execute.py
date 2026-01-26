@@ -42,6 +42,7 @@ def ssh_completed_process_to_dict(ssh_completed_process):
 def get_result(context: Context) -> dict[str, str | None | Any]:
     if context.response_schema is None:
         print("debug 02 The value of response_schema is None.")
+    print("debug 07",context)
     match context.method:
         case Method.GET:
             result = context.response_schema(

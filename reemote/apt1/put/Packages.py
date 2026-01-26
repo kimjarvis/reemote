@@ -10,96 +10,48 @@ from reemote.operation import (
     Operation,
     common_operation_request,
 )
-from reemote.response import GetResponseElement
+from reemote.response import PutResponseElement
 from reemote.router_handler import router_handler1
+
+from reemote import apt1
+from reemote import core
+
 
 router = APIRouter()
 
-def parse_apt_list_installed(value):
-    """Parses the output of 'apt list --installed' into a list of dictionaries.
-
-    This helper function processes the raw string output from the
-    `apt list --installed` command. It iterates through each line,
-    skipping the "Listing..." header and any empty lines. For each valid
-    package line, it accurately extracts the package name and its
-    corresponding version number.
-
-    Args:
-        value (str): The raw string output from the `apt list --installed`
-            command.
-
-    Returns:
-        list[dict]: A list of dictionaries, where each dictionary
-            represents an installed package and contains 'name' and 'version'
-            keys. Example: `[{'name': 'zlib1g', 'version': '1:1.2.11.dfsg-2'}]`.
-    """
-    lines = value.strip().split("\n")
-    packages = []
-
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("Listing..."):
-            continue
-
-        # Split package name from the rest using first '/'
-        if "/" not in line:
-            continue
-
-        name_part, rest = line.split("/", 1)
-        name = name_part.strip()
-
-        # Find the first space — version starts right after it
-        space_index = rest.find(" ")
-        if space_index == -1:
-            continue
-
-        # Extract everything after the first space
-        after_space = rest[space_index + 1 :]
-
-        # Version is everything until the next space or '['
-        version = after_space.split(" ", 1)[0].split("[", 1)[0].rstrip(",")
-
-        packages.append({"name": name, "version": version})
-
-    return packages
-
-
-class PackageListItem(BaseModel):
-    name: str = Field(..., description="The name of the package")
-    version: str = Field(..., description="The version of the package")
-
-class PackageList(RootModel):
-    root: List[PackageListItem]
-
-class PackagesResponse(GetResponseElement):
-    value: PackageList = Field(
-        # default=[],
-        default_factory=lambda: PackageList(root=[]),
-        description="List of package versions.",
-    )
 
 
 class Packages(Operation):
     class Request(CommonOperationRequest):
-        pass
+        packages: list[str]
+        present: bool
 
     request_schema = Request
-    response_schema = PackagesResponse
-    method = Method.GET
+    response_schema = PutResponseElement
+    method = Method.PUT
 
-    async def execute(self) -> AsyncGenerator[Context, List[PackagesResponse]]:
+    async def execute(self) -> AsyncGenerator[Context, List[PutResponseElement]]:
         model_instance = self.request_schema.model_validate(self.kwargs)
-        response = yield core.get.Fact(cmd="apt list --installed | head -4")
-        if not response.error:
-            parsed_packages = parse_apt_list_installed(response.value.stdout)
-            package_list = PackageList.model_validate(parsed_packages)
-            yield core.put.Return(changed=True)
+        print("debug 10")
+        pre = yield apt1.get.Packages()
+        if model_instance.present:
+            print("debug 11")
+            yield core.post.Command(cmd=f"apt-get install -y {' '.join(model_instance.packages)}", **self.common_kwargs)
+        else:
+            print("debug 12")
+            yield core.post.Command(cmd=f"apt-get remove -y {' '.join(model_instance.packages)}",**self.common_kwargs)
+        post = yield apt1.get.Packages()
+
+        print(post.value)
+        changed = pre.value != post.value
+        yield core.put.Return(changed=changed)
+
 
     @staticmethod
     @router.put(
         "/packages",
         tags=["APT Package Manager"],
-        response_model=List[PackagesResponse],
+        response_model=List[PutResponseElement],
         responses={
             # block insert examples/apt/put/Packages_responses.generated -4
             "200": {
@@ -129,7 +81,7 @@ class Packages(Operation):
     async def packages(
         common: CommonOperationRequest = Depends(common_operation_request),
     ) -> Request:
-        """# Get a list of installed packages and versions
+        """# Manage packages
 
         <!-- block insert examples/apt/put/Packages_example.generated -->
         

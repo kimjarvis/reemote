@@ -101,7 +101,6 @@ class Packages(Operation):
         tags=["APT Package Manager"],
         response_model=List[PackagesResponse],
         responses={
-            # block insert examples/apt/get/Packages_responses.generated -4
             "200": {
                 "description": "Successful Response",
                 "content": {
@@ -149,7 +148,6 @@ class Packages(Operation):
                     }
                 }
             }
-            # block end
         },
     )
     async def packages(

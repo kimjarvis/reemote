@@ -1,6 +1,6 @@
 from typing import Any, Callable
 
-from reemote.inventory import Connection, Inventory, InventoryItem
+from reemote.inventory import Connection, Inventory, InventoryItem, Authentication
 from scripts.setup_logging import setup_logging
 
 
@@ -13,12 +13,14 @@ async def execute_example(example: Callable ) -> dict[
                 connection=Connection(
                     host="server104", username="user", password="password"
                 ),
+                authentication=Authentication(sudo_password="password"),
                 groups=["server104"],
             ),
             InventoryItem(
                 connection=Connection(
                     host="server105", username="user", password="password"
                 ),
+                authentication=Authentication(sudo_password="password"),
                 groups=["server105"],
             ),
         ]
