@@ -32,13 +32,10 @@ class Packages(Operation):
 
     async def execute(self) -> AsyncGenerator[Context, List[PutResponseElement]]:
         model_instance = self.request_schema.model_validate(self.kwargs)
-        print("debug 10")
         pre = yield apt1.get.Packages()
         if model_instance.present:
-            print("debug 11")
             yield core.post.Command(cmd=f"apt-get install -y {' '.join(model_instance.packages)}", **self.common_kwargs)
         else:
-            print("debug 12")
             yield core.post.Command(cmd=f"apt-get remove -y {' '.join(model_instance.packages)}",**self.common_kwargs)
         post = yield apt1.get.Packages()
 

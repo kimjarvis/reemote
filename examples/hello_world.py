@@ -1,7 +1,7 @@
 # examples/hello_world.py
 import asyncio
 from reemote.execute import execute
-from reemote.core import GetFact
+from reemote import core
 from reemote.inventory import Inventory, InventoryItem, Connection
 
 
@@ -22,11 +22,12 @@ async def main():
     )
 
     responses = await execute(
-        lambda: GetFact(cmd="echo Hello World!"), inventory=inventory
+        lambda: core.get.Fact(cmd="echo Hello World!"), inventory=inventory
     )
     for response in responses:
-        print(response["value"]["stdout"])
-
+        assert response.value.stdout == "Hello World!\n", (
+            "Expected the each host to return 'Hello World!'"
+        )
 
 if __name__ == "__main__":
     asyncio.run(main())

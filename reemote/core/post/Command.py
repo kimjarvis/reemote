@@ -25,7 +25,6 @@ class Command(Operation):
 
     async def execute(self) -> AsyncGenerator[Context, List[PostResponseElement]]:
         model_instance = self.request_schema.model_validate(self.kwargs)
-        print("debug 10",model_instance.cmd)
         result = yield Context(
             command=model_instance.cmd,
             call=self.__class__.child + "(" + str(model_instance) + ")",

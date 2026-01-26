@@ -1,6 +1,6 @@
 import asyncio
 from reemote.execute import execute
-from reemote.core import Shell
+from reemote import core
 from reemote.inventory import Inventory, InventoryItem, Connection
 
 
@@ -22,7 +22,7 @@ async def main():
 
     # examples/hello_world_response.py
     responses = await execute(
-        lambda: Shell(cmd="echo Hello World!"), inventory=inventory
+        lambda: core.get.Fact(cmd="echo Hello World!"), inventory=inventory
     )
     # Convert to formatted JSON
     import json
