@@ -1,4 +1,4 @@
-# block extract examples/hello_world.generated
+# block extract examples/hello_world.py.generated
 # examples/hello_world.py
 import asyncio
 

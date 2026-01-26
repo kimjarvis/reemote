@@ -96,7 +96,7 @@ def process_path(path, extract_path):
             process_file(file, extract_path)
 
 
-def block_insert(source_path, extract_path):
+def block_extract(source_path, extract_path):
     process_path(source_path, extract_path)
 
 
@@ -106,7 +106,7 @@ def main():
     parser.add_argument("--extract_path", required=True, help="Base path for block files.")
     args = parser.parse_args()
 
-    block_insert(source_path=args.source_path, extract_path=args.extract_path)
+    block_extract(source_path=args.source_path, extract_path=args.extract_path)
 
 
 if __name__ == "__main__":
