@@ -86,7 +86,7 @@ class Context(Passthrough):
                                 }
                             },
                             {
-                                "host": "server104",
+                                "host": "server108",
                                 "error": False,
                                 "message": "",
                                 "value": {
@@ -96,7 +96,7 @@ class Context(Passthrough):
                                     "su": False,
                                     "inventory_item": {
                                         "connection": {
-                                            "host": "server104",
+                                            "host": "server108",
                                             "username": "user",
                                             "password": "password"
                                         },
@@ -107,7 +107,7 @@ class Context(Passthrough):
                                         },
                                         "session": {},
                                         "groups": [
-                                            "server104"
+                                            "server108"
                                         ]
                                     }
                                 }
@@ -139,7 +139,7 @@ class Context(Passthrough):
             responses = await execute(lambda: core.get.Context(), inventory)
         
             for response in responses:
-                assert response.host in ["server104", "server105"]
+                assert response.host in ["server108", "server105"]
         
             return responses
         ```

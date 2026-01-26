@@ -63,13 +63,13 @@ class Packages(Operation):
                                 "host": "server105",
                                 "error": False,
                                 "message": "",
-                                "changed": True
+                                "changed": False
                             },
                             {
                                 "host": "server104",
                                 "error": False,
                                 "message": "",
-                                "changed": True
+                                "changed": False
                             }
                         ]
                     }
@@ -91,13 +91,17 @@ class Packages(Operation):
         
         ```python
         async def example(inventory):
-            from reemote.execute import execute
             from reemote import apt1
+            from reemote.execute import execute
         
-            responses = await execute(lambda: apt1.put.Packages(), inventory)
-        
-            print(responses)
-        
+            responses = await execute(
+                lambda: apt1.put.Packages(
+                    packages=["tree"],
+                    present=False,
+                    sudo=True,
+                ),
+                inventory,
+            )
             return responses
         ```
         <!-- block end -->

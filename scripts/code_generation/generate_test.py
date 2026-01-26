@@ -32,7 +32,12 @@ def generate_test(func: Callable, file: str):
             if "responses = await execute" in line:
                 line = (
                     line.replace("await execute", "await endpoint_execute")
-                    .replace(", inventory)", ")")
+                    .replace(", inventory", "")
+
+                )
+            if "inventory" in line:
+                line = (
+                    line.replace("inventory,","")
                 )
             f.write(line + "\n")  # Write each line individually
 

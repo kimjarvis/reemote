@@ -56,7 +56,7 @@ class IsDir(Callback):
                                 "value": True
                             },
                             {
-                                "host": "server104",
+                                "host": "server108",
                                 "error": False,
                                 "message": "",
                                 "value": True

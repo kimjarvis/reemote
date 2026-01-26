@@ -50,7 +50,7 @@ class Call(Passthrough):
                     "application/json": {
                         "example": [
                             {
-                                "host": "server104",
+                                "host": "server108",
                                 "error": False,
                                 "message": "",
                                 "value": "Hello World!"
@@ -94,7 +94,7 @@ class Call(Passthrough):
             async def callback(context: Context):
                 return context.value + "World!"
         
-            responses = await execute(lambda: core.get.Call(callback=callback, value="Hello ", group="server104"), inventory)
+            responses = await execute(lambda: core.get.Call(callback=callback, value="Hello ", group="server108"), inventory)
             for item in responses:
                 assert item.value == "Hello World!", "Expected the coroutine to yield 'World!' appended to the input value"
         

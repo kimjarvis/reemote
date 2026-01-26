@@ -107,7 +107,7 @@ class Fact(Operation):
                                 }
                             },
                             {
-                                "host": "server104",
+                                "host": "server108",
                                 "error": False,
                                 "message": "",
                                 "value": {

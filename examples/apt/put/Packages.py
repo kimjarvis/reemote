@@ -11,14 +11,19 @@ from scripts.code_generation.generate_test import generate_test
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # block end
 
+
 async def example(inventory):
-    from reemote.execute import execute
     from reemote import apt1
+    from reemote.execute import execute
 
-    responses = await execute(lambda: apt1.put.Packages(), inventory)
-
-    print(responses)
-
+    responses = await execute(
+        lambda: apt1.put.Packages(
+            packages=["tree"],
+            present=False,
+            sudo=True,
+        ),
+        inventory,
+    )
     return responses
 
 
@@ -33,4 +38,3 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 # block end
-

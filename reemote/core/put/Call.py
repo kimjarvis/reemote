@@ -51,7 +51,7 @@ class Call(Passthrough):
                 "application/json": {
                     "example": [
                         {
-                            "host": "server104",
+                            "host": "server108",
                             "error": False,
                             "message": "",
                             "changed": True
@@ -96,7 +96,7 @@ async def call(
             # Make a change to the host
             context.changed = True
     
-        responses = await execute(lambda: core.put.Call(callback=callback, value="Hello", group="server104"), inventory)
+        responses = await execute(lambda: core.put.Call(callback=callback, value="Hello", group="server108"), inventory)
         for item in responses:
             assert item.changed == True, "Expected the coroutine to set the changed indicator"
     
