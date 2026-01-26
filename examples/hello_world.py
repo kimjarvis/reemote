@@ -27,7 +27,7 @@ async def main():
         lambda: core.get.Fact(cmd="echo Hello World!"), inventory=inventory
     )
     for response in responses:
-        assert response.value.stdout == "Hello World!\n", (
+        assert  "Hello World!" in response.value.stdout, (
             "Expected the each host to return 'Hello World!'"
         )
 

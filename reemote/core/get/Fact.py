@@ -15,8 +15,6 @@ from reemote.router_handler import router_handler1
 router = APIRouter()
 
 
-
-
 class SSHCompletedProcess(BaseModel):
     # env: Optional[Dict[str, str]] = Field(
     #     default=None,
@@ -58,15 +56,19 @@ class FactResponse(GetResponseElement):
     )
 
 
-
 class Fact(Operation):
     class Request(CommonOperationRequest):
         cmd: str = Field(...)
 
+    class Response(FactResponse):
+        pass
+
+    class Responses(RootModel):
+        root: List[FactResponse]
+
     request_schema = Request
     response_schema = FactResponse
     method = Method.GET
-
 
     async def execute(self) -> AsyncGenerator[Context, List[FactResponse]]:
         model_instance = self.request_schema.model_validate(self.kwargs)
@@ -103,8 +105,8 @@ class Fact(Operation):
                                     "exit_signal": None,
                                     "returncode": 0,
                                     "stdout": "Hello World!\n",
-                                    "stderr": ""
-                                }
+                                    "stderr": "",
+                                },
                             },
                             {
                                 "host": "server108",
@@ -117,12 +119,12 @@ class Fact(Operation):
                                     "exit_signal": None,
                                     "returncode": 0,
                                     "stdout": "Hello World!\n",
-                                    "stderr": ""
-                                }
-                            }
+                                    "stderr": "",
+                                },
+                            },
                         ]
                     }
-                }
+                },
             }
             # block end
         },
@@ -136,21 +138,21 @@ class Fact(Operation):
         """# Execute a shell command to get information from the remote host
 
         <!-- block insert examples/core/get/Fact_example.generated -->
-        
+
         ## core.get.Fact
-        
+
         Example:
-        
+
         ```python
         async def example(inventory):
             from reemote.execute import execute
             from reemote import core
-        
+
             responses = await execute(lambda: core.get.Fact(cmd='echo Hello World!'), inventory)
-        
+
             for item in responses:
                 assert "Hello World" in item.value.stdout, "Expected the coroutine to yield the output of the command"
-        
+
             return responses
         ```
         <!-- block end -->

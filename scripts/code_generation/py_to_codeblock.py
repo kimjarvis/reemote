@@ -26,8 +26,10 @@ def process_file(source_file):
         print(f"Error: Source file '{source_file}' not found.")
         return
 
-    markdown_content = f"```python\n{content}\n```"
+    # Remove '.py.generated' and append '.md.generated'
+    stem = source_file.name.removesuffix(".py.generated")
+    output_file = source_file.parent / f"{stem}.md.generated"
 
-    output_file = source_file.with_suffix(".md.generated")
+    markdown_content = f"```python\n{content}\n```"
     with open(output_file, "w") as f:
         f.write(markdown_content)

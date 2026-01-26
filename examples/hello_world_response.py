@@ -1,7 +1,8 @@
 import asyncio
-from reemote.execute import execute
+
 from reemote import core
-from reemote.inventory import Inventory, InventoryItem, Connection
+from reemote.execute import execute
+from reemote.inventory import Connection, Inventory, InventoryItem
 
 
 async def main():
@@ -24,10 +25,7 @@ async def main():
     responses = await execute(
         lambda: core.get.Fact(cmd="echo Hello World!"), inventory=inventory
     )
-    # Convert to formatted JSON
-    import json
-    formatted_json = json.dumps(responses, indent=4)
-    print(formatted_json)
+    print(core.get.Fact.Responses.model_validate(responses).model_dump_json(indent=4))
 
 if __name__ == "__main__":
     asyncio.run(main())

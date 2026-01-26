@@ -1,9 +1,10 @@
 ## An example deployment
 
-Reemote is an API for controlling remote systems.  Lets look at an example deployment in which the command `echo Hello World!` is executed on two servers and the output is printed on the console.
+Reemote is an API for controlling remote systems.  Lets look at an example deployment in which the command 
+`echo Hello World!` is executed on two hosts and the host output is verified.
 
+<!-- block insert examples/hello_world.md.generated -->
 ```python
-<!-- block insert examples/hello_world.generated -->
 # examples/hello_world.py
 import asyncio
 
@@ -39,25 +40,35 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+```
 <!-- block end -->
-```
 
-This prints the following to the console
+The `main` function is run by the `asyncio` execution loop. All Reemote deployments follow this structure. 
+If you're unfamiliar with `asyncio`, don't worry—this is just a standard pattern to follow.
 
-```bash
-Hello World!
-Hello World!
-```
+The body of the `main` function defines an inventory that contains two hosts: `server104` and `server105`. 
+It provides SSH connection details for each host, including the username and password. For more information about 
+inventories, refer to the [[inventory]] documentation.
 
-To convince yourself that the commands are actually being executed on both hosts change the command to `ip addr`.  You should see the IP address of both hosts printed.
+Within the `main` function, there is a call to the `execute` function. This function takes two arguments:
 
-The `main` function is run by the `asyncio` execution loop.  All Reemote deployments use this construction.  Don't worry if you are not familiar with asyncio, this is just a pattern to follow.
+1. A lambda function that invokes `core.get.Fact` with the command `echo Hello World!`.
+2. The inventory object, which specifies the target hosts for execution.
 
-The body of the `main` function defines an inventory that contains two hosts `server104` and `server105`.  It provides ssh connection details for each host.  The [[inventory]] document describes the inventory in detail.
+`core.get.Fact` is a coroutine.  It yields a response object, which contains the command's output.
 
-The body of the `main` function contains a call to the `execute` function.  The arguments are the `Shell` constructor and the inventory.  Again, don't worry if you are not familiar with `await` or lambda functions.  What matters here is that `Shell` is passed as a parameter to execute and execute returns a response dictionary with the result of the execution of `Shell` on each host.  
+The `execute` function is asynchronous (indicated by the `await` keyword) and runs the provided command 
+(`echo Hello World!`) on each host in the inventory concurrently. It returns a list of responses, one for each host. 
+The responses are then iterated over, and an assertion ensures that the command's output matches the 
+expected result (`"Hello World!\n"`).
 
-Reemote deployments consist of an inventory, an asynchronous main function one or more calls to the execute function and additional code to prepare the commands to execute and to interpret the responses.
+Reemote deployments typically consist of:
+
+- An inventory defining the target hosts.
+- An asynchronous `main` function that serves as the entry point for execution.
+- One or more calls to the `execute` function to run commands or tasks on the remote hosts.
+- Additional code to prepare commands and process the responses returned by `execute`.
 
 ## Interpreting the documentation
 
@@ -68,32 +79,20 @@ by running the API server, as described in the [[installation]] section.
 
 The documentation applies to both the python and the REST API.  The interfaces are semantically identical.  
 
-Lets examine the description of the `Shell` request.
-
-![[Screenshot_20260107_212807.png]]
-
-The query parameters descriptions apply to both the python `Shell` class constructor and the REST API request.  
-
-Example, of passing a Shell constructor to execute:
+For example the `core.get.Fact` coroutine call in python:
 
 ```python 
-Shell(name="print hello", cmd="echo Hello World!")
+ core.get.Fact(cmd="echo Hello World!")
 ```
 
-The equivalent REST API request:
+This is equivalent to the REST API request:
 
 ```bash
-curl -X 'POST' \
-  'http://127.0.0.1:8001/reemote/host/shell?cmd=echo%20%22Hello%20World%22&name=print%20hello' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: application/json' \
-  -d '{
-  "connection": {},
-  "session": {}
-}'
+curl -X 'GET' \
+  'http://127.0.0.1:8001/reemote/core/fact?cmd=echo%20%22Hello%20World%22&name=print%20hello' \
+  -H 'accept: application/json'
 ```
 
-Shell is a POST operation.  POST operations sends data to the server to create or update a resource. It is not idempotent, repeated requests may create multiple resources.
 ### API Responses
 
 Lets examine the description of the Shell command response.
