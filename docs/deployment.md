@@ -3,38 +3,7 @@
 Reemote is an API for controlling remote systems.  Lets look at an example deployment in which the command `echo Hello World!` is executed on two servers and the output is printed on the console.
 
 ```python
-# examples/hello_world.py
-import asyncio
-from reemote.execute import execute
-from reemote.core import GetFact
-from reemote.inventory import Inventory, InventoryItem, Connection
-
-
-async def main():
-    inventory = Inventory(
-        hosts=[
-            InventoryItem(
-                connection=Connection(
-                    host="server104", username="user", password="password"
-                )
-            ),
-            InventoryItem(
-                connection=Connection(
-                    host="server105", username="user", password="password"
-                )
-            ),
-        ]
-    )
-
-    responses = await execute(
-        lambda: GetFact(cmd="echo Hello World!"), inventory=inventory
-    )
-    for response in responses:
-        print(response["value"]["stdout"])
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# block insert examples/hello_world.generated
 ```
 
 This prints the following to the console

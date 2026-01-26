@@ -1,8 +1,10 @@
+# block extract examples/hello_world.generated
 # examples/hello_world.py
 import asyncio
-from reemote.execute import execute
+
 from reemote import core
-from reemote.inventory import Inventory, InventoryItem, Connection
+from reemote.execute import execute
+from reemote.inventory import Connection, Inventory, InventoryItem
 
 
 async def main():
@@ -29,5 +31,7 @@ async def main():
             "Expected the each host to return 'Hello World!'"
         )
 
+
 if __name__ == "__main__":
     asyncio.run(main())
+# block end

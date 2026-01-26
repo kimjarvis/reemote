@@ -1,4 +1,5 @@
 **/*.generated
+generated/
 openapi.json
 uv.lock
 .idea/
