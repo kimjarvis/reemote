@@ -61,6 +61,7 @@ def get_result(context: Context) -> dict[str, str | None | Any]:
                     "host": context.inventory_item.connection.host,
                     "error": context.error,
                     "message": context.value if context.error else "",
+                    "request": context.request_instance,
                 }
             )
         case Method.PUT:
@@ -70,6 +71,7 @@ def get_result(context: Context) -> dict[str, str | None | Any]:
                     "error": context.error,
                     "message": context.value if context.error else "",
                     "changed": context.changed,
+                    "request": context.request_instance,
                 }
             )
         case _:

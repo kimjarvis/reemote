@@ -15,25 +15,40 @@ from reemote.router_handler import router_handler1
 router = APIRouter()
 
 
-class Command(Operation):
-    class Request(CommonOperationRequest):
-        cmd: str = Field(...)
+class CorePostCommandRequest(CommonOperationRequest):
+    cmd: str = Field(...)
 
-    request_schema = Request
-    response_schema = PostResponseElement
+
+class CorePostCommandResponse(PostResponseElement):
+    request: CorePostCommandRequest = Field(
+        default=None,
+        description="The request object used to execute the operation.",
+    )
+
+
+class CorePostCommandResponses(RootModel):
+    root: List[CorePostCommandResponse]
+
+
+class Command(Operation):
+    request = CorePostCommandRequest
+    response = CorePostCommandResponse
+    responses = CorePostCommandResponses
+
     method = Method.POST
 
-    async def execute(self) -> AsyncGenerator[Context, List[PostResponseElement]]:
-        model_instance = self.request_schema.model_validate(self.kwargs)
+    async def execute(self) -> AsyncGenerator[Context, CorePostCommandResponse]:
+        model_instance = self.request.model_validate(self.kwargs)
         result = yield Context(
             command=model_instance.cmd,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             type=ContextType.OPERATION,
             method=self.method,
-            response=self.response_schema,
+            request_instance=model_instance,
+            response=self.response,
             **self.common_kwargs,
         )
-        self.__class__.response_schema(root=result)
+        self.__class__.response(root=result)
 
     @staticmethod
     @router.post(
@@ -47,21 +62,14 @@ class Command(Operation):
                 "content": {
                     "application/json": {
                         "example": [
-                            {
-                                "host": "server104",
-                                "error": False,
-                                "message": ""
-                            },
-                            {
-                                "host": "server105",
-                                "error": False,
-                                "message": ""
-                            }
+                            {"host": "server104", "error": False, "message": ""},
+                            {"host": "server105", "error": False, "message": ""},
                         ]
                     }
-                }
-            }
+                },
+            },
             # block end
+            # block insert scripts/boilerplate/operation_error_examples.txt
         },
     )
     async def command(
@@ -69,22 +77,22 @@ class Command(Operation):
             ..., description="Shell command", examples=["systemctl start firewalld"]
         ),
         common: CommonOperationRequest = Depends(common_operation_request),
-    ) -> Request:
+    ):
         """# Execute a shell command on the remote host
 
         <!-- block insert examples/core/post/Command_example.generated -->
-        
+
         ## core.post.Command
-        
+
         Example:
-        
+
         ```python
         async def example(inventory):
             from reemote.execute import execute
             from reemote import core
-        
+
             responses = await execute(lambda: core.post.Command(cmd='systemctl start firewalld'), inventory)
-        
+
             return responses
         ```
         <!-- block end -->
