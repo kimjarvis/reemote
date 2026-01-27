@@ -15,17 +15,17 @@ from examples.apt.put.Packages import main as put_packages
 from block_insert import block_insert
 
 async def main():
-    # await get_is_dir()
-    # await get_call()
-    # await post_call()
-    # await put_call()
-    # await get_fact()
-    # await get_context()
-    # await get_return()
-    # await post_return()
-    # await put_return()
-    # await post_command()
-    # await get_packages()
+    await get_is_dir()
+    await get_call()
+    await post_call()
+    await put_call()
+    await get_fact()
+    await get_context()
+    await get_return()
+    await post_return()
+    await put_return()
+    await post_command()
+    await get_packages()
     await put_packages()
     block_insert(source_path="~/reemote/", insert_path="~/reemote/")
 

@@ -106,6 +106,27 @@ class Fact(Operation):
                     "application/json": {
                         "example": [
                             {
+                                "host": "server104",
+                                "error": False,
+                                "message": "",
+                                "value": {
+                                    "command": "echo Hello World!",
+                                    "subsystem": None,
+                                    "exit_status": 0,
+                                    "exit_signal": None,
+                                    "returncode": 0,
+                                    "stdout": "Hello World!\n",
+                                    "stderr": ""
+                                },
+                                "request": {
+                                    "group": "all",
+                                    "name": None,
+                                    "sudo": False,
+                                    "su": False,
+                                    "cmd": "echo Hello World!"
+                                }
+                            },
+                            {
                                 "host": "server105",
                                 "error": False,
                                 "message": "",
@@ -116,28 +137,23 @@ class Fact(Operation):
                                     "exit_signal": None,
                                     "returncode": 0,
                                     "stdout": "Hello World!\n",
-                                    "stderr": "",
+                                    "stderr": ""
                                 },
-                            },
-                            {
-                                "host": "server108",
-                                "error": False,
-                                "message": "",
-                                "value": {
-                                    "command": "echo Hello World!",
-                                    "subsystem": None,
-                                    "exit_status": 0,
-                                    "exit_signal": None,
-                                    "returncode": 0,
-                                    "stdout": "Hello World!\n",
-                                    "stderr": "",
-                                },
-                            },
+                                "request": {
+                                    "group": "all",
+                                    "name": None,
+                                    "sudo": False,
+                                    "su": False,
+                                    "cmd": "echo Hello World!"
+                                }
+                            }
                         ]
                     }
-                },
-            },
+                }
+            }
             # block end
+            ,
+            # block insert scripts/boilerplate/operation_error_examples.txt
             "400": {
                 "description": "Bad Request",
                 "model": BadRequestErrorResponse,  # Reference to the Pydantic model
@@ -171,6 +187,7 @@ class Fact(Operation):
                     }
                 },
             },
+            # block end
         },
     )
     async def fact(
@@ -182,21 +199,21 @@ class Fact(Operation):
         """# Execute a shell command to get information from the remote host
 
         <!-- block insert examples/core/get/Fact_example.generated -->
-
+        
         ## core.get.Fact
-
+        
         Example:
-
+        
         ```python
         async def example(inventory):
             from reemote.execute import execute
             from reemote import core
-
+        
             responses = await execute(lambda: core.get.Fact(cmd='echo Hello World!'), inventory)
-
+        
             for item in responses:
                 assert "Hello World" in item.value.stdout, "Expected the coroutine to yield the output of the command"
-
+        
             return responses
         ```
         <!-- block end -->

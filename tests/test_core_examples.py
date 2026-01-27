@@ -12,7 +12,7 @@ async def test_core_get_call_example(setup_inventory, setup_directory):
     async def callback(context: Context):
         return context.value + "World!"
 
-    responses = await endpoint_execute(lambda: core.get.Call(callback=callback, value="Hello ", group="server108"))
+    responses = await endpoint_execute(lambda: core.get.Call(callback=callback, value="Hello ", group="server104"))
     for item in responses:
         assert item.value == "Hello World!", "Expected the coroutine to yield 'World!' appended to the input value"
 
@@ -30,7 +30,7 @@ async def test_core_post_call_example(setup_inventory, setup_directory):
         # Make a change to the host
         pass
 
-    responses = await endpoint_execute(lambda: core.post.Call(callback=callback, value="Hello", group="server108"))
+    responses = await endpoint_execute(lambda: core.post.Call(callback=callback, value="Hello", group="server104"))
 
     return responses
 # block end
@@ -46,7 +46,7 @@ async def test_core_put_call_example(setup_inventory, setup_directory):
         # Make a change to the host
         context.changed = True
 
-    responses = await endpoint_execute(lambda: core.put.Call(callback=callback, value="Hello", group="server108"))
+    responses = await endpoint_execute(lambda: core.put.Call(callback=callback, value="Hello", group="server104"))
     for item in responses:
         assert item.changed == True, "Expected the coroutine to set the changed indicator"
 
@@ -78,7 +78,7 @@ async def test_core_get_context_example(setup_inventory, setup_directory):
     responses = await endpoint_execute(lambda: core.get.Context())
 
     for response in responses:
-        assert response.host in ["server108", "server105"]
+        assert response.host in ["server104", "server105"]
 
     return responses
 # block end

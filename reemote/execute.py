@@ -1,4 +1,4 @@
-# block insert copyright_header
+# block insert scripts/boilerplate/copyright_header.txt
 # Copyright (C) 2026 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -184,8 +184,9 @@ async def run_operation(
                         )
             context.value = ssh_completed_process_to_dict(cp)
             result = get_result(context)
-            if result.value.returncode != 0:
-                raise ReturnCodeNotZeroError(f"{result.value.stderr}")
+            if hasattr(result, 'value'):
+                if result.value.returncode != 0:
+                    raise ReturnCodeNotZeroError(f"{result.value.stderr}")
             return result
         except ReturnCodeNotZeroError as e:
             detail = f"{context.inventory_item.connection.host} - {e.__class__.__name__} {e}"

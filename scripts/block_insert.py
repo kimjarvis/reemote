@@ -1,4 +1,4 @@
-# block insert copyright_header
+# block insert scripts/boilerplate/copyright_header.txt
 # Copyright (C) 2026 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

@@ -50,7 +50,7 @@ class Call(Passthrough):
                     "application/json": {
                         "example": [
                             {
-                                "host": "server108",
+                                "host": "server104",
                                 "error": False,
                                 "message": ""
                             }
@@ -94,7 +94,7 @@ class Call(Passthrough):
                 # Make a change to the host
                 pass
         
-            responses = await execute(lambda: core.post.Call(callback=callback, value="Hello", group="server108"), inventory)
+            responses = await execute(lambda: core.post.Call(callback=callback, value="Hello", group="server104"), inventory)
         
             return responses
         ```

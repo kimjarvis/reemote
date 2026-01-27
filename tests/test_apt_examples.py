@@ -43,20 +43,3 @@ async def test_apt_put_packages_example(setup_inventory, setup_directory):
     return responses
 # block end
 
-
-@pytest.mark.asyncio
-async def test_hfhgh(setup_inventory, setup_directory):
-    from reemote import apt1
-    from reemote.execute import execute
-
-    responses = await endpoint_execute(
-        lambda: apt1.put.Packages(
-            packages=["tree"],
-            present=False,
-            sudo=True,
-        )
-    )
-
-    print(responses)
-
-    return responses

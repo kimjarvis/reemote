@@ -59,6 +59,33 @@ class Context(Passthrough):
                     "application/json": {
                         "example": [
                             {
+                                "host": "server104",
+                                "error": False,
+                                "message": "",
+                                "value": {
+                                    "group": None,
+                                    "name": None,
+                                    "sudo": False,
+                                    "su": False,
+                                    "inventory_item": {
+                                        "connection": {
+                                            "host": "server104",
+                                            "username": "user",
+                                            "password": "password"
+                                        },
+                                        "authentication": {
+                                            "sudo_password": "password",
+                                            "su_user": "",
+                                            "su_password": ""
+                                        },
+                                        "session": {},
+                                        "groups": [
+                                            "server104"
+                                        ]
+                                    }
+                                }
+                            },
+                            {
                                 "host": "server105",
                                 "error": False,
                                 "message": "",
@@ -74,40 +101,13 @@ class Context(Passthrough):
                                             "password": "password"
                                         },
                                         "authentication": {
-                                            "sudo_password": "",
+                                            "sudo_password": "password",
                                             "su_user": "",
                                             "su_password": ""
                                         },
                                         "session": {},
                                         "groups": [
                                             "server105"
-                                        ]
-                                    }
-                                }
-                            },
-                            {
-                                "host": "server108",
-                                "error": False,
-                                "message": "",
-                                "value": {
-                                    "group": None,
-                                    "name": None,
-                                    "sudo": False,
-                                    "su": False,
-                                    "inventory_item": {
-                                        "connection": {
-                                            "host": "server108",
-                                            "username": "user",
-                                            "password": "password"
-                                        },
-                                        "authentication": {
-                                            "sudo_password": "",
-                                            "su_user": "",
-                                            "su_password": ""
-                                        },
-                                        "session": {},
-                                        "groups": [
-                                            "server108"
                                         ]
                                     }
                                 }
@@ -139,7 +139,7 @@ class Context(Passthrough):
             responses = await execute(lambda: core.get.Context(), inventory)
         
             for response in responses:
-                assert response.host in ["server108", "server105"]
+                assert response.host in ["server104", "server105"]
         
             return responses
         ```
