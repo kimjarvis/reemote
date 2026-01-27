@@ -20,10 +20,13 @@ from typing import Any, AsyncGenerator, Callable, Dict, List, Tuple
 
 import asyncssh
 from asyncssh import SSHCompletedProcess
+from fastapi import HTTPException
 
 from reemote.config import Config
 from reemote.context import Context, ContextType, Method
 from reemote.inventory import Inventory
+from reemote.exceptions import ReturnCodeNotZeroError, BadRequestErrorResponse
+
 
 
 def ssh_completed_process_to_dict(ssh_completed_process):
@@ -119,74 +122,95 @@ async def run_operation(
     ):
         logging.info(f"{context.inventory_item.connection.host:<16} - {context.call}")
         try:
+            print("debug 02")
             conn = await asyncssh.connect(
                 **context.inventory_item.connection.to_json_serializable()
             )
             async with conn as conn:
+                print("debug 00")
                 if context.sudo:
-                    if context.inventory_item.authentication.sudo_password is None:
-                        full_command = f"sudo {context.command}"
-                    else:
-                        full_command = f"echo {context.inventory_item.authentication.sudo_password} | sudo -S {context.command}"
-                    cp = await conn.run(
-                        full_command,
-                        check=False,
-                        **context.inventory_item.session.to_json_serializable(),
-                    )
-                elif context.su:
-                    full_command = f"su {context.inventory_item.authentication.su_user} -c '{context.command}'"
-                    if context.inventory_item.authentication.su_user == "root":
-                        async with conn.create_process(
+                    try:
+                        if context.inventory_item.authentication.sudo_password is None:
+                            full_command = f"sudo {context.command}"
+                        else:
+                            full_command = f"echo {context.inventory_item.authentication.sudo_password} | sudo -S {context.command}"
+                        cp = await conn.run(
                             full_command,
+                            check=False,
                             **context.inventory_item.session.to_json_serializable(),
-                            stdin=asyncssh.PIPE,
-                            stdout=asyncssh.PIPE,
-                            stderr=asyncssh.PIPE,
-                        ) as process:
-                            try:
+                        )
+                    except asyncssh.Error as e:
+                        detail=f"{context.inventory_item.connection.host} - {e.__class__.__name__} {e}"
+                        logging.error(detail)
+                        raise HTTPException(status_code=500, detail=detail)
+                elif context.su:
+                    try:
+                        full_command = f"su {context.inventory_item.authentication.su_user} -c '{context.command}'"
+                        if context.inventory_item.authentication.su_user == "root":
+                            async with conn.create_process(
+                                full_command,
+                                **context.inventory_item.session.to_json_serializable(),
+                                stdin=asyncssh.PIPE,
+                                stdout=asyncssh.PIPE,
+                                stderr=asyncssh.PIPE,
+                            ) as process:
+                                try:
+                                    await process.stdout.readuntil("Password:")
+                                    process.stdin.write(
+                                        f"{context.inventory_item.authentication.su_password}\n"
+                                    )
+                                except asyncio.TimeoutError:
+                                    pass
+                                stdout, stderr = await process.communicate()
+                        else:
+                            async with conn.create_process(
+                                full_command,
+                                **context.inventory_item.session.to_json_serializable(),
+                                stdin=asyncssh.PIPE,
+                                stdout=asyncssh.PIPE,
+                                stderr=asyncssh.PIPE,
+                            ) as process:
                                 await process.stdout.readuntil("Password:")
                                 process.stdin.write(
                                     f"{context.inventory_item.authentication.su_password}\n"
                                 )
-                            except asyncio.TimeoutError:
-                                pass
-                            stdout, stderr = await process.communicate()
-                    else:
-                        async with conn.create_process(
-                            full_command,
-                            **context.inventory_item.session.to_json_serializable(),
-                            stdin=asyncssh.PIPE,
-                            stdout=asyncssh.PIPE,
-                            stderr=asyncssh.PIPE,
-                        ) as process:
-                            await process.stdout.readuntil("Password:")
-                            process.stdin.write(
-                                f"{context.inventory_item.authentication.su_password}\n"
-                            )
-                            stdout, stderr = await process.communicate()
-                    cp = SSHCompletedProcess(
-                        command=full_command,
-                        exit_status=process.exit_status,
-                        returncode=process.returncode,
-                        stdout=stdout,
-                        stderr=stderr,
-                    )
+                                stdout, stderr = await process.communicate()
+                        cp = SSHCompletedProcess(
+                            command=full_command,
+                            exit_status=process.exit_status,
+                            returncode=process.returncode,
+                            stdout=stdout,
+                            stderr=stderr,
+                        )
+                    except asyncssh.Error as e:
+                        detail = f"{context.inventory_item.connection.host} - {e.__class__.__name__} {e}"
+                        logging.error(detail)
+                        raise HTTPException(status_code=500, detail=detail)
                 else:
-                    cp = await conn.run(
-                        context.command,
-                        **context.inventory_item.session.to_json_serializable(),
-                        check=False,
-                    )
+                    try:
+                        cp = await conn.run(
+                            context.command,
+                            **context.inventory_item.session.to_json_serializable(),
+                            check=False,
+                        )
+                    except asyncssh.Error as e:
+                        detail=f"{context.inventory_item.connection.host} - {e.__class__.__name__} {e}"
+                        logging.error(detail)
+                        raise HTTPException(status_code=500, detail=detail)
             context.value = ssh_completed_process_to_dict(cp)
             result = get_result(context)
-            # logging.info(f"{result['host']:<16} - {result}")
+            if result.value.returncode != 0:
+                raise ReturnCodeNotZeroError(f"{result.value.stderr}")
             return result
-        except Exception as e:
-            context.error = True
-            context.value = f"{e.__class__.__name__} on host {context.inventory_item.connection.host}: {e}"
-            result = get_result(context)
-            # logging.error(f"{result['host']:<16} - {result}")
-            return result
+        except ReturnCodeNotZeroError as e:
+            detail = f"{context.inventory_item.connection.host} - {e.__class__.__name__} {e}"
+            logging.error(detail)
+            raise HTTPException(status_code=400, detail=detail)
+        # except asyncssh.Error as e:
+        #     print("debug 01")
+        #     detail=f"{context.inventory_item.connection.host} - {e.__class__.__name__} {e}"
+        #     logging.error(detail)
+        #     raise HTTPException(status_code=503, detail=detail)
     return None
 
 

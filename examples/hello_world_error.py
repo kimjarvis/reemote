@@ -17,7 +17,7 @@ async def main():
             ),
             InventoryItem(
                 connection=Connection(
-                    host="server999", username="user", password="password"
+                    host="server199", username="user", password="password"
                 )
             ),
         ]
@@ -26,10 +26,10 @@ async def main():
     responses = await execute(
         lambda: core.get.Fact(cmd="echo Hello World!"), inventory=inventory
     )
-    # for response in responses:
-    #     assert  "Hello World!" in response.value.stdout, (
-    #         "Expected the each host to return 'Hello World!'"
-    #     )
+    for response in responses:
+        assert  "Hello World!" in response.value.stdout, (
+            "Expected the each host to return 'Hello World!'"
+        )
 
 
 if __name__ == "__main__":

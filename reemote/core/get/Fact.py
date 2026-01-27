@@ -11,8 +11,10 @@ from reemote.operation import (
 )
 from reemote.response import GetResponseElement
 from reemote.router_handler import router_handler1
+from reemote.exceptions import ServiceUnavailableErrorResponse, InternalServerErrorResponse, BadRequestErrorResponse
 
 router = APIRouter()
+
 
 
 class SSHCompletedProcess(BaseModel):
@@ -129,6 +131,42 @@ class Fact(Operation):
                 },
             }
             # block end
+            ,
+            "400": {
+                "description": "Bad Request",
+                "model": BadRequestErrorResponse,  # Reference to the Pydantic model
+                "content": {
+                    "application/json": {
+                        "example": {
+                            "detail": "server104 - ReturnCodeNotZeroError bash: line 1: tree: command not found"
+                        }
+                    }
+                },
+            }
+            ,
+            "500": {
+                "description": "Internal Server Error",
+                "model": InternalServerErrorResponse,  # Reference to the Pydantic model
+                "content": {
+                    "application/json": {
+                        "example": {
+                            "detail": "server999 - processerror [-2] Process exited with non-zero exit status"
+                        }
+                    }
+                },
+            }
+            ,
+            "503": {
+                "description": "Service Unavailable",
+                "model": ServiceUnavailableErrorResponse,  # Reference to the Pydantic model
+                "content": {
+                    "application/json": {
+                        "example": {
+                            "detail": "server999 - gaierror [Errno -2] Name or service not known"
+                        }
+                    }
+                },
+            }
         },
     )
     async def fact(
