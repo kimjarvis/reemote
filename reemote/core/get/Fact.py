@@ -138,7 +138,7 @@ class Fact(Operation):
                 "content": {
                     "application/json": {
                         "example": {
-                            "detail": "server104 - ReturnCodeNotZeroError bash: line 1: tree: command not found"
+                            "detail": "server105 - ReturnCodeNotZeroError bash: line 1: tree: command not found"
                         }
                     }
                 },
@@ -150,7 +150,7 @@ class Fact(Operation):
                 "content": {
                     "application/json": {
                         "example": {
-                            "detail": "server999 - processerror [-2] Process exited with non-zero exit status"
+                            "detail": "server105 - processerror [-2] Process exited with non-zero exit status"
                         }
                     }
                 },
@@ -162,7 +162,7 @@ class Fact(Operation):
                 "content": {
                     "application/json": {
                         "example": {
-                            "detail": "server999 - gaierror [Errno -2] Name or service not known"
+                            "detail": "server105 - Address resolution failed gaierror [Errno -2] Name or service not known"
                         }
                     }
                 },

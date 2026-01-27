@@ -14,6 +14,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 # block end
 import asyncio
+import socket
 import inspect
 import logging
 from typing import Any, AsyncGenerator, Callable, Dict, List, Tuple
@@ -122,14 +123,11 @@ async def run_operation(
     ):
         logging.info(f"{context.inventory_item.connection.host:<16} - {context.call}")
         try:
-            print("debug 02")
             conn = await asyncssh.connect(
                 **context.inventory_item.connection.to_json_serializable()
             )
             async with conn as conn:
-                print("debug 00")
                 if context.sudo:
-                    try:
                         if context.inventory_item.authentication.sudo_password is None:
                             full_command = f"sudo {context.command}"
                         else:
@@ -139,12 +137,7 @@ async def run_operation(
                             check=False,
                             **context.inventory_item.session.to_json_serializable(),
                         )
-                    except asyncssh.Error as e:
-                        detail=f"{context.inventory_item.connection.host} - {e.__class__.__name__} {e}"
-                        logging.error(detail)
-                        raise HTTPException(status_code=500, detail=detail)
                 elif context.su:
-                    try:
                         full_command = f"su {context.inventory_item.authentication.su_user} -c '{context.command}'"
                         if context.inventory_item.authentication.su_user == "root":
                             async with conn.create_process(
@@ -182,21 +175,12 @@ async def run_operation(
                             stdout=stdout,
                             stderr=stderr,
                         )
-                    except asyncssh.Error as e:
-                        detail = f"{context.inventory_item.connection.host} - {e.__class__.__name__} {e}"
-                        logging.error(detail)
-                        raise HTTPException(status_code=500, detail=detail)
                 else:
-                    try:
                         cp = await conn.run(
                             context.command,
                             **context.inventory_item.session.to_json_serializable(),
                             check=False,
                         )
-                    except asyncssh.Error as e:
-                        detail=f"{context.inventory_item.connection.host} - {e.__class__.__name__} {e}"
-                        logging.error(detail)
-                        raise HTTPException(status_code=500, detail=detail)
             context.value = ssh_completed_process_to_dict(cp)
             result = get_result(context)
             if result.value.returncode != 0:
@@ -206,11 +190,14 @@ async def run_operation(
             detail = f"{context.inventory_item.connection.host} - {e.__class__.__name__} {e}"
             logging.error(detail)
             raise HTTPException(status_code=400, detail=detail)
-        # except asyncssh.Error as e:
-        #     print("debug 01")
-        #     detail=f"{context.inventory_item.connection.host} - {e.__class__.__name__} {e}"
-        #     logging.error(detail)
-        #     raise HTTPException(status_code=503, detail=detail)
+        except asyncssh.Error as e:
+            detail=f"{context.inventory_item.connection.host} - {e.__class__.__name__} {e}"
+            logging.error(detail)
+            raise HTTPException(status_code=500, detail=detail)
+        except socket.gaierror as e:
+            detail=f"{context.inventory_item.connection.host} - Address resolution failed {e.__class__.__name__} {e}"
+            logging.error(detail)
+            raise HTTPException(status_code=503, detail=detail)
     return None
 
 
