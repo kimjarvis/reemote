@@ -1,6 +1,7 @@
 from typing import Any, AsyncGenerator, Callable, List, Optional
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field, RootModel
 
 from reemote.context import Context, ContextType, Method
 from reemote.passthrough import (
@@ -13,26 +14,38 @@ from reemote.router_handler import router_handler1
 
 router = APIRouter()
 
-
 class CorePutCallRequest(CommonPassthroughRequest):
     callback: Callable
     value: Optional[Any]
 
+class CorePutCallResponse(PutResponseElement):
+    request: CorePutCallRequest = Field(
+        default=None,
+        description="The request object used to execute the operation.",
+    )
+
+class CorePutCallResponses(RootModel):
+    root: List[CorePutCallResponse]
+
 
 class Call(Passthrough):
-    request_schema = CorePutCallRequest
-    response_schema = PutResponseElement
+
+    request = CorePutCallRequest
+    response = CorePutCallResponse
+    responses = CorePutCallResponses
+
     method = Method.PUT
 
-    async def execute(self) -> AsyncGenerator[Context, List[PutResponseElement]]:
-        model_instance = self.request_schema.model_validate(self.kwargs)
+    async def execute(self) -> AsyncGenerator[Context, CorePutCallResponse]:
+        model_instance = self.request.model_validate(self.kwargs)
 
         yield Context(
             type=ContextType.PASSTHROUGH,
             value=model_instance.value,
             callback=model_instance.callback,
             method=self.method,
-            response=self.response_schema,
+            request_instance=model_instance,
+            response=self.response,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,
@@ -42,7 +55,7 @@ class Call(Passthrough):
 @router.put(
     "/call",
     tags=["Core Operations"],
-    response_model=List[PutResponseElement],
+    response_model=CorePutCallResponses,
     responses={
         # block insert examples/core/put/Call_responses.generated -4
         "200": {
@@ -75,7 +88,7 @@ async def call(
         examples=["True"],
     ),
     common: CommonPassthroughRequest = Depends(common_passthrough_request),
-) -> CorePutCallRequest:
+):
     """# Call a coroutine that returns a changed indication
 
     *This REST API cannot be called.*

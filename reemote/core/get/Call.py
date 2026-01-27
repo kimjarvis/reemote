@@ -54,7 +54,7 @@ class Call(Passthrough):
     @router.get(
         "/call",
         tags=["Core Operations"],
-        response_model=List[GetResponseElement],
+        response_model=CoreGetCallResponses,
         responses={
             # block insert examples/core/get/Call_responses.generated -4
             "200": {
