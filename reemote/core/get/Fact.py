@@ -50,27 +50,29 @@ class SSHCompletedProcess(BaseModel):
     )
 
 
-class FactResponse(GetResponseElement):
+class CoreGetFactResponse(GetResponseElement):
     value: SSHCompletedProcess = Field(
         default=None, description="The results from the executed command."
     )
 
+class CoreGetFactResponses(RootModel):
+    root: List[CoreGetFactResponse]
 
 class Fact(Operation):
     class Request(CommonOperationRequest):
         cmd: str = Field(...)
 
-    class Response(FactResponse):
-        pass
-
-    class Responses(RootModel):
-        root: List[FactResponse]
-
     request_schema = Request
-    response_schema = FactResponse
+    response_schema = CoreGetFactResponse
+    responses_schema = CoreGetFactResponses
+
+    request = Request
+    response = CoreGetFactResponse
+    responses = CoreGetFactResponses
+
     method = Method.GET
 
-    async def execute(self) -> AsyncGenerator[Context, List[FactResponse]]:
+    async def execute(self) -> AsyncGenerator[Context, CoreGetFactResponse]:
         model_instance = self.request_schema.model_validate(self.kwargs)
         result = yield Context(
             command=model_instance.cmd,
@@ -86,7 +88,7 @@ class Fact(Operation):
     @router.get(
         "/fact",
         tags=["Core Operations"],
-        response_model=List[FactResponse],
+        response_model=CoreGetFactResponses,
         responses={
             # block insert examples/core/get/Fact_responses.generated -4
             "200": {
@@ -134,7 +136,7 @@ class Fact(Operation):
             ..., description="Shell command", examples=["echo Hello World!", "ls -ltr"]
         ),
         common: CommonOperationRequest = Depends(common_operation_request),
-    ) -> Request:
+    ):
         """# Execute a shell command to get information from the remote host
 
         <!-- block insert examples/core/get/Fact_example.generated -->
