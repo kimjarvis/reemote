@@ -30,7 +30,7 @@ class Command(Operation):
             call=self.__class__.child + "(" + str(model_instance) + ")",
             type=ContextType.OPERATION,
             method=self.method,
-            response_schema=self.response_schema,
+            response=self.response_schema,
             **self.common_kwargs,
         )
         self.__class__.response_schema(root=result)

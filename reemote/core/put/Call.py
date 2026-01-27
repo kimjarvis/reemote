@@ -32,7 +32,7 @@ class Call(Passthrough):
             value=model_instance.value,
             callback=model_instance.callback,
             method=self.method,
-            response_schema=self.response_schema,
+            response=self.response_schema,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,

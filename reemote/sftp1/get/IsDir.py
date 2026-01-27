@@ -29,7 +29,7 @@ class IsDir(Callback):
 
     @classmethod
     async def callback(cls, context: Context) -> None:
-        context.response_schema = cls.response_schema
+        context.response = cls.response_schema
         context.method = cls.method
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()

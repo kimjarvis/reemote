@@ -29,7 +29,7 @@ class Context(Passthrough):
 
     @classmethod
     async def callback(cls, context: _Context) -> None:
-        context.response_schema = cls.response_schema
+        context.response = cls.response_schema
         context.method = cls.method
         return context
 
@@ -40,7 +40,7 @@ class Context(Passthrough):
             type=ContextType.PASSTHROUGH,
             callback=self.callback,
             method=self.method,
-            response_schema=self.response_schema,
+            response=self.response_schema,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,

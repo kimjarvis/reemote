@@ -4,6 +4,11 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field, RootModel
 
 from reemote.context import Context, ContextType, Method
+from reemote.exceptions import (
+    BadRequestErrorResponse,
+    InternalServerErrorResponse,
+    ServiceUnavailableErrorResponse,
+)
 from reemote.operation import (
     CommonOperationRequest,
     Operation,
@@ -11,10 +16,8 @@ from reemote.operation import (
 )
 from reemote.response import GetResponseElement
 from reemote.router_handler import router_handler1
-from reemote.exceptions import ServiceUnavailableErrorResponse, InternalServerErrorResponse, BadRequestErrorResponse
 
 router = APIRouter()
-
 
 
 class SSHCompletedProcess(BaseModel):
@@ -52,39 +55,43 @@ class SSHCompletedProcess(BaseModel):
     )
 
 
+class CoreGetFactRequest(CommonOperationRequest):
+    cmd: str = Field(...)
+
+
 class CoreGetFactResponse(GetResponseElement):
+    request: CoreGetFactRequest = Field(
+        default=None,
+        description="The request object used to execute the operation.",
+    )
     value: SSHCompletedProcess = Field(
         default=None, description="The results from the executed command."
     )
 
+
 class CoreGetFactResponses(RootModel):
     root: List[CoreGetFactResponse]
 
+
 class Fact(Operation):
-    class Request(CommonOperationRequest):
-        cmd: str = Field(...)
-
-    request_schema = Request
-    response_schema = CoreGetFactResponse
-    responses_schema = CoreGetFactResponses
-
-    request = Request
+    request = CoreGetFactRequest
     response = CoreGetFactResponse
     responses = CoreGetFactResponses
 
     method = Method.GET
 
     async def execute(self) -> AsyncGenerator[Context, CoreGetFactResponse]:
-        model_instance = self.request_schema.model_validate(self.kwargs)
+        model_instance = self.request.model_validate(self.kwargs)
         result = yield Context(
             command=model_instance.cmd,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             type=ContextType.OPERATION,
             method=self.method,
-            response_schema=self.response_schema,
+            request_instance=model_instance,
+            response=self.response,
             **self.common_kwargs,
         )
-        self.__class__.response_schema(root=result)
+        self.__class__.response(root=result)
 
     @staticmethod
     @router.get(
@@ -129,9 +136,8 @@ class Fact(Operation):
                         ]
                     }
                 },
-            }
+            },
             # block end
-            ,
             "400": {
                 "description": "Bad Request",
                 "model": BadRequestErrorResponse,  # Reference to the Pydantic model
@@ -142,8 +148,7 @@ class Fact(Operation):
                         }
                     }
                 },
-            }
-            ,
+            },
             "500": {
                 "description": "Internal Server Error",
                 "model": InternalServerErrorResponse,  # Reference to the Pydantic model
@@ -154,8 +159,7 @@ class Fact(Operation):
                         }
                     }
                 },
-            }
-            ,
+            },
             "503": {
                 "description": "Service Unavailable",
                 "model": ServiceUnavailableErrorResponse,  # Reference to the Pydantic model
@@ -166,7 +170,7 @@ class Fact(Operation):
                         }
                     }
                 },
-            }
+            },
         },
     )
     async def fact(

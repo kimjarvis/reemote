@@ -61,7 +61,11 @@ class Context(CommonOperationRequest):
     error: Optional[bool] = Field(
         default=False, description="Whether there was an error", exclude=True
     )
-    response_schema: Optional[Callable] = Field(
+
+    request_instance: Optional[Any] = Field(
+        default=None, description="The request object", exclude=True
+    )
+    response: Optional[Callable] = Field(
         default=None, description="The type of the response object", exclude=True
     )
 

@@ -46,16 +46,17 @@ def ssh_completed_process_to_dict(ssh_completed_process):
 def get_result(context: Context) -> dict[str, str | None | Any]:
     match context.method:
         case Method.GET:
-            result = context.response_schema(
+            result = context.response(
                 **{
                     "host": context.inventory_item.connection.host,
                     "error": context.error,
                     "message": context.value if context.error else "",
                     "value": context.value if not context.error else "",
+                    "request": context.request_instance,
                 }
             )
         case Method.POST:
-            result = context.response_schema(
+            result = context.response(
                 **{
                     "host": context.inventory_item.connection.host,
                     "error": context.error,
@@ -63,7 +64,7 @@ def get_result(context: Context) -> dict[str, str | None | Any]:
                 }
             )
         case Method.PUT:
-            result = context.response_schema(
+            result = context.response(
                 **{
                     "host": context.inventory_item.connection.host,
                     "error": context.error,

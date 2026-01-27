@@ -25,7 +25,7 @@ class Return(Passthrough):
 
     @classmethod
     async def callback(cls, context: _Context) -> None:
-        context.response_schema = cls.response_schema
+        context.response = cls.response_schema
         context.method = cls.method
         return context.value
 
@@ -37,7 +37,7 @@ class Return(Passthrough):
             value=model_instance.value,
             callback=self.callback,
             method=self.method,
-            response_schema=self.response_schema,
+            response=self.response_schema,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,
