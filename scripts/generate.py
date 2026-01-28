@@ -25,8 +25,8 @@ async def main():
     await post_return()
     await put_return()
     await post_command()
-    # await get_packages()
-    # await put_packages()
+    await get_packages()
+    await put_packages()
     block_insert(source_path="~/reemote/", insert_path="~/reemote/")
 
 

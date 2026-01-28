@@ -106,7 +106,7 @@ class Fact(Operation):
                     "application/json": {
                         "example": [
                             {
-                                "host": "server105",
+                                "host": "server104",
                                 "error": False,
                                 "message": "",
                                 "value": {
@@ -127,7 +127,7 @@ class Fact(Operation):
                                 }
                             },
                             {
-                                "host": "server104",
+                                "host": "server105",
                                 "error": False,
                                 "message": "",
                                 "value": {

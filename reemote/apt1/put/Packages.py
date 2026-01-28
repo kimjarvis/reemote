@@ -20,18 +20,29 @@ from reemote import core
 router = APIRouter()
 
 
+class AptPutPackagesRequest(CommonOperationRequest):
+    packages: list[str]
+    present: bool
+
+class AptPutPackagesResponse(PutResponseElement):
+    request: AptPutPackagesRequest = Field(
+        default=None,
+        description="The request object used to execute the operation.",
+    )
+
+class AptPutPackagesResponses(RootModel):
+    root: List[AptPutPackagesResponse]
+
 
 class Packages(Operation):
-    class Request(CommonOperationRequest):
-        packages: list[str]
-        present: bool
 
-    request_schema = Request
-    response_schema = PutResponseElement
+    request = AptPutPackagesRequest
+    response = AptPutPackagesResponse
+    responses = AptPutPackagesResponses
     method = Method.PUT
 
-    async def execute(self) -> AsyncGenerator[Context, List[PutResponseElement]]:
-        model_instance = self.request_schema.model_validate(self.kwargs)
+    async def execute(self) -> AsyncGenerator[Context, AptPutPackagesResponse]:
+        model_instance = self.request.model_validate(self.kwargs)
         pre = yield apt1.get.Packages()
         if model_instance.present:
             yield core.post.Command(cmd=f"apt-get install -y {' '.join(model_instance.packages)}", **self.common_kwargs)
@@ -39,7 +50,6 @@ class Packages(Operation):
             yield core.post.Command(cmd=f"apt-get remove -y {' '.join(model_instance.packages)}",**self.common_kwargs)
         post = yield apt1.get.Packages()
 
-        print(post.value)
         changed = pre.value != post.value
         yield core.put.Return(changed=changed)
 
@@ -48,7 +58,7 @@ class Packages(Operation):
     @router.put(
         "/packages",
         tags=["APT Package Manager"],
-        response_model=List[PutResponseElement],
+        response_model=AptPutPackagesResponses,
         responses={
             # block insert examples/apt/put/Packages_responses.generated -4
             "200": {
@@ -60,13 +70,23 @@ class Packages(Operation):
                                 "host": "server104",
                                 "error": False,
                                 "message": "",
-                                "changed": False
+                                "changed": False,
+                                "request": {
+                                    "group": None,
+                                    "name": None,
+                                    "changed": False
+                                }
                             },
                             {
                                 "host": "server105",
                                 "error": False,
                                 "message": "",
-                                "changed": False
+                                "changed": False,
+                                "request": {
+                                    "group": None,
+                                    "name": None,
+                                    "changed": False
+                                }
                             }
                         ]
                     }
@@ -77,7 +97,7 @@ class Packages(Operation):
     )
     async def packages(
         common: CommonOperationRequest = Depends(common_operation_request),
-    ) -> Request:
+    ):
         """# Manage packages
 
         <!-- block insert examples/apt/put/Packages_example.generated -->

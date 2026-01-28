@@ -69,7 +69,7 @@ class Return(Passthrough):
                     "application/json": {
                         "example": [
                             {
-                                "host": "server105",
+                                "host": "server104",
                                 "error": False,
                                 "message": "",
                                 "request": {
@@ -78,7 +78,7 @@ class Return(Passthrough):
                                 }
                             },
                             {
-                                "host": "server104",
+                                "host": "server105",
                                 "error": False,
                                 "message": "",
                                 "request": {

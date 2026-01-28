@@ -15,6 +15,7 @@ from reemote.router_handler import router_handler1
 
 router = APIRouter()
 
+
 def parse_apt_list_installed(value):
     """Parses the output of 'apt list --installed' into a list of dictionaries.
 
@@ -64,42 +65,55 @@ def parse_apt_list_installed(value):
     return packages
 
 
+class AptGetPackagesRequest(CommonOperationRequest):
+    pass
+
+
 class PackageListItem(BaseModel):
     name: str = Field(..., description="The name of the package")
     version: str = Field(..., description="The version of the package")
 
+
 class PackageList(RootModel):
     root: List[PackageListItem]
 
-class PackagesResponse(GetResponseElement):
+
+class AptGetPackagesResponse(GetResponseElement):
     value: PackageList = Field(
         # default=[],
         default_factory=lambda: PackageList(root=[]),
         description="List of package versions.",
     )
+    request: AptGetPackagesRequest = Field(
+        default=None,
+        description="The request object used to execute the operation.",
+    )
+
+
+class AptGetPackagesResponses(RootModel):
+    root: List[AptGetPackagesResponse]
 
 
 class Packages(Operation):
-    class Request(CommonOperationRequest):
-        pass
-
-    request_schema = Request
-    response_schema = PackagesResponse
+    request = AptGetPackagesRequest
+    response = AptGetPackagesResponse
+    responses = AptGetPackagesResponses
     method = Method.GET
 
-    async def execute(self) -> AsyncGenerator[Context, List[PackagesResponse]]:
-        model_instance = self.request_schema.model_validate(self.kwargs)
+    async def execute(self) -> AsyncGenerator[Context, AptGetPackagesResponse]:
+        model_instance = self.request.model_validate(self.kwargs)
         response = yield core.get.Fact(cmd="apt list --installed | head -4")
         if not response.error:
             parsed_packages = parse_apt_list_installed(response.value.stdout)
             package_list = PackageList.model_validate(parsed_packages)
             yield core.get.Return(value=package_list)
 
+    # todo: Add the request to these examples
     @staticmethod
     @router.get(
         "/packages",
         tags=["APT Package Manager"],
-        response_model=List[PackagesResponse],
+        response_model=AptGetPackagesResponses,
         responses={
             "200": {
                 "description": "Successful Response",
@@ -111,48 +125,30 @@ class Packages(Operation):
                                 "error": False,
                                 "message": "",
                                 "value": [
-                                    {
-                                        "name": "adduser",
-                                        "version": "3.152"
-                                    },
-                                    {
-                                        "name": "apparmor",
-                                        "version": "4.1.0-1"
-                                    },
-                                    {
-                                        "name": "apt-listchanges",
-                                        "version": "4.8"
-                                    }
-                                ]
+                                    {"name": "adduser", "version": "3.152"},
+                                    {"name": "apparmor", "version": "4.1.0-1"},
+                                    {"name": "apt-listchanges", "version": "4.8"},
+                                ],
                             },
                             {
                                 "host": "server104",
                                 "error": False,
                                 "message": "",
                                 "value": [
-                                    {
-                                        "name": "adduser",
-                                        "version": "3.152"
-                                    },
-                                    {
-                                        "name": "apparmor",
-                                        "version": "4.1.0-1"
-                                    },
-                                    {
-                                        "name": "apt-listchanges",
-                                        "version": "4.8"
-                                    }
-                                ]
-                            }
+                                    {"name": "adduser", "version": "3.152"},
+                                    {"name": "apparmor", "version": "4.1.0-1"},
+                                    {"name": "apt-listchanges", "version": "4.8"},
+                                ],
+                            },
                         ]
                     }
-                }
+                },
             }
         },
     )
     async def packages(
         common: CommonOperationRequest = Depends(common_operation_request),
-    ) -> Request:
+    ):
         """# Get a list of installed packages and versions
 
         <!-- block insert examples/apt/get/Packages_example.generated -->

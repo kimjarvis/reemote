@@ -70,37 +70,6 @@ class Context(Passthrough):
                     "application/json": {
                         "example": [
                             {
-                                "host": "server105",
-                                "error": False,
-                                "message": "",
-                                "value": {
-                                    "group": None,
-                                    "name": None,
-                                    "sudo": False,
-                                    "su": False,
-                                    "inventory_item": {
-                                        "connection": {
-                                            "host": "server105",
-                                            "username": "user",
-                                            "password": "password"
-                                        },
-                                        "authentication": {
-                                            "sudo_password": "password",
-                                            "su_user": "",
-                                            "su_password": ""
-                                        },
-                                        "session": {},
-                                        "groups": [
-                                            "server105"
-                                        ]
-                                    }
-                                },
-                                "request": {
-                                    "group": None,
-                                    "name": None
-                                }
-                            },
-                            {
                                 "host": "server104",
                                 "error": False,
                                 "message": "",
@@ -123,6 +92,37 @@ class Context(Passthrough):
                                         "session": {},
                                         "groups": [
                                             "server104"
+                                        ]
+                                    }
+                                },
+                                "request": {
+                                    "group": None,
+                                    "name": None
+                                }
+                            },
+                            {
+                                "host": "server105",
+                                "error": False,
+                                "message": "",
+                                "value": {
+                                    "group": None,
+                                    "name": None,
+                                    "sudo": False,
+                                    "su": False,
+                                    "inventory_item": {
+                                        "connection": {
+                                            "host": "server105",
+                                            "username": "user",
+                                            "password": "password"
+                                        },
+                                        "authentication": {
+                                            "sudo_password": "password",
+                                            "su_user": "",
+                                            "su_password": ""
+                                        },
+                                        "session": {},
+                                        "groups": [
+                                            "server105"
                                         ]
                                     }
                                 },
