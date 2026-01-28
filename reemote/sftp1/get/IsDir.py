@@ -3,9 +3,7 @@ from typing import List, Union
 
 import asyncssh
 from fastapi import APIRouter, Depends, Query
-from pydantic import (
-    Field,
-)
+from pydantic import BaseModel, Field, RootModel
 
 from reemote.callback import Callback, CommonCallbackRequest, common_callback_request
 from reemote.context import Context, Method
@@ -15,21 +13,30 @@ from reemote.sftp1.common import PathRequest
 
 router = APIRouter()
 
+class SftpGetIsDirRequest(PathRequest):
+    pass
 
-class IsDirResponse(GetResponseElement):
+class SftpGetIsDirResponse(GetResponseElement):
     value: bool = False
+    request: SftpGetIsDirRequest = Field(
+        default=None,
+        description="The request object used to execute the operation.",
+    )
+
+class SftpGetIsDirResponses(RootModel):
+    root: List[SftpGetIsDirResponse]
+
 
 class IsDir(Callback):
-    class Request(PathRequest):
-        pass
 
-    request_schema = Request
-    response_schema = IsDirResponse
+    request = SftpGetIsDirRequest
+    response = SftpGetIsDirResponse
+    responses = SftpGetIsDirResponses
     method = Method.GET
 
     @classmethod
     async def callback(cls, context: Context) -> None:
-        context.response = cls.response_schema
+        context.response = cls.response
         context.method = cls.method
         async with asyncssh.connect(
             **context.inventory_item.connection.to_json_serializable()
@@ -41,7 +48,7 @@ class IsDir(Callback):
     @router.get(
         "/is_dir",
         tags=["SFTP Operations"],
-        response_model=List[IsDirResponse],
+        response_model=SftpGetIsDirResponses,
         responses={
             # block insert examples/sftp/get/IsDir_responses.generated -4
             "200": {
@@ -73,7 +80,7 @@ class IsDir(Callback):
             ..., description="Path to check if it's a directory"
         ),
         common: CommonCallbackRequest = Depends(common_callback_request),
-    ) -> Request:
+    ):
         """# Return if the remote path refers to a directory
 
         <!-- block insert examples/sftp/get/IsDir_example.generated -->
