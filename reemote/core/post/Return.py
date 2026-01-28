@@ -1,8 +1,9 @@
 from typing import AsyncGenerator, List, Any, Optional
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field, RootModel
 
-from reemote.context import Context as _Context
+from reemote.context import Context
 from reemote.context import ContextType, Method
 from reemote.passthrough import (
     CommonPassthroughRequest,
@@ -15,28 +16,41 @@ from reemote.router_handler import router_handler1
 router = APIRouter()
 
 
-class Return(Passthrough):
-    class Request(CommonPassthroughRequest):
-        pass
+class CorePostReturnRequest(CommonPassthroughRequest):
+    pass
 
-    request_schema = Request
-    response_schema = PostResponseElement
+class CorePostReturnResponse(PostResponseElement):
+    request: CorePostReturnRequest = Field(
+        default=None,
+        description="The request object used to execute the operation.",
+    )
+
+class CorePostReturnResponses(RootModel):
+    root: List[CorePostReturnResponse]
+
+
+class Return(Passthrough):
+
+    request = CorePostReturnRequest
+    response = CorePostReturnResponse
+    responses = CorePostReturnResponses
     method = Method.POST
 
     @classmethod
-    async def callback(cls, context: _Context) -> None:
-        context.response = cls.response_schema
+    async def callback(cls, context: Context) -> None:
+        context.response = cls.response
         context.method = cls.method
         return context.value
 
-    async def execute(self) -> AsyncGenerator[_Context, List[PostResponseElement]]:
-        model_instance = self.request_schema.model_validate(self.kwargs)
+    async def execute(self) -> AsyncGenerator[Context, CorePostReturnResponse]:
+        model_instance = self.request.model_validate(self.kwargs)
 
-        yield _Context(
+        yield Context(
             type=ContextType.PASSTHROUGH,
             callback=self.callback,
             method=self.method,
-            response=self.response_schema,
+            request_instance=model_instance,
+            response=self.response,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,
@@ -46,7 +60,7 @@ class Return(Passthrough):
     @router.post(
         "/return",
         tags=["Core Operations"],
-        response_model=List[PostResponseElement],
+        response_model=CorePostReturnResponses,
         responses={
             # block insert examples/core/post/Return_responses.generated -4
             "200": {
@@ -73,7 +87,7 @@ class Return(Passthrough):
     )
     async def _return(
         common: CommonPassthroughRequest = Depends(common_passthrough_request),
-    ) -> Request:
+    ):
         """# Return the operational context
 
         <!-- block insert examples/core/post/Return_example.generated -->

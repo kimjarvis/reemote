@@ -1,8 +1,9 @@
-from typing import AsyncGenerator, List, Any, Optional
+from typing import Any, AsyncGenerator, List, Optional
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field, RootModel
 
-from reemote.context import Context as _Context
+from reemote.context import Context
 from reemote.context import ContextType, Method
 from reemote.passthrough import (
     CommonPassthroughRequest,
@@ -15,29 +16,41 @@ from reemote.router_handler import router_handler1
 router = APIRouter()
 
 
-class Return(Passthrough):
-    class Request(CommonPassthroughRequest):
-        value: Any = None
+class CoreGetReturnRequest(CommonPassthroughRequest):
+    value: Any = None
 
-    request_schema = Request
-    response_schema = GetResponseElement
+class CoreGetReturnResponse(GetResponseElement):
+    request: CoreGetReturnRequest = Field(
+        default=None,
+        description="The request object used to execute the operation.",
+    )
+
+class CoreGetReturnResponses(RootModel):
+    root: List[CoreGetReturnResponse]
+
+class Return(Passthrough):
+
+    request = CoreGetReturnRequest
+    response = CoreGetReturnResponse
+    responses = CoreGetReturnResponses
     method = Method.GET
 
     @classmethod
-    async def callback(cls, context: _Context) -> None:
-        context.response = cls.response_schema
+    async def callback(cls, context: Context) -> None:
+        context.response = cls.response
         context.method = cls.method
         return context.value
 
-    async def execute(self) -> AsyncGenerator[_Context, List[GetResponseElement]]:
-        model_instance = self.request_schema.model_validate(self.kwargs)
+    async def execute(self) -> AsyncGenerator[Context, CoreGetReturnResponse]:
+        model_instance = self.request.model_validate(self.kwargs)
 
-        yield _Context(
+        yield Context(
             type=ContextType.PASSTHROUGH,
             value=model_instance.value,
             callback=self.callback,
             method=self.method,
-            response=self.response_schema,
+            request_instance=model_instance,
+            response=self.response,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,
@@ -47,7 +60,7 @@ class Return(Passthrough):
     @router.get(
         "/return",
         tags=["Core Operations"],
-        response_model=List[GetResponseElement],
+        response_model=CoreGetReturnResponses,
         responses={
             # block insert examples/core/get/Return_responses.generated -4
             "200": {
@@ -77,7 +90,7 @@ class Return(Passthrough):
     async def _return(
         value: Any = Query(..., description="The value to return."),
         common: CommonPassthroughRequest = Depends(common_passthrough_request),
-    ) -> Request:
+    ):
         """# Return the operational context
 
         <!-- block insert examples/core/get/Return_example.generated -->

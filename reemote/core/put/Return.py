@@ -1,8 +1,9 @@
 from typing import AsyncGenerator, List, Any, Optional
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field, RootModel
 
-from reemote.context import Context as _Context
+from reemote.context import Context
 from reemote.context import ContextType, Method
 from reemote.passthrough import (
     CommonPassthroughRequest,
@@ -15,29 +16,42 @@ from reemote.router_handler import router_handler1
 router = APIRouter()
 
 
-class Return(Passthrough):
-    class Request(CommonPassthroughRequest):
-        changed: bool = None
+class CorePutReturnRequest(CommonPassthroughRequest):
+    changed: bool = None
 
-    request_schema = Request
-    response_schema = PutResponseElement
+class CorePutReturnResponse(PutResponseElement):
+    request: CorePutReturnRequest = Field(
+        default=None,
+        description="The request object used to execute the operation.",
+    )
+
+class CorePutReturnResponses(RootModel):
+    root: List[CorePutReturnResponse]
+
+
+class Return(Passthrough):
+
+    request = CorePutReturnRequest
+    response = CorePutReturnResponse
+    responses = CorePutReturnResponses
     method = Method.PUT
 
     @classmethod
-    async def callback(cls, context: _Context) -> None:
-        context.response = cls.response_schema
+    async def callback(cls, context: Context) -> None:
+        context.response = cls.response
         context.method = cls.method
         return
 
-    async def execute(self) -> AsyncGenerator[_Context, List[PutResponseElement]]:
-        model_instance = self.request_schema.model_validate(self.kwargs)
+    async def execute(self) -> AsyncGenerator[Context, CorePutReturnResponse]:
+        model_instance = self.request.model_validate(self.kwargs)
 
-        yield _Context(
+        yield Context(
             type=ContextType.PASSTHROUGH,
             changed=model_instance.changed,
             callback=self.callback,
             method=self.method,
-            response=self.response_schema,
+            request_instance=model_instance,
+            response=self.response,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,
@@ -47,7 +61,7 @@ class Return(Passthrough):
     @router.put(
         "/return",
         tags=["Core Operations"],
-        response_model=List[PutResponseElement],
+        response_model=CorePutReturnResponses,
         responses={
             # block insert examples/core/put/Return_responses.generated -4
             "200": {
@@ -77,7 +91,7 @@ class Return(Passthrough):
     async def _return(
         changed: bool = Query(..., description="Whether or not the operation changed the host."),
         common: CommonPassthroughRequest = Depends(common_passthrough_request),
-    ) -> Request:
+    ):
         """# Return the operational context
 
         <!-- block insert examples/core/put/Return_example.generated -->
