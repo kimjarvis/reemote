@@ -57,16 +57,26 @@ class IsDir(Callback):
                     "application/json": {
                         "example": [
                             {
-                                "host": "server104",
-                                "error": False,
-                                "message": "",
-                                "value": True
-                            },
-                            {
                                 "host": "server105",
                                 "error": False,
                                 "message": "",
-                                "value": True
+                                "value": True,
+                                "request": {
+                                    "group": "all",
+                                    "name": None,
+                                    "path": ".."
+                                }
+                            },
+                            {
+                                "host": "server104",
+                                "error": False,
+                                "message": "",
+                                "value": True,
+                                "request": {
+                                    "group": "all",
+                                    "name": None,
+                                    "path": ".."
+                                }
                             }
                         ]
                     }

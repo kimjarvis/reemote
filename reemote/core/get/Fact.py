@@ -106,7 +106,7 @@ class Fact(Operation):
                     "application/json": {
                         "example": [
                             {
-                                "host": "server104",
+                                "host": "server105",
                                 "error": False,
                                 "message": "",
                                 "value": {
@@ -127,7 +127,7 @@ class Fact(Operation):
                                 }
                             },
                             {
-                                "host": "server105",
+                                "host": "server104",
                                 "error": False,
                                 "message": "",
                                 "value": {
@@ -153,7 +153,7 @@ class Fact(Operation):
             }
             # block end
             ,
-            # block insert scripts/boilerplate/operation_error_examples.txt
+            #X block insert scripts/boilerplate/operation_error_examples.txt
             "400": {
                 "description": "Bad Request",
                 "model": BadRequestErrorResponse,  # Reference to the Pydantic model

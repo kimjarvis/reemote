@@ -17,9 +17,9 @@ core_router.include_router(core_get_context_router, prefix="/reemote/core")
 core_router.include_router(core_put_return_router, prefix="/reemote/core")
 core_router.include_router(core_post_return_router, prefix="/reemote/core")
 core_router.include_router(core_get_return_router, prefix="/reemote/core")
-core_router.include_router(core_get_call_router, prefix="/reemote/core")
-core_router.include_router(core_put_call_router, prefix="/reemote/core")
-core_router.include_router(core_post_call_router, prefix="/reemote/core")
+# core_router.include_router(core_get_call_router, prefix="/reemote/core")
+# core_router.include_router(core_put_call_router, prefix="/reemote/core")
+# core_router.include_router(core_post_call_router, prefix="/reemote/core")
 core_router.include_router(core_post_command_router, prefix="/reemote/core")
 
 __all__ = ["core_router", "CORE_TAG"]

@@ -1,18 +1,10 @@
 from pathlib import PurePath
 from typing import Union
 
-from fastapi import APIRouter
-from pydantic import (
-    BaseModel,
-    Field,
-    field_validator,
-)
-from reemote.callback import CommonCallbackRequest
-
-router = APIRouter()
+from pydantic import BaseModel, Field, field_validator
 
 
-class PathRequest(CommonCallbackRequest):
+class PathRequest(BaseModel):
     path: Union[PurePath, str, bytes] = Field(..., examples=["/home/user", "testdata"])
 
     @field_validator("path", mode="before")
@@ -37,3 +29,22 @@ class PathRequest(CommonCallbackRequest):
         data = super().model_dump(**kwargs)
         data["path"] = str(data["path"])  # Ensure `path` is serialized as a string
         return data
+
+
+# Test the model
+if __name__ == "__main__":
+    # Create an instance of PathRequest
+    request = PathRequest(path="/home/user")
+
+    # Print the model dump (serialized output)
+    print("Serialized Output:", request.model_dump())
+
+    # Verify deserialization and validation
+    try:
+        invalid_request = PathRequest(path=None)  # This should raise a ValueError
+    except ValueError as e:
+        print("Validation Error:", e)
+
+    # Test with a valid bytes input
+    valid_bytes_request = PathRequest(path=b"/home/user")
+    print("Bytes Input Serialized:", valid_bytes_request.model_dump())

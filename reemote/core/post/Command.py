@@ -62,14 +62,36 @@ class Command(Operation):
                 "content": {
                     "application/json": {
                         "example": [
-                            {"host": "server104", "error": False, "message": ""},
-                            {"host": "server105", "error": False, "message": ""},
+                            {
+                                "host": "server105",
+                                "error": False,
+                                "message": "",
+                                "request": {
+                                    "group": "all",
+                                    "name": None,
+                                    "sudo": False,
+                                    "su": False,
+                                    "cmd": "systemctl start firewalld"
+                                }
+                            },
+                            {
+                                "host": "server104",
+                                "error": False,
+                                "message": "",
+                                "request": {
+                                    "group": "all",
+                                    "name": None,
+                                    "sudo": False,
+                                    "su": False,
+                                    "cmd": "systemctl start firewalld"
+                                }
+                            }
                         ]
                     }
-                },
-            },
+                }
+            }
             # block end
-            # block insert scripts/boilerplate/operation_error_examples.txt
+            #X block insert scripts/boilerplate/operation_error_examples.txt
         },
     )
     async def command(
@@ -81,18 +103,18 @@ class Command(Operation):
         """# Execute a shell command on the remote host
 
         <!-- block insert examples/core/post/Command_example.generated -->
-
+        
         ## core.post.Command
-
+        
         Example:
-
+        
         ```python
         async def example(inventory):
             from reemote.execute import execute
             from reemote import core
-
+        
             responses = await execute(lambda: core.post.Command(cmd='systemctl start firewalld'), inventory)
-
+        
             return responses
         ```
         <!-- block end -->

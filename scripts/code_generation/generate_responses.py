@@ -1,7 +1,15 @@
 # generate_responses.py
 import json
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Dict
+
+class PathEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, PurePath):
+            return str(obj)  # Convert path to string
+        if callable(obj):  # Handles functions, methods, lambdas
+            return obj.__name__ if hasattr(obj, '__name__') else str(obj)
+        return super().default(obj)
 
 
 def generate_responses(responses: Dict, file: str):
@@ -22,7 +30,7 @@ def generate_responses(responses: Dict, file: str):
     json_dict['example'] = json_dict.pop(old_key)
 
     # Convert the responses dictionary to a formatted JSON string with indent=4
-    json_str = json.dumps(responses, indent=4)
+    json_str = json.dumps(responses, indent=4, cls=PathEncoder)
 
     # Replace "false" with "False" and "true" with "True"
     json_str = json_str.replace("false", "False").replace("true", "True").replace("null", "None")

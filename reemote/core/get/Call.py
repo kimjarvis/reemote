@@ -66,7 +66,13 @@ class Call(Passthrough):
                                 "host": "server104",
                                 "error": False,
                                 "message": "",
-                                "value": "Hello World!"
+                                "value": "Hello World!",
+                                "request": {
+                                    "group": "server104",
+                                    "name": None,
+                                    "callback": "callback",
+                                    "value": "Hello "
+                                }
                             }
                         ]
                     }

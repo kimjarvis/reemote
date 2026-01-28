@@ -70,16 +70,26 @@ class Return(Passthrough):
                     "application/json": {
                         "example": [
                             {
-                                "host": "server104",
-                                "error": False,
-                                "message": "",
-                                "changed": True
-                            },
-                            {
                                 "host": "server105",
                                 "error": False,
                                 "message": "",
-                                "changed": True
+                                "changed": True,
+                                "request": {
+                                    "group": None,
+                                    "name": None,
+                                    "changed": True
+                                }
+                            },
+                            {
+                                "host": "server104",
+                                "error": False,
+                                "message": "",
+                                "changed": True,
+                                "request": {
+                                    "group": None,
+                                    "name": None,
+                                    "changed": True
+                                }
                             }
                         ]
                     }
