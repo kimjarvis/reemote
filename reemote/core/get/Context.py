@@ -1,6 +1,7 @@
 from typing import AsyncGenerator, List
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field, RootModel
 
 from reemote.context import Context as _Context
 from reemote.context import ContextType, Method
@@ -15,32 +16,42 @@ from reemote.router_handler import router_handler1
 router = APIRouter()
 
 
-class ContextResponse(GetResponseElement):
+class CoreGetContextRequest(CommonPassthroughRequest):
+    pass
+
+class CoreGetContextResponse(GetResponseElement):
     value: _Context = None
+    request: CoreGetContextRequest = Field(
+        default=None,
+        description="The request object used to execute the operation.",
+    )
+
+class CoreGetContextResponses(RootModel):
+    root: List[CoreGetContextResponse]
 
 
 class Context(Passthrough):
-    class Request(CommonPassthroughRequest):
-        pass
 
-    request_schema = Request
-    response_schema = ContextResponse
+    request = CoreGetContextRequest
+    response = CoreGetContextResponse
+    responses = CoreGetContextResponses
     method = Method.GET
 
     @classmethod
     async def callback(cls, context: _Context) -> None:
-        context.response = cls.response_schema
+        context.response = cls.response
         context.method = cls.method
         return context
 
-    async def execute(self) -> AsyncGenerator[_Context, List[GetResponseElement]]:
-        model_instance = self.request_schema.model_validate(self.kwargs)
+    async def execute(self) -> AsyncGenerator[_Context, CoreGetContextResponse]:
+        model_instance = self.request.model_validate(self.kwargs)
 
         yield _Context(
             type=ContextType.PASSTHROUGH,
             callback=self.callback,
             method=self.method,
-            response=self.response_schema,
+            response=self.response,
+            request_instance=model_instance,
             call=self.__class__.child + "(" + str(model_instance) + ")",
             caller=model_instance,
             group=model_instance.group,
@@ -50,7 +61,7 @@ class Context(Passthrough):
     @router.get(
         "/context",
         tags=["Core Operations"],
-        response_model=List[ContextResponse],
+        response_model=CoreGetContextResponses,
         responses={
             # block insert examples/core/get/Context_responses.generated -4
             "200": {
@@ -121,7 +132,7 @@ class Context(Passthrough):
     )
     async def context(
         common: CommonPassthroughRequest = Depends(common_passthrough_request),
-    ) -> Request:
+    ):
         """# Return the operational context
 
         <!-- block insert examples/core/get/Context_example.generated -->
