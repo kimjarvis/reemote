@@ -1,4 +1,4 @@
-# block insert scripts/boilerplate/copyright_header.txt
+# block insert copyright_header
 # Copyright (C) 2026 Kim Jarvis TPF Software Services S.A. kim.jarvis@tpfsystems.com
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -70,7 +70,6 @@ def is_end_marker(line):
         return True
     return False
 
-
 def process_file(source_file, insert_path, clear_mode=False, remove_mode=False):
     try:
         with open(source_file, "r") as f:
@@ -90,6 +89,13 @@ def process_file(source_file, insert_path, clear_mode=False, remove_mode=False):
         if info:
             file_path, total_indent, orig_indent, block_type = info
 
+            # Check if the block file exists
+            if not file_path.exists():
+                print(f"Warning: Block file '{file_path}' not found.")
+                output.append(line)  # Keep the marker line
+                i += 1
+                continue
+
             # Find end marker
             end_i = None
             for j in range(i + 1, len(original_lines)):
@@ -108,7 +114,6 @@ def process_file(source_file, insert_path, clear_mode=False, remove_mode=False):
                 replacement = [line]  # keep start marker
 
                 # Read and insert block content
-                block_content = []
                 try:
                     with open(file_path, "r") as f:
                         block_content = f.readlines()
@@ -131,7 +136,7 @@ def process_file(source_file, insert_path, clear_mode=False, remove_mode=False):
 
             i = next_i
         else:
-            # Drop orphaned end markers in clear/remove mode
+            # Handle orphaned end markers in clear/remove mode
             if (clear_mode or remove_mode) and is_end_marker(line):
                 changed = True
             else:
@@ -160,7 +165,6 @@ def process_file(source_file, insert_path, clear_mode=False, remove_mode=False):
             with open(source_file, "w") as f:
                 f.writelines(final_lines)
             print(f"Removed all block markers from: {source_file}")
-
 
 def process_path(path, insert_path, clear_mode=False, remove_mode=False):
     path = Path(path).expanduser().resolve()
