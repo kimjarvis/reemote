@@ -1,3 +1,4 @@
+pyinfra/
 **/*.generated
 generated/
 openapi.json
