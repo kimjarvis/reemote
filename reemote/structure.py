@@ -2,12 +2,15 @@
 structure.py
 ============
 
-A stand-alone, runnable demonstration of the design patterns used in
+A stand-alone demonstration of the design patterns used in
 ``reemote/execute.py``.
 
 The SSH / inventory machinery is intentionally *not* implemented.  "Remote
-command execution" is simulated in-process so this file can be run directly
-with ``python structure.py`` and has no third-party dependencies.
+command execution" is simulated in-process, so this module has no third-party
+dependencies.  The engine (Context, Shell/Callback/Sequence, traversal,
+Blackboard, lockstep orchestration and the ``execute()`` facade) lives here;
+the demonstration command tree (``demo_script`` and its factories) lives in
+``tests/test_structure.py``.
 
 Pattern map (demo -> counterpart in reemote/execute.py):
 
@@ -40,6 +43,30 @@ import logging
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, AsyncGenerator, Callable, List, Tuple
+
+
+# ---------------------------------------------------------------------------
+# Custom exception for Callback-initiated aborts
+# ---------------------------------------------------------------------------
+
+
+class CallbackAbortError(Exception):
+    """Raised by a Callback to abort the entire execution.
+
+    Carries structured context -- the failing host name and the Callback's
+    tree path -- so that ``execute()`` can log exactly which host and which
+    Callback caused the abort, and can look up related blackboard entries
+    for that host.
+    """
+
+    def __init__(self, host_name: str, callback_path: str, message: str = ""):
+        self.host_name = host_name
+        self.callback_path = callback_path
+        self.message = message
+        super().__init__(
+            f"Callback '{callback_path}' aborted on host '{host_name}'"
+            + (f": {message}" if message else "")
+        )
 
 # ---------------------------------------------------------------------------
 # Simulated stand-ins for reemote.inventory / asyncssh
@@ -100,8 +127,11 @@ class Method(Enum):
 
 
 @dataclass
-class DemoResponse:
-    """The response object built by ``get_result`` (``context.response``)."""
+class Response:
+    """The response object built by ``get_result`` (``context.response``).
+
+    Mirrors ``reemote.response`` -- the engine's per-host result value type.
+    """
 
     host: str
     error: bool = False
@@ -126,7 +156,7 @@ class Context:
     path: str = ""
     group: str | None = None
     request_instance: Any = None
-    response: Callable[..., Any] = DemoResponse
+    response: Callable[..., Any] = Response
     # Populated by the driver (HostDriver) before execution:
     inventory_item: SimulatedHost | None = None
     value: Any = None
@@ -190,33 +220,60 @@ async def run_operation(context: Context) -> Any | None:
     """The "remote command" runner.
 
     In reemote this opens an SSH connection (with sudo/su handling); here the
-    execution is simulated in-process.
+    execution is simulated in-process.  Errors (SSH failures, non-zero return
+    codes) are CAUGHT and RECORDED as error results, not propagated -- this
+    matches the real framework's "catch and record" pattern, where one host's
+    failure doesn't crash the run for other hosts.
     """
     if not group_matches(context):
         return None
     logging.info(f"{context.inventory_item.name:<16} - {context.command}")
     await asyncio.sleep(context.inventory_item.latency)  # simulated latency
 
-    if "fail" in context.command:  # simulate a non-zero exit status
-        cp = CompletedProcess(context.command, 1, 1, "", "simulated failure")
-    else:
-        cp = CompletedProcess(
-            command=context.command,
-            exit_status=0,
-            returncode=0,
-            stdout=f"[{context.inventory_item.name}] output of: {context.command}",
-            stderr="",
-        )
+    try:
+        # Simulate SSH errors for specific commands (demonstration)
+        if context.command == "ssh-error":
+            raise RuntimeError("Simulated SSH connection error")
 
-    context.value = completed_process_to_dict(cp)  # ADAPTER
-    # A successful PUT (idempotent) operation mutates host state, so this is
-    # the honest place to report `changed` -- an OPERATION runs on the host.
-    if context.method is Method.PUT and context.value["returncode"] == 0:
-        context.changed = True
-    result = get_result(context)
-    if context.value["returncode"] != 0:
-        raise RuntimeError(f"non-zero return code: {context.value['stderr']}")
-    return result
+        # Simulate the command execution
+        if "fail" in context.command:  # simulate a non-zero exit status
+            cp = CompletedProcess(context.command, 1, 1, "", "simulated failure")
+        else:
+            cp = CompletedProcess(
+                command=context.command,
+                exit_status=0,
+                returncode=0,
+                stdout=f"[{context.inventory_item.name}] output of: {context.command}",
+                stderr="",
+            )
+
+        context.value = completed_process_to_dict(cp)  # ADAPTER
+        # A successful PUT (idempotent) operation mutates host state, so this is
+        # the honest place to report `changed` -- an OPERATION runs on the host.
+        if context.method is Method.PUT and context.value["returncode"] == 0:
+            context.changed = True
+
+        # Non-zero return code: record as error (don't raise)
+        if context.value["returncode"] != 0:
+            context.error = f"non-zero return code: {context.value['stderr']}"
+            context.value = {
+                "error": context.error,
+                "command": context.command,
+                "returncode": context.value["returncode"],
+            }
+
+        return get_result(context)
+
+    except Exception as e:
+        # Catch SSH errors (simulated), record them as error results.
+        # This matches the real framework's pattern: catch asyncssh errors,
+        # convert to error results, continue execution for other hosts.
+        context.error = str(e)
+        context.value = {
+            "error": str(e),
+            "command": context.command,
+        }
+        return get_result(context)
 
 
 async def run_callback(context: Context) -> Any | None:
@@ -233,9 +290,21 @@ async def run_callback(context: Context) -> Any | None:
     if not group_matches(context):
         return None
     logging.info(f"{context.inventory_item.name:<16} - callback:{context.path}")
-    value = context.request_instance["callback"](context.inventory_item)
-    if inspect.isawaitable(value):
-        value = await value
+    try:
+        value = context.request_instance["callback"](context.inventory_item)
+        if inspect.isawaitable(value):
+            value = await value
+    except CallbackAbortError:
+        # Already wrapped (e.g. by a nested call) -- re-raise as-is.
+        raise
+    except Exception as e:
+        # Wrap the exception with host name and callback path so execute()
+        # can log structured context.
+        raise CallbackAbortError(
+            host_name=context.inventory_item.name,
+            callback_path=context.path,
+            message=str(e),
+        ) from e
     context.value = value
     return get_result(context)
 
@@ -460,232 +529,6 @@ class Sequence:
 
 
 # ---------------------------------------------------------------------------
-# Callback callables -- imperative result-processing, defined at MODULE scope
-# ---------------------------------------------------------------------------
-
-
-def uname_a_check(host: SimulatedHost, board: Blackboard) -> Any:
-    """Callback callable for the ``uname -a`` result (path ``outer.detect-os-full``).
-
-    Defined OUTSIDE ``demo_script`` on purpose: a module-level callable cannot
-    close over ``board``, so the board is a parameter, bound at the Callback
-    site inside ``demo_script`` via ``lambda host: uname_a_check(host, board)``.
-    It runs once per host (in lockstep), reads that host's ``outer.detect-os-full``
-    result off the shared board -- the ``uname -a`` Shell nested just above it in
-    the ``outer`` Sequence -- and derives a small summary: imperative
-    result-processing living in a node.
-    """
-    resp = board.results["outer.detect-os-full"].get(host.name)
-    if resp is None:  # NULL OBJECT: host was group-filtered for detect-os-full
-        return None
-    full = resp.value["stdout"]
-    return {"full": full, "words": len(full.split())}
-
-
-# ---------------------------------------------------------------------------
-# Reusable Sequence factories -- PROGRAM COMPOSITION
-# ---------------------------------------------------------------------------
-
-
-def make_system_probe(name: str, board: Blackboard) -> Sequence:
-    """FACTORY: returns a reusable Sequence that probes system info.
-
-    The Sequence runs ``whoami`` (current user) and then a Callback that
-    reads the result off the blackboard and derives a summary.
-
-    Parameterized by ``name`` so it can be reused multiple times in one tree
-    (each instance gets a unique blackboard path: ``{name}.whoami``, etc.).
-
-    Parameterized by ``board`` because the Callback needs to read earlier
-    results off the blackboard, and ``board`` doesn't exist at module scope.
-    """
-
-    def user_check(host: SimulatedHost) -> dict[str, Any]:
-        """Callback: reads this host's ``whoami`` result and derives a summary."""
-        resp = board.results[f"{name}.whoami"].get(host.name)
-        if resp is None:  # NULL OBJECT: host was group-filtered
-            return None
-        user = resp.value["stdout"].strip()
-        return {"user": user, "length": len(user)}
-
-    return Sequence(
-        Shell("whoami", group="linux", name="whoami"),
-        Callback(user_check, group="linux", name="user-check"),
-        name=name,
-    )
-
-
-def make_apt_install_probe(name: str, board: Blackboard) -> Sequence:
-    """FACTORY: returns a reusable Sequence that installs a package and checks
-    if the installed package list changed.
-
-    The Sequence:
-    1. Runs ``apt list --installed`` to capture the initial state.
-    2. Runs ``apt-get install -y cowsay`` to install something.
-    3. Runs ``apt list --installed`` again to capture the final state.
-    4. Runs a Callback that compares the two lists and determines if they changed.
-
-    Parameterized by ``name`` (for blackboard path uniqueness) and ``board``
-    (because the Callback needs to read results from rounds N and N+2).
-    """
-
-    def check_changed(host: SimulatedHost) -> dict[str, Any]:
-        """Callback: compares the two ``apt list --installed`` results."""
-        before_resp = board.results[f"{name}.list-before"].get(host.name)
-        after_resp = board.results[f"{name}.list-after"].get(host.name)
-        if before_resp is None or after_resp is None:
-            return None  # NULL OBJECT: host was group-filtered
-        before = before_resp.value["stdout"]
-        after = after_resp.value["stdout"]
-        changed = before != after
-        return {
-            "changed": changed,
-            "before_lines": len(before.strip().splitlines()),
-            "after_lines": len(after.strip().splitlines()),
-        }
-
-    return Sequence(
-        Shell("apt list --installed", group="linux", name="list-before"),
-        Shell("apt-get install -y cowsay", group="linux", name="install"),
-        Shell("apt list --installed", group="linux", name="list-after"),
-        Callback(check_changed, group="linux", name="check"),
-        name=name,
-    )
-
-
-# ---------------------------------------------------------------------------
-# The root command generator (built by the FACTORY, once per host)
-# ---------------------------------------------------------------------------
-
-
-async def demo_script(board: Blackboard):
-    """Root of the composite tree -- analogous to a reemote endpoint command.
-
-    A plain async generator FUNCTION: each call returns a fresh generator, so
-    the FACTORY still builds a new root per host, and ``board`` is a simple
-    parameter rather than instance state.  The only state shared between hosts
-    is the Blackboard, which the orchestrator fills with every host's result
-    after each lockstep round.
-
-    Three node types exist: ``Shell`` (a remote OPERATION leaf), ``Callback``
-    (a leaf that runs imperative local processing) and ``Sequence`` (a
-    COMPOSITE that runs its children in order).
-    """
-    # OPERATION leaf, targeted at the "linux" group only.  On non-matching
-    # hosts run_operation returns None (NULL OBJECT).
-    yield Shell("uname -s", group="linux", name="detect-os")
-
-    # Imperative result-processing, now IN A NODE.  A Callback runs local
-    # Python for each host (in lockstep) and records its return value to the
-    # blackboard under its own tree path -- exactly like a Shell -- but it
-    # performs NO remote OPERATION.  This one reads its host's round-1
-    # detect-os result off the shared board (safe: the barrier guarantees
-    # every host recorded before this round began).
-    def uname_of(host):
-        resp = board.results["detect-os"].get(host.name)
-        return resp.value["stdout"] if resp is not None else None
-
-    yield Callback(uname_of, group="linux", name="uname")
-
-    # Like every node, the Callback's per-host results are on the board under
-    # its path; roll them up here (a Callback runs per host, so cross-host
-    # aggregation is a read of the board, indexed by host name).
-    uname_by_host = {
-        host: response.value
-        for host, response in board.results["uname"].items()
-        if response is not None
-    }
-    logging.info(f"uname results by host: {uname_by_host}")
-
-    # A PUT operation mutates host state, so its response reports
-    # `changed` -- the honest home for that flag (an OPERATION actually
-    # runs on the host).  Collect which hosts changed.
-    yield Shell(
-        "touch /tmp/reemote-demo", method=Method.PUT, group="linux", name="mark"
-    )
-    changed_hosts = [
-        host
-        for host, response in board.results["mark"].items()
-        if response is not None and response.changed
-    ]
-    logging.info(
-        f"operation changed any host: {bool(changed_hosts)} "
-        f"(changed hosts: {changed_hosts})"
-    )
-
-    # PROGRAM COMPOSITION: a factory returns a reusable Sequence.  The factory
-    # takes ``name`` (for blackboard path uniqueness) and ``board`` (because the
-    # Callback inside needs to read results).  This demonstrates how to build
-    # reusable Sequence components that can be composed into larger trees.
-    yield make_system_probe("probe", board)
-
-    # PROGRAM COMPOSITION: another factory-produced Sequence, this one capturing
-    # the installed-package list before/after an install, with a Callback
-    # comparing them.  The Callback reads results from rounds N and N+2 (skipping
-    # the install round), demonstrating cross-round blackboard reads.
-    yield make_apt_install_probe("apt-install", board)
-
-    # A Callback that prints whether the apt-install changed the package list.
-    # It reads the apt-install.check result (from the round just above) and
-    # prints "changed" or "not changed" per host.
-    def print_apt_changed(host):
-        check_resp = board.results["apt-install.check"].get(host.name)
-        if check_resp is None:
-            return  # NULL OBJECT: host was group-filtered
-        changed = check_resp.value["changed"]
-        print(f"{host.name}: {'changed' if changed else 'not changed'}")
-
-    yield Callback(print_apt_changed, group="linux", name="print-apt-changed")
-
-    # Nested COMPOSITEs: a Sequence accepts Shell leaves or other Sequence
-    # nodes to any depth.  Below is 3 levels deep (root -> outer -> inner
-    # -> innermost).
-    yield Sequence(
-        Shell("echo step-1", name="step-1"),
-        Sequence(
-            Shell("echo step-2", name="step-2"),
-            Sequence(
-                Shell("echo step-3", name="step-3"),
-                Shell("echo step-4", name="step-4"),
-                name="innermost",
-            ),
-            name="inner",
-        ),
-        # OPERATION leaf moved INSIDE the composite so `uname -a` runs here --
-        # between step-4 (the end of inner) and step-5 -- immediately before the
-        # Callback that consumes it (a Callback can only read a result already
-        # on the board).  Its blackboard key is now the dot-joined path
-        # "outer.detect-os-full" (it was the top-level "detect-os-full").
-        Shell("uname -a", group="linux", name="detect-os-full"),
-        # CALLBACK leaf nested in the composite: runs the module-level
-        # uname_a_check per host, reading this host's detect-os-full result
-        # recorded the round just above.  Bound to `board` via the lambda (a
-        # module-level function cannot close over it).  Blackboard key becomes
-        # "outer.uname-a-check".
-        Callback(
-            lambda host: uname_a_check(host, board),
-            group="linux",
-            name="uname-a-check",
-        ),
-        Shell("echo step-5", name="step-5"),
-        name="outer",
-    )
-    # The board is indexed by (tree path, host), so results from EARLIER
-    # rounds persist: after all the nested Sequences have run, every Shell
-    # command's per-host results are still available for examination.
-    logging.info(
-        f"blackboard holds {len(board.results)} command paths: "
-        f"{sorted(board.results)}"
-    )
-    logging.info(
-        "detect-os (round 1) still available: "
-        f"{sorted(board.results['detect-os'])}"
-    )
-    # Note: the root's return value is discarded by the driver; results are
-    # read from the blackboard, indexed by tree path and host.
-
-
-# ---------------------------------------------------------------------------
 # Host & inventory orchestration -- LOCKSTEP scatter-gather
 # ---------------------------------------------------------------------------
 
@@ -771,6 +614,7 @@ class HostDriver:
 async def process_inventory(
     hosts: List[SimulatedHost],
     root_obj_factory: Callable[[Blackboard], Any],
+    board: Blackboard,
 ) -> None:
     """LOCKSTEP SCATTER-GATHER (a barrier per operation).
 
@@ -790,10 +634,9 @@ async def process_inventory(
     if not hosts:
         return
 
-    # BLACKBOARD: one shared board per run, accumulating every command's
-    # per-host results.  FACTORY: a fresh root generator per host, with
-    # the board bound in so trees can read all hosts' results.
-    board = Blackboard()
+    # BLACKBOARD: the shared board is passed in by the caller, accumulating
+    # every command's per-host results.  FACTORY: a fresh root generator per
+    # host, with the board bound in so trees can read all hosts' results.
     drivers = [HostDriver(host, root_obj_factory(board), board) for host in hosts]
 
     # Prime all trees concurrently.
@@ -821,28 +664,47 @@ async def process_inventory(
 async def execute(
     root_obj_factory: Callable[[Blackboard], Any],
     inventory: List[SimulatedHost],
-) -> None:
+    board: Blackboard,
+) -> bool:
     """FACADE: a single entry point hiding logging setup and orchestration
-    (cf. execute()/endpoint_execute())."""
+    (cf. execute()/endpoint_execute()).
+
+    Returns True if the run completed successfully, False if a Callback raised
+    an exception to abort the run.  If the exception is a ``CallbackAbortError``
+    (carrying the host name and callback path), structured context is logged
+    together with all blackboard entries for the failing host.
+    """
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
     )
-    await process_inventory(inventory, root_obj_factory)
-
-
-async def main() -> None:
-    # A tiny simulated "inventory".
-    inventory = [
-        SimulatedHost("web-1", ("linux", "webservers"), latency=0.15),
-        SimulatedHost("web-2", ("linux", "webservers"), latency=0.02),
-        SimulatedHost("win-1", ("windows",), latency=0.08),
-    ]
-
-    # FACTORY: the caller supplies how to build the root command generator;
-    # the shared blackboard is passed in so trees can read cross-host results.
-    await execute(lambda board: demo_script(board), inventory)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        await process_inventory(inventory, root_obj_factory, board)
+        return True
+    except CallbackAbortError as e:
+        # A Callback raised to abort the run.  Log the structured context
+        # (host name, callback path) and all blackboard entries for the
+        # failing host so the user can diagnose the issue.
+        logging.error(
+            f"Execution aborted by callback '{e.callback_path}' "
+            f"on host '{e.host_name}': {e.message}"
+        )
+        # Log all blackboard results for the failing host.
+        host_results = {
+            path: resp
+            for path, by_host in board.results.items()
+            if e.host_name in by_host
+            for resp in [by_host[e.host_name]]
+        }
+        if host_results:
+            logging.error(
+                f"Blackboard entries for host '{e.host_name}':"
+            )
+            for path, resp in sorted(host_results.items()):
+                logging.error(f"  {path}: {resp}")
+        return False
+    except Exception as e:
+        # An unexpected exception (not a Callback abort).  Log with full
+        # traceback so the user can diagnose the issue.
+        logging.error(f"Execution aborted: {e}", exc_info=True)
+        return False
