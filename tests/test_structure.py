@@ -1,7 +1,7 @@
-"""Tests for reemote/structure.py -- the lockstep design-pattern demo.
+"""Tests for src/reemote/structure.py -- the lockstep design-pattern demo.
 
 The demonstration command tree (``demo_script`` and its reusable ``Sequence``
-factories) lives HERE rather than in ``reemote/structure.py``: structure.py
+factories) lives HERE rather than in ``src/reemote/structure.py``: structure.py
 provides the engine (Context, Shell/Callback/Sequence, traversal, Blackboard,
 lockstep orchestration and the ``execute()`` facade), and this module builds a
 demo tree on top of it and asserts the results via pytest.

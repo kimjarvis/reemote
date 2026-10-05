@@ -52,3 +52,7 @@ Documentation = "https://reemote.org/redoc-static.html"
 [project.scripts]
 reemote = "reemote.module:main"
 
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+
