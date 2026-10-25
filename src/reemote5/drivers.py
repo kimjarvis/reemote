@@ -73,9 +73,7 @@ async def materialize(host: Host, cache: FactCache, request: OperationRequest):
     the operation awaits facts, which gather their values asynchronously.
     """
     ctx = OpContext(host=host, facts=cache)
-    commands = [
-        cmd async for cmd in request.func(ctx, *request.args, **request.kwargs)
-    ]
+    commands = [cmd async for cmd in request.func(ctx, *request.args, **request.kwargs)]
     return ctx, commands
 
 

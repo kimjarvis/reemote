@@ -12,9 +12,10 @@ a real asyncssh transport is missing:
   descriptor to the in-memory state. ``reemote5.drivers.send_command``
   forwards to it when the host provides it, and raises ``NotImplementedError``
   otherwise.
-- ``packages`` / ``links`` / ``existing_files``: the state the library's
-  facts (``DnfPackages``, ``FileLink``, ``FileExists``) read as a stand-in
-  for gathering over SSH.
+- ``packages`` / ``links`` / ``existing_files`` / ``repositories`` /
+  ``enabled_modules``: the state the library's facts (``DnfPackages``,
+  ``FileLink``, ``FileExists``, ``DnfRepositories``, ``DnfEnabledModules``)
+  read as a stand-in for gathering over SSH.
 
 Holding this state is what makes the "fresh fact cache per lockstep step"
 property observable in the tests and the demo: ``send_command`` mutates the
@@ -26,7 +27,12 @@ from dataclasses import dataclass, field
 
 from reemote5.commands import Command, StringCommand
 from reemote5.hosts import Host
-from reemote5.operations.dnf import DnfInstallCommand, DnfRemoveCommand
+from reemote5.operations.dnf import (
+    DnfCleanCommand,
+    DnfInstallCommand,
+    DnfRemoveCommand,
+    DnfUpdateCommand,
+)
 from reemote5.operations.files import FileCommand, LinkCommand
 
 
@@ -43,6 +49,8 @@ class SimulatedHost(Host):
     packages: set[str] = field(default_factory=set)
     links: dict[str, str] = field(default_factory=dict)  # src -> target
     existing_files: set[str] = field(default_factory=set)
+    repositories: list[dict[str, str]] = field(default_factory=list)
+    enabled_modules: dict[str, str] = field(default_factory=dict)  # name -> stream
     # Side effects of installing a package: package -> {link src: target}
     # and package -> {file path}. This is what lets the demo reproduce the
     # design doc section 9 trace: installing a package creates the default
@@ -67,6 +75,8 @@ class SimulatedHost(Host):
                 self.install_packages(packages)
             case DnfRemoveCommand(packages=packages):
                 self.remove_packages(packages)
+            case DnfUpdateCommand() | DnfCleanCommand():
+                pass  # the simulation tracks no versions/metadata to update
             case LinkCommand(src=src, target=None):
                 self.remove_link(src)
             case LinkCommand(src=src, target=target):
@@ -84,6 +94,9 @@ class SimulatedHost(Host):
 
     def install_packages(self, packages: tuple[str, ...]) -> None:
         for package in packages:
+            # Version pins (``pkg=version``) carry no simulated state: only
+            # the name is tracked, matching the name-only DnfPackages fact.
+            package = package.split("=", 1)[0]
             if package in self.packages:
                 continue
             self.packages.add(package)
@@ -93,7 +106,7 @@ class SimulatedHost(Host):
                 self.existing_files.add(path)
 
     def remove_packages(self, packages: tuple[str, ...]) -> None:
-        self.packages.difference_update(packages)
+        self.packages.difference_update(pkg.split("=", 1)[0] for pkg in packages)
 
     def make_link(self, src: str, target: str) -> None:
         self.links[src] = target

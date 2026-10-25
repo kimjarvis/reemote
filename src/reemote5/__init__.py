@@ -25,10 +25,15 @@ from .drivers import (
     run_prepare,
     send_command,
 )
-from .facts import DnfPackages, FileExists, FileLink
+from .facts import DnfEnabledModules, DnfPackages, DnfRepositories, FileExists, FileLink
 from .hosts import Host, InventoryEntry, InventoryError, validate_inventory
 from .operations import dnf, files
-from .operations.dnf import DnfInstallCommand, DnfRemoveCommand
+from .operations.dnf import (
+    DnfCleanCommand,
+    DnfInstallCommand,
+    DnfRemoveCommand,
+    DnfUpdateCommand,
+)
 from .operations.files import FileCommand, LinkCommand
 
 
@@ -40,9 +45,13 @@ __all__ = [
     "ApplyReport",
     "Command",
     "DeterminismError",
+    "DnfCleanCommand",
+    "DnfEnabledModules",
     "DnfInstallCommand",
     "DnfPackages",
     "DnfRemoveCommand",
+    "DnfRepositories",
+    "DnfUpdateCommand",
     "FactCache",
     "FileCommand",
     "FileExists",

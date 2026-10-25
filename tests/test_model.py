@@ -28,10 +28,15 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.facts import DnfPackages, FileLink
+from reemote5.facts import DnfEnabledModules, DnfPackages, DnfRepositories, FileLink
 from reemote5.hosts import Host, InventoryError, validate_inventory
 from reemote5.operations import dnf, files
-from reemote5.operations.dnf import DnfInstallCommand
+from reemote5.operations.dnf import (
+    DnfCleanCommand,
+    DnfInstallCommand,
+    DnfRemoveCommand,
+    DnfUpdateCommand,
+)
 from reemote5.operations.files import FileCommand, LinkCommand
 from tests.simulated_host import SimulatedHost
 
@@ -299,6 +304,104 @@ async def test_fact_cache_keys_include_args():
     assert await cache.get(FileLink, "/b") is None
 
 
+# --- DnfRepositories fact (pyinfra parity) -----------------------------------
+
+# The example result from the pyinfra ``dnf.DnfRepositories`` documentation: a
+# single AlmaLinux BaseOS repository parsed out of its ``.repo`` file.
+ALMALINUX_BASEOS_REPO = {
+    "repoid": "baseos",
+    "name": "AlmaLinux $releasever - BaseOS",
+    "mirrorlist": "https://mirrors.almalinux.org/mirrorlist/$releasever/baseos",
+    "enabled": "1",
+    "gpgcheck": "1",
+    "countme": "1",
+    "gpgkey": "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux-9",
+    "metadata_expire": "86400",
+    "enabled_metadata": "1",
+    "filename": "/etc/yum.repos.d/almalinux.repo",
+}
+
+
+async def test_dnf_repositories_parses_the_documented_example():
+    """Over the real-transport path, ``DnfRepositories`` parses a cat'd
+    ``.repo`` file into pyinfra's documented example result."""
+
+    class CannedShellHost(Host):
+        """Returns fixed stdout from ``run_shell`` instead of connecting."""
+
+        def __init__(self, stdout: str):
+            super().__init__(name="canned")
+            self._stdout = stdout
+
+        async def run_shell(self, shell: str) -> str:
+            return self._stdout
+
+    marker = DnfRepositories.FILENAME_MARKER
+    stdout = "\n".join(
+        [
+            f"{marker} /etc/yum.repos.d/almalinux.repo",
+            "[baseos]",
+            "name=AlmaLinux $releasever - BaseOS",
+            "mirrorlist=https://mirrors.almalinux.org/mirrorlist/$releasever/baseos",
+            "enabled=1",
+            "gpgcheck=1",
+            "countme=1",
+            "gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux-9",
+            "metadata_expire=86400",
+            "enabled_metadata=1",
+        ]
+    )
+    host = CannedShellHost(stdout)
+    assert await DnfRepositories.process(host) == [ALMALINUX_BASEOS_REPO]
+
+
+async def test_dnf_repositories_reads_the_simulated_seam():
+    """A SimulatedHost exposes ``repositories`` directly, bypassing the shell."""
+    host = SimulatedHost(name="h", repositories=[ALMALINUX_BASEOS_REPO])
+    assert await DnfRepositories.process(host) == [ALMALINUX_BASEOS_REPO]
+
+
+# --- DnfEnabledModules fact (pyinfra parity) -----------------------------------
+
+# The example result from the pyinfra ``dnf.DnfEnabledModules`` documentation,
+# produced by parsing the ``dnf module list --enabled`` table below (the
+# ``multiple_modules`` case from pyinfra's own fact tests).
+DOCUMENTED_ENABLED_MODULES = {"postgresql": "16", "nodejs": "20"}
+
+DNF_MODULE_LIST_ENABLED_OUTPUT = """\
+Name         Stream        Profiles                                  Summary
+nodejs       20 [e]        common [d], development, minimal, s2i     Javascript runtime
+postgresql   16 [e]        client, server [d]                        PostgreSQL server and client module
+
+Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled"""
+
+
+async def test_dnf_enabled_modules_parses_the_documented_example():
+    """Over the real-transport path, ``DnfEnabledModules`` parses a
+    ``dnf module list --enabled`` table into pyinfra's documented example
+    result, skipping the header, blank lines and the trailing hint line."""
+
+    class CannedShellHost(Host):
+        """Returns fixed stdout from ``run_shell`` instead of connecting."""
+
+        def __init__(self, stdout: str):
+            super().__init__(name="canned")
+            self._stdout = stdout
+
+        async def run_shell(self, shell: str) -> str:
+            return self._stdout
+
+    host = CannedShellHost(DNF_MODULE_LIST_ENABLED_OUTPUT)
+    assert await DnfEnabledModules.process(host) == DOCUMENTED_ENABLED_MODULES
+
+
+async def test_dnf_enabled_modules_reads_the_simulated_seam():
+    """A SimulatedHost exposes ``enabled_modules`` directly, bypassing the
+    shell."""
+    host = SimulatedHost(name="h", enabled_modules=DOCUMENTED_ENABLED_MODULES)
+    assert await DnfEnabledModules.process(host) == DOCUMENTED_ENABLED_MODULES
+
+
 # --- Operations (6) ----------------------------------------------------------
 
 
@@ -318,6 +421,187 @@ async def test_dnf_packages_no_change_reason_recorded():
     assert not ctx.changed
     assert ctx.reason == "all packages present"  # recorded even when unchanged (10)
     assert commands == []
+
+
+# --- dnf.packages options (pyinfra parity) ------------------------------------
+
+
+async def test_dnf_packages_accepts_a_bare_string():
+    """pyinfra accepts ``packages="nginx"`` as shorthand for a one-item list."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.packages(ctx, packages="nginx")]
+    assert commands == [DnfInstallCommand(packages=("nginx",))]
+
+
+async def test_dnf_packages_none_without_flags_is_a_noop():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.packages(ctx)]
+    assert not ctx.changed
+    assert ctx.reason == "no packages requested"
+    assert commands == []
+
+
+async def test_dnf_packages_clean_and_update_yield_before_install():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.packages(ctx, packages=("nginx",), clean=True, update=True)
+    ]
+    assert commands == [
+        DnfCleanCommand(),
+        DnfUpdateCommand(),
+        DnfInstallCommand(packages=("nginx",)),
+    ]
+    assert commands[0].shell() == "dnf clean all"
+    assert commands[1].shell() == "dnf update -y"
+    assert ctx.changed
+    assert ctx.reason == "dnf clean; dnf update; 1 package(s) to install"
+
+
+async def test_dnf_packages_update_only_without_packages():
+    """``update=True`` alone mirrors pyinfra's stateless ``dnf.update``."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.packages(ctx, update=True)]
+    assert commands == [DnfUpdateCommand()]
+    assert ctx.changed
+    assert ctx.reason == "dnf update"
+
+
+async def test_dnf_packages_nobest_and_extra_install_args():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx",),
+            nobest=True,
+            extra_install_args="--skip-broken",
+        )
+    ]
+    assert commands == [
+        DnfInstallCommand(packages=("nginx",), nobest=True, extra_args="--skip-broken")
+    ]
+    assert commands[0].shell() == "dnf install -y --nobest --skip-broken nginx"
+
+
+async def test_dnf_packages_extra_uninstall_args():
+    host = SimulatedHost(name="h", packages={"nginx"})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx",),
+            present=False,
+            extra_uninstall_args="--autoremove",
+        )
+    ]
+    assert commands == [
+        DnfRemoveCommand(packages=("nginx",), extra_args="--autoremove")
+    ]
+    assert commands[0].shell() == "dnf remove -y --autoremove nginx"
+
+
+async def test_dnf_packages_latest_upgrades_installed_unpinned_packages():
+    """``latest`` upgrades present, unpinned packages; missing ones install."""
+    host = SimulatedHost(name="h", packages={"nginx"})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.packages(ctx, packages=("nginx", "vim"), latest=True)
+    ]
+    assert commands == [
+        DnfInstallCommand(packages=("vim",)),
+        DnfUpdateCommand(packages=("nginx",)),
+    ]
+    assert commands[1].shell() == "dnf update -y nginx"
+    assert ctx.changed
+    assert ctx.reason == "1 package(s) to install; 1 package(s) to upgrade"
+
+
+async def test_dnf_packages_latest_skips_version_pins():
+    """A pinned ``<pkg>=<version>`` is never an upgrade candidate, and the
+    name-only fact treats any installed version as present."""
+    host = SimulatedHost(name="h", packages={"nginx"})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.packages(ctx, packages=("nginx=1.23.0",), latest=True)
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "all packages present"
+    assert commands == []
+
+
+async def test_dnf_packages_version_pin_installs_when_name_absent():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.packages(ctx, packages=("nginx=1.23.0",))]
+    assert commands == [DnfInstallCommand(packages=("nginx=1.23.0",))]
+    assert commands[0].shell() == "dnf install -y nginx=1.23.0"
+
+
+async def test_dnf_packages_absorbs_unknown_kwargs():
+    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    strips the ``name``/``sudo`` meta-parameters, the rest is ignored."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.packages(ctx, packages=("nginx",), future_flag=True)
+    ]
+    assert commands == [DnfInstallCommand(packages=("nginx",))]
+
+
+async def test_dnf_options_flow_through_run_and_format_log():
+    """End-to-end: clean/update/install all execute and render in the log."""
+
+    def opts_deploy(host):
+        yield op(
+            dnf.packages,
+            name="Update and install nginx",
+            packages=("nginx",),
+            clean=True,
+            update=True,
+        )
+
+    _plans, report, (host,) = await run(
+        [{"host": "a", "connection": {}}],
+        opts_deploy,
+        host_factory=SimulatedHost.from_inventory,
+    )
+    (entry,) = report.log
+    assert entry.changed
+    assert entry.commands == (
+        DnfCleanCommand(),
+        DnfUpdateCommand(),
+        DnfInstallCommand(packages=("nginx",)),
+    )
+    assert host.packages == {"nginx"}
+    log = format_log(report)
+    assert "$ dnf clean all" in log
+    assert "$ dnf update -y" in log
+    assert "$ dnf install -y nginx" in log
+
+
+async def test_dnf_version_pin_install_simulates_by_name():
+    """The simulated seam strips version pins, so the name-only state and
+    the fresh-fact-cache property hold for pinned installs too."""
+
+    def pinned_deploy(host):
+        yield op(dnf.packages, name="Install pinned nginx", packages=("nginx=1.23.0",))
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], pinned_deploy)
+    assert plans["h"][0].changed
+    report = await run_apply(runtimes, plans=plans)
+    assert report.log[0].changed
+    assert host.packages == {"nginx"}
+    # A second prepare sees the name as installed: no change.
+    _runtimes, plans2 = await run_prepare([host], pinned_deploy)
+    assert not plans2["h"][0].changed
+    assert plans2["h"][0].reason == "all packages present"
 
 
 async def test_files_link_remove_when_present():

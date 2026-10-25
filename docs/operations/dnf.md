@@ -20,3 +20,5 @@ mutate the host.
         - packages
         - DnfInstallCommand
         - DnfRemoveCommand
+        - DnfUpdateCommand
+        - DnfCleanCommand
