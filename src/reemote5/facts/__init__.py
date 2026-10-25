@@ -13,17 +13,18 @@ writing ``from reemote5.facts import DnfPackages, FileLink``.
 
 The POC has no SSH transport: each ``process`` reads the in-memory state of
 a simulated host through a duck-typed seam (``packages``/``links``/
-``existing_files``/``repositories``/``enabled_modules``, provided by the test
-framework's ``SimulatedHost`` in ``tests/simulated_host.py``) and gathers over
-asyncssh for any host lacking it. The library never imports the test-framework
-class itself.
+``existing_files``/``repositories``/``enabled_modules``/``disabled_modules``,
+provided by the test framework's ``SimulatedHost`` in ``tests/simulated_host.py``)
+and gathers over asyncssh for any host lacking it. The library never imports the
+test-framework class itself.
 """
 
 from . import dnf, files
-from .dnf import DnfEnabledModules, DnfPackages, DnfRepositories
+from .dnf import DnfDisabledModules, DnfEnabledModules, DnfPackages, DnfRepositories
 from .files import FileExists, FileLink
 
 __all__ = [
+    "DnfDisabledModules",
     "DnfEnabledModules",
     "DnfPackages",
     "DnfRepositories",

@@ -2,9 +2,9 @@
 
 Exposes ``DnfPackages``, the fact read by ``dnf.packages`` to learn which
 packages are already installed, ``DnfRepositories``, the configured dnf
-repositories, and ``DnfEnabledModules``, the enabled dnf modules. Like every
-fact they are phase-unaware: each ``process`` coroutine just gathers the raw
-value.
+repositories, ``DnfEnabledModules``, the enabled dnf modules, and
+``DnfDisabledModules``, the explicitly disabled dnf modules. Like every fact
+they are phase-unaware: each ``process`` coroutine just gathers the raw value.
 """
 
 import re
@@ -159,4 +159,51 @@ class DnfEnabledModules:
         return cls.parse(stdout.splitlines())
 
 
-__all__ = ["DnfEnabledModules", "DnfPackages", "DnfRepositories"]
+class DnfDisabledModules:
+    """The sorted names of the explicitly disabled dnf modules.
+
+    Mirrors pyinfra's ``dnf.DnfDisabledModules``: every row of the
+    ``dnf module list --disabled`` table carrying an ``[x]`` flag contributes
+    its module name; a module disabled across several streams is listed once,
+    and the names are returned sorted. Headers, blank lines and the trailing
+    hint line are ignored.
+    """
+
+    #: Shell used to list the disabled modules over SSH.
+    COMMAND = "dnf module list --disabled"
+
+    #: Matches the ``[x]`` disabled flag on a stream but not the ``[x]disabled``
+    #: word in the table's trailing ``Hint:`` line (pyinfra's
+    #: ``_DISABLED_FLAG``).
+    DISABLED_FLAG = re.compile(r"\[x\](?!\w)")
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> list[str]:
+        """Parse ``dnf module list --disabled`` rows into a sorted name list.
+
+        Only lines carrying the ``[x]`` flag are kept; the first
+        whitespace-separated token of such a line is the module name. Names
+        are deduplicated across streams and returned sorted.
+        """
+        seen: set[str] = set()
+        for line in output:
+            if not cls.DISABLED_FLAG.search(line):
+                continue
+            tokens = line.split()
+            if not tokens:
+                continue
+            seen.add(tokens[0])
+        return sorted(seen)
+
+    @classmethod
+    async def process(cls, host: Host) -> list[str]:
+        disabled_modules = getattr(host, "disabled_modules", None)
+        if disabled_modules is not None:
+            # SimulatedHost seam: read the in-memory state directly.
+            return list(disabled_modules)
+        # Real transport: list the disabled modules over asyncssh and parse.
+        stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
+__all__ = ["DnfDisabledModules", "DnfEnabledModules", "DnfPackages", "DnfRepositories"]

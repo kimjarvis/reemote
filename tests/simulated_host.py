@@ -13,9 +13,10 @@ a real asyncssh transport is missing:
   forwards to it when the host provides it, and raises ``NotImplementedError``
   otherwise.
 - ``packages`` / ``links`` / ``existing_files`` / ``repositories`` /
-  ``enabled_modules``: the state the library's facts (``DnfPackages``,
-  ``FileLink``, ``FileExists``, ``DnfRepositories``, ``DnfEnabledModules``)
-  read as a stand-in for gathering over SSH.
+  ``enabled_modules`` / ``disabled_modules``: the state the library's facts
+  (``DnfPackages``, ``FileLink``, ``FileExists``, ``DnfRepositories``,
+  ``DnfEnabledModules``, ``DnfDisabledModules``) read as a stand-in for
+  gathering over SSH.
 
 Holding this state is what makes the "fresh fact cache per lockstep step"
 property observable in the tests and the demo: ``send_command`` mutates the
@@ -51,6 +52,7 @@ class SimulatedHost(Host):
     existing_files: set[str] = field(default_factory=set)
     repositories: list[dict[str, str]] = field(default_factory=list)
     enabled_modules: dict[str, str] = field(default_factory=dict)  # name -> stream
+    disabled_modules: list[str] = field(default_factory=list)  # disabled module names
     # Side effects of installing a package: package -> {link src: target}
     # and package -> {file path}. This is what lets the demo reproduce the
     # design doc section 9 trace: installing a package creates the default

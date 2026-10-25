@@ -28,7 +28,7 @@ file over SSH and removes it.
 
 Run it with::
 
-    uv run python examples/dnf_install_httpd.py
+    uv run python examples/dnf_packages.py
 """
 
 import asyncio

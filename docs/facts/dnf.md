@@ -16,3 +16,4 @@ coroutine, so results are awaited and cached within a phase step.
         - DnfPackages
         - DnfRepositories
         - DnfEnabledModules
+        - DnfDisabledModules

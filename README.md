@@ -56,7 +56,7 @@ asyncio.run(main())
 
 ```bash
 uv sync                          # library + pytest
-uv run python examples/dnf_install_httpd.py
+uv run python examples/dnf_packages.py
 uv run pytest
 ```
 

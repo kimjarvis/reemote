@@ -1,9 +1,14 @@
-"""Tests for the generator-based two-phase execution model.
+"""Tests for the operations layer and the generator-based two-phase model.
 
 Covers the properties from the design document: request descriptor
 semantics (4.1), fact caching (4.4), sequential "act, then read"
 semantics in apply (8.2/9), cross-host lockstep (8.2), --dry behavior
 (8.1), determinism checking (11.1) and change reporting (10).
+
+The pure read-only fact parsing (dnf repositories/modules) lives in
+``tests/facts/test_dnf.py``; anything that drives an operation -- or mixes
+facts and operations, like the FactCache and the end-to-end apply traces --
+is kept here.
 
 The apply path (``send_command`` and the drivers calling it) is async in
 preparation for an asyncssh transport, and so is fact gathering: a fact's
@@ -28,7 +33,7 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.facts import DnfEnabledModules, DnfPackages, DnfRepositories, FileLink
+from reemote5.facts import DnfPackages, FileLink
 from reemote5.hosts import Host, InventoryError, validate_inventory
 from reemote5.operations import dnf, files
 from reemote5.operations.dnf import (
@@ -302,104 +307,6 @@ async def test_fact_cache_keys_include_args():
     cache = FactCache(host, phase="prepare")
     assert await cache.get(FileLink, "/a") == "/target-a"
     assert await cache.get(FileLink, "/b") is None
-
-
-# --- DnfRepositories fact (pyinfra parity) -----------------------------------
-
-# The example result from the pyinfra ``dnf.DnfRepositories`` documentation: a
-# single AlmaLinux BaseOS repository parsed out of its ``.repo`` file.
-ALMALINUX_BASEOS_REPO = {
-    "repoid": "baseos",
-    "name": "AlmaLinux $releasever - BaseOS",
-    "mirrorlist": "https://mirrors.almalinux.org/mirrorlist/$releasever/baseos",
-    "enabled": "1",
-    "gpgcheck": "1",
-    "countme": "1",
-    "gpgkey": "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux-9",
-    "metadata_expire": "86400",
-    "enabled_metadata": "1",
-    "filename": "/etc/yum.repos.d/almalinux.repo",
-}
-
-
-async def test_dnf_repositories_parses_the_documented_example():
-    """Over the real-transport path, ``DnfRepositories`` parses a cat'd
-    ``.repo`` file into pyinfra's documented example result."""
-
-    class CannedShellHost(Host):
-        """Returns fixed stdout from ``run_shell`` instead of connecting."""
-
-        def __init__(self, stdout: str):
-            super().__init__(name="canned")
-            self._stdout = stdout
-
-        async def run_shell(self, shell: str) -> str:
-            return self._stdout
-
-    marker = DnfRepositories.FILENAME_MARKER
-    stdout = "\n".join(
-        [
-            f"{marker} /etc/yum.repos.d/almalinux.repo",
-            "[baseos]",
-            "name=AlmaLinux $releasever - BaseOS",
-            "mirrorlist=https://mirrors.almalinux.org/mirrorlist/$releasever/baseos",
-            "enabled=1",
-            "gpgcheck=1",
-            "countme=1",
-            "gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux-9",
-            "metadata_expire=86400",
-            "enabled_metadata=1",
-        ]
-    )
-    host = CannedShellHost(stdout)
-    assert await DnfRepositories.process(host) == [ALMALINUX_BASEOS_REPO]
-
-
-async def test_dnf_repositories_reads_the_simulated_seam():
-    """A SimulatedHost exposes ``repositories`` directly, bypassing the shell."""
-    host = SimulatedHost(name="h", repositories=[ALMALINUX_BASEOS_REPO])
-    assert await DnfRepositories.process(host) == [ALMALINUX_BASEOS_REPO]
-
-
-# --- DnfEnabledModules fact (pyinfra parity) -----------------------------------
-
-# The example result from the pyinfra ``dnf.DnfEnabledModules`` documentation,
-# produced by parsing the ``dnf module list --enabled`` table below (the
-# ``multiple_modules`` case from pyinfra's own fact tests).
-DOCUMENTED_ENABLED_MODULES = {"postgresql": "16", "nodejs": "20"}
-
-DNF_MODULE_LIST_ENABLED_OUTPUT = """\
-Name         Stream        Profiles                                  Summary
-nodejs       20 [e]        common [d], development, minimal, s2i     Javascript runtime
-postgresql   16 [e]        client, server [d]                        PostgreSQL server and client module
-
-Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled"""
-
-
-async def test_dnf_enabled_modules_parses_the_documented_example():
-    """Over the real-transport path, ``DnfEnabledModules`` parses a
-    ``dnf module list --enabled`` table into pyinfra's documented example
-    result, skipping the header, blank lines and the trailing hint line."""
-
-    class CannedShellHost(Host):
-        """Returns fixed stdout from ``run_shell`` instead of connecting."""
-
-        def __init__(self, stdout: str):
-            super().__init__(name="canned")
-            self._stdout = stdout
-
-        async def run_shell(self, shell: str) -> str:
-            return self._stdout
-
-    host = CannedShellHost(DNF_MODULE_LIST_ENABLED_OUTPUT)
-    assert await DnfEnabledModules.process(host) == DOCUMENTED_ENABLED_MODULES
-
-
-async def test_dnf_enabled_modules_reads_the_simulated_seam():
-    """A SimulatedHost exposes ``enabled_modules`` directly, bypassing the
-    shell."""
-    host = SimulatedHost(name="h", enabled_modules=DOCUMENTED_ENABLED_MODULES)
-    assert await DnfEnabledModules.process(host) == DOCUMENTED_ENABLED_MODULES
 
 
 # --- Operations (6) ----------------------------------------------------------
