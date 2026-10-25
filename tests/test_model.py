@@ -20,20 +20,23 @@ import pytest
 from reemote5.core import FactCache, OpContext, OperationRequest, op
 from reemote5.drivers import (
     DeterminismError,
+    command_shell,
+    format_log,
     run,
     run_apply,
     run_prepare,
     send_command,
 )
-from reemote5.facts import AptPackages, FileLink
+from reemote5.facts import DnfPackages, FileLink
 from reemote5.hosts import Host
-from reemote5.operations import apt, files
-from reemote5.operations.apt import AptInstallCommand
-from reemote5.operations.files import LinkCommand
+from reemote5.operations import dnf, files
+from reemote5.operations.dnf import DnfInstallCommand
+from reemote5.operations.files import FileCommand, LinkCommand
 from tests.simulated_host import SimulatedHost
 
 NGINX_DEFAULT_SITE = "/etc/nginx/sites-enabled/default"
 DEFAULT_TARGET = "/etc/nginx/sites-available/default"
+HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
 
 
 # --- Test setup: example inventory, deploy script and host factory ----------
@@ -86,7 +89,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     Install nginx, then remove its default site. Branch-free, so it is
     deterministic across the prepare and apply phases.
     """
-    yield op(apt.packages, name="Install nginx", packages=("nginx",))
+    yield op(dnf.packages, name="Install nginx", packages=("nginx",))
     yield op(
         files.link,
         name="Remove default site",
@@ -121,9 +124,9 @@ async def test_inventory_host_reaches_the_real_transport_boundary():
     host = Host.from_inventory(WEB_INVENTORY[0])
     assert host.connection == {"key_path": "~/.ssh/id_ed25519"}
     with pytest.raises(NotImplementedError):
-        await AptPackages.process(host)
+        await DnfPackages.process(host)
     with pytest.raises(NotImplementedError):
-        await send_command(host, AptInstallCommand(packages=("nginx",)))
+        await send_command(host, DnfInstallCommand(packages=("nginx",)))
 
 
 # --- OperationRequest (4.1) -------------------------------------------------
@@ -131,17 +134,68 @@ async def test_inventory_host_reaches_the_real_transport_boundary():
 
 def test_operation_request_kwargs_are_copied():
     kwargs = {"packages": ("nginx",)}
-    request = OperationRequest(func=apt.packages, kwargs=kwargs, name="Install nginx")
+    request = OperationRequest(func=dnf.packages, kwargs=kwargs, name="Install nginx")
     kwargs["packages"] = ("vim",)  # mutating the caller's dict...
     assert request.kwargs["packages"] == ("nginx",)  # ...must not leak in
 
 
 def test_operation_request_value_equality_and_hashing():
-    a = op(apt.packages, name="Install nginx", packages=("nginx",))
-    b = op(apt.packages, name="Install nginx", packages=("nginx",))
+    a = op(dnf.packages, name="Install nginx", packages=("nginx",))
+    b = op(dnf.packages, name="Install nginx", packages=("nginx",))
     assert a == b
     assert hash(a) == hash(b)
-    assert a != op(apt.packages, name="Install nginx", packages=("vim",))
+    assert a != op(dnf.packages, name="Install nginx", packages=("vim",))
+
+
+def test_op_sudo_is_a_meta_parameter_not_forwarded_to_the_operation():
+    request = op(dnf.packages, name="Install nginx", packages=("nginx",), sudo=True)
+    # ``sudo`` is captured on the request, never mixed into the operation's
+    # kwargs (dnf.packages has no ``sudo`` parameter).
+    assert request.sudo is True
+    assert "sudo" not in request.kwargs
+    assert request.kwargs == {"packages": ("nginx",)}
+    # Unprivileged by default.
+    assert op(dnf.packages, packages=("nginx",)).sudo is False
+
+
+def test_sudo_participates_in_request_equality_and_hashing():
+    plain = op(dnf.packages, name="Install nginx", packages=("nginx",))
+    elevated = op(dnf.packages, name="Install nginx", packages=("nginx",), sudo=True)
+    other_elevated = op(
+        dnf.packages, name="Install nginx", packages=("nginx",), sudo=True
+    )
+    assert plain != elevated  # a sudo difference must not pair in lockstep
+    assert elevated == other_elevated
+    assert hash(elevated) == hash(other_elevated)
+
+
+# --- sudo elevation on the command path --------------------------------------
+
+
+def test_command_shell_applies_the_sudo_prefix():
+    cmd = DnfInstallCommand(packages=("nginx",))
+    assert command_shell(cmd) == "dnf install -y nginx"
+    assert command_shell(cmd, sudo=True) == "sudo dnf install -y nginx"
+
+
+async def test_send_command_prefixes_sudo_on_the_real_transport_path():
+    """A plain Host (no ``execute_command`` seam) gets the elevated shell."""
+
+    class RecordingHost(Host):
+        """Records ``run_shell`` instead of opening a real asyncssh connection."""
+
+        def __init__(self):
+            super().__init__(name="rec")
+            self.sent: list[str] = []
+
+        async def run_shell(self, shell: str) -> str:
+            self.sent.append(shell)
+            return ""
+
+    host = RecordingHost()
+    await send_command(host, DnfInstallCommand(packages=("nginx",)), sudo=True)
+    await send_command(host, DnfInstallCommand(packages=("nginx",)))
+    assert host.sent == ["sudo dnf install -y nginx", "dnf install -y nginx"]
 
 
 # --- FactCache (4.4) ---------------------------------------------------------
@@ -150,14 +204,14 @@ def test_operation_request_value_equality_and_hashing():
 async def test_fact_cache_caches_per_key():
     host = SimulatedHost(name="h", packages={"nginx"})
     cache = FactCache(host, phase="prepare")
-    assert await cache.get(AptPackages) == {"nginx"}
+    assert await cache.get(DnfPackages) == {"nginx"}
 
     host.packages.add("vim")
     # Cached: the mutation is not visible through the same cache...
-    assert await cache.get(AptPackages) == {"nginx"}
+    assert await cache.get(DnfPackages) == {"nginx"}
     # ...but a fresh cache sees it, which is exactly the per-step
     # recreation the apply driver relies on.
-    assert await FactCache(host, phase="apply").get(AptPackages) == {"nginx", "vim"}
+    assert await FactCache(host, phase="apply").get(DnfPackages) == {"nginx", "vim"}
 
 
 async def test_fact_cache_keys_include_args():
@@ -170,19 +224,19 @@ async def test_fact_cache_keys_include_args():
 # --- Operations (6) ----------------------------------------------------------
 
 
-async def test_apt_packages_sets_changed_and_yields_command():
+async def test_dnf_packages_sets_changed_and_yields_command():
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
-    commands = [c async for c in apt.packages(ctx, packages=("nginx", "vim"))]
+    commands = [c async for c in dnf.packages(ctx, packages=("nginx", "vim"))]
     assert ctx.changed
     assert ctx.reason == "2 package(s) to install"
-    assert commands == [AptInstallCommand(packages=("nginx", "vim"))]
+    assert commands == [DnfInstallCommand(packages=("nginx", "vim"))]
 
 
-async def test_apt_packages_no_change_reason_recorded():
+async def test_dnf_packages_no_change_reason_recorded():
     host = SimulatedHost(name="h", packages={"nginx"})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
-    commands = [c async for c in apt.packages(ctx, packages=("nginx",))]
+    commands = [c async for c in dnf.packages(ctx, packages=("nginx",))]
     assert not ctx.changed
     assert ctx.reason == "all packages present"  # recorded even when unchanged (10)
     assert commands == []
@@ -195,6 +249,24 @@ async def test_files_link_remove_when_present():
     assert ctx.changed
     assert ctx.reason == "link present, will remove"
     assert commands == [LinkCommand(src=NGINX_DEFAULT_SITE, target=None)]
+
+
+async def test_files_file_remove_when_present():
+    host = SimulatedHost(name="h", existing_files={HTTPD_WELCOME_CONF})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in files.file(ctx, src=HTTPD_WELCOME_CONF, present=False)]
+    assert ctx.changed
+    assert ctx.reason == "file present, will remove"
+    assert commands == [FileCommand(src=HTTPD_WELCOME_CONF, present=False)]
+
+
+async def test_files_file_no_change_when_already_absent():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in files.file(ctx, src=HTTPD_WELCOME_CONF, present=False)]
+    assert not ctx.changed
+    assert ctx.reason == "file already absent"  # recorded even when unchanged (10)
+    assert commands == []
 
 
 # --- Apply phase: sequential facts and lockstep (8.2, 9) ---------------------
@@ -213,7 +285,7 @@ async def test_apply_sequential_facts_the_section_9_trace():
     # operation's fresh fact cache sees it and removes it.
     w1_install, w1_link = by_host["web1"]
     assert w1_install.changed and w1_install.commands == (
-        AptInstallCommand(packages=("nginx",)),
+        DnfInstallCommand(packages=("nginx",)),
     )
     assert w1_link.changed and w1_link.reason == "link present, will remove"
     assert w1_link.commands == (LinkCommand(src=NGINX_DEFAULT_SITE, target=None),)
@@ -228,6 +300,35 @@ async def test_apply_sequential_facts_the_section_9_trace():
     for host in (web1, web2):
         assert host.packages == {"nginx"}
         assert host.links == {}
+
+
+async def test_apply_sequential_facts_with_file_side_effects():
+    """The httpd scenario: installing the package drops welcome.conf, which
+    the next operation's fresh fact cache sees and removes."""
+
+    def httpd_deploy(host):
+        yield op(dnf.packages, name="Install httpd", packages=("httpd",))
+        yield op(
+            files.file,
+            name="Remove welcome configuration",
+            src=HTTPD_WELCOME_CONF,
+            present=False,
+        )
+
+    host = SimulatedHost(name="h", installs_files={"httpd": {HTTPD_WELCOME_CONF}})
+    runtimes, plans = await run_prepare([host], httpd_deploy)
+    # During prepare nothing has run, so the file is not there yet.
+    assert not plans["h"][1].changed
+    assert plans["h"][1].reason == "file already absent"
+
+    report = await run_apply(runtimes, plans=plans)
+    install, remove = report.log
+    assert install.changed
+    assert remove.changed and remove.reason == "file present, will remove"
+    assert remove.commands == (FileCommand(src=HTTPD_WELCOME_CONF, present=False),)
+    # Final state: httpd installed, welcome.conf gone.
+    assert host.packages == {"httpd"}
+    assert host.existing_files == set()
 
 
 async def test_apply_is_lockstep_across_hosts():
@@ -254,9 +355,9 @@ async def test_hosts_finishing_at_different_steps():
     """A host whose generator ends early does not stall the others."""
 
     def uneven_deploy(host):
-        yield op(apt.packages, name="Install nginx", packages=("nginx",))
+        yield op(dnf.packages, name="Install nginx", packages=("nginx",))
         if host.name == "b":
-            yield op(apt.packages, name="Install vim", packages=("vim",))
+            yield op(dnf.packages, name="Install vim", packages=("vim",))
 
     _plans, report, (a, b) = await run(
         [{"host": "a"}, {"host": "b"}],
@@ -270,6 +371,23 @@ async def test_hosts_finishing_at_different_steps():
     ]
     assert a.packages == {"nginx"}
     assert b.packages == {"nginx", "vim"}
+
+
+async def test_sudo_flag_flows_into_the_apply_log():
+    """The request's sudo flag is recorded on the log entry and rendered."""
+
+    def sudo_deploy(host):
+        yield op(dnf.packages, name="Install nginx", packages=("nginx",), sudo=True)
+
+    _plans, report, _hosts = await run(
+        [{"host": "a"}], sudo_deploy, host_factory=SimulatedHost.from_inventory
+    )
+    (entry,) = report.log
+    assert entry.sudo is True
+    # The simulated seam ignores privilege (nginx is still installed), but the
+    # rendered log shows the elevated shell that would go over SSH.
+    assert _hosts[0].packages == {"nginx"}
+    assert "sudo dnf install -y nginx" in format_log(report)
 
 
 # --- Prepare phase / --dry (8.1, 10) ------------------------------------------
@@ -299,7 +417,7 @@ async def test_prepare_materializes_commands_for_changed_ops():
         WEB_INVENTORY[:1], deploy, host_factory=simulated_web_factory, dry=True
     )
     install = plans["web1"][0]
-    assert install.commands == (AptInstallCommand(packages=("nginx",)),)
+    assert install.commands == (DnfInstallCommand(packages=("nginx",)),)
 
 
 # --- Determinism check (11.1) --------------------------------------------------
@@ -309,11 +427,11 @@ async def test_determinism_violation_is_a_hard_error():
     """Branching on a mutable fact diverges between phases -> hard error."""
 
     def nondeterministic_deploy(host):
-        yield op(apt.packages, name="Install nginx", packages=("nginx",))
+        yield op(dnf.packages, name="Install nginx", packages=("nginx",))
         if "nginx" in host.packages:  # mutable-fact branch: forbidden
-            yield op(apt.packages, name="Install vim", packages=("vim",))
+            yield op(dnf.packages, name="Install vim", packages=("vim",))
         else:
-            yield op(apt.packages, name="Install emacs", packages=("emacs",))
+            yield op(dnf.packages, name="Install emacs", packages=("emacs",))
 
     host = SimulatedHost(name="h")
     runtimes, plans = await run_prepare([host], nondeterministic_deploy)

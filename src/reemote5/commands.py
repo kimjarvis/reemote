@@ -6,7 +6,7 @@ dumb; the *driver* maps them onto host actions via ``send_command``.
 
 This module holds the base ``Command`` and the raw ``StringCommand``; typed
 descriptors live beside the operations that yield them
-(``operations.apt``, ``operations.files``).
+(``operations.dnf``, ``operations.files``).
 """
 
 from dataclasses import dataclass

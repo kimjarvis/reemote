@@ -15,13 +15,14 @@ def deploy(host: Host) -> Generator[OperationRequest, None, None]:
 ```
 
 Requests are built with the [`op`][reemote5.core.op] helper, which takes the
-operation function, an optional human-readable `name` for plan output, and the
-operation's parameters **as keyword arguments only**:
+operation function, an optional human-readable `name` for plan output, an
+optional `sudo` flag, and the operation's parameters **as keyword arguments
+only**:
 
 ```python
-from reemote5 import apt, files, op
+from reemote5 import dnf, files, op
 
-yield op(apt.packages, name="Install nginx", packages=("nginx",), present=True)
+yield op(dnf.packages, name="Install nginx", packages=("nginx",), present=True, sudo=True)
 yield op(
     files.link,
     name="Enable site",
@@ -30,13 +31,23 @@ yield op(
 )
 ```
 
+`name` and `sudo` are *meta-parameters*: they tell the driver how to run (and
+label) the operation rather than being forwarded to it, so `sudo=True` does not
+require the operation function to accept a `sudo` argument. When set, the driver
+elevates every command the operation yields -- the real asyncssh transport
+prefixes its shell with `sudo`, and [`format_log`][reemote5.drivers.format_log]
+renders the elevated command. The test framework's `SimulatedHost` seam ignores
+it, since privilege has no in-memory effect. Elevation is per operation, so a
+privileged package install and an unprivileged link change can sit side by side
+in one deploy.
+
 Three rules follow from the model:
 
 1. **Use immutable containers for collection parameters.** `packages=("nginx",)`
    not `packages=["nginx"]`. Requests are compared and hashed to pair "the Nth
    operation on host A" with "the Nth operation on host B"; a `list` inside
    `kwargs` breaks hashing.
-2. **Yield requests; do not call operations.** Calling `apt.packages(...)`
+2. **Yield requests; do not call operations.** Calling `dnf.packages(...)`
    directly returns an unexecuted generator and bypasses the driver entirely.
 3. **Do not branch on mutable state** in the deploy body. See
    [Determinism](#determinism) below.
@@ -51,7 +62,7 @@ phases:
 def deploy(host):
     # Same two requests in prepare and apply. Whether the link exists at the
     # moment the second operation runs is the operation's business.
-    yield op(apt.packages, name="Install nginx", packages=("nginx",))
+    yield op(dnf.packages, name="Install nginx", packages=("nginx",))
     yield op(
         files.link,
         name="Remove default site",
@@ -147,10 +158,11 @@ SimulatedHost(
 )
 ```
 
-It is injected from outside via `run`'s `host_factory` keyword — tests and
-examples pass a factory building `SimulatedHost`s (see
-`examples/install_nginx.py`), so the example runs without SSH while the
-library itself never constructs one:
+It is injected from outside via `run`'s `host_factory` keyword — the pytest
+suite passes a factory building `SimulatedHost`s (see `tests/test_model.py`),
+so the tests run without SSH while the library itself never constructs one
+(the `examples/` scripts instead use the default factory and connect for
+real):
 
 ```python
 plans, report, hosts = await run(inventory, deploy, host_factory=my_simulated_factory)
@@ -248,7 +260,7 @@ Note that `reason` is set on both branches: it is the explanation printed in
 plans and run logs even when nothing changes.
 
 Operations live in namespace modules under `reemote5.operations` so deploy
-scripts read `apt.packages` rather than `apt_packages`. The driver calls
+scripts read `dnf.packages` rather than `dnf_packages`. The driver calls
 `request.func(ctx, *request.args, **request.kwargs)`, and materializes the
 whole command generator to learn `changed` — even during prepare.
 
@@ -256,7 +268,7 @@ whole command generator to learn `changed` — even during prepare.
 
 Commands are frozen dataclasses subclassing
 [`Command`][reemote5.commands.Command]; typed descriptors live beside the
-operations that yield them ([`reemote5.operations.apt`][reemote5.operations.apt.AptInstallCommand],
+operations that yield them ([`reemote5.operations.dnf`][reemote5.operations.dnf.DnfInstallCommand],
 [`reemote5.operations.files`][reemote5.operations.files.LinkCommand]).
 Two things make a descriptor useful in
 this model:
@@ -298,7 +310,7 @@ SITE = "/etc/nginx/sites-enabled/default"
 
 # ✗ Breaks determinism.
 def deploy(host):
-    yield op(apt.packages, name="Install nginx", packages=("nginx",))
+    yield op(dnf.packages, name="Install nginx", packages=("nginx",))
     if host.links.get(SITE) is None:  # reads mutable host state directly
         return
     yield op(files.link, name="Remove default site", src=SITE, present=False)
@@ -313,7 +325,7 @@ Safe patterns:
 
 - keep the request sequence unconditional, and let operations decide
   *changed vs. no change* internally (this is what
-  [`apt.packages`][reemote5.operations.apt.packages] and
+  [`dnf.packages`][reemote5.operations.dnf.packages] and
   [`files.link`][reemote5.operations.files.link] do);
 - branch only on **immutable** inputs — host name, inventory data, deploy
   arguments — which read identically in both phases.

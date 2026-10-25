@@ -51,8 +51,8 @@ nav:
       - Commands: commands.md
       - Hosts: hosts.md
       - Facts:
-          - apt: facts/apt.md
+          - dnf: facts/dnf.md
           - files: facts/files.md
       - Operations:
-          - apt: operations/apt.md
+          - dnf: operations/dnf.md
           - files: operations/files.md

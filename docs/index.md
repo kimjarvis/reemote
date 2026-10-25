@@ -85,14 +85,14 @@ with the [`op`][reemote5.core.op] helper:
 ```python
 from collections.abc import Generator
 
-from reemote5 import Host, OperationRequest, apt, files, op, run
+from reemote5 import Host, OperationRequest, dnf, files, op, run
 
 SITE = "/etc/nginx/sites-enabled/default"
 TARGET = "/etc/nginx/sites-available/default"
 
 
 def deploy(host: Host) -> Generator[OperationRequest, None, None]:
-    yield op(apt.packages, name="Install nginx", packages=("nginx",))
+    yield op(dnf.packages, name="Install nginx", packages=("nginx",))
     yield op(files.link, name="Remove default site", src=SITE, present=False)
 ```
 
@@ -154,10 +154,10 @@ and `report` is `None`.
 
 A complete, runnable version of this example — including the final host state
 — lives in
-[`examples/install_nginx.py`](https://github.com/kimjarvis/reemote5/blob/main/examples/install_nginx.py):
+[`examples/dnf_install_nginx.py`](https://github.com/kimjarvis/reemote5/blob/main/examples/dnf_install_nginx.py):
 
 ```bash
-uv run python examples/apt_install_nginx.py
+uv run python examples/dnf_install_nginx.py
 ```
 
 ```text
@@ -169,7 +169,7 @@ web2: Remove default site      [changed: link present, will remove]
 
 == Run log (apply phase) ==
 web1: Install nginx            [changed: 1 package(s) to install]
-    $ apt-get install -y nginx
+    $ dnf install -y nginx
 web2: Install nginx            [no change: all packages present]
 web1: Remove default site      [changed: link present, will remove]
     $ rm -f /etc/nginx/sites-enabled/default
@@ -217,7 +217,7 @@ Everything documented in the reference is re-exported from the top-level
 package, so a deploy script only ever needs one import line:
 
 ```python
-from reemote5 import Host, OperationRequest, apt, files, op, run
+from reemote5 import Host, OperationRequest, dnf, files, op, run
 ```
 
 The API has four layers, each documented on a page named after the source
@@ -227,8 +227,8 @@ module that defines it:
 | --- | --- | --- |
 | **Drivers** | [`run`][reemote5.drivers.run], [`run_prepare`][reemote5.drivers.run_prepare], [`run_apply`][reemote5.drivers.run_apply], [`send_command`][reemote5.drivers.send_command], [`format_plan`][reemote5.drivers.format_plan], [`format_log`][reemote5.drivers.format_log] | [drivers](drivers.md) |
 | **Core objects** | [`OperationRequest`][reemote5.core.OperationRequest], [`op`][reemote5.core.op], [`OpContext`][reemote5.core.OpContext], [`FactCache`][reemote5.core.FactCache], [`HostRuntime`][reemote5.core.HostRuntime] | [core](core.md) |
-| **Commands** | [`Command`][reemote5.commands.Command], [`StringCommand`][reemote5.commands.StringCommand], and typed subclasses beside their operations ([`AptInstallCommand`][reemote5.operations.apt.AptInstallCommand], [`AptRemoveCommand`][reemote5.operations.apt.AptRemoveCommand], [`LinkCommand`][reemote5.operations.files.LinkCommand]) | [commands](commands.md) |
-| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`AptPackages`][reemote5.facts.apt.AptPackages], [`FileLink`][reemote5.facts.files.FileLink], [`apt.packages`][reemote5.operations.apt.packages], [`files.link`][reemote5.operations.files.link] | [hosts](hosts.md), [facts/apt](facts/apt.md), [facts/files](facts/files.md), [operations/apt](operations/apt.md), [operations/files](operations/files.md) |
+| **Commands** | [`Command`][reemote5.commands.Command], [`StringCommand`][reemote5.commands.StringCommand], and typed subclasses beside their operations ([`DnfInstallCommand`][reemote5.operations.dnf.DnfInstallCommand], [`DnfRemoveCommand`][reemote5.operations.dnf.DnfRemoveCommand], [`LinkCommand`][reemote5.operations.files.LinkCommand]) | [commands](commands.md) |
+| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`DnfPackages`][reemote5.facts.dnf.DnfPackages], [`FileLink`][reemote5.facts.files.FileLink], [`dnf.packages`][reemote5.operations.dnf.packages], [`files.link`][reemote5.operations.files.link] | [hosts](hosts.md), [facts/dnf](facts/dnf.md), [facts/files](facts/files.md), [operations/dnf](operations/dnf.md), [operations/files](operations/files.md) |
 
 !!! note "Design-doc references"
 
@@ -245,13 +245,13 @@ src/reemote5/
 ├── drivers.py         # run_prepare, run_apply, send_command, run, formatters
 ├── hosts.py           # Host (materialized from inventory entries)
 ├── facts/             # fact namespaces
-│   ├── apt.py         #   AptPackages
+│   ├── dnf.py         #   DnfPackages
 │   └── files.py       #   FileLink
 └── operations/        # operation namespaces
-    ├── apt.py         #   apt.packages, AptInstall/AptRemoveCommand
+    ├── dnf.py         #   dnf.packages, DnfInstall/DnfRemoveCommand
     └── files.py       #   files.link, LinkCommand
 
-examples/install_nginx.py   # end-to-end usage example (not part of the library)
+examples/dnf_install_nginx.py   # end-to-end usage example (not part of the library)
 tests/simulated_host.py     # SimulatedHost (test framework, not part of the library)
 tests/test_model.py         # model tests, incl. the nginx trace and determinism
 docs/                       # this documentation

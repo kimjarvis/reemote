@@ -1,7 +1,7 @@
 """Operation namespaces (design doc section 6).
 
 Operations are grouped into namespace modules mirroring pyinfra's API so a
-deploy reads ``apt.packages`` / ``files.link`` rather than ``apt_packages``
+deploy reads ``dnf.packages`` / ``files.link`` rather than ``dnf_packages``
 / ``files_link``.
 
 Each operation is an async generator with the signature::
@@ -20,6 +20,6 @@ An operation:
 - Never executes anything; never touches the host directly.
 """
 
-from . import apt, files
+from . import dnf, files
 
-__all__ = ["apt", "files"]
+__all__ = ["dnf", "files"]

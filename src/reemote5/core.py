@@ -21,12 +21,19 @@ class OperationRequest:
     to pair "the Nth operation for host A" with "the Nth operation for
     host B". The dict ``kwargs`` field is unhashable, so ``__hash__`` is
     defined explicitly over a hashable projection of the fields.
+
+    ``sudo`` is a *meta-parameter*: like ``name`` it describes how the driver
+    should run the operation rather than being forwarded to ``func``. When
+    true, the driver elevates each command the operation yields (the real
+    transport prefixes it with ``sudo``; the test framework's simulated seam
+    ignores it, since privilege has no in-memory effect).
     """
 
-    func: Callable  # operation function, e.g. apt.packages
+    func: Callable  # operation function, e.g. dnf.packages
     args: tuple[Any, ...] = ()  # positional args passed to func
     kwargs: dict = field(default_factory=dict)  # keyword args passed to func
     name: str = ""  # human-readable label for plan output
+    sudo: bool = False  # meta-parameter: elevate this operation's commands
 
     def __post_init__(self):
         # A dict inside a frozen dataclass is otherwise mutable from outside.
@@ -36,7 +43,13 @@ class OperationRequest:
 
     def __hash__(self):
         return hash(
-            (self.func, self.args, tuple(sorted(self.kwargs.items())), self.name)
+            (
+                self.func,
+                self.args,
+                tuple(sorted(self.kwargs.items())),
+                self.name,
+                self.sudo,
+            )
         )
 
 
@@ -87,9 +100,16 @@ class HostRuntime:
     done: bool = False
 
 
-def op(func: Callable, *, name: str = "", **kwargs) -> OperationRequest:
-    """Convenience helper for building OperationRequests in deploy scripts."""
-    return OperationRequest(func=func, kwargs=kwargs, name=name)
+def op(
+    func: Callable, *, name: str = "", sudo: bool = False, **kwargs
+) -> OperationRequest:
+    """Convenience helper for building OperationRequests in deploy scripts.
+
+    ``name`` and ``sudo`` are meta-parameters consumed by the driver, so they
+    are captured here and never forwarded to ``func``; everything else in
+    ``kwargs`` is passed through to the operation as keyword arguments.
+    """
+    return OperationRequest(func=func, kwargs=kwargs, name=name, sudo=sudo)
 
 
 __all__ = [

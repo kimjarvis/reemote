@@ -12,8 +12,9 @@ a real asyncssh transport is missing:
   descriptor to the in-memory state. ``reemote5.drivers.send_command``
   forwards to it when the host provides it, and raises ``NotImplementedError``
   otherwise.
-- ``packages`` / ``links``: the state the library's facts (``AptPackages``,
-  ``FileLink``) read as a stand-in for gathering over SSH.
+- ``packages`` / ``links`` / ``existing_files``: the state the library's
+  facts (``DnfPackages``, ``FileLink``, ``FileExists``) read as a stand-in
+  for gathering over SSH.
 
 Holding this state is what makes the "fresh fact cache per lockstep step"
 property observable in the tests and the demo: ``send_command`` mutates the
@@ -25,8 +26,8 @@ from dataclasses import dataclass, field
 
 from reemote5.commands import Command, StringCommand
 from reemote5.hosts import Host
-from reemote5.operations.apt import AptInstallCommand, AptRemoveCommand
-from reemote5.operations.files import LinkCommand
+from reemote5.operations.dnf import DnfInstallCommand, DnfRemoveCommand
+from reemote5.operations.files import FileCommand, LinkCommand
 
 
 @dataclass
@@ -41,11 +42,15 @@ class SimulatedHost(Host):
 
     packages: set[str] = field(default_factory=set)
     links: dict[str, str] = field(default_factory=dict)  # src -> target
-    # Side effects of installing a package: package -> {link src: target}.
-    # This is what lets the demo reproduce the design doc section 9 trace:
-    # installing nginx creates the default-site link, which the *next*
-    # operation then sees because the fact cache is recreated per step.
+    existing_files: set[str] = field(default_factory=set)
+    # Side effects of installing a package: package -> {link src: target}
+    # and package -> {file path}. This is what lets the demo reproduce the
+    # design doc section 9 trace: installing a package creates the default
+    # site's link or ships files (e.g. httpd's welcome.conf), which the
+    # *next* operation then sees because the fact cache is recreated per
+    # step.
     installs_links: dict[str, dict[str, str]] = field(default_factory=dict)
+    installs_files: dict[str, set[str]] = field(default_factory=dict)
 
     # Command seam: reemote5.drivers.send_command forwards here. The match
     # on the typed descriptors lives in the test framework, not the library.
@@ -58,14 +63,18 @@ class SimulatedHost(Host):
         silently ignored.
         """
         match cmd:
-            case AptInstallCommand(packages=packages):
+            case DnfInstallCommand(packages=packages):
                 self.install_packages(packages)
-            case AptRemoveCommand(packages=packages):
+            case DnfRemoveCommand(packages=packages):
                 self.remove_packages(packages)
             case LinkCommand(src=src, target=None):
                 self.remove_link(src)
             case LinkCommand(src=src, target=target):
                 self.make_link(src, target)
+            case FileCommand(src=src, present=False):
+                self.remove_file(src)
+            case FileCommand(src=src):
+                self.create_file(src)
             case StringCommand():
                 pass  # no simulated effect for raw shell strings
             case _:
@@ -80,6 +89,8 @@ class SimulatedHost(Host):
             self.packages.add(package)
             for src, target in self.installs_links.get(package, {}).items():
                 self.links[src] = target
+            for path in self.installs_files.get(package, set()):
+                self.existing_files.add(path)
 
     def remove_packages(self, packages: tuple[str, ...]) -> None:
         self.packages.difference_update(packages)
@@ -89,6 +100,12 @@ class SimulatedHost(Host):
 
     def remove_link(self, src: str) -> None:
         self.links.pop(src, None)
+
+    def create_file(self, src: str) -> None:
+        self.existing_files.add(src)
+
+    def remove_file(self, src: str) -> None:
+        self.existing_files.discard(src)
 
 
 __all__ = ["SimulatedHost"]

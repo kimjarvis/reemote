@@ -1,7 +1,7 @@
-# apt facts
+# dnf facts
 
-`reemote5.facts.apt` holds the apt fact classes, mirroring the
-[`apt` operation namespace](../operations/apt.md). A fact is an
+`reemote5.facts.dnf` holds the dnf fact classes, mirroring the
+[`dnf` operation namespace](../operations/dnf.md). A fact is an
 asynchronous, queryable resource — never yielded by a generator —
 implemented as a `process` coroutine returning the raw value (over
 asyncssh in the real implementation). Read facts through
@@ -10,7 +10,7 @@ coroutine, so results are awaited and cached within a phase step.
 
 ## Reference
 
-::: reemote5.facts.apt
+::: reemote5.facts.dnf
     options:
       members:
-        - AptPackages
+        - DnfPackages

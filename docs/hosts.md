@@ -13,9 +13,13 @@ library: it lives in `tests/simulated_host.py` and is the in-memory stand-in
 holding the state facts read (`packages`, `links`) and the mutations commands
 apply (`execute_command`), which is what makes the "fresh fact cache per
 lockstep step" property observable. The library never imports or constructs
-it; tests and examples inject it via `run`'s `host_factory` argument and it
-implements the seams [`send_command`][reemote5.drivers.send_command] and the
-facts fall back to while no real SSH transport exists.
+it; tests inject it via `run`'s `host_factory` argument and it overrides the
+seams [`send_command`][reemote5.drivers.send_command] and the facts otherwise
+use to run over a real asyncssh connection. A plain
+[`Host`][reemote5.hosts.Host] built from a real inventory entry connects over
+asyncssh instead: it opens a connection lazily from its `connection` data
+(`address`, `username`, `key_path`, optional `port`), runs each command with
+`run_shell`, and `run` closes the connection when it finishes.
 
 ## Reference
 

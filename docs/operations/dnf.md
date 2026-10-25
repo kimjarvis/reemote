@@ -1,6 +1,6 @@
-# apt operations
+# dnf operations
 
-Operations live in namespace modules so a deploy reads `apt.packages` and
+Operations live in namespace modules so a deploy reads `dnf.packages` and
 `files.link`, mirroring pyinfra's API. Every operation is an async generator
 with the same fixed signature:
 
@@ -14,9 +14,9 @@ mutate the host.
 
 ## Reference
 
-::: reemote5.operations.apt
+::: reemote5.operations.dnf
     options:
       members:
         - packages
-        - AptInstallCommand
-        - AptRemoveCommand
+        - DnfInstallCommand
+        - DnfRemoveCommand

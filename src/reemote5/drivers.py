@@ -53,6 +53,7 @@ class LogEntry:
     changed: bool
     reason: str
     commands: tuple[Command, ...] = ()
+    sudo: bool = False  # whether the operation's commands were elevated
 
 
 @dataclass
@@ -78,25 +79,39 @@ async def materialize(host: Host, cache: FactCache, request: OperationRequest):
     return ctx, commands
 
 
-async def send_command(host: Host, cmd: Command) -> None:
-    """Stand-in for pyinfra's SSH command execution.
+def command_shell(cmd: Command, sudo: bool = False) -> str:
+    """Render the shell string a command descriptor runs as.
 
-    Declared ``async`` because the real implementation will run commands
-    over asyncssh (rather than pyinfra's Paramiko + gevent stack), using
-    the host's ``connection``/``session``/``sudo`` inventory data. The POC
-    never connects anywhere: hosts providing an ``execute_command`` seam
-    (the test framework's ``SimulatedHost``, injected via ``run``'s
-    ``host_factory``) apply the command's simulated effect -- so subsequent
-    fact reads observe the change -- and any other host hits the
-    missing-transport boundary below.
+    Command descriptors stay dumb (design doc section 4.5); turning one into
+    the text actually sent to a host -- including the ``sudo`` elevation the
+    driver applies for a request flagged ``sudo=True`` -- is the driver's job,
+    so both execution and log rendering go through this single mapping.
+    """
+    shell = cmd.shell() if hasattr(cmd, "shell") else str(cmd)
+    return f"sudo {shell}" if sudo else shell
+
+
+async def send_command(host: Host, cmd: Command, *, sudo: bool = False) -> None:
+    """Execute one command descriptor on a host.
+
+    Two paths, chosen by the seams the host provides:
+
+    - The test framework's ``SimulatedHost`` exposes an ``execute_command``
+      seam; when present it applies the command's simulated effect (so
+      subsequent fact reads observe the change) and nothing is sent anywhere.
+      ``sudo`` is irrelevant here -- privilege has no in-memory effect -- so
+      it is not forwarded. This is the path pytest always takes.
+    - Any other host -- a plain library ``Host`` built from a real inventory
+      entry -- runs the command's shell over asyncssh via ``host.run_shell``,
+      using the host's ``connection``/``session`` data, prefixed with ``sudo``
+      when ``sudo`` is true. This differs from pyinfra, which drives Paramiko
+      under gevent.
     """
     execute = getattr(host, "execute_command", None)
-    if execute is None:
-        raise NotImplementedError(
-            "real SSH command execution is not implemented: it will run "
-            "over asyncssh using host.connection/host.session"
-        )
-    execute(cmd)
+    if execute is not None:
+        execute(cmd)
+        return
+    await host.run_shell(command_shell(cmd, sudo))
 
 
 async def run_prepare(
@@ -186,7 +201,7 @@ async def run_apply(
             sent: list[Command] = []
             if ctx.changed:
                 for cmd in commands:
-                    await send_command(rt.host, cmd)
+                    await send_command(rt.host, cmd, sudo=request.sudo)
                     sent.append(cmd)
             report.log.append(
                 LogEntry(
@@ -195,6 +210,7 @@ async def run_apply(
                     changed=ctx.changed,
                     reason=ctx.reason,
                     commands=tuple(sent),
+                    sudo=request.sudo,
                 )
             )
 
@@ -224,8 +240,7 @@ def format_log(report: ApplyReport) -> str:
         if entry.changed:
             lines.append(f"{entry.host}: {entry.name:<24} [changed: {entry.reason}]")
             for cmd in entry.commands:
-                shell = cmd.shell() if hasattr(cmd, "shell") else str(cmd)
-                lines.append(f"    $ {shell}")
+                lines.append(f"    $ {command_shell(cmd, entry.sudo)}")
         else:
             lines.append(f"{entry.host}: {entry.name:<24} [no change: {entry.reason}]")
     return "\n".join(lines)
@@ -253,11 +268,20 @@ async def run(
     ``send_command``) are awaited.
     """
     host_list = [host_factory(entry) for entry in inventory]
-    runtimes, plans = await run_prepare(host_list, deploy_func)
-    if dry:
-        return plans, None, host_list
-    report = await run_apply(runtimes, plans=plans)
-    return plans, report, host_list
+    try:
+        runtimes, plans = await run_prepare(host_list, deploy_func)
+        if dry:
+            return plans, None, host_list
+        report = await run_apply(runtimes, plans=plans)
+        return plans, report, host_list
+    finally:
+        # ``run`` owns the hosts it materialized, so it tears down any real
+        # asyncssh connections they opened (a no-op for SimulatedHost, which
+        # never connects and has no ``aclose`` state to release).
+        for host in host_list:
+            aclose = getattr(host, "aclose", None)
+            if aclose is not None:
+                await aclose()
 
 
 __all__ = [
@@ -265,6 +289,7 @@ __all__ = [
     "DeterminismError",
     "LogEntry",
     "PlannedOperation",
+    "command_shell",
     "format_log",
     "format_plan",
     "materialize",

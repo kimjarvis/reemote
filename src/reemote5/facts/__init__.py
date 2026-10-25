@@ -7,19 +7,19 @@ Paramiko + gevent stack). Facts are phase-unaware; the ``FactCache`` that
 wraps them is phase-aware, and the driver controls cache lifetime.
 
 Facts are grouped into namespace modules mirroring the operation namespaces,
-so ``apt.AptPackages`` sits beside ``apt.packages`` and ``files.FileLink``
+so ``dnf.DnfPackages`` sits beside ``dnf.packages`` and ``files.FileLink``
 beside ``files.link``. The classes are re-exported here, so callers can keep
-writing ``from reemote5.facts import AptPackages, FileLink``.
+writing ``from reemote5.facts import DnfPackages, FileLink``.
 
 The POC has no SSH transport: each ``process`` reads the in-memory state of
-a simulated host through a duck-typed seam (``packages``/``links``, provided
-by the test framework's ``SimulatedHost`` in ``tests/simulated_host.py``)
-and raises ``NotImplementedError`` for any host lacking it. The library
-never imports the test-framework class itself.
+a simulated host through a duck-typed seam (``packages``/``links``/
+``existing_files``, provided by the test framework's ``SimulatedHost`` in
+``tests/simulated_host.py``) and gathers over asyncssh for any host lacking
+it. The library never imports the test-framework class itself.
 """
 
-from . import apt, files
-from .apt import AptPackages
-from .files import FileLink
+from . import dnf, files
+from .dnf import DnfPackages
+from .files import FileExists, FileLink
 
-__all__ = ["AptPackages", "FileLink", "apt", "files"]
+__all__ = ["DnfPackages", "FileExists", "FileLink", "dnf", "files"]
