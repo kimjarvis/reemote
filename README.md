@@ -12,10 +12,14 @@ answer in both phases. Facts and operations stay phase-unaware — only the
 drivers know which phase they are in.
 
 **Scope.** reemote5 is a library, not a deployment tool. It is limited to
-generating commands: no SSH, no async, no CLI, and hosts are in-memory
-`SimulatedHost` stand-ins.
+generating commands: no SSH transport, no CLI, and hosts are in-memory
+`SimulatedHost` stand-ins. Both the command-execution path (`send_command`,
+the apply drivers) and fact gathering (each fact's `process`, `FactCache.get`,
+the operations that await it, and `run_prepare`) are `async`, preparing for a
+real [asyncssh]-based transport (where pyinfra uses Paramiko + gevent).
 
 ```python
+import asyncio
 from collections.abc import Generator
 
 from reemote5 import OperationRequest, SimulatedHost, apt, files, format_log, op, run
@@ -31,8 +35,12 @@ def deploy(host: SimulatedHost) -> Generator[OperationRequest, None, None]:
     )
 
 
-plans, report = run([SimulatedHost(name="web1")], deploy)
-print(format_log(report))
+async def main() -> None:
+    plans, report = await run([SimulatedHost(name="web1")], deploy)
+    print(format_log(report))
+
+
+asyncio.run(main())
 ```
 
 ## Getting started
@@ -70,3 +78,4 @@ tests/test_model.py          model tests
 Requires Python 3.13+.
 
 [pyinfra]: https://pyinfra.com/
+[asyncssh]: https://asyncssh.readthedocs.io/

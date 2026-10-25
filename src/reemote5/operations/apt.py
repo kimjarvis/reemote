@@ -1,21 +1,21 @@
 """The ``apt`` operation namespace (design doc section 6).
 
-Exposes ``apt.packages``. Operations are generators that receive an
-``OpContext``, read facts, set ``ctx.changed``/``ctx.reason``, and yield
+Exposes ``apt.packages``. Operations are async generators that receive an
+``OpContext``, await facts, set ``ctx.changed``/``ctx.reason``, and yield
 command descriptors; they never touch the host directly.
 """
 
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 
 from ..commands import AptInstallCommand, AptRemoveCommand, Command
 from ..core import OpContext
 from ..facts import AptPackages
 
 
-def packages(
+async def packages(
     ctx: OpContext, packages: tuple[str, ...], present: bool = True
-) -> Generator[Command]:
-    installed = ctx.facts.get(AptPackages)
+) -> AsyncGenerator[Command]:
+    installed = await ctx.facts.get(AptPackages)
 
     if present:
         to_install = tuple(p for p in packages if p not in installed)

@@ -59,6 +59,8 @@ class FactCache:
 
     Also recreated at each lockstep step in the apply phase, which is what
     gives generator-body fact reads sequential "act, then read" semantics.
+    ``get`` is a coroutine because a fact's ``process`` gathers its value
+    asynchronously (over asyncssh in the real implementation).
     """
 
     def __init__(self, host: Any, phase: str):
@@ -66,10 +68,10 @@ class FactCache:
         self.phase = phase  # "prepare" | "apply"
         self._data: dict = {}
 
-    def get(self, fact_cls, *args, **kwargs):
+    async def get(self, fact_cls, *args, **kwargs):
         key = (fact_cls, args, tuple(sorted(kwargs.items())))
         if key not in self._data:
-            self._data[key] = fact_cls.process(self.host, *args, **kwargs)
+            self._data[key] = await fact_cls.process(self.host, *args, **kwargs)
         return self._data[key]
 
 

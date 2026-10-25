@@ -36,7 +36,7 @@ deploy(host) generator
       │  yield OperationRequest
       ▼
 run_prepare ──► materialize() ──► (changed, reason, commands)   [plan / dry run]
-run_apply   ──► materialize() ──► send_command() per command    [host mutated]
+run_apply   ──► materialize() ──► await send_command() per cmd  [host mutated]
 ```
 
 ## Drivers
@@ -45,6 +45,16 @@ run_apply   ──► materialize() ──► send_command() per command    [hos
 the entry point used by deploy scripts and examples; the remaining functions
 are exposed so the two phases can be driven, inspected and rendered
 separately.
+
+The command-execution path is asynchronous:
+[`send_command`][reemote5.drivers.send_command] is a coroutine (a stand-in
+for the asyncssh-based SSH execution to come), and therefore
+[`run_apply`][reemote5.drivers.run_apply] and [`run`][reemote5.drivers.run]
+are coroutines as well. Fact gathering is asynchronous for the same reason —
+a fact's `process` will run over asyncssh — so
+[`materialize`][reemote5.drivers.materialize] and
+[`run_prepare`][reemote5.drivers.run_prepare] are coroutines too. The
+formatters are pure local rendering and stay synchronous.
 
 ::: reemote5.drivers
     options:
@@ -116,11 +126,11 @@ the "fresh fact cache per lockstep step" property observable.
 
 ## Facts
 
-`reemote5.facts` holds the fact classes. A fact is a synchronous, queryable
+`reemote5.facts` holds the fact classes. A fact is an asynchronous, queryable
 resource — never yielded by a generator — implemented as a `process`
-classmethod returning the raw value. Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get] so results are cached within a
-phase step.
+coroutine returning the raw value (over asyncssh in the real implementation).
+Read facts through [`FactCache.get`][reemote5.core.FactCache.get], which is
+itself a coroutine, so results are awaited and cached within a phase step.
 
 ::: reemote5.facts
     options:
@@ -131,14 +141,14 @@ phase step.
 ## Operations
 
 Operations live in namespace modules so a deploy reads `apt.packages` and
-`files.link`, mirroring pyinfra's API. Every operation is a generator with the
-same fixed signature:
+`files.link`, mirroring pyinfra's API. Every operation is an async generator
+with the same fixed signature:
 
 ```python
-def operation(ctx: OpContext, *args, **kwargs) -> Generator[Command, None, None]:
+async def operation(ctx: OpContext, *args, **kwargs) -> AsyncGenerator[Command, None]:
 ```
 
-It reads facts via `ctx.facts`, sets `ctx.changed` and `ctx.reason` where it
+It awaits facts via `ctx.facts`, sets `ctx.changed` and `ctx.reason` where it
 decides a change is needed, and yields one descriptor per command that would
 mutate the host.
 

@@ -7,6 +7,9 @@ reemote5's two-phase execution model end to end:
 2. Construct the target hosts (here, in-memory ``SimulatedHost`` stand-ins).
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
+``run`` is a coroutine (the apply path is async, in preparation for an
+asyncssh transport), so ``main`` is async and driven by ``asyncio.run``.
+
 The trace mirrors the design doc section 9 scenario:
 
 - ``web1`` starts fresh: installing nginx creates the default-site link, and
@@ -19,6 +22,7 @@ Run it with::
     uv run python examples/install_nginx.py
 """
 
+import asyncio
 from collections.abc import Generator
 
 from reemote5 import (
@@ -65,16 +69,16 @@ def make_hosts() -> list[SimulatedHost]:
     return [web1, web2]
 
 
-def main() -> None:
+async def main() -> None:
     # --dry: prepare phase only, nothing is sent to the hosts.
     dry_hosts = make_hosts()
-    plans, _ = run(dry_hosts, deploy, dry=True)
+    plans, _ = await run(dry_hosts, deploy, dry=True)
     print("== Plan (prepare phase, --dry) ==")
     print(format_plan(plans))
 
     # Real run: prepare, then apply in lockstep across hosts.
     hosts = make_hosts()
-    plans, report = run(hosts, deploy)
+    plans, report = await run(hosts, deploy)
     print("\n== Run log (apply phase) ==")
     assert report is not None
     print(format_log(report))
@@ -85,4 +89,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

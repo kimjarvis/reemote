@@ -4,13 +4,15 @@ Operations are grouped into namespace modules mirroring pyinfra's API so a
 deploy reads ``apt.packages`` / ``files.link`` rather than ``apt_packages``
 / ``files_link``.
 
-Each operation is a generator with the signature::
+Each operation is an async generator with the signature::
 
-    def operation(ctx: OpContext, *args, **kwargs) -> Generator[Command, None, None]
+    async def operation(
+        ctx: OpContext, *args, **kwargs
+    ) -> AsyncGenerator[Command, None]
 
 An operation:
 
-- Reads facts via ``ctx.facts.get(...)``.
+- Awaits facts via ``await ctx.facts.get(...)``.
 - Sets ``ctx.changed = True`` and ``ctx.reason = "..."`` at the point
   where it decides that a change is needed.
 - Yields command descriptors for each command that will actually mutate

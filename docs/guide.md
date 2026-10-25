@@ -121,8 +121,9 @@ never touch it.
 
 ## Facts
 
-A fact is a class with a `process` classmethod returning the raw value. Facts
-are synchronous, phase-unaware, and never yielded by a generator:
+A fact is a class with an `async` `process` classmethod returning the raw
+value. Facts are asynchronous, phase-unaware, and never yielded by a
+generator:
 
 ```python
 from reemote5 import SimulatedHost
@@ -132,17 +133,18 @@ class EnabledSites:
     """The set of nginx sites currently enabled on the host."""
 
     @classmethod
-    def process(cls, host: SimulatedHost) -> set[str]:
-        # A real implementation would list /etc/nginx/sites-enabled over SSH.
+    async def process(cls, host: SimulatedHost) -> set[str]:
+        # A real implementation would list /etc/nginx/sites-enabled over asyncssh.
         prefix = "/etc/nginx/sites-enabled/"
         return {src for src in host.links if src.startswith(prefix)}
 ```
 
 Always read facts through the cache, never by calling `process` directly — the
-cache is the boundary whose lifetime the driver controls:
+cache is the boundary whose lifetime the driver controls, and its `get` is a
+coroutine, so it must be awaited:
 
 ```python
-enabled = ctx.facts.get(EnabledSites)
+enabled = await ctx.facts.get(EnabledSites)
 ```
 
 Cache keys include the fact class and its arguments, so repeated reads within
@@ -150,16 +152,16 @@ one step are free.
 
 ## Operations
 
-An operation is a generator receiving the
+An operation is an async generator receiving the
 [`OpContext`][reemote5.core.OpContext] as its first argument:
 
 ```python
-def operation(ctx: OpContext, *args, **kwargs) -> Generator[Command, None, None]:
+async def operation(ctx: OpContext, *args, **kwargs) -> AsyncGenerator[Command, None]:
 ```
 
 Its contract:
 
-- read facts via `ctx.facts.get(...)`;
+- await facts via `await ctx.facts.get(...)`;
 - set `ctx.changed = True` and a short `ctx.reason` at the point where it
   decides a change is needed (leave `changed` false and still set `reason`
   for the "no change" explanation shown in plans);
@@ -169,10 +171,10 @@ Its contract:
 The built-in [`files.link`][reemote5.operations.files.link] in full:
 
 ```python
-def link(
+async def link(
     ctx: OpContext, src: str, target: str | None = None, present: bool = True
-) -> Generator[Command, None, None]:
-    current = ctx.facts.get(FileLink, src)
+) -> AsyncGenerator[Command, None]:
+    current = await ctx.facts.get(FileLink, src)
 
     if present:
         if current == target:

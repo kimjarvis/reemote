@@ -17,12 +17,21 @@ reporting.
     restricted to *generating commands*:
 
     - no SSH or any other connection transport,
-    - no async execution,
     - no CLI, inventory files or plugin system,
     - hosts are in-memory [`SimulatedHost`][reemote5.hosts.SimulatedHost] objects.
 
     Nothing here connects to a real machine. The point of the project is the
     execution model, demonstrated end to end and covered by tests.
+
+    The command-execution path *is* asynchronous:
+    [`send_command`][reemote5.drivers.send_command] — and therefore
+    [`run_apply`][reemote5.drivers.run_apply] and
+    [`run`][reemote5.drivers.run] — are coroutines, preparing for a real
+    [asyncssh]-based transport (pyinfra uses Paramiko + gevent instead).
+    Fact gathering is async for the same reason: a fact's `process`,
+    [`FactCache.get`][reemote5.core.FactCache.get], the operations that await
+    it, and [`run_prepare`][reemote5.drivers.run_prepare] are all coroutines,
+    so the whole prepare/apply path is awaited end to end.
 
 ## Why generators?
 
@@ -84,9 +93,12 @@ def deploy(host: SimulatedHost) -> Generator[OperationRequest, None, None]:
 ```
 
 Hosts are then passed to [`run`][reemote5.drivers.run], which prepares and
-applies in one call:
+applies in one call. `run` is a coroutine, so it must be awaited (here from
+an `asyncio.run` entry point):
 
 ```python
+import asyncio
+
 from reemote5 import format_log, format_plan
 
 hosts = [
@@ -96,9 +108,14 @@ hosts = [
     SimulatedHost(name="web2", packages={"nginx"}, links={SITE: TARGET}),
 ]
 
-plans, report = run(hosts, deploy)
-print(format_plan(plans))
-print(format_log(report))
+
+async def main() -> None:
+    plans, report = await run(hosts, deploy)
+    print(format_plan(plans))
+    print(format_log(report))
+
+
+asyncio.run(main())
 ```
 
 Pass `dry=True` to stop after the prepare phase — nothing is sent to the hosts
@@ -149,8 +166,9 @@ generator cannot be replayed once exhausted.
 **Apply** — [`run_apply`][reemote5.drivers.run_apply] advances all hosts in
 lockstep: every host executes its Nth request before any host pulls request
 N+1. For each step it recreates the fact cache, materializes the request, and
-if `ctx.changed` is true, hands each command to
-[`send_command`][reemote5.drivers.send_command] to mutate the simulated host.
+if `ctx.changed` is true, awaits
+[`send_command`][reemote5.drivers.send_command] for each command to mutate
+the simulated host.
 Every step is recorded as a [`LogEntry`][reemote5.drivers.LogEntry], including
 the commands that were actually sent.
 
@@ -190,3 +208,4 @@ uv run --group docs mkdocs build     # build the static site into site/
 
 [pyinfra]: https://pyinfra.com/
 [uv]: https://docs.astral.sh/uv/
+[asyncssh]: https://asyncssh.readthedocs.io/

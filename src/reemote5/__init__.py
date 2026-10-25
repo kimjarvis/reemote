@@ -3,8 +3,11 @@
 An alternative to pyinfra's prepare/execute design in which deploy scripts
 are generators yielding ``OperationRequest`` descriptors, and the driver
 re-invokes the generator per phase, advancing all hosts in lockstep with a
-fresh ``FactCache`` per step. Restricted to command generation: no SSH, no
-async.
+fresh ``FactCache`` per step. Restricted to command generation: no SSH
+transport, but the command-execution path (``send_command`` and the apply
+drivers) and fact gathering (each fact's ``process``, ``FactCache.get``, the
+operations that await it, and ``run_prepare``) are async, ready for an
+asyncssh-based implementation.
 """
 
 from .commands import (

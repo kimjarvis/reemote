@@ -1,21 +1,21 @@
 """The ``files`` operation namespace (design doc section 6).
 
-Exposes ``files.link``. Operations are generators that receive an
-``OpContext``, read facts, set ``ctx.changed``/``ctx.reason``, and yield
+Exposes ``files.link``. Operations are async generators that receive an
+``OpContext``, await facts, set ``ctx.changed``/``ctx.reason``, and yield
 command descriptors; they never touch the host directly.
 """
 
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 
 from ..commands import Command, LinkCommand
 from ..core import OpContext
 from ..facts import FileLink
 
 
-def link(
+async def link(
     ctx: OpContext, src: str, target: str | None = None, present: bool = True
-) -> Generator[Command]:
-    current = ctx.facts.get(FileLink, src)
+) -> AsyncGenerator[Command]:
+    current = await ctx.facts.get(FileLink, src)
 
     if present:
         if current == target:

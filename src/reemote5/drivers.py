@@ -7,6 +7,13 @@ The apply phase advances one generator per host in lockstep, recreating
 each host's ``FactCache`` at every step so generator-body fact reads see
 the effects of prior operations. Operations and facts never inspect a
 phase flag; only the driver changes behavior between phases.
+
+Command execution is asynchronous: ``send_command`` (and therefore
+``run_apply`` and ``run``) are coroutines, preparing the apply path for a
+real asyncssh-based transport. Fact gathering is asynchronous for the same
+reason: a fact's ``process`` will run over asyncssh, so ``FactCache.get``,
+the operations that await it, and ``materialize`` are coroutines too. The
+whole prepare/apply path is therefore awaited end to end.
 """
 
 from collections.abc import Callable, Iterable
@@ -63,23 +70,29 @@ class ApplyReport:
         return any(entry.changed for entry in self.log)
 
 
-def materialize(host: SimulatedHost, cache: FactCache, request: OperationRequest):
-    """Fully materialize an operation's command generator.
+async def materialize(
+    host: SimulatedHost, cache: FactCache, request: OperationRequest
+):
+    """Fully materialize an operation's async command generator.
 
-    Returns ``(ctx, commands)``. Materializing is pure local computation,
-    not host mutation: the prepare phase must do this to learn
-    ``ctx.changed`` (design doc section 6.3, cost of approach C).
+    Returns ``(ctx, commands)``. Materializing computes ``ctx.changed``
+    (design doc section 6.3, cost of approach C); it is a coroutine because
+    the operation awaits facts, which gather their values asynchronously.
     """
     ctx = OpContext(host=host, facts=cache)
-    commands = list(request.func(ctx, *request.args, **request.kwargs))
+    commands = [
+        cmd async for cmd in request.func(ctx, *request.args, **request.kwargs)
+    ]
     return ctx, commands
 
 
-def send_command(host: SimulatedHost, cmd: Command) -> None:
+async def send_command(host: SimulatedHost, cmd: Command) -> None:
     """Stand-in for pyinfra's SSH command execution.
 
-    The POC never connects anywhere: typed commands mutate the simulated
-    host state (so subsequent fact reads observe the change), and raw
+    Declared ``async`` because the real implementation will run commands
+    over asyncssh (rather than pyinfra's Paramiko + gevent stack). The POC
+    never connects anywhere: typed commands mutate the simulated host state
+    (so subsequent fact reads observe the change), and raw
     ``StringCommand``\\ s are accepted but have no simulated effect.
     """
     match cmd:
@@ -97,13 +110,14 @@ def send_command(host: SimulatedHost, cmd: Command) -> None:
             raise TypeError(f"unknown command descriptor: {cmd!r}")
 
 
-def run_prepare(
+async def run_prepare(
     hosts: Iterable[SimulatedHost], deploy_func: Callable
 ) -> tuple[list[HostRuntime], dict[str, list[PlannedOperation]]]:
     """Prepare phase: invoke each host's generator and materialize the plan.
 
     Returns ``(runtimes, plans)``. Fact reads go through the prepare-phase
-    cache and reflect pre-deployment state; nothing is executed.
+    cache and reflect pre-deployment state; nothing is executed. A
+    coroutine, because materializing awaits operations and their facts.
     """
     runtimes: list[HostRuntime] = []
     plans: dict[str, list[PlannedOperation]] = {}
@@ -113,7 +127,7 @@ def run_prepare(
         requests = list(gen)
         plan = []
         for request in requests:
-            ctx, commands = materialize(host, cache, request)
+            ctx, commands = await materialize(host, cache, request)
             plan.append(
                 PlannedOperation(
                     request=request,
@@ -129,7 +143,7 @@ def run_prepare(
     return runtimes, plans
 
 
-def run_apply(
+async def run_apply(
     runtimes: Iterable[HostRuntime],
     plans: dict[str, list[PlannedOperation]] | None = None,
 ) -> ApplyReport:
@@ -138,6 +152,9 @@ def run_apply(
     All hosts execute their Nth request before any host pulls request
     N+1. If ``plans`` is given, each pulled request sequence is checked
     against the plan; a mismatch raises ``DeterminismError``.
+
+    A coroutine, because commands are executed via the async
+    ``send_command``.
     """
     report = ApplyReport()
     active = [rt for rt in runtimes if not rt.done]
@@ -175,12 +192,12 @@ def run_apply(
             if rt.done or rt.current_request is None:
                 continue
             request = rt.current_request
-            ctx, commands = materialize(rt.host, rt.fact_cache, request)
+            ctx, commands = await materialize(rt.host, rt.fact_cache, request)
             rt.current_ctx = ctx
             sent: list[Command] = []
             if ctx.changed:
                 for cmd in commands:
-                    send_command(rt.host, cmd)
+                    await send_command(rt.host, cmd)
                     sent.append(cmd)
             report.log.append(
                 LogEntry(
@@ -225,15 +242,20 @@ def format_log(report: ApplyReport) -> str:
     return "\n".join(lines)
 
 
-def run(
+async def run(
     hosts: Iterable[SimulatedHost], deploy_func: Callable, dry: bool = False
 ) -> tuple[dict[str, list[PlannedOperation]], ApplyReport | None]:
-    """Top-level entry point: prepare, then apply (unless ``dry``)."""
+    """Top-level entry point: prepare, then apply (unless ``dry``).
+
+    A coroutine: both the prepare phase (which materializes the plan) and
+    the apply phase (which executes commands via the async ``send_command``)
+    are awaited.
+    """
     host_list = list(hosts)
-    runtimes, plans = run_prepare(host_list, deploy_func)
+    runtimes, plans = await run_prepare(host_list, deploy_func)
     if dry:
         return plans, None
-    report = run_apply(runtimes, plans=plans)
+    report = await run_apply(runtimes, plans=plans)
     return plans, report
 
 
