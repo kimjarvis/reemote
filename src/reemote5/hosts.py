@@ -17,6 +17,14 @@ simple *inventory*: a list of dictionaries, each describing one host, e.g.::
 connection/session (and optional sudo/extra) data, which the operations
 (``send_command``) and the facts (each ``process``) use to run over asyncssh.
 
+Every entry is validated with pydantic before it is materialized: the
+inventory must be a list of dictionaries and each entry must carry at least
+a ``host`` (its name) and a ``connection`` (the SSH connection data), while
+``session`` and ``sudo`` are optional and any other keys are preserved.
+``Host.from_inventory`` validates a single entry; ``validate_inventory``
+validates a whole inventory up front (``drivers.run`` calls it before
+materializing any host). Both raise ``InventoryError`` on bad input.
+
 A plain ``Host`` owns a lazily-established asyncssh connection built from its
 ``connection``/``session`` data: ``connect`` opens it, ``run_shell`` runs one
 command over it, and ``aclose`` tears it down. The library calls those from
@@ -31,6 +39,82 @@ holding the state facts read and the mutations commands apply -- belong to the
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+
+
+class InventoryError(ValueError):
+    """Raised when an inventory or one of its entries fails validation.
+
+    Wraps pydantic's ``ValidationError`` -- and the structural checks that
+    the inventory is a list and each entry a dictionary -- so callers have a
+    single, library-specific exception to catch, with a message naming the
+    offending entry.
+    """
+
+
+class InventoryEntry(BaseModel):
+    """Pydantic schema for one inventory entry.
+
+    An entry must carry at least ``host`` (the host name) and ``connection``
+    (the SSH connection data -- possibly an empty mapping for a host only
+    ever driven through the test framework's ``SimulatedHost``); ``session``
+    and ``sudo`` are optional. Any other keys are allowed and preserved:
+    ``extra="allow"`` keeps them in ``model_extra``, which
+    ``Host.from_inventory`` folds into ``Host.extra``, so the inventory
+    format stays extensible without schema changes.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    host: str
+    connection: dict[str, Any]
+    session: dict[str, Any] = Field(default_factory=dict)
+    sudo: dict[str, Any] = Field(default_factory=dict)
+
+
+# Reusable adapter: validating the whole inventory in one call is clearer and
+# faster than looping per entry, and pydantic reports every bad entry -- each
+# identified by its list index in the error ``loc`` -- instead of stopping at
+# the first.
+InventoryListAdapter = TypeAdapter(list[InventoryEntry])
+
+
+def _validate_entry(entry: Any) -> InventoryEntry:
+    """Validate one inventory entry, raising ``InventoryError`` if invalid.
+
+    Used by ``Host.from_inventory`` for the single-entry path; whole
+    inventories go through ``validate_inventory`` (and its ``TypeAdapter``).
+    """
+    if not isinstance(entry, dict):
+        raise InventoryError(
+            f"inventory entry must be a dictionary, got {type(entry).__name__}"
+        )
+    try:
+        return InventoryEntry.model_validate(entry)
+    except ValidationError as exc:
+        raise InventoryError(f"invalid inventory entry: {exc}") from exc
+
+
+def validate_inventory(inventory: Any) -> list[InventoryEntry]:
+    """Validate a whole inventory: a list of dictionaries, each carrying at
+    least a ``host`` and a ``connection`` key.
+
+    Returns the validated ``InventoryEntry`` models. Raises ``InventoryError``
+    when ``inventory`` is not a list or an entry fails the ``InventoryEntry``
+    schema (not a dictionary, missing a required key, or a wrong type); the
+    wrapped pydantic error identifies each offending entry by its list index.
+    ``drivers.run`` calls this up front so a malformed inventory fails before
+    any host is materialized or connected.
+    """
+    if not isinstance(inventory, list):
+        raise InventoryError(
+            f"inventory must be a list of dictionaries, got {type(inventory).__name__}"
+        )
+    try:
+        return InventoryListAdapter.validate_python(inventory)
+    except ValidationError as exc:
+        raise InventoryError(f"invalid inventory: {exc}") from exc
 
 
 @dataclass
@@ -60,18 +144,20 @@ class Host:
 
     @classmethod
     def from_inventory(cls, entry: dict) -> "Host":
-        """Build a host from one inventory dictionary.
+        """Build a host from one validated inventory dictionary.
 
-        Recognised keys are ``host``, ``connection``, ``session`` and
-        ``sudo``; everything else lands in ``extra``.
+        The entry is validated with pydantic (``InventoryEntry``) first, so
+        it must carry at least ``host`` and ``connection``; ``session`` and
+        ``sudo`` are optional and every other key lands in ``extra``. Raises
+        ``InventoryError`` on invalid input.
         """
-        known = {"host", "connection", "session", "sudo"}
+        validated = _validate_entry(entry)
         return cls(
-            name=entry["host"],
-            connection=dict(entry.get("connection", {})),
-            session=dict(entry.get("session", {})),
-            sudo=dict(entry.get("sudo", {})),
-            extra={key: value for key, value in entry.items() if key not in known},
+            name=validated.host,
+            connection=dict(validated.connection),
+            session=dict(validated.session),
+            sudo=dict(validated.sudo),
+            extra=dict(validated.model_extra or {}),
         )
 
     def __str__(self) -> str:
@@ -150,4 +236,4 @@ class Host:
         await conn.wait_closed()
 
 
-__all__ = ["Host"]
+__all__ = ["Host", "InventoryEntry", "InventoryError", "validate_inventory"]

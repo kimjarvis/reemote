@@ -28,7 +28,7 @@ from reemote5.drivers import (
     send_command,
 )
 from reemote5.facts import DnfPackages, FileLink
-from reemote5.hosts import Host
+from reemote5.hosts import Host, InventoryError, validate_inventory
 from reemote5.operations import dnf, files
 from reemote5.operations.dnf import DnfInstallCommand
 from reemote5.operations.files import FileCommand, LinkCommand
@@ -127,6 +127,39 @@ async def test_inventory_host_reaches_the_real_transport_boundary():
         await DnfPackages.process(host)
     with pytest.raises(NotImplementedError):
         await send_command(host, DnfInstallCommand(packages=("nginx",)))
+
+
+def test_validate_inventory_accepts_a_wellformed_inventory():
+    entries = validate_inventory(WEB_INVENTORY)
+    assert [entry.host for entry in entries] == ["web1", "web2"]
+    assert entries[0].connection == {"key_path": "~/.ssh/id_ed25519"}
+
+
+def test_validate_inventory_requires_a_list():
+    with pytest.raises(InventoryError, match="must be a list"):
+        validate_inventory({"host": "web1", "connection": {}})
+
+
+def test_validate_inventory_reports_the_offending_entry_index():
+    # The TypeAdapter reports every bad entry by its list index in the error
+    # ``loc`` (here entry 1 is missing ``connection``).
+    with pytest.raises(InventoryError, match=r"1\.connection"):
+        validate_inventory([{"host": "web1", "connection": {}}, {"host": "web2"}])
+
+
+def test_from_inventory_requires_a_connection_key():
+    with pytest.raises(InventoryError, match="connection"):
+        Host.from_inventory({"host": "web1"})
+
+
+def test_from_inventory_requires_a_host_key():
+    with pytest.raises(InventoryError, match="host"):
+        Host.from_inventory({"connection": {}})
+
+
+def test_from_inventory_rejects_a_non_dict_entry():
+    with pytest.raises(InventoryError, match="must be a dictionary"):
+        Host.from_inventory("web1")
 
 
 # --- OperationRequest (4.1) -------------------------------------------------
@@ -360,7 +393,7 @@ async def test_hosts_finishing_at_different_steps():
             yield op(dnf.packages, name="Install vim", packages=("vim",))
 
     _plans, report, (a, b) = await run(
-        [{"host": "a"}, {"host": "b"}],
+        [{"host": "a", "connection": {}}, {"host": "b", "connection": {}}],
         uneven_deploy,
         host_factory=SimulatedHost.from_inventory,
     )
@@ -380,7 +413,9 @@ async def test_sudo_flag_flows_into_the_apply_log():
         yield op(dnf.packages, name="Install nginx", packages=("nginx",), sudo=True)
 
     _plans, report, _hosts = await run(
-        [{"host": "a"}], sudo_deploy, host_factory=SimulatedHost.from_inventory
+        [{"host": "a", "connection": {}}],
+        sudo_deploy,
+        host_factory=SimulatedHost.from_inventory,
     )
     (entry,) = report.log
     assert entry.sudo is True

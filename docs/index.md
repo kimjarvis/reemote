@@ -96,11 +96,13 @@ def deploy(host: Host) -> Generator[OperationRequest, None, None]:
     yield op(files.link, name="Remove default site", src=SITE, present=False)
 ```
 
-Hosts are specified as an *inventory* — a list of dictionaries carrying each
-host's name and SSH connection/session information — and passed to
-[`run`][reemote5.drivers.run], which prepares and applies in one call. `run`
-is a coroutine, so it must be awaited (here from an `asyncio.run` entry
-point):
+Hosts are specified as an *inventory* — a list of dictionaries, each carrying
+at least a host's name (`host`) and SSH `connection` information, optionally
+`session`/`sudo` — and passed to [`run`][reemote5.drivers.run], which validates
+it (every entry must have `host` and `connection`; a malformed inventory raises
+[`InventoryError`][reemote5.hosts.InventoryError]) and then prepares and applies
+in one call. `run` is a coroutine, so it must be awaited (here from an
+`asyncio.run` entry point):
 
 ```python
 import asyncio
@@ -228,7 +230,7 @@ module that defines it:
 | **Drivers** | [`run`][reemote5.drivers.run], [`run_prepare`][reemote5.drivers.run_prepare], [`run_apply`][reemote5.drivers.run_apply], [`send_command`][reemote5.drivers.send_command], [`format_plan`][reemote5.drivers.format_plan], [`format_log`][reemote5.drivers.format_log] | [drivers](drivers.md) |
 | **Core objects** | [`OperationRequest`][reemote5.core.OperationRequest], [`op`][reemote5.core.op], [`OpContext`][reemote5.core.OpContext], [`FactCache`][reemote5.core.FactCache], [`HostRuntime`][reemote5.core.HostRuntime] | [core](core.md) |
 | **Commands** | [`Command`][reemote5.commands.Command], [`StringCommand`][reemote5.commands.StringCommand], and typed subclasses beside their operations ([`DnfInstallCommand`][reemote5.operations.dnf.DnfInstallCommand], [`DnfRemoveCommand`][reemote5.operations.dnf.DnfRemoveCommand], [`LinkCommand`][reemote5.operations.files.LinkCommand]) | [commands](commands.md) |
-| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`DnfPackages`][reemote5.facts.dnf.DnfPackages], [`FileLink`][reemote5.facts.files.FileLink], [`dnf.packages`][reemote5.operations.dnf.packages], [`files.link`][reemote5.operations.files.link] | [hosts](hosts.md), [facts/dnf](facts/dnf.md), [facts/files](facts/files.md), [operations/dnf](operations/dnf.md), [operations/files](operations/files.md) |
+| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`validate_inventory`][reemote5.hosts.validate_inventory], [`InventoryError`][reemote5.hosts.InventoryError], [`DnfPackages`][reemote5.facts.dnf.DnfPackages], [`FileLink`][reemote5.facts.files.FileLink], [`dnf.packages`][reemote5.operations.dnf.packages], [`files.link`][reemote5.operations.files.link] | [hosts](hosts.md), [facts/dnf](facts/dnf.md), [facts/files](facts/files.md), [operations/dnf](operations/dnf.md), [operations/files](operations/files.md) |
 
 !!! note "Design-doc references"
 

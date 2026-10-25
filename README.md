@@ -42,7 +42,7 @@ def deploy(host: Host) -> Generator[OperationRequest, None, None]:
 
 
 async def main() -> None:
-    inventory = [{"host": "web1"}]
+    inventory = [{"host": "web1", "connection": {}}]
     plans, report, hosts = await run(
         inventory, deploy, host_factory=SimulatedHost.from_inventory
     )

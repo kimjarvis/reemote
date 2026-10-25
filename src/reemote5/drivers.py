@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 from .commands import Command
 from .core import FactCache, HostRuntime, OpContext, OperationRequest
-from .hosts import Host
+from .hosts import Host, validate_inventory
 
 
 class DeterminismError(RuntimeError):
@@ -247,7 +247,7 @@ def format_log(report: ApplyReport) -> str:
 
 
 async def run(
-    inventory: Iterable[dict],
+    inventory: list[dict],
     deploy_func: Callable,
     *,
     host_factory: Callable[[dict], Host] = Host.from_inventory,
@@ -256,9 +256,12 @@ async def run(
     """Top-level entry point: prepare, then apply (unless ``dry``).
 
     ``inventory`` is the user-supplied list of host dictionaries (see
-    ``hosts.py``); each entry is materialized into a ``Host`` via
-    ``host_factory``. The default factory builds plain library hosts; tests
-    and examples inject a factory building ``SimulatedHost``\\ s (the
+    ``hosts.py``). It is validated up front with ``validate_inventory`` --
+    it must be a list of dictionaries, each carrying at least ``host`` and
+    ``connection`` -- and raises ``InventoryError`` on bad input before any
+    host is materialized. Each entry is then materialized into a ``Host``
+    via ``host_factory``. The default factory builds plain library hosts;
+    tests and examples inject a factory building ``SimulatedHost``\\ s (the
     test-framework class in ``tests/simulated_host.py``) so the simulation
     stays out of the library.
 
@@ -267,6 +270,11 @@ async def run(
     the plan) and the apply phase (which executes commands via the async
     ``send_command``) are awaited.
     """
+    # Fail fast on a malformed inventory before materializing -- and
+    # potentially connecting -- any host. The default factory validates each
+    # entry again as it builds a Host; validating here enforces the contract
+    # even for a custom ``host_factory`` that does not.
+    validate_inventory(inventory)
     host_list = [host_factory(entry) for entry in inventory]
     try:
         runtimes, plans = await run_prepare(host_list, deploy_func)

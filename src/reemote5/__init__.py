@@ -26,7 +26,7 @@ from .drivers import (
     send_command,
 )
 from .facts import DnfPackages, FileExists, FileLink
-from .hosts import Host
+from .hosts import Host, InventoryEntry, InventoryError, validate_inventory
 from .operations import dnf, files
 from .operations.dnf import DnfInstallCommand, DnfRemoveCommand
 from .operations.files import FileCommand, LinkCommand
@@ -49,6 +49,8 @@ __all__ = [
     "FileLink",
     "Host",
     "HostRuntime",
+    "InventoryEntry",
+    "InventoryError",
     "LinkCommand",
     "LogEntry",
     "OpContext",
@@ -66,4 +68,5 @@ __all__ = [
     "run_apply",
     "run_prepare",
     "send_command",
+    "validate_inventory",
 ]

@@ -137,6 +137,15 @@ extensible). That data reaches both operations
 ([`send_command`][reemote5.drivers.send_command]) and facts (each `process`),
 which is where the real asyncssh transport will use it.
 
+Every entry must carry at least `host` and `connection`. The inventory is
+validated with pydantic (against
+[`InventoryEntry`][reemote5.hosts.InventoryEntry]) before any host is
+materialized: [`run`][reemote5.drivers.run] checks the whole inventory up front
+via [`validate_inventory`][reemote5.hosts.validate_inventory], so a malformed
+one — not a list, an entry that is not a dictionary, or a missing required key
+— raises [`InventoryError`][reemote5.hosts.InventoryError] instead of failing
+later over SSH.
+
 `SimulatedHost` is part of the *test framework*, not of the inventory or the
 library API: it lives in `tests/simulated_host.py`. It subclasses `Host` and
 adds the in-memory state facts read — `packages` and `links` — plus an
