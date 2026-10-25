@@ -42,6 +42,59 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
+# asyncssh.connect options forwarded verbatim from an inventory ``connection``
+# mapping when present. The names match asyncssh's own kwargs exactly -- the
+# library keeps asyncssh key names rather than inventing reemote5 aliases --
+# and cover the direct equivalents of pyinfra's ``ssh_*`` data plus the
+# high-value knobs real deployments touch (jump hosts, algorithm pinning,
+# keyboard-interactive auth, keepalives and login timeouts). The rarely-used
+# asyncssh machinery (GSSAPI, X.509, socket plumbing, rekeying, ...) is
+# deliberately not first-class here; pass it through the
+# ``asyncssh_connect_kwargs`` mapping instead.
+_FORWARDED_OPTIONS: tuple[str, ...] = (
+    "port",
+    "password",
+    "passphrase",
+    "identities",
+    "agent_path",
+    "agent_forwarding",
+    "config",
+    "known_hosts",
+    "proxy_command",
+    "tunnel",
+    "kex_algs",
+    "encryption_algs",
+    "mac_algs",
+    "server_host_key_algs",
+    "preferred_auth",
+    "kbdint_auth",
+    "login_timeout",
+    "keepalive_interval",
+    "keepalive_count_max",
+    "tcp_keepalive",
+)
+
+# The forwarded options whose values are filesystem paths, so ``~`` should be
+# expanded before they reach asyncssh.
+_PATH_OPTIONS: frozenset[str] = frozenset(
+    {"agent_path", "config", "identities", "known_hosts"}
+)
+
+
+def _expand_paths(value: Any) -> Any:
+    """Expand ``~`` in a path-valued asyncssh option.
+
+    Handles the forms asyncssh accepts -- a single path string or a list/tuple
+    of them -- and leaves any other value (e.g. ``True`` for ``config``, meaning
+    "use the default", or ``None`` for ``known_hosts``, meaning "skip host key
+    checking") untouched.
+    """
+    if isinstance(value, str):
+        return str(Path(value).expanduser())
+    if isinstance(value, (list, tuple)):
+        return [_expand_paths(item) for item in value]
+    return value
+
 
 class InventoryError(ValueError):
     """Raised when an inventory or one of its entries fails validation.
@@ -127,10 +180,18 @@ class Host:
     inventory keys are preserved in ``extra``, so the inventory format is
     extensible without library changes.
 
-    ``connection`` keys understood by the transport: ``address`` (or
-    ``host``/``hostname``) is the SSH address to connect to, ``username``
-    (or ``user``) the login name, ``key_path`` the client private key and
-    ``port`` an optional port. ``session`` keys (e.g. ``term_type``) are
+    ``connection`` keys understood by the transport keep asyncssh's own names:
+    ``_connect_options`` forwards a curated set of ``asyncssh.connect`` options
+    verbatim (``port``, ``password``, ``passphrase``, ``client_keys``,
+    ``identities``, ``agent_path``, ``agent_forwarding``, ``config``,
+    ``known_hosts``, ``proxy_command``, ``tunnel``, the ``*_algs``/
+    ``preferred_auth``/``kbdint_auth`` knobs and the ``keepalive_*``/
+    ``login_timeout`` timeouts). Three friendly aliases are accepted for
+    convenience: ``address``/``host``/``hostname`` for the SSH target,
+    ``username``/``user`` for the login name and ``key_path`` as a single-key
+    shorthand for ``client_keys``. Anything asyncssh supports that is not
+    first-class can still be supplied through the ``asyncssh_connect_kwargs``
+    mapping, which is merged last. ``session`` keys (e.g. ``term_type``) are
     applied per command. A connection is opened lazily on first use and
     cached on the instance; ``SimulatedHost`` never triggers this because it
     overrides the ``execute_command``/``packages``/``links`` seams instead.
@@ -174,6 +235,23 @@ class Host:
     def _connect_options(self) -> tuple[str, dict[str, Any]]:
         """Build ``(address, kwargs)`` for ``asyncssh.connect``.
 
+        Recognised options keep asyncssh's own key names and are forwarded
+        verbatim when present in the ``connection`` mapping (see
+        ``_FORWARDED_OPTIONS``): a key that appears is passed through as-is,
+        including an explicit ``None`` (e.g. ``known_hosts=None`` disables host
+        key checking, ``client_keys=None`` loads no default identities). This
+        covers ``port``, ``password``, ``passphrase``, ``identities``,
+        ``agent_path``, ``agent_forwarding``, ``config``, ``known_hosts``,
+        ``proxy_command``, ``tunnel``, the algorithm/``preferred_auth``/
+        ``kbdint_auth`` knobs and the ``keepalive_*``/``login_timeout``
+        timeouts. Three friendly aliases are also honoured for backward
+        compatibility: ``address``/``host``/``hostname`` for the target,
+        ``username``/``user`` for the login name, and ``key_path`` as a
+        single-key shorthand for ``client_keys``. Path-valued options have
+        ``~`` expanded. Any other asyncssh.connect kwarg can be supplied via
+        the ``asyncssh_connect_kwargs`` mapping, which is merged last and may
+        therefore add to or override the options above.
+
         Raises ``NotImplementedError`` when the connection carries no SSH
         address: that is how an inventory entry with no real target (e.g. one
         only ever driven through SimulatedHost) reports that there is nothing
@@ -187,14 +265,34 @@ class Host:
                 "carries no address to connect to"
             )
         kwargs: dict[str, Any] = {}
+
         username = conn.get("username") or conn.get("user")
         if username:
             kwargs["username"] = username
-        key_path = conn.get("key_path")
-        if key_path:
-            kwargs["client_keys"] = [str(Path(key_path).expanduser())]
-        if conn.get("port") is not None:
-            kwargs["port"] = conn["port"]
+
+        # ``client_keys`` under its asyncssh name, or the legacy single-key
+        # ``key_path`` shorthand; either way ``~`` is expanded. An explicit
+        # ``client_keys=None`` is forwarded verbatim so asyncssh loads no
+        # default identities.
+        if "client_keys" in conn:
+            kwargs["client_keys"] = _expand_paths(conn["client_keys"])
+        elif conn.get("key_path"):
+            kwargs["client_keys"] = _expand_paths([conn["key_path"]])
+
+        # Curated asyncssh options: a key present in the mapping is forwarded
+        # as-is (``~`` expanded for the path-valued ones), including when its
+        # value is ``None``.
+        for name in _FORWARDED_OPTIONS:
+            if name in conn:
+                value = conn[name]
+                kwargs[name] = _expand_paths(value) if name in _PATH_OPTIONS else value
+
+        # Escape hatch for anything asyncssh supports that is not first-class
+        # above; merged last so it can add to or override those options.
+        passthrough = conn.get("asyncssh_connect_kwargs")
+        if passthrough:
+            kwargs.update(passthrough)
+
         return address, kwargs
 
     def _session_options(self) -> dict[str, Any]:

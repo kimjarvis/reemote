@@ -28,16 +28,54 @@ it; tests inject it via `run`'s `host_factory` argument and it overrides the
 seams [`send_command`][reemote5.drivers.send_command] and the facts otherwise
 use to run over a real asyncssh connection. A plain
 [`Host`][reemote5.hosts.Host] built from a real inventory entry connects over
-asyncssh instead: it opens a connection lazily from its `connection` data
-(`address`, `username`, `key_path`, optional `port`), runs each command with
-`run_shell`, and `run` closes the connection when it finishes.
+asyncssh instead: it opens a connection lazily from its `connection` data,
+runs each command with `run_shell`, and `run` closes the connection when it
+finishes.
 
-## Reference
+## SSH connection options
 
-::: reemote5.hosts
-    options:
-      members:
-        - Host
-        - InventoryEntry
-        - InventoryError
-        - validate_inventory
+The `connection` mapping keeps asyncssh's own key names, so a curated set of
+`asyncssh.connect` options is forwarded verbatim. The target address may be
+given as `address` (or `host`/`hostname`), the login name as `username` (or
+`user`), and a single client key as the `key_path` shorthand for
+`client_keys`. Path-valued options have `~` expanded.
+
+| Option | Purpose |
+|---|---|
+| `port` | TCP port to connect to |
+| `username` / `user` | Login name |
+| `password` | Password authentication |
+| `key_path` | Single client private key (shorthand for `client_keys`) |
+| `client_keys` | Client private keys (list) |
+| `passphrase` | Passphrase for encrypted keys |
+| `identities` | Certificates/identities to present |
+| `agent_path` | SSH agent socket (`None` uses the default) |
+| `agent_forwarding` | Forward the agent to the remote host |
+| `config` | OpenSSH config file path(s), or `True` for the default |
+| `known_hosts` | Known-hosts file path(s); `None` skips host key checking |
+| `proxy_command` | Jump-host `ProxyCommand` string |
+| `tunnel` | Bastion tunnel, as `"[user@]host[:port]"` or a connection |
+| `kex_algs` / `encryption_algs` / `mac_algs` / `server_host_key_algs` | Algorithm pinning for compliance or legacy servers |
+| `preferred_auth` | Auth method order, e.g. `["publickey", "password"]` |
+| `kbdint_auth` | Enable keyboard-interactive auth (MFA prompts) |
+| `login_timeout` | Auth window in seconds |
+| `keepalive_interval` / `keepalive_count_max` / `tcp_keepalive` | Dead-peer detection |
+
+Anything asyncssh supports that is not first-class above — GSSAPI, X.509,
+socket plumbing, rekeying and the like — can still be passed through the
+`asyncssh_connect_kwargs` mapping, which is merged last and may override the
+options above, for example:
+
+```python
+{
+    "host": "web1",
+    "connection": {
+        "address": "192.168.0.240",
+        "username": "kjarvis",
+        "proxy_command": "ssh -W %h:%p bastion",
+        "known_hosts": None,
+        "asyncssh_connect_kwargs": {"family": 0, "local_addr": ("10.0.0.5", 0)},
+    },
+}
+```
+

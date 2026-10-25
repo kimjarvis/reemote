@@ -14,6 +14,7 @@ without decorators.
 
 import copy
 from collections.abc import Generator
+from pathlib import Path
 
 import pytest
 
@@ -160,6 +161,50 @@ def test_from_inventory_requires_a_host_key():
 def test_from_inventory_rejects_a_non_dict_entry():
     with pytest.raises(InventoryError, match="must be a dictionary"):
         Host.from_inventory("web1")
+
+
+def test_connect_options_forwards_asyncssh_named_options():
+    """Recognised asyncssh key names pass through verbatim; path options expand."""
+    host = Host(
+        name="web1",
+        connection={
+            "address": "10.0.0.1",
+            "user": "kjarvis",
+            "port": 2222,
+            "key_path": "~/keys/id_ed25519",
+            "proxy_command": "ssh -W %h:%p bastion",
+            "known_hosts": None,
+            "keepalive_interval": 30,
+            "preferred_auth": ["publickey", "password"],
+        },
+    )
+    address, kwargs = host._connect_options()
+    assert address == "10.0.0.1"
+    assert kwargs["username"] == "kjarvis"
+    assert kwargs["port"] == 2222
+    assert kwargs["proxy_command"] == "ssh -W %h:%p bastion"
+    assert kwargs["keepalive_interval"] == 30
+    assert kwargs["preferred_auth"] == ["publickey", "password"]
+    # ``key_path`` is a single-key shorthand, expanded to an absolute path.
+    assert kwargs["client_keys"] == [str(Path("~/keys/id_ed25519").expanduser())]
+    # A key present but set to ``None`` is forwarded verbatim, so an explicit
+    # ``known_hosts=None`` reaches asyncssh and disables host key checking.
+    assert kwargs["known_hosts"] is None
+
+
+def test_connect_options_merges_passthrough_last():
+    """``asyncssh_connect_kwargs`` reaches asyncssh and may override options."""
+    host = Host(
+        name="web1",
+        connection={
+            "address": "10.0.0.1",
+            "port": 22,
+            "asyncssh_connect_kwargs": {"port": 2222, "family": 0},
+        },
+    )
+    _address, kwargs = host._connect_options()
+    assert kwargs["port"] == 2222  # passthrough wins
+    assert kwargs["family"] == 0  # non-first-class option still forwarded
 
 
 # --- OperationRequest (4.1) -------------------------------------------------
