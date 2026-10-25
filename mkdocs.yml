@@ -45,4 +45,14 @@ plugins:
 nav:
   - Home: index.md
   - Guide: guide.md
-  - API Reference: api.md
+  - API Reference:
+      - Drivers: drivers.md
+      - Core: core.md
+      - Commands: commands.md
+      - Hosts: hosts.md
+      - Facts:
+          - apt: facts/apt.md
+          - files: facts/files.md
+      - Operations:
+          - apt: operations/apt.md
+          - files: operations/files.md

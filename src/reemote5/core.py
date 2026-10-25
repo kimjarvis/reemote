@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .commands import Command
-from .hosts import SimulatedHost
+from .hosts import Host
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ class OpContext:
     and ``reason`` back to the driver (design doc section 6.3, approach C).
     """
 
-    host: Any
+    host: Host
     facts: "FactCache"
     changed: bool = False
     reason: str = ""
@@ -63,7 +63,7 @@ class FactCache:
     asynchronously (over asyncssh in the real implementation).
     """
 
-    def __init__(self, host: Any, phase: str):
+    def __init__(self, host: Host, phase: str):
         self.host = host
         self.phase = phase  # "prepare" | "apply"
         self._data: dict = {}
@@ -79,7 +79,7 @@ class FactCache:
 class HostRuntime:
     """Per-host state maintained by the apply-phase driver."""
 
-    host: SimulatedHost
+    host: Host
     generator: Generator  # deploy(host) generator
     fact_cache: FactCache
     current_request: OperationRequest | None = None

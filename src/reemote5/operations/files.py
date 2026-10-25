@@ -1,15 +1,28 @@
 """The ``files`` operation namespace (design doc section 6).
 
-Exposes ``files.link``. Operations are async generators that receive an
+Exposes ``files.link`` plus the typed command descriptor it yields
+(``LinkCommand``). Operations are async generators that receive an
 ``OpContext``, await facts, set ``ctx.changed``/``ctx.reason``, and yield
 command descriptors; they never touch the host directly.
 """
 
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 
-from ..commands import Command, LinkCommand
+from ..commands import Command
 from ..core import OpContext
-from ..facts import FileLink
+from ..facts.files import FileLink
+
+
+@dataclass(frozen=True)
+class LinkCommand(Command):
+    src: str
+    target: str | None = None  # None means "remove the link at src"
+
+    def shell(self) -> str:
+        if self.target is None:
+            return f"rm -f {self.src}"
+        return f"ln -sf {self.target} {self.src}"
 
 
 async def link(
@@ -33,4 +46,4 @@ async def link(
             yield LinkCommand(src=src, target=None)
 
 
-__all__ = ["link"]
+__all__ = ["LinkCommand", "link"]

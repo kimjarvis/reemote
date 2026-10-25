@@ -10,13 +10,7 @@ operations that await it, and ``run_prepare``) are async, ready for an
 asyncssh-based implementation.
 """
 
-from .commands import (
-    AptInstallCommand,
-    AptRemoveCommand,
-    Command,
-    LinkCommand,
-    StringCommand,
-)
+from .commands import Command, StringCommand
 from .core import FactCache, HostRuntime, OpContext, OperationRequest, op
 from .drivers import (
     ApplyReport,
@@ -31,8 +25,10 @@ from .drivers import (
     send_command,
 )
 from .facts import AptPackages, FileLink
-from .hosts import SimulatedHost
+from .hosts import Host
 from .operations import apt, files
+from .operations.apt import AptInstallCommand, AptRemoveCommand
+from .operations.files import LinkCommand
 
 
 def hello() -> str:
@@ -48,13 +44,13 @@ __all__ = [
     "DeterminismError",
     "FactCache",
     "FileLink",
+    "Host",
     "HostRuntime",
     "LinkCommand",
     "LogEntry",
     "OpContext",
     "OperationRequest",
     "PlannedOperation",
-    "SimulatedHost",
     "StringCommand",
     "apt",
     "files",

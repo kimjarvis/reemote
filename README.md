@@ -13,7 +13,9 @@ drivers know which phase they are in.
 
 **Scope.** reemote5 is a library, not a deployment tool. It is limited to
 generating commands: no SSH transport, no CLI, and hosts are in-memory
-`SimulatedHost` stand-ins. Both the command-execution path (`send_command`,
+`SimulatedHost` stand-ins provided by the *test framework*
+(`tests/simulated_host.py`), never by the library itself. Both the
+command-execution path (`send_command`,
 the apply drivers) and fact gathering (each fact's `process`, `FactCache.get`,
 the operations that await it, and `run_prepare`) are `async`, preparing for a
 real [asyncssh]-based transport (where pyinfra uses Paramiko + gevent).
@@ -22,10 +24,14 @@ real [asyncssh]-based transport (where pyinfra uses Paramiko + gevent).
 import asyncio
 from collections.abc import Generator
 
-from reemote5 import OperationRequest, SimulatedHost, apt, files, format_log, op, run
+from reemote5 import Host, OperationRequest, apt, files, format_log, op, run
+
+# Test-framework stand-in, lives in tests/simulated_host.py: injected via
+# host_factory so this runs without a real SSH transport.
+from tests.simulated_host import SimulatedHost
 
 
-def deploy(host: SimulatedHost) -> Generator[OperationRequest, None, None]:
+def deploy(host: Host) -> Generator[OperationRequest, None, None]:
     yield op(apt.packages, name="Install nginx", packages=("nginx",))
     yield op(
         files.link,
@@ -36,7 +42,10 @@ def deploy(host: SimulatedHost) -> Generator[OperationRequest, None, None]:
 
 
 async def main() -> None:
-    plans, report = await run([SimulatedHost(name="web1")], deploy)
+    inventory = [{"host": "web1"}]
+    plans, report, hosts = await run(
+        inventory, deploy, host_factory=SimulatedHost.from_inventory
+    )
     print(format_log(report))
 
 
@@ -47,7 +56,7 @@ asyncio.run(main())
 
 ```bash
 uv sync                          # library + pytest
-uv run python examples/install_nginx.py
+uv run python examples/apt_install_nginx.py
 uv run pytest
 ```
 
@@ -60,7 +69,11 @@ uv run --group docs mkdocs serve   # http://localhost:8000
 
 - [Home](docs/index.md) — what the model is and why generators
 - [Guide](docs/guide.md) — writing deploy scripts, facts, operations, commands
-- [API Reference](docs/api.md) — every public object, generated from docstrings
+- API reference — one page per source module, generated from docstrings:
+  [core](docs/core.md), [drivers](docs/drivers.md), [commands](docs/commands.md),
+  [hosts](docs/hosts.md),
+  [facts/apt](docs/facts/apt.md), [facts/files](docs/facts/files.md),
+  [operations/apt](docs/operations/apt.md), [operations/files](docs/operations/files.md)
 
 ## Layout
 
@@ -68,10 +81,11 @@ uv run --group docs mkdocs serve   # http://localhost:8000
 src/reemote5/core.py         OperationRequest, OpContext, FactCache, HostRuntime, op()
 src/reemote5/commands.py     command descriptors yielded by operations
 src/reemote5/drivers.py      run_prepare / run_apply / send_command / run
-src/reemote5/facts.py        AptPackages, FileLink
-src/reemote5/hosts.py        SimulatedHost
+src/reemote5/facts/          AptPackages, FileLink (namespace modules)
+src/reemote5/hosts.py        Host (materialized from inventory entries)
 src/reemote5/operations/     apt.packages, files.link
 examples/install_nginx.py    end-to-end usage example
+tests/simulated_host.py      SimulatedHost (test framework, not shipped)
 tests/test_model.py          model tests
 ```
 

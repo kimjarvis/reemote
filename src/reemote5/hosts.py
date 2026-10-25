@@ -1,48 +1,70 @@
-"""Simulated hosts for the POC.
+"""Hosts: the library-side ``Host``, materialized from an inventory entry.
 
-The model is restricted to generating commands: there is no SSH and no
-async. A ``SimulatedHost`` stands in for a real machine and holds the
-state that facts read (installed packages, filesystem links). The driver
-mutates this state via ``send_command`` when an operation is changed,
-which is what makes the "fresh fact cache per lockstep step" property
-observable in the demo and tests.
+Hosts and their SSH connection information are specified by the user as a
+simple *inventory*: a list of dictionaries, each describing one host, e.g.::
+
+    [
+        {"host": "web1",
+         "connection": {"key_path": "~/.ssh/id_ed25519"},
+         "session": {"term_type": "xterm-color"}},
+        {"host": "web2",
+         "connection": {"key_path": "~/.ssh/id_ed25519"},
+         "session": {"term_type": "xterm-color", "term_size": 80},
+         "sudo": {"password": "..."}},
+    ]
+
+``Host.from_inventory`` materializes one entry into a ``Host`` carrying the
+connection/session (and optional sudo/extra) data, which the operations
+(``send_command``) and the facts (each ``process``) will use to run over
+asyncssh once a real transport exists.
+
+The model is currently restricted to generating commands: there is no SSH.
+Hosts that stand in for a real machine -- holding the state facts read and
+the mutations commands apply -- belong to the *test framework* and live in
+``tests/``, never in this package. The library does not import or construct
+them; it only forwards to the seams such a host provides
+(``execute_command`` for commands, ``packages``/``links`` for facts) and
+raises ``NotImplementedError`` where a real asyncssh transport is missing.
 """
 
 from dataclasses import dataclass, field
 
 
 @dataclass
-class SimulatedHost:
+class Host:
+    """One target host, materialized from an inventory entry.
+
+    ``connection`` and ``session`` hold the SSH information that will be
+    passed to the asyncssh transport (and therefore reaches both operations
+    and facts); ``sudo`` holds optional per-host sudo information. Any
+    unrecognised inventory keys are preserved in ``extra``, so the inventory
+    format is extensible without library changes.
+    """
+
     name: str
-    packages: set[str] = field(default_factory=set)
-    links: dict[str, str] = field(default_factory=dict)  # src -> target
-    # Side effects of installing a package: package -> {link src: target}.
-    # This is what lets the demo reproduce the design doc section 9 trace:
-    # installing nginx creates the default-site link, which the *next*
-    # operation then sees because the fact cache is recreated per step.
-    installs_links: dict[str, dict[str, str]] = field(default_factory=dict)
+    connection: dict = field(default_factory=dict)
+    session: dict = field(default_factory=dict)
+    sudo: dict = field(default_factory=dict)
+    extra: dict = field(default_factory=dict)
 
-    # State mutations, invoked only by the driver's send_command.
+    @classmethod
+    def from_inventory(cls, entry: dict) -> "Host":
+        """Build a host from one inventory dictionary.
 
-    def install_packages(self, packages: tuple[str, ...]) -> None:
-        for package in packages:
-            if package in self.packages:
-                continue
-            self.packages.add(package)
-            for src, target in self.installs_links.get(package, {}).items():
-                self.links[src] = target
-
-    def remove_packages(self, packages: tuple[str, ...]) -> None:
-        self.packages.difference_update(packages)
-
-    def make_link(self, src: str, target: str) -> None:
-        self.links[src] = target
-
-    def remove_link(self, src: str) -> None:
-        self.links.pop(src, None)
+        Recognised keys are ``host``, ``connection``, ``session`` and
+        ``sudo``; everything else lands in ``extra``.
+        """
+        known = {"host", "connection", "session", "sudo"}
+        return cls(
+            name=entry["host"],
+            connection=dict(entry.get("connection", {})),
+            session=dict(entry.get("session", {})),
+            sudo=dict(entry.get("sudo", {})),
+            extra={key: value for key, value in entry.items() if key not in known},
+        )
 
     def __str__(self) -> str:
         return self.name
 
 
-__all__ = ["SimulatedHost"]
+__all__ = ["Host"]

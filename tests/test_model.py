@@ -12,29 +12,75 @@ await it async too. ``asyncio_mode = "auto"`` lets the async tests below run
 without decorators.
 """
 
+import copy
 from collections.abc import Generator
 
 import pytest
 
-from reemote5.commands import AptInstallCommand, LinkCommand
 from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import DeterminismError, run, run_apply, run_prepare
+from reemote5.drivers import (
+    DeterminismError,
+    run,
+    run_apply,
+    run_prepare,
+    send_command,
+)
 from reemote5.facts import AptPackages, FileLink
-from reemote5.hosts import SimulatedHost
+from reemote5.hosts import Host
 from reemote5.operations import apt, files
+from reemote5.operations.apt import AptInstallCommand
+from reemote5.operations.files import LinkCommand
+from tests.simulated_host import SimulatedHost
 
 NGINX_DEFAULT_SITE = "/etc/nginx/sites-enabled/default"
 DEFAULT_TARGET = "/etc/nginx/sites-available/default"
 
 
-# --- Test setup: example deploy script and simulated hosts --------------------
+# --- Test setup: example inventory, deploy script and host factory ----------
 #
 # The library provides the execution model (drivers, core, operations,
-# facts, SimulatedHost). The specific nginx deploy script and the web1/web2
-# host construction below are test fixtures, not part of the library.
+# facts, Host) and accepts the inventory as a parameter. SimulatedHost is
+# part of the test framework: it lives in tests/simulated_host.py (never in
+# src/reemote5/) and is injected via ``run``'s ``host_factory`` argument,
+# never constructed by the library. The specific nginx deploy script and
+# the web1/web2 inventory and initial state below are test fixtures, not
+# part of the library.
+
+WEB_INVENTORY = [
+    {
+        "host": "web1",
+        "connection": {"key_path": "~/.ssh/id_ed25519"},
+        "session": {"term_type": "xterm-color"},
+    },
+    {
+        "host": "web2",
+        "connection": {"key_path": "~/.ssh/id_ed25519"},
+        "session": {"term_type": "xterm-color", "term_size": 80},
+    },
+]
+
+# Simulated pre-deployment state per host name (test-framework data, NOT
+# inventory): web1 fresh, web2 already configured (design doc section 9).
+WEB_INITIAL_STATE = {
+    "web1": {"installs_links": {"nginx": {NGINX_DEFAULT_SITE: DEFAULT_TARGET}}},
+    "web2": {
+        "packages": {"nginx"},
+        "links": {NGINX_DEFAULT_SITE: DEFAULT_TARGET},
+    },
+}
 
 
-def deploy(host: SimulatedHost) -> Generator[OperationRequest]:
+def simulated_web_factory(entry: dict) -> SimulatedHost:
+    """``host_factory`` building SimulatedHosts with the section-9 state."""
+    host = SimulatedHost.from_inventory(entry)
+    # Deep-copy: send_command mutates the host's dicts in place, which must
+    # not leak back into the shared fixture.
+    for attr, value in WEB_INITIAL_STATE.get(host.name, {}).items():
+        setattr(host, attr, copy.deepcopy(value))
+    return host
+
+
+def deploy(host: Host) -> Generator[OperationRequest]:
     """Example deploy script (design doc section 7/9).
 
     Install nginx, then remove its default site. Branch-free, so it is
@@ -49,17 +95,35 @@ def deploy(host: SimulatedHost) -> Generator[OperationRequest]:
     )
 
 
-def make_web_hosts() -> list[SimulatedHost]:
-    """web1 fresh, web2 already configured (design doc section 9)."""
-    web1 = SimulatedHost(
-        name="web1", installs_links={"nginx": {NGINX_DEFAULT_SITE: DEFAULT_TARGET}}
+# --- Inventory / Host (library input) ----------------------------------------
+
+
+def test_host_from_inventory_maps_known_and_extra_keys():
+    host = Host.from_inventory(
+        {
+            "host": "web1",
+            "connection": {"key_path": "~/.ssh/id_ed25519"},
+            "session": {"term_type": "xterm-color"},
+            "sudo": {"password": "secret"},
+            "groups": ["web"],  # unrecognised key -> preserved in extra
+        }
     )
-    web2 = SimulatedHost(
-        name="web2",
-        packages={"nginx"},
-        links={NGINX_DEFAULT_SITE: DEFAULT_TARGET},
-    )
-    return [web1, web2]
+    assert host.name == "web1"
+    assert host.connection == {"key_path": "~/.ssh/id_ed25519"}
+    assert host.session == {"term_type": "xterm-color"}
+    assert host.sudo == {"password": "secret"}
+    assert host.extra == {"groups": ["web"]}
+
+
+async def test_inventory_host_reaches_the_real_transport_boundary():
+    """A plain Host carries connection/session into facts and operations,
+    where the missing real SSH transport is reported explicitly."""
+    host = Host.from_inventory(WEB_INVENTORY[0])
+    assert host.connection == {"key_path": "~/.ssh/id_ed25519"}
+    with pytest.raises(NotImplementedError):
+        await AptPackages.process(host)
+    with pytest.raises(NotImplementedError):
+        await send_command(host, AptInstallCommand(packages=("nginx",)))
 
 
 # --- OperationRequest (4.1) -------------------------------------------------
@@ -137,8 +201,9 @@ async def test_files_link_remove_when_present():
 
 
 async def test_apply_sequential_facts_the_section_9_trace():
-    web1, web2 = make_web_hosts()
-    _plans, report = await run([web1, web2], deploy)
+    _plans, report, (web1, web2) = await run(
+        WEB_INVENTORY, deploy, host_factory=simulated_web_factory
+    )
 
     by_host: dict[str, list] = {}
     for entry in report.log:
@@ -193,9 +258,11 @@ async def test_hosts_finishing_at_different_steps():
         if host.name == "b":
             yield op(apt.packages, name="Install vim", packages=("vim",))
 
-    a = SimulatedHost(name="a")
-    b = SimulatedHost(name="b")
-    _plans, report = await run([a, b], uneven_deploy)
+    _plans, report, (a, b) = await run(
+        [{"host": "a"}, {"host": "b"}],
+        uneven_deploy,
+        host_factory=SimulatedHost.from_inventory,
+    )
     assert [entry.name for entry in report.log] == [
         "Install nginx",
         "Install nginx",
@@ -209,8 +276,9 @@ async def test_hosts_finishing_at_different_steps():
 
 
 async def test_dry_run_reports_plan_without_touching_hosts():
-    web1, web2 = make_web_hosts()
-    plans, report = await run([web1, web2], deploy, dry=True)
+    plans, report, (web1, _web2) = await run(
+        WEB_INVENTORY, deploy, host_factory=simulated_web_factory, dry=True
+    )
 
     assert report is None
     # The plan reflects pre-deployment state: on web1 the link does not
@@ -227,8 +295,9 @@ async def test_dry_run_reports_plan_without_touching_hosts():
 
 
 async def test_prepare_materializes_commands_for_changed_ops():
-    (web1,) = make_web_hosts()[:1]
-    plans, _ = await run([web1], deploy, dry=True)
+    plans, _, _hosts = await run(
+        WEB_INVENTORY[:1], deploy, host_factory=simulated_web_factory, dry=True
+    )
     install = plans["web1"][0]
     assert install.commands == (AptInstallCommand(packages=("nginx",)),)
 

@@ -17,8 +17,12 @@ reporting.
     restricted to *generating commands*:
 
     - no SSH or any other connection transport,
-    - no CLI, inventory files or plugin system,
-    - hosts are in-memory [`SimulatedHost`][reemote5.hosts.SimulatedHost] objects.
+    - no CLI, inventory files or plugin system — hosts are specified as a
+      simple *inventory* (a list of dictionaries) passed to
+      [`run`][reemote5.drivers.run],
+    - without an injected transport, hosts are in-memory `SimulatedHost`
+      objects — part of the test framework (`tests/simulated_host.py`),
+      never of the library.
 
     Nothing here connects to a real machine. The point of the project is the
     execution model, demonstrated end to end and covered by tests.
@@ -81,36 +85,63 @@ with the [`op`][reemote5.core.op] helper:
 ```python
 from collections.abc import Generator
 
-from reemote5 import OperationRequest, SimulatedHost, apt, files, op, run
+from reemote5 import Host, OperationRequest, apt, files, op, run
 
 SITE = "/etc/nginx/sites-enabled/default"
 TARGET = "/etc/nginx/sites-available/default"
 
 
-def deploy(host: SimulatedHost) -> Generator[OperationRequest, None, None]:
+def deploy(host: Host) -> Generator[OperationRequest, None, None]:
     yield op(apt.packages, name="Install nginx", packages=("nginx",))
     yield op(files.link, name="Remove default site", src=SITE, present=False)
 ```
 
-Hosts are then passed to [`run`][reemote5.drivers.run], which prepares and
-applies in one call. `run` is a coroutine, so it must be awaited (here from
-an `asyncio.run` entry point):
+Hosts are specified as an *inventory* — a list of dictionaries carrying each
+host's name and SSH connection/session information — and passed to
+[`run`][reemote5.drivers.run], which prepares and applies in one call. `run`
+is a coroutine, so it must be awaited (here from an `asyncio.run` entry
+point):
 
 ```python
 import asyncio
 
-from reemote5 import format_log, format_plan
+from reemote5 import format_log, format_plan, run
 
-hosts = [
-    # web1 is fresh: installing nginx creates the default-site link.
-    SimulatedHost(name="web1", installs_links={"nginx": {SITE: TARGET}}),
-    # web2 already has nginx installed, and still has the default-site link.
-    SimulatedHost(name="web2", packages={"nginx"}, links={SITE: TARGET}),
+# Test-framework stand-in, lives in tests/simulated_host.py — not part of
+# the library API.
+from tests.simulated_host import SimulatedHost
+
+inventory = [
+    {
+        "host": "web1",
+        "connection": {"key_path": "~/.ssh/id_ed25519"},
+        "session": {"term_type": "xterm-color"},
+    },
+    {
+        "host": "web2",
+        "connection": {"key_path": "~/.ssh/id_ed25519"},
+        "session": {"term_type": "xterm-color", "term_size": 80},
+    },
 ]
 
 
+def simulated_factory(entry: dict) -> SimulatedHost:
+    # Test-framework stand-in, injected via host_factory so this runs
+    # without SSH: web1 is fresh (installing nginx creates the
+    # default-site link); web2 already has nginx and the link.
+    host = SimulatedHost.from_inventory(entry)
+    if host.name == "web1":
+        host.installs_links = {"nginx": {SITE: TARGET}}
+    else:
+        host.packages = {"nginx"}
+        host.links = {SITE: TARGET}
+    return host
+
+
 async def main() -> None:
-    plans, report = await run(hosts, deploy)
+    plans, report, hosts = await run(
+        inventory, deploy, host_factory=simulated_factory
+    )
     print(format_plan(plans))
     print(format_log(report))
 
@@ -126,7 +157,7 @@ A complete, runnable version of this example — including the final host state
 [`examples/install_nginx.py`](https://github.com/kimjarvis/reemote5/blob/main/examples/install_nginx.py):
 
 ```bash
-uv run python examples/install_nginx.py
+uv run python examples/apt_install_nginx.py
 ```
 
 ```text
@@ -177,23 +208,51 @@ If a deploy body branches on mutable state and the two phases disagree, the
 driver raises [`DeterminismError`][reemote5.drivers.DeterminismError] instead
 of silently applying a different plan.
 
-See the [Guide](guide.md) for the rules this imposes on deploy scripts, and the
-[API Reference](api.md) for every object involved.
+See the [Guide](guide.md) for the rules this imposes on deploy scripts, and
+the API reference below for every object involved.
+
+## API reference
+
+Everything documented in the reference is re-exported from the top-level
+package, so a deploy script only ever needs one import line:
+
+```python
+from reemote5 import Host, OperationRequest, apt, files, op, run
+```
+
+The API has four layers, each documented on a page named after the source
+module that defines it:
+
+| Layer | Objects | Reference page |
+| --- | --- | --- |
+| **Drivers** | [`run`][reemote5.drivers.run], [`run_prepare`][reemote5.drivers.run_prepare], [`run_apply`][reemote5.drivers.run_apply], [`send_command`][reemote5.drivers.send_command], [`format_plan`][reemote5.drivers.format_plan], [`format_log`][reemote5.drivers.format_log] | [drivers](drivers.md) |
+| **Core objects** | [`OperationRequest`][reemote5.core.OperationRequest], [`op`][reemote5.core.op], [`OpContext`][reemote5.core.OpContext], [`FactCache`][reemote5.core.FactCache], [`HostRuntime`][reemote5.core.HostRuntime] | [core](core.md) |
+| **Commands** | [`Command`][reemote5.commands.Command], [`StringCommand`][reemote5.commands.StringCommand], and typed subclasses beside their operations ([`AptInstallCommand`][reemote5.operations.apt.AptInstallCommand], [`AptRemoveCommand`][reemote5.operations.apt.AptRemoveCommand], [`LinkCommand`][reemote5.operations.files.LinkCommand]) | [commands](commands.md) |
+| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`AptPackages`][reemote5.facts.apt.AptPackages], [`FileLink`][reemote5.facts.files.FileLink], [`apt.packages`][reemote5.operations.apt.packages], [`files.link`][reemote5.operations.files.link] | [hosts](hosts.md), [facts/apt](facts/apt.md), [facts/files](facts/files.md), [operations/apt](operations/apt.md), [operations/files](operations/files.md) |
+
+!!! note "Design-doc references"
+
+    Several docstrings cite *design doc section N*. Those are section numbers
+    from the original design notes for this POC; they are informational only
+    and are not published here.
 
 ## Project layout
 
 ```text
 src/reemote5/
 ├── core.py            # OperationRequest, OpContext, FactCache, HostRuntime, op()
-├── commands.py        # Command descriptors (StringCommand, Apt*, LinkCommand)
+├── commands.py        # Command descriptors (base Command, StringCommand)
 ├── drivers.py         # run_prepare, run_apply, send_command, run, formatters
-├── facts.py           # AptPackages, FileLink
-├── hosts.py           # SimulatedHost
+├── hosts.py           # Host (materialized from inventory entries)
+├── facts/             # fact namespaces
+│   ├── apt.py         #   AptPackages
+│   └── files.py       #   FileLink
 └── operations/        # operation namespaces
-    ├── apt.py         #   apt.packages
-    └── files.py       #   files.link
+    ├── apt.py         #   apt.packages, AptInstall/AptRemoveCommand
+    └── files.py       #   files.link, LinkCommand
 
 examples/install_nginx.py   # end-to-end usage example (not part of the library)
+tests/simulated_host.py     # SimulatedHost (test framework, not part of the library)
 tests/test_model.py         # model tests, incl. the nginx trace and determinism
 docs/                       # this documentation
 ```

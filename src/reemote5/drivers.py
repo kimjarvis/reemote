@@ -19,15 +19,9 @@ whole prepare/apply path is therefore awaited end to end.
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 
-from .commands import (
-    AptInstallCommand,
-    AptRemoveCommand,
-    Command,
-    LinkCommand,
-    StringCommand,
-)
+from .commands import Command
 from .core import FactCache, HostRuntime, OpContext, OperationRequest
-from .hosts import SimulatedHost
+from .hosts import Host
 
 
 class DeterminismError(RuntimeError):
@@ -70,9 +64,7 @@ class ApplyReport:
         return any(entry.changed for entry in self.log)
 
 
-async def materialize(
-    host: SimulatedHost, cache: FactCache, request: OperationRequest
-):
+async def materialize(host: Host, cache: FactCache, request: OperationRequest):
     """Fully materialize an operation's async command generator.
 
     Returns ``(ctx, commands)``. Materializing computes ``ctx.changed``
@@ -86,32 +78,29 @@ async def materialize(
     return ctx, commands
 
 
-async def send_command(host: SimulatedHost, cmd: Command) -> None:
+async def send_command(host: Host, cmd: Command) -> None:
     """Stand-in for pyinfra's SSH command execution.
 
     Declared ``async`` because the real implementation will run commands
-    over asyncssh (rather than pyinfra's Paramiko + gevent stack). The POC
-    never connects anywhere: typed commands mutate the simulated host state
-    (so subsequent fact reads observe the change), and raw
-    ``StringCommand``\\ s are accepted but have no simulated effect.
+    over asyncssh (rather than pyinfra's Paramiko + gevent stack), using
+    the host's ``connection``/``session``/``sudo`` inventory data. The POC
+    never connects anywhere: hosts providing an ``execute_command`` seam
+    (the test framework's ``SimulatedHost``, injected via ``run``'s
+    ``host_factory``) apply the command's simulated effect -- so subsequent
+    fact reads observe the change -- and any other host hits the
+    missing-transport boundary below.
     """
-    match cmd:
-        case AptInstallCommand(packages=packages):
-            host.install_packages(packages)
-        case AptRemoveCommand(packages=packages):
-            host.remove_packages(packages)
-        case LinkCommand(src=src, target=None):
-            host.remove_link(src)
-        case LinkCommand(src=src, target=target):
-            host.make_link(src, target)
-        case StringCommand():
-            pass  # no simulated effect for raw shell strings
-        case _:
-            raise TypeError(f"unknown command descriptor: {cmd!r}")
+    execute = getattr(host, "execute_command", None)
+    if execute is None:
+        raise NotImplementedError(
+            "real SSH command execution is not implemented: it will run "
+            "over asyncssh using host.connection/host.session"
+        )
+    execute(cmd)
 
 
 async def run_prepare(
-    hosts: Iterable[SimulatedHost], deploy_func: Callable
+    hosts: Iterable[Host], deploy_func: Callable
 ) -> tuple[list[HostRuntime], dict[str, list[PlannedOperation]]]:
     """Prepare phase: invoke each host's generator and materialize the plan.
 
@@ -243,20 +232,32 @@ def format_log(report: ApplyReport) -> str:
 
 
 async def run(
-    hosts: Iterable[SimulatedHost], deploy_func: Callable, dry: bool = False
-) -> tuple[dict[str, list[PlannedOperation]], ApplyReport | None]:
+    inventory: Iterable[dict],
+    deploy_func: Callable,
+    *,
+    host_factory: Callable[[dict], Host] = Host.from_inventory,
+    dry: bool = False,
+) -> tuple[dict[str, list[PlannedOperation]], ApplyReport | None, list[Host]]:
     """Top-level entry point: prepare, then apply (unless ``dry``).
 
-    A coroutine: both the prepare phase (which materializes the plan) and
-    the apply phase (which executes commands via the async ``send_command``)
-    are awaited.
+    ``inventory`` is the user-supplied list of host dictionaries (see
+    ``hosts.py``); each entry is materialized into a ``Host`` via
+    ``host_factory``. The default factory builds plain library hosts; tests
+    and examples inject a factory building ``SimulatedHost``\\ s (the
+    test-framework class in ``tests/simulated_host.py``) so the simulation
+    stays out of the library.
+
+    Returns ``(plans, report, hosts)`` so callers can inspect the final
+    host state. A coroutine: both the prepare phase (which materializes
+    the plan) and the apply phase (which executes commands via the async
+    ``send_command``) are awaited.
     """
-    host_list = list(hosts)
+    host_list = [host_factory(entry) for entry in inventory]
     runtimes, plans = await run_prepare(host_list, deploy_func)
     if dry:
-        return plans, None
+        return plans, None, host_list
     report = await run_apply(runtimes, plans=plans)
-    return plans, report
+    return plans, report, host_list
 
 
 __all__ = [

@@ -11,7 +11,7 @@ A deploy script is a generator that takes a host and yields
 fixed:
 
 ```python
-def deploy(host: SimulatedHost) -> Generator[OperationRequest, None, None]:
+def deploy(host: Host) -> Generator[OperationRequest, None, None]:
 ```
 
 Requests are built with the [`op`][reemote5.core.op] helper, which takes the
@@ -62,15 +62,19 @@ def deploy(host):
 
 ## Running a deploy
 
-[`run`][reemote5.drivers.run] is the one-call entry point:
+[`run`][reemote5.drivers.run] is the one-call entry point. It takes the
+*inventory* — the list of host dictionaries described under
+[Hosts and the inventory](#hosts-and-the-inventory) — and is a coroutine, so
+it must be awaited:
 
 ```python
-plans, report = run(hosts, deploy)  # prepare + apply
-plans, report = run(hosts, deploy, dry=True)  # prepare only, report is None
+plans, report, hosts = await run(inventory, deploy)  # prepare + apply
+plans, report, hosts = await run(inventory, deploy, dry=True)  # prepare only, report is None
 ```
 
-It returns the plan keyed by host name plus the
-[`ApplyReport`][reemote5.drivers.ApplyReport]. Render either with
+It returns the plan keyed by host name, the
+[`ApplyReport`][reemote5.drivers.ApplyReport] and the materialized hosts (so
+callers can inspect their final state). Render either with
 [`format_plan`][reemote5.drivers.format_plan] /
 [`format_log`][reemote5.drivers.format_log], or inspect the structures
 directly:
@@ -83,24 +87,56 @@ if report is not None and report.changed:
 
 To drive the phases yourself — for example to review a plan before committing
 to it — use [`run_prepare`][reemote5.drivers.run_prepare] and
-[`run_apply`][reemote5.drivers.run_apply]:
+[`run_apply`][reemote5.drivers.run_apply], which take materialized
+[`Host`][reemote5.hosts.Host] objects:
 
 ```python
-runtimes, plans = run_prepare(hosts, deploy)
+hosts = [Host.from_inventory(entry) for entry in inventory]
+runtimes, plans = await run_prepare(hosts, deploy)
 print(format_plan(plans))
-report = run_apply(runtimes, plans=plans)  # plans= enables the determinism guard
+report = await run_apply(runtimes, plans=plans)  # plans= enables the determinism guard
 ```
 
-## Hosts
+## Hosts and the inventory
 
-[`SimulatedHost`][reemote5.hosts.SimulatedHost] is the in-memory stand-in for a
-machine. It carries the state facts read — `packages` and `links` — plus an
+Hosts and their SSH connection information are specified as a simple
+*inventory*: a list of dictionaries, each describing one host. This is the
+parameter the library functions accept:
+
+```python
+inventory = [
+    {
+        "host": "web1",
+        "connection": {"key_path": "~/.ssh/id_ed25519"},
+        "session": {"term_type": "xterm-color"},
+    },
+    {
+        "host": "web2",
+        "connection": {"key_path": "~/.ssh/id_ed25519"},
+        "session": {"term_type": "xterm-color", "term_size": 80},
+        "sudo": {"password": "..."},  # optional per-host sudo information
+    },
+]
+```
+
+[`Host.from_inventory`][reemote5.hosts.Host.from_inventory] materializes each
+entry into a [`Host`][reemote5.hosts.Host] carrying `connection`, `session`,
+`sudo` and any unrecognised keys (preserved in `extra`, so the format is
+extensible). That data reaches both operations
+([`send_command`][reemote5.drivers.send_command]) and facts (each `process`),
+which is where the real asyncssh transport will use it.
+
+`SimulatedHost` is part of the *test framework*, not of the inventory or the
+library API: it lives in `tests/simulated_host.py`. It subclasses `Host` and
+adds the in-memory state facts read — `packages` and `links` — plus an
 optional `installs_links` map describing the side effects of installing a
 package:
 
 ```python
 SimulatedHost(
     name="web1",
+    connection={"key_path": "~/.ssh/id_ed25519"},
+    session={"term_type": "xterm-color"},
     packages=set(),
     links={},
     installs_links={
@@ -111,13 +147,22 @@ SimulatedHost(
 )
 ```
 
+It is injected from outside via `run`'s `host_factory` keyword — tests and
+examples pass a factory building `SimulatedHost`s (see
+`examples/install_nginx.py`), so the example runs without SSH while the
+library itself never constructs one:
+
+```python
+plans, report, hosts = await run(inventory, deploy, host_factory=my_simulated_factory)
+```
+
 `installs_links` is what lets the example reproduce the interesting case: on a
 fresh host, installing nginx *creates* the default-site link, so the next
 operation sees state that did not exist during prepare.
 
-Host state is mutated only by
-[`send_command`][reemote5.drivers.send_command]; deploy scripts and operations
-never touch it.
+Host state is mutated only through the
+[`send_command`][reemote5.drivers.send_command] → `execute_command` seam;
+deploy scripts and operations never touch it.
 
 ## Facts
 
@@ -126,17 +171,24 @@ value. Facts are asynchronous, phase-unaware, and never yielded by a
 generator:
 
 ```python
-from reemote5 import SimulatedHost
+from reemote5 import Host
 
 
 class EnabledSites:
     """The set of nginx sites currently enabled on the host."""
 
     @classmethod
-    async def process(cls, host: SimulatedHost) -> set[str]:
-        # A real implementation would list /etc/nginx/sites-enabled over asyncssh.
+    async def process(cls, host: Host) -> set[str]:
+        # A real implementation would list /etc/nginx/sites-enabled over
+        # asyncssh, using host.connection/host.session; the POC reads the
+        # simulated state provided by the test framework's SimulatedHost.
+        links = getattr(host, "links", None)
+        if links is None:
+            raise NotImplementedError(
+                "real SSH fact gathering is not implemented"
+            )
         prefix = "/etc/nginx/sites-enabled/"
-        return {src for src in host.links if src.startswith(prefix)}
+        return {src for src in links if src.startswith(prefix)}
 ```
 
 Always read facts through the cache, never by calling `process` directly — the
@@ -203,13 +255,17 @@ whole command generator to learn `changed` — even during prepare.
 ## Command descriptors
 
 Commands are frozen dataclasses subclassing
-[`Command`][reemote5.commands.Command]. Two things make a descriptor useful in
+[`Command`][reemote5.commands.Command]; typed descriptors live beside the
+operations that yield them ([`reemote5.operations.apt`][reemote5.operations.apt.AptInstallCommand],
+[`reemote5.operations.files`][reemote5.operations.files.LinkCommand]).
+Two things make a descriptor useful in
 this model:
 
 1. A `shell()` method returning the equivalent command line, used by
    [`format_log`][reemote5.drivers.format_log].
-2. A `match` arm in [`send_command`][reemote5.drivers.send_command] applying the
-   equivalent mutation to the simulated host.
+2. A `match` arm in the simulated host's `execute_command` (test framework,
+   `tests/simulated_host.py`) applying the equivalent mutation; the library's
+   [`send_command`][reemote5.drivers.send_command] forwards to it.
 
 ```python
 @dataclass(frozen=True)
@@ -220,10 +276,13 @@ class ServiceRestartCommand(Command):
         return f"systemctl restart {self.name}"
 ```
 
-Without a `match` arm, `send_command` raises `TypeError` for an unknown
-descriptor. A plain [`StringCommand`][reemote5.commands.StringCommand] is
-accepted but has **no simulated effect** — it is the escape hatch for commands
-the POC does not model.
+Without a `match` arm, `execute_command` raises `TypeError` for an unknown
+descriptor, and on a host without the seam (a plain
+[`Host`][reemote5.hosts.Host]) [`send_command`][reemote5.drivers.send_command]
+raises `NotImplementedError`. A plain
+[`StringCommand`][reemote5.commands.StringCommand] is accepted but has **no
+simulated effect** — it is the escape hatch for commands the POC does not
+model.
 
 ## Determinism
 
@@ -274,5 +333,5 @@ extending the model:
    `deploy(host)` generator inside each [`HostRuntime`][reemote5.core.HostRuntime].
 4. **Requests must be hashable and comparable**, hence the explicit
    `__hash__` on `OperationRequest` and the immutable-container rule.
-5. **Operations yield typed descriptors**, not strings, so `send_command` can
-   simulate their effects.
+5. **Operations yield typed descriptors**, not strings, so the simulated
+   host's `execute_command` can apply their effects.
