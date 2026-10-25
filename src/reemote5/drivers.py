@@ -8,6 +8,15 @@ each host's ``FactCache`` at every step so generator-body fact reads see
 the effects of prior operations. Operations and facts never inspect a
 phase flag; only the driver changes behavior between phases.
 
+Within each phase the per-host work is independent (each host owns its own
+connection, generator and ``FactCache``), so it is issued concurrently across
+hosts with ``asyncio.gather``: ``run_prepare`` gathers each host's whole
+prepare, and ``run_apply`` gathers step 2 (materialize + send) for all active
+hosts. The gather join is the barrier that preserves cross-host lockstep
+ordering, and ``asyncio.gather`` returns results in input order so plans and
+the run log stay deterministic. Commands within a single host still run
+sequentially, since some command sequences are order-dependent.
+
 Command execution is asynchronous: ``send_command`` (and therefore
 ``run_apply`` and ``run``) are coroutines, preparing the apply path for a
 real asyncssh-based transport. Fact gathering is asynchronous for the same
@@ -16,8 +25,10 @@ the operations that await it, and ``materialize`` are coroutines too. The
 whole prepare/apply path is therefore awaited end to end.
 """
 
+import asyncio
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from typing import Any
 
 from .commands import Command
 from .core import FactCache, HostRuntime, OpContext, OperationRequest
@@ -77,6 +88,37 @@ async def materialize(host: Host, cache: FactCache, request: OperationRequest):
     return ctx, commands
 
 
+async def gather_fact(
+    hosts: Iterable[Host], fact_cls: type, *args: Any, **kwargs: Any
+) -> dict[str, Any]:
+    """Gather one fact across all hosts concurrently.
+
+    The driver-level fan-out that ``FactCache.get`` performs for a single
+    host: it runs ``fact_cls.process`` for every host at once via
+    ``asyncio.gather`` and returns a host-aligned mapping of ``host.name`` to
+    that host's gathered value. Hosts are independent -- each owns its own
+    connection and (in tests) its own simulated state -- so the per-host reads
+    overlap on the network instead of running one host at a time.
+
+    ``asyncio.gather`` preserves input order in its result list, so zipping the
+    hosts with the gathered values keeps the mapping deterministic regardless
+    of the order in which individual hosts finish. A dict keyed by host name is
+    returned rather than a positional list so a caller can look a value up
+    without re-deriving the inventory order (mirroring pyinfra's ``get_facts``,
+    which returns ``{host: value}``).
+
+    ``fact_cls`` is a fact class exposing an ``async def process(host, ...)``
+    classmethod (e.g. ``DnfRepositories``); ``args``/``kwargs`` are forwarded to
+    it verbatim, exactly as ``FactCache.get`` does. A coroutine, because each
+    fact's ``process`` gathers its value asynchronously.
+    """
+    host_list = list(hosts)
+    values = await asyncio.gather(
+        *(fact_cls.process(host, *args, **kwargs) for host in host_list)
+    )
+    return {host.name: value for host, value in zip(host_list, values)}
+
+
 def command_shell(cmd: Command, sudo: bool = False) -> str:
     """Render the shell string a command descriptor runs as.
 
@@ -112,37 +154,85 @@ async def send_command(host: Host, cmd: Command, *, sudo: bool = False) -> None:
     await host.run_shell(command_shell(cmd, sudo))
 
 
+async def _prepare_host(
+    host: Host, deploy_func: Callable
+) -> tuple[HostRuntime, list[PlannedOperation]]:
+    """Prepare one host: collect its request sequence and materialize the plan.
+
+    Independent of every other host -- it owns its own prepare-phase
+    ``FactCache`` and generator -- so ``run_prepare`` gathers this across the
+    whole inventory to overlap the fact reads over SSH. Within a host the
+    requests are materialized in order against pre-deployment state (prepare
+    never sends commands, so nothing mutates between them).
+    """
+    cache = FactCache(host, phase="prepare")
+    requests = list(deploy_func(host))
+    plan = []
+    for request in requests:
+        ctx, commands = await materialize(host, cache, request)
+        plan.append(
+            PlannedOperation(
+                request=request,
+                changed=ctx.changed,
+                reason=ctx.reason,
+                commands=tuple(commands),
+            )
+        )
+    # Re-invoke deploy(host) for the apply phase: generators cannot be
+    # replayed once exhausted (design doc section 11.5).
+    return HostRuntime(host, deploy_func(host), cache), plan
+
+
 async def run_prepare(
     hosts: Iterable[Host], deploy_func: Callable
 ) -> tuple[list[HostRuntime], dict[str, list[PlannedOperation]]]:
     """Prepare phase: invoke each host's generator and materialize the plan.
 
     Returns ``(runtimes, plans)``. Fact reads go through the prepare-phase
-    cache and reflect pre-deployment state; nothing is executed. A
-    coroutine, because materializing awaits operations and their facts.
+    cache and reflect pre-deployment state; nothing is executed. Each host is
+    prepared concurrently via ``asyncio.gather`` (hosts are independent), and
+    the results come back in input order, so ``runtimes`` and ``plans`` stay
+    deterministic. A coroutine, because materializing awaits operations and
+    their facts.
     """
+    host_list = list(hosts)
+    prepared = await asyncio.gather(
+        *(_prepare_host(host, deploy_func) for host in host_list)
+    )
     runtimes: list[HostRuntime] = []
     plans: dict[str, list[PlannedOperation]] = {}
-    for host in hosts:
-        cache = FactCache(host, phase="prepare")
-        gen = deploy_func(host)
-        requests = list(gen)
-        plan = []
-        for request in requests:
-            ctx, commands = await materialize(host, cache, request)
-            plan.append(
-                PlannedOperation(
-                    request=request,
-                    changed=ctx.changed,
-                    reason=ctx.reason,
-                    commands=tuple(commands),
-                )
-            )
-        # Re-invoke deploy(host) for the apply phase: generators cannot be
-        # replayed once exhausted (design doc section 11.5).
-        runtimes.append(HostRuntime(host, deploy_func(host), cache))
-        plans[host.name] = plan
+    for runtime, plan in prepared:
+        runtimes.append(runtime)
+        plans[runtime.host.name] = plan
     return runtimes, plans
+
+
+async def _apply_host_step(rt: HostRuntime) -> LogEntry | None:
+    """Execute one host's current request and return its log entry.
+
+    Returns ``None`` when the host is idle this step (finished, or no request
+    pulled). Commands within the host are sent sequentially -- some sequences
+    are order-dependent -- so concurrency is only across hosts, provided by
+    ``run_apply`` gathering this coroutine for every active host.
+    """
+    if rt.done or rt.current_request is None:
+        return None
+    request = rt.current_request
+    ctx, commands = await materialize(rt.host, rt.fact_cache, request)
+    rt.current_ctx = ctx
+    sent: list[Command] = []
+    if ctx.changed:
+        for cmd in commands:
+            await send_command(rt.host, cmd, sudo=request.sudo)
+            sent.append(cmd)
+    return LogEntry(
+        host=rt.host.name,
+        name=request.name or request.func.__name__,
+        changed=ctx.changed,
+        reason=ctx.reason,
+        commands=tuple(sent),
+        sudo=request.sudo,
+    )
 
 
 async def run_apply(
@@ -152,8 +242,13 @@ async def run_apply(
     """Apply phase: advance all host generators in lockstep.
 
     All hosts execute their Nth request before any host pulls request
-    N+1. If ``plans`` is given, each pulled request sequence is checked
-    against the plan; a mismatch raises ``DeterminismError``.
+    N+1. Within a step the per-host execution (materialize + send) runs
+    concurrently across hosts via ``asyncio.gather``; the gather join is the
+    barrier between steps, and results are collected in host order so the log
+    stays deterministic. The request pull and the determinism check stay
+    synchronous and complete before anything is sent. If ``plans`` is given,
+    each pulled request sequence is checked against the plan; a mismatch
+    raises ``DeterminismError``.
 
     A coroutine, because commands are executed via the async
     ``send_command``.
@@ -189,28 +284,14 @@ async def run_apply(
                         f"diverges from the prepare-phase plan"
                     )
 
-        # Step 2: execute each active host's current request.
-        for rt in active:
-            if rt.done or rt.current_request is None:
-                continue
-            request = rt.current_request
-            ctx, commands = await materialize(rt.host, rt.fact_cache, request)
-            rt.current_ctx = ctx
-            sent: list[Command] = []
-            if ctx.changed:
-                for cmd in commands:
-                    await send_command(rt.host, cmd, sudo=request.sudo)
-                    sent.append(cmd)
-            report.log.append(
-                LogEntry(
-                    host=rt.host.name,
-                    name=request.name or request.func.__name__,
-                    changed=ctx.changed,
-                    reason=ctx.reason,
-                    commands=tuple(sent),
-                    sudo=request.sudo,
-                )
-            )
+        # Step 2: execute the current request on all active hosts
+        # concurrently. asyncio.gather returns in input order, so the log stays
+        # deterministic, and its join is the barrier holding lockstep ordering
+        # before the next step. Per-host commands still run sequentially inside
+        # ``_apply_host_step``.
+        for entry in await asyncio.gather(*(_apply_host_step(rt) for rt in active)):
+            if entry is not None:
+                report.log.append(entry)
 
         # Step 3: remove finished hosts.
         active = [rt for rt in active if not rt.done]
@@ -298,6 +379,7 @@ __all__ = [
     "command_shell",
     "format_log",
     "format_plan",
+    "gather_fact",
     "materialize",
     "run",
     "run_apply",

@@ -17,6 +17,7 @@ await it async too. ``asyncio_mode = "auto"`` lets the async tests below run
 without decorators.
 """
 
+import asyncio
 import copy
 from collections.abc import Generator
 from pathlib import Path
@@ -28,6 +29,7 @@ from reemote5.drivers import (
     DeterminismError,
     command_shell,
     format_log,
+    gather_fact,
     run,
     run_apply,
     run_prepare,
@@ -307,6 +309,64 @@ async def test_fact_cache_keys_include_args():
     cache = FactCache(host, phase="prepare")
     assert await cache.get(FileLink, "/a") == "/target-a"
     assert await cache.get(FileLink, "/b") is None
+
+
+# --- gather_fact: the multi-host fan-out of FactCache.get --------------------
+
+
+async def test_gather_fact_returns_a_host_aligned_mapping():
+    """gather_fact runs one fact across all hosts and keys the results by host
+    name, so a single await yields every host's value."""
+    hosts = [
+        SimulatedHost(name="web1", packages={"nginx"}),
+        SimulatedHost(name="web2", packages={"nginx", "vim"}),
+        SimulatedHost(name="web3", packages=set()),
+    ]
+    assert await gather_fact(hosts, DnfPackages) == {
+        "web1": {"nginx"},
+        "web2": {"nginx", "vim"},
+        "web3": set(),
+    }
+
+
+async def test_gather_fact_forwards_args_and_kwargs():
+    """Positional/keyword args reach each fact's process, exactly as
+    FactCache.get forwards them (here FileLink's src path)."""
+    hosts = [
+        SimulatedHost(name="web1", links={"/a": "/target-a"}),
+        SimulatedHost(name="web2", links={"/a": "/target-b"}),
+    ]
+    assert await gather_fact(hosts, FileLink, "/a") == {
+        "web1": "/target-a",
+        "web2": "/target-b",
+    }
+    # A path no host has a link for gathers to None everywhere.
+    assert await gather_fact(hosts, FileLink, "/missing") == {
+        "web1": None,
+        "web2": None,
+    }
+
+
+async def test_gather_fact_runs_hosts_concurrently():
+    """The per-host reads overlap rather than running one host at a time: a
+    fact tracking the in-flight high-water mark sees both hosts running
+    before either returns (a serial loop would peak at 1)."""
+    in_flight = 0
+    peak = 0
+
+    class SlowFact:
+        @classmethod
+        async def process(cls, host):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0)  # yield so the other host's process starts
+            in_flight -= 1
+            return host.name
+
+    hosts = [SimulatedHost(name="web1"), SimulatedHost(name="web2")]
+    assert await gather_fact(hosts, SlowFact) == {"web1": "web1", "web2": "web2"}
+    assert peak == 2
 
 
 # --- Operations (6) ----------------------------------------------------------
@@ -618,6 +678,43 @@ async def test_apply_is_lockstep_across_hosts():
         "Remove default site",
         "Remove default site",
     ]
+
+
+async def test_prepare_and_apply_fan_out_across_hosts():
+    """``run_prepare`` and ``run_apply`` step 2 gather per-host work with
+    ``asyncio.gather``, so hosts overlap within a phase/step instead of
+    running one at a time. A probe operation tracks the in-flight high-water
+    mark across hosts; a serial loop would peak at 1, the gather peaks at 2.
+    Ordering stays deterministic (input/host order) despite the overlap."""
+    in_flight = 0
+    peak = 0
+
+    async def probe_op(ctx):
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0)  # yield so the other host's step starts
+        in_flight -= 1
+        # A pure probe: it changes nothing, so it yields no commands. The
+        # conditional yield is what makes probe_op an async generator.
+        ctx.changed = False
+        ctx.reason = "concurrency probe"
+        if ctx.changed:
+            yield DnfInstallCommand(packages=())
+
+    def probe_deploy(host):
+        yield op(probe_op, name="probe")
+
+    hosts = [SimulatedHost(name="a"), SimulatedHost(name="b")]
+
+    runtimes, plans = await run_prepare(hosts, probe_deploy)
+    assert peak == 2  # both hosts' prepares overlapped
+    assert list(plans) == ["a", "b"]  # deterministic, input order
+
+    peak = 0  # isolate the apply phase
+    report = await run_apply(runtimes, plans=plans)
+    assert peak == 2  # both hosts' step-2 execution overlapped
+    assert [entry.host for entry in report.log] == ["a", "b"]
 
 
 async def test_hosts_finishing_at_different_steps():
