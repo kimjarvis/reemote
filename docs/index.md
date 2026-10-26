@@ -210,8 +210,9 @@ If a deploy body branches on mutable state and the two phases disagree, the
 driver raises [`DeterminismError`][reemote5.drivers.DeterminismError] instead
 of silently applying a different plan.
 
-See the [Guide](guide.md) for the rules this imposes on deploy scripts, and
-the API reference below for every object involved.
+See the [Guide](guide.md) for the rules this imposes on deploy scripts, the
+[Examples](examples.md) for runnable scripts demonstrating them (including
+deploy composition), and the API reference below for every object involved.
 
 ## API reference
 
@@ -253,7 +254,7 @@ src/reemote5/
     ├── dnf.py         #   dnf.packages, DnfInstall/DnfRemoveCommand
     └── files.py       #   files.link, LinkCommand
 
-examples/dnf_install_nginx.py   # end-to-end usage example (not part of the library)
+examples/                     # runnable usage examples (not part of the library)
 tests/simulated_host.py     # SimulatedHost (test framework, not part of the library)
 tests/test_model.py         # model tests, incl. the nginx trace and determinism
 docs/                       # this documentation

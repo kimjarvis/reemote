@@ -71,6 +71,82 @@ def deploy(host):
     )
 ```
 
+## Composing deploys
+
+Deploys are plain iterables of frozen requests, so they nest and combine
+without driver involvement. A sub-deploy is just another
+`(host) -> Generator[OperationRequest]` callable, and the simplest composition
+is delegation inside the deploy body:
+
+```python
+def deploy(host):
+    yield from role_baseline(host)
+    yield from role_httpd(host)
+```
+
+Two helpers in [`reemote5.core`][reemote5.core] cover what delegation cannot.
+[`sub_deploy`][reemote5.core.sub_deploy] wraps a sub-deploy with default
+meta-parameters: `name_prefix` labels every request it produces for readable
+plans, and `sudo=True` elevates requests that did not ask for elevation
+themselves (the inner request wins; elevation is never removed).
+[`compose`][reemote5.core.compose] concatenates sub-deploys into one
+deploy-shaped callable in argument order — an explicit cross-role ordering
+statement — and with `dedupe=True` collapses requests sharing the same
+*effective identity* (`func`, args, kwargs and `sudo` — everything that
+reaches the host, but not the plan `name`) to their first occurrence, so
+independently written roles can each declare the same prerequisite under
+their own label:
+
+```python
+from reemote5 import compose, dnf, files, op, sub_deploy
+
+def role_baseline(host):
+    yield op(dnf.packages, name="Install baseline tools",
+             packages=("curl",), sudo=True)
+
+def role_httpd(host):
+    # Re-declares its prerequisite: dedupe collapses the duplicate.
+    yield op(dnf.packages, name="Install baseline tools",
+             packages=("curl",), sudo=True)
+    yield op(dnf.packages, name="Install httpd", packages=("httpd",), sudo=True)
+    yield op(files.file, name="Remove welcome configuration",
+             src="/etc/httpd/conf.d/welcome.conf", present=False, sudo=True)
+
+def role_httpd_tools(host):
+    # Written for a root login: no sudo flags anywhere.
+    yield op(dnf.packages, name="Install httpd tools", packages=("httpd-tools",))
+
+deploy = compose(
+    role_baseline,
+    role_httpd,                                  # shares the baseline request
+    sub_deploy(role_httpd_tools, name_prefix="httpd", sudo=True),
+    dedupe=True,
+)
+```
+
+Rules that keep composition deterministic:
+
+- Wrappers must be **pure stream transforms** — no state shared between
+  invocations, no reads of mutable host state. Both helpers create any
+  internal state (the dedupe set) per call, so the prepare and apply phases
+  flatten identically and the determinism guard holds.
+- Dedupe collapses by *effective identity*: `name` only labels a request in
+  plans and logs and is excluded from the dedupe key, while `sudo` is part
+  of it (it changes what executes). The first occurrence wins and keeps its
+  name, so identically-parameterized requests collapse even under different
+  labels or `name_prefix`es — at the cost of silently dropping the later
+  label. `OperationRequest` equality itself stays maximal (name included),
+  because the determinism guard pairs full values.
+- Sub-deploys stay **sync generators** and inherit every deploy-body rule
+  above — in particular, do not branch on mutable facts inside them.
+- Branch on **static** data instead: assemble the deploy from roles at call
+  time (per environment, or per host from inventory data such as `host.name`),
+  so the same composed callable is used in both phases.
+
+Runnable demonstrations of each pattern — deduplication, environment layering,
+privilege policies, role ordering, per-host branching and patch windows — live
+in [Examples](examples.md#composing-deploys).
+
 ## Running a deploy
 
 [`run`][reemote5.drivers.run] is the one-call entry point. It takes the

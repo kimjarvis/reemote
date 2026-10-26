@@ -32,7 +32,7 @@ from typing import Any
 
 from .commands import Command
 from .core import FactCache, HostRuntime, OpContext, OperationRequest
-from .hosts import Host, validate_inventory
+from .hosts import Host, HostConnectionError, validate_inventory
 
 
 class DeterminismError(RuntimeError):
@@ -194,11 +194,31 @@ async def run_prepare(
     the results come back in input order, so ``runtimes`` and ``plans`` stay
     deterministic. A coroutine, because materializing awaits operations and
     their facts.
+
+    Because the hosts connect concurrently, several may fail to be reached at
+    once. Per-host ``HostConnectionError`` instances are therefore collected
+    (via ``return_exceptions=True``) and merged into a single aggregate naming
+    every unreachable host, so the caller learns about all of them together
+    rather than only the first to fail. Any other exception is a genuine error
+    and propagates unchanged.
     """
     host_list = list(hosts)
-    prepared = await asyncio.gather(
-        *(_prepare_host(host, deploy_func) for host in host_list)
+    results = await asyncio.gather(
+        *(_prepare_host(host, deploy_func) for host in host_list),
+        return_exceptions=True,
     )
+    connection_errors: list[HostConnectionError] = []
+    prepared: list[tuple[HostRuntime, list[PlannedOperation]]] = []
+    for result in results:
+        if isinstance(result, HostConnectionError):
+            connection_errors.append(result)
+        elif isinstance(result, BaseException):
+            raise result
+        else:
+            prepared.append(result)
+    if connection_errors:
+        raise HostConnectionError.aggregate(connection_errors)
+
     runtimes: list[HostRuntime] = []
     plans: dict[str, list[PlannedOperation]] = {}
     for runtime, plan in prepared:

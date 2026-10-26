@@ -31,6 +31,10 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
+          # Besides the installed reemote5 package, the example scripts are
+          # importable by file name so docs/examples.md can render their
+          # module docstrings (the explanation lives in the example itself).
+          paths: [examples/operations/dnf]
           options:
             docstring_style: google
             show_root_heading: false
@@ -45,6 +49,7 @@ plugins:
 nav:
   - Home: index.md
   - Guide: guide.md
+  - Examples: examples.md
   - API Reference:
       - Drivers: drivers.md
       - Core: core.md

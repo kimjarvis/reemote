@@ -7,7 +7,8 @@ application drives reemote5's two-phase execution model end to end over a
 1. Specify the target hosts as an *inventory*: a list of dictionaries with
    each host's name plus its SSH ``connection`` information (address,
    username and client key). There is no ``session`` information here.
-2. Build the deploy script as a generator yielding ``OperationRequest``\\ s.
+2. Build the deploy script as a generator yielding ``OperationRequest``
+   objects.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
 Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``

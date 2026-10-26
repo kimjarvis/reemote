@@ -11,7 +11,15 @@ asyncssh transport built from its inventory ``connection``/``session`` data.
 """
 
 from .commands import Command, StringCommand
-from .core import FactCache, HostRuntime, OpContext, OperationRequest, op
+from .core import (
+    FactCache,
+    HostRuntime,
+    OpContext,
+    OperationRequest,
+    compose,
+    op,
+    sub_deploy,
+)
 from .drivers import (
     ApplyReport,
     DeterminismError,
@@ -34,7 +42,13 @@ from .facts import (
     FileExists,
     FileLink,
 )
-from .hosts import Host, InventoryEntry, InventoryError, validate_inventory
+from .hosts import (
+    Host,
+    HostConnectionError,
+    InventoryEntry,
+    InventoryError,
+    validate_inventory,
+)
 from .operations import dnf, files
 from .operations.dnf import (
     DnfCleanCommand,
@@ -66,6 +80,7 @@ __all__ = [
     "FileExists",
     "FileLink",
     "Host",
+    "HostConnectionError",
     "HostRuntime",
     "InventoryEntry",
     "InventoryError",
@@ -76,6 +91,7 @@ __all__ = [
     "PlannedOperation",
     "StringCommand",
     "command_shell",
+    "compose",
     "dnf",
     "files",
     "format_log",
@@ -87,5 +103,6 @@ __all__ = [
     "run_apply",
     "run_prepare",
     "send_command",
+    "sub_deploy",
     "validate_inventory",
 ]

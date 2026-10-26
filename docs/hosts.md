@@ -32,6 +32,18 @@ asyncssh instead: it opens a connection lazily from its `connection` data,
 runs each command with `run_shell`, and `run` closes the connection when it
 finishes.
 
+When a host cannot be reached, [`Host.connect`][reemote5.hosts.Host.connect]
+wraps the underlying transport failure — an `OSError` (reset, timeout,
+unreachable) or an `asyncssh.Error` (host-key or authentication rejection) —
+in a single [`HostConnectionError`][reemote5.hosts.HostConnectionError] naming
+that host, so callers never have to catch asyncssh internals or read a raw
+transport traceback. The message stays generic (which host, or hosts, could
+not be reached); the original error is still available as `__cause__` for
+diagnosis. Because [`run_prepare`][reemote5.drivers.run_prepare] connects the
+whole inventory concurrently, it collects the per-host failures and merges them
+into one aggregate naming every unreachable host, rather than surfacing only
+the first to fail.
+
 ## SSH connection options
 
 The `connection` mapping keeps asyncssh's own key names, so a curated set of
@@ -78,4 +90,13 @@ options above, for example:
     },
 }
 ```
+
+::: reemote5.hosts
+    options:
+      members:
+        - Host
+        - HostConnectionError
+        - InventoryEntry
+        - InventoryError
+        - validate_inventory
 

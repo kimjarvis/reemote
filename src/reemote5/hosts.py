@@ -36,6 +36,7 @@ holding the state facts read and the mutations commands apply -- belong to the
 *test framework* and live in ``tests/``, never in this package.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -104,6 +105,48 @@ class InventoryError(ValueError):
     single, library-specific exception to catch, with a message naming the
     offending entry.
     """
+
+
+class HostConnectionError(RuntimeError):
+    """Raised when an SSH connection to one or more hosts cannot be established.
+
+    ``Host.connect`` wraps the underlying transport failure -- an ``OSError``
+    such as a reset or timeout, or an ``asyncssh.Error`` such as a host-key or
+    authentication rejection -- in this single, library-specific exception, so
+    callers never have to catch asyncssh internals. The message stays generic:
+    it names the unreachable host(s) and nothing else, while the original
+    exception is preserved as ``__cause__`` (and per host in ``failures``) for
+    diagnosis. ``drivers.run_prepare`` merges the per-host failures from a
+    concurrent inventory into one aggregate via ``aggregate``, so every
+    unreachable host is reported at once instead of only the first to fail.
+
+    ``failures`` is a tuple of ``(host_name, address, cause)`` triples.
+    """
+
+    def __init__(self, failures: Iterable[tuple[str, str, BaseException]]) -> None:
+        self.failures: tuple[tuple[str, str, BaseException], ...] = tuple(failures)
+        hosts = ", ".join(f"{name} ({address})" for name, address, _ in self.failures)
+        label = "host" if len(self.failures) == 1 else "hosts"
+        super().__init__(
+            f"SSH connectivity error on {len(self.failures)} {label}: {hosts}"
+        )
+
+    @property
+    def host_names(self) -> tuple[str, ...]:
+        """Names of the hosts that could not be reached."""
+        return tuple(name for name, _, _ in self.failures)
+
+    @classmethod
+    def aggregate(
+        cls, errors: Iterable["HostConnectionError"]
+    ) -> "HostConnectionError":
+        """Merge several per-host errors into one naming every failed host."""
+        failures = [failure for error in errors for failure in error.failures]
+        merged = cls(failures)
+        # Keep the first underlying transport error reachable for diagnosis.
+        if failures:
+            merged.__cause__ = failures[0][2]
+        return merged
 
 
 class InventoryEntry(BaseModel):
@@ -304,14 +347,24 @@ class Host:
         return kwargs
 
     async def connect(self) -> Any:
-        """Lazily open (and cache) this host's asyncssh connection."""
+        """Lazily open (and cache) this host's asyncssh connection.
+
+        A transport-level failure -- an ``OSError`` (reset, timeout, host
+        unreachable) or an ``asyncssh.Error`` (host-key or authentication
+        rejection) -- is wrapped in ``HostConnectionError`` naming this host,
+        so callers get one library-specific exception instead of a raw
+        asyncssh traceback. The original error is chained as ``__cause__``.
+        """
         conn = getattr(self, "_conn", None)
         if conn is not None:
             return conn
         import asyncssh  # imported lazily: pytest never connects, so never imports it
 
         address, kwargs = self._connect_options()
-        self._conn = await asyncssh.connect(address, **kwargs)
+        try:
+            self._conn = await asyncssh.connect(address, **kwargs)
+        except (OSError, asyncssh.Error) as exc:
+            raise HostConnectionError([(self.name, address, exc)]) from exc
         return self._conn
 
     async def run_shell(self, shell: str) -> str:
@@ -334,4 +387,10 @@ class Host:
         await conn.wait_closed()
 
 
-__all__ = ["Host", "InventoryEntry", "InventoryError", "validate_inventory"]
+__all__ = [
+    "Host",
+    "HostConnectionError",
+    "InventoryEntry",
+    "InventoryError",
+    "validate_inventory",
+]

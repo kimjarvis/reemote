@@ -5,8 +5,8 @@ See the design document sections 4.1 (OperationRequest), 4.3 (OpContext),
 the phase they are used in; phase awareness lives entirely in the drivers.
 """
 
-from collections.abc import Callable, Generator
-from dataclasses import dataclass, field
+from collections.abc import Callable, Generator, Iterable
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from .commands import Command
@@ -112,11 +112,112 @@ def op(
     return OperationRequest(func=func, kwargs=kwargs, name=name, sudo=sudo)
 
 
+def sub_deploy(
+    sub: Callable[[Host], Iterable[OperationRequest]],
+    *,
+    name_prefix: str = "",
+    sudo: bool = False,
+) -> Callable[[Host], Generator[OperationRequest]]:
+    """Wrap a sub-deploy, applying default meta-parameters to its requests.
+
+    The returned callable has the deploy-script shape -- ``(host)`` ->
+    generator of ``OperationRequest`` -- so a wrapped sub-deploy nests with
+    ``yield from``, composes with ``compose`` and is accepted anywhere a
+    deploy function is (e.g. ``run``).
+
+    Meta-parameters are inherited as defaults and the inner request wins:
+    ``sudo=True`` here only elevates requests that did not ask for elevation
+    themselves, and ``name_prefix`` prepends ``"<prefix>: "`` to each plan
+    name (an unnamed request falls back to its operation function's name,
+    matching the formatters). Because ``sudo`` is a plain bool, an inner
+    request that deliberately set ``sudo=False`` is indistinguishable from
+    one that left it unset -- a wrapper with ``sudo=True`` elevates both.
+
+    The wrapper is a pure stream transform over the frozen dataclass
+    (``dataclasses.replace`` produces the modified copies): it keeps no
+    state between calls and reads nothing but each request, so the prepare
+    and apply phases flatten it identically and the determinism guard holds.
+    """
+
+    def wrapper(host: Host) -> Generator[OperationRequest]:
+        for request in sub(host):
+            changes: dict[str, Any] = {}
+            if name_prefix:
+                base = request.name or request.func.__name__
+                changes["name"] = f"{name_prefix}: {base}"
+            if sudo and not request.sudo:
+                changes["sudo"] = True
+            yield replace(request, **changes) if changes else request
+
+    return wrapper
+
+
+def _effective_key(request: OperationRequest) -> tuple:
+    """Hashable identity of what a request *executes*, excluding its name.
+
+    ``name`` labels a request in plans and logs but never reaches the host
+    (``command_shell`` renders the descriptor plus ``sudo`` only), so two
+    requests with the same key run identically. ``OperationRequest`` equality
+    itself stays maximal -- the determinism guard pairs full values -- while
+    ``compose``'s deduplication uses this projection.
+    """
+    return (
+        request.func,
+        request.args,
+        tuple(sorted(request.kwargs.items())),
+        request.sudo,
+    )
+
+
+def compose(
+    *subs: Callable[[Host], Iterable[OperationRequest]],
+    dedupe: bool = False,
+) -> Callable[[Host], Generator[OperationRequest]]:
+    """Concatenate sub-deploys into one deploy-shaped callable, in order.
+
+    Each ``sub`` is any callable taking a ``Host`` and producing
+    ``OperationRequest`` objects (a deploy generator function, or one wrapped
+    by ``sub_deploy``); their requests are yielded in argument order, so
+    composition doubles as an explicit cross-role ordering statement (e.g.
+    repositories before the packages they provide).
+
+    With ``dedupe=True``, requests collapse by *effective identity* --
+    ``func``, ``args``, ``kwargs`` and ``sudo``, but not ``name`` (see
+    ``_effective_key``) -- to their first occurrence, which keeps its name.
+    Independently written roles may therefore each declare the same
+    prerequisite under a different label or a different ``sub_deploy`` name
+    prefix and still collapse to one plan entry; ``sudo`` still separates
+    requests, since it changes what executes. ``OperationRequest`` equality
+    remains maximal (name included), because the determinism guard pairs
+    full values.
+
+    The ``seen`` set is created inside the returned deploy, per invocation:
+    every ``deploy(host)`` call (one per host per phase) dedupes from
+    scratch, keeping the transform pure so both phases produce the identical
+    collapsed sequence and the determinism guard holds.
+    """
+
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        seen: set[tuple] = set()
+        for sub in subs:
+            for request in sub(host):
+                if dedupe:
+                    key = _effective_key(request)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                yield request
+
+    return deploy
+
+
 __all__ = [
     "Command",
     "FactCache",
     "HostRuntime",
     "OpContext",
     "OperationRequest",
+    "compose",
     "op",
+    "sub_deploy",
 ]
