@@ -25,11 +25,24 @@ the concurrency — so `process`, `FactCache` and the `SimulatedHost` seams are
 untouched.
 
 A request flagged `sudo=True` (see [Deploy scripts](guide.md#deploy-scripts))
-is elevated by the driver: [`command_shell`][reemote5.drivers.command_shell] is
-the single mapping from a command descriptor to the shell text a host receives,
-prefixing `sudo` when the operation asked for it. Both `send_command` and
-[`format_log`][reemote5.drivers.format_log] go through it, so the real transport
-and the rendered log agree on what runs.
+is elevated by the driver. [`command_shell`][reemote5.drivers.command_shell]
+renders the shell text for a command descriptor — prefixing `sudo`, or
+`sudo -u <user>` when the host's inventory `privilege` section names a
+`sudo_user` (the run-as user comes from the inventory, never from the
+operation; `root`, being sudo's default target, collapses to a bare `sudo`) —
+and is what [`format_log`][reemote5.drivers.format_log] shows. It is
+deliberately credential-free: when `privilege` carries a `sudo_password`,
+[`send_command`][reemote5.drivers.send_command] elevates through
+[`Host.run_shell_sudo`][reemote5.hosts.Host.run_shell_sudo], which runs
+`sudo -A` against a generated askpass helper so the password is supplied
+without a TTY and never reaches the log. On the real transport an applied
+command that exits non-zero raises
+[`CommandError`][reemote5.hosts.CommandError] (fail-fast) instead of being
+silently logged as applied — unless sudo reports the failure as its *own*
+authentication rejection (a wrong or missing `sudo_password`), which raises
+[`PrivilegeError`][reemote5.hosts.PrivilegeError] so a rejected credential is
+reported as a privilege problem rather than a broken command. See
+[Privilege and sudo](hosts.md#privilege-and-sudo).
 
 ## Phase awareness
 
@@ -65,6 +78,15 @@ run log stay deterministic regardless of the order the hosts finish. Commands
 *within* a single host still run sequentially, since some command sequences are
 order-dependent. [`gather_fact`][reemote5.drivers.gather_fact] applies the same
 fan-out to a one-off fact read outside the two-phase flow.
+
+Both gathers also report failures the same way, since concurrency means several
+hosts can fail at once. `run_prepare` collects the per-host
+[`HostConnectionError`][reemote5.hosts.HostConnectionError] instances of an
+inventory, and `run_apply` the per-host
+[`PrivilegeError`][reemote5.hosts.PrivilegeError] instances of a step, each
+merging them into a single aggregate naming every failed host instead of only
+the first to lose the race. Any other exception propagates unchanged, so a
+`CommandError` or a genuine bug still aborts the run.
 
 ## Reference
 

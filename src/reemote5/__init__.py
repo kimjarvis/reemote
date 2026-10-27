@@ -7,7 +7,7 @@ fresh ``FactCache`` per step. The command-execution path (``send_command``
 and the apply drivers) and fact gathering (each fact's ``process``,
 ``FactCache.get``, the operations that await it, and ``run_prepare``) are
 async, and a plain ``Host`` runs commands and gathers facts over a real
-asyncssh transport built from its inventory ``connection``/``session`` data.
+asyncssh transport built from its inventory ``connection`` data.
 """
 
 from .commands import Command, StringCommand
@@ -43,10 +43,12 @@ from .facts import (
     FileLink,
 )
 from .hosts import (
+    CommandError,
     Host,
     HostConnectionError,
     InventoryEntry,
     InventoryError,
+    PrivilegeError,
     validate_inventory,
 )
 from .operations import dnf, files
@@ -66,6 +68,7 @@ def hello() -> str:
 __all__ = [
     "ApplyReport",
     "Command",
+    "CommandError",
     "DeterminismError",
     "DnfCleanCommand",
     "DnfDisabledModules",
@@ -89,6 +92,7 @@ __all__ = [
     "OpContext",
     "OperationRequest",
     "PlannedOperation",
+    "PrivilegeError",
     "StringCommand",
     "command_shell",
     "compose",

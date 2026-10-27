@@ -19,8 +19,10 @@ without decorators.
 
 import asyncio
 import copy
+import shlex
 from collections.abc import Generator
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -36,7 +38,7 @@ from reemote5.drivers import (
     send_command,
 )
 from reemote5.facts import DnfPackages, FileLink
-from reemote5.hosts import Host, InventoryError, validate_inventory
+from reemote5.hosts import CommandError, Host, InventoryError, validate_inventory
 from reemote5.operations import dnf, files
 from reemote5.operations.dnf import (
     DnfCleanCommand,
@@ -66,12 +68,10 @@ WEB_INVENTORY = [
     {
         "host": "web1",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
-        "session": {"term_type": "xterm-color"},
     },
     {
         "host": "web2",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
-        "session": {"term_type": "xterm-color", "term_size": 80},
     },
 ]
 
@@ -119,20 +119,18 @@ def test_host_from_inventory_maps_known_and_extra_keys():
         {
             "host": "web1",
             "connection": {"key_path": "~/.ssh/id_ed25519"},
-            "session": {"term_type": "xterm-color"},
-            "sudo": {"password": "secret"},
+            "privilege": {"sudo_user": "deploy"},
             "groups": ["web"],  # unrecognised key -> preserved in extra
         }
     )
     assert host.name == "web1"
     assert host.connection == {"key_path": "~/.ssh/id_ed25519"}
-    assert host.session == {"term_type": "xterm-color"}
-    assert host.sudo == {"password": "secret"}
+    assert host.privilege == {"sudo_user": "deploy"}
     assert host.extra == {"groups": ["web"]}
 
 
 async def test_inventory_host_reaches_the_real_transport_boundary():
-    """A plain Host carries connection/session into facts and operations,
+    """A plain Host carries its connection data into facts and operations,
     where the missing real SSH transport is reported explicitly."""
     host = Host.from_inventory(WEB_INVENTORY[0])
     assert host.connection == {"key_path": "~/.ssh/id_ed25519"}
@@ -266,26 +264,184 @@ def test_command_shell_applies_the_sudo_prefix():
     cmd = DnfInstallCommand(packages=("nginx",))
     assert command_shell(cmd) == "dnf install -y nginx"
     assert command_shell(cmd, sudo=True) == "sudo dnf install -y nginx"
+    # A run-as user is emitted as ``sudo -u <user>`` (shell-quoted)...
+    assert (
+        command_shell(cmd, sudo=True, sudo_user="deploy")
+        == "sudo -u deploy dnf install -y nginx"
+    )
+    # ``root`` is sudo's own default target, so it collapses to a bare ``sudo``.
+    assert (
+        command_shell(cmd, sudo=True, sudo_user="root")
+        == "sudo dnf install -y nginx"
+    )
+    # ...but only when elevation was actually requested.
+    assert command_shell(cmd, sudo_user="deploy") == "dnf install -y nginx"
 
 
 async def test_send_command_prefixes_sudo_on_the_real_transport_path():
     """A plain Host (no ``execute_command`` seam) gets the elevated shell."""
 
     class RecordingHost(Host):
-        """Records ``run_shell`` instead of opening a real asyncssh connection."""
+        """Records the transport seam instead of opening a real connection."""
 
         def __init__(self):
             super().__init__(name="rec")
             self.sent: list[str] = []
 
-        async def run_shell(self, shell: str) -> str:
+        async def _run_shell(self, shell: str):
             self.sent.append(shell)
-            return ""
+            return SimpleNamespace(exit_status=0, stdout="", stderr="")
 
     host = RecordingHost()
     await send_command(host, DnfInstallCommand(packages=("nginx",)), sudo=True)
     await send_command(host, DnfInstallCommand(packages=("nginx",)))
     assert host.sent == ["sudo dnf install -y nginx", "dnf install -y nginx"]
+
+
+async def test_send_command_sources_sudo_user_from_host_privilege():
+    """The run-as user comes from the inventory ``privilege`` section, never
+    from the operation -- the op only carries ``sudo=True``."""
+
+    class RecordingHost(Host):
+        def __init__(self, privilege):
+            super().__init__(name="rec", privilege=privilege)
+            self.sent: list[str] = []
+
+        async def _run_shell(self, shell: str):
+            self.sent.append(shell)
+            return SimpleNamespace(exit_status=0, stdout="", stderr="")
+
+    host = RecordingHost({"sudo_user": "deploy"})
+    await send_command(host, DnfInstallCommand(packages=("nginx",)), sudo=True)
+    # Unprivileged: no elevation even though a sudo_user is configured.
+    await send_command(host, DnfInstallCommand(packages=("nginx",)))
+    assert host.sent == [
+        "sudo -u deploy dnf install -y nginx",
+        "dnf install -y nginx",
+    ]
+
+
+class _AskpassRecordingHost(Host):
+    """Records the transport seam and fakes the askpass-setup round-trip.
+
+    Stands in for the real transport so the askpass command construction can be
+    asserted without an SSH connection: the ``_ASKPASS_SETUP`` call (detected by
+    its ``mktemp``) returns a canned helper path, everything else empty stdout.
+    """
+
+    ASKPASS_PATH = "/tmp/reemote5-askpass-abc123"
+
+    def __init__(self, privilege):
+        super().__init__(name="rec", privilege=privilege)
+        self.sent: list[str] = []
+
+    async def _run_shell(self, shell: str):
+        self.sent.append(shell)
+        stdout = f"{self.ASKPASS_PATH}\n" if "mktemp" in shell else ""
+        return SimpleNamespace(exit_status=0, stdout=stdout, stderr="")
+
+
+async def test_run_shell_sudo_uses_askpass_when_password_configured():
+    """A ``sudo_password`` in privilege runs the command under ``sudo -A`` with
+    the generated askpass helper, the password supplied via the environment (no
+    TTY), and the run-as user still applied."""
+    host = _AskpassRecordingHost({"sudo_user": "deploy", "sudo_password": "s3cr3t"})
+    await send_command(host, DnfInstallCommand(packages=("nginx",)), sudo=True)
+    # First round-trip writes the helper, second runs the elevated command.
+    setup, elevated = host.sent
+    assert "mktemp" in setup
+    assert elevated == (
+        "env SUDO_ASKPASS=/tmp/reemote5-askpass-abc123 "
+        "REEMOTE5_SUDO_PASSWORD=s3cr3t "
+        "sudo -A -k -u deploy dnf install -y nginx"
+    )
+
+
+async def test_run_shell_sudo_collapses_the_root_run_as_user_to_a_bare_sudo():
+    """``sudo_user: root`` is ``sudo``'s own default target, so it collapses to
+    a bare ``sudo`` (no ``-u root``): the login user is already in sudoers and
+    ``sudo`` elevates to root on its own."""
+    host = _AskpassRecordingHost({"sudo_user": "root", "sudo_password": "s3cr3t"})
+    await send_command(host, DnfInstallCommand(packages=("nginx",)), sudo=True)
+    _setup, elevated = host.sent
+    assert elevated == (
+        "env SUDO_ASKPASS=/tmp/reemote5-askpass-abc123 "
+        "REEMOTE5_SUDO_PASSWORD=s3cr3t "
+        "sudo -A -k dnf install -y nginx"
+    )
+    assert "-u root" not in elevated
+
+
+async def test_run_shell_sudo_creates_the_askpass_helper_once():
+    """The helper is cached per host: two elevated commands write it once."""
+    host = _AskpassRecordingHost({"sudo_password": "pw"})
+    await send_command(host, DnfInstallCommand(packages=("a",)), sudo=True)
+    await send_command(host, DnfInstallCommand(packages=("b",)), sudo=True)
+    assert sum("mktemp" in s for s in host.sent) == 1
+
+
+async def test_run_shell_sudo_shell_quotes_the_password():
+    """A password with shell metacharacters is quoted, not interpolated raw."""
+    host = _AskpassRecordingHost({"sudo_password": "p@ss w0rd';rm"})
+    await send_command(host, DnfInstallCommand(packages=("a",)), sudo=True)
+    elevated = host.sent[-1]
+    assert shlex.quote("p@ss w0rd';rm") in elevated
+    assert elevated.endswith("sudo -A -k dnf install -y a")
+
+
+# --- fail-fast on a non-zero exit (CommandError) -----------------------------
+
+
+async def test_send_command_raises_command_error_on_nonzero_exit():
+    """The apply path is fail-fast: a command that exits non-zero raises
+    ``CommandError`` instead of being silently reported as applied."""
+
+    class FailingHost(Host):
+        async def _run_shell(self, shell: str):
+            return SimpleNamespace(exit_status=1, stdout="", stderr="dnf: boom")
+
+    host = FailingHost(name="f")
+    with pytest.raises(CommandError) as excinfo:
+        await send_command(host, DnfInstallCommand(packages=("nginx",)))
+    assert excinfo.value.exit_status == 1
+    assert excinfo.value.command == "dnf install -y nginx"
+    assert "dnf: boom" in excinfo.value.stderr
+
+
+async def test_run_shell_sudo_failure_reports_a_credential_free_command():
+    """A failed elevated command reports the credential-free ``sudo``
+    rendering, never the askpass command that carries the password."""
+
+    class FailingSudoHost(Host):
+        def __init__(self):
+            super().__init__(
+                name="f",
+                privilege={"sudo_user": "root", "sudo_password": "s3cr3t"},
+            )
+            self._askpass_path = "/tmp/reemote5-askpass-cached"  # skip the setup
+
+        async def _run_shell(self, shell: str):
+            return SimpleNamespace(exit_status=1, stdout="", stderr="sudo: failed")
+
+    host = FailingSudoHost()
+    with pytest.raises(CommandError) as excinfo:
+        await send_command(host, DnfInstallCommand(packages=("nginx",)), sudo=True)
+    assert excinfo.value.command == "sudo dnf install -y nginx"
+    assert "s3cr3t" not in excinfo.value.command
+    assert "s3cr3t" not in str(excinfo.value)
+
+
+async def test_fact_gathering_tolerates_a_nonzero_exit():
+    """``run_shell`` without ``check`` (the fact path) returns stdout and does
+    not raise on a non-zero exit -- reads like ``readlink`` on an absent link
+    exit non-zero legitimately."""
+
+    class NonZeroHost(Host):
+        async def _run_shell(self, shell: str):
+            return SimpleNamespace(exit_status=1, stdout="", stderr="")
+
+    host = NonZeroHost(name="f")
+    assert await host.run_shell("readlink /absent") == ""
 
 
 # --- FactCache (4.4) ---------------------------------------------------------
@@ -756,6 +912,46 @@ async def test_sudo_flag_flows_into_the_apply_log():
     # rendered log shows the elevated shell that would go over SSH.
     assert _hosts[0].packages == {"nginx"}
     assert "sudo dnf install -y nginx" in format_log(report)
+
+
+async def test_sudo_user_from_privilege_flows_into_the_apply_log():
+    """The run-as user is read from the inventory ``privilege`` section and
+    rendered in the log; the op itself only carries ``sudo=True``."""
+
+    def sudo_deploy(host):
+        yield op(dnf.packages, name="Install nginx", packages=("nginx",), sudo=True)
+
+    _plans, report, _hosts = await run(
+        [{"host": "a", "connection": {}, "privilege": {"sudo_user": "deploy"}}],
+        sudo_deploy,
+        host_factory=SimulatedHost.from_inventory,
+    )
+    (entry,) = report.log
+    assert entry.sudo_user == "deploy"
+    assert "sudo -u deploy dnf install -y nginx" in format_log(report)
+
+
+async def test_sudo_password_never_appears_in_the_apply_log():
+    """The password lives only in the inventory and the execution string; the
+    rendered log shows the credential-free elevated command, never the secret."""
+
+    def sudo_deploy(host):
+        yield op(dnf.packages, name="Install nginx", packages=("nginx",), sudo=True)
+
+    _plans, report, _hosts = await run(
+        [
+            {
+                "host": "a",
+                "connection": {},
+                "privilege": {"sudo_user": "deploy", "sudo_password": "s3cr3t"},
+            }
+        ],
+        sudo_deploy,
+        host_factory=SimulatedHost.from_inventory,
+    )
+    rendered = format_log(report)
+    assert "s3cr3t" not in rendered
+    assert "sudo -u deploy dnf install -y nginx" in rendered
 
 
 # --- Prepare phase / --dry (8.1, 10) ------------------------------------------

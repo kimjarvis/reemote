@@ -6,7 +6,7 @@ application drives reemote5's two-phase execution model end to end over a
 
 1. Specify the target hosts as an *inventory*: a list of dictionaries with
    each host's name plus its SSH ``connection`` information (address,
-   username and client key). There is no ``session`` information here.
+   username and client key).
 2. Build the deploy script as a generator yielding ``OperationRequest``
    objects.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
@@ -50,8 +50,7 @@ HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
 
 # The inventory: real hosts and their SSH connection information, supplied
 # by the application to the library. The default host_factory materializes
-# each entry into a plain Host that connects over asyncssh. There is no
-# session information for these hosts.
+# each entry into a plain Host that connects over asyncssh.
 INVENTORY = [
     {
         "host": "web1",

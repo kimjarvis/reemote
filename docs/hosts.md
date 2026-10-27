@@ -2,16 +2,16 @@
 
 Hosts and their SSH information are specified as a simple *inventory*: a list
 of dictionaries, each describing one host. Every entry must carry at least a
-`host` (its name) and a `connection` (the SSH connection data); `session` and
-`sudo` are optional and any extra keys are preserved. The inventory is the
+`host` (its name) and a `connection` (the SSH connection data); `privilege` is
+optional and any extra keys are preserved. The inventory is the
 parameter the library functions accept; [`Host.from_inventory`][reemote5.hosts.Host.from_inventory]
 materializes each entry into a [`Host`][reemote5.hosts.Host] whose
-`connection`/`session` data reaches both operations
+`connection` data reaches both operations
 ([`send_command`][reemote5.drivers.send_command]) and facts (each `process`).
 
 The inventory is validated with pydantic before any host is materialized.
 Each entry is checked against the [`InventoryEntry`][reemote5.hosts.InventoryEntry]
-schema — `host` and `connection` are required, `session`/`sudo` optional, and
+schema — `host` and `connection` are required, `privilege` optional, and
 unrecognised keys are allowed (they land in `Host.extra`).
 [`validate_inventory`][reemote5.hosts.validate_inventory] checks a whole
 inventory up front (it must be a list of dictionaries), and
@@ -91,12 +91,71 @@ options above, for example:
 }
 ```
 
+## Privilege and sudo
+
+An entry may carry an optional `privilege` mapping holding elevation settings.
+Two keys are recognised: `sudo_user`, the run-as user the driver passes to
+`sudo -u` (since `sudo` defaults to `root`, a `sudo_user` of `root` collapses
+to a bare `sudo`), and `sudo_password`, the sudo password. Both apply only when
+an operation is flagged `sudo=True`:
+
+```python
+{
+    "host": "web1",
+    "connection": {"address": "192.168.0.240", "username": "kjarvis"},
+    "privilege": {"sudo_user": "deploy", "sudo_password": "s3cr3t"},
+}
+```
+
+Privilege parameters come from the inventory, never from a deploy script: an
+operation asks to elevate with `sudo=True` (see the
+[Guide](guide.md#deploy-scripts)) but cannot choose the run-as user or supply a
+password. Without `sudo_password`, elevation assumes passwordless sudo
+(NOPASSWD or a cached credential) and runs a bare `sudo`. With one, the real
+transport runs `sudo -A` against a generated askpass helper, so the password is
+supplied without a TTY (asyncssh channels are non-interactive). The password is
+plain text in the inventory — the only supported form — and is shell-quoted into
+the command sent over the encrypted channel; it never appears in the rendered
+apply log, which shows the credential-free `sudo -u <user> …` form.
+
+An applied command that exits non-zero raises
+[`CommandError`][reemote5.hosts.CommandError] (fail-fast), carrying the host,
+the credential-free command text, the exit status and the captured stderr, so a
+permission error or a failed package transaction surfaces instead of being
+silently logged as applied. Fact gathering does not raise it: reads tolerate a
+non-zero exit (e.g. `readlink` on an absent link).
+
+### A rejected credential
+
+A failure sudo reports as its *own* authentication rejection — a wrong
+`sudo_password`, a missing one where sudo demands it, or a run-as user the login
+user may not become — raises
+[`PrivilegeError`][reemote5.hosts.PrivilegeError] instead: the privilege
+counterpart of [`HostConnectionError`][reemote5.hosts.HostConnectionError],
+reported the same way.
+
+reemote5 invokes `sudo -A` exactly once, but sudo re-runs the askpass helper up
+to its own `passwd_tries` limit (3 by default), so one bad password costs three
+identical attempts and three `Sorry, try again.` lines before sudo gives up with
+`sudo: 3 incorrect password attempts`. Matching those signatures — for both Todd
+Miller's sudo and sudo-rs — collapses that into a single error whose message
+names the affected host(s) and nothing else, so neither the retry noise nor the
+password reaches the report. The detail is preserved for diagnosis rather than
+discarded: `failures` carries `(host_name, command, cause)` triples, where the
+command is the credential-free rendering and the cause is the `CommandError`
+holding the exit status and captured stderr (also chained as `__cause__`).
+[`run_apply`][reemote5.drivers.run_apply] merges the per-host failures of a
+concurrent lockstep step into one aggregate via `PrivilegeError.aggregate`, so
+every host whose credentials were rejected is reported at once.
+
 ::: reemote5.hosts
     options:
       members:
+        - CommandError
         - Host
         - HostConnectionError
         - InventoryEntry
         - InventoryError
+        - PrivilegeError
         - validate_inventory
 

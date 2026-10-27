@@ -26,13 +26,14 @@ whole prepare/apply path is therefore awaited end to end.
 """
 
 import asyncio
+import shlex
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
 from .commands import Command
 from .core import FactCache, HostRuntime, OpContext, OperationRequest
-from .hosts import Host, HostConnectionError, validate_inventory
+from .hosts import Host, HostConnectionError, PrivilegeError, validate_inventory
 
 
 class DeterminismError(RuntimeError):
@@ -65,6 +66,7 @@ class LogEntry:
     reason: str
     commands: tuple[Command, ...] = ()
     sudo: bool = False  # whether the operation's commands were elevated
+    sudo_user: str | None = None  # run-as user from the host's privilege data
 
 
 @dataclass
@@ -119,16 +121,48 @@ async def gather_fact(
     return {host.name: value for host, value in zip(host_list, values)}
 
 
-def command_shell(cmd: Command, sudo: bool = False) -> str:
-    """Render the shell string a command descriptor runs as.
+def command_shell(
+    cmd: Command, sudo: bool = False, sudo_user: str | None = None
+) -> str:
+    """Render the shell string a command descriptor runs as (the loggable form).
 
     Command descriptors stay dumb (design doc section 4.5); turning one into
-    the text actually sent to a host -- including the ``sudo`` elevation the
-    driver applies for a request flagged ``sudo=True`` -- is the driver's job,
-    so both execution and log rendering go through this single mapping.
+    shell text is the driver's job. With ``sudo`` this is the elevated form the
+    apply log shows (``sudo`` / ``sudo -u <user>``); it is deliberately
+    credential-free -- when the host's ``privilege`` carries a ``sudo_password``
+    the real transport runs it under ``sudo -A`` with an askpass helper (see
+    ``Host.run_shell_sudo``), plumbing this rendering never exposes so the
+    password cannot leak into ``format_log``. ``send_command`` also calls it
+    with ``sudo=False`` to get the plain descriptor shell it hands to the
+    transport.
+
+    ``sudo_user`` is the run-as user taken from the host's inventory
+    ``privilege`` section (never from the operation); when set alongside
+    ``sudo`` it is emitted as ``sudo -u <user>``, shell-quoted -- except that
+    ``root``, ``sudo``'s own default target, collapses to a bare ``sudo``.
     """
     shell = cmd.shell() if hasattr(cmd, "shell") else str(cmd)
-    return f"sudo {shell}" if sudo else shell
+    if not sudo:
+        return shell
+    # ``sudo`` defaults to root, so a ``sudo_user`` of ``root`` collapses to a
+    # bare ``sudo``; only a non-root run-as user is emitted as ``-u <user>``.
+    if sudo_user and sudo_user != "root":
+        return f"sudo -u {shlex.quote(sudo_user)} {shell}"
+    return f"sudo {shell}"
+
+
+def _privilege_sudo_user(host: Host, sudo: bool) -> str | None:
+    """The run-as user for an elevated command, from the host's privilege data.
+
+    Returns ``None`` when the request is not elevated or the host specifies no
+    ``sudo_user``. Sourced here -- from the inventory-backed ``Host.privilege``
+    -- and never from the operation, so a deploy script cannot choose the
+    run-as user.
+    """
+    if not sudo:
+        return None
+    privilege = getattr(host, "privilege", None) or {}
+    return privilege.get("sudo_user")
 
 
 async def send_command(host: Host, cmd: Command, *, sudo: bool = False) -> None:
@@ -142,16 +176,29 @@ async def send_command(host: Host, cmd: Command, *, sudo: bool = False) -> None:
       ``sudo`` is irrelevant here -- privilege has no in-memory effect -- so
       it is not forwarded. This is the path pytest always takes.
     - Any other host -- a plain library ``Host`` built from a real inventory
-      entry -- runs the command's shell over asyncssh via ``host.run_shell``,
-      using the host's ``connection``/``session`` data, prefixed with ``sudo``
-      when ``sudo`` is true. This differs from pyinfra, which drives Paramiko
-      under gevent.
+      entry -- runs the command's shell over asyncssh, using the host's
+      ``connection`` data. An elevated request goes through
+      ``host.run_shell_sudo``, which applies the run-as user and (when the
+      host's ``privilege`` carries a ``sudo_password``) the askpass mechanism
+      sourced from the inventory; an unprivileged one goes through
+      ``host.run_shell``. Either way a non-zero exit raises
+      ``CommandError`` (fail-fast), so a command that fails -- a permission
+      error, a broken package transaction -- is never silently reported as
+      applied. A failure sudo reports as its *own* authentication rejection
+      (a wrong or missing ``sudo_password``) raises ``PrivilegeError``
+      instead, which ``run_apply`` aggregates across hosts exactly as
+      ``run_prepare`` aggregates ``HostConnectionError``.
+      This differs from pyinfra, which drives Paramiko under gevent.
     """
     execute = getattr(host, "execute_command", None)
     if execute is not None:
         execute(cmd)
         return
-    await host.run_shell(command_shell(cmd, sudo))
+    base = command_shell(cmd)  # sudo=False -> the plain descriptor shell
+    if sudo:
+        await host.run_shell_sudo(base)
+    else:
+        await host.run_shell(base, check=True)
 
 
 async def _prepare_host(
@@ -252,6 +299,7 @@ async def _apply_host_step(rt: HostRuntime) -> LogEntry | None:
         reason=ctx.reason,
         commands=tuple(sent),
         sudo=request.sudo,
+        sudo_user=_privilege_sudo_user(rt.host, request.sudo),
     )
 
 
@@ -269,6 +317,15 @@ async def run_apply(
     synchronous and complete before anything is sent. If ``plans`` is given,
     each pulled request sequence is checked against the plan; a mismatch
     raises ``DeterminismError``.
+
+    Because a step's hosts execute concurrently, several may have their
+    elevation rejected at once. Per-host ``PrivilegeError`` instances are
+    therefore collected (via ``return_exceptions=True``) and merged into a
+    single aggregate naming every host whose credentials failed, so one bad
+    ``sudo_password`` is reported for the whole inventory at once -- the same
+    treatment ``run_prepare`` gives ``HostConnectionError``. Any other
+    exception is a genuine error and propagates unchanged, so a ``CommandError``
+    or a bug still aborts the run.
 
     A coroutine, because commands are executed via the async
     ``send_command``.
@@ -309,9 +366,19 @@ async def run_apply(
         # deterministic, and its join is the barrier holding lockstep ordering
         # before the next step. Per-host commands still run sequentially inside
         # ``_apply_host_step``.
-        for entry in await asyncio.gather(*(_apply_host_step(rt) for rt in active)):
-            if entry is not None:
-                report.log.append(entry)
+        results = await asyncio.gather(
+            *(_apply_host_step(rt) for rt in active), return_exceptions=True
+        )
+        privilege_errors: list[PrivilegeError] = []
+        for result in results:
+            if isinstance(result, PrivilegeError):
+                privilege_errors.append(result)
+            elif isinstance(result, BaseException):
+                raise result
+            elif result is not None:
+                report.log.append(result)
+        if privilege_errors:
+            raise PrivilegeError.aggregate(privilege_errors)
 
         # Step 3: remove finished hosts.
         active = [rt for rt in active if not rt.done]
@@ -339,7 +406,9 @@ def format_log(report: ApplyReport) -> str:
         if entry.changed:
             lines.append(f"{entry.host}: {entry.name:<24} [changed: {entry.reason}]")
             for cmd in entry.commands:
-                lines.append(f"    $ {command_shell(cmd, entry.sudo)}")
+                lines.append(
+                    f"    $ {command_shell(cmd, entry.sudo, sudo_user=entry.sudo_user)}"
+                )
         else:
             lines.append(f"{entry.host}: {entry.name:<24} [no change: {entry.reason}]")
     return "\n".join(lines)

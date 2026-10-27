@@ -97,8 +97,8 @@ def deploy(host: Host) -> Generator[OperationRequest, None, None]:
 ```
 
 Hosts are specified as an *inventory* — a list of dictionaries, each carrying
-at least a host's name (`host`) and SSH `connection` information, optionally
-`session`/`sudo` — and passed to [`run`][reemote5.drivers.run], which validates
+at least a host's name (`host`) and SSH `connection` information — and passed
+to [`run`][reemote5.drivers.run], which validates
 it (every entry must have `host` and `connection`; a malformed inventory raises
 [`InventoryError`][reemote5.hosts.InventoryError]) and then prepares and applies
 in one call. `run` is a coroutine, so it must be awaited (here from an
@@ -117,12 +117,10 @@ inventory = [
     {
         "host": "web1",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
-        "session": {"term_type": "xterm-color"},
     },
     {
         "host": "web2",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
-        "session": {"term_type": "xterm-color", "term_size": 80},
     },
 ]
 

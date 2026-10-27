@@ -9,9 +9,12 @@ docstring and this page follows.
 !!! warning "The operation examples connect for real"
 
     The scripts under `examples/operations/dnf/` use the *default*
-    `Host.from_inventory` factory and a two-host inventory of real machines
-    (web1/web2 on `192.168.0.x`) — hard-coded as `INVENTORY` in the script,
-    or, for [`json_inventory`](#inventory-from-a-json-file), read from
+    `Host.from_inventory` factory and an inventory of real machines —
+    hard-coded as `INVENTORY` in the script (most target the two hosts
+    web1/web2 on `192.168.0.x`;
+    [`privilege_sudo_pw`](#elevating-with-a-sudo-password) targets a single
+    `centos9-sudo-pw` and carries a plain-text sudo password), or, for
+    [`json_inventory`](#inventory-from-a-json-file), read from
     `inventory.json` in the project root — so running one opens real
     asyncssh connections: first read-only for the `dry=True` plan, then
     executing the apply phase. Edit the inventory (or keep only the dry
@@ -40,6 +43,21 @@ The same deploy as the base example, with the target hosts kept in
 plain list of dictionaries to `run`.
 
 ::: json_inventory
+    options:
+      members: []
+
+## Elevating with a sudo password
+
+The base example's deploy, unchanged, run against a single host whose
+inventory carries a `privilege` section — the run-as user and a plain-text
+`sudo_password`. The operations still only *ask* to elevate with `sudo=True`;
+the credential comes from the inventory alone, and the driver supplies it
+through a generated askpass helper (`sudo -A`, no TTY) without ever logging it.
+It also shows how a rejected credential is reported: `main` catches
+[`PrivilegeError`][reemote5.hosts.PrivilegeError] and prints one line naming the
+host, instead of surfacing sudo's three password retries as a traceback.
+
+::: privilege_sudo_pw
     options:
       members: []
 

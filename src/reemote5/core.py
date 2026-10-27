@@ -26,7 +26,11 @@ class OperationRequest:
     should run the operation rather than being forwarded to ``func``. When
     true, the driver elevates each command the operation yields (the real
     transport prefixes it with ``sudo``; the test framework's simulated seam
-    ignores it, since privilege has no in-memory effect).
+    ignores it, since privilege has no in-memory effect). Note that ``sudo``
+    is only a boolean request to elevate: *how* to elevate -- the run-as user
+    (and, later, the password) -- comes from the host's inventory
+    ``privilege`` section, never from the operation, so a deploy script cannot
+    choose its own privilege parameters.
     """
 
     func: Callable  # operation function, e.g. dnf.packages

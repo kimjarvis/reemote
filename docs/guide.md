@@ -41,6 +41,18 @@ it, since privilege has no in-memory effect. Elevation is per operation, so a
 privileged package install and an unprivileged link change can sit side by side
 in one deploy.
 
+`sudo=True` only *asks* to elevate -- it never says as whom, or with what
+credential. The run-as user and password come from the host's inventory
+`privilege` section (see
+[Hosts and the inventory](#hosts-and-the-inventory)), so a deploy script cannot
+choose its own privilege parameters; when a `sudo_user` other than `root` is
+configured the driver emits `sudo -u <user>` instead of a bare `sudo` (`root`,
+sudo's default target, collapses to a bare `sudo`), and a `sudo_password` is
+supplied through an askpass helper without ever appearing in the log. A
+credential the host rejects is reported as a
+[`PrivilegeError`][reemote5.hosts.PrivilegeError] naming the host, not as a
+failed command — see [Privilege and sudo](hosts.md#privilege-and-sudo).
+
 Three rules follow from the model:
 
 1. **Use immutable containers for collection parameters.** `packages=("nginx",)`
@@ -195,20 +207,18 @@ inventory = [
     {
         "host": "web1",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
-        "session": {"term_type": "xterm-color"},
     },
     {
         "host": "web2",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
-        "session": {"term_type": "xterm-color", "term_size": 80},
-        "sudo": {"password": "..."},  # optional per-host sudo information
+        "privilege": {"sudo_user": "deploy"},  # optional elevation settings
     },
 ]
 ```
 
 [`Host.from_inventory`][reemote5.hosts.Host.from_inventory] materializes each
-entry into a [`Host`][reemote5.hosts.Host] carrying `connection`, `session`,
-`sudo` and any unrecognised keys (preserved in `extra`, so the format is
+entry into a [`Host`][reemote5.hosts.Host] carrying `connection`,
+`privilege` and any unrecognised keys (preserved in `extra`, so the format is
 extensible). That data reaches both operations
 ([`send_command`][reemote5.drivers.send_command]) and facts (each `process`),
 which is where the real asyncssh transport will use it.
@@ -232,7 +242,6 @@ package:
 SimulatedHost(
     name="web1",
     connection={"key_path": "~/.ssh/id_ed25519"},
-    session={"term_type": "xterm-color"},
     packages=set(),
     links={},
     installs_links={
@@ -277,7 +286,7 @@ class EnabledSites:
     @classmethod
     async def process(cls, host: Host) -> set[str]:
         # A real implementation would list /etc/nginx/sites-enabled over
-        # asyncssh, using host.connection/host.session; the POC reads the
+        # asyncssh, using host.connection; the POC reads the
         # simulated state provided by the test framework's SimulatedHost.
         links = getattr(host, "links", None)
         if links is None:

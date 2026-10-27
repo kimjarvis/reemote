@@ -7,7 +7,7 @@ execution model:
 
 1. Specify the target hosts as an *inventory*: a list of dictionaries with
    each host's name plus its SSH ``connection`` information (address,
-   username and client key). There is no ``session`` information here.
+   username and client key).
 2. Materialize each entry into a plain ``Host`` with the default
    ``Host.from_inventory`` factory. Each ``Host`` lazily opens an asyncssh
    connection from its ``connection`` data when a fact is gathered.
@@ -33,8 +33,7 @@ from reemote5 import DnfEnabledModules, Host, gather_fact
 
 # The inventory: real hosts and their SSH connection information, supplied by
 # the application to the library. Host.from_inventory materializes each entry
-# into a plain Host that connects over asyncssh. There is no session
-# information for these hosts.
+# into a plain Host that connects over asyncssh.
 INVENTORY = [
     {
         "host": "web1",

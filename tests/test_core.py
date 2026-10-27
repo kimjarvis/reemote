@@ -22,7 +22,6 @@ INVENTORY = [
     {
         "host": "web1",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
-        "session": {"term_type": "xterm-color"},
     },
 ]
 
