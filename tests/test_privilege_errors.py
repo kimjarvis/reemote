@@ -173,6 +173,93 @@ async def test_a_command_failure_under_sudo_stays_a_command_error():
     assert not isinstance(excinfo.value, PrivilegeError)
 
 
+# --- run_shell_su classifies su's own authentication failure ------------------
+
+
+class RejectingSuHost(Host):
+    """A ``Host`` whose su credential the target rejects.
+
+    Mirrors ``RejectingSudoHost`` for the su path: ``_run_shell`` returns su's
+    authentication-failure output for every command, and the su askpass helper
+    path is pre-seeded so the setup round-trip is skipped.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        stderr: str = "su: Authentication failure",
+        exit_status: int = 1,
+    ):
+        super().__init__(
+            name=name,
+            connection={"address": "10.0.0.1"},
+            privilege={"su_user": "deploy", "su_password": PASSWORD},
+        )
+        self._su_askpass_path = "/tmp/reemote5-su-askpass-cached"
+        self.stderr = stderr
+        self.exit_status = exit_status
+
+    async def _run_shell(self, shell: str):
+        return SimpleNamespace(
+            exit_status=self.exit_status, stdout="", stderr=self.stderr
+        )
+
+
+async def test_rejected_su_password_raises_privilege_error():
+    host = RejectingSuHost("web1")
+
+    with pytest.raises(PrivilegeError) as excinfo:
+        await send_command(host, DnfInstallCommand(packages=("httpd",)), su=True)
+
+    err = excinfo.value
+    assert err.host_names == ("web1",)
+    assert str(err) == "privilege escalation failed on 1 host: web1"
+
+
+async def test_su_privilege_error_is_credential_free():
+    host = RejectingSuHost("web1")
+
+    with pytest.raises(PrivilegeError) as excinfo:
+        await send_command(host, DnfInstallCommand(packages=("httpd",)), su=True)
+
+    err = excinfo.value
+    name, command, cause = err.failures[0]
+    assert name == "web1"
+    # The credential-free rendering names the su target, never the password.
+    assert command == "su deploy -c 'dnf install -y httpd'"
+    assert PASSWORD not in command
+    assert PASSWORD not in str(err)
+    assert isinstance(cause, CommandError)
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "su: Authentication failure",
+        "su: incorrect password",
+        "Cannot make/remove an entry for the specified session",
+    ],
+)
+async def test_su_authentication_failures_are_privilege_errors(stderr: str):
+    host = RejectingSuHost("web1", stderr=stderr)
+
+    with pytest.raises(PrivilegeError):
+        await send_command(host, DnfInstallCommand(packages=("httpd",)), su=True)
+
+
+async def test_a_command_failure_under_su_stays_a_command_error():
+    """Once su has authenticated, a failure of the command it ran is a genuine
+    ``CommandError`` -- not misclassified as a privilege problem."""
+    host = RejectingSuHost(
+        "web1", stderr="Error: No match for argument: httpd", exit_status=1
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        await send_command(host, DnfInstallCommand(packages=("httpd",)), su=True)
+
+    assert not isinstance(excinfo.value, PrivilegeError)
+
+
 # --- run_apply aggregates per-host failures -----------------------------------
 
 

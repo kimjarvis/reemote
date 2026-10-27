@@ -217,6 +217,29 @@ def test_connect_options_merges_passthrough_last():
     assert kwargs["family"] == 0  # non-first-class option still forwarded
 
 
+def test_connect_options_rejects_forbidden_kbdint_auth():
+    """``kbdint_auth`` is expressly forbidden in the connection mapping."""
+    host = Host(
+        name="web1",
+        connection={"address": "10.0.0.1", "kbdint_auth": True},
+    )
+    with pytest.raises(InventoryError, match="kbdint_auth"):
+        host._connect_options()
+
+
+def test_connect_options_rejects_forbidden_option_in_passthrough():
+    """A forbidden option cannot be smuggled through ``asyncssh_connect_kwargs``."""
+    host = Host(
+        name="web1",
+        connection={
+            "address": "10.0.0.1",
+            "asyncssh_connect_kwargs": {"kbdint_auth": True},
+        },
+    )
+    with pytest.raises(InventoryError, match="kbdint_auth"):
+        host._connect_options()
+
+
 # --- OperationRequest (4.1) -------------------------------------------------
 
 
@@ -255,6 +278,28 @@ def test_sudo_participates_in_request_equality_and_hashing():
     assert plain != elevated  # a sudo difference must not pair in lockstep
     assert elevated == other_elevated
     assert hash(elevated) == hash(other_elevated)
+
+
+def test_op_su_is_a_meta_parameter_not_forwarded_to_the_operation():
+    request = op(dnf.packages, name="Install nginx", packages=("nginx",), su=True)
+    # ``su`` is captured on the request, never mixed into the operation's
+    # kwargs (dnf.packages has no ``su`` parameter).
+    assert request.su is True
+    assert "su" not in request.kwargs
+    assert request.kwargs == {"packages": ("nginx",)}
+    assert op(dnf.packages, packages=("nginx",)).su is False
+
+
+def test_su_participates_in_request_equality_and_hashing():
+    plain = op(dnf.packages, name="Install nginx", packages=("nginx",))
+    elevated = op(dnf.packages, name="Install nginx", packages=("nginx",), su=True)
+    other = op(dnf.packages, name="Install nginx", packages=("nginx",), su=True)
+    assert plain != elevated  # a su difference must not pair in lockstep
+    assert elevated == other
+    assert hash(elevated) == hash(other)
+    # sudo and su are independent flags: a request differs on either.
+    sudo_only = op(dnf.packages, name="Install nginx", packages=("nginx",), sudo=True)
+    assert sudo_only != elevated
 
 
 # --- sudo elevation on the command path --------------------------------------
@@ -387,6 +432,140 @@ async def test_run_shell_sudo_shell_quotes_the_password():
     elevated = host.sent[-1]
     assert shlex.quote("p@ss w0rd';rm") in elevated
     assert elevated.endswith("sudo -A -k dnf install -y a")
+
+
+# --- su elevation on the command path ----------------------------------------
+
+
+def test_command_shell_applies_the_su_prefix():
+    cmd = DnfInstallCommand(packages=("nginx",))
+    # Default su runs ``su -c``; su's own default target (root) collapses to a
+    # bare ``su -c`` rather than naming root.
+    assert command_shell(cmd, su=True) == "su -c 'dnf install -y nginx'"
+    assert command_shell(cmd, su=True, su_user="root") == "su -c 'dnf install -y nginx'"
+    # A non-root target is named.
+    assert (
+        command_shell(cmd, su=True, su_user="deploy")
+        == "su deploy -c 'dnf install -y nginx'"
+    )
+    # ...but only when su was actually requested.
+    assert command_shell(cmd, su_user="deploy") == "dnf install -y nginx"
+
+
+def test_command_shell_combines_sudo_then_su_in_order():
+    """When both flags are set the order is sudo -> su: sudo is the outer
+    prefix and su runs inside it."""
+    cmd = DnfInstallCommand(packages=("nginx",))
+    assert command_shell(cmd, sudo=True, su=True) == "sudo su -c 'dnf install -y nginx'"
+    assert (
+        command_shell(cmd, sudo=True, sudo_user="deploy", su=True, su_user="app")
+        == "sudo -u deploy su app -c 'dnf install -y nginx'"
+    )
+
+
+async def test_send_command_prefixes_su_on_the_real_transport_path():
+    class RecordingHost(Host):
+        def __init__(self, privilege=None):
+            super().__init__(name="rec", privilege=privilege or {})
+            self.sent: list[str] = []
+
+        async def _run_shell(self, shell: str):
+            self.sent.append(shell)
+            return SimpleNamespace(exit_status=0, stdout="", stderr="")
+
+    host = RecordingHost()
+    await send_command(host, DnfInstallCommand(packages=("nginx",)), su=True)
+    await send_command(host, DnfInstallCommand(packages=("nginx",)))
+    assert host.sent == [
+        "su -c 'dnf install -y nginx'",
+        "dnf install -y nginx",
+    ]
+
+
+async def test_send_command_sources_su_user_from_host_privilege():
+    """The su target comes from the inventory ``privilege`` section, never from
+    the operation -- the op only carries ``su=True``."""
+
+    class RecordingHost(Host):
+        def __init__(self, privilege):
+            super().__init__(name="rec", privilege=privilege)
+            self.sent: list[str] = []
+
+        async def _run_shell(self, shell: str):
+            self.sent.append(shell)
+            return SimpleNamespace(exit_status=0, stdout="", stderr="")
+
+    host = RecordingHost({"su_user": "deploy"})
+    await send_command(host, DnfInstallCommand(packages=("nginx",)), su=True)
+    # Unprivileged: no su even though a su_user is configured.
+    await send_command(host, DnfInstallCommand(packages=("nginx",)))
+    assert host.sent == [
+        "su deploy -c 'dnf install -y nginx'",
+        "dnf install -y nginx",
+    ]
+
+
+async def test_send_command_combines_sudo_then_su_on_the_real_transport():
+    """sudo is the outer escalation, running su inside it (order sudo -> su)."""
+
+    class RecordingHost(Host):
+        def __init__(self, privilege):
+            super().__init__(name="rec", privilege=privilege)
+            self.sent: list[str] = []
+
+        async def _run_shell(self, shell: str):
+            self.sent.append(shell)
+            return SimpleNamespace(exit_status=0, stdout="", stderr="")
+
+    host = RecordingHost({"sudo_user": "root", "su_user": "deploy"})
+    await send_command(
+        host, DnfInstallCommand(packages=("nginx",)), sudo=True, su=True
+    )
+    assert host.sent == ["sudo su deploy -c 'dnf install -y nginx'"]
+
+
+async def test_run_shell_su_uses_askpass_when_password_configured():
+    """A ``su_password`` pipes the password to su's stdin via the helper, since
+    su has no ``-A`` askpass mechanism; the target user is still applied."""
+    host = _AskpassRecordingHost({"su_user": "deploy", "su_password": "s3cr3t"})
+    await send_command(host, DnfInstallCommand(packages=("nginx",)), su=True)
+    setup, elevated = host.sent
+    assert "mktemp" in setup
+    assert elevated == (
+        "env REEMOTE5_SU_PASSWORD=s3cr3t /tmp/reemote5-askpass-abc123 "
+        "| su deploy -c 'dnf install -y nginx'"
+    )
+
+
+async def test_run_shell_su_creates_the_askpass_helper_once():
+    host = _AskpassRecordingHost({"su_password": "pw"})
+    await send_command(host, DnfInstallCommand(packages=("a",)), su=True)
+    await send_command(host, DnfInstallCommand(packages=("b",)), su=True)
+    assert sum("mktemp" in s for s in host.sent) == 1
+
+
+async def test_run_shell_su_shell_quotes_the_password():
+    host = _AskpassRecordingHost({"su_password": "p@ss w0rd';rm"})
+    await send_command(host, DnfInstallCommand(packages=("a",)), su=True)
+    elevated = host.sent[-1]
+    assert shlex.quote("p@ss w0rd';rm") in elevated
+    assert elevated.endswith("| su -c 'dnf install -y a'")
+
+
+async def test_send_command_sudo_su_with_su_password_wraps_the_pipe_in_sh():
+    """When su carries a password its stdin pipe must stay intact under sudo,
+    so sudo runs the pipeline through ``sh -c`` (order sudo -> su)."""
+    host = _AskpassRecordingHost(
+        {"sudo_user": "root", "su_user": "app", "su_password": "s3cr3t"}
+    )
+    await send_command(
+        host, DnfInstallCommand(packages=("nginx",)), sudo=True, su=True
+    )
+    elevated = host.sent[-1]
+    assert elevated.startswith("sudo ")
+    assert "sh -c " in elevated
+    assert "su app -c" in elevated
+    assert "REEMOTE5_SU_PASSWORD=s3cr3t" in elevated
 
 
 # --- fail-fast on a non-zero exit (CommandError) -----------------------------
@@ -952,6 +1131,44 @@ async def test_sudo_password_never_appears_in_the_apply_log():
     rendered = format_log(report)
     assert "s3cr3t" not in rendered
     assert "sudo -u deploy dnf install -y nginx" in rendered
+
+
+async def test_su_user_from_privilege_flows_into_the_apply_log():
+    """The su target is read from the inventory ``privilege`` section and
+    rendered in the log; the op itself only carries ``su=True``."""
+
+    def su_deploy(host):
+        yield op(dnf.packages, name="Install nginx", packages=("nginx",), su=True)
+
+    _plans, report, _hosts = await run(
+        [{"host": "a", "connection": {}, "privilege": {"su_user": "deploy"}}],
+        su_deploy,
+        host_factory=SimulatedHost.from_inventory,
+    )
+    (entry,) = report.log
+    assert entry.su is True
+    assert entry.su_user == "deploy"
+    assert "su deploy -c 'dnf install -y nginx'" in format_log(report)
+
+
+async def test_su_password_never_appears_in_the_apply_log():
+    def su_deploy(host):
+        yield op(dnf.packages, name="Install nginx", packages=("nginx",), su=True)
+
+    _plans, report, _hosts = await run(
+        [
+            {
+                "host": "a",
+                "connection": {},
+                "privilege": {"su_user": "deploy", "su_password": "s3cr3t"},
+            }
+        ],
+        su_deploy,
+        host_factory=SimulatedHost.from_inventory,
+    )
+    rendered = format_log(report)
+    assert "s3cr3t" not in rendered
+    assert "su deploy -c 'dnf install -y nginx'" in rendered
 
 
 # --- Prepare phase / --dry (8.1, 10) ------------------------------------------

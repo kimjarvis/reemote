@@ -12,8 +12,9 @@ docstring and this page follows.
     `Host.from_inventory` factory and an inventory of real machines —
     hard-coded as `INVENTORY` in the script (most target the two hosts
     web1/web2 on `192.168.0.x`;
-    [`privilege_sudo_pw`](#elevating-with-a-sudo-password) targets a single
-    `centos9-sudo-pw` and carries a plain-text sudo password), or, for
+    [`privilege_sudo_pw`](#elevating-with-a-sudo-password) and
+    [`privilege_su`](#elevating-with-su) each target a single `centos9-*` host
+    and carry a plain-text password), or, for
     [`json_inventory`](#inventory-from-a-json-file), read from
     `inventory.json` in the project root — so running one opens real
     asyncssh connections: first read-only for the `dry=True` plan, then
@@ -58,6 +59,21 @@ It also shows how a rejected credential is reported: `main` catches
 host, instead of surfacing sudo's three password retries as a traceback.
 
 ::: privilege_sudo_pw
+    options:
+      members: []
+
+## Elevating with su
+
+The `su` counterpart of the sudo-password example: the same deploy shape, run
+against a single host whose inventory `privilege` section carries a `su_user`
+and a plain-text `su_password`. The operations only *ask* to elevate with
+`su=True`; reemote5 runs a *default* `su <user> -c` (no login shell) and, since
+`su` has no askpass mechanism, pipes the password to su's stdin through a
+generated helper. The credential comes from the inventory alone and never
+reaches the log, and a rejected password surfaces as a single
+[`PrivilegeError`][reemote5.hosts.PrivilegeError] naming the host.
+
+::: privilege_su
     options:
       members: []
 

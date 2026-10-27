@@ -69,7 +69,6 @@ given as `address` (or `host`/`hostname`), the login name as `username` (or
 | `tunnel` | Bastion tunnel, as `"[user@]host[:port]"` or a connection |
 | `kex_algs` / `encryption_algs` / `mac_algs` / `server_host_key_algs` | Algorithm pinning for compliance or legacy servers |
 | `preferred_auth` | Auth method order, e.g. `["publickey", "password"]` |
-| `kbdint_auth` | Enable keyboard-interactive auth (MFA prompts) |
 | `login_timeout` | Auth window in seconds |
 | `keepalive_interval` / `keepalive_count_max` / `tcp_keepalive` | Dead-peer detection |
 
@@ -91,13 +90,36 @@ options above, for example:
 }
 ```
 
-## Privilege and sudo
+### Forbidden options
+
+A few asyncssh options are *expressly forbidden* rather than merely omitted
+from the curated list: an inventory that requests one raises
+[`InventoryError`][reemote5.hosts.InventoryError] instead of the option being
+silently dropped or passed on to asyncssh.
+
+`kbdint_auth` (keyboard-interactive authentication) is forbidden. It produces
+interactive challenge/MFA prompts, which asyncssh's non-interactive channels
+cannot answer, so reemote5 does not support keyboard-interactive auth at all.
+The rejection also covers the `asyncssh_connect_kwargs` passthrough — because
+that mapping is merged last and could otherwise override the curated options, a
+forbidden key cannot be smuggled through it either. The forbidden set is defined
+by `_FORBIDDEN_OPTIONS` in [`reemote5.hosts`][reemote5.hosts] and is checked by
+`_connect_options` before any connection is attempted.
+
+## Privilege: sudo and su
 
 An entry may carry an optional `privilege` mapping holding elevation settings.
-Two keys are recognised: `sudo_user`, the run-as user the driver passes to
-`sudo -u` (since `sudo` defaults to `root`, a `sudo_user` of `root` collapses
-to a bare `sudo`), and `sudo_password`, the sudo password. Both apply only when
-an operation is flagged `sudo=True`:
+Four keys are recognised, in two pairs:
+
+- `sudo_user` — the run-as user the driver passes to `sudo -u` (since `sudo`
+  defaults to `root`, a `sudo_user` of `root` collapses to a bare `sudo`) — and
+  `sudo_password`, the sudo password. Both apply only when an operation is
+  flagged `sudo=True`.
+- `su_user` — the target of a *default* `su <user> -c` (since `su` defaults to
+  `root`, a `su_user` of `root`, or none at all, collapses to a bare `su -c`) —
+  and `su_password`, the su password. Both apply only when an operation is
+  flagged `su=True`. Only default su is supported: no login shell (`su -l`), no
+  environment preservation, no shell override.
 
 ```python
 {
@@ -108,15 +130,26 @@ an operation is flagged `sudo=True`:
 ```
 
 Privilege parameters come from the inventory, never from a deploy script: an
-operation asks to elevate with `sudo=True` (see the
-[Guide](guide.md#deploy-scripts)) but cannot choose the run-as user or supply a
-password. Without `sudo_password`, elevation assumes passwordless sudo
-(NOPASSWD or a cached credential) and runs a bare `sudo`. With one, the real
-transport runs `sudo -A` against a generated askpass helper, so the password is
-supplied without a TTY (asyncssh channels are non-interactive). The password is
-plain text in the inventory — the only supported form — and is shell-quoted into
-the command sent over the encrypted channel; it never appears in the rendered
-apply log, which shows the credential-free `sudo -u <user> …` form.
+operation asks to elevate with `sudo=True` and/or `su=True` (see the
+[Guide](guide.md#deploy-scripts)) but cannot choose a run-as user or supply a
+password.
+
+**Combining the two.** When an operation is flagged both `sudo=True` and
+`su=True`, the escalations are applied in a fixed order — `sudo` then `su` — so
+`sudo` is the outer escalation and runs `su` inside it:
+`sudo [-u <sudo_user>] su <su_user> -c '<command>'`.
+
+**Passwords.** Without `sudo_password`, sudo elevation assumes passwordless
+sudo (NOPASSWD or a cached credential) and runs a bare `sudo`; with one, the
+real transport runs `sudo -A` against a generated askpass helper, so the
+password is supplied without a TTY (asyncssh channels are non-interactive).
+`su` has no askpass mechanism, so with a `su_password` the helper's output is
+piped to su's stdin (`env REEMOTE5_SU_PASSWORD=… <helper> | su …`); when that
+pipeline also runs under `sudo` it is wrapped in `sh -c` so the pipe stays
+intact inside sudo's elevation. Passwords are plain text in the inventory — the
+only supported form — and are shell-quoted into the command sent over the
+encrypted channel; they never appear in the rendered apply log, which shows the
+credential-free `sudo -u <user> …` / `su <user> -c …` form.
 
 An applied command that exits non-zero raises
 [`CommandError`][reemote5.hosts.CommandError] (fail-fast), carrying the host,
@@ -127,9 +160,9 @@ non-zero exit (e.g. `readlink` on an absent link).
 
 ### A rejected credential
 
-A failure sudo reports as its *own* authentication rejection — a wrong
-`sudo_password`, a missing one where sudo demands it, or a run-as user the login
-user may not become — raises
+A failure sudo or su reports as its *own* authentication rejection — a wrong
+password, a missing one where it is demanded, or a run-as user the login user
+may not become — raises
 [`PrivilegeError`][reemote5.hosts.PrivilegeError] instead: the privilege
 counterpart of [`HostConnectionError`][reemote5.hosts.HostConnectionError],
 reported the same way.
@@ -137,8 +170,9 @@ reported the same way.
 reemote5 invokes `sudo -A` exactly once, but sudo re-runs the askpass helper up
 to its own `passwd_tries` limit (3 by default), so one bad password costs three
 identical attempts and three `Sorry, try again.` lines before sudo gives up with
-`sudo: 3 incorrect password attempts`. Matching those signatures — for both Todd
-Miller's sudo and sudo-rs — collapses that into a single error whose message
+`sudo: 3 incorrect password attempts`. (`su` does not retry — it fails at once.)
+Matching those signatures — for both Todd Miller's sudo and sudo-rs, and su's
+`Authentication failure` — collapses that into a single error whose message
 names the affected host(s) and nothing else, so neither the retry noise nor the
 password reaches the report. The detail is preserved for diagnosis rather than
 discarded: `failures` carries `(host_name, command, cause)` triples, where the

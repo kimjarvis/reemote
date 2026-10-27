@@ -24,25 +24,27 @@ which returns `{host: value}`). Facts stay single-host — only the driver owns
 the concurrency — so `process`, `FactCache` and the `SimulatedHost` seams are
 untouched.
 
-A request flagged `sudo=True` (see [Deploy scripts](guide.md#deploy-scripts))
-is elevated by the driver. [`command_shell`][reemote5.drivers.command_shell]
-renders the shell text for a command descriptor — prefixing `sudo`, or
-`sudo -u <user>` when the host's inventory `privilege` section names a
-`sudo_user` (the run-as user comes from the inventory, never from the
-operation; `root`, being sudo's default target, collapses to a bare `sudo`) —
-and is what [`format_log`][reemote5.drivers.format_log] shows. It is
-deliberately credential-free: when `privilege` carries a `sudo_password`,
+A request flagged `sudo=True` and/or `su=True` (see
+[Deploy scripts](guide.md#deploy-scripts)) is elevated by the driver.
+[`command_shell`][reemote5.drivers.command_shell] renders the shell text for a
+command descriptor — prefixing `sudo` (or `sudo -u <user>`) and wrapping `su
+<user> -c …`, combining the two in the fixed order `sudo` then `su` (sudo is
+the outer escalation, running su inside it). The run-as users come from the
+host's inventory `privilege` section, never from the operation; `root`, being
+the default target of both `sudo` and `su`, collapses to a bare `sudo` / `su -c`.
+This rendering is what [`format_log`][reemote5.drivers.format_log] shows and is
+deliberately credential-free: when `privilege` carries a password,
 [`send_command`][reemote5.drivers.send_command] elevates through
-[`Host.run_shell_sudo`][reemote5.hosts.Host.run_shell_sudo], which runs
-`sudo -A` against a generated askpass helper so the password is supplied
-without a TTY and never reaches the log. On the real transport an applied
-command that exits non-zero raises
+[`Host.run_shell_privileged`][reemote5.hosts.Host.run_shell_privileged], which
+runs `sudo -A` against a generated askpass helper (or pipes a `su_password` to
+su's stdin) so the password is supplied without a TTY and never reaches the
+log. On the real transport an applied command that exits non-zero raises
 [`CommandError`][reemote5.hosts.CommandError] (fail-fast) instead of being
-silently logged as applied — unless sudo reports the failure as its *own*
-authentication rejection (a wrong or missing `sudo_password`), which raises
+silently logged as applied — unless sudo or su reports the failure as its *own*
+authentication rejection (a wrong or missing password), which raises
 [`PrivilegeError`][reemote5.hosts.PrivilegeError] so a rejected credential is
 reported as a privilege problem rather than a broken command. See
-[Privilege and sudo](hosts.md#privilege-and-sudo).
+[Privilege: sudo and su](hosts.md#privilege-sudo-and-su).
 
 ## Phase awareness
 

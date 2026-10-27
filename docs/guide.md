@@ -15,9 +15,9 @@ def deploy(host: Host) -> Generator[OperationRequest, None, None]:
 ```
 
 Requests are built with the [`op`][reemote5.core.op] helper, which takes the
-operation function, an optional human-readable `name` for plan output, an
-optional `sudo` flag, and the operation's parameters **as keyword arguments
-only**:
+operation function, an optional human-readable `name` for plan output, optional
+`sudo` and `su` elevation flags, and the operation's parameters **as keyword
+arguments only**:
 
 ```python
 from reemote5 import dnf, files, op
@@ -31,27 +31,30 @@ yield op(
 )
 ```
 
-`name` and `sudo` are *meta-parameters*: they tell the driver how to run (and
-label) the operation rather than being forwarded to it, so `sudo=True` does not
-require the operation function to accept a `sudo` argument. When set, the driver
-elevates every command the operation yields -- the real asyncssh transport
-prefixes its shell with `sudo`, and [`format_log`][reemote5.drivers.format_log]
-renders the elevated command. The test framework's `SimulatedHost` seam ignores
-it, since privilege has no in-memory effect. Elevation is per operation, so a
-privileged package install and an unprivileged link change can sit side by side
-in one deploy.
+`name`, `sudo` and `su` are *meta-parameters*: they tell the driver how to run
+(and label) the operation rather than being forwarded to it, so `sudo=True` does
+not require the operation function to accept a `sudo` argument. When set, the
+driver elevates every command the operation yields -- the real asyncssh
+transport wraps its shell with `sudo` and/or `su`, and
+[`format_log`][reemote5.drivers.format_log] renders the elevated command. The
+test framework's `SimulatedHost` seam ignores them, since privilege has no
+in-memory effect. Elevation is per operation, so a privileged package install
+and an unprivileged link change can sit side by side in one deploy.
 
-`sudo=True` only *asks* to elevate -- it never says as whom, or with what
-credential. The run-as user and password come from the host's inventory
+`sudo=True`/`su=True` only *ask* to elevate -- they never say as whom, or with
+what credential. The run-as users and passwords come from the host's inventory
 `privilege` section (see
 [Hosts and the inventory](#hosts-and-the-inventory)), so a deploy script cannot
 choose its own privilege parameters; when a `sudo_user` other than `root` is
-configured the driver emits `sudo -u <user>` instead of a bare `sudo` (`root`,
-sudo's default target, collapses to a bare `sudo`), and a `sudo_password` is
-supplied through an askpass helper without ever appearing in the log. A
-credential the host rejects is reported as a
+configured the driver emits `sudo -u <user>` instead of a bare `sudo`, and a
+`su_user` becomes `su <user> -c` (`root`, the default target of both, collapses
+to a bare `sudo` / `su -c`). A password is supplied through an askpass helper
+without ever appearing in the log. When an operation is flagged both `sudo=True`
+and `su=True`, the escalations combine in a fixed order -- `sudo` then `su` --
+so sudo is the outer escalation and runs su inside it. Only *default* su is
+supported (no login shell). A credential the host rejects is reported as a
 [`PrivilegeError`][reemote5.hosts.PrivilegeError] naming the host, not as a
-failed command — see [Privilege and sudo](hosts.md#privilege-and-sudo).
+failed command — see [Privilege: sudo and su](hosts.md#privilege-sudo-and-su).
 
 Three rules follow from the model:
 
@@ -99,12 +102,12 @@ def deploy(host):
 Two helpers in [`reemote5.core`][reemote5.core] cover what delegation cannot.
 [`sub_deploy`][reemote5.core.sub_deploy] wraps a sub-deploy with default
 meta-parameters: `name_prefix` labels every request it produces for readable
-plans, and `sudo=True` elevates requests that did not ask for elevation
-themselves (the inner request wins; elevation is never removed).
+plans, and `sudo=True`/`su=True` elevate requests that did not ask for that
+escalation themselves (the inner request wins; elevation is never removed).
 [`compose`][reemote5.core.compose] concatenates sub-deploys into one
 deploy-shaped callable in argument order — an explicit cross-role ordering
 statement — and with `dedupe=True` collapses requests sharing the same
-*effective identity* (`func`, args, kwargs and `sudo` — everything that
+*effective identity* (`func`, args, kwargs, `sudo` and `su` — everything that
 reaches the host, but not the plan `name`) to their first occurrence, so
 independently written roles can each declare the same prerequisite under
 their own label:
@@ -143,12 +146,12 @@ Rules that keep composition deterministic:
   internal state (the dedupe set) per call, so the prepare and apply phases
   flatten identically and the determinism guard holds.
 - Dedupe collapses by *effective identity*: `name` only labels a request in
-  plans and logs and is excluded from the dedupe key, while `sudo` is part
-  of it (it changes what executes). The first occurrence wins and keeps its
-  name, so identically-parameterized requests collapse even under different
-  labels or `name_prefix`es — at the cost of silently dropping the later
-  label. `OperationRequest` equality itself stays maximal (name included),
-  because the determinism guard pairs full values.
+  plans and logs and is excluded from the dedupe key, while `sudo` and `su`
+  are part of it (they change what executes). The first occurrence wins and
+  keeps its name, so identically-parameterized requests collapse even under
+  different labels or `name_prefix`es — at the cost of silently dropping the
+  later label. `OperationRequest` equality itself stays maximal (name
+  included), because the determinism guard pairs full values.
 - Sub-deploys stay **sync generators** and inherit every deploy-body rule
   above — in particular, do not branch on mutable facts inside them.
 - Branch on **static** data instead: assemble the deploy from roles at call

@@ -48,10 +48,10 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 # library keeps asyncssh key names rather than inventing reemote5 aliases --
 # and cover the direct equivalents of pyinfra's ``ssh_*`` data plus the
 # high-value knobs real deployments touch (jump hosts, algorithm pinning,
-# keyboard-interactive auth, keepalives and login timeouts). The rarely-used
-# asyncssh machinery (GSSAPI, X.509, socket plumbing, rekeying, ...) is
-# deliberately not first-class here; pass it through the
-# ``asyncssh_connect_kwargs`` mapping instead.
+# keepalives and login timeouts). The rarely-used asyncssh machinery (GSSAPI,
+# X.509, socket plumbing, rekeying, ...) is deliberately not first-class here;
+# pass it through the ``asyncssh_connect_kwargs`` mapping instead. Options
+# reemote5 refuses to support at all live in ``_FORBIDDEN_OPTIONS`` below.
 _FORWARDED_OPTIONS: tuple[str, ...] = (
     "port",
     "password",
@@ -68,7 +68,6 @@ _FORWARDED_OPTIONS: tuple[str, ...] = (
     "mac_algs",
     "server_host_key_algs",
     "preferred_auth",
-    "kbdint_auth",
     "login_timeout",
     "keepalive_interval",
     "keepalive_count_max",
@@ -80,6 +79,20 @@ _FORWARDED_OPTIONS: tuple[str, ...] = (
 _PATH_OPTIONS: frozenset[str] = frozenset(
     {"agent_path", "config", "identities", "known_hosts"}
 )
+
+# asyncssh.connect options reemote5 expressly forbids: kept out of the curated
+# set above AND rejected outright rather than silently ignored, so an inventory
+# that requests one fails fast with a clear ``InventoryError`` instead of
+# reaching asyncssh. ``kbdint_auth`` turns on keyboard-interactive
+# authentication -- interactive challenge/MFA prompts -- which cannot be
+# answered over asyncssh's non-interactive channels and is out of scope for the
+# library. Each value is the human-readable reason carried in the error.
+_FORBIDDEN_OPTIONS: dict[str, str] = {
+    "kbdint_auth": (
+        "keyboard-interactive authentication is not supported: asyncssh "
+        "channels are non-interactive and cannot answer its prompts"
+    ),
+}
 
 
 def _expand_paths(value: Any) -> Any:
@@ -95,6 +108,26 @@ def _expand_paths(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_expand_paths(item) for item in value]
     return value
+
+
+def _reject_forbidden_options(conn: dict[str, Any]) -> None:
+    """Raise ``InventoryError`` if a forbidden asyncssh option is requested.
+
+    Both the top-level ``connection`` mapping and the ``asyncssh_connect_kwargs``
+    passthrough are checked, since the passthrough is merged last and could
+    otherwise smuggle a forbidden option through to ``asyncssh.connect``. See
+    ``_FORBIDDEN_OPTIONS``.
+    """
+    sources: list[tuple[str, Any]] = [("connection", conn)]
+    passthrough = conn.get("asyncssh_connect_kwargs")
+    if isinstance(passthrough, dict):
+        sources.append(("asyncssh_connect_kwargs", passthrough))
+    for source, mapping in sources:
+        for name, reason in _FORBIDDEN_OPTIONS.items():
+            if name in mapping:
+                raise InventoryError(
+                    f"{source} option {name!r} is forbidden: {reason}"
+                )
 
 
 # sudo askpass plumbing (mirrors pyinfra's connectors/util.py). ``sudo -A``
@@ -160,6 +193,72 @@ def _build_sudo_command(
     return " ".join(bits)
 
 
+# su askpass plumbing. Unlike sudo, su has no ``SUDO_ASKPASS``/``-A``
+# mechanism, so the password is fed to su's stdin through a pipe from a
+# generated helper (mirroring pyinfra's connectors/util.py). The helper prints
+# ``$REEMOTE5_SU_PASSWORD`` -- supplied through the environment at run time --
+# so the password itself is never written to the file. The helper is created
+# once per host and removed by ``Host.aclose``. Only *default* su is supported
+# here: no login shell (``su -l``), no environment preservation, no ``-s``
+# shell override.
+_SU_ASKPASS_ENV_VAR = "REEMOTE5_SU_PASSWORD"
+
+# Shell snippet that creates the su askpass helper and prints its path on
+# stdout. Same shape as ``_ASKPASS_SETUP`` but echoes the su password env var.
+# The heredoc delimiter is quoted so the body is written literally and only
+# expanded when the helper runs. It must echo the env var named by
+# ``_SU_ASKPASS_ENV_VAR``.
+_SU_ASKPASS_SETUP = """\
+f=$(mktemp "${TMPDIR:=/tmp}/reemote5-su-askpass-XXXXXXXX") || exit 1
+cat >"$f" <<'__REEMOTE5_SU_ASKPASS_EOF__'
+#!/bin/sh
+printf '%s\\n' "$REEMOTE5_SU_PASSWORD"
+__REEMOTE5_SU_ASKPASS_EOF__
+chmod 700 "$f" || exit 1
+printf '%s' "$f"
+"""
+
+
+def _build_su_command(
+    shell: str,
+    *,
+    su_user: str | None = None,
+    su_password: str | None = None,
+    askpass_path: str | None = None,
+) -> str:
+    """Build the default-``su`` wrapped form of ``shell`` (pure; performs no I/O).
+
+    Runs ``su <user> -c <shell>``, the user and the shell both shell-quoted.
+    ``su``'s own default target is root, so a ``su_user`` of ``None`` or
+    ``root`` collapses to ``su -c <shell>`` rather than naming root explicitly.
+    No login shell is used.
+
+    ``su`` has no askpass mechanism, so with a ``su_password`` the password is
+    piped to su's stdin: the command becomes ``env
+    REEMOTE5_SU_PASSWORD=<password> <helper> | su ...``, where the generated
+    helper prints the password; both the helper path and the password are
+    shell-quoted. The password lives only in this execution string -- the
+    drivers log the credential-free ``command_shell`` rendering instead, so it
+    never reaches ``format_log``. Without a password, plain ``su`` is used
+    (which assumes the caller may already become the target user, e.g. because
+    it is running under ``sudo``).
+    """
+    su = ["su"]
+    # ``su`` already defaults to running as root, so an explicit
+    # ``su_user="root"`` collapses to a bare ``su`` instead of naming it.
+    if su_user and su_user != "root":
+        su.append(shlex.quote(su_user))
+    su += ["-c", shlex.quote(shell)]
+    if su_password:
+        if not askpass_path:
+            raise ValueError("askpass_path is required when su_password is set")
+        return (
+            f"env {_SU_ASKPASS_ENV_VAR}={shlex.quote(su_password)} "
+            f"{shlex.quote(askpass_path)} | {' '.join(su)}"
+        )
+    return " ".join(su)
+
+
 # stderr signatures identifying sudo's *own* authentication failure, as distinct
 # from a failure of the command sudo successfully ran. ``sudo -A`` is invoked
 # once, but sudo re-runs the askpass helper up to its ``passwd_tries`` limit
@@ -179,17 +278,29 @@ _SUDO_AUTH_FAILURE_MARKERS: tuple[str, ...] = (
     "interactive authentication is required",
 )
 
+# stderr signatures identifying su's *own* authentication failure. Unlike sudo,
+# su does not retry up to a limit -- a wrong password fails at once -- so there
+# is no retry noise to collapse, but the rejection is still classified so it
+# surfaces as ``PrivilegeError`` rather than a generic ``CommandError``. The set
+# covers shadow's su and util-linux's su.
+_SU_AUTH_FAILURE_MARKERS: tuple[str, ...] = (
+    "authentication failure",
+    "su: incorrect password",
+    "cannot make/remove an entry for the specified session",
+)
+
 
 def _is_privilege_failure(*outputs: str) -> bool:
-    """Whether sudo's own output identifies an authentication failure.
+    """Whether sudo's or su's own output identifies an authentication failure.
 
-    Matched case-insensitively across every captured stream (sudo writes its
-    prompts to stderr, but a pty-less channel is not the only shape a result
-    can take). A miss is safe: the caller falls back to ``CommandError``,
+    Matched case-insensitively across every captured stream (sudo/su write
+    their prompts to stderr, but a pty-less channel is not the only shape a
+    result can take). A miss is safe: the caller falls back to ``CommandError``,
     which already reports the command, exit status and stderr.
     """
     lowered = " ".join(output.lower() for output in outputs if output)
-    return any(marker in lowered for marker in _SUDO_AUTH_FAILURE_MARKERS)
+    markers = _SUDO_AUTH_FAILURE_MARKERS + _SU_AUTH_FAILURE_MARKERS
+    return any(marker in lowered for marker in markers)
 
 
 class InventoryError(ValueError):
@@ -272,17 +383,17 @@ class CommandError(RuntimeError):
 class PrivilegeError(RuntimeError):
     """Raised when a host rejects the privilege escalation it was asked to perform.
 
-    ``Host.run_shell_sudo`` recognises sudo's *own* authentication failures --
-    a wrong ``sudo_password``, a missing one where sudo demands it, or a run-as
-    user the login user may not become -- and wraps them here instead of raising
-    the generic ``CommandError`` any non-zero exit would otherwise produce. The
-    report mirrors ``HostConnectionError``: the message stays generic, naming
-    the affected host(s) and nothing else, so sudo's three "Sorry, try again"
-    retries never become the user-facing error, and the password cannot reach
-    it either. The detail is kept for diagnosis rather than discarded -- each
-    ``failures`` entry carries the credential-free command text and the
-    ``CommandError`` (exit status plus captured stderr) as its cause, and the
-    first cause is chained as ``__cause__``.
+    ``Host.run_shell_privileged`` recognises sudo's and su's *own*
+    authentication failures -- a wrong password, a missing one where the tool
+    demands it, or a run-as user the login user may not become -- and wraps them
+    here instead of raising the generic ``CommandError`` any non-zero exit would
+    otherwise produce. The report mirrors ``HostConnectionError``: the message
+    stays generic, naming the affected host(s) and nothing else, so sudo's three
+    "Sorry, try again" retries never become the user-facing error, and the
+    password cannot reach it either. The detail is kept for diagnosis rather
+    than discarded -- each ``failures`` entry carries the credential-free
+    command text and the ``CommandError`` (exit status plus captured stderr) as
+    its cause, and the first cause is chained as ``__cause__``.
 
     ``drivers.run_apply`` merges the per-host failures from a concurrent
     lockstep step into one aggregate via ``aggregate``, so every host whose
@@ -385,21 +496,27 @@ class Host:
 
     ``connection`` holds the SSH information passed to the asyncssh transport
     (and therefore reaching both operations and facts); ``privilege`` holds
-    optional elevation settings -- currently ``sudo_user``, the run-as user
-    the driver passes to ``sudo -u`` when an operation is flagged
-    ``sudo=True``. Privilege parameters come from here, the inventory, and
-    never from an operation: a deploy script can ask to elevate but cannot
-    choose the run-as user. Any unrecognised inventory keys are preserved in
-    ``extra``, so the inventory format is extensible without library changes.
+    optional elevation settings: ``sudo_user``/``sudo_password`` (applied when
+    an operation is flagged ``sudo=True``) and ``su_user``/``su_password``
+    (applied when flagged ``su=True``). ``sudo_user`` is the run-as user the
+    driver passes to ``sudo -u``; ``su_user`` is the target of a default
+    ``su <user> -c``. When both flags are set the escalations combine in the
+    fixed order ``sudo`` then ``su``. Privilege parameters come from here, the
+    inventory, and never from an operation: a deploy script can ask to elevate
+    but cannot choose the run-as user. Any unrecognised inventory keys are
+    preserved in ``extra``, so the inventory format is extensible without
+    library changes.
 
     ``connection`` keys understood by the transport keep asyncssh's own names:
     ``_connect_options`` forwards a curated set of ``asyncssh.connect`` options
     verbatim (``port``, ``password``, ``passphrase``, ``client_keys``,
     ``identities``, ``agent_path``, ``agent_forwarding``, ``config``,
     ``known_hosts``, ``proxy_command``, ``tunnel``, the ``*_algs``/
-    ``preferred_auth``/``kbdint_auth`` knobs and the ``keepalive_*``/
-    ``login_timeout`` timeouts). Three friendly aliases are accepted for
-    convenience: ``address``/``host``/``hostname`` for the SSH target,
+    ``preferred_auth`` knobs and the ``keepalive_*``/``login_timeout``
+    timeouts). Keyboard-interactive auth (``kbdint_auth``) is expressly
+    forbidden rather than forwarded -- see ``_FORBIDDEN_OPTIONS``. Three
+    friendly aliases are accepted for convenience:
+    ``address``/``host``/``hostname`` for the SSH target,
     ``username``/``user`` for the login name and ``key_path`` as a single-key
     shorthand for ``client_keys``. Anything asyncssh supports that is not
     first-class can still be supplied through the ``asyncssh_connect_kwargs``
@@ -452,22 +569,26 @@ class Host:
         key checking, ``client_keys=None`` loads no default identities). This
         covers ``port``, ``password``, ``passphrase``, ``identities``,
         ``agent_path``, ``agent_forwarding``, ``config``, ``known_hosts``,
-        ``proxy_command``, ``tunnel``, the algorithm/``preferred_auth``/
-        ``kbdint_auth`` knobs and the ``keepalive_*``/``login_timeout``
-        timeouts. Three friendly aliases are also honoured for backward
-        compatibility: ``address``/``host``/``hostname`` for the target,
-        ``username``/``user`` for the login name, and ``key_path`` as a
-        single-key shorthand for ``client_keys``. Path-valued options have
-        ``~`` expanded. Any other asyncssh.connect kwarg can be supplied via
-        the ``asyncssh_connect_kwargs`` mapping, which is merged last and may
+        ``proxy_command``, ``tunnel``, the algorithm/``preferred_auth`` knobs
+        and the ``keepalive_*``/``login_timeout`` timeouts. Three friendly
+        aliases are also honoured for backward compatibility:
+        ``address``/``host``/``hostname`` for the target, ``username``/``user``
+        for the login name, and ``key_path`` as a single-key shorthand for
+        ``client_keys``. Path-valued options have ``~`` expanded. Any other
+        asyncssh.connect kwarg can be supplied via the
+        ``asyncssh_connect_kwargs`` mapping, which is merged last and may
         therefore add to or override the options above.
 
+        Raises ``InventoryError`` when the connection -- or its
+        ``asyncssh_connect_kwargs`` passthrough -- requests an expressly
+        forbidden option such as ``kbdint_auth`` (see ``_FORBIDDEN_OPTIONS``).
         Raises ``NotImplementedError`` when the connection carries no SSH
         address: that is how an inventory entry with no real target (e.g. one
         only ever driven through SimulatedHost) reports that there is nothing
         to connect to, rather than silently resolving the logical host name.
         """
         conn = self.connection
+        _reject_forbidden_options(conn)
         address = conn.get("address") or conn.get("host") or conn.get("hostname")
         if not address:
             raise NotImplementedError(
@@ -550,45 +671,114 @@ class Host:
             raise CommandError(self.name, shell, result.exit_status, result.stderr)
         return result.stdout or ""
 
-    async def run_shell_sudo(self, shell: str) -> str:
-        """Run one shell command elevated with ``sudo`` and return its stdout.
+    async def run_shell_privileged(
+        self, shell: str, *, sudo: bool = False, su: bool = False
+    ) -> str:
+        """Run one shell command elevated with ``sudo`` and/or ``su``.
 
         Elevation parameters come from this host's inventory ``privilege``
-        data, never from the caller: ``sudo_user`` becomes ``sudo -u <user>``,
-        and when ``sudo_password`` is set the command runs under ``sudo -A``
-        with a generated askpass helper, so the password is supplied without a
-        TTY and never appears in the command text the drivers log. With no
-        password, plain passwordless ``sudo`` is used.
+        data, never from the caller. The two escalations combine in a fixed
+        order -- ``sudo`` then ``su`` -- so ``sudo`` is the outer escalation
+        and runs ``su`` inside it (``sudo ... su <user> -c ...``), matching the
+        order in which the flags are applied.
+
+        ``sudo`` uses ``sudo_user``/``sudo_password`` (see ``run_shell_sudo``);
+        ``su`` uses ``su_user``/``su_password`` and runs a *default* (non-login)
+        ``su <user> -c``. ``su`` has no askpass mechanism, so with an
+        ``su_password`` the generated helper pipes the password to su's stdin;
+        when that pipeline also runs under ``sudo`` it is wrapped in ``sh -c``
+        so the pipe stays intact inside sudo's elevation (sudo execs its
+        command directly rather than through a shell).
 
         A non-zero exit raises ``CommandError`` whose command text is the
-        credential-free rendering (``sudo -u <user> ...``) -- never the askpass
-        command, which carries the password. When sudo's output identifies the
-        failure as its *own* authentication rejection (a wrong or missing
-        password, a forbidden run-as user) a ``PrivilegeError`` is raised
-        instead, so the caller gets one actionable error naming the host rather
-        than the generic command failure plus sudo's three retry lines.
+        credential-free rendering -- never the askpass command, which carries a
+        password. When sudo's or su's output identifies the failure as its
+        *own* authentication rejection (a wrong or missing password, a
+        forbidden run-as user) a ``PrivilegeError`` is raised instead, so the
+        caller gets one actionable error naming the host.
         """
-        password = self.privilege.get("sudo_password")
-        sudo_user = self.privilege.get("sudo_user")
-        askpass_path = await self._ensure_sudo_askpass() if password else None
-        command = _build_sudo_command(
-            shell,
-            sudo_user=sudo_user,
-            sudo_password=password,
-            askpass_path=askpass_path,
-        )
+        sudo_user = self.privilege.get("sudo_user") if sudo else None
+        sudo_password = self.privilege.get("sudo_password") if sudo else None
+        su_user = self.privilege.get("su_user") if su else None
+        su_password = self.privilege.get("su_password") if su else None
+
+        # Build the innermost escalation first (su), then wrap it with sudo so
+        # the applied order is sudo -> su.
+        payload = shell
+        if su:
+            su_askpass = await self._ensure_su_askpass() if su_password else None
+            payload = _build_su_command(
+                shell,
+                su_user=su_user,
+                su_password=su_password,
+                askpass_path=su_askpass,
+            )
+        if sudo:
+            # An su password turns the payload into a shell pipeline
+            # (``... | su ...``). sudo execs its command directly rather than
+            # through a shell, so wrap the pipeline in ``sh -c`` to keep it
+            # intact and running under sudo's elevation.
+            sudo_payload = payload
+            if su and su_password:
+                sudo_payload = f"sh -c {shlex.quote(payload)}"
+            sudo_askpass = (
+                await self._ensure_sudo_askpass() if sudo_password else None
+            )
+            command = _build_sudo_command(
+                sudo_payload,
+                sudo_user=sudo_user,
+                sudo_password=sudo_password,
+                askpass_path=sudo_askpass,
+            )
+        else:
+            command = payload
+
         result = await self._run_shell(command)
         if result.exit_status != 0:
             # Report the credential-free rendering, not the password-bearing one.
-            safe = _build_sudo_command(shell, sudo_user=sudo_user)
+            safe_payload = _build_su_command(shell, su_user=su_user) if su else shell
+            safe = (
+                _build_sudo_command(safe_payload, sudo_user=sudo_user)
+                if sudo
+                else safe_payload
+            )
             failure = CommandError(self.name, safe, result.exit_status, result.stderr)
             if _is_privilege_failure(result.stderr, result.stdout):
-                # sudo never got as far as running the command: the credential
-                # (or the run-as target) was rejected. Report it as a privilege
-                # failure, keeping the full detail reachable as the cause.
+                # The escalation never got as far as running the command: the
+                # credential (or the run-as target) was rejected. Report it as
+                # a privilege failure, keeping the detail reachable as the cause.
                 raise PrivilegeError([(self.name, safe, failure)]) from failure
             raise failure
         return result.stdout or ""
+
+    async def run_shell_sudo(self, shell: str) -> str:
+        """Run one shell command elevated with ``sudo`` and return its stdout.
+
+        A thin wrapper over ``run_shell_privileged`` for the sudo-only case.
+        Elevation parameters come from this host's inventory ``privilege``
+        data, never from the caller: ``sudo_user`` becomes ``sudo -u <user>``
+        (with ``root`` collapsing to a bare ``sudo``), and when
+        ``sudo_password`` is set the command runs under ``sudo -A`` with a
+        generated askpass helper, so the password is supplied without a TTY and
+        never appears in the command text the drivers log. With no password,
+        plain passwordless ``sudo`` is used. A non-zero exit raises
+        ``CommandError`` (credential-free) or, when sudo reports its *own*
+        authentication rejection, ``PrivilegeError``.
+        """
+        return await self.run_shell_privileged(shell, sudo=True)
+
+    async def run_shell_su(self, shell: str) -> str:
+        """Run one shell command elevated with default ``su`` and return stdout.
+
+        A thin wrapper over ``run_shell_privileged`` for the su-only case.
+        ``su_user`` becomes ``su <user> -c`` (with ``None``/``root`` collapsing
+        to a bare ``su -c``); when ``su_password`` is set the password is piped
+        to su's stdin through a generated askpass helper, since su has no
+        ``-A`` mechanism. Login shells are not supported. A non-zero exit
+        raises ``CommandError`` (credential-free) or, when su reports its *own*
+        authentication rejection, ``PrivilegeError``.
+        """
+        return await self.run_shell_privileged(shell, su=True)
 
     async def _ensure_sudo_askpass(self) -> str:
         """Create (once) and return the path of this host's sudo askpass helper.
@@ -607,15 +797,39 @@ class Host:
         self._askpass_path = path
         return path
 
+    async def _ensure_su_askpass(self) -> str:
+        """Create (once) and return the path of this host's su askpass helper.
+
+        Same shape as ``_ensure_sudo_askpass`` but writes ``_SU_ASKPASS_SETUP``
+        (which echoes ``$REEMOTE5_SU_PASSWORD``) and caches the path in the
+        separate ``_su_askpass_path`` attribute. ``aclose`` removes the file.
+        Raises ``RuntimeError`` if the helper could not be created.
+        """
+        path = getattr(self, "_su_askpass_path", None)
+        if path:
+            return path
+        path = (await self.run_shell(_SU_ASKPASS_SETUP)).strip()
+        if not path:
+            raise RuntimeError(f"{self.name}: could not create a su askpass helper")
+        self._su_askpass_path = path
+        return path
+
     async def aclose(self) -> None:
-        """Close the cached connection, removing any sudo askpass helper first."""
+        """Close the cached connection, removing any askpass helpers first."""
         conn = getattr(self, "_conn", None)
-        askpass = getattr(self, "_askpass_path", None)
+        helpers = (
+            getattr(self, "_askpass_path", None),
+            getattr(self, "_su_askpass_path", None),
+        )
         self._askpass_path = None
-        if askpass and conn is not None:
-            # Best-effort cleanup: a dropped connection must not fail teardown.
-            with contextlib.suppress(Exception):
-                await conn.run(f"rm -f {shlex.quote(askpass)}", check=False)
+        self._su_askpass_path = None
+        if conn is not None:
+            for path in helpers:
+                if not path:
+                    continue
+                # Best-effort cleanup: a dropped connection must not fail teardown.
+                with contextlib.suppress(Exception):
+                    await conn.run(f"rm -f {shlex.quote(path)}", check=False)
         if conn is None:
             return
         self._conn = None

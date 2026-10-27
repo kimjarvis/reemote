@@ -65,8 +65,10 @@ class LogEntry:
     changed: bool
     reason: str
     commands: tuple[Command, ...] = ()
-    sudo: bool = False  # whether the operation's commands were elevated
+    sudo: bool = False  # whether the operation's commands were sudo-elevated
     sudo_user: str | None = None  # run-as user from the host's privilege data
+    su: bool = False  # whether the operation's commands were run via su
+    su_user: str | None = None  # su target user from the host's privilege data
 
 
 @dataclass
@@ -122,26 +124,42 @@ async def gather_fact(
 
 
 def command_shell(
-    cmd: Command, sudo: bool = False, sudo_user: str | None = None
+    cmd: Command,
+    sudo: bool = False,
+    sudo_user: str | None = None,
+    su: bool = False,
+    su_user: str | None = None,
 ) -> str:
     """Render the shell string a command descriptor runs as (the loggable form).
 
     Command descriptors stay dumb (design doc section 4.5); turning one into
-    shell text is the driver's job. With ``sudo`` this is the elevated form the
-    apply log shows (``sudo`` / ``sudo -u <user>``); it is deliberately
-    credential-free -- when the host's ``privilege`` carries a ``sudo_password``
-    the real transport runs it under ``sudo -A`` with an askpass helper (see
-    ``Host.run_shell_sudo``), plumbing this rendering never exposes so the
-    password cannot leak into ``format_log``. ``send_command`` also calls it
-    with ``sudo=False`` to get the plain descriptor shell it hands to the
-    transport.
+    shell text is the driver's job. With ``sudo`` and/or ``su`` this is the
+    elevated form the apply log shows; it is deliberately credential-free --
+    when the host's ``privilege`` carries a password the real transport runs it
+    under an askpass helper (see ``Host.run_shell_privileged``), plumbing this
+    rendering never exposes so the password cannot leak into ``format_log``.
+    ``send_command`` also calls it with the flags off to get the plain
+    descriptor shell it hands to the transport.
 
-    ``sudo_user`` is the run-as user taken from the host's inventory
-    ``privilege`` section (never from the operation); when set alongside
-    ``sudo`` it is emitted as ``sudo -u <user>``, shell-quoted -- except that
-    ``root``, ``sudo``'s own default target, collapses to a bare ``sudo``.
+    The two escalations combine in the fixed order ``sudo`` then ``su``: sudo
+    is the outer prefix and ``su`` runs inside it, so a request flagged both
+    renders as ``sudo [-u <sudo_user>] su <su_user> -c '<shell>'``.
+
+    ``sudo_user``/``su_user`` are the run-as users taken from the host's
+    inventory ``privilege`` section (never from the operation). ``sudo_user``
+    is emitted as ``sudo -u <user>`` except that ``root`` -- sudo's own default
+    target -- collapses to a bare ``sudo``. ``su_user`` is emitted as
+    ``su <user> -c`` except that ``None``/``root`` -- su's default target --
+    collapses to a bare ``su -c``.
     """
     shell = cmd.shell() if hasattr(cmd, "shell") else str(cmd)
+    if su:
+        # ``su`` defaults to root, so a ``su_user`` of ``None``/``root``
+        # collapses to a bare ``su -c``; only a non-root target is named.
+        if su_user and su_user != "root":
+            shell = f"su {shlex.quote(su_user)} -c {shlex.quote(shell)}"
+        else:
+            shell = f"su -c {shlex.quote(shell)}"
     if not sudo:
         return shell
     # ``sudo`` defaults to root, so a ``sudo_user`` of ``root`` collapses to a
@@ -165,7 +183,23 @@ def _privilege_sudo_user(host: Host, sudo: bool) -> str | None:
     return privilege.get("sudo_user")
 
 
-async def send_command(host: Host, cmd: Command, *, sudo: bool = False) -> None:
+def _privilege_su_user(host: Host, su: bool) -> str | None:
+    """The ``su`` target user for a command, from the host's privilege data.
+
+    The ``su`` counterpart of ``_privilege_sudo_user``: returns ``None`` when
+    the request is not flagged ``su`` or the host specifies no ``su_user``.
+    Sourced from the inventory-backed ``Host.privilege``, never from the
+    operation.
+    """
+    if not su:
+        return None
+    privilege = getattr(host, "privilege", None) or {}
+    return privilege.get("su_user")
+
+
+async def send_command(
+    host: Host, cmd: Command, *, sudo: bool = False, su: bool = False
+) -> None:
     """Execute one command descriptor on a host.
 
     Two paths, chosen by the seams the host provides:
@@ -173,30 +207,30 @@ async def send_command(host: Host, cmd: Command, *, sudo: bool = False) -> None:
     - The test framework's ``SimulatedHost`` exposes an ``execute_command``
       seam; when present it applies the command's simulated effect (so
       subsequent fact reads observe the change) and nothing is sent anywhere.
-      ``sudo`` is irrelevant here -- privilege has no in-memory effect -- so
-      it is not forwarded. This is the path pytest always takes.
+      ``sudo``/``su`` are irrelevant here -- privilege has no in-memory effect
+      -- so they are not forwarded. This is the path pytest always takes.
     - Any other host -- a plain library ``Host`` built from a real inventory
       entry -- runs the command's shell over asyncssh, using the host's
-      ``connection`` data. An elevated request goes through
-      ``host.run_shell_sudo``, which applies the run-as user and (when the
-      host's ``privilege`` carries a ``sudo_password``) the askpass mechanism
-      sourced from the inventory; an unprivileged one goes through
-      ``host.run_shell``. Either way a non-zero exit raises
-      ``CommandError`` (fail-fast), so a command that fails -- a permission
-      error, a broken package transaction -- is never silently reported as
-      applied. A failure sudo reports as its *own* authentication rejection
-      (a wrong or missing ``sudo_password``) raises ``PrivilegeError``
-      instead, which ``run_apply`` aggregates across hosts exactly as
-      ``run_prepare`` aggregates ``HostConnectionError``.
+      ``connection`` data. An elevated request (``sudo`` and/or ``su``) goes
+      through ``host.run_shell_privileged``, which applies the run-as users and
+      any passwords (via askpass helpers) sourced from the inventory, in the
+      fixed order ``sudo`` then ``su``; an unprivileged one goes through
+      ``host.run_shell``. Either way a non-zero exit raises ``CommandError``
+      (fail-fast), so a command that fails -- a permission error, a broken
+      package transaction -- is never silently reported as applied. A failure
+      sudo or su reports as its *own* authentication rejection (a wrong or
+      missing password) raises ``PrivilegeError`` instead, which ``run_apply``
+      aggregates across hosts exactly as ``run_prepare`` aggregates
+      ``HostConnectionError``.
       This differs from pyinfra, which drives Paramiko under gevent.
     """
     execute = getattr(host, "execute_command", None)
     if execute is not None:
         execute(cmd)
         return
-    base = command_shell(cmd)  # sudo=False -> the plain descriptor shell
-    if sudo:
-        await host.run_shell_sudo(base)
+    base = command_shell(cmd)  # flags off -> the plain descriptor shell
+    if sudo or su:
+        await host.run_shell_privileged(base, sudo=sudo, su=su)
     else:
         await host.run_shell(base, check=True)
 
@@ -290,7 +324,7 @@ async def _apply_host_step(rt: HostRuntime) -> LogEntry | None:
     sent: list[Command] = []
     if ctx.changed:
         for cmd in commands:
-            await send_command(rt.host, cmd, sudo=request.sudo)
+            await send_command(rt.host, cmd, sudo=request.sudo, su=request.su)
             sent.append(cmd)
     return LogEntry(
         host=rt.host.name,
@@ -300,6 +334,8 @@ async def _apply_host_step(rt: HostRuntime) -> LogEntry | None:
         commands=tuple(sent),
         sudo=request.sudo,
         sudo_user=_privilege_sudo_user(rt.host, request.sudo),
+        su=request.su,
+        su_user=_privilege_su_user(rt.host, request.su),
     )
 
 
@@ -407,7 +443,7 @@ def format_log(report: ApplyReport) -> str:
             lines.append(f"{entry.host}: {entry.name:<24} [changed: {entry.reason}]")
             for cmd in entry.commands:
                 lines.append(
-                    f"    $ {command_shell(cmd, entry.sudo, sudo_user=entry.sudo_user)}"
+                    f"    $ {command_shell(cmd, entry.sudo, sudo_user=entry.sudo_user, su=entry.su, su_user=entry.su_user)}"
                 )
         else:
             lines.append(f"{entry.host}: {entry.name:<24} [no change: {entry.reason}]")

@@ -22,15 +22,17 @@ class OperationRequest:
     host B". The dict ``kwargs`` field is unhashable, so ``__hash__`` is
     defined explicitly over a hashable projection of the fields.
 
-    ``sudo`` is a *meta-parameter*: like ``name`` it describes how the driver
-    should run the operation rather than being forwarded to ``func``. When
-    true, the driver elevates each command the operation yields (the real
-    transport prefixes it with ``sudo``; the test framework's simulated seam
-    ignores it, since privilege has no in-memory effect). Note that ``sudo``
-    is only a boolean request to elevate: *how* to elevate -- the run-as user
-    (and, later, the password) -- comes from the host's inventory
-    ``privilege`` section, never from the operation, so a deploy script cannot
-    choose its own privilege parameters.
+    ``sudo`` and ``su`` are *meta-parameters*: like ``name`` they describe how
+    the driver should run the operation rather than being forwarded to
+    ``func``. When true, the driver elevates each command the operation yields
+    (the real transport wraps it with ``sudo`` and/or ``su``; the test
+    framework's simulated seam ignores them, since privilege has no in-memory
+    effect). Note that both are only boolean requests to elevate: *how* to
+    elevate -- the run-as users and the passwords -- comes from the host's
+    inventory ``privilege`` section, never from the operation, so a deploy
+    script cannot choose its own privilege parameters. When both are set the
+    escalations combine in a fixed order, ``sudo`` then ``su`` (sudo is the
+    outer escalation, running ``su`` inside it).
     """
 
     func: Callable  # operation function, e.g. dnf.packages
@@ -38,6 +40,7 @@ class OperationRequest:
     kwargs: dict = field(default_factory=dict)  # keyword args passed to func
     name: str = ""  # human-readable label for plan output
     sudo: bool = False  # meta-parameter: elevate this operation's commands
+    su: bool = False  # meta-parameter: run this operation's commands via su
 
     def __post_init__(self):
         # A dict inside a frozen dataclass is otherwise mutable from outside.
@@ -53,6 +56,7 @@ class OperationRequest:
                 tuple(sorted(self.kwargs.items())),
                 self.name,
                 self.sudo,
+                self.su,
             )
         )
 
@@ -105,15 +109,17 @@ class HostRuntime:
 
 
 def op(
-    func: Callable, *, name: str = "", sudo: bool = False, **kwargs
+    func: Callable, *, name: str = "", sudo: bool = False, su: bool = False, **kwargs
 ) -> OperationRequest:
     """Convenience helper for building OperationRequests in deploy scripts.
 
-    ``name`` and ``sudo`` are meta-parameters consumed by the driver, so they
-    are captured here and never forwarded to ``func``; everything else in
-    ``kwargs`` is passed through to the operation as keyword arguments.
+    ``name``, ``sudo`` and ``su`` are meta-parameters consumed by the driver,
+    so they are captured here and never forwarded to ``func``; everything else
+    in ``kwargs`` is passed through to the operation as keyword arguments.
     """
-    return OperationRequest(func=func, kwargs=kwargs, name=name, sudo=sudo)
+    return OperationRequest(
+        func=func, kwargs=kwargs, name=name, sudo=sudo, su=su
+    )
 
 
 def sub_deploy(
@@ -121,6 +127,7 @@ def sub_deploy(
     *,
     name_prefix: str = "",
     sudo: bool = False,
+    su: bool = False,
 ) -> Callable[[Host], Generator[OperationRequest]]:
     """Wrap a sub-deploy, applying default meta-parameters to its requests.
 
@@ -130,12 +137,13 @@ def sub_deploy(
     deploy function is (e.g. ``run``).
 
     Meta-parameters are inherited as defaults and the inner request wins:
-    ``sudo=True`` here only elevates requests that did not ask for elevation
-    themselves, and ``name_prefix`` prepends ``"<prefix>: "`` to each plan
-    name (an unnamed request falls back to its operation function's name,
-    matching the formatters). Because ``sudo`` is a plain bool, an inner
-    request that deliberately set ``sudo=False`` is indistinguishable from
-    one that left it unset -- a wrapper with ``sudo=True`` elevates both.
+    ``sudo=True``/``su=True`` here only elevate requests that did not ask for
+    that escalation themselves, and ``name_prefix`` prepends ``"<prefix>: "``
+    to each plan name (an unnamed request falls back to its operation
+    function's name, matching the formatters). Because ``sudo`` and ``su`` are
+    plain bools, an inner request that deliberately set one to ``False`` is
+    indistinguishable from one that left it unset -- a wrapper with the flag
+    set elevates both.
 
     The wrapper is a pure stream transform over the frozen dataclass
     (``dataclasses.replace`` produces the modified copies): it keeps no
@@ -151,6 +159,8 @@ def sub_deploy(
                 changes["name"] = f"{name_prefix}: {base}"
             if sudo and not request.sudo:
                 changes["sudo"] = True
+            if su and not request.su:
+                changes["su"] = True
             yield replace(request, **changes) if changes else request
 
     return wrapper
@@ -160,16 +170,17 @@ def _effective_key(request: OperationRequest) -> tuple:
     """Hashable identity of what a request *executes*, excluding its name.
 
     ``name`` labels a request in plans and logs but never reaches the host
-    (``command_shell`` renders the descriptor plus ``sudo`` only), so two
-    requests with the same key run identically. ``OperationRequest`` equality
-    itself stays maximal -- the determinism guard pairs full values -- while
-    ``compose``'s deduplication uses this projection.
+    (``command_shell`` renders the descriptor plus ``sudo``/``su`` only), so
+    two requests with the same key run identically. ``OperationRequest``
+    equality itself stays maximal -- the determinism guard pairs full values
+    -- while ``compose``'s deduplication uses this projection.
     """
     return (
         request.func,
         request.args,
         tuple(sorted(request.kwargs.items())),
         request.sudo,
+        request.su,
     )
 
 
@@ -186,14 +197,14 @@ def compose(
     repositories before the packages they provide).
 
     With ``dedupe=True``, requests collapse by *effective identity* --
-    ``func``, ``args``, ``kwargs`` and ``sudo``, but not ``name`` (see
+    ``func``, ``args``, ``kwargs``, ``sudo`` and ``su``, but not ``name`` (see
     ``_effective_key``) -- to their first occurrence, which keeps its name.
     Independently written roles may therefore each declare the same
     prerequisite under a different label or a different ``sub_deploy`` name
-    prefix and still collapse to one plan entry; ``sudo`` still separates
-    requests, since it changes what executes. ``OperationRequest`` equality
-    remains maximal (name included), because the determinism guard pairs
-    full values.
+    prefix and still collapse to one plan entry; ``sudo`` and ``su`` still
+    separate requests, since they change what executes. ``OperationRequest``
+    equality remains maximal (name included), because the determinism guard
+    pairs full values.
 
     The ``seen`` set is created inside the returned deploy, per invocation:
     every ``deploy(host)`` call (one per host per phase) dedupes from
