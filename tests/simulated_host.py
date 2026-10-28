@@ -28,13 +28,13 @@ from dataclasses import dataclass, field
 
 from reemote5.commands import Command, StringCommand
 from reemote5.hosts import Host
-from reemote5.operations.dnf import (
+from reemote5.modules.dnf.dnf import (
     DnfCleanCommand,
     DnfInstallCommand,
     DnfRemoveCommand,
     DnfUpdateCommand,
 )
-from reemote5.operations.files import FileCommand, LinkCommand
+from reemote5.modules.files.files import FileCommand, LinkCommand
 
 
 @dataclass

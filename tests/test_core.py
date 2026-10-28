@@ -10,10 +10,10 @@ determinism guard using the test framework's ``SimulatedHost``.
 
 from collections.abc import Generator
 
-from reemote5.core import OperationRequest, compose, op, sub_deploy
+from reemote5.core import OperationRequest, Privilege, compose, op, sub_deploy
 from reemote5.drivers import format_log, format_plan, run
 from reemote5.hosts import Host
-from reemote5.operations import dnf, files
+from reemote5.modules import dnf, files
 from tests.simulated_host import SimulatedHost
 
 HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
@@ -85,8 +85,8 @@ def test_sub_deploy_sudo_elevates_only_unflagged_requests():
         yield op(files.file, name="privileged", src="/tmp/x", sudo=True)
 
     first, second = sub_deploy(mixed, sudo=True)(HOST)
-    assert first.sudo is True
-    assert second.sudo is True  # inner sudo=True preserved, never removed
+    assert first.sudo is Privilege.ON
+    assert second.sudo is Privilege.ON  # inner sudo=True preserved, never removed
 
 
 def test_sub_deploy_sudo_default_does_not_touch_requests():
@@ -94,12 +94,79 @@ def test_sub_deploy_sudo_default_does_not_touch_requests():
         yield op(dnf.packages, name="install", packages=("curl",))
 
     (request,) = sub_deploy(unprivileged)(HOST)
-    assert request.sudo is False
+    assert request.sudo is Privilege.UNSET
 
 
 def test_sub_deploy_wrapper_is_pure_across_invocations():
     wrapped = sub_deploy(role_httpd, name_prefix="httpd", sudo=True)
     assert list(wrapped(HOST)) == list(wrapped(HOST))
+
+
+# --- Privilege tri-state: forced elevation with an explicit opt-out --------------
+
+
+def test_privilege_coerce_maps_bools_and_none():
+    assert Privilege.coerce(True) is Privilege.ON
+    assert Privilege.coerce(False) is Privilege.OFF
+    assert Privilege.coerce(None) is Privilege.UNSET
+    assert Privilege.coerce(Privilege.ON) is Privilege.ON
+    assert Privilege.coerce(Privilege.OFF) is Privilege.OFF
+    assert Privilege.coerce(Privilege.UNSET) is Privilege.UNSET
+
+
+def test_privilege_elevates_only_for_on():
+    assert Privilege.ON.elevates() is True
+    assert Privilege.OFF.elevates() is False
+    assert Privilege.UNSET.elevates() is False
+
+
+def test_op_default_is_unset_and_flags_coerce():
+    request = op(dnf.packages, packages=("curl",))
+    assert request.sudo is Privilege.UNSET
+    assert request.su is Privilege.UNSET
+    assert op(dnf.packages, packages=("curl",), sudo=True).sudo is Privilege.ON
+    assert op(dnf.packages, packages=("curl",), sudo=False).sudo is Privilege.OFF
+    assert (
+        op(dnf.packages, packages=("curl",), sudo=Privilege.ON).sudo
+        is Privilege.ON
+    )
+
+
+def test_sub_deploy_forced_elevation_honours_explicit_opt_out():
+    """The tri-state's reason for existing: ``sudo=False`` survives a forced policy."""
+
+    def role(host: Host) -> Generator[OperationRequest]:
+        yield op(dnf.packages, name="unflagged", packages=("curl",))
+        yield op(dnf.packages, name="opted-out", packages=("vim",), sudo=False)
+        yield op(dnf.packages, name="explicit", packages=("git",), sudo=True)
+
+    unflagged, opted_out, explicit = sub_deploy(role, sudo=True)(HOST)
+    assert unflagged.sudo is Privilege.ON  # UNSET filled by the policy
+    assert opted_out.sudo is Privilege.OFF  # deliberate opt-out survives
+    assert explicit.sudo is Privilege.ON  # already ON
+
+
+def test_sub_deploy_off_policy_forces_unset_unprivileged_but_keeps_inner_on():
+    def role(host: Host) -> Generator[OperationRequest]:
+        yield op(dnf.packages, name="unflagged", packages=("curl",))
+        yield op(dnf.packages, name="explicit", packages=("git",), sudo=True)
+
+    unflagged, explicit = sub_deploy(role, sudo=Privilege.OFF)(HOST)
+    assert unflagged.sudo is Privilege.OFF  # UNSET filled with OFF
+    assert explicit.sudo is Privilege.ON  # inner ON wins over the policy
+
+
+def test_sub_deploy_su_forced_elevation_honours_opt_out_and_leaves_sudo_alone():
+    def role(host: Host) -> Generator[OperationRequest]:
+        yield op(dnf.packages, name="unflagged", packages=("curl",))
+        yield op(dnf.packages, name="opted-out", packages=("vim",), su=False)
+
+    unflagged, opted_out = sub_deploy(role, su=Privilege.ON)(HOST)
+    assert unflagged.su is Privilege.ON
+    assert opted_out.su is Privilege.OFF
+    # An su-only policy never touches the independent sudo flag.
+    assert unflagged.sudo is Privilege.UNSET
+    assert opted_out.sudo is Privilege.UNSET
 
 
 # --- compose: ordering and effective-identity deduplication --------------------
@@ -146,6 +213,22 @@ def test_compose_dedupe_distinguishes_requests_by_sudo():
 
     deploy = compose(same_op_different_sudo, dedupe=True)
     assert len(list(deploy(HOST))) == 2
+
+
+def test_compose_dedupe_collapses_off_and_unset_as_both_unprivileged():
+    """Dedupe keys on the *resolved* elevation, so OFF and UNSET collapse.
+
+    Both execute unprivileged, so they are one effective operation; ON changes
+    what executes and stays a separate plan entry.
+    """
+
+    def role(host: Host) -> Generator[OperationRequest]:
+        yield op(dnf.packages, name="unset", packages=("curl",))
+        yield op(dnf.packages, name="off", packages=("curl",), sudo=False)
+        yield op(dnf.packages, name="on", packages=("curl",), sudo=True)
+
+    requests = list(compose(role, dedupe=True)(HOST))
+    assert [r.name for r in requests] == ["unset", "on"]
 
 
 def test_compose_dedupe_collapses_prefixed_duplicates():
@@ -200,3 +283,32 @@ async def test_sub_deploy_meta_parameters_flow_into_plan_and_log():
     assert entry.name == "httpd: Install httpd"
     assert entry.sudo is True
     assert "$ sudo dnf install -y httpd" in format_log(report)
+
+
+async def test_forced_elevation_with_opt_out_flows_into_the_log():
+    """End to end: a forced-elevation policy elevates all but the explicit opt-out."""
+
+    def role(host: Host) -> Generator[OperationRequest]:
+        yield op(dnf.packages, name="unflagged", packages=("curl",))
+        yield op(dnf.packages, name="opted-out", packages=("vim",), sudo=False)
+        yield op(dnf.packages, name="explicit", packages=("git",), sudo=True)
+
+    deploy = compose(sub_deploy(role, sudo=Privilege.ON))
+    _plans, report, hosts = await run(
+        INVENTORY, deploy, host_factory=simulated_factory
+    )
+
+    assert report is not None
+    by_name = {entry.name: entry for entry in report.log}
+    # UNSET (filled by the policy) and explicit ON both elevate; the deliberate
+    # opt-out stays unprivileged even under the forced-elevation policy.
+    assert by_name["unflagged"].sudo is True
+    assert by_name["explicit"].sudo is True
+    assert by_name["opted-out"].sudo is False
+
+    log = format_log(report)
+    assert "$ sudo dnf install -y curl" in log
+    assert "$ sudo dnf install -y git" in log
+    assert "$ dnf install -y vim" in log
+    assert "$ sudo dnf install -y vim" not in log
+    assert hosts[0].packages == {"curl", "vim", "git"}

@@ -16,7 +16,7 @@ import pytest
 from reemote5 import OperationRequest, op
 from reemote5.drivers import run, run_prepare
 from reemote5.hosts import Host, HostConnectionError
-from reemote5.operations import dnf
+from reemote5.modules import dnf
 
 
 class UnreachableHost(Host):

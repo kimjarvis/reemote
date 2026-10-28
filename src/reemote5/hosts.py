@@ -5,7 +5,9 @@ simple *inventory*: a list of dictionaries, each describing one host, e.g.::
 
     [
         {"host": "web1",
-         "connection": {"key_path": "~/.ssh/id_ed25519"}},
+         "connection": {"key_path": "~/.ssh/id_ed25519"},
+         "group": "webservers",
+         "tags": ["ubuntu_host", "web"]},
         {"host": "web2",
          "connection": {"key_path": "~/.ssh/id_ed25519"},
          "privilege": {"sudo_user": "deploy"}},
@@ -18,7 +20,10 @@ connection, privilege (and optional extra) data, which the operations
 Every entry is validated with pydantic before it is materialized: the
 inventory must be a list of dictionaries and each entry must carry at least
 a ``host`` (its name) and a ``connection`` (the SSH connection data), while
-``privilege`` is optional and any other keys are preserved.
+``privilege``, ``group`` and ``tags`` are optional and any other keys are
+preserved. ``group`` (a single label) and ``tags`` (an unordered list of
+string labels) are static classifiers a deploy script reads off the host to
+branch per host (``host.group``, ``host.tags``).
 ``Host.from_inventory`` validates a single entry; ``validate_inventory``
 validates a whole inventory up front (``drivers.run`` calls it before
 materializing any host). Both raise ``InventoryError`` on bad input.
@@ -432,8 +437,11 @@ class InventoryEntry(BaseModel):
 
     An entry must carry at least ``host`` (the host name) and ``connection``
     (the SSH connection data -- possibly an empty mapping for a host only
-    ever driven through the test framework's ``SimulatedHost``); ``privilege``
-    is optional. Any other keys are allowed and preserved:
+    ever driven through the test framework's ``SimulatedHost``); ``privilege``,
+    ``group`` and ``tags`` are optional. ``group`` is a single label naming the
+    group the host belongs to; ``tags`` is an unordered list of string labels.
+    Both are static, inventory-supplied values a deploy script can branch on
+    (``host.group``, ``host.tags``). Any other keys are allowed and preserved:
     ``extra="allow"`` keeps them in ``model_extra``, which
     ``Host.from_inventory`` folds into ``Host.extra``, so the inventory
     format stays extensible without schema changes.
@@ -444,6 +452,8 @@ class InventoryEntry(BaseModel):
     host: str
     connection: dict[str, Any]
     privilege: dict[str, Any] = Field(default_factory=dict)
+    group: str | None = None
+    tags: list[str] = Field(default_factory=list)
 
 
 # Reusable adapter: validating the whole inventory in one call is clearer and
@@ -503,7 +513,11 @@ class Host:
     ``su <user> -c``. When both flags are set the escalations combine in the
     fixed order ``sudo`` then ``su``. Privilege parameters come from here, the
     inventory, and never from an operation: a deploy script can ask to elevate
-    but cannot choose the run-as user. Any unrecognised inventory keys are
+    but cannot choose the run-as user. ``group`` (an optional single label)
+    and ``tags`` (an optional unordered list of string labels) are static,
+    inventory-supplied classifiers a deploy script reads to branch per host --
+    e.g. ``if host.group == "webservers":`` or ``if "web" in host.tags:``.
+    Any unrecognised inventory keys are
     preserved in ``extra``, so the inventory format is extensible without
     library changes.
 
@@ -529,6 +543,8 @@ class Host:
     name: str
     connection: dict = field(default_factory=dict)
     privilege: dict = field(default_factory=dict)
+    group: str | None = None
+    tags: list[str] = field(default_factory=list)
     extra: dict = field(default_factory=dict)
 
     @classmethod
@@ -536,15 +552,17 @@ class Host:
         """Build a host from one validated inventory dictionary.
 
         The entry is validated with pydantic (``InventoryEntry``) first, so
-        it must carry at least ``host`` and ``connection``; ``privilege`` is
-        optional and every other key lands in ``extra``. Raises
-        ``InventoryError`` on invalid input.
+        it must carry at least ``host`` and ``connection``; ``privilege``,
+        ``group`` and ``tags`` are optional and every other key lands in
+        ``extra``. Raises ``InventoryError`` on invalid input.
         """
         validated = _validate_entry(entry)
         return cls(
             name=validated.host,
             connection=dict(validated.connection),
             privilege=dict(validated.privilege),
+            group=validated.group,
+            tags=list(validated.tags),
             extra=dict(validated.model_extra or {}),
         )
 

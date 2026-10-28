@@ -228,8 +228,8 @@ module that defines it:
 | --- | --- | --- |
 | **Drivers** | [`run`][reemote5.drivers.run], [`run_prepare`][reemote5.drivers.run_prepare], [`run_apply`][reemote5.drivers.run_apply], [`send_command`][reemote5.drivers.send_command], [`format_plan`][reemote5.drivers.format_plan], [`format_log`][reemote5.drivers.format_log] | [drivers](drivers.md) |
 | **Core objects** | [`OperationRequest`][reemote5.core.OperationRequest], [`op`][reemote5.core.op], [`OpContext`][reemote5.core.OpContext], [`FactCache`][reemote5.core.FactCache], [`HostRuntime`][reemote5.core.HostRuntime] | [core](core.md) |
-| **Commands** | [`Command`][reemote5.commands.Command], [`StringCommand`][reemote5.commands.StringCommand], and typed subclasses beside their operations ([`DnfInstallCommand`][reemote5.operations.dnf.DnfInstallCommand], [`DnfRemoveCommand`][reemote5.operations.dnf.DnfRemoveCommand], [`LinkCommand`][reemote5.operations.files.LinkCommand]) | [commands](commands.md) |
-| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`validate_inventory`][reemote5.hosts.validate_inventory], [`InventoryError`][reemote5.hosts.InventoryError], [`DnfPackages`][reemote5.facts.dnf.DnfPackages], [`FileLink`][reemote5.facts.files.FileLink], [`dnf.packages`][reemote5.operations.dnf.packages], [`files.link`][reemote5.operations.files.link] | [hosts](hosts.md), [facts/dnf](facts/dnf.md), [facts/files](facts/files.md), [operations/dnf](operations/dnf.md), [operations/files](operations/files.md) |
+| **Commands** | [`Command`][reemote5.commands.Command], [`StringCommand`][reemote5.commands.StringCommand], and typed subclasses beside their operations ([`DnfInstallCommand`][reemote5.modules.dnf.dnf.DnfInstallCommand], [`DnfRemoveCommand`][reemote5.modules.dnf.dnf.DnfRemoveCommand], [`LinkCommand`][reemote5.modules.files.files.LinkCommand]) | [commands](commands.md) |
+| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`validate_inventory`][reemote5.hosts.validate_inventory], [`InventoryError`][reemote5.hosts.InventoryError], [`DnfPackages`][reemote5.modules.dnf.dnf.DnfPackages], [`FileLink`][reemote5.modules.files.files.FileLink], [`dnf.packages`][reemote5.modules.dnf.dnf.packages], [`files.link`][reemote5.modules.files.files.link] | [hosts](hosts.md), [modules/dnf](modules/dnf.md), [modules/files](modules/files.md) |
 
 !!! note "Design-doc references"
 
@@ -245,12 +245,11 @@ src/reemote5/
 ├── commands.py        # Command descriptors (base Command, StringCommand)
 ├── drivers.py         # run_prepare, run_apply, send_command, run, formatters
 ├── hosts.py           # Host (materialized from inventory entries)
-├── facts/             # fact namespaces
-│   ├── dnf.py         #   DnfPackages
-│   └── files.py       #   FileLink
-└── operations/        # operation namespaces
-    ├── dnf.py         #   dnf.packages, DnfInstall/DnfRemoveCommand
-    └── files.py       #   files.link, LinkCommand
+└── modules/           # self-contained namespaces (facts + operations together)
+    ├── dnf/
+    │   └── dnf.py     #   DnfPackages…, dnf.packages, DnfInstall/DnfRemoveCommand
+    └── files/
+        └── files.py   #   FileLink, FileExists, files.link, files.file, Link/FileCommand
 
 examples/                     # runnable usage examples (not part of the library)
 tests/simulated_host.py     # SimulatedHost (test framework, not part of the library)

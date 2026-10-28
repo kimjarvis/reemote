@@ -319,12 +319,19 @@ async def _apply_host_step(rt: HostRuntime) -> LogEntry | None:
     if rt.done or rt.current_request is None:
         return None
     request = rt.current_request
+    # Resolve the tri-state escalation flags (``Privilege``) to the concrete
+    # bools the execution layer speaks -- ``send_command``/``command_shell``/
+    # ``LogEntry`` and the host's privilege builders all take a bool, and only
+    # ``Privilege.ON`` elevates. By this point every ``sub_deploy`` wrapper has
+    # run, so a still-``UNSET`` flag correctly means "do not elevate".
+    sudo = request.sudo.elevates()
+    su = request.su.elevates()
     ctx, commands = await materialize(rt.host, rt.fact_cache, request)
     rt.current_ctx = ctx
     sent: list[Command] = []
     if ctx.changed:
         for cmd in commands:
-            await send_command(rt.host, cmd, sudo=request.sudo, su=request.su)
+            await send_command(rt.host, cmd, sudo=sudo, su=su)
             sent.append(cmd)
     return LogEntry(
         host=rt.host.name,
@@ -332,10 +339,10 @@ async def _apply_host_step(rt: HostRuntime) -> LogEntry | None:
         changed=ctx.changed,
         reason=ctx.reason,
         commands=tuple(sent),
-        sudo=request.sudo,
-        sudo_user=_privilege_sudo_user(rt.host, request.sudo),
-        su=request.su,
-        su_user=_privilege_su_user(rt.host, request.su),
+        sudo=sudo,
+        sudo_user=_privilege_sudo_user(rt.host, sudo),
+        su=su,
+        su_user=_privilege_su_user(rt.host, su),
     )
 
 

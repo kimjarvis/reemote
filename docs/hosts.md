@@ -2,17 +2,18 @@
 
 Hosts and their SSH information are specified as a simple *inventory*: a list
 of dictionaries, each describing one host. Every entry must carry at least a
-`host` (its name) and a `connection` (the SSH connection data); `privilege` is
-optional and any extra keys are preserved. The inventory is the
-parameter the library functions accept; [`Host.from_inventory`][reemote5.hosts.Host.from_inventory]
+`host` (its name) and a `connection` (the SSH connection data); `privilege`,
+`group` and `tags` are optional and any extra keys are preserved. The inventory
+is the parameter the library functions accept;
+[`Host.from_inventory`][reemote5.hosts.Host.from_inventory]
 materializes each entry into a [`Host`][reemote5.hosts.Host] whose
 `connection` data reaches both operations
 ([`send_command`][reemote5.drivers.send_command]) and facts (each `process`).
 
 The inventory is validated with pydantic before any host is materialized.
 Each entry is checked against the [`InventoryEntry`][reemote5.hosts.InventoryEntry]
-schema — `host` and `connection` are required, `privilege` optional, and
-unrecognised keys are allowed (they land in `Host.extra`).
+schema — `host` and `connection` are required, `privilege`, `group` and `tags`
+optional, and unrecognised keys are allowed (they land in `Host.extra`).
 [`validate_inventory`][reemote5.hosts.validate_inventory] checks a whole
 inventory up front (it must be a list of dictionaries), and
 [`run`][reemote5.drivers.run] calls it before building any host, so a
@@ -105,6 +106,42 @@ that mapping is merged last and could otherwise override the curated options, a
 forbidden key cannot be smuggled through it either. The forbidden set is defined
 by `_FORBIDDEN_OPTIONS` in [`reemote5.hosts`][reemote5.hosts] and is checked by
 `_connect_options` before any connection is attempted.
+
+## Groups and tags
+
+An entry may carry two optional, static classifiers that a deploy script reads
+off the materialized [`Host`][reemote5.hosts.Host] to branch per host:
+
+- `group` — a single string naming the group the host belongs to, exposed as
+  `host.group` (`None` when unset).
+- `tags` — an unordered list of strings, exposed as `host.tags` (empty when
+  unset).
+
+```python
+{
+    "host": "web1",
+    "connection": {
+        "address": "192.168.0.240",
+        "username": "kjarvis",
+        "key_path": "/home/kim/.ssh/id_ed25519",
+    },
+    "group": "webservers",
+    "tags": ["ubuntu_host", "web"],
+}
+```
+
+Both come from the inventory, so a deploy generator can select work by host
+name, group or tag:
+
+```python
+def deploy(host):
+    if host.name == "web1":
+        yield from role_web(host)
+    if host.group == "webservers":
+        yield from role_web(host)
+    if "ubuntu_host" in host.tags:
+        yield from role_apt_install_nginx(host)
+```
 
 ## Privilege: sudo and su
 

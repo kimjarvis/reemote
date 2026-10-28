@@ -7,10 +7,74 @@ the phase they are used in; phase awareness lives entirely in the drivers.
 
 from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass, field, replace
+from enum import Enum
 from typing import Any
 
 from .commands import Command
 from .hosts import Host
+
+
+class Privilege(Enum):
+    """Tri-state privilege-escalation request for the ``sudo``/``su`` meta-parameters.
+
+    A plain ``bool`` conflates two different intentions: "run this operation
+    unprivileged" and "no opinion, let a wrapper decide". Because they are the
+    same ``False``, a ``sub_deploy(sudo=True)`` policy cannot tell a request
+    that deliberately opted out from one that was simply never flagged, and
+    elevates both. ``Privilege`` separates the three states so forced elevation
+    can honour an explicit opt-out:
+
+    - ``ON`` -- elevate this operation's commands.
+    - ``OFF`` -- deliberately run unprivileged; a forced-elevation wrapper
+      (``sub_deploy(sudo=Privilege.ON)``) respects it. This is the opt-out a
+      plain bool cannot express.
+    - ``UNSET`` -- no opinion. A wrapper may fill it in; with no wrapper left it
+      resolves to "do not elevate" at the execution boundary, so an unflagged
+      top-level request stays unprivileged exactly as ``sudo=False`` did before.
+
+    The execution layer (``drivers.command_shell``, ``Host.run_shell_privileged``,
+    ``LogEntry``) deals in concrete bools, so the driver collapses a request's
+    tri-state with ``elevates()`` before sending: only ``ON`` elevates.
+    """
+
+    ON = "on"
+    OFF = "off"
+    UNSET = "unset"
+
+    def elevates(self) -> bool:
+        """The concrete elevation decision: ``True`` only for ``ON``.
+
+        ``OFF`` and ``UNSET`` both collapse to ``False`` -- by the time a
+        request reaches the driver every wrapper has run, so a still-``UNSET``
+        flag means nothing claimed it and it must not elevate.
+        """
+        return self is Privilege.ON
+
+    @classmethod
+    def coerce(cls, value: "Privilege | bool | None") -> "Privilege":
+        """Normalize the accepted spellings to a ``Privilege`` member.
+
+        Accepts a ``Privilege`` (returned unchanged), ``None`` (-> ``UNSET``)
+        and a plain ``bool`` for ergonomic call sites -- ``True`` -> ``ON``,
+        ``False`` -> ``OFF`` -- so existing ``sudo=True``/``sudo=False`` keep
+        working while the omitted default stays ``UNSET``.
+        """
+        if isinstance(value, Privilege):
+            return value
+        if value is None:
+            return cls.UNSET
+        return cls.ON if value else cls.OFF
+
+
+def _inherit(policy: Privilege, inner: Privilege) -> Privilege:
+    """Apply a wrapper's escalation ``policy`` to an inner request's ``inner`` flag.
+
+    The inner request wins whenever it has an opinion (``ON`` or ``OFF``); the
+    wrapper only fills the ``UNSET`` ones. This is what makes
+    ``sub_deploy(sudo=Privilege.ON)`` a *forced-elevation-with-opt-out* policy:
+    it elevates every request that did not deliberately set ``sudo=False``.
+    """
+    return inner if inner is not Privilege.UNSET else policy
 
 
 @dataclass(frozen=True)
@@ -24,13 +88,18 @@ class OperationRequest:
 
     ``sudo`` and ``su`` are *meta-parameters*: like ``name`` they describe how
     the driver should run the operation rather than being forwarded to
-    ``func``. When true, the driver elevates each command the operation yields
-    (the real transport wraps it with ``sudo`` and/or ``su``; the test
-    framework's simulated seam ignores them, since privilege has no in-memory
-    effect). Note that both are only boolean requests to elevate: *how* to
-    elevate -- the run-as users and the passwords -- comes from the host's
+    ``func``. Each is a :class:`Privilege` tri-state, not a plain bool, so a
+    request can distinguish "elevate" (``ON``), "deliberately run unprivileged"
+    (``OFF``) and "no opinion" (``UNSET``, the default). Only ``ON`` elevates:
+    the driver collapses the tri-state with ``Privilege.elevates`` before
+    sending, wrapping the command with ``sudo`` and/or ``su`` on the real
+    transport (the test framework's simulated seam ignores them, since
+    privilege has no in-memory effect). The tri-state is what lets a
+    ``sub_deploy`` policy force elevation while honouring an explicit opt-out
+    -- see ``sub_deploy``. Note that these are only requests to elevate: *how*
+    to elevate -- the run-as users and the passwords -- comes from the host's
     inventory ``privilege`` section, never from the operation, so a deploy
-    script cannot choose its own privilege parameters. When both are set the
+    script cannot choose its own privilege parameters. When both are ``ON`` the
     escalations combine in a fixed order, ``sudo`` then ``su`` (sudo is the
     outer escalation, running ``su`` inside it).
     """
@@ -39,14 +108,19 @@ class OperationRequest:
     args: tuple[Any, ...] = ()  # positional args passed to func
     kwargs: dict = field(default_factory=dict)  # keyword args passed to func
     name: str = ""  # human-readable label for plan output
-    sudo: bool = False  # meta-parameter: elevate this operation's commands
-    su: bool = False  # meta-parameter: run this operation's commands via su
+    sudo: Privilege = Privilege.UNSET  # meta-parameter: elevate via sudo
+    su: Privilege = Privilege.UNSET  # meta-parameter: elevate via su
 
     def __post_init__(self):
         # A dict inside a frozen dataclass is otherwise mutable from outside.
         # The copy is shallow: callers should prefer immutable containers for
         # nested values (e.g. packages=("nginx",)).
         object.__setattr__(self, "kwargs", dict(self.kwargs))
+        # Normalize the escalation flags so the ergonomic bool/None spellings
+        # (``sudo=True``) and the ``Privilege`` members coexist: every stored
+        # value is a ``Privilege``, so ``elevates()`` is always available.
+        object.__setattr__(self, "sudo", Privilege.coerce(self.sudo))
+        object.__setattr__(self, "su", Privilege.coerce(self.su))
 
     def __hash__(self):
         return hash(
@@ -109,16 +183,30 @@ class HostRuntime:
 
 
 def op(
-    func: Callable, *, name: str = "", sudo: bool = False, su: bool = False, **kwargs
+    func: Callable,
+    *,
+    name: str = "",
+    sudo: Privilege | bool = Privilege.UNSET,
+    su: Privilege | bool = Privilege.UNSET,
+    **kwargs,
 ) -> OperationRequest:
     """Convenience helper for building OperationRequests in deploy scripts.
 
     ``name``, ``sudo`` and ``su`` are meta-parameters consumed by the driver,
     so they are captured here and never forwarded to ``func``; everything else
     in ``kwargs`` is passed through to the operation as keyword arguments.
+
+    ``sudo``/``su`` accept a :class:`Privilege` or a plain bool (``True`` ->
+    ``ON``, ``False`` -> ``OFF``) and default to ``UNSET`` -- "no opinion", so
+    a ``sub_deploy`` policy can still fill them in. ``OperationRequest``
+    normalizes the value, so the stored flag is always a ``Privilege``.
     """
     return OperationRequest(
-        func=func, kwargs=kwargs, name=name, sudo=sudo, su=su
+        func=func,
+        kwargs=kwargs,
+        name=name,
+        sudo=Privilege.coerce(sudo),
+        su=Privilege.coerce(su),
     )
 
 
@@ -126,8 +214,8 @@ def sub_deploy(
     sub: Callable[[Host], Iterable[OperationRequest]],
     *,
     name_prefix: str = "",
-    sudo: bool = False,
-    su: bool = False,
+    sudo: Privilege | bool = Privilege.UNSET,
+    su: Privilege | bool = Privilege.UNSET,
 ) -> Callable[[Host], Generator[OperationRequest]]:
     """Wrap a sub-deploy, applying default meta-parameters to its requests.
 
@@ -136,20 +224,32 @@ def sub_deploy(
     ``yield from``, composes with ``compose`` and is accepted anywhere a
     deploy function is (e.g. ``run``).
 
-    Meta-parameters are inherited as defaults and the inner request wins:
-    ``sudo=True``/``su=True`` here only elevate requests that did not ask for
-    that escalation themselves, and ``name_prefix`` prepends ``"<prefix>: "``
-    to each plan name (an unnamed request falls back to its operation
-    function's name, matching the formatters). Because ``sudo`` and ``su`` are
-    plain bools, an inner request that deliberately set one to ``False`` is
-    indistinguishable from one that left it unset -- a wrapper with the flag
-    set elevates both.
+    ``sudo``/``su`` are an escalation *policy* for the wrapped requests, given
+    as a :class:`Privilege` (or a bool: ``True`` -> ``ON``). The inner request
+    wins whenever it has an opinion, and the policy only fills the ``UNSET``
+    ones (see ``_inherit``):
+
+    - ``sub_deploy(sudo=Privilege.ON)`` (equivalently ``sudo=True``) forces
+      elevation on every request that did not *deliberately* opt out -- an
+      inner ``sudo=False``/``Privilege.OFF`` stays unprivileged, while an
+      unflagged (``UNSET``) one is elevated. This forced-elevation-with-opt-out
+      is exactly what a plain bool could not express.
+    - ``sub_deploy(sudo=Privilege.OFF)`` forces the ``UNSET`` requests
+      unprivileged, leaving an inner ``ON`` untouched.
+    - the default ``Privilege.UNSET`` is no policy at all: every request passes
+      through unchanged.
+
+    ``name_prefix`` prepends ``"<prefix>: "`` to each plan name (an unnamed
+    request falls back to its operation function's name, matching the
+    formatters).
 
     The wrapper is a pure stream transform over the frozen dataclass
     (``dataclasses.replace`` produces the modified copies): it keeps no
     state between calls and reads nothing but each request, so the prepare
     and apply phases flatten it identically and the determinism guard holds.
     """
+    sudo_policy = Privilege.coerce(sudo)
+    su_policy = Privilege.coerce(su)
 
     def wrapper(host: Host) -> Generator[OperationRequest]:
         for request in sub(host):
@@ -157,10 +257,12 @@ def sub_deploy(
             if name_prefix:
                 base = request.name or request.func.__name__
                 changes["name"] = f"{name_prefix}: {base}"
-            if sudo and not request.sudo:
-                changes["sudo"] = True
-            if su and not request.su:
-                changes["su"] = True
+            inherited_sudo = _inherit(sudo_policy, request.sudo)
+            if inherited_sudo is not request.sudo:
+                changes["sudo"] = inherited_sudo
+            inherited_su = _inherit(su_policy, request.su)
+            if inherited_su is not request.su:
+                changes["su"] = inherited_su
             yield replace(request, **changes) if changes else request
 
     return wrapper
@@ -170,17 +272,21 @@ def _effective_key(request: OperationRequest) -> tuple:
     """Hashable identity of what a request *executes*, excluding its name.
 
     ``name`` labels a request in plans and logs but never reaches the host
-    (``command_shell`` renders the descriptor plus ``sudo``/``su`` only), so
-    two requests with the same key run identically. ``OperationRequest``
-    equality itself stays maximal -- the determinism guard pairs full values
-    -- while ``compose``'s deduplication uses this projection.
+    (``command_shell`` renders the descriptor plus the resolved ``sudo``/``su``
+    only), so two requests with the same key run identically. The escalation
+    flags contribute their *resolved* decision (``Privilege.elevates``), not the
+    raw tri-state: ``ON`` separates a request from the rest, while ``OFF`` and
+    ``UNSET`` collapse together because both execute unprivileged.
+    ``OperationRequest`` equality itself stays maximal -- the determinism guard
+    pairs full values, tri-state included -- while ``compose``'s deduplication
+    uses this projection.
     """
     return (
         request.func,
         request.args,
         tuple(sorted(request.kwargs.items())),
-        request.sudo,
-        request.su,
+        request.sudo.elevates(),
+        request.su.elevates(),
     )
 
 
@@ -232,6 +338,7 @@ __all__ = [
     "HostRuntime",
     "OpContext",
     "OperationRequest",
+    "Privilege",
     "compose",
     "op",
     "sub_deploy",

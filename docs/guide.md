@@ -56,6 +56,18 @@ supported (no login shell). A credential the host rejects is reported as a
 [`PrivilegeError`][reemote5.hosts.PrivilegeError] naming the host, not as a
 failed command — see [Privilege: sudo and su](hosts.md#privilege-sudo-and-su).
 
+`sudo` and `su` are a *tri-state* ([`Privilege`][reemote5.core.Privilege]), not
+a plain bool, so a request can say three distinct things: `ON` (`sudo=True`)
+elevates, `OFF` (`sudo=False`) deliberately runs unprivileged, and `UNSET` (the
+default, when the flag is omitted) means “no opinion”. Only `ON` elevates — the
+driver collapses the tri-state to a concrete bool before a command is sent. The
+distinction matters when composing: because `UNSET` and `OFF` are different, a
+[`sub_deploy`][reemote5.core.sub_deploy] policy can *force* elevation across a
+role while still honouring a request that explicitly opted out with
+`sudo=False` — something a plain bool cannot express, since it cannot tell “run
+this one unprivileged” from “never flagged”. (`op` and `sub_deploy` still accept
+a plain bool for convenience: `True` → `ON`, `False` → `OFF`.)
+
 Three rules follow from the model:
 
 1. **Use immutable containers for collection parameters.** `packages=("nginx",)`
@@ -102,8 +114,12 @@ def deploy(host):
 Two helpers in [`reemote5.core`][reemote5.core] cover what delegation cannot.
 [`sub_deploy`][reemote5.core.sub_deploy] wraps a sub-deploy with default
 meta-parameters: `name_prefix` labels every request it produces for readable
-plans, and `sudo=True`/`su=True` elevate requests that did not ask for that
-escalation themselves (the inner request wins; elevation is never removed).
+plans, and `sudo=True`/`su=True` set an escalation *policy* that elevates every
+request that did not deliberately opt out — the inner request wins whenever it
+has an opinion (`sudo=True`/`sudo=False`), and the policy only fills the
+unflagged (`UNSET`) ones, so a forced-elevation policy still respects an
+explicit `sudo=False` (see the [`Privilege`][reemote5.core.Privilege] tri-state
+above).
 [`compose`][reemote5.core.compose] concatenates sub-deploys into one
 deploy-shaped callable in argument order — an explicit cross-role ordering
 statement — and with `dedupe=True` collapses requests sharing the same
@@ -329,7 +345,7 @@ Its contract:
 - yield one command descriptor per command that would mutate the host;
 - never execute anything and never touch the host directly.
 
-The built-in [`files.link`][reemote5.operations.files.link] in full:
+The built-in [`files.link`][reemote5.modules.files.files.link] in full:
 
 ```python
 async def link(
@@ -356,7 +372,7 @@ async def link(
 Note that `reason` is set on both branches: it is the explanation printed in
 plans and run logs even when nothing changes.
 
-Operations live in namespace modules under `reemote5.operations` so deploy
+Operations live in namespace modules under `reemote5.modules` so deploy
 scripts read `dnf.packages` rather than `dnf_packages`. The driver calls
 `request.func(ctx, *request.args, **request.kwargs)`, and materializes the
 whole command generator to learn `changed` — even during prepare.
@@ -365,8 +381,8 @@ whole command generator to learn `changed` — even during prepare.
 
 Commands are frozen dataclasses subclassing
 [`Command`][reemote5.commands.Command]; typed descriptors live beside the
-operations that yield them ([`reemote5.operations.dnf`][reemote5.operations.dnf.DnfInstallCommand],
-[`reemote5.operations.files`][reemote5.operations.files.LinkCommand]).
+operations that yield them ([`reemote5.modules.dnf.dnf`][reemote5.modules.dnf.dnf.DnfInstallCommand],
+[`reemote5.modules.files.files`][reemote5.modules.files.files.LinkCommand]).
 Two things make a descriptor useful in
 this model:
 
@@ -422,8 +438,8 @@ Safe patterns:
 
 - keep the request sequence unconditional, and let operations decide
   *changed vs. no change* internally (this is what
-  [`dnf.packages`][reemote5.operations.dnf.packages] and
-  [`files.link`][reemote5.operations.files.link] do);
+  [`dnf.packages`][reemote5.modules.dnf.dnf.packages] and
+  [`files.link`][reemote5.modules.files.files.link] do);
 - branch only on **immutable** inputs — host name, inventory data, deploy
   arguments — which read identically in both phases.
 

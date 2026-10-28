@@ -22,8 +22,8 @@ from reemote5 import OperationRequest, op
 from reemote5.core import FactCache, HostRuntime
 from reemote5.drivers import run, run_apply, send_command
 from reemote5.hosts import CommandError, Host, PrivilegeError
-from reemote5.operations import dnf
-from reemote5.operations.dnf import DnfInstallCommand
+from reemote5.modules import dnf
+from reemote5.modules.dnf.dnf import DnfInstallCommand
 
 # What sudo prints when the askpass helper keeps supplying a wrong password:
 # three attempts (the ``passwd_tries`` default), then it gives up and exits 1.

@@ -16,6 +16,7 @@ from .core import (
     HostRuntime,
     OpContext,
     OperationRequest,
+    Privilege,
     compose,
     op,
     sub_deploy,
@@ -34,14 +35,6 @@ from .drivers import (
     run_prepare,
     send_command,
 )
-from .facts import (
-    DnfDisabledModules,
-    DnfEnabledModules,
-    DnfPackages,
-    DnfRepositories,
-    FileExists,
-    FileLink,
-)
 from .hosts import (
     CommandError,
     Host,
@@ -51,14 +44,23 @@ from .hosts import (
     PrivilegeError,
     validate_inventory,
 )
-from .operations import dnf, files
-from .operations.dnf import (
+from .modules import dnf, files
+from .modules.dnf.dnf import (
     DnfCleanCommand,
+    DnfDisabledModules,
+    DnfEnabledModules,
     DnfInstallCommand,
+    DnfPackages,
     DnfRemoveCommand,
+    DnfRepositories,
     DnfUpdateCommand,
 )
-from .operations.files import FileCommand, LinkCommand
+from .modules.files.files import (
+    FileCommand,
+    FileExists,
+    FileLink,
+    LinkCommand,
+)
 
 
 def hello() -> str:
@@ -92,6 +94,7 @@ __all__ = [
     "OpContext",
     "OperationRequest",
     "PlannedOperation",
+    "Privilege",
     "PrivilegeError",
     "StringCommand",
     "command_shell",

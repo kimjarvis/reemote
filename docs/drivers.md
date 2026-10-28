@@ -24,8 +24,10 @@ which returns `{host: value}`). Facts stay single-host — only the driver owns
 the concurrency — so `process`, `FactCache` and the `SimulatedHost` seams are
 untouched.
 
-A request flagged `sudo=True` and/or `su=True` (see
-[Deploy scripts](guide.md#deploy-scripts)) is elevated by the driver.
+A request whose `sudo`/`su` tri-state resolves to elevation
+([`Privilege.ON`][reemote5.core.Privilege], i.e. `sudo=True`; see
+[Deploy scripts](guide.md#deploy-scripts)) is elevated by the driver, which
+collapses the tri-state to a concrete bool before sending.
 [`command_shell`][reemote5.drivers.command_shell] renders the shell text for a
 command descriptor — prefixing `sudo` (or `sudo -u <user>`) and wrapping `su
 <user> -c …`, combining the two in the fixed order `sudo` then `su` (sudo is

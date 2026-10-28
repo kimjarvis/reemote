@@ -34,7 +34,11 @@ plugins:
           # Besides the installed reemote5 package, the example scripts are
           # importable by file name so docs/examples.md can render their
           # module docstrings (the explanation lives in the example itself).
-          paths: [examples/operations/dnf]
+          paths:
+            - examples/modules/dnf
+            - examples/demonstrations/composition
+            - examples/demonstrations/inventory
+            - examples/demonstrations/privilege
           options:
             docstring_style: google
             show_root_heading: false
@@ -55,9 +59,6 @@ nav:
       - Core: core.md
       - Commands: commands.md
       - Hosts: hosts.md
-      - Facts:
-          - dnf: facts/dnf.md
-          - files: facts/files.md
-      - Operations:
-          - dnf: operations/dnf.md
-          - files: operations/files.md
+      - Modules:
+          - dnf: modules/dnf.md
+          - files: modules/files.md

@@ -72,8 +72,7 @@ uv run --group docs mkdocs serve   # http://localhost:8000
 - API reference — one page per source module, generated from docstrings:
   [core](docs/core.md), [drivers](docs/drivers.md), [commands](docs/commands.md),
   [hosts](docs/hosts.md),
-  [facts/dnf](docs/facts/dnf.md), [facts/files](docs/facts/files.md),
-  [operations/dnf](docs/operations/dnf.md), [operations/files](docs/operations/files.md)
+  [modules/dnf](docs/modules/dnf.md), [modules/files](docs/modules/files.md)
 
 ## Layout
 
@@ -81,9 +80,8 @@ uv run --group docs mkdocs serve   # http://localhost:8000
 src/reemote5/core.py         OperationRequest, OpContext, FactCache, HostRuntime, op()
 src/reemote5/commands.py     command descriptors yielded by operations
 src/reemote5/drivers.py      run_prepare / run_apply / send_command / run
-src/reemote5/facts/          DnfPackages, FileLink, FileExists (namespace modules)
 src/reemote5/hosts.py        Host (materialized from inventory entries)
-src/reemote5/operations/     dnf.packages, files.link, files.file
+src/reemote5/modules/        dnf + files: facts and operations combined per namespace
 examples/dnf_install_httpd.py end-to-end usage example
 tests/simulated_host.py      SimulatedHost (test framework, not shipped)
 tests/test_model.py          model tests
