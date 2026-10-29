@@ -381,8 +381,8 @@ whole command generator to learn `changed` — even during prepare.
 
 Commands are frozen dataclasses subclassing
 [`Command`][reemote5.commands.Command]; typed descriptors live beside the
-operations that yield them ([`reemote5.modules.dnf.dnf`][reemote5.modules.dnf.dnf.DnfInstallCommand],
-[`reemote5.modules.files.files`][reemote5.modules.files.files.LinkCommand]).
+operations that yield them (`reemote5.modules.dnf.dnf`,
+`reemote5.modules.files.files`).
 Two things make a descriptor useful in
 this model:
 

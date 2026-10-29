@@ -19,18 +19,6 @@ dispatched the same way — `send_command` awaits its `wait`, which polls the
 host until its condition holds or raises `WaitTimeoutError` — and is likewise
 unprivileged (see [server module](modules/server.md#waiting-for-a-condition)).
 
-| Descriptor | Shell form | Simulated effect |
-| --- | --- | --- |
-| [`DnfInstallCommand`][reemote5.modules.dnf.dnf.DnfInstallCommand] | `dnf install -y <pkgs>` | adds packages (plus their `installs_links` side effects) |
-| [`DnfRemoveCommand`][reemote5.modules.dnf.dnf.DnfRemoveCommand] | `dnf remove -y <pkgs>` | removes packages |
-| [`LinkCommand`][reemote5.modules.files.files.LinkCommand] | `ln -sf <target> <src>` | sets `links[src] = target` |
-| [`LinkCommand`][reemote5.modules.files.files.LinkCommand] with `target=None` | `rm -f <src>` | removes `links[src]` |
-| [`PutCommand`][reemote5.modules.files.files.PutCommand] | none — scp transfer of an IO-like source, logged as `scp <source> -> <dest>` | records `remote_files[dest]` = the source content |
-| [`GetCommand`][reemote5.modules.files.files.GetCommand] | none — scp transfer into an IO-like destination, logged as `scp <src> -> <dest>` | writes `remote_files[src]` into the destination stream |
-| [`SystemctlCommand`][reemote5.modules.server.server.SystemctlCommand] | `systemctl <action> [<unit>]` | start/restart set `services[unit] = "active"`, stop sets `"inactive"`, enable/disable update `enabled_services` |
-| [`WaitForFactCommand`][reemote5.modules.server.server.WaitForFactCommand] | none — polls a fact until a predicate holds, logged as `wait for <Fact>(<args>) <predicate> every <interval>s up to <timeout>s` | evaluated once: passes if the condition already holds, else raises `WaitTimeoutError` |
-| [`StringCommand`][reemote5.commands.StringCommand] | the raw string | none (accepted, not simulated) |
-
 ## Reference
 
 ::: reemote5.commands
@@ -41,15 +29,3 @@ unprivileged (see [server module](modules/server.md#waiting-for-a-condition)).
         - TransferCommand
         - WaitCommand
         - WaitTimeoutError
-
-The typed descriptors are documented with their operations:
-[`DnfInstallCommand`][reemote5.modules.dnf.dnf.DnfInstallCommand] and
-[`DnfRemoveCommand`][reemote5.modules.dnf.dnf.DnfRemoveCommand] in
-[dnf module](modules/dnf.md),
-[`LinkCommand`][reemote5.modules.files.files.LinkCommand],
-[`PutCommand`][reemote5.modules.files.files.PutCommand] and
-[`GetCommand`][reemote5.modules.files.files.GetCommand] in
-[files module](modules/files.md),
-[`SystemctlCommand`][reemote5.modules.server.server.SystemctlCommand] and
-[`WaitForFactCommand`][reemote5.modules.server.server.WaitForFactCommand] in
-[server module](modules/server.md).

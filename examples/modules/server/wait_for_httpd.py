@@ -21,6 +21,11 @@ phase, and branching on that would trip the determinism guard. The wait
 itself is unprivileged (``systemctl show`` works as the login user), so it
 carries no ``sudo`` flag.
 
+Every failure mode of the run -- an unreachable host, a rejected elevation, a
+``systemctl`` that exits non-zero, or a wait that times out -- reaches ``main``
+as a typed error whose message already names the host, so ``main`` catches them
+and prints one line each instead of a traceback.
+
 Because the apply phase runs each step on every host concurrently and joins
 before the next one, both hosts have *finished* ``systemctl start`` before
 either begins polling, and the two poll loops then run in parallel; a slow
@@ -45,9 +50,12 @@ import sys
 from collections.abc import Generator
 
 from reemote5 import (
+    CommandError,
     Host,
     HostConnectionError,
     OperationRequest,
+    PrivilegeError,
+    WaitTimeoutError,
     format_log,
     format_plan,
     op,
@@ -122,6 +130,24 @@ async def main() -> None:
         # A host could not be reached over SSH at all. Report it plainly --
         # naming every unreachable host -- instead of dumping an asyncssh
         # traceback, and exit non-zero so the failure is script-visible.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except PrivilegeError as exc:
+        # The host was reached but rejected the ``sudo=True`` elevation -- a
+        # wrong ``sudo_password``, or a run-as user the login user may not
+        # become. One line naming the host; the detail stays on ``__cause__``.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except CommandError as exc:
+        # A ``systemctl`` invocation exited non-zero (an unknown or masked
+        # unit, for instance). The typed message already names the host, the
+        # credential-free command and its stderr, so print just that.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except WaitTimeoutError as exc:
+        # httpd never became active within the timeout. The message carries
+        # the host, the wait descriptor and the last polled state, which is
+        # everything worth printing -- no traceback.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 

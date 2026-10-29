@@ -47,11 +47,15 @@ Run it with::
 
 import asyncio
 import io
+import sys
 from collections.abc import Generator
 
 from reemote5 import (
+    CommandError,
     Host,
+    HostConnectionError,
     OperationRequest,
+    PrivilegeError,
     files,
     format_log,
     format_plan,
@@ -109,26 +113,34 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 
 async def main() -> None:
-    # --dry: prepare phase only. The remote sha1 is still gathered over SSH
-    # (read-only) so the plan reflects each host's real pre-deployment state;
-    # no content is transferred and the sinks stay empty.
-    plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
-    print("== Plan (prepare phase, --dry) ==")
-    print(format_plan(plans))
+    try:
+        # --dry: prepare phase only. The remote sha1 is still gathered over SSH
+        # (read-only) so the plan reflects each host's real pre-deployment state;
+        # no content is transferred and the sinks stay empty.
+        plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
+        print("== Plan (prepare phase, --dry) ==")
+        print(format_plan(plans))
 
-    # Real run: prepare, then apply in lockstep across hosts. The first get
-    # transfers over scp into each host's sink; the second sees the downloaded
-    # content and reports no change.
-    plans, report, _hosts = await run(INVENTORY, deploy)
-    print("\n== Run log (apply phase) ==")
-    assert report is not None
-    print(format_log(report))
+        # Real run: prepare, then apply in lockstep across hosts. The first get
+        # transfers over scp into each host's sink; the second sees the downloaded
+        # content and reports no change.
+        plans, report, _hosts = await run(INVENTORY, deploy)
+        print("\n== Run log (apply phase) ==")
+        assert report is not None
+        print(format_log(report))
 
-    # The point of an IO-like destination: the downloaded bytes are right here
-    # in a Python variable, with no local file involved.
-    print("\n== Downloaded content per host ==")
-    for name, sink in SINKS.items():
-        print(f"{name}: {sink.getvalue().decode().strip()!r}")
+        # The point of an IO-like destination: the downloaded bytes are right here
+        # in a Python variable, with no local file involved.
+        print("\n== Downloaded content per host ==")
+        for name, sink in SINKS.items():
+            print(f"{name}: {sink.getvalue().decode().strip()!r}")
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
+        # The library already reports every host-level failure as a typed error
+        # whose message names the host and the failing command. Print that
+        # message -- no traceback -- and exit non-zero so the failure stays
+        # script-visible.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

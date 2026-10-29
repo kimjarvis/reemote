@@ -31,9 +31,22 @@ single source of truth: update the docstring and this page follows.
     which does the same injection — it runs entirely in memory against
     `SimulatedHost`, so it opens no connection and needs no real hosts.
 
-The read-only fact-gathering examples (`DnfRepositories`,
-`DnfEnabledModules`, `DnfDisabledModules` over `gather_fact`) live alongside
-the base example in `examples/modules/dnf/`.
+Each real-host script also owns its *error reporting*, because the library is
+CLI-free and only raises: `main` catches the typed errors a run can produce —
+[`HostConnectionError`][reemote5.hosts.HostConnectionError] for a host that
+cannot be reached, [`PrivilegeError`][reemote5.hosts.PrivilegeError] for a
+rejected elevation, [`CommandError`][reemote5.hosts.CommandError] for a command
+that exits non-zero, plus [`WaitTimeoutError`][reemote5.commands.WaitTimeoutError]
+in the polling example and [`InventoryError`][reemote5.hosts.InventoryError] in
+the JSON-inventory one — prints the message on stderr and exits non-zero. The
+message already names the host and, for a failed command, the credential-free
+command text and its stderr, so a failing run reports the reason instead of a
+Python traceback.
+
+The read-only fact-gathering examples (`DnfRepositories`, `DnfRepoList`,
+`DnfEnabledModules`, `DnfDisabledModules`, `DnfInstalledModules`, `DnfGroups`
+and `DnfAvailableGroups` over `gather_fact`) live alongside the base example in
+`examples/modules/dnf/`.
 
 ## Module examples: dnf
 
@@ -44,6 +57,47 @@ installing httpd and removing the welcome configuration the package drops,
 run end to end over SSH in both phases.
 
 ::: dnf_packages
+    options:
+      members: []
+
+### Adding a repository file with content idempotence
+
+The repository-file operation: `dnf.repo` builds an
+`/etc/yum.repos.d/<name>.repo` file from its arguments (`baseurl`,
+`description`, `gpgkey`, …) and writes it only when the content differs from
+what the [`DnfRepoFile`][reemote5.modules.dnf.dnf.DnfRepoFile] fact reads back
+— so re-running is a no-op. Where pyinfra's `dnf.repo` can also *download* a
+remote `.repo` file, reemote5 has no download operation, so a URL `src` raises
+`ValueError` and the file is always constructed locally from the arguments.
+The script yields the same repository request twice — the second is a
+guaranteed no-op in the apply phase, because the first write is visible to it
+through the fresh per-step fact cache (in the prepare phase, where nothing is
+sent, both plan as changes). The write rides under `sudo` (`/etc/yum.repos.d`
+is root-owned), and the command wraps it in `sh -c` so the `>` redirect happens
+inside the elevated shell rather than as the login user.
+
+::: dnf_repo
+    options:
+      members: []
+
+### Installing a `.rpm` file with version idempotence
+
+The package-file operation: `dnf.rpm` installs or removes a `.rpm` that already
+exists on the *target host*. It reads the
+[`RpmPackage`][reemote5.modules.dnf.dnf.RpmPackage] fact twice — once for the
+file's `name`/`version`, once for the installed package of that name — and
+counts the package as present only when the installed version matches the
+file's, so `present=True` installs with `rpm -i` only when it does not and is
+otherwise a no-op, while `present=False` removes it with `dnf remove -y <name>`.
+Where pyinfra's `dnf.rpm` can also *download* a remote `.rpm` mid-deploy,
+reemote5 has no download operation, so a URL `src` raises `ValueError`; upload
+the file from the controller with `files.put` first. The install rides under
+`sudo` (installing a package needs root), and the script yields the same request
+twice — the second is a guaranteed no-op in the apply phase, because the first
+install is visible to it through the fresh per-step fact cache (in the prepare
+phase, where nothing is sent, both plan as changes).
+
+::: dnf_rpm
     options:
       members: []
 

@@ -1,8 +1,8 @@
 # dnf module
 
-`reemote5.modules.dnf.dnf` combines the dnf facts and the dnf operation in a
+`reemote5.modules.dnf.dnf` combines the dnf facts and the dnf operations in a
 single source, so the read side (`DnfPackages` and friends) sits beside the
-`dnf.packages` operation that consumes it.
+`dnf.packages`, `dnf.repo` and `dnf.rpm` operations that consume it.
 
 ## Facts
 
@@ -17,8 +17,14 @@ so results are awaited and cached within a phase step.
       members:
         - DnfPackages
         - DnfRepositories
+        - DnfRepoFile
+        - DnfRepoList
         - DnfEnabledModules
         - DnfDisabledModules
+        - DnfInstalledModules
+        - DnfGroups
+        - DnfAvailableGroups
+        - RpmPackage
 
 ## Operations
 
@@ -38,7 +44,5 @@ mutate the host.
     options:
       members:
         - packages
-        - DnfInstallCommand
-        - DnfRemoveCommand
-        - DnfUpdateCommand
-        - DnfCleanCommand
+        - repo
+        - rpm

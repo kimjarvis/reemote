@@ -25,11 +25,15 @@ Run it with::
 """
 
 import asyncio
+import sys
 from collections.abc import Generator
 
 from reemote5 import (
+    CommandError,
     Host,
+    HostConnectionError,
     OperationRequest,
+    PrivilegeError,
     compose,
     dnf,
     format_log,
@@ -89,18 +93,26 @@ deploy = compose(
 
 
 async def main() -> None:
-    # --dry: prepare phase only. The plan lists the repo request first on
-    # each host; no mutating command is sent.
-    plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
-    print("== Plan (prepare phase, --dry) ==")
-    print(format_plan(plans))
+    try:
+        # --dry: prepare phase only. The plan lists the repo request first on
+        # each host; no mutating command is sent.
+        plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
+        print("== Plan (prepare phase, --dry) ==")
+        print(format_plan(plans))
 
-    # Real run: the lockstep barrier between steps is what guarantees both
-    # hosts have epel-release before either installs htop/iotop.
-    plans, report, _hosts = await run(INVENTORY, deploy)
-    print("\n== Run log (apply phase) ==")
-    assert report is not None
-    print(format_log(report))
+        # Real run: the lockstep barrier between steps is what guarantees both
+        # hosts have epel-release before either installs htop/iotop.
+        plans, report, _hosts = await run(INVENTORY, deploy)
+        print("\n== Run log (apply phase) ==")
+        assert report is not None
+        print(format_log(report))
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
+        # The library already reports every host-level failure as a typed error
+        # whose message names the host and the failing command. Print that
+        # message -- no traceback -- and exit non-zero so the failure stays
+        # script-visible.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

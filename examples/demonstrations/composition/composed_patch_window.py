@@ -30,11 +30,15 @@ Run it with::
 """
 
 import asyncio
+import sys
 from collections.abc import Callable, Generator
 
 from reemote5 import (
+    CommandError,
     Host,
+    HostConnectionError,
     OperationRequest,
+    PrivilegeError,
     compose,
     dnf,
     format_log,
@@ -100,22 +104,30 @@ patch_deploy = compose(
 
 
 async def main() -> None:
-    # --dry both intents: prepare phase only, facts gathered read-only
-    # over SSH, so the plans show what each would do to the real hosts.
-    install_plans, _, _hosts = await run(INVENTORY, install_deploy, dry=True)
-    print("== Install plan (prepare phase, --dry) ==")
-    print(format_plan(install_plans))
+    try:
+        # --dry both intents: prepare phase only, facts gathered read-only
+        # over SSH, so the plans show what each would do to the real hosts.
+        install_plans, _, _hosts = await run(INVENTORY, install_deploy, dry=True)
+        print("== Install plan (prepare phase, --dry) ==")
+        print(format_plan(install_plans))
 
-    patch_plans, _, _hosts = await run(INVENTORY, patch_deploy, dry=True)
-    print("\n== Patch plan (prepare phase, --dry) ==")
-    print(format_plan(patch_plans))
+        patch_plans, _, _hosts = await run(INVENTORY, patch_deploy, dry=True)
+        print("\n== Patch plan (prepare phase, --dry) ==")
+        print(format_plan(patch_plans))
 
-    # Real run of the patch deploy only: installs where missing, upgrades
-    # where present (``dnf update -y httpd mod_ssl``).
-    _plans, report, _hosts = await run(INVENTORY, patch_deploy)
-    print("\n== Run log (patch deploy, apply phase) ==")
-    assert report is not None
-    print(format_log(report))
+        # Real run of the patch deploy only: installs where missing, upgrades
+        # where present (``dnf update -y httpd mod_ssl``).
+        _plans, report, _hosts = await run(INVENTORY, patch_deploy)
+        print("\n== Run log (patch deploy, apply phase) ==")
+        assert report is not None
+        print(format_log(report))
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
+        # The library already reports every host-level failure as a typed error
+        # whose message names the host and the failing command. Print that
+        # message -- no traceback -- and exit non-zero so the failure stays
+        # script-visible.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

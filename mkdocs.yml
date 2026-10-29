@@ -51,7 +51,10 @@ plugins:
             separate_signature: true
             show_signature_annotations: true
             signature_crossrefs: true
-            filters: ["!^_"]
+            # Render class/function docstrings, but not the docstrings of
+            # UPPERCASE class constants (e.g. FILENAME_MARKER, COMMAND), which
+            # are implementation detail rather than part of the documented API.
+            filters: ["!^_", "!^[A-Z][A-Z0-9_]*$"]
 
 nav:
   - Home: index.md

@@ -1,9 +1,11 @@
 """Tests for the dnf module: its facts and the operations layer.
 
 Covers the read-only state discovery in ``reemote5.modules.dnf.dnf``:
-``DnfRepositories``, ``DnfEnabledModules`` and ``DnfDisabledModules``. Each
-fact is exercised both over the real-transport path (parsing canned shell
-output) and through the ``SimulatedHost`` seam.
+``DnfRepositories``, ``DnfRepoList``, ``DnfEnabledModules``,
+``DnfDisabledModules``, ``DnfInstalledModules``, ``DnfGroups``,
+``DnfAvailableGroups`` and ``RpmPackage``. Each fact is exercised both over the
+real-transport path (parsing canned shell output) and through the
+``SimulatedHost`` seam.
 
 Also covers the properties from the design document: request descriptor
 semantics (4.1), fact caching (4.4), sequential "act, then read"
@@ -40,14 +42,22 @@ from reemote5.drivers import (
 from reemote5.hosts import CommandError, Host, InventoryError, validate_inventory
 from reemote5.modules import dnf, files
 from reemote5.modules.dnf.dnf import (
+    DnfAvailableGroups,
     DnfCleanCommand,
     DnfDisabledModules,
     DnfEnabledModules,
+    DnfGroups,
     DnfInstallCommand,
+    DnfInstalledModules,
     DnfPackages,
     DnfRemoveCommand,
+    DnfRepoCommand,
+    DnfRepoFile,
+    DnfRepoList,
     DnfRepositories,
     DnfUpdateCommand,
+    RpmInstallCommand,
+    RpmPackage,
 )
 from reemote5.modules.files.files import FileCommand, FileLink, LinkCommand
 from tests.simulated_host import SimulatedHost
@@ -108,6 +118,62 @@ async def test_dnf_repositories_reads_the_simulated_seam():
     """A SimulatedHost exposes ``repositories`` directly, bypassing the shell."""
     host = SimulatedHost(name="h", repositories=[ALMALINUX_BASEOS_REPO])
     assert await DnfRepositories.process(host) == [ALMALINUX_BASEOS_REPO]
+
+
+# --- DnfRepoFile fact ---------------------------------------------------------
+
+# The ``.repo`` file dnf.repo constructs for a DockerCE repo, reused across the
+# fact and operation tests below. ``$basearch`` must survive verbatim: the write
+# shell-quotes the content, so the remote shell never expands it.
+DOCKER_BASEURL = "https://download.docker.com/linux/centos/7/$basearch/stable"
+DOCKER_REPO_PATH = "/etc/yum.repos.d/DockerCE.repo"
+DOCKER_REPO_CONTENT = (
+    "[DockerCE]\n"
+    "name=DockerCE\n"
+    f"baseurl={DOCKER_BASEURL}\n"
+    "enabled=1\n"
+    "gpgcheck=1\n"
+)
+
+
+async def test_dnf_repofile_reads_the_simulated_seam():
+    """A SimulatedHost stores repo-file content in ``remote_files``; the fact
+    decodes it back, and an absent path reads as None."""
+    host = SimulatedHost(
+        name="h", remote_files={DOCKER_REPO_PATH: DOCKER_REPO_CONTENT.encode()}
+    )
+    assert await DnfRepoFile.process(host, DOCKER_REPO_PATH) == DOCKER_REPO_CONTENT
+    assert await DnfRepoFile.process(host, "/etc/yum.repos.d/absent.repo") is None
+
+
+async def test_dnf_repofile_parses_the_marked_real_transport_output():
+    """Over the real transport the fact strips the marker line and returns the
+    file content verbatim (including the literal ``$basearch``)."""
+    host = CannedShellHost(f"{DnfRepoFile.MARKER}\n{DOCKER_REPO_CONTENT}")
+    assert await DnfRepoFile.process(host, DOCKER_REPO_PATH) == DOCKER_REPO_CONTENT
+
+
+async def test_dnf_repofile_absent_without_the_marker():
+    """A missing file produces no marker, so the fact reports None rather than
+    empty content -- the distinction ``present=False`` removal relies on."""
+    host = CannedShellHost("")
+    assert await DnfRepoFile.process(host, DOCKER_REPO_PATH) is None
+
+
+async def test_dnf_repofile_present_but_empty_returns_empty_string():
+    """An existing empty file leads with the marker and no content, so the fact
+    returns ``""`` (not None), distinguishing it from an absent file."""
+    host = CannedShellHost(f"{DnfRepoFile.MARKER}\n")
+    assert await DnfRepoFile.process(host, DOCKER_REPO_PATH) == ""
+
+
+def test_dnf_repofile_command_guards_on_existence():
+    """The real-transport command cats the file only behind a ``test -e`` guard
+    and leads with the marker, so absence is distinguishable from empty."""
+    command = DnfRepoFile.command(DOCKER_REPO_PATH)
+    assert command.startswith(f"test -e {DOCKER_REPO_PATH}")
+    assert DnfRepoFile.MARKER in command
+    assert f"cat -- {DOCKER_REPO_PATH}" in command
 
 
 # --- DnfEnabledModules fact (pyinfra parity) -----------------------------------
@@ -183,6 +249,240 @@ async def test_dnf_disabled_modules_reads_the_simulated_seam():
     shell."""
     host = SimulatedHost(name="h", disabled_modules=DOCUMENTED_DISABLED_MODULES)
     assert await DnfDisabledModules.process(host) == DOCUMENTED_DISABLED_MODULES
+
+
+# --- DnfInstalledModules fact -------------------------------------------------
+
+# ``dnf module list --installed`` marks installed streams with ``[i]``; the
+# fact maps each such row's name to its stream, ignoring the header, blank
+# lines and the trailing ``Hint:`` line (whose ``[i]nstalled`` word must not be
+# mistaken for a flag).
+DOCUMENTED_INSTALLED_MODULES = {"postgresql": "16", "nodejs": "20"}
+
+DNF_MODULE_LIST_INSTALLED_OUTPUT = """\
+Name         Stream        Profiles                                  Summary
+nodejs       20 [i]        common [d], development, minimal, s2i     Javascript runtime
+postgresql   16 [i]        client, server [d]                        PostgreSQL server and client module
+
+Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled"""
+
+
+async def test_dnf_installed_modules_parses_the_installed_table():
+    """Over the real-transport path, ``DnfInstalledModules`` parses a
+    ``dnf module list --installed`` table into a name-to-stream map, keeping
+    only the ``[i]``-flagged rows and skipping the header and hint line."""
+    host = CannedShellHost(DNF_MODULE_LIST_INSTALLED_OUTPUT)
+    assert await DnfInstalledModules.process(host) == DOCUMENTED_INSTALLED_MODULES
+
+
+async def test_dnf_installed_modules_ignores_the_hint_and_headers():
+    """The trailing ``Hint:`` line's ``[i]nstalled`` word carries no bare ``[i]``
+    flag, so it is not parsed as a module row."""
+    host = CannedShellHost(DNF_MODULE_LIST_INSTALLED_OUTPUT)
+    modules = await DnfInstalledModules.process(host)
+    assert "Hint:" not in modules
+    assert all(stream.isdigit() for stream in modules.values())
+
+
+async def test_dnf_installed_modules_reads_the_simulated_seam():
+    """A SimulatedHost exposes ``installed_modules`` directly, bypassing the
+    shell."""
+    host = SimulatedHost(name="h", installed_modules=DOCUMENTED_INSTALLED_MODULES)
+    assert await DnfInstalledModules.process(host) == DOCUMENTED_INSTALLED_MODULES
+
+
+# --- DnfGroups / DnfAvailableGroups facts ------------------------------------
+
+# ``dnf group list --installed`` prints section headers at column 0 and lists
+# each group name on its own indented line beneath. Environment groups and
+# regular groups are gathered together.
+DNF_GROUP_LIST_INSTALLED_OUTPUT = """\
+Installed Environment Groups:
+   Server with GUI
+   Minimal Install
+Installed Groups:
+   Core
+   Development Tools
+   Container Management"""
+
+DOCUMENTED_INSTALLED_GROUPS = {
+    "Server with GUI",
+    "Minimal Install",
+    "Core",
+    "Development Tools",
+    "Container Management",
+}
+
+# An unfiltered ``dnf group list`` interleaves Available and Installed
+# sections; each fact must keep only its own section's names.
+DNF_GROUP_LIST_MIXED_OUTPUT = """\
+Available Environment Groups:
+   KDE Plasma Workspaces
+Available Groups:
+   3D Printing
+   Audio Production
+Installed Environment Groups:
+   Server with GUI
+Installed Groups:
+   Core"""
+
+
+async def test_dnf_groups_parses_the_installed_table():
+    """Over the real-transport path, ``DnfGroups`` collects every indented name
+    under an ``Installed ... Groups:`` header, environment groups included."""
+    host = CannedShellHost(DNF_GROUP_LIST_INSTALLED_OUTPUT)
+    assert await DnfGroups.process(host) == DOCUMENTED_INSTALLED_GROUPS
+
+
+async def test_dnf_groups_ignores_available_sections():
+    """In a mixed listing, ``DnfGroups`` keeps only the ``Installed`` names."""
+    host = CannedShellHost(DNF_GROUP_LIST_MIXED_OUTPUT)
+    assert await DnfGroups.process(host) == {"Server with GUI", "Core"}
+
+
+async def test_dnf_groups_reads_the_simulated_seam():
+    """A SimulatedHost exposes ``installed_groups`` directly, bypassing the
+    shell."""
+    host = SimulatedHost(name="h", installed_groups=DOCUMENTED_INSTALLED_GROUPS)
+    assert await DnfGroups.process(host) == DOCUMENTED_INSTALLED_GROUPS
+
+
+async def test_dnf_available_groups_parses_the_available_table():
+    """``DnfAvailableGroups`` collects the names under ``Available ... Groups:``
+    headers from a ``dnf group list --available`` listing."""
+    stdout = """\
+Available Environment Groups:
+   Fedora Custom Operating System
+   Minimal Install
+Available Groups:
+   3D Printing
+   Administration Tools
+   Authoring and Publishing"""
+    host = CannedShellHost(stdout)
+    assert await DnfAvailableGroups.process(host) == {
+        "Fedora Custom Operating System",
+        "Minimal Install",
+        "3D Printing",
+        "Administration Tools",
+        "Authoring and Publishing",
+    }
+
+
+async def test_dnf_available_groups_ignores_installed_sections():
+    """In a mixed listing, ``DnfAvailableGroups`` keeps only the ``Available``
+    names."""
+    host = CannedShellHost(DNF_GROUP_LIST_MIXED_OUTPUT)
+    assert await DnfAvailableGroups.process(host) == {
+        "KDE Plasma Workspaces",
+        "3D Printing",
+        "Audio Production",
+    }
+
+
+async def test_dnf_available_groups_reads_the_simulated_seam():
+    """A SimulatedHost exposes ``available_groups`` directly, bypassing the
+    shell."""
+    host = SimulatedHost(name="h", available_groups={"3D Printing", "Core"})
+    assert await DnfAvailableGroups.process(host) == {"3D Printing", "Core"}
+
+
+# --- DnfRepoList fact ---------------------------------------------------------
+
+# ``dnf repolist --all`` prints three columns -- repo id, a possibly multi-word
+# repo name, and an enabled/disabled status -- under a ``repo id`` header row.
+DNF_REPOLIST_ALL_OUTPUT = """\
+repo id                 repo name                                            status
+baseos                  AlmaLinux 9 - BaseOS                                 enabled
+appstream               AlmaLinux 9 - AppStream                              enabled
+epel                    Extra Packages for Enterprise Linux 9 - x86_64       disabled"""
+
+DOCUMENTED_REPO_LIST = [
+    {"repoid": "baseos", "name": "AlmaLinux 9 - BaseOS", "status": "enabled"},
+    {"repoid": "appstream", "name": "AlmaLinux 9 - AppStream", "status": "enabled"},
+    {
+        "repoid": "epel",
+        "name": "Extra Packages for Enterprise Linux 9 - x86_64",
+        "status": "disabled",
+    },
+]
+
+
+async def test_dnf_repolist_parses_the_all_table():
+    """Over the real-transport path, ``DnfRepoList`` splits each row into
+    ``repoid``, the multi-word ``name`` and the trailing ``status``, skipping
+    the header row."""
+    host = CannedShellHost(DNF_REPOLIST_ALL_OUTPUT)
+    assert await DnfRepoList.process(host) == DOCUMENTED_REPO_LIST
+
+
+async def test_dnf_repolist_parses_a_two_column_listing_without_status():
+    """A plain ``dnf repolist`` (no ``--all``) has no status column; the fact
+    still parses it, simply omitting the ``status`` key."""
+    stdout = """\
+repo id            repo name
+baseos             AlmaLinux 9 - BaseOS
+appstream          AlmaLinux 9 - AppStream"""
+    host = CannedShellHost(stdout)
+    assert await DnfRepoList.process(host) == [
+        {"repoid": "baseos", "name": "AlmaLinux 9 - BaseOS"},
+        {"repoid": "appstream", "name": "AlmaLinux 9 - AppStream"},
+    ]
+
+
+async def test_dnf_repolist_reads_the_simulated_seam():
+    """A SimulatedHost exposes ``repo_list`` directly, bypassing the shell."""
+    host = SimulatedHost(name="h", repo_list=DOCUMENTED_REPO_LIST)
+    assert await DnfRepoList.process(host) == DOCUMENTED_REPO_LIST
+
+
+# --- RpmPackage fact (pyinfra parity) ----------------------------------------
+
+# A ``.rpm`` file on the target host and the package it provides, reused across
+# the RpmPackage fact and dnf.rpm operation tests below. ``RPM_FILE_VERSION`` is
+# rpm's ``VERSION-RELEASE`` (what ``%{VERSION}-%{RELEASE}`` prints).
+RPM_FILE_PATH = "/tmp/foo-1.0-1.el9.x86_64.rpm"
+RPM_FILE_NAME = "foo"
+RPM_FILE_VERSION = "1.0-1.el9"
+RPM_FILE_INFO = {"name": RPM_FILE_NAME, "version": RPM_FILE_VERSION}
+
+
+async def test_rpm_package_parses_the_queryformat_line():
+    """Over the real-transport path, ``RpmPackage`` parses rpm's
+    ``NAME VERSION-RELEASE`` line into pyinfra's documented dict."""
+    host = CannedShellHost(f"{RPM_FILE_NAME} {RPM_FILE_VERSION}\n")
+    assert await RpmPackage.process(host, RPM_FILE_NAME) == RPM_FILE_INFO
+
+
+async def test_rpm_package_absent_name_parses_to_none():
+    """rpm's ``package <name> is not installed`` message has more than two
+    fields, so the two-token regex rejects it and the fact reports None."""
+    host = CannedShellHost(f"package {RPM_FILE_NAME} is not installed\n")
+    assert await RpmPackage.process(host, RPM_FILE_NAME) is None
+
+
+def test_rpm_package_command_queries_installed_then_file():
+    """The real-transport command queries the installed package first, then --
+    behind a ``test -e`` guard -- the ``.rpm`` file, mirroring pyinfra's
+    ``rpm -q ... || rpm -qp ...`` chain."""
+    command = RpmPackage.command(RPM_FILE_PATH)
+    assert "--queryformat" in command
+    assert f"-q {RPM_FILE_PATH}" in command
+    assert f"! test -e {RPM_FILE_PATH}" in command
+    assert f"-qp {RPM_FILE_PATH}" in command
+
+
+async def test_rpm_package_reads_the_simulated_seam():
+    """A SimulatedHost exposes ``rpm_packages`` (installed name -> version) and
+    ``rpm_files`` (path -> metadata); both are readable and an unknown key
+    reads as None."""
+    host = SimulatedHost(
+        name="h",
+        rpm_packages={RPM_FILE_NAME: RPM_FILE_VERSION},
+        rpm_files={RPM_FILE_PATH: RPM_FILE_INFO},
+    )
+    assert await RpmPackage.process(host, RPM_FILE_NAME) == RPM_FILE_INFO
+    assert await RpmPackage.process(host, RPM_FILE_PATH) == RPM_FILE_INFO
+    assert await RpmPackage.process(host, "absent") is None
 
 
 NGINX_DEFAULT_SITE = "/etc/nginx/sites-enabled/default"
@@ -1085,6 +1385,380 @@ async def test_dnf_version_pin_install_simulates_by_name():
     _runtimes, plans2 = await run_prepare([host], pinned_deploy)
     assert not plans2["h"][0].changed
     assert plans2["h"][0].reason == "all packages present"
+
+
+# --- dnf.repo operation (pyinfra parity) --------------------------------------
+
+
+async def test_dnf_repo_writes_the_constructed_file():
+    """present=True with a baseurl builds the ``.repo`` content and yields a
+    write when the file is absent."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.repo(ctx, src="DockerCE", baseurl=DOCKER_BASEURL)]
+    assert ctx.changed
+    assert ctx.reason == (
+        f"repo file {DOCKER_REPO_PATH} missing or differs from the desired content"
+    )
+    assert commands == [
+        DnfRepoCommand(path=DOCKER_REPO_PATH, content=DOCKER_REPO_CONTENT)
+    ]
+
+
+async def test_dnf_repo_no_change_when_content_matches():
+    """A repo file already holding exactly the constructed content is a no-op."""
+    host = SimulatedHost(
+        name="h", remote_files={DOCKER_REPO_PATH: DOCKER_REPO_CONTENT.encode()}
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.repo(ctx, src="DockerCE", baseurl=DOCKER_BASEURL)]
+    assert not ctx.changed
+    assert ctx.reason == f"repo file already up to date ({DOCKER_REPO_PATH})"
+    assert commands == []
+
+
+async def test_dnf_repo_options_render_into_the_content():
+    """description/enabled/gpgcheck/gpgkey all land in the constructed file."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.repo(
+            ctx,
+            src="DockerCE",
+            baseurl=DOCKER_BASEURL,
+            description="Docker CE for CentOS",
+            enabled=False,
+            gpgcheck=False,
+            gpgkey="https://download.docker.com/linux/centos/gpg",
+        )
+    ]
+    (cmd,) = commands
+    assert cmd.content == (
+        "[DockerCE]\n"
+        "name=Docker CE for CentOS\n"
+        f"baseurl={DOCKER_BASEURL}\n"
+        "enabled=0\n"
+        "gpgcheck=0\n"
+        "gpgkey=https://download.docker.com/linux/centos/gpg\n"
+    )
+
+
+async def test_dnf_repo_removes_an_existing_file():
+    host = SimulatedHost(
+        name="h", remote_files={DOCKER_REPO_PATH: DOCKER_REPO_CONTENT.encode()}
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.repo(ctx, src="DockerCE", present=False)]
+    assert ctx.changed
+    assert ctx.reason == f"repo file {DOCKER_REPO_PATH} present, will remove"
+    assert commands == [DnfRepoCommand(path=DOCKER_REPO_PATH, content=None)]
+
+
+async def test_dnf_repo_removal_noop_when_absent():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.repo(ctx, src="DockerCE", present=False)]
+    assert not ctx.changed
+    assert ctx.reason == f"repo file already absent ({DOCKER_REPO_PATH})"
+    assert commands == []
+
+
+async def test_dnf_repo_rejects_a_url_src():
+    """pyinfra downloads a URL ``.repo`` file; reemote5 has no download
+    operation, so a URL src raises instead of silently doing nothing."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="does not support a URL src"):
+        _ = [
+            c
+            async for c in dnf.repo(
+                ctx, src="https://download.docker.com/linux/centos/docker-ce.repo"
+            )
+        ]
+
+
+async def test_dnf_repo_present_requires_baseurl():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="requires baseurl"):
+        _ = [c async for c in dnf.repo(ctx, src="DockerCE")]
+
+
+async def test_dnf_repo_rejects_a_relative_gpgkey():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="gpgkey must be a valid URL"):
+        _ = [
+            c
+            async for c in dnf.repo(
+                ctx, src="DockerCE", baseurl=DOCKER_BASEURL, gpgkey="gpg/key"
+            )
+        ]
+
+
+def test_dnf_repo_command_shell_keeps_the_redirect_inside_sh():
+    """The write wraps printf in ``sh -c`` so the ``>`` redirect runs under the
+    elevated shell, and shell-quoting keeps ``$basearch`` literal."""
+    cmd = DnfRepoCommand(path=DOCKER_REPO_PATH, content=DOCKER_REPO_CONTENT)
+    shell = cmd.shell()
+    assert shell.startswith("sh -c ")
+    # The printf and its ``>`` redirect are a single ``sh -c`` argument, so the
+    # driver elevates them together; shlex.split recovers that inner script
+    # (the raw ``shell`` re-quotes it, so ``'%s'`` is not a literal substring).
+    inner = shlex.split(shell)[2]
+    assert inner.startswith("printf '%s' ")
+    assert inner.endswith(f" > {DOCKER_REPO_PATH}")
+    assert "$basearch" in inner  # literal, never shell-expanded
+    # Removal renders as a plain rm -f (no redirect to protect).
+    assert DnfRepoCommand(path=DOCKER_REPO_PATH, content=None).shell() == (
+        f"rm -f {DOCKER_REPO_PATH}"
+    )
+    # Under sudo the whole sh -c (redirect included) runs as root.
+    assert command_shell(cmd, sudo=True).startswith("sudo sh -c ")
+
+
+async def test_dnf_repo_end_to_end_write_then_noop():
+    """Through run(): the first apply writes the file into the simulated remote
+    filesystem; a second run sees the matching content and is a no-op. The
+    request kwargs are plain strings, so the determinism guard holds with no
+    module-level constant (unlike files.put's identity-compared IO source)."""
+
+    def repo_deploy(host):
+        yield op(
+            dnf.repo,
+            name="Add DockerCE repo",
+            src="DockerCE",
+            baseurl=DOCKER_BASEURL,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+
+    def factory(entry):
+        return host  # reuse ONE host so the second run sees the first's write
+
+    _plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}], repo_deploy, host_factory=factory
+    )
+    (entry,) = report.log
+    assert entry.changed
+    assert entry.commands == (
+        DnfRepoCommand(path=DOCKER_REPO_PATH, content=DOCKER_REPO_CONTENT),
+    )
+    assert host.remote_files[DOCKER_REPO_PATH] == DOCKER_REPO_CONTENT.encode()
+    assert "sudo sh -c " in format_log(report)
+
+    _plans2, report2, _hosts2 = await run(
+        [{"host": "h", "connection": {}}], repo_deploy, host_factory=factory
+    )
+    (entry2,) = report2.log
+    assert not entry2.changed
+    assert entry2.reason == f"repo file already up to date ({DOCKER_REPO_PATH})"
+
+
+async def test_dnf_repo_remove_after_write_in_one_deploy():
+    """The apply phase's fresh per-step fact cache sees the write, so a following
+    present=False in the same deploy removes it -- while the prepare plan (which
+    never sends) still shows the removal as a no-op."""
+
+    def repo_deploy(host):
+        yield op(dnf.repo, name="add", src="DockerCE", baseurl=DOCKER_BASEURL)
+        yield op(dnf.repo, name="remove", src="DockerCE", present=False)
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], repo_deploy)
+    assert plans["h"][0].changed  # write: absent -> differs
+    assert not plans["h"][1].changed  # remove: still absent during prepare
+    report = await run_apply(runtimes, plans=plans)
+    add, remove = report.log
+    assert add.changed
+    assert remove.changed
+    assert remove.reason == f"repo file {DOCKER_REPO_PATH} present, will remove"
+    assert host.remote_files == {}
+
+
+# --- dnf.rpm operation (pyinfra parity) --------------------------------------
+
+
+async def test_dnf_rpm_installs_an_absent_package():
+    """present=True with a ``.rpm`` whose package is not installed yields the
+    ``rpm -i`` install and records the change."""
+    host = SimulatedHost(name="h", rpm_files={RPM_FILE_PATH: RPM_FILE_INFO})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.rpm(ctx, src=RPM_FILE_PATH)]
+    assert ctx.changed
+    assert ctx.reason == f"rpm {RPM_FILE_PATH} not installed, will install"
+    assert commands == [RpmInstallCommand(src=RPM_FILE_PATH)]
+
+
+async def test_dnf_rpm_no_change_when_installed_version_matches():
+    """The file's package installed at the file's exact version is a no-op."""
+    host = SimulatedHost(
+        name="h",
+        rpm_files={RPM_FILE_PATH: RPM_FILE_INFO},
+        rpm_packages={RPM_FILE_NAME: RPM_FILE_VERSION},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.rpm(ctx, src=RPM_FILE_PATH)]
+    assert not ctx.changed
+    assert ctx.reason == f"rpm {RPM_FILE_PATH} is installed"
+    assert commands == []
+
+
+async def test_dnf_rpm_reinstalls_when_installed_version_differs():
+    """A different installed version does not match the file, so present=True
+    installs again -- the version-comparison idempotence pyinfra's ``ensure_rpm``
+    performs."""
+    host = SimulatedHost(
+        name="h",
+        rpm_files={RPM_FILE_PATH: RPM_FILE_INFO},
+        rpm_packages={RPM_FILE_NAME: "0.9-1.el9"},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.rpm(ctx, src=RPM_FILE_PATH)]
+    assert ctx.changed
+    assert commands == [RpmInstallCommand(src=RPM_FILE_PATH)]
+
+
+async def test_dnf_rpm_removes_an_installed_package():
+    """present=False removes the file's package by name (reusing the dnf remove
+    descriptor) when that exact version is installed."""
+    host = SimulatedHost(
+        name="h",
+        rpm_files={RPM_FILE_PATH: RPM_FILE_INFO},
+        rpm_packages={RPM_FILE_NAME: RPM_FILE_VERSION},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.rpm(ctx, src=RPM_FILE_PATH, present=False)]
+    assert ctx.changed
+    assert ctx.reason == f"rpm {RPM_FILE_PATH} installed, will remove"
+    assert commands == [DnfRemoveCommand(packages=(RPM_FILE_NAME,))]
+
+
+async def test_dnf_rpm_removal_noop_when_not_installed():
+    """present=False with the file present but its package not installed is a
+    no-op."""
+    host = SimulatedHost(name="h", rpm_files={RPM_FILE_PATH: RPM_FILE_INFO})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.rpm(ctx, src=RPM_FILE_PATH, present=False)]
+    assert not ctx.changed
+    assert ctx.reason == f"rpm {RPM_FILE_PATH} is not installed"
+    assert commands == []
+
+
+async def test_dnf_rpm_removal_noop_when_file_absent():
+    """A present=False whose ``.rpm`` is absent cannot resolve a package name, so
+    it is a no-op -- the limitation the docstring records for an un-downloadable
+    source."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.rpm(ctx, src=RPM_FILE_PATH, present=False)]
+    assert not ctx.changed
+    assert ctx.reason == f"rpm {RPM_FILE_PATH} is not installed"
+    assert commands == []
+
+
+async def test_dnf_rpm_rejects_a_url_src():
+    """pyinfra downloads a URL ``.rpm``; reemote5 has no download operation, so a
+    URL src raises instead of silently doing nothing (mirroring dnf.repo)."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="does not support a URL src"):
+        _ = [
+            c
+            async for c in dnf.rpm(
+                ctx, src="https://example.com/foo-1.0-1.el9.x86_64.rpm"
+            )
+        ]
+
+
+async def test_dnf_rpm_absorbs_unknown_kwargs():
+    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already strips
+    the ``name``/``sudo`` meta-parameters, the rest is ignored."""
+    host = SimulatedHost(name="h", rpm_files={RPM_FILE_PATH: RPM_FILE_INFO})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.rpm(ctx, src=RPM_FILE_PATH, future_flag=True)]
+    assert commands == [RpmInstallCommand(src=RPM_FILE_PATH)]
+
+
+def test_rpm_install_command_shell_and_elevation():
+    """The descriptor renders ``rpm -i <quoted src>`` and elevates as a whole
+    under sudo -- a plain command, not pyinfra's ``|| ...`` runtime-check chain,
+    whose fallback arm a ``sudo`` prefix would leave unprivileged."""
+    cmd = RpmInstallCommand(src=RPM_FILE_PATH)
+    assert cmd.shell() == f"rpm -i {RPM_FILE_PATH}"
+    assert command_shell(cmd, sudo=True) == f"sudo rpm -i {RPM_FILE_PATH}"
+    # A path with a space is shell-quoted.
+    assert RpmInstallCommand(src="/tmp/my pkg.rpm").shell() == "rpm -i '/tmp/my pkg.rpm'"
+
+
+async def test_dnf_rpm_simulated_seam_mutates_state():
+    """``send_command`` maps the install descriptor onto the simulated state: the
+    file's name/version land in ``rpm_packages`` and the name in ``packages`` (so
+    ``DnfPackages`` sees it too)."""
+    host = SimulatedHost(name="h", rpm_files={RPM_FILE_PATH: RPM_FILE_INFO})
+    await send_command(host, RpmInstallCommand(src=RPM_FILE_PATH))
+    assert host.rpm_packages == {RPM_FILE_NAME: RPM_FILE_VERSION}
+    assert RPM_FILE_NAME in host.packages
+
+
+async def test_dnf_rpm_end_to_end_install_then_noop():
+    """Through run(): the first apply installs the ``.rpm`` into the simulated
+    state; a second run sees the matching installed version and is a no-op. The
+    request kwargs are plain strings, so the determinism guard holds with no
+    module-level constant."""
+
+    def rpm_deploy(host):
+        yield op(
+            dnf.rpm,
+            name="Install foo from a .rpm",
+            src=RPM_FILE_PATH,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h", rpm_files={RPM_FILE_PATH: RPM_FILE_INFO})
+
+    def factory(entry):
+        return host  # reuse ONE host so the second run sees the first's install
+
+    _plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}], rpm_deploy, host_factory=factory
+    )
+    (entry,) = report.log
+    assert entry.changed
+    assert entry.commands == (RpmInstallCommand(src=RPM_FILE_PATH),)
+    assert host.rpm_packages == {RPM_FILE_NAME: RPM_FILE_VERSION}
+    assert f"sudo rpm -i {RPM_FILE_PATH}" in format_log(report)
+
+    _plans2, report2, _hosts2 = await run(
+        [{"host": "h", "connection": {}}], rpm_deploy, host_factory=factory
+    )
+    (entry2,) = report2.log
+    assert not entry2.changed
+    assert entry2.reason == f"rpm {RPM_FILE_PATH} is installed"
+
+
+async def test_dnf_rpm_remove_after_install_in_one_deploy():
+    """The apply phase's fresh per-step fact cache sees the install, so a following
+    present=False in the same deploy removes it -- while the prepare plan (which
+    never sends) still shows the removal as a no-op."""
+
+    def rpm_deploy(host):
+        yield op(dnf.rpm, name="install", src=RPM_FILE_PATH)
+        yield op(dnf.rpm, name="remove", src=RPM_FILE_PATH, present=False)
+
+    host = SimulatedHost(name="h", rpm_files={RPM_FILE_PATH: RPM_FILE_INFO})
+    runtimes, plans = await run_prepare([host], rpm_deploy)
+    assert plans["h"][0].changed  # install: file present, package absent
+    assert not plans["h"][1].changed  # remove: still absent during prepare
+    report = await run_apply(runtimes, plans=plans)
+    install, remove = report.log
+    assert install.changed
+    assert remove.changed
+    assert remove.reason == f"rpm {RPM_FILE_PATH} installed, will remove"
+    assert host.rpm_packages == {}
+    assert RPM_FILE_NAME not in host.packages
 
 
 async def test_files_link_remove_when_present():

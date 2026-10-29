@@ -37,6 +37,15 @@ uses the *default* factory (``Host.from_inventory``): each plain ``Host``
 lazily opens an asyncssh connection, gathers facts, runs the elevated dnf
 command, and transfers content over scp for real.
 
+``main`` also owns the error reporting, as every real-host example here does:
+the library is CLI-free and *raises*, so ``main`` catches its typed errors
+(``HostConnectionError``, ``PrivilegeError``, ``CommandError``) and prints the
+message -- which already names the host and the failing command -- on stderr
+before exiting non-zero. Installing ``htop`` against a host without
+EPEL enabled therefore reports ``command failed on web1 (exit 1): sudo dnf
+install -y htop`` plus dnf's own ``Error: Unable to find a match: htop``, never
+a Python traceback.
+
 Run it with::
 
     uv run python examples/general/dnf_put_get.py
@@ -44,11 +53,15 @@ Run it with::
 
 import asyncio
 import io
+import sys
 from collections.abc import Generator
 
 from reemote5 import (
+    CommandError,
     Host,
+    HostConnectionError,
     OperationRequest,
+    PrivilegeError,
     dnf,
     files,
     format_log,
@@ -125,29 +138,37 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 
 async def main() -> None:
-    # --dry: prepare phase only. Facts are still gathered over SSH (read-only)
-    # so the plan reflects each host's real pre-deployment state; no command
-    # that mutates a host is sent and no content is transferred.
-    plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
-    print("== Plan (prepare phase, --dry) ==")
-    print(format_plan(plans))
+    try:
+        # --dry: prepare phase only. Facts are still gathered over SSH (read-only)
+        # so the plan reflects each host's real pre-deployment state; no command
+        # that mutates a host is sent and no content is transferred.
+        plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
+        print("== Plan (prepare phase, --dry) ==")
+        print(format_plan(plans))
 
-    # Real run: prepare, then apply in lockstep across hosts over SSH. The
-    # dnf install is elevated with sudo, the put uploads over scp when the
-    # remote motd differs, and the get downloads /etc/os-release into each
-    # host's sink.
-    plans, report, _hosts = await run(INVENTORY, deploy)
-    print("\n== Run log (apply phase) ==")
-    assert report is not None
-    print(format_log(report))
+        # Real run: prepare, then apply in lockstep across hosts over SSH. The
+        # dnf install is elevated with sudo, the put uploads over scp when the
+        # remote motd differs, and the get downloads /etc/os-release into each
+        # host's sink.
+        plans, report, _hosts = await run(INVENTORY, deploy)
+        print("\n== Run log (apply phase) ==")
+        assert report is not None
+        print(format_log(report))
 
-    # The point of an IO-like destination: the downloaded bytes are right
-    # here in a Python variable -- print each host's OS release info straight
-    # from the stream, with no local file involved.
-    print("\n== Remote OS release info per host ==")
-    for name, sink in SINKS.items():
-        print(f"--- {name} ---")
-        print(sink.getvalue().decode().strip())
+        # The point of an IO-like destination: the downloaded bytes are right
+        # here in a Python variable -- print each host's OS release info straight
+        # from the stream, with no local file involved.
+        print("\n== Remote OS release info per host ==")
+        for name, sink in SINKS.items():
+            print(f"--- {name} ---")
+            print(sink.getvalue().decode().strip())
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
+        # The library already reports every host-level failure as a typed error
+        # whose message names the host and the failing command. Print that
+        # message -- no traceback -- and exit non-zero so the failure stays
+        # script-visible.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

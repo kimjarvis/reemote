@@ -33,7 +33,8 @@ affected host(s) and nothing else, keeping the exit status and sudo's stderr as
 ``__cause__`` for diagnosis. ``main`` below catches it and prints one line, so a
 rejected credential is reported plainly instead of as a traceback. A command
 that fails *after* sudo has authenticated is still the ordinary
-``CommandError``, and still aborts the run.
+``CommandError``: it also aborts the run, and ``main`` reports it the same way
+-- one line, no traceback.
 
 Run it with::
 
@@ -45,6 +46,7 @@ import sys
 from collections.abc import Generator
 
 from reemote5 import (
+    CommandError,
     Host,
     HostConnectionError,
     OperationRequest,
@@ -128,6 +130,12 @@ async def main() -> None:
         # ``sudo_password``, or a run-as user the login user may not become.
         # One line naming the host rather than sudo's three "Sorry, try again."
         # retries; the exit status and stderr stay on ``exc.__cause__``.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except CommandError as exc:
+        # sudo authenticated, but the command it ran exited non-zero. The typed
+        # message already names the host, the credential-free command and its
+        # stderr, so print just that one report -- no traceback.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 

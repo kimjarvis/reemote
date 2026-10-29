@@ -34,8 +34,8 @@ change is needed, and yielding one [`Command`][reemote5.commands.Command]
 descriptor per mutation.
 
 `files.put` and `files.get` yield the *non-shell* descriptors:
-[`PutCommand`][reemote5.modules.files.files.PutCommand] and
-[`GetCommand`][reemote5.modules.files.files.GetCommand] have no `shell()` —
+`PutCommand` and
+`GetCommand` have no `shell()` —
 [`send_command`][reemote5.drivers.send_command] dispatches them over the host's
 asyncssh connection with scp instead of running shell text, so the `sudo`/`su`
 flags do not apply and the remote path must be writable (put) or readable (get)
@@ -56,10 +56,6 @@ dropped — there is no local path to place, create or force.
     options:
       members:
         - link
-        - LinkCommand
         - file
-        - FileCommand
         - put
-        - PutCommand
         - get
-        - GetCommand

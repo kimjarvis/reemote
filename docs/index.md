@@ -228,8 +228,8 @@ module that defines it:
 | --- | --- | --- |
 | **Drivers** | [`run`][reemote5.drivers.run], [`run_prepare`][reemote5.drivers.run_prepare], [`run_apply`][reemote5.drivers.run_apply], [`send_command`][reemote5.drivers.send_command], [`format_plan`][reemote5.drivers.format_plan], [`format_log`][reemote5.drivers.format_log] | [drivers](drivers.md) |
 | **Core objects** | [`OperationRequest`][reemote5.core.OperationRequest], [`op`][reemote5.core.op], [`OpContext`][reemote5.core.OpContext], [`FactCache`][reemote5.core.FactCache], [`HostRuntime`][reemote5.core.HostRuntime] | [core](core.md) |
-| **Commands** | [`Command`][reemote5.commands.Command], [`StringCommand`][reemote5.commands.StringCommand], [`TransferCommand`][reemote5.commands.TransferCommand], [`WaitCommand`][reemote5.commands.WaitCommand], [`WaitTimeoutError`][reemote5.commands.WaitTimeoutError], and typed subclasses beside their operations ([`DnfInstallCommand`][reemote5.modules.dnf.dnf.DnfInstallCommand], [`DnfRemoveCommand`][reemote5.modules.dnf.dnf.DnfRemoveCommand], [`LinkCommand`][reemote5.modules.files.files.LinkCommand], [`PutCommand`][reemote5.modules.files.files.PutCommand], [`GetCommand`][reemote5.modules.files.files.GetCommand], [`SystemctlCommand`][reemote5.modules.server.server.SystemctlCommand], [`WaitForFactCommand`][reemote5.modules.server.server.WaitForFactCommand]) | [commands](commands.md) |
-| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`validate_inventory`][reemote5.hosts.validate_inventory], [`InventoryError`][reemote5.hosts.InventoryError], [`DnfPackages`][reemote5.modules.dnf.dnf.DnfPackages], [`FileLink`][reemote5.modules.files.files.FileLink], [`RemoteFileSha1`][reemote5.modules.files.files.RemoteFileSha1], [`SystemdServiceState`][reemote5.modules.server.server.SystemdServiceState], [`dnf.packages`][reemote5.modules.dnf.dnf.packages], [`files.link`][reemote5.modules.files.files.link], [`files.put`][reemote5.modules.files.files.put], [`files.get`][reemote5.modules.files.files.get], [`server.service`][reemote5.modules.server.server.service], [`server.wait_service`][reemote5.modules.server.server.wait_service] | [hosts](hosts.md), [modules/dnf](modules/dnf.md), [modules/files](modules/files.md), [modules/server](modules/server.md) |
+| **Commands** | [`Command`][reemote5.commands.Command], [`StringCommand`][reemote5.commands.StringCommand], [`TransferCommand`][reemote5.commands.TransferCommand], [`WaitCommand`][reemote5.commands.WaitCommand], [`WaitTimeoutError`][reemote5.commands.WaitTimeoutError] | [commands](commands.md) |
+| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`validate_inventory`][reemote5.hosts.validate_inventory], [`InventoryError`][reemote5.hosts.InventoryError], [`DnfPackages`][reemote5.modules.dnf.dnf.DnfPackages], [`FileLink`][reemote5.modules.files.files.FileLink], [`RemoteFileSha1`][reemote5.modules.files.files.RemoteFileSha1], [`SystemdServiceState`][reemote5.modules.server.server.SystemdServiceState], [`dnf.packages`][reemote5.modules.dnf.dnf.packages], [`dnf.repo`][reemote5.modules.dnf.dnf.repo], [`dnf.rpm`][reemote5.modules.dnf.dnf.rpm], [`files.link`][reemote5.modules.files.files.link], [`files.put`][reemote5.modules.files.files.put], [`files.get`][reemote5.modules.files.files.get], [`server.service`][reemote5.modules.server.server.service], [`server.wait_service`][reemote5.modules.server.server.wait_service] | [hosts](hosts.md), [modules/dnf](modules/dnf.md), [modules/files](modules/files.md), [modules/server](modules/server.md) |
 
 !!! note "Design-doc references"
 
@@ -247,11 +247,11 @@ src/reemote5/
 ├── hosts.py           # Host (materialized from inventory entries)
 └── modules/           # self-contained namespaces (facts + operations together)
     ├── dnf/
-    │   └── dnf.py     #   DnfPackages…, dnf.packages, DnfInstall/DnfRemoveCommand
+    │   └── dnf.py     #   DnfPackages…, dnf.packages + its command descriptors
     ├── files/
-    │   └── files.py   #   FileLink…, LocalSha1/RemoteFileSha1, files.link/file/put/get, Link/File/Put/GetCommand
+    │   └── files.py   #   FileLink…, LocalSha1/RemoteFileSha1, files.link/file/put/get + their command descriptors
     └── server/
-        └── server.py  #   SystemdServiceState/Enabled, server.service/wait_service, Systemctl/WaitForFactCommand
+        └── server.py  #   SystemdServiceState/Enabled, server.service/wait_service + their command descriptors
 
 examples/                     # runnable usage examples (not part of the library)
 tests/simulated_host.py     # SimulatedHost (test framework, not part of the library)

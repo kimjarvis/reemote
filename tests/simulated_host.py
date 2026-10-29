@@ -13,12 +13,15 @@ a real asyncssh transport is missing:
   forwards to it when the host provides it, and raises ``NotImplementedError``
   otherwise.
 - ``packages`` / ``links`` / ``existing_files`` / ``remote_files`` /
-  ``repositories`` / ``enabled_modules`` / ``disabled_modules`` /
-  ``services`` / ``enabled_services``: the state the
-  library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
-  ``RemoteFileSha1``, ``DnfRepositories``, ``DnfEnabledModules``,
-  ``DnfDisabledModules``, ``SystemdServiceState``, ``SystemdServiceEnabled``)
-  read as a stand-in for gathering over SSH.
+  ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
+  / ``installed_modules`` / ``installed_groups`` / ``available_groups`` /
+  ``rpm_files`` / ``rpm_packages`` / ``services`` / ``enabled_services``: the
+  state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
+  ``RemoteFileSha1``, ``DnfRepoFile``, ``DnfRepositories``, ``DnfRepoList``,
+  ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
+  ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``,
+  ``SystemdServiceState``, ``SystemdServiceEnabled``) read as a stand-in for
+  gathering over SSH.
 
 Holding this state is what makes the "fresh fact cache per lockstep step"
 property observable in the tests and the demo: ``send_command`` mutates the
@@ -34,7 +37,9 @@ from reemote5.modules.dnf.dnf import (
     DnfCleanCommand,
     DnfInstallCommand,
     DnfRemoveCommand,
+    DnfRepoCommand,
     DnfUpdateCommand,
+    RpmInstallCommand,
 )
 from reemote5.modules.files.files import (
     FileCommand,
@@ -74,8 +79,24 @@ class SimulatedHost(Host):
     # fact cache sees the mutation.
     remote_files: dict[str, bytes] = field(default_factory=dict)
     repositories: list[dict[str, str]] = field(default_factory=list)
+    # Runtime repository list (``dnf repolist --all``), backing ``DnfRepoList``:
+    # each entry is a ``{repoid, name, status}`` dict.
+    repo_list: list[dict[str, str]] = field(default_factory=list)
     enabled_modules: dict[str, str] = field(default_factory=dict)  # name -> stream
     disabled_modules: list[str] = field(default_factory=list)  # disabled module names
+    installed_modules: dict[str, str] = field(default_factory=dict)  # name -> stream
+    # Installed/available package-group names (``dnf group list``), backing
+    # ``DnfGroups``/``DnfAvailableGroups``. Named distinctly from ``Host.group``
+    # (the inventory classifier) so the two are never confused.
+    installed_groups: set[str] = field(default_factory=set)
+    available_groups: set[str] = field(default_factory=set)
+    # ``.rpm`` files present on the host (path -> {name, version}) and the
+    # packages installed from them (name -> version), backing ``RpmPackage``.
+    # ``dnf.rpm`` installs the file's package: ``install_rpm`` copies the file's
+    # name/version into ``rpm_packages`` (and the name into ``packages``), so a
+    # repeat is a no-op and a removal (``present=False``) clears both.
+    rpm_files: dict[str, dict[str, str]] = field(default_factory=dict)
+    rpm_packages: dict[str, str] = field(default_factory=dict)
     # Simulated systemd: full unit name (``httpd.service``) -> its ActiveState
     # string (``active``/``inactive``/...), backing ``SystemdServiceState``;
     # and the set of unit names enabled on boot, backing
@@ -109,6 +130,12 @@ class SimulatedHost(Host):
                 self.remove_packages(packages)
             case DnfUpdateCommand() | DnfCleanCommand():
                 pass  # the simulation tracks no versions/metadata to update
+            case DnfRepoCommand(path=path, content=None):
+                self.remove_repo_file(path)
+            case DnfRepoCommand(path=path, content=content):
+                self.write_repo_file(path, content)
+            case RpmInstallCommand(src=src):
+                self.install_rpm(src)
             case LinkCommand(src=src, target=None):
                 self.remove_link(src)
             case LinkCommand(src=src, target=target):
@@ -154,7 +181,29 @@ class SimulatedHost(Host):
                 self.existing_files.add(path)
 
     def remove_packages(self, packages: tuple[str, ...]) -> None:
-        self.packages.difference_update(pkg.split("=", 1)[0] for pkg in packages)
+        for package in packages:
+            name = package.split("=", 1)[0]
+            self.packages.discard(name)
+            # A package installed from a ``.rpm`` (``dnf.rpm`` ``present=False``
+            # reuses DnfRemoveCommand) must also leave ``rpm_packages``, or
+            # ``RpmPackage`` would still report it installed.
+            self.rpm_packages.pop(name, None)
+
+    def install_rpm(self, src: str) -> None:
+        """Record a simulated ``rpm -i``: mark the file's package installed.
+
+        Reads the ``.rpm``'s name/version from ``rpm_files`` (the seam
+        ``RpmPackage`` reads for a file path) and records them in
+        ``rpm_packages`` plus ``packages``, so a repeat ``dnf.rpm`` is a no-op
+        and ``DnfPackages`` also sees the package. An unknown ``.rpm`` path has
+        no metadata to install, so nothing changes.
+        """
+        info = self.rpm_files.get(src)
+        if info is None:
+            return
+        name = info["name"]
+        self.rpm_packages[name] = info["version"]
+        self.packages.add(name)
 
     def make_link(self, src: str, target: str) -> None:
         self.links[src] = target
@@ -167,6 +216,20 @@ class SimulatedHost(Host):
 
     def remove_file(self, src: str) -> None:
         self.existing_files.discard(src)
+
+    def write_repo_file(self, path: str, content: str) -> None:
+        """Record a simulated ``dnf.repo`` write: store the content bytes.
+
+        Mirrors ``put_file``: the content lands in ``remote_files`` -- the same
+        store ``DnfRepoFile`` reads back (and ``RemoteFileSha1`` hashes) -- so a
+        repeat ``dnf.repo`` with identical arguments is a no-op, since the fresh
+        per-step fact cache sees these bytes and the content matches.
+        """
+        self.remote_files[path] = content.encode("utf-8")
+
+    def remove_repo_file(self, path: str) -> None:
+        """Record a simulated ``dnf.repo`` removal (``present=False``)."""
+        self.remote_files.pop(path, None)
 
     def put_file(self, src, dest: str) -> None:
         """Record a simulated scp upload: store the IO-like source's content.

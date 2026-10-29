@@ -24,11 +24,15 @@ Run it with::
 """
 
 import asyncio
+import sys
 from collections.abc import Generator
 
 from reemote5 import (
+    CommandError,
     Host,
+    HostConnectionError,
     OperationRequest,
+    PrivilegeError,
     dnf,
     files,
     format_log,
@@ -111,17 +115,25 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 
 async def main() -> None:
-    # --dry: prepare phase only. web1's plan holds one more entry than
-    # web2's; no mutating command is sent.
-    plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
-    print("== Plan (prepare phase, --dry) ==")
-    print(format_plan(plans))
+    try:
+        # --dry: prepare phase only. web1's plan holds one more entry than
+        # web2's; no mutating command is sent.
+        plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
+        print("== Plan (prepare phase, --dry) ==")
+        print(format_plan(plans))
 
-    # Real run: prepare, then apply in lockstep across hosts over SSH.
-    plans, report, _hosts = await run(INVENTORY, deploy)
-    print("\n== Run log (apply phase) ==")
-    assert report is not None
-    print(format_log(report))
+        # Real run: prepare, then apply in lockstep across hosts over SSH.
+        plans, report, _hosts = await run(INVENTORY, deploy)
+        print("\n== Run log (apply phase) ==")
+        assert report is not None
+        print(format_log(report))
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
+        # The library already reports every host-level failure as a typed error
+        # whose message names the host and the failing command. Print that
+        # message -- no traceback -- and exit non-zero so the failure stays
+        # script-visible.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":

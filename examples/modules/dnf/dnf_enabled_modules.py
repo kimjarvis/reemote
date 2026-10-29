@@ -28,8 +28,15 @@ Run it with::
 
 import asyncio
 import json
+import sys
 
-from reemote5 import DnfEnabledModules, Host, gather_fact
+from reemote5 import (
+    CommandError,
+    DnfEnabledModules,
+    Host,
+    HostConnectionError,
+    gather_fact,
+)
 
 # The inventory: real hosts and their SSH connection information, supplied by
 # the application to the library. Host.from_inventory materializes each entry
@@ -65,6 +72,13 @@ async def main() -> None:
         # running one host at a time. process runs ``dnf module list --enabled``
         # and parses the [e]-flagged rows into a {module name: stream} mapping.
         enabled_modules = await gather_fact(hosts, DnfEnabledModules)
+    except (CommandError, HostConnectionError) as exc:
+        # The library reports an unreachable host or a failed fact command as a
+        # typed error whose message already names the host. Print that message
+        # -- no traceback -- and exit non-zero so the failure stays
+        # script-visible.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     finally:
         # Close every connection gather_fact may have opened, concurrently.
         await asyncio.gather(*(host.aclose() for host in hosts))

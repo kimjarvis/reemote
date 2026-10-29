@@ -35,9 +35,9 @@ runs each command with `run_shell`, copies IO-like sources to the host with
 destinations with [`download_file`][reemote5.hosts.Host.download_file] (both
 asyncssh's scp, via a temporary local file — the seams
 [`files.put`][reemote5.modules.files.files.put]'s non-shell
-[`PutCommand`][reemote5.modules.files.files.PutCommand] and
+`PutCommand` and
 [`files.get`][reemote5.modules.files.files.get]'s
-[`GetCommand`][reemote5.modules.files.files.GetCommand] ride), and
+`GetCommand` ride), and
 `run` closes the connection when it finishes.
 
 When a host cannot be reached, [`Host.connect`][reemote5.hosts.Host.connect]

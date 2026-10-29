@@ -40,7 +40,7 @@ yielding one [`Command`][reemote5.commands.Command] descriptor per mutation.
 `server.service` is the idempotent half, mirroring pyinfra's `systemd.service`
 for `service`, `running`, `restarted`, `enabled` and `daemon_reload`: it
 compares the unit against the two facts and yields a
-[`SystemctlCommand`][reemote5.modules.server.server.SystemctlCommand] only
+`SystemctlCommand` only
 where the unit differs from the request (`daemon_reload` and `restarted` are
 stateless and always yield when set). The `systemctl` commands need root, so
 flag the request `sudo=True`. pyinfra's `reloaded`, `command`, `user_mode`,
@@ -50,7 +50,6 @@ flag the request `sudo=True`. pyinfra's `reloaded`, `command`, `user_mode`,
     options:
       members:
         - service
-        - SystemctlCommand
 
 ## Waiting for a condition
 
@@ -59,7 +58,7 @@ pyinfra waits in two ways: a remote-side shell loop (`server.wait` polls
 (`server.reboot` yields a `FunctionCommand` that sleeps and re-reads the
 `Uptime` fact until the host is back). reemote5 takes the second shape and
 makes it a descriptor: `server.wait_service` yields a
-[`WaitForFactCommand`][reemote5.modules.server.server.WaitForFactCommand],
+`WaitForFactCommand`,
 the second kind of *non-shell* descriptor after the transfers. It has no
 `shell()`; [`send_command`][reemote5.drivers.send_command] dispatches on the
 [`WaitCommand`][reemote5.commands.WaitCommand] base and awaits the
@@ -109,7 +108,6 @@ already holds or the simulated wait raises `WaitTimeoutError` immediately.
       members:
         - wait_service
         - is_active
-        - WaitForFactCommand
 
 ## Example
 

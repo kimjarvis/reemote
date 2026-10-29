@@ -2,27 +2,42 @@
 
 Fact side (design doc section 5): ``DnfPackages``, the fact read by
 ``dnf.packages`` to learn which packages are already installed,
-``DnfRepositories``, the configured dnf repositories,
-``DnfEnabledModules``, the enabled dnf modules, and
-``DnfDisabledModules``, the explicitly disabled dnf modules. Like every
-fact they are phase-unaware: each ``process`` coroutine just gathers the
-raw value.
+``DnfRepositories``, the configured dnf repositories, ``DnfRepoFile``, the
+raw content of a single ``.repo`` file (read by ``dnf.repo``),
+``DnfRepoList``, the runtime repository list (enabled and disabled),
+``DnfEnabledModules``, ``DnfDisabledModules`` and ``DnfInstalledModules``, the
+enabled, disabled and installed dnf modules, and
+``DnfGroups``/``DnfAvailableGroups``, the installed and available package
+groups, and ``RpmPackage``, the name/version of a ``.rpm`` file or an
+installed package that ``dnf.rpm`` reads to decide idempotence. Like every
+fact they are phase-unaware: each ``process`` coroutine just gathers the raw
+value.
 
-Operation side (design doc section 6): ``dnf.packages`` plus the typed
-command descriptors it yields (``DnfInstallCommand``/``DnfRemoveCommand``/
-``DnfUpdateCommand``/``DnfCleanCommand``). Operations are async generators
-that receive an ``OpContext``, await facts, set ``ctx.changed``/
-``ctx.reason``, and yield command descriptors; they never touch the host
-directly.
+Operation side (design doc section 6): ``dnf.packages``, ``dnf.repo`` and
+``dnf.rpm`` plus the typed command descriptors they yield
+(``DnfInstallCommand``/``DnfRemoveCommand``/``DnfUpdateCommand``/
+``DnfCleanCommand``/``DnfRepoCommand``/``RpmInstallCommand``). Operations are
+async generators that receive an ``OpContext``, await facts, set
+``ctx.changed``/``ctx.reason``, and yield command descriptors; they never touch
+the host directly.
 
 ``dnf.packages`` mirrors pyinfra's option set (``present``, ``latest``,
 ``update``, ``clean``, ``nobest``, ``extra_install_args``,
-``extra_uninstall_args``) with the same names and semantics.
+``extra_uninstall_args``) with the same names and semantics. ``dnf.repo``
+mirrors pyinfra's ``dnf.repo`` for the manual-construction case (``present``,
+``baseurl``, ``description``, ``enabled``, ``gpgcheck``, ``gpgkey``);
+pyinfra's URL source is dropped, since reemote5 has no download operation.
+``dnf.rpm`` mirrors pyinfra's ``dnf.rpm`` (``src``, ``present``) for a ``.rpm``
+file already on the target host; pyinfra's URL source -- which downloads the
+file mid-deploy -- is dropped for the same reason, so a URL ``src`` raises
+``ValueError``.
 """
 
 import re
+import shlex
 from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from ...commands import Command
 from ...core import OpContext
@@ -130,6 +145,53 @@ class DnfRepositories:
         return cls.parse(stdout.splitlines())
 
 
+class DnfRepoFile:
+    """The current content of one ``.repo`` file, or None when it is absent.
+
+    The fact ``dnf.repo`` reads to make its write idempotent: where
+    ``DnfRepositories`` parses *every* configured repository into option
+    dicts, this reports the raw text of a *single* file so the operation can
+    compare it against the content it would write. Absence is reported as
+    ``None`` -- never the empty string -- so a file that exists but is empty
+    stays distinguishable from one that is missing, which is what lets
+    ``dnf.repo(present=False)`` remove an empty leftover.
+    """
+
+    #: Marker printed before the ``cat``'d content, only when ``test -e``
+    #: passes, so ``process`` can tell an existing (possibly empty) file from
+    #: a missing one (no marker on stdout).
+    MARKER = "#reemote5-repofile"
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell printing ``MARKER`` then the file's content, only if it exists.
+
+        The ``test -e`` guard means a missing file produces no output at all
+        (not even the marker), while an existing one -- empty or not -- always
+        leads with the marker line.
+        """
+        quoted = shlex.quote(path)
+        return f"test -e {quoted} && {{ printf '{cls.MARKER}\\n'; cat -- {quoted}; }}"
+
+    @classmethod
+    async def process(cls, host: Host, path: str) -> str | None:
+        remote_files = getattr(host, "remote_files", None)
+        if remote_files is not None:
+            # SimulatedHost seam: decode the content the simulated remote
+            # filesystem holds at the path (None when absent). The same store
+            # backs files.put/files.get, so a simulated dnf.repo write -- which
+            # stores its content here -- reads back through this fact.
+            data = remote_files.get(path)
+            return data.decode("utf-8") if data is not None else None
+        # Real transport: cat the file over asyncssh behind the marker, so a
+        # missing file (no marker) reads as None rather than empty content.
+        stdout = await host.run_shell(cls.command(path))
+        prefix = f"{cls.MARKER}\n"
+        if not stdout.startswith(prefix):
+            return None
+        return stdout[len(prefix) :]
+
+
 class DnfEnabledModules:
     """The enabled dnf modules, mapping module name to its enabled stream.
 
@@ -221,6 +283,284 @@ class DnfDisabledModules:
             return list(disabled_modules)
         # Real transport: list the disabled modules over asyncssh and parse.
         stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
+class DnfInstalledModules:
+    """The installed dnf modules, mapping module name to its installed stream.
+
+    The counterpart of ``DnfEnabledModules``: where that fact reports the
+    streams dnf has *enabled* (``[e]``), this one reports the streams that
+    actually have packages *installed* (``[i]``) out of the
+    ``dnf module list --installed`` table. A module can be enabled without any
+    of its packages installed, or installed on a stream that is not the enabled
+    default, so the two facts answer different questions. Every ``[i]``-flagged
+    row becomes a ``{name: stream}`` entry; headers, blank lines and the
+    trailing hint line are ignored.
+    """
+
+    #: Shell used to list the installed modules over SSH.
+    COMMAND = "dnf module list --installed"
+
+    #: Matches the ``[i]`` installed flag on a stream but not the ``[i]nstalled``
+    #: word in the table's trailing ``Hint:`` line.
+    INSTALLED_FLAG = re.compile(r"\[i\](?!\w)")
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> dict[str, str]:
+        """Parse ``dnf module list --installed`` rows into a name-to-stream map.
+
+        Only lines carrying the ``[i]`` flag are kept; the first two
+        whitespace-separated tokens of such a line are the module name and its
+        installed stream.
+        """
+        modules: dict[str, str] = {}
+        for line in output:
+            if not cls.INSTALLED_FLAG.search(line):
+                continue
+            tokens = line.split()
+            if len(tokens) < 2:
+                continue
+            name, stream = tokens[0], tokens[1]
+            modules[name] = stream
+        return modules
+
+    @classmethod
+    async def process(cls, host: Host) -> dict[str, str]:
+        installed_modules = getattr(host, "installed_modules", None)
+        if installed_modules is not None:
+            # SimulatedHost seam: read the in-memory state directly.
+            return dict(installed_modules)
+        # Real transport: list the installed modules over asyncssh and parse.
+        stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
+def _parse_group_list(output: Iterable[str], *, section: str) -> set[str]:
+    """Collect the group names listed under ``section`` headers.
+
+    ``dnf group list`` prints its section headers at column 0, each ending in a
+    colon (``Installed Groups:``, ``Available Environment Groups:``, ...), and
+    lists every group name on its own *indented* line beneath the header it
+    belongs to. A group name is kept only while the current header starts with
+    ``section`` (``"Installed"`` for ``DnfGroups``, ``"Available"`` for
+    ``DnfAvailableGroups``); any other header -- or a blank line, or a stray
+    non-indented prompt line -- switches collection off, so environment-group
+    and regular-group names are gathered together while names from the unwanted
+    sections are not. Names are returned de-duplicated as a set.
+    """
+    names: set[str] = set()
+    in_section = False
+    for raw in output:
+        if not raw.strip():
+            continue
+        # A header sits at column 0 and ends with a colon; a group name is
+        # indented beneath it, so indentation alone tells the two apart.
+        if not raw[0].isspace():
+            header = raw.strip()
+            in_section = header.endswith(":") and header.startswith(section)
+            continue
+        if in_section:
+            names.add(raw.strip())
+    return names
+
+
+class DnfGroups:
+    """The names of the installed dnf groups.
+
+    Fills a gap pyinfra leaves open: there is no way to ask which package
+    *groups* are already installed, so a ``dnf group install`` cannot be made
+    idempotent. This fact parses ``dnf group list --installed`` and returns the
+    installed group names -- both environment groups (``Installed Environment
+    Groups:``) and regular groups (``Installed Groups:``) -- as a set, so a
+    later group operation can skip the ones already present.
+    """
+
+    #: Shell used to list the installed groups over SSH.
+    COMMAND = "dnf group list --installed"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> set[str]:
+        """Parse ``dnf group list --installed`` into a set of group names.
+
+        Only the names indented under an ``Installed ... Groups:`` header are
+        kept; the ``Available`` sections (and any prompt or blank line) are
+        ignored.
+        """
+        return _parse_group_list(output, section="Installed")
+
+    @classmethod
+    async def process(cls, host: Host) -> set[str]:
+        installed_groups = getattr(host, "installed_groups", None)
+        if installed_groups is not None:
+            # SimulatedHost seam: read the in-memory state directly.
+            return set(installed_groups)
+        # Real transport: list the installed groups over asyncssh and parse.
+        stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
+class DnfAvailableGroups:
+    """The names of the available (not-yet-installed) dnf groups.
+
+    The counterpart of ``DnfGroups``: parses ``dnf group list --available`` and
+    returns the group names dnf could install -- both environment groups
+    (``Available Environment Groups:``) and regular groups (``Available
+    Groups:``) -- as a set. Useful to check that a group name is valid before
+    installing it, and to decide whether an install is needed at all.
+    """
+
+    #: Shell used to list the available groups over SSH.
+    COMMAND = "dnf group list --available"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> set[str]:
+        """Parse ``dnf group list --available`` into a set of group names.
+
+        Only the names indented under an ``Available ... Groups:`` header are
+        kept; the ``Installed`` sections (and any prompt or blank line) are
+        ignored.
+        """
+        return _parse_group_list(output, section="Available")
+
+    @classmethod
+    async def process(cls, host: Host) -> set[str]:
+        available_groups = getattr(host, "available_groups", None)
+        if available_groups is not None:
+            # SimulatedHost seam: read the in-memory state directly.
+            return set(available_groups)
+        # Real transport: list the available groups over asyncssh and parse.
+        stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
+class DnfRepoList:
+    """The runtime dnf repositories, as a list of repo dicts.
+
+    Where ``DnfRepositories`` parses the ``.repo`` *configuration* files -- and
+    so cannot tell which repositories dnf actually has loaded, or whether a
+    configured repo is enabled -- this fact reports the *runtime* list from
+    ``dnf repolist --all``: every repository dnf knows about, enabled or
+    disabled. Each row becomes a dict with the ``repoid``, its human-readable
+    ``name`` and, when the listing carries one, its ``status`` (``enabled`` or
+    ``disabled``).
+    """
+
+    #: Shell used to list every repository (enabled and disabled) over SSH.
+    COMMAND = "dnf repolist --all"
+
+    #: The status literals ``dnf repolist --all`` puts in its last column. A
+    #: trailing token matching one is the status; anything else stays part of
+    #: the repository name (so a two-column ``dnf repolist`` still parses).
+    STATUSES = ("enabled", "disabled")
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> list[dict[str, str]]:
+        """Parse ``dnf repolist --all`` rows into a list of repository dicts.
+
+        The first whitespace-separated token is the ``repoid`` and the last --
+        when it is one of ``STATUSES`` -- is the ``status``; everything in
+        between is the (possibly multi-word) ``name``. The ``repo id`` header
+        row and blank lines are skipped.
+        """
+        repos: list[dict[str, str]] = []
+        for raw in output:
+            line = raw.strip()
+            if not line:
+                continue
+            tokens = line.split()
+            if tokens[:2] == ["repo", "id"]:  # the table header row
+                continue
+            if len(tokens) < 2:
+                continue
+            repoid, rest = tokens[0], tokens[1:]
+            status = None
+            if rest[-1] in cls.STATUSES:
+                status = rest.pop()
+            if not rest:
+                continue
+            repo = {"repoid": repoid, "name": " ".join(rest)}
+            if status is not None:
+                repo["status"] = status
+            repos.append(repo)
+        return repos
+
+    @classmethod
+    async def process(cls, host: Host) -> list[dict[str, str]]:
+        repo_list = getattr(host, "repo_list", None)
+        if repo_list is not None:
+            # SimulatedHost seam: read the in-memory state directly.
+            return list(repo_list)
+        # Real transport: list the repositories over asyncssh and parse.
+        stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
+class RpmPackage:
+    """The name and version of a ``.rpm`` file or an installed package.
+
+    Mirrors pyinfra's ``rpm.RpmPackage``: given a package *name* or a ``.rpm``
+    file *path*, returns ``{"name": ..., "version": ...}`` (``version`` is
+    rpm's ``VERSION-RELEASE``), or None when the name is not installed and the
+    path is not an existing file. ``dnf.rpm`` reads it twice -- once for the
+    ``.rpm`` file, once for the installed package of that file's name -- and
+    compares the two versions to decide whether the file's package is already
+    installed at that version.
+    """
+
+    #: rpm query format printing ``NAME VERSION-RELEASE`` on one line
+    #: (pyinfra's ``rpm_query_format``).
+    QUERY_FORMAT = "%{NAME} %{VERSION}-%{RELEASE}\\n"
+
+    #: Matches the ``NAME VERSION-RELEASE`` line ``QUERY_FORMAT`` prints
+    #: (pyinfra's ``rpm_regex``).
+    RPM_REGEX = re.compile(r"^(\S+)\s+(\S+)$")
+
+    @classmethod
+    def command(cls, package: str) -> str:
+        """Shell reporting ``package``'s name and version.
+
+        Queries the *installed* package ``package`` by name first (``rpm -q``);
+        if that fails and ``package`` is an existing file, queries the *file*
+        (``rpm -qp``). A name that is neither installed nor an existing file
+        produces no output -- the ``! test -e`` guard short-circuits the chain
+        -- so ``process`` reports None rather than empty metadata.
+        """
+        query_format = shlex.quote(cls.QUERY_FORMAT)
+        quoted = shlex.quote(package)
+        return (
+            f"rpm --queryformat {query_format} -q {quoted} || "
+            f"! test -e {quoted} || "
+            f"rpm --queryformat {query_format} -qp {quoted} 2> /dev/null"
+        )
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> dict[str, str] | None:
+        """Parse ``rpm``'s ``NAME VERSION-RELEASE`` output into a dict.
+
+        Returns the first matching line as ``{"name", "version"}``, or None
+        when no line matches (an unknown name, or an absent ``.rpm`` file).
+        """
+        for line in output:
+            match = cls.RPM_REGEX.match(line.strip())
+            if match:
+                return {"name": match.group(1), "version": match.group(2)}
+        return None
+
+    @classmethod
+    async def process(cls, host: Host, package: str) -> dict[str, str] | None:
+        rpm_files = getattr(host, "rpm_files", None)
+        if rpm_files is not None:
+            # SimulatedHost seam: an installed name (``rpm_packages``) is
+            # queried before a ``.rpm`` file path (``rpm_files``), mirroring
+            # ``command``'s installed-before-file precedence.
+            rpm_packages = host.rpm_packages
+            if package in rpm_packages:
+                return {"name": package, "version": rpm_packages[package]}
+            info = rpm_files.get(package)
+            return dict(info) if info is not None else None
+        # Real transport: query the installed package / .rpm file over asyncssh.
+        stdout = await host.run_shell(cls.command(package))
         return cls.parse(stdout.splitlines())
 
 
@@ -391,14 +731,232 @@ async def packages(
     ctx.reason = "; ".join(reasons)
 
 
+# --- dnf.repo ----------------------------------------------------------------
+
+#: Directory dnf/yum reads ``.repo`` files from -- pyinfra's ``ensure_yum_repo``
+#: default ``repo_directory``.
+_REPO_DIRECTORY = "/etc/yum.repos.d/"
+
+
+@dataclass(frozen=True)
+class DnfRepoCommand(Command):
+    """Write or remove one ``.repo`` file.
+
+    With ``content`` it writes that text to ``path``; with ``content=None`` it
+    removes ``path`` (mirroring ``LinkCommand``'s ``target=None`` removal). The
+    write wraps ``printf`` in ``sh -c`` so the ``>`` redirect happens *inside*
+    the shell the driver elevates: a bare ``sudo printf ... > /etc/...`` opens
+    the redirect as the login user and fails on a root-owned directory, whereas
+    ``sudo sh -c 'printf ... > /etc/...'`` runs the redirect as root too. The
+    content is shell-quoted, so a ``baseurl`` carrying ``$basearch`` or
+    ``$releasever`` reaches the file literally instead of being expanded.
+
+    Unlike pyinfra's ``dnf.repo`` -- which routes through ``files.put`` with
+    ``mode="0644"`` -- no file mode is set, matching reemote5's ``files.put``
+    (which also drops pyinfra's ``mode``); the file is created with the
+    elevated user's default umask.
+    """
+
+    path: str
+    content: str | None = None  # None means "remove the file at path"
+
+    def shell(self) -> str:
+        if self.content is None:
+            return f"rm -f {shlex.quote(self.path)}"
+        inner = f"printf '%s' {shlex.quote(self.content)} > {shlex.quote(self.path)}"
+        return f"sh -c {shlex.quote(inner)}"
+
+
+async def repo(
+    ctx: OpContext,
+    src: str,
+    present: bool = True,
+    baseurl: str | None = None,
+    description: str | None = None,
+    enabled: bool = True,
+    gpgcheck: bool = True,
+    gpgkey: str | None = None,
+) -> AsyncGenerator[Command]:
+    """Add/remove/update a dnf repository ``.repo`` file (pyinfra ``dnf.repo``).
+
+    + src: the repository name; the file is ``/etc/yum.repos.d/<src>.repo``
+      and ``<src>`` is its ``[section]`` id
+    + present: whether the ``.repo`` file should exist
+    + baseurl: the repository's ``baseurl`` (required when ``present``)
+    + description: the ``name=`` line; defaults to ``src``
+    + enabled: whether the repo is ``enabled=1`` (else ``enabled=0``)
+    + gpgcheck: whether to set ``gpgcheck=1`` (else ``gpgcheck=0``)
+    + gpgkey: the ``gpgkey=`` value; each whitespace-separated token must be a
+      URL or an absolute path
+
+    The ``present`` case constructs the file content and writes it only when it
+    differs from what is already there (``DnfRepoFile``), so re-running is a
+    no-op; ``present=False`` removes the file when it exists. Writing needs
+    root -- ``/etc/yum.repos.d`` is root-owned -- so flag the request
+    ``sudo=True`` (or ``su=True``); ``DnfRepoCommand``'s ``sh -c`` wrapper
+    keeps the redirect inside the elevated shell.
+
+    pyinfra's URL ``src`` -- downloading a remote ``.repo`` file -- is
+    deliberately dropped: reemote5 has no download operation, so a ``src`` with
+    a URL scheme raises ``ValueError``. So does a ``present`` request with no
+    ``baseurl`` (there is nothing to construct the file from) and a ``gpgkey``
+    token that is neither a URL nor an absolute path.
+    """
+    if urlparse(src).scheme:
+        raise ValueError(
+            "dnf.repo does not support a URL src (reemote5 has no download "
+            f"operation); pass a repository name and baseurl instead, got: {src}"
+        )
+
+    path = f"{_REPO_DIRECTORY}{src}.repo"
+    current = await ctx.facts.get(DnfRepoFile, path)
+
+    if not present:
+        if current is None:
+            ctx.reason = f"repo file already absent ({path})"
+        else:
+            ctx.changed = True
+            ctx.reason = f"repo file {path} present, will remove"
+            yield DnfRepoCommand(path=path, content=None)
+        return
+
+    if baseurl is None:
+        raise ValueError(
+            "dnf.repo requires baseurl when present=True and src is a "
+            "repository name (there is otherwise nothing to write)"
+        )
+
+    if gpgkey:
+        for token in gpgkey.split():
+            if not urlparse(token).scheme and not token.startswith("/"):
+                raise ValueError(
+                    f"gpgkey must be a valid URL or an absolute path, got: {token}"
+                )
+
+    lines = [
+        f"[{src}]",
+        f"name={description or src}",
+        f"baseurl={baseurl}",
+        f"enabled={1 if enabled else 0}",
+        f"gpgcheck={1 if gpgcheck else 0}",
+    ]
+    if gpgkey:
+        lines.append(f"gpgkey={gpgkey}")
+    lines.append("")  # trailing newline, matching pyinfra's constructed file
+    content = "\n".join(lines)
+
+    if current == content:
+        ctx.reason = f"repo file already up to date ({path})"
+    else:
+        ctx.changed = True
+        ctx.reason = f"repo file {path} missing or differs from the desired content"
+        yield DnfRepoCommand(path=path, content=content)
+
+
+# --- dnf.rpm -----------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RpmInstallCommand(Command):
+    """``rpm -i <src>``: install a ``.rpm`` file already on the target host.
+
+    ``src`` is shell-quoted. Unlike pyinfra's ``ensure_rpm`` -- which, for a
+    file it could not read at plan time (a URL downloaded mid-deploy), emitted
+    a defensive ``rpm -q \\`rpm -qp <src>\\` ... || rpm -i <src>`` runtime check
+    -- reemote5 always installs with a plain ``rpm -i``: it re-materializes the
+    operation at apply time against a fresh fact cache, so a ``.rpm`` created
+    earlier in the same deploy (e.g. by ``files.put``) is read then, and the
+    installed-version idempotence check applies normally. A plain command also
+    keeps elevation correct -- ``sudo rpm -i <src>`` elevates the whole install,
+    whereas a ``sudo``-prefixed ``|| ...`` chain would leave its fallback arm
+    unprivileged.
+    """
+
+    src: str
+
+    def shell(self) -> str:
+        return f"rpm -i {shlex.quote(self.src)}"
+
+
+async def rpm(
+    ctx: OpContext,
+    src: str,
+    present: bool = True,
+    **kwargs,
+) -> AsyncGenerator[Command]:
+    """Add/remove a ``.rpm`` file package (pyinfra ``dnf.rpm`` parity).
+
+    + src: path to the ``.rpm`` file on the *target host*
+    + present: whether the package should be installed
+
+    ``src`` names a ``.rpm`` that already exists on the target host (upload one
+    from the controller with ``files.put`` first). The ``RpmPackage`` fact reads
+    the file's ``name``/``version``, then reads the installed package of that
+    name; the package counts as present only when the installed version matches
+    the file's, so ``present=True`` installs (``rpm -i``) when it does not and
+    is otherwise a no-op, while ``present=False`` removes it with
+    ``dnf remove -y <name>`` only when that exact version is installed.
+    Installing needs root, so flag the request ``sudo=True`` (or ``su=True``).
+
+    pyinfra's URL ``src`` -- downloading a remote ``.rpm`` mid-deploy via
+    ``files.download`` -- is deliberately dropped: reemote5 has no download
+    operation, so a ``src`` with a URL scheme raises ``ValueError`` (mirroring
+    ``dnf.repo``). Because removal reads the package name from the file, a
+    ``present=False`` request whose ``.rpm`` is absent from the host cannot
+    resolve a name and is a no-op -- the same limitation pyinfra documents for
+    an un-downloaded URL source. ``**kwargs`` absorbs pyinfra's global
+    arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    """
+    if urlparse(src).scheme:
+        raise ValueError(
+            "dnf.rpm does not support a URL src (reemote5 has no download "
+            f"operation); put the .rpm on the host first, got: {src}"
+        )
+
+    info = await ctx.facts.get(RpmPackage, src)
+    # ``installed_name`` is set only when the file's package is installed at the
+    # file's exact version, so it doubles as pyinfra's ``exists`` flag and
+    # carries the name the removal needs.
+    installed_name: str | None = None
+    if info is not None:
+        current = await ctx.facts.get(RpmPackage, info["name"])
+        if current is not None and current["version"] == info["version"]:
+            installed_name = info["name"]
+
+    if present:
+        if installed_name is not None:
+            ctx.reason = f"rpm {src} is installed"
+        else:
+            ctx.changed = True
+            ctx.reason = f"rpm {src} not installed, will install"
+            yield RpmInstallCommand(src=src)
+    else:
+        if installed_name is not None:
+            ctx.changed = True
+            ctx.reason = f"rpm {src} installed, will remove"
+            yield DnfRemoveCommand(packages=(installed_name,))
+        else:
+            ctx.reason = f"rpm {src} is not installed"
+
+
 __all__ = [
+    "DnfAvailableGroups",
     "DnfCleanCommand",
     "DnfDisabledModules",
     "DnfEnabledModules",
+    "DnfGroups",
     "DnfInstallCommand",
+    "DnfInstalledModules",
     "DnfPackages",
     "DnfRemoveCommand",
+    "DnfRepoCommand",
+    "DnfRepoFile",
+    "DnfRepoList",
     "DnfRepositories",
     "DnfUpdateCommand",
+    "RpmInstallCommand",
+    "RpmPackage",
     "packages",
+    "repo",
+    "rpm",
 ]
