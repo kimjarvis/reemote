@@ -2,8 +2,10 @@
 
 Runnable showcase scripts living in `examples/` — *usage* demonstrations
 through the public API only, never part of the library. The tree is split in
-two: `examples/modules/<namespace>/` holds one script per fact or operation
-of a library module (currently `dnf`), and `examples/demonstrations/<topic>/`
+three: `examples/modules/<namespace>/` holds one script per fact or operation
+of a library module (currently `dnf` and `files`), `examples/general/` holds
+general scenario scripts built on more than one module, and
+`examples/demonstrations/<topic>/`
 holds scenario scripts — `composition/`, `inventory/` and `privilege/` — that
 cross module boundaries. Each explanation below is the example module's
 **own docstring**, rendered here with mkdocstrings, so the script stays the
@@ -42,6 +44,61 @@ installing httpd and removing the welcome configuration the package drops,
 run end to end over SSH in both phases.
 
 ::: dnf_packages
+    options:
+      members: []
+
+## Module examples: files
+
+### Uploading a stream with sha1 idempotence
+
+The first non-shell operation: `files.put` compares the sha1 of an IO-like
+source on the control machine against the remote file's and transfers over
+the asyncssh connection's scp channel only when they differ. Unlike pyinfra's
+`str | IO[Any]`, the source is a *stream only* — the example uses a
+module-level `io.BytesIO`, defined once so both phases pass the identical
+object (request equality compares it by identity). The script puts the same
+stream twice — the second put is a guaranteed no-op because the first put's
+upload is visible to it through the fresh per-step fact cache. The transfer
+rides the connection as the login user, so the destination is a path under
+that user's home (no `sudo`/`su` applies to transfers).
+
+::: files_put
+    options:
+      members: []
+
+### Downloading into a stream with sha1 idempotence
+
+The mirror operation: `files.get` compares the remote file's sha1 against the
+sha1 of an IO-like destination's current content and downloads over the
+asyncssh connection's scp channel only when they differ. Where pyinfra writes
+to a local path (with `add_deploy_dir`/`create_local_dir`/`force`), reemote5's
+destination is a *stream only* — the example reads `/etc/hostname` into a
+module-level `io.BytesIO` and prints the bytes back, so no local file is
+involved. Because a get *writes* its destination, each host keeps its own sink
+(a per-host `io.BytesIO` in a module-level dict, reused across phases for
+identity) so two hosts never clobber each other in lockstep. The script gets
+the same file twice — the second get is a guaranteed no-op because the first
+get's download is visible to it through the fresh per-step fact cache.
+
+::: files_get
+    options:
+      members: []
+
+## General examples
+
+### A health-check deploy: dnf install, put and get
+
+The reemote5 take on a relatable pyinfra scenario — a simple web-server
+health-check / log-rotation deploy — in one flat generator: `dnf.packages`
+installs `htop` (elevated with `sudo=True`), `files.put` pushes an
+in-memory motd stream to `/tmp/remote_motd` (unprivileged scp), and
+`files.get` pulls `/etc/os-release` back into a per-host `io.BytesIO` sink
+whose content the script prints. Where the pyinfra original uses local paths
+(`files/motd`, `local_os_release.txt`, `add_deploy_dir=True`), reemote5's
+transfers take IO-like objects only — no local file is involved in either
+direction.
+
+::: dnf_put_get
     options:
       members: []
 

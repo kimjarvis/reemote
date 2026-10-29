@@ -12,11 +12,11 @@ a real asyncssh transport is missing:
   descriptor to the in-memory state. ``reemote5.drivers.send_command``
   forwards to it when the host provides it, and raises ``NotImplementedError``
   otherwise.
-- ``packages`` / ``links`` / ``existing_files`` / ``repositories`` /
-  ``enabled_modules`` / ``disabled_modules``: the state the library's facts
-  (``DnfPackages``, ``FileLink``, ``FileExists``, ``DnfRepositories``,
-  ``DnfEnabledModules``, ``DnfDisabledModules``) read as a stand-in for
-  gathering over SSH.
+- ``packages`` / ``links`` / ``existing_files`` / ``remote_files`` /
+  ``repositories`` / ``enabled_modules`` / ``disabled_modules``: the state the
+  library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
+  ``RemoteFileSha1``, ``DnfRepositories``, ``DnfEnabledModules``,
+  ``DnfDisabledModules``) read as a stand-in for gathering over SSH.
 
 Holding this state is what makes the "fresh fact cache per lockstep step"
 property observable in the tests and the demo: ``send_command`` mutates the
@@ -34,7 +34,14 @@ from reemote5.modules.dnf.dnf import (
     DnfRemoveCommand,
     DnfUpdateCommand,
 )
-from reemote5.modules.files.files import FileCommand, LinkCommand
+from reemote5.modules.files.files import (
+    FileCommand,
+    GetCommand,
+    LinkCommand,
+    PutCommand,
+    read_source_bytes,
+    write_dest_bytes,
+)
 
 
 @dataclass
@@ -50,6 +57,15 @@ class SimulatedHost(Host):
     packages: set[str] = field(default_factory=set)
     links: dict[str, str] = field(default_factory=dict)  # src -> target
     existing_files: set[str] = field(default_factory=set)
+    # Remote path -> the content bytes the simulated remote filesystem holds
+    # there. This single store backs both transfer directions: ``RemoteFileSha1``
+    # derives its digest from it, a simulated ``files.put`` writes the source
+    # stream's bytes into it, and a simulated ``files.get`` reads them back out
+    # into the destination stream. Storing content (not just a hash) is what
+    # lets a put then a get of the same path round-trip, and what makes a repeat
+    # transfer a no-op: execute_command mutates it, and the next step's fresh
+    # fact cache sees the mutation.
+    remote_files: dict[str, bytes] = field(default_factory=dict)
     repositories: list[dict[str, str]] = field(default_factory=list)
     enabled_modules: dict[str, str] = field(default_factory=dict)  # name -> stream
     disabled_modules: list[str] = field(default_factory=list)  # disabled module names
@@ -87,6 +103,10 @@ class SimulatedHost(Host):
                 self.remove_file(src)
             case FileCommand(src=src):
                 self.create_file(src)
+            case PutCommand(src=src, dest=dest):
+                self.put_file(src, dest)
+            case GetCommand(src=src, dest=dest):
+                self.get_file(src, dest)
             case StringCommand():
                 pass  # no simulated effect for raw shell strings
             case _:
@@ -121,6 +141,32 @@ class SimulatedHost(Host):
 
     def remove_file(self, src: str) -> None:
         self.existing_files.discard(src)
+
+    def put_file(self, src, dest: str) -> None:
+        """Record a simulated scp upload: store the IO-like source's content.
+
+        The source is read through the library's own ``read_source_bytes``
+        (rewind + UTF-8 normalization), so the bytes stored are exactly what
+        ``LocalSha1`` hashes and what the real transport would copy. Storing
+        the content -- rather than only its hash -- lets ``RemoteFileSha1``
+        derive the digest and lets a later ``files.get`` read the same bytes
+        back out.
+        """
+        self.remote_files[dest] = read_source_bytes(src)
+
+    def get_file(self, src: str, dest) -> None:
+        """Record a simulated scp download: write the remote content into dest.
+
+        The mirror of ``put_file``: the bytes stored at the remote path are
+        written into the IO-like destination through the library's own
+        ``write_dest_bytes`` (rewind + truncate + UTF-8 for a text stream), so
+        the destination ends up holding exactly the content ``RemoteFileSha1``
+        describes and a repeat get is a no-op. An absent remote path has no
+        content to copy, so the destination is left untouched.
+        """
+        data = self.remote_files.get(src)
+        if data is not None:
+            write_dest_bytes(dest, data)
 
 
 __all__ = ["SimulatedHost"]

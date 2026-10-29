@@ -30,21 +30,27 @@ materializing any host). Both raise ``InventoryError`` on bad input.
 
 A plain ``Host`` owns a lazily-established asyncssh connection built from its
 ``connection`` data: ``connect`` opens it, ``run_shell`` runs one
-command over it, and ``aclose`` tears it down. The library calls those from
-``send_command`` and the facts, so a real inventory entry (one whose
+command over it, ``upload_file`` copies an IO-like source to the remote host
+and ``download_file`` copies a remote file into an IO-like destination (both
+over asyncssh's scp), and ``aclose`` tears it down. The library calls
+those from ``send_command`` and the facts, so a real inventory entry (one whose
 ``connection`` carries an address) executes for real, while the test
 framework's ``SimulatedHost`` overrides the ``execute_command``/``packages``/
-``links`` seams and never connects. Hosts that stand in for a real machine --
+``links``/``remote_files`` seams and never connects. Hosts that stand in for a
+real machine --
 holding the state facts read and the mutations commands apply -- belong to the
 *test framework* and live in ``tests/``, never in this package.
 """
 
+import asyncio
 import contextlib
+import os
 import shlex
+import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
@@ -575,7 +581,8 @@ class Host:
     # connection is opened lazily on first use and cached in ``_conn`` (a
     # non-field attribute, so it stays out of the dataclass constructor,
     # equality and repr). The test framework's SimulatedHost provides the
-    # execute_command/packages/links seams instead, so it never reaches here.
+    # execute_command/packages/links/remote_files seams instead, so it never
+    # reaches here.
 
     def _connect_options(self) -> tuple[str, dict[str, Any]]:
         """Build ``(address, kwargs)`` for ``asyncssh.connect``.
@@ -797,6 +804,98 @@ class Host:
         authentication rejection, ``PrivilegeError``.
         """
         return await self.run_shell_privileged(shell, su=True)
+
+    async def upload_file(self, src: IO[Any], remote: str) -> None:
+        """Copy an IO-like source to ``remote`` on this host via asyncssh's scp.
+
+        The non-shell transport seam ``files.put`` rides: instead of running
+        shell text, ``send_command`` dispatches a ``PutCommand`` here, and the
+        copy goes over the cached connection's scp protocol as the login user
+        (no privilege escalation applies to it).
+
+        ``src`` is a seekable IO-like object, never a path -- reemote5
+        deliberately supports only the stream form pyinfra also accepts. The
+        stream is rewound and read once (a text stream's payload is encoded
+        as UTF-8), and because asyncssh's ``scp`` copies between *paths* --
+        its source may be a local path or an ``(conn, path)`` tuple, not a
+        file-like object -- the bytes are materialized into a temporary local
+        file for the copy and removed afterwards. A connection failure still
+        surfaces as ``HostConnectionError`` from ``connect``; a failed copy --
+        an unwritable destination, a dropped transfer -- raises ``CommandError``
+        whose command text is the ``scp <source> -> <remote>`` rendering, with
+        no exit status (scp reports an exception, not a shell exit).
+        """
+        conn = await self.connect()
+        import asyncssh  # imported lazily: pytest never connects, so never imports it
+
+        src.seek(0)
+        data = src.read()
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        fd, local = tempfile.mkstemp(prefix="reemote5-upload-")
+        try:
+            with os.fdopen(fd, "wb") as tmp:
+                tmp.write(data)
+            await asyncssh.scp(local, (conn, remote))
+        except (OSError, asyncssh.Error) as exc:
+            raise CommandError(
+                self.name,
+                f"scp {getattr(src, 'name', '<stream>')} -> {remote}",
+                None,
+                str(exc),
+            ) from exc
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(local)
+
+    async def download_file(self, remote: str, dest: IO[Any]) -> None:
+        """Copy ``remote`` on this host into an IO-like destination via scp.
+
+        The mirror of ``upload_file`` and the non-shell transport seam
+        ``files.get`` rides: instead of running shell text, ``send_command``
+        dispatches a ``GetCommand`` here, and the copy goes over the cached
+        connection's scp protocol as the login user (no privilege escalation
+        applies to it).
+
+        ``dest`` is a seekable, writable IO-like object, never a path -- the
+        mirror of ``upload_file``'s source. Because asyncssh's ``scp`` copies
+        between *paths*, the remote file is first fetched into a temporary
+        local file, then its bytes are written into ``dest`` (decoded as UTF-8
+        for a text stream) and the stream rewound, and the temporary file is
+        removed. A connection failure still surfaces as ``HostConnectionError``
+        from ``connect``; a failed copy -- an absent or unreadable remote
+        source, a dropped transfer -- raises ``CommandError`` whose command
+        text is the ``scp <remote> -> <dest>`` rendering, with no exit status
+        (scp reports an exception, not a shell exit).
+        """
+        conn = await self.connect()
+        import asyncssh  # imported lazily: pytest never connects, so never imports it
+
+        fd, local = tempfile.mkstemp(prefix="reemote5-download-")
+        os.close(fd)  # scp writes the destination file itself; only the path matters
+        try:
+            await asyncssh.scp((conn, remote), local)
+            # Read the fetched bytes off the event loop: opening a file is
+            # blocking, and Path.read_bytes opens+reads+closes in one call.
+            data = await asyncio.to_thread(Path(local).read_bytes)
+            dest.seek(0)
+            dest.truncate()
+            try:
+                dest.write(data)
+            except TypeError:
+                # A text stream rejects bytes; decode as UTF-8 (write_dest_bytes).
+                dest.write(data.decode("utf-8"))
+            dest.seek(0)
+        except (OSError, asyncssh.Error) as exc:
+            raise CommandError(
+                self.name,
+                f"scp {remote} -> {getattr(dest, 'name', '<stream>')}",
+                None,
+                str(exc),
+            ) from exc
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(local)
 
     async def _ensure_sudo_askpass(self) -> str:
         """Create (once) and return the path of this host's sudo askpass helper.

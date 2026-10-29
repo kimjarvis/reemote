@@ -36,6 +36,8 @@ plugins:
           # module docstrings (the explanation lives in the example itself).
           paths:
             - examples/modules/dnf
+            - examples/modules/files
+            - examples/general
             - examples/demonstrations/composition
             - examples/demonstrations/inventory
             - examples/demonstrations/privilege

@@ -10,7 +10,7 @@ async, and a plain ``Host`` runs commands and gathers facts over a real
 asyncssh transport built from its inventory ``connection`` data.
 """
 
-from .commands import Command, StringCommand
+from .commands import Command, StringCommand, TransferCommand
 from .core import (
     FactCache,
     HostRuntime,
@@ -59,7 +59,11 @@ from .modules.files.files import (
     FileCommand,
     FileExists,
     FileLink,
+    GetCommand,
     LinkCommand,
+    LocalSha1,
+    PutCommand,
+    RemoteFileSha1,
 )
 
 
@@ -84,19 +88,24 @@ __all__ = [
     "FileCommand",
     "FileExists",
     "FileLink",
+    "GetCommand",
     "Host",
     "HostConnectionError",
     "HostRuntime",
     "InventoryEntry",
     "InventoryError",
     "LinkCommand",
+    "LocalSha1",
     "LogEntry",
     "OpContext",
     "OperationRequest",
     "PlannedOperation",
     "Privilege",
     "PrivilegeError",
+    "PutCommand",
+    "RemoteFileSha1",
     "StringCommand",
+    "TransferCommand",
     "command_shell",
     "compose",
     "dnf",

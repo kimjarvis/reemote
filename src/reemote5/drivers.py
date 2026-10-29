@@ -31,7 +31,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .commands import Command
+from .commands import Command, TransferCommand
 from .core import FactCache, HostRuntime, OpContext, OperationRequest
 from .hosts import Host, HostConnectionError, PrivilegeError, validate_inventory
 
@@ -210,8 +210,14 @@ async def send_command(
       ``sudo``/``su`` are irrelevant here -- privilege has no in-memory effect
       -- so they are not forwarded. This is the path pytest always takes.
     - Any other host -- a plain library ``Host`` built from a real inventory
-      entry -- runs the command's shell over asyncssh, using the host's
-      ``connection`` data. An elevated request (``sudo`` and/or ``su``) goes
+      entry -- dispatches on the descriptor kind. A ``TransferCommand`` (e.g.
+      ``files.put``'s ``PutCommand``, ``files.get``'s ``GetCommand``) copies
+      over the connection's own transport via the descriptor's ``transfer``
+      (asyncssh's scp), never through a shell, so the ``sudo``/``su``
+      escalation flags do not apply to it and are ignored. Anything else runs
+      the command's shell over asyncssh, using the host's ``connection`` data.
+      An elevated request
+      (``sudo`` and/or ``su``) goes
       through ``host.run_shell_privileged``, which applies the run-as users and
       any passwords (via askpass helpers) sourced from the inventory, in the
       fixed order ``sudo`` then ``su``; an unprivileged one goes through
@@ -227,6 +233,9 @@ async def send_command(
     execute = getattr(host, "execute_command", None)
     if execute is not None:
         execute(cmd)
+        return
+    if isinstance(cmd, TransferCommand):
+        await cmd.transfer(host)
         return
     base = command_shell(cmd)  # flags off -> the plain descriptor shell
     if sudo or su:
