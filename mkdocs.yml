@@ -37,6 +37,7 @@ plugins:
           paths:
             - examples/modules/dnf
             - examples/modules/files
+            - examples/modules/server
             - examples/general
             - examples/demonstrations/composition
             - examples/demonstrations/inventory
@@ -64,3 +65,4 @@ nav:
       - Modules:
           - dnf: modules/dnf.md
           - files: modules/files.md
+          - server: modules/server.md

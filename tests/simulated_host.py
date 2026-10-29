@@ -13,10 +13,12 @@ a real asyncssh transport is missing:
   forwards to it when the host provides it, and raises ``NotImplementedError``
   otherwise.
 - ``packages`` / ``links`` / ``existing_files`` / ``remote_files`` /
-  ``repositories`` / ``enabled_modules`` / ``disabled_modules``: the state the
+  ``repositories`` / ``enabled_modules`` / ``disabled_modules`` /
+  ``services`` / ``enabled_services``: the state the
   library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
   ``RemoteFileSha1``, ``DnfRepositories``, ``DnfEnabledModules``,
-  ``DnfDisabledModules``) read as a stand-in for gathering over SSH.
+  ``DnfDisabledModules``, ``SystemdServiceState``, ``SystemdServiceEnabled``)
+  read as a stand-in for gathering over SSH.
 
 Holding this state is what makes the "fresh fact cache per lockstep step"
 property observable in the tests and the demo: ``send_command`` mutates the
@@ -26,7 +28,7 @@ the mutation.
 
 from dataclasses import dataclass, field
 
-from reemote5.commands import Command, StringCommand
+from reemote5.commands import Command, StringCommand, WaitTimeoutError
 from reemote5.hosts import Host
 from reemote5.modules.dnf.dnf import (
     DnfCleanCommand,
@@ -41,6 +43,11 @@ from reemote5.modules.files.files import (
     PutCommand,
     read_source_bytes,
     write_dest_bytes,
+)
+from reemote5.modules.server.server import (
+    SystemctlCommand,
+    SystemdServiceState,
+    WaitForFactCommand,
 )
 
 
@@ -69,6 +76,13 @@ class SimulatedHost(Host):
     repositories: list[dict[str, str]] = field(default_factory=list)
     enabled_modules: dict[str, str] = field(default_factory=dict)  # name -> stream
     disabled_modules: list[str] = field(default_factory=list)  # disabled module names
+    # Simulated systemd: full unit name (``httpd.service``) -> its ActiveState
+    # string (``active``/``inactive``/...), backing ``SystemdServiceState``;
+    # and the set of unit names enabled on boot, backing
+    # ``SystemdServiceEnabled``. A unit absent from ``services`` reads as
+    # None (as the fact reports when systemd answers nothing).
+    services: dict[str, str] = field(default_factory=dict)
+    enabled_services: set[str] = field(default_factory=set)
     # Side effects of installing a package: package -> {link src: target}
     # and package -> {file path}. This is what lets the demo reproduce the
     # design doc section 9 trace: installing a package creates the default
@@ -109,6 +123,18 @@ class SimulatedHost(Host):
                 self.get_file(src, dest)
             case StringCommand():
                 pass  # no simulated effect for raw shell strings
+            case SystemctlCommand(action="daemon-reload"):
+                pass  # the simulation tracks no unit files to reload
+            case SystemctlCommand(action="start" | "restart", unit=unit):
+                self.services[unit] = "active"
+            case SystemctlCommand(action="stop", unit=unit):
+                self.services[unit] = "inactive"
+            case SystemctlCommand(action="enable", unit=unit):
+                self.enabled_services.add(unit)
+            case SystemctlCommand(action="disable", unit=unit):
+                self.enabled_services.discard(unit)
+            case WaitForFactCommand():
+                self.check_wait(cmd)
             case _:
                 raise TypeError(f"unknown command descriptor: {cmd!r}")
 
@@ -167,6 +193,29 @@ class SimulatedHost(Host):
         data = self.remote_files.get(src)
         if data is not None:
             write_dest_bytes(dest, data)
+
+    def check_wait(self, cmd: WaitForFactCommand) -> None:
+        """Evaluate a simulated wait once, without polling or sleeping.
+
+        The in-memory state never changes on its own, so there is nothing to
+        wait *for*: the condition either already holds -- the wait succeeds
+        -- or it never will, and the wait fails at once with the same
+        ``WaitTimeoutError`` the real poll loop raises at its deadline. The
+        fact's value is read straight from the seam the fact itself would
+        read (``execute_command`` is synchronous, so the async ``process``
+        cannot be awaited here); a wait on a fact this simulation does not
+        model is a hard error, like any unknown descriptor.
+        """
+        if cmd.fact_cls is SystemdServiceState:
+            (unit,) = cmd.args
+            value = self.services.get(unit)
+        else:
+            raise TypeError(f"unsupported simulated wait fact: {cmd.fact_cls!r}")
+        if not cmd.predicate(value):
+            raise WaitTimeoutError(
+                f"host {self.name}: {cmd} -- condition not met within "
+                f"{cmd.timeout}s (last value: {value!r})"
+            )
 
 
 __all__ = ["SimulatedHost"]

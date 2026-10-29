@@ -31,7 +31,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .commands import Command, TransferCommand
+from .commands import Command, TransferCommand, WaitCommand
 from .core import FactCache, HostRuntime, OpContext, OperationRequest
 from .hosts import Host, HostConnectionError, PrivilegeError, validate_inventory
 
@@ -214,7 +214,11 @@ async def send_command(
       ``files.put``'s ``PutCommand``, ``files.get``'s ``GetCommand``) copies
       over the connection's own transport via the descriptor's ``transfer``
       (asyncssh's scp), never through a shell, so the ``sudo``/``su``
-      escalation flags do not apply to it and are ignored. Anything else runs
+      escalation flags do not apply to it and are ignored. A ``WaitCommand``
+      (e.g. ``server.wait_service``'s ``WaitForFactCommand``) likewise runs
+      no shell: the driver awaits the descriptor's ``wait``, which polls the
+      host until its condition holds or raises ``WaitTimeoutError``; the
+      escalation flags are ignored for it too. Anything else runs
       the command's shell over asyncssh, using the host's ``connection`` data.
       An elevated request
       (``sudo`` and/or ``su``) goes
@@ -236,6 +240,9 @@ async def send_command(
         return
     if isinstance(cmd, TransferCommand):
         await cmd.transfer(host)
+        return
+    if isinstance(cmd, WaitCommand):
+        await cmd.wait(host)
         return
     base = command_shell(cmd)  # flags off -> the plain descriptor shell
     if sudo or su:

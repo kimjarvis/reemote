@@ -10,7 +10,13 @@ async, and a plain ``Host`` runs commands and gathers facts over a real
 asyncssh transport built from its inventory ``connection`` data.
 """
 
-from .commands import Command, StringCommand, TransferCommand
+from .commands import (
+    Command,
+    StringCommand,
+    TransferCommand,
+    WaitCommand,
+    WaitTimeoutError,
+)
 from .core import (
     FactCache,
     HostRuntime,
@@ -44,7 +50,7 @@ from .hosts import (
     PrivilegeError,
     validate_inventory,
 )
-from .modules import dnf, files
+from .modules import dnf, files, server
 from .modules.dnf.dnf import (
     DnfCleanCommand,
     DnfDisabledModules,
@@ -64,6 +70,12 @@ from .modules.files.files import (
     LocalSha1,
     PutCommand,
     RemoteFileSha1,
+)
+from .modules.server.server import (
+    SystemctlCommand,
+    SystemdServiceEnabled,
+    SystemdServiceState,
+    WaitForFactCommand,
 )
 
 
@@ -105,7 +117,13 @@ __all__ = [
     "PutCommand",
     "RemoteFileSha1",
     "StringCommand",
+    "SystemctlCommand",
+    "SystemdServiceEnabled",
+    "SystemdServiceState",
     "TransferCommand",
+    "WaitCommand",
+    "WaitForFactCommand",
+    "WaitTimeoutError",
     "command_shell",
     "compose",
     "dnf",
@@ -119,6 +137,7 @@ __all__ = [
     "run_apply",
     "run_prepare",
     "send_command",
+    "server",
     "sub_deploy",
     "validate_inventory",
 ]

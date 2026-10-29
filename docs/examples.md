@@ -3,7 +3,7 @@
 Runnable showcase scripts living in `examples/` — *usage* demonstrations
 through the public API only, never part of the library. The tree is split in
 three: `examples/modules/<namespace>/` holds one script per fact or operation
-of a library module (currently `dnf` and `files`), `examples/general/` holds
+of a library module (currently `dnf`, `files` and `server`), `examples/general/` holds
 general scenario scripts built on more than one module, and
 `examples/demonstrations/<topic>/`
 holds scenario scripts — `composition/`, `inventory/` and `privilege/` — that
@@ -81,6 +81,25 @@ the same file twice — the second get is a guaranteed no-op because the first
 get's download is visible to it through the fresh per-step fact cache.
 
 ::: files_get
+    options:
+      members: []
+
+## Module examples: server
+
+### Starting a service and waiting for it
+
+The waiting design in action: `server.service` starts and enables httpd under
+`sudo` (idempotently — it reads the unit's `ActiveState`/`UnitFileState` and
+yields `systemctl` commands only where the unit differs), then
+`server.wait_service` yields a `WaitForFactCommand` that the driver *polls*
+over SSH every two seconds until `SystemdServiceState` reports `active`, or
+raises `WaitTimeoutError` after sixty. The wait is always planned as a change
+— like pyinfra's `server.wait` it reads no facts, so the request sequence is
+identical in both phases; whether the unit is already active is discovered by
+the first poll. Both hosts finish the start step before either polls, and the
+two poll loops then run concurrently.
+
+::: wait_for_httpd
     options:
       members: []
 
