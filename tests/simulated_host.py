@@ -14,10 +14,11 @@ a real asyncssh transport is missing:
   otherwise.
 - ``packages`` / ``links`` / ``existing_files`` / ``remote_files`` /
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
-  / ``installed_modules`` / ``installed_groups`` / ``available_groups`` /
-  ``rpm_files`` / ``rpm_packages`` / ``services`` / ``enabled_services``: the
+  / ``installed_modules`` / ``installed_groups`` / ``available_groups``
+  / ``rpm_files`` / ``rpm_packages`` / ``services`` / ``enabled_services``: the
   state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
-  ``RemoteFileSha1``, ``DnfRepoFile``, ``DnfRepositories``, ``DnfRepoList``,
+  ``RemoteFileSha1``, ``FileContents``, ``DnfRepoFile``, ``DnfRepositories``,
+  ``DnfRepoList``,
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``,
   ``SystemdServiceState``, ``SystemdServiceEnabled``) read as a stand-in for
@@ -36,6 +37,10 @@ from reemote5.hosts import Host
 from reemote5.modules.dnf.dnf import (
     DnfCleanCommand,
     DnfInstallCommand,
+    DnfKeyImportCommand,
+    DnfKeyUploadCommand,
+    DnfModuleDisableCommand,
+    DnfModuleEnableCommand,
     DnfRemoveCommand,
     DnfRepoCommand,
     DnfUpdateCommand,
@@ -71,7 +76,8 @@ class SimulatedHost(Host):
     existing_files: set[str] = field(default_factory=set)
     # Remote path -> the content bytes the simulated remote filesystem holds
     # there. This single store backs both transfer directions: ``RemoteFileSha1``
-    # derives its digest from it, a simulated ``files.put`` writes the source
+    # derives its digest from it, ``FileContents`` decodes its text back out,
+    # a simulated ``files.put`` writes the source
     # stream's bytes into it, and a simulated ``files.get`` reads them back out
     # into the destination stream. Storing content (not just a hash) is what
     # lets a put then a get of the same path round-trip, and what makes a repeat
@@ -97,6 +103,13 @@ class SimulatedHost(Host):
     # repeat is a no-op and a removal (``present=False``) clears both.
     rpm_files: dict[str, dict[str, str]] = field(default_factory=dict)
     rpm_packages: dict[str, str] = field(default_factory=dict)
+    # GPG key content imported via ``dnf.key`` (the raw bytes of each imported
+    # key). ``dnf.key`` is non-idempotent and reads no fact, so nothing in the
+    # library reads this back; it exists so a test can observe that the
+    # simulated ``rpm --import`` ran. ``import_key`` fills it and clears the
+    # ``/tmp`` spool entry the paired ``DnfKeyUploadCommand`` wrote into
+    # ``remote_files``.
+    imported_keys: set[bytes] = field(default_factory=set)
     # Simulated systemd: full unit name (``httpd.service``) -> its ActiveState
     # string (``active``/``inactive``/...), backing ``SystemdServiceState``;
     # and the set of unit names enabled on boot, backing
@@ -136,6 +149,14 @@ class SimulatedHost(Host):
                 self.write_repo_file(path, content)
             case RpmInstallCommand(src=src):
                 self.install_rpm(src)
+            case DnfKeyUploadCommand(src=src, dest=dest):
+                self.put_file(src, dest)
+            case DnfKeyImportCommand(path=path):
+                self.import_key(path)
+            case DnfModuleEnableCommand(module=module, stream=stream):
+                self.enable_module(module, stream)
+            case DnfModuleDisableCommand(module=module):
+                self.disable_module(module)
             case LinkCommand(src=src, target=None):
                 self.remove_link(src)
             case LinkCommand(src=src, target=target):
@@ -204,6 +225,47 @@ class SimulatedHost(Host):
         name = info["name"]
         self.rpm_packages[name] = info["version"]
         self.packages.add(name)
+
+    def import_key(self, path: str) -> None:
+        """Record a simulated ``rpm --import`` of the spooled key at ``path``.
+
+        ``dnf.key`` first uploads the key stream to a ``/tmp`` spool path (the
+        paired ``DnfKeyUploadCommand`` runs through ``put_file``, storing the
+        bytes in ``remote_files``), then imports and removes it. This mirrors
+        the import-and-remove: the spool bytes are popped out of
+        ``remote_files`` and recorded in ``imported_keys``, so a test can assert
+        both that the key was imported and that the spool file was cleaned up.
+        An absent spool path imports nothing.
+        """
+        data = self.remote_files.pop(path, None)
+        if data is not None:
+            self.imported_keys.add(data)
+
+    def enable_module(self, module: str, stream: str) -> None:
+        """Record a simulated ``dnf module enable``: set the enabled stream.
+
+        A module is either enabled on one stream or disabled, never both, so
+        enabling also clears any disabled marker -- keeping ``enabled_modules``
+        and ``disabled_modules`` mutually consistent for the ``DnfEnabledModules``
+        and ``DnfDisabledModules`` facts. A repeat enable of the same stream is
+        then a no-op, and a switch re-points the stream.
+        """
+        self.enabled_modules[module] = stream
+        if module in self.disabled_modules:
+            self.disabled_modules.remove(module)
+
+    def disable_module(self, module: str) -> None:
+        """Record a simulated ``dnf module disable``: mark the module disabled.
+
+        The mirror of ``enable_module``: clears any enabled stream and keeps
+        ``disabled_modules`` sorted, matching what ``DnfDisabledModules`` reports
+        (its ``parse`` returns sorted, de-duplicated names), so a repeat disable
+        is a no-op.
+        """
+        self.enabled_modules.pop(module, None)
+        if module not in self.disabled_modules:
+            self.disabled_modules.append(module)
+        self.disabled_modules.sort()
 
     def make_link(self, src: str, target: str) -> None:
         self.links[src] = target

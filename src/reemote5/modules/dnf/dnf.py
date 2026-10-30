@@ -13,10 +13,12 @@ installed package that ``dnf.rpm`` reads to decide idempotence. Like every
 fact they are phase-unaware: each ``process`` coroutine just gathers the raw
 value.
 
-Operation side (design doc section 6): ``dnf.packages``, ``dnf.repo`` and
-``dnf.rpm`` plus the typed command descriptors they yield
-(``DnfInstallCommand``/``DnfRemoveCommand``/``DnfUpdateCommand``/
-``DnfCleanCommand``/``DnfRepoCommand``/``RpmInstallCommand``). Operations are
+Operation side (design doc section 6): ``dnf.packages``, ``dnf.update``, ``dnf.repo``,
+``dnf.rpm``, ``dnf.key`` and ``dnf.module`` plus the typed command descriptors
+they yield (``DnfInstallCommand``/``DnfRemoveCommand``/``DnfUpdateCommand``/
+``DnfCleanCommand``/``DnfRepoCommand``/``RpmInstallCommand``/
+``DnfKeyUploadCommand``/``DnfKeyImportCommand``/``DnfModuleEnableCommand``/
+``DnfModuleDisableCommand``). Operations are
 async generators that receive an ``OpContext``, await facts, set
 ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never touch
 the host directly.
@@ -30,16 +32,22 @@ pyinfra's URL source is dropped, since reemote5 has no download operation.
 ``dnf.rpm`` mirrors pyinfra's ``dnf.rpm`` (``src``, ``present``) for a ``.rpm``
 file already on the target host; pyinfra's URL source -- which downloads the
 file mid-deploy -- is dropped for the same reason, so a URL ``src`` raises
-``ValueError``.
+``ValueError``. ``dnf.key`` mirrors pyinfra's non-idempotent ``dnf.key`` but
+takes the GPG key content as an IO-like *stream* -- reemote5 has no
+controller-side file locations -- spooling it to a ``/tmp`` path over scp and
+running an elevated ``rpm --import`` on it, so a ``str`` ``src`` raises
+``ValueError``. ``dnf.update`` mirrors pyinfra's non-idempotent ``dnf.update``:
+it reads no fact and always runs ``dnf update -y`` over every package.
 """
 
 import re
 import shlex
 from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass
+from typing import IO, Any
 from urllib.parse import urlparse
 
-from ...commands import Command
+from ...commands import Command, TransferCommand
 from ...core import OpContext
 from ...hosts import Host
 
@@ -609,7 +617,8 @@ class DnfRemoveCommand(Command):
 @dataclass(frozen=True)
 class DnfUpdateCommand(Command):
     """``dnf update``: all packages when bare, just ``packages`` when given
-    (the ``latest`` upgrade path)."""
+    (the ``latest`` upgrade path). The bare form is what both ``dnf.update``
+    and ``dnf.packages(update=True)`` yield."""
 
     packages: tuple[str, ...] = ()
 
@@ -729,6 +738,26 @@ async def packages(
         reasons.append("no packages requested")
 
     ctx.reason = "; ".join(reasons)
+
+
+# --- dnf.update --------------------------------------------------------------
+
+
+async def update(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
+    """Update every dnf package on the host (pyinfra ``dnf.update`` parity).
+
+    Like pyinfra's ``dnf.update`` this is **non-idempotent**: it reads no fact,
+    so it always reports a change and yields one bare ``DnfUpdateCommand``
+    (rendering ``dnf update -y``) on every run. There is no cheap way to tell
+    whether any package actually has a pending upgrade, so dnf is simply invoked
+    and is itself a no-op when the system is already up to date. Updating the
+    whole system needs root, so flag the request ``sudo=True`` (or ``su=True``).
+    ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already strips
+    ``name``/``sudo``/``su``).
+    """
+    ctx.changed = True
+    ctx.reason = "dnf update"
+    yield DnfUpdateCommand()
 
 
 # --- dnf.repo ----------------------------------------------------------------
@@ -939,6 +968,204 @@ async def rpm(
             ctx.reason = f"rpm {src} is not installed"
 
 
+# --- dnf.key -----------------------------------------------------------------
+
+#: Where ``dnf.key``'s transfer spools the key stream on the target host before
+#: the elevated ``rpm --import``. A fixed path under world-writable ``/tmp`` so
+#: the *unprivileged* scp can write it, and a constant so the value is identical
+#: across the prepare and apply phases (a per-materialization temp name would
+#: diverge and trip the determinism guard). ``DnfKeyImportCommand`` removes it
+#: again after importing.
+_KEY_IMPORT_PATH = "/tmp/reemote5-dnf-key.gpg"
+
+
+@dataclass(frozen=True)
+class DnfKeyUploadCommand(TransferCommand):
+    """Spool the GPG key stream to a ``/tmp`` path on the target host.
+
+    The first half of ``dnf.key`` and a *non-shell* descriptor: it copies the
+    IO-like key content over the connection's scp channel via
+    ``Host.upload_file`` rather than running shell text, so it has no
+    ``shell()`` and its loggable form is the ``__str__`` rendering
+    ``command_shell`` falls back to. The copy rides as the login user --
+    transfers are unprivileged, so the request's ``sudo`` does not apply to it
+    (and ``command_shell`` renders it without the prefix) -- which is why the
+    spool path is world-writable ``/tmp`` rather than a root-owned directory.
+    ``src`` is the IO-like object itself (never a path): ``OperationRequest``
+    compares it by identity, so a deploy must pass the *same* stream object in
+    every phase -- define it once (e.g. at module level), not inside the
+    generator.
+    """
+
+    src: IO[Any]  # IO-like GPG key content on the control machine
+    dest: str  # spool path on the target host
+
+    def __str__(self) -> str:
+        return f"scp {getattr(self.src, 'name', '<stream>')} -> {self.dest}"
+
+    async def transfer(self, host: Host) -> None:
+        await host.upload_file(self.src, self.dest)
+
+
+@dataclass(frozen=True)
+class DnfKeyImportCommand(Command):
+    """``rpm --import`` the spooled key, then remove the spool file.
+
+    The second half of ``dnf.key`` and the elevated one: importing into the
+    system rpm keyring needs root, so the request is flagged ``sudo=True`` and
+    the import-and-remove is wrapped in ``sh -c``. A bare ``sudo rpm --import
+    <path> && rm -f <path>`` would elevate only the import and leave the ``rm``
+    running as the login user, whereas ``sudo sh -c '...'`` runs both steps as
+    root, which can always remove the login-user spool file. The path is
+    shell-quoted.
+    """
+
+    path: str
+
+    def shell(self) -> str:
+        quoted = shlex.quote(self.path)
+        inner = f"rpm --import {quoted} && rm -f {quoted}"
+        return f"sh -c {shlex.quote(inner)}"
+
+
+async def key(ctx: OpContext, src: IO[Any], **kwargs) -> AsyncGenerator[Command]:
+    """Import a GPG key into the target host's rpm keyring (pyinfra ``dnf.key``).
+
+    + src: the key content as a seekable IO-like object on the control machine
+      (an ``io.BytesIO``/``io.StringIO``, a file opened with ``open()``, ...),
+      rewound to position 0 before it is read
+
+    Like pyinfra's ``dnf.key`` this is **non-idempotent**: it always imports, so
+    it always reports a change and yields its commands on every run (rpm itself
+    deduplicates an already-imported key). It yields *two* descriptors from the
+    one request -- a ``DnfKeyUploadCommand`` transfer that spools the stream to
+    a ``/tmp`` path over scp, then a ``DnfKeyImportCommand`` running the elevated
+    ``rpm --import`` on that spool file and removing it. Because the import needs
+    root, flag the request ``sudo=True`` (or ``su=True``); the transfer stays
+    unprivileged regardless (transfers ride the connection as the login user),
+    so the two commands of one request run at different privilege levels -- the
+    driver dispatches the transfer to scp and elevates only the shell import.
+
+    pyinfra's ``dnf.key`` takes a ``src`` that is a *filename or URL* the target
+    host reads directly (``rpm --import <src>``). reemote5 does not support
+    controller-side file locations, so ``src`` is an IO-like *stream* of the key
+    content instead, and the bytes reach the host over the connection's scp
+    channel rather than by naming a path rpm can open; a ``str`` ``src`` raises
+    ``ValueError``. ``**kwargs`` absorbs pyinfra's global arguments (``op()``
+    already strips ``name``/``sudo``/``su``).
+    """
+    if isinstance(src, str):
+        # ValueError (not TypeError) keeps dnf.key consistent with dnf.repo and
+        # dnf.rpm, which also reject an unusable string ``src`` with ValueError;
+        # TRY004 assumes any isinstance guard should raise TypeError instead.
+        raise ValueError(  # noqa: TRY004
+            "dnf.key does not support a filename/URL src (reemote5 takes IO "
+            "streams, not controller-side file locations); pass the key content "
+            f"as an IO-like object, got: {src!r}"
+        )
+    ctx.changed = True
+    ctx.reason = f"import GPG key from {getattr(src, 'name', '<stream>')}"
+    yield DnfKeyUploadCommand(src=src, dest=_KEY_IMPORT_PATH)
+    yield DnfKeyImportCommand(path=_KEY_IMPORT_PATH)
+
+
+# --- dnf.module --------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DnfModuleEnableCommand(Command):
+    """``dnf module enable -y <module>:<stream>``: enable a module stream.
+
+    ``module`` and ``stream`` are joined with ``:`` and shell-quoted as a
+    single argument, so a stream name carrying shell metacharacters reaches
+    dnf literally. Enabling a stream writes dnf's module state, so the request
+    is flagged ``sudo=True`` (or ``su=True``) and the driver elevates it.
+    """
+
+    module: str
+    stream: str
+
+    def shell(self) -> str:
+        return f"dnf module enable -y {shlex.quote(f'{self.module}:{self.stream}')}"
+
+
+@dataclass(frozen=True)
+class DnfModuleDisableCommand(Command):
+    """``dnf module disable -y <module>``: disable a module (all its streams).
+
+    ``module`` is shell-quoted. Disabling writes dnf's module state, so the
+    request is flagged ``sudo=True`` (or ``su=True``) and the driver elevates it.
+    """
+
+    module: str
+
+    def shell(self) -> str:
+        return f"dnf module disable -y {shlex.quote(self.module)}"
+
+
+async def module(
+    ctx: OpContext,
+    module: str,
+    stream: str | None = None,
+    enabled: bool = True,
+    **kwargs,
+) -> AsyncGenerator[Command]:
+    """Enable/disable a dnf module stream (pyinfra ``dnf.module`` parity).
+
+    + module: name of the dnf module (an application-stream family)
+    + stream: the stream to enable; required when ``enabled=True``, ignored
+      when ``enabled=False``
+    + enabled: ``True`` (default) enables ``module:stream``; ``False`` disables
+      the module, so every one of its streams becomes inactive
+
+    ``enabled=True`` compares against ``DnfEnabledModules`` (a name->stream
+    map): when ``module`` is already enabled on exactly ``stream`` the request
+    is a no-op, otherwise it yields one ``dnf module enable`` command -- so a
+    ``module`` enabled on a *different* stream is re-enabled onto the requested
+    one. ``enabled=False`` compares against ``DnfDisabledModules`` (a sorted
+    name list): when ``module`` is already disabled the request is a no-op,
+    otherwise it yields one ``dnf module disable`` command. Either way enabling
+    or disabling writes dnf's module state, so flag the request ``sudo=True``
+    (or ``su=True``).
+
+    Like pyinfra, ``stream`` is required when ``enabled=True`` and a missing
+    one raises ``ValueError`` -- pyinfra raises its ``OperationValueError``,
+    itself a ``ValueError`` subclass, so reemote5 uses the plain ``ValueError``
+    its sibling operations (``dnf.repo``/``dnf.rpm``/``dnf.key``) already raise.
+    pyinfra's stream-switching caveat is inherited unchanged: ``dnf module
+    enable`` refuses to switch streams while packages from the active stream
+    are installed, so those must be removed (or the module ``dnf module
+    reset``) first -- this operation does not do that for you. ``**kwargs``
+    absorbs pyinfra's global arguments (``op()`` already strips
+    ``name``/``sudo``/``su``).
+    """
+    if enabled:
+        if stream is None:
+            raise ValueError("stream is required when enabled=True")
+        enabled_modules = await ctx.facts.get(DnfEnabledModules)
+        current = enabled_modules.get(module)
+        if current == stream:
+            ctx.reason = f"dnf module {module}:{stream} is already enabled"
+            return
+        ctx.changed = True
+        ctx.reason = (
+            f"dnf module {module}:{stream} not enabled, will enable"
+            if current is None
+            else f"dnf module {module} is enabled on stream {current}, "
+            f"will switch to {stream}"
+        )
+        yield DnfModuleEnableCommand(module=module, stream=stream)
+        return
+
+    disabled = await ctx.facts.get(DnfDisabledModules)
+    if module in disabled:
+        ctx.reason = f"dnf module {module} is already disabled"
+        return
+    ctx.changed = True
+    ctx.reason = f"dnf module {module} not disabled, will disable"
+    yield DnfModuleDisableCommand(module=module)
+
+
 __all__ = [
     "DnfAvailableGroups",
     "DnfCleanCommand",
@@ -947,6 +1174,10 @@ __all__ = [
     "DnfGroups",
     "DnfInstallCommand",
     "DnfInstalledModules",
+    "DnfKeyImportCommand",
+    "DnfKeyUploadCommand",
+    "DnfModuleDisableCommand",
+    "DnfModuleEnableCommand",
     "DnfPackages",
     "DnfRemoveCommand",
     "DnfRepoCommand",
@@ -956,7 +1187,10 @@ __all__ = [
     "DnfUpdateCommand",
     "RpmInstallCommand",
     "RpmPackage",
+    "key",
+    "module",
     "packages",
     "repo",
     "rpm",
+    "update",
 ]

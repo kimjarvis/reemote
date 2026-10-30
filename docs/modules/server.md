@@ -112,7 +112,7 @@ already holds or the simulated wait raises `WaitTimeoutError` immediately.
 ## Example
 
 The deploy from
-[`wait_for_httpd`](../examples.md#starting-a-service-and-waiting-for-it):
+[`wait_for_httpd`](../examples/modules/server.md#starting-a-service-and-waiting-for-it):
 
 ```python
 def deploy(host: Host) -> Generator[OperationRequest]:

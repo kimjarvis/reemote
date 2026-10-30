@@ -176,7 +176,7 @@ Rules that keep composition deterministic:
 
 Runnable demonstrations of each pattern — deduplication, environment layering,
 privilege policies, role ordering, per-host branching and patch windows — live
-in [Examples](examples.md#composing-deploys).
+in [Examples](examples/demonstrations/composition.md).
 
 ## Running a deploy
 

@@ -59,7 +59,17 @@ plugins:
 nav:
   - Home: index.md
   - Guide: guide.md
-  - Examples: examples.md
+  - Examples:
+      - Overview: examples.md
+      - Modules:
+          - dnf: examples/modules/dnf.md
+          - files: examples/modules/files.md
+          - server: examples/modules/server.md
+      - General: examples/general.md
+      - Demonstrations:
+          - Composition: examples/demonstrations/composition.md
+          - Inventory: examples/demonstrations/inventory.md
+          - Privilege: examples/demonstrations/privilege.md
   - API Reference:
       - Drivers: drivers.md
       - Core: core.md

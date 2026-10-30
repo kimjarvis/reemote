@@ -3,12 +3,15 @@
 Fact side (design doc section 5): ``FileLink`` (the fact read by
 ``files.link`` to learn the current target of a symlink), ``FileExists``
 (the fact read by ``files.file`` to learn whether a regular file exists),
-and the ``LocalSha1``/``RemoteFileSha1`` pair ``files.put`` and ``files.get``
-compare to decide whether a transfer is needed. Like every fact they are
-phase-unaware: each ``process`` coroutine just gathers the raw value.
+the ``LocalSha1``/``RemoteFileSha1`` pair ``files.put`` and ``files.get``
+compare to decide whether a transfer is needed, and ``FileContents`` (the
+raw text of a remote file, or None when absent, that ``files.edit`` reads to
+transform it). Like every fact they are phase-unaware: each ``process``
+coroutine just gathers the raw value.
 
 Operation side (design doc section 6): ``files.link``, ``files.file``,
-``files.put`` and ``files.get`` plus the typed command descriptors they yield
+``files.put``, ``files.get`` and ``files.edit`` plus the typed command
+descriptors they yield
 (``LinkCommand``/``FileCommand``/``PutCommand``/``GetCommand``). Operations
 are async generators that receive an ``OpContext``, await facts, set
 ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never
@@ -21,8 +24,9 @@ destination.
 
 import asyncio
 import hashlib
+import io
 import shlex
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from typing import IO, Any
 
@@ -146,6 +150,54 @@ class RemoteFileSha1:
         stdout = await host.run_shell(f"sha1sum {shlex.quote(path)}")
         fields = stdout.split()
         return fields[0] if fields else None
+
+
+class FileContents:
+    """The text content of a file on the remote host, or None when absent.
+
+    Mirrors pyinfra's ``files.FileContents`` (gathered with ``cat``), with one
+    deliberate deviation: reemote5 returns the content as a single ``str``
+    rather than pyinfra's list of lines, so a content transform (``files.edit``)
+    can treat the file as one blob and re-split it however it likes. Like
+    ``dnf.DnfRepoFile`` -- the same read-content-or-None shape -- absence is
+    reported as ``None``, never the empty string, so a file that exists but is
+    empty stays distinguishable from one that is missing.
+    """
+
+    #: Marker printed before the ``cat``'d content, only when ``test -e``
+    #: passes, so ``process`` can tell an existing (possibly empty) file from
+    #: a missing one (no marker on stdout).
+    MARKER = "#reemote5-filecontents"
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell printing ``MARKER`` then the file's content, only if it exists.
+
+        The ``test -e`` guard means a missing file produces no output at all
+        (not even the marker), while an existing one -- empty or not -- always
+        leads with the marker line.
+        """
+        quoted = shlex.quote(path)
+        return f"test -e {quoted} && {{ printf '{cls.MARKER}\\n'; cat -- {quoted}; }}"
+
+    @classmethod
+    async def process(cls, host: Host, path: str) -> str | None:
+        remote_files = getattr(host, "remote_files", None)
+        if remote_files is not None:
+            # SimulatedHost seam: decode the content the simulated remote
+            # filesystem holds at the path (None when absent). The same store
+            # backs files.put/files.get and RemoteFileSha1, so a simulated
+            # upload -- which stores its bytes here -- reads back through this
+            # fact, and an ``edit`` sees the content a prior ``edit`` wrote.
+            data = remote_files.get(path)
+            return data.decode("utf-8") if data is not None else None
+        # Real transport: cat the file over asyncssh behind the marker, so a
+        # missing file (no marker) reads as None rather than empty content.
+        stdout = await host.run_shell(cls.command(path))
+        prefix = f"{cls.MARKER}\n"
+        if not stdout.startswith(prefix):
+            return None
+        return stdout[len(prefix) :]
 
 
 # --- Operations --------------------------------------------------------------
@@ -323,8 +375,64 @@ async def get(ctx: OpContext, src: str, dest: IO[Any]) -> AsyncGenerator[Command
         yield GetCommand(src=src, dest=dest)
 
 
+async def edit(
+    ctx: OpContext, path: str, transform: Callable[[str | None], str]
+) -> AsyncGenerator[Command]:
+    """Ensure the remote file ``path`` matches ``transform`` of its current content.
+
+    The generic content-editing primitive: instead of a bespoke operation per
+    config-file format (pyinfra's ``server.etc_hosts``, ``files.line``,
+    ``files.replace`` and friends each hard-code one shape of edit), this reads
+    the file's current text with the ``FileContents`` fact, applies a
+    caller-supplied *pure* ``transform``, and writes the result back with a
+    ``PutCommand`` only when it differs. Any "edit a file in place" task --
+    adding an ``/etc/hosts`` entry, setting a ``sysctl`` key, appending a
+    managed block -- is then just a transform, with no new operation needed.
+
+    + path: the remote file to edit.
+    + transform: a pure callable taking the current content (``str``, or
+      ``None`` when the file is absent) and returning the desired content as a
+      ``str``. It must be *idempotent* -- ``transform(transform(x)) ==
+      transform(x)`` -- so a second run is a no-op, and side-effect free, since
+      it runs once per phase (prepare, then each apply step).
+
+    Idempotence is content-equality based: the transform's result is compared
+    against the current content, and a ``PutCommand`` is yielded only when they
+    differ, so a repeat edit whose transform is a fixpoint reports no change.
+    An absent file always counts as a change (``transform(None)`` produces the
+    content to create it from).
+
+    ``transform`` must be a *stable, hashable* object -- a module-level
+    function, not a lambda or closure built inside the deploy generator. It is
+    stored in the ``OperationRequest`` kwargs, which the determinism guard
+    compares by value across phases; a fresh callable per phase would diverge
+    and raise ``DeterminismError``, exactly as a fresh IO stream would for
+    ``files.put``/``files.get``.
+
+    The write rides ``files.put``'s unprivileged scp transfer, so ``sudo``/``su``
+    do not apply to it and ``path`` must be writable by the login user. A
+    root-owned target (``/etc/hosts``, a file under ``/etc``) must instead be
+    transformed into a writable path and moved into place with an elevated
+    shell operation, since a transfer cannot be escalated.
+    """
+    current = await ctx.facts.get(FileContents, path)
+    new = transform(current)
+
+    if new == current:
+        ctx.reason = f"content already up to date ({path})"
+    else:
+        ctx.changed = True
+        ctx.reason = (
+            f"content {path} differs from the transform, will rewrite"
+            if current is not None
+            else f"content {path} is absent, will create from the transform"
+        )
+        yield PutCommand(src=io.StringIO(new), dest=path)
+
+
 __all__ = [
     "FileCommand",
+    "FileContents",
     "FileExists",
     "FileLink",
     "GetCommand",
@@ -332,6 +440,7 @@ __all__ = [
     "LocalSha1",
     "PutCommand",
     "RemoteFileSha1",
+    "edit",
     "file",
     "get",
     "link",

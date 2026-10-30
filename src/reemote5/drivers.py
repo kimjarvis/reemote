@@ -139,7 +139,10 @@ def command_shell(
     under an askpass helper (see ``Host.run_shell_privileged``), plumbing this
     rendering never exposes so the password cannot leak into ``format_log``.
     ``send_command`` also calls it with the flags off to get the plain
-    descriptor shell it hands to the transport.
+    descriptor shell it hands to the transport. A ``TransferCommand`` is never
+    elevated -- it copies over the connection's scp channel as the login user --
+    so its rendering is returned without any ``sudo``/``su`` prefix even when
+    the flags are set.
 
     The two escalations combine in the fixed order ``sudo`` then ``su``: sudo
     is the outer prefix and ``su`` runs inside it, so a request flagged both
@@ -153,6 +156,15 @@ def command_shell(
     collapses to a bare ``su -c``.
     """
     shell = cmd.shell() if hasattr(cmd, "shell") else str(cmd)
+    # A transfer rides the connection's scp channel as the login user; the
+    # ``sudo``/``su`` flags never apply to it (``send_command`` ignores them for
+    # a ``TransferCommand``), so the log rendering must not prefix them either.
+    # An operation whose request is elevated for a *shell* command -- e.g.
+    # ``dnf.key``, which spools a key by scp then runs an elevated ``rpm
+    # --import`` -- still transfers its bytes unprivileged, and the log shows
+    # that truthfully rather than as a misleading ``sudo scp ...``.
+    if isinstance(cmd, TransferCommand):
+        return shell
     if su:
         # ``su`` defaults to root, so a ``su_user`` of ``None``/``root``
         # collapses to a bare ``su -c``; only a non-root target is named.

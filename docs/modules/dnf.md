@@ -2,7 +2,10 @@
 
 `reemote5.modules.dnf.dnf` combines the dnf facts and the dnf operations in a
 single source, so the read side (`DnfPackages` and friends) sits beside the
-`dnf.packages`, `dnf.repo` and `dnf.rpm` operations that consume it.
+`dnf.packages`, `dnf.repo`, `dnf.rpm` and `dnf.module` operations that consume
+it, plus the non-idempotent `dnf.key` and `dnf.update`, which read no fact:
+`dnf.key` imports a GPG key stream and `dnf.update` runs `dnf update -y` over
+every package.
 
 ## Facts
 
@@ -44,5 +47,8 @@ mutate the host.
     options:
       members:
         - packages
+        - update
         - repo
         - rpm
+        - key
+        - module

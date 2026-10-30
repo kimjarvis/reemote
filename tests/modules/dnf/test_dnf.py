@@ -21,6 +21,7 @@ without decorators.
 
 import asyncio
 import copy
+import io
 import shlex
 from collections.abc import Generator
 from pathlib import Path
@@ -42,6 +43,7 @@ from reemote5.drivers import (
 from reemote5.hosts import CommandError, Host, InventoryError, validate_inventory
 from reemote5.modules import dnf, files
 from reemote5.modules.dnf.dnf import (
+    _KEY_IMPORT_PATH,
     DnfAvailableGroups,
     DnfCleanCommand,
     DnfDisabledModules,
@@ -49,6 +51,10 @@ from reemote5.modules.dnf.dnf import (
     DnfGroups,
     DnfInstallCommand,
     DnfInstalledModules,
+    DnfKeyImportCommand,
+    DnfKeyUploadCommand,
+    DnfModuleDisableCommand,
+    DnfModuleEnableCommand,
     DnfPackages,
     DnfRemoveCommand,
     DnfRepoCommand,
@@ -1759,6 +1765,473 @@ async def test_dnf_rpm_remove_after_install_in_one_deploy():
     assert remove.reason == f"rpm {RPM_FILE_PATH} installed, will remove"
     assert host.rpm_packages == {}
     assert RPM_FILE_NAME not in host.packages
+
+
+# --- dnf.key operation (pyinfra parity) --------------------------------------
+
+# A stand-in ASCII-armored GPG public key. dnf.key imports the *content* of an
+# IO stream (never a path), so the tests only need opaque, stable bytes; the
+# simulated host records them verbatim.
+GPG_KEY_BYTES = (
+    b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n"
+    b"mQIN reemote5 test key material\n"
+    b"-----END PGP PUBLIC KEY BLOCK-----\n"
+)
+
+
+async def test_dnf_key_yields_upload_then_import():
+    """dnf.key is non-idempotent: it always reports a change and yields the
+    spool transfer followed by the elevated import, reading no fact."""
+    host = SimulatedHost(name="h")
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.key(ctx, src=stream)]
+    assert ctx.changed
+    assert ctx.reason == "import GPG key from <stream>"
+    assert commands == [
+        DnfKeyUploadCommand(src=stream, dest=_KEY_IMPORT_PATH),
+        DnfKeyImportCommand(path=_KEY_IMPORT_PATH),
+    ]
+
+
+async def test_dnf_key_rejects_a_str_src():
+    """pyinfra's dnf.key takes a filename/URL the target host reads; reemote5
+    takes an IO stream, so a str src raises rather than being treated as a
+    controller-side path."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="does not support a filename/URL src"):
+        _ = [c async for c in dnf.key(ctx, src="https://example.com/RPM-GPG-KEY")]
+
+
+async def test_dnf_key_absorbs_unknown_kwargs():
+    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already strips
+    the name/sudo meta-parameters, the rest is ignored."""
+    host = SimulatedHost(name="h")
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.key(ctx, src=stream, future_flag=True)]
+    assert commands == [
+        DnfKeyUploadCommand(src=stream, dest=_KEY_IMPORT_PATH),
+        DnfKeyImportCommand(path=_KEY_IMPORT_PATH),
+    ]
+
+
+def test_dnf_key_upload_command_renders_as_an_unprivileged_scp():
+    """The spool transfer has no shell(); it renders via __str__ and -- being a
+    TransferCommand -- is never elevated, even though dnf.key's request is
+    sudo=True for the import half. This is the command_shell guard: the log
+    shows a plain ``scp ...``, never a misleading ``sudo scp ...``."""
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    cmd = DnfKeyUploadCommand(src=stream, dest=_KEY_IMPORT_PATH)
+    assert not hasattr(cmd, "shell")
+    assert str(cmd) == f"scp <stream> -> {_KEY_IMPORT_PATH}"
+    assert command_shell(cmd) == f"scp <stream> -> {_KEY_IMPORT_PATH}"
+    assert command_shell(cmd, sudo=True) == f"scp <stream> -> {_KEY_IMPORT_PATH}"
+
+
+def test_dnf_key_import_command_shell_and_elevation():
+    """The import wraps ``rpm --import && rm`` in ``sh -c`` so both steps run
+    under the elevated shell (a bare ``sudo ... && rm`` would leave the rm
+    unprivileged), and shell-quotes the spool path."""
+    cmd = DnfKeyImportCommand(path=_KEY_IMPORT_PATH)
+    shell = cmd.shell()
+    assert shell.startswith("sh -c ")
+    inner = shlex.split(shell)[2]
+    assert inner == f"rpm --import {_KEY_IMPORT_PATH} && rm -f {_KEY_IMPORT_PATH}"
+    assert command_shell(cmd, sudo=True).startswith("sudo sh -c ")
+
+
+async def test_dnf_key_simulated_seam_spools_then_imports():
+    """send_command maps the transfer onto remote_files (via put_file) and the
+    import onto imported_keys while clearing the spool file -- the two-step
+    effect of one dnf.key request."""
+    host = SimulatedHost(name="h")
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    await send_command(host, DnfKeyUploadCommand(src=stream, dest=_KEY_IMPORT_PATH))
+    assert host.remote_files[_KEY_IMPORT_PATH] == GPG_KEY_BYTES
+    await send_command(host, DnfKeyImportCommand(path=_KEY_IMPORT_PATH))
+    assert host.imported_keys == {GPG_KEY_BYTES}
+    assert _KEY_IMPORT_PATH not in host.remote_files
+
+
+async def test_dnf_key_end_to_end_imports_over_run():
+    """Through run(): the apply phase spools the stream by scp then imports it,
+    so the simulated host records the key and the spool file is gone. The stream
+    is one object captured by the deploy closure, so both phases pass the
+    identical object and the determinism guard holds. The log shows the transfer
+    unprivileged and only the import elevated."""
+    stream = io.BytesIO(GPG_KEY_BYTES)
+
+    def key_deploy(host):
+        yield op(dnf.key, name="Import GPG key", src=stream, sudo=True)
+
+    host = SimulatedHost(name="h")
+
+    def factory(entry):
+        return host
+
+    _plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}], key_deploy, host_factory=factory
+    )
+    (entry,) = report.log
+    assert entry.changed
+    assert entry.commands == (
+        DnfKeyUploadCommand(src=stream, dest=_KEY_IMPORT_PATH),
+        DnfKeyImportCommand(path=_KEY_IMPORT_PATH),
+    )
+    assert host.imported_keys == {GPG_KEY_BYTES}
+    assert _KEY_IMPORT_PATH not in host.remote_files
+    log = format_log(report)
+    assert f"    $ scp <stream> -> {_KEY_IMPORT_PATH}" in log
+    assert "    $ sudo sh -c " in log
+
+
+async def test_dnf_key_dry_run_plans_without_importing():
+    """dry=True materializes the plan (non-idempotent -> changed, two commands)
+    but sends nothing, so no key is imported and no spool file is written."""
+    stream = io.BytesIO(GPG_KEY_BYTES)
+
+    def key_deploy(host):
+        yield op(dnf.key, name="Import GPG key", src=stream, sudo=True)
+
+    host = SimulatedHost(name="h")
+    plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}],
+        key_deploy,
+        host_factory=lambda entry: host,
+        dry=True,
+    )
+    assert report is None
+    (planned,) = plans["h"]
+    assert planned.changed
+    assert len(planned.commands) == 2
+    assert host.imported_keys == set()
+    assert host.remote_files == {}
+
+
+async def test_dnf_key_fresh_stream_per_phase_trips_determinism():
+    """The stream is compared by identity, so a deploy that builds a new one per
+    invocation diverges between the prepare and apply phases and the guard
+    raises -- the reason the example hoists its stream to a module constant."""
+
+    def key_deploy(host):
+        yield op(dnf.key, name="Import GPG key", src=io.BytesIO(GPG_KEY_BYTES))
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], key_deploy)
+    with pytest.raises(DeterminismError):
+        await run_apply(runtimes, plans=plans)
+
+
+# --- dnf.module operation (pyinfra parity) -----------------------------------
+
+# The module/stream pyinfra's own dnf.module operation tests use: enabling
+# postgresql:16 and disabling ruby. Reused for command/reason parity below.
+MODULE_NAME = "postgresql"
+MODULE_STREAM = "16"
+DISABLE_MODULE_NAME = "ruby"
+
+
+async def test_dnf_module_enable_new_yields_command():
+    """enabled=True with a module not yet enabled on the stream yields the
+    ``dnf module enable`` command (pyinfra's ``enable_new`` case)."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.module(ctx, module=MODULE_NAME, stream=MODULE_STREAM)
+    ]
+    assert ctx.changed
+    assert ctx.reason == f"dnf module {MODULE_NAME}:{MODULE_STREAM} not enabled, will enable"
+    assert commands == [
+        DnfModuleEnableCommand(module=MODULE_NAME, stream=MODULE_STREAM)
+    ]
+
+
+async def test_dnf_module_enable_already_enabled_noop():
+    """A module already enabled on exactly the requested stream is a no-op
+    (pyinfra's ``enable_already_enabled`` case, reason matches its noop)."""
+    host = SimulatedHost(name="h", enabled_modules={MODULE_NAME: MODULE_STREAM})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.module(ctx, module=MODULE_NAME, stream=MODULE_STREAM)
+    ]
+    assert not ctx.changed
+    assert ctx.reason == f"dnf module {MODULE_NAME}:{MODULE_STREAM} is already enabled"
+    assert commands == []
+
+
+async def test_dnf_module_enable_switches_stream():
+    """A module enabled on a *different* stream re-enables onto the requested
+    one (pyinfra's ``enable_different_stream`` case); the reason names the
+    switch."""
+    host = SimulatedHost(name="h", enabled_modules={MODULE_NAME: "15"})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.module(ctx, module=MODULE_NAME, stream=MODULE_STREAM)
+    ]
+    assert ctx.changed
+    assert ctx.reason == (
+        f"dnf module {MODULE_NAME} is enabled on stream 15, will switch to "
+        f"{MODULE_STREAM}"
+    )
+    assert commands == [
+        DnfModuleEnableCommand(module=MODULE_NAME, stream=MODULE_STREAM)
+    ]
+
+
+async def test_dnf_module_enable_requires_stream():
+    """enabled=True with no stream raises -- pyinfra's ``OperationValueError``
+    (a ValueError subclass) maps to reemote5's plain ValueError."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="stream is required when enabled=True"):
+        _ = [c async for c in dnf.module(ctx, module=MODULE_NAME)]
+
+
+async def test_dnf_module_disable_new_yields_command():
+    """enabled=False with a module not yet disabled yields the ``dnf module
+    disable`` command (pyinfra's ``disable_new`` case)."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.module(ctx, module=DISABLE_MODULE_NAME, enabled=False)
+    ]
+    assert ctx.changed
+    assert ctx.reason == f"dnf module {DISABLE_MODULE_NAME} not disabled, will disable"
+    assert commands == [DnfModuleDisableCommand(module=DISABLE_MODULE_NAME)]
+
+
+async def test_dnf_module_disable_already_disabled_noop():
+    """A module already disabled is a no-op (pyinfra's ``disable_already_disabled``
+    case, reason matches its noop)."""
+    host = SimulatedHost(name="h", disabled_modules=[DISABLE_MODULE_NAME])
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.module(ctx, module=DISABLE_MODULE_NAME, enabled=False)
+    ]
+    assert not ctx.changed
+    assert ctx.reason == f"dnf module {DISABLE_MODULE_NAME} is already disabled"
+    assert commands == []
+
+
+async def test_dnf_module_absorbs_unknown_kwargs():
+    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already strips
+    the name/sudo meta-parameters, the rest is ignored."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.module(
+            ctx, module=MODULE_NAME, stream=MODULE_STREAM, future_flag=True
+        )
+    ]
+    assert commands == [
+        DnfModuleEnableCommand(module=MODULE_NAME, stream=MODULE_STREAM)
+    ]
+
+
+def test_dnf_module_enable_command_shell_and_elevation():
+    """The enable descriptor renders ``dnf module enable -y <module>:<stream>``,
+    elevates as a whole under sudo, and shell-quotes the joined argument."""
+    cmd = DnfModuleEnableCommand(module=MODULE_NAME, stream=MODULE_STREAM)
+    assert cmd.shell() == f"dnf module enable -y {MODULE_NAME}:{MODULE_STREAM}"
+    assert command_shell(cmd, sudo=True) == (
+        f"sudo dnf module enable -y {MODULE_NAME}:{MODULE_STREAM}"
+    )
+    # A module/stream with a space is shell-quoted as one argument.
+    assert DnfModuleEnableCommand(module="my mod", stream="1 6").shell() == (
+        "dnf module enable -y 'my mod:1 6'"
+    )
+
+
+def test_dnf_module_disable_command_shell_and_elevation():
+    """The disable descriptor renders ``dnf module disable -y <module>``,
+    elevates under sudo, and shell-quotes the module name."""
+    cmd = DnfModuleDisableCommand(module=DISABLE_MODULE_NAME)
+    assert cmd.shell() == f"dnf module disable -y {DISABLE_MODULE_NAME}"
+    assert command_shell(cmd, sudo=True) == (
+        f"sudo dnf module disable -y {DISABLE_MODULE_NAME}"
+    )
+    assert DnfModuleDisableCommand(module="my mod").shell() == (
+        "dnf module disable -y 'my mod'"
+    )
+
+
+async def test_dnf_module_enable_simulated_seam_mutates_state():
+    """``send_command`` maps the enable descriptor onto the simulated state: the
+    stream lands in ``enabled_modules`` and any disabled marker is cleared, so
+    the two module facts stay consistent."""
+    host = SimulatedHost(name="h", disabled_modules=[MODULE_NAME])
+    await send_command(
+        host, DnfModuleEnableCommand(module=MODULE_NAME, stream=MODULE_STREAM)
+    )
+    assert host.enabled_modules == {MODULE_NAME: MODULE_STREAM}
+    assert MODULE_NAME not in host.disabled_modules
+
+
+async def test_dnf_module_disable_simulated_seam_mutates_state():
+    """``send_command`` maps the disable descriptor onto the simulated state: the
+    module lands in ``disabled_modules`` (sorted) and any enabled stream is
+    cleared."""
+    host = SimulatedHost(name="h", enabled_modules={MODULE_NAME: MODULE_STREAM})
+    await send_command(host, DnfModuleDisableCommand(module=MODULE_NAME))
+    assert host.enabled_modules == {}
+    assert host.disabled_modules == [MODULE_NAME]
+
+
+async def test_dnf_module_end_to_end_enable_then_noop():
+    """Through run(): the first apply enables the stream into the simulated
+    state (elevated, per the sudo flag); a second run sees it enabled and is a
+    no-op. The request kwargs are plain strings, so the determinism guard holds
+    with no module-level constant."""
+
+    def module_deploy(host):
+        yield op(
+            dnf.module,
+            name="Enable PostgreSQL 16",
+            module=MODULE_NAME,
+            stream=MODULE_STREAM,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+
+    def factory(entry):
+        return host  # reuse ONE host so the second run sees the first's enable
+
+    _plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}], module_deploy, host_factory=factory
+    )
+    (entry,) = report.log
+    assert entry.changed
+    assert entry.commands == (
+        DnfModuleEnableCommand(module=MODULE_NAME, stream=MODULE_STREAM),
+    )
+    assert host.enabled_modules == {MODULE_NAME: MODULE_STREAM}
+    assert (
+        f"sudo dnf module enable -y {MODULE_NAME}:{MODULE_STREAM}" in format_log(report)
+    )
+
+    _plans2, report2, _hosts2 = await run(
+        [{"host": "h", "connection": {}}], module_deploy, host_factory=factory
+    )
+    (entry2,) = report2.log
+    assert not entry2.changed
+    assert entry2.reason == f"dnf module {MODULE_NAME}:{MODULE_STREAM} is already enabled"
+
+
+async def test_dnf_module_enable_then_noop_in_one_deploy():
+    """The apply phase's fresh per-step fact cache sees the first enable, so a
+    second identical enable in the same deploy is a no-op -- while the prepare
+    plan (which never sends) shows both as changes against the empty state."""
+
+    def module_deploy(host):
+        yield op(dnf.module, name="enable", module=MODULE_NAME, stream=MODULE_STREAM)
+        yield op(dnf.module, name="re-enable", module=MODULE_NAME, stream=MODULE_STREAM)
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], module_deploy)
+    assert plans["h"][0].changed  # enable: empty state -> not enabled
+    assert plans["h"][1].changed  # prepare never sends, so still not enabled
+    report = await run_apply(runtimes, plans=plans)
+    first, second = report.log
+    assert first.changed
+    assert not second.changed
+    assert second.reason == f"dnf module {MODULE_NAME}:{MODULE_STREAM} is already enabled"
+    assert host.enabled_modules == {MODULE_NAME: MODULE_STREAM}
+
+
+# --- dnf.update operation (pyinfra parity) -----------------------------------
+
+
+async def test_dnf_update_always_yields_and_changes():
+    """``dnf.update`` is non-idempotent: it reads no fact, always reports a
+    change and yields one bare ``DnfUpdateCommand`` (pyinfra's ``dnf update -y``)."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.update(ctx)]
+    assert ctx.changed
+    assert ctx.reason == "dnf update"
+    assert commands == [DnfUpdateCommand()]
+    assert commands[0].shell() == "dnf update -y"
+
+
+async def test_dnf_update_is_non_idempotent_with_packages_installed():
+    """A host that already has packages still plans an update: there is no fact
+    to compare against, so the operation never becomes a no-op -- matching
+    pyinfra's ``is_idempotent=False``."""
+    host = SimulatedHost(name="h", packages={"nginx", "vim"})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.update(ctx)]
+    assert ctx.changed
+    assert commands == [DnfUpdateCommand()]
+
+
+async def test_dnf_update_absorbs_unknown_kwargs():
+    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already strips
+    the name/sudo meta-parameters, the rest is ignored."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.update(ctx, future_flag=True)]
+    assert commands == [DnfUpdateCommand()]
+
+
+def test_dnf_update_command_shell_and_elevation():
+    """The bare descriptor renders ``dnf update -y`` and elevates as a whole
+    under sudo/su (updating the system needs root)."""
+    cmd = DnfUpdateCommand()
+    assert cmd.shell() == "dnf update -y"
+    assert command_shell(cmd, sudo=True) == "sudo dnf update -y"
+    assert command_shell(cmd, su=True) == "su -c 'dnf update -y'"
+
+
+async def test_dnf_update_simulated_seam_is_recognised_and_a_noop():
+    """``send_command`` maps the descriptor onto the seam without error: the
+    simulation tracks no package versions, so an update leaves the in-memory
+    state untouched rather than raising ``TypeError`` for an unknown command."""
+    host = SimulatedHost(name="h", packages={"nginx"})
+    await send_command(host, DnfUpdateCommand())
+    assert host.packages == {"nginx"}
+
+
+async def test_dnf_update_end_to_end_over_run():
+    """Through run(): the plan reports the change and the apply log shows the
+    elevated ``dnf update -y`` (the request is flagged ``sudo=True``)."""
+
+    def update_deploy(host):
+        yield op(dnf.update, name="Update all packages", sudo=True)
+
+    _plans, report, _hosts = await run(
+        [{"host": "a", "connection": {}}],
+        update_deploy,
+        host_factory=SimulatedHost.from_inventory,
+    )
+    (entry,) = report.log
+    assert entry.changed
+    assert entry.commands == (DnfUpdateCommand(),)
+    assert "$ sudo dnf update -y" in format_log(report)
+
+
+async def test_dnf_update_dry_run_plans_without_sending():
+    """``dry=True`` stops after prepare: the update is planned as a change but
+    there is no apply report, so nothing runs on the host."""
+
+    def update_deploy(host):
+        yield op(dnf.update, name="Update all packages", sudo=True)
+
+    host = SimulatedHost(name="h", packages={"nginx"})
+    plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}],
+        update_deploy,
+        host_factory=lambda entry: host,
+        dry=True,
+    )
+    assert report is None
+    (planned,) = plans["h"]
+    assert planned.changed
+    assert planned.reason == "dnf update"
+    assert planned.commands == (DnfUpdateCommand(),)
 
 
 async def test_files_link_remove_when_present():
