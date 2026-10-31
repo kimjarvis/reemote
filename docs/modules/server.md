@@ -1,9 +1,14 @@
 # server module
 
-`reemote5.modules.server.server` combines the systemd facts and the service
-operations in a single source, so the read side (`SystemdServiceState`,
-`SystemdServiceEnabled`) sits beside the `server.service` and
-`server.wait_service` operations that consume it. It is also where reemote5's
+`reemote5.modules.server.server` combines the server facts and the service
+operations in a single source, so the read side (`Arch`, `AuthorizedKeys`,
+`Date`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
+`KernelVersion`, `Last`, `LinuxDistribution`, `LinuxGui`, `LinuxName`,
+`Locales`, `LsbRelease`, `Mounts`, `Path`, `Processes`,
+`SystemdServiceState`,
+`SystemdServiceEnabled`, `Timezone`, `Uptime`, `User`, `Users`, `Which`)
+sits beside the `server.service` and `server.wait_service` operations that
+consume the systemd facts. It is also where reemote5's
 **waiting** design lives: `server.wait_service` is the first operation that
 blocks until a condition on the host holds.
 
@@ -13,21 +18,226 @@ A fact is an asynchronous, queryable resource — never yielded by a generator �
 implemented as a `process` coroutine returning the raw value (over asyncssh in
 the real implementation). Read facts through
 [`FactCache.get`][reemote5.core.FactCache.get], which is itself a coroutine,
-so results are awaited and cached within a phase step. Both facts take a
-service name and normalize it with
+so results are awaited and cached within a phase step. The two systemd facts
+take a service name and normalize it with
 [`unit_name`][reemote5.modules.server.server.unit_name] (`httpd` →
 `httpd.service`), so the test framework's simulated state is keyed by full
 unit names too. `SystemdServiceState` returns the raw `ActiveState` string
 rather than a boolean so a predicate can decide what counts as ready —
 `activating` is deliberately *not* `active`, which is what a wait polls
-through.
+through. `Arch` takes no arguments: it runs `uname -m` and returns the
+machine's architecture string (e.g. `x86_64`), mirroring pyinfra's
+`server.Arch`. `AuthorizedKeys` takes a username (and an optional explicit
+`path`) and returns the SSH public keys listed in that user's
+`~/.ssh/authorized_keys` as full key strings in file order, skipping blank
+lines and `#` comments; a missing file reads as `[]`. The default path
+resolves the home through shell tilde expansion (`~user`), which cannot be
+quoted, so an unsafe username raises `ValueError` instead of reaching the
+shell — mirroring pyinfra's `server.AuthorizedKeys`. `Date` takes no
+arguments: it runs `date +'%Y-%m-%dT%H:%M:%S%z'` and parses the ISO 8601
+timestamp into a timezone-aware `datetime`, mirroring pyinfra's
+`server.Date`; empty output (the command failed) reads as `None` — pyinfra's
+`default = datetime.now` fallback to the control machine's clock is
+deliberately dropped. `Groups` takes no arguments: it cats `/etc/group` and
+returns the first `:`-separated field of every colon-bearing line — the
+group names in file order, with no dedup or sorting — mirroring pyinfra's
+`server.Groups`; lines without a colon are skipped and empty output reads
+as `[]`. `HasGui` takes no arguments: it runs `ls /usr/bin/*session || true`
+and returns `True` when any listed path is a known desktop-session binary
+(GNOME, MATE, LXDE, KDE Plasma, XFCE 4), mirroring pyinfra's `server.HasGui`;
+empty output reads as `False`. pyinfra implements it as a short fact over
+`LinuxGui`; reemote5 keeps both facts, sharing the same shell and
+known-binary map — `HasGui` is the boolean projection of `LinuxGui`'s list
+of GUI names. `Home` takes an optional username
+(an empty one means the login user) and runs `echo ~user`, letting the
+shell's tilde expansion resolve the home directory (e.g. `/home/pyinfra`),
+mirroring pyinfra's `server.Home`; the username is validated rather than
+quoted, so an unsafe one raises `ValueError`. Empty output reads as `None`,
+and so does an unexpanded `~user` echo — the shell's answer for an unknown
+user, which pyinfra returns as the literal string; reemote5 deliberately
+maps it to `None` so a missing user never masquerades as a path. `Hostname`
+takes no arguments: it runs `uname -n` and returns the server's hostname
+string (e.g. `my-host.net`), mirroring pyinfra's `server.Hostname`; the
+first non-blank line is the answer and empty output (the command failed)
+reads as `""`, just like `Arch`. `Kernel` takes no arguments: it runs
+`uname -s` and returns the kernel name string (e.g. `Linux`, `Darwin`,
+`FreeBSD`), mirroring pyinfra's `server.Kernel`; the first non-blank line is
+the answer and empty output reads as `""`, just like `Arch`. pyinfra's
+deprecated `server.Os` alias for the same fact is deliberately dropped.
+`KernelModules` takes no arguments: it reads the `Kernel` fact to pick its
+shell — FreeBSD lists `kldstat | tail +2`, every other kernel cats
+`/proc/modules` — and returns a dict of module name → info dict, mirroring
+pyinfra's `server.KernelModules`. On Linux each info dict holds `size`
+(the raw string), `instances` (an int), `state` (e.g. `Live`) and, only
+when the row lists dependencies, a `depends` list; on FreeBSD it holds
+`id`, `refs`, `address` and `size`, all raw strings with hex `size` and
+`address`. A failed read (no `/proc/modules`) maps to `{}`, pyinfra's
+`default = dict`. `KernelVersion` takes no arguments: it runs `uname -r`
+and returns the kernel release string (e.g. `6.1.0-26-amd64`), mirroring
+pyinfra's `server.KernelVersion`; the first non-blank line is the answer
+and empty output reads as `""`, just like `Arch`. pyinfra's deprecated
+`server.OsVersion` alias for the same fact is deliberately dropped.
+`Last` takes no arguments: it runs `last` (util-linux
+`-Fwi` for full timestamps and IPs, falling back to `-w` on FreeBSD and the
+bare command on busybox) and returns the login records as a list of
+`{user, tty, host, time}` dicts, mirroring pyinfra's `server.Last`. Parsing
+is intentionally light: `time` holds the raw trailing string (whitespace
+collapsed to single spaces) so callers can re-parse their system's date
+format; a `reboot` row's `system boot` counts as one tty and a row whose
+remainder starts with a weekday has no host (`""`). Blank lines,
+`wtmp`/`btmp begins` footers and header rows are skipped; empty output —
+`last` missing or failed, swallowed by `|| true` — reads as `[]`, pyinfra's
+`default = list`. `LinuxDistribution` takes no arguments: it dumps every
+`/etc/*-release` file (each preceded by its path and followed by a `---`
+separator) and replays the parts into a scratch `etc` directory that the
+`distro` library parses — the same library pyinfra uses — returning
+`{name, major, minor, release_meta}`, mirroring pyinfra's
+`server.LinuxDistribution`. `major`/`minor` come from the most precise
+source available (a distro-specific release file supplies the minor when
+`/etc/os-release` exposes only a major version); `minor` is `None` when no
+source provides it (e.g. CentOS Stream). `name` is the pretty form of the
+distro id (`centos` → `CentOS`), `release_meta` holds the upper-cased
+`/etc/os-release` key/values, empty release files (Arch's
+`/etc/arch-release`) are skipped, and no release files at all read as
+`{"name": None, "major": None, "minor": None, "release_meta": {}}`,
+pyinfra's `default`. `LinuxGui` takes no arguments: it runs the same
+`ls /usr/bin/*session || true` as `HasGui` and returns the GUI names of the
+recognised session binaries (e.g. `["GNOME"]`) in listing order, mirroring
+pyinfra's `server.LinuxGui`; lines are matched exactly, unknown lines are
+ignored, and empty output reads as `[]`, pyinfra's `default = list`.
+`LinuxName` takes no arguments: it returns just the distribution's pretty
+name (e.g. `Ubuntu`), mirroring pyinfra's `server.LinuxName` — a shortcut
+for the `name` key of `LinuxDistribution`. pyinfra implements it as a short
+fact over `LinuxDistribution`; reemote5 likewise delegates to that fact's
+`process`, sharing its shell, `distro` parsing and `linux_distribution`
+simulated seam. No release files at all read as `None` (the `name` of
+pyinfra's `default()`). `Locales` takes no arguments: it runs `locale -a`
+and returns the installed locale names with lowercase `utf8` replaced by
+`UTF-8` (to match the names in `/etc/locale.gen`), mirroring pyinfra's
+`server.Locales`; lines are kept verbatim otherwise — the command's order
+is preserved, with no dedup or sorting — and empty output (the command
+failed or `locale` is missing) reads as `[]`, pyinfra's `default = list`.
+`LsbRelease` takes no arguments: it runs `lsb_release -ca` and returns the
+release information as a dict (e.g. `{"id": "Ubuntu", "description":
+"Ubuntu 18.04.3 LTS", "release": "18.04", "codename": "bionic"}`),
+mirroring pyinfra's `server.LsbRelease`. Keys are lower-cased and reduced
+to their last word (`Distributor ID` → `id`), values are stripped, and
+only the first colon splits — lines without one (the `No LSB modules are
+available.` hint, blank lines) are skipped. Empty output (`lsb_release`
+missing or failed) reads as `{}`; pyinfra's `requires_command` gating is
+deliberately dropped. `Mounts` takes no arguments: it reads the `Kernel`
+fact to pick its shell — FreeBSD lists `mount -p --libxo json`, OpenBSD
+`mount -v`, every other kernel cats `/proc/self/mountinfo` — and returns a
+dict of mount point → `{device, type, options}` dict, mirroring pyinfra's
+`server.Mounts`. On Linux the octal escapes in mount points, devices and
+super-block options (`\040` space, `\054` comma, `\134` backslash) are
+decoded, the optional `shared`/`master`/`propagate_from`/`unbindable` tags
+are skipped, and `options` combines the per-mount options with the
+super-block ones — `ro`/`rw` are filtered from the super-block side
+because the per-mount options override them. On OpenBSD the `ctime=...`
+flag is dropped and non-matching lines are skipped. Empty output reads as
+`{}` on every branch, pyinfra's `default = dict` (its FreeBSD JSON branch
+would raise on empty output — a failed read here simply reports no mounts).
+`Path` takes no arguments: it runs `echo $PATH` and returns the login
+user's `PATH` environment variable as the raw colon-separated string
+(e.g. `/usr/bin:/bin`), mirroring pyinfra's `server.Path` — the string is
+not split into a list, so callers can `split(":")` themselves. The first
+non-blank line is the answer and empty output — the command failed, or
+`PATH` is unset or empty — reads as `""`, just like `Arch`.
+`Processes` takes an optional `pid`: it reads the `Kernel` fact and probes
+for BusyBox to pick its shell — Linux lists `ps -eo
+pid,user,stat,%cpu,%mem,comm,args --no-headers`, FreeBSD the same `ps -eo`
+without `--no-headers`, BusyBox (Alpine) the limited `ps -o
+pid,user,vsz,stat,args` columns, and Darwin runs `ps` twice (`args` last,
+then `comm` last, joined by a marker line) because macOS truncates any
+non-last text column — and returns a dict of PID → `{user, state,
+cpu_percent, mem_percent, command, args}` dict, mirroring pyinfra's
+`server.Processes`. A `pid` restricts the listing to that one process (an
+absent PID reads as `{}`); on BusyBox the percents are always `0.0` and
+`command` is the basename of `args`' first word, and on Darwin a PID that
+vanished between the two `ps` snapshots is dropped. Header rows, blank
+lines, short rows and non-integer PIDs are skipped, and empty output reads
+as `{}`, pyinfra's `default = dict`. The BusyBox detection reads the `Which`
+fact (`command -v busybox || true`), exactly like pyinfra; one deliberate
+deviation remains: a missing Darwin marker line raises `ValueError` rather
+than pyinfra's bare `Exception`. A non-int `pid` raises `TypeError` on both
+transports — the BusyBox branch interpolates it into an `awk` program,
+where shell quoting cannot protect it. `Timezone` takes no arguments: it
+runs `readlink -f /etc/localtime | sed 's|.*/zoneinfo/||'` and returns the
+current system timezone (e.g. `Europe/Amsterdam`), mirroring pyinfra's
+`server.Timezone`; when `/etc/localtime` is a copied file rather than a
+symlink into zoneinfo, the resolved path is returned verbatim, exactly like
+pyinfra. The first non-blank line is the answer and empty output (the
+command failed) reads as `""`, just like `Arch` — pyinfra's `output[0]`
+would raise on empty output. `Uptime` takes no arguments: it reads the
+`Kernel` fact to pick its shell — Darwin and FreeBSD print the current
+epoch seconds followed by the boot-time epoch seconds (`date +%s` plus a
+`sysctl kern.boottime` pipeline) and the uptime is their difference, every
+other kernel runs `cut -d. -f1 /proc/uptime` — and returns the number of
+seconds the system has been up (e.g. `86400` — one day), mirroring
+pyinfra's `server.Uptime`. Blank lines are skipped; empty output (the
+command failed) reads as `None`, pyinfra's `FactBase` default, so a failed
+read never masquerades as a freshly booted host. A non-integer line raises
+`ValueError`, and a BSD answer missing its second line raises
+`IndexError`, exactly like pyinfra's parser. `User` takes no arguments: it
+runs `echo $USER` and returns the current user's name (e.g. `root`),
+mirroring pyinfra's `server.User`; the first non-blank line is the answer
+and empty output — the command failed, or `USER` is unset or empty — reads
+as `""`, just like `Path`. `Users` takes no arguments: it runs pyinfra's
+shell loop joining each `/etc/passwd` entry with `id`'s primary and
+secondary groups, the `lastlog` (`lastlogin` on BSD) row and the shadow
+password hash, and returns a dict of username → `{home, comment, shell,
+group, groups, uid, gid, lastlog, login_time, password}` dict, mirroring
+pyinfra's `server.Users`. Empty passwd fields read as `None`, `groups`
+holds only the secondary groups, `uid`/`gid` are ints, `lastlog` is the
+raw matched timestamp (`None` when the user never logged in) and
+`password` is the raw hash string (`""` when the shadow file cannot be
+read). `login_time` is parsed with the two fixed `strptime` layouts —
+Linux `lastlog` (aware `datetime`) and BSD `lastlogin` (naive) — instead
+of pyinfra's fuzzy dateutil parse, a deliberate deviation that avoids the
+extra dependency; an unmatched layout leaves `login_time` as `None`.
+Empty output reads as `{}`, pyinfra's `default = dict`, and a row missing
+its four `|` separators raises `ValueError`, like pyinfra's parser.
+`Which` takes a command name: it runs `command -v <command> || true` and
+returns the path the shell would run for that name (e.g.
+`/usr/local/bin/python`), mirroring pyinfra's `server.Which`; the name is
+`shlex`-quoted so shell metacharacters are looked up literally, never
+executed, and a builtin or alias reads as its own name. The first non-blank
+line is the answer; empty output — the command is unavailable, its non-zero
+exit swallowed by `|| true` — reads as `None`, pyinfra's `FactBase` default,
+so callers can branch on the answer directly. `Processes` reads this fact
+for its BusyBox probe.
 
 ::: reemote5.modules.server.server
     options:
       members:
+        - Arch
+        - AuthorizedKeys
+        - Date
+        - Groups
+        - HasGui
+        - Home
+        - Hostname
+        - Kernel
+        - KernelModules
+        - KernelVersion
+        - Last
+        - LinuxDistribution
+        - LinuxGui
+        - LinuxName
+        - Locales
+        - LsbRelease
+        - Mounts
+        - Path
+        - Processes
         - unit_name
         - SystemdServiceState
         - SystemdServiceEnabled
+        - Timezone
+        - Uptime
+        - User
+        - Users
+        - Which
 
 ## Operations
 

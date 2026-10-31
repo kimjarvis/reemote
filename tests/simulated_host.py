@@ -15,14 +15,25 @@ a real asyncssh transport is missing:
 - ``packages`` / ``links`` / ``existing_files`` / ``remote_files`` /
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
-  / ``rpm_files`` / ``rpm_packages`` / ``services`` / ``enabled_services``: the
-  state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
+  / ``rpm_files`` / ``rpm_packages`` / ``services`` / ``enabled_services``
+  / ``arch`` / ``authorized_keys`` / ``date`` / ``os_groups`` / ``has_gui``
+  / ``home_directories`` / ``os_hostname`` / ``os_kernel`` / ``kernel_modules``
+  / ``os_kernel_version`` / ``login_records`` / ``linux_distribution``
+  / ``linux_gui`` / ``locales`` / ``lsb_release`` / ``mounts`` / ``os_path``
+  / ``processes`` / ``os_timezone`` / ``os_user`` / ``os_users``
+  / ``uptime_seconds`` / ``command_paths``:
+  the state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
   ``RemoteFileSha1``, ``FileContents``, ``DnfRepoFile``, ``DnfRepositories``,
   ``DnfRepoList``,
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``,
-  ``SystemdServiceState``, ``SystemdServiceEnabled``) read as a stand-in for
-  gathering over SSH.
+  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``Arch``,
+  ``AuthorizedKeys``, ``Date``, ``Groups``, ``HasGui``, ``Home``,
+  ``Hostname``, ``Kernel``, ``KernelModules``, ``KernelVersion``, ``Last``,
+  ``LinuxDistribution``, ``LinuxGui``, ``LinuxName``, ``Locales``,
+  ``LsbRelease``, ``Mounts``, ``Path``, ``Processes``, ``Timezone``,
+  ``Uptime``, ``User``, ``Users``, ``Which``) read as a
+  stand-in for gathering over SSH.
 
 Holding this state is what makes the "fresh fact cache per lockstep step"
 property observable in the tests and the demo: ``send_command`` mutates the
@@ -31,6 +42,8 @@ the mutation.
 """
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
 
 from reemote5.commands import Command, StringCommand, WaitTimeoutError
 from reemote5.hosts import Host
@@ -117,6 +130,153 @@ class SimulatedHost(Host):
     # None (as the fact reports when systemd answers nothing).
     services: dict[str, str] = field(default_factory=dict)
     enabled_services: set[str] = field(default_factory=set)
+    # The machine architecture (``uname -m``), backing ``Arch``. Defaults to
+    # ``x86_64`` -- a real machine always answers ``uname -m`` with something.
+    arch: str = "x86_64"
+    # SSH public keys, backing ``AuthorizedKeys``: keyed by username for the
+    # default ``~user/.ssh/authorized_keys`` path and by the explicit path
+    # when the fact is given one; each value is the list of full key strings
+    # the file lists (already stripped, no comments -- the parsed form).
+    authorized_keys: dict[str, list[str]] = field(default_factory=dict)
+    # The server's clock, backing ``Date``. Defaults to pyinfra's own fact
+    # fixture timestamp (2019-01-01T00:00:00+00:00) -- a real machine always
+    # answers ``date``, so the seam never falls through to the shell, and a
+    # fixed default keeps simulated reads deterministic.
+    date: datetime = datetime(2019, 1, 1, tzinfo=UTC)
+    # Group names present on the system (the first ``/etc/group`` field of
+    # each row, in file order), backing ``Groups``. Named distinctly from
+    # ``Host.group`` (the inventory classifier) so the two are never confused.
+    os_groups: list[str] = field(default_factory=list)
+    # Whether a known desktop-session binary is installed, backing
+    # ``HasGui``. Defaults to False -- a simulated server is headless, like
+    # pyinfra's gui_absent fixture (``ls /usr/bin/*session`` lists nothing).
+    has_gui: bool = False
+    # Home directories, backing ``Home``: username -> home directory path,
+    # with "" keying the login user (the bare ``~``). An absent user reads as
+    # None, like the shell failing to expand ``~user`` for an unknown user.
+    home_directories: dict[str, str] = field(default_factory=dict)
+    # The machine's hostname (``uname -n``), backing ``Hostname``. Named
+    # ``os_hostname`` to stay distinct from ``Host.name`` (the inventory
+    # label) and the inventory's ``connection.hostname`` address alias.
+    # Defaults to pyinfra's own fact fixture hostname -- a real machine
+    # always answers ``uname -n``, and a fixed default keeps simulated
+    # reads deterministic.
+    os_hostname: str = "my-host.net"
+    # The kernel name (``uname -s``), backing ``Kernel``. Named ``os_kernel``
+    # with the os_ prefix (like ``os_hostname``) so it stays clear of any
+    # inventory field. Defaults to ``Linux`` -- a real machine always answers
+    # ``uname -s``, and the simulated fleet is Linux servers (pyinfra's own
+    # fixture value is the literal placeholder "os", not a real kernel name).
+    os_kernel: str = "Linux"
+    # Loaded kernel modules (module name -> info dict), backing
+    # ``KernelModules``. Each value is the parsed form the fact returns: on
+    # Linux {size, instances, state} plus an optional depends list, on
+    # FreeBSD {id, refs, address, size} -- the seam holds whichever shape
+    # matches the host's ``os_kernel``. Defaults to {} -- a simulated machine
+    # with no modules listed, like pyinfra's ``default = dict`` for a failed
+    # or absent /proc/modules read.
+    kernel_modules: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # The kernel release (``uname -r``), backing ``KernelVersion``. Named
+    # ``os_kernel_version`` with the os_ prefix (like ``os_kernel``) so it
+    # stays clear of any inventory field. Defaults to a real Fedora kernel
+    # release -- a real machine always answers ``uname -r``, and the
+    # simulated fleet is dnf-based Linux servers (pyinfra's own fixture
+    # value is the literal placeholder "os_version", not a real release).
+    os_kernel_version: str = "6.11.4-301.fc41.x86_64"
+    # Login records (the parsed ``last`` output), backing ``Last``. Each
+    # entry is the dict the fact returns -- {user, tty, host, time} with
+    # time the raw trailing string -- in ``last`` order. Defaults to [] --
+    # a simulated machine with no recorded logins, like pyinfra's
+    # ``default = list`` for an empty or failed ``last`` read.
+    login_records: list[dict[str, str]] = field(default_factory=list)
+    # The Linux distribution info (the parsed /etc/*-release dump), backing
+    # ``LinuxDistribution``: {name, major, minor, release_meta} in the shape
+    # the fact returns. ``LinuxName`` delegates to ``LinuxDistribution`` and
+    # so reads this same seam -- there is deliberately no separate name
+    # field, keeping the two facts consistent by construction. Defaults to
+    # pyinfra's ``default()`` -- all None with an empty release_meta, the
+    # "no release files matched" answer -- so a simulated machine makes no
+    # distro claim until a test sets one.
+    linux_distribution: dict[str, Any] = field(
+        default_factory=lambda: {
+            "name": None,
+            "major": None,
+            "minor": None,
+            "release_meta": {},
+        }
+    )
+    # Installed GUI names (the parsed ``ls /usr/bin/*session`` listing),
+    # backing ``LinuxGui``: the list of names the fact returns, in listing
+    # order. Defaults to [] -- a simulated server is headless, matching the
+    # ``has_gui`` flag's False default; a test simulating a desktop should
+    # set both seams consistently (``has_gui`` is ``bool(linux_gui)``).
+    linux_gui: list[str] = field(default_factory=list)
+    # Installed locale names (the parsed ``locale -a`` listing, with ``utf8``
+    # already normalized to ``UTF-8``), backing ``Locales``: the list of names
+    # the fact returns, in command order. Defaults to [] -- a simulated
+    # machine with no locales listed, like pyinfra's ``default = list`` for an
+    # empty or failed ``locale -a`` read.
+    locales: list[str] = field(default_factory=list)
+    # Release information (the parsed ``lsb_release -ca`` rows), backing
+    # ``LsbRelease``: the lower-cased key -> stripped value dict the fact
+    # returns (``Distributor ID`` already reduced to ``id``). Defaults to
+    # {} -- a simulated machine makes no LSB claim until a test sets one,
+    # like the fact's answer when ``lsb_release`` is missing or failed.
+    lsb_release: dict[str, str] = field(default_factory=dict)
+    # Mounted filesystems (mount point -> {device, type, options}), backing
+    # ``Mounts``. Each value is the parsed form the fact returns, with the
+    # options already combined and octal escapes decoded -- the seam holds
+    # whichever kernel's listing the host's ``os_kernel`` implies. Defaults
+    # to {} -- a simulated machine with no mounts listed, like pyinfra's
+    # ``default = dict`` for a failed read.
+    mounts: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # The login user's PATH environment variable (the raw colon-separated
+    # ``echo $PATH`` string), backing ``Path``. Named ``os_path`` with the
+    # os_ prefix (like ``os_kernel``) so it stays clear of any inventory
+    # field. Defaults to a standard Linux search path -- a real machine
+    # always answers ``echo $PATH``, and a fixed default keeps simulated
+    # reads deterministic (pyinfra ships no fixture for this fact).
+    os_path: str = "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin"
+    # Running processes (PID -> {user, state, cpu_percent, mem_percent,
+    # command, args}), backing ``Processes``. Each value is the parsed form
+    # the fact returns -- the seam holds the joined record regardless of
+    # which kernel's ps listing ``os_kernel`` implies. Defaults to {} -- a
+    # simulated machine with no processes listed, like pyinfra's
+    # ``default = dict`` for a failed ps read.
+    processes: dict[int, dict[str, Any]] = field(default_factory=dict)
+    # The system timezone (the ``readlink -f /etc/localtime | sed`` answer),
+    # backing ``Timezone``. Named ``os_timezone`` with the os_ prefix (like
+    # ``os_kernel``) so it stays clear of any inventory field. Defaults to
+    # pyinfra's own fact fixture timezone -- a real machine always resolves
+    # ``/etc/localtime``, and a fixed default keeps simulated reads
+    # deterministic.
+    os_timezone: str = "Europe/Amsterdam"
+    # The current user's name (the ``echo $USER`` answer), backing ``User``.
+    # Named ``os_user`` with the os_ prefix (like ``os_path``) so it stays
+    # clear of the inventory's ``connection.user`` login name. Defaults to
+    # ``root`` -- a real machine always answers ``echo $USER``, and a fixed
+    # default keeps simulated reads deterministic (pyinfra ships no fixture
+    # for this fact).
+    os_user: str = "root"
+    # System users (username -> the details dict ``Users`` returns -- home,
+    # comment, shell, group, groups, uid, gid, lastlog, login_time,
+    # password), backing ``Users``. Named ``os_users`` with the os_ prefix
+    # (like ``os_user``) so it stays clear of the inventory's
+    # ``connection.user`` login name. Defaults to {} -- a simulated machine
+    # with no users listed, like pyinfra's ``default = dict`` for a failed
+    # or empty read.
+    os_users: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # The seconds since boot (the parsed ``cut -d. -f1 /proc/uptime`` answer,
+    # or the BSD now-minus-boottime difference), backing ``Uptime``. Defaults
+    # to pyinfra's own fact fixture uptime (86400 -- one day) -- a real
+    # machine always answers with an uptime, and a fixed default keeps
+    # simulated reads deterministic.
+    uptime_seconds: int = 86400
+    # Resolvable commands (command name -> the path ``command -v`` prints),
+    # backing ``Which``. An absent command reads as None, like the swallowed
+    # non-zero exit of ``command -v nosuchcommand || true``. Defaults to {} --
+    # a simulated machine resolves no commands until a test names them.
+    command_paths: dict[str, str] = field(default_factory=dict)
     # Side effects of installing a package: package -> {link src: target}
     # and package -> {file path}. This is what lets the demo reproduce the
     # design doc section 9 trace: installing a package creates the default
