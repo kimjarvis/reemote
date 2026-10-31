@@ -2,9 +2,9 @@
 
 `reemote5.modules.files.files` combines the file facts and the file operations
 in a single source, so the read side (`FileLink`, `FileExists`,
-`LocalSha1`, `RemoteFileSha1`, `FileContents`) sits beside the `files.link`,
-`files.file`, `files.put`, `files.get` and `files.edit` operations that consume
-it.
+`LocalSha1`, `RemoteFileSha1`, `FileContents`, `File`, `Directory`, `Link`)
+sits beside the `files.link`, `files.file`, `files.put`, `files.get` and
+`files.edit` operations that consume it.
 
 ## Facts
 
@@ -17,9 +17,46 @@ one fact whose input is not the host: it hashes an IO-like stream on the
 *control* machine — the source `files.put` uploads or the destination
 `files.get` downloads into — which both compare against the remote file's hash.
 
+`File` mirrors pyinfra's `files.File`: it guards the path with
+`test -e`/`test -L`, then describes it with GNU `stat -c`, falling back to BSD
+`stat -f` and finally `ls -ld`, and returns the metadata dict — `user`,
+`group`, `mode` (the octal-looking int pyinfra returns, e.g. `644` or `4755`,
+setuid/setgid/sticky bits included), `size`, and `atime`/`mtime`/`ctime` as
+*naive UTC* `datetime`s (pyinfra's convention; the `ls -ld` fallback provides
+only an mtime, so its atime/ctime read as `None`). A path that does not exist
+reads as `None`; one that exists but is not a regular file (a directory,
+symlink, socket, ...) reads as `False` — `Directory` and `Link` are the
+directory- and link-accepting siblings, and only `Link`'s dict carries the
+`link_target` key. Like
+pyinfra, a leading `~/` stays unquoted so the remote shell expands it. Where
+`FileExists` is the cheap existence probe `files.file` consumes, `File` is
+the richer stat-level read for auditing ownership, permissions or timestamps.
+
+`Directory` mirrors pyinfra's `files.Directory` — its `File` subclass with
+`type = "directory"`: the very same guard, stat/ls chain and metadata dict,
+but the path's type flag must be `d`, so a regular file, symlink, socket, ...
+reads as `False` instead. Use it to audit a directory's ownership, mode
+(setuid/setgid/sticky bits included — `/tmp`'s `1777`, a setgid share's
+`2775`) or timestamps before placing files inside it.
+
+`Link` mirrors pyinfra's `files.Link` — the same `File` subclass with
+`type = "link"`: the very same guard, stat/ls chain and metadata dict, but
+the path's type flag must be `l`, and the dict additionally carries
+`link_target` — the target path with the stat/ls quoting stripped (GNU
+`'name'`, older GNU/RHEL 6 `` `name' ``, uutils `"name"`), exactly as the
+link records it, so a relative target stays relative. The `test -L` guard
+lets a *dangling* symlink through to the `ls -ld` fallback, so a broken
+link is still reported with its target. Where `FileLink` is the cheap
+`readlink` probe `files.link` consumes, `Link` is the richer stat-level
+read for auditing the link itself — ownership, mode, timestamps —
+alongside where it points.
+
 ::: reemote5.modules.files.files
     options:
       members:
+        - File
+        - Directory
+        - Link
         - FileLink
         - FileExists
         - LocalSha1

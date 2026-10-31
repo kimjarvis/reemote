@@ -249,7 +249,7 @@ src/reemote5/
     ├── dnf/
     │   └── dnf.py     #   DnfPackages…, dnf.packages + its command descriptors
     ├── files/
-    │   └── files.py   #   FileLink…, LocalSha1/RemoteFileSha1/FileContents, files.link/file/put/get/edit + their command descriptors
+    │   └── files.py   #   File/FileLink…, LocalSha1/RemoteFileSha1/FileContents, files.link/file/put/get/edit + their command descriptors
     ├── hardware/
     │   └── hardware.py  # BlockDevices (df), CpuInfo (lscpu), Cpus (getconf), DiskStats (/proc/diskstats), DmiInfo (/sys/class/dmi/id), Ipv4Addrs/Ipv6Addrs/NetworkDevices (ip), LsBlk (lsblk), SmbiosInfo (dmidecode)
     └── server/

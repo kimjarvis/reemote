@@ -19,3 +19,23 @@ direction.
 ::: dnf_put_get
     options:
       members: []
+
+## Splitting a fact-dependent deploy in two
+
+A task the determinism rule forbids as a single deploy — "install nginx,
+then configure it only if the install actually put it on the box" — made
+legal by moving the mutable-fact read into the gap between two complete
+prepare/apply cycles. Deploy 1 (`install_nginx`) is branch-free; a
+`gather_fact` snapshot of `dnf.DnfPackages` taken after its apply-phase join
+captures the real post-install state per host; deploy 2 is built by a
+factory closing over that frozen dict, so its branch is a pure function of
+static input and both phases yield the identical request sequence. The
+second run's `dry=True` plan is an honest preview of the configure step,
+computed against the state the install actually left behind. The config is
+staged with `files.put` to `/tmp` (transfers are never elevated); the
+trade-off — a frozen snapshot, no mid-run replanning — is spelled out in the
+script's own docstring below.
+
+::: two_deploy_split
+    options:
+      members: []

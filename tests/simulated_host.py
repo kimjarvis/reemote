@@ -12,7 +12,8 @@ a real asyncssh transport is missing:
   descriptor to the in-memory state. ``reemote5.drivers.send_command``
   forwards to it when the host provides it, and raises ``NotImplementedError``
   otherwise.
-- ``packages`` / ``links`` / ``existing_files`` / ``remote_files`` /
+- ``packages`` / ``links`` / ``existing_files`` / ``file_stats`` /
+  ``directory_stats`` / ``link_stats`` / ``remote_files`` /
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``services`` / ``enabled_services``
@@ -27,7 +28,7 @@ a real asyncssh transport is missing:
   / ``processes`` / ``smbios_info`` / ``os_timezone`` / ``os_user`` / ``os_users``
   / ``uptime_seconds`` / ``command_paths``:
   the state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
-  ``RemoteFileSha1``, ``FileContents``, ``DnfRepoFile``, ``DnfRepositories``,
+  ``File``, ``Directory``, ``Link``, ``RemoteFileSha1``, ``FileContents``, ``DnfRepoFile``, ``DnfRepositories``,
   ``DnfRepoList``,
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``,
@@ -183,6 +184,27 @@ class SimulatedHost(Host):
     # simulated machine with no DMI identity (a container), like the
     # fact's {} fallback for a failed read.
     dmi_info: dict[str, str] = field(default_factory=dict)
+    # Directory metadata (path -> the stat dict ``Directory`` returns -- the
+    # same shape as ``file_stats`` -- or False for a path that exists but is
+    # not a directory), backing ``Directory``. A separate store from
+    # ``file_stats`` because a metadata dict carries no type flag, so one
+    # store cannot answer both the file- and the directory-typed question
+    # for the same path. Keys are the caller-supplied path strings verbatim,
+    # ``~/...`` prefixes included; an absent key reads as None, like a
+    # missing path. A read-only seam: no ``execute_command`` mutator
+    # maintains it, so a test sets it directly.
+    directory_stats: dict[str, dict[str, Any] | bool] = field(default_factory=dict)
+    # File metadata (path -> the stat dict ``File`` returns -- user, group,
+    # mode, atime, mtime, ctime, size -- or False for a path that exists but
+    # is not a regular file), backing ``File``. Keys are the caller-supplied
+    # path strings verbatim, ``~/...`` prefixes included: the command leaves
+    # the leading tilde for the remote shell to expand, so the effective
+    # remote path is only known after expansion (like ``authorized_keys``,
+    # this cannot ride the literal-path ``remote_files`` store -- which also
+    # holds content bytes, not metadata). An absent key reads as None, like
+    # a missing path. A read-only seam: no ``execute_command`` mutator
+    # maintains it, so a test sets it directly.
+    file_stats: dict[str, dict[str, Any] | bool] = field(default_factory=dict)
     # Group names present on the system (the first ``/etc/group`` field of
     # each row, in file order), backing ``Groups``. Named distinctly from
     # ``Host.group`` (the inventory classifier) so the two are never confused.
@@ -237,6 +259,17 @@ class SimulatedHost(Host):
     # simulated fleet is dnf-based Linux servers (pyinfra's own fixture
     # value is the literal placeholder "os_version", not a real release).
     os_kernel_version: str = "6.11.4-301.fc41.x86_64"
+    # Symlink metadata (path -> the stat dict ``Link`` returns -- the same
+    # shape as ``file_stats`` plus a ``link_target`` key -- or False for a
+    # path that exists but is not a symlink), backing ``Link``. A separate
+    # store from ``file_stats``/``directory_stats`` because a metadata dict
+    # carries no type flag, so one store cannot answer the file-, directory-
+    # and link-typed questions for the same path. Keys are the caller-supplied
+    # path strings verbatim, ``~/...`` prefixes included; an absent key reads
+    # as None, like a missing path. A read-only seam: no ``execute_command``
+    # mutator maintains it (``make_link`` only fills the bare ``links`` store
+    # ``FileLink`` reads), so a test sets it directly.
+    link_stats: dict[str, dict[str, Any] | bool] = field(default_factory=dict)
     # Login records (the parsed ``last`` output), backing ``Last``. Each
     # entry is the dict the fact returns -- {user, tty, host, time} with
     # time the raw trailing string -- in ``last`` order. Defaults to [] --

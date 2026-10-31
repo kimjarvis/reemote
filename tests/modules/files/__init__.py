@@ -1,0 +1,1 @@
+"""Tests for the files module namespace: the ``File`` fact."""

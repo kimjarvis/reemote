@@ -4,10 +4,15 @@ Fact side (design doc section 5): ``FileLink`` (the fact read by
 ``files.link`` to learn the current target of a symlink), ``FileExists``
 (the fact read by ``files.file`` to learn whether a regular file exists),
 the ``LocalSha1``/``RemoteFileSha1`` pair ``files.put`` and ``files.get``
-compare to decide whether a transfer is needed, and ``FileContents`` (the
+compare to decide whether a transfer is needed, ``FileContents`` (the
 raw text of a remote file, or None when absent, that ``files.edit`` reads to
-transform it). Like every fact they are phase-unaware: each ``process``
-coroutine just gathers the raw value.
+transform it), and ``File`` (pyinfra's stat-level metadata for a regular
+file -- owner, group, mode, timestamps, size -- False for a non-file path,
+None when absent) with its ``Directory`` and ``Link`` siblings (the same
+metadata for a directory or a symlink, False for a non-directory/non-link
+path; ``Link``'s dict additionally carries the ``link_target``). Like every
+fact they are phase-unaware: each ``process`` coroutine just gathers the raw
+value.
 
 Operation side (design doc section 6): ``files.link``, ``files.file``,
 ``files.put``, ``files.get`` and ``files.edit`` plus the typed command
@@ -25,10 +30,13 @@ destination.
 import asyncio
 import hashlib
 import io
+import re
 import shlex
-from collections.abc import AsyncGenerator, Callable
+import stat
+from collections.abc import AsyncGenerator, Callable, Iterable
 from dataclasses import dataclass
-from typing import IO, Any
+from datetime import UTC, datetime
+from typing import IO, Any, Literal
 
 from ...commands import Command, TransferCommand
 from ...core import OpContext
@@ -198,6 +206,368 @@ class FileContents:
         if not stdout.startswith(prefix):
             return None
         return stdout[len(prefix) :]
+
+
+#: The leading ``ls``/``stat`` mode character mapped to pyinfra's path type;
+#: each fact class (``File``, ``Directory``, ``Link``) accepts only its own
+#: ``TYPE``, every other type reads as False.
+_FLAG_TO_TYPE = {
+    "b": "block",
+    "c": "character",
+    "d": "directory",
+    "l": "link",
+    "s": "socket",
+    "p": "fifo",
+    "-": "file",
+}
+
+#: Per-position mode character -> permission bit (pyinfra's
+#: ``CHAR_TO_PERMISSION``, taken from the stdlib ``stat`` table): ``s``/``S``
+#: encode setuid/setgid combined with execute, ``t``/``T`` the sticky bit.
+_CHAR_TO_PERMISSION = (
+    {"r": stat.S_IRUSR},
+    {"w": stat.S_IWUSR},
+    {"x": stat.S_IXUSR, "S": stat.S_ISUID, "s": stat.S_IXUSR | stat.S_ISUID},
+    {"r": stat.S_IRGRP},
+    {"w": stat.S_IWGRP},
+    {"x": stat.S_IXGRP, "S": stat.S_ISGID, "s": stat.S_IXGRP | stat.S_ISGID},
+    {"r": stat.S_IROTH},
+    {"w": stat.S_IWOTH},
+    {"x": stat.S_IXOTH, "T": stat.S_ISVTX, "t": stat.S_IXOTH | stat.S_ISVTX},
+)
+
+#: The keyed ``stat`` format whose rows ``File.parse`` matches; the GNU
+#: (``-c``) and BSD (``-f``) forms print the same ``user=... group=...``
+#: shape, so one regex parses both.
+_STAT_REGEX = (
+    r"user=(.*) group=(.*) mode=(.*) "
+    r"atime=(-?[0-9]*) mtime=(-?[0-9]*) ctime=(-?[0-9]*) "
+    r"size=([0-9]*) (.*)"
+)
+
+#: ``ls -ld`` output: permissions links user group size month day year/time
+#: path. The permissions may carry a trailing attribute marker (``.``
+#: SELinux, ``@`` extended attrs, ``+`` ACL); the date supports both
+#: "MMM DD" and "DD MMM" orders.
+_LS_REGEX = (
+    r"^([dlbcsp-][-rwxstST]{9}[.@+]?)\s+\d+\s+(\S+)\s+(\S+)\s+(\d+)"
+    r"\s+(\S+)\s+(\S+)\s+(\S+)\s+(.+)$"
+)
+
+#: ``ls`` month abbreviations (pyinfra's explicit map -- locale-independent,
+#: unlike ``strptime``'s ``%b``).
+_LS_MONTHS = {
+    "Jan": 1,
+    "Feb": 2,
+    "Mar": 3,
+    "Apr": 4,
+    "May": 5,
+    "Jun": 6,
+    "Jul": 7,
+    "Aug": 8,
+    "Sep": 9,
+    "Oct": 10,
+    "Nov": 11,
+    "Dec": 12,
+}
+
+#: GNU ``stat -c`` format printing the keyed row ``File.parse`` matches
+#: (pyinfra's ``LINUX_STAT_COMMAND`` format string).
+_LINUX_STAT_FORMAT = "user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N"
+
+#: BSD ``stat -f`` format printing the same keyed row (pyinfra's
+#: ``BSD_STAT_COMMAND`` format string).
+_BSD_STAT_FORMAT = (
+    "user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY"
+)
+
+
+def _unquote_stat_name(name: str) -> str:
+    """Strip the quoting ``stat %N`` (or ``ls -ld``) wraps a path in.
+
+    pyinfra's ``_unquote_stat_name``: ``'name'`` (GNU coreutils), ```name'``
+    (older GNU/RHEL 6), or ``"name"`` (uutils-coreutils).
+    """
+    for opener, closer in (("'", "'"), ("`", "'"), ('"', '"')):
+        if name.startswith(opener) and name.endswith(closer) and len(name) >= 2:
+            return name[len(opener) : -len(closer)]
+    return name
+
+
+def _try_int(value: str) -> int | str:
+    """pyinfra's ``try_int``: the int a string denotes, else the string itself."""
+    try:
+        return int(value)
+    except ValueError:
+        return value
+
+
+def _parse_mode(mode: str) -> int:
+    """Convert a nine-character rwx mode string to pyinfra's octal int (755)."""
+    out = 0
+    for i, char in enumerate(mode):
+        for c, m in _CHAR_TO_PERMISSION[i].items():
+            if char == c:
+                out |= m
+                break
+    return int(oct(out)[2:])
+
+
+def _parse_epoch(value: str) -> datetime | None:
+    """Parse epoch seconds into a *naive UTC* datetime (pyinfra's convention).
+
+    A non-numeric value (an empty or unsupported timestamp field) reads as
+    None rather than raising.
+    """
+    try:
+        seconds = int(value)
+    except ValueError:
+        return None
+    return datetime.fromtimestamp(seconds, UTC).replace(tzinfo=None)
+
+
+def _parse_ls_time(month: str, day: str, year_or_time: str) -> datetime | None:
+    """Parse ``ls``'s "MMM DD YYYY" / "MMM DD HH:MM" stamp (naive, as printed).
+
+    ``ls`` shows a HH:MM time for recently modified files and a year for
+    older ones; the time form assumes the current (UTC) year. An
+    unparseable stamp reads as None rather than raising.
+    """
+    month_num = _LS_MONTHS.get(month)
+    if month_num is None:
+        return None
+    try:
+        day_num = int(day)
+        if ":" in year_or_time:
+            hour, minute = map(int, year_or_time.split(":"))
+            return datetime(datetime.now(UTC).year, month_num, day_num, hour, minute)
+        return datetime(int(year_or_time), month_num, day_num)
+    except ValueError:
+        return None
+
+
+def _parse_ls_line(line: str) -> tuple[dict[str, Any], str] | None:
+    """Parse one ``ls -ld`` row into (metadata, path type), or None if unmatched.
+
+    ``ls`` provides no atime/ctime, so those read as None; the mode may
+    carry a trailing ``.``/``@``/``+`` attribute marker, which is stripped.
+    """
+    match = re.match(_LS_REGEX, line.strip())
+    if not match:
+        return None
+    permissions = match.group(1)
+    # Some locales print "DD MMM" instead of "MMM DD".
+    date_part1, date_part2 = match.group(5), match.group(6)
+    day, month = (
+        (date_part1, date_part2) if date_part1.isdigit() else (date_part2, date_part1)
+    )
+    data: dict[str, Any] = {
+        "user": match.group(2),
+        "group": match.group(3),
+        "mode": _parse_mode(permissions[1:10]),
+        "atime": None,  # ls doesn't provide atime
+        "mtime": _parse_ls_time(month, day, match.group(7)),
+        "ctime": None,  # ls doesn't provide ctime
+        "size": _try_int(match.group(4)),
+    }
+    path_type = _FLAG_TO_TYPE[permissions[0]]
+    # A symlink row names its target after " -> "; keep it (unquoted) so
+    # the link-accepting fact can report where the link points.
+    if path_type == "link" and " -> " in match.group(8):
+        _, target = match.group(8).split(" -> ", 1)
+        data["link_target"] = _unquote_stat_name(target)
+    return data, path_type
+
+
+class File:
+    """Metadata for a regular file, False for a non-file path, None if absent.
+
+    Mirrors pyinfra's ``files.File``: the path is guarded with
+    ``test -e``/``test -L`` (so a dangling symlink is still probed), then
+    described by GNU ``stat -c``, falling back to BSD ``stat -f`` and
+    finally ``ls -ld``. The parsed result is a dict, for example::
+
+        {"user": "pyinfra", "group": "pyinfra", "mode": 644, "size": 3928}
+
+    plus ``atime``/``mtime``/``ctime`` -- epoch timestamps parsed into
+    *naive UTC* ``datetime``s, pyinfra's convention (the ``ls -ld`` fallback
+    provides only an mtime, so its atime/ctime read as None). ``mode`` is
+    the octal-looking int pyinfra returns (644, 4755, ...), including the
+    setuid/setgid/sticky bits. A path that does not exist (no output) reads
+    as ``None``; one that exists but is not a regular file (a directory,
+    symlink, socket, ...) reads as ``False`` -- ``Directory`` and ``Link``
+    are the directory- and link-accepting siblings, and only ``Link``'s
+    dict carries the ``link_target`` key. Like pyinfra,
+    a leading ``~/`` stays unquoted so the remote shell expands it; the
+    rest of the path is quoted.
+    """
+
+    #: pyinfra's ``type`` field: only a regular file is accepted; every other
+    #: path type (directory, link, socket, ...) reads as False.
+    TYPE = "file"
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell printing the stat (or ls) description of ``path``, if it exists.
+
+        The ``test -e || test -L`` guard means a missing path produces no
+        output at all; ``test -L`` additionally lets a dangling symlink
+        through to ``ls -ld`` (both ``stat`` forms follow the link and
+        fail), which reports it as a non-file.
+        """
+        # A leading ~/ must stay unquoted so the shell expands it (pyinfra's
+        # tilde branch); everything after it -- or the whole path -- is quoted.
+        if path.startswith("~/"):
+            quoted = "~/" + shlex.quote(path[2:])
+        else:
+            quoted = shlex.quote(path)
+        return (
+            f"! (test -e {quoted} || test -L {quoted} ) || "
+            f"( stat -c '{_LINUX_STAT_FORMAT}' {quoted} 2> /dev/null || "
+            f"stat -f '{_BSD_STAT_FORMAT}' {quoted} || ls -ld {quoted} )"
+        )
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> dict[str, Any] | Literal[False] | None:
+        """Parse the stat (or ``ls -ld``) row into metadata, False or None.
+
+        The first line is tried against the keyed stat format, then the
+        ``ls -ld`` format; a path type other than ``TYPE`` reads as False,
+        and output that matches neither (or no output at all) reads as None.
+        A symlink row accepted by ``TYPE = "link"`` additionally carries the
+        unquoted ``link_target``.
+        """
+        line = next(iter(output), None)
+        if line is None:
+            return None
+        match = re.match(_STAT_REGEX, line)
+        if match:
+            mode = match.group(3)
+            data: dict[str, Any] = {
+                "user": match.group(1),
+                "group": match.group(2),
+                "mode": _parse_mode(mode[1:10]),
+                "atime": _parse_epoch(match.group(4)),
+                "mtime": _parse_epoch(match.group(5)),
+                "ctime": _parse_epoch(match.group(6)),
+                "size": _try_int(match.group(7)),
+            }
+            path_type = _FLAG_TO_TYPE[mode[0]]
+            if path_type != cls.TYPE:
+                return False
+            if path_type == "link":
+                # stat %N prints 'link' -> 'target'; keep the target,
+                # unquoted (pyinfra's link_target extraction).
+                _, target = match.group(8).split(" -> ", 1)
+                data["link_target"] = _unquote_stat_name(target)
+            return data
+        ls_result = _parse_ls_line(line)
+        if ls_result is not None:
+            data, path_type = ls_result
+            return data if path_type == cls.TYPE else False
+        return None
+
+    @classmethod
+    async def process(
+        cls, host: Host, path: str
+    ) -> dict[str, Any] | Literal[False] | None:
+        stats = getattr(host, "file_stats", None)
+        if stats is not None:
+            # SimulatedHost seam: metadata keyed by the caller-supplied path
+            # string (any ~/ prefix included, since the shell resolves it).
+            # Return a copy so callers never mutate simulated state; the
+            # False (non-file) and None (absent) answers pass through.
+            value = stats.get(path)
+            return dict(value) if isinstance(value, dict) else value
+        # Real transport: stat/ls over asyncssh. A missing path produces
+        # empty stdout (the guard short-circuits), which parses to None.
+        stdout = await host.run_shell(cls.command(path))
+        return cls.parse(stdout.splitlines())
+
+
+class Directory(File):
+    """Metadata for a directory, False for a non-directory path, None if absent.
+
+    Mirrors pyinfra's ``files.Directory`` -- its ``File`` subclass with
+    ``type = "directory"``: the same ``test -e``/``test -L`` guard and
+    stat/ls chain (``command`` and ``parse`` are inherited), but the type
+    flag must be ``d``, so a regular file, symlink, socket, ... reads as
+    ``False`` instead. The dict shape, *naive UTC* timestamps and
+    octal-looking ``mode`` int are exactly ``File``'s, and a leading ``~/``
+    likewise stays unquoted for the remote shell to expand.
+    """
+
+    #: pyinfra's ``type`` field: only a directory is accepted; every other
+    #: path type (file, link, socket, ...) reads as False.
+    TYPE = "directory"
+
+    @classmethod
+    async def process(
+        cls, host: Host, path: str
+    ) -> dict[str, Any] | Literal[False] | None:
+        stats = getattr(host, "directory_stats", None)
+        if stats is not None:
+            # SimulatedHost seam: the file_stats shape in a separate store,
+            # because a metadata dict carries no type flag -- file_stats
+            # alone cannot say whether its path is a directory. Keys are
+            # the caller-supplied path strings verbatim (any ~/ prefix
+            # included); a dict is a directory's metadata, False an
+            # existing non-directory, an absent key None. Return a copy so
+            # callers never mutate simulated state.
+            value = stats.get(path)
+            return dict(value) if isinstance(value, dict) else value
+        # Real transport: the inherited stat/ls chain over asyncssh, parsed
+        # against TYPE = "directory". A missing path produces empty stdout
+        # (the guard short-circuits), which parses to None.
+        stdout = await host.run_shell(cls.command(path))
+        return cls.parse(stdout.splitlines())
+
+
+class Link(File):
+    """Metadata for a symlink plus its target, False for non-link, None if absent.
+
+    Mirrors pyinfra's ``files.Link`` -- its ``File`` subclass with
+    ``type = "link"``: the same ``test -e``/``test -L`` guard and stat/ls
+    chain (``command`` and ``parse`` are inherited), but the type flag must
+    be ``l``, so a regular file, directory, socket, ... reads as ``False``
+    instead. The dict is ``File``'s shape plus a ``link_target`` key -- the
+    target path with the stat/ls quoting stripped, exactly as the link
+    records it (a relative target stays relative), for example::
+
+        {"user": "pyinfra", "group": "pyinfra", "link_target": "/path/to/link/target"}
+
+    The ``test -L`` guard lets a *dangling* symlink through to the
+    ``ls -ld`` fallback (both ``stat`` forms follow the link and fail), so
+    a broken link is still reported with its target. Where ``FileLink`` is
+    the cheap ``readlink`` probe ``files.link`` consumes, ``Link`` is the
+    richer stat-level read for auditing the link itself -- ownership, mode,
+    timestamps -- alongside where it points.
+    """
+
+    #: pyinfra's ``type`` field: only a symlink is accepted; every other
+    #: path type (file, directory, socket, ...) reads as False.
+    TYPE = "link"
+
+    @classmethod
+    async def process(
+        cls, host: Host, path: str
+    ) -> dict[str, Any] | Literal[False] | None:
+        stats = getattr(host, "link_stats", None)
+        if stats is not None:
+            # SimulatedHost seam: the file_stats shape (plus link_target) in
+            # a separate store, because a metadata dict carries no type flag
+            # -- file_stats alone cannot say whether its path is a symlink.
+            # Keys are the caller-supplied path strings verbatim (any ~/
+            # prefix included); a dict is a symlink's metadata, False an
+            # existing non-link, an absent key None. Return a copy so
+            # callers never mutate simulated state.
+            value = stats.get(path)
+            return dict(value) if isinstance(value, dict) else value
+        # Real transport: the inherited stat/ls chain over asyncssh, parsed
+        # against TYPE = "link". A missing path produces empty stdout (the
+        # guard short-circuits), which parses to None.
+        stdout = await host.run_shell(cls.command(path))
+        return cls.parse(stdout.splitlines())
 
 
 # --- Operations --------------------------------------------------------------
@@ -431,11 +801,14 @@ async def edit(
 
 
 __all__ = [
+    "Directory",
+    "File",
     "FileCommand",
     "FileContents",
     "FileExists",
     "FileLink",
     "GetCommand",
+    "Link",
     "LinkCommand",
     "LocalSha1",
     "PutCommand",

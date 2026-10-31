@@ -1,9 +1,18 @@
 # Module examples: files
 
-Scripts under `examples/modules/files/` — one per operation of the
+Scripts under `examples/modules/files/` — one per fact or operation of the
 [`files`](../../modules/files.md) module. See the
 [Examples overview](../../examples.md) for the shared "connects for real"
 warning and the error-reporting contract every script follows.
+
+The read-only fact-gathering examples (`files_file.py`, reading `File` for
+`/etc/hosts` over `gather_fact`, `files_directory.py`, reading `Directory`
+for `/etc` the same way, and `files_link.py`, reading `Link` for
+`/etc/localtime` — the timezone symlink, whose `link_target` names the
+zoneinfo file — the same way) live alongside the operation examples
+in `examples/modules/files/`. They are not rendered here — each reads a
+single fact, and the facts themselves are documented on the
+[`files` module page](../../modules/files.md).
 
 ## Uploading a stream with sha1 idempotence
 
