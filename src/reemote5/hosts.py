@@ -373,9 +373,13 @@ class CommandError(RuntimeError):
     ``format_log`` shows -- for an elevated command this is ``sudo -u <user>
     ...``, never the askpass string that carries the password), the exit status
     and the captured stderr, so a failed apply is reported instead of being
-    silently logged as applied. Fact gathering does not raise this: reads
-    tolerate a non-zero exit (e.g. ``readlink`` on an absent link).
+    silently logged as applied. Fact gathering tolerates other non-zero exits
+    (e.g. ``readlink`` on an absent link), but exit 127 -- the shell's
+    command-not-found status -- raises ``CommandNotFoundError`` on every path.
     """
+
+    #: Message prefix naming the failure; ``CommandNotFoundError`` overrides it.
+    _summary = "command failed"
 
     def __init__(
         self, host: str, command: str, exit_status: int | None, stderr: str
@@ -384,11 +388,61 @@ class CommandError(RuntimeError):
         self.command = command
         self.exit_status = exit_status
         self.stderr = stderr or ""
-        message = f"command failed on {host} (exit {exit_status}): {command}"
+        message = f"{self._summary} on {host} (exit {exit_status}): {command}"
         detail = self.stderr.strip()
         if detail:
             message = f"{message}\n{detail}"
         super().__init__(message)
+
+
+class CommandNotFoundError(CommandError):
+    """Raised when a command a fact or operation relies on is not installed.
+
+    A shell that cannot find the command to run exits with status 127 (e.g.
+    ``lsb_release`` on a minimal CentOS install). ``Host.run_shell`` raises
+    this for *any* exit 127 -- even with ``check`` off -- so a fact never
+    silently parses a missing command's empty output into its default value.
+    It subclasses ``CommandError``, so a caller catching that also catches
+    this, and carries the same host name, command text, exit status and
+    captured stderr (the shell's own ``command not found`` line). A fact that
+    deliberately tolerates an absent tool guards its command in the shell
+    itself (``Which``'s ``command -v ... || true``, ``Last``'s fallback
+    chain), which masks the 127 before it reaches the transport.
+
+    ``drivers.gather_fact`` merges the per-host errors of a concurrent
+    fan-out into one aggregate via ``aggregate`` -- the same treatment
+    ``run_prepare`` gives ``HostConnectionError`` -- so every host missing
+    the command is reported at once instead of only the first to fail.
+    """
+
+    _summary = "command not found"
+
+    @classmethod
+    def aggregate(
+        cls, errors: Iterable["CommandNotFoundError"]
+    ) -> "CommandNotFoundError":
+        """Merge several per-host errors into one naming every affected host.
+
+        A single error is returned unchanged. For several, the merged error
+        names every host in place of one (``command not found on web1, web2
+        ...``) and keeps the first error's command text, exit status and
+        stderr -- the same fact runs the same command everywhere, so the
+        detail is representative -- with the first error chained as
+        ``__cause__`` for diagnosis.
+        """
+        collected = list(errors)
+        if len(collected) == 1:
+            return collected[0]
+        first = collected[0]
+        merged = cls(
+            ", ".join(error.host for error in collected),
+            first.command,
+            first.exit_status,
+            first.stderr,
+        )
+        # Keep the first per-host error reachable for diagnosis.
+        merged.__cause__ = first
+        return merged
 
 
 class PrivilegeError(RuntimeError):
@@ -677,8 +731,9 @@ class Host:
 
         The single transport seam ``run_shell`` and ``run_shell_sudo`` build on.
         ``check`` is left off so the *caller* decides how to treat a non-zero
-        exit: fact gathering tolerates it, the apply path raises ``CommandError``.
-        The result carries ``exit_status``, ``stdout`` and ``stderr``.
+        exit: fact gathering tolerates it (except exit 127, a missing command),
+        the apply path raises ``CommandError``. The result carries
+        ``exit_status``, ``stdout`` and ``stderr``.
         """
         conn = await self.connect()
         return await conn.run(shell, check=False)
@@ -690,8 +745,19 @@ class Host:
         (e.g. ``readlink`` on an absent link exits non-zero with empty stdout).
         The apply path passes ``check=True``, so a command that exits non-zero
         raises ``CommandError`` instead of being silently treated as applied.
+        Exit 127 is the exception on both paths: it is the shell's
+        command-not-found status, so a command the caller relies on is not
+        installed and ``CommandNotFoundError`` (a ``CommandError`` subclass)
+        is raised regardless of ``check`` -- a missing tool must never parse
+        as an empty fact default. A command that deliberately tolerates
+        absence guards itself with ``|| true`` (``Which``, ``Last``), masking
+        the 127 in the shell before it reaches here.
         """
         result = await self._run_shell(shell)
+        if result.exit_status == 127:
+            raise CommandNotFoundError(
+                self.name, shell, result.exit_status, result.stderr
+            )
         if check and result.exit_status != 0:
             raise CommandError(self.name, shell, result.exit_status, result.stderr)
         return result.stdout or ""
@@ -956,6 +1022,7 @@ class Host:
 
 __all__ = [
     "CommandError",
+    "CommandNotFoundError",
     "Host",
     "HostConnectionError",
     "InventoryEntry",

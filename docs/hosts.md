@@ -199,8 +199,19 @@ An applied command that exits non-zero raises
 [`CommandError`][reemote5.hosts.CommandError] (fail-fast), carrying the host,
 the credential-free command text, the exit status and the captured stderr, so a
 permission error or a failed package transaction surfaces instead of being
-silently logged as applied. Fact gathering does not raise it: reads tolerate a
-non-zero exit (e.g. `readlink` on an absent link).
+silently logged as applied. Fact reads tolerate other non-zero exits (e.g.
+`readlink` on an absent link), but exit 127 — the shell's command-not-found
+status — raises [`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError]
+on *every* path, even with `check` off: a command a fact relies on that is not
+installed (e.g. `lsb_release` on a minimal CentOS install) must never parse as
+an empty fact default. It subclasses `CommandError`, so existing error
+handling catches it unchanged. A fact that deliberately tolerates an absent
+tool guards its command in the shell itself (`Which`'s `command -v … || true`,
+`Last`'s fallback chain), masking the 127 before it reaches the transport.
+Because [`gather_fact`][reemote5.drivers.gather_fact] reads hosts concurrently,
+it merges the per-host errors into one aggregate naming *every* host missing
+the command — the same treatment `run_prepare` gives `HostConnectionError` —
+so a whole fleet without `lsb_release` is reported in a single message.
 
 ### A rejected credential
 
@@ -230,6 +241,7 @@ every host whose credentials were rejected is reported at once.
     options:
       members:
         - CommandError
+        - CommandNotFoundError
         - Host
         - HostConnectionError
         - InventoryEntry

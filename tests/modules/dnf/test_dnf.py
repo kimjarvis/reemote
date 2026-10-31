@@ -40,7 +40,13 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import CommandError, Host, InventoryError, validate_inventory
+from reemote5.hosts import (
+    CommandError,
+    CommandNotFoundError,
+    Host,
+    InventoryError,
+    validate_inventory,
+)
 from reemote5.modules import dnf, files
 from reemote5.modules.dnf.dnf import (
     _KEY_IMPORT_PATH,
@@ -1108,6 +1114,57 @@ async def test_fact_gathering_tolerates_a_nonzero_exit():
 
     host = NonZeroHost(name="f")
     assert await host.run_shell("readlink /absent") == ""
+
+
+# --- fail-fast on a missing command (CommandNotFoundError, exit 127) ----------
+
+
+class MissingCommandHost(Host):
+    """Answers every shell with the exit status of a command not found."""
+
+    async def _run_shell(self, shell: str):
+        return SimpleNamespace(
+            exit_status=127,
+            stdout="",
+            stderr="-bash: lsb_release: command not found",
+        )
+
+
+async def test_run_shell_raises_command_not_found_even_without_check():
+    """Exit 127 is the shell's command-not-found status: the fact path
+    (``check`` off) must raise instead of parsing the empty stdout into a
+    fact default."""
+    host = MissingCommandHost(name="f")
+    with pytest.raises(CommandNotFoundError) as excinfo:
+        await host.run_shell("lsb_release -ca")
+    assert isinstance(excinfo.value, CommandError)
+    assert excinfo.value.exit_status == 127
+    assert excinfo.value.command == "lsb_release -ca"
+    assert "command not found on f" in str(excinfo.value)
+    assert "lsb_release: command not found" in str(excinfo.value)
+
+
+async def test_send_command_raises_command_not_found_for_a_missing_tool():
+    """The apply path reports a missing tool as the same ``CommandError``
+    subclass, so existing fail-fast handling catches it unchanged."""
+    host = MissingCommandHost(name="f")
+    with pytest.raises(CommandError) as excinfo:
+        await send_command(host, DnfInstallCommand(packages=("nginx",)))
+    assert isinstance(excinfo.value, CommandNotFoundError)
+    assert excinfo.value.command == "dnf install -y nginx"
+
+
+async def test_run_shell_tolerates_a_shell_guarded_missing_command():
+    """A fact that deliberately tolerates an absent tool guards its command
+    with ``|| true`` (``Which``, ``Last``), so the shell exits 0 and the read
+    stays tolerant -- the 127 never reaches the transport."""
+
+    class GuardedHost(Host):
+        async def _run_shell(self, shell: str):
+            return SimpleNamespace(exit_status=0, stdout="", stderr="")
+
+    host = GuardedHost(name="f")
+    assert await host.run_shell("command -v nosuchcommand || true") == ""
 
 
 # --- FactCache (4.4) ---------------------------------------------------------

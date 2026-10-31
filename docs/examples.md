@@ -3,7 +3,8 @@
 Runnable showcase scripts living in `examples/` — *usage* demonstrations
 through the public API only, never part of the library. The tree is split in
 three: `examples/modules/<namespace>/` holds one script per fact or operation
-of a library module (currently `dnf`, `files` and `server`), `examples/general/`
+of a library module (currently `dnf`, `files`, `hardware` and `server`),
+`examples/general/`
 holds general scenario scripts built on more than one module, and
 `examples/demonstrations/<topic>/` holds scenario scripts — `composition/`,
 `inventory/` and `privilege/` — that cross module boundaries. Each explanation
@@ -18,6 +19,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 | --- | --- |
 | `examples/modules/dnf/` | [Module examples: dnf](examples/modules/dnf.md) |
 | `examples/modules/files/` | [Module examples: files](examples/modules/files.md) |
+| `examples/modules/hardware/` | [Module examples: hardware](examples/modules/hardware.md) |
 | `examples/modules/server/` | [Module examples: server](examples/modules/server.md) |
 | `examples/general/` | [General examples](examples/general.md) |
 | `examples/demonstrations/inventory/` | [Inventory demonstrations](examples/demonstrations/inventory.md) |
@@ -50,7 +52,10 @@ CLI-free and only raises: `main` catches the typed errors a run can produce —
 [`HostConnectionError`][reemote5.hosts.HostConnectionError] for a host that
 cannot be reached, [`PrivilegeError`][reemote5.hosts.PrivilegeError] for a
 rejected elevation, [`CommandError`][reemote5.hosts.CommandError] for a command
-that exits non-zero, plus [`WaitTimeoutError`][reemote5.commands.WaitTimeoutError]
+that exits non-zero — including its
+[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError] subclass when the
+command is not installed on the host — plus
+[`WaitTimeoutError`][reemote5.commands.WaitTimeoutError]
 in the polling example and [`InventoryError`][reemote5.hosts.InventoryError] in
 the JSON-inventory one — prints the message on stderr and exits non-zero. The
 message already names the host and, for a failed command, the credential-free

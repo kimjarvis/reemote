@@ -64,6 +64,7 @@ is active and aborts the run with ``WaitTimeoutError`` when it is not.
 from collections.abc import Generator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -79,7 +80,7 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
+from reemote5.hosts import CommandError, CommandNotFoundError, Host
 from reemote5.modules import server
 from reemote5.modules.server.server import (
     Arch,
@@ -1732,6 +1733,17 @@ async def test_locales_gather_fact_across_hosts():
 # --- LsbRelease ----------------------------------------------------------------
 
 
+class MissingLsbReleaseHost(Host):
+    """Answers the shell with exit 127: lsb_release is not installed."""
+
+    async def _run_shell(self, shell: str):
+        return SimpleNamespace(
+            exit_status=127,
+            stdout="",
+            stderr="-bash: lsb_release: command not found",
+        )
+
+
 async def test_lsb_release_parses_pyintras_release_fixture():
     # pyinfra's own fact fixture (tests/facts/server.LsbRelease/release.json):
     # command "lsb_release -ca", the Ubuntu 18.04.3 listing below -> the
@@ -1770,8 +1782,66 @@ def test_lsb_release_parse_normalizes_keys_and_splits_once():
 
 
 async def test_lsb_release_is_empty_on_empty_output():
-    # lsb_release missing or failed: empty stdout parses to {}.
+    # A failed lsb_release read (an exit other than 127): empty stdout
+    # parses to {}.
     assert await LsbRelease.process(CannedShellHost("")) == {}
+
+
+async def test_lsb_release_raises_when_the_command_is_not_installed():
+    # lsb_release missing (e.g. a minimal CentOS install): the shell exits
+    # 127, which run_shell reports as CommandNotFoundError instead of the
+    # fact silently reading as {}.
+    host = MissingLsbReleaseHost(name="web1")
+    with pytest.raises(CommandNotFoundError) as excinfo:
+        await LsbRelease.process(host)
+    assert excinfo.value.command == "lsb_release -ca"
+    assert "command not found on web1" in str(excinfo.value)
+
+
+async def test_lsb_release_gather_fact_propagates_the_missing_command_error():
+    # gather_fact lets the typed error through, and it IS a CommandError --
+    # the guard the example scripts already carry catches it and prints the
+    # message without a traceback.
+    with pytest.raises(CommandError):
+        await gather_fact([MissingLsbReleaseHost(name="web1")], LsbRelease)
+
+
+async def test_lsb_release_gather_fact_names_every_host_missing_the_command():
+    # Both hosts lack lsb_release: the aggregate names them both (in input
+    # order), not just the first to fail, and keeps the first per-host error
+    # reachable as __cause__.
+    hosts = [MissingLsbReleaseHost(name="web1"), MissingLsbReleaseHost(name="web2")]
+    with pytest.raises(CommandNotFoundError) as excinfo:
+        await gather_fact(hosts, LsbRelease)
+    assert "command not found on web1, web2 (exit 127)" in str(excinfo.value)
+    assert excinfo.value.command == "lsb_release -ca"
+    assert isinstance(excinfo.value.__cause__, CommandNotFoundError)
+    assert excinfo.value.__cause__.host == "web1"
+
+
+async def test_lsb_release_gather_fact_single_missing_host_among_healthy_ones():
+    # One healthy host does not mask the other's missing command, and a lone
+    # error passes through unchanged (no aggregate wrapper, no partial map).
+    hosts = [
+        SimulatedHost(name="web1", lsb_release={"id": "Ubuntu"}),
+        MissingLsbReleaseHost(name="web2"),
+    ]
+    with pytest.raises(CommandNotFoundError) as excinfo:
+        await gather_fact(hosts, LsbRelease)
+    assert excinfo.value.host == "web2"
+    assert "command not found on web2 (exit 127)" in str(excinfo.value)
+
+
+async def test_lsb_release_gather_fact_other_exceptions_propagate_unchanged():
+    # A genuine error is not swallowed by the missing-command aggregation,
+    # even when another host is missing the command in the same fan-out.
+    class BrokenShellHost(Host):
+        async def _run_shell(self, shell: str):
+            raise ValueError("transport bug")
+
+    hosts = [MissingLsbReleaseHost(name="web1"), BrokenShellHost(name="web2")]
+    with pytest.raises(ValueError, match="transport bug"):
+        await gather_fact(hosts, LsbRelease)
 
 
 async def test_lsb_release_reads_the_simulated_seam():

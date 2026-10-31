@@ -116,16 +116,19 @@ and returns the installed locale names with lowercase `utf8` replaced by
 `UTF-8` (to match the names in `/etc/locale.gen`), mirroring pyinfra's
 `server.Locales`; lines are kept verbatim otherwise — the command's order
 is preserved, with no dedup or sorting — and empty output (the command
-failed or `locale` is missing) reads as `[]`, pyinfra's `default = list`.
+failed) reads as `[]`, pyinfra's `default = list`; a missing `locale`
+exits 127 and raises `CommandNotFoundError` instead.
 `LsbRelease` takes no arguments: it runs `lsb_release -ca` and returns the
 release information as a dict (e.g. `{"id": "Ubuntu", "description":
 "Ubuntu 18.04.3 LTS", "release": "18.04", "codename": "bionic"}`),
 mirroring pyinfra's `server.LsbRelease`. Keys are lower-cased and reduced
 to their last word (`Distributor ID` → `id`), values are stripped, and
 only the first colon splits — lines without one (the `No LSB modules are
-available.` hint, blank lines) are skipped. Empty output (`lsb_release`
-missing or failed) reads as `{}`; pyinfra's `requires_command` gating is
-deliberately dropped. `Mounts` takes no arguments: it reads the `Kernel`
+available.` hint, blank lines) are skipped. Empty output (a failed read)
+parses to `{}`; pyinfra's `requires_command` gating is deliberately
+dropped. A *missing* `lsb_release` exits 127, which `run_shell` reports as
+[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError] rather than
+an empty dict. `Mounts` takes no arguments: it reads the `Kernel`
 fact to pick its shell — FreeBSD lists `mount -p --libxo json`, OpenBSD
 `mount -v`, every other kernel cats `/proc/self/mountinfo` — and returns a
 dict of mount point → `{device, type, options}` dict, mirroring pyinfra's

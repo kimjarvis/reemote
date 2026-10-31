@@ -5,13 +5,18 @@ single source, so ``modules/dnf/dnf.py`` holds the dnf fact classes
 (``DnfPackages``, ``DnfRepositories``, ``DnfEnabledModules``,
 ``DnfDisabledModules``) beside the ``packages`` operation and the typed
 command descriptors it yields, ``modules/files/files.py`` holds
-``FileLink``/``FileExists`` beside the ``link``/``file`` operations, and
+``FileLink``/``FileExists`` beside the ``link``/``file`` operations,
+``modules/hardware/hardware.py`` holds the ``BlockDevices``, ``CpuInfo``,
+``Cpus``, ``DiskStats``, ``DmiInfo``, ``Ipv4Addrs``, ``Ipv6Addrs``,
+``LsBlk``, ``NetworkDevices`` and ``SmbiosInfo`` facts, and
 ``modules/server/server.py`` holds the systemd facts beside the ``service``
 and ``wait_service`` operations. The subpackages are re-exported here, so a
-deploy can keep writing ``from reemote5.modules import dnf, files, server``
-and read ``dnf.packages`` / ``files.link`` / ``server.service``.
+deploy can keep writing
+``from reemote5.modules import dnf, files, hardware, server`` and read
+``dnf.packages`` / ``files.link`` / ``hardware.BlockDevices`` /
+``server.service``.
 """
 
-from . import dnf, files, server
+from . import dnf, files, hardware, server
 
-__all__ = ["dnf", "files", "server"]
+__all__ = ["dnf", "files", "hardware", "server"]

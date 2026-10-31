@@ -89,8 +89,12 @@ hosts can fail at once. `run_prepare` collects the per-host
 inventory, and `run_apply` the per-host
 [`PrivilegeError`][reemote5.hosts.PrivilegeError] instances of a step, each
 merging them into a single aggregate naming every failed host instead of only
-the first to lose the race. Any other exception propagates unchanged, so a
-`CommandError` or a genuine bug still aborts the run.
+the first to lose the race. [`gather_fact`][reemote5.drivers.gather_fact] gives
+the same treatment to
+[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError]: every host
+missing the command the fact runs is named in one aggregate. Any other
+exception propagates unchanged, so a `CommandError` or a genuine bug still
+aborts the run.
 
 ## Reference
 

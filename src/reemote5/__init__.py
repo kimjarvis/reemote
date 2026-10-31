@@ -43,6 +43,7 @@ from .drivers import (
 )
 from .hosts import (
     CommandError,
+    CommandNotFoundError,
     Host,
     HostConnectionError,
     InventoryEntry,
@@ -50,7 +51,7 @@ from .hosts import (
     PrivilegeError,
     validate_inventory,
 )
-from .modules import dnf, files, server
+from .modules import dnf, files, hardware, server
 from .modules.dnf.dnf import (
     DnfAvailableGroups,
     DnfCleanCommand,
@@ -83,6 +84,18 @@ from .modules.files.files import (
     LocalSha1,
     PutCommand,
     RemoteFileSha1,
+)
+from .modules.hardware.hardware import (
+    BlockDevices,
+    CpuInfo,
+    Cpus,
+    DiskStats,
+    DmiInfo,
+    Ipv4Addrs,
+    Ipv6Addrs,
+    LsBlk,
+    NetworkDevices,
+    SmbiosInfo,
 )
 from .modules.server.server import (
     Arch,
@@ -124,10 +137,16 @@ __all__ = [
     "ApplyReport",
     "Arch",
     "AuthorizedKeys",
+    "BlockDevices",
     "Command",
     "CommandError",
+    "CommandNotFoundError",
+    "CpuInfo",
+    "Cpus",
     "Date",
     "DeterminismError",
+    "DiskStats",
+    "DmiInfo",
     "DnfAvailableGroups",
     "DnfCleanCommand",
     "DnfDisabledModules",
@@ -161,6 +180,8 @@ __all__ = [
     "Hostname",
     "InventoryEntry",
     "InventoryError",
+    "Ipv4Addrs",
+    "Ipv6Addrs",
     "Kernel",
     "KernelModules",
     "KernelVersion",
@@ -172,8 +193,10 @@ __all__ = [
     "LocalSha1",
     "Locales",
     "LogEntry",
+    "LsBlk",
     "LsbRelease",
     "Mounts",
+    "NetworkDevices",
     "OpContext",
     "OperationRequest",
     "Path",
@@ -185,6 +208,7 @@ __all__ = [
     "RemoteFileSha1",
     "RpmInstallCommand",
     "RpmPackage",
+    "SmbiosInfo",
     "StringCommand",
     "SystemctlCommand",
     "SystemdServiceEnabled",
@@ -205,6 +229,7 @@ __all__ = [
     "format_log",
     "format_plan",
     "gather_fact",
+    "hardware",
     "hello",
     "op",
     "run",

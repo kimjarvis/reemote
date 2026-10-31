@@ -21,8 +21,12 @@ two-phase execution model:
 ``lsb_release -ca`` and returns the release information as a dict with
 lower-cased, last-word keys (e.g. ``{"id": "Ubuntu", "description":
 "Ubuntu 18.04.3 LTS", "release": "18.04", "codename": "bionic"}``), so a
-deploy can branch on a distribution's id or release. A host without the
-``lsb_release`` command reads as ``{}``.
+deploy can branch on a distribution's id or release. A host where
+``lsb_release`` is not installed exits 127, which the library raises as
+``CommandNotFoundError`` (a ``CommandError`` subclass); ``gather_fact``
+aggregates the per-host errors, so the guard below reports every host
+missing the command in one stderr message -- no traceback -- and a
+non-zero exit.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
 ``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven
@@ -80,10 +84,11 @@ async def main() -> None:
         # returns the release info with normalized keys.
         releases = await gather_fact(hosts, LsbRelease)
     except (CommandError, HostConnectionError) as exc:
-        # The library reports an unreachable host or a failed fact command as a
-        # typed error whose message already names the host. Print that message
-        # -- no traceback -- and exit non-zero so the failure stays
-        # script-visible.
+        # The library reports an unreachable host, a failed fact command or a
+        # command that is not installed (CommandNotFoundError, a CommandError
+        # subclass) as a typed error whose message already names the host.
+        # Print that message -- no traceback -- and exit non-zero so the
+        # failure stays script-visible.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     finally:

@@ -16,11 +16,15 @@ a real asyncssh transport is missing:
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``services`` / ``enabled_services``
-  / ``arch`` / ``authorized_keys`` / ``date`` / ``os_groups`` / ``has_gui``
-  / ``home_directories`` / ``os_hostname`` / ``os_kernel`` / ``kernel_modules``
-  / ``os_kernel_version`` / ``login_records`` / ``linux_distribution``
-  / ``linux_gui`` / ``locales`` / ``lsb_release`` / ``mounts`` / ``os_path``
-  / ``processes`` / ``os_timezone`` / ``os_user`` / ``os_users``
+  / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus``
+  / ``date`` / ``disk_stats`` / ``dmi_info`` / ``os_groups`` / ``has_gui``
+  / ``home_directories`` / ``os_hostname`` / ``ipv4_addrs`` / ``ipv6_addrs``
+  / ``os_kernel``
+  / ``kernel_modules`` / ``os_kernel_version`` / ``login_records``
+  / ``linux_distribution``
+  / ``linux_gui`` / ``locales`` / ``lsb_release`` / ``lsblk_devices`` / ``mounts``
+  / ``network_devices`` / ``os_path``
+  / ``processes`` / ``smbios_info`` / ``os_timezone`` / ``os_user`` / ``os_users``
   / ``uptime_seconds`` / ``command_paths``:
   the state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
   ``RemoteFileSha1``, ``FileContents``, ``DnfRepoFile``, ``DnfRepositories``,
@@ -28,10 +32,13 @@ a real asyncssh transport is missing:
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``,
   ``SystemdServiceState``, ``SystemdServiceEnabled``, ``Arch``,
-  ``AuthorizedKeys``, ``Date``, ``Groups``, ``HasGui``, ``Home``,
-  ``Hostname``, ``Kernel``, ``KernelModules``, ``KernelVersion``, ``Last``,
+  ``AuthorizedKeys``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``,
+  ``DiskStats``, ``DmiInfo``, ``Groups``,
+  ``HasGui``, ``Home``, ``Hostname``, ``Ipv4Addrs``, ``Ipv6Addrs``, ``Kernel``,
+  ``KernelModules``, ``KernelVersion``, ``Last``,
   ``LinuxDistribution``, ``LinuxGui``, ``LinuxName``, ``Locales``,
-  ``LsbRelease``, ``Mounts``, ``Path``, ``Processes``, ``Timezone``,
+  ``LsbRelease``, ``LsBlk``, ``Mounts``, ``NetworkDevices``, ``Path``, ``Processes``,
+  ``SmbiosInfo``, ``Timezone``,
   ``Uptime``, ``User``, ``Users``, ``Which``) read as a
   stand-in for gathering over SSH.
 
@@ -138,11 +145,44 @@ class SimulatedHost(Host):
     # when the fact is given one; each value is the list of full key strings
     # the file lists (already stripped, no comments -- the parsed form).
     authorized_keys: dict[str, list[str]] = field(default_factory=dict)
+    # Mounted block devices (device -> {blocks, used, available,
+    # used_percent, mount}), backing ``BlockDevices``. Each value is the
+    # parsed form the fact returns -- all five entries raw strings, as
+    # ``df`` prints them. Defaults to {} -- a simulated machine with no
+    # devices listed, like pyinfra's ``default = dict`` for a failed read.
+    block_devices: dict[str, dict[str, str]] = field(default_factory=dict)
+    # CPU details (the parsed ``LANG=C lscpu`` rows), backing ``CpuInfo``:
+    # each key maps to its stripped string value, except a ``flag``-bearing
+    # key (e.g. ``Flags``) whose value is the list of whitespace-split tokens.
+    # Defaults to {} -- a simulated machine reporting no lscpu rows; the real
+    # transport reads None on a failed/empty read (pyinfra's ``invalid``
+    # fixture), but the seam stays a non-None dict so it never falls through
+    # to the shell.
+    cpu_info: dict[str, str | list[str]] = field(default_factory=dict)
+    # The number of online CPUs (the parsed ``getconf NPROCESSORS_ONLN``
+    # answer), backing ``Cpus``. Defaults to pyinfra's own fact fixture value
+    # (1) -- a real machine always answers ``getconf``, and a fixed default
+    # keeps simulated reads deterministic.
+    cpus: int = 1
     # The server's clock, backing ``Date``. Defaults to pyinfra's own fact
     # fixture timestamp (2019-01-01T00:00:00+00:00) -- a real machine always
     # answers ``date``, so the seam never falls through to the shell, and a
     # fixed default keeps simulated reads deterministic.
     date: datetime = datetime(2019, 1, 1, tzinfo=UTC)
+    # Per-device IO counters (device -> the int counter dict the fact
+    # returns), backing ``DiskStats``. Each value holds whichever counter
+    # groups the simulated kernel prints -- the eleven classic counters,
+    # plus the discard/flush groups on a modern kernel. Defaults to {} --
+    # a simulated machine with no /proc/diskstats rows, like the fact's
+    # {} fallback for a failed read.
+    disk_stats: dict[str, dict[str, int]] = field(default_factory=dict)
+    # DMI identity fields (the parsed /sys/class/dmi/id/ dump: sys_vendor,
+    # product_name, bios_version, chassis_type, ...), backing ``DmiInfo``.
+    # Each value is the raw string the sysfs file holds, with uevent/
+    # modalias and empty values already absent. Defaults to {} -- a
+    # simulated machine with no DMI identity (a container), like the
+    # fact's {} fallback for a failed read.
+    dmi_info: dict[str, str] = field(default_factory=dict)
     # Group names present on the system (the first ``/etc/group`` field of
     # each row, in file order), backing ``Groups``. Named distinctly from
     # ``Host.group`` (the inventory classifier) so the two are never confused.
@@ -162,6 +202,20 @@ class SimulatedHost(Host):
     # always answers ``uname -n``, and a fixed default keeps simulated
     # reads deterministic.
     os_hostname: str = "my-host.net"
+    # IPv4 addresses per network interface (the parsed `ip addr show` /
+    # `ifconfig -a` listing), backing ``Ipv4Addrs``: interface name -> the
+    # list of address strings the fact returns, primary first, with any
+    # interfaces that carry no IPv4 already absent. Defaults to {} -- a
+    # simulated machine with no interfaces listed, like pyinfra's
+    # ``default = dict`` for a failed read.
+    ipv4_addrs: dict[str, list[str]] = field(default_factory=dict)
+    # IPv6 addresses per network interface (the parsed `ip addr show` /
+    # `ifconfig -a` listing), backing ``Ipv6Addrs``: interface name -> the
+    # list of address strings the fact returns, primary first, with any
+    # interfaces that carry no IPv6 already absent. Defaults to {} -- a
+    # simulated machine with no interfaces listed, like pyinfra's
+    # ``default = dict`` for a failed read.
+    ipv6_addrs: dict[str, list[str]] = field(default_factory=dict)
     # The kernel name (``uname -s``), backing ``Kernel``. Named ``os_kernel``
     # with the os_ prefix (like ``os_hostname``) so it stays clear of any
     # inventory field. Defaults to ``Linux`` -- a real machine always answers
@@ -221,8 +275,16 @@ class SimulatedHost(Host):
     # ``LsbRelease``: the lower-cased key -> stripped value dict the fact
     # returns (``Distributor ID`` already reduced to ``id``). Defaults to
     # {} -- a simulated machine makes no LSB claim until a test sets one,
-    # like the fact's answer when ``lsb_release`` is missing or failed.
+    # like the fact's answer when the ``lsb_release`` read fails (a missing
+    # ``lsb_release`` raises ``CommandNotFoundError`` on the real transport).
     lsb_release: dict[str, str] = field(default_factory=dict)
+    # The block device tree (the parsed ``lsblk -J`` node list), backing
+    # ``LsBlk``: each node is the dict the fact returns -- name, type,
+    # size (int bytes), mountpoint (None when unmounted) -- with stacked
+    # devices nested under ``children``. Defaults to [] -- a simulated
+    # machine with no block devices listed, like the fact's [] fallback
+    # for a failed or undecodable read.
+    lsblk_devices: list[dict[str, Any]] = field(default_factory=list)
     # Mounted filesystems (mount point -> {device, type, options}), backing
     # ``Mounts``. Each value is the parsed form the fact returns, with the
     # options already combined and octal escapes decoded -- the seam holds
@@ -230,6 +292,13 @@ class SimulatedHost(Host):
     # to {} -- a simulated machine with no mounts listed, like pyinfra's
     # ``default = dict`` for a failed read.
     mounts: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Network devices (interface -> {state, ether?, mtu?, ipv4?, ipv6?}),
+    # backing ``NetworkDevices``. Each value is the parsed form the fact
+    # returns -- an ipv4/ipv6 block holds the primary address plus its
+    # mask/broadcast details and any ``additional_ips`` aliases. Defaults
+    # to {} -- a simulated machine with no interfaces listed, like pyinfra's
+    # ``default = dict`` for a failed read.
+    network_devices: dict[str, dict[str, Any]] = field(default_factory=dict)
     # The login user's PATH environment variable (the raw colon-separated
     # ``echo $PATH`` string), backing ``Path``. Named ``os_path`` with the
     # os_ prefix (like ``os_kernel``) so it stays clear of any inventory
@@ -244,6 +313,13 @@ class SimulatedHost(Host):
     # simulated machine with no processes listed, like pyinfra's
     # ``default = dict`` for a failed ps read.
     processes: dict[int, dict[str, Any]] = field(default_factory=dict)
+    # Decoded SMBIOS tables (section title -> the field dict the fact
+    # returns), backing ``SmbiosInfo``. Each field value is a raw string,
+    # except a multi-item field (e.g. ``Characteristics``) whose value is
+    # the list of item strings. Defaults to {} -- a simulated machine
+    # whose dmidecode read fails (no binary, no root or passwordless
+    # sudo), like the fact's {} fallback for a failed read.
+    smbios_info: dict[str, dict[str, str | list[str]]] = field(default_factory=dict)
     # The system timezone (the ``readlink -f /etc/localtime | sed`` answer),
     # backing ``Timezone``. Named ``os_timezone`` with the os_ prefix (like
     # ``os_kernel``) so it stays clear of any inventory field. Defaults to

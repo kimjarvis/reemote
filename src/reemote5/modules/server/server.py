@@ -999,8 +999,9 @@ class Locales:
 
         ["C.UTF-8", "en_US.UTF-8"]
 
-    Empty output (the command failed or ``locale`` is missing) reads as
-    ``[]``, pyinfra's ``default = list``.
+    Empty output (the command failed) reads as ``[]``, pyinfra's
+    ``default = list``; a *missing* ``locale`` exits 127, which
+    ``run_shell`` reports as ``CommandNotFoundError`` instead.
     """
 
     #: Shell used to gather the installed locales over SSH.
@@ -1044,10 +1045,10 @@ class LsbRelease:
 
     Lines without a colon -- the ``No LSB modules are available.`` hint,
     blank lines, stray output -- are skipped, and only the first colon
-    splits (a value may contain colons). Empty output (``lsb_release`` is
-    missing or failed) reads as ``{}``; pyinfra's ``requires_command``
-    gating is deliberately dropped -- the shell simply runs and a failed
-    read parses to the empty dict.
+    splits (a value may contain colons). Empty output (a failed read) parses
+    to ``{}``; pyinfra's ``requires_command`` gating is deliberately dropped.
+    A *missing* ``lsb_release`` exits 127, which ``run_shell`` reports as
+    ``CommandNotFoundError`` rather than an empty dict.
     """
 
     #: Shell used to gather the release information over SSH.

@@ -33,7 +33,13 @@ from typing import Any
 
 from .commands import Command, TransferCommand, WaitCommand
 from .core import FactCache, HostRuntime, OpContext, OperationRequest
-from .hosts import Host, HostConnectionError, PrivilegeError, validate_inventory
+from .hosts import (
+    CommandNotFoundError,
+    Host,
+    HostConnectionError,
+    PrivilegeError,
+    validate_inventory,
+)
 
 
 class DeterminismError(RuntimeError):
@@ -115,12 +121,29 @@ async def gather_fact(
     classmethod (e.g. ``DnfRepositories``); ``args``/``kwargs`` are forwarded to
     it verbatim, exactly as ``FactCache.get`` does. A coroutine, because each
     fact's ``process`` gathers its value asynchronously.
+
+    Because the hosts are read concurrently, several may lack the command the
+    fact runs at once. Per-host ``CommandNotFoundError`` instances (exit 127)
+    are therefore collected (via ``return_exceptions=True``) and merged into
+    a single aggregate naming every host missing the command -- the same
+    treatment ``run_prepare`` gives ``HostConnectionError`` -- rather than
+    reporting only the first to fail. Any other exception is a genuine error
+    and propagates unchanged.
     """
     host_list = list(hosts)
-    values = await asyncio.gather(
-        *(fact_cls.process(host, *args, **kwargs) for host in host_list)
+    results = await asyncio.gather(
+        *(fact_cls.process(host, *args, **kwargs) for host in host_list),
+        return_exceptions=True,
     )
-    return {host.name: value for host, value in zip(host_list, values)}
+    missing: list[CommandNotFoundError] = []
+    for result in results:
+        if isinstance(result, CommandNotFoundError):
+            missing.append(result)
+        elif isinstance(result, BaseException):
+            raise result
+    if missing:
+        raise CommandNotFoundError.aggregate(missing)
+    return {host.name: value for host, value in zip(host_list, results)}
 
 
 def command_shell(

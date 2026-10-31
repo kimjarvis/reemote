@@ -1,0 +1,1 @@
+"""Tests for the hardware module: the ``BlockDevices`` fact."""
