@@ -251,6 +251,13 @@ one — not a list, an entry that is not a dictionary, or a missing required key
 — raises [`InventoryError`][reemote5.hosts.InventoryError] instead of failing
 later over SSH.
 
+The `connection` mapping may also carry a `connector` key selecting the
+transport: the default `"ssh"` builds the asyncssh-backed `Host` shown here,
+while `"docker"` builds a
+[`DockerHost`][reemote5.connectors.docker.DockerHost] that runs the very same
+deploy inside a local Docker/Podman container (see
+[the docker connector](connectors/docker.md)).
+
 `SimulatedHost` is part of the *test framework*, not of the inventory or the
 library API: it lives in `tests/simulated_host.py`. It subclasses `Host` and
 adds the in-memory state facts read — `packages` and `links` — plus an

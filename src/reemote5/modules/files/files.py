@@ -15,9 +15,10 @@ fact they are phase-unaware: each ``process`` coroutine just gathers the raw
 value.
 
 Operation side (design doc section 6): ``files.link``, ``files.file``,
-``files.put``, ``files.get`` and ``files.edit`` plus the typed command
-descriptors they yield
-(``LinkCommand``/``FileCommand``/``PutCommand``/``GetCommand``). Operations
+``files.put``, ``files.get``, ``files.edit`` and ``files.move`` plus the typed
+command descriptors they yield
+(``LinkCommand``/``FileCommand``/``PutCommand``/``GetCommand``/
+``MoveCommand``/``RemoveTreeCommand``). Operations
 are async generators that receive an ``OpContext``, await facts, set
 ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never
 touch the host directly. ``PutCommand`` and ``GetCommand`` are the *non-shell*
@@ -30,12 +31,14 @@ destination.
 import asyncio
 import hashlib
 import io
+import posixpath
 import re
 import shlex
 import stat
 from collections.abc import AsyncGenerator, Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import PurePosixPath
 from typing import IO, Any, Literal
 
 from ...commands import Command, TransferCommand
@@ -676,8 +679,8 @@ async def put(ctx: OpContext, src: IO[Any], dest: str) -> AsyncGenerator[Command
     The transfer is unprivileged: it rides the connection's scp channel as
     the login user, so the ``sudo``/``su`` escalation flags do not apply to
     it and ``dest`` must be writable by that user (put into a writable path
-    first and move it with an elevated shell operation when it must end up
-    root-owned).
+    first and move it with ``files.move`` flagged ``sudo=True`` when it must
+    end up root-owned).
     """
     local_sha1 = await ctx.facts.get(LocalSha1, src)
     remote_sha1 = await ctx.facts.get(RemoteFileSha1, dest)
@@ -782,8 +785,8 @@ async def edit(
     The write rides ``files.put``'s unprivileged scp transfer, so ``sudo``/``su``
     do not apply to it and ``path`` must be writable by the login user. A
     root-owned target (``/etc/hosts``, a file under ``/etc``) must instead be
-    transformed into a writable path and moved into place with an elevated
-    shell operation, since a transfer cannot be escalated.
+    transformed into a writable path and moved into place with ``files.move``
+    flagged ``sudo=True``, since a transfer cannot be escalated.
     """
     current = await ctx.facts.get(FileContents, path)
     new = transform(current)
@@ -800,6 +803,98 @@ async def edit(
         yield PutCommand(src=io.StringIO(new), dest=path)
 
 
+@dataclass(frozen=True)
+class MoveCommand(Command):
+    """Move a remote path into a remote directory (``mv src dest``)."""
+
+    src: str
+    dest: str
+
+    def shell(self) -> str:
+        return f"mv {shlex.quote(self.src)} {shlex.quote(self.dest)}"
+
+
+@dataclass(frozen=True)
+class RemoveTreeCommand(Command):
+    """Recursively remove a remote path (``rm -rf src``).
+
+    The overwrite branch of ``files.move``: unlike ``FileCommand``'s
+    ``rm -f`` (a regular-file probe), the move target may be a directory,
+    so the removal must be recursive.
+    """
+
+    src: str
+
+    def shell(self) -> str:
+        return f"rm -rf {shlex.quote(self.src)}"
+
+
+async def move(
+    ctx: OpContext,
+    src: str,
+    dest: str,
+    overwrite: bool = False,
+    **kwargs,
+) -> AsyncGenerator[Command]:
+    """Move a remote file/directory/link into a remote directory
+    (pyinfra ``files.move`` parity).
+
+    + src: the remote path to move.
+    + dest: the remote *directory* to move ``src`` into; the moved path
+      becomes ``dest/basename(src)``.
+    + overwrite: when the destination path already exists, remove it
+      first (``rm -rf``) instead of raising.
+
+    Stateless like pyinfra: there is no no-op branch -- a valid move
+    always yields a ``MoveCommand`` (preceded by a ``RemoveTreeCommand``
+    when ``overwrite`` clears an existing target), so ``ctx.changed`` is
+    always True. Repeating the same move fails at apply when ``mv`` exits
+    non-zero on the now-absent source (``CommandError``, fail-fast).
+
+    Reads ``File(src)`` (a directory or symlink reads False, which pyinfra
+    accepts -- only absence is rejected), ``Directory(dest)`` and
+    ``File(dest/basename(src))``. An absent ``src``, a ``dest`` that is not
+    a directory or does not exist, and an existing target without
+    ``overwrite`` all raise ``ValueError``. pyinfra's phase-aware handling
+    of the two absence cases (a soft log while planning, an error only
+    while executing) is deliberately dropped because reemote5 operations
+    are phase-unaware: they raise in *both* phases. A consequence is that
+    a "create a file then move it" flow cannot share one deploy -- the
+    prepare phase would raise on the not-yet-created source -- so it spans
+    two runs (see the ``files.edit`` + ``files.move`` ``/etc/hosts``
+    recipe example).
+
+    Both commands are shell text, so flagging the request ``sudo=True``
+    elevates the whole move -- the vehicle for installing a login-user
+    spool file into a root-owned directory such as ``/etc``. ``**kwargs``
+    absorbs pyinfra's global arguments (``op()`` already strips
+    ``name``/``sudo``/``su``).
+    """
+    if await ctx.facts.get(File, src) is None:
+        raise ValueError(f"src {src} does not exist")
+
+    dest_info = await ctx.facts.get(Directory, dest)
+    if dest_info is False:
+        raise ValueError(f"dest {dest} is not a directory")
+    if dest_info is None:
+        raise ValueError(f"dest directory {dest} does not exist")
+
+    full_dest = posixpath.join(dest, PurePosixPath(src).name)
+    reasons: list[str] = []
+    if await ctx.facts.get(File, full_dest) is not None:
+        if not overwrite:
+            raise ValueError(
+                f"dest {full_dest} already exists and `overwrite` is unset"
+            )
+        reasons.append(f"{full_dest} present, will remove first")
+        yield RemoveTreeCommand(src=full_dest)
+
+    reasons.append(f"will move {src} into {dest}")
+    ctx.changed = True
+    ctx.reason = "; ".join(reasons)
+    yield MoveCommand(src=src, dest=dest)
+
+
 __all__ = [
     "Directory",
     "File",
@@ -811,12 +906,15 @@ __all__ = [
     "Link",
     "LinkCommand",
     "LocalSha1",
+    "MoveCommand",
     "PutCommand",
     "RemoteFileSha1",
+    "RemoveTreeCommand",
     "edit",
     "file",
     "get",
     "link",
+    "move",
     "put",
     "read_source_bytes",
     "write_dest_bytes",

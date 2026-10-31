@@ -114,6 +114,20 @@ forbidden key cannot be smuggled through it either. The forbidden set is defined
 by `_FORBIDDEN_OPTIONS` in [`reemote5.hosts`][reemote5.hosts] and is checked by
 `_connect_options` before any connection is attempted.
 
+## Connectors
+
+The `connection` mapping may also select an alternative transport with a
+`connector` key. The default `"ssh"` builds a plain
+[`Host`][reemote5.hosts.Host]; `"docker"` builds a
+[`DockerHost`][reemote5.connectors.docker.DockerHost], which drives a local
+Docker/Podman container through the very same seams (shell, transfers,
+close) — see [the docker connector](connectors/docker.md) for its connection
+options and container lifecycle. Any other connector value raises
+[`InventoryError`][reemote5.hosts.InventoryError]. The dispatch applies only
+to the default `Host.from_inventory` factory; a subclass factory (such as
+the test framework's `SimulatedHost.from_inventory`) always builds its own
+class.
+
 ## Groups and tags
 
 An entry may carry two optional, static classifiers that a deploy script reads

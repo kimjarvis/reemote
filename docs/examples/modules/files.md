@@ -62,8 +62,69 @@ fresh per-step fact cache. The transform must be a module-level function (a
 lambda built inside the deploy generator would diverge across phases and raise
 `DeterminismError`), and because the write is an unprivileged transfer the
 target is a path under the login user's home, not a root-owned file like
-`/etc/hosts`.
+`/etc/hosts` — for that, see the spool-and-install recipe below.
 
 ::: files_edit
+    options:
+      members: []
+
+## Managing a marked block (pyinfra files.block parity)
+
+reemote5's answer to pyinfra's `files.block`: no bespoke block editor, just a
+transform. The example's `block_transform` factory builds a pure, idempotent
+`files.edit` transform from pyinfra's option set — `content` (a string or a
+list of lines) surrounded by the `marker` lines (`# BEGIN/END PYINFRA BLOCK`
+by default, kept verbatim so existing pyinfra-managed blocks are recognized),
+`line`/`before`/`after` regex positioning with `escape_regex_characters`, and
+`present=False` to remove the marked region. An existing block is replaced in
+place or returned byte-identical (the fixpoint that makes the second edit a
+no-op); the factory must be called once outside the deploy generator, or the
+fresh closure per phase would raise `DeterminismError`. pyinfra's `backup`
+(a non-deterministic timestamped `cp`), `preserve_meta` (moot under an scp
+overwrite) and the deprecated `try_prevent_shell_expansion` are deliberately
+dropped; removal from an absent file passes `None` through so no empty file
+is created. The script runs the full lifecycle — ensure twice, then remove
+twice — each run as a `--dry` plan followed by the real apply log, against a
+login-user-writable path (a root-owned target needs the spool-and-install
+recipe below).
+
+::: files_block
+    options:
+      members: []
+
+## Moving a remote file into a remote directory
+
+`files.move` (pyinfra parity): `src` is a remote path, `dest` the remote
+*directory* to move it into, and `overwrite=True` clears an existing target
+with `rm -rf` before the `mv`. The operation is stateless — a valid move
+always plans a command — and raises `ValueError` on an absent source or
+absent/non-directory destination in *both* phases, so a "create then move"
+flow cannot share one deploy: the example stages the payload with
+`files.put` into `/tmp` in run 1, then moves it into the login user's home
+in run 2, each run shown as a `--dry` plan followed by the real apply log.
+Nothing is elevated here; a root-owned destination would carry `sudo=True`.
+
+::: files_move
+    options:
+      members: []
+
+## Managing /etc/hosts with files.edit + files.move
+
+reemote5's answer to pyinfra's bespoke `server.etc_hosts`: no per-format
+editor, just the generic primitives composed. A `gather_fact` snapshot reads
+each host's real `/etc/hosts`; the pure `ensure_db_host` transform computes
+the desired content on the control machine (the line-keyed-by-IP edit
+pyinfra performs), and hosts already in the desired state are skipped — the
+script-level idempotence pyinfra gets from its `EtcHosts` fact. Run 1 spools
+the content to `/tmp/hosts` with `files.edit` (a per-host transform built
+once by a closure factory over the frozen snapshot, determinism-safe across
+phases); run 2 installs it with `files.move` flagged `sudo=True` —
+`sudo rm -rf /etc/hosts` then `sudo mv /tmp/hosts /etc`. Two runs because
+`files.edit`'s write is an unprivileged transfer that cannot touch
+root-owned `/etc/hosts`, and `files.move` validates its source in the
+prepare phase, which a single deploy's not-yet-created spool file would
+fail.
+
+::: files_edit_etc_hosts
     options:
       members: []

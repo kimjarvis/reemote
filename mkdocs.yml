@@ -41,6 +41,7 @@ plugins:
             - examples/modules/server
             - examples/general
             - examples/demonstrations/composition
+            - examples/demonstrations/connectors
             - examples/demonstrations/inventory
             - examples/demonstrations/privilege
           options:
@@ -70,6 +71,7 @@ nav:
       - General: examples/general.md
       - Demonstrations:
           - Composition: examples/demonstrations/composition.md
+          - Connectors: examples/demonstrations/connectors.md
           - Inventory: examples/demonstrations/inventory.md
           - Privilege: examples/demonstrations/privilege.md
   - API Reference:
@@ -77,6 +79,8 @@ nav:
       - Core: core.md
       - Commands: commands.md
       - Hosts: hosts.md
+      - Connectors:
+          - docker: connectors/docker.md
       - Modules:
           - dnf: modules/dnf.md
           - files: modules/files.md

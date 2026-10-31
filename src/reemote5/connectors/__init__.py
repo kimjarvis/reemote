@@ -1,0 +1,18 @@
+"""Connectors: alternative transports for reaching a target host.
+
+A plain ``Host`` executes over asyncssh (see ``reemote5.hosts``); a connector
+swaps that transport while keeping every seam the drivers, facts and
+operations already speak. ``Host.from_inventory`` dispatches on the
+inventory's ``connection.connector`` key (default ``"ssh"``), so a deploy
+script and its operations are written once and run against either kind of
+target unchanged.
+
+The ``docker`` connector targets local Docker/Podman containers: it shells
+out to the ``docker`` (or ``podman``) CLI on the control machine, mirroring
+pyinfra's ``@docker`` connector. Further connectors (e.g. containers on a
+remote SSH host) can live beside it.
+"""
+
+from .docker import DockerHost
+
+__all__ = ["DockerHost"]

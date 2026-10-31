@@ -40,6 +40,12 @@ framework's ``SimulatedHost`` overrides the ``execute_command``/``packages``/
 real machine --
 holding the state facts read and the mutations commands apply -- belong to the
 *test framework* and live in ``tests/``, never in this package.
+
+An entry may also select an alternative transport with
+``connection.connector``: the default ``"ssh"`` builds a plain ``Host``,
+while ``"docker"`` builds a ``DockerHost`` (``reemote5.connectors.docker``)
+that drives a local Docker/Podman container through the very same seams.
+Any other connector value is rejected with ``InventoryError``.
 """
 
 import asyncio
@@ -325,12 +331,15 @@ class InventoryError(ValueError):
 
 
 class HostConnectionError(RuntimeError):
-    """Raised when an SSH connection to one or more hosts cannot be established.
+    """Raised when a connection to one or more hosts cannot be established.
 
     ``Host.connect`` wraps the underlying transport failure -- an ``OSError``
     such as a reset or timeout, or an ``asyncssh.Error`` such as a host-key or
     authentication rejection -- in this single, library-specific exception, so
-    callers never have to catch asyncssh internals. The message stays generic:
+    callers never have to catch asyncssh internals. ``DockerHost.connect``
+    reuses it for container targets (a missing CLI binary, a failed
+    ``run``/``start``), labelling the message with ``transport="docker"``
+    instead of the default ``"SSH"``. The message stays generic:
     it names the unreachable host(s) and nothing else, while the original
     exception is preserved as ``__cause__`` (and per host in ``failures``) for
     diagnosis. ``drivers.run_prepare`` merges the per-host failures from a
@@ -340,12 +349,18 @@ class HostConnectionError(RuntimeError):
     ``failures`` is a tuple of ``(host_name, address, cause)`` triples.
     """
 
-    def __init__(self, failures: Iterable[tuple[str, str, BaseException]]) -> None:
+    def __init__(
+        self,
+        failures: Iterable[tuple[str, str, BaseException]],
+        *,
+        transport: str = "SSH",
+    ) -> None:
         self.failures: tuple[tuple[str, str, BaseException], ...] = tuple(failures)
+        self.transport = transport
         hosts = ", ".join(f"{name} ({address})" for name, address, _ in self.failures)
         label = "host" if len(self.failures) == 1 else "hosts"
         super().__init__(
-            f"SSH connectivity error on {len(self.failures)} {label}: {hosts}"
+            f"{transport} connectivity error on {len(self.failures)} {label}: {hosts}"
         )
 
     @property
@@ -358,8 +373,12 @@ class HostConnectionError(RuntimeError):
         cls, errors: Iterable["HostConnectionError"]
     ) -> "HostConnectionError":
         """Merge several per-host errors into one naming every failed host."""
-        failures = [failure for error in errors for failure in error.failures]
-        merged = cls(failures)
+        collected = list(errors)
+        failures = [failure for error in collected for failure in error.failures]
+        merged = cls(
+            failures,
+            transport=collected[0].transport if collected else "SSH",
+        )
         # Keep the first underlying transport error reachable for diagnosis.
         if failures:
             merged.__cause__ = failures[0][2]
@@ -615,9 +634,31 @@ class Host:
         it must carry at least ``host`` and ``connection``; ``privilege``,
         ``group`` and ``tags`` are optional and every other key lands in
         ``extra``. Raises ``InventoryError`` on invalid input.
+
+        The ``connection.connector`` key selects the transport: the default
+        ``"ssh"`` builds this class, while ``"docker"`` builds a
+        ``DockerHost`` (its connection mapping is validated by
+        ``validate_docker_connection``). Any other value raises
+        ``InventoryError``. The dispatch applies only to the plain ``Host``
+        factory -- a subclass factory (e.g. the test framework's
+        ``SimulatedHost.from_inventory``) always builds its own class.
         """
         validated = _validate_entry(entry)
-        return cls(
+        host_cls: type[Host] = cls
+        if cls is Host:
+            connector = validated.connection.get("connector", "ssh")
+            if connector == "docker":
+                # Imported lazily: connectors.docker imports this module, and
+                # an SSH-only run never needs the docker connector at all.
+                from .connectors.docker import DockerHost, validate_docker_connection
+
+                validate_docker_connection(validated.connection)
+                host_cls = DockerHost
+            elif connector != "ssh":
+                raise InventoryError(
+                    f"unknown connector {connector!r}: expected 'ssh' or 'docker'"
+                )
+        return host_cls(
             name=validated.host,
             connection=dict(validated.connection),
             privilege=dict(validated.privilege),

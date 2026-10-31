@@ -49,8 +49,10 @@ state when an operation is changed, and the next operation's fact reads see
 the mutation.
 """
 
+import posixpath
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import PurePosixPath
 from typing import Any
 
 from reemote5.commands import Command, StringCommand, WaitTimeoutError
@@ -71,7 +73,9 @@ from reemote5.modules.files.files import (
     FileCommand,
     GetCommand,
     LinkCommand,
+    MoveCommand,
     PutCommand,
+    RemoveTreeCommand,
     read_source_bytes,
     write_dest_bytes,
 )
@@ -202,8 +206,9 @@ class SimulatedHost(Host):
     # remote path is only known after expansion (like ``authorized_keys``,
     # this cannot ride the literal-path ``remote_files`` store -- which also
     # holds content bytes, not metadata). An absent key reads as None, like
-    # a missing path. A read-only seam: no ``execute_command`` mutator
-    # maintains it, so a test sets it directly.
+    # a missing path. A test seeds it directly; the ``files.move`` seam
+    # (``move_path``/``remove_tree``) relocates or drops a row so the ``File``
+    # fact stays consistent across a simulated move.
     file_stats: dict[str, dict[str, Any] | bool] = field(default_factory=dict)
     # Group names present on the system (the first ``/etc/group`` field of
     # each row, in file order), backing ``Groups``. Named distinctly from
@@ -438,6 +443,10 @@ class SimulatedHost(Host):
                 self.put_file(src, dest)
             case GetCommand(src=src, dest=dest):
                 self.get_file(src, dest)
+            case MoveCommand(src=src, dest=dest):
+                self.move_path(src, dest)
+            case RemoveTreeCommand(src=src):
+                self.remove_tree(src)
             case StringCommand():
                 pass  # no simulated effect for raw shell strings
             case SystemctlCommand(action="daemon-reload"):
@@ -587,6 +596,39 @@ class SimulatedHost(Host):
         data = self.remote_files.get(src)
         if data is not None:
             write_dest_bytes(dest, data)
+
+    def move_path(self, src: str, dest: str) -> None:
+        """Record a simulated ``mv``: relocate ``src`` into the directory ``dest``.
+
+        The moved path is ``dest/basename(src)``, exactly as the operation
+        computes it. The content bytes move within ``remote_files`` (so
+        ``FileContents`` and ``RemoteFileSha1`` read them at the new path),
+        any ``existing_files`` membership moves with them, and a seeded
+        ``file_stats`` row relocates too, so the ``File`` fact answers
+        consistently after the move. An absent source moves nothing -- the
+        real ``mv`` would exit non-zero and fail the apply step.
+        """
+        full_dest = posixpath.join(dest, PurePosixPath(src).name)
+        data = self.remote_files.pop(src, None)
+        if data is not None:
+            self.remote_files[full_dest] = data
+        if src in self.existing_files:
+            self.existing_files.discard(src)
+            self.existing_files.add(full_dest)
+        stats = self.file_stats.pop(src, None)
+        if stats is not None:
+            self.file_stats[full_dest] = stats
+
+    def remove_tree(self, src: str) -> None:
+        """Record a simulated ``rm -rf``: drop the path from every file store.
+
+        The overwrite branch of ``files.move`` removes the target before the
+        move lands, so the content bytes (``remote_files``), the existence
+        marker (``existing_files``) and any seeded ``file_stats`` row all go.
+        """
+        self.remote_files.pop(src, None)
+        self.existing_files.discard(src)
+        self.file_stats.pop(src, None)
 
     def check_wait(self, cmd: WaitForFactCommand) -> None:
         """Evaluate a simulated wait once, without polling or sleeping.

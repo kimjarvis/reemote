@@ -7,7 +7,8 @@ of a library module (currently `dnf`, `files`, `hardware` and `server`),
 `examples/general/`
 holds general scenario scripts built on more than one module, and
 `examples/demonstrations/<topic>/` holds scenario scripts — `composition/`,
-`inventory/` and `privilege/` — that cross module boundaries. Each explanation
+`connectors/`, `inventory/` and `privilege/` — that cross module boundaries.
+Each explanation
 on the pages below is the example module's **own docstring**, rendered with
 mkdocstrings, so the script stays the single source of truth: update the
 docstring and the page follows.
@@ -25,6 +26,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 | `examples/demonstrations/inventory/` | [Inventory demonstrations](examples/demonstrations/inventory.md) |
 | `examples/demonstrations/privilege/` | [Privilege demonstrations](examples/demonstrations/privilege.md) |
 | `examples/demonstrations/composition/` | [Composing deploys](examples/demonstrations/composition.md) |
+| `examples/demonstrations/connectors/` | [Connector demonstrations](examples/demonstrations/connectors.md) |
 
 !!! warning "The operation examples connect for real"
 
@@ -46,6 +48,12 @@ sub-directory. Pick a page from the navigation, or start from this table:
     [`composed_group_tag_roles`](examples/demonstrations/composition.md#group-and-tag-roles-from-inventory-data),
     which does the same injection — it runs entirely in memory against
     `SimulatedHost`, so it opens no connection and needs no real hosts.
+
+    The [`docker_files`](examples/demonstrations/connectors.md) connector
+    demonstration also needs no SSH host, but it is *not* in-memory: it
+    starts a real local container, so it needs a `docker` (or `podman`) CLI
+    with a reachable daemon on the control machine, and each run commits a
+    new image (the dry run included).
 
 Each real-host script also owns its *error reporting*, because the library is
 CLI-free and only raises: `main` catches the typed errors a run can produce —

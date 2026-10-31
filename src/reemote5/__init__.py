@@ -7,7 +7,9 @@ fresh ``FactCache`` per step. The command-execution path (``send_command``
 and the apply drivers) and fact gathering (each fact's ``process``,
 ``FactCache.get``, the operations that await it, and ``run_prepare``) are
 async, and a plain ``Host`` runs commands and gathers facts over a real
-asyncssh transport built from its inventory ``connection`` data.
+asyncssh transport built from its inventory ``connection`` data (or, with
+``connection.connector`` set to ``"docker"``, a ``DockerHost`` drives a
+local Docker/Podman container through the same seams).
 """
 
 from .commands import (
@@ -17,6 +19,7 @@ from .commands import (
     WaitCommand,
     WaitTimeoutError,
 )
+from .connectors.docker import DockerHost
 from .core import (
     FactCache,
     HostRuntime,
@@ -85,8 +88,10 @@ from .modules.files.files import (
     Link,
     LinkCommand,
     LocalSha1,
+    MoveCommand,
     PutCommand,
     RemoteFileSha1,
+    RemoveTreeCommand,
 )
 from .modules.hardware.hardware import (
     BlockDevices,
@@ -169,6 +174,7 @@ __all__ = [
     "DnfRepoList",
     "DnfRepositories",
     "DnfUpdateCommand",
+    "DockerHost",
     "FactCache",
     "File",
     "FileCommand",
@@ -202,6 +208,7 @@ __all__ = [
     "LsBlk",
     "LsbRelease",
     "Mounts",
+    "MoveCommand",
     "NetworkDevices",
     "OpContext",
     "OperationRequest",
@@ -212,6 +219,7 @@ __all__ = [
     "Processes",
     "PutCommand",
     "RemoteFileSha1",
+    "RemoveTreeCommand",
     "RpmInstallCommand",
     "RpmPackage",
     "SmbiosInfo",

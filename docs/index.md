@@ -221,7 +221,7 @@ package, so a deploy script only ever needs one import line:
 from reemote5 import Host, OperationRequest, dnf, files, op, run
 ```
 
-The API has four layers, each documented on a page named after the source
+The API has five layers, each documented on a page named after the source
 module that defines it:
 
 | Layer | Objects | Reference page |
@@ -229,7 +229,8 @@ module that defines it:
 | **Drivers** | [`run`][reemote5.drivers.run], [`run_prepare`][reemote5.drivers.run_prepare], [`run_apply`][reemote5.drivers.run_apply], [`send_command`][reemote5.drivers.send_command], [`format_plan`][reemote5.drivers.format_plan], [`format_log`][reemote5.drivers.format_log] | [drivers](drivers.md) |
 | **Core objects** | [`OperationRequest`][reemote5.core.OperationRequest], [`op`][reemote5.core.op], [`OpContext`][reemote5.core.OpContext], [`FactCache`][reemote5.core.FactCache], [`HostRuntime`][reemote5.core.HostRuntime] | [core](core.md) |
 | **Commands** | [`Command`][reemote5.commands.Command], [`StringCommand`][reemote5.commands.StringCommand], [`TransferCommand`][reemote5.commands.TransferCommand], [`WaitCommand`][reemote5.commands.WaitCommand], [`WaitTimeoutError`][reemote5.commands.WaitTimeoutError] | [commands](commands.md) |
-| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`validate_inventory`][reemote5.hosts.validate_inventory], [`InventoryError`][reemote5.hosts.InventoryError], [`DnfPackages`][reemote5.modules.dnf.dnf.DnfPackages], [`FileLink`][reemote5.modules.files.files.FileLink], [`RemoteFileSha1`][reemote5.modules.files.files.RemoteFileSha1], [`FileContents`][reemote5.modules.files.files.FileContents], [`BlockDevices`][reemote5.modules.hardware.hardware.BlockDevices], [`SystemdServiceState`][reemote5.modules.server.server.SystemdServiceState], [`dnf.packages`][reemote5.modules.dnf.dnf.packages], [`dnf.update`][reemote5.modules.dnf.dnf.update], [`dnf.repo`][reemote5.modules.dnf.dnf.repo], [`dnf.rpm`][reemote5.modules.dnf.dnf.rpm], [`dnf.key`][reemote5.modules.dnf.dnf.key], [`dnf.module`][reemote5.modules.dnf.dnf.module], [`files.link`][reemote5.modules.files.files.link], [`files.put`][reemote5.modules.files.files.put], [`files.get`][reemote5.modules.files.files.get], [`files.edit`][reemote5.modules.files.files.edit], [`server.service`][reemote5.modules.server.server.service], [`server.wait_service`][reemote5.modules.server.server.wait_service] | [hosts](hosts.md), [modules/dnf](modules/dnf.md), [modules/files](modules/files.md), [modules/hardware](modules/hardware.md), [modules/server](modules/server.md) |
+| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`validate_inventory`][reemote5.hosts.validate_inventory], [`InventoryError`][reemote5.hosts.InventoryError], [`DnfPackages`][reemote5.modules.dnf.dnf.DnfPackages], [`FileLink`][reemote5.modules.files.files.FileLink], [`RemoteFileSha1`][reemote5.modules.files.files.RemoteFileSha1], [`FileContents`][reemote5.modules.files.files.FileContents], [`BlockDevices`][reemote5.modules.hardware.hardware.BlockDevices], [`SystemdServiceState`][reemote5.modules.server.server.SystemdServiceState], [`dnf.packages`][reemote5.modules.dnf.dnf.packages], [`dnf.update`][reemote5.modules.dnf.dnf.update], [`dnf.repo`][reemote5.modules.dnf.dnf.repo], [`dnf.rpm`][reemote5.modules.dnf.dnf.rpm], [`dnf.key`][reemote5.modules.dnf.dnf.key], [`dnf.module`][reemote5.modules.dnf.dnf.module], [`files.link`][reemote5.modules.files.files.link], [`files.put`][reemote5.modules.files.files.put], [`files.get`][reemote5.modules.files.files.get], [`files.edit`][reemote5.modules.files.files.edit], [`files.move`][reemote5.modules.files.files.move], [`server.service`][reemote5.modules.server.server.service], [`server.wait_service`][reemote5.modules.server.server.wait_service] | [hosts](hosts.md), [modules/dnf](modules/dnf.md), [modules/files](modules/files.md), [modules/hardware](modules/hardware.md), [modules/server](modules/server.md) |
+| **Connectors** | [`DockerHost`][reemote5.connectors.docker.DockerHost], [`validate_docker_connection`][reemote5.connectors.docker.validate_docker_connection] | [connectors/docker](connectors/docker.md) |
 
 !!! note "Design-doc references"
 
@@ -245,11 +246,13 @@ src/reemote5/
 ├── commands.py        # Command descriptors (Command, StringCommand, TransferCommand, WaitCommand)
 ├── drivers.py         # run_prepare, run_apply, send_command, run, formatters
 ├── hosts.py           # Host (materialized from inventory entries)
+├── connectors/        # alternative transports selected by connection.connector
+│   └── docker.py      #   DockerHost (local Docker/Podman containers via the CLI)
 └── modules/           # self-contained namespaces (facts + operations together)
     ├── dnf/
     │   └── dnf.py     #   DnfPackages…, dnf.packages + its command descriptors
     ├── files/
-    │   └── files.py   #   File/FileLink…, LocalSha1/RemoteFileSha1/FileContents, files.link/file/put/get/edit + their command descriptors
+    │   └── files.py   #   File/FileLink…, LocalSha1/RemoteFileSha1/FileContents, files.link/file/put/get/edit/move + their command descriptors
     ├── hardware/
     │   └── hardware.py  # BlockDevices (df), CpuInfo (lscpu), Cpus (getconf), DiskStats (/proc/diskstats), DmiInfo (/sys/class/dmi/id), Ipv4Addrs/Ipv6Addrs/NetworkDevices (ip), LsBlk (lsblk), SmbiosInfo (dmidecode)
     └── server/
