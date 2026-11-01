@@ -212,6 +212,11 @@ See the [Guide](guide.md) for the rules this imposes on deploy scripts, the
 [Examples](examples.md) for runnable scripts demonstrating them (including
 deploy composition), and the API reference below for every object involved.
 
+Orthogonal to the deploy model, [**actions**](actions.md) run bespoke shell
+commands immediately — before, between or after deploys, never inside one — and
+return a [`Result`][reemote5.actions.Result] per host. They are the escape hatch
+for software the library knows nothing about.
+
 ## API reference
 
 Everything documented in the reference is re-exported from the top-level
@@ -221,7 +226,7 @@ package, so a deploy script only ever needs one import line:
 from reemote5 import Host, OperationRequest, dnf, files, op, run
 ```
 
-The API has five layers, each documented on a page named after the source
+The API has six layers, each documented on a page named after the source
 module that defines it:
 
 | Layer | Objects | Reference page |
@@ -231,6 +236,7 @@ module that defines it:
 | **Commands** | [`Command`][reemote5.commands.Command], [`StringCommand`][reemote5.commands.StringCommand], [`TransferCommand`][reemote5.commands.TransferCommand], [`WaitCommand`][reemote5.commands.WaitCommand], [`WaitTimeoutError`][reemote5.commands.WaitTimeoutError] | [commands](commands.md) |
 | **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`validate_inventory`][reemote5.hosts.validate_inventory], [`InventoryError`][reemote5.hosts.InventoryError], [`DnfPackages`][reemote5.modules.dnf.dnf.DnfPackages], [`FileLink`][reemote5.modules.files.files.FileLink], [`RemoteFileSha1`][reemote5.modules.files.files.RemoteFileSha1], [`FileContents`][reemote5.modules.files.files.FileContents], [`BlockDevices`][reemote5.modules.hardware.hardware.BlockDevices], [`SystemdServiceState`][reemote5.modules.server.server.SystemdServiceState], [`dnf.packages`][reemote5.modules.dnf.dnf.packages], [`dnf.update`][reemote5.modules.dnf.dnf.update], [`dnf.repo`][reemote5.modules.dnf.dnf.repo], [`dnf.rpm`][reemote5.modules.dnf.dnf.rpm], [`dnf.key`][reemote5.modules.dnf.dnf.key], [`dnf.module`][reemote5.modules.dnf.dnf.module], [`files.link`][reemote5.modules.files.files.link], [`files.put`][reemote5.modules.files.files.put], [`files.get`][reemote5.modules.files.files.get], [`files.edit`][reemote5.modules.files.files.edit], [`files.move`][reemote5.modules.files.files.move], [`server.group`][reemote5.modules.server.server.group], [`server.hostname`][reemote5.modules.server.server.hostname], [`server.kill`][reemote5.modules.server.server.kill], [`server.modprobe`][reemote5.modules.server.server.modprobe], [`server.mount`][reemote5.modules.server.server.mount], [`server.service`][reemote5.modules.server.server.service], [`server.timezone`][reemote5.modules.server.server.timezone], [`server.wait_service`][reemote5.modules.server.server.wait_service] | [hosts](hosts.md), [modules/dnf](modules/dnf.md), [modules/files](modules/files.md), [modules/hardware](modules/hardware.md), [modules/server](modules/server.md) |
 | **Connectors** | [`DockerHost`][reemote5.connectors.docker.DockerHost], [`validate_docker_connection`][reemote5.connectors.docker.validate_docker_connection] | [connectors/docker](connectors/docker.md) |
+| **Actions** | [`Shell`][reemote5.actions.Shell], [`Result`][reemote5.actions.Result], [`gather_action`][reemote5.actions.gather_action], [`ActionInDeployError`][reemote5.actions.ActionInDeployError] | [actions](actions.md) |
 
 !!! note "Design-doc references"
 
@@ -245,6 +251,7 @@ src/reemote5/
 ├── core.py            # OperationRequest, OpContext, FactCache, HostRuntime, OperationError, op()
 ├── commands.py        # Command descriptors (Command, StringCommand, TransferCommand, WaitCommand)
 ├── drivers.py         # run_prepare, run_apply, send_command, run, formatters
+├── actions.py         # Shell action, Result, gather_action (immediate bespoke shell, outside deploys)
 ├── hosts.py           # Host (materialized from inventory entries)
 ├── connectors/        # alternative transports selected by connection.connector
 │   └── docker.py      #   DockerHost (local Docker/Podman containers via the CLI)

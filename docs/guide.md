@@ -1,8 +1,9 @@
 # Guide
 
 This guide covers how to write against the model: deploy scripts first, then
-the three extension points (facts, operations, command descriptors) and the
-rules that keep both phases in agreement.
+the three extension points (facts, operations, command descriptors), the
+orthogonal [actions](#actions) escape hatch, and the rules that keep both
+phases in agreement.
 
 ## Deploy scripts
 
@@ -246,6 +247,58 @@ runtimes, plans = await run_prepare(hosts, deploy)
 print(format_plan(plans))
 report = await run_apply(runtimes, plans=plans)  # plans= enables the determinism guard
 ```
+
+## Actions
+
+Not everything on a server is a fact reemote5 can read or an operation it can
+manage. For the pragmatic case — bespoke software with no fact and no
+operation — an **action** runs a shell command *now* and hands back what it
+produced. [`Shell`][reemote5.actions.Shell] is the first action kind, and
+[`gather_action`][reemote5.actions.gather_action] fans it out across the
+inventory exactly as [`gather_fact`][reemote5.drivers.gather_fact] does a fact,
+returning a `{host.name: Result}` mapping:
+
+```python
+from reemote5 import Host, Shell, gather_action
+
+hosts = [Host.from_inventory(entry) for entry in inventory]
+results = await gather_action(hosts, Shell, command="/opt/acme/bin/status", sudo=True)
+for name, result in results.items():
+    print(name, result.exit_status, result.stdout)
+```
+
+Actions are **orthogonal** to the prepare/apply model, and the split is
+enforced, not conventional:
+
+- **Call them before, between or after deploys — never inside one.** The
+  awaited `gather_action` is a barrier: every host's command has completed
+  before the next deploy or fact read. Calling it inside a deploy generator
+  raises [`ActionInDeployError`][reemote5.actions.ActionInDeployError] at the
+  call site (a deploy runs once per phase, so an immediate action would run
+  twice and mutate the host during prepare).
+- **The outcome is data, not an exception.** A non-zero exit — including 127,
+  command-not-found — travels back in the frozen
+  [`Result`][reemote5.actions.Result] (`exit_status`, `stdout`, `stderr`, `.ok`);
+  the caller decides what a bespoke command's failure means. Library-level
+  failures still raise: [`HostConnectionError`][reemote5.hosts.HostConnectionError]
+  for an unreachable host and [`PrivilegeError`][reemote5.hosts.PrivilegeError]
+  for a rejected credential, each aggregated across hosts.
+- **Privilege is honoured, but asked for only.** `sudo=True`/`su=True` are plain
+  bools (the execution-layer spelling, not the plan layer's
+  [`Privilege`][reemote5.core.Privilege] tri-state); the run-as users and
+  passwords still come from the inventory `privilege` section, never the call.
+- **Each call re-connects.** Outside a deploy the fan-out closes every host's
+  connection when it finishes, so the next call opens a fresh one — an action
+  can follow a [`run`][reemote5.drivers.run] transparently.
+
+To let a deploy depend on a bespoke command's outcome, use the **deploy →
+action → deploy** split: run the action *between* two complete prepare/apply
+cycles, freeze its `Result` dict, and build the second deploy from a factory
+closing over that snapshot — a pure function of static input, so both phases
+resolve identically and the [determinism](#determinism) guard holds. This is
+the action analogue of the two-deploy fact split. See the
+[Actions reference](actions.md) for the full contract and the
+[worked examples](examples/actions.md).
 
 ## Hosts and the inventory
 

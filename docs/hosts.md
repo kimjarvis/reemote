@@ -251,6 +251,31 @@ holding the exit status and captured stderr (also chained as `__cause__`).
 concurrent lockstep step into one aggregate via `PrivilegeError.aggregate`, so
 every host whose credentials were rejected is reported at once.
 
+### Raw-result seams for actions
+
+The fail-fast paths above serve facts and operations, where a non-zero exit is
+a problem the library must surface. [Actions](actions.md) need the opposite:
+the command's own exit status must travel back as *data*, so the caller decides
+what a bespoke command's failure means. Two raw-result seams provide that
+without re-interpreting the outcome:
+
+- [`run_shell_result`][reemote5.hosts.Host.run_shell_result] — the unprivileged
+  counterpart of `run_shell`: it opens the connection lazily, sends the command
+  verbatim and returns the transport's completion record untouched.
+- [`run_shell_privileged_result`][reemote5.hosts.Host.run_shell_privileged_result]
+  — the raw-result variant of
+  [`run_shell_privileged`][reemote5.hosts.Host.run_shell_privileged]. The
+  escalation is built identically (the shared `_build_privileged_command`
+  produces the execution string and the credential-free rendering), but the
+  command's own exit travels back instead of raising `CommandError`. The one
+  exception is sudo's or su's *own* authentication rejection, which still raises
+  [`PrivilegeError`][reemote5.hosts.PrivilegeError]: a rejected credential is a
+  library-level failure, never a mere exit status.
+
+[`Shell.process`][reemote5.actions.Shell.process] rides these seams and copies
+the record into a library-owned [`Result`][reemote5.actions.Result], so no
+asyncssh type reaches the public API.
+
 ::: reemote5.hosts
     options:
       members:

@@ -26,13 +26,15 @@ whole prepare/apply path is therefore awaited end to end.
 """
 
 import asyncio
+import inspect
 import shlex
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from .actions import _deploy_phase
 from .commands import Command, TransferCommand, WaitCommand
-from .core import FactCache, HostRuntime, OpContext, OperationRequest
+from .core import FactCache, HostRuntime, OpContext, OperationError, OperationRequest
 from .hosts import (
     CommandNotFoundError,
     Host,
@@ -111,7 +113,18 @@ async def materialize(host: Host, cache: FactCache, request: OperationRequest):
     Returns ``(ctx, commands)``. Materializing computes ``ctx.changed``
     (design doc section 6.3, cost of approach C); it is a coroutine because
     the operation awaits facts, which gather their values asynchronously.
+
+    An operation must be an async generator function. Anything else -- e.g.
+    an action class passed to ``op()`` -- raises ``OperationError`` here rather
+    than failing obscurely in the ``async for``: actions execute immediately
+    and cannot run inside a deploy (see ``reemote5.actions``).
     """
+    if not inspect.isasyncgenfunction(request.func):
+        raise OperationError(
+            f"{getattr(request.func, '__name__', request.func)!r} is not an "
+            "async-generator operation; actions cannot run inside a deploy "
+            "(call gather_action before, between or after deploys instead)"
+        )
     ctx = OpContext(host=host, facts=cache)
     commands = [cmd async for cmd in request.func(ctx, *request.args, **request.kwargs)]
     return ctx, commands
@@ -352,6 +365,7 @@ async def _prepare_host(
     return HostRuntime(host, deploy_func(host), cache), plan
 
 
+@_deploy_phase
 async def run_prepare(
     hosts: Iterable[Host], deploy_func: Callable
 ) -> tuple[list[HostRuntime], dict[str, list[PlannedOperation]]]:
@@ -363,6 +377,11 @@ async def run_prepare(
     the results come back in input order, so ``runtimes`` and ``plans`` stay
     deterministic. A coroutine, because materializing awaits operations and
     their facts.
+
+    The ``_deploy_phase`` wrapper holds the in-deploy guard for the whole
+    phase: a ``gather_action`` call from a deploy generator raises
+    ``ActionInDeployError`` immediately (actions execute at once and would
+    mutate hosts during prepare).
 
     Because the hosts connect concurrently, several may fail to be reached at
     once. Per-host ``HostConnectionError`` instances are therefore collected
@@ -447,6 +466,7 @@ async def _apply_host_step(rt: HostRuntime) -> LogEntry | None:
     )
 
 
+@_deploy_phase
 async def run_apply(
     runtimes: Iterable[HostRuntime],
     plans: dict[str, list[PlannedOperation]] | None = None,
@@ -460,7 +480,9 @@ async def run_apply(
     stays deterministic. The request pull and the determinism check stay
     synchronous and complete before anything is sent. If ``plans`` is given,
     each pulled request sequence is checked against the plan; a mismatch
-    raises ``DeterminismError``.
+    raises ``DeterminismError``. The ``_deploy_phase`` wrapper holds the
+    in-deploy guard here too, so an action called from a generator body
+    raises ``ActionInDeployError`` in apply exactly as it does in prepare.
 
     Because a step's hosts execute concurrently, several may have their
     elevation rejected at once. Per-host ``PrivilegeError`` instances are

@@ -803,31 +803,32 @@ class Host:
             raise CommandError(self.name, shell, result.exit_status, result.stderr)
         return result.stdout or ""
 
-    async def run_shell_privileged(
+    async def run_shell_result(self, shell: str) -> Any:
+        """Run one shell command and return the raw transport result.
+
+        The unchecked counterpart of ``run_shell``, and the seam actions
+        (``reemote5.actions``) ride: no exit status is interpreted here -- not
+        even 127 -- so the caller receives ``exit_status``, ``stdout`` and
+        ``stderr`` exactly as the bespoke command produced them. A connection
+        failure still raises ``HostConnectionError`` from ``connect``. The
+        returned record is the transport's own (asyncssh's
+        ``SSHCompletedProcess``); ``Shell.process`` copies it into the
+        library-owned ``Result`` dataclass so no asyncssh type reaches the
+        public API.
+        """
+        return await self._run_shell(shell)
+
+    async def _build_privileged_command(
         self, shell: str, *, sudo: bool = False, su: bool = False
-    ) -> str:
-        """Run one shell command elevated with ``sudo`` and/or ``su``.
+    ) -> tuple[str, str]:
+        """Build ``(command, safe)`` for an elevated shell (no execution).
 
-        Elevation parameters come from this host's inventory ``privilege``
-        data, never from the caller. The two escalations combine in a fixed
-        order -- ``sudo`` then ``su`` -- so ``sudo`` is the outer escalation
-        and runs ``su`` inside it (``sudo ... su <user> -c ...``), matching the
-        order in which the flags are applied.
-
-        ``sudo`` uses ``sudo_user``/``sudo_password`` (see ``run_shell_sudo``);
-        ``su`` uses ``su_user``/``su_password`` and runs a *default* (non-login)
-        ``su <user> -c``. ``su`` has no askpass mechanism, so with an
-        ``su_password`` the generated helper pipes the password to su's stdin;
-        when that pipeline also runs under ``sudo`` it is wrapped in ``sh -c``
-        so the pipe stays intact inside sudo's elevation (sudo execs its
-        command directly rather than through a shell).
-
-        A non-zero exit raises ``CommandError`` whose command text is the
-        credential-free rendering -- never the askpass command, which carries a
-        password. When sudo's or su's output identifies the failure as its
-        *own* authentication rejection (a wrong or missing password, a
-        forbidden run-as user) a ``PrivilegeError`` is raised instead, so the
-        caller gets one actionable error naming the host.
+        ``command`` is the execution string -- it may carry passwords through
+        the askpass helpers -- and ``safe`` is the credential-free rendering
+        used in error reports. Shared by ``run_shell_privileged`` (fail-fast,
+        stdout-only) and ``run_shell_privileged_result`` (raw result), so the
+        escalation construction and its safe rendering can never diverge
+        between the two paths.
         """
         sudo_user = self.privilege.get("sudo_user") if sudo else None
         sudo_password = self.privilege.get("sudo_password") if sudo else None
@@ -865,15 +866,45 @@ class Host:
         else:
             command = payload
 
+        # The credential-free rendering of the same escalation, for error
+        # reports: never the askpass command, which carries a password.
+        safe_payload = _build_su_command(shell, su_user=su_user) if su else shell
+        safe = (
+            _build_sudo_command(safe_payload, sudo_user=sudo_user)
+            if sudo
+            else safe_payload
+        )
+        return command, safe
+
+    async def run_shell_privileged(
+        self, shell: str, *, sudo: bool = False, su: bool = False
+    ) -> str:
+        """Run one shell command elevated with ``sudo`` and/or ``su``.
+
+        Elevation parameters come from this host's inventory ``privilege``
+        data, never from the caller. The two escalations combine in a fixed
+        order -- ``sudo`` then ``su`` -- so ``sudo`` is the outer escalation
+        and runs ``su`` inside it (``sudo ... su <user> -c ...``), matching the
+        order in which the flags are applied.
+
+        ``sudo`` uses ``sudo_user``/``sudo_password`` (see ``run_shell_sudo``);
+        ``su`` uses ``su_user``/``su_password`` and runs a *default* (non-login)
+        ``su <user> -c``. ``su`` has no askpass mechanism, so with an
+        ``su_password`` the generated helper pipes the password to su's stdin;
+        when that pipeline also runs under ``sudo`` it is wrapped in ``sh -c``
+        so the pipe stays intact inside sudo's elevation (sudo execs its
+        command directly rather than through a shell).
+
+        A non-zero exit raises ``CommandError`` whose command text is the
+        credential-free rendering -- never the askpass command, which carries a
+        password. When sudo's or su's output identifies the failure as its
+        *own* authentication rejection (a wrong or missing password, a
+        forbidden run-as user) a ``PrivilegeError`` is raised instead, so the
+        caller gets one actionable error naming the host.
+        """
+        command, safe = await self._build_privileged_command(shell, sudo=sudo, su=su)
         result = await self._run_shell(command)
         if result.exit_status != 0:
-            # Report the credential-free rendering, not the password-bearing one.
-            safe_payload = _build_su_command(shell, su_user=su_user) if su else shell
-            safe = (
-                _build_sudo_command(safe_payload, sudo_user=sudo_user)
-                if sudo
-                else safe_payload
-            )
             failure = CommandError(self.name, safe, result.exit_status, result.stderr)
             if _is_privilege_failure(result.stderr, result.stdout):
                 # The escalation never got as far as running the command: the
@@ -882,6 +913,36 @@ class Host:
                 raise PrivilegeError([(self.name, safe, failure)]) from failure
             raise failure
         return result.stdout or ""
+
+    async def run_shell_privileged_result(
+        self, shell: str, *, sudo: bool = False, su: bool = False
+    ) -> Any:
+        """Run one elevated shell command and return the raw transport result.
+
+        The raw-result variant of ``run_shell_privileged``, and the seam an
+        elevated action (``reemote5.actions.Shell`` with ``sudo``/``su``) rides:
+        the escalation is built identically (same ``_build_privileged_command``,
+        same askpass helpers, same ``sudo`` then ``su`` order), but the bespoke
+        command's own exit status travels back in the result instead of raising
+        ``CommandError`` -- the caller decides what a non-zero exit means.
+
+        Library-level failures still raise: a connection failure surfaces as
+        ``HostConnectionError`` from ``connect``, and sudo's or su's *own*
+        authentication rejection (a wrong or missing password, a forbidden
+        run-as user) raises ``PrivilegeError`` with the credential-free
+        rendering and the would-be ``CommandError`` as its cause -- a rejected
+        credential is never reported as a mere exit status. The returned record
+        is the transport's own; ``Shell.process`` copies it into the
+        library-owned ``Result`` dataclass.
+        """
+        command, safe = await self._build_privileged_command(shell, sudo=sudo, su=su)
+        result = await self._run_shell(command)
+        if result.exit_status != 0 and _is_privilege_failure(
+            result.stderr, result.stdout
+        ):
+            failure = CommandError(self.name, safe, result.exit_status, result.stderr)
+            raise PrivilegeError([(self.name, safe, failure)]) from failure
+        return result
 
     async def run_shell_sudo(self, shell: str) -> str:
         """Run one shell command elevated with ``sudo`` and return its stdout.

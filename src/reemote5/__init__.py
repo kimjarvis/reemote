@@ -10,8 +10,13 @@ async, and a plain ``Host`` runs commands and gathers facts over a real
 asyncssh transport built from its inventory ``connection`` data (or, with
 ``connection.connector`` set to ``"docker"``, a ``DockerHost`` drives a
 local Docker/Podman container through the same seams).
+
+Beside the deploy model, ``actions`` (``Shell``, ``gather_action``) run
+bespoke shell commands immediately -- before, between or after deploys, never
+inside one -- and return a ``Result`` per host.
 """
 
+from .actions import ActionInDeployError, Result, Shell, gather_action
 from .commands import (
     Command,
     StringCommand,
@@ -152,6 +157,7 @@ def hello() -> str:
 
 
 __all__ = [
+    "ActionInDeployError",
     "ApplyReport",
     "Arch",
     "AuthorizedKeys",
@@ -236,10 +242,12 @@ __all__ = [
     "PutCommand",
     "RemoteFileSha1",
     "RemoveTreeCommand",
+    "Result",
     "RpmInstallCommand",
     "RpmPackage",
     "SetHostnameCommand",
     "SetTimezoneCommand",
+    "Shell",
     "SmbiosInfo",
     "StringCommand",
     "Sysctl",
@@ -262,6 +270,7 @@ __all__ = [
     "files",
     "format_log",
     "format_plan",
+    "gather_action",
     "gather_fact",
     "hardware",
     "hello",

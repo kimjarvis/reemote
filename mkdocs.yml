@@ -39,6 +39,7 @@ plugins:
             - examples/modules/files
             - examples/modules/hardware
             - examples/modules/server
+            - examples/actions
             - examples/general
             - examples/demonstrations/composition
             - examples/demonstrations/connectors
@@ -69,6 +70,7 @@ nav:
           - hardware: examples/modules/hardware.md
           - server: examples/modules/server.md
       - General: examples/general.md
+      - Actions: examples/actions.md
       - Demonstrations:
           - Composition: examples/demonstrations/composition.md
           - Connectors: examples/demonstrations/connectors.md
@@ -79,6 +81,7 @@ nav:
       - Core: core.md
       - Commands: commands.md
       - Hosts: hosts.md
+      - Actions: actions.md
       - Connectors:
           - docker: connectors/docker.md
       - Modules:

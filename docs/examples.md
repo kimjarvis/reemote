@@ -2,10 +2,11 @@
 
 Runnable showcase scripts living in `examples/` — *usage* demonstrations
 through the public API only, never part of the library. The tree is split in
-three: `examples/modules/<namespace>/` holds one script per fact or operation
+four: `examples/modules/<namespace>/` holds one script per fact or operation
 of a library module (currently `dnf`, `files`, `hardware` and `server`),
 `examples/general/`
-holds general scenario scripts built on more than one module, and
+holds general scenario scripts built on more than one module,
+`examples/actions/` holds bespoke-shell [action](actions.md) demonstrations, and
 `examples/demonstrations/<topic>/` holds scenario scripts — `composition/`,
 `connectors/`, `inventory/` and `privilege/` — that cross module boundaries.
 Each explanation
@@ -23,6 +24,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 | `examples/modules/hardware/` | [Module examples: hardware](examples/modules/hardware.md) |
 | `examples/modules/server/` | [Module examples: server](examples/modules/server.md) |
 | `examples/general/` | [General examples](examples/general.md) |
+| `examples/actions/` | [Action examples](examples/actions.md) |
 | `examples/demonstrations/inventory/` | [Inventory demonstrations](examples/demonstrations/inventory.md) |
 | `examples/demonstrations/privilege/` | [Privilege demonstrations](examples/demonstrations/privilege.md) |
 | `examples/demonstrations/composition/` | [Composing deploys](examples/demonstrations/composition.md) |
@@ -49,6 +51,12 @@ sub-directory. Pick a page from the navigation, or start from this table:
     which does the same injection — it runs entirely in memory against
     `SimulatedHost`, so it opens no connection and needs no real hosts.
 
+    The [`action_in_deploy_guard`](examples/actions.md#the-in-deploy-guard)
+    example also opens no connection, though it uses the default factory and a
+    real-looking inventory: the in-deploy guard fires during prepare, before
+    any fact is gathered, so it runs offline and treats the
+    `ActionInDeployError` as the expected outcome.
+
     The [`docker_files`](examples/demonstrations/connectors.md) connector
     demonstration also needs no SSH host, but it is *not* in-memory: it
     starts a real local container, so it needs a `docker` (or `podman`) CLI
@@ -71,3 +79,11 @@ the JSON-inventory one — prints the message on stderr and exits non-zero. The
 message already names the host and, for a failed command, the credential-free
 command text and its stderr, so a failing run reports the reason instead of a
 Python traceback.
+
+The [action](actions.md) examples follow the same contract with one difference:
+a bespoke command's own non-zero exit is **data in the
+[`Result`][reemote5.actions.Result]**, not a raised `CommandError` — only
+library-level failures (`HostConnectionError`, `PrivilegeError`) raise. The
+in-deploy guard example catches
+[`ActionInDeployError`][reemote5.actions.ActionInDeployError] as its *expected*
+outcome and exits zero.
