@@ -13,6 +13,30 @@ from typing import Any
 from .commands import Command
 from .hosts import Host
 
+# A ``when`` guard predicate: reads the host (static inventory data -- name,
+# group, tags, ...) and answers "is this host eligible for the request?".
+WhenPredicate = Callable[[Host], bool]
+
+
+def _coerce_when(
+    value: "WhenPredicate | tuple[WhenPredicate, ...] | None",
+) -> tuple[WhenPredicate, ...]:
+    """Normalize the accepted ``when`` spellings to a tuple of predicates.
+
+    ``None`` (the default) becomes the empty tuple -- no guard, every host is
+    eligible -- a single callable is wrapped, and a tuple passes through.
+    Storing a *tuple* rather than one composed callable is what keeps guard
+    composition value-stable: ``sub_deploy`` concatenates tuples instead of
+    building a fresh closure per request, so the prepare and apply phases
+    produce equal ``when`` values (predicates compare by identity, like
+    ``func``) and the determinism guard holds.
+    """
+    if value is None:
+        return ()
+    if callable(value):
+        return (value,)
+    return tuple(value)
+
 
 class Privilege(Enum):
     """Tri-state privilege-escalation request for the ``sudo``/``su`` meta-parameters.
@@ -102,6 +126,21 @@ class OperationRequest:
     script cannot choose its own privilege parameters. When both are ``ON`` the
     escalations combine in a fixed order, ``sudo`` then ``su`` (sudo is the
     outer escalation, running ``su`` inside it).
+
+    ``when`` is the eligibility meta-parameter: a guard predicate (or tuple
+    of predicates) over *static* host data, stored normalized as a tuple
+    (empty = always eligible). The driver evaluates the predicates at the
+    execution boundary -- a request whose guard fails on a host is skipped
+    there, but stays in the host's request sequence, so every host shares the
+    same schedule and lockstep pairing is untouched. Unlike ``sudo``/``su``
+    (configuration values a wrapper fills in), guards compose by conjunction:
+    a ``sub_deploy`` guard and an inner guard must *both* pass. Predicates
+    must read only static inventory data (``host.name``, ``host.group``,
+    ``host.tags``, ...) -- never mutable facts -- so both phases reach the
+    same skip decision, and they must be stable function objects (module- or
+    composition-level definitions, like ``func`` itself): an inline
+    ``lambda`` in a deploy body is a fresh object on each phase invocation,
+    which the determinism guard correctly reports as divergence.
     """
 
     func: Callable  # operation function, e.g. dnf.packages
@@ -110,6 +149,7 @@ class OperationRequest:
     name: str = ""  # human-readable label for plan output
     sudo: Privilege = Privilege.UNSET  # meta-parameter: elevate via sudo
     su: Privilege = Privilege.UNSET  # meta-parameter: elevate via su
+    when: WhenPredicate | tuple[WhenPredicate, ...] | None = None  # eligibility guard(s)
 
     def __post_init__(self):
         # A dict inside a frozen dataclass is otherwise mutable from outside.
@@ -121,6 +161,9 @@ class OperationRequest:
         # value is a ``Privilege``, so ``elevates()`` is always available.
         object.__setattr__(self, "sudo", Privilege.coerce(self.sudo))
         object.__setattr__(self, "su", Privilege.coerce(self.su))
+        # Normalize the guard(s) to a tuple so the stored value is hashable,
+        # value-comparable and conjunction-composable (see ``_coerce_when``).
+        object.__setattr__(self, "when", _coerce_when(self.when))
 
     def __hash__(self):
         return hash(
@@ -131,8 +174,22 @@ class OperationRequest:
                 self.name,
                 self.sudo,
                 self.su,
+                self.when,
             )
         )
+
+    def when_failure(self, host: Host) -> WhenPredicate | None:
+        """The first guard predicate ``host`` fails, or ``None`` when eligible.
+
+        Short-circuits in tuple order (outer ``sub_deploy`` guards first), so
+        the returned predicate names the *outermost* reason a host is skipped
+        -- which is what the plan and run log report. An empty ``when`` tuple
+        means no guard: every host is eligible.
+        """
+        for predicate in self.when:
+            if not predicate(host):
+                return predicate
+        return None
 
 
 @dataclass
@@ -201,18 +258,27 @@ def op(
     name: str = "",
     sudo: Privilege | bool = Privilege.UNSET,
     su: Privilege | bool = Privilege.UNSET,
+    when: WhenPredicate | tuple[WhenPredicate, ...] | None = None,
     **kwargs,
 ) -> OperationRequest:
     """Convenience helper for building OperationRequests in deploy scripts.
 
-    ``name``, ``sudo`` and ``su`` are meta-parameters consumed by the driver,
-    so they are captured here and never forwarded to ``func``; everything else
-    in ``kwargs`` is passed through to the operation as keyword arguments.
+    ``name``, ``sudo``, ``su`` and ``when`` are meta-parameters consumed by
+    the driver, so they are captured here and never forwarded to ``func``;
+    everything else in ``kwargs`` is passed through to the operation as
+    keyword arguments.
 
     ``sudo``/``su`` accept a :class:`Privilege` or a plain bool (``True`` ->
     ``ON``, ``False`` -> ``OFF``) and default to ``UNSET`` -- "no opinion", so
     a ``sub_deploy`` policy can still fill them in. ``OperationRequest``
     normalizes the value, so the stored flag is always a ``Privilege``.
+
+    ``when`` is an eligibility guard: a predicate over static host data
+    (``lambda``-free at this call site -- pass a stable, module-level function
+    so both phases yield equal requests), a tuple of predicates (all must
+    pass), or ``None`` (the default, always eligible). A guarded request stays
+    in every host's sequence; the driver skips it on hosts that fail the
+    guard. ``OperationRequest`` normalizes the value to a tuple.
     """
     return OperationRequest(
         func=func,
@@ -220,6 +286,7 @@ def op(
         name=name,
         sudo=Privilege.coerce(sudo),
         su=Privilege.coerce(su),
+        when=when,
     )
 
 
@@ -229,6 +296,7 @@ def sub_deploy(
     name_prefix: str = "",
     sudo: Privilege | bool = Privilege.UNSET,
     su: Privilege | bool = Privilege.UNSET,
+    when: WhenPredicate | tuple[WhenPredicate, ...] | None = None,
 ) -> Callable[[Host], Generator[OperationRequest]]:
     """Wrap a sub-deploy, applying default meta-parameters to its requests.
 
@@ -252,6 +320,16 @@ def sub_deploy(
     - the default ``Privilege.UNSET`` is no policy at all: every request passes
       through unchanged.
 
+    ``when`` is a role-level eligibility guard -- the analogue of Ansible's
+    block-level ``when``. Unlike the escalation policy it composes by
+    *conjunction*, not inner-wins: the wrapper's predicates are prepended to
+    each request's own ``when`` tuple, so both must pass and a wrapper can
+    only ever *restrict* eligibility, never widen it (a guard the inside
+    could override would be no guard at all). The default ``None`` adds no
+    predicate. Concatenating tuples -- rather than building a composed
+    closure per request -- keeps the transform value-stable across phases,
+    so the determinism guard holds.
+
     ``name_prefix`` prepends ``"<prefix>: "`` to each plan name (an unnamed
     request falls back to its operation function's name, matching the
     formatters).
@@ -263,6 +341,7 @@ def sub_deploy(
     """
     sudo_policy = Privilege.coerce(sudo)
     su_policy = Privilege.coerce(su)
+    when_policy = _coerce_when(when)
 
     def wrapper(host: Host) -> Generator[OperationRequest]:
         for request in sub(host):
@@ -276,6 +355,10 @@ def sub_deploy(
             inherited_su = _inherit(su_policy, request.su)
             if inherited_su is not request.su:
                 changes["su"] = inherited_su
+            if when_policy:
+                # Conjunction by concatenation: outer guards first, so a
+                # skip reports the outermost failing predicate.
+                changes["when"] = when_policy + request.when
             yield replace(request, **changes) if changes else request
 
     return wrapper
@@ -289,7 +372,10 @@ def _effective_key(request: OperationRequest) -> tuple:
     only), so two requests with the same key run identically. The escalation
     flags contribute their *resolved* decision (``Privilege.elevates``), not the
     raw tri-state: ``ON`` separates a request from the rest, while ``OFF`` and
-    ``UNSET`` collapse together because both execute unprivileged.
+    ``UNSET`` collapse together because both execute unprivileged. The
+    ``when`` guard tuple participates as-is: it changes *whether* a request
+    executes, so two otherwise-identical requests with different guards are
+    not duplicates.
     ``OperationRequest`` equality itself stays maximal -- the determinism guard
     pairs full values, tri-state included -- while ``compose``'s deduplication
     uses this projection.
@@ -300,6 +386,7 @@ def _effective_key(request: OperationRequest) -> tuple:
         tuple(sorted(request.kwargs.items())),
         request.sudo.elevates(),
         request.su.elevates(),
+        request.when,
     )
 
 
@@ -316,12 +403,14 @@ def compose(
     repositories before the packages they provide).
 
     With ``dedupe=True``, requests collapse by *effective identity* --
-    ``func``, ``args``, ``kwargs``, ``sudo`` and ``su``, but not ``name`` (see
-    ``_effective_key``) -- to their first occurrence, which keeps its name.
+    ``func``, ``args``, ``kwargs``, ``sudo``, ``su`` and ``when``, but not
+    ``name`` (see ``_effective_key``) -- to their first occurrence, which keeps
+    its name.
     Independently written roles may therefore each declare the same
     prerequisite under a different label or a different ``sub_deploy`` name
-    prefix and still collapse to one plan entry; ``sudo`` and ``su`` still
-    separate requests, since they change what executes. ``OperationRequest``
+    prefix and still collapse to one plan entry; ``sudo``/``su`` still
+    separate requests, since they change what executes, and so does ``when``,
+    since it changes whether it executes. ``OperationRequest``
     equality remains maximal (name included), because the determinism guard
     pairs full values.
 
@@ -353,6 +442,7 @@ __all__ = [
     "OperationError",
     "OperationRequest",
     "Privilege",
+    "WhenPredicate",
     "compose",
     "op",
     "sub_deploy",

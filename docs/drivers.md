@@ -48,6 +48,19 @@ authentication rejection (a wrong or missing password), which raises
 reported as a privilege problem rather than a broken command. See
 [Privilege: sudo and su](hosts.md#privilege-sudo-and-su).
 
+A request whose `when` guard fails on a host is skipped by the driver in both
+phases: prepare records a `skipped`
+[`PlannedOperation`][reemote5.drivers.PlannedOperation] without materializing the
+operation at all (no facts are read for it — the guard may exist precisely
+because the host cannot provide them), and apply logs a `skipped`
+[`LogEntry`][reemote5.drivers.LogEntry] without sending anything. The request
+still consumes its lockstep slot, so the shared schedule stays aligned across
+hosts; [`format_plan`][reemote5.drivers.format_plan] and
+[`format_log`][reemote5.drivers.format_log] render it as
+`[skipped: when guard <name>]` — a third outcome beside *changed* and
+*no change*. See [Deploy scripts](guide.md#deploy-scripts) for the guard's
+static-data and stable-predicate rules.
+
 ## Phase awareness
 
 Only the drivers know which phase they are running in. Facts, operations and

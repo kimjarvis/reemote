@@ -5,9 +5,11 @@ module boundaries to demonstrate the composition helpers
 [`sub_deploy`][reemote5.core.sub_deploy] and [`compose`][reemote5.core.compose]
 — one scenario each, in the order the [guide](../../guide.md#composing-deploys)
 introduces them — plus a role-selection scenario keyed on the inventory's
-`group`/`tags`. All but the last reuse the base example's real-SSH inventory;
-every one follows the same dry-run-then-apply flow, and the last runs in memory
-against `SimulatedHost` instead of over SSH. See the
+`group`/`tags` and a `when`-guard scenario that keeps one shared schedule
+across hosts. All but the group/tag one reuse the base example's real-SSH
+inventory; every one follows the same dry-run-then-apply flow, and
+`composed_group_tag_roles` runs in memory against `SimulatedHost` instead of
+over SSH. See the
 [Examples overview](../../examples.md) for the shared "connects for real"
 warning and the error-reporting contract every script follows.
 
@@ -38,6 +40,12 @@ warning and the error-reporting contract every script follows.
 ## Per-host roles from inventory data
 
 ::: composed_per_host_roles
+    options:
+      members: []
+
+## A shared schedule with when guards
+
+::: composed_when_guard
     options:
       members: []
 

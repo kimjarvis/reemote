@@ -48,23 +48,41 @@ class DeterminismError(RuntimeError):
     If a generator body branches on a mutable fact, the prepare and apply
     phases may produce different request sequences, breaking lockstep
     pairing (design doc section 11.1). The driver treats this as a hard
-    error.
+    error. The same applies to request *values*: a ``when`` predicate (or
+    any other argument) constructed fresh on each phase invocation -- e.g.
+    an inline ``lambda`` in a deploy body -- compares unequal across phases
+    even when semantically identical, so guards must be stable function
+    objects defined at module or composition level.
     """
 
 
 @dataclass(frozen=True)
 class PlannedOperation:
-    """One materialized request in a host's plan."""
+    """One materialized request in a host's plan.
+
+    A ``skipped`` entry was not materialized at all: the request's ``when``
+    guard failed on this host, so no facts were read and no commands were
+    generated. ``changed`` is ``False`` and ``reason`` names the failing
+    predicate.
+    """
 
     request: OperationRequest
     changed: bool
     reason: str
     commands: tuple[Command, ...]
+    skipped: bool = False  # True when the request's ``when`` guard failed
 
 
 @dataclass(frozen=True)
 class LogEntry:
-    """One executed (or skipped) operation in the apply-phase run log."""
+    """One executed (or skipped) operation in the apply-phase run log.
+
+    ``skipped`` marks an entry whose ``when`` guard failed on this host: it
+    was neither materialized nor sent, ``changed`` is ``False`` and the
+    privilege fields stay at their inert defaults (nothing ran, so nothing
+    was elevated). This is a third outcome alongside ``changed`` and
+    "no change": ineligible regardless of state, versus nothing to do.
+    """
 
     host: str
     name: str
@@ -75,6 +93,7 @@ class LogEntry:
     sudo_user: str | None = None  # run-as user from the host's privilege data
     su: bool = False  # whether the operation's commands were run via su
     su_user: str | None = None  # su target user from the host's privilege data
+    skipped: bool = False  # True when the request's ``when`` guard failed
 
 
 @dataclass
@@ -296,11 +315,29 @@ async def _prepare_host(
     whole inventory to overlap the fact reads over SSH. Within a host the
     requests are materialized in order against pre-deployment state (prepare
     never sends commands, so nothing mutates between them).
+
+    A request whose ``when`` guard fails on this host is *not* materialized:
+    the plan records a ``skipped`` entry without reading any facts (the
+    operation might gather facts this host cannot even provide -- e.g. a dnf
+    fact on a non-dnf host the guard exists to exclude). The guard reads
+    static inventory data only, so the apply phase reaches the same decision.
     """
     cache = FactCache(host, phase="prepare")
     requests = list(deploy_func(host))
     plan = []
     for request in requests:
+        guard = request.when_failure(host)
+        if guard is not None:
+            plan.append(
+                PlannedOperation(
+                    request=request,
+                    changed=False,
+                    reason=f"when guard {guard.__name__}",
+                    commands=(),
+                    skipped=True,
+                )
+            )
+            continue
         ctx, commands = await materialize(host, cache, request)
         plan.append(
             PlannedOperation(
@@ -366,10 +403,23 @@ async def _apply_host_step(rt: HostRuntime) -> LogEntry | None:
     pulled). Commands within the host are sent sequentially -- some sequences
     are order-dependent -- so concurrency is only across hosts, provided by
     ``run_apply`` gathering this coroutine for every active host.
+
+    A request whose ``when`` guard fails on this host returns a ``skipped``
+    log entry without materializing or sending anything -- the request still
+    consumed its lockstep slot, so the shared schedule stays aligned.
     """
     if rt.done or rt.current_request is None:
         return None
     request = rt.current_request
+    guard = request.when_failure(rt.host)
+    if guard is not None:
+        return LogEntry(
+            host=rt.host.name,
+            name=request.name or request.func.__name__,
+            changed=False,
+            reason=f"when guard {guard.__name__}",
+            skipped=True,
+        )
     # Resolve the tri-state escalation flags (``Privilege``) to the concrete
     # bools the execution layer speaks -- ``send_command``/``command_shell``/
     # ``LogEntry`` and the host's privilege builders all take a bool, and only
@@ -486,7 +536,9 @@ def format_plan(plans: dict[str, list[PlannedOperation]]) -> str:
     for host_name, plan in plans.items():
         for planned in plan:
             name = planned.request.name or planned.request.func.__name__
-            if planned.changed:
+            if planned.skipped:
+                lines.append(f"{host_name}: {name:<24} [skipped: {planned.reason}]")
+            elif planned.changed:
                 lines.append(f"{host_name}: {name:<24} [changed: {planned.reason}]")
             else:
                 lines.append(f"{host_name}: {name:<24} [no change: {planned.reason}]")
@@ -497,7 +549,9 @@ def format_log(report: ApplyReport) -> str:
     """Render the apply-phase run log, including generated commands."""
     lines = []
     for entry in report.log:
-        if entry.changed:
+        if entry.skipped:
+            lines.append(f"{entry.host}: {entry.name:<24} [skipped: {entry.reason}]")
+        elif entry.changed:
             lines.append(f"{entry.host}: {entry.name:<24} [changed: {entry.reason}]")
             for cmd in entry.commands:
                 lines.append(

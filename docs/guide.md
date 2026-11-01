@@ -16,8 +16,8 @@ def deploy(host: Host) -> Generator[OperationRequest, None, None]:
 
 Requests are built with the [`op`][reemote5.core.op] helper, which takes the
 operation function, an optional human-readable `name` for plan output, optional
-`sudo` and `su` elevation flags, and the operation's parameters **as keyword
-arguments only**:
+`sudo` and `su` elevation flags, an optional `when` eligibility guard, and the
+operation's parameters **as keyword arguments only**:
 
 ```python
 from reemote5 import dnf, files, op
@@ -31,10 +31,11 @@ yield op(
 )
 ```
 
-`name`, `sudo` and `su` are *meta-parameters*: they tell the driver how to run
-(and label) the operation rather than being forwarded to it, so `sudo=True` does
-not require the operation function to accept a `sudo` argument. When set, the
-driver elevates every command the operation yields -- the real asyncssh
+`name`, `sudo`, `su` and `when` are *meta-parameters*: they tell the driver how
+to run (and label, or skip) the operation rather than being forwarded to it, so
+`sudo=True` does not require the operation function to accept a `sudo` argument.
+When set, the driver elevates every command the operation yields -- the real
+asyncssh
 transport wraps its shell with `sudo` and/or `su`, and
 [`format_log`][reemote5.drivers.format_log] renders the elevated command. The
 test framework's `SimulatedHost` seam ignores them, since privilege has no
@@ -67,6 +68,31 @@ role while still honouring a request that explicitly opted out with
 `sudo=False` — something a plain bool cannot express, since it cannot tell “run
 this one unprivileged” from “never flagged”. (`op` and `sub_deploy` still accept
 a plain bool for convenience: `True` → `ON`, `False` → `OFF`.)
+
+`when` is the *eligibility* meta-parameter: a predicate over static host data
+that decides **whether** a request runs on a host, orthogonally to `sudo`/`su`
+deciding **how** it runs. A request whose guard fails on a host is skipped there
+— never materialized, no facts read, nothing sent — but keeps its slot in the
+sequence, so every host shares one schedule and the plan and run log show
+`[skipped: when guard <name>]` side by side with the hosts that run it:
+
+```python
+def is_canary(host: Host) -> bool:
+    return "canary" in host.tags
+
+yield op(dnf.packages, name="Install canary tooling",
+         packages=("strace", "tcpdump"), sudo=True, when=is_canary)
+```
+
+This is the declarative alternative to `if host.name == ...` branching in the
+deploy body (which changes the request *sequence* per host). Two rules keep it
+deterministic: the predicate reads only **static** inventory data (`host.name`,
+`host.group`, `host.tags`, ...), never mutable facts, so both phases reach the
+same skip decision; and it is a **stable function object** defined at module or
+composition level — an inline `lambda` in the deploy body is a fresh object on
+each phase invocation, which the determinism guard correctly reports as
+divergence. A skipped request is a third outcome beside *changed* and
+*no change*: ineligible regardless of state, versus nothing to do.
 
 Three rules follow from the model:
 
@@ -119,12 +145,16 @@ request that did not deliberately opt out — the inner request wins whenever it
 has an opinion (`sudo=True`/`sudo=False`), and the policy only fills the
 unflagged (`UNSET`) ones, so a forced-elevation policy still respects an
 explicit `sudo=False` (see the [`Privilege`][reemote5.core.Privilege] tri-state
-above).
+above). `when=...` sets a role-level *eligibility guard* — the analogue of
+Ansible's block-level `when` — which, unlike the escalation policy, composes by
+conjunction: the wrapper's predicates and each request's own `when` must all
+pass, so a wrapper can only restrict eligibility, never widen it.
 [`compose`][reemote5.core.compose] concatenates sub-deploys into one
 deploy-shaped callable in argument order — an explicit cross-role ordering
 statement — and with `dedupe=True` collapses requests sharing the same
-*effective identity* (`func`, args, kwargs, `sudo` and `su` — everything that
-reaches the host, but not the plan `name`) to their first occurrence, so
+*effective identity* (`func`, args, kwargs, `sudo`, `su` and `when` — everything
+that decides whether and how a request executes, but not the plan `name`) to
+their first occurrence, so
 independently written roles can each declare the same prerequisite under
 their own label:
 
@@ -162,8 +192,9 @@ Rules that keep composition deterministic:
   internal state (the dedupe set) per call, so the prepare and apply phases
   flatten identically and the determinism guard holds.
 - Dedupe collapses by *effective identity*: `name` only labels a request in
-  plans and logs and is excluded from the dedupe key, while `sudo` and `su`
-  are part of it (they change what executes). The first occurrence wins and
+  plans and logs and is excluded from the dedupe key, while `sudo`/`su` (they
+  change what executes) and `when` (it changes whether a request executes) are
+  part of it. The first occurrence wins and
   keeps its name, so identically-parameterized requests collapse even under
   different labels or `name_prefix`es — at the cost of silently dropping the
   later label. `OperationRequest` equality itself stays maximal (name
@@ -175,7 +206,8 @@ Rules that keep composition deterministic:
   so the same composed callable is used in both phases.
 
 Runnable demonstrations of each pattern — deduplication, environment layering,
-privilege policies, role ordering, per-host branching and patch windows — live
+privilege policies, role ordering, per-host branching, eligibility guards and
+patch windows — live
 in [Examples](examples/demonstrations/composition.md).
 
 ## Running a deploy
@@ -448,7 +480,13 @@ Safe patterns:
   [`dnf.packages`][reemote5.modules.dnf.dnf.packages] and
   [`files.link`][reemote5.modules.files.files.link] do);
 - branch only on **immutable** inputs — host name, inventory data, deploy
-  arguments — which read identically in both phases.
+  arguments — which read identically in both phases;
+- guard per-host eligibility with a `when` predicate over static data instead
+  of an `if` in the deploy body — the request sequence stays identical on every
+  host and the driver skips ineligible ones (see
+  [Deploy scripts](#deploy-scripts)). Like the operation functions themselves,
+  predicates must be stable function objects: an inline `lambda` is recreated
+  on each phase invocation and compares unequal, raising `DeterminismError`.
 
 ## Design invariants
 
