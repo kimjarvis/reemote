@@ -227,9 +227,9 @@ module that defines it:
 | Layer | Objects | Reference page |
 | --- | --- | --- |
 | **Drivers** | [`run`][reemote5.drivers.run], [`run_prepare`][reemote5.drivers.run_prepare], [`run_apply`][reemote5.drivers.run_apply], [`send_command`][reemote5.drivers.send_command], [`format_plan`][reemote5.drivers.format_plan], [`format_log`][reemote5.drivers.format_log] | [drivers](drivers.md) |
-| **Core objects** | [`OperationRequest`][reemote5.core.OperationRequest], [`op`][reemote5.core.op], [`OpContext`][reemote5.core.OpContext], [`FactCache`][reemote5.core.FactCache], [`HostRuntime`][reemote5.core.HostRuntime] | [core](core.md) |
+| **Core objects** | [`OperationRequest`][reemote5.core.OperationRequest], [`op`][reemote5.core.op], [`OpContext`][reemote5.core.OpContext], [`FactCache`][reemote5.core.FactCache], [`HostRuntime`][reemote5.core.HostRuntime], [`OperationError`][reemote5.core.OperationError] | [core](core.md) |
 | **Commands** | [`Command`][reemote5.commands.Command], [`StringCommand`][reemote5.commands.StringCommand], [`TransferCommand`][reemote5.commands.TransferCommand], [`WaitCommand`][reemote5.commands.WaitCommand], [`WaitTimeoutError`][reemote5.commands.WaitTimeoutError] | [commands](commands.md) |
-| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`validate_inventory`][reemote5.hosts.validate_inventory], [`InventoryError`][reemote5.hosts.InventoryError], [`DnfPackages`][reemote5.modules.dnf.dnf.DnfPackages], [`FileLink`][reemote5.modules.files.files.FileLink], [`RemoteFileSha1`][reemote5.modules.files.files.RemoteFileSha1], [`FileContents`][reemote5.modules.files.files.FileContents], [`BlockDevices`][reemote5.modules.hardware.hardware.BlockDevices], [`SystemdServiceState`][reemote5.modules.server.server.SystemdServiceState], [`dnf.packages`][reemote5.modules.dnf.dnf.packages], [`dnf.update`][reemote5.modules.dnf.dnf.update], [`dnf.repo`][reemote5.modules.dnf.dnf.repo], [`dnf.rpm`][reemote5.modules.dnf.dnf.rpm], [`dnf.key`][reemote5.modules.dnf.dnf.key], [`dnf.module`][reemote5.modules.dnf.dnf.module], [`files.link`][reemote5.modules.files.files.link], [`files.put`][reemote5.modules.files.files.put], [`files.get`][reemote5.modules.files.files.get], [`files.edit`][reemote5.modules.files.files.edit], [`files.move`][reemote5.modules.files.files.move], [`server.service`][reemote5.modules.server.server.service], [`server.wait_service`][reemote5.modules.server.server.wait_service] | [hosts](hosts.md), [modules/dnf](modules/dnf.md), [modules/files](modules/files.md), [modules/hardware](modules/hardware.md), [modules/server](modules/server.md) |
+| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`validate_inventory`][reemote5.hosts.validate_inventory], [`InventoryError`][reemote5.hosts.InventoryError], [`DnfPackages`][reemote5.modules.dnf.dnf.DnfPackages], [`FileLink`][reemote5.modules.files.files.FileLink], [`RemoteFileSha1`][reemote5.modules.files.files.RemoteFileSha1], [`FileContents`][reemote5.modules.files.files.FileContents], [`BlockDevices`][reemote5.modules.hardware.hardware.BlockDevices], [`SystemdServiceState`][reemote5.modules.server.server.SystemdServiceState], [`dnf.packages`][reemote5.modules.dnf.dnf.packages], [`dnf.update`][reemote5.modules.dnf.dnf.update], [`dnf.repo`][reemote5.modules.dnf.dnf.repo], [`dnf.rpm`][reemote5.modules.dnf.dnf.rpm], [`dnf.key`][reemote5.modules.dnf.dnf.key], [`dnf.module`][reemote5.modules.dnf.dnf.module], [`files.link`][reemote5.modules.files.files.link], [`files.put`][reemote5.modules.files.files.put], [`files.get`][reemote5.modules.files.files.get], [`files.edit`][reemote5.modules.files.files.edit], [`files.move`][reemote5.modules.files.files.move], [`server.group`][reemote5.modules.server.server.group], [`server.hostname`][reemote5.modules.server.server.hostname], [`server.kill`][reemote5.modules.server.server.kill], [`server.modprobe`][reemote5.modules.server.server.modprobe], [`server.mount`][reemote5.modules.server.server.mount], [`server.service`][reemote5.modules.server.server.service], [`server.timezone`][reemote5.modules.server.server.timezone], [`server.wait_service`][reemote5.modules.server.server.wait_service] | [hosts](hosts.md), [modules/dnf](modules/dnf.md), [modules/files](modules/files.md), [modules/hardware](modules/hardware.md), [modules/server](modules/server.md) |
 | **Connectors** | [`DockerHost`][reemote5.connectors.docker.DockerHost], [`validate_docker_connection`][reemote5.connectors.docker.validate_docker_connection] | [connectors/docker](connectors/docker.md) |
 
 !!! note "Design-doc references"
@@ -242,7 +242,7 @@ module that defines it:
 
 ```text
 src/reemote5/
-├── core.py            # OperationRequest, OpContext, FactCache, HostRuntime, op()
+├── core.py            # OperationRequest, OpContext, FactCache, HostRuntime, OperationError, op()
 ├── commands.py        # Command descriptors (Command, StringCommand, TransferCommand, WaitCommand)
 ├── drivers.py         # run_prepare, run_apply, send_command, run, formatters
 ├── hosts.py           # Host (materialized from inventory entries)
@@ -256,7 +256,7 @@ src/reemote5/
     ├── hardware/
     │   └── hardware.py  # BlockDevices (df), CpuInfo (lscpu), Cpus (getconf), DiskStats (/proc/diskstats), DmiInfo (/sys/class/dmi/id), Ipv4Addrs/Ipv6Addrs/NetworkDevices (ip), LsBlk (lsblk), SmbiosInfo (dmidecode)
     └── server/
-        └── server.py  #   SystemdServiceState/Enabled, server.service/wait_service + their command descriptors
+        └── server.py  #   SystemdServiceState/Enabled, server.group/hostname/kill/modprobe/mount/service/timezone/wait_service + their command descriptors
 
 examples/                     # runnable usage examples (not part of the library)
 tests/simulated_host.py     # SimulatedHost (test framework, not part of the library)

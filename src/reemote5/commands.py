@@ -28,6 +28,14 @@ class StringCommand(Command):
 
     command: str
 
+    def shell(self) -> str:
+        """The raw shell text, verbatim -- the descriptor *is* the command line.
+
+        Without this, ``command_shell`` would fall back to ``str(cmd)`` (the
+        dataclass repr) and the transport would run that repr as shell text.
+        """
+        return self.command
+
 
 @dataclass(frozen=True)
 class TransferCommand(Command):

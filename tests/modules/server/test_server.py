@@ -50,8 +50,35 @@ fixtures over the real-transport path, name quoting and parsing edge cases,
 and the ``SimulatedHost`` seam) and the
 ``SystemdServiceState`` and ``SystemdServiceEnabled`` facts (over the
 real-transport path, parsing canned shell output, and through the
-``SimulatedHost`` seams), the ``service`` operation's option set and its
-``SystemctlCommand`` descriptors,
+``SimulatedHost`` seams), the ``group`` operation's option set and its
+``GroupAddCommand``/``GroupDelCommand`` descriptors (pyinfra's own eight
+operation fixtures replayed over the ``SimulatedHost`` seams, idempotence,
+the kernel dispatch and the end-to-end lockstep run), the ``hostname``
+operation and its ``SetHostnameCommand`` descriptor (pyinfra's own six
+operation fixtures replayed over the ``SimulatedHost`` seams with the
+dropped ``hostname_file`` upload step, the ``Which`` dispatch between
+``hostnamectl`` and the bare ``hostname`` command, idempotence and the
+end-to-end lockstep run), the ``kill`` operation and its ``KillCommand``
+descriptor (pyinfra's own three operation fixtures replayed over the
+``SimulatedHost`` seam, the stateless always-changed behaviour, the
+``processes`` seam mutation, the snapshot-factory pattern, the determinism
+guard against live-state branching and the end-to-end lockstep run), the
+``modprobe`` operation and its ``ModprobeCommand`` descriptor (pyinfra's own
+nine operation fixtures replayed over the ``SimulatedHost`` seam, the
+load/unload partition against ``KernelModules``, the ``kernel_modules`` seam
+mutation, the determinism guard against live-state branching and the
+end-to-end lockstep run), the ``mount`` operation and its ``MountCommand``
+descriptor (pyinfra's own fifteen operation fixtures replayed over the
+``SimulatedHost`` seam, the lookup-by-device fallback and the BSD remount
+dispatch against ``Mounts``/``Kernel``, the ``mounts`` seam mutation, the
+determinism guard against live-state branching and the end-to-end lockstep
+run), the ``timezone`` operation and its ``SetTimezoneCommand`` descriptor
+(pyinfra's own noop and set_timedatectl fixtures replayed over the
+``SimulatedHost`` seams, the dropped non-systemd fallback raising
+``OperationError`` instead, idempotence and the end-to-end lockstep run),
+the
+``service``
+operation's option set and its ``SystemctlCommand`` descriptors,
 and the waiting design: the ``WaitCommand`` base, the generic
 ``WaitForFactCommand`` poll loop (already met, met after several polls, and
 timeout -- all without real sleeping), the ``send_command`` dispatch onto
@@ -61,7 +88,7 @@ sequence is identical in both phases (determinism), it passes when the unit
 is active and aborts the run with ``WaitTimeoutError`` when it is not.
 """
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -69,8 +96,9 @@ from types import SimpleNamespace
 import pytest
 
 from reemote5.commands import WaitCommand, WaitTimeoutError
-from reemote5.core import FactCache, OpContext, OperationRequest, op
+from reemote5.core import FactCache, OpContext, OperationError, OperationRequest, op
 from reemote5.drivers import (
+    DeterminismError,
     command_shell,
     format_log,
     format_plan,
@@ -86,6 +114,8 @@ from reemote5.modules.server.server import (
     Arch,
     AuthorizedKeys,
     Date,
+    GroupAddCommand,
+    GroupDelCommand,
     Groups,
     HasGui,
     Home,
@@ -93,15 +123,21 @@ from reemote5.modules.server.server import (
     Kernel,
     KernelModules,
     KernelVersion,
+    KillCommand,
     Last,
     LinuxDistribution,
     LinuxGui,
     LinuxName,
     Locales,
     LsbRelease,
+    ModprobeCommand,
+    MountCommand,
     Mounts,
     Path,
     Processes,
+    SetHostnameCommand,
+    SetTimezoneCommand,
+    Sysctl,
     SystemctlCommand,
     SystemdServiceEnabled,
     SystemdServiceState,
@@ -2730,6 +2766,151 @@ async def test_processes_gather_fact_across_hosts():
     }
 
 
+# --- Sysctl --------------------------------------------------------------------
+
+
+async def test_sysctl_parses_pyintras_linux_fixture():
+    # pyinfra's own fact fixture (tests/facts/server.Sysctl/sysctl_linux.json):
+    # command "sysctl -a 2>/dev/null || true", int values including a negative
+    # one, and a row without a separator ("nope what") skipped.
+    host = CannedShellHost(
+        "net.ipv4.tcp_adv_win_scale = -2\n"
+        "vm.nr_hugepages_mempolicy = 0\n"
+        "nope what\n"
+        "vm.nr_overcommit_hugepages = 0\n"
+    )
+    assert await Sysctl.process(host) == {
+        "net.ipv4.tcp_adv_win_scale": -2,
+        "vm.nr_hugepages_mempolicy": 0,
+        "vm.nr_overcommit_hugepages": 0,
+    }
+    assert host.shells == ["sysctl -a 2>/dev/null || true"]
+
+
+async def test_sysctl_parses_pyintras_macos_fixture():
+    # pyinfra's sysctl_macos.json fixture: BSD rows separate with ":".
+    host = CannedShellHost(
+        "security.mac.sysvmsg_enforce: 1\n"
+        "security.mac.sysvsem_enforce: 1\n"
+        "security.mac.sysvshm_enforce: 1\n"
+    )
+    assert await Sysctl.process(host) == {
+        "security.mac.sysvmsg_enforce": 1,
+        "security.mac.sysvsem_enforce": 1,
+        "security.mac.sysvshm_enforce": 1,
+    }
+
+
+async def test_sysctl_parses_pyintras_port_range_fixture():
+    # pyinfra's sysctl_port_range.json fixture: a tab-separated pair becomes
+    # a list of ints, a whitespace-only value keeps "", and a simple word
+    # stays a string.
+    host = CannedShellHost(
+        "net.ipv4.ip_local_port_range = 1024\t65535\n"
+        "net.ipv4.ip_local_reserved_ports = \n"
+        "kern.hostname: example\n"
+    )
+    assert await Sysctl.process(host) == {
+        "net.ipv4.ip_local_port_range": [1024, 65535],
+        "net.ipv4.ip_local_reserved_ports": "",
+        "kern.hostname": "example",
+    }
+
+
+def test_sysctl_command_quotes_the_named_keys():
+    assert Sysctl.command() == "sysctl -a 2>/dev/null || true"
+    # Safe tokens stay unquoted (pyinfra's QuoteString), multiple keys join
+    # with spaces, and a key carrying metacharacters is a literal lookup.
+    assert (
+        Sysctl.command(["kern.max-files"])
+        == "sysctl kern.max-files 2>/dev/null || true"
+    )
+    assert (
+        Sysctl.command(["a.b", "c.d"]) == "sysctl a.b c.d 2>/dev/null || true"
+    )
+    assert (
+        Sysctl.command(["kern.evil; whoami"])
+        == "sysctl 'kern.evil; whoami' 2>/dev/null || true"
+    )
+
+
+async def test_sysctl_keyed_read_over_the_shell():
+    host = CannedShellHost("kern.max-files = 2000\n")
+    assert await Sysctl.process(host, keys=["kern.max-files"]) == {
+        "kern.max-files": 2000
+    }
+    assert host.shells == ["sysctl kern.max-files 2>/dev/null || true"]
+
+
+def test_sysctl_parse_edge_cases():
+    # A value outside the simple character set stays the stripped raw
+    # string -- no int conversion, no list split.
+    assert Sysctl.parse(["kernel.core_pattern = |/usr/sbin/coredump %p"]) == {
+        "kernel.core_pattern": "|/usr/sbin/coredump %p"
+    }
+    # Mixed tokens int-convert individually; a single token collapses.
+    assert Sysctl.parse(["kern.mix = 1 two"]) == {"kern.mix": [1, "two"]}
+    assert Sysctl.parse(["kern.one = 42"]) == {"kern.one": 42}
+    # Truthiness is tested BEFORE stripping: "key =" (nothing after the
+    # separator) is skipped, "key = " (whitespace) keeps "".
+    assert Sysctl.parse(["kern.none =", "kern.blank = "]) == {"kern.blank": ""}
+    # "=" wins over ":" when both appear (the first split is on "=").
+    assert Sysctl.parse(["kern.both: x = 5"]) == {"kern.both: x": 5}
+
+
+async def test_sysctl_is_empty_on_empty_output():
+    # An unknown key or a failed read maps to {} (pyinfra's default = dict).
+    assert await Sysctl.process(CannedShellHost("")) == {}
+
+
+async def test_sysctl_reads_the_simulated_seam():
+    host = SimulatedHost(
+        name="h",
+        sysctls={"fs.file-max": 100000, "net.ipv4.ip_local_port_range": [1024, 65535]},
+    )
+    assert await Sysctl.process(host) == {
+        "fs.file-max": 100000,
+        "net.ipv4.ip_local_port_range": [1024, 65535],
+    }
+    # A keys filter selects the named settings; an unknown key reads as
+    # absent, like the swallowed sysctl error.
+    assert await Sysctl.process(host, keys=["fs.file-max"]) == {"fs.file-max": 100000}
+    assert await Sysctl.process(host, keys=["fs.file-max", "no.such"]) == {
+        "fs.file-max": 100000
+    }
+    assert await Sysctl.process(host, keys=["no.such"]) == {}
+    # The seam defaults to {} -- a simulated machine with no settings listed.
+    assert await Sysctl.process(SimulatedHost(name="h")) == {}
+
+
+async def test_sysctl_seam_returns_a_copy():
+    host = SimulatedHost(name="h", sysctls={"kern.pair": [1, 2]})
+    result = await Sysctl.process(host)
+    result["kern.pair"].append(3)
+    result["kern.extra"] = 0
+    assert host.sysctls == {"kern.pair": [1, 2]}
+
+
+async def test_sysctl_gather_fact_across_hosts():
+    hosts = [
+        SimulatedHost(name="web1", sysctls={"fs.file-max": 100000}),
+        SimulatedHost(name="web2", sysctls={"fs.file-max": 200000}),
+    ]
+    assert await gather_fact(hosts, Sysctl) == {
+        "web1": {"fs.file-max": 100000},
+        "web2": {"fs.file-max": 200000},
+    }
+    # The keys argument is forwarded to process verbatim.
+    assert await gather_fact(hosts, Sysctl, keys=["fs.file-max"]) == {
+        "web1": {"fs.file-max": 100000},
+        "web2": {"fs.file-max": 200000},
+    }
+    assert await gather_fact(hosts, Sysctl, keys=["no.such"]) == {
+        "web1": {},
+        "web2": {},
+    }
+
+
 # --- Timezone ----------------------------------------------------------------
 
 
@@ -3265,6 +3446,1639 @@ async def test_service_commands_mutate_the_simulated_host():
     await send_command(host, SystemctlCommand(action="disable", unit="httpd.service"))
     assert host.services == {"httpd.service": "inactive"}
     assert host.enabled_services == set()
+
+
+# --- server.group ------------------------------------------------------------
+
+
+def test_group_add_command_shell_rendering():
+    assert GroupAddCommand(group="docker").shell() == "groupadd docker"
+    assert GroupAddCommand(group="docker", system=True).shell() == "groupadd -r docker"
+    assert (
+        GroupAddCommand(group="somegroup", system=True, gid=1000).shell()
+        == "groupadd -r somegroup --gid 1000"
+    )
+    assert (
+        GroupAddCommand(group="my group; whoami").shell()
+        == "groupadd 'my group; whoami'"
+    )
+    assert (
+        GroupAddCommand(group="somegroup", gid=1000, freebsd=True).shell()
+        == "pw groupadd -n somegroup -g 1000"
+    )
+    assert command_shell(GroupAddCommand(group="docker"), sudo=True) == (
+        "sudo groupadd docker"
+    )
+
+
+def test_group_del_command_shell_rendering():
+    assert GroupDelCommand(group="docker").shell() == "groupdel docker"
+    assert (
+        GroupDelCommand(group="my group; whoami").shell()
+        == "groupdel 'my group; whoami'"
+    )
+    assert (
+        GroupDelCommand(group="somegroup", freebsd=True).shell()
+        == "pw groupdel -n somegroup"
+    )
+    assert command_shell(GroupDelCommand(group="docker"), sudo=True) == (
+        "sudo groupdel docker"
+    )
+
+
+@pytest.mark.parametrize(
+    ("group", "kernel", "groups", "kwargs", "expected"),
+    [
+        # pyinfra's own operation fixtures (tests/operations/server.group/):
+        # add.json, add_needs_quotes.json, add.freebsd.json,
+        # add_freebsd_needs_quotes.json, delete.json, delete_needs_quotes.json,
+        # delete.freebsd.json, delete_freebsd_needs_quotes.json. Its server.Os
+        # fact is the deprecated alias of server.Kernel, so the fixture's Os
+        # value feeds the os_kernel seam.
+        ("somegroup", "Linux", [], {"gid": 1000, "system": True},
+         ["groupadd -r somegroup --gid 1000"]),
+        ("my group; whoami", "Linux", [], {},
+         ["groupadd 'my group; whoami'"]),
+        # system=True is ignored on FreeBSD ("BSD" in the kernel name).
+        ("somegroup", "FreeBSD", [], {"gid": 1000, "system": True},
+         ["pw groupadd -n somegroup -g 1000"]),
+        ("my group; whoami", "FreeBSD", [], {"gid": 1000},
+         ["pw groupadd -n 'my group; whoami' -g 1000"]),
+        ("somegroup", "Linux", ["somegroup"], {"present": False},
+         ["groupdel somegroup"]),
+        ("my group; whoami", "Linux", ["my group; whoami"], {"present": False},
+         ["groupdel 'my group; whoami'"]),
+        ("somegroup", "FreeBSD", ["somegroup"], {"present": False},
+         ["pw groupdel -n somegroup"]),
+        ("my group; whoami", "FreeBSD", ["my group; whoami"], {"present": False},
+         ["pw groupdel -n 'my group; whoami'"]),
+    ],
+)
+async def test_group_matches_pyinfra_operation_fixtures(
+    group: str, kernel: str, groups: list[str], kwargs: dict, expected: list[str]
+):
+    host = SimulatedHost(name="h", os_groups=groups, os_kernel=kernel)
+    ctx, commands = await materialize(host, op(server.group, group=group, **kwargs))
+    assert ctx.changed
+    assert [cmd.shell() for cmd in commands] == expected
+
+
+async def test_group_creates_an_absent_group():
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(host, op(server.group, group="docker"))
+    assert ctx.changed
+    assert ctx.reason == "group docker absent, will create"
+    assert commands == [GroupAddCommand(group="docker")]
+
+
+async def test_group_removes_a_present_group():
+    host = SimulatedHost(name="h", os_groups=["docker"])
+    ctx, commands = await materialize(
+        host, op(server.group, group="docker", present=False)
+    )
+    assert ctx.changed
+    assert ctx.reason == "group docker present, will remove"
+    assert commands == [GroupDelCommand(group="docker")]
+
+
+async def test_group_no_change_when_already_present():
+    host = SimulatedHost(name="h", os_groups=["docker"])
+    ctx, commands = await materialize(host, op(server.group, group="docker"))
+    assert not ctx.changed
+    assert ctx.reason == "group docker already present"
+    assert commands == []
+
+
+async def test_group_no_change_when_already_absent():
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host, op(server.group, group="docker", present=False)
+    )
+    assert not ctx.changed
+    assert ctx.reason == "group docker already absent"
+    assert commands == []
+
+
+async def test_group_gid_accepts_a_string_and_zero_is_skipped():
+    host = SimulatedHost(name="h")
+    _, commands = await materialize(host, op(server.group, group="docker", gid="1500"))
+    assert commands == [GroupAddCommand(group="docker", gid="1500")]
+    assert commands[0].shell() == "groupadd docker --gid 1500"
+    # pyinfra's `if gid:` truthiness check: a gid of 0 renders no flag.
+    _, commands = await materialize(host, op(server.group, group="docker", gid=0))
+    assert commands[0].shell() == "groupadd docker"
+
+
+async def test_group_existing_group_is_never_modified():
+    # system/gid only apply at creation; a present group plans no command
+    # even when the request's gid or system flag differs (pyinfra parity).
+    host = SimulatedHost(name="h", os_groups=["docker"])
+    ctx, commands = await materialize(
+        host, op(server.group, group="docker", system=True, gid=1500)
+    )
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_group_absorbs_unknown_keyword_arguments():
+    host = SimulatedHost(name="h")
+    _ctx, commands = await materialize(
+        host, op(server.group, group="docker", _pyinfra_global=True)
+    )
+    assert commands == [GroupAddCommand(group="docker")]
+
+
+async def test_group_commands_mutate_the_simulated_host():
+    host = SimulatedHost(name="h", os_groups=["wheel"])
+    await send_command(host, GroupAddCommand(group="docker"))
+    assert host.os_groups == ["wheel", "docker"]
+    # A repeat add leaves the list alone (the operation's fact check would
+    # not yield it, but the seam stays safe regardless).
+    await send_command(host, GroupAddCommand(group="docker"))
+    assert host.os_groups == ["wheel", "docker"]
+    await send_command(host, GroupDelCommand(group="docker"))
+    assert host.os_groups == ["wheel"]
+
+
+def ensure_groups(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: create the docker group, then a system group."""
+    yield op(server.group, name="Create docker group", group="docker", sudo=True)
+    yield op(
+        server.group,
+        name="Create lusers system group",
+        group="lusers",
+        system=True,
+        gid=1500,
+        sudo=True,
+    )
+
+
+def wheel_only_factory(entry: dict) -> Host:
+    """``host_factory`` building SimulatedHosts whose only group is wheel."""
+    host = SimulatedHost.from_inventory(entry)
+    host.os_groups = ["wheel"]  # fresh list per host
+    return host
+
+
+async def test_group_runs_across_hosts_in_lockstep():
+    plans, report, hosts = await run(
+        INVENTORY, ensure_groups, host_factory=wheel_only_factory
+    )
+    assert format_plan(plans).splitlines() == [
+        "web1: Create docker group      [changed: group docker absent, will create]",
+        "web1: Create lusers system group [changed: group lusers absent, will create]",
+        "web2: Create docker group      [changed: group docker absent, will create]",
+        "web2: Create lusers system group [changed: group lusers absent, will create]",
+    ]
+    assert report is not None
+    # Lockstep: every host finishes the docker step before either creates
+    # lusers, and the elevated shells land in the log.
+    assert [e.name for e in report.log] == [
+        "Create docker group",
+        "Create docker group",
+        "Create lusers system group",
+        "Create lusers system group",
+    ]
+    log = format_log(report)
+    assert "$ sudo groupadd docker" in log
+    assert "$ sudo groupadd -r lusers --gid 1500" in log
+    for host in hosts:
+        assert host.os_groups == ["wheel", "docker", "lusers"]
+
+
+async def test_group_second_prepare_plans_no_change():
+    host = SimulatedHost(name="h", os_groups=["wheel"])
+    runtimes, plans = await run_prepare([host], ensure_groups)
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    assert [e.changed for e in report.log] == [True, True]
+    assert host.os_groups == ["wheel", "docker", "lusers"]
+    # The apply mutated the seam, so a fresh prepare sees both groups and
+    # plans no change -- the operation is idempotent across runs.
+    runtimes, plans = await run_prepare([host], ensure_groups)
+    assert [p.changed for p in plans["h"]] == [False, False]
+    assert [p.reason for p in plans["h"]] == [
+        "group docker already present",
+        "group lusers already present",
+    ]
+
+
+async def test_group_duplicate_requests_no_op_only_in_apply():
+    def twice(host: Host) -> Generator[OperationRequest]:
+        yield op(server.group, name="Create docker group", group="docker", sudo=True)
+        yield op(
+            server.group, name="Create docker group again", group="docker", sudo=True
+        )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], twice)
+    # The prepare cache persists across a host's requests and prepare never
+    # sends, so both identical requests plan a change...
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # ...while the per-step cache recreation makes the second a no-op.
+    assert [e.changed for e in report.log] == [True, False]
+    assert host.os_groups == ["docker"]
+
+
+async def test_group_dry_run_sends_nothing():
+    _plans, report, hosts = await run(
+        INVENTORY, ensure_groups, host_factory=wheel_only_factory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert host.os_groups == ["wheel"]
+
+
+# --- hostname operation -------------------------------------------------------
+
+
+def test_set_hostname_command_shell_rendering():
+    assert (
+        SetHostnameCommand(hostname="web1.example.com").shell()
+        == "hostname web1.example.com"
+    )
+    assert (
+        SetHostnameCommand(hostname="web1.example.com", hostnamectl=True).shell()
+        == "hostnamectl set-hostname web1.example.com"
+    )
+    # pyinfra's QuoteString: a name carrying shell metacharacters is quoted.
+    assert (
+        SetHostnameCommand(hostname="my host; whoami", hostnamectl=True).shell()
+        == "hostnamectl set-hostname 'my host; whoami'"
+    )
+    assert (
+        SetHostnameCommand(hostname="my host; whoami").shell()
+        == "hostname 'my host; whoami'"
+    )
+    assert command_shell(SetHostnameCommand(hostname="web1"), sudo=True) == (
+        "sudo hostname web1"
+    )
+    assert command_shell(
+        SetHostnameCommand(hostname="web1", hostnamectl=True), sudo=True
+    ) == "sudo hostnamectl set-hostname web1"
+    assert command_shell(
+        SetHostnameCommand(hostname="web1", hostnamectl=True), su=True
+    ) == "su -c 'hostnamectl set-hostname web1'"
+
+
+@pytest.mark.parametrize(
+    ("name", "current", "hostnamectl", "expected"),
+    [
+        # pyinfra's own operation fixtures (tests/operations/server.hostname/).
+        # The upload step of set_hostname_bsd.json and set_hostname_linux.json
+        # is the deliberately dropped hostname_file branch, so only the shell
+        # command remains; the fixtures' server.Os value fed that branch's
+        # file auto-detection and is no longer read.
+        pytest.param(
+            "my-hostname.net", "my-hostname.net", "hostnamectl", [],
+            id="hostnamectl_noop",
+        ),
+        pytest.param(
+            "my-hostname.net", "my-hostname.net", None, [],
+            id="hostname_noop",
+        ),
+        pytest.param(
+            "my-hostname.net", "nope", None, ["hostname my-hostname.net"],
+            id="set_hostname_bsd",
+        ),
+        pytest.param(
+            "my-hostname.net", "nope", "hostnamectl",
+            ["hostnamectl set-hostname my-hostname.net"],
+            id="set_hostnamectl_linux",
+        ),
+        pytest.param(
+            "my host; whoami", "nope", "hostnamectl",
+            ["hostnamectl set-hostname 'my host; whoami'"],
+            id="set_hostnamectl_needs_quotes",
+        ),
+        pytest.param(
+            "my-hostname.net", "nope", None, ["hostname my-hostname.net"],
+            id="set_hostname_linux",
+        ),
+    ],
+)
+async def test_hostname_matches_pyinfra_operation_fixtures(
+    name: str, current: str, hostnamectl: str | None, expected: list[str]
+):
+    host = SimulatedHost(name="h", os_hostname=current)
+    if hostnamectl is not None:
+        host.command_paths = {"hostnamectl": hostnamectl}
+    ctx, commands = await materialize(host, op(server.hostname, hostname=name))
+    assert ctx.changed == bool(expected)
+    assert [cmd.shell() for cmd in commands] == expected
+    if not expected:
+        # pyinfra's noop_description, verbatim.
+        assert ctx.reason == "hostname is set"
+
+
+async def test_hostname_sets_via_hostnamectl_when_available():
+    host = SimulatedHost(
+        name="h",
+        os_hostname="old-host.net",
+        command_paths={"hostnamectl": "/usr/bin/hostnamectl"},
+    )
+    ctx, commands = await materialize(
+        host, op(server.hostname, hostname="web1.example.com")
+    )
+    assert ctx.changed
+    assert ctx.reason == "hostname is 'old-host.net', will set 'web1.example.com'"
+    assert commands == [
+        SetHostnameCommand(hostname="web1.example.com", hostnamectl=True)
+    ]
+
+
+async def test_hostname_falls_back_to_the_bare_hostname_command():
+    # No hostnamectl resolvable (the default empty command_paths): the
+    # legacy form is yielded, with no file write (the dropped branch).
+    host = SimulatedHost(name="h", os_hostname="old-host.net")
+    ctx, commands = await materialize(
+        host, op(server.hostname, hostname="web1.example.com")
+    )
+    assert ctx.changed
+    assert commands == [SetHostnameCommand(hostname="web1.example.com")]
+
+
+async def test_hostname_no_change_when_already_set():
+    for paths in ({}, {"hostnamectl": "/usr/bin/hostnamectl"}):
+        host = SimulatedHost(
+            name="h", os_hostname="web1.example.com", command_paths=paths
+        )
+        ctx, commands = await materialize(
+            host, op(server.hostname, hostname="web1.example.com")
+        )
+        assert not ctx.changed
+        assert ctx.reason == "hostname is set"
+        assert commands == []
+
+
+async def test_hostname_absorbs_unknown_keyword_arguments():
+    host = SimulatedHost(name="h", os_hostname="old-host.net")
+    _ctx, commands = await materialize(
+        host, op(server.hostname, hostname="web1.example.com", _pyinfra_global=True)
+    )
+    assert commands == [SetHostnameCommand(hostname="web1.example.com")]
+
+
+async def test_hostname_command_mutates_the_simulated_host():
+    host = SimulatedHost(name="h")
+    await send_command(
+        host, SetHostnameCommand(hostname="web1.example.com", hostnamectl=True)
+    )
+    assert host.os_hostname == "web1.example.com"
+    # Both command forms set the same running hostname in the simulation.
+    await send_command(host, SetHostnameCommand(hostname="web2.example.com"))
+    assert host.os_hostname == "web2.example.com"
+
+
+def set_hostnames(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: name each host after its inventory label."""
+    yield op(
+        server.hostname,
+        name="Set hostname",
+        hostname=f"{host.name}.example.com",
+        sudo=True,
+    )
+
+
+def old_hostname_factory(entry: dict) -> Host:
+    """``host_factory`` building SimulatedHosts with hostnamectl available."""
+    host = SimulatedHost.from_inventory(entry)
+    host.os_hostname = "old-host.net"
+    host.command_paths = {"hostnamectl": "/usr/bin/hostnamectl"}
+    return host
+
+
+async def test_hostname_runs_across_hosts_in_lockstep():
+    plans, report, hosts = await run(
+        INVENTORY, set_hostnames, host_factory=old_hostname_factory
+    )
+    assert format_plan(plans).splitlines() == [
+        (
+            "web1: Set hostname             [changed: hostname is 'old-host.net', "
+            "will set 'web1.example.com']"
+        ),
+        (
+            "web2: Set hostname             [changed: hostname is 'old-host.net', "
+            "will set 'web2.example.com']"
+        ),
+    ]
+    assert report is not None
+    assert [e.name for e in report.log] == ["Set hostname", "Set hostname"]
+    log = format_log(report)
+    # The elevated shells land in the log, one per host.
+    assert "$ sudo hostnamectl set-hostname web1.example.com" in log
+    assert "$ sudo hostnamectl set-hostname web2.example.com" in log
+    for host in hosts:
+        assert host.os_hostname == f"{host.name}.example.com"
+
+
+async def test_hostname_without_hostnamectl_runs_the_bare_command():
+    def legacy_factory(entry: dict) -> Host:
+        host = SimulatedHost.from_inventory(entry)
+        host.os_hostname = "old-host.net"
+        return host
+
+    _plans, report, hosts = await run(
+        INVENTORY, set_hostnames, host_factory=legacy_factory
+    )
+    assert report is not None
+    log = format_log(report)
+    assert "$ sudo hostname web1.example.com" in log
+    assert "$ sudo hostname web2.example.com" in log
+    for host in hosts:
+        assert host.os_hostname == f"{host.name}.example.com"
+
+
+async def test_hostname_second_prepare_plans_no_change():
+    host = old_hostname_factory({"host": "h", "connection": {}})
+    runtimes, plans = await run_prepare([host], set_hostnames)
+    assert [p.changed for p in plans["h"]] == [True]
+    report = await run_apply(runtimes, plans=plans)
+    assert [e.changed for e in report.log] == [True]
+    assert host.os_hostname == "h.example.com"
+    # The apply mutated the seam, so a fresh prepare sees the new name and
+    # plans no change -- the operation is idempotent across runs.
+    runtimes, plans = await run_prepare([host], set_hostnames)
+    assert [p.changed for p in plans["h"]] == [False]
+    assert [p.reason for p in plans["h"]] == ["hostname is set"]
+
+
+async def test_hostname_duplicate_requests_no_op_only_in_apply():
+    def twice(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.hostname, name="Set hostname", hostname="web1.example.com",
+            sudo=True,
+        )
+        yield op(
+            server.hostname, name="Set hostname again", hostname="web1.example.com",
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h", os_hostname="old-host.net")
+    runtimes, plans = await run_prepare([host], twice)
+    # The prepare cache persists across a host's requests and prepare never
+    # sends, so both identical requests plan a change...
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # ...while the per-step cache recreation makes the second a no-op.
+    assert [e.changed for e in report.log] == [True, False]
+    assert host.os_hostname == "web1.example.com"
+
+
+async def test_hostname_dry_run_sends_nothing():
+    _plans, report, hosts = await run(
+        INVENTORY, set_hostnames, host_factory=old_hostname_factory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert host.os_hostname == "old-host.net"
+
+
+# --- kill operation -----------------------------------------------------------
+
+
+NGINX_RECORD = {
+    "user": "root",
+    "state": "Ss",
+    "cpu_percent": 0.0,
+    "mem_percent": 0.1,
+    "command": "nginx",
+    "args": "nginx: master process /usr/sbin/nginx",
+}
+SSHD_RECORD = {
+    "user": "root",
+    "state": "Ss",
+    "cpu_percent": 0.0,
+    "mem_percent": 0.0,
+    "command": "sshd",
+    "args": "/usr/sbin/sshd -D",
+}
+
+
+def test_kill_command_shell_rendering():
+    assert KillCommand(pid=1234).shell() == "kill -TERM 1234"
+    assert KillCommand(pid=5678, signal="KILL").shell() == "kill -KILL 5678"
+    # pyinfra's QuoteString: a signal carrying shell metacharacters is
+    # quoted, so it reaches kill literally instead of being executed.
+    assert (
+        KillCommand(pid=1234, signal="9; rm -rf /").shell()
+        == "kill '-9; rm -rf /' 1234"
+    )
+    assert command_shell(KillCommand(pid=1234), sudo=True) == "sudo kill -TERM 1234"
+    assert command_shell(KillCommand(pid=1234), su=True) == "su -c 'kill -TERM 1234'"
+
+
+@pytest.mark.parametrize(
+    ("pid", "kwargs", "expected"),
+    [
+        # pyinfra's own operation fixtures (tests/operations/server.kill/),
+        # all marked "idempotent": false -- the kill always yields.
+        pytest.param(1234, {}, ["kill -TERM 1234"], id="kill_default"),
+        pytest.param(
+            5678, {"signal": "KILL"}, ["kill -KILL 5678"], id="kill_signal"
+        ),
+        pytest.param(
+            1234,
+            {"signal": "9; rm -rf /"},
+            ["kill '-9; rm -rf /' 1234"],
+            id="kill_quotes_injection",
+        ),
+    ],
+)
+async def test_kill_matches_pyinfra_operation_fixtures(
+    pid: int, kwargs: dict, expected: list[str]
+):
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(host, op(server.kill, pid=pid, **kwargs))
+    assert ctx.changed
+    assert [cmd.shell() for cmd in commands] == expected
+
+
+async def test_kill_is_stateless_and_sets_the_reason():
+    # No processes seeded at all: the operation reads no fact and still
+    # plans the kill (pyinfra's non-idempotent behaviour).
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(host, op(server.kill, pid=1234))
+    assert ctx.changed
+    assert ctx.reason == "kill process 1234 with signal TERM"
+    assert commands == [KillCommand(pid=1234)]
+
+
+async def test_kill_reads_no_fact():
+    host = CannedShellHost("")
+    _ctx, commands = await materialize(host, op(server.kill, pid=1234))
+    assert commands == [KillCommand(pid=1234)]
+    # Not a single shell was gathered -- the PID is the caller's input.
+    assert host.shells == []
+
+
+async def test_kill_absorbs_unknown_keyword_arguments():
+    host = SimulatedHost(name="h")
+    _ctx, commands = await materialize(
+        host, op(server.kill, pid=1234, _pyinfra_global=True)
+    )
+    assert commands == [KillCommand(pid=1234)]
+
+
+async def test_kill_command_mutates_the_simulated_host():
+    host = SimulatedHost(
+        name="h", processes={1234: dict(NGINX_RECORD), 5678: dict(SSHD_RECORD)}
+    )
+    await send_command(host, KillCommand(pid=1234))
+    assert 1234 not in host.processes
+    # The Processes fact's next read no longer lists the killed PID.
+    assert await Processes.process(host) == {5678: SSHD_RECORD}
+    # An absent PID is tolerated by the simulation (the real kill would
+    # exit non-zero and fail the apply step).
+    await send_command(host, KillCommand(pid=9999))
+    assert 5678 in host.processes
+
+
+def kill_workers(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: kill one known PID, elevated."""
+    yield op(server.kill, name="Kill worker", pid=1234, sudo=True)
+
+
+def worker_factory(entry: dict) -> Host:
+    """``host_factory`` building SimulatedHosts running one nginx PID."""
+    host = SimulatedHost.from_inventory(entry)
+    host.processes = {1234: dict(NGINX_RECORD)}
+    return host
+
+
+async def test_kill_runs_across_hosts_in_lockstep():
+    plans, report, hosts = await run(
+        INVENTORY, kill_workers, host_factory=worker_factory
+    )
+    assert format_plan(plans).splitlines() == [
+        f"web1: {'Kill worker':<24} [changed: kill process 1234 with signal TERM]",
+        f"web2: {'Kill worker':<24} [changed: kill process 1234 with signal TERM]",
+    ]
+    assert report is not None
+    assert [e.name for e in report.log] == ["Kill worker", "Kill worker"]
+    log = format_log(report)
+    # The elevated shells land in the log, one per host.
+    assert log.count("$ sudo kill -TERM 1234") == 2
+    for host in hosts:
+        assert host.processes == {}
+
+
+async def test_kill_is_not_idempotent_across_runs():
+    host = worker_factory({"host": "h", "connection": {}})
+    runtimes, plans = await run_prepare([host], kill_workers)
+    assert [p.changed for p in plans["h"]] == [True]
+    report = await run_apply(runtimes, plans=plans)
+    assert [e.changed for e in report.log] == [True]
+    assert host.processes == {}
+    # Stateless: even with the PID gone a fresh prepare still plans the
+    # kill -- unlike server.hostname, there is no fact to compare against.
+    _runtimes, plans = await run_prepare([host], kill_workers)
+    assert [p.changed for p in plans["h"]] == [True]
+
+
+async def test_kill_duplicate_requests_both_change_in_apply():
+    def twice(host: Host) -> Generator[OperationRequest]:
+        yield op(server.kill, name="Kill worker", pid=1234, sudo=True)
+        yield op(server.kill, name="Kill worker again", pid=1234, sudo=True)
+
+    host = worker_factory({"host": "h", "connection": {}})
+    runtimes, plans = await run_prepare([host], twice)
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # No fact check makes the second a no-op: both steps report a change.
+    # On a real host the second kill of the dead PID would exit non-zero
+    # (CommandError); the simulation tolerates the absent PID.
+    assert [e.changed for e in report.log] == [True, True]
+
+
+async def test_kill_dry_run_sends_nothing():
+    _plans, report, hosts = await run(
+        INVENTORY, kill_workers, host_factory=worker_factory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert host.processes == {1234: NGINX_RECORD}
+
+
+def build_kill_nginx(
+    snapshot: dict[str, dict[int, dict]],
+) -> Callable[[Host], Generator[OperationRequest]]:
+    """The example factory: close over a frozen Processes snapshot.
+
+    The returned deploy branches only on the snapshot taken BEFORE either
+    phase, so both phases yield the identical request sequence -- the
+    determinism-safe way to turn "find the PID" into "kill it" in one run.
+    """
+
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        for pid, info in sorted(snapshot[host.name].items()):
+            if info["command"] == "nginx":
+                yield op(
+                    server.kill, name=f"Kill nginx ({pid})", pid=pid, sudo=True
+                )
+
+    return deploy
+
+
+async def test_kill_snapshot_factory_runs_deterministically():
+    def factory(entry: dict) -> Host:
+        host = SimulatedHost.from_inventory(entry)
+        host.processes = {1234: dict(NGINX_RECORD), 5678: dict(SSHD_RECORD)}
+        return host
+
+    # The snapshot half of the pattern: one concurrent Processes read
+    # across the fleet, keyed by host name, before any deploy runs.
+    snapshot = await gather_fact([factory(e) for e in INVENTORY], Processes)
+    deploy = build_kill_nginx(snapshot)
+
+    plans, report, _hosts = await run(INVENTORY, deploy, host_factory=factory, dry=True)
+    assert report is None
+    assert [p.request.name for p in plans["web1"]] == ["Kill nginx (1234)"]
+
+    plans, report, hosts = await run(INVENTORY, deploy, host_factory=factory)
+    assert report is not None
+    # Same plan from the same frozen snapshot -- no DeterminismError.
+    assert [p.request.name for p in plans["web2"]] == ["Kill nginx (1234)"]
+    for host in hosts:
+        assert host.processes == {5678: SSHD_RECORD}
+
+
+async def test_kill_branching_on_live_state_raises_determinism_error():
+    def live_branch(host: Host) -> Generator[OperationRequest]:
+        yield op(server.kill, name="Kill parent", pid=1234, sudo=True)
+        # The illegal branch: consult live state the first kill mutates.
+        # Prepare sees the parent alive and plans one request; apply's
+        # second pull sees it dead and yields a second -- divergence.
+        if 1234 not in host.processes:
+            yield op(server.kill, name="Kill child", pid=5678, sudo=True)
+
+    host = SimulatedHost(
+        name="h", processes={1234: dict(NGINX_RECORD), 5678: dict(SSHD_RECORD)}
+    )
+    runtimes, plans = await run_prepare([host], live_branch)
+    assert [p.request.name for p in plans["h"]] == ["Kill parent"]
+    with pytest.raises(DeterminismError):
+        await run_apply(runtimes, plans=plans)
+
+
+# --- server.modprobe ---------------------------------------------------------
+
+
+def test_modprobe_command_shell_rendering():
+    assert ModprobeCommand(modules=("floppy",)).shell() == "modprobe -a floppy"
+    assert (
+        ModprobeCommand(modules=("floppy",), force=True).shell()
+        == "modprobe -f -a floppy"
+    )
+    assert (
+        ModprobeCommand(modules=("floppy",), present=False).shell()
+        == "modprobe -r -a floppy"
+    )
+    assert (
+        ModprobeCommand(modules=("floppy",), present=False, force=True).shell()
+        == "modprobe -f -r -a floppy"
+    )
+    assert ModprobeCommand(modules=("mod1", "mod3")).shell() == "modprobe -a mod1 mod3"
+    assert (
+        ModprobeCommand(modules=("evil; rm -rf /",)).shell()
+        == "modprobe -a 'evil; rm -rf /'"
+    )
+    assert command_shell(ModprobeCommand(modules=("floppy",)), sudo=True) == (
+        "sudo modprobe -a floppy"
+    )
+
+
+@pytest.mark.parametrize(
+    ("module", "loaded", "kwargs", "expected", "changed"),
+    [
+        # pyinfra's own operation fixtures (tests/operations/server.modprobe/):
+        # add.json, add_exists.json, add_force.json, add-list.json,
+        # add_multiple_exists.json, add_needs_quotes.json, remove.json,
+        # remove-list.json, remove_needs_quotes.json. Only membership in the
+        # KernelModules dict matters, so the fixtures' empty info dicts feed
+        # the kernel_modules seam verbatim.
+        ("somemodule", [], {}, ["modprobe -a somemodule"], True),
+        ("somemodule", ["somemodule"], {}, [], False),
+        ("somemodule", [], {"force": True}, ["modprobe -f -a somemodule"], True),
+        (["mod1", "mod2", "mod3"], ["mod2"], {}, ["modprobe -a mod1 mod3"], True),
+        (["somemodule", "someothermodule"], ["somemodule", "someothermodule"],
+         {}, [], False),
+        ("evil; rm -rf /", [], {}, ["modprobe -a 'evil; rm -rf /'"], True),
+        ("somemodule", ["somemodule"], {"present": False},
+         ["modprobe -r -a somemodule"], True),
+        (["mod1", "mod2", "mod3"], ["mod1"], {"present": False},
+         ["modprobe -r -a mod1"], True),
+        ("evil; rm -rf /", ["evil; rm -rf /"], {"present": False},
+         ["modprobe -r -a 'evil; rm -rf /'"], True),
+    ],
+)
+async def test_modprobe_matches_pyinfra_operation_fixtures(
+    module, loaded: list[str], kwargs: dict, expected: list[str], changed: bool
+):
+    host = SimulatedHost(name="h", kernel_modules={name: {} for name in loaded})
+    ctx, commands = await materialize(
+        host, op(server.modprobe, module=module, **kwargs)
+    )
+    assert ctx.changed == changed
+    assert [cmd.shell() for cmd in commands] == expected
+
+
+async def test_modprobe_loads_a_missing_module():
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(host, op(server.modprobe, module="floppy"))
+    assert ctx.changed
+    assert ctx.reason == "module floppy not loaded, will load"
+    assert commands == [ModprobeCommand(modules=("floppy",))]
+
+
+async def test_modprobe_unloads_a_loaded_module():
+    host = SimulatedHost(name="h", kernel_modules={"floppy": {}})
+    ctx, commands = await materialize(
+        host, op(server.modprobe, module="floppy", present=False)
+    )
+    assert ctx.changed
+    assert ctx.reason == "module floppy loaded, will remove"
+    assert commands == [ModprobeCommand(modules=("floppy",), present=False)]
+
+
+async def test_modprobe_no_change_when_already_loaded():
+    # pyinfra's add_exists.json noop_description, verbatim.
+    host = SimulatedHost(name="h", kernel_modules={"somemodule": {}})
+    ctx, commands = await materialize(host, op(server.modprobe, module="somemodule"))
+    assert not ctx.changed
+    assert ctx.reason == "module somemodule is loaded"
+    assert commands == []
+
+
+async def test_modprobe_no_change_when_already_absent():
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host, op(server.modprobe, module="floppy", present=False)
+    )
+    assert not ctx.changed
+    assert ctx.reason == "module floppy is not loaded"
+    assert commands == []
+
+
+async def test_modprobe_noop_reason_plural_wording():
+    # pyinfra's add_multiple_exists.json noop_description, verbatim.
+    host = SimulatedHost(
+        name="h", kernel_modules={"somemodule": {}, "someothermodule": {}}
+    )
+    ctx, commands = await materialize(
+        host, op(server.modprobe, module=("somemodule", "someothermodule"))
+    )
+    assert not ctx.changed
+    assert ctx.reason == "modules somemodule/someothermodule are loaded"
+    assert commands == []
+
+
+async def test_modprobe_partial_list_reason_names_only_the_difference():
+    host = SimulatedHost(name="h", kernel_modules={"mod2": {}})
+    ctx, commands = await materialize(
+        host, op(server.modprobe, module=("mod1", "mod2", "mod3"))
+    )
+    assert ctx.changed
+    assert ctx.reason == "modules mod1/mod3 not loaded, will load"
+    assert commands == [ModprobeCommand(modules=("mod1", "mod3"))]
+
+
+async def test_modprobe_force_does_not_reload_an_in_state_module():
+    # Like pyinfra, force only flags the command -- it never turns an
+    # in-state request into a reload, in either direction.
+    host = SimulatedHost(name="h", kernel_modules={"floppy": {}})
+    ctx, commands = await materialize(
+        host, op(server.modprobe, module="floppy", force=True)
+    )
+    assert not ctx.changed
+    assert commands == []
+
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host, op(server.modprobe, module="floppy", present=False, force=True)
+    )
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_modprobe_absorbs_unknown_keyword_arguments():
+    host = SimulatedHost(name="h")
+    _ctx, commands = await materialize(
+        host, op(server.modprobe, module="floppy", _pyinfra_global=True)
+    )
+    assert commands == [ModprobeCommand(modules=("floppy",))]
+
+
+async def test_modprobe_commands_mutate_the_simulated_host():
+    host = SimulatedHost(name="h")
+    await send_command(host, ModprobeCommand(modules=("floppy", "loop")))
+    assert set(host.kernel_modules) == {"floppy", "loop"}
+    assert host.kernel_modules["floppy"]["state"] == "Live"
+    # A repeat load leaves an existing info dict alone (the operation's fact
+    # check would not yield it, but the seam stays safe regardless).
+    host.kernel_modules["floppy"]["instances"] = 3
+    await send_command(host, ModprobeCommand(modules=("floppy",)))
+    assert host.kernel_modules["floppy"]["instances"] == 3
+    await send_command(host, ModprobeCommand(modules=("floppy",), present=False))
+    assert set(host.kernel_modules) == {"loop"}
+    # An absent name is tolerated on unload.
+    await send_command(host, ModprobeCommand(modules=("nosuch",), present=False))
+    assert set(host.kernel_modules) == {"loop"}
+
+
+def ensure_modules(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: load floppy, then ensure loop and brd are loaded."""
+    yield op(server.modprobe, name="Load floppy module", module="floppy", sudo=True)
+    yield op(
+        server.modprobe,
+        name="Load loop and brd modules",
+        module=("loop", "brd"),
+        sudo=True,
+    )
+
+
+def loop_only_factory(entry: dict) -> Host:
+    """``host_factory`` building SimulatedHosts whose only module is loop."""
+    host = SimulatedHost.from_inventory(entry)
+    host.kernel_modules = {"loop": {"size": "28672", "instances": 0, "state": "Live"}}
+    return host
+
+
+async def test_modprobe_runs_across_hosts_in_lockstep():
+    plans, report, hosts = await run(
+        INVENTORY, ensure_modules, host_factory=loop_only_factory
+    )
+    assert format_plan(plans).splitlines() == [
+        "web1: Load floppy module       [changed: module floppy not loaded, will load]",
+        "web1: Load loop and brd modules [changed: module brd not loaded, will load]",
+        "web2: Load floppy module       [changed: module floppy not loaded, will load]",
+        "web2: Load loop and brd modules [changed: module brd not loaded, will load]",
+    ]
+    assert report is not None
+    # Lockstep: every host finishes the floppy step before either loads brd,
+    # and the elevated shells land in the log -- loop is never re-loaded.
+    assert [e.name for e in report.log] == [
+        "Load floppy module",
+        "Load floppy module",
+        "Load loop and brd modules",
+        "Load loop and brd modules",
+    ]
+    log = format_log(report)
+    assert "$ sudo modprobe -a floppy" in log
+    assert "$ sudo modprobe -a brd" in log
+    assert "modprobe -a loop" not in log  # the loaded module is never re-loaded
+    for host in hosts:
+        assert set(host.kernel_modules) == {"loop", "floppy", "brd"}
+
+
+async def test_modprobe_second_prepare_plans_no_change():
+    host = SimulatedHost(
+        name="h", kernel_modules={"loop": {"size": "28672", "instances": 0, "state": "Live"}}
+    )
+    runtimes, plans = await run_prepare([host], ensure_modules)
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    assert [e.changed for e in report.log] == [True, True]
+    assert set(host.kernel_modules) == {"loop", "floppy", "brd"}
+    # The apply mutated the seam, so a fresh prepare sees every module and
+    # plans no change -- the operation is idempotent across runs.
+    runtimes, plans = await run_prepare([host], ensure_modules)
+    assert [p.changed for p in plans["h"]] == [False, False]
+    assert [p.reason for p in plans["h"]] == [
+        "module floppy is loaded",
+        "modules loop/brd are loaded",
+    ]
+
+
+async def test_modprobe_duplicate_requests_no_op_only_in_apply():
+    def twice(host: Host) -> Generator[OperationRequest]:
+        yield op(server.modprobe, name="Load floppy module", module="floppy", sudo=True)
+        yield op(
+            server.modprobe, name="Load floppy module again", module="floppy", sudo=True
+        )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], twice)
+    # The prepare cache persists across a host's requests and prepare never
+    # sends, so both identical requests plan a change...
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # ...while the per-step cache recreation makes the second a no-op.
+    assert [e.changed for e in report.log] == [True, False]
+    assert set(host.kernel_modules) == {"floppy"}
+
+
+async def test_modprobe_dry_run_sends_nothing():
+    _plans, report, hosts = await run(
+        INVENTORY, ensure_modules, host_factory=loop_only_factory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert set(host.kernel_modules) == {"loop"}
+
+
+async def test_modprobe_branching_on_live_state_raises_determinism_error():
+    def live_branch(host: Host) -> Generator[OperationRequest]:
+        yield op(server.modprobe, name="Load floppy module", module="floppy", sudo=True)
+        # The illegal branch: consult live state the first load mutates.
+        # Prepare sees floppy absent and plans one request; apply's second
+        # pull sees it loaded and yields a second -- divergence.
+        if "floppy" in host.kernel_modules:
+            yield op(
+                server.modprobe,
+                name="Unload floppy module",
+                module="floppy",
+                present=False,
+                sudo=True,
+            )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], live_branch)
+    assert [p.request.name for p in plans["h"]] == ["Load floppy module"]
+    with pytest.raises(DeterminismError):
+        await run_apply(runtimes, plans=plans)
+
+
+# --- server.mount ------------------------------------------------------------
+
+
+def test_mount_command_shell_rendering():
+    assert MountCommand(path="/data").shell() == "mount /data"
+    assert (
+        MountCommand(path="/data", device="/dev/sdb1").shell()
+        == "mount /dev/sdb1 /data"
+    )
+    assert (
+        MountCommand(path="/data", device="/dev/sdc3", fs_type="xfs").shell()
+        == "mount -t xfs /dev/sdc3 /data"
+    )
+    assert (
+        MountCommand(path="/data", options=("rw", "noatime")).shell()
+        == "mount -o rw,noatime /data"
+    )
+    assert MountCommand(path="/data", mounted=False).shell() == "umount /data"
+    assert (
+        MountCommand(path="/data", options=("rw", "noatime"), remount=True).shell()
+        == "mount -o remount,rw,noatime /data"
+    )
+    assert (
+        MountCommand(
+            path="/data",
+            options=("rw", "noatime"),
+            device="/dev/sd0a",
+            fs_type="ufs",
+            remount=True,
+            bsd=True,
+        ).shell()
+        == "mount -uo rw,noatime -t ufs /dev/sd0a /data"
+    )
+    assert (
+        MountCommand(path="/data dir; rm -rf /", mounted=False).shell()
+        == "umount '/data dir; rm -rf /'"
+    )
+    assert (
+        MountCommand(path="/data dir; rm -rf /", options=("rw",), remount=True).shell()
+        == "mount -o remount,rw '/data dir; rm -rf /'"
+    )
+    assert command_shell(MountCommand(path="/data"), sudo=True) == "sudo mount /data"
+
+
+@pytest.mark.parametrize(
+    ("path", "mounts", "kernel", "kwargs", "expected", "changed"),
+    [
+        # pyinfra's own fifteen operation fixtures
+        # (tests/operations/server.mount/), replayed verbatim over the
+        # SimulatedHost seams. The bare {} info dicts (mount_exists.json,
+        # unmount.json) feed the mounts seam as-is: only membership matters.
+        # mount.json
+        ("/data", {}, "Linux", {}, ["mount /data"], True),
+        # mount_device.json
+        ("/data", {}, "Linux", {"device": "/dev/sdb1"},
+         ["mount /dev/sdb1 /data"], True),
+        # mount_device_fstype.json
+        ("/data", {}, "Linux", {"device": "/dev/sdc3", "fs_type": "xfs"},
+         ["mount -t xfs /dev/sdc3 /data"], True),
+        # mount_options.json
+        ("/data", {}, "Linux", {"options": ["rw"]}, ["mount -o rw /data"], True),
+        # mount_exists.json
+        ("/data", {"/data": {}}, "Linux", {}, [], False),
+        # mount_exists_device_match.json
+        ("/data",
+         {"/data": {"device": "/dev/sdb1", "type": "ext4",
+                    "options": ["rw", "relatime"]}},
+         "Linux", {"device": "/dev/sdb1"}, [], False),
+        # mount_exists_device_fallback.json
+        ("/data",
+         {"/mnt/data": {"device": "/dev/sdb1", "type": "ext4",
+                        "options": ["rw", "relatime"]}},
+         "Linux", {"device": "/dev/sdb1"}, [], False),
+        # unmount.json
+        ("/data", {"/data": {}}, "Linux", {"mounted": False},
+         ["umount /data"], True),
+        # unmount_needs_quotes.json
+        ("/data dir; rm -rf /", {"/data dir; rm -rf /": {}}, "Linux",
+         {"mounted": False}, ["umount '/data dir; rm -rf /'"], True),
+        # unmount_device_fallback.json
+        ("/data",
+         {"/mnt/data": {"device": "/dev/sdb1", "type": "ext4",
+                        "options": ["rw", "relatime"]}},
+         "Linux", {"mounted": False, "device": "/dev/sdb1"},
+         ["umount /mnt/data"], True),
+        # unmount_device_fallback_needs_quotes.json
+        ("/data",
+         {"/mnt/my data; rm -rf /": {"device": "/dev/sdb1", "type": "ext4",
+                                    "options": ["rw", "relatime"]}},
+         "Linux", {"mounted": False, "device": "/dev/sdb1"},
+         ["umount '/mnt/my data; rm -rf /'"], True),
+        # remount_options.json
+        ("/data", {"/data": {"options": ["rw"]}}, "Linux",
+         {"options": ["rw", "noatime"]},
+         ["mount -o remount,rw,noatime /data"], True),
+        # remount_needs_quotes.json
+        ("/data dir; rm -rf /", {"/data dir; rm -rf /": {"options": ["rw"]}},
+         "Linux", {"options": ["rw", "noatime"]},
+         ["mount -o remount,rw,noatime '/data dir; rm -rf /'"], True),
+        # remount_options_device_fallback.json
+        ("/data",
+         {"/mnt/data": {"device": "/dev/sdb1", "type": "ext4",
+                        "options": ["rw"]}},
+         "Linux", {"device": "/dev/sdb1", "options": ["rw", "noatime"]},
+         ["mount -o remount,rw,noatime /mnt/data"], True),
+        # remount_options_bsd.json
+        ("/data",
+         {"/data": {"options": ["rw"], "type": "ufs", "device": "/dev/sd0a"}},
+         "*BSD", {"options": ["rw", "noatime"]},
+         ["mount -uo rw,noatime -t ufs /dev/sd0a /data"], True),
+    ],
+)
+async def test_mount_matches_pyinfra_operation_fixtures(
+    path, mounts: dict, kernel: str, kwargs: dict, expected: list[str], changed: bool
+):
+    host = SimulatedHost(name="h", mounts=mounts, os_kernel=kernel)
+    ctx, commands = await materialize(host, op(server.mount, path=path, **kwargs))
+    assert ctx.changed == changed
+    assert [cmd.shell() for cmd in commands] == expected
+
+
+async def test_mount_mounts_a_missing_filesystem():
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.mount,
+            path="/data",
+            device="/dev/sdb1",
+            fs_type="ext4",
+            options=("rw",),
+        ),
+    )
+    assert ctx.changed
+    assert ctx.reason == "filesystem /data is not mounted, will mount"
+    assert commands == [
+        MountCommand(path="/data", device="/dev/sdb1", fs_type="ext4", options=("rw",))
+    ]
+
+
+async def test_mount_unmount_reason_names_the_found_mount_point():
+    # The device fallback finds /mnt/data; the unmount reason and command
+    # act on the found mount point, not the requested path (pyinfra).
+    host = SimulatedHost(
+        name="h",
+        mounts={"/mnt/data": {"device": "/dev/sdb1", "type": "ext4", "options": ["rw"]}},
+    )
+    ctx, commands = await materialize(
+        host, op(server.mount, path="/data", device="/dev/sdb1", mounted=False)
+    )
+    assert ctx.changed
+    assert ctx.reason == "filesystem /mnt/data is mounted, will unmount"
+    assert commands == [MountCommand(path="/mnt/data", mounted=False)]
+
+
+async def test_mount_no_change_when_already_mounted():
+    # pyinfra's mount_exists.json noop_description, verbatim.
+    host = SimulatedHost(name="h", mounts={"/data": {}})
+    ctx, commands = await materialize(host, op(server.mount, path="/data"))
+    assert not ctx.changed
+    assert ctx.reason == "filesystem /data is mounted"
+    assert commands == []
+
+
+async def test_mount_no_change_when_already_unmounted():
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host, op(server.mount, path="/data", mounted=False)
+    )
+    assert not ctx.changed
+    assert ctx.reason == "filesystem /data is not mounted"
+    assert commands == []
+
+
+async def test_mount_no_change_when_options_already_present():
+    # The options check is a subset test: extra options on the mount never
+    # trigger a remount, and the noop wording stays pyinfra's "is mounted".
+    host = SimulatedHost(
+        name="h", mounts={"/data": {"options": ["rw", "relatime", "noatime"]}}
+    )
+    ctx, commands = await materialize(
+        host, op(server.mount, path="/data", options=("rw", "noatime"))
+    )
+    assert not ctx.changed
+    assert ctx.reason == "filesystem /data is mounted"
+    assert commands == []
+
+
+async def test_mount_remount_reason_lists_missing_options_sorted():
+    host = SimulatedHost(name="h", mounts={"/data": {"options": ["rw"]}})
+    ctx, commands = await materialize(
+        host, op(server.mount, path="/data", options=("rw", "noatime", "nodiratime"))
+    )
+    assert ctx.changed
+    assert ctx.reason == (
+        "filesystem /data is missing options noatime, nodiratime, will remount"
+    )
+    assert commands == [
+        MountCommand(path="/data", options=("rw", "noatime", "nodiratime"), remount=True)
+    ]
+
+
+async def test_mount_remounts_on_bsd_with_fact_device_and_type():
+    # The Kernel fact picks the -uo form; device/type come from the Mounts
+    # entry, not the request (pyinfra's BSD remount branch).
+    host = SimulatedHost(
+        name="h",
+        os_kernel="FreeBSD",
+        mounts={"/data": {"options": ["rw"], "type": "ufs", "device": "/dev/sd0a"}},
+    )
+    ctx, commands = await materialize(
+        host, op(server.mount, path="/data", options=("rw", "noatime"))
+    )
+    assert ctx.changed
+    assert commands == [
+        MountCommand(
+            path="/data",
+            options=("rw", "noatime"),
+            device="/dev/sd0a",
+            fs_type="ufs",
+            remount=True,
+            bsd=True,
+        )
+    ]
+
+
+async def test_mount_absorbs_unknown_keyword_arguments():
+    host = SimulatedHost(name="h")
+    _ctx, commands = await materialize(
+        host, op(server.mount, path="/data", _pyinfra_global=True)
+    )
+    assert commands == [MountCommand(path="/data")]
+
+
+async def test_mount_commands_mutate_the_simulated_host():
+    host = SimulatedHost(name="h")
+    await send_command(
+        host,
+        MountCommand(path="/data", device="/dev/sdb1", fs_type="ext4", options=("rw",)),
+    )
+    assert host.mounts["/data"] == {
+        "device": "/dev/sdb1",
+        "type": "ext4",
+        "options": ["rw"],
+    }
+    # A remount merges the requested options into the entry, keeping order.
+    await send_command(
+        host, MountCommand(path="/data", options=("rw", "noatime"), remount=True)
+    )
+    assert host.mounts["/data"]["options"] == ["rw", "noatime"]
+    await send_command(host, MountCommand(path="/data", mounted=False))
+    assert "/data" not in host.mounts
+    # An absent mount point is tolerated on unmount, and a remount of one
+    # gains a minimal entry (the seam stays safe regardless).
+    await send_command(host, MountCommand(path="/nosuch", mounted=False))
+    await send_command(host, MountCommand(path="/nosuch", options=("rw",), remount=True))
+    assert host.mounts["/nosuch"]["options"] == ["rw"]
+
+
+def ensure_mounts(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: mount /data, then unmount the scratch filesystem."""
+    yield op(
+        server.mount,
+        name="Mount data filesystem",
+        path="/data",
+        device="/dev/sdb1",
+        fs_type="ext4",
+        options=("rw",),
+        sudo=True,
+    )
+    yield op(
+        server.mount,
+        name="Unmount scratch filesystem",
+        path="/scratch",
+        mounted=False,
+        sudo=True,
+    )
+
+
+def scratch_only_factory(entry: dict) -> Host:
+    """``host_factory`` building SimulatedHosts whose only mount is /scratch."""
+    host = SimulatedHost.from_inventory(entry)
+    host.mounts = {
+        "/scratch": {"device": "/dev/sdb2", "type": "ext4", "options": ["rw"]}
+    }
+    return host
+
+
+async def test_mount_runs_across_hosts_in_lockstep():
+    plans, report, hosts = await run(
+        INVENTORY, ensure_mounts, host_factory=scratch_only_factory
+    )
+    assert format_plan(plans).splitlines() == [
+        "web1: Mount data filesystem    [changed: filesystem /data is not mounted, will mount]",
+        "web1: Unmount scratch filesystem [changed: filesystem /scratch is mounted, will unmount]",
+        "web2: Mount data filesystem    [changed: filesystem /data is not mounted, will mount]",
+        "web2: Unmount scratch filesystem [changed: filesystem /scratch is mounted, will unmount]",
+    ]
+    assert report is not None
+    # Lockstep: every host finishes the mount step before either unmounts,
+    # and the elevated shells land in the log.
+    assert [e.name for e in report.log] == [
+        "Mount data filesystem",
+        "Mount data filesystem",
+        "Unmount scratch filesystem",
+        "Unmount scratch filesystem",
+    ]
+    log = format_log(report)
+    assert "$ sudo mount -t ext4 -o rw /dev/sdb1 /data" in log
+    assert "$ sudo umount /scratch" in log
+    for host in hosts:
+        assert set(host.mounts) == {"/data"}
+        assert host.mounts["/data"]["device"] == "/dev/sdb1"
+
+
+async def test_mount_second_prepare_plans_no_change():
+    host = SimulatedHost(
+        name="h",
+        mounts={"/scratch": {"device": "/dev/sdb2", "type": "ext4", "options": ["rw"]}},
+    )
+    runtimes, plans = await run_prepare([host], ensure_mounts)
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    assert [e.changed for e in report.log] == [True, True]
+    assert set(host.mounts) == {"/data"}
+    # The apply mutated the seam, so a fresh prepare sees /data mounted and
+    # /scratch gone -- the operation is idempotent across runs.
+    runtimes, plans = await run_prepare([host], ensure_mounts)
+    assert [p.changed for p in plans["h"]] == [False, False]
+    assert [p.reason for p in plans["h"]] == [
+        "filesystem /data is mounted",
+        "filesystem /scratch is not mounted",
+    ]
+
+
+async def test_mount_then_remount_sees_the_fresh_per_step_cache():
+    def mount_then_tighten(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.mount,
+            name="Mount data filesystem",
+            path="/data",
+            device="/dev/sdb1",
+            fs_type="ext4",
+            options=("rw",),
+            sudo=True,
+        )
+        yield op(
+            server.mount,
+            name="Tighten data options",
+            path="/data",
+            options=("rw", "noatime"),
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], mount_then_tighten)
+    # The prepare cache persists across a host's requests and prepare never
+    # sends, so the second request also plans a fresh mount against the
+    # pre-deployment state.
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    log = format_log(report)
+    assert "$ sudo mount -t ext4 -o rw /dev/sdb1 /data" in log
+    # Apply's per-step cache sees the first mount, so the second request
+    # remounts with the missing option instead of mounting again.
+    assert "$ sudo mount -o remount,rw,noatime /data" in log
+    assert host.mounts["/data"]["options"] == ["rw", "noatime"]
+
+
+async def test_mount_duplicate_requests_no_op_only_in_apply():
+    def twice(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.mount, name="Mount data filesystem", path="/data", sudo=True
+        )
+        yield op(
+            server.mount, name="Mount data filesystem again", path="/data", sudo=True
+        )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], twice)
+    # The prepare cache persists across a host's requests and prepare never
+    # sends, so both identical requests plan a change...
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # ...while the per-step cache recreation makes the second a no-op.
+    assert [e.changed for e in report.log] == [True, False]
+    assert set(host.mounts) == {"/data"}
+
+
+async def test_mount_dry_run_sends_nothing():
+    _plans, report, hosts = await run(
+        INVENTORY, ensure_mounts, host_factory=scratch_only_factory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert set(host.mounts) == {"/scratch"}
+
+
+async def test_mount_branching_on_live_state_raises_determinism_error():
+    def live_branch(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.mount,
+            name="Mount data filesystem",
+            path="/data",
+            device="/dev/sdb1",
+            sudo=True,
+        )
+        # The illegal branch: consult live state the mount mutates. Prepare
+        # sees /data absent and plans one request; apply's second pull sees
+        # it mounted and yields a second -- divergence.
+        if "/data" in host.mounts:
+            yield op(
+                server.mount,
+                name="Unmount data filesystem",
+                path="/data",
+                mounted=False,
+                sudo=True,
+            )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], live_branch)
+    assert [p.request.name for p in plans["h"]] == ["Mount data filesystem"]
+    with pytest.raises(DeterminismError):
+        await run_apply(runtimes, plans=plans)
+
+
+# --- timezone operation -------------------------------------------------------
+
+
+def test_set_timezone_command_shell_rendering():
+    assert (
+        SetTimezoneCommand(timezone="Europe/Amsterdam").shell()
+        == "timedatectl set-timezone Europe/Amsterdam"
+    )
+    # pyinfra's QuoteString: a name carrying shell metacharacters is quoted
+    # (the argument of pyinfra's own set_quotes_injection.json fixture).
+    assert (
+        SetTimezoneCommand(timezone="x; reboot").shell()
+        == "timedatectl set-timezone 'x; reboot'"
+    )
+    assert command_shell(SetTimezoneCommand(timezone="UTC"), sudo=True) == (
+        "sudo timedatectl set-timezone UTC"
+    )
+    assert command_shell(SetTimezoneCommand(timezone="UTC"), su=True) == (
+        "su -c 'timedatectl set-timezone UTC'"
+    )
+
+
+@pytest.mark.parametrize(
+    ("zone", "current", "timedatectl", "expected"),
+    [
+        # pyinfra's own operation fixtures (tests/operations/server.timezone/).
+        # set_no_timedatectl.json and set_quotes_injection.json exercise the
+        # deliberately dropped non-systemd fallback (ln -sf /etc/localtime
+        # plus echo > /etc/timezone); a host without timedatectl now raises
+        # OperationError instead (test_timezone_raises_without_timedatectl).
+        pytest.param(
+            "Europe/Amsterdam", "Europe/Amsterdam", None, [],
+            id="noop",
+        ),
+        pytest.param(
+            "Europe/Amsterdam", "UTC", "/usr/bin/timedatectl",
+            ["timedatectl set-timezone Europe/Amsterdam"],
+            id="set_timedatectl",
+        ),
+    ],
+)
+async def test_timezone_matches_pyinfra_operation_fixtures(
+    zone: str, current: str, timedatectl: str | None, expected: list[str]
+):
+    host = SimulatedHost(name="h", os_timezone=current)
+    if timedatectl is not None:
+        host.command_paths = {"timedatectl": timedatectl}
+    ctx, commands = await materialize(host, op(server.timezone, timezone=zone))
+    assert ctx.changed == bool(expected)
+    assert [cmd.shell() for cmd in commands] == expected
+    if not expected:
+        # pyinfra's noop_description, verbatim.
+        assert ctx.reason == "timezone is set"
+
+
+async def test_timezone_sets_via_timedatectl():
+    host = SimulatedHost(
+        name="h",
+        os_timezone="UTC",
+        command_paths={"timedatectl": "/usr/bin/timedatectl"},
+    )
+    ctx, commands = await materialize(
+        host, op(server.timezone, timezone="Europe/Amsterdam")
+    )
+    assert ctx.changed
+    assert ctx.reason == "timezone is 'UTC', will set 'Europe/Amsterdam'"
+    assert commands == [SetTimezoneCommand(timezone="Europe/Amsterdam")]
+
+
+async def test_timezone_raises_without_timedatectl():
+    # No timedatectl resolvable (the default empty command_paths): the
+    # dropped fallback is an OperationError, not a symlink/edit command.
+    host = SimulatedHost(name="h", os_timezone="UTC")
+    with pytest.raises(OperationError) as excinfo:
+        await materialize(host, op(server.timezone, timezone="Europe/Amsterdam"))
+    assert str(excinfo.value) == (
+        "server.timezone requires timedatectl (systemd only), not found on h"
+    )
+    assert isinstance(excinfo.value, RuntimeError)
+
+
+async def test_timezone_no_change_when_already_set():
+    # Like pyinfra, the fact comparison comes first: an already-set zone is
+    # a no-op even on a host without timedatectl (no probe, no raise).
+    for paths in ({}, {"timedatectl": "/usr/bin/timedatectl"}):
+        host = SimulatedHost(
+            name="h", os_timezone="Europe/Amsterdam", command_paths=paths
+        )
+        ctx, commands = await materialize(
+            host, op(server.timezone, timezone="Europe/Amsterdam")
+        )
+        assert not ctx.changed
+        assert ctx.reason == "timezone is set"
+        assert commands == []
+
+
+async def test_timezone_absorbs_unknown_keyword_arguments():
+    host = SimulatedHost(
+        name="h",
+        os_timezone="UTC",
+        command_paths={"timedatectl": "/usr/bin/timedatectl"},
+    )
+    _ctx, commands = await materialize(
+        host, op(server.timezone, timezone="Europe/Amsterdam", _pyinfra_global=True)
+    )
+    assert commands == [SetTimezoneCommand(timezone="Europe/Amsterdam")]
+
+
+async def test_timezone_command_mutates_the_simulated_host():
+    host = SimulatedHost(name="h")
+    await send_command(host, SetTimezoneCommand(timezone="UTC"))
+    assert host.os_timezone == "UTC"
+    await send_command(host, SetTimezoneCommand(timezone="Europe/Amsterdam"))
+    assert host.os_timezone == "Europe/Amsterdam"
+
+
+def set_timezones(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: every host keeps Europe/Amsterdam."""
+    yield op(
+        server.timezone,
+        name="Set timezone",
+        timezone="Europe/Amsterdam",
+        sudo=True,
+    )
+
+
+def utc_timezone_factory(entry: dict) -> Host:
+    """``host_factory`` building SimulatedHosts on UTC with timedatectl."""
+    host = SimulatedHost.from_inventory(entry)
+    host.os_timezone = "UTC"
+    host.command_paths = {"timedatectl": "/usr/bin/timedatectl"}
+    return host
+
+
+async def test_timezone_runs_across_hosts_in_lockstep():
+    plans, report, hosts = await run(
+        INVENTORY, set_timezones, host_factory=utc_timezone_factory
+    )
+    assert format_plan(plans).splitlines() == [
+        (
+            "web1: Set timezone             [changed: timezone is 'UTC', "
+            "will set 'Europe/Amsterdam']"
+        ),
+        (
+            "web2: Set timezone             [changed: timezone is 'UTC', "
+            "will set 'Europe/Amsterdam']"
+        ),
+    ]
+    assert report is not None
+    assert [e.name for e in report.log] == ["Set timezone", "Set timezone"]
+    log = format_log(report)
+    # The elevated shell lands in the log, one per host.
+    assert "$ sudo timedatectl set-timezone Europe/Amsterdam" in log
+    for host in hosts:
+        assert host.os_timezone == "Europe/Amsterdam"
+
+
+async def test_timezone_without_timedatectl_aborts_the_prepare():
+    # The Which probe raises while materializing, which in a deploy run is
+    # the prepare phase -- before anything is sent (fail-fast, no fallback).
+    host = SimulatedHost(name="h", os_timezone="UTC")
+    with pytest.raises(OperationError, match="not found on h"):
+        await run_prepare([host], set_timezones)
+    assert host.os_timezone == "UTC"
+
+
+async def test_timezone_second_prepare_plans_no_change():
+    host = utc_timezone_factory({"host": "h", "connection": {}})
+    runtimes, plans = await run_prepare([host], set_timezones)
+    assert [p.changed for p in plans["h"]] == [True]
+    report = await run_apply(runtimes, plans=plans)
+    assert [e.changed for e in report.log] == [True]
+    assert host.os_timezone == "Europe/Amsterdam"
+    # The apply mutated the seam, so a fresh prepare sees the new zone and
+    # plans no change -- the operation is idempotent across runs.
+    runtimes, plans = await run_prepare([host], set_timezones)
+    assert [p.changed for p in plans["h"]] == [False]
+    assert [p.reason for p in plans["h"]] == ["timezone is set"]
+
+
+async def test_timezone_duplicate_requests_no_op_only_in_apply():
+    def twice(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.timezone, name="Set timezone", timezone="Europe/Amsterdam",
+            sudo=True,
+        )
+        yield op(
+            server.timezone, name="Set timezone again", timezone="Europe/Amsterdam",
+            sudo=True,
+        )
+
+    host = SimulatedHost(
+        name="h",
+        os_timezone="UTC",
+        command_paths={"timedatectl": "/usr/bin/timedatectl"},
+    )
+    runtimes, plans = await run_prepare([host], twice)
+    # The prepare cache persists across a host's requests and prepare never
+    # sends, so both identical requests plan a change...
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # ...while the per-step cache recreation makes the second a no-op.
+    assert [e.changed for e in report.log] == [True, False]
+    assert host.os_timezone == "Europe/Amsterdam"
+
+
+async def test_timezone_dry_run_sends_nothing():
+    _plans, report, hosts = await run(
+        INVENTORY, set_timezones, host_factory=utc_timezone_factory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert host.os_timezone == "UTC"
 
 
 # --- WaitCommand / WaitForFactCommand ----------------------------------------

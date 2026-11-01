@@ -63,6 +63,8 @@ rejected elevation, [`CommandError`][reemote5.hosts.CommandError] for a command
 that exits non-zero — including its
 [`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError] subclass when the
 command is not installed on the host — plus
+[`OperationError`][reemote5.core.OperationError] when an operation's
+prerequisites are not met (the timezone example on a non-systemd host),
 [`WaitTimeoutError`][reemote5.commands.WaitTimeoutError]
 in the polling example and [`InventoryError`][reemote5.hosts.InventoryError] in
 the JSON-inventory one — prints the message on stderr and exits non-zero. The

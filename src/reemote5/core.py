@@ -182,6 +182,19 @@ class HostRuntime:
     done: bool = False
 
 
+class OperationError(RuntimeError):
+    """Raised when an operation's prerequisites are not met on a host.
+
+    An operation may require a capability the host does not have -- e.g.
+    ``server.timezone`` requires ``timedatectl`` and is supported on systemd
+    systems only. Rather than silently skipping the host or yielding a
+    command that cannot run, the operation raises this while materializing,
+    which in a deploy run happens in the prepare phase -- before anything is
+    sent -- so the run aborts fail-fast like ``CommandError``, with a message
+    naming the host and the missing prerequisite.
+    """
+
+
 def op(
     func: Callable,
     *,
@@ -337,6 +350,7 @@ __all__ = [
     "FactCache",
     "HostRuntime",
     "OpContext",
+    "OperationError",
     "OperationRequest",
     "Privilege",
     "compose",

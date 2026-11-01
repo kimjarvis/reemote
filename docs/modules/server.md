@@ -1,14 +1,16 @@
 # server module
 
-`reemote5.modules.server.server` combines the server facts and the service
+`reemote5.modules.server.server` combines the server facts and the server
 operations in a single source, so the read side (`Arch`, `AuthorizedKeys`,
 `Date`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
 `KernelVersion`, `Last`, `LinuxDistribution`, `LinuxGui`, `LinuxName`,
-`Locales`, `LsbRelease`, `Mounts`, `Path`, `Processes`,
+`Locales`, `LsbRelease`, `Mounts`, `Path`, `Processes`, `Sysctl`,
 `SystemdServiceState`,
 `SystemdServiceEnabled`, `Timezone`, `Uptime`, `User`, `Users`, `Which`)
-sits beside the `server.service` and `server.wait_service` operations that
-consume the systemd facts. It is also where reemote5's
+sits beside the `server.group`, `server.hostname`, `server.kill`,
+`server.modprobe`, `server.mount`, `server.service`, `server.timezone` and
+`server.wait_service`
+operations that consume them. It is also where reemote5's
 **waiting** design lives: `server.wait_service` is the first operation that
 blocks until a condition on the host holds.
 
@@ -165,7 +167,19 @@ fact (`command -v busybox || true`), exactly like pyinfra; one deliberate
 deviation remains: a missing Darwin marker line raises `ValueError` rather
 than pyinfra's bare `Exception`. A non-int `pid` raises `TypeError` on both
 transports — the BusyBox branch interpolates it into an `awk` program,
-where shell quoting cannot protect it. `Timezone` takes no arguments: it
+where shell quoting cannot protect it. `Sysctl` takes an optional `keys`
+list: it runs `sysctl -a 2>/dev/null || true` (or `sysctl <key> ...` for the
+named keys, each shell-quoted) and returns a dict of setting name → value,
+mirroring pyinfra's `server.Sysctl`. Rows separate on `=` (Linux) or `:`
+(BSD); a row carrying neither is skipped. A value made only of
+alphanumeric, `_`, `-`, `.` and whitespace characters is split on
+whitespace and each token int-converted when possible, a single token
+collapsing to a scalar (so `1024\t65535` reads as `[1024, 65535]`);
+anything else stays the stripped raw string. A whitespace-only value
+keeps `""` while a row with nothing after the separator is skipped
+(pyinfra's truthiness check), and empty output — an unknown key or a
+failed read, swallowed by `|| true` — reads as `{}`, pyinfra's
+`default = dict`. `Timezone` takes no arguments: it
 runs `readlink -f /etc/localtime | sed 's|.*/zoneinfo/||'` and returns the
 current system timezone (e.g. `Europe/Amsterdam`), mirroring pyinfra's
 `server.Timezone`; when `/etc/localtime` is a copied file rather than a
@@ -233,6 +247,7 @@ for its BusyBox probe.
         - Mounts
         - Path
         - Processes
+        - Sysctl
         - unit_name
         - SystemdServiceState
         - SystemdServiceEnabled
@@ -244,11 +259,97 @@ for its BusyBox probe.
 
 ## Operations
 
-Operations live in namespace modules so a deploy reads `server.service` and
-`server.wait_service`, mirroring pyinfra's API. Every operation is an async
+Operations live in namespace modules so a deploy reads `server.group`,
+`server.hostname`, `server.kill`, `server.modprobe`, `server.mount`,
+`server.service`, `server.timezone` and
+`server.wait_service`,
+mirroring pyinfra's API. Every
+operation is an async
 generator taking an [`OpContext`][reemote5.core.OpContext], awaiting facts via
 `ctx.facts`, setting `ctx.changed`/`ctx.reason` where a change is needed, and
 yielding one [`Command`][reemote5.commands.Command] descriptor per mutation.
+
+`server.group` mirrors pyinfra's `server.group` for `group`, `present`,
+`system` and `gid`: it compares the name against the `Groups` fact and yields
+a `GroupAddCommand` or `GroupDelCommand` only when the group differs from the
+request. The `Kernel` fact picks the command form — FreeBSD gets
+`pw groupadd`/`pw groupdel -n`, every other kernel `groupadd`/`groupdel` —
+the same dispatch `KernelModules` uses (pyinfra reads its deprecated `Os`
+fact, renamed `Kernel` upstream). `system` renders `groupadd -r` but is
+ignored on BSD kernels, which have no system groups, and `gid` renders
+`--gid` (`-g` on FreeBSD); a falsy gid (`None` or `0`) is skipped, exactly
+like pyinfra's `if gid:` check. Both options only apply at creation — an
+existing group is never modified, so a gid or system change on a present
+group plans no command. The commands need root, so flag the request
+`sudo=True`.
+
+`server.hostname` mirrors pyinfra's `server.hostname` for the hostname
+itself: it compares the requested name against the `Hostname` fact and
+yields a `SetHostnameCommand` only when they differ. The `Which` fact picks
+the command form — `hostnamectl set-hostname` when `hostnamectl` is
+available (the systemd tool persists the name itself), the bare `hostname`
+command on older systems without it — and the name is shell-quoted, so a
+hostname carrying metacharacters is set literally. The command needs root,
+so flag the request `sudo=True`. pyinfra's `hostname_file` option is
+deliberately dropped: on systems without `hostnamectl` pyinfra also uploads
+the name to a persistent file (`/etc/hostname` on Linux, `/etc/myname` on
+OpenBSD) through `files.put`, which pyinfra can elevate — reemote5's
+transfers are always unprivileged, so that root-owned write cannot ride a
+transfer and the whole file branch is omitted rather than silently run as
+the login user. On a systemd host nothing is lost, since `hostnamectl`
+already persists the name.
+
+`server.kill` mirrors pyinfra's `server.kill` for `pid` and `signal`
+(default `TERM`): stateless and non-idempotent, it reads no fact and always
+yields one `KillCommand` rendering `kill -<signal> <pid>`, so every planned
+kill shows as a change and a repeat request kills again. The signal flag
+and the PID are shell-quoted, so a signal string carrying metacharacters
+reaches `kill` literally. Discovering the PID is the caller's job: read the
+`Processes` fact via `gather_fact` before the run and close over the frozen
+snapshot in a deploy factory (see the
+[kill example](../examples/modules/server.md#killing-a-process-by-pid)) —
+the synchronous deploy generator cannot await a fact, and branching it on
+live process state would raise
+[`DeterminismError`][reemote5.drivers.DeterminismError]. Killing another
+user's process needs root, so flag the request `sudo=True`. A PID that
+exited between the snapshot and the apply makes `kill` exit non-zero, which
+fails the run with `CommandError` — pyinfra behaves the same.
+
+`server.modprobe` mirrors pyinfra's `server.modprobe` for `module`,
+`present` and `force`: it compares the requested names against the
+`KernelModules` fact and yields one `ModprobeCommand` only for the modules
+that differ from the request — `modprobe -a` loads just the missing ones,
+`modprobe -r -a` unloads just the loaded ones (pyinfra's partition).
+`module` accepts a single string or a list/tuple of names (prefer tuples in
+`op()` requests, which must stay hashable), `present=False` picks the
+unload direction, and `force=True` renders `-f` without ever turning an
+in-state request into a reload. Each name is shell-quoted, so a name
+carrying metacharacters reaches `modprobe` literally. Names are compared
+verbatim — the kernel treats `-` and `_` as equivalent in module names,
+but neither pyinfra nor reemote5 normalizes the spelling. The commands
+need root, so flag the request `sudo=True`.
+
+`server.mount` mirrors pyinfra's `server.mount` for `path`, `mounted`,
+`options`, `device` and `fs_type`: it compares against the `Mounts` fact
+and yields one `MountCommand` only where the mount differs from the
+request — a fresh `mount [-t fs_type] [-o options] [device] path` when the
+mount point is absent, an `umount` when `mounted=False` finds it present,
+and a `mount -o remount,<options> <path>` when an already-mounted
+filesystem is missing some of the requested options. When `path` is not
+found directly but `device` is given, the mount is located by device
+instead (pyinfra's fallback for paths whose spelling differs from
+`/proc/self/mountinfo`), and that found mount point is what an unmount or
+remount acts on. The options check is a subset test, not equality: extra
+options already on the mount never trigger a remount, and a remount always
+carries the full requested option set. On a BSD kernel the remount takes
+the `mount -uo <options> -t <type> <device> <path>` form instead — the
+`Kernel` fact picks it, and the type/device come from the fact. `options`
+accepts a list/tuple of option strings (prefer tuples in `op()` requests,
+which must stay hashable), and every path, device and option string is
+shell-quoted, so a value carrying metacharacters reaches `mount` literally.
+Like pyinfra, `/etc/fstab` is never touched — persistence across reboots is
+a `files.edit` recipe. The commands need root, so flag the request
+`sudo=True`.
 
 `server.service` is the idempotent half, mirroring pyinfra's `systemd.service`
 for `service`, `running`, `restarted`, `enabled` and `daemon_reload`: it
@@ -259,10 +360,55 @@ stateless and always yield when set). The `systemctl` commands need root, so
 flag the request `sudo=True`. pyinfra's `reloaded`, `command`, `user_mode`,
 `machine` and `user_name` options are not supported.
 
+`server.timezone` mirrors pyinfra's `server.timezone` for `timezone`, on
+**systemd systems only**: it compares the requested zone against the
+`Timezone` fact and yields a `SetTimezoneCommand` (`timedatectl
+set-timezone`, which also persists the zone across reboots) only when they
+differ. The zone is shell-quoted, so a name carrying metacharacters is set
+literally. When a change is needed the `Which` fact probes `timedatectl`,
+and a host without it raises
+[`OperationError`][reemote5.core.OperationError] during the prepare phase
+— before anything is sent — rather than falling back; an already-set zone
+is a no-op on any host, like pyinfra, which also compares the fact before
+probing for the tool. The command needs root, so flag the request
+`sudo=True`. pyinfra's non-systemd fallback — symlinking
+`/usr/share/zoneinfo/<timezone>` onto `/etc/localtime` and echoing the zone
+into `/etc/timezone` — is deliberately dropped: reemote5 supports this
+operation on systemd systems only, where `timedatectl` already persists
+the zone.
+
+pyinfra's `server.locale` is deliberately not ported: the `/etc/locale.gen`
+edit is fully expressible with the generic `files.edit` transform primitive,
+and its `locale-gen` step is a raw shell command. The
+[locale recipe](../examples/modules/server.md#managing-locales-pyinfra-serverlocale-parity)
+snapshots `Locales` and `FileContents`, applies pyinfra's change condition
+and definition-line lookup controller-side (a Python regex over the content
+instead of a `FindInFile` grep), spools the desired content to a writable
+path, then installs it with an elevated `files.move` and regenerates — no
+bespoke operation and no new descriptor.
+
+pyinfra's `server.sysctl` is deliberately not ported either: its runtime
+half is a raw `sysctl key=value` shell command gated by the `Sysctl` fact,
+and its `persist` half edits root-owned `/etc/sysctl.conf` through
+`files.line` — fully expressible with the generic `files.edit` transform
+primitive. The
+[sysctl recipe](../examples/modules/server.md#ensuring-a-sysctl-setting-pyinfra-serversysctl-parity)
+snapshots `Sysctl` and `FileContents`, applies pyinfra's value
+normalization and `files.line` semantics controller-side, applies the live
+value with an elevated raw command, spools the desired config to a
+writable path and installs it with an elevated `files.move` in a second
+deploy — no bespoke operation and no new descriptor.
+
 ::: reemote5.modules.server.server
     options:
       members:
+        - group
+        - hostname
+        - kill
+        - modprobe
+        - mount
         - service
+        - timezone
 
 ## Waiting for a condition
 

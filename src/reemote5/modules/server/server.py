@@ -1,4 +1,4 @@
-"""The ``server`` module: systemd facts, ``Arch``, the ``service`` operation and waiting.
+"""The ``server`` module: systemd facts, ``Arch``, the ``group``/``service`` operations and waiting.
 
 Fact side (design doc section 5): ``Arch`` (the machine architecture from
 ``uname -m``), ``AuthorizedKeys`` (the SSH public keys listed in a user's
@@ -21,7 +21,8 @@ mounted filesystems, keyed by mount point, read from
 ``/proc/self/mountinfo`` or the BSD ``mount`` variants), ``Path`` (the
 current user's ``PATH`` environment variable, as the raw colon-separated
 string), ``Processes`` (the running processes keyed by PID, parsed from
-``ps``), ``SystemdServiceState`` (a unit's
+``ps``), ``Sysctl`` (the sysctl settings keyed by name, parsed from
+``sysctl -a`` or the named keys), ``SystemdServiceState`` (a unit's
 ``ActiveState`` -- ``active``, ``inactive``, ``activating``, ... -- read by
 ``server.service`` to decide whether to start or stop, and polled by
 ``server.wait_service``) and ``SystemdServiceEnabled`` (whether a unit is
@@ -34,12 +35,45 @@ shadow password files) and ``Which`` (the path of a given command from
 ``command -v``, or None when unavailable). Like every fact they are
 phase-unaware: each ``process`` coroutine just gathers the raw value.
 
-Operation side (design doc section 6): ``server.service`` plus the
-``SystemctlCommand`` descriptor it yields, and ``server.wait_service`` plus the
-``WaitForFactCommand`` descriptor it yields. ``server.service`` mirrors
-pyinfra's ``systemd.service`` for ``service``, ``running``, ``restarted``,
-``enabled`` and ``daemon_reload``; pyinfra's ``reloaded``, ``command``,
-``user_mode``, ``machine`` and ``user_name`` options are deliberately dropped.
+Operation side (design doc section 6): ``server.group`` plus the
+``GroupAddCommand``/``GroupDelCommand`` descriptors it yields,
+``server.hostname`` plus the ``SetHostnameCommand`` descriptor it yields,
+``server.kill`` plus the ``KillCommand`` descriptor it yields,
+``server.modprobe`` plus the ``ModprobeCommand`` descriptor it yields,
+``server.mount`` plus the ``MountCommand`` descriptor it yields,
+``server.service`` plus the ``SystemctlCommand`` descriptor it yields,
+``server.timezone`` plus the ``SetTimezoneCommand`` descriptor it yields, and
+``server.wait_service`` plus the ``WaitForFactCommand`` descriptor it yields.
+``server.group`` mirrors pyinfra's ``server.group`` for ``group``,
+``present``, ``system`` and ``gid``, dispatching on the ``Kernel`` fact
+(pyinfra's deprecated ``Os``) exactly like ``KernelModules``: FreeBSD gets
+``pw groupadd``/``pw groupdel``, every other kernel ``groupadd``/``groupdel``.
+``server.hostname`` mirrors pyinfra's ``server.hostname`` for the hostname
+itself: the ``Which`` fact picks ``hostnamectl set-hostname`` when
+``hostnamectl`` is available and the bare ``hostname`` command otherwise;
+pyinfra's ``hostname_file`` upload branch is deliberately dropped.
+``server.kill`` mirrors pyinfra's ``server.kill`` for ``pid`` and
+``signal``: stateless and non-idempotent, it reads no fact and always
+yields one ``kill -<signal> <pid>`` command.
+``server.modprobe`` mirrors pyinfra's ``server.modprobe`` for ``module``,
+``present`` and ``force``: it compares the names against the
+``KernelModules`` fact and yields one ``modprobe [-f] [-r] -a <modules>``
+command only for the modules that differ from the request.
+``server.mount`` mirrors pyinfra's ``server.mount`` for ``path``,
+``mounted``, ``options``, ``device`` and ``fs_type``: it compares against
+the ``Mounts`` fact (with a lookup-by-device fallback) and yields one
+``MountCommand`` -- a fresh ``mount``, an ``umount`` or an options remount
+(the ``Kernel`` fact picks the BSD remount form).
+``server.service`` mirrors pyinfra's ``systemd.service`` for ``service``,
+``running``, ``restarted``, ``enabled`` and ``daemon_reload``; pyinfra's
+``reloaded``, ``command``, ``user_mode``, ``machine`` and ``user_name``
+options are deliberately dropped.
+``server.timezone`` mirrors pyinfra's ``server.timezone`` for ``timezone``
+on systemd systems only: it compares against the ``Timezone`` fact and
+yields ``timedatectl set-timezone`` when they differ; pyinfra's non-systemd
+fallback (symlinking ``/etc/localtime`` and writing ``/etc/timezone``) is
+deliberately dropped, and a host without ``timedatectl`` raises
+``OperationError`` during prepare instead.
 
 ``WaitForFactCommand`` is the *non-shell* wait descriptor: it carries a fact,
 its arguments and a predicate, and its ``wait`` polls the fact (bypassing
@@ -64,7 +98,7 @@ from typing import Any, ClassVar
 import distro
 
 from ...commands import Command, WaitCommand, WaitTimeoutError
-from ...core import OpContext
+from ...core import OpContext, OperationError
 from ...hosts import Host
 
 #: Unit suffixes systemd recognises; a bare name gets ``.service`` appended
@@ -1264,9 +1298,10 @@ class Mounts:
         if mounts is not None:
             # SimulatedHost seam: read the in-memory state directly. Copy the
             # nested dicts and their options lists so callers never mutate
-            # the simulated state.
+            # the simulated state. A partial info dict (pyinfra's operation
+            # fixtures carry bare {} entries) reads as no options.
             return {
-                point: {**info, "options": list(info["options"])}
+                point: {**info, "options": list(info.get("options", []))}
                 for point, info in mounts.items()
             }
         # Real transport: the Kernel fact picks the shell (pyinfra reads it
@@ -1588,6 +1623,100 @@ class Processes:
             busybox = bool(await Which.process(host, "busybox"))
         stdout = await host.run_shell(cls.command(kernel, busybox, pid))
         return cls.parse(stdout.splitlines(), kernel, busybox)
+
+
+class Sysctl:
+    """The sysctl settings, as a dict of key -> value.
+
+    Mirrors pyinfra's ``server.Sysctl``: ``sysctl -a`` dumps every setting
+    (or ``sysctl <key> ...`` when ``keys`` is given), with stderr discarded
+    and the exit swallowed (``2>/dev/null || true``) so an unknown key or a
+    missing binary never fails the read. Each row is ``key = value``
+    (Linux) or ``key: value`` (BSD); a row carrying neither separator is
+    skipped. A value made only of alphanumeric, ``_``, ``-``, ``.`` and
+    whitespace characters is split on whitespace and each token
+    int-converted when possible, a single token collapsing to a scalar;
+    anything else stays the stripped raw string. For example::
+
+        {
+            "fs.inotify.max_queued_events": 16384,
+            "fs.inode-state": [44565, 360],
+        }
+
+    A value that is only whitespace keeps ``""`` (it is truthy before the
+    strip, pyinfra's check); a row with nothing at all after the separator
+    is skipped. Empty output reads as ``{}`` (pyinfra's ``default = dict``).
+    """
+
+    #: Shell used to dump every sysctl setting over SSH.
+    COMMAND = "sysctl -a 2>/dev/null || true"
+
+    #: Values matching this pattern are whitespace-split and int-converted
+    #: (pyinfra's regex); anything else stays a raw string.
+    _SIMPLE_VALUE_RE = re.compile(r"^[a-zA-Z0-9_\-\.\s]+$")
+
+    @classmethod
+    def command(cls, keys: list[str] | None = None) -> str:
+        """Shell reads the named keys, or dumps every setting when None.
+
+        Each key is quoted normally (pyinfra's ``QuoteString``), so a key
+        carrying shell metacharacters is a literal lookup, never executed.
+        """
+        if keys is None:
+            return cls.COMMAND
+        quoted = " ".join(shlex.quote(key) for key in keys)
+        return f"sysctl {quoted} 2>/dev/null || true"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> dict[str, Any]:
+        """Parse ``sysctl`` rows into the key -> value dict.
+
+        Rows without a ``=`` or ``:`` separator are skipped; simple values
+        become ints (or lists of ints/strings), everything else stays the
+        stripped raw string. Pure and testable.
+        """
+        sysctls: dict[str, Any] = {}
+        for line in output:
+            if "=" in line:
+                key, value = line.split("=", 1)
+            elif ":" in line:
+                key, value = line.split(":", 1)
+            else:
+                continue
+            # pyinfra tests truthiness BEFORE stripping: "key = " (a
+            # whitespace-only value) keeps "", "key =" is skipped.
+            if not (key and value):
+                continue
+            key = key.strip()
+            value = value.strip()
+            if cls._SIMPLE_VALUE_RE.match(value):
+                tokens = [_try_int(token) for token in value.split()]
+                sysctls[key] = tokens[0] if len(tokens) == 1 else tokens
+            else:
+                sysctls[key] = value
+        return sysctls
+
+    @classmethod
+    async def process(
+        cls, host: Host, keys: list[str] | None = None
+    ) -> dict[str, Any]:
+        sysctls = getattr(host, "sysctls", None)
+        if sysctls is not None:
+            # SimulatedHost seam: key -> parsed value. Copy any list value so
+            # callers never mutate the simulated state; a keys filter selects
+            # the named settings, and an unknown key reads as absent, like
+            # the swallowed sysctl error.
+            wanted = list(sysctls) if keys is None else keys
+            return {
+                key: list(sysctls[key])
+                if isinstance(sysctls[key], list)
+                else sysctls[key]
+                for key in wanted
+                if key in sysctls
+            }
+        # Real transport: the sysctl dump (or named keys) over asyncssh.
+        stdout = await host.run_shell(cls.command(keys))
+        return cls.parse(stdout.splitlines())
 
 
 class SystemdServiceState:
@@ -1976,6 +2105,431 @@ class Which:
 
 
 @dataclass(frozen=True)
+class GroupAddCommand(Command):
+    """One ``groupadd`` (``pw groupadd`` on FreeBSD) invocation.
+
+    ``system`` renders ``-r`` and ``gid`` renders ``--gid`` (``-g`` on
+    FreeBSD); the operation clears ``system`` on BSD kernels, where
+    ``groupadd`` has no such flag (pyinfra's ``"BSD" not in Os`` check).
+    """
+
+    group: str
+    system: bool = False
+    gid: int | str | None = None
+    freebsd: bool = False
+
+    def shell(self) -> str:
+        parts = ["pw", "groupadd"] if self.freebsd else ["groupadd"]
+        if self.system:
+            parts.append("-r")
+        if self.freebsd:
+            parts.extend(["-n", shlex.quote(self.group)])
+        else:
+            parts.append(shlex.quote(self.group))
+        # pyinfra's truthiness check: a gid of 0 is skipped, not rendered.
+        if self.gid:
+            flag = "-g" if self.freebsd else "--gid"
+            parts.extend([flag, shlex.quote(str(self.gid))])
+        return " ".join(parts)
+
+
+@dataclass(frozen=True)
+class GroupDelCommand(Command):
+    """One ``groupdel`` (``pw groupdel -n`` on FreeBSD) invocation."""
+
+    group: str
+    freebsd: bool = False
+
+    def shell(self) -> str:
+        if self.freebsd:
+            return f"pw groupdel -n {shlex.quote(self.group)}"
+        return f"groupdel {shlex.quote(self.group)}"
+
+
+async def group(
+    ctx: OpContext,
+    group: str,
+    present: bool = True,
+    system: bool = False,
+    gid: int | str | None = None,
+    **kwargs,
+) -> AsyncGenerator[Command]:
+    """Add/remove a system group (pyinfra ``server.group`` parity).
+
+    + group: name of the group to ensure
+    + present: whether the group should be present or not
+    + system: whether to create a system group (``groupadd -r``); ignored
+      on BSD kernels, which have no system groups
+    + gid: use a specific group id number; a falsy gid (``None`` or ``0``)
+      is skipped, exactly like pyinfra's ``if gid:`` check
+
+    Idempotent: the group name is compared against the ``Groups`` fact and
+    a descriptor is yielded only when the group differs from the request.
+    The ``Kernel`` fact picks the command form -- FreeBSD gets
+    ``pw groupadd``/``pw groupdel``, every other kernel
+    ``groupadd``/``groupdel`` -- mirroring pyinfra's dispatch on its
+    deprecated ``Os`` fact (renamed ``Kernel`` upstream, the same fact
+    ``KernelModules`` dispatches on here). ``system`` and ``gid`` only
+    apply at creation: an existing group is never modified, so a gid or
+    system change on a present group plans no command, like pyinfra. The
+    commands need root: flag the request ``sudo=True``. ``**kwargs``
+    absorbs pyinfra's global arguments (``op()`` already strips
+    ``name``/``sudo``/``su``).
+    """
+    groups = await ctx.facts.get(Groups)
+    kernel = (await ctx.facts.get(Kernel)).strip()
+    is_present = group in groups
+    freebsd = kernel == "FreeBSD"
+
+    if not present and is_present:
+        ctx.changed = True
+        ctx.reason = f"group {group} present, will remove"
+        yield GroupDelCommand(group=group, freebsd=freebsd)
+    elif present and not is_present:
+        ctx.changed = True
+        ctx.reason = f"group {group} absent, will create"
+        yield GroupAddCommand(
+            group=group,
+            # BSD doesn't do system groups (pyinfra's "BSD" not in Os).
+            system=system and "BSD" not in kernel,
+            gid=gid,
+            freebsd=freebsd,
+        )
+    else:
+        ctx.reason = f"group {group} already {'present' if present else 'absent'}"
+
+
+@dataclass(frozen=True)
+class SetHostnameCommand(Command):
+    """One hostname-setting invocation.
+
+    With ``hostnamectl`` it renders ``hostnamectl set-hostname <hostname>``
+    (the systemd form, which also persists the name); without it the bare
+    ``hostname <hostname>`` command for older systems. The hostname is
+    ``shlex``-quoted (pyinfra's ``QuoteString``), so a name carrying shell
+    metacharacters is set literally rather than executed.
+    """
+
+    hostname: str
+    hostnamectl: bool = False
+
+    def shell(self) -> str:
+        if self.hostnamectl:
+            return f"hostnamectl set-hostname {shlex.quote(self.hostname)}"
+        return f"hostname {shlex.quote(self.hostname)}"
+
+
+async def hostname(
+    ctx: OpContext,
+    hostname: str,
+    **kwargs,
+) -> AsyncGenerator[Command]:
+    """Set the system hostname (pyinfra ``server.hostname`` parity).
+
+    + hostname: the hostname that should be set
+
+    Idempotent: the requested name is compared against the ``Hostname``
+    fact and a ``SetHostnameCommand`` is yielded only when they differ.
+    The ``Which`` fact picks the command form -- ``hostnamectl
+    set-hostname`` when ``hostnamectl`` is available (it persists the name
+    itself), the bare ``hostname`` command on older systems without it.
+    The command needs root: flag the request ``sudo=True``.
+
+    pyinfra's ``hostname_file`` option is deliberately dropped: on systems
+    without ``hostnamectl`` pyinfra also uploads the name to a persistent
+    file (``/etc/hostname`` on Linux, ``/etc/myname`` on OpenBSD) through
+    ``files.put``, which pyinfra can elevate -- reemote5's transfers are
+    always unprivileged, so that root-owned write cannot ride a transfer
+    and the whole file branch (option included) is omitted rather than
+    silently run as the login user. On a systemd host ``hostnamectl``
+    already persists the name, so nothing is lost there. ``**kwargs``
+    absorbs pyinfra's global arguments (``op()`` already strips
+    ``name``/``sudo``/``su``).
+    """
+    current = await ctx.facts.get(Hostname)
+    has_hostnamectl = await ctx.facts.get(Which, "hostnamectl") is not None
+
+    if current == hostname:
+        ctx.reason = "hostname is set"
+    else:
+        ctx.changed = True
+        ctx.reason = f"hostname is {current!r}, will set {hostname!r}"
+        yield SetHostnameCommand(hostname=hostname, hostnamectl=has_hostnamectl)
+
+
+@dataclass(frozen=True)
+class KillCommand(Command):
+    """One ``kill -<signal> <pid>`` invocation.
+
+    Both the signal flag and the PID are ``shlex``-quoted (pyinfra's
+    ``QuoteString``), so a signal string carrying shell metacharacters is
+    passed to ``kill`` literally rather than executed by the shell.
+    """
+
+    pid: int
+    signal: str = "TERM"
+
+    def shell(self) -> str:
+        return f"kill {shlex.quote(f'-{self.signal}')} {shlex.quote(str(self.pid))}"
+
+
+async def kill(
+    ctx: OpContext,
+    pid: int,
+    signal: str = "TERM",
+    **kwargs,
+) -> AsyncGenerator[Command]:
+    """Kill a running process (pyinfra ``server.kill`` parity).
+
+    + pid: PID of the process to kill
+    + signal: signal to send (default ``TERM``)
+
+    Stateless and non-idempotent, exactly like pyinfra: no fact is read
+    and a ``KillCommand`` is always yielded, so the plan always shows a
+    change and a repeat request kills again. Discovering the PID is the
+    caller's job -- read the ``Processes`` fact via ``gather_fact`` BEFORE
+    the run and close over the frozen snapshot in a deploy factory (see
+    ``examples/modules/server/server_kill.py``); branching the deploy
+    generator itself on live process state would break the determinism
+    guard. Killing another user's process needs root: flag the request
+    ``sudo=True``. A PID that exited between the snapshot and the apply
+    makes ``kill`` exit non-zero, which fails the run with ``CommandError``
+    (pyinfra behaves the same). ``**kwargs`` absorbs pyinfra's global
+    arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    """
+    ctx.changed = True
+    ctx.reason = f"kill process {pid} with signal {signal}"
+    yield KillCommand(pid=pid, signal=signal)
+
+
+def _module_label(modules: tuple[str, ...]) -> str:
+    """pyinfra's modprobe noop wording: ``module x`` or ``modules x/y``."""
+    noun = "modules" if len(modules) > 1 else "module"
+    return f"{noun} {'/'.join(modules)}"
+
+
+@dataclass(frozen=True)
+class ModprobeCommand(Command):
+    """One ``modprobe [-f] [-r] -a <modules>`` invocation.
+
+    ``present=False`` renders ``-r`` (unload the named modules) and
+    ``force`` renders ``-f``. Each module name is ``shlex``-quoted
+    (pyinfra's ``QuoteString``), so a name carrying shell metacharacters
+    is passed to ``modprobe`` literally rather than executed.
+    """
+
+    modules: tuple[str, ...]
+    present: bool = True
+    force: bool = False
+
+    def shell(self) -> str:
+        parts = ["modprobe"]
+        if self.force:
+            parts.append("-f")
+        if not self.present:
+            parts.append("-r")
+        parts.append("-a")
+        parts.extend(shlex.quote(module) for module in self.modules)
+        return " ".join(parts)
+
+
+async def modprobe(
+    ctx: OpContext,
+    module: str | list[str] | tuple[str, ...],
+    present: bool = True,
+    force: bool = False,
+    **kwargs,
+) -> AsyncGenerator[Command]:
+    """Load/unload kernel modules (pyinfra ``server.modprobe`` parity).
+
+    + module: name of the module to manage; a single string or a list/tuple
+      of names. Prefer tuples when building requests via ``op()``, since
+      ``OperationRequest`` kwargs must stay hashable.
+    + present: whether the module(s) should be loaded or not
+    + force: whether to force any add/remove modules (``modprobe -f``)
+
+    Idempotent: the names are compared against the ``KernelModules`` fact
+    and one ``ModprobeCommand`` is yielded only for the modules that differ
+    from the request -- ``modprobe -a`` loads just the missing ones,
+    ``modprobe -r -a`` unloads just the loaded ones (pyinfra's partition).
+    ``present`` picks which subset is acted on, so the two directions never
+    mix in one request, and ``force`` does not force a reload of an
+    already-loaded module -- like pyinfra, an in-state request is a no-op
+    whatever the flag. Names are compared verbatim: the kernel treats
+    ``-`` and ``_`` as equivalent in module names, but neither pyinfra nor
+    reemote5 normalizes the spelling. The unchanged reason mirrors
+    pyinfra's noop wording (``module floppy is loaded``). The commands
+    need root: flag the request ``sudo=True``. ``**kwargs`` absorbs
+    pyinfra's global arguments (``op()`` already strips
+    ``name``/``sudo``/``su``).
+    """
+    requested = (module,) if isinstance(module, str) else tuple(module)
+    loaded = await ctx.facts.get(KernelModules)
+    present_mods = tuple(name for name in requested if name in loaded)
+    missing_mods = tuple(name for name in requested if name not in loaded)
+
+    # Module is loaded and we don't want it?
+    if not present and present_mods:
+        ctx.changed = True
+        ctx.reason = f"{_module_label(present_mods)} loaded, will remove"
+        yield ModprobeCommand(modules=present_mods, present=False, force=force)
+    # Module isn't loaded and we want it?
+    elif present and missing_mods:
+        ctx.changed = True
+        ctx.reason = f"{_module_label(missing_mods)} not loaded, will load"
+        yield ModprobeCommand(modules=missing_mods, force=force)
+    else:
+        verb = "are" if len(requested) > 1 else "is"
+        state = "loaded" if present else "not loaded"
+        ctx.reason = f"{_module_label(requested)} {verb} {state}"
+
+
+@dataclass(frozen=True)
+class MountCommand(Command):
+    """One ``mount``/``umount`` invocation.
+
+    ``mounted=False`` renders ``umount <path>``. ``remount=True`` renders
+    the options-update form -- ``mount -o remount,<options> <path>`` on
+    Linux, ``mount -uo <options> -t <fs_type> <device> <path>`` on the BSDs
+    (``bsd=True``, with ``fs_type``/``device`` taken from the ``Mounts``
+    fact). Otherwise it renders a fresh mount
+    ``mount [-t <fs_type>] [-o <options>] [<device>] <path>``. Every
+    user-supplied string is ``shlex``-quoted: pyinfra quotes only some of
+    them, and quoting the rest leaves simple values unchanged while a path
+    or device carrying shell metacharacters reaches ``mount`` literally.
+    """
+
+    path: str
+    mounted: bool = True
+    options: tuple[str, ...] = ()
+    device: str | None = None
+    fs_type: str | None = None
+    remount: bool = False
+    bsd: bool = False
+
+    def shell(self) -> str:
+        if not self.mounted:
+            return f"umount {shlex.quote(self.path)}"
+        options_string = ",".join(self.options)
+        if self.remount:
+            if self.bsd:
+                return (
+                    f"mount -uo {shlex.quote(options_string)} "
+                    f"-t {shlex.quote(self.fs_type)} "
+                    f"{shlex.quote(self.device)} {shlex.quote(self.path)}"
+                )
+            return (
+                f"mount -o {shlex.quote(f'remount,{options_string}')} "
+                f"{shlex.quote(self.path)}"
+            )
+        parts = ["mount"]
+        if self.fs_type:
+            parts.extend(["-t", shlex.quote(self.fs_type)])
+        if options_string:
+            parts.extend(["-o", shlex.quote(options_string)])
+        if self.device:
+            parts.append(shlex.quote(self.device))
+        parts.append(shlex.quote(self.path))
+        return " ".join(parts)
+
+
+async def mount(
+    ctx: OpContext,
+    path: str,
+    mounted: bool = True,
+    options: list[str] | tuple[str, ...] | None = None,
+    device: str | None = None,
+    fs_type: str | None = None,
+    **kwargs,
+) -> AsyncGenerator[Command]:
+    """Manage mounted filesystems (pyinfra ``server.mount`` parity).
+
+    + path: the path of the mounted filesystem
+    + mounted: whether the filesystem should be mounted
+    + options: the mount options; a list/tuple of option strings (prefer
+      tuples in ``op()`` requests, which must stay hashable)
+    + device: the device behind the mount
+    + fs_type: the filesystem type
+
+    Idempotent: the ``Mounts`` fact is keyed by mount point and ``path`` is
+    looked up directly first; when it is absent and ``device`` is given,
+    the mount is found by device instead (pyinfra's fallback for paths
+    whose spelling differs from ``/proc/self/mountinfo``), and that found
+    mount point is what an unmount or remount acts on. A missing mount
+    yields one ``MountCommand`` rendering
+    ``mount [-t fs_type] [-o options] [device] path``; ``mounted=False`` on
+    a present mount yields ``umount``; an already-mounted filesystem whose
+    options do not include all of ``options`` is remounted --
+    ``mount -o remount,<options> <path>`` on Linux,
+    ``mount -uo <options> -t <type> <device> <path>`` on the BSDs, where the
+    ``Kernel`` fact picks the form and the type/device come from the fact.
+    The options check is a subset test, not equality: extra options already
+    on the mount never trigger a remount, and a remount always carries the
+    full requested option set. Like pyinfra, ``/etc/fstab`` is never
+    touched -- persistence across reboots is a ``files.edit`` recipe. The
+    unchanged reason mirrors pyinfra's noop wording (``filesystem /data is
+    mounted``). The commands need root: flag the request ``sudo=True``.
+    ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
+    strips ``name``/``sudo``/``su``).
+    """
+    opts = tuple(options) if options else ()
+    mounts = await ctx.facts.get(Mounts)
+    is_mounted = path in mounts
+    mounted_path = path
+
+    # If path not found directly, check by device as fallback (pyinfra):
+    # the path representation can differ between user input and
+    # /proc/self/mountinfo.
+    if not is_mounted and device:
+        for point, info in mounts.items():
+            if info.get("device") == device:
+                is_mounted = True
+                mounted_path = point
+                break
+
+    # Want mount but don't have?
+    if mounted and not is_mounted:
+        ctx.changed = True
+        ctx.reason = f"filesystem {path} is not mounted, will mount"
+        yield MountCommand(path=path, options=opts, device=device, fs_type=fs_type)
+    # Want no mount but mounted?
+    elif mounted is False and is_mounted:
+        ctx.changed = True
+        ctx.reason = f"filesystem {mounted_path} is mounted, will unmount"
+        yield MountCommand(path=mounted_path, mounted=False)
+    # Want mount and is mounted! Check the options (pyinfra).
+    elif is_mounted and mounted and opts:
+        info = mounts[mounted_path]
+        needed = set(opts) - set(info.get("options", []))
+        if needed:
+            # The -u option is common among FreeBSD, OpenBSD, NetBSD and
+            # DragonFlyBSD; the Kernel fact picks the remount form.
+            kernel = await ctx.facts.get(Kernel)
+            bsd = "BSD" in kernel.strip()
+            ctx.changed = True
+            missing = ", ".join(sorted(needed))
+            ctx.reason = (
+                f"filesystem {mounted_path} is missing options {missing}, "
+                "will remount"
+            )
+            if bsd:
+                yield MountCommand(
+                    path=mounted_path,
+                    options=opts,
+                    device=info["device"],
+                    fs_type=info["type"],
+                    remount=True,
+                    bsd=True,
+                )
+            else:
+                yield MountCommand(path=mounted_path, options=opts, remount=True)
+        else:
+            ctx.reason = f"filesystem {path} is mounted"
+    else:
+        ctx.reason = f"filesystem {path} is {'mounted' if mounted else 'not mounted'}"
+
+
+@dataclass(frozen=True)
 class SystemctlCommand(Command):
     """One ``systemctl <action> [<unit>]`` invocation.
 
@@ -2063,6 +2617,62 @@ async def service(
             reasons.append(f"{unit} already {'enabled' if enabled else 'disabled'}")
 
     ctx.reason = "; ".join(reasons)
+
+
+@dataclass(frozen=True)
+class SetTimezoneCommand(Command):
+    """One ``timedatectl set-timezone <timezone>`` invocation.
+
+    The systemd form, which also persists the zone across reboots. The
+    timezone is ``shlex``-quoted (pyinfra's ``QuoteString``), so a name
+    carrying shell metacharacters is set literally rather than executed.
+    """
+
+    timezone: str
+
+    def shell(self) -> str:
+        return f"timedatectl set-timezone {shlex.quote(self.timezone)}"
+
+
+async def timezone(
+    ctx: OpContext,
+    timezone: str,
+    **kwargs,
+) -> AsyncGenerator[Command]:
+    """Set the system timezone (pyinfra ``server.timezone`` parity, systemd only).
+
+    + timezone: the timezone to set (e.g. ``Europe/Amsterdam``, ``UTC``)
+
+    Idempotent: the requested zone is compared against the ``Timezone``
+    fact and a ``SetTimezoneCommand`` (``timedatectl set-timezone``) is
+    yielded only when they differ. Supported on systemd systems only:
+    when a change is needed the ``Which`` fact probes ``timedatectl``,
+    and a host without it raises ``OperationError`` while materializing
+    -- in a deploy run that is the prepare phase, before anything is
+    sent. An already-set timezone is a no-op on any host, like pyinfra,
+    which also compares the fact before probing for the tool. The
+    command needs root: flag the request ``sudo=True``.
+
+    pyinfra's non-systemd fallback -- ``ln -sf
+    /usr/share/zoneinfo/<timezone> /etc/localtime`` plus ``echo <timezone>
+    > /etc/timezone`` -- is deliberately dropped: reemote5 supports this
+    operation on systemd systems only, where ``timedatectl`` already
+    persists the zone. ``**kwargs`` absorbs pyinfra's global arguments
+    (``op()`` already strips ``name``/``sudo``/``su``).
+    """
+    current = await ctx.facts.get(Timezone)
+    if current == timezone:
+        ctx.reason = "timezone is set"
+        return
+
+    if await ctx.facts.get(Which, "timedatectl") is None:
+        raise OperationError(
+            f"server.timezone requires timedatectl (systemd only), "
+            f"not found on {ctx.host.name}"
+        )
+    ctx.changed = True
+    ctx.reason = f"timezone is {current!r}, will set {timezone!r}"
+    yield SetTimezoneCommand(timezone=timezone)
 
 
 def is_active(state: str | None) -> bool:
@@ -2170,6 +2780,8 @@ __all__ = [
     "Arch",
     "AuthorizedKeys",
     "Date",
+    "GroupAddCommand",
+    "GroupDelCommand",
     "Groups",
     "HasGui",
     "Home",
@@ -2177,15 +2789,21 @@ __all__ = [
     "Kernel",
     "KernelModules",
     "KernelVersion",
+    "KillCommand",
     "Last",
     "LinuxDistribution",
     "LinuxGui",
     "LinuxName",
     "Locales",
     "LsbRelease",
+    "ModprobeCommand",
+    "MountCommand",
     "Mounts",
     "Path",
     "Processes",
+    "SetHostnameCommand",
+    "SetTimezoneCommand",
+    "Sysctl",
     "SystemctlCommand",
     "SystemdServiceEnabled",
     "SystemdServiceState",
@@ -2195,8 +2813,14 @@ __all__ = [
     "Users",
     "WaitForFactCommand",
     "Which",
+    "group",
+    "hostname",
     "is_active",
+    "kill",
+    "modprobe",
+    "mount",
     "service",
+    "timezone",
     "unit_name",
     "wait_service",
 ]

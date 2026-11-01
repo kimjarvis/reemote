@@ -21,10 +21,18 @@ opt-out (see [Composing deploys](guide.md#composing-deploys)). `op` and
 default to `UNSET`; the driver collapses the tri-state to a concrete bool
 before a command is sent, where only `ON` elevates.
 
+[`OperationError`][reemote5.core.OperationError] is raised by an operation
+whose prerequisites are not met on a host — `server.timezone`, for instance,
+requires `timedatectl` and is supported on systemd systems only. It aborts
+the run fail-fast while materializing (in a deploy run that is the prepare
+phase, before anything is sent), with a message naming the host and the
+missing prerequisite.
+
 ::: reemote5.core
     options:
       members:
         - OperationRequest
+        - OperationError
         - Privilege
         - op
         - sub_deploy

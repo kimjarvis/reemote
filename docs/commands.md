@@ -7,7 +7,13 @@ poll the host until a condition holds; the concrete typed descriptors live
 beside the operations that yield them (`reemote5.modules.dnf.dnf`,
 `reemote5.modules.files.files`, `reemote5.modules.server.server`). They are dumb,
 frozen value objects: an operation never executes anything, it only describes
-what would have to run. The typed descriptors exist so the test framework's
+what would have to run. The raw `StringCommand` carries shell text verbatim —
+its `shell()` returns the command unchanged, so it runs (and takes the
+`sudo`/`su` prefixes) exactly like a typed shell descriptor; it is the vehicle
+for a demo-side operation running a one-off command such as the `locale-gen`
+step of the
+[locale recipe](examples/modules/server.md#managing-locales-pyinfra-serverlocale-parity)
+without a library operation. The typed descriptors exist so the test framework's
 `SimulatedHost` (in `tests/simulated_host.py`) can dispatch on them in its
 `execute_command` and apply the equivalent mutation; the library's
 [`send_command`][reemote5.drivers.send_command] forwards to that seam. On the

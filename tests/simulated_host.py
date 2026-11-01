@@ -25,7 +25,7 @@ a real asyncssh transport is missing:
   / ``linux_distribution``
   / ``linux_gui`` / ``locales`` / ``lsb_release`` / ``lsblk_devices`` / ``mounts``
   / ``network_devices`` / ``os_path``
-  / ``processes`` / ``smbios_info`` / ``os_timezone`` / ``os_user`` / ``os_users``
+  / ``processes`` / ``smbios_info`` / ``sysctls`` / ``os_timezone`` / ``os_user`` / ``os_users``
   / ``uptime_seconds`` / ``command_paths``:
   the state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
   ``File``, ``Directory``, ``Link``, ``RemoteFileSha1``, ``FileContents``, ``DnfRepoFile``, ``DnfRepositories``,
@@ -39,7 +39,7 @@ a real asyncssh transport is missing:
   ``KernelModules``, ``KernelVersion``, ``Last``,
   ``LinuxDistribution``, ``LinuxGui``, ``LinuxName``, ``Locales``,
   ``LsbRelease``, ``LsBlk``, ``Mounts``, ``NetworkDevices``, ``Path``, ``Processes``,
-  ``SmbiosInfo``, ``Timezone``,
+  ``SmbiosInfo``, ``Sysctl``, ``Timezone``,
   ``Uptime``, ``User``, ``Users``, ``Which``) read as a
   stand-in for gathering over SSH.
 
@@ -80,6 +80,13 @@ from reemote5.modules.files.files import (
     write_dest_bytes,
 )
 from reemote5.modules.server.server import (
+    GroupAddCommand,
+    GroupDelCommand,
+    KillCommand,
+    ModprobeCommand,
+    MountCommand,
+    SetHostnameCommand,
+    SetTimezoneCommand,
     SystemctlCommand,
     SystemdServiceState,
     WaitForFactCommand,
@@ -213,6 +220,9 @@ class SimulatedHost(Host):
     # Group names present on the system (the first ``/etc/group`` field of
     # each row, in file order), backing ``Groups``. Named distinctly from
     # ``Host.group`` (the inventory classifier) so the two are never confused.
+    # ``server.group`` mutates it: ``add_group`` appends a new name (file
+    # order preserved) and ``remove_group`` drops it, so a repeat operation
+    # is a no-op once the fresh per-step fact cache sees the change.
     os_groups: list[str] = field(default_factory=list)
     # Whether a known desktop-session binary is installed, backing
     # ``HasGui``. Defaults to False -- a simulated server is headless, like
@@ -227,7 +237,8 @@ class SimulatedHost(Host):
     # label) and the inventory's ``connection.hostname`` address alias.
     # Defaults to pyinfra's own fact fixture hostname -- a real machine
     # always answers ``uname -n``, and a fixed default keeps simulated
-    # reads deterministic.
+    # reads deterministic. ``set_hostname`` (the simulated ``server.hostname``
+    # effect) replaces it, so a repeat hostname set is a no-op.
     os_hostname: str = "my-host.net"
     # IPv4 addresses per network interface (the parsed `ip addr show` /
     # `ifconfig -a` listing), backing ``Ipv4Addrs``: interface name -> the
@@ -255,7 +266,10 @@ class SimulatedHost(Host):
     # FreeBSD {id, refs, address, size} -- the seam holds whichever shape
     # matches the host's ``os_kernel``. Defaults to {} -- a simulated machine
     # with no modules listed, like pyinfra's ``default = dict`` for a failed
-    # or absent /proc/modules read.
+    # or absent /proc/modules read. ``server.modprobe`` mutates it:
+    # ``load_modules`` adds a name with a minimal Linux-shaped info dict and
+    # ``unload_modules`` drops it, so a repeat operation is a no-op once the
+    # fresh per-step fact cache sees the change.
     kernel_modules: dict[str, dict[str, Any]] = field(default_factory=dict)
     # The kernel release (``uname -r``), backing ``KernelVersion``. Named
     # ``os_kernel_version`` with the os_ prefix (like ``os_kernel``) so it
@@ -328,7 +342,10 @@ class SimulatedHost(Host):
     # options already combined and octal escapes decoded -- the seam holds
     # whichever kernel's listing the host's ``os_kernel`` implies. Defaults
     # to {} -- a simulated machine with no mounts listed, like pyinfra's
-    # ``default = dict`` for a failed read.
+    # ``default = dict`` for a failed read. ``server.mount`` mutates it:
+    # ``mount_filesystem`` records a new mount, ``remount_filesystem`` merges
+    # the requested options into the entry and ``unmount_filesystem`` drops
+    # the mount point, so the next step's fresh fact cache sees the change.
     mounts: dict[str, dict[str, Any]] = field(default_factory=dict)
     # Network devices (interface -> {state, ether?, mtu?, ipv4?, ipv6?}),
     # backing ``NetworkDevices``. Each value is the parsed form the fact
@@ -349,7 +366,9 @@ class SimulatedHost(Host):
     # the fact returns -- the seam holds the joined record regardless of
     # which kernel's ps listing ``os_kernel`` implies. Defaults to {} -- a
     # simulated machine with no processes listed, like pyinfra's
-    # ``default = dict`` for a failed ps read.
+    # ``default = dict`` for a failed ps read. ``server.kill`` mutates it:
+    # ``kill_process`` drops the PID, so the next step's fresh fact cache
+    # no longer lists the killed process.
     processes: dict[int, dict[str, Any]] = field(default_factory=dict)
     # Decoded SMBIOS tables (section title -> the field dict the fact
     # returns), backing ``SmbiosInfo``. Each field value is a raw string,
@@ -363,7 +382,8 @@ class SimulatedHost(Host):
     # ``os_kernel``) so it stays clear of any inventory field. Defaults to
     # pyinfra's own fact fixture timezone -- a real machine always resolves
     # ``/etc/localtime``, and a fixed default keeps simulated reads
-    # deterministic.
+    # deterministic. ``set_timezone`` (the simulated ``server.timezone``
+    # effect) replaces it, so a repeat timezone set is a no-op.
     os_timezone: str = "Europe/Amsterdam"
     # The current user's name (the ``echo $USER`` answer), backing ``User``.
     # Named ``os_user`` with the os_ prefix (like ``os_path``) so it stays
@@ -391,6 +411,15 @@ class SimulatedHost(Host):
     # non-zero exit of ``command -v nosuchcommand || true``. Defaults to {} --
     # a simulated machine resolves no commands until a test names them.
     command_paths: dict[str, str] = field(default_factory=dict)
+    # Sysctl settings (key -> the parsed value ``Sysctl`` returns -- an int,
+    # a string, or a list of ints/strings), backing ``Sysctl``. A keys filter
+    # selects the named settings; an absent key reads as missing, like the
+    # swallowed ``sysctl nosuchkey`` error. Defaults to {} -- a simulated
+    # machine with no settings listed, like pyinfra's ``default = dict`` for
+    # an empty or failed read. A read-only seam: the demo-side ``sysctl``
+    # step is a raw ``StringCommand`` with no simulated effect, so a test
+    # mutates it directly to emulate a live value change.
+    sysctls: dict[str, Any] = field(default_factory=dict)
     # Side effects of installing a package: package -> {link src: target}
     # and package -> {file path}. This is what lets the demo reproduce the
     # design doc section 9 trace: installing a package creates the default
@@ -449,6 +478,26 @@ class SimulatedHost(Host):
                 self.remove_tree(src)
             case StringCommand():
                 pass  # no simulated effect for raw shell strings
+            case GroupAddCommand(group=name):
+                self.add_group(name)
+            case GroupDelCommand(group=name):
+                self.remove_group(name)
+            case SetHostnameCommand(hostname=name):
+                self.set_hostname(name)
+            case SetTimezoneCommand(timezone=timezone):
+                self.set_timezone(timezone)
+            case KillCommand(pid=pid):
+                self.kill_process(pid)
+            case ModprobeCommand(modules=modules, present=False):
+                self.unload_modules(modules)
+            case ModprobeCommand(modules=modules):
+                self.load_modules(modules)
+            case MountCommand(path=path, mounted=False):
+                self.unmount_filesystem(path)
+            case MountCommand(path=path, options=options, remount=True):
+                self.remount_filesystem(path, options)
+            case MountCommand(path=path, device=device, fs_type=fs_type, options=options):
+                self.mount_filesystem(path, device, fs_type, options)
             case SystemctlCommand(action="daemon-reload"):
                 pass  # the simulation tracks no unit files to reload
             case SystemctlCommand(action="start" | "restart", unit=unit):
@@ -556,6 +605,111 @@ class SimulatedHost(Host):
 
     def remove_file(self, src: str) -> None:
         self.existing_files.discard(src)
+
+    def add_group(self, name: str) -> None:
+        """Record a simulated ``groupadd``: append the name to ``os_groups``.
+
+        The ``Groups`` fact reads ``os_groups`` in file order, so a new group
+        lands at the end and an already-present name is left alone (the real
+        ``groupadd`` would exit non-zero; the operation's fact check never
+        yields the command in that case). ``system``/``gid`` carry no
+        simulated state: the fact reports names only.
+        """
+        if name not in self.os_groups:
+            self.os_groups.append(name)
+
+    def remove_group(self, name: str) -> None:
+        """Record a simulated ``groupdel``: drop the name from ``os_groups``."""
+        if name in self.os_groups:
+            self.os_groups.remove(name)
+
+    def set_hostname(self, name: str) -> None:
+        """Record a simulated ``hostnamectl set-hostname``/``hostname``.
+
+        Both command forms set the same running hostname, so the seam just
+        replaces ``os_hostname`` -- the one field the ``Hostname`` fact
+        reads -- and the next step's fresh fact cache sees the new name.
+        """
+        self.os_hostname = name
+
+    def set_timezone(self, timezone: str) -> None:
+        """Record a simulated ``timedatectl set-timezone``.
+
+        The seam replaces ``os_timezone`` -- the one field the ``Timezone``
+        fact reads -- so the next step's fresh fact cache sees the new zone
+        and a repeat timezone set is a no-op.
+        """
+        self.os_timezone = timezone
+
+    def kill_process(self, pid: int) -> None:
+        """Record a simulated ``kill``: drop the PID from ``processes``.
+
+        The ``Processes`` fact reads ``processes``, so the next step's fresh
+        fact cache no longer lists the killed PID. The simulation treats
+        every signal as terminal (it models no stopped/continued states),
+        and an absent PID is left alone -- the real ``kill`` would exit
+        non-zero and fail the apply step.
+        """
+        self.processes.pop(pid, None)
+
+    def load_modules(self, modules: tuple[str, ...]) -> None:
+        """Record a simulated ``modprobe -a``: add names to ``kernel_modules``.
+
+        The ``KernelModules`` fact keys on the module name, so a newly loaded
+        module gets a minimal Linux-shaped info dict; an already-loaded name
+        is left alone (the real ``modprobe -a`` succeeds silently on it).
+        ``force`` carries no simulated state: the fact reports no version or
+        force-related field.
+        """
+        for name in modules:
+            self.kernel_modules.setdefault(
+                name, {"size": "16384", "instances": 1, "state": "Live"}
+            )
+
+    def unload_modules(self, modules: tuple[str, ...]) -> None:
+        """Record a simulated ``modprobe -r -a``: drop names from ``kernel_modules``.
+
+        The simulation models no reference counts, so an in-use module is
+        unloaded too -- the real ``modprobe -r`` would exit non-zero and fail
+        the apply step. An absent name is left alone.
+        """
+        for name in modules:
+            self.kernel_modules.pop(name, None)
+
+    def mount_filesystem(
+        self, path: str, device: str | None, fs_type: str | None, options: tuple[str, ...]
+    ) -> None:
+        """Record a simulated ``mount``: add the mount point to ``mounts``.
+
+        The ``Mounts`` fact keys on the mount point, so the entry holds the
+        device/type as given (None when the request omitted them -- the
+        simulation has no fstab to resolve them from) and the requested
+        options. A repeat mount is then a no-op for the operation's
+        membership check, and an unmount or remount by device fallback finds
+        the entry.
+        """
+        self.mounts[path] = {"device": device, "type": fs_type, "options": list(options)}
+
+    def unmount_filesystem(self, path: str) -> None:
+        """Record a simulated ``umount``: drop the mount point from ``mounts``.
+
+        An absent mount point is left alone -- the real ``umount`` would exit
+        non-zero and fail the apply step.
+        """
+        self.mounts.pop(path, None)
+
+    def remount_filesystem(self, path: str, options: tuple[str, ...]) -> None:
+        """Record a simulated options remount: merge options into the entry.
+
+        The existing options are kept and the requested ones appended in
+        order, so the operation's subset check sees a repeat remount as a
+        no-op. The BSD form's device/type already sit in the entry and are
+        left alone. An absent mount point gains a minimal entry (the real
+        ``mount -o remount`` would fail; the seam stays safe regardless).
+        """
+        info = self.mounts.setdefault(path, {"device": None, "type": None, "options": []})
+        existing = list(info.get("options", []))
+        info["options"] = existing + [opt for opt in options if opt not in existing]
 
     def write_repo_file(self, path: str, content: str) -> None:
         """Record a simulated ``dnf.repo`` write: store the content bytes.
