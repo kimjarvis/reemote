@@ -35,6 +35,7 @@ plugins:
           # importable by file name so docs/examples.md can render their
           # module docstrings (the explanation lives in the example itself).
           paths:
+            - examples/modules/apk
             - examples/modules/apt
             - examples/modules/dnf
             - examples/modules/files
@@ -66,6 +67,7 @@ nav:
   - Examples:
       - Overview: examples.md
       - Modules:
+          - apk: examples/modules/apk.md
           - apt: examples/modules/apt.md
           - dnf: examples/modules/dnf.md
           - files: examples/modules/files.md
@@ -87,6 +89,7 @@ nav:
       - Connectors:
           - docker: connectors/docker.md
       - Modules:
+          - apk: modules/apk.md
           - apt: modules/apt.md
           - dnf: modules/dnf.md
           - files: modules/files.md

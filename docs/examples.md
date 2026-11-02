@@ -3,7 +3,8 @@
 Runnable showcase scripts living in `examples/` — *usage* demonstrations
 through the public API only, never part of the library. The tree is split in
 four: `examples/modules/<namespace>/` holds one script per fact or operation
-of a library module (currently `apt`, `dnf`, `files`, `hardware` and `server`),
+of a library module (currently `apk`, `apt`, `dnf`, `files`, `hardware` and
+`server`),
 `examples/general/`
 holds general scenario scripts built on more than one module,
 `examples/actions/` holds bespoke-shell [action](actions.md) demonstrations, and
@@ -19,6 +20,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 
 | Examples directory | Documentation page |
 | --- | --- |
+| `examples/modules/apk/` | [Module examples: apk](examples/modules/apk.md) |
 | `examples/modules/apt/` | [Module examples: apt](examples/modules/apt.md) |
 | `examples/modules/dnf/` | [Module examples: dnf](examples/modules/dnf.md) |
 | `examples/modules/files/` | [Module examples: files](examples/modules/files.md) |
@@ -37,11 +39,13 @@ sub-directory. Pick a page from the navigation, or start from this table:
     factory and an inventory of real machines — hard-coded as
     `INVENTORY` in the script (most target the two hosts web1/web2 on
     `192.168.0.x`; the [`apt` fact examples](examples/modules/apt.md) target
-    a single `ubuntu` host; the two [`privilege`](examples/demonstrations/privilege.md)
+    a single `ubuntu` host; the two
+    [`privilege`](examples/demonstrations/privilege.md)
     demonstrations each target a single `centos9-*` host and carry a
     plain-text password), or, for
-    [`json_inventory`](examples/demonstrations/inventory.md#inventory-from-a-json-file),
-    read from `inventory.json` in the project root — so running one opens
+    [`json_inventory`](examples/demonstrations/inventory.md#inventory-from-a-json-file)
+    and the [`apk` fact example](examples/modules/apk.md),
+    read from the `inventory*.json` files in the project root — so running one opens
     real asyncssh connections: first read-only for the `dry=True` plan,
     then executing the apply phase. Edit the inventory (or keep only the
     dry run) to point at your own machines before executing them. The
@@ -77,7 +81,7 @@ command is not installed on the host — plus
 prerequisites are not met (the timezone example on a non-systemd host),
 [`WaitTimeoutError`][reemote5.commands.WaitTimeoutError]
 in the polling example and [`InventoryError`][reemote5.hosts.InventoryError] in
-the JSON-inventory one — prints the message on stderr and exits non-zero. The
+the JSON-inventory examples — prints the message on stderr and exits non-zero. The
 message already names the host and, for a failed command, the credential-free
 command text and its stderr, so a failing run reports the reason instead of a
 Python traceback.

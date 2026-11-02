@@ -61,7 +61,14 @@ from .hosts import (
     PrivilegeError,
     validate_inventory,
 )
-from .modules import apt, dnf, files, hardware, server
+from .modules import apk, apt, dnf, files, hardware, server
+from .modules.apk.apk import (
+    ApkExplicitPackages,
+    ApkPackage,
+    ApkPackageInfo,
+    ApkPackages,
+    ApkRepositories,
+)
 from .modules.apt.apt import (
     AptAutoremovable,
     AptAutoRemoveCommand,
@@ -196,6 +203,11 @@ def hello() -> str:
 
 __all__ = [
     "ActionInDeployError",
+    "ApkExplicitPackages",
+    "ApkPackage",
+    "ApkPackageInfo",
+    "ApkPackages",
+    "ApkRepositories",
     "ApplyReport",
     "AptAutoRemoveCommand",
     "AptAutoremovable",
@@ -338,6 +350,7 @@ __all__ = [
     "WaitTimeoutError",
     "WhenPredicate",
     "Which",
+    "apk",
     "apt",
     "command_shell",
     "compose",

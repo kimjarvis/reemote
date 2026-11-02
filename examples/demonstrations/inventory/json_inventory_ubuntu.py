@@ -1,6 +1,6 @@
-"""Example: the same deploy as ``dnf_packages.py``, with the inventory in a JSON file.
+"""Example: the same deploy as ``apt_packages.py``, with the inventory in a JSON file.
 
-This is a *usage* example, not part of the library. ``dnf_packages.py``
+This is a *usage* example, not part of the library. ``apt_packages.py``
 hard-codes its ``INVENTORY`` in the source; real applications usually keep
 the target hosts in a data file instead, so the deployment script and the
 machine list change independently. This example loads the inventory from
@@ -19,9 +19,13 @@ machine list change independently. This example loads the inventory from
    (``Host.from_inventory``) materializes each entry into a ``Host`` that
    lazily opens an asyncssh connection from its ``connection`` data.
 
-The deploy itself is unchanged from ``dnf_packages.py`` -- install httpd,
-then remove the welcome configuration the package drops -- and still runs
-end to end over a **real SSH transport** in both phases.
+The deploy itself mirrors ``apt_packages.py`` -- install the web server with
+``apt.packages``, then remove the welcome content the package drops -- but
+the welcome configuration is not the same as on CentOS: Ubuntu's
+``apache2`` package ships a default homepage, an HTML file at
+``/var/www/html/index.html`` you can replace or edit to customize the
+site, and here the deploy removes it. The example still runs end to end over
+a **real SSH transport** in both phases.
 
 The path is resolved from ``__file__``, so the example works from any
 working directory. Point ``INVENTORY_PATH`` at your own file (or edit
@@ -46,7 +50,7 @@ from reemote5 import (
     InventoryError,
     OperationRequest,
     PrivilegeError,
-    dnf,
+    apt,
     files,
     format_log,
     format_plan,
@@ -55,7 +59,7 @@ from reemote5 import (
     validate_inventory,
 )
 
-HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
+APACHE_INDEX_HTML = "/var/www/html/index.html"
 
 # examples/demonstrations/inventory/json_inventory.py -> the project root,
 # so the inventory is found whatever the current working directory is.
@@ -78,18 +82,23 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Install httpd, then remove its default welcome configuration.
+    """Install apache2, then remove its default homepage.
+
+    Ubuntu's ``apache2`` package drops a welcome page at
+    ``/var/www/html/index.html`` -- an HTML file the operator would replace
+    or edit to customize the site -- and the second step removes it, unlike
+    the CentOS deploy which removes a ``welcome.conf`` configuration file.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
     Both operations need root, so both are flagged ``sudo=True`` and the
     driver elevates their commands over SSH.
     """
-    yield op(dnf.packages, name="Install httpd", packages=("httpd",), sudo=True)
+    yield op(apt.packages, name="Install apache2", packages=("apache2",), sudo=True)
     yield op(
         files.file,
-        name="Remove welcome configuration",
-        src=HTTPD_WELCOME_CONF,
+        name="Remove default homepage",
+        src=APACHE_INDEX_HTML,
         present=False,
         sudo=True,
     )
@@ -138,7 +147,7 @@ async def main() -> None:
         raise SystemExit(1) from exc
     except CommandError as exc:
         # The elevation was accepted but the command it ran exited non-zero
-        # (dnf could not install the package, for instance). The typed message
+        # (apt could not install the package, for instance). The typed message
         # already names the host, the command and its stderr, so print just
         # that one report -- no traceback.
         print(f"\nERROR: {exc}", file=sys.stderr)

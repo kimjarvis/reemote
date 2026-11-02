@@ -17,7 +17,7 @@ a real asyncssh transport is missing:
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``services`` / ``enabled_services``
-  / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``deb_files``
+  / ``apk_explicit_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``deb_files``
   / ``date`` / ``disk_stats`` / ``dmi_info`` / ``os_groups`` / ``has_gui``
   / ``home_directories`` / ``os_hostname`` / ``ipv4_addrs`` / ``ipv6_addrs``
   / ``os_kernel``
@@ -32,7 +32,7 @@ a real asyncssh transport is missing:
   ``DnfRepoList``,
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``,
-  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpgradable``, ``Arch``,
+  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``ApkExplicitPackages``, ``ApkPackage``, ``ApkPackages``, ``ApkRepositories``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpgradable``, ``Arch``,
   ``AuthorizedKeys``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``, ``DebPackage``,
   ``DiskStats``, ``DmiInfo``, ``Groups``,
   ``HasGui``, ``Home``, ``Hostname``, ``Ipv4Addrs``, ``Ipv6Addrs``, ``Kernel``,
@@ -59,6 +59,7 @@ from typing import Any
 
 from reemote5.commands import Command, StringCommand, WaitTimeoutError
 from reemote5.hosts import Host
+from reemote5.modules.apk.apk import ApkPackageInfo
 from reemote5.modules.apt.apt import (
     AptAutoRemoveCommand,
     AptDistUpgradeCommand,
@@ -184,6 +185,52 @@ class SimulatedHost(Host):
     # None (as the fact reports when systemd answers nothing).
     services: dict[str, str] = field(default_factory=dict)
     enabled_services: set[str] = field(default_factory=set)
+    # Explicitly installed (world) apk package names (the sorted,
+    # de-duplicated name list ``ApkExplicitPackages`` returns, with each
+    # line's ``@tag``/version constraint already dropped), backing
+    # ``ApkExplicitPackages``. Kept separate from ``apk_packages`` (name ->
+    # versions) because the ``apk list --installed`` rows that seam models
+    # cannot tell a package the operator asked for from a dependency.
+    # Named with the apk_ prefix (like ``apk_packages``) so the apk-side
+    # state never mixes with the apt/dnf-side stores. Defaults to [] -- a
+    # simulated machine whose ``/etc/apk/world`` holds nothing, like the
+    # fact's answer for a missing or empty file. A read-only seam: the
+    # namespace has no operations yet, so no ``execute_command`` mutator
+    # maintains it and a test seeds it directly.
+    apk_explicit_packages: list[str] = field(default_factory=list)
+    # Installed apk packages (name -> the sorted version-and-release list
+    # ``ApkPackages`` returns, e.g. ``musl`` -> ``["1.1.22-r3"]``), backing
+    # ``ApkPackages``. Named distinctly from ``packages`` (the name-only set
+    # ``DnfPackages`` reads) and ``apt_packages`` (name -> versions) so the
+    # dnf-, apt- and apk-side state never mix. Defaults to {} -- a simulated
+    # Alpine machine with no installed packages listed, like pyinfra's
+    # ``default = dict`` for a failed read. A read-only seam: the namespace
+    # has no operations yet, so no ``execute_command`` mutator maintains it
+    # and a test seeds it directly.
+    apk_packages: dict[str, list[str]] = field(default_factory=dict)
+    # Configured apk repositories (the list of ``{url, tag}`` dicts
+    # ``ApkRepositories`` returns, ``tag`` the empty string for an untagged
+    # line), backing ``ApkRepositories``. Named with the apk_ prefix (like
+    # ``apk_packages``) to stay distinct from ``repositories`` (the dnf-side
+    # ``DnfRepositories`` store) so the two never mix. Defaults to [] -- a
+    # simulated machine with no ``/etc/apk/repositories`` entries, like the
+    # fact's answer for a missing or empty file. A read-only seam: the
+    # namespace has no operations yet, so no ``execute_command`` mutator
+    # maintains it and a test seeds it directly.
+    apk_repositories: list[dict[str, str]] = field(default_factory=list)
+    # Per-package detailed metadata (package name -> the ``ApkPackageInfo``
+    # dict ``ApkPackage`` returns -- name, version, description, url, license,
+    # size, depends, provides), backing ``ApkPackage``. A name absent from the
+    # mapping reads as None, like an absent package printing no ``apk info``
+    # field header. Kept separate from ``apk_packages`` (name -> versions)
+    # because the ``apk list --installed`` rows that seam models report only
+    # installed versions, never a package's dependencies, size or description.
+    # Named with the apk_ prefix (like ``apk_packages``) so the apk-side state
+    # never mixes with the apt/dnf-side stores. Defaults to {} -- a simulated
+    # machine whose packages' detail has not been seeded. A read-only seam:
+    # the namespace has no operations yet, so no ``execute_command`` mutator
+    # maintains it and a test seeds it directly.
+    apk_package_info: dict[str, ApkPackageInfo] = field(default_factory=dict)
     # No-longer-needed apt package names (the sorted, de-duplicated name
     # list ``AptAutoremovable`` returns, architecture-suffixed names like
     # ``libc6:i386`` included), backing ``AptAutoremovable``. Kept separate
