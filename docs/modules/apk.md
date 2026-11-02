@@ -1,16 +1,32 @@
 # apk module
 
-`reemote5.modules.apk.apk` holds the apk facts — `ApkPackages`, the
+`reemote5.modules.apk.apk` combines the apk facts and the apk operations in a
+single source. The facts are `ApkAutoremovable`, the orphaned packages an
+`apk add --purge` would remove, parsed from the `(N/M) Purging <name>` rows of
+its `--simulate` sibling, `ApkPackages`, the
 installed Alpine Linux (apk) packages with their versions, parsed from the
 `name-version arch {origin} (license) [installed]` rows of
 `apk list --installed`, `ApkExplicitPackages`, the explicitly installed
 (world) package names parsed line by line from `/etc/apk/world`,
+`ApkHeldPackages`, the version-pinned (held) packages and their constraints
+parsed from the same `/etc/apk/world`,
 `ApkPackage`, one package's detailed metadata (version, description, size,
 dependencies, provides) parsed from the labelled field sections of
 `apk info -a`, and `ApkRepositories`, the configured repositories parsed
-line by line from `/etc/apk/repositories`. It is a fact-only namespace so
-far: pyinfra's `apk` operations (`apk.packages`, `apk.upgrade`, `apk.key`,
-`apk.repo`) are not migrated, so no operations live here yet.
+line by line from `/etc/apk/repositories`. Beside the facts lives the
+`apk.autoremove` operation, which removes the orphaned packages
+`ApkAutoremovable` names with `apk add --purge`, the
+`apk.packages` operation, which installs, upgrades or removes packages by
+name, reading `ApkPackages` for exact-version idempotence, and the
+`apk.virtual` operation, a reemote5 original that manages an apk *virtual
+package* group (`apk add -t <tag>` to create it, `apk del <tag>` to remove
+it) with world-name idempotence against `ApkExplicitPackages`, and the
+`apk.hold` operation, the apk counterpart of `apt.mark`, which pins packages
+back from upgrades (`apk add <pkg>=<version>` to hold, `apk add <pkg>` to
+release the pin) with version-aware idempotence against `ApkHeldPackages`.
+pyinfra's
+remaining `apk` operations (`apk.upgrade`, `apk.key`, `apk.repo`) are not
+migrated.
 
 ## Facts
 
@@ -19,6 +35,34 @@ generator — implemented as a `process` coroutine returning the raw value
 (over asyncssh in the real implementation). Read facts through
 [`FactCache.get`][reemote5.core.FactCache.get], which is itself a
 coroutine, so results are awaited and cached within a phase step.
+`ApkAutoremovable` takes no arguments and runs
+`apk add --purge --simulate 2>/dev/null` — apk's own orphan-purge
+simulation, which never removes anything (the `2>/dev/null` suppresses the
+index-noise warnings an offline simulation writes to stderr). It is a
+reemote5 original: pyinfra ships no `apk.ApkAutoremovable` counterpart
+(its `apk` namespace publishes only `ApkPackages`). Only the
+machine-readable `(N/M) Purging <name>-<version>-r<release>` rows are read
+— the `WARNING: Ignoring APKINDEX...` index-noise lines, the
+`OK: N packages, ...` summary footer and any progress chatter are never
+mistaken for package names, and each row's version-and-release tail is
+dropped at the same last `-<version>-r<release>` boundary `ApkPackages`
+splits at, so multi-dash names like `alpine-baselayout-data` and names
+carrying punctuation (`libstdc++`, `p11-kit`) stay intact. Names come back
+sorted and de-duplicated, the shape the sibling `AptAutoremovable` and the
+name-list half of `ApkExplicitPackages` report, so a deploy cleaning up
+after itself reads the purgable names here — and only collects the list;
+removal stays an explicit operator decision, never a fact side effect —
+the `apk.autoremove` operation performs that cleanup. `apk fix --purge`
+is deliberately not used: it also reinstalls damaged packages, so its
+simulation output mixes a repair plan with the purge plan, while
+`apk add --purge --simulate` names exactly the orphan set. The fact
+fills a coverage gap of `ApkExplicitPackages`: the world names it parses
+cannot tell a legacy dependency from one still in use, so the installed
+names missing from the world are candidates a cleanup would consider
+removing — this fact names exactly those `apk add --purge` would purge.
+The simulation needs no root, and a missing `apk` exits 127 — reported as
+[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
+
 `ApkPackages` takes no arguments and runs `apk list --installed`,
 mirroring pyinfra's `apk.ApkPackages`. Each row is matched with pyinfra's
 apk regex, so multi-dash names like `alpine-baselayout-data` and
@@ -55,12 +99,15 @@ name; names come back sorted and de-duplicated, the shape the apt-side
 name-list facts `AptHeldPackages` and `AptAutoremovable` report and the
 name-only half of what `DnfPackages` returns, so the result compares
 directly against `ApkPackages`' keys — the installed names missing from
-this list are the dependency-only ones an audit is after (apk has no
-autoremove, so cleanup stays an explicit operator decision). The
+this list are the dependency-only ones an audit is after; the sibling
+`ApkAutoremovable` names exactly the orphans `apk add --purge` would
+remove, and the `apk.autoremove` operation performs that cleanup. The
 constraint itself is deliberately dropped, exactly as `AptAutoremovable`
 drops the version its simulation rows carry: a `@tag` a package may be
 selected from and an `=`, `<`, `>`, `>=`, `~` or `><` version bound say
-nothing about *which* packages were asked for. A leading `!` marks a
+nothing about *which* packages were asked for. The version bound a *hold*
+is after — the constraint this fact drops — is exactly what the sibling
+`ApkHeldPackages` keeps. A leading `!` marks a
 conflict constraint — a package that must NOT be installed — so it never
 contributes a name, and blank lines, `#` comments and lines carrying no
 name (a lone `@tag` or operator) are skipped the way the siblings skip
@@ -69,6 +116,25 @@ than for the file it reads (`ApkWorld` would name a file, not answer a
 question) and keeps apk's own vocabulary: apk documents these as the
 *explicitly* installed packages, where apt calls them `manual` and dnf
 `userinstalled`.
+
+`ApkHeldPackages` takes no arguments and cats the *same* `/etc/apk/world`
+`ApkExplicitPackages` reads — behind the identical `|| true`, so a host
+without apk reads as `{}` — but keeps only the lines carrying a version
+bound, answering the apk counterpart of `AptHeldPackages`: which packages
+are pinned back from upgrades, and to what. apk has no `apt-mark hold`; it
+holds a package by writing a version *constraint* into its world, so each
+held line becomes one `name → constraint` entry (the operator and version
+kept together, e.g. `curl → =8.14.0-r0`, `openssh → >~9.7_p1-r4`). The
+shape deliberately differs from the sibling `AptHeldPackages`' sorted name
+list: `apt-mark hold` records a bare name with no version, where an apk
+pin's whole purpose is the constraint, so dropping it would make a re-pin to
+a different version undetectable. A bare name (`busybox`) and a
+repository-tag-only line (`nginx@edge`, a selection rather than a hold)
+never contribute; comments, blank lines, a leading `!` conflict and a
+nameless constraint are skipped exactly as `ApkExplicitPackages` skips them,
+and entries keep file order (a repeated name's last line wins). The
+`apk.hold` operation reads this fact for version-aware idempotence and
+writes it back through `apk add <pkg><constraint>`.
 
 `ApkRepositories` takes no arguments and cats `/etc/apk/repositories`
 behind a `|| true`, so a host without apk simply reads as `[]` — the same
@@ -125,11 +191,119 @@ argument.
 ::: reemote5.modules.apk.apk
     options:
       members:
+        - ApkAutoremovable
         - ApkExplicitPackages
+        - ApkHeldPackages
         - ApkPackage
         - ApkPackageInfo
         - ApkPackages
         - ApkRepositories
+
+## Operations
+
+Operations live in namespace modules so a deploy reads `apk.packages`,
+mirroring pyinfra's API. Every operation is an async generator with the same
+fixed signature:
+
+```python
+async def operation(ctx: OpContext, *args, **kwargs) -> AsyncGenerator[Command, None]:
+```
+
+It awaits facts via `ctx.facts`, sets `ctx.changed` and `ctx.reason` where it
+decides a change is needed, and yields one descriptor per command that would
+mutate the host.
+
+`apk.autoremove` removes orphaned packages — those apk pulled in as
+dependencies that nothing in `/etc/apk/world` requires any more — a
+reemote5 original: pyinfra ships no apk autoremove, and apk itself has no
+`autoremove` verb; it exposes orphan purge as the `--purge` flag of
+`apk add`/`apk fix`, which reemote5 splits out into this standalone
+operation (the same split [`apt.auto_remove`][reemote5.modules.apt.apt.auto_remove]
+made against `apt.dist_upgrade`'s `auto_remove=True`). The
+[`ApkAutoremovable`][reemote5.modules.apk.apk.ApkAutoremovable] fact
+simulates the purge and names exactly the orphaned packages: a non-empty
+list yields the real `apk add --purge` (the reason names the packages,
+already sorted so both phases report identically), an empty list is a
+no-op. Purging writes to the root-owned apk database, so flag the request
+`sudo=True` (or `su=True`). Yielding `apk.packages` with `present=False`
+then `apk.autoremove` in one deploy composes the remove-then-cleanup flow
+— each half an explicit, separately plannable step. apk uses no lock file
+(the way apt's `DPkg::Lock::Timeout` guards concurrent `apt-get` runs), so
+there is deliberately no `wait_for_lock` parameter — a keyword passed for
+consistency with `apt.auto_remove` is absorbed by `**kwargs` with no
+effect.
+
+`apk.packages` installs, upgrades or removes packages by name (pyinfra's
+`apk.packages` parity). `packages` accepts a single name, a list/tuple or
+`None`; a name can be pinned as `<pkg>=<version>`, and the `ApkPackages`
+fact supplies the installed versions, so a pin counts as present only when
+that *exact* version is installed (pyinfra's `ensure_packages` version
+match, the same rule `apt.packages` follows). `present=True` installs only
+what is missing with `apk add`; `latest=True` additionally upgrades every
+installed, *unpinned* name with `apk upgrade` — pyinfra's legacy behavior,
+which upgrades blindly without checking whether a newer version exists.
+`present=False` removes only what is installed with `apk del`. apk never
+prompts, so the commands carry no `-y` flag (unlike apt's and dnf's).
+Installing, upgrading and removing all need root, so flag the request
+`sudo=True` (or `su=True`). Two pyinfra options are deliberately dropped:
+`update` and `upgrade`, which prefix the operation with a whole-system
+`apk update` / `apk upgrade` — reemote5 keeps the whole-system
+refresh/upgrade out of the package operation, so both keywords are absorbed
+by `**kwargs` with no effect.
+
+`apk.virtual` manages an apk *virtual package* group — a reemote5 original:
+pyinfra's `apk` namespace ships only `upgrade`, `update` and `packages`, with
+no virtual-group management. Alpine's `apk add -t <tag> <packages>`
+(`--virtual`) creates a temporary virtual package `<tag>` that depends on
+`<packages>`, records `<tag>` in `/etc/apk/world`, and lets the whole group be
+torn down later with a single `apk del <tag>` — the build-dependency pattern a
+compile step wraps itself in so its toolchain does not linger on the finished
+image. `tag` names the group, `packages` accepts a single name, a list/tuple
+or `None` (a name can be pinned as `<pkg>=<version>`), and `present` selects
+the direction. Idempotence reads the
+[`ApkExplicitPackages`][reemote5.modules.apk.apk.ApkExplicitPackages] fact
+(the world names): the group is present exactly when `tag` appears there, so
+`present=True` creates it with `apk add -t` only when `tag` is absent (and
+only when at least one member is requested), while `present=False` removes it
+with `apk del` only when `tag` is present. A deliberate simplification: the
+fact reports the world *names* only, so a changed member set for an
+already-existing `tag` is not detected — the group reads as present and the
+operation is a no-op — because apk records a virtual group's identity in
+world, not its membership. Both directions render through one present-flagged
+`ApkVirtualCommand` descriptor (the `server.modprobe` single-descriptor
+pattern), and both write the root-owned apk database and world file, so flag
+the request `sudo=True` (or `su=True`).
+
+`apk.hold` holds packages back from upgrades, or releases held ones — the apk
+counterpart of [`apt.mark`][reemote5.modules.apt.apt.mark]: pyinfra ships no
+apk hold, and apk has no `apt-mark` verb, so it keeps a package out of
+upgrades by pinning a version *constraint* into `/etc/apk/world`. `packages`
+accepts a single name or a list/tuple, `present` selects the direction, and
+`version` is the optional constraint to pin to — a bare `1.2.3-r0`
+(normalized to `=1.2.3-r0`) or an operator-led `~1.2`/`<2.0`; omitted with
+`present=True` it pins each name to its currently installed version
+(`ApkPackages`' newest). Idempotence reads the
+[`ApkHeldPackages`][reemote5.modules.apk.apk.ApkHeldPackages] fact
+(name → constraint): `present=True` re-adds with `apk add <pkg>=<version>`
+only the names whose current pin differs from the wanted constraint (a name
+already pinned to it is a no-op), while `present=False` re-adds the bare
+`apk add <pkg>` only for the names currently held, rewriting the world line
+without a bound so the package stays installed and only the pin goes. Both
+directions render through one present-flagged `ApkHoldCommand` descriptor
+(the `apk.virtual` single-descriptor pattern — both are the same `apk add`
+verb). A deliberate consequence of pinning to the installed version: with
+`version` omitted, a name that is *not* installed cannot be pinned and is
+reported but not held — pass `version` to pin a package that is not yet
+installed. Both directions write the root-owned apk database and world file,
+so flag the request `sudo=True` (or `su=True`).
+
+::: reemote5.modules.apk.apk
+    options:
+      members:
+        - autoremove
+        - hold
+        - packages
+        - virtual
 
 ## Example
 
@@ -138,8 +312,17 @@ The read-only fact-gathering scripts under
 inventory from `inventory_alpine.json` in the project root — validated
 with `validate_inventory` before any host is materialized — and gather
 `ApkPackages` (`apk_apk_packages.py`), `ApkExplicitPackages`
-(`apk_apk_explicit_packages.py`), `ApkRepositories`
+(`apk_apk_explicit_packages.py`), `ApkAutoremovable`
+(`apk_apk_autoremovable.py`), `ApkRepositories`
 (`apk_apk_repositories.py`) or `ApkPackage` for one package
 (`apk_apk_package.py`) on the Alpine hosts with
 [`gather_fact`][reemote5.drivers.gather_fact], printing each result as
 JSON.
+
+The `apk_packages.py` script beside them demonstrates the `apk.packages`
+operation: it installs packages by name with exact-version idempotence,
+yielding the same request twice so the second is a guaranteed no-op in the
+apply phase. The `apk_autoremove.py` script demonstrates `apk.autoremove`
+the same way — it yields the purge request twice so the second is a
+guaranteed no-op once the first cleanup left nothing purgable. Both are
+rendered on the [apk examples page](../examples/modules/apk.md).

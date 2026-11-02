@@ -5,7 +5,10 @@
 
 Each subpackage combines the facts and operations of one namespace in a
 single source, so ``modules/apk/apk.py`` holds the apk fact classes
-(``ApkExplicitPackages``, ``ApkPackages``, ``ApkRepositories``),
+(``ApkAutoremovable``, ``ApkExplicitPackages``, ``ApkHeldPackages``,
+``ApkPackage``, ``ApkPackages``, ``ApkRepositories``) beside the
+``autoremove``/``hold``/``packages``/``virtual`` operations and the typed
+command descriptors they yield,
 ``modules/apt/apt.py`` holds the apt fact classes (``AptKeys``,
 ``AptPackages``, ``AptUpgradable``, ``AptAutoremovable``),
 ``modules/dnf/dnf.py`` holds the dnf fact classes

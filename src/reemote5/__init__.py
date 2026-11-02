@@ -66,11 +66,19 @@ from .hosts import (
 )
 from .modules import apk, apt, dnf, files, hardware, server
 from .modules.apk.apk import (
+    ApkAutoremovable,
     ApkExplicitPackages,
+    ApkHeldPackages,
+    ApkHoldCommand,
+    ApkInstallCommand,
     ApkPackage,
     ApkPackageInfo,
     ApkPackages,
+    ApkPurgeCommand,
+    ApkRemoveCommand,
     ApkRepositories,
+    ApkUpgradeCommand,
+    ApkVirtualCommand,
 )
 from .modules.apt.apt import (
     AptAutoremovable,
@@ -206,11 +214,19 @@ def hello() -> str:
 
 __all__ = [
     "ActionInDeployError",
+    "ApkAutoremovable",
     "ApkExplicitPackages",
+    "ApkHeldPackages",
+    "ApkHoldCommand",
+    "ApkInstallCommand",
     "ApkPackage",
     "ApkPackageInfo",
     "ApkPackages",
+    "ApkPurgeCommand",
+    "ApkRemoveCommand",
     "ApkRepositories",
+    "ApkUpgradeCommand",
+    "ApkVirtualCommand",
     "ApplyReport",
     "AptAutoRemoveCommand",
     "AptAutoremovable",

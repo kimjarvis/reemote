@@ -39,12 +39,13 @@ sub-directory. Pick a page from the navigation, or start from this table:
     factory and an inventory of real machines — hard-coded as
     `INVENTORY` in the script (most target the two hosts web1/web2 on
     `192.168.0.x`; the [`apt` fact examples](examples/modules/apt.md) target
-    a single `ubuntu` host; the two
+    a single `ubuntu` host; the [`apk` operation
+    examples](examples/modules/apk.md) target a single `alpine` host; the two
     [`privilege`](examples/demonstrations/privilege.md)
     demonstrations each target a single `centos9-*` host and carry a
     plain-text password), or, for
     [`json_inventory`](examples/demonstrations/inventory.md#inventory-from-a-json-file)
-    and the [`apk` fact example](examples/modules/apk.md),
+    and the [`apk` fact examples](examples/modules/apk.md),
     read from the `inventory*.json` files in the project root — so running one opens
     real asyncssh connections: first read-only for the `dry=True` plan,
     then executing the apply phase. Edit the inventory (or keep only the

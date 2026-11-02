@@ -20,7 +20,7 @@ a real asyncssh transport is missing:
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``services`` / ``enabled_services``
-  / ``apk_explicit_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``deb_files``
+  / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``deb_files``
   / ``date`` / ``disk_stats`` / ``dmi_info`` / ``os_groups`` / ``has_gui``
   / ``home_directories`` / ``os_hostname`` / ``ipv4_addrs`` / ``ipv6_addrs``
   / ``os_kernel``
@@ -35,7 +35,7 @@ a real asyncssh transport is missing:
   ``DnfRepoList``,
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``,
-  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``ApkExplicitPackages``, ``ApkPackage``, ``ApkPackages``, ``ApkRepositories``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpgradable``, ``Arch``,
+  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``ApkAutoremovable``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkPackage``, ``ApkPackages``, ``ApkRepositories``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpgradable``, ``Arch``,
   ``AuthorizedKeys``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``, ``DebPackage``,
   ``DiskStats``, ``DmiInfo``, ``Groups``,
   ``HasGui``, ``Home``, ``Hostname``, ``Ipv4Addrs``, ``Ipv6Addrs``, ``Kernel``,
@@ -62,7 +62,16 @@ from typing import Any
 
 from reemote5.commands import Command, StringCommand, WaitTimeoutError
 from reemote5.hosts import Host
-from reemote5.modules.apk.apk import ApkPackageInfo
+from reemote5.modules.apk.apk import (
+    ApkHoldCommand,
+    ApkInstallCommand,
+    ApkPackageInfo,
+    ApkPurgeCommand,
+    ApkRemoveCommand,
+    ApkUpgradeCommand,
+    ApkVirtualCommand,
+    _split_constraint,
+)
 from reemote5.modules.apt.apt import (
     AptAutoRemoveCommand,
     AptDistUpgradeCommand,
@@ -188,6 +197,22 @@ class SimulatedHost(Host):
     # None (as the fact reports when systemd answers nothing).
     services: dict[str, str] = field(default_factory=dict)
     enabled_services: set[str] = field(default_factory=set)
+    # Orphan apk package names (the sorted, de-duplicated name list
+    # ``ApkAutoremovable`` returns -- the packages ``apk add --purge`` would
+    # drop because nothing in ``/etc/apk/world`` reaches them any more),
+    # backing ``ApkAutoremovable``. Kept separate from ``apk_packages``
+    # (name -> versions) because the ``apk list --installed`` rows that seam
+    # models cannot tell an orphan from a package still reachable from the
+    # world, and from ``apk_explicit_packages`` (the world names) because a
+    # world entry is by definition NOT an orphan. Named with the apk_ prefix
+    # (like ``apk_packages``) so the apk-side state never mixes with the
+    # apt/dnf-side stores -- in particular with ``apt_autoremovable``, the
+    # sibling apt-side seam this one mirrors in shape and role. Defaults to
+    # [] -- a simulated machine with nothing a purge would remove, like the
+    # fact's answer for a simulation with no ``(N/M) Purging`` rows. A test
+    # seeds it directly; ``autoremove_apk_packages`` (the simulated
+    # ``apk.autoremove``) clears it and pops the names from ``apk_packages``.
+    apk_autoremovable: list[str] = field(default_factory=list)
     # Explicitly installed (world) apk package names (the sorted,
     # de-duplicated name list ``ApkExplicitPackages`` returns, with each
     # line's ``@tag``/version constraint already dropped), backing
@@ -197,19 +222,34 @@ class SimulatedHost(Host):
     # Named with the apk_ prefix (like ``apk_packages``) so the apk-side
     # state never mixes with the apt/dnf-side stores. Defaults to [] -- a
     # simulated machine whose ``/etc/apk/world`` holds nothing, like the
-    # fact's answer for a missing or empty file. A read-only seam: the
-    # namespace has no operations yet, so no ``execute_command`` mutator
-    # maintains it and a test seeds it directly.
+    # fact's answer for a missing or empty file. A test seeds it directly;
+    # ``add_apk_virtual``/``remove_apk_virtual`` (the simulated
+    # ``apk.virtual``) insert/drop the virtual group's tag, keeping the list
+    # sorted and de-duplicated as the world file's parsed names read.
     apk_explicit_packages: list[str] = field(default_factory=list)
+    # Held (version-pinned) apk packages (name -> the version constraint
+    # ``ApkHeldPackages`` returns, e.g. ``curl`` -> ``=8.14.0-r0``), backing
+    # ``ApkHeldPackages``. Kept separate from ``apk_explicit_packages`` (the
+    # bare world names) because that list deliberately drops every
+    # constraint, and from ``apk_packages`` (name -> installed versions)
+    # because the ``apk list --installed`` rows that seam models never show
+    # the world's version pins. Named with the apk_ prefix (like
+    # ``apk_packages``) so the apk-side state never mixes with the apt/dnf-
+    # side stores. Defaults to {} -- a simulated machine whose
+    # ``/etc/apk/world`` pins nothing, like the fact's answer for a missing
+    # or empty file. A test seeds it directly; ``hold_apk_packages``/
+    # ``unhold_apk_packages`` (the simulated ``apk.hold``) set/drop the
+    # name -> constraint entries as the corresponding apk commands would.
+    apk_held_packages: dict[str, str] = field(default_factory=dict)
     # Installed apk packages (name -> the sorted version-and-release list
     # ``ApkPackages`` returns, e.g. ``musl`` -> ``["1.1.22-r3"]``), backing
     # ``ApkPackages``. Named distinctly from ``packages`` (the name-only set
     # ``DnfPackages`` reads) and ``apt_packages`` (name -> versions) so the
     # dnf-, apt- and apk-side state never mix. Defaults to {} -- a simulated
     # Alpine machine with no installed packages listed, like pyinfra's
-    # ``default = dict`` for a failed read. A read-only seam: the namespace
-    # has no operations yet, so no ``execute_command`` mutator maintains it
-    # and a test seeds it directly.
+    # ``default = dict`` for a failed read. A test seeds it directly;
+    # ``install_apk_packages`` and ``remove_apk_packages`` (the simulated
+    # ``apk.packages``) mutate it as the corresponding apk commands would.
     apk_packages: dict[str, list[str]] = field(default_factory=dict)
     # Configured apk repositories (the list of ``{url, tag}`` dicts
     # ``ApkRepositories`` returns, ``tag`` the empty string for an untagged
@@ -626,6 +666,22 @@ class SimulatedHost(Host):
         silently ignored.
         """
         match cmd:
+            case ApkHoldCommand(packages=packages, present=False):
+                self.unhold_apk_packages(packages)
+            case ApkHoldCommand(packages=packages):
+                self.hold_apk_packages(packages)
+            case ApkInstallCommand(packages=packages):
+                self.install_apk_packages(packages)
+            case ApkPurgeCommand():
+                self.autoremove_apk_packages()
+            case ApkRemoveCommand(packages=packages):
+                self.remove_apk_packages(packages)
+            case ApkUpgradeCommand():
+                pass  # the simulation tracks no newer versions to upgrade to
+            case ApkVirtualCommand(tag=tag, packages=packages, present=False):
+                self.remove_apk_virtual(tag, packages)
+            case ApkVirtualCommand(tag=tag, packages=packages):
+                self.add_apk_virtual(tag, packages)
             case DnfInstallCommand(packages=packages):
                 self.install_packages(packages)
             case DnfRemoveCommand(packages=packages):
@@ -740,6 +796,131 @@ class SimulatedHost(Host):
                 raise TypeError(f"unknown command descriptor: {cmd!r}")
 
     # State mutations, invoked only via execute_command.
+
+    def install_apk_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``apk add``: mark the names installed.
+
+        ``apk.packages``' install mutation. A version pin (``pkg=version``)
+        records exactly that version in ``apk_packages`` (the name -> sorted
+        version list ``ApkPackages`` reads), so a repeat pinned install is a
+        no-op; an unpinned name carries no repository metadata to resolve a
+        version from, so it gets the ``[""]`` placeholder -- and an
+        already-installed name keeps its versions. Kept separate from
+        ``packages``/``apt_packages`` (the dnf-/apt-side state) so apk, apt
+        and dnf never mix.
+        """
+        for package in packages:
+            name, sep, version = package.rpartition("=")
+            if sep:
+                self.apk_packages[name] = [version]
+            else:
+                self.apk_packages.setdefault(package, [""])
+
+    def remove_apk_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``apk del``: drop the versions.
+
+        The ``present=False`` direction of ``apk.packages``. A bare name pops
+        the whole entry from ``apk_packages`` so ``ApkPackages`` no longer
+        reports it; a version pin (``pkg=version``, which ``apk.packages``
+        passes through verbatim) drops only that version, popping the name
+        once no versions remain. An absent name/version is tolerated (the
+        real command would exit non-zero, but the operation's fact check
+        never yields the removal in that case).
+        """
+        for package in packages:
+            name, sep, version = package.rpartition("=")
+            if not sep:
+                self.apk_packages.pop(package, None)
+                continue
+            versions = self.apk_packages.get(name)
+            if versions is None:
+                continue
+            if version in versions:
+                versions.remove(version)
+            if not versions:
+                self.apk_packages.pop(name, None)
+
+    def add_apk_virtual(self, tag: str, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``apk add -t <tag> <packages>``.
+
+        ``apk.virtual``'s create mutation. apk records the virtual group's
+        ``tag`` in ``/etc/apk/world`` and installs the member packages as its
+        dependencies, so this both inserts ``tag`` into ``apk_explicit_packages``
+        (the sorted, de-duplicated world-name list ``ApkExplicitPackages``
+        reads) -- keeping it sorted and de-duplicated as the parsed world names
+        read -- and delegates the members to ``install_apk_packages`` so
+        ``ApkPackages`` stays consistent for any later ``apk.packages`` read.
+        """
+        if tag not in self.apk_explicit_packages:
+            self.apk_explicit_packages.append(tag)
+            self.apk_explicit_packages.sort()
+        self.install_apk_packages(packages)
+
+    def remove_apk_virtual(self, tag: str, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``apk del <tag>``.
+
+        ``apk.virtual``'s remove mutation: drop the virtual group's ``tag`` from
+        ``apk_explicit_packages`` (an absent tag is tolerated -- the real
+        command would exit non-zero, but the operation's world-name check never
+        yields the removal in that case) and remove whichever member packages
+        the request named via ``remove_apk_packages``. A tag-only removal
+        (``packages`` empty, the common ``present=False`` form) leaves the
+        members installed: apk's own ``apk del <tag>`` would drop the ones
+        nothing else needs, but the simulation models no dependency graph, so
+        member cleanup on removal stays out of scope.
+        """
+        if tag in self.apk_explicit_packages:
+            self.apk_explicit_packages.remove(tag)
+        self.remove_apk_packages(packages)
+
+    def hold_apk_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``apk add <pkg><constraint>``: pin the names.
+
+        ``apk.hold``'s ``present=True`` mutation. Each entry carries its
+        version constraint (``curl=8.14.0-r0``), so ``_split_constraint``
+        separates the bare name from the bound and the pair lands in
+        ``apk_held_packages`` (the name -> constraint dict ``ApkHeldPackages``
+        reads), exactly as the fact parses the world line the real command
+        writes. A repeat hold of the same pin is a no-op once the fresh
+        per-step fact cache sees it. Holding does not touch ``apk_packages``
+        -- the pin keeps a package out of upgrades, it never installs or
+        removes anything.
+        """
+        for package in packages:
+            name, constraint = _split_constraint(package)
+            self.apk_held_packages[name] = constraint
+
+    def unhold_apk_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``apk add <pkg>``: drop the pins.
+
+        ``apk.hold``'s ``present=False`` mutation. Each entry is a bare name
+        (the real ``apk add <pkg>`` rewrites the world line without a bound),
+        so the name is popped from ``apk_held_packages`` and
+        ``ApkHeldPackages`` no longer reports it. An absent name is tolerated
+        -- the operation's fact check only yields names currently held. The
+        package stays installed: ``apk_packages`` is untouched.
+        """
+        for name in packages:
+            self.apk_held_packages.pop(name, None)
+
+    def autoremove_apk_packages(self) -> None:
+        """Record a simulated ``apk add --purge``: drop the orphan names.
+
+        ``apk.autoremove``'s mutation. Pops each ``apk_autoremovable`` name
+        from ``apk_packages`` so ``ApkPackages`` no longer reports it,
+        clears ``apk_autoremovable`` (nothing left to purge) so a repeat
+        ``apk.autoremove`` is a no-op once the fresh per-step fact cache
+        sees the empty list. ``apk_explicit_packages`` is deliberately
+        untouched: an orphan is by definition NOT a world entry, so the
+        purge never rewrites the world. ``apk_held_packages`` is likewise
+        untouched -- a held package carries a version constraint in the
+        world, so it is reachable and never an orphan. An absent name is
+        tolerated (the operation's fact check only yields names the
+        simulation reported).
+        """
+        for name in self.apk_autoremovable:
+            self.apk_packages.pop(name, None)
+        self.apk_autoremovable.clear()
 
     def install_packages(self, packages: tuple[str, ...]) -> None:
         for package in packages:
