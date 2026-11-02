@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """The ``hardware`` module namespace.
 
 Re-exports everything from ``hardware.py`` so the facts

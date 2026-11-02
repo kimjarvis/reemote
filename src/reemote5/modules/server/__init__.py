@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """The ``server`` module namespace.
 
 Re-exports everything from ``server.py`` so the operations

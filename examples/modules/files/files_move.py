@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: move a remote file into a remote directory with files.move.
 
 This is a *usage* example, not part of the library. It shows ``files.move``

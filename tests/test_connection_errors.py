@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Tests for SSH connectivity error handling (``HostConnectionError``).
 
 Two layers keep an asyncssh transport failure from leaking a raw traceback:

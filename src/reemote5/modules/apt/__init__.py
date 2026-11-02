@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """The ``apt`` module namespace.
 
 Re-exports everything from ``apt.py`` so the facts (``apt.AptAutoremovable``,

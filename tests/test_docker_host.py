@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Tests for the docker connector (``DockerHost``), without a docker daemon.
 
 Every local CLI call goes through the single ``_run_local`` seam, so the

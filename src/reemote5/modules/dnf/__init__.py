@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """The ``dnf`` module namespace.
 
 Re-exports everything from ``dnf.py`` so both the operations (``dnf.packages``,

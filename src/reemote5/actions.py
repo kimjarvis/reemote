@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Actions: immediate shell execution, deliberately outside the deploy model.
 
 An action runs a bespoke command on the target servers *now* and hands back

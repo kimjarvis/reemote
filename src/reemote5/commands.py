@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Command descriptors (design doc section 4.5).
 
 Operations yield command descriptors, not strings, so the driver can

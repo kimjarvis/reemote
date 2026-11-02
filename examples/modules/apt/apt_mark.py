@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Hold apt packages back from upgrades with ``apt-mark hold``.
 
 This is a *usage* example, not part of the library. It shows how an

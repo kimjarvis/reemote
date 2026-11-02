@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Hosts: the library-side ``Host``, materialized from an inventory entry.
 
 Hosts and their SSH connection information are specified by the user as a

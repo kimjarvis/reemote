@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Self-contained module namespaces.
 
 Each subpackage combines the facts and operations of one namespace in a

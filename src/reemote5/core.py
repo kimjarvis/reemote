@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Core data structures for the generator-based two-phase execution model.
 
 See the design document sections 4.1 (OperationRequest), 4.3 (OpContext),

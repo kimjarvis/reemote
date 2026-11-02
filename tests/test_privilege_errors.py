@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Tests for privilege escalation error handling (``PrivilegeError``).
 
 The mirror image of ``test_connection_errors.py``: a rejected sudo credential is

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Regression tests for the raw ``StringCommand`` descriptor's shell rendering.
 
 The ``server.locale`` recipe migration exposed a latent bug: ``StringCommand``

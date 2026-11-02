@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: ensure a sysctl setting (pyinfra server.sysctl parity).
 
 This is a *usage* example, not part of the library. It is reemote5's answer

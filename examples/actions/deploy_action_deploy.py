@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: a deploy, then a bespoke action, then a second deploy.
 
 This is a *usage* example, not part of the library. It is the action analogue

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """The docker connector: run deploys inside local Docker/Podman containers.
 
 Ported from pyinfra's ``@docker`` connector (``connectors/docker.py``), as a

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Drivers (design doc section 8).
 
 The prepare phase collects the request sequence per host and materializes

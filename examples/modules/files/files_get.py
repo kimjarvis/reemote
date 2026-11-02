@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: download a remote file into an in-memory stream with files.get.
 
 This is a *usage* example, not part of the library. It shows the mirror of

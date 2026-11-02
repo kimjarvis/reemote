@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: install httpd and remove its welcome page using ``su``.
 
 This is a *usage* example, not part of the library. It is the ``su``

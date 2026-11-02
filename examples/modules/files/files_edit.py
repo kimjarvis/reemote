@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: edit a remote file in place with a pure transform via files.edit.
 
 This is a *usage* example, not part of the library. It shows reemote5's

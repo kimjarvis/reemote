@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """The ``server`` module: systemd facts, ``Arch``, the ``group``/``service`` operations and waiting.
 
 Fact side (design doc section 5): ``Arch`` (the machine architecture from

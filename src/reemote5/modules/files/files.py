@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """The ``files`` module: facts and operations in one source.
 
 Fact side (design doc section 5): ``FileLink`` (the fact read by

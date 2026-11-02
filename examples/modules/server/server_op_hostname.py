@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: set the system hostname on two real hosts.
 
 This is a *usage* example, not part of the library. It shows reemote5's

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: build a container image with the docker connector.
 
 This is a *usage* example, not part of the library. The inventory entry

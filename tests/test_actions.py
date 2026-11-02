@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Tests for actions: immediate shell execution outside the deploy model.
 
 Two fakes stand in for the real transport, both overriding the single

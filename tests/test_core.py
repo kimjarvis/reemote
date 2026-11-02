@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Tests for the deploy-composition helpers (``core.sub_deploy``/``compose``).
 
 Covers the pure stream-transform properties the two-phase model relies on:

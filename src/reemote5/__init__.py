@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """reemote5: a POC model for generator-based two-phase execution.
 
 An alternative to pyinfra's prepare/execute design in which deploy scripts

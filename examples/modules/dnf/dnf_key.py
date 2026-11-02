@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Import a GPG key into the target host's rpm keyring, from a stream.
 
 This is a *usage* example, not part of the library. It shows reemote5's

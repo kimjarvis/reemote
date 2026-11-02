@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Tests for the ``files.block`` migration: a managed block as a files.edit transform.
 
 pyinfra's ``files.block`` is not ported as a bespoke operation -- the developer

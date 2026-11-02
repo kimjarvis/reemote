@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Tests for the files module: the ``File``, ``Directory`` and ``Link`` facts.
 
 Covers ``reemote5.modules.files.files.File``: pyinfra's own thirteen

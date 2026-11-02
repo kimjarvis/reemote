@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Add an Ubuntu PPA repository with ``apt-add-repository``.
 
 This is a *usage* example, not part of the library. It shows how an

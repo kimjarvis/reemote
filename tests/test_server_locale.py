@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Tests for the ``server.locale`` migration: a locale.gen recipe on files.edit.
 
 pyinfra's ``server.locale`` is not ported as a bespoke operation -- the

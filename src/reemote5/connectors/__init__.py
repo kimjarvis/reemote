@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Connectors: alternative transports for reaching a target host.
 
 A plain ``Host`` executes over asyncssh (see ``reemote5.hosts``); a connector

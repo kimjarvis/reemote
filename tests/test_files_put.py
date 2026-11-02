@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Tests for ``files.put``: sha1-based idempotent transfer of IO-like sources.
 
 The source is always a seekable IO-like object on the control machine -- a

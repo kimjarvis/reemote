@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Tests for the server.sysctl example-only recipe (spool-and-install).
 
 pyinfra's ``server.sysctl`` is not ported as a bespoke operation -- the

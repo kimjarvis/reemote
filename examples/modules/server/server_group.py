@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: ensure the docker and lusers system groups exist on two real hosts.
 
 This is a *usage* example, not part of the library. It shows reemote5's

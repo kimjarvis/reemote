@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: set the system timezone on two real hosts (systemd only).
 
 This is a *usage* example, not part of the library. It shows reemote5's

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Tests for ``files.get``: sha1-based idempotent download into an IO-like dest.
 
 The mirror of ``test_files_put.py``: the destination is always a seekable,

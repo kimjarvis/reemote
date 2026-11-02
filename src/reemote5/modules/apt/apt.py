@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """The ``apt`` module: facts and operations in one source.
 
 Fact side: ``AptAutoremovable``, the no-longer-needed packages an

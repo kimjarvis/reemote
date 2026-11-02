@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: ordering guarantees across roles -- repositories before packages.
 
 This is a *usage* example, not part of the library. It builds on

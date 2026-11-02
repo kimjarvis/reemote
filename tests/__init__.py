@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Test-framework package for reemote5.
 
 Holds everything that exists exclusively to support testing the library --

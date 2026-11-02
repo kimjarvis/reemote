@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Tests for ``files.edit``: the generic content-transform primitive.
 
 ``files.edit`` reads a remote file's text with the ``FileContents`` fact,

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Upgrade all apt packages with dist-upgrade, gated by a dry-run simulation.
 
 This is a *usage* example, not part of the library. It shows how an

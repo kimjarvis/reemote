@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Tests for the ``when`` eligibility guard (meta-parameter, composition, driver).
 
 Covers the guard's value semantics (normalization to a predicate tuple,

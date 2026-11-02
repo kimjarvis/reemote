@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: splitting a fact-dependent deploy into two deterministic deploys.
 
 This is a *usage* example, not part of the library. It demonstrates the

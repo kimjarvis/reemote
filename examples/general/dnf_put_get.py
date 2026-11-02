@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: a health-check style deploy combining dnf, files.put and files.get.
 
 This is a *usage* example, not part of the library. It is the reemote5 take on

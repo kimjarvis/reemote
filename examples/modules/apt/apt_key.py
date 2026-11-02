@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Install an APT GPG keyring file from a controller-side key stream.
 
 This is a *usage* example, not part of the library. It shows how an

@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Test-framework stand-in for a real machine.
 
 ``SimulatedHost`` is part of the *test framework*, not of the library, so it

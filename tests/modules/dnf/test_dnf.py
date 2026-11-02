@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Tests for the dnf module: its facts and the operations layer.
 
 Covers the read-only state discovery in ``reemote5.modules.dnf.dnf``:

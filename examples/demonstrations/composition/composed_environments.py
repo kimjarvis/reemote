@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: layered environments assembled from static configuration.
 
 This is a *usage* example, not part of the library. It builds on

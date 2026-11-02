@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
 """Example: run a bespoke shell command on two hosts and inspect the Results.
 
 This is a *usage* example, not part of the library. It demonstrates
