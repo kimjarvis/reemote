@@ -14,7 +14,7 @@ execution model:
 3. Gather ``DnfAvailableGroups`` on every host at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's sorted set of installable group names with
+   mapping -- then print each host's sorted list of installable group names with
    ``json.dumps(..., indent=2)``.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
@@ -71,8 +71,8 @@ async def main() -> None:
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
         # running one host at a time. process runs ``dnf group list
         # --available`` and collects the group names indented under the
-        # ``Available ... Groups:`` headers into a set -- handy to check that a
-        # group name is valid before installing it.
+        # ``Available ... Groups:`` headers into a sorted, de-duplicated list
+        # -- handy to check that a group name is valid before installing it.
         available_groups = await gather_fact(hosts, DnfAvailableGroups)
     except (CommandError, HostConnectionError) as exc:
         # The library reports an unreachable host or a failed fact command as a
@@ -84,11 +84,11 @@ async def main() -> None:
     finally:
         # Close every connection gather_fact may have opened, concurrently.
         await asyncio.gather(*(host.aclose() for host in hosts))
-    # Print in inventory order (gather_fact keys the results by host name). A
-    # set has no stable order, so sort it for a reproducible listing.
+    # Print in inventory order (gather_fact keys the results by host name).
+    # The fact already returns a sorted list, so the listing is reproducible.
     for host in hosts:
         print(f"== {host.name}: dnf.DnfAvailableGroups ==")
-        print(json.dumps(sorted(available_groups[host.name]), indent=2))
+        print(json.dumps(available_groups[host.name], indent=2))
 
 
 if __name__ == "__main__":

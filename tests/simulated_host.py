@@ -32,7 +32,7 @@ a real asyncssh transport is missing:
   ``DnfRepoList``,
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``,
-  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptUpgradable``, ``Arch``,
+  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpgradable``, ``Arch``,
   ``AuthorizedKeys``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``, ``DebPackage``,
   ``DiskStats``, ``DmiInfo``, ``Groups``,
   ``HasGui``, ``Home``, ``Hostname``, ``Ipv4Addrs``, ``Ipv6Addrs``, ``Kernel``,
@@ -93,7 +93,9 @@ from reemote5.modules.dnf.dnf import (
     DnfModuleDisableCommand,
     DnfModuleEnableCommand,
     DnfRemoveCommand,
-    DnfRepoCommand,
+    DnfRepoInstallCommand,
+    DnfRepoRemoveCommand,
+    DnfRepoUploadCommand,
     DnfUpdateCommand,
     RpmInstallCommand,
 )
@@ -139,8 +141,9 @@ class SimulatedHost(Host):
     # derives its digest from it, ``FileContents`` decodes its text back out,
     # a simulated ``files.put`` writes the source
     # stream's bytes into it, and a simulated ``files.get`` reads them back out
-    # into the destination stream. The ``dnf.key``/``apt.key``/``apt.sources_file``
-    # spool uploads land here too: ``import_key``/``install_apt_key``/
+    # into the destination stream. The ``dnf.key``/``dnf.repo``/``apt.key``/
+    # ``apt.sources_file`` spool uploads land here too:
+    # ``import_key``/``install_repo_file``/``install_apt_key``/
     # ``install_apt_sources_file`` pop the spool entry, and the install
     # mutators store the content bytes back at their dest path.
     # Storing content (not just a hash) is what
@@ -579,10 +582,12 @@ class SimulatedHost(Host):
                 self.remove_packages(packages)
             case DnfUpdateCommand() | DnfCleanCommand():
                 pass  # the simulation tracks no versions/metadata to update
-            case DnfRepoCommand(path=path, content=None):
+            case DnfRepoUploadCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
+            case DnfRepoInstallCommand(spool=spool, dest=dest):
+                self.install_repo_file(spool, dest)
+            case DnfRepoRemoveCommand(path=path):
                 self.remove_repo_file(path)
-            case DnfRepoCommand(path=path, content=content):
-                self.write_repo_file(path, content)
             case RpmInstallCommand(src=src):
                 self.install_rpm(src)
             case DebInstallCommand(src=src):
@@ -1230,19 +1235,45 @@ class SimulatedHost(Host):
         existing = list(info.get("options", []))
         info["options"] = existing + [opt for opt in options if opt not in existing]
 
-    def write_repo_file(self, path: str, content: str) -> None:
-        """Record a simulated ``dnf.repo`` write: store the content bytes.
+    def install_repo_file(self, spool: str, dest: str) -> None:
+        """Record a simulated ``dnf.repo`` install of the spooled ``.repo`` text.
 
-        Mirrors ``put_file``: the content lands in ``remote_files`` -- the same
-        store ``DnfRepoFile`` reads back (and ``RemoteFileSha1`` hashes) -- so a
-        repeat ``dnf.repo`` with identical arguments is a no-op, since the fresh
-        per-step fact cache sees these bytes and the content matches.
+        ``dnf.repo`` first uploads the generated content to a ``/tmp`` spool
+        path (the paired ``DnfRepoUploadCommand`` runs through ``put_file``,
+        storing the bytes in ``remote_files``), then installs it as the
+        ``dest`` repo file and removes the spool. This mirrors the
+        install-and-remove: the spool bytes are popped out of ``remote_files``
+        and stored at ``dest`` -- the same store ``DnfRepoFile`` reads back
+        (and ``RemoteFileSha1`` hashes) -- so a repeat ``dnf.repo`` with
+        identical arguments is a no-op, since the fresh per-step fact cache
+        sees these bytes and the content matches. The path is added to
+        ``existing_files`` plus a minimal ``file_stats`` row (root-owned,
+        mode 644 -- the real command's ``chmod 0644``). An absent spool path
+        installs nothing.
         """
-        self.remote_files[path] = content.encode("utf-8")
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        self.file_stats[dest] = {
+            "user": "root",
+            "group": "root",
+            "mode": 644,
+            "size": len(data),
+        }
 
     def remove_repo_file(self, path: str) -> None:
-        """Record a simulated ``dnf.repo`` removal (``present=False``)."""
+        """Record a simulated ``dnf.repo`` removal (``present=False``).
+
+        The content bytes (``remote_files``), the existence marker
+        (``existing_files``) and any ``file_stats`` row all go, so the file
+        facts stay consistent. An absent path is tolerated -- ``rm -f``
+        exits 0 on a missing file.
+        """
         self.remote_files.pop(path, None)
+        self.existing_files.discard(path)
+        self.file_stats.pop(path, None)
 
     def put_file(self, src, dest: str) -> None:
         """Record a simulated scp upload: store the IO-like source's content.

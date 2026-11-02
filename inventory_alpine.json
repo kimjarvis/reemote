@@ -1,0 +1,12 @@
+[
+  {
+    "host": "alpine",
+    "connection": {
+      "address": "192.168.0.197",
+      "username": "alpine",
+      "key_path": "~/.ssh/id_ed25519"
+    },
+    "group": "alpine",
+    "tags": ["alpine_host"]
+  }
+]

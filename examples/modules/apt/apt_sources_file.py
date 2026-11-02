@@ -32,9 +32,10 @@ pyinfra -- whose ``apt.sources_file`` delegates the write to ``files.put``
 spooled to ``/tmp`` by an unprivileged scp upload (a transfer never
 elevates), then an elevated ``sh -c`` installs it into ``sources.list.d``
 with mode ``0644`` and removes the spool file -- the same privilege split as
-``apt.key``. The removal direction always yields ``rm -f`` and reports a
-change, without pyinfra's existence check (a deliberate deviation: reading
-another namespace's fact would break the module's self-containment).
+``apt.key``. The removal direction is idempotent too: the ``AptSourcesFile``
+fact reads the file's content (None when absent), so ``present=False`` yields
+``rm -f`` only when the file exists -- the same in-namespace existence gate
+``dnf.repo`` uses, without importing another namespace's fact.
 
 ``apt.sources_file`` compares every desired entry against the ``AptSources``
 fact, so a file whose repositories are all already configured is a no-op.

@@ -27,9 +27,9 @@ The deploy adds the Docker CE repository by constructing its
 ``dnf.repo`` can also download a remote ``.repo`` file -- reemote5 has no
 download operation, so ``dnf.repo`` takes a repository *name* and builds the
 file itself; a URL ``src`` raises ``ValueError``. The ``$releasever`` and
-``$basearch`` in the baseurl are dnf's own substitutions: the content is
-shell-quoted, so they reach the file literally and dnf expands them when it
-reads the repo.
+``$basearch`` in the baseurl are dnf's own substitutions: the content rides
+the scp transfer as data, so it reaches the file literally and dnf expands
+it when it reads the repo.
 
 ``dnf.repo`` reads the current file back through the ``DnfRepoFile`` fact and
 writes only when the content differs, so re-running is a no-op. The script
@@ -40,9 +40,12 @@ phase writes on the first and reports the second as a no-op, because the
 fresh per-step fact cache now sees the file the first step wrote.
 
 Writing under ``/etc/yum.repos.d`` needs root -- the directory is root-owned
--- so the request is flagged ``sudo=True`` and the driver elevates its
-command; ``DnfRepoCommand`` wraps the write in ``sh -c`` so the ``>`` redirect
-happens inside the elevated shell rather than as the login user.
+-- so the request is flagged ``sudo=True``. One request yields two commands
+at different privilege levels: ``DnfRepoUploadCommand`` spools the generated
+text to a ``/tmp`` path over scp as the login user (transfers never elevate),
+then ``DnfRepoInstallCommand`` runs one elevated ``sh -c`` that creates the
+directory, copies the file, chmods it ``0644`` and removes the spool -- the
+``apt.sources_file`` pattern.
 
 Run it with::
 

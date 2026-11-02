@@ -14,7 +14,9 @@ from the modern keyring directories
 origins of one package, parsed from `apt-cache policy` into a plain
 `AptPackagePolicy` TypedDict-shaped dict, `AptSources`, the configured
 repositories, parsed from the legacy `.list` files and the modern deb822
-`.sources` files into plain `AptSource` TypedDict-shaped dicts, and
+`.sources` files into plain `AptSource` TypedDict-shaped dicts,
+`AptSourcesFile`, the raw content of one `.sources` file (None when it is
+absent), read behind a `test -e`-guarded marker, and
 `AptUpgradable`, the packages `apt upgrade` would move with both ends of
 each version jump, parsed from `apt list --upgradable` into plain
 `AptPackageUpgrade` TypedDict-shaped dicts, `DebPackage`, the name and
@@ -42,7 +44,8 @@ PPA with `apt-add-repository`, deliberately non-idempotent like pyinfra's;
 `/etc/apt/sources.list` or a `sources.list.d` file, idempotent on
 `AptSources`; and `apt.sources_file`, which manages a modern deb822
 `.sources` file under `sources.list.d`, idempotent on `AptSources` for
-the write direction; `apt.update`, the stateless package-list refresh,
+the write direction and on `AptSourcesFile` for the removal;
+`apt.update`, the stateless package-list refresh,
 deliberately non-idempotent like pyinfra's; and `apt.upgrade`, which
 upgrades every upgradable package when `SimulateOperationWillChange`
 proposes changes.
@@ -136,9 +139,10 @@ version jump, and `AptAutoremovable` the no-longer-needed packages an
 autoremove would clean up.
 
 `AptPolicy` takes a package name (shell-quoted) and runs
-`LANG=C apt-cache policy <package>` — the `LANG=C` prefix (like
-`Processes`' `ps`) keeps apt's field labels untranslated on localized
-hosts. It is a reemote5 original: pyinfra ships no `apt.AptPolicy`
+`LC_ALL=C apt-cache policy <package>` — the `LC_ALL=C` prefix keeps apt's
+field labels untranslated on localized hosts, overriding any `LC_*`
+variable the login environment sets (a bare `LANG=C` would lose to an
+exported `LC_ALL`). It is a reemote5 original: pyinfra ships no `apt.AptPolicy`
 counterpart. The result is an `AptPackagePolicy` dict — `{installed,
 candidate, versions}` — where `installed` is the installed version and
 `candidate` the version `apt install` would pick right now (either maps
@@ -186,6 +190,17 @@ a bare string, forcing callers to type-check, while here
 gating on `apt` is deliberately dropped too: the command is pure shell
 and `cat` and never runs `apt`, so a host without apt simply reports its
 files (usually `[]`).
+
+`AptSourcesFile` takes a file path and reports the raw text of that one
+`.sources` file, or `None` when it is absent — the `DnfRepoFile` pattern
+in this namespace. The real-transport command cats the file only behind
+a `test -e` guard and leads with a `#reemote5-sourcesfile` marker line,
+so a missing file (no marker) reads as `None` while an existing but empty
+file reads as `""` — the distinction that lets the removal delete an
+empty leftover. Where `AptSources` parses *every* configured repository
+into `AptSource` dicts, this fact answers the single-file existence and
+content question `apt.sources_file(present=False)` reads to make its
+removal idempotent without importing another namespace's facts.
 
 `AptUpgradable` takes no arguments and runs
 `apt list --upgradable 2>/dev/null` (the redirect suppresses the
@@ -262,6 +277,7 @@ still raises `CommandError` — reemote5's fail-fast convention. pyinfra's
         - AptSimulationDict
         - AptSource
         - AptSources
+        - AptSourcesFile
         - AptUpgradable
         - DebPackage
         - SimulateOperationWillChange
@@ -446,10 +462,10 @@ and an `&& rm` chain would leave its second command unprivileged under a
 list, a tuple or a space-separated string; `signed_by` names the keyring
 file for signature verification (the natural pairing with `apt.key`).
 `present=True` requires at least one URI and one suite — otherwise
-[`OperationError`][reemote5.core.OperationError] is raised with pyinfra's
-message — and is idempotent on `AptSources`: the fields expand into one
-desired repository per type/URI/suite combination (in the fact's
-list-valued `AptSource` shape), and when every combination is already
+`ValueError` is raised with pyinfra's message (reemote5's single
+validation error type) — and is idempotent on `AptSources`: the fields
+expand into one desired repository per type/URI/suite combination (in the
+fact's list-valued `AptSource` shape), and when every combination is already
 configured the operation is a no-op. Otherwise one request yields two
 commands at different privilege levels, the `apt.key` pattern:
 `AptSourcesFileUploadCommand` spools the generated deb822 text to a fixed
@@ -460,11 +476,12 @@ request `sudo=True` (or `su=True`); the transfer stays unprivileged
 regardless. This spool-and-install pair is the deliberate replacement for
 pyinfra's `files.put` delegation: reemote5's transfers are unprivileged
 scp and namespaces never reuse each other's operations.
-`present=False` is deliberately **non-idempotent**: it always reports a
-change and yields `rm -f` (safe on an absent file). pyinfra checks the
-`files.File` fact and no-ops when the file is absent, but the apt
-namespace never imports another module's facts (the same deviation
-`apt.key` recorded), so the existence check is dropped.
+`present=False` is idempotent on `AptSourcesFile`: it yields `rm -f`
+only when the file exists (an empty leftover included) and is a no-op
+when it is already absent. pyinfra checks its `files.File` fact for the
+same gate; reemote5's apt namespace never imports another module's
+facts, so the in-namespace `AptSourcesFile` content fact provides the
+existence answer — the same pattern `dnf.repo` uses with `DnfRepoFile`.
 
 `apt.update` refreshes the package lists (pyinfra's `apt.update` parity)
 — the standalone form of `apt.packages`' stateless `update=True` prefix.

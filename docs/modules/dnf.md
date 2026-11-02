@@ -13,7 +13,12 @@ A fact is an asynchronous, queryable resource — never yielded by a generator �
 implemented as a `process` coroutine returning the raw value (over asyncssh in
 the real implementation). Read facts through
 [`FactCache.get`][reemote5.core.FactCache.get], which is itself a coroutine,
-so results are awaited and cached within a phase step.
+so results are awaited and cached within a phase step. The name-list
+facts (`DnfPackages`, `DnfGroups`, `DnfAvailableGroups`) return sorted,
+de-duplicated lists — the apt-side convention rather than pyinfra's
+runtime sets — so reads stay deterministic and JSON-printable, and
+`DnfRepoList` rows are plain `DnfRepoListEntry` dicts (`status` is
+omitted when the listing has no status column).
 
 ::: reemote5.modules.dnf.dnf
     options:
@@ -22,6 +27,7 @@ so results are awaited and cached within a phase step.
         - DnfRepositories
         - DnfRepoFile
         - DnfRepoList
+        - DnfRepoListEntry
         - DnfEnabledModules
         - DnfDisabledModules
         - DnfInstalledModules

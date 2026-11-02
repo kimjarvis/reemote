@@ -50,6 +50,7 @@ from reemote5.hosts import (
 from reemote5.modules import dnf, files
 from reemote5.modules.dnf.dnf import (
     _KEY_IMPORT_PATH,
+    _REPO_SPOOL_PATH,
     DnfAvailableGroups,
     DnfCleanCommand,
     DnfDisabledModules,
@@ -63,10 +64,12 @@ from reemote5.modules.dnf.dnf import (
     DnfModuleEnableCommand,
     DnfPackages,
     DnfRemoveCommand,
-    DnfRepoCommand,
     DnfRepoFile,
+    DnfRepoInstallCommand,
     DnfRepoList,
+    DnfRepoRemoveCommand,
     DnfRepositories,
+    DnfRepoUploadCommand,
     DnfUpdateCommand,
     RpmInstallCommand,
     RpmPackage,
@@ -84,6 +87,32 @@ class CannedShellHost(Host):
 
     async def run_shell(self, shell: str) -> str:
         return self._stdout
+
+
+# --- DnfPackages fact ---------------------------------------------------------
+
+
+async def test_dnf_packages_parses_rpm_names_sorted_and_unique():
+    """Over the real-transport path, ``DnfPackages`` parses ``rpm -qa`` name
+    lines into the apt-side sorted-list shape: blank lines dropped, surrounding
+    whitespace stripped, duplicates collapsed, names sorted."""
+    host = CannedShellHost("vim\nnginx\n\nnginx\n  coreutils  \n")
+    assert await DnfPackages.process(host) == ["coreutils", "nginx", "vim"]
+
+
+def test_dnf_packages_parse_empty_output_is_an_empty_list():
+    """A host with no packages parses to an empty list, not None."""
+    assert DnfPackages.parse([]) == []
+
+
+async def test_dnf_packages_seam_read_is_a_sorted_copy():
+    """The seam answer is sorted and copy-on-read: mutating the returned list
+    never touches simulated state."""
+    host = SimulatedHost(name="h", packages={"vim", "nginx"})
+    result = await DnfPackages.process(host)
+    assert result == ["nginx", "vim"]
+    result.append("mutated")
+    assert host.packages == {"vim", "nginx"}
 
 
 # --- DnfRepositories fact (pyinfra parity) -----------------------------------
@@ -317,13 +346,13 @@ Installed Groups:
    Development Tools
    Container Management"""
 
-DOCUMENTED_INSTALLED_GROUPS = {
-    "Server with GUI",
-    "Minimal Install",
+DOCUMENTED_INSTALLED_GROUPS = [
+    "Container Management",
     "Core",
     "Development Tools",
-    "Container Management",
-}
+    "Minimal Install",
+    "Server with GUI",
+]
 
 # An unfiltered ``dnf group list`` interleaves Available and Installed
 # sections; each fact must keep only its own section's names.
@@ -349,13 +378,13 @@ async def test_dnf_groups_parses_the_installed_table():
 async def test_dnf_groups_ignores_available_sections():
     """In a mixed listing, ``DnfGroups`` keeps only the ``Installed`` names."""
     host = CannedShellHost(DNF_GROUP_LIST_MIXED_OUTPUT)
-    assert await DnfGroups.process(host) == {"Server with GUI", "Core"}
+    assert await DnfGroups.process(host) == ["Core", "Server with GUI"]
 
 
 async def test_dnf_groups_reads_the_simulated_seam():
     """A SimulatedHost exposes ``installed_groups`` directly, bypassing the
     shell."""
-    host = SimulatedHost(name="h", installed_groups=DOCUMENTED_INSTALLED_GROUPS)
+    host = SimulatedHost(name="h", installed_groups=set(DOCUMENTED_INSTALLED_GROUPS))
     assert await DnfGroups.process(host) == DOCUMENTED_INSTALLED_GROUPS
 
 
@@ -371,31 +400,31 @@ Available Groups:
    Administration Tools
    Authoring and Publishing"""
     host = CannedShellHost(stdout)
-    assert await DnfAvailableGroups.process(host) == {
-        "Fedora Custom Operating System",
-        "Minimal Install",
+    assert await DnfAvailableGroups.process(host) == [
         "3D Printing",
         "Administration Tools",
         "Authoring and Publishing",
-    }
+        "Fedora Custom Operating System",
+        "Minimal Install",
+    ]
 
 
 async def test_dnf_available_groups_ignores_installed_sections():
     """In a mixed listing, ``DnfAvailableGroups`` keeps only the ``Available``
     names."""
     host = CannedShellHost(DNF_GROUP_LIST_MIXED_OUTPUT)
-    assert await DnfAvailableGroups.process(host) == {
-        "KDE Plasma Workspaces",
+    assert await DnfAvailableGroups.process(host) == [
         "3D Printing",
         "Audio Production",
-    }
+        "KDE Plasma Workspaces",
+    ]
 
 
 async def test_dnf_available_groups_reads_the_simulated_seam():
     """A SimulatedHost exposes ``available_groups`` directly, bypassing the
     shell."""
     host = SimulatedHost(name="h", available_groups={"3D Printing", "Core"})
-    assert await DnfAvailableGroups.process(host) == {"3D Printing", "Core"}
+    assert await DnfAvailableGroups.process(host) == ["3D Printing", "Core"]
 
 
 # --- DnfRepoList fact ---------------------------------------------------------
@@ -445,6 +474,15 @@ async def test_dnf_repolist_reads_the_simulated_seam():
     """A SimulatedHost exposes ``repo_list`` directly, bypassing the shell."""
     host = SimulatedHost(name="h", repo_list=DOCUMENTED_REPO_LIST)
     assert await DnfRepoList.process(host) == DOCUMENTED_REPO_LIST
+
+
+async def test_dnf_repolist_seam_read_copies_each_entry():
+    """The seam answer copies every entry dict, so mutating the result never
+    touches simulated state."""
+    host = SimulatedHost(name="h", repo_list=DOCUMENTED_REPO_LIST)
+    result = await DnfRepoList.process(host)
+    result[0]["repoid"] = "mutated"
+    assert host.repo_list == DOCUMENTED_REPO_LIST
 
 
 # --- RpmPackage fact (pyinfra parity) ----------------------------------------
@@ -1173,14 +1211,14 @@ async def test_run_shell_tolerates_a_shell_guarded_missing_command():
 async def test_fact_cache_caches_per_key():
     host = SimulatedHost(name="h", packages={"nginx"})
     cache = FactCache(host, phase="prepare")
-    assert await cache.get(DnfPackages) == {"nginx"}
+    assert await cache.get(DnfPackages) == ["nginx"]
 
     host.packages.add("vim")
     # Cached: the mutation is not visible through the same cache...
-    assert await cache.get(DnfPackages) == {"nginx"}
+    assert await cache.get(DnfPackages) == ["nginx"]
     # ...but a fresh cache sees it, which is exactly the per-step
     # recreation the apply driver relies on.
-    assert await FactCache(host, phase="apply").get(DnfPackages) == {"nginx", "vim"}
+    assert await FactCache(host, phase="apply").get(DnfPackages) == ["nginx", "vim"]
 
 
 async def test_fact_cache_keys_include_args():
@@ -1202,9 +1240,9 @@ async def test_gather_fact_returns_a_host_aligned_mapping():
         SimulatedHost(name="web3", packages=set()),
     ]
     assert await gather_fact(hosts, DnfPackages) == {
-        "web1": {"nginx"},
-        "web2": {"nginx", "vim"},
-        "web3": set(),
+        "web1": ["nginx"],
+        "web2": ["nginx", "vim"],
+        "web3": [],
     }
 
 
@@ -1389,6 +1427,31 @@ async def test_dnf_packages_version_pin_installs_when_name_absent():
     assert commands[0].shell() == "dnf install -y nginx=1.23.0"
 
 
+async def test_dnf_packages_version_pin_splits_on_the_last_equals():
+    """The pin splits on the *last* ``=`` (pyinfra's ``rsplit`` join, apt's
+    ``rpartition``), so an ``=`` inside the version never cuts the name short:
+    the installed name ``foo=1.0`` matches the pin ``foo=1.0=2``."""
+    host = SimulatedHost(name="h", packages={"foo=1.0"})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.packages(ctx, packages=("foo=1.0=2",), latest=True)
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "all packages present"
+    assert commands == []
+
+
+def test_dnf_package_commands_shell_quote_the_names():
+    """Package names are shell-quoted like apt's, so a metacharacter in a name
+    can never reach the remote shell unescaped."""
+    package = "nginx;touch /tmp/pwned"
+    quoted = shlex.quote(package)
+    assert quoted != package
+    assert DnfInstallCommand(packages=(package,)).shell() == f"dnf install -y {quoted}"
+    assert DnfRemoveCommand(packages=(package,)).shell() == f"dnf remove -y {quoted}"
+    assert DnfUpdateCommand(packages=(package,)).shell() == f"dnf update -y {quoted}"
+
+
 async def test_dnf_packages_absorbs_unknown_kwargs():
     """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
     strips the ``name``/``sudo`` meta-parameters, the rest is ignored."""
@@ -1454,8 +1517,8 @@ async def test_dnf_version_pin_install_simulates_by_name():
 
 
 async def test_dnf_repo_writes_the_constructed_file():
-    """present=True with a baseurl builds the ``.repo`` content and yields a
-    write when the file is absent."""
+    """present=True with a baseurl builds the ``.repo`` content and yields the
+    spool-transfer + elevated-install pair when the file is absent."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in dnf.repo(ctx, src="DockerCE", baseurl=DOCKER_BASEURL)]
@@ -1464,7 +1527,8 @@ async def test_dnf_repo_writes_the_constructed_file():
         f"repo file {DOCKER_REPO_PATH} missing or differs from the desired content"
     )
     assert commands == [
-        DnfRepoCommand(path=DOCKER_REPO_PATH, content=DOCKER_REPO_CONTENT)
+        DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=_REPO_SPOOL_PATH),
+        DnfRepoInstallCommand(spool=_REPO_SPOOL_PATH, dest=DOCKER_REPO_PATH),
     ]
 
 
@@ -1496,8 +1560,8 @@ async def test_dnf_repo_options_render_into_the_content():
             gpgkey="https://download.docker.com/linux/centos/gpg",
         )
     ]
-    (cmd,) = commands
-    assert cmd.content == (
+    (upload, _install) = commands
+    assert upload.content == (
         "[DockerCE]\n"
         "name=Docker CE for CentOS\n"
         f"baseurl={DOCKER_BASEURL}\n"
@@ -1515,7 +1579,7 @@ async def test_dnf_repo_removes_an_existing_file():
     commands = [c async for c in dnf.repo(ctx, src="DockerCE", present=False)]
     assert ctx.changed
     assert ctx.reason == f"repo file {DOCKER_REPO_PATH} present, will remove"
-    assert commands == [DnfRepoCommand(path=DOCKER_REPO_PATH, content=None)]
+    assert commands == [DnfRepoRemoveCommand(path=DOCKER_REPO_PATH)]
 
 
 async def test_dnf_repo_removal_noop_when_absent():
@@ -1560,25 +1624,85 @@ async def test_dnf_repo_rejects_a_relative_gpgkey():
         ]
 
 
-def test_dnf_repo_command_shell_keeps_the_redirect_inside_sh():
-    """The write wraps printf in ``sh -c`` so the ``>`` redirect runs under the
-    elevated shell, and shell-quoting keeps ``$basearch`` literal."""
-    cmd = DnfRepoCommand(path=DOCKER_REPO_PATH, content=DOCKER_REPO_CONTENT)
+async def test_dnf_repo_absorbs_unknown_kwargs():
+    """``**kwargs`` mirrors pyinfra's global-arguments slot, like every other
+    dnf operation; op() already strips the meta-parameters."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.repo(
+            ctx, src="DockerCE", baseurl=DOCKER_BASEURL, future_flag=True
+        )
+    ]
+    assert commands == [
+        DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=_REPO_SPOOL_PATH),
+        DnfRepoInstallCommand(spool=_REPO_SPOOL_PATH, dest=DOCKER_REPO_PATH),
+    ]
+
+
+def test_dnf_repo_upload_command_renders_as_an_unprivileged_scp():
+    """The spool transfer has no shell(); it renders via __str__ and -- being a
+    TransferCommand -- is never elevated, even though dnf.repo's request is
+    sudo=True for the install half. The content rides as data, so the literal
+    ``$basearch`` can never be shell-expanded."""
+    cmd = DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=_REPO_SPOOL_PATH)
+    assert not hasattr(cmd, "shell")
+    assert str(cmd) == f"scp <repo file> -> {_REPO_SPOOL_PATH}"
+    assert command_shell(cmd) == f"scp <repo file> -> {_REPO_SPOOL_PATH}"
+    assert command_shell(cmd, sudo=True) == f"scp <repo file> -> {_REPO_SPOOL_PATH}"
+
+
+def test_dnf_repo_install_command_shell_and_elevation():
+    """The install wraps the mkdir/cp/chmod/rm chain in ``sh -c`` so every step
+    runs under the elevated shell (a bare ``sudo ... && rm`` would leave the
+    cleanup unprivileged), and shell-quotes every path."""
+    cmd = DnfRepoInstallCommand(spool=_REPO_SPOOL_PATH, dest=DOCKER_REPO_PATH)
     shell = cmd.shell()
     assert shell.startswith("sh -c ")
-    # The printf and its ``>`` redirect are a single ``sh -c`` argument, so the
-    # driver elevates them together; shlex.split recovers that inner script
-    # (the raw ``shell`` re-quotes it, so ``'%s'`` is not a literal substring).
+    # The chain is a single ``sh -c`` argument; shlex.split recovers the inner
+    # script (the raw ``shell`` re-quotes it).
     inner = shlex.split(shell)[2]
-    assert inner.startswith("printf '%s' ")
-    assert inner.endswith(f" > {DOCKER_REPO_PATH}")
-    assert "$basearch" in inner  # literal, never shell-expanded
-    # Removal renders as a plain rm -f (no redirect to protect).
-    assert DnfRepoCommand(path=DOCKER_REPO_PATH, content=None).shell() == (
+    assert inner == (
+        "mkdir -p /etc/yum.repos.d && "
+        f"cp {_REPO_SPOOL_PATH} {DOCKER_REPO_PATH} && "
+        f"chmod 0644 {DOCKER_REPO_PATH} && rm -f {_REPO_SPOOL_PATH}"
+    )
+    # Under sudo the whole sh -c chain runs as root.
+    assert command_shell(cmd, sudo=True).startswith("sudo sh -c ")
+
+
+def test_dnf_repo_remove_command_shell_quotes_the_path():
+    """Removal renders as a plain ``rm -f`` with a shell-quoted path."""
+    assert DnfRepoRemoveCommand(path=DOCKER_REPO_PATH).shell() == (
         f"rm -f {DOCKER_REPO_PATH}"
     )
-    # Under sudo the whole sh -c (redirect included) runs as root.
-    assert command_shell(cmd, sudo=True).startswith("sudo sh -c ")
+    path = "/etc/yum.repos.d/odd name.repo"
+    assert DnfRepoRemoveCommand(path=path).shell() == f"rm -f {shlex.quote(path)}"
+
+
+async def test_dnf_repo_simulated_seam_spools_then_installs():
+    """send_command maps the transfer onto remote_files (via put_file) and the
+    install onto the dest path with a root-owned 0644 file_stats row while
+    clearing the spool file -- the two-step effect of one dnf.repo request."""
+    host = SimulatedHost(name="h")
+    await send_command(
+        host,
+        DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=_REPO_SPOOL_PATH),
+    )
+    assert host.remote_files[_REPO_SPOOL_PATH] == DOCKER_REPO_CONTENT.encode()
+    await send_command(
+        host, DnfRepoInstallCommand(spool=_REPO_SPOOL_PATH, dest=DOCKER_REPO_PATH)
+    )
+    assert host.remote_files[DOCKER_REPO_PATH] == DOCKER_REPO_CONTENT.encode()
+    assert _REPO_SPOOL_PATH not in host.remote_files
+    assert DOCKER_REPO_PATH in host.existing_files
+    assert host.file_stats[DOCKER_REPO_PATH] == {
+        "user": "root",
+        "group": "root",
+        "mode": 644,
+        "size": len(DOCKER_REPO_CONTENT.encode()),
+    }
 
 
 async def test_dnf_repo_end_to_end_write_then_noop():
@@ -1607,10 +1731,14 @@ async def test_dnf_repo_end_to_end_write_then_noop():
     (entry,) = report.log
     assert entry.changed
     assert entry.commands == (
-        DnfRepoCommand(path=DOCKER_REPO_PATH, content=DOCKER_REPO_CONTENT),
+        DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=_REPO_SPOOL_PATH),
+        DnfRepoInstallCommand(spool=_REPO_SPOOL_PATH, dest=DOCKER_REPO_PATH),
     )
     assert host.remote_files[DOCKER_REPO_PATH] == DOCKER_REPO_CONTENT.encode()
-    assert "sudo sh -c " in format_log(report)
+    assert _REPO_SPOOL_PATH not in host.remote_files  # install cleaned the spool
+    log = format_log(report)
+    assert f"    $ scp <repo file> -> {_REPO_SPOOL_PATH}" in log
+    assert "    $ sudo sh -c " in log
 
     _plans2, report2, _hosts2 = await run(
         [{"host": "h", "connection": {}}], repo_deploy, host_factory=factory

@@ -14,7 +14,7 @@ two-phase execution model:
 3. Gather ``DnfGroups`` on every host at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's sorted set of installed group names with
+   mapping -- then print each host's sorted list of installed group names with
    ``json.dumps(..., indent=2)``.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
@@ -65,7 +65,7 @@ async def main() -> None:
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
         # running one host at a time. process runs ``dnf group list
         # --installed`` and collects the group names indented under the
-        # ``Installed ... Groups:`` headers into a set.
+        # ``Installed ... Groups:`` headers into a sorted, de-duplicated list.
         groups = await gather_fact(hosts, DnfGroups)
     except (CommandError, HostConnectionError) as exc:
         # The library reports an unreachable host or a failed fact command as a
@@ -77,11 +77,11 @@ async def main() -> None:
     finally:
         # Close every connection gather_fact may have opened, concurrently.
         await asyncio.gather(*(host.aclose() for host in hosts))
-    # Print in inventory order (gather_fact keys the results by host name). A
-    # set has no stable order, so sort it for a reproducible listing.
+    # Print in inventory order (gather_fact keys the results by host name).
+    # The fact already returns a sorted list, so the listing is reproducible.
     for host in hosts:
         print(f"== {host.name}: dnf.DnfGroups ==")
-        print(json.dumps(sorted(groups[host.name]), indent=2))
+        print(json.dumps(groups[host.name], indent=2))
 
 
 if __name__ == "__main__":

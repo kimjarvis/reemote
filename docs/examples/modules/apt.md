@@ -263,8 +263,9 @@ delegates the write to `files.put`, reemote5 keeps the namespaces separate:
 the generated deb822 text is spooled to `/tmp` by an unprivileged scp upload
 (a transfer never elevates), then an elevated `sh -c` installs it into
 `/etc/apt/sources.list.d/` with mode `0644` and removes the spool file — the
-same privilege split as `apt.key`. Removal always yields `rm -f` and reports
-a change, without pyinfra's existence check. The script yields the same
+same privilege split as `apt.key`. Removal is idempotent too: the
+[`AptSourcesFile`][reemote5.modules.apt.apt.AptSourcesFile] fact gates the
+`rm -f`, so an already-absent file is a no-op. The script yields the same
 request twice: the prepare phase plans both as changes, while the apply
 phase writes on the first and reports the second as a no-op through the
 fresh per-step fact cache.

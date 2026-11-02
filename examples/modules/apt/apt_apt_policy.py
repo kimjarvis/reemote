@@ -22,7 +22,7 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's raw policy dict with
    ``json.dumps(..., indent=2)``.
 
-``AptPolicy`` runs ``LANG=C apt-cache policy nginx`` and parses the
+``AptPolicy`` runs ``LC_ALL=C apt-cache policy nginx`` and parses the
 installed version, the candidate ``apt install nginx`` would pick right
 now, and the version table listing every offering with its pin priority
 and repository origins. ``(none)`` values read as ``None`` and an unknown
@@ -84,7 +84,7 @@ async def main() -> None:
         # Gather the fact across the whole inventory concurrently: gather_fact
         # fans AptPolicy.process out with asyncio.gather, forwarding PACKAGE as
         # the fact's argument, and returns a host-name-keyed mapping. process
-        # runs LANG=C apt-cache policy over SSH and parses the installed and
+        # runs LC_ALL=C apt-cache policy over SSH and parses the installed and
         # candidate versions plus the version table with its origins.
         policies = await gather_fact(hosts, AptPolicy, PACKAGE)
     except (CommandError, HostConnectionError) as exc:

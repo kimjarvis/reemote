@@ -2,7 +2,8 @@
 
 Re-exports everything from ``apt.py`` so the facts (``apt.AptAutoremovable``,
 ``apt.AptHeldPackages``, ``apt.AptKeys``, ``apt.AptPackages``,
-``apt.AptPolicy``, ``apt.AptSources``, ``apt.AptUpgradable``,
+``apt.AptPolicy``, ``apt.AptSources``, ``apt.AptSourcesFile``,
+``apt.AptUpgradable``,
 ``apt.DebPackage``, ``apt.SimulateOperationWillChange``), the
 ``apt.AptPackagePolicy`` / ``apt.AptPackageUpgrade`` / ``apt.AptPolicyVersion``
 / ``apt.AptSimulationDict`` / ``apt.AptSource`` entry types, the ``apt.deb``,
@@ -47,6 +48,7 @@ from .apt import (
     AptSimulationDict,
     AptSource,
     AptSources,
+    AptSourcesFile,
     AptSourcesFileInstallCommand,
     AptSourcesFileRemoveCommand,
     AptSourcesFileUploadCommand,
@@ -93,6 +95,7 @@ __all__ = [
     "AptSimulationDict",
     "AptSource",
     "AptSources",
+    "AptSourcesFile",
     "AptSourcesFileInstallCommand",
     "AptSourcesFileRemoveCommand",
     "AptSourcesFileUploadCommand",

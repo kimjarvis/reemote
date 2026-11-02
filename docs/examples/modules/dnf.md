@@ -50,8 +50,10 @@ The script yields the same repository request twice — the second is a
 guaranteed no-op in the apply phase, because the first write is visible to it
 through the fresh per-step fact cache (in the prepare phase, where nothing is
 sent, both plan as changes). The write rides under `sudo` (`/etc/yum.repos.d`
-is root-owned), and the command wraps it in `sh -c` so the `>` redirect happens
-inside the elevated shell rather than as the login user.
+is root-owned) as a two-command pair: an unprivileged scp transfer spools the
+generated text to `/tmp`, then one elevated `sh -c` creates the directory,
+copies the file, chmods it `0644` and removes the spool — the `apt.sources_file`
+pattern.
 
 ::: dnf_repo
     options:

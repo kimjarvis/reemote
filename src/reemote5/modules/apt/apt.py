@@ -12,7 +12,9 @@ with ``gpg --with-colons`` instead of the deprecated ``apt-key`` command,
 repository origins of one package, parsed from ``apt-cache policy``,
 ``AptSources``, the configured repositories, parsed from the legacy
 ``.list`` files and the modern deb822 ``.sources`` files into plain
-``AptSource`` TypedDict-shaped dicts, and ``AptUpgradable``, the packages
+``AptSource`` TypedDict-shaped dicts, ``AptSourcesFile``, the raw content
+of a single ``.sources`` file (read by ``apt.sources_file``), and
+``AptUpgradable``, the packages
 ``apt upgrade`` would move with both ends of each version jump, parsed
 from ``apt list --upgradable`` into plain ``AptPackageUpgrade``
 TypedDict-shaped dicts, ``DebPackage``, the name/version of a
@@ -72,10 +74,9 @@ deb822 ``.sources`` file under ``sources.list.d``), idempotent on
 ``AptSources`` for the write direction: the generated content is spooled
 over scp and installed with an elevated shell (the ``apt.key`` pattern
 replacing pyinfra's ``files.put`` delegation, since transfers are
-unprivileged); the ``present=False`` removal is deliberately
-non-idempotent -- it always yields ``rm -f`` -- because pyinfra's
-``files.File`` existence check would need a cross-module fact import.
-Operations are async
+unprivileged); the ``present=False`` removal is idempotent on the
+in-namespace ``AptSourcesFile`` content fact (the ``DnfRepoFile``
+pattern), so an absent file is a no-op. Operations are async
 generators that receive an ``OpContext``, await facts, set
 ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never
 touch the host directly.
@@ -91,7 +92,7 @@ from typing import IO, Any, TypedDict
 from urllib.parse import urlparse
 
 from ...commands import Command, TransferCommand
-from ...core import OpContext, OperationError
+from ...core import OpContext
 from ...hosts import Host
 
 # --- Shared helpers ------------------------------------------------------------
@@ -622,7 +623,7 @@ class AptPolicy:
     conveys it) and rows keep apt's printed order. An unknown package
     prints nothing on stdout (apt's "Unable to locate package" notice
     goes to stderr), which reads as None. The command is prefixed with
-    ``LANG=C`` (like ``Processes``' ``ps``) so the ``Installed:`` /
+    ``LC_ALL=C`` (like ``SimulateOperationWillChange``) so the ``Installed:`` /
     ``Candidate:`` labels stay untranslated on localized hosts. A missing
     ``apt-cache`` exits 127, which ``run_shell`` reports as
     ``CommandNotFoundError``.
@@ -642,10 +643,10 @@ class AptPolicy:
     def command(cls, package: str) -> str:
         """Shell printing ``package``'s policy over SSH.
 
-        The package name is ``shlex``-quoted, and ``LANG=C`` keeps apt's
+        The package name is ``shlex``-quoted, and ``LC_ALL=C`` keeps apt's
         field labels in English on localized hosts.
         """
-        return f"LANG=C apt-cache policy {shlex.quote(package)}"
+        return f"LC_ALL=C apt-cache policy {shlex.quote(package)}"
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> AptPackagePolicy | None:
@@ -977,6 +978,54 @@ class AptSources:
         # Real transport: cat the sources files over asyncssh and parse.
         stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
+
+
+class AptSourcesFile:
+    """The current content of one ``.sources`` file, or None when it is absent.
+
+    The fact ``apt.sources_file(present=False)`` reads to make its removal
+    idempotent -- the ``DnfRepoFile`` pattern in this namespace: where
+    ``AptSources`` parses *every* configured repository into ``AptSource``
+    dicts, this reports the raw text of a *single* file so the operation
+    can tell an existing file from a missing one. Absence is reported as
+    ``None`` -- never the empty string -- so a file that exists but is
+    empty stays distinguishable from one that is missing, which is what
+    lets the removal delete an empty leftover.
+    """
+
+    #: Marker printed before the ``cat``'d content, only when ``test -e``
+    #: passes, so ``process`` can tell an existing (possibly empty) file from
+    #: a missing one (no marker on stdout).
+    MARKER = "#reemote5-sourcesfile"
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell printing ``MARKER`` then the file's content, only if it exists.
+
+        The ``test -e`` guard means a missing file produces no output at all
+        (not even the marker), while an existing one -- empty or not -- always
+        leads with the marker line (``DnfRepoFile.command``'s form).
+        """
+        quoted = shlex.quote(path)
+        return f"test -e {quoted} && {{ printf '{cls.MARKER}\\n'; cat -- {quoted}; }}"
+
+    @classmethod
+    async def process(cls, host: Host, path: str) -> str | None:
+        remote_files = getattr(host, "remote_files", None)
+        if remote_files is not None:
+            # SimulatedHost seam: decode the content the simulated remote
+            # filesystem holds at the path (None when absent). The same store
+            # backs files.put/files.get, so a simulated apt.sources_file write
+            # -- which stores its content here -- reads back through this fact.
+            data = remote_files.get(path)
+            return data.decode("utf-8") if data is not None else None
+        # Real transport: cat the file over asyncssh behind the marker, so a
+        # missing file (no marker) reads as None rather than empty content.
+        stdout = await host.run_shell(cls.command(path))
+        prefix = f"{cls.MARKER}\n"
+        if not stdout.startswith(prefix):
+            return None
+        return stdout[len(prefix) :]
 
 
 class AptPackageUpgrade(TypedDict):
@@ -2180,7 +2229,7 @@ class AptRepoAddCommand(Command):
     wrapped in ``sh -c`` so it happens *inside* the shell the driver
     elevates: a bare ``sudo echo ... >> /etc/apt/...`` would open the
     redirect as the login user and fail on the root-owned sources file
-    (the same wrapper as ``DnfRepoCommand``). The line is shell-quoted,
+    (the same wrapper as ``DnfRepoInstallCommand``). The line is shell-quoted,
     so bracketed options reach the file literally.
     """
 
@@ -2364,11 +2413,12 @@ class AptSourcesFileInstallCommand(Command):
 class AptSourcesFileRemoveCommand(Command):
     """``rm -f <path>``: delete a deb822 sources file.
 
-    The removal mutation ``apt.sources_file(present=False)`` yields -- the
-    same shell pyinfra's ``files.file(present=False)`` delegation renders.
-    ``rm -f`` tolerates an absent path (the operation always yields it,
-    never checking existence), and deleting under ``sources.list.d`` needs
-    root, so flag the request ``sudo=True`` (or ``su=True``).
+    The removal mutation ``apt.sources_file(present=False)`` yields, only
+    when the ``AptSourcesFile`` fact reports the file present -- the same
+    shell pyinfra's ``files.file(present=False)`` delegation renders.
+    ``rm -f`` tolerates an absent path, and deleting under
+    ``sources.list.d`` needs root, so flag the request ``sudo=True`` (or
+    ``su=True``).
     """
 
     path: str
@@ -2405,8 +2455,10 @@ async def sources_file(
 
     Each multi-value field accepts a list, a tuple or a space-separated
     string (pyinfra's normalization). ``present=True`` requires at least
-    one URI and one suite -- otherwise ``OperationError`` is raised with
-    pyinfra's message -- and is **idempotent** on ``AptSources``: the
+    one URI and one suite -- otherwise ``ValueError`` is raised with
+    pyinfra's message (the plain ``ValueError`` the sibling operations
+    raise for argument validation) -- and is **idempotent** on
+    ``AptSources``: the
     fields expand into one desired ``AptSource`` dict per type/URI/suite
     combination (list-valued ``arch``/``signed-by`` options, the fact's
     shape), and when every combination is already configured the
@@ -2418,12 +2470,12 @@ async def sources_file(
     Writing the apt sources needs root, so flag the request ``sudo=True``
     (or ``su=True``); the transfer stays unprivileged regardless.
 
-    ``present=False`` is deliberately **non-idempotent**: it always
-    reports a change and yields one ``AptSourcesFileRemoveCommand``
-    (``rm -f``, safe on an absent file). pyinfra checks the ``files.File``
-    fact and no-ops when the file is absent, but the apt namespace never
-    imports another module's facts (the same deviation ``apt.key``
-    recorded), so the existence check is dropped.
+    ``present=False`` is **idempotent** on the in-namespace
+    ``AptSourcesFile`` content fact (the ``DnfRepoFile`` pattern): an
+    absent file is a no-op, an existing one -- empty or not -- yields one
+    ``AptSourcesFileRemoveCommand`` (``rm -f``). pyinfra checks its
+    ``files.File`` fact for the same guard; the in-namespace content fact
+    provides it without a cross-module fact import.
 
     Deliberate deviations from pyinfra: the write rides the spool-and-install
     descriptor pair instead of delegating to ``files.put`` (reemote5's
@@ -2434,11 +2486,15 @@ async def sources_file(
     """
     dest = f"/etc/apt/sources.list.d/{filename}.sources"
 
-    # Removal path -- always delete the file (rm -f tolerates absence).
+    # Removal path -- idempotent on the file's existence (DnfRepoFile pattern).
     if not present:
-        ctx.changed = True
-        ctx.reason = f'apt sources file "{dest}" will be removed'
-        yield AptSourcesFileRemoveCommand(path=dest)
+        current = await ctx.facts.get(AptSourcesFile, dest)
+        if current is None:
+            ctx.reason = f'apt sources file "{dest}" already absent'
+        else:
+            ctx.changed = True
+            ctx.reason = f'apt sources file "{dest}" will be removed'
+            yield AptSourcesFileRemoveCommand(path=dest)
         return
 
     types_list = _as_list(types) or ["deb"]
@@ -2448,7 +2504,7 @@ async def sources_file(
     architectures_list = _as_list(architectures)
 
     if not uris_list or not suites_list:
-        raise OperationError("apt.sources_file requires at least one URI and one suite")
+        raise ValueError("apt.sources_file requires at least one URI and one suite")
 
     # Expand into the AptSources fact's shape (list-valued options) so the
     # idempotence check is plain dict membership -- pyinfra's
@@ -2519,6 +2575,7 @@ __all__ = [
     "AptSimulationDict",
     "AptSource",
     "AptSources",
+    "AptSourcesFile",
     "AptSourcesFileInstallCommand",
     "AptSourcesFileRemoveCommand",
     "AptSourcesFileUploadCommand",

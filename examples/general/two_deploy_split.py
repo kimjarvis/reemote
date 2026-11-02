@@ -16,9 +16,9 @@ gap between two complete prepare/apply cycles:
    Both phases trivially yield the same single request.
 2. A fact SNAPSHOT taken between the runs: ``gather_fact`` fans the
    ``DnfPackages`` read out across all hosts and returns a
-   ``{host.name: set[str]}`` mapping of the real POST-install state. The
-   apply-phase join of run 1 is the barrier: every host has finished
-   installing before any host's snapshot is read.
+   ``{host.name: list[str]}`` mapping of the real POST-install state (the
+   fact's sorted name list). The apply-phase join of run 1 is the barrier:
+   every host has finished installing before any host's snapshot is read.
 3. ``build_configure_nginx(installed)`` -- a factory closing over that
    frozen dict, returning the second deploy. Its ``if`` consults the
    snapshot, never a live fact, so the generator is a pure function of
@@ -110,7 +110,7 @@ def install_nginx(host: Host) -> Generator[OperationRequest]:
 
 
 def build_configure_nginx(
-    installed: dict[str, set[str]],
+    installed: dict[str, list[str]],
 ) -> Callable[[Host], Generator[OperationRequest]]:
     """Deploy 2 factory: close over the frozen post-install fact snapshot.
 

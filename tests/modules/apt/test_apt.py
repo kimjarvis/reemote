@@ -61,9 +61,10 @@ documented deviations -- the ``sh -c``-wrapped append and the bare
 end-to-end / dry-run / repeat-noop runs. ``apt.sources_file`` is covered
 against pyinfra's ``apt.sources_file`` operation fixtures (create,
 create-idempotent, minimal, string args, update, the two missing-field
-errors, remove), with its two documented deviations -- the spool-and-install
-write pair replacing the ``files.put`` delegation and the non-idempotent
-``rm -f`` removal -- plus the multi-value expansion idempotence, the
+errors, remove), with its documented deviation -- the spool-and-install
+write pair replacing the ``files.put`` delegation -- plus the fact-gated
+idempotent removal (the ``AptSourcesFile`` content fact), the
+multi-value expansion idempotence, the
 SimulatedHost spool/install/remove mutations and end-to-end / dry-run /
 repeat-noop / determinism runs.
 
@@ -76,7 +77,7 @@ import shlex
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, OperationError, op
+from reemote5.core import FactCache, OpContext, op
 from reemote5.drivers import (
     DeterminismError,
     command_shell,
@@ -111,6 +112,7 @@ from reemote5.modules.apt.apt import (
     AptRepoAddCommand,
     AptRepoRemoveCommand,
     AptSources,
+    AptSourcesFile,
     AptSourcesFileInstallCommand,
     AptSourcesFileRemoveCommand,
     AptSourcesFileUploadCommand,
@@ -1160,12 +1162,13 @@ async def test_gather_fact_apt_held_packages_over_canned_shells():
 
 
 def test_apt_policy_command_quotes_the_package():
-    """The command runs apt-cache policy under LANG=C (untranslated field
-    labels) with the package name shlex-quoted."""
-    assert AptPolicy.command("nginx") == "LANG=C apt-cache policy nginx"
+    """The command runs apt-cache policy under LC_ALL=C (untranslated field
+    labels, overriding any LC_* the login environment sets) with the package
+    name shlex-quoted."""
+    assert AptPolicy.command("nginx") == "LC_ALL=C apt-cache policy nginx"
     assert (
         AptPolicy.command("strange; rm -rf /")
-        == "LANG=C apt-cache policy 'strange; rm -rf /'"
+        == "LC_ALL=C apt-cache policy 'strange; rm -rf /'"
     )
 
 
@@ -1227,7 +1230,7 @@ async def test_apt_policy_parses_realistic_output():
     candidate versions plus the full version table with its origins."""
     host = CannedShellHost(NGINX_POLICY_OUTPUT)
     assert await AptPolicy.process(host, "nginx") == NGINX_POLICY
-    assert host.last_shell == "LANG=C apt-cache policy nginx"
+    assert host.last_shell == "LC_ALL=C apt-cache policy nginx"
 
 
 async def test_apt_policy_result_is_json_printable():
@@ -1363,8 +1366,8 @@ async def test_gather_fact_apt_policy_forwards_package():
     host2.name = "web2"
     policies = await gather_fact([host1, host2], AptPolicy, "nginx")
     assert policies == {"web1": NGINX_POLICY, "web2": None}
-    assert host1.last_shell == "LANG=C apt-cache policy nginx"
-    assert host2.last_shell == "LANG=C apt-cache policy nginx"
+    assert host1.last_shell == "LC_ALL=C apt-cache policy nginx"
+    assert host2.last_shell == "LC_ALL=C apt-cache policy nginx"
 
 
 async def test_gather_fact_apt_policy_reads_simulated_seams():
@@ -4358,6 +4361,53 @@ DOCKER_SOURCE = {
 }
 
 
+# --- AptSourcesFile fact (the DnfRepoFile pattern in this namespace) -----------
+
+
+async def test_apt_sources_file_fact_reads_the_simulated_seam():
+    """A SimulatedHost stores sources-file content in ``remote_files``; the
+    fact decodes it back, and an absent path reads as None."""
+    host = SimulatedHost(
+        name="h", remote_files={DOCKER_DEST: DOCKER_CONTENT.encode()}
+    )
+    assert await AptSourcesFile.process(host, DOCKER_DEST) == DOCKER_CONTENT
+    assert await AptSourcesFile.process(host, "/etc/apt/sources.list.d/absent.sources") is None
+
+
+async def test_apt_sources_file_fact_parses_the_marked_real_transport_output():
+    """Over the real transport the fact strips the marker line and returns
+    the file content verbatim."""
+    host = CannedShellHost(f"{AptSourcesFile.MARKER}\n{DOCKER_CONTENT}")
+    assert await AptSourcesFile.process(host, DOCKER_DEST) == DOCKER_CONTENT
+
+
+async def test_apt_sources_file_fact_absent_without_the_marker():
+    """A missing file produces no marker, so the fact reports None rather
+    than empty content -- the distinction the idempotent removal relies on."""
+    host = CannedShellHost("")
+    assert await AptSourcesFile.process(host, DOCKER_DEST) is None
+
+
+async def test_apt_sources_file_fact_present_but_empty_returns_empty_string():
+    """An existing empty file leads with the marker and no content, so the
+    fact returns ``""`` (not None), distinguishing it from an absent file."""
+    host = CannedShellHost(f"{AptSourcesFile.MARKER}\n")
+    assert await AptSourcesFile.process(host, DOCKER_DEST) == ""
+
+
+def test_apt_sources_file_fact_command_guards_on_existence():
+    """The real-transport command cats the file only behind a ``test -e``
+    guard and leads with the marker, so absence is distinguishable from
+    empty (``DnfRepoFile.command``'s form)."""
+    command = AptSourcesFile.command(DOCKER_DEST)
+    assert command.startswith(f"test -e {DOCKER_DEST}")
+    assert AptSourcesFile.MARKER in command
+    assert f"cat -- {DOCKER_DEST}" in command
+
+
+# --- apt.sources_file operation cases -----------------------------------------
+
+
 async def test_apt_sources_file_create_matches_pyinfra():
     """pyinfra's create.json: an unconfigured repository yields the spool
     transfer plus the elevated install, and the generated deb822 content is
@@ -4457,11 +4507,12 @@ async def test_apt_sources_file_create_update():
 
 async def test_apt_sources_file_requires_uris():
     """pyinfra's error_missing_uris.json: suites without any URI raises
-    OperationError with pyinfra's message verbatim."""
+    ValueError with pyinfra's message verbatim (reemote5's single validation
+    error type)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     with pytest.raises(
-        OperationError, match="apt.sources_file requires at least one URI and one suite"
+        ValueError, match="apt.sources_file requires at least one URI and one suite"
     ):
         _ = [
             c
@@ -4475,7 +4526,7 @@ async def test_apt_sources_file_requires_suites():
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     with pytest.raises(
-        OperationError, match="apt.sources_file requires at least one URI and one suite"
+        ValueError, match="apt.sources_file requires at least one URI and one suite"
     ):
         _ = [
             c
@@ -4485,21 +4536,30 @@ async def test_apt_sources_file_requires_suites():
         ]
 
 
-async def test_apt_sources_file_remove_always_yields():
-    """pyinfra's remove.json command (rm -f) with the documented deviation:
-    the removal is non-idempotent, so both fixture cases -- file present and
-    file absent (remove_missing.json, a no-op upstream) -- yield the same
-    command and report a change."""
-    for seeded in (True, False):
+async def test_apt_sources_file_remove_yields_when_present():
+    """pyinfra's remove.json command (rm -f): an existing sources file --
+    even an empty leftover -- is removed and the change reported."""
+    for content in (DOCKER_CONTENT, ""):
         host = SimulatedHost(name="h")
-        if seeded:
-            host.remote_files[DOCKER_DEST] = DOCKER_CONTENT.encode()
-            host.existing_files.add(DOCKER_DEST)
+        host.remote_files[DOCKER_DEST] = content.encode()
+        host.existing_files.add(DOCKER_DEST)
         ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
         commands = [c async for c in apt.sources_file(ctx, filename="docker", present=False)]
         assert ctx.changed
         assert ctx.reason == f'apt sources file "{DOCKER_DEST}" will be removed'
         assert commands == [AptSourcesFileRemoveCommand(path=DOCKER_DEST)]
+
+
+async def test_apt_sources_file_removal_noop_when_absent():
+    """The documented deviation from pyinfra's remove_missing.json (which
+    still yields rm -f): the AptSourcesFile fact gates the removal, so an
+    absent file is a no-op -- the dnf.repo(present=False) pattern."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.sources_file(ctx, filename="docker", present=False)]
+    assert not ctx.changed
+    assert ctx.reason == f'apt sources file "{DOCKER_DEST}" already absent'
+    assert commands == []
 
 
 async def test_apt_sources_file_multi_value_expansion_idempotence():
@@ -4807,9 +4867,11 @@ async def test_apt_sources_file_repeat_write_in_one_deploy_apply_noop():
 
 
 async def test_apt_sources_file_write_then_remove_in_one_deploy():
-    """Write then remove in one deploy: the removal is non-idempotent, so it
-    is planned changed even in prepare (unlike apt.repo's fact-gated remove)
-    and the apply leaves every store empty."""
+    """Write then remove in one deploy: the removal is fact-gated, so the
+    prepare plan (which never sends) shows it as a no-op while the apply
+    phase's fresh per-step fact cache sees the write and removes the file,
+    leaving every store empty -- apt.repo/dnf.repo's remove-after-write
+    semantics."""
 
     def sources_deploy(host):
         yield op(apt.sources_file, name="write", sudo=True, **DOCKER_DEPLOY_KWARGS)
@@ -4820,7 +4882,7 @@ async def test_apt_sources_file_write_then_remove_in_one_deploy():
     host = SimulatedHost(name="h")
     runtimes, plans = await run_prepare([host], sources_deploy)
     assert plans["h"][0].changed
-    assert plans["h"][1].changed
+    assert not plans["h"][1].changed  # still absent during prepare
     report = await run_apply(runtimes, plans=plans)
     write, remove = report.log
     assert write.changed
