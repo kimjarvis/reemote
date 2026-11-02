@@ -836,6 +836,30 @@ def test_su_participates_in_request_equality_and_hashing():
     assert sudo_only != elevated
 
 
+def test_op_doas_is_a_meta_parameter_not_forwarded_to_the_operation():
+    request = op(dnf.packages, name="Install nginx", packages=("nginx",), doas=True)
+    # ``doas`` is captured on the request, never mixed into the operation's
+    # kwargs (dnf.packages has no ``doas`` parameter).
+    assert request.doas is Privilege.ON
+    assert "doas" not in request.kwargs
+    assert request.kwargs == {"packages": ("nginx",)}
+    assert op(dnf.packages, packages=("nginx",)).doas is Privilege.UNSET
+
+
+def test_doas_participates_in_request_equality_and_hashing():
+    plain = op(dnf.packages, name="Install nginx", packages=("nginx",))
+    elevated = op(dnf.packages, name="Install nginx", packages=("nginx",), doas=True)
+    other = op(dnf.packages, name="Install nginx", packages=("nginx",), doas=True)
+    assert plain != elevated  # a doas difference must not pair in lockstep
+    assert elevated == other
+    assert hash(elevated) == hash(other)
+    # doas is independent of sudo and su: a request differs on any of them.
+    sudo_only = op(dnf.packages, name="Install nginx", packages=("nginx",), sudo=True)
+    su_only = op(dnf.packages, name="Install nginx", packages=("nginx",), su=True)
+    assert sudo_only != elevated
+    assert su_only != elevated
+
+
 # --- sudo elevation on the command path --------------------------------------
 
 
@@ -1100,6 +1124,145 @@ async def test_send_command_sudo_su_with_su_password_wraps_the_pipe_in_sh():
     assert "sh -c " in elevated
     assert "su app -c" in elevated
     assert "REEMOTE5_SU_PASSWORD=s3cr3t" in elevated
+
+
+# --- doas elevation on the command path --------------------------------------
+
+
+def test_command_shell_applies_the_doas_prefix():
+    cmd = DnfInstallCommand(packages=("nginx",))
+    # doas is passwordless and always non-interactive: ``doas -n``. Its own
+    # default target (root) collapses to a bare ``doas -n``.
+    assert command_shell(cmd, doas=True) == "doas -n dnf install -y nginx"
+    assert (
+        command_shell(cmd, doas=True, doas_user="root")
+        == "doas -n dnf install -y nginx"
+    )
+    # A non-root target is named.
+    assert (
+        command_shell(cmd, doas=True, doas_user="deploy")
+        == "doas -n -u deploy dnf install -y nginx"
+    )
+    # ...but only when doas was actually requested.
+    assert command_shell(cmd, doas_user="deploy") == "dnf install -y nginx"
+
+
+def test_command_shell_combines_doas_then_sudo_then_su_in_order():
+    """With every flag set the order is doas -> sudo -> su: doas is the
+    outermost prefix, su the innermost payload."""
+    cmd = DnfInstallCommand(packages=("nginx",))
+    assert (
+        command_shell(cmd, doas=True, sudo=True, su=True)
+        == "doas -n sudo su -c 'dnf install -y nginx'"
+    )
+    assert (
+        command_shell(
+            cmd,
+            doas=True,
+            doas_user="ops",
+            sudo=True,
+            sudo_user="deploy",
+            su=True,
+            su_user="app",
+        )
+        == "doas -n -u ops sudo -u deploy su app -c 'dnf install -y nginx'"
+    )
+    # doas wrapping sudo alone: doas stays outermost.
+    assert (
+        command_shell(cmd, doas=True, sudo=True)
+        == "doas -n sudo dnf install -y nginx"
+    )
+
+
+async def test_send_command_prefixes_doas_on_the_real_transport_path():
+    class RecordingHost(Host):
+        def __init__(self, privilege=None):
+            super().__init__(name="rec", privilege=privilege or {})
+            self.sent: list[str] = []
+
+        async def _run_shell(self, shell: str):
+            self.sent.append(shell)
+            return SimpleNamespace(exit_status=0, stdout="", stderr="")
+
+    host = RecordingHost()
+    await send_command(host, DnfInstallCommand(packages=("nginx",)), doas=True)
+    await send_command(host, DnfInstallCommand(packages=("nginx",)))
+    assert host.sent == [
+        "doas -n dnf install -y nginx",
+        "dnf install -y nginx",
+    ]
+
+
+async def test_send_command_sources_doas_user_from_host_privilege():
+    """The doas target comes from the inventory ``privilege`` section, never
+    from the operation -- the op only carries ``doas=True``."""
+
+    class RecordingHost(Host):
+        def __init__(self, privilege):
+            super().__init__(name="rec", privilege=privilege)
+            self.sent: list[str] = []
+
+        async def _run_shell(self, shell: str):
+            self.sent.append(shell)
+            return SimpleNamespace(exit_status=0, stdout="", stderr="")
+
+    host = RecordingHost({"doas_user": "deploy"})
+    await send_command(host, DnfInstallCommand(packages=("nginx",)), doas=True)
+    # Unprivileged: no doas even though a doas_user is configured.
+    await send_command(host, DnfInstallCommand(packages=("nginx",)))
+    assert host.sent == [
+        "doas -n -u deploy dnf install -y nginx",
+        "dnf install -y nginx",
+    ]
+
+
+async def test_send_command_combines_doas_then_sudo_then_su_on_the_real_transport():
+    """doas is the outermost escalation, running sudo (and su inside it)."""
+
+    class RecordingHost(Host):
+        def __init__(self, privilege):
+            super().__init__(name="rec", privilege=privilege)
+            self.sent: list[str] = []
+
+        async def _run_shell(self, shell: str):
+            self.sent.append(shell)
+            return SimpleNamespace(exit_status=0, stdout="", stderr="")
+
+    host = RecordingHost(
+        {"doas_user": "root", "sudo_user": "root", "su_user": "deploy"}
+    )
+    await send_command(
+        host, DnfInstallCommand(packages=("nginx",)), doas=True, sudo=True, su=True
+    )
+    assert host.sent == ["doas -n sudo su deploy -c 'dnf install -y nginx'"]
+
+
+async def test_send_command_doas_su_with_su_password_wraps_the_pipe_in_sh():
+    """When doas is the outermost wrapper around an su-password pipeline -- no
+    sudo layer in between -- doas runs the pipeline through ``sh -c`` so the
+    ``... | su ...`` pipe stays intact (doas execs its command directly)."""
+    host = _AskpassRecordingHost(
+        {"doas_user": "root", "su_user": "app", "su_password": "s3cr3t"}
+    )
+    await send_command(
+        host, DnfInstallCommand(packages=("nginx",)), doas=True, su=True
+    )
+    elevated = host.sent[-1]
+    assert elevated.startswith("doas -n ")
+    assert "sh -c " in elevated
+    assert "su app -c" in elevated
+    assert "REEMOTE5_SU_PASSWORD=s3cr3t" in elevated
+
+
+async def test_run_shell_doas_is_passwordless_and_needs_no_askpass_helper():
+    """doas has no askpass mechanism: an elevated doas command is a single
+    round-trip (``doas -n ...``) with no helper-setup call, since the privilege
+    section carries no password."""
+    host = _AskpassRecordingHost({"doas_user": "deploy"})
+    await send_command(host, DnfInstallCommand(packages=("nginx",)), doas=True)
+    # No ``mktemp`` setup round-trip: doas runs the command directly.
+    assert sum("mktemp" in s for s in host.sent) == 0
+    assert host.sent == ["doas -n -u deploy dnf install -y nginx"]
 
 
 # --- fail-fast on a non-zero exit (CommandError) -----------------------------

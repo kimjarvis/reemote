@@ -38,10 +38,11 @@ type reaches the public API, and the test framework can produce a ``Result``
 without importing asyncssh. The bespoke command's own exit status travels back
 in the result (even 127): the caller decides what a failure means. Library-level
 failures still RAISE: ``HostConnectionError`` for an unreachable host and
-``PrivilegeError`` for sudo's/su's own authentication rejection, each aggregated
-across hosts exactly as ``gather_fact`` and ``run_apply`` aggregate them.
+``PrivilegeError`` for doas's/sudo's/su's own authentication rejection, each
+aggregated across hosts exactly as ``gather_fact`` and ``run_apply`` aggregate
+them.
 
-Privilege escalation is honoured with plain ``sudo``/``su`` bools -- the
+Privilege escalation is honoured with plain ``doas``/``sudo``/``su`` bools -- the
 execution-layer spelling, not the plan layer's ``Privilege`` tri-state -- and
 the run-as users and passwords come from the inventory's ``privilege`` section,
 never from the call.
@@ -145,10 +146,10 @@ class Shell:
     The first action kind. ``process`` mirrors a fact's single-host signature
     so ``gather_action`` can fan it out identically, but unlike a fact it
     interprets nothing: the command text is sent verbatim and the outcome
-    comes back whole. ``sudo``/``su`` ask for elevation with the host's
+    comes back whole. ``doas``/``sudo``/``su`` ask for elevation with the host's
     inventory privilege data (run-as users, passwords via askpass helpers,
-    fixed ``sudo`` then ``su`` order); a rejected credential raises
-    ``PrivilegeError`` rather than travelling back as an exit status.
+    fixed ``doas`` then ``sudo`` then ``su`` order); a rejected credential
+    raises ``PrivilegeError`` rather than travelling back as an exit status.
     """
 
     @classmethod
@@ -159,6 +160,7 @@ class Shell:
         command: str,
         sudo: bool = False,
         su: bool = False,
+        doas: bool = False,
     ) -> Result:
         """Execute ``command`` on ``host`` and capture its outcome.
 
@@ -166,8 +168,10 @@ class Shell:
         ``run_shell_privileged_result``), so no exit status is interpreted on
         the way out. Connection and privilege failures still raise.
         """
-        if sudo or su:
-            raw = await host.run_shell_privileged_result(command, sudo=sudo, su=su)
+        if sudo or su or doas:
+            raw = await host.run_shell_privileged_result(
+                command, sudo=sudo, su=su, doas=doas
+            )
         else:
             raw = await host.run_shell_result(command)
         return Result(
@@ -185,7 +189,8 @@ def gather_action(
     The action counterpart of ``gather_fact``: ``action_cls.process`` runs for
     every host at once via ``asyncio.gather`` and the awaited result maps
     ``host.name`` to that host's ``Result``, in input order. ``args``/``kwargs``
-    are forwarded verbatim (``command=``, ``sudo=``, ``su=`` for ``Shell``).
+    are forwarded verbatim (``command=``, ``sudo=``, ``su=``, ``doas=`` for
+    ``Shell``).
     The gather join is the barrier: every host's command has completed before
     the caller's next deploy or fact read begins.
 

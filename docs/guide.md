@@ -17,8 +17,8 @@ def deploy(host: Host) -> Generator[OperationRequest, None, None]:
 
 Requests are built with the [`op`][reemote5.core.op] helper, which takes the
 operation function, an optional human-readable `name` for plan output, optional
-`sudo` and `su` elevation flags, an optional `when` eligibility guard, and the
-operation's parameters **as keyword arguments only**:
+`doas`, `sudo` and `su` elevation flags, an optional `when` eligibility guard,
+and the operation's parameters **as keyword arguments only**:
 
 ```python
 from reemote5 import dnf, files, op
@@ -32,34 +32,39 @@ yield op(
 )
 ```
 
-`name`, `sudo`, `su` and `when` are *meta-parameters*: they tell the driver how
-to run (and label, or skip) the operation rather than being forwarded to it, so
-`sudo=True` does not require the operation function to accept a `sudo` argument.
-When set, the driver elevates every command the operation yields -- the real
-asyncssh
-transport wraps its shell with `sudo` and/or `su`, and
+`name`, `doas`, `sudo`, `su` and `when` are *meta-parameters*: they tell the
+driver how to run (and label, or skip) the operation rather than being forwarded
+to it, so `sudo=True` does not require the operation function to accept a `sudo`
+argument. When set, the driver elevates every command the operation yields -- the
+real asyncssh
+transport wraps its shell with `doas`, `sudo` and/or `su`, and
 [`format_log`][reemote5.drivers.format_log] renders the elevated command. The
 test framework's `SimulatedHost` seam ignores them, since privilege has no
 in-memory effect. Elevation is per operation, so a privileged package install
 and an unprivileged link change can sit side by side in one deploy.
 
-`sudo=True`/`su=True` only *ask* to elevate -- they never say as whom, or with
-what credential. The run-as users and passwords come from the host's inventory
-`privilege` section (see
+`doas=True`/`sudo=True`/`su=True` only *ask* to elevate -- they never say as
+whom, or with what credential. The run-as users and passwords come from the
+host's inventory `privilege` section (see
 [Hosts and the inventory](#hosts-and-the-inventory)), so a deploy script cannot
 choose its own privilege parameters; when a `sudo_user` other than `root` is
-configured the driver emits `sudo -u <user>` instead of a bare `sudo`, and a
-`su_user` becomes `su <user> -c` (`root`, the default target of both, collapses
-to a bare `sudo` / `su -c`). A password is supplied through an askpass helper
-without ever appearing in the log. When an operation is flagged both `sudo=True`
-and `su=True`, the escalations combine in a fixed order -- `sudo` then `su` --
-so sudo is the outer escalation and runs su inside it. Only *default* su is
-supported (no login shell). A credential the host rejects is reported as a
+configured the driver emits `sudo -u <user>` instead of a bare `sudo`, a
+`su_user` becomes `su <user> -c`, and a `doas_user` becomes `doas -n -u <user>`
+(`root`, the default target of all three, collapses to a bare `sudo` / `su -c` /
+`doas -n`). A sudo or su password is supplied through an askpass helper without
+ever appearing in the log; `doas` is *passwordless* -- reemote5 always runs
+`doas -n` (non-interactive), so the host must grant the login user a
+`permit nopass` rule in `/etc/doas.conf`. When an operation carries several
+flags, the escalations combine in a fixed order -- `doas` then `sudo` then `su`
+-- so `doas` is the outermost escalation and `su` the innermost payload. Only
+*default* su is supported (no login shell). A credential the host rejects -- or a
+doas rule it denies -- is reported as a
 [`PrivilegeError`][reemote5.hosts.PrivilegeError] naming the host, not as a
-failed command — see [Privilege: sudo and su](hosts.md#privilege-sudo-and-su).
+failed command — see
+[Privilege: sudo, su and doas](hosts.md#privilege-sudo-su-and-doas).
 
-`sudo` and `su` are a *tri-state* ([`Privilege`][reemote5.core.Privilege]), not
-a plain bool, so a request can say three distinct things: `ON` (`sudo=True`)
+`doas`, `sudo` and `su` are a *tri-state* ([`Privilege`][reemote5.core.Privilege]),
+not a plain bool, so a request can say three distinct things: `ON` (`sudo=True`)
 elevates, `OFF` (`sudo=False`) deliberately runs unprivileged, and `UNSET` (the
 default, when the flag is omitted) means “no opinion”. Only `ON` elevates — the
 driver collapses the tri-state to a concrete bool before a command is sent. The
@@ -71,8 +76,8 @@ this one unprivileged” from “never flagged”. (`op` and `sub_deploy` still 
 a plain bool for convenience: `True` → `ON`, `False` → `OFF`.)
 
 `when` is the *eligibility* meta-parameter: a predicate over static host data
-that decides **whether** a request runs on a host, orthogonally to `sudo`/`su`
-deciding **how** it runs. A request whose guard fails on a host is skipped there
+that decides **whether** a request runs on a host, orthogonally to
+`doas`/`sudo`/`su` deciding **how** it runs. A request whose guard fails on a host is skipped there
 — never materialized, no facts read, nothing sent — but keeps its slot in the
 sequence, so every host shares one schedule and the plan and run log show
 `[skipped: when guard <name>]` side by side with the hosts that run it:
@@ -141,7 +146,7 @@ def deploy(host):
 Two helpers in [`reemote5.core`][reemote5.core] cover what delegation cannot.
 [`sub_deploy`][reemote5.core.sub_deploy] wraps a sub-deploy with default
 meta-parameters: `name_prefix` labels every request it produces for readable
-plans, and `sudo=True`/`su=True` set an escalation *policy* that elevates every
+plans, and `doas=True`/`sudo=True`/`su=True` set an escalation *policy* that elevates every
 request that did not deliberately opt out — the inner request wins whenever it
 has an opinion (`sudo=True`/`sudo=False`), and the policy only fills the
 unflagged (`UNSET`) ones, so a forced-elevation policy still respects an
@@ -153,7 +158,7 @@ pass, so a wrapper can only restrict eligibility, never widen it.
 [`compose`][reemote5.core.compose] concatenates sub-deploys into one
 deploy-shaped callable in argument order — an explicit cross-role ordering
 statement — and with `dedupe=True` collapses requests sharing the same
-*effective identity* (`func`, args, kwargs, `sudo`, `su` and `when` — everything
+*effective identity* (`func`, args, kwargs, `doas`, `sudo`, `su` and `when` — everything
 that decides whether and how a request executes, but not the plan `name`) to
 their first occurrence, so
 independently written roles can each declare the same prerequisite under
@@ -193,9 +198,9 @@ Rules that keep composition deterministic:
   internal state (the dedupe set) per call, so the prepare and apply phases
   flatten identically and the determinism guard holds.
 - Dedupe collapses by *effective identity*: `name` only labels a request in
-  plans and logs and is excluded from the dedupe key, while `sudo`/`su` (they
-  change what executes) and `when` (it changes whether a request executes) are
-  part of it. The first occurrence wins and
+  plans and logs and is excluded from the dedupe key, while `doas`/`sudo`/`su`
+  (they change what executes) and `when` (it changes whether a request executes)
+  are part of it. The first occurrence wins and
   keeps its name, so identically-parameterized requests collapse even under
   different labels or `name_prefix`es — at the cost of silently dropping the
   later label. `OperationRequest` equality itself stays maximal (name

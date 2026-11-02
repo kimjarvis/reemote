@@ -24,12 +24,20 @@ upgrades every installed, *unpinned* name with `apk upgrade` (pyinfra's legacy
 blind upgrade). apk never prompts, so the commands carry no `-y` flag, unlike
 the apt and dnf package examples. Where pyinfra's `apk.packages` also takes
 `update`/`upgrade` options that prefix a whole-system `apk update` /
-`apk upgrade`, reemote5 deliberately drops both. The script yields the same
-install request twice — the second is a guaranteed no-op in the apply phase,
-because the first install is visible to it through the fresh per-step fact
-cache (in the prepare phase, where nothing is sent, both plan as changes).
-Installing writes to the root-owned apk database, so the request is flagged
-`sudo=True` and the driver elevates the command.
+`apk upgrade`, reemote5 deliberately drops both. Two apk-native install
+modifiers ride on the add/upgrade verbs: `no_cache` adds `--no-cache` (bypass
+the package cache entirely) and `no_scripts` adds `--no-scripts` (skip
+post-install triggers and scriptlets); both flow into the `latest` upgrade
+path too, are ignored by the removal direction, and are a deliberate apk-only
+asymmetry (apt's `no_recommends`/`allow_downgrades` and dnf's `nobest` are the
+closest cousins, but neither tool exposes a cache-bypass or script-skip flag).
+The script yields the same install request twice — the second is a guaranteed
+no-op in the apply phase, because the first install is visible to it through
+the fresh per-step fact cache (in the prepare phase, where nothing is sent,
+both plan as changes) — then a third request that demonstrates both modifiers
+together on a different package. Installing writes to the root-owned apk
+database, so the requests are flagged `sudo=True` and the driver elevates the
+commands.
 
 ::: apk_packages
     options:

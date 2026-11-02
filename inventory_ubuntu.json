@@ -7,6 +7,6 @@
       "key_path": "~/.ssh/id_ed25519"
     },
     "group": "ubuntu",
-    "tags": ["ubuntu_host"]
+    "tags": ["ubuntu_host", "apt_package_manager"]
   }
 ]

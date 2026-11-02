@@ -9,7 +9,7 @@ beside the operations that yield them (`reemote5.modules.dnf.dnf`,
 frozen value objects: an operation never executes anything, it only describes
 what would have to run. The raw `StringCommand` carries shell text verbatim —
 its `shell()` returns the command unchanged, so it runs (and takes the
-`sudo`/`su` prefixes) exactly like a typed shell descriptor; it is the vehicle
+`doas`/`sudo`/`su` prefixes) exactly like a typed shell descriptor; it is the vehicle
 for a demo-side operation running a one-off command such as the `locale-gen`
 step of the
 [locale recipe](examples/modules/server.md#managing-locales-pyinfra-serverlocale-parity)
@@ -20,7 +20,7 @@ without a library operation. The typed descriptors exist so the test framework's
 real transport a `TransferCommand` is dispatched on its base —
 `send_command` hands the host to its `transfer`, which copies over the
 connection's own protocol (asyncssh's scp) rather than through a shell, so
-the `sudo`/`su` escalation flags do not apply to it. A `WaitCommand` is
+the `doas`/`sudo`/`su` escalation flags do not apply to it. A `WaitCommand` is
 dispatched the same way — `send_command` awaits its `wait`, which polls the
 host until its condition holds or raises `WaitTimeoutError` — and is likewise
 unprivileged (see [server module](modules/server.md#waiting-for-a-condition)).

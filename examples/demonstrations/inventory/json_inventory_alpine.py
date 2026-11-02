@@ -1,13 +1,13 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: the same deploy as ``dnf_packages.py``, with the inventory in a JSON file.
+"""Example: the same deploy as ``apk_packages.py``, with the inventory in a JSON file.
 
-This is a *usage* example, not part of the library. ``dnf_packages.py``
+This is a *usage* example, not part of the library. ``apk_packages.py``
 hard-codes its ``INVENTORY`` in the source; real applications usually keep
 the target hosts in a data file instead, so the deployment script and the
 machine list change independently. This example loads the inventory from
-``inventory.json`` in the project root:
+``inventory_centos.json`` in the project root:
 
 1. Read the file and parse it as JSON -- an inventory is just a list of
    dictionaries, which is exactly what JSON expresses, so no translation
@@ -22,13 +22,17 @@ machine list change independently. This example loads the inventory from
    (``Host.from_inventory``) materializes each entry into a ``Host`` that
    lazily opens an asyncssh connection from its ``connection`` data.
 
-The deploy itself is unchanged from ``dnf_packages.py`` -- install httpd,
-then remove the welcome configuration the package drops -- and still runs
+The deploy itself mirrors ``apk_packages.py`` -- install the web server with
+``apk.packages``, then remove the welcome content the package drops -- but
+the welcome configuration is not the same as on CentOS: Alpine's
+``apache2`` package ships a default homepage, an HTML file at
+``/var/www/localhost/htdocs/index.html`` you can replace or edit to
+customize the site, and here the deploy removes it. The example still runs
 end to end over a **real SSH transport** in both phases.
 
 The path is resolved from ``__file__``, so the example works from any
 working directory. Point ``INVENTORY_PATH`` at your own file (or edit
-``inventory.json``) to target your machines.
+``inventory_centos.json``) to target your machines.
 
 Run it with::
 
@@ -49,7 +53,7 @@ from reemote5 import (
     InventoryError,
     OperationRequest,
     PrivilegeError,
-    dnf,
+    apk,
     files,
     format_log,
     format_plan,
@@ -58,9 +62,9 @@ from reemote5 import (
     validate_inventory,
 )
 
-HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
+APACHE_INDEX_HTML = "/var/www/localhost/htdocs/index.html"
 
-# examples/demonstrations/inventory/json_inventory.py -> the project root,
+# examples/demonstrations/inventory/json_inventory_centos.py -> the project root,
 # so the inventory is found whatever the current working directory is.
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INVENTORY_PATH = PROJECT_ROOT / "inventory_alpine.json"
@@ -81,18 +85,24 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Install httpd, then remove its default welcome configuration.
+    """Install apache2, then remove its default homepage.
+
+    Alpine's ``apache2`` package drops a welcome page at
+    ``/var/www/localhost/htdocs/index.html`` -- an HTML file the operator
+    would replace or edit to customize the site -- and the second step
+    removes it, unlike the CentOS deploy which removes a ``welcome.conf``
+    configuration file.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
     Both operations need root, so both are flagged ``sudo=True`` and the
     driver elevates their commands over SSH.
     """
-    yield op(dnf.packages, name="Install httpd", packages=("httpd",), sudo=True)
+    yield op(apk.packages, name="Install apache2", packages=("apache2",), sudo=True)
     yield op(
         files.file,
-        name="Remove welcome configuration",
-        src=HTTPD_WELCOME_CONF,
+        name="Remove default homepage",
+        src=APACHE_INDEX_HTML,
         present=False,
         sudo=True,
     )
@@ -141,7 +151,7 @@ async def main() -> None:
         raise SystemExit(1) from exc
     except CommandError as exc:
         # The elevation was accepted but the command it ran exited non-zero
-        # (dnf could not install the package, for instance). The typed message
+        # (apk could not install the package, for instance). The typed message
         # already names the host, the command and its stderr, so print just
         # that one report -- no traceback.
         print(f"\nERROR: {exc}", file=sys.stderr)

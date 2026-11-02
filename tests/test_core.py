@@ -127,8 +127,11 @@ def test_op_default_is_unset_and_flags_coerce():
     request = op(dnf.packages, packages=("curl",))
     assert request.sudo is Privilege.UNSET
     assert request.su is Privilege.UNSET
+    assert request.doas is Privilege.UNSET
     assert op(dnf.packages, packages=("curl",), sudo=True).sudo is Privilege.ON
     assert op(dnf.packages, packages=("curl",), sudo=False).sudo is Privilege.OFF
+    assert op(dnf.packages, packages=("curl",), doas=True).doas is Privilege.ON
+    assert op(dnf.packages, packages=("curl",), doas=False).doas is Privilege.OFF
     assert (
         op(dnf.packages, packages=("curl",), sudo=Privilege.ON).sudo
         is Privilege.ON
@@ -170,6 +173,21 @@ def test_sub_deploy_su_forced_elevation_honours_opt_out_and_leaves_sudo_alone():
     # An su-only policy never touches the independent sudo flag.
     assert unflagged.sudo is Privilege.UNSET
     assert opted_out.sudo is Privilege.UNSET
+
+
+def test_sub_deploy_doas_forced_elevation_honours_opt_out_and_leaves_others_alone():
+    def role(host: Host) -> Generator[OperationRequest]:
+        yield op(dnf.packages, name="unflagged", packages=("curl",))
+        yield op(dnf.packages, name="opted-out", packages=("vim",), doas=False)
+
+    unflagged, opted_out = sub_deploy(role, doas=Privilege.ON)(HOST)
+    assert unflagged.doas is Privilege.ON
+    assert opted_out.doas is Privilege.OFF
+    # A doas-only policy never touches the independent sudo/su flags.
+    assert unflagged.sudo is Privilege.UNSET
+    assert unflagged.su is Privilege.UNSET
+    assert opted_out.sudo is Privilege.UNSET
+    assert opted_out.su is Privilege.UNSET
 
 
 # --- compose: ordering and effective-identity deduplication --------------------
@@ -215,6 +233,15 @@ def test_compose_dedupe_distinguishes_requests_by_sudo():
         yield op(dnf.packages, name="Install curl", packages=("curl",), sudo=True)
 
     deploy = compose(same_op_different_sudo, dedupe=True)
+    assert len(list(deploy(HOST))) == 2
+
+
+def test_compose_dedupe_distinguishes_requests_by_doas():
+    def same_op_different_doas(host: Host) -> Generator[OperationRequest]:
+        yield op(dnf.packages, name="Install curl", packages=("curl",))
+        yield op(dnf.packages, name="Install curl", packages=("curl",), doas=True)
+
+    deploy = compose(same_op_different_doas, dedupe=True)
     assert len(list(deploy(HOST))) == 2
 
 
@@ -315,3 +342,25 @@ async def test_forced_elevation_with_opt_out_flows_into_the_log():
     assert "$ dnf install -y vim" in log
     assert "$ sudo dnf install -y vim" not in log
     assert hosts[0].packages == {"curl", "vim", "git"}
+
+
+async def test_doas_meta_parameter_flows_into_plan_and_log():
+    """End to end: a ``doas=True`` request resolves to the outermost ``doas -n``
+    prefix in the apply log, with no doas_user in the (empty) inventory
+    privilege section so it collapses to a bare ``doas -n``."""
+
+    def role(host: Host) -> Generator[OperationRequest]:
+        yield op(dnf.packages, name="Install httpd", packages=("httpd",), doas=True)
+
+    deploy = compose(role)
+    _plans, report, hosts = await run(
+        INVENTORY, deploy, host_factory=simulated_factory
+    )
+
+    assert report is not None
+    entry = report.log[0]
+    assert entry.doas is True
+    assert entry.sudo is False
+    assert entry.su is False
+    assert "$ doas -n dnf install -y httpd" in format_log(report)
+    assert hosts[0].packages == {"httpd"}

@@ -42,7 +42,8 @@ def _coerce_when(
 
 
 class Privilege(Enum):
-    """Tri-state privilege-escalation request for the ``sudo``/``su`` meta-parameters.
+    """Tri-state privilege-escalation request for the ``sudo``/``su``/``doas``
+    meta-parameters.
 
     A plain ``bool`` conflates two different intentions: "run this operation
     unprivileged" and "no opinion, let a wrapper decide". Because they are the
@@ -113,22 +114,23 @@ class OperationRequest:
     host B". The dict ``kwargs`` field is unhashable, so ``__hash__`` is
     defined explicitly over a hashable projection of the fields.
 
-    ``sudo`` and ``su`` are *meta-parameters*: like ``name`` they describe how
-    the driver should run the operation rather than being forwarded to
-    ``func``. Each is a :class:`Privilege` tri-state, not a plain bool, so a
+    ``sudo``, ``su`` and ``doas`` are *meta-parameters*: like ``name`` they
+    describe how the driver should run the operation rather than being forwarded
+    to ``func``. Each is a :class:`Privilege` tri-state, not a plain bool, so a
     request can distinguish "elevate" (``ON``), "deliberately run unprivileged"
     (``OFF``) and "no opinion" (``UNSET``, the default). Only ``ON`` elevates:
     the driver collapses the tri-state with ``Privilege.elevates`` before
-    sending, wrapping the command with ``sudo`` and/or ``su`` on the real
-    transport (the test framework's simulated seam ignores them, since
+    sending, wrapping the command with ``doas``, ``sudo`` and/or ``su`` on the
+    real transport (the test framework's simulated seam ignores them, since
     privilege has no in-memory effect). The tri-state is what lets a
     ``sub_deploy`` policy force elevation while honouring an explicit opt-out
     -- see ``sub_deploy``. Note that these are only requests to elevate: *how*
     to elevate -- the run-as users and the passwords -- comes from the host's
     inventory ``privilege`` section, never from the operation, so a deploy
-    script cannot choose its own privilege parameters. When both are ``ON`` the
-    escalations combine in a fixed order, ``sudo`` then ``su`` (sudo is the
-    outer escalation, running ``su`` inside it).
+    script cannot choose its own privilege parameters. When several are ``ON``
+    the escalations combine in a fixed order, ``doas`` then ``sudo`` then ``su``
+    (``doas`` is the outermost escalation and ``su`` the innermost, so ``doas``
+    runs ``sudo``, which runs ``su`` inside it).
 
     ``when`` is the eligibility meta-parameter: a guard predicate (or tuple
     of predicates) over *static* host data, stored normalized as a tuple
@@ -152,6 +154,7 @@ class OperationRequest:
     name: str = ""  # human-readable label for plan output
     sudo: Privilege = Privilege.UNSET  # meta-parameter: elevate via sudo
     su: Privilege = Privilege.UNSET  # meta-parameter: elevate via su
+    doas: Privilege = Privilege.UNSET  # meta-parameter: elevate via doas
     when: WhenPredicate | tuple[WhenPredicate, ...] | None = None  # eligibility guard(s)
 
     def __post_init__(self):
@@ -164,6 +167,7 @@ class OperationRequest:
         # value is a ``Privilege``, so ``elevates()`` is always available.
         object.__setattr__(self, "sudo", Privilege.coerce(self.sudo))
         object.__setattr__(self, "su", Privilege.coerce(self.su))
+        object.__setattr__(self, "doas", Privilege.coerce(self.doas))
         # Normalize the guard(s) to a tuple so the stored value is hashable,
         # value-comparable and conjunction-composable (see ``_coerce_when``).
         object.__setattr__(self, "when", _coerce_when(self.when))
@@ -177,6 +181,7 @@ class OperationRequest:
                 self.name,
                 self.sudo,
                 self.su,
+                self.doas,
                 self.when,
             )
         )
@@ -261,20 +266,22 @@ def op(
     name: str = "",
     sudo: Privilege | bool = Privilege.UNSET,
     su: Privilege | bool = Privilege.UNSET,
+    doas: Privilege | bool = Privilege.UNSET,
     when: WhenPredicate | tuple[WhenPredicate, ...] | None = None,
     **kwargs,
 ) -> OperationRequest:
     """Convenience helper for building OperationRequests in deploy scripts.
 
-    ``name``, ``sudo``, ``su`` and ``when`` are meta-parameters consumed by
-    the driver, so they are captured here and never forwarded to ``func``;
-    everything else in ``kwargs`` is passed through to the operation as
-    keyword arguments.
+    ``name``, ``sudo``, ``su``, ``doas`` and ``when`` are meta-parameters
+    consumed by the driver, so they are captured here and never forwarded to
+    ``func``; everything else in ``kwargs`` is passed through to the operation
+    as keyword arguments.
 
-    ``sudo``/``su`` accept a :class:`Privilege` or a plain bool (``True`` ->
-    ``ON``, ``False`` -> ``OFF``) and default to ``UNSET`` -- "no opinion", so
-    a ``sub_deploy`` policy can still fill them in. ``OperationRequest``
-    normalizes the value, so the stored flag is always a ``Privilege``.
+    ``sudo``/``su``/``doas`` accept a :class:`Privilege` or a plain bool
+    (``True`` -> ``ON``, ``False`` -> ``OFF``) and default to ``UNSET`` -- "no
+    opinion", so a ``sub_deploy`` policy can still fill them in.
+    ``OperationRequest`` normalizes the value, so the stored flag is always a
+    ``Privilege``.
 
     ``when`` is an eligibility guard: a predicate over static host data
     (``lambda``-free at this call site -- pass a stable, module-level function
@@ -289,6 +296,7 @@ def op(
         name=name,
         sudo=Privilege.coerce(sudo),
         su=Privilege.coerce(su),
+        doas=Privilege.coerce(doas),
         when=when,
     )
 
@@ -299,6 +307,7 @@ def sub_deploy(
     name_prefix: str = "",
     sudo: Privilege | bool = Privilege.UNSET,
     su: Privilege | bool = Privilege.UNSET,
+    doas: Privilege | bool = Privilege.UNSET,
     when: WhenPredicate | tuple[WhenPredicate, ...] | None = None,
 ) -> Callable[[Host], Generator[OperationRequest]]:
     """Wrap a sub-deploy, applying default meta-parameters to its requests.
@@ -308,10 +317,10 @@ def sub_deploy(
     ``yield from``, composes with ``compose`` and is accepted anywhere a
     deploy function is (e.g. ``run``).
 
-    ``sudo``/``su`` are an escalation *policy* for the wrapped requests, given
-    as a :class:`Privilege` (or a bool: ``True`` -> ``ON``). The inner request
-    wins whenever it has an opinion, and the policy only fills the ``UNSET``
-    ones (see ``_inherit``):
+    ``sudo``/``su``/``doas`` are an escalation *policy* for the wrapped
+    requests, given as a :class:`Privilege` (or a bool: ``True`` -> ``ON``). The
+    inner request wins whenever it has an opinion, and the policy only fills the
+    ``UNSET`` ones (see ``_inherit``):
 
     - ``sub_deploy(sudo=Privilege.ON)`` (equivalently ``sudo=True``) forces
       elevation on every request that did not *deliberately* opt out -- an
@@ -344,6 +353,7 @@ def sub_deploy(
     """
     sudo_policy = Privilege.coerce(sudo)
     su_policy = Privilege.coerce(su)
+    doas_policy = Privilege.coerce(doas)
     when_policy = _coerce_when(when)
 
     def wrapper(host: Host) -> Generator[OperationRequest]:
@@ -358,6 +368,9 @@ def sub_deploy(
             inherited_su = _inherit(su_policy, request.su)
             if inherited_su is not request.su:
                 changes["su"] = inherited_su
+            inherited_doas = _inherit(doas_policy, request.doas)
+            if inherited_doas is not request.doas:
+                changes["doas"] = inherited_doas
             if when_policy:
                 # Conjunction by concatenation: outer guards first, so a
                 # skip reports the outermost failing predicate.
@@ -371,11 +384,12 @@ def _effective_key(request: OperationRequest) -> tuple:
     """Hashable identity of what a request *executes*, excluding its name.
 
     ``name`` labels a request in plans and logs but never reaches the host
-    (``command_shell`` renders the descriptor plus the resolved ``sudo``/``su``
-    only), so two requests with the same key run identically. The escalation
-    flags contribute their *resolved* decision (``Privilege.elevates``), not the
-    raw tri-state: ``ON`` separates a request from the rest, while ``OFF`` and
-    ``UNSET`` collapse together because both execute unprivileged. The
+    (``command_shell`` renders the descriptor plus the resolved
+    ``sudo``/``su``/``doas`` only), so two requests with the same key run
+    identically. The escalation flags contribute their *resolved* decision
+    (``Privilege.elevates``), not the raw tri-state: ``ON`` separates a request
+    from the rest, while ``OFF`` and ``UNSET`` collapse together because both
+    execute unprivileged. The
     ``when`` guard tuple participates as-is: it changes *whether* a request
     executes, so two otherwise-identical requests with different guards are
     not duplicates.
@@ -389,6 +403,7 @@ def _effective_key(request: OperationRequest) -> tuple:
         tuple(sorted(request.kwargs.items())),
         request.sudo.elevates(),
         request.su.elevates(),
+        request.doas.elevates(),
         request.when,
     )
 
@@ -406,12 +421,12 @@ def compose(
     repositories before the packages they provide).
 
     With ``dedupe=True``, requests collapse by *effective identity* --
-    ``func``, ``args``, ``kwargs``, ``sudo``, ``su`` and ``when``, but not
-    ``name`` (see ``_effective_key``) -- to their first occurrence, which keeps
-    its name.
+    ``func``, ``args``, ``kwargs``, ``sudo``, ``su``, ``doas`` and ``when``,
+    but not ``name`` (see ``_effective_key``) -- to their first occurrence,
+    which keeps its name.
     Independently written roles may therefore each declare the same
     prerequisite under a different label or a different ``sub_deploy`` name
-    prefix and still collapse to one plan entry; ``sudo``/``su`` still
+    prefix and still collapse to one plan entry; ``sudo``/``su``/``doas`` still
     separate requests, since they change what executes, and so does ``when``,
     since it changes whether it executes. ``OperationRequest``
     equality remains maximal (name included), because the determinism guard

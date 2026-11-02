@@ -7,6 +7,6 @@
       "key_path": "~/.ssh/id_ed25519"
     },
     "group": "alpine",
-    "tags": ["alpine_host"]
+    "tags": ["alpine_host","apk_package_manager"]
   }
 ]

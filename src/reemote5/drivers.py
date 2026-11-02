@@ -98,6 +98,8 @@ class LogEntry:
     sudo_user: str | None = None  # run-as user from the host's privilege data
     su: bool = False  # whether the operation's commands were run via su
     su_user: str | None = None  # su target user from the host's privilege data
+    doas: bool = False  # whether the operation's commands were run via doas
+    doas_user: str | None = None  # doas target user from the host's privilege data
     skipped: bool = False  # True when the request's ``when`` guard failed
 
 
@@ -187,38 +189,43 @@ def command_shell(
     sudo_user: str | None = None,
     su: bool = False,
     su_user: str | None = None,
+    doas: bool = False,
+    doas_user: str | None = None,
 ) -> str:
     """Render the shell string a command descriptor runs as (the loggable form).
 
     Command descriptors stay dumb (design doc section 4.5); turning one into
-    shell text is the driver's job. With ``sudo`` and/or ``su`` this is the
-    elevated form the apply log shows; it is deliberately credential-free --
-    when the host's ``privilege`` carries a password the real transport runs it
-    under an askpass helper (see ``Host.run_shell_privileged``), plumbing this
+    shell text is the driver's job. With ``doas``, ``sudo`` and/or ``su`` this
+    is the elevated form the apply log shows; it is deliberately credential-free
+    -- when the host's ``privilege`` carries a password the real transport runs
+    it under an askpass helper (see ``Host.run_shell_privileged``), plumbing this
     rendering never exposes so the password cannot leak into ``format_log``.
     ``send_command`` also calls it with the flags off to get the plain
     descriptor shell it hands to the transport. A ``TransferCommand`` is never
     elevated -- it copies over the connection's scp channel as the login user --
-    so its rendering is returned without any ``sudo``/``su`` prefix even when
-    the flags are set.
+    so its rendering is returned without any ``doas``/``sudo``/``su`` prefix
+    even when the flags are set.
 
-    The two escalations combine in the fixed order ``sudo`` then ``su``: sudo
-    is the outer prefix and ``su`` runs inside it, so a request flagged both
-    renders as ``sudo [-u <sudo_user>] su <su_user> -c '<shell>'``.
+    The escalations combine in the fixed order ``doas`` then ``sudo`` then
+    ``su``: ``doas`` is the outermost prefix and ``su`` the innermost, so a
+    request flagged all three renders as ``doas -n [-u <doas_user>] sudo
+    [-u <sudo_user>] su <su_user> -c '<shell>'``.
 
-    ``sudo_user``/``su_user`` are the run-as users taken from the host's
-    inventory ``privilege`` section (never from the operation). ``sudo_user``
-    is emitted as ``sudo -u <user>`` except that ``root`` -- sudo's own default
-    target -- collapses to a bare ``sudo``. ``su_user`` is emitted as
-    ``su <user> -c`` except that ``None``/``root`` -- su's default target --
-    collapses to a bare ``su -c``.
+    ``sudo_user``/``su_user``/``doas_user`` are the run-as users taken from the
+    host's inventory ``privilege`` section (never from the operation).
+    ``sudo_user`` is emitted as ``sudo -u <user>`` except that ``root`` --
+    sudo's own default target -- collapses to a bare ``sudo``. ``su_user`` is
+    emitted as ``su <user> -c`` except that ``None``/``root`` -- su's default
+    target -- collapses to a bare ``su -c``. ``doas_user`` is emitted as
+    ``doas -n -u <user>`` except that ``None``/``root`` collapses to a bare
+    ``doas -n`` (doas is passwordless, so no credential is ever rendered).
     """
     shell = cmd.shell() if hasattr(cmd, "shell") else str(cmd)
     # A transfer rides the connection's scp channel as the login user; the
-    # ``sudo``/``su`` flags never apply to it (``send_command`` ignores them for
-    # a ``TransferCommand``), so the log rendering must not prefix them either.
-    # An operation whose request is elevated for a *shell* command -- e.g.
-    # ``dnf.key``, which spools a key by scp then runs an elevated ``rpm
+    # ``doas``/``sudo``/``su`` flags never apply to it (``send_command`` ignores
+    # them for a ``TransferCommand``), so the log rendering must not prefix them
+    # either. An operation whose request is elevated for a *shell* command --
+    # e.g. ``dnf.key``, which spools a key by scp then runs an elevated ``rpm
     # --import`` -- still transfers its bytes unprivileged, and the log shows
     # that truthfully rather than as a misleading ``sudo scp ...``.
     if isinstance(cmd, TransferCommand):
@@ -230,13 +237,23 @@ def command_shell(
             shell = f"su {shlex.quote(su_user)} -c {shlex.quote(shell)}"
         else:
             shell = f"su -c {shlex.quote(shell)}"
-    if not sudo:
-        return shell
-    # ``sudo`` defaults to root, so a ``sudo_user`` of ``root`` collapses to a
-    # bare ``sudo``; only a non-root run-as user is emitted as ``-u <user>``.
-    if sudo_user and sudo_user != "root":
-        return f"sudo -u {shlex.quote(sudo_user)} {shell}"
-    return f"sudo {shell}"
+    if sudo:
+        # ``sudo`` defaults to root, so a ``sudo_user`` of ``root`` collapses to
+        # a bare ``sudo``; only a non-root run-as user is emitted as ``-u <user>``.
+        if sudo_user and sudo_user != "root":
+            shell = f"sudo -u {shlex.quote(sudo_user)} {shell}"
+        else:
+            shell = f"sudo {shell}"
+    if doas:
+        # ``doas`` defaults to root, so a ``doas_user`` of ``None``/``root``
+        # collapses to a bare ``doas -n``; only a non-root target is named. doas
+        # is passwordless, so ``-n`` (non-interactive) is always emitted and no
+        # credential is ever rendered.
+        if doas_user and doas_user != "root":
+            shell = f"doas -n -u {shlex.quote(doas_user)} {shell}"
+        else:
+            shell = f"doas -n {shell}"
+    return shell
 
 
 def _privilege_sudo_user(host: Host, sudo: bool) -> str | None:
@@ -267,8 +284,22 @@ def _privilege_su_user(host: Host, su: bool) -> str | None:
     return privilege.get("su_user")
 
 
+def _privilege_doas_user(host: Host, doas: bool) -> str | None:
+    """The ``doas`` target user for a command, from the host's privilege data.
+
+    The ``doas`` counterpart of ``_privilege_sudo_user``: returns ``None`` when
+    the request is not flagged ``doas`` or the host specifies no ``doas_user``.
+    Sourced from the inventory-backed ``Host.privilege``, never from the
+    operation.
+    """
+    if not doas:
+        return None
+    privilege = getattr(host, "privilege", None) or {}
+    return privilege.get("doas_user")
+
+
 async def send_command(
-    host: Host, cmd: Command, *, sudo: bool = False, su: bool = False
+    host: Host, cmd: Command, *, sudo: bool = False, su: bool = False, doas: bool = False
 ) -> None:
     """Execute one command descriptor on a host.
 
@@ -277,13 +308,14 @@ async def send_command(
     - The test framework's ``SimulatedHost`` exposes an ``execute_command``
       seam; when present it applies the command's simulated effect (so
       subsequent fact reads observe the change) and nothing is sent anywhere.
-      ``sudo``/``su`` are irrelevant here -- privilege has no in-memory effect
-      -- so they are not forwarded. This is the path pytest always takes.
+      ``sudo``/``su``/``doas`` are irrelevant here -- privilege has no
+      in-memory effect -- so they are not forwarded. This is the path pytest
+      always takes.
     - Any other host -- a plain library ``Host`` built from a real inventory
       entry -- dispatches on the descriptor kind. A ``TransferCommand`` (e.g.
       ``files.put``'s ``PutCommand``, ``files.get``'s ``GetCommand``) copies
       over the connection's own transport via the descriptor's ``transfer``
-      (asyncssh's scp), never through a shell, so the ``sudo``/``su``
+      (asyncssh's scp), never through a shell, so the ``sudo``/``su``/``doas``
       escalation flags do not apply to it and are ignored. A ``WaitCommand``
       (e.g. ``server.wait_service``'s ``WaitForFactCommand``) likewise runs
       no shell: the driver awaits the descriptor's ``wait``, which polls the
@@ -291,15 +323,16 @@ async def send_command(
       escalation flags are ignored for it too. Anything else runs
       the command's shell over asyncssh, using the host's ``connection`` data.
       An elevated request
-      (``sudo`` and/or ``su``) goes
+      (``doas``, ``sudo`` and/or ``su``) goes
       through ``host.run_shell_privileged``, which applies the run-as users and
       any passwords (via askpass helpers) sourced from the inventory, in the
-      fixed order ``sudo`` then ``su``; an unprivileged one goes through
-      ``host.run_shell``. Either way a non-zero exit raises ``CommandError``
-      (fail-fast), so a command that fails -- a permission error, a broken
-      package transaction -- is never silently reported as applied. A failure
-      sudo or su reports as its *own* authentication rejection (a wrong or
-      missing password) raises ``PrivilegeError`` instead, which ``run_apply``
+      fixed order ``doas`` then ``sudo`` then ``su``; an unprivileged one goes
+      through ``host.run_shell``. Either way a non-zero exit raises
+      ``CommandError`` (fail-fast), so a command that fails -- a permission
+      error, a broken package transaction -- is never silently reported as
+      applied. A failure doas, sudo or su reports as its *own* authentication
+      rejection (a wrong or missing password, or a doas denial) raises
+      ``PrivilegeError`` instead, which ``run_apply``
       aggregates across hosts exactly as ``run_prepare`` aggregates
       ``HostConnectionError``.
       This differs from pyinfra, which drives Paramiko under gevent.
@@ -315,8 +348,8 @@ async def send_command(
         await cmd.wait(host)
         return
     base = command_shell(cmd)  # flags off -> the plain descriptor shell
-    if sudo or su:
-        await host.run_shell_privileged(base, sudo=sudo, su=su)
+    if sudo or su or doas:
+        await host.run_shell_privileged(base, sudo=sudo, su=su, doas=doas)
     else:
         await host.run_shell(base, check=True)
 
@@ -449,12 +482,13 @@ async def _apply_host_step(rt: HostRuntime) -> LogEntry | None:
     # run, so a still-``UNSET`` flag correctly means "do not elevate".
     sudo = request.sudo.elevates()
     su = request.su.elevates()
+    doas = request.doas.elevates()
     ctx, commands = await materialize(rt.host, rt.fact_cache, request)
     rt.current_ctx = ctx
     sent: list[Command] = []
     if ctx.changed:
         for cmd in commands:
-            await send_command(rt.host, cmd, sudo=sudo, su=su)
+            await send_command(rt.host, cmd, sudo=sudo, su=su, doas=doas)
             sent.append(cmd)
     return LogEntry(
         host=rt.host.name,
@@ -466,6 +500,8 @@ async def _apply_host_step(rt: HostRuntime) -> LogEntry | None:
         sudo_user=_privilege_sudo_user(rt.host, sudo),
         su=su,
         su_user=_privilege_su_user(rt.host, su),
+        doas=doas,
+        doas_user=_privilege_doas_user(rt.host, doas),
     )
 
 
@@ -580,7 +616,7 @@ def format_log(report: ApplyReport) -> str:
             lines.append(f"{entry.host}: {entry.name:<24} [changed: {entry.reason}]")
             for cmd in entry.commands:
                 lines.append(
-                    f"    $ {command_shell(cmd, entry.sudo, sudo_user=entry.sudo_user, su=entry.su, su_user=entry.su_user)}"
+                    f"    $ {command_shell(cmd, entry.sudo, sudo_user=entry.sudo_user, su=entry.su, su_user=entry.su_user, doas=entry.doas, doas_user=entry.doas_user)}"
                 )
         else:
             lines.append(f"{entry.host}: {entry.name:<24} [no change: {entry.reason}]")

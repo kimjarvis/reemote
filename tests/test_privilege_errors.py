@@ -263,6 +263,108 @@ async def test_a_command_failure_under_su_stays_a_command_error():
     assert not isinstance(excinfo.value, PrivilegeError)
 
 
+# --- run_shell_doas classifies doas's own authorization failure ---------------
+
+
+class RejectingDoasHost(Host):
+    """A ``Host`` whose doas authorization the target denies.
+
+    Mirrors ``RejectingSudoHost`` for the passwordless doas path: ``_run_shell``
+    returns doas's authorization-failure output for every command. doas is
+    passwordless in reemote5 (``doas -n``), so there is no password and no
+    askpass helper to pre-seed -- only the ``doas_user`` from the inventory
+    privilege section.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        stderr: str = "doas: Operation not permitted",
+        exit_status: int = 1,
+    ):
+        super().__init__(
+            name=name,
+            connection={"address": "10.0.0.1"},
+            privilege={"doas_user": "root"},
+        )
+        self.stderr = stderr
+        self.exit_status = exit_status
+
+    async def _run_shell(self, shell: str):
+        return SimpleNamespace(
+            exit_status=self.exit_status, stdout="", stderr=self.stderr
+        )
+
+
+async def test_denied_doas_raises_privilege_error():
+    host = RejectingDoasHost("web1")
+
+    with pytest.raises(PrivilegeError) as excinfo:
+        await send_command(host, DnfInstallCommand(packages=("httpd",)), doas=True)
+
+    err = excinfo.value
+    assert err.host_names == ("web1",)
+    assert str(err) == "privilege escalation failed on 1 host: web1"
+
+
+async def test_doas_privilege_error_is_credential_free():
+    host = RejectingDoasHost("web1")
+
+    with pytest.raises(PrivilegeError) as excinfo:
+        await send_command(host, DnfInstallCommand(packages=("httpd",)), doas=True)
+
+    err = excinfo.value
+    name, command, cause = err.failures[0]
+    assert name == "web1"
+    # doas is passwordless: the rendering is a bare ``doas -n``, no credential.
+    assert command == "doas -n dnf install -y httpd"
+    assert isinstance(cause, CommandError)
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        # opendoas/OpenBSD doas: a denied rule reports EPERM...
+        "doas: Operation not permitted",
+        # ...a rule that would require a password (under ``-n``)...
+        "doas: Authentication required",
+        # ...and a PAM rejection.
+        "doas: Authentication failed",
+    ],
+)
+async def test_doas_authentication_failures_are_privilege_errors(stderr: str):
+    host = RejectingDoasHost("web1", stderr=stderr)
+
+    with pytest.raises(PrivilegeError):
+        await send_command(host, DnfInstallCommand(packages=("httpd",)), doas=True)
+
+
+async def test_a_command_failure_under_doas_stays_a_command_error():
+    """Once doas has authorized, a failure of the command it ran is a genuine
+    ``CommandError`` -- not misclassified as a privilege problem."""
+    host = RejectingDoasHost(
+        "web1", stderr="Error: No match for argument: httpd", exit_status=1
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        await send_command(host, DnfInstallCommand(packages=("httpd",)), doas=True)
+
+    assert not isinstance(excinfo.value, PrivilegeError)
+
+
+async def test_a_command_printing_operation_not_permitted_stays_a_command_error():
+    """The ``doas:`` prefix on each marker is what keeps a command's *own*
+    "Operation not permitted" text from being misclassified as a doas denial."""
+    host = RejectingDoasHost(
+        "web1", stderr="ln: /etc/shadow: Operation not permitted", exit_status=1
+    )
+
+    with pytest.raises(CommandError) as excinfo:
+        await send_command(host, DnfInstallCommand(packages=("httpd",)), doas=True)
+
+    assert not isinstance(excinfo.value, PrivilegeError)
+
+
 # --- run_apply aggregates per-host failures -----------------------------------
 
 

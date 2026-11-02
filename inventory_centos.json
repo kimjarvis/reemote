@@ -7,7 +7,7 @@
       "key_path": "/home/kim/.ssh/id_ed25519"
     },
     "group": "webservers",
-    "tags": ["ubuntu_host", "web"]
+    "tags": ["ubuntu_host", "web","apt_package_manager"]
   },
   {
     "host": "web2",
@@ -17,6 +17,6 @@
       "key_path": "/home/kim/.ssh/id_ed25519"
     },
     "group": "webservers",
-    "tags": ["web"]
+    "tags": ["ubuntu_host", "web","apt_package_manager"]
   }
 ]

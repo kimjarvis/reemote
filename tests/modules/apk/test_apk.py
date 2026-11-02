@@ -1087,6 +1087,170 @@ async def test_apk_packages_absorbs_unknown_kwargs():
     assert commands == [ApkInstallCommand(packages=("nginx",))]
 
 
+# --- apk.packages: apk-native install modifiers (no_cache / no_scripts) -------
+
+
+def test_apk_install_command_renders_no_cache():
+    """``no_cache`` adds apk's ``--no-cache`` flag between the verb and the
+    names, bypassing the package cache entirely."""
+    cmd = ApkInstallCommand(packages=("nginx",), no_cache=True)
+    assert cmd.shell() == "apk add --no-cache nginx"
+
+
+def test_apk_install_command_renders_no_scripts():
+    """``no_scripts`` adds apk's ``--no-scripts`` flag, skipping post-install
+    triggers and scriptlets."""
+    cmd = ApkInstallCommand(packages=("nginx",), no_scripts=True)
+    assert cmd.shell() == "apk add --no-scripts nginx"
+
+
+def test_apk_install_command_renders_both_modifiers_in_a_fixed_order():
+    """Both flags render together in a deterministic order (``--no-cache``
+    before ``--no-scripts``), so the prepare and apply phases report the
+    identical shell."""
+    cmd = ApkInstallCommand(packages=("nginx", "vim"), no_cache=True, no_scripts=True)
+    assert cmd.shell() == "apk add --no-cache --no-scripts nginx vim"
+
+
+def test_apk_install_command_defaults_render_no_modifiers():
+    """With neither flag set the shell is the bare ``apk add`` the unmodified
+    descriptor always rendered -- the new fields default to ``False``."""
+    cmd = ApkInstallCommand(packages=("nginx",))
+    assert cmd.shell() == "apk add nginx"
+    assert not cmd.no_cache
+    assert not cmd.no_scripts
+
+
+def test_apk_upgrade_command_renders_both_modifiers():
+    """``apk upgrade`` accepts the same flags, so the ``latest`` path honours
+    the same install modifiers."""
+    cmd = ApkUpgradeCommand(packages=("nginx",), no_cache=True, no_scripts=True)
+    assert cmd.shell() == "apk upgrade --no-cache --no-scripts nginx"
+
+
+def test_apk_remove_command_takes_no_modifiers():
+    """The removal direction has no ``no_cache``/``no_scripts`` fields: apk's
+    ``del`` neither downloads nor runs install scripts, so the flags are
+    install/upgrade-only and ``ApkRemoveCommand`` stays unchanged."""
+    cmd = ApkRemoveCommand(packages=("nginx",))
+    assert cmd.shell() == "apk del nginx"
+    assert not hasattr(cmd, "no_cache")
+    assert not hasattr(cmd, "no_scripts")
+
+
+def test_apk_install_command_modifiers_are_elevated_by_sudo():
+    """The flags ride inside the descriptor's own shell, so ``sudo=True``
+    prefixes the whole rendered command exactly as it does without them."""
+    cmd = ApkInstallCommand(packages=("nginx",), no_cache=True, no_scripts=True)
+    assert command_shell(cmd) == "apk add --no-cache --no-scripts nginx"
+    assert command_shell(cmd, sudo=True) == "sudo apk add --no-cache --no-scripts nginx"
+
+
+async def test_apk_packages_flows_no_cache_into_the_install_command():
+    """``no_cache=True`` on the operation reaches the yielded install
+    descriptor, so the rendered shell carries ``--no-cache``."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in apk.packages(ctx, packages=("nginx",), no_cache=True)
+    ]
+    assert commands == [ApkInstallCommand(packages=("nginx",), no_cache=True)]
+    assert commands[0].shell() == "apk add --no-cache nginx"
+
+
+async def test_apk_packages_flows_no_scripts_into_the_install_command():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in apk.packages(ctx, packages=("nginx",), no_scripts=True)
+    ]
+    assert commands == [ApkInstallCommand(packages=("nginx",), no_scripts=True)]
+    assert commands[0].shell() == "apk add --no-scripts nginx"
+
+
+async def test_apk_packages_flows_both_modifiers_into_the_latest_upgrade():
+    """The ``latest`` upgrade path honours the same modifiers: both flags
+    reach the ``ApkUpgradeCommand`` the install command follows."""
+    host = SimulatedHost(name="h", apk_packages={"nginx": ["1.23.0-r0"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apk.packages(
+            ctx, packages=("nginx", "vim"), latest=True, no_cache=True, no_scripts=True
+        )
+    ]
+    assert commands == [
+        ApkInstallCommand(packages=("vim",), no_cache=True, no_scripts=True),
+        ApkUpgradeCommand(packages=("nginx",), no_cache=True, no_scripts=True),
+    ]
+    assert commands[1].shell() == "apk upgrade --no-cache --no-scripts nginx"
+
+
+async def test_apk_packages_modifiers_do_not_affect_idempotence():
+    """The flags change only how the install runs, never what ``ApkPackages``
+    reports, so an already-present package is still a no-op with both set."""
+    host = SimulatedHost(name="h", apk_packages={"nginx": ["1.23.0-r0"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apk.packages(
+            ctx, packages=("nginx",), no_cache=True, no_scripts=True
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "all packages present"
+    assert commands == []
+
+
+async def test_apk_packages_removal_ignores_the_modifiers():
+    """``present=False`` yields ``ApkRemoveCommand``, which carries no
+    modifier fields, so passing both flags removes with the bare ``apk del``
+    -- the install-only modifiers never leak onto the removal direction."""
+    host = SimulatedHost(name="h", apk_packages={"nginx": ["1.23.0-r0"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apk.packages(
+            ctx, packages=("nginx",), present=False, no_cache=True, no_scripts=True
+        )
+    ]
+    assert commands == [ApkRemoveCommand(packages=("nginx",))]
+    assert commands[0].shell() == "apk del nginx"
+
+
+async def test_apk_packages_modifiers_end_to_end_under_sudo():
+    """Through run_prepare/run_apply: the flagged install executes under sudo
+    and renders with both modifiers in the log; a second prepare sees the
+    package installed and plans no change (the flags do not affect the
+    fact-backed idempotence)."""
+
+    def install_deploy(host):
+        yield op(
+            apk.packages,
+            name="Install nginx without cache or scripts",
+            packages=("nginx",),
+            no_cache=True,
+            no_scripts=True,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], install_deploy)
+    assert plans["h"][0].changed
+    report = await run_apply(runtimes, plans=plans)
+    (entry,) = report.log
+    assert entry.changed
+    assert entry.commands == (
+        ApkInstallCommand(packages=("nginx",), no_cache=True, no_scripts=True),
+    )
+    assert "$ sudo apk add --no-cache --no-scripts nginx" in format_log(report)
+    assert host.apk_packages == {"nginx": [""]}
+    # A second prepare sees the package: no change, flags or not.
+    _runtimes, plans2 = await run_prepare([host], install_deploy)
+    assert not plans2["h"][0].changed
+    assert plans2["h"][0].reason == "all packages present"
+
+
 # --- apk.packages: SimulatedHost seam dispatch -------------------------------
 
 

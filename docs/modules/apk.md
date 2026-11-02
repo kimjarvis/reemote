@@ -244,10 +244,19 @@ installed, *unpinned* name with `apk upgrade` — pyinfra's legacy behavior,
 which upgrades blindly without checking whether a newer version exists.
 `present=False` removes only what is installed with `apk del`. apk never
 prompts, so the commands carry no `-y` flag (unlike apt's and dnf's).
-Installing, upgrading and removing all need root, so flag the request
-`sudo=True` (or `su=True`). Two pyinfra options are deliberately dropped:
-`update` and `upgrade`, which prefix the operation with a whole-system
-`apk update` / `apk upgrade` — reemote5 keeps the whole-system
+Two apk-native install modifiers ride on the add/upgrade verbs:
+`no_cache` adds `--no-cache` (bypass the package cache entirely — neither
+read from nor write to `/var/cache/apk`) and `no_scripts` adds
+`--no-scripts` (skip post-install triggers and scriptlets); both flow into
+the `latest` upgrade path too, are ignored by the removal direction, and
+change only how the install runs — never what `ApkPackages` reports — so
+idempotence is unchanged. They are a deliberate apk-only asymmetry: apt's
+`no_recommends`/`allow_downgrades` and dnf's `nobest` are the closest
+cousins, but neither tool exposes a cache-bypass or script-skip flag on its
+package operation. Installing, upgrading and removing all need root, so flag
+the request `sudo=True` (or `su=True`). Two pyinfra options are deliberately
+dropped: `update` and `upgrade`, which prefix the operation with a
+whole-system `apk update` / `apk upgrade` — reemote5 keeps the whole-system
 refresh/upgrade out of the package operation, so both keywords are absorbed
 by `**kwargs` with no effect.
 

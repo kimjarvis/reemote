@@ -19,7 +19,12 @@ raw value.
 Operation side: ``apk.packages`` plus the typed command descriptors it
 yields (``ApkInstallCommand``/``ApkRemoveCommand``/``ApkUpgradeCommand``).
 ``apk.packages`` mirrors pyinfra's ``apk.packages`` (add/remove packages
-with version pins and ``latest`` upgrades), reading ``ApkPackages``;
+with version pins and ``latest`` upgrades), reading ``ApkPackages``, and
+exposes two apk-native install modifiers -- ``no_cache``
+(``apk add --no-cache``, bypass the package cache) and ``no_scripts``
+(``apk add --no-scripts``, skip post-install triggers) -- which apt and
+dnf have no equivalent for, so they are a deliberate apk-only asymmetry
+on the shared package-manager surface;
 pyinfra's ``update`` and ``upgrade`` prefix options are deliberately
 dropped -- reemote5 keeps the whole-system ``apk update``/``apk upgrade``
 out of the package operation, and both keywords are absorbed by
@@ -744,13 +749,27 @@ class ApkInstallCommand(Command):
     The ``present=True`` direction of ``apk.packages``. apk never prompts,
     so the shell is pyinfra's bare ``apk add`` (no ``-y``) plus the
     shell-quoted package names, ``<pkg>=<version>`` pins included.
+    ``no_cache`` adds apk's ``--no-cache`` flag (bypass the package cache
+    entirely -- neither read from nor write to ``/var/cache/apk``), and
+    ``no_scripts`` adds ``--no-scripts`` (skip post-install triggers and
+    scriptlets). Both are apk-native modifiers with no apt/dnf equivalent,
+    so they are a deliberate asymmetry on the shared package-manager
+    surface; they affect only how the install runs, never what the
+    ``ApkPackages`` fact reports, so idempotence is unchanged.
     """
 
     packages: tuple[str, ...]
+    no_cache: bool = False
+    no_scripts: bool = False
 
     def shell(self) -> str:
+        command = "add"
+        if self.no_cache:
+            command += " --no-cache"
+        if self.no_scripts:
+            command += " --no-scripts"
         names = " ".join(shlex.quote(package) for package in self.packages)
-        return f"apk add {names}"
+        return f"apk {command} {names}"
 
 
 @dataclass(frozen=True)
@@ -774,14 +793,24 @@ class ApkUpgradeCommand(Command):
     """``apk upgrade <packages>``: upgrade the named packages.
 
     The ``latest`` upgrade path of ``apk.packages`` (pyinfra's
-    ``upgrade_command``); names are shell-quoted.
+    ``upgrade_command``); names are shell-quoted. ``no_cache`` and
+    ``no_scripts`` behave exactly as on ``ApkInstallCommand`` -- apk's
+    ``upgrade`` accepts the same flags -- so the ``latest`` path honours
+    the same install modifiers the ``present=True`` path does.
     """
 
     packages: tuple[str, ...]
+    no_cache: bool = False
+    no_scripts: bool = False
 
     def shell(self) -> str:
+        command = "upgrade"
+        if self.no_cache:
+            command += " --no-cache"
+        if self.no_scripts:
+            command += " --no-scripts"
         names = " ".join(shlex.quote(package) for package in self.packages)
-        return f"apk upgrade {names}"
+        return f"apk {command} {names}"
 
 
 async def packages(
@@ -789,6 +818,8 @@ async def packages(
     packages: str | list[str] | tuple[str, ...] | None = None,
     present: bool = True,
     latest: bool = False,
+    no_cache: bool = False,
+    no_scripts: bool = False,
     **kwargs,
 ) -> AsyncGenerator[Command]:
     """Add/remove/update apk packages (pyinfra ``apk.packages`` parity).
@@ -799,6 +830,11 @@ async def packages(
       pinned as ``<pkg>=<version>``.
     + present: whether the packages should be installed
     + latest: whether to upgrade installed packages without a pinned version
+    + no_cache: add ``--no-cache`` to the install/upgrade command, bypassing
+      the package cache entirely (neither read from nor write to
+      ``/var/cache/apk``)
+    + no_scripts: add ``--no-scripts`` to the install/upgrade command,
+      skipping post-install triggers and scriptlets
 
     The ``ApkPackages`` fact supplies the installed versions, so a pinned
     ``<pkg>=<version>`` is present only when that *exact* version is
@@ -809,6 +845,15 @@ async def packages(
     Installing, removing and upgrading all need root, so flag the request
     ``sudo=True`` (or ``su=True``). ``**kwargs`` absorbs pyinfra's global
     arguments (``op()`` already strips ``name``/``sudo``/``su``).
+
+    ``no_cache`` and ``no_scripts`` are apk-native modifiers with no
+    apt/dnf equivalent -- apt's ``no_recommends``/``allow_downgrades`` and
+    dnf's ``nobest`` are the closest cousins, but neither tool exposes a
+    cache-bypass or script-skip flag on its package operation -- so they
+    are a deliberate apk-only asymmetry on the shared package-manager
+    surface. They affect only how the install/upgrade runs, never what the
+    ``ApkPackages`` fact reports, so idempotence is unchanged and the
+    removal direction (``present=False``) ignores both.
 
     Deliberate deviations from pyinfra: the ``update`` and ``upgrade``
     options -- which prefix the operation with a whole-system ``apk update``
@@ -851,11 +896,19 @@ async def packages(
             if to_install:
                 ctx.changed = True
                 reasons.append(f"{len(to_install)} package(s) to install")
-                yield ApkInstallCommand(packages=to_install)
+                yield ApkInstallCommand(
+                    packages=to_install,
+                    no_cache=no_cache,
+                    no_scripts=no_scripts,
+                )
             if to_upgrade:
                 ctx.changed = True
                 reasons.append(f"{len(to_upgrade)} package(s) to upgrade")
-                yield ApkUpgradeCommand(packages=to_upgrade)
+                yield ApkUpgradeCommand(
+                    packages=to_upgrade,
+                    no_cache=no_cache,
+                    no_scripts=no_scripts,
+                )
             if not to_install and not to_upgrade:
                 reasons.append("all packages present")
         else:

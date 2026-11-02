@@ -204,6 +204,57 @@ async def test_su_wraps_the_command():
     assert host.shells == ["su deploy -c id"]
 
 
+async def test_doas_prefixes_the_command():
+    host = ActionHost("web1", privilege={"doas_user": "root"})
+
+    await gather_action([host], Shell, command="cat /etc/shadow", doas=True)
+
+    # doas is passwordless and non-interactive; root is its own default target,
+    # so a bare ``doas -n`` with no ``-u root``.
+    assert host.shells == ["doas -n cat /etc/shadow"]
+
+
+async def test_doas_user_names_a_non_root_target():
+    host = ActionHost("web1", privilege={"doas_user": "deploy"})
+
+    await gather_action([host], Shell, command="id", doas=True)
+
+    assert host.shells == ["doas -n -u deploy id"]
+
+
+async def test_doas_then_sudo_then_su_is_the_escalation_order():
+    host = ActionHost(
+        "web1",
+        privilege={"doas_user": "root", "sudo_user": "root", "su_user": "deploy"},
+    )
+
+    await gather_action([host], Shell, command="id", doas=True, sudo=True, su=True)
+
+    assert host.shells == ["doas -n sudo su deploy -c id"]
+
+
+async def test_rejected_doas_raises_privilege_error_aggregated():
+    """A denied doas rule (passwordless) is a ``PrivilegeError``, aggregated
+    across hosts, with the credential-free ``doas -n`` rendering."""
+    hosts = [
+        ActionHost(
+            name,
+            exit_status=1,
+            stderr="doas: Operation not permitted",
+            privilege={"doas_user": "root"},
+        )
+        for name in ("web1", "web2")
+    ]
+
+    with pytest.raises(PrivilegeError) as excinfo:
+        await gather_action(hosts, Shell, command="whoami", doas=True)
+
+    err = excinfo.value
+    assert err.host_names == ("web1", "web2")
+    assert err.failures[0][1] == "doas -n whoami"
+    assert all(host.closes == 1 for host in hosts)
+
+
 async def test_sudo_password_rides_the_askpass_helper():
     host = ActionHost(
         "web1",

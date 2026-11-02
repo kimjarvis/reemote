@@ -40,11 +40,11 @@ sub-directory. Pick a page from the navigation, or start from this table:
     `INVENTORY` in the script (most target the two hosts web1/web2 on
     `192.168.0.x`; the [`apt` fact examples](examples/modules/apt.md) target
     a single `ubuntu` host; the [`apk` operation
-    examples](examples/modules/apk.md) target a single `alpine` host; the two
+    examples](examples/modules/apk.md) target a single `alpine` host; the three
     [`privilege`](examples/demonstrations/privilege.md)
-    demonstrations each target a single `centos9-*` host and carry a
-    plain-text password), or, for
-    [`json_inventory`](examples/demonstrations/inventory.md#inventory-from-a-json-file)
+    demonstrations each target a single `centos9-*` host — the sudo and su ones
+    carry a plain-text password, the doas one is passwordless), or, for
+    the [JSON-inventory examples](examples/demonstrations/inventory.md)
     and the [`apk` fact examples](examples/modules/apk.md),
     read from the `inventory*.json` files in the project root — so running one opens
     real asyncssh connections: first read-only for the `dry=True` plan,

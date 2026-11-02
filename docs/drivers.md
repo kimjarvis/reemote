@@ -24,29 +24,32 @@ which returns `{host: value}`). Facts stay single-host — only the driver owns
 the concurrency — so `process`, `FactCache` and the `SimulatedHost` seams are
 untouched.
 
-A request whose `sudo`/`su` tri-state resolves to elevation
+A request whose `doas`/`sudo`/`su` tri-state resolves to elevation
 ([`Privilege.ON`][reemote5.core.Privilege], i.e. `sudo=True`; see
 [Deploy scripts](guide.md#deploy-scripts)) is elevated by the driver, which
 collapses the tri-state to a concrete bool before sending.
 [`command_shell`][reemote5.drivers.command_shell] renders the shell text for a
-command descriptor — prefixing `sudo` (or `sudo -u <user>`) and wrapping `su
-<user> -c …`, combining the two in the fixed order `sudo` then `su` (sudo is
-the outer escalation, running su inside it). The run-as users come from the
+command descriptor — prefixing `doas -n` (or `doas -n -u <user>`) and `sudo`
+(or `sudo -u <user>`), and wrapping `su <user> -c …`, combining them in the
+fixed order `doas` then `sudo` then `su` (doas is the outermost escalation, su
+the innermost payload). The run-as users come from the
 host's inventory `privilege` section, never from the operation; `root`, being
-the default target of both `sudo` and `su`, collapses to a bare `sudo` / `su -c`.
+the default target of all three, collapses to a bare `doas -n` / `sudo` / `su -c`.
 This rendering is what [`format_log`][reemote5.drivers.format_log] shows and is
 deliberately credential-free: when `privilege` carries a password,
 [`send_command`][reemote5.drivers.send_command] elevates through
 [`Host.run_shell_privileged`][reemote5.hosts.Host.run_shell_privileged], which
 runs `sudo -A` against a generated askpass helper (or pipes a `su_password` to
 su's stdin) so the password is supplied without a TTY and never reaches the
-log. On the real transport an applied command that exits non-zero raises
+log (`doas` is passwordless, so it carries no credential at all). On the real
+transport an applied command that exits non-zero raises
 [`CommandError`][reemote5.hosts.CommandError] (fail-fast) instead of being
-silently logged as applied — unless sudo or su reports the failure as its *own*
-authentication rejection (a wrong or missing password), which raises
+silently logged as applied — unless doas, sudo or su reports the failure as its
+*own* authentication rejection (a wrong or missing password, or a denied doas
+rule), which raises
 [`PrivilegeError`][reemote5.hosts.PrivilegeError] so a rejected credential is
 reported as a privilege problem rather than a broken command. See
-[Privilege: sudo and su](hosts.md#privilege-sudo-and-su).
+[Privilege: sudo, su and doas](hosts.md#privilege-sudo-su-and-doas).
 
 A request whose `when` guard fails on a host is skipped by the driver in both
 phases: prepare records a `skipped`

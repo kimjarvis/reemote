@@ -82,16 +82,18 @@ exception propagates unchanged.
 
 ## Privilege escalation
 
-[`Shell`][reemote5.actions.Shell] honours `sudo=True` and/or `su=True` with the
+[`Shell`][reemote5.actions.Shell] honours `doas=True`, `sudo=True` and/or
+`su=True` with the
 host's inventory `privilege` data — the run-as users and passwords come from the
 inventory, **never from the call**, exactly as for an operation. The escalations
-combine in the fixed order `sudo` then `su`, and a password is supplied through
-an askpass helper without ever reaching the `Result` or a log. See
-[Privilege: sudo and su](hosts.md#privilege-sudo-and-su).
+combine in the fixed order `doas` then `sudo` then `su`, and a password is
+supplied through an askpass helper without ever reaching the `Result` or a log
+(`doas` is passwordless). See
+[Privilege: sudo, su and doas](hosts.md#privilege-sudo-su-and-doas).
 
-Actions use plain `sudo`/`su` **bools** — the execution-layer spelling — rather
-than the plan layer's [`Privilege`][reemote5.core.Privilege] tri-state, because
-an action is executed immediately and never composed into a plan.
+Actions use plain `doas`/`sudo`/`su` **bools** — the execution-layer spelling —
+rather than the plan layer's [`Privilege`][reemote5.core.Privilege] tri-state,
+because an action is executed immediately and never composed into a plan.
 
 The elevated path rides
 [`Host.run_shell_privileged_result`][reemote5.hosts.Host.run_shell_privileged_result],

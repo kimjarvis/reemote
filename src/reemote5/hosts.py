@@ -279,6 +279,34 @@ def _build_su_command(
     return " ".join(su)
 
 
+# doas (OpenBSD's ``doas``; ``opendoas`` on Linux) has no askpass/``-A``
+# mechanism and reads a password only from a TTY, which asyncssh's
+# non-interactive channels do not provide. reemote5 therefore supports doas
+# PASSWORDLESS only: it always runs ``doas -n`` (non-interactive -- fail rather
+# than prompt), so the host must grant the login user a ``permit nopass`` rule
+# in ``/etc/doas.conf``. There is deliberately no ``doas_password`` inventory
+# option and no doas askpass helper -- in this respect doas is simpler than both
+# sudo and su.
+def _build_doas_command(shell: str, *, doas_user: str | None = None) -> str:
+    """Build the ``doas``-elevated form of ``shell`` (pure; performs no I/O).
+
+    Runs ``doas -n [-u <user>] <shell>``, the run-as user shell-quoted. ``-n``
+    makes doas non-interactive: it fails rather than prompts for a password, so
+    the host must carry a ``permit nopass`` rule for the login user (doas has no
+    askpass mechanism and asyncssh channels offer no TTY, so a password cannot
+    be supplied -- reemote5's doas support is passwordless only). ``doas``'s own
+    default target is root, so a ``doas_user`` of ``None`` or ``root`` collapses
+    to a bare ``doas -n`` rather than ``-u root``.
+    """
+    bits = ["doas", "-n"]
+    # ``doas`` already defaults to running as root, so an explicit
+    # ``doas_user="root"`` collapses to a bare ``doas -n`` instead of ``-u root``.
+    if doas_user and doas_user != "root":
+        bits += ["-u", shlex.quote(doas_user)]
+    bits.append(shell)
+    return " ".join(bits)
+
+
 # stderr signatures identifying sudo's *own* authentication failure, as distinct
 # from a failure of the command sudo successfully ran. ``sudo -A`` is invoked
 # once, but sudo re-runs the askpass helper up to its ``passwd_tries`` limit
@@ -309,17 +337,37 @@ _SU_AUTH_FAILURE_MARKERS: tuple[str, ...] = (
     "cannot make/remove an entry for the specified session",
 )
 
+# stderr signatures identifying doas's *own* authorization/authentication
+# failure. doas never prompts under the ``-n`` reemote5 always passes, so these
+# mark a host whose ``/etc/doas.conf`` does not grant the login user a matching
+# ``permit`` (or ``permit nopass``) rule. The strings are opendoas's own (the
+# OpenBSD doas port on Linux): a denied rule reports EPERM (``doas: Operation
+# not permitted``), a rule that would require a password reports ``doas:
+# Authentication required``, and a PAM rejection reports ``doas: Authentication
+# failed``. Each is prefixed with ``doas:`` so a genuine failure of the command
+# doas ran -- which might itself print "operation not permitted" -- is not
+# misclassified as an escalation rejection.
+_DOAS_AUTH_FAILURE_MARKERS: tuple[str, ...] = (
+    "doas: operation not permitted",
+    "doas: authentication required",
+    "doas: authentication failed",
+)
+
 
 def _is_privilege_failure(*outputs: str) -> bool:
-    """Whether sudo's or su's own output identifies an authentication failure.
+    """Whether sudo's, su's or doas's own output identifies an auth failure.
 
-    Matched case-insensitively across every captured stream (sudo/su write
+    Matched case-insensitively across every captured stream (sudo/su/doas write
     their prompts to stderr, but a pty-less channel is not the only shape a
     result can take). A miss is safe: the caller falls back to ``CommandError``,
     which already reports the command, exit status and stderr.
     """
     lowered = " ".join(output.lower() for output in outputs if output)
-    markers = _SUDO_AUTH_FAILURE_MARKERS + _SU_AUTH_FAILURE_MARKERS
+    markers = (
+        _SUDO_AUTH_FAILURE_MARKERS
+        + _SU_AUTH_FAILURE_MARKERS
+        + _DOAS_AUTH_FAILURE_MARKERS
+    )
     return any(marker in lowered for marker in markers)
 
 
@@ -470,9 +518,10 @@ class CommandNotFoundError(CommandError):
 class PrivilegeError(RuntimeError):
     """Raised when a host rejects the privilege escalation it was asked to perform.
 
-    ``Host.run_shell_privileged`` recognises sudo's and su's *own*
+    ``Host.run_shell_privileged`` recognises sudo's, su's and doas's *own*
     authentication failures -- a wrong password, a missing one where the tool
-    demands it, or a run-as user the login user may not become -- and wraps them
+    demands it, a doas rule that denies the login user, or a run-as user the
+    login user may not become -- and wraps them
     here instead of raising the generic ``CommandError`` any non-zero exit would
     otherwise produce. The report mirrors ``HostConnectionError``: the message
     stays generic, naming the affected host(s) and nothing else, so sudo's three
@@ -589,13 +638,17 @@ class Host:
     ``connection`` holds the SSH information passed to the asyncssh transport
     (and therefore reaching both operations and facts); ``privilege`` holds
     optional elevation settings: ``sudo_user``/``sudo_password`` (applied when
-    an operation is flagged ``sudo=True``) and ``su_user``/``su_password``
-    (applied when flagged ``su=True``). ``sudo_user`` is the run-as user the
-    driver passes to ``sudo -u``; ``su_user`` is the target of a default
-    ``su <user> -c``. When both flags are set the escalations combine in the
-    fixed order ``sudo`` then ``su``. Privilege parameters come from here, the
-    inventory, and never from an operation: a deploy script can ask to elevate
-    but cannot choose the run-as user. ``group`` (an optional single label)
+    an operation is flagged ``sudo=True``), ``su_user``/``su_password`` (applied
+    when flagged ``su=True``) and ``doas_user`` (applied when flagged
+    ``doas=True``). ``sudo_user`` is the run-as user the driver passes to
+    ``sudo -u``; ``su_user`` is the target of a default ``su <user> -c``;
+    ``doas_user`` is the target of a passwordless ``doas -n [-u <user>]`` (doas
+    has no askpass, so it is passwordless-only -- the host must grant a
+    ``permit nopass`` rule). When several flags are set the escalations combine
+    in the fixed order ``doas`` then ``sudo`` then ``su``. Privilege parameters
+    come from here, the inventory, and never from an operation: a deploy script
+    can ask to elevate but cannot choose the run-as user. ``group`` (an optional
+    single label)
     and ``tags`` (an optional unordered list of string labels) are static,
     inventory-supplied classifiers a deploy script reads to branch per host --
     e.g. ``if host.group == "webservers":`` or ``if "web" in host.tags:``.
@@ -822,7 +875,7 @@ class Host:
         return await self._run_shell(shell)
 
     async def _build_privileged_command(
-        self, shell: str, *, sudo: bool = False, su: bool = False
+        self, shell: str, *, sudo: bool = False, su: bool = False, doas: bool = False
     ) -> tuple[str, str]:
         """Build ``(command, safe)`` for an elevated shell (no execution).
 
@@ -837,9 +890,11 @@ class Host:
         sudo_password = self.privilege.get("sudo_password") if sudo else None
         su_user = self.privilege.get("su_user") if su else None
         su_password = self.privilege.get("su_password") if su else None
+        doas_user = self.privilege.get("doas_user") if doas else None
 
-        # Build the innermost escalation first (su), then wrap it with sudo so
-        # the applied order is sudo -> su.
+        # Build the innermost escalation first (su), then wrap it with sudo,
+        # then with doas, so the applied order is doas -> sudo -> su (doas is
+        # the outermost wrapper, su the innermost payload).
         payload = shell
         if su:
             su_askpass = await self._ensure_su_askpass() if su_password else None
@@ -868,6 +923,15 @@ class Host:
             )
         else:
             command = payload
+        if doas:
+            # doas, like sudo, execs its command directly rather than through a
+            # shell. When it is the outermost wrapper around an su-password
+            # pipeline -- i.e. no sudo layer already wrapped it in ``sh -c`` --
+            # wrap it here so the ``... | su ...`` pipe stays intact under doas.
+            doas_payload = command
+            if su and su_password and not sudo:
+                doas_payload = f"sh -c {shlex.quote(command)}"
+            command = _build_doas_command(doas_payload, doas_user=doas_user)
 
         # The credential-free rendering of the same escalation, for error
         # reports: never the askpass command, which carries a password.
@@ -877,35 +941,43 @@ class Host:
             if sudo
             else safe_payload
         )
+        if doas:
+            # The credential-free su rendering carries no password pipe, so doas
+            # wraps it directly -- no ``sh -c`` needed on the safe path.
+            safe = _build_doas_command(safe, doas_user=doas_user)
         return command, safe
 
     async def run_shell_privileged(
-        self, shell: str, *, sudo: bool = False, su: bool = False
+        self, shell: str, *, sudo: bool = False, su: bool = False, doas: bool = False
     ) -> str:
-        """Run one shell command elevated with ``sudo`` and/or ``su``.
+        """Run one shell command elevated with ``doas``, ``sudo`` and/or ``su``.
 
         Elevation parameters come from this host's inventory ``privilege``
-        data, never from the caller. The two escalations combine in a fixed
-        order -- ``sudo`` then ``su`` -- so ``sudo`` is the outer escalation
-        and runs ``su`` inside it (``sudo ... su <user> -c ...``), matching the
-        order in which the flags are applied.
+        data, never from the caller. The escalations combine in a fixed order --
+        ``doas`` then ``sudo`` then ``su`` -- so ``doas`` is the outermost
+        wrapper and ``su`` the innermost payload (``doas -n ... sudo ... su
+        <user> -c ...``), matching the order in which the flags are applied.
 
         ``sudo`` uses ``sudo_user``/``sudo_password`` (see ``run_shell_sudo``);
         ``su`` uses ``su_user``/``su_password`` and runs a *default* (non-login)
-        ``su <user> -c``. ``su`` has no askpass mechanism, so with an
-        ``su_password`` the generated helper pipes the password to su's stdin;
-        when that pipeline also runs under ``sudo`` it is wrapped in ``sh -c``
-        so the pipe stays intact inside sudo's elevation (sudo execs its
-        command directly rather than through a shell).
+        ``su <user> -c``; ``doas`` uses ``doas_user`` and is *passwordless*
+        (``doas -n``; see ``run_shell_doas``). ``su`` has no askpass mechanism,
+        so with an ``su_password`` the generated helper pipes the password to
+        su's stdin; when that pipeline runs under ``sudo`` or ``doas`` it is
+        wrapped in ``sh -c`` so the pipe stays intact inside the outer
+        escalation (both exec their command directly rather than through a
+        shell).
 
         A non-zero exit raises ``CommandError`` whose command text is the
         credential-free rendering -- never the askpass command, which carries a
-        password. When sudo's or su's output identifies the failure as its
-        *own* authentication rejection (a wrong or missing password, a
-        forbidden run-as user) a ``PrivilegeError`` is raised instead, so the
-        caller gets one actionable error naming the host.
+        password. When sudo's, su's or doas's output identifies the failure as
+        its *own* authentication rejection (a wrong or missing password, a
+        denied doas rule, a forbidden run-as user) a ``PrivilegeError`` is
+        raised instead, so the caller gets one actionable error naming the host.
         """
-        command, safe = await self._build_privileged_command(shell, sudo=sudo, su=su)
+        command, safe = await self._build_privileged_command(
+            shell, sudo=sudo, su=su, doas=doas
+        )
         result = await self._run_shell(command)
         if result.exit_status != 0:
             failure = CommandError(self.name, safe, result.exit_status, result.stderr)
@@ -918,27 +990,30 @@ class Host:
         return result.stdout or ""
 
     async def run_shell_privileged_result(
-        self, shell: str, *, sudo: bool = False, su: bool = False
+        self, shell: str, *, sudo: bool = False, su: bool = False, doas: bool = False
     ) -> Any:
         """Run one elevated shell command and return the raw transport result.
 
         The raw-result variant of ``run_shell_privileged``, and the seam an
-        elevated action (``reemote5.actions.Shell`` with ``sudo``/``su``) rides:
-        the escalation is built identically (same ``_build_privileged_command``,
-        same askpass helpers, same ``sudo`` then ``su`` order), but the bespoke
-        command's own exit status travels back in the result instead of raising
-        ``CommandError`` -- the caller decides what a non-zero exit means.
+        elevated action (``reemote5.actions.Shell`` with ``sudo``/``su``/``doas``)
+        rides: the escalation is built identically (same
+        ``_build_privileged_command``, same askpass helpers, same ``doas`` then
+        ``sudo`` then ``su`` order), but the bespoke command's own exit status
+        travels back in the result instead of raising ``CommandError`` -- the
+        caller decides what a non-zero exit means.
 
         Library-level failures still raise: a connection failure surfaces as
-        ``HostConnectionError`` from ``connect``, and sudo's or su's *own*
-        authentication rejection (a wrong or missing password, a forbidden
-        run-as user) raises ``PrivilegeError`` with the credential-free
-        rendering and the would-be ``CommandError`` as its cause -- a rejected
-        credential is never reported as a mere exit status. The returned record
-        is the transport's own; ``Shell.process`` copies it into the
-        library-owned ``Result`` dataclass.
+        ``HostConnectionError`` from ``connect``, and sudo's, su's or doas's
+        *own* authentication rejection (a wrong or missing password, a denied
+        doas rule, a forbidden run-as user) raises ``PrivilegeError`` with the
+        credential-free rendering and the would-be ``CommandError`` as its cause
+        -- a rejected credential is never reported as a mere exit status. The
+        returned record is the transport's own; ``Shell.process`` copies it into
+        the library-owned ``Result`` dataclass.
         """
-        command, safe = await self._build_privileged_command(shell, sudo=sudo, su=su)
+        command, safe = await self._build_privileged_command(
+            shell, sudo=sudo, su=su, doas=doas
+        )
         result = await self._run_shell(command)
         if result.exit_status != 0 and _is_privilege_failure(
             result.stderr, result.stdout
@@ -975,6 +1050,21 @@ class Host:
         authentication rejection, ``PrivilegeError``.
         """
         return await self.run_shell_privileged(shell, su=True)
+
+    async def run_shell_doas(self, shell: str) -> str:
+        """Run one shell command elevated with ``doas`` and return its stdout.
+
+        A thin wrapper over ``run_shell_privileged`` for the doas-only case.
+        ``doas_user`` becomes ``doas -n -u <user>`` (with ``None``/``root``
+        collapsing to a bare ``doas -n``). doas is *passwordless* here: ``-n``
+        makes it non-interactive (it fails rather than prompts), because doas
+        has no askpass mechanism and asyncssh channels offer no TTY, so the host
+        must grant the login user a ``permit nopass`` rule in
+        ``/etc/doas.conf``. A non-zero exit raises ``CommandError``
+        (credential-free) or, when doas reports its *own*
+        authorization/authentication rejection, ``PrivilegeError``.
+        """
+        return await self.run_shell_privileged(shell, doas=True)
 
     async def upload_file(self, src: IO[Any], remote: str) -> None:
         """Copy an IO-like source to ``remote`` on this host via asyncssh's scp.

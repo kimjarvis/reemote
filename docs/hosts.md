@@ -164,10 +164,10 @@ def deploy(host):
         yield from role_apt_install_nginx(host)
 ```
 
-## Privilege: sudo and su
+## Privilege: sudo, su and doas
 
 An entry may carry an optional `privilege` mapping holding elevation settings.
-Four keys are recognised, in two pairs:
+Five keys are recognised:
 
 - `sudo_user` — the run-as user the driver passes to `sudo -u` (since `sudo`
   defaults to `root`, a `sudo_user` of `root` collapses to a bare `sudo`) — and
@@ -178,6 +178,13 @@ Four keys are recognised, in two pairs:
   and `su_password`, the su password. Both apply only when an operation is
   flagged `su=True`. Only default su is supported: no login shell (`su -l`), no
   environment preservation, no shell override.
+- `doas_user` — the target of a passwordless `doas -n -u <user>` (since `doas`
+  defaults to `root`, a `doas_user` of `root`, or none at all, collapses to a
+  bare `doas -n`). It applies only when an operation is flagged `doas=True`.
+  There is deliberately no `doas_password`: `doas` has no askpass mechanism and
+  asyncssh channels offer no TTY, so reemote5 always runs `doas -n`
+  (non-interactive — it fails rather than prompts) and the host must grant the
+  login user a `permit nopass` rule in `/etc/doas.conf`.
 
 ```python
 {
@@ -188,14 +195,14 @@ Four keys are recognised, in two pairs:
 ```
 
 Privilege parameters come from the inventory, never from a deploy script: an
-operation asks to elevate with `sudo=True` and/or `su=True` (see the
+operation asks to elevate with `doas=True`, `sudo=True` and/or `su=True` (see the
 [Guide](guide.md#deploy-scripts)) but cannot choose a run-as user or supply a
 password.
 
-**Combining the two.** When an operation is flagged both `sudo=True` and
-`su=True`, the escalations are applied in a fixed order — `sudo` then `su` — so
-`sudo` is the outer escalation and runs `su` inside it:
-`sudo [-u <sudo_user>] su <su_user> -c '<command>'`.
+**Combining them.** When an operation carries several flags the escalations are
+applied in a fixed order — `doas` then `sudo` then `su` — so `doas` is the
+outermost escalation and `su` the innermost payload:
+`doas -n [-u <doas_user>] sudo [-u <sudo_user>] su <su_user> -c '<command>'`.
 
 **Passwords.** Without `sudo_password`, sudo elevation assumes passwordless
 sudo (NOPASSWD or a cached credential) and runs a bare `sudo`; with one, the
@@ -204,10 +211,13 @@ password is supplied without a TTY (asyncssh channels are non-interactive).
 `su` has no askpass mechanism, so with a `su_password` the helper's output is
 piped to su's stdin (`env REEMOTE5_SU_PASSWORD=… <helper> | su …`); when that
 pipeline also runs under `sudo` it is wrapped in `sh -c` so the pipe stays
-intact inside sudo's elevation. Passwords are plain text in the inventory — the
-only supported form — and are shell-quoted into the command sent over the
-encrypted channel; they never appear in the rendered apply log, which shows the
-credential-free `sudo -u <user> …` / `su <user> -c …` form.
+intact inside sudo's elevation (the same wrap applies when `doas` is the
+outermost wrapper around an su-password pipeline with no `sudo` in between).
+Passwords are plain text in the inventory — the only supported form — and are
+shell-quoted into the command sent over the encrypted channel; they never appear
+in the rendered apply log, which shows the credential-free `sudo -u <user> …` /
+`su <user> -c …` form. `doas` carries no password at all, so its rendering is
+simply `doas -n [-u <user>] …`.
 
 An applied command that exits non-zero raises
 [`CommandError`][reemote5.hosts.CommandError] (fail-fast), carrying the host,
@@ -229,9 +239,9 @@ so a whole fleet without `lsb_release` is reported in a single message.
 
 ### A rejected credential
 
-A failure sudo or su reports as its *own* authentication rejection — a wrong
-password, a missing one where it is demanded, or a run-as user the login user
-may not become — raises
+A failure doas, sudo or su reports as its *own* authorization/authentication
+rejection — a wrong password, a missing one where it is demanded, a denied doas
+rule, or a run-as user the login user may not become — raises
 [`PrivilegeError`][reemote5.hosts.PrivilegeError] instead: the privilege
 counterpart of [`HostConnectionError`][reemote5.hosts.HostConnectionError],
 reported the same way.
@@ -239,11 +249,12 @@ reported the same way.
 reemote5 invokes `sudo -A` exactly once, but sudo re-runs the askpass helper up
 to its own `passwd_tries` limit (3 by default), so one bad password costs three
 identical attempts and three `Sorry, try again.` lines before sudo gives up with
-`sudo: 3 incorrect password attempts`. (`su` does not retry — it fails at once.)
-Matching those signatures — for both Todd Miller's sudo and sudo-rs, and su's
-`Authentication failure` — collapses that into a single error whose message
-names the affected host(s) and nothing else, so neither the retry noise nor the
-password reaches the report. The detail is preserved for diagnosis rather than
+`sudo: 3 incorrect password attempts`. (`su` does not retry — it fails at once, and `doas -n` never prompts at all.)
+Matching those signatures — for both Todd Miller's sudo and sudo-rs, su's
+`Authentication failure`, and doas's `Operation not permitted` /
+`Authentication required` / `Authentication failed` — collapses that into a
+single error whose message names the affected host(s) and nothing else, so
+neither the retry noise nor the password reaches the report. The detail is preserved for diagnosis rather than
 discarded: `failures` carries `(host_name, command, cause)` triples, where the
 command is the credential-free rendering and the cause is the `CommandError`
 holding the exit status and captured stderr (also chained as `__cause__`).
@@ -268,9 +279,9 @@ without re-interpreting the outcome:
   escalation is built identically (the shared `_build_privileged_command`
   produces the execution string and the credential-free rendering), but the
   command's own exit travels back instead of raising `CommandError`. The one
-  exception is sudo's or su's *own* authentication rejection, which still raises
-  [`PrivilegeError`][reemote5.hosts.PrivilegeError]: a rejected credential is a
-  library-level failure, never a mere exit status.
+  exception is doas's, sudo's or su's *own* authentication rejection, which still
+  raises [`PrivilegeError`][reemote5.hosts.PrivilegeError]: a rejected credential
+  is a library-level failure, never a mere exit status.
 
 [`Shell.process`][reemote5.actions.Shell.process] rides these seams and copies
 the record into a library-owned [`Result`][reemote5.actions.Result], so no

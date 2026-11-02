@@ -7,7 +7,7 @@ This is a *usage* example, not part of the library. ``apt_packages.py``
 hard-codes its ``INVENTORY`` in the source; real applications usually keep
 the target hosts in a data file instead, so the deployment script and the
 machine list change independently. This example loads the inventory from
-``inventory.json`` in the project root:
+``inventory_centos.json`` in the project root:
 
 1. Read the file and parse it as JSON -- an inventory is just a list of
    dictionaries, which is exactly what JSON expresses, so no translation
@@ -32,7 +32,7 @@ a **real SSH transport** in both phases.
 
 The path is resolved from ``__file__``, so the example works from any
 working directory. Point ``INVENTORY_PATH`` at your own file (or edit
-``inventory.json``) to target your machines.
+``inventory_centos.json``) to target your machines.
 
 Run it with::
 
@@ -64,7 +64,7 @@ from reemote5 import (
 
 APACHE_INDEX_HTML = "/var/www/html/index.html"
 
-# examples/demonstrations/inventory/json_inventory.py -> the project root,
+# examples/demonstrations/inventory/json_inventory_centos.py -> the project root,
 # so the inventory is found whatever the current working directory is.
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INVENTORY_PATH = PROJECT_ROOT / "inventory_ubuntu.json"

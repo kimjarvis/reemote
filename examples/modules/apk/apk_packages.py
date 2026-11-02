@@ -39,12 +39,19 @@ whole-system ``apk update`` / ``apk upgrade``, reemote5 deliberately drops
 both -- the whole-system refresh/upgrade stays out of the package operation
 -- so those keywords are absorbed with no effect.
 
-The script yields the *same* install request twice to show that idempotence
-across the two phases: the prepare phase plans both as changes (nothing is
-installed yet, so both compare against the same pre-deployment state), while
-the apply phase installs on the first and reports the second as a no-op,
-because the fresh per-step fact cache now sees the packages the first step
-installed.
+Two apk-native install modifiers are demonstrated on a third request:
+``no_cache=True`` adds ``--no-cache`` (bypass the package cache entirely)
+and ``no_scripts=True`` adds ``--no-scripts`` (skip post-install triggers
+and scriptlets). Both flow into the ``latest`` upgrade path too and are
+ignored by the removal direction.
+
+The script yields the *same* baseline install request twice to show
+idempotence across the two phases: the prepare phase plans both as changes
+(nothing is installed yet, so both compare against the same pre-deployment
+state), while the apply phase installs on the first and reports the second
+as a no-op, because the fresh per-step fact cache now sees the packages the
+first step installed. A third request then demonstrates both modifiers
+together on a different package.
 
 Installing packages writes to the root-owned apk database, so the requests
 are flagged ``sudo=True`` and the driver elevates their commands.
@@ -72,9 +79,13 @@ from reemote5 import (
 )
 
 # The packages to ensure, as a tuple -- OperationRequest kwargs must stay
-# hashable. Shared by both requests below so they carry identical operation
-# kwargs (only the log ``name`` differs).
+# hashable. Shared by both baseline requests below so they carry identical
+# operation kwargs (only the log ``name`` differs).
 BASELINE_PACKAGES = ("htop", "tree")
+
+# A single package installed with the apk-native modifiers to demonstrate
+# ``no_cache`` and ``no_scripts``.
+MODIFIER_PACKAGE = ("curl",)
 
 # The inventory: a real Alpine server and its SSH connection information,
 # supplied by the application to the library (the same connection data as the
@@ -96,15 +107,18 @@ INVENTORY = [
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Install the baseline packages -- twice, to show idempotence.
+    """Install the baseline packages -- twice, to show idempotence -- then
+    demonstrate the apk-native install modifiers on a third request.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
     The first request installs whatever is missing; the second carries the
     same arguments and is a guaranteed no-op in the apply phase, because the
     first install is already visible through the fresh per-step fact cache.
+    The third installs a different package with ``no_cache=True`` and
+    ``no_scripts=True``, rendering ``apk add --no-cache --no-scripts curl``.
 
-    Installing packages writes to the root-owned apk database, so both
+    Installing packages writes to the root-owned apk database, so all
     requests are flagged ``sudo=True`` and the driver elevates their commands
     over SSH.
     """
@@ -118,6 +132,14 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         apk.packages,
         name="Re-install baseline packages (no-op)",
         packages=BASELINE_PACKAGES,
+        sudo=True,
+    )
+    yield op(
+        apk.packages,
+        name="Install with --no-cache --no-scripts",
+        packages=MODIFIER_PACKAGE,
+        no_cache=True,
+        no_scripts=True,
         sudo=True,
     )
 

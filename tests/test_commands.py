@@ -34,6 +34,11 @@ def test_command_shell_renders_plain_and_elevated():
     assert command_shell(cmd, sudo=True, sudo_user="root") == "sudo locale-gen"
     assert command_shell(cmd, sudo=True, sudo_user="ops") == "sudo -u ops locale-gen"
     assert command_shell(cmd, su=True) == "su -c locale-gen"
+    # doas is passwordless and outermost: ``doas -n``, root collapsing to bare.
+    assert command_shell(cmd, doas=True) == "doas -n locale-gen"
+    assert command_shell(cmd, doas=True, doas_user="root") == "doas -n locale-gen"
+    assert command_shell(cmd, doas=True, doas_user="ops") == "doas -n -u ops locale-gen"
+    assert command_shell(cmd, doas=True, sudo=True) == "doas -n sudo locale-gen"
 
 
 async def test_send_command_hands_the_raw_text_to_the_transport():
