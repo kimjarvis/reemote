@@ -1,7 +1,9 @@
 """Self-contained module namespaces.
 
 Each subpackage combines the facts and operations of one namespace in a
-single source, so ``modules/dnf/dnf.py`` holds the dnf fact classes
+single source, so ``modules/apt/apt.py`` holds the apt fact classes
+(``AptKeys``, ``AptPackages``, ``AptUpgradable``, ``AptAutoremovable``),
+``modules/dnf/dnf.py`` holds the dnf fact classes
 (``DnfPackages``, ``DnfRepositories``, ``DnfEnabledModules``,
 ``DnfDisabledModules``) beside the ``packages`` operation and the typed
 command descriptors it yields, ``modules/files/files.py`` holds
@@ -12,11 +14,11 @@ command descriptors it yields, ``modules/files/files.py`` holds
 ``modules/server/server.py`` holds the systemd facts beside the ``service``
 and ``wait_service`` operations. The subpackages are re-exported here, so a
 deploy can keep writing
-``from reemote5.modules import dnf, files, hardware, server`` and read
-``dnf.packages`` / ``files.link`` / ``hardware.BlockDevices`` /
+``from reemote5.modules import apt, dnf, files, hardware, server`` and read
+``apt.AptKeys`` / ``dnf.packages`` / ``files.link`` / ``hardware.BlockDevices`` /
 ``server.service``.
 """
 
-from . import dnf, files, hardware, server
+from . import apt, dnf, files, hardware, server
 
-__all__ = ["dnf", "files", "hardware", "server"]
+__all__ = ["apt", "dnf", "files", "hardware", "server"]

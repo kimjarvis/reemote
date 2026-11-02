@@ -17,7 +17,7 @@ a real asyncssh transport is missing:
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``services`` / ``enabled_services``
-  / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus``
+  / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``deb_files``
   / ``date`` / ``disk_stats`` / ``dmi_info`` / ``os_groups`` / ``has_gui``
   / ``home_directories`` / ``os_hostname`` / ``ipv4_addrs`` / ``ipv6_addrs``
   / ``os_kernel``
@@ -32,14 +32,14 @@ a real asyncssh transport is missing:
   ``DnfRepoList``,
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``,
-  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``Arch``,
-  ``AuthorizedKeys``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``,
+  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptUpgradable``, ``Arch``,
+  ``AuthorizedKeys``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``, ``DebPackage``,
   ``DiskStats``, ``DmiInfo``, ``Groups``,
   ``HasGui``, ``Home``, ``Hostname``, ``Ipv4Addrs``, ``Ipv6Addrs``, ``Kernel``,
   ``KernelModules``, ``KernelVersion``, ``Last``,
   ``LinuxDistribution``, ``LinuxGui``, ``LinuxName``, ``Locales``,
   ``LsbRelease``, ``LsBlk``, ``Mounts``, ``NetworkDevices``, ``Path``, ``Processes``,
-  ``SmbiosInfo``, ``Sysctl``, ``Timezone``,
+  ``SmbiosInfo``, ``SimulateOperationWillChange``, ``Sysctl``, ``Timezone``,
   ``Uptime``, ``User``, ``Users``, ``Which``) read as a
   stand-in for gathering over SSH.
 
@@ -49,7 +49,9 @@ state when an operation is changed, and the next operation's fact reads see
 the mutation.
 """
 
+import io
 import posixpath
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
@@ -57,6 +59,32 @@ from typing import Any
 
 from reemote5.commands import Command, StringCommand, WaitTimeoutError
 from reemote5.hosts import Host
+from reemote5.modules.apt.apt import (
+    AptAutoRemoveCommand,
+    AptDistUpgradeCommand,
+    AptInstallCommand,
+    AptInstallFixCommand,
+    AptKeyInstallCommand,
+    AptKeyUploadCommand,
+    AptMarkHoldCommand,
+    AptMarkUnholdCommand,
+    AptPackagePolicy,
+    AptPackageUpgrade,
+    AptPpaCommand,
+    AptRemoveCommand,
+    AptRepoAddCommand,
+    AptRepoRemoveCommand,
+    AptSimulationDict,
+    AptSource,
+    AptSources,
+    AptSourcesFileInstallCommand,
+    AptSourcesFileRemoveCommand,
+    AptSourcesFileUploadCommand,
+    AptUpdateCommand,
+    AptUpgradeCommand,
+    DebInstallCommand,
+    _repo_line_pattern,
+)
 from reemote5.modules.dnf.dnf import (
     DnfCleanCommand,
     DnfInstallCommand,
@@ -111,7 +139,11 @@ class SimulatedHost(Host):
     # derives its digest from it, ``FileContents`` decodes its text back out,
     # a simulated ``files.put`` writes the source
     # stream's bytes into it, and a simulated ``files.get`` reads them back out
-    # into the destination stream. Storing content (not just a hash) is what
+    # into the destination stream. The ``dnf.key``/``apt.key``/``apt.sources_file``
+    # spool uploads land here too: ``import_key``/``install_apt_key``/
+    # ``install_apt_sources_file`` pop the spool entry, and the install
+    # mutators store the content bytes back at their dest path.
+    # Storing content (not just a hash) is what
     # lets a put then a get of the same path round-trip, and what makes a repeat
     # transfer a no-op: execute_command mutates it, and the next step's fresh
     # fact cache sees the mutation.
@@ -149,9 +181,110 @@ class SimulatedHost(Host):
     # None (as the fact reports when systemd answers nothing).
     services: dict[str, str] = field(default_factory=dict)
     enabled_services: set[str] = field(default_factory=set)
+    # No-longer-needed apt package names (the sorted, de-duplicated name
+    # list ``AptAutoremovable`` returns, architecture-suffixed names like
+    # ``libc6:i386`` included), backing ``AptAutoremovable``. Kept separate
+    # from ``apt_packages`` (name -> versions) because the installed rows
+    # cannot tell a legacy dependency from one still in use. Defaults to
+    # [] -- a simulated machine with nothing an autoremove would remove,
+    # like the fact's answer for a simulation with no Remv rows. A test
+    # seeds it directly; ``auto_remove_apt_packages`` (the simulated
+    # ``apt.auto_remove``) clears it and pops the names from
+    # ``apt_packages``.
+    apt_autoremovable: list[str] = field(default_factory=list)
+    # Held apt package names (the sorted, de-duplicated name list
+    # ``AptHeldPackages`` returns, architecture-suffixed names like
+    # ``libc6:i386`` included), backing ``AptHeldPackages``. Kept separate
+    # from ``apt_packages`` (name -> versions) because the hold state is
+    # invisible in the ``apt list --installed`` rows that seam models.
+    # Defaults to [] -- a simulated machine with nothing marked
+    # ``apt-mark hold``, like the fact's answer for empty showhold output.
+    # A test seeds it directly; ``hold_apt_packages``/``unhold_apt_packages``
+    # (the simulated ``apt.mark``) add/drop names, keeping the list sorted
+    # and de-duplicated as ``apt-mark showhold`` output parses.
+    apt_held_packages: list[str] = field(default_factory=list)
     # The machine architecture (``uname -m``), backing ``Arch``. Defaults to
     # ``x86_64`` -- a real machine always answers ``uname -m`` with something.
     arch: str = "x86_64"
+    # GPG keys available to APT (key id -> the details dict ``AptKeys``
+    # returns -- validity, length, subkeys, fingerprint, uid_hash, uid),
+    # backing ``AptKeys``. The seam holds the already-flattened answer the
+    # fact produces after merging every keyring file, so the fact's
+    # ``directories`` argument does not filter it. Defaults to {} -- a
+    # simulated machine with no keyring files found, like the fact's
+    # answer when the find sweep lists nothing. A read-only seam: no
+    # ``execute_command`` mutator maintains it, so a test sets it directly.
+    apt_keys: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Installed apt packages (name -> the sorted version list
+    # ``AptPackages`` returns, architecture-suffixed names like
+    # ``libc6:i386`` included), backing ``AptPackages``. Named distinctly
+    # from ``packages`` (the name-only set ``DnfPackages`` reads) so the
+    # dnf- and apt-side state never mix. Defaults to {} -- a simulated
+    # machine with no installed packages listed, like pyinfra's
+    # ``default = dict`` for a failed read. A test seeds it directly;
+    # ``install_deb``, ``install_apt_packages``, ``remove_apt_packages``,
+    # ``upgrade_apt_packages``, ``dist_upgrade_apt_packages`` and
+    # ``auto_remove_apt_packages`` mutate it as the corresponding
+    # simulated apt commands would.
+    apt_packages: dict[str, list[str]] = field(default_factory=dict)
+    # Per-package ``apt-cache policy`` answers (package name -> the
+    # ``AptPackagePolicy`` dict ``AptPolicy`` returns -- installed, candidate
+    # and the parsed version table), backing ``AptPolicy``. A name absent
+    # from the mapping reads as None, like an unknown package printing
+    # nothing on stdout. Kept separate from ``apt_packages`` because the
+    # candidate and repository origins are invisible in the ``apt list
+    # --installed`` rows that seam models. Defaults to {} -- a simulated
+    # machine where no package's policy has been seeded. A read-only seam:
+    # no ``execute_command`` mutator maintains it, so a test sets it
+    # directly.
+    apt_policy: dict[str, AptPackagePolicy] = field(default_factory=dict)
+    # Simulated ``apt-get`` change counts (subcommand phrase -> the
+    # ``AptSimulationDict`` dict ``SimulateOperationWillChange`` returns --
+    # upgraded, newly_installed, removed, not_upgraded), backing
+    # ``SimulateOperationWillChange``. A phrase absent from the mapping
+    # reads as None, like a simulation printing no summary line (which
+    # ``apt.dist_upgrade`` treats as "run the real command anyway").
+    # Defaults to {} -- a simulated machine where no simulation has been
+    # seeded. A test seeds it directly; ``dist_upgrade_apt_packages``,
+    # ``upgrade_apt_packages`` and ``auto_remove_apt_packages`` zero the
+    # matching entry as the real commands would leave nothing more to do.
+    apt_simulations: dict[str, AptSimulationDict] = field(default_factory=dict)
+    # Configured apt repositories (the list of ``AptSource`` dicts
+    # ``AptSources`` returns -- type, url, distribution, components and
+    # list-valued options, legacy .list and deb822 .sources entries already
+    # merged and expanded), backing ``AptSources``. Defaults to [] -- a
+    # simulated machine with no sources files, like pyinfra's
+    # ``default = list``. A test seeds it directly; ``add_ppa``/``remove_ppa``
+    # (the simulated ``apt.ppa``) append/drop the PPA's Launchpad source and
+    # ``add_apt_repo_line``/``remove_apt_repo_line`` (the simulated
+    # ``apt.repo``) append/drop the parsed source line, so ``AptSources``
+    # stays consistent across a simulated add/remove. The
+    # ``apt.sources_file`` mutators (``install_apt_sources_file``/
+    # ``remove_apt_sources_file``) replace/drop the entries their deb822
+    # content parses into, keeping the seam consistent across a simulated
+    # sources-file write/remove too.
+    apt_sources: list[AptSource] = field(default_factory=list)
+    # Pending apt upgrades (name -> the ``AptPackageUpgrade`` dict
+    # ``AptUpgradable`` returns -- installed and candidate versions,
+    # architecture-suffixed names like ``libc6:i386`` included), backing
+    # ``AptUpgradable``. Kept separate from ``apt_packages`` (name ->
+    # installed versions) and ``apt_policy`` (one package's full policy)
+    # because neither the installed rows nor a per-package policy query
+    # names the whole set an upgrade would move. Defaults to {} -- a
+    # simulated machine fully up to date, like the fact's answer for a
+    # listing with no upgradable rows. A test seeds it directly;
+    # ``dist_upgrade_apt_packages`` (the simulated ``apt.dist_upgrade``) and
+    # ``upgrade_apt_packages`` (the simulated ``apt.upgrade`` /
+    # ``apt.packages(upgrade=True)``) apply the candidates into
+    # ``apt_packages`` and clear it.
+    apt_upgradable: dict[str, AptPackageUpgrade] = field(default_factory=dict)
+    # ``.deb`` files present on the host (path -> {name, version}), backing
+    # ``DebPackage``'s file query. ``apt.deb`` installs the file's package:
+    # ``install_deb`` copies the file's version into ``apt_packages`` (the
+    # name -> sorted version list ``AptPackages`` reads), so a repeat is a
+    # no-op and a removal (``present=False``) clears it. Kept separate from
+    # ``rpm_files`` (the dnf-side ``.rpm`` store) so apt and dnf never mix.
+    deb_files: dict[str, dict[str, str]] = field(default_factory=dict)
     # SSH public keys, backing ``AuthorizedKeys``: keyed by username for the
     # default ``~user/.ssh/authorized_keys`` path and by the explicit path
     # when the fact is given one; each value is the list of full key strings
@@ -452,10 +585,48 @@ class SimulatedHost(Host):
                 self.write_repo_file(path, content)
             case RpmInstallCommand(src=src):
                 self.install_rpm(src)
+            case DebInstallCommand(src=src):
+                self.install_deb(src)
+            case AptInstallFixCommand():
+                pass  # the simulation models no dependency resolution
+            case AptRemoveCommand(packages=packages):
+                self.remove_apt_packages(packages)
+            case AptInstallCommand(packages=packages):
+                self.install_apt_packages(packages)
+            case AptUpdateCommand():
+                pass  # the simulation tracks no package-list metadata to refresh
+            case AptUpgradeCommand():
+                self.upgrade_apt_packages()
+            case AptDistUpgradeCommand():
+                self.dist_upgrade_apt_packages()
+            case AptAutoRemoveCommand():
+                self.auto_remove_apt_packages()
+            case AptMarkHoldCommand(packages=packages):
+                self.hold_apt_packages(packages)
+            case AptMarkUnholdCommand(packages=packages):
+                self.unhold_apt_packages(packages)
+            case AptPpaCommand(src=src, present=False):
+                self.remove_ppa(src)
+            case AptPpaCommand(src=src):
+                self.add_ppa(src)
+            case AptRepoAddCommand(path=path, line=line):
+                self.add_apt_repo_line(path, line)
+            case AptRepoRemoveCommand(path=path, line=line):
+                self.remove_apt_repo_line(path, line)
+            case AptSourcesFileUploadCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
+            case AptSourcesFileInstallCommand(spool=spool, dest=dest):
+                self.install_apt_sources_file(spool, dest)
+            case AptSourcesFileRemoveCommand(path=path):
+                self.remove_apt_sources_file(path)
             case DnfKeyUploadCommand(src=src, dest=dest):
                 self.put_file(src, dest)
             case DnfKeyImportCommand(path=path):
                 self.import_key(path)
+            case AptKeyUploadCommand(src=src, dest=dest):
+                self.put_file(src, dest)
+            case AptKeyInstallCommand(spool=spool, dest=dest):
+                self.install_apt_key(spool, dest)
             case DnfModuleEnableCommand(module=module, stream=stream):
                 self.enable_module(module, stream)
             case DnfModuleDisableCommand(module=module):
@@ -553,6 +724,324 @@ class SimulatedHost(Host):
         self.rpm_packages[name] = info["version"]
         self.packages.add(name)
 
+    def install_deb(self, src: str) -> None:
+        """Record a simulated ``dpkg -i``: mark the ``.deb``'s package installed.
+
+        Reads the ``.deb``'s name/version from ``deb_files`` (the seam
+        ``DebPackage`` reads for a file path) and records the version in
+        ``apt_packages`` (the name -> sorted version list ``AptPackages``
+        reads), so a repeat ``apt.deb`` is a no-op. Both install passes -- the
+        tolerant first and the configuring final -- have the same simulated
+        effect, and the middle ``apt-get install -f`` models no dependency
+        resolution. An unknown ``.deb`` path has no metadata to install, so
+        nothing changes. Kept separate from ``packages``/``rpm_packages`` (the
+        dnf-side state) so apt and dnf never mix.
+        """
+        info = self.deb_files.get(src)
+        if info is None:
+            return
+        self.apt_packages[info["name"]] = [info["version"]]
+
+    def install_apt_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``apt-get install``: mark the names installed.
+
+        ``apt.packages``' install (and ``latest`` upgrade) mutation. A
+        version pin (``pkg=version``) records exactly that version in
+        ``apt_packages`` (the name -> sorted version list ``AptPackages``
+        reads), so a repeat pinned install is a no-op; an unpinned name
+        carries no repository metadata to resolve a version from, so it
+        gets the ``[""]`` placeholder pyinfra's own operation fixtures use
+        for an unknown version -- and an already-installed name keeps its
+        versions (the ``latest`` path is non-idempotent by design, so no
+        candidate convergence is modeled). Kept separate from
+        ``packages``/``rpm_packages`` (the dnf-side state) so apt and dnf
+        never mix.
+        """
+        for package in packages:
+            name, sep, version = package.rpartition("=")
+            if sep:
+                self.apt_packages[name] = [version]
+            else:
+                self.apt_packages.setdefault(package, [""])
+
+    def remove_apt_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``apt-get remove``/``purge``: drop the versions.
+
+        The ``present=False`` direction of ``apt.deb`` and ``apt.packages``.
+        A bare name pops the whole entry from ``apt_packages`` so
+        ``AptPackages`` (and ``DebPackage``'s installed-name query) no
+        longer report it; a version pin (``pkg=version``, which
+        ``apt.packages`` passes through verbatim) drops only that version,
+        popping the name once no versions remain. An absent name/version is
+        tolerated (the real command would exit non-zero, but the
+        operation's fact check never yields the removal in that case).
+        """
+        for package in packages:
+            name, sep, version = package.rpartition("=")
+            if not sep:
+                self.apt_packages.pop(package, None)
+                continue
+            versions = self.apt_packages.get(name)
+            if versions is None:
+                continue
+            if version in versions:
+                versions.remove(version)
+            if not versions:
+                self.apt_packages.pop(name, None)
+
+    def upgrade_apt_packages(self) -> None:
+        """Record a simulated ``apt-get upgrade``: apply pending upgrades.
+
+        ``apt.upgrade``'s and ``apt.packages(upgrade=True)``'s mutation. Like
+        ``dist_upgrade_apt_packages`` it moves every ``apt_upgradable``
+        candidate version into ``apt_packages`` and clears
+        ``apt_upgradable`` (a plain upgrade never installs new dependencies
+        or removes conflicting packages, which the simulation does not
+        model anyway), but zeroes the ``upgrade`` entry in
+        ``apt_simulations`` -- the phrase both operations simulate -- so
+        a repeat upgrade is a no-op.
+        """
+        for name, upgrade in self.apt_upgradable.items():
+            self.apt_packages[name] = [upgrade["candidate"]]
+        self.apt_upgradable.clear()
+        self.apt_simulations["upgrade"] = {
+            "upgraded": 0,
+            "newly_installed": 0,
+            "removed": 0,
+            "not_upgraded": 0,
+        }
+
+    def dist_upgrade_apt_packages(self) -> None:
+        """Record a simulated ``apt-get dist-upgrade``: apply pending upgrades.
+
+        ``apt.dist_upgrade``'s mutation. Moves every ``apt_upgradable``
+        candidate version into ``apt_packages`` (the name -> sorted version
+        list ``AptPackages`` reads), clears ``apt_upgradable`` (nothing left
+        to upgrade) and zeroes the ``dist-upgrade`` entry in
+        ``apt_simulations``, so a repeat ``apt.dist_upgrade`` is a no-op.
+        Orphaned dependencies are left alone -- a plain dist-upgrade does
+        not autoremove; that is ``auto_remove_apt_packages``' job.
+        """
+        for name, upgrade in self.apt_upgradable.items():
+            self.apt_packages[name] = [upgrade["candidate"]]
+        self.apt_upgradable.clear()
+        self.apt_simulations["dist-upgrade"] = {
+            "upgraded": 0,
+            "newly_installed": 0,
+            "removed": 0,
+            "not_upgraded": 0,
+        }
+
+    def auto_remove_apt_packages(self) -> None:
+        """Record a simulated ``apt-get autoremove``: drop the removable names.
+
+        ``apt.auto_remove``'s mutation. Pops each ``apt_autoremovable`` name
+        from ``apt_packages`` so ``AptPackages`` no longer reports it,
+        clears ``apt_autoremovable`` (nothing left to remove) and zeroes the
+        ``autoremove`` entry in ``apt_simulations``, so a repeat
+        ``apt.auto_remove`` is a no-op. An absent name is tolerated (the
+        operation's fact check only yields names the simulation reported).
+        """
+        for name in self.apt_autoremovable:
+            self.apt_packages.pop(name, None)
+        self.apt_autoremovable.clear()
+        self.apt_simulations["autoremove"] = {
+            "upgraded": 0,
+            "newly_installed": 0,
+            "removed": 0,
+            "not_upgraded": 0,
+        }
+
+    def hold_apt_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``apt-mark hold``: mark the names held.
+
+        ``apt.mark``'s ``held=True`` mutation. Adds the names to
+        ``apt_held_packages`` (the list ``AptHeldPackages`` reads), keeping
+        it sorted and de-duplicated as the fact's ``showhold`` parsing
+        would, so a repeat hold is a no-op once the fresh per-step fact
+        cache sees the change. Holding does not touch ``apt_packages`` --
+        the mark keeps a package out of upgrades, it never installs or
+        removes anything.
+        """
+        self.apt_held_packages[:] = sorted(set(self.apt_held_packages) | set(packages))
+
+    def unhold_apt_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``apt-mark unhold``: drop the held marks.
+
+        ``apt.mark``'s ``held=False`` mutation. Removes the names from
+        ``apt_held_packages`` so ``AptHeldPackages`` no longer reports them
+        (the list stays sorted). An absent name is tolerated -- the real
+        ``apt-mark unhold`` reports "was already not on hold" and exits 0,
+        and the operation's fact check never yields such a name anyway.
+        """
+        dropped = set(packages)
+        self.apt_held_packages[:] = [
+            name for name in self.apt_held_packages if name not in dropped
+        ]
+
+    @staticmethod
+    def _ppa_url(src: str) -> str:
+        """The Launchpad URL a ``ppa:user/repo`` name expands to."""
+        return f"http://ppa.launchpad.net/{src.removeprefix('ppa:')}/ubuntu"
+
+    def add_ppa(self, src: str) -> None:
+        """Record a simulated ``apt-add-repository``: add the PPA's source.
+
+        ``apt.ppa``'s ``present=True`` mutation. A ``ppa:user/repo`` name
+        expands to the Launchpad URL ``http://ppa.launchpad.net/user/repo/ubuntu``
+        and is appended to ``apt_sources`` (the list ``AptSources`` reads) as a
+        ``deb`` source with the ``main`` component and the host's codename (the
+        ``lsb_release`` seam's ``Codename``, ``""`` when unset -- the simulation
+        models no release detection). A repeat add of the same URL is a no-op.
+        The signing key ``apt-add-repository`` also imports is not modeled,
+        like ``install_apt_key`` leaves ``apt_keys`` to the test.
+        """
+        url = self._ppa_url(src)
+        if any(source["url"] == url for source in self.apt_sources):
+            return
+        self.apt_sources.append(
+            {
+                "type": "deb",
+                "url": url,
+                "distribution": self.lsb_release.get("Codename", ""),
+                "components": ["main"],
+                "options": {},
+            }
+        )
+
+    def remove_ppa(self, src: str) -> None:
+        """Record a simulated ``apt-add-repository --remove``: drop the PPA.
+
+        ``apt.ppa``'s ``present=False`` mutation. Removes every ``apt_sources``
+        entry whose URL matches the PPA's Launchpad URL, so ``AptSources`` no
+        longer reports it. An absent PPA is tolerated (the real command would
+        exit non-zero, but the operation is non-idempotent and always yields).
+        """
+        url = self._ppa_url(src)
+        self.apt_sources[:] = [s for s in self.apt_sources if s["url"] != url]
+
+    def add_apt_repo_line(self, path: str, line: str) -> None:
+        """Record a simulated ``echo <line> >> <path>``: append a source line.
+
+        ``apt.repo``'s ``present=True`` mutation. The line (plus its
+        newline) is appended to the ``remote_files`` content at ``path``,
+        creating the file when absent, and the path is recorded in
+        ``existing_files`` with a ``file_stats`` size refresh, so the
+        content-read, existence and metadata facts all see the appended
+        file consistently. The parsed ``AptSource`` (``AptSources``' legacy
+        line parser) also lands in ``apt_sources`` unless an equal entry is
+        already there, so a repeat ``apt.repo`` is a no-op once the fresh
+        per-step fact cache sees the change. An unparseable line still
+        appends to the file but contributes no sources entry -- the fact's
+        parser skips it too.
+        """
+        data = self.remote_files.get(path, b"") + f"{line}\n".encode()
+        self.remote_files[path] = data
+        self.existing_files.add(path)
+        stats = self.file_stats.get(path)
+        if isinstance(stats, dict):
+            stats["size"] = len(data)
+        else:
+            self.file_stats[path] = {
+                "user": "root",
+                "group": "root",
+                "mode": 644,
+                "size": len(data),
+            }
+        parsed = AptSources._parse_list_line(line)
+        if parsed is not None and parsed not in self.apt_sources:
+            self.apt_sources.append(parsed)
+
+    def remove_apt_repo_line(self, path: str, line: str) -> None:
+        """Record a simulated ``sed -i '/<pattern>/d'``: drop source lines.
+
+        ``apt.repo``'s ``present=False`` mutation. Deletes every line
+        matching the same anchored, escaped whole-line pattern the sed
+        descriptor renders (``_repo_line_pattern``) from the
+        ``remote_files`` content at ``path`` and refreshes the
+        ``file_stats`` size; the parsed entry is also dropped from
+        ``apt_sources`` so ``AptSources`` no longer reports the repo (the
+        simulation does not track which file an entry came from, so an
+        equal entry goes regardless of its file). An absent path or a
+        line matching nothing is tolerated -- sed exits 0 when it deletes
+        nothing.
+        """
+        parsed = AptSources._parse_list_line(line)
+        if parsed is not None:
+            self.apt_sources[:] = [s for s in self.apt_sources if s != parsed]
+        data = self.remote_files.get(path)
+        if data is None:
+            return
+        regex = re.compile(_repo_line_pattern(line))
+        text = data.decode("utf-8")
+        kept = [row for row in text.splitlines() if regex.match(row) is None]
+        new = "\n".join(kept)
+        if kept and text.endswith("\n"):
+            new += "\n"
+        self.remote_files[path] = new.encode()
+        stats = self.file_stats.get(path)
+        if isinstance(stats, dict):
+            stats["size"] = len(self.remote_files[path])
+
+    def install_apt_sources_file(self, spool: str, dest: str) -> None:
+        """Record a simulated ``apt.sources_file`` install of the spooled deb822.
+
+        ``apt.sources_file`` first uploads the generated content to a
+        ``/tmp`` spool path (the paired ``AptSourcesFileUploadCommand`` runs
+        through ``put_file``, storing the bytes in ``remote_files``), then
+        installs it as the ``dest`` sources file and removes the spool. This
+        mirrors the install-and-remove: the spool bytes are popped out of
+        ``remote_files`` and stored at ``dest``, and the path is added to
+        ``existing_files`` plus a minimal ``file_stats`` row (root-owned,
+        mode 644 -- the real command's ``chmod 0644``), so the file facts
+        see the installed file consistently. The ``apt_sources`` seam is
+        refreshed too: entries the *previous* content at ``dest`` parsed
+        into are dropped and the new content's entries (``AptSources``'
+        deb822 parser) appended, so a rewrite replaces rather than
+        accumulates and a repeat write is a no-op once the fresh per-step
+        fact cache sees them. The simulation does not track which file an
+        entry came from, so an equal entry goes regardless of its file
+        (``remove_apt_repo_line``'s tolerance). An absent spool path
+        installs nothing.
+        """
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        previous = self.remote_files.get(dest)
+        if previous is not None:
+            stale = AptSources._parse_deb822_file(previous.decode("utf-8").splitlines())
+            self.apt_sources[:] = [s for s in self.apt_sources if s not in stale]
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        self.file_stats[dest] = {
+            "user": "root",
+            "group": "root",
+            "mode": 644,
+            "size": len(data),
+        }
+        for entry in AptSources._parse_deb822_file(data.decode("utf-8").splitlines()):
+            if entry not in self.apt_sources:
+                self.apt_sources.append(entry)
+
+    def remove_apt_sources_file(self, path: str) -> None:
+        """Record a simulated ``rm -f`` of a deb822 sources file.
+
+        ``apt.sources_file``'s ``present=False`` mutation. The content
+        bytes (``remote_files``), the existence marker (``existing_files``)
+        and any ``file_stats`` row all go, and the entries the file's
+        content parsed into are dropped from ``apt_sources`` so
+        ``AptSources`` no longer reports them (equal entries go regardless
+        of their file -- the simulation tracks no per-entry provenance).
+        An absent path is tolerated: ``rm -f`` exits 0 on a missing file
+        and the operation always yields the removal.
+        """
+        data = self.remote_files.pop(path, None)
+        if data is not None:
+            stale = AptSources._parse_deb822_file(data.decode("utf-8").splitlines())
+            self.apt_sources[:] = [s for s in self.apt_sources if s not in stale]
+        self.existing_files.discard(path)
+        self.file_stats.pop(path, None)
+
     def import_key(self, path: str) -> None:
         """Record a simulated ``rpm --import`` of the spooled key at ``path``.
 
@@ -567,6 +1056,36 @@ class SimulatedHost(Host):
         data = self.remote_files.pop(path, None)
         if data is not None:
             self.imported_keys.add(data)
+
+    def install_apt_key(self, spool: str, dest: str) -> None:
+        """Record a simulated ``apt.key`` install of the spooled key at ``spool``.
+
+        ``apt.key`` first uploads the key stream to a ``/tmp`` spool path (the
+        paired ``AptKeyUploadCommand`` runs through ``put_file``, storing the
+        bytes in ``remote_files``), then installs it as the ``dest`` keyring
+        file and removes the spool. This mirrors the install-and-remove: the
+        spool bytes are popped out of ``remote_files`` and stored at ``dest``,
+        and the keyring path is added to ``existing_files`` plus a minimal
+        ``file_stats`` row (root-owned, mode 644 -- the real command's
+        ``chmod 0644``), so ``FileExists``, ``File`` and the content-read
+        facts all see the installed file consistently. The simulated install
+        models no ``gpg --dearmor``: armored content is stored verbatim (the
+        real command would write its binary conversion), and the ``apt_keys``
+        seam is not derived from it -- that seam holds the already-parsed
+        ``AptKeys`` answer a test seeds directly. An absent spool path
+        installs nothing.
+        """
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        self.file_stats[dest] = {
+            "user": "root",
+            "group": "root",
+            "mode": 644,
+            "size": len(data),
+        }
 
     def enable_module(self, module: str, stream: str) -> None:
         """Record a simulated ``dnf module enable``: set the enabled stream.

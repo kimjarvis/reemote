@@ -1,0 +1,145 @@
+"""Install an APT GPG keyring file from a controller-side key stream.
+
+This is a *usage* example, not part of the library. It shows how an
+application drives reemote5's two-phase execution model end to end over a
+**real SSH transport** (asyncssh):
+
+1. Specify the target hosts as an *inventory*: a list of dictionaries with
+   each host's name plus its SSH ``connection`` information (address,
+   username and client key).
+2. Build the deploy script as a generator yielding ``OperationRequest``
+   objects.
+3. Run the prepare phase to get a plan, and the apply phase to execute it.
+
+Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
+via ``run``'s ``host_factory`` and never touches the network -- this example
+uses the *default* factory (``Host.from_inventory``). Each plain ``Host``
+lazily opens an asyncssh connection from its ``connection`` data, gathers
+facts and runs commands for real, and ``run`` closes those connections when
+it finishes.
+
+``run`` is a coroutine (both phases are async), so ``main`` is async and
+driven by ``asyncio.run``.
+
+``apt.key`` installs a GPG key as a keyring file under ``/etc/apt/keyrings/``
+-- the modern replacement for the deprecated ``apt-key add``: a sources
+entry references the file via ``signed-by=`` so the key is trusted only for
+its own repository. The ``src`` is the key *content* as a seekable IO-like
+stream on the control machine, never a filename or URL (fetch a URL on the
+controller and pass its bytes); ``dest`` names the keyring file, resolved
+under ``/etc/apt/keyrings/`` when relative.
+
+One request yields two commands at different privilege levels: an
+``AptKeyUploadCommand`` transfer spools the stream to a fixed ``/tmp`` path
+over scp as the login user, then an ``AptKeyInstallCommand`` runs one
+elevated ``sh -c`` that creates the keyrings directory, dearmors the key
+with ``gpg --batch --dearmor`` when the content is ASCII-armored (binary
+content is copied verbatim), chmods the keyring ``0644`` and removes the
+spool file. The request is flagged ``sudo=True`` for the install; the
+transfer stays unprivileged regardless, so the log shows a plain ``scp``
+line followed by ``sudo sh -c``.
+
+Unlike pyinfra's existence-checked ``apt.key``, this one is deliberately
+**non-idempotent** (like ``dnf.key``): it always installs and always reports
+a change, on every run. The stream is compared *by identity* across the
+prepare and apply phases, so it is defined once at module level below --
+building a fresh stream inside the deploy generator would diverge between
+the phases and raise ``DeterminismError``. The placeholder bytes stand in
+for a real vendor key (e.g. the armored body of
+``https://download.docker.com/linux/ubuntu/gpg``); replace them with the
+key you actually deploy.
+
+Run it with::
+
+    uv run python examples/modules/apt/apt_key.py
+"""
+
+import asyncio
+import io
+import sys
+from collections.abc import Generator
+
+from reemote5 import (
+    CommandError,
+    Host,
+    HostConnectionError,
+    OperationRequest,
+    PrivilegeError,
+    apt,
+    format_log,
+    format_plan,
+    op,
+    run,
+)
+
+# The key content, as ONE module-level stream: OperationRequest compares the
+# IO object by identity, so both phases must pass the same object (a stream
+# built inside the generator would trip the determinism guard). Placeholder
+# armored bytes -- replace with a real vendor key before deploying.
+GPG_KEY = io.BytesIO(
+    b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n"
+    b"mQIN reemote5 example placeholder key material\n"
+    b"-----END PGP PUBLIC KEY BLOCK-----\n"
+)
+
+# The inventory: a real Ubuntu server and its SSH connection information,
+# supplied by the application to the library (the same connection data as the
+# inventory_ubuntu.json entry the JSON-inventory demonstration loads). The
+# default host_factory materializes each entry into a plain Host that connects
+# over asyncssh.
+INVENTORY = [
+    {
+        "host": "ubuntu",
+        "connection": {
+            "address": "192.168.0.221",
+            "username": "kjarvis",
+            "key_path": "~/.ssh/id_ed25519",
+        },
+        "group": "ubuntu",
+        "tags": ["ubuntu_host"],
+    },
+]
+
+
+def deploy(host: Host) -> Generator[OperationRequest]:
+    """Install the key stream as ``/etc/apt/keyrings/reemote5-demo.gpg``.
+
+    Branch-free, so the request sequence is identical in the prepare and
+    apply phases. Writing under ``/etc/apt/keyrings/`` needs root, so the
+    request is flagged ``sudo=True``; the driver elevates the install shell
+    while the spool transfer rides scp as the login user.
+    """
+    yield op(
+        apt.key,
+        name="Install demo apt GPG keyring",
+        src=GPG_KEY,
+        dest="reemote5-demo.gpg",
+        sudo=True,
+    )
+
+
+async def main() -> None:
+    try:
+        # --dry: prepare phase only. The operation reads no fact (it is
+        # non-idempotent), so the plan always shows the install as a change;
+        # no command that mutates a host is sent.
+        plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
+        print("== Plan (prepare phase, --dry) ==")
+        print(format_plan(plans))
+
+        # Real run: prepare, then apply in lockstep across hosts over SSH.
+        plans, report, _hosts = await run(INVENTORY, deploy)
+        print("\n== Run log (apply phase) ==")
+        assert report is not None
+        print(format_log(report))
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
+        # The library already reports every host-level failure as a typed error
+        # whose message names the host and the failing command. Print that
+        # message -- no traceback -- and exit non-zero so the failure stays
+        # script-visible.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

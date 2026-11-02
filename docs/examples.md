@@ -3,7 +3,7 @@
 Runnable showcase scripts living in `examples/` — *usage* demonstrations
 through the public API only, never part of the library. The tree is split in
 four: `examples/modules/<namespace>/` holds one script per fact or operation
-of a library module (currently `dnf`, `files`, `hardware` and `server`),
+of a library module (currently `apt`, `dnf`, `files`, `hardware` and `server`),
 `examples/general/`
 holds general scenario scripts built on more than one module,
 `examples/actions/` holds bespoke-shell [action](actions.md) demonstrations, and
@@ -19,6 +19,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 
 | Examples directory | Documentation page |
 | --- | --- |
+| `examples/modules/apt/` | [Module examples: apt](examples/modules/apt.md) |
 | `examples/modules/dnf/` | [Module examples: dnf](examples/modules/dnf.md) |
 | `examples/modules/files/` | [Module examples: files](examples/modules/files.md) |
 | `examples/modules/hardware/` | [Module examples: hardware](examples/modules/hardware.md) |
@@ -35,7 +36,8 @@ sub-directory. Pick a page from the navigation, or start from this table:
     Every script on these pages uses the *default* `Host.from_inventory`
     factory and an inventory of real machines — hard-coded as
     `INVENTORY` in the script (most target the two hosts web1/web2 on
-    `192.168.0.x`; the two [`privilege`](examples/demonstrations/privilege.md)
+    `192.168.0.x`; the [`apt` fact examples](examples/modules/apt.md) target
+    a single `ubuntu` host; the two [`privilege`](examples/demonstrations/privilege.md)
     demonstrations each target a single `centos9-*` host and carry a
     plain-text password), or, for
     [`json_inventory`](examples/demonstrations/inventory.md#inventory-from-a-json-file),
