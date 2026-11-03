@@ -39,6 +39,20 @@ together on a different package. Installing writes to the root-owned apk
 database, so the requests are flagged `sudo=True` and the driver elevates the
 commands.
 
+The inventory is read from the project root's `inventory.json` (validated up
+front with `validate_inventory`), and every request carries
+`when=is_alpine` — the request-level counterpart of the `when` guard the
+[`composed_when_guard`](../demonstrations/composition.md) demonstration shows
+for a canary tag. The predicate reads only static inventory data
+(`host.group`) and is a stable module-level function, so both phases reach the
+same decision; the driver skips a rejected request without materializing it,
+so on a non-Alpine host neither the `apk` commands nor the `ApkPackages` fact
+behind them run, and plan and log render
+`[skipped: when guard is_alpine]` in the request's lockstep slot. The
+read-only fact examples guard differently by necessity: `gather_fact` takes no
+`when` parameter, so their predicate filters the host list before the
+fan-out.
+
 ::: apk_packages
     options:
       members: []
@@ -59,6 +73,13 @@ request twice so the second create and the second remove are guaranteed no-ops
 in the apply phase through the fresh per-step fact cache. Creating and removing
 both write the root-owned apk database and world file, so the requests are
 flagged `sudo=True` and the driver elevates the commands.
+
+Like the other apk examples, this script reads the shared project-root
+`inventory.json` (validated up front with `validate_inventory`) and every
+request carries `when=is_alpine`, so on a non-Alpine host neither the `apk
+add -t`/`apk del` commands nor the `ApkExplicitPackages` fact behind them
+run — the driver skips each request without materializing it and plan and log
+render `[skipped: when guard is_alpine]`.
 
 ::: apk_virtual
     options:
@@ -87,6 +108,13 @@ releases it, yielding the release twice for the same reason. Holding and
 releasing both write the root-owned apk database and world file, so the
 requests are flagged `sudo=True` and the driver elevates the commands.
 
+Like the other apk examples, this script reads the shared project-root
+`inventory.json` (validated up front with `validate_inventory`) and every
+request carries `when=is_alpine`, so on a non-Alpine host neither the
+`apk add` pin commands nor the `ApkHeldPackages` and `ApkPackages` facts
+behind them run — the driver skips each request without materializing it and
+plan and log render `[skipped: when guard is_alpine]`.
+
 ::: apk_hold
     options:
       members: []
@@ -114,6 +142,13 @@ the requests are flagged `sudo=True` and the driver elevates the commands.
 Pair this with `apk_packages.py`'s `apk.packages` (`present=False`) to
 compose the remove-then-cleanup flow as two explicit, separately plannable
 steps.
+
+Like the other apk examples, this script reads the shared project-root
+`inventory.json` (validated up front with `validate_inventory`) and every
+request carries `when=is_alpine`, so on a non-Alpine host neither the
+`apk add --purge` command nor the `ApkAutoremovable` purge simulation behind
+it runs — the driver skips each request without materializing it and plan and
+log render `[skipped: when guard is_alpine]`.
 
 ::: apk_autoremove
     options:

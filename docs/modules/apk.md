@@ -317,14 +317,16 @@ so flag the request `sudo=True` (or `su=True`).
 ## Example
 
 The read-only fact-gathering scripts under
-[`examples/modules/apk/`](../examples/modules/apk.md) load their
-inventory from `inventory_alpine.json` in the project root — validated
-with `validate_inventory` before any host is materialized — and gather
+[`examples/modules/apk/`](../examples/modules/apk.md) load the shared
+project-root inventory `inventory.json` — validated with `validate_inventory`
+before any host is materialized — and guard the gather with an `is_alpine`
+`when` predicate that filters the host list before `gather_fact`'s fan-out,
+since `gather_fact` takes no `when` parameter of its own. They gather
 `ApkPackages` (`apk_apk_packages.py`), `ApkExplicitPackages`
 (`apk_apk_explicit_packages.py`), `ApkAutoremovable`
 (`apk_apk_autoremovable.py`), `ApkRepositories`
 (`apk_apk_repositories.py`) or `ApkPackage` for one package
-(`apk_apk_package.py`) on the Alpine hosts with
+(`apk_apk_package.py`) on the Alpine hosts only with
 [`gather_fact`][reemote5.drivers.gather_fact], printing each result as
 JSON.
 

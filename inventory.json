@@ -1,0 +1,42 @@
+[
+  {
+    "host": "alpine",
+    "connection": {
+      "address": "192.168.0.197",
+      "username": "alpine",
+      "key_path": "~/.ssh/id_ed25519"
+    },
+    "group": "alpine",
+    "tags": ["alpine_host","apk_package_manager"]
+  },
+  {
+    "host": "web1",
+    "connection": {
+      "address": "192.168.0.240",
+      "username": "kjarvis",
+      "key_path": "/home/kim/.ssh/id_ed25519"
+    },
+    "group": "webservers",
+    "tags": ["ubuntu_host", "web","apt_package_manager"]
+  },
+  {
+    "host": "web2",
+    "connection": {
+      "address": "192.168.0.242",
+      "username": "kjarvis",
+      "key_path": "/home/kim/.ssh/id_ed25519"
+    },
+    "group": "webservers",
+    "tags": ["ubuntu_host", "web","apt_package_manager"]
+  },
+  {
+    "host": "ubuntu",
+    "connection": {
+      "address": "192.168.0.221",
+      "username": "kjarvis",
+      "key_path": "~/.ssh/id_ed25519"
+    },
+    "group": "ubuntu",
+    "tags": ["ubuntu_host", "apt_package_manager"]
+  }
+]

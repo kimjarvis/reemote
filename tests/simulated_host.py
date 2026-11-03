@@ -21,7 +21,11 @@ a real asyncssh transport is missing:
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``services`` / ``enabled_services``
   / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``deb_files``
-  / ``date`` / ``disk_stats`` / ``dmi_info`` / ``os_groups`` / ``has_gui``
+  / ``date`` / ``disk_stats`` / ``dmi_info`` / ``git_branches``
+  / ``git_configs`` / ``git_head_detached`` / ``git_local_commits``
+  / ``git_remote_commits`` / ``git_remote_urls`` / ``git_repos``
+  / ``git_ssh_authenticated`` / ``git_statuses`` / ``git_submodules``
+  / ``git_tags`` / ``git_tracking_branches`` / ``os_groups`` / ``has_gui``
   / ``home_directories`` / ``os_hostname`` / ``ipv4_addrs`` / ``ipv6_addrs``
   / ``os_kernel``
   / ``kernel_modules`` / ``os_kernel_version`` / ``login_records``
@@ -37,7 +41,11 @@ a real asyncssh transport is missing:
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``,
   ``SystemdServiceState``, ``SystemdServiceEnabled``, ``ApkAutoremovable``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkPackage``, ``ApkPackages``, ``ApkRepositories``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpgradable``, ``Arch``,
   ``AuthorizedKeys``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``, ``DebPackage``,
-  ``DiskStats``, ``DmiInfo``, ``Groups``,
+  ``DiskStats``, ``DmiInfo``, ``GitBranch``, ``GitConfig``,
+  ``GitHeadDetached``, ``GitIsRepo``, ``GitLocalCommit``,
+  ``GitRemoteBranchCommit``, ``GitRemoteUrl``, ``GitSshKeyConfigured``,
+  ``GitStatus``, ``GitSubmoduleStatus``, ``GitTag``,
+  ``GitTrackingBranch``, ``Groups``,
   ``HasGui``, ``Home``, ``Hostname``, ``Ipv4Addrs``, ``Ipv6Addrs``, ``Kernel``,
   ``KernelModules``, ``KernelVersion``, ``Last``,
   ``LinuxDistribution``, ``LinuxGui``, ``LinuxName``, ``Locales``,
@@ -121,6 +129,20 @@ from reemote5.modules.files.files import (
     RemoveTreeCommand,
     read_source_bytes,
     write_dest_bytes,
+)
+from reemote5.modules.git.git import (
+    GitCheckoutCommand,
+    GitCloneCommand,
+    GitConfigCommand,
+    GitFetchCommand,
+    GitPullCommand,
+    GitRemoteSetUrlCommand,
+    GitRepoPullCommand,
+    GitStatusSummary,
+    GitSubmodule,
+    GitSubmoduleUpdateCommand,
+    GitWorktreeAddCommand,
+    GitWorktreeRemoveCommand,
 )
 from reemote5.modules.server.server import (
     GroupAddCommand,
@@ -428,8 +450,13 @@ class SimulatedHost(Host):
     # store cannot answer both the file- and the directory-typed question
     # for the same path. Keys are the caller-supplied path strings verbatim,
     # ``~/...`` prefixes included; an absent key reads as None, like a
-    # missing path. A read-only seam: no ``execute_command`` mutator
-    # maintains it, so a test sets it directly.
+    # missing path. Also backing ``git.worktree``'s and ``git.repo``'s private
+    # ``_DirectoryExists`` probe (the same seam, read as a bool):
+    # ``add_worktree``/``remove_worktree`` (the simulated ``git.worktree``)
+    # add/drop the worktree path so a repeat add or remove is a no-op, and
+    # ``clone_repo`` (the simulated ``git.repo``) adds both ``dest`` and
+    # ``<dest>/.git`` so a repeat clone short-circuits. A test seeds any
+    # other directory directly.
     directory_stats: dict[str, dict[str, Any] | bool] = field(default_factory=dict)
     # File metadata (path -> the stat dict ``File`` returns -- user, group,
     # mode, atime, mtime, ctime, size -- or False for a path that exists but
@@ -443,6 +470,92 @@ class SimulatedHost(Host):
     # (``move_path``/``remove_tree``) relocates or drops a row so the ``File``
     # fact stays consistent across a simulated move.
     file_stats: dict[str, dict[str, Any] | bool] = field(default_factory=dict)
+    # The branch a repository is on (``git describe --all``, the
+    # heads/tags prefix stripped), backing ``GitBranch``: repo path ->
+    # branch name. An absent repo reads as "", like the short-circuited
+    # directory guard. A test seeds it directly for read-only fact checks;
+    # ``clone_repo``/``checkout_branch`` (the simulated ``git.repo``) write it
+    # so a repeat ``git.repo`` sees the branch already checked out.
+    git_branches: dict[str, str] = field(default_factory=dict)
+    # Git configuration items (the parsed ``git config -l`` rows), backing
+    # ``GitConfig``: scope key -> the key -> value-list dict. The scope
+    # key is the repo path for a ``--local`` read, or the "global"/
+    # "system" sentinels for the two repo-less login-user scopes. An
+    # absent scope reads as {} (pyinfra's ``default = dict``). A test
+    # seeds it directly; ``set_git_config`` (the simulated ``git.config``)
+    # sets or adds a key's value list under the targeted scope, so a
+    # repeat ``git.config`` reads the value back and is a no-op.
+    # ``clone_repo``/``set_git_remote_url`` (the simulated ``git.repo``)
+    # additionally maintain the ``remote.origin.url`` row under the repo-
+    # path scope, so a repeat ``git.repo`` sees origin already reconciled.
+    git_configs: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    # Whether a repository's ``HEAD`` is detached (the ``attached``/
+    # ``detached`` probe answer), backing ``GitHeadDetached``: repo path ->
+    # detached bool. An absent repo reads as None (undetermined), like the
+    # wrapped probe printing no token for a missing or invalid repository. A
+    # read-only seam: no ``execute_command`` mutator maintains it, so a test
+    # sets it directly.
+    git_head_detached: dict[str, bool] = field(default_factory=dict)
+    # Local ref SHAs (the ``git rev-parse <ref>`` answers), backing
+    # ``GitLocalCommit``: repo path -> ref -> SHA. An absent repo or ref
+    # reads as None, like the swallowed rev-parse failure. ``pull_worktree``
+    # (the simulated ``git.worktree`` pull) advances a worktree's ``HEAD`` to
+    # the remote tip; ``pull_repo`` (the simulated ``git.repo`` pull)
+    # advances the repo's row at the effective-branch key, so a repeat pull
+    # short-circuits through ``skip_pull``. A test seeds any other repo or
+    # ref directly.
+    git_local_commits: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Remote branch tip SHAs (the ``git ls-remote`` answers), backing
+    # ``GitRemoteBranchCommit``: repo path -> remote name -> ref -> SHA,
+    # where the ref is the requested branch or "HEAD" for a falsy one. An
+    # absent repo, remote or ref reads as None, like the swallowed
+    # ls-remote failure. A read-only seam: a test seeds it directly.
+    git_remote_commits: dict[str, dict[str, dict[str, str]]] = field(
+        default_factory=dict
+    )
+    # Remote fetch/push URLs (the ``git remote get-url`` answers), backing
+    # ``GitRemoteUrl``: repo path -> remote name -> "fetch"/"push" -> URL. An
+    # absent repo, remote or kind reads as None, like the swallowed
+    # ``get-url`` failure. A read-only seam: a test seeds it directly.
+    git_remote_urls: dict[str, dict[str, dict[str, str]]] = field(
+        default_factory=dict
+    )
+    # The paths that are valid git working-tree repositories (the
+    # ``git rev-parse --is-inside-work-tree`` answers), backing ``GitIsRepo``.
+    # Membership is the answer; an absent path reads as False, like the guard
+    # or rev-parse printing no ``true``. A test seeds it directly for
+    # read-only fact checks; ``clone_repo`` (the simulated ``git.repo``)
+    # adds the freshly cloned ``dest`` so the shape stays consistent with the
+    # ``<dest>/.git`` entry it also writes into ``directory_stats``.
+    git_repos: set[str] = field(default_factory=set)
+    # The ``user@host`` targets whose ``ssh -T`` authentication succeeds,
+    # backing ``GitSshKeyConfigured``. Membership is the answer; an absent
+    # target reads as False, like the probe printing ``unauthenticated``. Not
+    # repo-scoped -- the one git seam keyed by a remote target, not a repo
+    # path. A read-only seam: a test seeds it directly.
+    git_ssh_authenticated: set[str] = field(default_factory=set)
+    # Working-tree statuses (the parsed ``git status --porcelain`` rows),
+    # backing ``GitStatus``: repo path -> ``GitStatusSummary``. An absent repo
+    # reads as a clean summary (``dirty=False``, empty lists), like the
+    # short-circuited directory guard. A read-only seam: a test seeds it
+    # directly.
+    git_statuses: dict[str, GitStatusSummary] = field(default_factory=dict)
+    # Submodule rows (the parsed ``git submodule status`` output), backing
+    # ``GitSubmoduleStatus``: repo path -> ``GitSubmodule`` list. An absent
+    # repo reads as [], like the short-circuited directory guard. A read-only
+    # seam: a test seeds it directly.
+    git_submodules: dict[str, list[GitSubmodule]] = field(default_factory=dict)
+    # The repository's tags (the ``git tag`` lines), backing ``GitTag``:
+    # repo path -> tag list in listing order. An absent repo reads as [],
+    # like the short-circuited directory guard. A read-only seam: a test
+    # seeds it directly.
+    git_tags: dict[str, list[str]] = field(default_factory=dict)
+    # Upstream tracking branches (the ``...`` token of
+    # ``git status --branch --porcelain``), backing ``GitTrackingBranch``:
+    # repo path -> upstream branch. An absent repo reads as None, like a
+    # branch without an upstream. A read-only seam: a test seeds it
+    # directly.
+    git_tracking_branches: dict[str, str] = field(default_factory=dict)
     # Group names present on the system (the first ``/etc/group`` field of
     # each row, in file order), backing ``Groups``. Named distinctly from
     # ``Host.group`` (the inventory classifier) so the two are never confused.
@@ -758,6 +871,34 @@ class SimulatedHost(Host):
                 self.move_path(src, dest)
             case RemoveTreeCommand(src=src):
                 self.remove_tree(src)
+            case GitConfigCommand(
+                key=key,
+                value=value,
+                multi_value=multi_value,
+                repo=repo,
+                system=system,
+            ):
+                self.set_git_config(key, value, multi_value, repo, system)
+            case GitCheckoutCommand(dest=dest, branch=branch):
+                self.checkout_branch(dest, branch)
+            case GitCloneCommand(src=src, dest=dest, branch=branch):
+                self.clone_repo(src, dest, branch)
+            case GitFetchCommand():
+                pass  # fetch only advances remote refs the facts do not read back
+            case GitRemoteSetUrlCommand(dest=dest, url=url):
+                self.set_git_remote_url(dest, url)
+            case GitRepoPullCommand(dest=dest, branch=branch):
+                self.pull_repo(dest, branch)
+            case GitSubmoduleUpdateCommand():
+                pass  # no migrated fact reads submodule sync state back
+            case GitWorktreeAddCommand(worktree=worktree):
+                self.add_worktree(worktree)
+            case GitWorktreeRemoveCommand(worktree=worktree):
+                self.remove_worktree(worktree)
+            case GitPullCommand(
+                worktree=worktree, from_remote_branch=from_remote_branch
+            ):
+                self.pull_worktree(worktree, from_remote_branch)
             case StringCommand():
                 pass  # no simulated effect for raw shell strings
             case GroupAddCommand(group=name):
@@ -1564,6 +1705,162 @@ class SimulatedHost(Host):
         self.remote_files.pop(src, None)
         self.existing_files.discard(src)
         self.file_stats.pop(src, None)
+
+    def add_worktree(self, worktree: str) -> None:
+        """Record a simulated ``git worktree add``: create the tree directory.
+
+        ``git.worktree``'s create mutation. The worktree path lands in
+        ``directory_stats`` (the seam both ``_DirectoryExists`` and
+        ``files.Directory`` read) as a non-empty metadata dict, so a repeat
+        ``git.worktree`` for the same path sees the directory present and
+        takes the pull/no-op branch instead of re-adding it. The source
+        repository's ``.git/worktrees`` metadata the real command also writes
+        is not modelled -- nothing in the library reads it back.
+        """
+        self.directory_stats[worktree] = {"mode": 755}
+
+    def remove_worktree(self, worktree: str) -> None:
+        """Record a simulated ``git worktree remove``: drop the tree directory.
+
+        ``git.worktree``'s ``present=False`` mutation: the worktree path leaves
+        ``directory_stats``, so a repeat removal sees it absent and is a no-op.
+        An absent path is tolerated (the real command would exit non-zero, but
+        the operation only yields the removal when the directory exists).
+        """
+        self.directory_stats.pop(worktree, None)
+
+    def pull_worktree(
+        self, worktree: str, from_remote_branch: tuple[str, str] | None
+    ) -> None:
+        """Record a simulated ``git pull``: fast-forward the tree's local HEAD.
+
+        ``git.worktree``'s pull mutation. It advances ``git_local_commits``
+        (the ``GitLocalCommit`` seam, keyed by the worktree path and ``HEAD``)
+        to the remote tip in ``git_remote_commits`` (the
+        ``GitRemoteBranchCommit`` seam), so a repeat pull reads local == remote
+        and short-circuits via the operation's ``skip_pull``. The remote and
+        branch are resolved exactly as the operation resolves them: the
+        explicit ``from_remote_branch`` when given, else the worktree's
+        ``GitTrackingBranch`` split on its first ``/``. A pull with neither a
+        resolvable remote tip nor a tracking branch changes nothing.
+        """
+        if from_remote_branch:
+            remote, branch = from_remote_branch
+        else:
+            tracking = self.git_tracking_branches.get(worktree)
+            if not tracking or "/" not in tracking:
+                return
+            remote, branch = tracking.split("/", 1)
+        tip = self.git_remote_commits.get(worktree, {}).get(remote, {}).get(branch)
+        if tip:
+            self.git_local_commits.setdefault(worktree, {})["HEAD"] = tip
+
+    def set_git_config(
+        self,
+        key: str,
+        value: str,
+        multi_value: bool = False,
+        repo: str | None = None,
+        system: bool = False,
+    ) -> None:
+        """Record a simulated ``git config``: set or add a config item.
+
+        ``git.config``'s mutation. It writes into ``git_configs`` (the
+        ``GitConfig`` seam) under the scope the operation targets -- the repo
+        path for a ``--local`` write, else the "system"/"global" sentinel for
+        the two repo-less login-user scopes -- resolved exactly as
+        ``GitConfig.process`` resolves it, so a repeat ``git.config`` reads the
+        value back and is a no-op. A ``multi_value`` write appends the value to
+        the key's list when absent (``git config --add``), leaving any existing
+        entries; a single-valued write replaces the key's list with exactly
+        ``[value]`` (``git config <key> <value>``).
+        """
+        scope = repo if repo is not None else ("system" if system else "global")
+        config = self.git_configs.setdefault(scope, {})
+        if multi_value:
+            values = config.setdefault(key, [])
+            if value not in values:
+                values.append(value)
+        else:
+            config[key] = [value]
+
+    def clone_repo(self, src: str, dest: str, branch: str | None) -> None:
+        """Record a simulated ``git clone``: bring the repository to life.
+
+        ``git.repo``'s create mutation. Every seam a later ``git.repo`` read
+        consults must be updated together so a repeat clone short-circuits:
+        ``directory_stats`` gets both the ``dest`` directory (so the top-level
+        ``files.Directory`` shape stays coherent) and the ``<dest>/.git``
+        directory that the operation's ``_DirectoryExists`` probe reads --
+        with that present the next pass takes the reconcile/branch/pull
+        branch instead of re-cloning. ``git_configs[dest]`` records the
+        ``remote.origin.url`` list ``GitConfig`` returns for the freshly
+        cloned repository (matching pyinfra's own fixture shape, a one-
+        element list), so the origin-reconcile check reads equal on the
+        second pass. ``git_branches[dest]`` becomes the requested ``branch``,
+        or ``"main"`` when none was named -- the modern ``init.defaultBranch``
+        a real clone resolves HEAD to -- so the branch-match check reads
+        equal too. The clone's commit SHAs are deliberately not seeded:
+        without a real remote there is nothing sensible to record in
+        ``git_local_commits``/``git_remote_commits``, and pyinfra's own
+        clone fixtures assert only the clone command, never a follow-up.
+        """
+        self.directory_stats[dest] = {"mode": 755}
+        self.directory_stats[f"{dest}/.git"] = {"mode": 755}
+        self.git_repos.add(dest)
+        config = self.git_configs.setdefault(dest, {})
+        config["remote.origin.url"] = [src]
+        self.git_branches[dest] = branch or "main"
+
+    def set_git_remote_url(self, dest: str, url: str) -> None:
+        """Record a simulated ``git remote set-url origin``: re-point origin.
+
+        ``git.repo``'s origin-reconcile mutation. Writes the fetched URL into
+        ``git_configs[dest]["remote.origin.url"]`` -- the exact key
+        ``GitConfig`` returns and the operation compares against ``src`` -- so
+        a repeat ``git.repo`` with the same ``src`` sees the values equal and
+        skips the reset. The push URL is not modelled (no migrated fact reads
+        it), matching pyinfra, whose reset command only rewrites the fetch.
+        """
+        config = self.git_configs.setdefault(dest, {})
+        config["remote.origin.url"] = [url]
+
+    def checkout_branch(self, dest: str, branch: str) -> None:
+        """Record a simulated ``git checkout``: switch the repository's HEAD.
+
+        ``git.repo``'s branch-switch (and tag-detach) mutation. Writes
+        ``branch`` into ``git_branches[dest]`` -- the value ``GitBranch``
+        reads back -- so a repeat ``git.repo`` for the same target sees the
+        current branch already equal and skips the fetch/checkout pair. A tag
+        checkout writes the tag name into the same seam: pyinfra's
+        ``is_tag`` branch does not model the resulting detached HEAD (the
+        fact's ``git describe --all`` answer for a detached tree is out of
+        scope here), and the operation only compares ``GitBranch`` against
+        ``branch``, so keeping the two consistent is enough to short-circuit
+        the second pass.
+        """
+        self.git_branches[dest] = branch
+
+    def pull_repo(self, dest: str, branch: str | None) -> None:
+        """Record a simulated ``git pull``: fast-forward the branch's local tip.
+
+        ``git.repo``'s pull mutation. Advances ``git_local_commits[dest]`` at
+        the ``branch`` key (the ``GitLocalCommit`` ref the operation compared)
+        to ``git_remote_commits[dest]["origin"][branch]`` -- the
+        ``GitRemoteBranchCommit`` tip the operation resolved against the same
+        effective branch -- so a repeat ``git.repo`` reads local == remote
+        and short-circuits through ``skip_pull``. A pull whose branch is
+        ``None`` (an empty repository with nothing checked out) or whose
+        remote tip is unseeded changes nothing: the real command would either
+        refuse or fetch from an unreachable origin, but the operation only
+        yields the pull when it decided the two differ, and the simulated
+        seam has no remote to contact for a missing tip.
+        """
+        if not branch:
+            return
+        tip = self.git_remote_commits.get(dest, {}).get("origin", {}).get(branch)
+        if tip:
+            self.git_local_commits.setdefault(dest, {})[branch] = tip
 
     def check_wait(self, cmd: WaitForFactCommand) -> None:
         """Evaluate a simulated wait once, without polling or sleeping.

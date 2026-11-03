@@ -42,6 +42,7 @@ plugins:
             - examples/modules/apt
             - examples/modules/dnf
             - examples/modules/files
+            - examples/modules/git
             - examples/modules/hardware
             - examples/modules/server
             - examples/actions
@@ -74,6 +75,7 @@ nav:
           - apt: examples/modules/apt.md
           - dnf: examples/modules/dnf.md
           - files: examples/modules/files.md
+          - git: examples/modules/git.md
           - hardware: examples/modules/hardware.md
           - server: examples/modules/server.md
       - General: examples/general.md
@@ -96,5 +98,6 @@ nav:
           - apt: modules/apt.md
           - dnf: modules/dnf.md
           - files: modules/files.md
+          - git: modules/git.md
           - hardware: modules/hardware.md
           - server: modules/server.md

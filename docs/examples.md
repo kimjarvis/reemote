@@ -3,8 +3,8 @@
 Runnable showcase scripts living in `examples/` — *usage* demonstrations
 through the public API only, never part of the library. The tree is split in
 four: `examples/modules/<namespace>/` holds one script per fact or operation
-of a library module (currently `apk`, `apt`, `dnf`, `files`, `hardware` and
-`server`),
+of a library module (currently `apk`, `apt`, `dnf`, `files`, `git`,
+`hardware` and `server`),
 `examples/general/`
 holds general scenario scripts built on more than one module,
 `examples/actions/` holds bespoke-shell [action](actions.md) demonstrations, and
@@ -24,6 +24,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 | `examples/modules/apt/` | [Module examples: apt](examples/modules/apt.md) |
 | `examples/modules/dnf/` | [Module examples: dnf](examples/modules/dnf.md) |
 | `examples/modules/files/` | [Module examples: files](examples/modules/files.md) |
+| `examples/modules/git/` | [Module examples: git](examples/modules/git.md) |
 | `examples/modules/hardware/` | [Module examples: hardware](examples/modules/hardware.md) |
 | `examples/modules/server/` | [Module examples: server](examples/modules/server.md) |
 | `examples/general/` | [General examples](examples/general.md) |
@@ -39,13 +40,14 @@ sub-directory. Pick a page from the navigation, or start from this table:
     factory and an inventory of real machines — hard-coded as
     `INVENTORY` in the script (most target the two hosts web1/web2 on
     `192.168.0.x`; the [`apt` fact examples](examples/modules/apt.md) target
-    a single `ubuntu` host; the [`apk` operation
+    a single `ubuntu` host; the remaining [`apk` operation
     examples](examples/modules/apk.md) target a single `alpine` host; the three
     [`privilege`](examples/demonstrations/privilege.md)
     demonstrations each target a single `centos9-*` host — the sudo and su ones
     carry a plain-text password, the doas one is passwordless), or, for
-    the [JSON-inventory examples](examples/demonstrations/inventory.md)
-    and the [`apk` fact examples](examples/modules/apk.md),
+    the [JSON-inventory examples](examples/demonstrations/inventory.md),
+    the [`apk` fact examples](examples/modules/apk.md) and the
+    [`apk.packages` operation example](examples/modules/apk.md),
     read from the `inventory*.json` files in the project root — so running one opens
     real asyncssh connections: first read-only for the `dry=True` plan,
     then executing the apply phase. Edit the inventory (or keep only the
@@ -81,8 +83,10 @@ command is not installed on the host — plus
 [`OperationError`][reemote5.core.OperationError] when an operation's
 prerequisites are not met (the timezone example on a non-systemd host),
 [`WaitTimeoutError`][reemote5.commands.WaitTimeoutError]
-in the polling example and [`InventoryError`][reemote5.hosts.InventoryError] in
-the JSON-inventory examples — prints the message on stderr and exits non-zero. The
+in the polling example and [`InventoryError`][reemote5.hosts.InventoryError]
+(together with Python's own `OSError`/`json.JSONDecodeError` for the file
+itself) in the examples that read their inventory from a JSON file — prints the
+message on stderr and exits non-zero. The
 message already names the host and, for a failed command, the credential-free
 command text and its stderr, so a failing run reports the reason instead of a
 Python traceback.

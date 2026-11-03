@@ -10,7 +10,7 @@ two-phase execution model -- but the target host is not hard-coded: the
 inventory comes from a JSON file, the way
 ``examples/demonstrations/inventory/json_inventory_alpine.py`` loads it:
 
-1. Read ``inventory_alpine.json`` in the project root and parse it as JSON
+1. Read ``inventory.json`` in the project root and parse it as JSON
    -- an inventory is just a list of dictionaries, which is exactly what
    JSON expresses -- then validate it up front with
    ``validate_inventory`` so a malformed file fails with an
@@ -19,11 +19,20 @@ inventory comes from a JSON file, the way
 2. Materialize each entry into a plain ``Host`` with the default
    ``Host.from_inventory`` factory. Each ``Host`` lazily opens an asyncssh
    connection from its ``connection`` data when a fact is gathered.
-3. Gather ``ApkExplicitPackages`` on every host at once with the driver's
-   ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
-   across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's raw list of package names with
-   ``json.dumps(..., indent=2)``.
+3. Guard the gather with a ``when`` predicate, the same style as the deploy
+   meta-parameter (see ``examples/demonstrations/
+   composed_when_guard.py``): ``is_alpine`` reads only **static** inventory
+   data -- ``host.group`` -- and the fact is gathered on the hosts that pass
+   it. ``gather_fact`` itself takes no ``when`` parameter, so the predicate
+   filters the host list before the fan-out -- the direct equivalent of a
+   driver-side skip. This example's inventory holds exactly one host in the
+   ``"alpine"`` group, so nothing is visibly skipped, but the same code
+   against a mixed inventory would gather on the Alpine hosts only.
+4. Gather ``ApkExplicitPackages`` on the guarded hosts at once with the
+   driver's ``gather_fact`` helper -- it fans the fact's ``process`` coroutine
+   out across the inventory with ``asyncio.gather`` and returns a
+   host-name-keyed mapping -- then print each host's raw list of package
+   names with ``json.dumps(..., indent=2)``.
 
 ``ApkExplicitPackages`` cats ``/etc/apk/world`` -- apk's *world*, the
 constraints the package selection must fulfil -- behind a ``|| true``, so a
@@ -41,7 +50,8 @@ takes no arguments, so the default gather needs none.
 
 The path is resolved from ``__file__``, so the example works from any
 working directory. Point ``INVENTORY_PATH`` at your own file (or edit
-``inventory_alpine.json``) to target your machines.
+``inventory.json``) to target your machines; hosts outside the
+``"alpine"`` group are skipped by the ``when`` guard.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
 ``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven
@@ -71,7 +81,7 @@ from reemote5 import (
 # examples/modules/apk/apk_apk_explicit_packages.py -> the project root, so the
 # inventory is found whatever the current working directory is.
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory_alpine.json"
+INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
 
 def load_inventory(path: Path) -> list[dict[str, Any]]:
@@ -88,6 +98,17 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
+def is_alpine(host: Host) -> bool:
+    """``when`` guard: the host belongs to the inventory group ``"alpine"".
+
+    Reads only static inventory data (``host.group``, set by the ``"group"``
+    key of the inventory entry), never a mutable fact, and stays a stable
+    module-level function -- the two rules every ``when`` predicate follows
+    so both deploy phases reach the same eligibility decision.
+    """
+    return host.group == "alpine"
+
+
 async def main() -> None:
     hosts: list[Host] = []
     try:
@@ -95,12 +116,21 @@ async def main() -> None:
         print(f"== Inventory loaded from {INVENTORY_PATH} ==")
         print(", ".join(entry["host"] for entry in inventory))
 
-        # Materialize every inventory entry up front so the fact can be gathered
-        # on all hosts at once.
-        hosts = [Host.from_inventory(entry) for entry in inventory]
-        # Gather the fact across the whole inventory concurrently: gather_fact
-        # fans ApkExplicitPackages.process out with asyncio.gather and returns a
-        # host-name-keyed mapping. process cats /etc/apk/world over SSH and
+        # Materialize every inventory entry up front, then guard the gather
+        # below -- a skipped host never reaches the fan-out at all.
+        all_hosts = [Host.from_inventory(entry) for entry in inventory]
+        # Apply the ``when`` guard before the fan-out: gather_fact has no
+        # ``when`` parameter of its own, so filtering the host list with the
+        # predicate is the equivalent of the driver skipping a guarded
+        # request on ineligible hosts -- the skipped hosts are never
+        # connected, exactly as a skipped request is never materialized.
+        hosts = [host for host in all_hosts if is_alpine(host)]
+        skipped = [host.name for host in all_hosts if host not in hosts]
+        if skipped:
+            print("\n== Skipped (when guard is_alpine): " + ", ".join(skipped) + " ==")
+        # Gather the fact across the guarded hosts concurrently: gather_fact
+        # fans ApkExplicitPackages.process out with asyncio.gather and returns
+        # a host-name-keyed mapping. process cats /etc/apk/world over SSH and
         # parses each constraint line into its package name, sorted and
         # de-duplicated.
         apk_explicit_packages = await gather_fact(hosts, ApkExplicitPackages)
