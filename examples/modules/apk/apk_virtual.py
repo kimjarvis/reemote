@@ -54,7 +54,17 @@ the group, the second sees it present and is a no-op, the first remove then
 drops it, and the second remove sees it gone and is a no-op.
 
 Creating and removing both write the root-owned apk database and world file,
-so every request is flagged ``sudo=True`` and the driver elevates its command.
+so every request is flagged ``doas=True`` and the driver elevates its
+command. ``doas`` rather than ``sudo`` because the Alpine host has no
+``sudo`` installed at all -- ``sudo apk add -t`` would die with
+``sh: sudo: not found`` (exit 127) before reaching ``apk``. ``doas`` is
+passwordless here: reemote5 always runs ``doas -n``, which fails rather than
+prompts, so the host must grant the login user a ``permit nopass`` rule in
+``/etc/doas.conf`` (see
+``examples/demonstrations/privilege/privilege_doas.py``); without one the
+driver raises ``PrivilegeError``. No target user is named, so each command
+sent is a bare ``doas -n apk ...`` (doas already targets root, so there is
+no ``-u``).
 
 Every request also carries ``when=is_alpine``, the declarative eligibility
 guard (see
@@ -67,9 +77,9 @@ plan and the run log render the step as ``[skipped: when guard is_alpine]``
 and none of its commands -- nor the ``ApkExplicitPackages`` fact behind them,
 the world read -- is materialized at all, which is exactly why an apk-native
 operation must be guarded rather than run blind on a host without ``apk``.
-The project root's ``inventory.json`` holds one host in the ``"alpine"``
-group, so nothing is visibly skipped here; the same deploy against a mixed
-inventory would build and tear down on the Alpine hosts only.
+The project root's ``inventory.json`` holds one host in the ``"alpine"`` group
+alongside hosts in other groups, so the run visibly creates and removes the
+group on the Alpine host and skips every other one.
 
 Run it with::
 
@@ -155,8 +165,9 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     then tear the group back down, the second a no-op for the same reason.
 
     Creating and removing both write the root-owned apk database and world
-    file, so every request is flagged ``sudo=True`` and the driver elevates
-    its command over SSH. Branch-free means the two phases agree, and the
+    file, so every request is flagged ``doas=True`` (the host has no ``sudo``)
+    and the driver elevates its command over SSH with passwordless
+    ``doas -n``. Branch-free means the two phases agree, and the
     ``when=is_alpine`` guard on every request keeps the schedule identical on
     every host: eligibility is the driver's decision, not an ``if`` in this
     body.
@@ -166,7 +177,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Create build-deps virtual group",
         tag=VIRTUAL_TAG,
         packages=BUILD_DEPS,
-        sudo=True,
+        doas=True,
         when=is_alpine,
     )
     yield op(
@@ -174,7 +185,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Re-create build-deps virtual group (no-op)",
         tag=VIRTUAL_TAG,
         packages=BUILD_DEPS,
-        sudo=True,
+        doas=True,
         when=is_alpine,
     )
     yield op(
@@ -182,7 +193,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Remove build-deps virtual group",
         tag=VIRTUAL_TAG,
         present=False,
-        sudo=True,
+        doas=True,
         when=is_alpine,
     )
     yield op(
@@ -190,7 +201,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Re-remove build-deps virtual group (no-op)",
         tag=VIRTUAL_TAG,
         present=False,
-        sudo=True,
+        doas=True,
         when=is_alpine,
     )
 

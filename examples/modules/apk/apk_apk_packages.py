@@ -25,9 +25,10 @@ inventory comes from a JSON file, the way
    data -- ``host.group`` -- and the fact is gathered on the hosts that pass
    it. ``gather_fact`` itself takes no ``when`` parameter, so the predicate
    filters the host list before the fan-out -- the direct equivalent of a
-   driver-side skip. This example's inventory holds exactly one host in the
-   ``"alpine"`` group, so nothing is visibly skipped, but the same code
-   against a mixed inventory would gather on the Alpine hosts only.
+   driver-side skip. The shared ``inventory.json`` holds one host in the
+   ``"alpine"`` group alongside hosts in other groups, so the run prints its
+   Alpine result plus a ``== Skipped (when guard is_alpine): ... ==`` line
+   naming every other one.
 4. Gather ``ApkPackages`` on the guarded hosts at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed

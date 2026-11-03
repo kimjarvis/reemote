@@ -63,7 +63,17 @@ written, the first release then drops all three, and the second release sees
 them gone and is a no-op.
 
 Holding and releasing both write the root-owned apk database and world file,
-so every request is flagged ``sudo=True`` and the driver elevates its command.
+so every request is flagged ``doas=True`` and the driver elevates its
+command. ``doas`` rather than ``sudo`` because the Alpine host has no
+``sudo`` installed at all -- ``sudo apk add`` would die with
+``sh: sudo: not found`` (exit 127) before reaching ``apk``. ``doas`` is
+passwordless here: reemote5 always runs ``doas -n``, which fails rather than
+prompts, so the host must grant the login user a ``permit nopass`` rule in
+``/etc/doas.conf`` (see
+``examples/demonstrations/privilege/privilege_doas.py``); without one the
+driver raises ``PrivilegeError``. No target user is named, so each command
+sent is a bare ``doas -n apk add ...`` (doas already targets root, so there
+is no ``-u``).
 
 Every request also carries ``when=is_alpine``, the declarative eligibility
 guard (see
@@ -77,8 +87,8 @@ and none of its commands -- nor the ``ApkHeldPackages`` and ``ApkPackages``
 facts behind them -- is materialized at all, which is exactly why an
 apk-native operation must be guarded rather than run blind on a host without
 ``apk``. The project root's ``inventory.json`` holds one host in the
-``"alpine"`` group, so nothing is visibly skipped here; the same deploy
-against a mixed inventory would pin and release on the Alpine hosts only.
+``"alpine"`` group alongside hosts in other groups, so the run visibly pins
+and releases on the Alpine host and skips every other one.
 
 Run it with::
 
@@ -172,8 +182,9 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     no-op for the same reason.
 
     Holding and releasing both write the root-owned apk database and world
-    file, so every request is flagged ``sudo=True`` and the driver elevates its
-    command over SSH. Branch-free means the two phases agree, and the
+    file, so every request is flagged ``doas=True`` (the host has no ``sudo``)
+    and the driver elevates its command over SSH with passwordless
+    ``doas -n``. Branch-free means the two phases agree, and the
     ``when=is_alpine`` guard on every request keeps the schedule identical on
     every host: eligibility is the driver's decision, not an ``if`` in this
     body.
@@ -182,14 +193,14 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         apk.hold,
         name="Hold core packages at their installed versions",
         packages=HELD_PACKAGES,
-        sudo=True,
+        doas=True,
         when=is_alpine,
     )
     yield op(
         apk.hold,
         name="Re-hold core packages (no-op)",
         packages=HELD_PACKAGES,
-        sudo=True,
+        doas=True,
         when=is_alpine,
     )
     yield op(
@@ -197,7 +208,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Pin openssl to an explicit ~3.3 constraint",
         packages=PINNED_PACKAGE,
         version=PINNED_VERSION,
-        sudo=True,
+        doas=True,
         when=is_alpine,
     )
     yield op(
@@ -205,7 +216,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Release every hold",
         packages=ALL_HELD,
         present=False,
-        sudo=True,
+        doas=True,
         when=is_alpine,
     )
     yield op(
@@ -213,7 +224,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Re-release every hold (no-op)",
         packages=ALL_HELD,
         present=False,
-        sudo=True,
+        doas=True,
         when=is_alpine,
     )
 

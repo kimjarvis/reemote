@@ -4900,17 +4900,18 @@ async def test_apt_sources_file_write_then_remove_in_one_deploy():
 async def test_apt_sources_file_fresh_containers_per_phase_stay_deterministic():
     """Unlike apt.key's identity-compared stream, the content is generated
     inside the operation from value-compared kwargs, so a deploy building
-    fresh lists on every invocation still passes the determinism guard."""
+    fresh -- but hashable -- tuples on every invocation still passes the
+    determinism guard."""
 
     def sources_deploy(host):
         yield op(
             apt.sources_file,
             name="Add Docker apt repository (deb822)",
             filename="docker",
-            types=["deb"],
-            uris=["https://download.docker.com/linux/debian"],
-            suites=["bookworm"],
-            components=["stable"],
+            types=("deb",),
+            uris=("https://download.docker.com/linux/debian",),
+            suites=("bookworm",),
+            components=("stable",),
             sudo=True,
         )
 

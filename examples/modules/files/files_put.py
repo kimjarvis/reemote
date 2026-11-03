@@ -13,8 +13,9 @@ The source is an **IO-like object only** -- pyinfra's ``files.put`` accepts
 here a module-level ``io.BytesIO``. Two rules follow from that. The stream
 must be *seekable*: it is rewound to position 0 before every read, so the
 prepare-phase hash, the apply-phase hash and the copy itself all see the
-same content. And because ``OperationRequest`` equality compares the
-unhashable stream *by identity*, the deploy must pass the same object in
+same content. And because ``OperationRequest`` equality compares a stream
+*by identity* -- an ``IO`` object hashes by identity too, so it satisfies the
+request hashability rule -- the deploy must pass the same object in
 both phases -- hence the module-level constant rather than a fresh
 ``BytesIO`` inside the generator (a new object per phase would trip the
 determinism guard).

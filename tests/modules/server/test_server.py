@@ -4200,17 +4200,19 @@ def test_modprobe_command_shell_rendering():
         # add_multiple_exists.json, add_needs_quotes.json, remove.json,
         # remove-list.json, remove_needs_quotes.json. Only membership in the
         # KernelModules dict matters, so the fixtures' empty info dicts feed
-        # the kernel_modules seam verbatim.
+        # the kernel_modules seam verbatim. The *request* arguments are tuples
+        # where pyinfra's JSON has lists: OperationRequest rejects an
+        # unhashable argument value (UnhashableArgumentError).
         ("somemodule", [], {}, ["modprobe -a somemodule"], True),
         ("somemodule", ["somemodule"], {}, [], False),
         ("somemodule", [], {"force": True}, ["modprobe -f -a somemodule"], True),
-        (["mod1", "mod2", "mod3"], ["mod2"], {}, ["modprobe -a mod1 mod3"], True),
-        (["somemodule", "someothermodule"], ["somemodule", "someothermodule"],
+        (("mod1", "mod2", "mod3"), ["mod2"], {}, ["modprobe -a mod1 mod3"], True),
+        (("somemodule", "someothermodule"), ["somemodule", "someothermodule"],
          {}, [], False),
         ("evil; rm -rf /", [], {}, ["modprobe -a 'evil; rm -rf /'"], True),
         ("somemodule", ["somemodule"], {"present": False},
          ["modprobe -r -a somemodule"], True),
-        (["mod1", "mod2", "mod3"], ["mod1"], {"present": False},
+        (("mod1", "mod2", "mod3"), ["mod1"], {"present": False},
          ["modprobe -r -a mod1"], True),
         ("evil; rm -rf /", ["evil; rm -rf /"], {"present": False},
          ["modprobe -r -a 'evil; rm -rf /'"], True),
@@ -4494,6 +4496,9 @@ def test_mount_command_shell_rendering():
         # (tests/operations/server.mount/), replayed verbatim over the
         # SimulatedHost seams. The bare {} info dicts (mount_exists.json,
         # unmount.json) feed the mounts seam as-is: only membership matters.
+        # The *request* arguments are tuples where pyinfra's JSON has lists,
+        # because OperationRequest rejects an unhashable argument value
+        # (UnhashableArgumentError); the seam entries keep pyinfra's lists.
         # mount.json
         ("/data", {}, "Linux", {}, ["mount /data"], True),
         # mount_device.json
@@ -4503,7 +4508,7 @@ def test_mount_command_shell_rendering():
         ("/data", {}, "Linux", {"device": "/dev/sdc3", "fs_type": "xfs"},
          ["mount -t xfs /dev/sdc3 /data"], True),
         # mount_options.json
-        ("/data", {}, "Linux", {"options": ["rw"]}, ["mount -o rw /data"], True),
+        ("/data", {}, "Linux", {"options": ("rw",)}, ["mount -o rw /data"], True),
         # mount_exists.json
         ("/data", {"/data": {}}, "Linux", {}, [], False),
         # mount_exists_device_match.json
@@ -4536,22 +4541,22 @@ def test_mount_command_shell_rendering():
          ["umount '/mnt/my data; rm -rf /'"], True),
         # remount_options.json
         ("/data", {"/data": {"options": ["rw"]}}, "Linux",
-         {"options": ["rw", "noatime"]},
+         {"options": ("rw", "noatime")},
          ["mount -o remount,rw,noatime /data"], True),
         # remount_needs_quotes.json
         ("/data dir; rm -rf /", {"/data dir; rm -rf /": {"options": ["rw"]}},
-         "Linux", {"options": ["rw", "noatime"]},
+         "Linux", {"options": ("rw", "noatime")},
          ["mount -o remount,rw,noatime '/data dir; rm -rf /'"], True),
         # remount_options_device_fallback.json
         ("/data",
          {"/mnt/data": {"device": "/dev/sdb1", "type": "ext4",
                         "options": ["rw"]}},
-         "Linux", {"device": "/dev/sdb1", "options": ["rw", "noatime"]},
+         "Linux", {"device": "/dev/sdb1", "options": ("rw", "noatime")},
          ["mount -o remount,rw,noatime /mnt/data"], True),
         # remount_options_bsd.json
         ("/data",
          {"/data": {"options": ["rw"], "type": "ufs", "device": "/dev/sd0a"}},
-         "*BSD", {"options": ["rw", "noatime"]},
+         "*BSD", {"options": ("rw", "noatime")},
          ["mount -uo rw,noatime -t ufs /dev/sd0a /data"], True),
     ],
 )

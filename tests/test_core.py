@@ -8,12 +8,25 @@ meta-parameter inheritance (inner request wins), name prefixing, order-
 preserving concatenation, deduplication by effective identity (name
 excluded, first occurrence wins), per-invocation purity (so prepare and
 apply flatten identically), and end-to-end ``run`` calls through the
-determinism guard using the test framework's ``SimulatedHost``.
+determinism guard using the test framework's ``SimulatedHost``. Also covers
+the request model's hashability rule: an unhashable ``args``/``kwargs`` value
+is rejected at construction, because ``compose(dedupe=True)`` hashes every
+argument value.
 """
 
+import io
 from collections.abc import Generator
 
-from reemote5.core import OperationRequest, Privilege, compose, op, sub_deploy
+import pytest
+
+from reemote5.core import (
+    OperationRequest,
+    Privilege,
+    UnhashableArgumentError,
+    compose,
+    op,
+    sub_deploy,
+)
 from reemote5.drivers import format_log, format_plan, run
 from reemote5.hosts import Host
 from reemote5.modules import dnf, files
@@ -61,6 +74,67 @@ def role_httpd(host: Host) -> Generator[OperationRequest]:
         src=HTTPD_WELCOME_CONF,
         present=False,
     )
+
+
+# --- OperationRequest hashability: mutable arguments rejected up front -----------
+
+
+def test_op_rejects_a_list_kwarg_value():
+    """The immutable-container rule is enforced, not just documented.
+
+    Lockstep pairing compares requests by *value*, so a ``list`` would pass the
+    determinism guard unnoticed; it is rejected here because
+    ``compose(dedupe=True)`` hashes every argument value.
+    """
+    with pytest.raises(UnhashableArgumentError, match=r"kwargs\['packages'\]"):
+        op(dnf.packages, name="Install nginx", packages=["nginx"])
+
+
+def test_op_rejects_a_dict_and_a_set_kwarg_value():
+    with pytest.raises(UnhashableArgumentError, match=r"kwargs\['packages'\]"):
+        op(dnf.packages, packages={"nginx": ["1.24"]})
+    with pytest.raises(UnhashableArgumentError, match=r"kwargs\['packages'\]"):
+        op(dnf.packages, packages={"nginx"})
+
+
+def test_op_rejects_a_mutable_value_nested_in_a_tuple():
+    """The check hashes the value, so a list inside a tuple is caught too."""
+    with pytest.raises(UnhashableArgumentError, match="unhashable type: 'list'"):
+        op(dnf.packages, packages=(["nginx"],))
+
+
+def test_op_rejects_an_unhashable_positional_arg():
+    with pytest.raises(UnhashableArgumentError, match=r"args\[0\]"):
+        OperationRequest(func=dnf.packages, args=(["nginx"],))
+
+
+def test_unhashable_argument_error_names_the_immutable_alternative():
+    """The message must say what to do, not only what went wrong."""
+    with pytest.raises(
+        UnhashableArgumentError, match=r'packages=\("nginx",\)'
+    ) as exc:
+        op(dnf.packages, packages=["nginx"])
+    # It replaces the bare TypeError a set insertion would have raised.
+    assert isinstance(exc.value, TypeError)
+
+
+def test_request_normalizes_positional_args_to_a_tuple():
+    """A list ``args`` would make the stored request itself unhashable."""
+    request = OperationRequest(func=dnf.packages, args=["nginx"])
+    assert request.args == ("nginx",)
+    assert hash(request) == hash(OperationRequest(func=dnf.packages, args=("nginx",)))
+
+
+def test_op_accepts_a_stream_kwarg_because_it_hashes_by_identity():
+    """The rule is hashability, not immutability: ``files.put`` carries an IO.
+
+    A stream hashes by identity, so it stays a legal request value -- it just
+    has to be the *same* object in both phases, since equality is identity too.
+    """
+    with io.BytesIO(b"worker_processes auto;") as stream:
+        request = op(files.put, src=stream, dest="/etc/nginx/nginx.conf")
+    assert request.kwargs["src"] is stream
+    assert hash(request) == hash(request)
 
 
 # --- sub_deploy: pure request-stream transform --------------------------------

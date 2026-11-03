@@ -1,53 +1,53 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""The ``apk`` module: facts in one source.
+# The ``apk`` module: facts in one source.
+#
+# Fact side: ``ApkPackages``, the installed Alpine Linux (apk) packages with
+# their versions, parsed from ``apk list --installed`` rows,
+# ``ApkExplicitPackages``, the explicitly installed (world) package names
+# parsed from ``/etc/apk/world``, ``ApkHeldPackages``, the version-pinned
+# (held) packages and their constraints parsed from the same ``/etc/apk/world``,
+# ``ApkAutoremovable``, the orphan packages ``apk add --purge`` would remove
+# parsed from its ``--simulate`` rows, ``ApkRepositories``, the configured apk
+# repositories parsed from ``/etc/apk/repositories``, and ``ApkPackage``, one
+# package's detailed metadata (version, description, size, dependencies,
+# provides) parsed from the labelled sections of ``apk info -a``. Like every
+# fact they are phase-unaware: their ``process`` coroutine just gathers the
+# raw value.
+#
+# Operation side: ``apk.packages`` plus the typed command descriptors it
+# yields (``ApkInstallCommand``/``ApkRemoveCommand``/``ApkUpgradeCommand``).
+# ``apk.packages`` mirrors pyinfra's ``apk.packages`` (add/remove packages
+# with version pins and ``latest`` upgrades), reading ``ApkPackages``, and
+# exposes two apk-native install modifiers -- ``no_cache``
+# (``apk add --no-cache``, bypass the package cache) and ``no_scripts``
+# (``apk add --no-scripts``, skip post-install triggers) -- which apt and
+# dnf have no equivalent for, so they are a deliberate apk-only asymmetry
+# on the shared package-manager surface;
+# pyinfra's ``update`` and ``upgrade`` prefix options are deliberately
+# dropped -- reemote5 keeps the whole-system ``apk update``/``apk upgrade``
+# out of the package operation, and both keywords are absorbed by
+# ``**kwargs`` with no effect. The remaining pyinfra ``apk`` operations
+# (``apk.upgrade``, ``apk.key``, ``apk.repo``) are not migrated.
+# ``apk.virtual`` -- a reemote5 original with no pyinfra counterpart --
+# manages a *virtual package* group (``apk add -t <tag>`` to create it,
+# ``apk del <tag>`` to remove it) through its present-flagged
+# ``ApkVirtualCommand``, reading ``ApkExplicitPackages`` for world-name
+# idempotence. ``apk.hold`` -- the apk counterpart of ``apt.mark`` -- pins
+# packages back from upgrades by writing a version constraint into
+# ``/etc/apk/world`` (``apk add <pkg>=<version>`` to hold, ``apk add <pkg>``
+# to release the pin) through its present-flagged ``ApkHoldCommand``, reading
+# ``ApkHeldPackages`` for version-aware idempotence. ``apk.autoremove`` -- the
+# apk counterpart of ``apt.auto_remove``, and a reemote5 original: pyinfra's
+# ``apk`` namespace has no cleanup verb, and apk itself ships no
+# ``autoremove`` subcommand -- purges the orphan packages nothing in
+# ``/etc/apk/world`` reaches any more through its ``ApkPurgeCommand``
+# (``apk add --purge``), reading ``ApkAutoremovable`` for idempotence.
+# Operations are async generators that receive an ``OpContext``,
+# await facts, set ``ctx.changed``/``ctx.reason``, and yield command
+# descriptors; they never touch the host directly.
 
-Fact side: ``ApkPackages``, the installed Alpine Linux (apk) packages with
-their versions, parsed from ``apk list --installed`` rows,
-``ApkExplicitPackages``, the explicitly installed (world) package names
-parsed from ``/etc/apk/world``, ``ApkHeldPackages``, the version-pinned
-(held) packages and their constraints parsed from the same ``/etc/apk/world``,
-``ApkAutoremovable``, the orphan packages ``apk add --purge`` would remove
-parsed from its ``--simulate`` rows, ``ApkRepositories``, the configured apk
-repositories parsed from ``/etc/apk/repositories``, and ``ApkPackage``, one
-package's detailed metadata (version, description, size, dependencies,
-provides) parsed from the labelled sections of ``apk info -a``. Like every
-fact they are phase-unaware: their ``process`` coroutine just gathers the
-raw value.
-
-Operation side: ``apk.packages`` plus the typed command descriptors it
-yields (``ApkInstallCommand``/``ApkRemoveCommand``/``ApkUpgradeCommand``).
-``apk.packages`` mirrors pyinfra's ``apk.packages`` (add/remove packages
-with version pins and ``latest`` upgrades), reading ``ApkPackages``, and
-exposes two apk-native install modifiers -- ``no_cache``
-(``apk add --no-cache``, bypass the package cache) and ``no_scripts``
-(``apk add --no-scripts``, skip post-install triggers) -- which apt and
-dnf have no equivalent for, so they are a deliberate apk-only asymmetry
-on the shared package-manager surface;
-pyinfra's ``update`` and ``upgrade`` prefix options are deliberately
-dropped -- reemote5 keeps the whole-system ``apk update``/``apk upgrade``
-out of the package operation, and both keywords are absorbed by
-``**kwargs`` with no effect. The remaining pyinfra ``apk`` operations
-(``apk.upgrade``, ``apk.key``, ``apk.repo``) are not migrated.
-``apk.virtual`` -- a reemote5 original with no pyinfra counterpart --
-manages a *virtual package* group (``apk add -t <tag>`` to create it,
-``apk del <tag>`` to remove it) through its present-flagged
-``ApkVirtualCommand``, reading ``ApkExplicitPackages`` for world-name
-idempotence. ``apk.hold`` -- the apk counterpart of ``apt.mark`` -- pins
-packages back from upgrades by writing a version constraint into
-``/etc/apk/world`` (``apk add <pkg>=<version>`` to hold, ``apk add <pkg>``
-to release the pin) through its present-flagged ``ApkHoldCommand``, reading
-``ApkHeldPackages`` for version-aware idempotence. ``apk.autoremove`` -- the
-apk counterpart of ``apt.auto_remove``, and a reemote5 original: pyinfra's
-``apk`` namespace has no cleanup verb, and apk itself ships no
-``autoremove`` subcommand -- purges the orphan packages nothing in
-``/etc/apk/world`` reaches any more through its ``ApkPurgeCommand``
-(``apk add --purge``), reading ``ApkAutoremovable`` for idempotence.
-Operations are async generators that receive an ``OpContext``,
-await facts, set ``ctx.changed``/``ctx.reason``, and yield command
-descriptors; they never touch the host directly.
-"""
 
 import re
 import shlex
@@ -118,43 +118,44 @@ def _normalize_constraint(version: str) -> str:
 
 class ApkAutoremovable:
     """Orphan packages ``apk add --purge`` would remove, as a sorted name list.
-
-    The apk counterpart of ``apt.AptAutoremovable`` and a reemote5 original:
-    pyinfra's ``apk`` namespace ships no cleanup verb, and apk itself has no
-    ``autoremove`` subcommand -- but it does have a first-class orphan-purge
-    mechanism, the ``--purge`` flag of ``apk add``/``apk fix``. Running
-    ``apk add --purge`` with no packages asks apk's solver to remove every
-    installed package nothing in ``/etc/apk/world`` reaches any more, and
-    adding ``--simulate`` prints the same plan without touching the system,
-    one ``(N/M) Purging <name>-<version>`` row per orphan, for example::
-
-        ["libllvm17", "py3-pycparser", "py3-pycparser-pyc"]
-
-    Only the ``Purging`` rows are read: the leading ``N packages to purge``
-    summary, the trailing ``OK: <size> in <count> packages`` footer, the
-    progress lines and blank lines are never mistaken for package names, and
-    each row's version-and-release is dropped at the same last
-    ``-<version>-r<release>`` boundary ``ApkPackages`` splits its listing
-    rows at -- the names are what a cleanup audits, not the versions apk
-    happened to have installed. Nothing purgable (or no output at all) reads
-    as ``[]``, exactly as ``AptAutoremovable``' empty simulation does.
-    This fact fills a coverage gap of ``ApkPackages``: the ``apk list
-    --installed`` rows that fact parses cannot tell an orphaned dependency
-    from one still reachable from the world, so a deploy cleaning up after
-    itself reads the purgable names here -- and only collects the list;
-    removal stays an explicit operator decision, never a fact side effect --
-    the ``apk.autoremove`` operation performs that cleanup. The simulation
-    needs no root, and a missing ``apk`` exits 127, which ``run_shell``
-    reports as ``CommandNotFoundError``.
-
-    One deliberate deviation from ``AptAutoremovable``: apk's ``--simulate``
-    output is human-readable rather than machine-readable, so the row format
-    is less stable than ``apt-get --just-print autoremove``'s. The same
-    pragmatic trade-off reemote5 already accepts for apt's ``Remv`` rows --
-    the parser is strict about the shape it recognises and simply skips a row
-    whose format changed, so a future apk release reads as ``[]`` rather
-    than reporting garbage.
     """
+
+    # The apk counterpart of ``apt.AptAutoremovable`` and a reemote5 original:
+    # pyinfra's ``apk`` namespace ships no cleanup verb, and apk itself has no
+    # ``autoremove`` subcommand -- but it does have a first-class orphan-purge
+    # mechanism, the ``--purge`` flag of ``apk add``/``apk fix``. Running
+    # ``apk add --purge`` with no packages asks apk's solver to remove every
+    # installed package nothing in ``/etc/apk/world`` reaches any more, and
+    # adding ``--simulate`` prints the same plan without touching the system,
+    # one ``(N/M) Purging <name>-<version>`` row per orphan, for example::
+    #
+    #     ["libllvm17", "py3-pycparser", "py3-pycparser-pyc"]
+    #
+    # Only the ``Purging`` rows are read: the leading ``N packages to purge``
+    # summary, the trailing ``OK: <size> in <count> packages`` footer, the
+    # progress lines and blank lines are never mistaken for package names, and
+    # each row's version-and-release is dropped at the same last
+    # ``-<version>-r<release>`` boundary ``ApkPackages`` splits its listing
+    # rows at -- the names are what a cleanup audits, not the versions apk
+    # happened to have installed. Nothing purgable (or no output at all) reads
+    # as ``[]``, exactly as ``AptAutoremovable``' empty simulation does.
+    # This fact fills a coverage gap of ``ApkPackages``: the ``apk list
+    # --installed`` rows that fact parses cannot tell an orphaned dependency
+    # from one still reachable from the world, so a deploy cleaning up after
+    # itself reads the purgable names here -- and only collects the list;
+    # removal stays an explicit operator decision, never a fact side effect --
+    # the ``apk.autoremove`` operation performs that cleanup. The simulation
+    # needs no root, and a missing ``apk`` exits 127, which ``run_shell``
+    # reports as ``CommandNotFoundError``.
+    #
+    # One deliberate deviation from ``AptAutoremovable``: apk's ``--simulate``
+    # output is human-readable rather than machine-readable, so the row format
+    # is less stable than ``apt-get --just-print autoremove``'s. The same
+    # pragmatic trade-off reemote5 already accepts for apt's ``Remv`` rows --
+    # the parser is strict about the shape it recognises and simply skips a row
+    # whose format changed, so a future apk release reads as ``[]`` rather
+    # than reporting garbage.
+
 
     #: Shell simulating the orphan purge over SSH, one ``(N/M) Purging`` row
     #: per package that would go. ``--simulate`` never removes anything (the
@@ -843,8 +844,13 @@ async def packages(
     behavior: every installed, unpinned package is upgraded with
     ``apk upgrade`` without checking whether an upgrade actually exists.
     Installing, removing and upgrading all need root, so flag the request
-    ``sudo=True`` (or ``su=True``). ``**kwargs`` absorbs pyinfra's global
-    arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    ``sudo=True``, ``doas=True`` or ``su=True``. Stock Alpine ships no
+    ``sudo``, so on an apk host ``doas`` is usually the escalator to reach
+    for: reemote5 runs it passwordless as ``doas -n``, which needs a
+    ``permit nopass`` rule for the login user in ``/etc/doas.conf`` and
+    raises ``PrivilegeError`` without one. ``**kwargs`` absorbs pyinfra's
+    global arguments (``op()`` already strips ``name`` and the
+    ``sudo``/``su``/``doas`` escalation flags).
 
     ``no_cache`` and ``no_scripts`` are apk-native modifiers with no
     apt/dnf equivalent -- apt's ``no_recommends``/``allow_downgrades`` and
@@ -993,9 +999,12 @@ async def virtual(
     no-op -- because apk records a virtual group's identity in world, not its
     membership, and comparing members would need the fuzzy version-constrained
     ``depends`` strings ``ApkPackage`` reports. Creating and removing both write
-    the root-owned apk database and world file, so flag the request ``sudo=True``
-    (or ``su=True``). ``**kwargs`` absorbs pyinfra's global arguments (``op()``
-    already strips ``name``/``sudo``/``su``).
+    the root-owned apk database and world file, so flag the request
+    ``sudo=True``, ``doas=True`` or ``su=True`` -- stock Alpine ships no
+    ``sudo``, so ``doas`` is usually the escalator on an apk host (see
+    ``packages`` for its passwordless ``doas -n`` prerequisites). ``**kwargs``
+    absorbs pyinfra's global arguments (``op()`` already strips ``name`` and the
+    ``sudo``/``su``/``doas`` escalation flags).
     """
     reasons: list[str] = []
 
@@ -1094,8 +1103,11 @@ async def hold(
     pinned (there is no version to pin to) and is reported but not held --
     pass ``version`` to pin a package that is not yet installed. Holding
     writes the root-owned apk database and world file, so flag the request
-    ``sudo=True`` (or ``su=True``). ``**kwargs`` absorbs pyinfra's global
-    arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    ``sudo=True``, ``doas=True`` or ``su=True`` -- stock Alpine ships no
+    ``sudo``, so ``doas`` is usually the escalator on an apk host (see
+    ``packages`` for its passwordless ``doas -n`` prerequisites). ``**kwargs``
+    absorbs pyinfra's global arguments (``op()`` already strips ``name`` and the
+    ``sudo``/``su``/``doas`` escalation flags).
     """
     # Normalize like apt.mark: a bare string is one name.
     requested = (packages,) if isinstance(packages, str) else tuple(packages)
@@ -1186,8 +1198,11 @@ async def autoremove(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
     names the orphans: a non-empty list yields the ``ApkPurgeCommand`` (the
     names are already sorted, so the reason reads identically in both
     phases), an empty list is a no-op. Purging needs root, so flag the
-    request ``sudo=True`` (or ``su=True``). ``**kwargs`` absorbs pyinfra's
-    global arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    request ``sudo=True``, ``doas=True`` or ``su=True`` -- stock Alpine ships
+    no ``sudo``, so ``doas`` is usually the escalator on an apk host (see
+    ``packages`` for its passwordless ``doas -n`` prerequisites). ``**kwargs``
+    absorbs pyinfra's global arguments (``op()`` already strips ``name`` and the
+    ``sudo``/``su``/``doas`` escalation flags).
 
     Deliberate deviation from ``apt.auto_remove``: no ``wait_for_lock``
     parameter, because apk uses no lock file the way apt's ``DPkg::Lock``

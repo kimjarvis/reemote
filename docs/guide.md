@@ -103,11 +103,29 @@ divergence. A skipped request is a third outcome beside *changed* and
 Three rules follow from the model:
 
 1. **Use immutable containers for collection parameters.** `packages=("nginx",)`
-   not `packages=["nginx"]`. Requests are compared and hashed to pair "the Nth
-   operation on host A" with "the Nth operation on host B"; a `list` inside
-   `kwargs` breaks hashing.
-2. **Yield requests; do not call operations.** Calling `dnf.packages(...)`
-   directly returns an unexecuted generator and bypasses the driver entirely.
+   not `packages=["nginx"]`. Lockstep pairing — and the determinism guard —
+   compare requests by *value*, so a list is not detected there; what the model
+   cannot carry is an *unhashable* value, since `compose(dedupe=True)` hashes
+   every argument value to collapse duplicates. `OperationRequest` therefore
+   rejects an unhashable `args`/`kwargs` value as soon as the request is built,
+   raising
+   [`UnhashableArgumentError`][reemote5.core.UnhashableArgumentError] at the
+   deploy line instead of a bare `TypeError` from inside a set insertion.
+2. **Yield requests; do not call operations.** `op(...)` only *builds* a
+   request — the driver sees one when the body *yields* it. Calling
+   `dnf.packages(...)` directly cannot work anyway, because an operation takes
+   the [`OpContext`][reemote5.core.OpContext] only the driver holds, so the call
+   fails on argument binding; and building a request then dropping it would lose
+   the operation in silence, since the shortened sequence is equally short in
+   both phases and so never trips the determinism guard. The driver therefore
+   enforces the shape at both points where it invokes a deploy body, raising
+   [`DeployRequestError`][reemote5.core.DeployRequestError] when the body returns
+   no request stream at all, when it hands over something that is not an
+   [`OperationRequest`][reemote5.core.OperationRequest], or when it builds more
+   requests than it yields (a
+   [`compose`][reemote5.core.compose]`(..., dedupe=True)` collapse is accounted
+   for, so a deliberate duplicate is not a failure). In a normal run that means
+   failing during prepare, before a single command is sent.
 3. **Do not branch on mutable state** in the deploy body. See
    [Determinism](#determinism) below.
 
@@ -559,7 +577,41 @@ extending the model:
    fact reads observe the effects of all previously executed operations.
 3. **Generators cannot be replayed.** `run_prepare` returns a fresh
    `deploy(host)` generator inside each [`HostRuntime`][reemote5.core.HostRuntime].
-4. **Requests must be hashable and comparable**, hence the explicit
-   `__hash__` on `OperationRequest` and the immutable-container rule.
+4. **Requests must be comparable by value, and hashable where they are
+   deduplicated.** Value equality is what pairs hosts in lockstep and what the
+   determinism guard checks; hashing happens only in `compose(dedupe=True)`,
+   hence the explicit `__hash__` on `OperationRequest`, the immutable-container
+   rule, and the `UnhashableArgumentError` raised in `__post_init__`.
 5. **Operations yield typed descriptors**, not strings, so the simulated
    host's `execute_command` can apply their effects.
+
+## The two phases
+
+**Prepare** — [`run_prepare`][reemote5.drivers.run_prepare] exhausts each
+host's generator, materializes every operation to learn its
+`(changed, reason, commands)`, and returns the plan. No host is mutated. It
+also builds a *fresh* generator per host for the apply phase, since a
+generator cannot be replayed once exhausted.
+
+**Apply** — [`run_apply`][reemote5.drivers.run_apply] advances all hosts in
+lockstep: every host executes its Nth request before any host pulls request
+N+1. For each step it recreates the fact cache, materializes the request, and
+if `ctx.changed` is true, awaits
+[`send_command`][reemote5.drivers.send_command] for each command to mutate
+the simulated host.
+Every step is recorded as a [`LogEntry`][reemote5.drivers.LogEntry], including
+the commands that were actually sent.
+
+**Determinism guard** — apply re-checks each pulled request against the plan.
+If a deploy body branches on mutable state and the two phases disagree, the
+driver raises [`DeterminismError`][reemote5.drivers.DeterminismError] instead
+of silently applying a different plan.
+
+See the [Guide](guide.md) for the rules this imposes on deploy scripts, the
+[Examples](examples.md) for runnable scripts demonstrating them (including
+deploy composition), and the API reference below for every object involved.
+
+Orthogonal to the deploy model, [**actions**](actions.md) run bespoke shell
+commands immediately — before, between or after deploys, never inside one — and
+return a [`Result`][reemote5.actions.Result] per host. They are the escape hatch
+for software the library knows nothing about.

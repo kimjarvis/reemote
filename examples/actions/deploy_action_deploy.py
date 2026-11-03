@@ -36,7 +36,7 @@ action inside a deploy is both illegal (the in-deploy guard raises
 The configure step stages the config with ``files.put`` to ``/tmp``: transfers
 ride the connection's scp channel as the login user and are never elevated.
 The put source is a module-level ``io.StringIO`` -- one stable identity across
-both phases, as ``OperationRequest`` compares the unhashable stream by identity.
+both phases, as ``OperationRequest`` compares a stream by identity.
 
 Connection lifecycle: ``run`` closes the hosts it owns, and ``gather_action``
 re-connects them for the probe then closes them again (each action call

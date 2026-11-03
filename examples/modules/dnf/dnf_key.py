@@ -30,8 +30,8 @@ The source is an **IO-like object only** -- pyinfra's ``dnf.key`` takes a
 file locations, so a ``str`` ``src`` raises ``ValueError`` and the key content
 must be handed over as a stream: here a module-level ``io.BytesIO``. Two rules
 follow. The stream must be *seekable*: it is rewound to position 0 before it
-is read. And because ``OperationRequest`` equality compares the unhashable
-stream *by identity*, the deploy must pass the same object in both phases --
+is read. And because ``OperationRequest`` equality compares a stream
+*by identity*, the deploy must pass the same object in both phases --
 hence the module-level constant rather than a fresh ``BytesIO`` inside the
 generator (a new object per phase would trip the determinism guard).
 

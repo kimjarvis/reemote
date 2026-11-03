@@ -55,7 +55,7 @@ def put_deploy(src, dest: str = REMOTE_DEST):
 
     The stream is captured once and reused by every ``deploy(host)``
     invocation, which is what keeps the prepare and apply request sequences
-    equal: ``OperationRequest`` compares the unhashable IO object by
+    equal: ``OperationRequest`` compares an IO object by
     identity, so a deploy must pass the *same* stream in both phases (define
     it outside the generator, as here).
     """

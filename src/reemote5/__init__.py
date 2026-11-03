@@ -29,12 +29,14 @@ from .commands import (
 )
 from .connectors.docker import DockerHost
 from .core import (
+    DeployRequestError,
     FactCache,
     HostRuntime,
     OpContext,
     OperationError,
     OperationRequest,
     Privilege,
+    UnhashableArgumentError,
     WhenPredicate,
     compose,
     op,
@@ -295,6 +297,7 @@ __all__ = [
     "Date",
     "DebInstallCommand",
     "DebPackage",
+    "DeployRequestError",
     "DeterminismError",
     "Directory",
     "DiskStats",
@@ -411,6 +414,7 @@ __all__ = [
     "SystemdServiceState",
     "Timezone",
     "TransferCommand",
+    "UnhashableArgumentError",
     "Uptime",
     "User",
     "Users",

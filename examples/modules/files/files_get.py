@@ -14,8 +14,8 @@ options reemote5 deliberately drops), but here the bytes land in a module-level
 ``io.BytesIO`` the script reads back afterwards. Two rules follow, mirroring
 ``files.put``. The stream must be *seekable* and *writable*: it is rewound and
 truncated before the download, then rewound again so the caller reads the fresh
-content from position 0. And because ``OperationRequest`` equality compares the
-unhashable stream *by identity*, the deploy must pass the same object in both
+content from position 0. And because ``OperationRequest`` equality compares a
+stream *by identity*, the deploy must pass the same object in both
 phases.
 
 There is one wrinkle the put example does not have: a get *writes* into its

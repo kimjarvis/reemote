@@ -1,5 +1,7 @@
 # apk module
 
+<!---
+
 `reemote5.modules.apk.apk` combines the apk facts and the apk operations in a
 single source. The facts are `ApkAutoremovable`, the orphaned packages an
 `apk add --purge` would remove, parsed from the `(N/M) Purging <name>` rows of
@@ -188,6 +190,8 @@ what `ApkPackages` parses and the configured repositories are what
 `shlex.quote`, so a caller-supplied package name cannot break out of the
 argument.
 
+-->
+
 ::: reemote5.modules.apk.apk
     options:
       members:
@@ -198,6 +202,10 @@ argument.
         - ApkPackageInfo
         - ApkPackages
         - ApkRepositories
+      filters:
+        - "!^parse$"
+        - "!^process$"
+<!---
 
 ## Operations
 
@@ -225,7 +233,10 @@ simulates the purge and names exactly the orphaned packages: a non-empty
 list yields the real `apk add --purge` (the reason names the packages,
 already sorted so both phases report identically), an empty list is a
 no-op. Purging writes to the root-owned apk database, so flag the request
-`sudo=True` (or `su=True`). Yielding `apk.packages` with `present=False`
+`sudo=True`, `doas=True` or `su=True` — stock Alpine ships no `sudo`, so
+`doas` is usually the escalator on an apk host (see `apk.packages` above for
+its passwordless `doas -n` prerequisites).
+Yielding `apk.packages` with `present=False`
 then `apk.autoremove` in one deploy composes the remove-then-cleanup flow
 — each half an explicit, separately plannable step. apk uses no lock file
 (the way apt's `DPkg::Lock::Timeout` guards concurrent `apt-get` runs), so
@@ -254,7 +265,11 @@ idempotence is unchanged. They are a deliberate apk-only asymmetry: apt's
 `no_recommends`/`allow_downgrades` and dnf's `nobest` are the closest
 cousins, but neither tool exposes a cache-bypass or script-skip flag on its
 package operation. Installing, upgrading and removing all need root, so flag
-the request `sudo=True` (or `su=True`). Two pyinfra options are deliberately
+the request `sudo=True`, `doas=True` or `su=True`. Stock Alpine ships no
+`sudo`, so on an apk host `doas` is usually the escalator to reach for:
+reemote5 runs it passwordless as `doas -n`, which needs a `permit nopass`
+rule for the login user in `/etc/doas.conf` and raises `PrivilegeError`
+without one. Two pyinfra options are deliberately
 dropped: `update` and `upgrade`, which prefix the operation with a
 whole-system `apk update` / `apk upgrade` — reemote5 keeps the whole-system
 refresh/upgrade out of the package operation, so both keywords are absorbed
@@ -281,7 +296,9 @@ operation is a no-op — because apk records a virtual group's identity in
 world, not its membership. Both directions render through one present-flagged
 `ApkVirtualCommand` descriptor (the `server.modprobe` single-descriptor
 pattern), and both write the root-owned apk database and world file, so flag
-the request `sudo=True` (or `su=True`).
+the request `sudo=True`, `doas=True` or `su=True` — stock Alpine ships no
+`sudo`, so `doas` is usually the escalator on an apk host (see its
+passwordless `doas -n` prerequisites above).
 
 `apk.hold` holds packages back from upgrades, or releases held ones — the apk
 counterpart of [`apt.mark`][reemote5.modules.apt.apt.mark]: pyinfra ships no
@@ -304,7 +321,11 @@ verb). A deliberate consequence of pinning to the installed version: with
 `version` omitted, a name that is *not* installed cannot be pinned and is
 reported but not held — pass `version` to pin a package that is not yet
 installed. Both directions write the root-owned apk database and world file,
-so flag the request `sudo=True` (or `su=True`).
+so flag the request `sudo=True`, `doas=True` or `su=True` — stock Alpine
+ships no `sudo`, so `doas` is usually the escalator on an apk host (see its
+passwordless `doas -n` prerequisites above).
+
+--->
 
 ::: reemote5.modules.apk.apk
     options:
@@ -313,6 +334,8 @@ so flag the request `sudo=True` (or `su=True`).
         - hold
         - packages
         - virtual
+
+<!---
 
 ## Example
 
@@ -337,3 +360,5 @@ apply phase. The `apk_autoremove.py` script demonstrates `apk.autoremove`
 the same way — it yields the purge request twice so the second is a
 guaranteed no-op once the first cleanup left nothing purgable. Both are
 rendered on the [apk examples page](../examples/modules/apk.md).
+
+--->

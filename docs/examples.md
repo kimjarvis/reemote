@@ -1,5 +1,7 @@
 # Examples
 
+<!---
+
 Runnable showcase scripts living in `examples/` — *usage* demonstrations
 through the public API only, never part of the library. The tree is split in
 four: `examples/modules/<namespace>/` holds one script per fact or operation
@@ -98,3 +100,5 @@ library-level failures (`HostConnectionError`, `PrivilegeError`) raise. The
 in-deploy guard example catches
 [`ActionInDeployError`][reemote5.actions.ActionInDeployError] as its *expected*
 outcome and exits zero.
+
+--->

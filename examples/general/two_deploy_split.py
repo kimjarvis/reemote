@@ -39,7 +39,7 @@ transfers ride the connection's scp channel as the login user and are never
 elevated, so writing into root-owned ``/etc/nginx`` would be a follow-up
 elevated shell operation (out of scope here). The put source is a
 module-level ``io.StringIO`` -- one stable identity across both phases, as
-``OperationRequest`` compares the unhashable stream by identity -- and its
+``OperationRequest`` compares a stream by identity -- and its
 sha1-based idempotence means re-running the whole script transfers nothing
 once the staged content matches.
 

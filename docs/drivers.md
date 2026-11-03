@@ -93,6 +93,20 @@ async-generator operation, so wrapping an action class as `op(Shell, ...)` is
 refused with [`OperationError`][reemote5.core.OperationError] rather than being
 run as a deploy step.
 
+The same two invocation points enforce the *yield requests* rule. Both
+[`run_prepare`][reemote5.drivers.run_prepare] (through `_prepare_host`) and the
+lockstep pull in [`run_apply`][reemote5.drivers.run_apply] type-check every item
+the deploy body hands over and tally the requests it builds, so a body that
+returns no request stream (an `op(...)` call with no `yield` anywhere), yields
+something that is not an
+[`OperationRequest`][reemote5.core.OperationRequest], or builds a request and
+drops it raises [`DeployRequestError`][reemote5.core.DeployRequestError] — in a
+normal run always during prepare, before a command is sent, and with the hosts of
+an apply step aggregated into one message. The tally lives on each
+[`HostRuntime`][reemote5.core.HostRuntime], so it is per host and per phase, and
+[`compose`][reemote5.core.compose]`(..., dedupe=True)` charges its own collapses
+so a deliberate duplicate is not mistaken for a lost request.
+
 ## Concurrency across hosts
 
 Hosts are independent — each owns its own connection, deploy generator and

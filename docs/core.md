@@ -42,11 +42,33 @@ the run fail-fast while materializing (in a deploy run that is the prepare
 phase, before anything is sent), with a message naming the host and the
 missing prerequisite.
 
+[`UnhashableArgumentError`][reemote5.core.UnhashableArgumentError] is raised
+by the request model itself, while an `OperationRequest` is being built. A
+request's `args`/`kwargs` values are hashed by
+[`compose`][reemote5.core.compose]`(..., dedupe=True)`, so a mutable container
+there — `packages=["nginx"]`, or a list nested inside a tuple — is rejected on
+the spot (a `TypeError` subclass) naming the offending field, rather than
+failing later from inside a set insertion in a composition helper.
+
+[`DeployRequestError`][reemote5.core.DeployRequestError] enforces the deploy
+body's other rule: *yield* the requests, do not merely build them. It is raised
+(also a `TypeError` subclass) when the body returns no iterable at all, when it
+hands over something that is not an `OperationRequest`, or when it builds a
+request with `op()` and drops it instead of yielding it — the last of these is
+caught by a per-invocation tally of requests built versus requests yielded,
+maintained through a `ContextVar` that `op()` charges on each construction.
+`compose`'s dedupe collapses are charged as dropped on purpose, so a legal
+duplicate is never read as a lost request. Both phases run the checks —
+see [Drivers](drivers.md#phase-awareness) and
+[Deploy scripts](guide.md#deploy-scripts).
+
 ::: reemote5.core
     options:
       members:
         - OperationRequest
         - OperationError
+        - UnhashableArgumentError
+        - DeployRequestError
         - Privilege
         - WhenPredicate
         - op

@@ -42,7 +42,16 @@ and reports the second as a no-op, because the fresh per-step fact cache
 re-simulates against the cleaned-up state.
 
 Purging writes to the root-owned apk database, so the requests are flagged
-``sudo=True`` and the driver elevates their commands. Pair this with
+``doas=True`` and the driver elevates their commands. ``doas`` rather than
+``sudo`` because the Alpine host has no ``sudo`` installed at all --
+``sudo apk add --purge`` would die with ``sh: sudo: not found`` (exit 127)
+before reaching ``apk``. ``doas`` is passwordless here: reemote5 always runs
+``doas -n``, which fails rather than prompts, so the host must grant the
+login user a ``permit nopass`` rule in ``/etc/doas.conf`` (see
+``examples/demonstrations/privilege/privilege_doas.py``); without one the
+driver raises ``PrivilegeError``. The read-only purge simulation behind
+``ApkAutoremovable`` needs no root, so only the purge itself is elevated.
+Pair this with
 ``apk_packages.py``'s ``apk.packages`` (``present=False``) to compose the
 remove-then-cleanup flow as two explicit, separately plannable steps -- the
 same split ``apt.auto_remove`` makes against ``apt.dist_upgrade``'s
@@ -60,8 +69,8 @@ and none of its commands -- nor the ``ApkAutoremovable`` fact behind it, the
 purge simulation -- is materialized at all, which is exactly why an
 apk-native operation must be guarded rather than run blind on a host without
 ``apk``. The project root's ``inventory.json`` holds one host in the
-``"alpine"`` group, so nothing is visibly skipped here; the same deploy
-against a mixed inventory would clean up on the Alpine hosts only.
+``"alpine"`` group alongside hosts in other groups, so the run visibly
+purges on the Alpine host and skips every other one.
 
 Run it with::
 
@@ -135,13 +144,14 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     first cleanup left nothing purgable.
 
     Purging writes to the root-owned apk database, so both requests are
-    flagged ``sudo=True`` and the driver elevates their commands over SSH.
+    flagged ``doas=True`` (the host has no ``sudo``) and the driver elevates
+    their commands over SSH with passwordless ``doas -n``.
     Branch-free means the two phases agree, and the ``when=is_alpine`` guard
     on both requests keeps the schedule identical on every host: eligibility
     is the driver's decision, not an ``if`` in this body.
     """
-    yield op(apk.autoremove, name="Remove orphaned packages", sudo=True, when=is_alpine)
-    yield op(apk.autoremove, name="Re-run autoremove (no-op)", sudo=True, when=is_alpine)
+    yield op(apk.autoremove, name="Remove orphaned packages", doas=True, when=is_alpine)
+    yield op(apk.autoremove, name="Re-run autoremove (no-op)", doas=True, when=is_alpine)
 
 
 async def main() -> None:

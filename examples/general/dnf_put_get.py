@@ -26,7 +26,7 @@ operations take **IO-like objects only**: the put source is a module-level
 is a per-host ``io.BytesIO`` sink. ``files.put`` also has no ``mode`` option;
 ownership/permissions would be a follow-up elevated shell operation if needed.
 Both streams obey the usual rules: created once at module level so both phases
-pass the identical object (``OperationRequest`` compares the unhashable stream
+pass the identical object (``OperationRequest`` compares the stream
 by identity), and -- because a get *writes* its destination -- one sink per
 host so the two hosts never clobber each other in lockstep.
 

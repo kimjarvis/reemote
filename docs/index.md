@@ -1,5 +1,10 @@
 # reemote5
 
+**reemote5** is a python library for configuration management.
+It provides cross-host lockstep ordering and dry-run reporting. 
+
+<!---
+
 **reemote5** is a proof-of-concept execution model for configuration
 management. It explores an alternative to [pyinfra]'s two-phase
 *prepare → execute* design: **deploy scripts are Python generators** that
@@ -10,6 +15,8 @@ boundary, which in turn makes sequential *"act, then read"* logic produce the
 correct answer in both phases — while keeping the properties that the
 two-phase split exists to provide: cross-host lockstep ordering and dry-run
 reporting.
+
+
 
 !!! warning "POC scope"
 
@@ -67,6 +74,8 @@ generator itself:
 The prepare phase still yields a full plan, and the apply phase still runs
 every host in lockstep. Neither facts nor operations know which phase they are
 in; only the drivers do.
+
+--->
 
 ## Installation
 
@@ -186,36 +195,8 @@ because nginx is not installed yet during prepare; the apply log says *changed*
 because installing nginx created the link and the fresh fact cache saw it. Same
 deploy script, same request sequence, correct outcome in both phases.
 
-## The two phases
 
-**Prepare** — [`run_prepare`][reemote5.drivers.run_prepare] exhausts each
-host's generator, materializes every operation to learn its
-`(changed, reason, commands)`, and returns the plan. No host is mutated. It
-also builds a *fresh* generator per host for the apply phase, since a
-generator cannot be replayed once exhausted.
-
-**Apply** — [`run_apply`][reemote5.drivers.run_apply] advances all hosts in
-lockstep: every host executes its Nth request before any host pulls request
-N+1. For each step it recreates the fact cache, materializes the request, and
-if `ctx.changed` is true, awaits
-[`send_command`][reemote5.drivers.send_command] for each command to mutate
-the simulated host.
-Every step is recorded as a [`LogEntry`][reemote5.drivers.LogEntry], including
-the commands that were actually sent.
-
-**Determinism guard** — apply re-checks each pulled request against the plan.
-If a deploy body branches on mutable state and the two phases disagree, the
-driver raises [`DeterminismError`][reemote5.drivers.DeterminismError] instead
-of silently applying a different plan.
-
-See the [Guide](guide.md) for the rules this imposes on deploy scripts, the
-[Examples](examples.md) for runnable scripts demonstrating them (including
-deploy composition), and the API reference below for every object involved.
-
-Orthogonal to the deploy model, [**actions**](actions.md) run bespoke shell
-commands immediately — before, between or after deploys, never inside one — and
-return a [`Result`][reemote5.actions.Result] per host. They are the escape hatch
-for software the library knows nothing about.
+<!---
 
 ## API reference
 
@@ -284,6 +265,8 @@ uv run pytest                        # run the tests
 uv run --group docs mkdocs serve     # live-reloading docs on localhost:8000
 uv run --group docs mkdocs build     # build the static site into site/
 ```
+
+--->
 
 [pyinfra]: https://pyinfra.com/
 [uv]: https://docs.astral.sh/uv/

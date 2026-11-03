@@ -68,31 +68,28 @@ plugins:
 nav:
   - Home: index.md
   - Guide: guide.md
-  - Examples:
-      - Overview: examples.md
-      - Modules:
-          - apk: examples/modules/apk.md
-          - apt: examples/modules/apt.md
-          - dnf: examples/modules/dnf.md
-          - files: examples/modules/files.md
-          - git: examples/modules/git.md
-          - hardware: examples/modules/hardware.md
-          - server: examples/modules/server.md
-      - General: examples/general.md
-      - Actions: examples/actions.md
-      - Demonstrations:
-          - Composition: examples/demonstrations/composition.md
-          - Connectors: examples/demonstrations/connectors.md
-          - Inventory: examples/demonstrations/inventory.md
-          - Privilege: examples/demonstrations/privilege.md
+#  - Examples:
+#      - Overview: examples.md
+#      - Modules:
+#          - apk: examples/modules/apk.md
+#          - apt: examples/modules/apt.md
+#          - dnf: examples/modules/dnf.md
+#          - files: examples/modules/files.md
+#          - git: examples/modules/git.md
+#          - hardware: examples/modules/hardware.md
+#          - server: examples/modules/server.md
+#      - General: examples/general.md
+#      - Actions: examples/actions.md
+#      - Demonstrations:
+#          - Composition: examples/demonstrations/composition.md
+#          - Connectors: examples/demonstrations/connectors.md
+#          - Inventory: examples/demonstrations/inventory.md
+#          - Privilege: examples/demonstrations/privilege.md
   - API Reference:
-      - Drivers: drivers.md
-      - Core: core.md
-      - Commands: commands.md
-      - Hosts: hosts.md
-      - Actions: actions.md
-      - Connectors:
-          - docker: connectors/docker.md
+#      - Drivers: drivers.md
+#      - Core: core.md
+#      - Commands: commands.md
+#      - Hosts: hosts.md
       - Modules:
           - apk: modules/apk.md
           - apt: modules/apt.md
@@ -101,3 +98,6 @@ nav:
           - git: modules/git.md
           - hardware: modules/hardware.md
           - server: modules/server.md
+      - Actions: actions.md
+      - Connectors:
+          - docker: connectors/docker.md

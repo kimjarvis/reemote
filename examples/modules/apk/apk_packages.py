@@ -60,7 +60,16 @@ first step installed. A third request then demonstrates both modifiers
 together on a different package.
 
 Installing packages writes to the root-owned apk database, so the requests
-are flagged ``sudo=True`` and the driver elevates their commands.
+are flagged ``doas=True`` and the driver elevates their commands. ``doas``
+rather than ``sudo`` because the Alpine host has no ``sudo`` installed at
+all -- ``sudo apk add`` would die with ``sh: sudo: not found`` (exit 127)
+before reaching ``apk``. ``doas`` is passwordless here: reemote5 always runs
+``doas -n``, which fails rather than prompts, so the host must grant the
+login user a ``permit nopass`` rule in ``/etc/doas.conf`` (see
+``examples/demonstrations/privilege/privilege_doas.py``); without one the
+driver raises ``PrivilegeError``. No target user is named, so the command
+sent is a bare ``doas -n apk add ...`` (doas already targets root, so there
+is no ``-u``).
 
 Every request also carries ``when=is_alpine``, the declarative eligibility
 guard (see
@@ -69,7 +78,7 @@ make it deterministic: the predicate reads only **static** inventory data --
 ``host.group``, set by the ``"group"`` key of the inventory entry -- never a
 mutable fact, and it is a stable module-level function, so the prepare and
 apply phases reach the same skip decision. ``when`` is a meta-parameter like
-``sudo``: captured on the request, never forwarded to the operation, and
+``doas``: captured on the request, never forwarded to the operation, and
 skipped by the *driver*, so every host keeps the identical three-request
 schedule (no ``if`` in the deploy body) and each request still consumes its
 lockstep slot. On a host the guard rejects, the plan and the run log render
@@ -77,8 +86,8 @@ the step as ``[skipped: when guard is_alpine]`` and none of its commands --
 nor the ``ApkPackages`` fact behind it -- is materialized at all, which is
 exactly why a package manager's operations must be guarded rather than run
 blind on a host without ``apk``. The project root's ``inventory.json`` holds
-one host in the ``"alpine"`` group, so nothing is visibly skipped here; the
-same deploy against a mixed inventory would install on the Alpine hosts only.
+one host in the ``"alpine"`` group alongside hosts in other groups, so the
+run visibly installs on the Alpine host and skips every other one.
 
 Guarding per request is the operation-side counterpart of what the read-only
 fact example ``apk_apk_packages.py`` does for a gather: ``gather_fact`` takes
@@ -172,21 +181,21 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     ``no_scripts=True``, rendering ``apk add --no-cache --no-scripts curl``.
 
     Installing packages writes to the root-owned apk database, so all
-    requests are flagged ``sudo=True`` and the driver elevates their commands
-    over SSH.
+    requests are flagged ``doas=True`` (the host has no ``sudo``) and the
+    driver elevates their commands over SSH with passwordless ``doas -n``.
     """
     yield op(
         apk.packages,
         name="Install baseline packages",
         packages=BASELINE_PACKAGES,
-        sudo=True,
+        doas=True,
         when=is_alpine,
     )
     yield op(
         apk.packages,
         name="Re-install baseline packages (no-op)",
         packages=BASELINE_PACKAGES,
-        sudo=True,
+        doas=True,
         when=is_alpine,
     )
     yield op(
@@ -195,7 +204,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         packages=MODIFIER_PACKAGE,
         no_cache=True,
         no_scripts=True,
-        sudo=True,
+        doas=True,
         when=is_alpine,
     )
 

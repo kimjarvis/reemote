@@ -37,7 +37,19 @@ from typing import Any
 
 from .actions import _deploy_phase
 from .commands import Command, TransferCommand, WaitCommand
-from .core import FactCache, HostRuntime, OpContext, OperationError, OperationRequest
+from .core import (
+    DeployRequestError,
+    FactCache,
+    HostRuntime,
+    OpContext,
+    OperationError,
+    OperationRequest,
+    _account_request,
+    _lost_requests,
+    _RequestCounter,
+    _tracked_requests,
+    _unyielded_message,
+)
 from .hosts import (
     CommandNotFoundError,
     Host,
@@ -370,9 +382,36 @@ async def _prepare_host(
     operation might gather facts this host cannot even provide -- e.g. a dnf
     fact on a non-dnf host the guard exists to exclude). The guard reads
     static inventory data only, so the apply phase reaches the same decision.
+
+    The deploy body itself is checked against the "yield requests" contract
+    while it is consumed (see ``core.DeployRequestError``): the invocation runs
+    inside a ``_RequestCounter`` so every ``op()`` call is tallied, each item the
+    body produces is type-checked and charged as yielded, a body that returns no
+    iterable at all (a ``def deploy`` that calls ``op()`` without ever yielding)
+    is refused here rather than as a bare ``TypeError`` from ``list()``, and a
+    request that was built but never handed over is reported once the body is
+    exhausted. All of it happens before a single command is sent.
     """
     cache = FactCache(host, phase="prepare")
-    requests = list(deploy_func(host))
+    counter = _RequestCounter()
+    with _tracked_requests(counter):
+        stream = deploy_func(host)
+        if not isinstance(stream, Iterable):
+            raise DeployRequestError(
+                f"host {host.name}: the prepare-phase deploy body returned "
+                f"{stream!r}, a {type(stream).__name__}, instead of a sequence "
+                "of requests; a deploy is a generator whose body yields every "
+                "request op() builds -- yield op(...), not op(...)"
+            )
+        requests = [
+            _account_request(item, counter, host.name, "prepare") for item in stream
+        ]
+    if counter.unyielded:
+        raise DeployRequestError(
+            _unyielded_message(
+                _lost_requests(host.name, counter.unyielded), "prepare"
+            )
+        )
     plan = []
     for request in requests:
         guard = request.when_failure(host)
@@ -397,8 +436,13 @@ async def _prepare_host(
             )
         )
     # Re-invoke deploy(host) for the apply phase: generators cannot be
-    # replayed once exhausted (design doc section 11.5).
-    return HostRuntime(host, deploy_func(host), cache), plan
+    # replayed once exhausted (design doc section 11.5). The fresh counter
+    # carries the same built-versus-yielded check into apply, where run_apply
+    # installs it around each request pull.
+    return (
+        HostRuntime(host, deploy_func(host), cache, deploy_counter=_RequestCounter()),
+        plan,
+    )
 
 
 @_deploy_phase
@@ -532,6 +576,15 @@ async def run_apply(
     exception is a genuine error and propagates unchanged, so a ``CommandError``
     or a bug still aborts the run.
 
+    The pull is also where the "yield requests" contract is enforced in apply
+    (mirroring ``_prepare_host``): each pull runs inside the runtime's
+    ``_RequestCounter`` so ``op()`` calls in the body are tallied, every pulled
+    item is type-checked as an ``OperationRequest``, and a body that finishes
+    having built more requests than it yielded raises ``DeployRequestError`` --
+    aggregated across the hosts of the step, since a lockstep step pulls from
+    every active host at once. A runtime the caller assembled itself, with no
+    deploy accounting to speak of, still gets the type check.
+
     A coroutine, because commands are executed via the async
     ``send_command``.
     """
@@ -543,16 +596,30 @@ async def run_apply(
         # Step 1: pull the next request from each active host's generator.
         # Recreate the fact cache so generator-body fact reads see prior ops.
         advanced = False
+        lost: list[str] = []
         for rt in active:
             rt.fact_cache = FactCache(rt.host, phase="apply")
+            counter = rt.deploy_counter
             try:
-                rt.current_request = next(rt.generator)
+                # Tally the body's op() calls against this host's counter for
+                # the duration of the pull, so a request built and dropped is
+                # visible when the generator runs out (see _prepare_host).
+                with _tracked_requests(counter):
+                    item = next(rt.generator)
             except StopIteration:
                 rt.done = True
                 rt.current_request = None
+                if counter.unyielded:
+                    lost.append(_lost_requests(rt.host.name, counter.unyielded))
             else:
+                rt.current_request = _account_request(
+                    item, counter, rt.host.name, "apply"
+                )
                 advanced = True
                 pulled[rt.host.name].append(rt.current_request)
+
+        if lost:
+            raise DeployRequestError(_unyielded_message("; ".join(lost), "apply"))
 
         if plans is not None and advanced:
             for rt in active:
@@ -671,6 +738,7 @@ async def run(
 
 __all__ = [
     "ApplyReport",
+    "DeployRequestError",
     "DeterminismError",
     "LogEntry",
     "PlannedOperation",

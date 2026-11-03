@@ -8,7 +8,9 @@ See the design document sections 4.1 (OperationRequest), 4.3 (OpContext),
 the phase they are used in; phase awareness lives entirely in the drivers.
 """
 
-from collections.abc import Callable, Generator, Iterable
+from collections.abc import Callable, Generator, Iterable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any
@@ -105,14 +107,56 @@ def _inherit(policy: Privilege, inner: Privilege) -> Privilege:
     return inner if inner is not Privilege.UNSET else policy
 
 
+class UnhashableArgumentError(TypeError):
+    """Raised when an ``OperationRequest`` carries an unhashable argument value.
+
+    Pairing hosts in lockstep and the determinism guard both compare requests by
+    *value*; hashing comes in separately, where ``compose(dedupe=True)`` builds
+    a ``set`` of ``_effective_key`` tuples -- and every argument value is part of
+    that key. An unhashable value (a ``list``, a ``dict``, a ``set``, or one of
+    those nested inside a tuple) therefore breaks deduplication with a bare
+    ``TypeError`` raised from inside a set insertion, far from the deploy line
+    that caused it. So the request validates its own arguments at construction
+    time, while the offending call site is still on the traceback.
+
+    Subclasses ``TypeError`` -- what it replaces -- so existing handlers keep
+    working.
+    """
+
+
+def _ensure_hashable(location: str, value: Any) -> None:
+    """Reject an unhashable request argument, naming where it came from.
+
+    ``location`` is the call-site label -- ``args[0]`` or ``kwargs['packages']``
+    -- so the message points straight at the deploy line. Hashing the value *is*
+    the check: unlike a top-level type test it also catches a mutable container
+    nested inside an immutable one, such as ``packages=(["nginx"],)``, which
+    ``hash`` rejects just the same.
+    """
+    try:
+        hash(value)
+    except TypeError as exc:
+        raise UnhashableArgumentError(
+            f"{location} is unhashable ({exc}); OperationRequest arguments must "
+            "stay hashable because compose(dedupe=True) hashes every one of "
+            'them -- use immutable containers, e.g. packages=("nginx",) not '
+            'packages=["nginx"]'
+        ) from exc
+
+
 @dataclass(frozen=True)
 class OperationRequest:
     """A plain, frozen, serializable descriptor of "an operation to perform".
 
-    ``frozen=True`` gives value equality, which the lockstep scheduler uses
-    to pair "the Nth operation for host A" with "the Nth operation for
-    host B". The dict ``kwargs`` field is unhashable, so ``__hash__`` is
-    defined explicitly over a hashable projection of the fields.
+    ``frozen=True`` gives value equality, which is what the lockstep scheduler
+    compares to pair "the Nth operation for host A" with "the Nth operation for
+    host B" -- and to check an apply-phase request against the prepare-phase
+    plan. Hashing is a second, narrower need: the dict ``kwargs`` field is
+    unhashable, so ``__hash__`` is defined explicitly over a hashable projection
+    of the fields, and it is ``compose(dedupe=True)`` (which puts ``_effective_key``
+    tuples in a set) that calls it. Because that key includes every argument
+    value, an unhashable one -- ``packages=["nginx"]`` -- is rejected here, in
+    ``__post_init__``, with ``UnhashableArgumentError``.
 
     ``sudo``, ``su`` and ``doas`` are *meta-parameters*: like ``name`` they
     describe how the driver should run the operation rather than being forwarded
@@ -159,9 +203,13 @@ class OperationRequest:
 
     def __post_init__(self):
         # A dict inside a frozen dataclass is otherwise mutable from outside.
-        # The copy is shallow: callers should prefer immutable containers for
-        # nested values (e.g. packages=("nginx",)).
+        # The copy is shallow, so nested values must be immutable themselves --
+        # enforced by the hashability check at the end of this method.
         object.__setattr__(self, "kwargs", dict(self.kwargs))
+        # ``args`` participates in ``__hash__`` as stored, so a list passed
+        # positionally would make the whole request unhashable; normalize it to
+        # a tuple, mirroring the ``kwargs`` copy.
+        object.__setattr__(self, "args", tuple(self.args))
         # Normalize the escalation flags so the ergonomic bool/None spellings
         # (``sudo=True``) and the ``Privilege`` members coexist: every stored
         # value is a ``Privilege``, so ``elevates()`` is always available.
@@ -171,6 +219,13 @@ class OperationRequest:
         # Normalize the guard(s) to a tuple so the stored value is hashable,
         # value-comparable and conjunction-composable (see ``_coerce_when``).
         object.__setattr__(self, "when", _coerce_when(self.when))
+        # Fail fast on an unhashable argument: deduplication hashes every value,
+        # and a deploy is the only place left where the call site is identifiable
+        # (see ``UnhashableArgumentError``).
+        for index, value in enumerate(self.args):
+            _ensure_hashable(f"args[{index}]", value)
+        for key, value in self.kwargs.items():
+            _ensure_hashable(f"kwargs[{key!r}]", value)
 
     def __hash__(self):
         return hash(
@@ -235,9 +290,149 @@ class FactCache:
         return self._data[key]
 
 
+class DeployRequestError(TypeError):
+    """Raised when a deploy body breaks the "yield requests" contract.
+
+    A deploy is a plain sync generator whose body hands the driver exactly one
+    ``OperationRequest`` per ``yield``. Breaking that shape loses work in
+    silence, or fails with an error raised so deep in the driver that it names
+    nothing useful, so the driver checks the contract at the two points where a
+    deploy body is invoked (``drivers._prepare_host`` and the lockstep pull in
+    ``drivers.run_apply``) -- which in a normal run means the prepare phase,
+    before anything is sent:
+
+    - the body returned a non-iterable (typically ``None``) because it calls
+      ``op()`` without ``yield``, so there is no request stream at all;
+    - a yielded item is not an ``OperationRequest`` -- e.g. an operation called
+      from the deploy body, which cannot even be invoked without the
+      ``OpContext`` only the driver holds;
+    - the body built a request with ``op()`` and dropped it instead of yielding
+      it. This is the shape nothing else can catch: the sequence stays valid,
+      is identically shorter in both phases (so the determinism guard holds)
+      and the operation simply never runs. It is caught by the per-invocation
+      built-versus-yielded tally in ``_RequestCounter``.
+
+    Subclasses ``TypeError`` -- the bare error these misuses used to raise from
+    inside the driver -- so a caller handling ``TypeError`` keeps handling it,
+    and the message names the host, the phase and the missing ``yield``.
+    """
+
+
+@dataclass
+class _RequestCounter:
+    """Per-invocation tally of the requests a deploy body built and yielded.
+
+    ``op()`` charges every request it constructs to the counter installed for
+    the deploy invocation in progress, the driver charges every request that
+    actually reaches the sequence, and ``compose(..., dedupe=True)`` charges the
+    requests it collapses on purpose. A body that builds a request and loses it
+    therefore leaves ``unyielded`` positive, which the driver reports as
+    ``DeployRequestError`` once the generator is exhausted.
+
+    The counter reaches ``op()`` through a ``ContextVar`` because ``op()`` sits
+    in the deploy body, which the driver only ever calls as an opaque callable;
+    set-and-reset-around-the-invocation is the same token discipline
+    ``actions._deploy_phase`` uses, so the tally stays per-invocation and
+    per-task. Both phases install a counter identically, so it is a pure
+    function of the body and never disturbs the determinism guard.
+    """
+
+    built: int = 0  # op() calls made while this counter was installed
+    yielded: int = 0  # requests the body handed the driver
+    dropped: int = 0  # requests a compose dedupe collapsed on purpose
+
+    @property
+    def unyielded(self) -> int:
+        """Requests built and then lost: never yielded, never deduped.
+
+        Clamped at zero. A body may legitimately hand over requests it built
+        outside the tracked invocation -- a module-level list of ``op()`` calls
+        it then ``yield from`` -- which leaves the tally negative, and a
+        negative tally is over-accounting, not a lost request.
+        """
+        return max(0, self.built - self.yielded - self.dropped)
+
+
+_REQUEST_COUNTER: ContextVar["_RequestCounter | None"] = ContextVar(
+    "reemote5_request_counter", default=None
+)
+
+
+def _current_counter() -> "_RequestCounter | None":
+    """The counter installed for the deploy invocation in progress, if any."""
+    return _REQUEST_COUNTER.get()
+
+
+@contextmanager
+def _tracked_requests(counter: _RequestCounter) -> Iterator[_RequestCounter]:
+    """Install ``counter`` as the tally for the deploy body run inside.
+
+    Requests the body builds with ``op()`` are charged to it for the duration,
+    and the ``ContextVar`` is reset even when the body raises, so a failed
+    deploy leaves no counter behind for the next invocation.
+    """
+    token = _REQUEST_COUNTER.set(counter)
+    try:
+        yield counter
+    finally:
+        _REQUEST_COUNTER.reset(token)
+
+
+def _account_request(
+    item: Any, counter: "_RequestCounter | None", host_name: str, phase: str
+) -> "OperationRequest":
+    """Check one item a deploy body produced and charge it to ``counter``.
+
+    The driver calls this on every item the body hands it, in both phases, so
+    the type rule is enforced once per yielded request and the yielded count
+    stays paired with the ``op()`` builds ``_tracked_requests`` tallies.
+
+    ``counter`` is ``None`` for a runtime built without deploy accounting (a
+    caller that hand-assembles a ``HostRuntime``), which keeps the type check
+    while leaving the built-versus-yielded tally untracked.
+    """
+    if not isinstance(item, OperationRequest):
+        raise DeployRequestError(
+            f"host {host_name}: the {phase}-phase deploy body yielded {item!r}, "
+            f"a {type(item).__name__}, not an OperationRequest; yield the "
+            "requests op() builds (yield op(dnf.packages, ...)) and never call "
+            "an operation from a deploy body, which needs the OpContext only "
+            "the driver holds"
+        )
+    if counter is not None:
+        counter.yielded += 1
+    return item
+
+
+def _lost_requests(host_name: str, count: int) -> str:
+    """The per-host clause of an unyielded-request report, pluralised."""
+    return f"host {host_name} lost {count} built request{'' if count == 1 else 's'}"
+
+
+def _unyielded_message(details: str, phase: str) -> str:
+    """Report requests a deploy body built and lost, naming hosts and phase.
+
+    ``details`` is the per-host part from ``_lost_requests``, already joined for
+    an apply-phase step where several hosts lost a request in the same lockstep
+    pull.
+    """
+    return (
+        f"{details} -- a {phase}-phase deploy body must yield every request it "
+        "builds with op(), because a built-but-unyielded request is silently "
+        "dropped: write yield op(...), not op(...)"
+    )
+
+
 @dataclass
 class HostRuntime:
-    """Per-host state maintained by the apply-phase driver."""
+    """Per-host state maintained by the apply-phase driver.
+
+    ``deploy_counter`` is the built-versus-yielded tally for this host's
+    *apply-phase* generator, installed by ``run_apply`` around each request
+    pull. ``_prepare_host`` gives every runtime a fresh one, so a deploy body
+    that loses a request is caught in the prepare phase first and again here if
+    a caller drives apply on a runtime it built itself.
+    """
 
     host: Host
     generator: Generator  # deploy(host) generator
@@ -245,6 +440,7 @@ class HostRuntime:
     current_request: OperationRequest | None = None
     current_ctx: OpContext | None = None
     done: bool = False
+    deploy_counter: _RequestCounter = field(default_factory=_RequestCounter)
 
 
 class OperationError(RuntimeError):
@@ -289,8 +485,20 @@ def op(
     pass), or ``None`` (the default, always eligible). A guarded request stays
     in every host's sequence; the driver skips it on hosts that fail the
     guard. ``OperationRequest`` normalizes the value to a tuple.
+
+    Collection arguments must be immutable: ``packages=("nginx",)``, never
+    ``packages=["nginx"]``. ``OperationRequest`` checks each ``args``/``kwargs``
+    value is hashable and raises ``UnhashableArgumentError`` on the spot, so a
+    list -- or a list nested inside a tuple -- is named at the deploy line
+    instead of failing later inside ``compose(dedupe=True)``.
+
+    Every call is charged to the deploy body's built-versus-yielded counter when
+    one is installed, which is what lets the driver catch a request that was
+    built here and then never yielded (``yield op(...)``, not ``op(...)``) with
+    ``DeployRequestError``. Outside a tracked deploy invocation the count is a
+    no-op, so building requests anywhere else is unaffected.
     """
-    return OperationRequest(
+    request = OperationRequest(
         func=func,
         kwargs=kwargs,
         name=name,
@@ -299,6 +507,12 @@ def op(
         doas=Privilege.coerce(doas),
         when=when,
     )
+    # Charged only after construction succeeds: a request the body failed to
+    # build never entered the sequence either, so the two sides stay balanced.
+    counter = _current_counter()
+    if counter is not None:
+        counter.built += 1
+    return request
 
 
 def sub_deploy(
@@ -436,6 +650,11 @@ def compose(
     every ``deploy(host)`` call (one per host per phase) dedupes from
     scratch, keeping the transform pure so both phases produce the identical
     collapsed sequence and the determinism guard holds.
+
+    A request dropped as a duplicate is charged to the deploy body's
+    built-versus-yielded counter as ``dropped``, because it was built on purpose
+    and collapsed on purpose -- without it the driver's ``DeployRequestError``
+    check would read a dedupe as a lost request.
     """
 
     def deploy(host: Host) -> Generator[OperationRequest]:
@@ -445,6 +664,9 @@ def compose(
                 if dedupe:
                     key = _effective_key(request)
                     if key in seen:
+                        counter = _current_counter()
+                        if counter is not None:
+                            counter.dropped += 1
                         continue
                     seen.add(key)
                 yield request
@@ -454,12 +676,14 @@ def compose(
 
 __all__ = [
     "Command",
+    "DeployRequestError",
     "FactCache",
     "HostRuntime",
     "OpContext",
     "OperationError",
     "OperationRequest",
     "Privilege",
+    "UnhashableArgumentError",
     "WhenPredicate",
     "compose",
     "op",
