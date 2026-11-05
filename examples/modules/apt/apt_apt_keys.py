@@ -21,8 +21,9 @@ two-phase execution model:
 3. Gather ``AptKeys`` on every host at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's raw mapping of GPG key id to key
-   details with ``json.dumps(..., indent=2)``.
+   mapping -- then print each host's list of ``AptKey`` entries (each
+   carrying its ``id`` and its subkeys as a list) with
+   ``json.dumps(..., indent=2)``.
 
 ``AptKeys`` sweeps APT's modern keyring directories
 (``/etc/apt/trusted.gpg.d``, ``/etc/apt/keyrings``, ``/usr/share/keyrings``)
@@ -80,7 +81,7 @@ async def main() -> None:
         # fans AptKeys.process out with asyncio.gather and returns a
         # host-name-keyed mapping. process runs the two find sweeps over APT's
         # keyring directories and flattens every keyring's gpg --with-colons
-        # records into a {key id: key details} mapping.
+        # records into a list of AptKey entries (each with its id and subkeys).
         apt_keys = await gather_fact(hosts, AptKeys)
     except (CommandError, HostConnectionError) as exc:
         # The library reports an unreachable host or a failed fact command as a

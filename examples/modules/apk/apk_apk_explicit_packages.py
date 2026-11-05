@@ -33,22 +33,24 @@ inventory comes from a JSON file, the way
    driver's ``gather_fact`` helper -- it fans the fact's ``process`` coroutine
    out across the inventory with ``asyncio.gather`` and returns a
    host-name-keyed mapping -- then print each host's raw list of
-   name-only ``ApkExplicitPackage`` entries with
+   ``ApkPackageVersion`` entries with
    ``json.dumps(..., indent=2)``.
 
 ``ApkExplicitPackages`` cats ``/etc/apk/world`` -- apk's *world*, the
 constraints the package selection must fulfil -- behind a ``|| true``, so a
 host without apk simply reports ``[]``, and parses each constraint line
-(``[!]name{@tag}{[<>~=]version}`` notation) into a name-only
-``{"name": ...}`` entry. Entries come back sorted and de-duplicated by
-name, with the ``@tag`` and the version bound dropped and a ``!`` conflict
+(``[!]name{@tag}{[<>~=]version}`` notation) into a
+``{"name": ..., "version": ...}`` entry -- the version bound kept verbatim
+as the ``version`` (``""`` for a bare name). Entries come back sorted and
+de-duplicated by name and version, with the ``@tag`` dropped and a ``!``
+conflict
 constraint (a package that must NOT be installed) never contributing an
 entry. This is the audit view pyinfra's apk
 namespace has no fact for: read beside ``ApkInstalledPackages`` -- whose
 ``apk list --installed`` rows cannot tell an explicitly requested package
 from a dependency -- the installed names missing from this list are exactly
-the dependency-only ones a cleanup would consider removing (apk has no
-autoremove, so the removal itself stays an operator decision). The fact
+the dependency-only ones a cleanup would consider removing (the removal
+itself is what the ``apk.autoremove`` operation performs). The fact
 takes no arguments, so the default gather needs none.
 
 The path is resolved from ``__file__``, so the example works from any
@@ -134,8 +136,8 @@ async def main() -> None:
         # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans ApkExplicitPackages.process out with asyncio.gather and returns
         # a host-name-keyed mapping. process cats /etc/apk/world over SSH and
-        # parses each constraint line into a name-only entry, sorted and
-        # de-duplicated.
+        # parses each constraint line into a name-and-constraint entry,
+        # sorted and de-duplicated.
         apk_explicit_packages = await gather_fact(hosts, ApkExplicitPackages)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's

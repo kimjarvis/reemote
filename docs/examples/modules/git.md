@@ -12,8 +12,8 @@ reading `GitIsRepo`, `git_git_local_commit.py` reading `GitLocalCommit`,
 `git_git_remote_branch_commit.py` reading `GitRemoteBranchCommit`,
 `git_git_remote_url.py` reading `GitRemoteUrl`,
 `git_git_ssh_key_configured.py` reading `GitSshKeyConfigured`,
-`git_git_status.py` reading `GitStatus`, `git_git_submodule_status.py`
-reading `GitSubmoduleStatus`, `git_git_tag.py` reading `GitTag`, and
+`git_git_status.py` reading `GitStatus`, `git_git_submodule.py`
+reading `GitSubmodule`, `git_git_tag.py` reading `GitTag`, and
 `git_git_tracking_branch.py` reading `GitTrackingBranch`, each over
 `gather_fact`) are not rendered here — they read a single fact, and the
 facts themselves are documented on the

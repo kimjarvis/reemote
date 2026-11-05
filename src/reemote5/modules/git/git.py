@@ -3,13 +3,14 @@
 
 # """The ``git`` module: the ``GitBranch``, ``GitConfig``, ``GitHeadDetached``,
 # ``GitIsRepo``, ``GitLocalCommit``, ``GitRemoteBranchCommit``, ``GitRemoteUrl``,
-# ``GitSshKeyConfigured``, ``GitStatus``, ``GitSubmoduleStatus``, ``GitTag`` and
+# ``GitSshKeyConfigured``, ``GitStatus``, ``GitSubmodule``, ``GitTag`` and
 # ``GitTrackingBranch`` facts plus the ``config``, ``repo`` and ``worktree``
 # operations and their typed command descriptors.
 #
 # Fact side: ``GitBranch`` (the branch or tag ``git describe --all`` reports
 # for a repository), ``GitConfig`` (the configuration items of a repository's
-# local config, or of the login user's global/system config),
+# local config, or of the login user's global/system config, as
+# ``GitConfigItem`` entries),
 # ``GitHeadDetached`` (whether ``HEAD`` is detached on a commit rather than a
 # branch, a tri-state), ``GitIsRepo`` (whether a directory is a valid git work
 # tree), ``GitLocalCommit`` (the SHA a local ref resolves to),
@@ -17,11 +18,12 @@
 # ``git ls-remote``), ``GitRemoteUrl`` (a remote's fetch or push URL),
 # ``GitSshKeyConfigured`` (whether ``ssh -T`` authenticates to a git remote
 # host), ``GitStatus`` (the working tree's staged, unstaged and untracked
-# changes), ``GitSubmoduleStatus`` (each submodule's path, SHA and sync state),
-# ``GitTag`` (the repository's tag list) and ``GitTrackingBranch`` (the
+# changes), ``GitSubmodule`` (each submodule's path, SHA and sync state, as
+# ``GitSubmoduleStatus`` entries), ``GitTag`` (the repository's tags, as
+# ``GitTagInfo`` entries) and ``GitTrackingBranch`` (the
 # upstream tracking branch of the checked-out branch). ``GitHeadDetached``,
 # ``GitIsRepo``, ``GitRemoteUrl``, ``GitSshKeyConfigured``, ``GitStatus`` and
-# ``GitSubmoduleStatus`` are reemote5-original -- pyinfra has no counterpart --
+# ``GitSubmodule`` are reemote5-original -- pyinfra has no counterpart --
 # and back the safe-pull, idempotency and pre-flight checks the migrated facts
 # cannot. Every fact but ``GitSshKeyConfigured`` takes the repository path it
 # reads, and each repo-scoped command carries pyinfra's ``! test -d <repo> ||``
@@ -56,7 +58,7 @@ import re
 import shlex
 from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from ...commands import Command
 from ...core import OpContext, OperationError
@@ -80,7 +82,7 @@ _DESCRIBE_PREFIX_RE = re.compile(r"(heads|tags)/")
 _TRACKING_RE = re.compile(r"\.{3}(\S+)\b")
 
 # The ``git submodule status`` leading-character states, which
-# ``GitSubmoduleStatus`` maps each row's prefix through: a space is an
+# ``GitSubmodule`` maps each row's prefix through: a space is an
 # initialized submodule sitting at the recorded commit, ``-`` is one that is
 # not initialized, ``+`` is a checked-out commit that differs from the
 # recorded one, and ``U`` is a merge conflict. Any other prefix (a future git
@@ -99,13 +101,13 @@ _SUBMODULE_STATES = {
 class GitBranch:
     """The branch a repository is on, according to ``git describe --all``.
 
-    command:
+    **Commands:**
 
     ```bash
     ! test -d <repo> || (cd <repo> && git describe --all)
     ```
 
-    return:
+    **Returns:**
 
     ```python
     str
@@ -162,19 +164,37 @@ class GitBranch:
         return cls.parse(stdout.splitlines())
 
 
-class GitConfig:
-    """The git configuration items, as a dict of key -> value list.
+class GitConfigItem(TypedDict):
+    """
+    Attributes:
+        key: The configuration item's key, for example ``user.email``.
+        values: The key's values in listing order; a multi-valued key
+            (``safe.directory``) keeps every entry.
+    """
 
-    command:
+    # One configuration item ``GitConfig`` reports.
+    #
+    # A TypedDict rather than a class instance, like ``AptSource``: entries
+    # are ordinary dicts, so equality against a literal dict works and
+    # ``json.dumps`` serializes them directly.
+
+    key: str
+    values: list[str]
+
+
+class GitConfig:
+    """The git configuration items, as a list of key/values entries.
+
+    **Commands:**
 
     ```bash
     ! test -d <repo> || (cd <repo> && git config --local -l)
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    dict[str, list[str]]
+    list[GitConfigItem]
     ```
 
     Examples:
@@ -182,19 +202,23 @@ class GitConfig:
     """
 
     # Mirrors pyinfra's ``git.GitConfig``: ``git config -l`` prints
-    # ``key=value`` rows and each key maps to the list of its values -- a
-    # multi-valued key (``safe.directory``) keeps every entry in listing
-    # order -- for example::
+    # ``key=value`` rows and the rows fold into one ``GitConfigItem`` per
+    # key, in first-appearance order -- a multi-valued key
+    # (``safe.directory``) keeps every value in its ``values`` list in
+    # listing order -- for example::
     #
-    #     {"user.email": ["nick@gmail.com"]}
+    #     [{"key": "user.email", "values": ["nick@gmail.com"]}]
     #
-    # Without a ``repo`` the login user's scope is read -- ``git config
+    # The entry list is a deliberate shape deviation from pyinfra's
+    # key -> value-list dict (the TypedDict-entry guideline). Without a
+    # ``repo`` the login user's scope is read -- ``git config
     # --global -l || true``, or ``git config --system -l || true`` with
     # ``system=True`` -- where the
-    # ``|| true`` guard maps a missing git or config file to ``{}``,
-    # pyinfra's ``default = dict``. With a ``repo`` the repository's
+    # ``|| true`` guard maps a missing git or config file to ``[]``
+    # (pyinfra's ``default = dict``, projected onto entries). With a
+    # ``repo`` the repository's
     # ``--local`` config is read, and a missing directory short-circuits the
-    # ``! test -d`` guard to ``{}`` as well. Rows without an ``=`` are
+    # ``! test -d`` guard to ``[]`` as well. Rows without an ``=`` are
     # skipped (pyinfra would raise ``ValueError`` on them; reemote5 hardens
     # the parser). The repo path is ``shlex``-quoted -- a deliberate
     # deviation from pyinfra, which interpolates it raw.
@@ -214,12 +238,13 @@ class GitConfig:
         return f"! test -d {quoted} || (cd {quoted} && git config --local -l)"
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> dict[str, list[str]]:
-        """Parse ``git config -l`` rows into the key -> value list dict.
+    def parse(cls, output: Iterable[str]) -> list[GitConfigItem]:
+        """Parse ``git config -l`` rows into the config item list.
 
         Each ``key=value`` row appends its value to the key's list (the
         split is on the *first* ``=``, so a value may contain ``=``);
-        rows without an ``=`` are skipped.
+        rows without an ``=`` are skipped. One entry is emitted per key,
+        in first-appearance order.
         """
         items: dict[str, list[str]] = {}
         for line in output:
@@ -227,23 +252,25 @@ class GitConfig:
             if not sep:
                 continue
             items.setdefault(key, []).append(value)
-        return items
+        return [{"key": key, "values": values} for key, values in items.items()]
 
     @classmethod
     async def process(
         cls, host: Host, repo: str | None = None, system: bool = False
-    ) -> dict[str, list[str]]:
+    ) -> list[GitConfigItem]:
         scope = repo if repo is not None else ("system" if system else "global")
         configs = getattr(host, "git_configs", None)
         if configs is not None:
             # SimulatedHost seam: scope key -> config dict, where the scope
-            # key is the repo path or the "global"/"system" sentinel. Copy
-            # the dict and the value lists so callers never mutate the
-            # simulated state; an unknown scope reads as {} (pyinfra's
-            # ``default = dict``).
-            return {
-                key: list(values) for key, values in configs.get(scope, {}).items()
-            }
+            # key is the repo path or the "global"/"system" sentinel. The
+            # dict store (mutated by the simulated ``git.config``) is
+            # projected into entries with copied value lists so callers
+            # never mutate the simulated state; an unknown scope reads as
+            # [] (pyinfra's ``default = dict``, projected).
+            return [
+                {"key": key, "values": list(values)}
+                for key, values in configs.get(scope, {}).items()
+            ]
         # Real transport: `git config -l` over asyncssh.
         stdout = await host.run_shell(cls.command(repo, system))
         return cls.parse(stdout.splitlines())
@@ -252,13 +279,13 @@ class GitConfig:
 class GitHeadDetached:
     """Whether the repository's ``HEAD`` is detached, or None if undetermined.
 
-    command:
+    **Commands:**
 
     ```bash
     ! test -d <repo> || (cd <repo> && if git symbolic-ref -q HEAD >/dev/null 2>&1; then echo attached; elif git rev-parse --git-dir >/dev/null 2>&1; then echo detached; fi)
     ```
 
-    return:
+    **Returns:**
 
     ```python
     bool | None
@@ -335,13 +362,13 @@ class GitHeadDetached:
 class GitIsRepo:
     """Whether a directory is a valid git working-tree repository.
 
-    command:
+    **Commands:**
 
     ```bash
     ! test -d <repo> || (cd <repo> && git rev-parse --is-inside-work-tree 2>/dev/null)
     ```
 
-    return:
+    **Returns:**
 
     ```python
     bool
@@ -411,13 +438,13 @@ class GitIsRepo:
 class GitLocalCommit:
     """The SHA of a local ref (default ``HEAD``) in a repository, or None.
 
-    command:
+    **Commands:**
 
     ```bash
     ! test -d <repo> || (cd <repo> && git rev-parse <ref> 2>/dev/null) || true
     ```
 
-    return:
+    **Returns:**
 
     ```python
     str | None
@@ -482,13 +509,13 @@ class GitLocalCommit:
 class GitRemoteBranchCommit:
     """The tip SHA of a branch on a remote, via ``git ls-remote``, or None.
 
-    command:
+    **Commands:**
 
     ```bash
     ! test -d <repo> || (cd <repo> && git ls-remote <remote> <branch> 2>/dev/null | head -n1)
     ```
 
-    return:
+    **Returns:**
 
     ```python
     str | None
@@ -563,13 +590,13 @@ class GitRemoteBranchCommit:
 class GitRemoteUrl:
     """A remote's fetch (or push) URL, or None when it cannot be resolved.
 
-    command:
+    **Commands:**
 
     ```bash
     ! test -d <repo> || (cd <repo> && git remote get-url <remote> 2>/dev/null)
     ```
 
-    return:
+    **Returns:**
 
     ```python
     str | None
@@ -642,13 +669,13 @@ class GitRemoteUrl:
 class GitSshKeyConfigured:
     """Whether ``ssh -T`` authenticates the user to a git remote host.
 
-    command:
+    **Commands:**
 
     ```bash
     ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=<timeout> <user>@<remote_host> >/dev/null 2>&1; rc=$?; test "$rc" -eq 127 && exit 127; test "$rc" -ne 255 && echo authenticated || echo unauthenticated
     ```
 
-    return:
+    **Returns:**
 
     ```python
     bool
@@ -749,13 +776,13 @@ class GitStatusSummary(TypedDict):
 class GitStatus:
     """The working tree's staged, unstaged and untracked changes.
 
-    command:
+    **Commands:**
 
     ```bash
     ! test -d <repo> || (cd <repo> && git status --porcelain)
     ```
 
-    return:
+    **Returns:**
 
     ```python
     GitStatusSummary
@@ -840,7 +867,7 @@ class GitStatus:
         return cls.parse(stdout.splitlines())
 
 
-class GitSubmodule(TypedDict):
+class GitSubmoduleStatus(TypedDict):
     """
     Attributes:
         path: The submodule's path within the repository.
@@ -851,7 +878,7 @@ class GitSubmodule(TypedDict):
             ``None`` when the row carries none (an uninitialized submodule).
     """
 
-    # One submodule row ``GitSubmoduleStatus`` reports.
+    # One submodule row ``GitSubmodule`` reports.
     #
     # A TypedDict rather than a class instance, like ``AptSource``: rows are
     # ordinary dicts, so equality against a literal dict works and
@@ -863,30 +890,30 @@ class GitSubmodule(TypedDict):
     describe: str | None
 
 
-class GitSubmoduleStatus:
+class GitSubmodule:
     """The repository's submodules and their synchronization state.
 
-    command:
+    **Commands:**
 
     ```bash
     ! test -d <repo> || (cd <repo> && git submodule status)
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    list[GitSubmodule]
+    list[GitSubmoduleStatus]
     ```
 
     Examples:
-        Examples can be found in ``examples/modules/git/git_git_submodule_status.py``.
+        Examples can be found in ``examples/modules/git/git_git_submodule.py``.
     """
 
     # A reemote5-original fact (pyinfra has no counterpart). ``git submodule
     # status`` prints one row per submodule as a leading state character, the
     # recorded SHA, the path and -- for an initialized submodule -- a
     # ``git describe`` detail in parentheses; the rows fold into a list of
-    # ``GitSubmodule`` dicts, for example::
+    # ``GitSubmoduleStatus`` dicts, for example::
     #
     #     [{"path": "vendor/lib", "sha": "1a2b...", "state": "synced",
     #       "describe": "heads/main"}]
@@ -907,7 +934,7 @@ class GitSubmoduleStatus:
         return f"! test -d {quoted} || (cd {quoted} && git submodule status)"
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> list[GitSubmodule]:
+    def parse(cls, output: Iterable[str]) -> list[GitSubmoduleStatus]:
         """Parse ``git submodule status`` rows into the submodule list.
 
         Each row is ``<state><sha> <path>[(<describe>)]``: the first
@@ -917,7 +944,7 @@ class GitSubmoduleStatus:
         containing one is kept whole). Blank rows are skipped; empty output
         reads as ``[]``.
         """
-        submodules: list[GitSubmodule] = []
+        submodules: list[GitSubmoduleStatus] = []
         for line in output:
             if not line.strip():
                 continue
@@ -939,7 +966,7 @@ class GitSubmoduleStatus:
         return submodules
 
     @classmethod
-    async def process(cls, host: Host, repo: str) -> list[GitSubmodule]:
+    async def process(cls, host: Host, repo: str) -> list[GitSubmoduleStatus]:
         submodules = getattr(host, "git_submodules", None)
         if submodules is not None:
             # SimulatedHost seam: repo path -> submodule row list. Copy each
@@ -951,19 +978,35 @@ class GitSubmoduleStatus:
         return cls.parse(stdout.splitlines())
 
 
-class GitTag:
-    """The repository's tags, as a list of tag names in ``git tag`` order.
+class GitTagInfo(TypedDict):
+    """
+    Attributes:
+        name: The tag name, for example ``v1.0.0``.
+    """
 
-    command:
+    # One tag ``GitTag`` reports. Named with the Info suffix because the
+    # bare ``GitTag`` slot is the fact class (the ApkPackageInfo precedent).
+    #
+    # A TypedDict rather than a class instance, like ``AptSource``: entries
+    # are ordinary dicts, so equality against a literal dict works and
+    # ``json.dumps`` serializes them directly.
+
+    name: str
+
+
+class GitTag:
+    """The repository's tags, as ``GitTagInfo`` entries in ``git tag`` order.
+
+    **Commands:**
 
     ```bash
     ! test -d <repo> || (cd <repo> && git tag)
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    list[str]
+    list[GitTagInfo]
     ```
 
     Examples:
@@ -971,10 +1014,13 @@ class GitTag:
     """
 
     # Mirrors pyinfra's ``git.GitTag``: ``git tag`` lists one tag per line,
-    # sorted by name, and the lines are returned verbatim, for example::
+    # sorted by name, and each line becomes one ``GitTagInfo`` entry, in
+    # listing order, for example::
     #
-    #     ["v1.0.0", "v1.0.1"]
+    #     [{"name": "v1.0.0"}, {"name": "v1.0.1"}]
     #
+    # The entry list is a deliberate shape deviation from pyinfra's bare
+    # name list (the TypedDict-entry guideline).
     # A missing repository directory short-circuits pyinfra's
     # ``! test -d <repo> ||`` guard to no output, which reads as ``[]``.
     # The repo path is ``shlex``-quoted -- a deliberate deviation from
@@ -987,22 +1033,23 @@ class GitTag:
         return f"! test -d {quoted} || (cd {quoted} && git tag)"
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> list[str]:
-        """Parse ``git tag`` output into the tag name list.
+    def parse(cls, output: Iterable[str]) -> list[GitTagInfo]:
+        """Parse ``git tag`` output into the tag entry list.
 
-        Every line is kept verbatim, in listing order (pyinfra returns its
-        output lines unchanged); empty output reads as ``[]``.
+        Every line becomes one ``{"name": line}`` entry, in listing order
+        (pyinfra returns its output lines unchanged); empty output reads
+        as ``[]``.
         """
-        return list(output)
+        return [{"name": line} for line in output]
 
     @classmethod
-    async def process(cls, host: Host, repo: str) -> list[str]:
+    async def process(cls, host: Host, repo: str) -> list[GitTagInfo]:
         tags = getattr(host, "git_tags", None)
         if tags is not None:
-            # SimulatedHost seam: repo path -> tag list. Copy the list so
-            # callers never mutate the simulated state; an unknown repo
-            # reads as [], like the short-circuited directory guard.
-            return list(tags.get(repo, []))
+            # SimulatedHost seam: repo path -> tag entry list. Copy each
+            # entry so callers never mutate the simulated state; an unknown
+            # repo reads as [], like the short-circuited directory guard.
+            return [{**entry} for entry in tags.get(repo, [])]
         # Real transport: `git tag` over asyncssh.
         stdout = await host.run_shell(cls.command(repo))
         return cls.parse(stdout.splitlines())
@@ -1011,13 +1058,13 @@ class GitTag:
 class GitTrackingBranch:
     """The upstream tracking branch of the checked-out branch, or None.
 
-    command:
+    **Commands:**
 
     ```bash
     ! test -d <repo> || (cd <repo> && git status --branch --porcelain)
     ```
 
-    return:
+    **Returns:**
 
     ```python
     str | None
@@ -1210,62 +1257,81 @@ async def worktree(
     present: bool = True,
     assume_repo_exists: bool = False,
     force: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Manage git working trees (pyinfra ``git.worktree`` parity).
+    """Manage git working trees.
 
-    + worktree: the working-tree directory to manage.
-    + repo: the main repository directory the worktree is added from
-      (required when creating; unused when removing).
-    + detached: create the working tree with a detached ``HEAD``.
-    + new_branch: a local branch created together with the worktree.
-    + commitish: the commit/branch/tag the worktree is created from.
-    + pull: pull changes for an existing worktree linked to a remote branch.
-    + rebase: when pulling, use ``--rebase``.
-    + from_remote_branch: a ``(remote, branch)`` 2-tuple naming the remote
-      branch to pull from.
-    + present: whether the working tree should exist.
-    + assume_repo_exists: skip the ``repo/.git`` validity check.
-    + force: pass ``--force`` when adding or removing the worktree.
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        worktree (str): The working-tree directory to manage.
+        repo (str | None, optional): The main repository directory the
+            worktree is added from (required when creating; unused when
+            removing). Defaults to None.
+        detached (bool, optional): Create the working tree with a detached
+            ``HEAD``. Defaults to False.
+        new_branch (str | None, optional): A local branch created together
+            with the worktree. Defaults to None.
+        commitish (str | None, optional): The commit/branch/tag the worktree
+            is created from. Defaults to None.
+        pull (bool, optional): Pull changes for an existing worktree linked
+            to a remote branch. Defaults to True.
+        rebase (bool, optional): When pulling, use ``--rebase``. Defaults to
+            False.
+        from_remote_branch (tuple[str, str] | None, optional): A
+            ``(remote, branch)`` 2-tuple naming the remote branch to pull
+            from. Defaults to None.
+        present (bool, optional): Whether the working tree should exist.
+            Defaults to True.
+        assume_repo_exists (bool, optional): Skip the ``repo/.git`` validity
+            check. Defaults to False.
+        force (bool, optional): Pass ``--force`` when adding or removing the
+            worktree. Defaults to False.
+        **kwargs: Additional keyword arguments.
 
-    The operation branches on the worktree's existence (read through the
-    git-local ``_DirectoryExists`` fact), so it is idempotent across the three
-    directions:
+    Yields:
+        Command: Generated worktree add/remove and pull commands.
 
-    * **Create** (``present`` and the directory is absent): validates the
-      source repository -- ``repo`` must be given (``ValueError``) and, unless
-      ``assume_repo_exists``, ``repo/.git`` must be a directory
-      (``OperationError``, pyinfra's message) -- then yields one
-      ``GitWorktreeAddCommand``.
-    * **Remove** (``present=False`` and the directory exists): yields one
-      ``GitWorktreeRemoveCommand``.
-    * **Pull** (``present`` and the directory exists): when ``pull`` is set
-      and the tree is linked to a tracking branch (``GitTrackingBranch``) or
-      an explicit ``from_remote_branch`` is given, it short-circuits the pull
-      when the tree's ``GitLocalCommit`` already equals the remote tip
-      (``GitRemoteBranchCommit``) -- pyinfra's ``skip_pull`` -- otherwise it
-      yields one ``GitPullCommand``. With ``pull=False``, no tracking branch
-      and no ``from_remote_branch``, it is a no-op.
-    * Absent and ``present=False`` is a no-op.
-
-    Creating or removing a worktree writes under the repository's ``.git``,
-    which is often root-owned, so flag the request ``sudo=True`` when the
-    login user cannot write there.
-
-    Deliberate deviations from pyinfra: the ``user``/``group`` options (and
-    the up-to-four ``chown`` commands they emit for the worktree, its
-    ``.git/worktrees`` metadata and the new branch's refs/logs) are dropped --
-    reemote5 has no ``chown`` primitive and routes ownership through the
-    inventory ``privilege`` plus the ``sudo``/``su`` meta-parameters, not a
-    per-operation ``chown``. The ``repo is None`` check runs *before* the
-    ``repo/.git`` probe (pyinfra joins ``None`` with ``.git`` first and would
-    crash), and argument-shape errors raise ``ValueError`` (reemote5's
-    argument-validation idiom) while the invalid-repository state error keeps
-    pyinfra's ``OperationError``. Because reemote5 operations are phase-unaware,
-    those errors surface in *both* the prepare and apply phases.
-    ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already strips
-    ``name``/``sudo``/``su``).
+    Examples:
+        Examples can be found in ``examples/modules/git/git_worktree.py``.
     """
+
+    # Mirrors pyinfra's ``git.worktree``. The operation branches on the
+    # worktree's existence (read through the git-local ``_DirectoryExists``
+    # fact), so it is idempotent across the three directions:
+    #
+    # * Create (``present`` and the directory is absent): validates the
+    #   source repository -- ``repo`` must be given (``ValueError``) and,
+    #   unless ``assume_repo_exists``, ``repo/.git`` must be a directory
+    #   (``OperationError``, pyinfra's message) -- then yields one
+    #   ``GitWorktreeAddCommand``.
+    # * Remove (``present=False`` and the directory exists): yields one
+    #   ``GitWorktreeRemoveCommand``.
+    # * Pull (``present`` and the directory exists): when ``pull`` is set and
+    #   the tree is linked to a tracking branch (``GitTrackingBranch``) or an
+    #   explicit ``from_remote_branch`` is given, it short-circuits the pull
+    #   when the tree's ``GitLocalCommit`` already equals the remote tip
+    #   (``GitRemoteBranchCommit``) -- pyinfra's ``skip_pull`` -- otherwise it
+    #   yields one ``GitPullCommand``. With ``pull=False``, no tracking branch
+    #   and no ``from_remote_branch``, it is a no-op.
+    # * Absent and ``present=False`` is a no-op.
+    #
+    # Creating or removing a worktree writes under the repository's ``.git``,
+    # which is often root-owned, so flag the request ``sudo=True`` when the
+    # login user cannot write there.
+    #
+    # Deliberate deviations from pyinfra: the ``user``/``group`` options (and
+    # the up-to-four ``chown`` commands they emit for the worktree, its
+    # ``.git/worktrees`` metadata and the new branch's refs/logs) are dropped
+    # -- reemote5 has no ``chown`` primitive and routes ownership through the
+    # inventory ``privilege`` plus the ``sudo``/``su`` meta-parameters, not a
+    # per-operation ``chown``. The ``repo is None`` check runs *before* the
+    # ``repo/.git`` probe (pyinfra joins ``None`` with ``.git`` first and would
+    # crash), and argument-shape errors raise ``ValueError`` (reemote5's
+    # argument-validation idiom) while the invalid-repository state error
+    # keeps pyinfra's ``OperationError``. Because reemote5 operations are
+    # phase-unaware, those errors surface in *both* the prepare and apply
+    # phases. ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
+    # strips ``name``/``sudo``/``su``).
     reasons: list[str] = []
     exists = await ctx.facts.get(_DirectoryExists, worktree)
 
@@ -1396,50 +1462,60 @@ async def config(
     multi_value: bool = False,
     repo: str | None = None,
     system: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Manage git config at repository, user or system level (pyinfra
-    ``git.config`` parity).
+    """Manage git config at repository, user or system level.
 
-    + key: the config key to ensure.
-    + value: the value this key should have.
-    + multi_value: add the value (``--add``) rather than set it, for keys
-      that carry several values.
-    + repo: edit this repository's ``--local`` config; defaults to the login
-      user's ``--global`` config when unset.
-    + system: with no ``repo``, work at ``--system`` level instead of
-      ``--global``.
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        key (str): The config key to ensure.
+        value (str): The value this key should have.
+        multi_value (bool, optional): Add the value (``--add``) rather than
+            set it, for keys that carry several values. Defaults to False.
+        repo (str | None, optional): Edit this repository's ``--local``
+            config; defaults to the login user's ``--global`` config when
+            unset. Defaults to None.
+        system (bool, optional): With no ``repo``, work at ``--system`` level
+            instead of ``--global``. Defaults to False.
+        **kwargs: Additional keyword arguments.
 
-    Idempotence mirrors pyinfra: a single-valued key is written only when its
-    current value list is not exactly ``[value]``; a ``multi_value`` key is
-    written only when ``value`` is absent from the current list. Otherwise the
-    operation is a no-op carrying pyinfra's ``git config <key> is set to
-    <value>`` reason.
+    Yields:
+        Command: The config-set command, when the value differs.
 
-    For a ``repo`` scope pyinfra reads the existing config only when
-    ``repo/.git`` is a directory (its ``files.Directory`` gate), so reemote5
-    probes the git-local ``_DirectoryExists`` fact first and reads
-    ``GitConfig`` only behind that gate; when the repository directory is
-    absent the existing config reads as ``{}`` and the write still runs,
-    exactly as pyinfra does. A repo-less scope reads ``GitConfig`` directly,
-    where ``system`` selects the ``--system`` level over the ``--global``
-    default.
-
-    Setting a repository's ``--local`` config or the ``--system`` config often
-    needs root or the repository owner, so flag the request ``sudo=True`` when
-    the login user cannot write there.
-
-    Deliberate deviation from pyinfra: the value is ``shlex``-quoted rather
-    than wrapped in literal double quotes (see ``GitConfigCommand``), so a
-    value carrying shell metacharacters is read literally. ``**kwargs``
-    absorbs pyinfra's global arguments (``op()`` already strips
-    ``name``/``sudo``/``su``).
+    Examples:
+        Examples can be found in ``examples/modules/git/git_config.py``.
     """
-    existing_config: dict[str, list[str]] = {}
+
+    # Mirrors pyinfra's ``git.config``. Idempotence mirrors pyinfra: a
+    # single-valued key is written only when its current value list is not
+    # exactly ``[value]``; a ``multi_value`` key is written only when ``value``
+    # is absent from the current list. Otherwise the operation is a no-op
+    # carrying pyinfra's ``git config <key> is set to <value>`` reason.
+    #
+    # For a ``repo`` scope pyinfra reads the existing config only when
+    # ``repo/.git`` is a directory (its ``files.Directory`` gate), so reemote5
+    # probes the git-local ``_DirectoryExists`` fact first and reads
+    # ``GitConfig`` only behind that gate; when the repository directory is
+    # absent the existing config reads as ``[]`` and the write still runs,
+    # exactly as pyinfra does. A repo-less scope reads ``GitConfig`` directly,
+    # where ``system`` selects the ``--system`` level over the ``--global``
+    # default.
+    #
+    # Setting a repository's ``--local`` config or the ``--system`` config
+    # often needs root or the repository owner, so flag the request
+    # ``sudo=True`` when the login user cannot write there.
+    #
+    # Deliberate deviation from pyinfra: the value is ``shlex``-quoted rather
+    # than wrapped in literal double quotes (see ``GitConfigCommand``), so a
+    # value carrying shell metacharacters is read literally. ``**kwargs``
+    # absorbs pyinfra's global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
+    existing_items: list[GitConfigItem] = []
     if not repo:
-        existing_config = await ctx.facts.get(GitConfig, system=system)
+        existing_items = await ctx.facts.get(GitConfig, system=system)
     elif await ctx.facts.get(_DirectoryExists, posixpath.join(repo, ".git")):
-        existing_config = await ctx.facts.get(GitConfig, repo=repo)
+        existing_items = await ctx.facts.get(GitConfig, repo=repo)
+    existing_config = {item["key"]: item["values"] for item in existing_items}
 
     if not multi_value and existing_config.get(key) != [value]:
         ctx.changed = True
@@ -1662,73 +1738,91 @@ async def repo(
     *,
     fetch_tags: bool = False,
     force: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Clone or update a git repository (pyinfra ``git.repo`` parity).
+    """Clone or update a git repository.
 
-    + src: the git source URL to clone from or keep ``origin`` pointed at.
-    + dest: the directory to clone into / update.
-    + branch: the branch or tag to check out.
-    + pull: pull changes for an existing repository (default ``True``).
-    + rebase: when pulling, use ``--rebase``.
-    + update_submodules: run ``git submodule update --init`` afterwards.
-    + recursive_submodules: add ``--recursive`` to that submodule update.
-    + depth: truncate clone, fetch and pull history to N commits
-      (``--depth N`` on each).
-    + fetch_tags: fetch all tags (``--tags``) before a branch checkout.
-    + force: pass ``--force`` to fetch, checkout and pull.
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        src (str): The git source URL to clone from or keep ``origin``
+            pointed at.
+        dest (str): The directory to clone into / update.
+        branch (str | None, optional): The branch or tag to check out.
+            Defaults to None.
+        pull (bool, optional): Pull changes for an existing repository.
+            Defaults to True.
+        rebase (bool, optional): When pulling, use ``--rebase``. Defaults to
+            False.
+        update_submodules (bool, optional): Run ``git submodule update
+            --init`` afterwards. Defaults to False.
+        recursive_submodules (bool, optional): Add ``--recursive`` to that
+            submodule update. Defaults to False.
+        depth (int | None, optional): Truncate clone, fetch and pull history
+            to N commits (``--depth N`` on each). Defaults to None.
+        fetch_tags (bool, optional): Fetch all tags (``--tags``) before a
+            branch checkout. Defaults to False.
+        force (bool, optional): Pass ``--force`` to fetch, checkout and pull.
+            Defaults to False.
+        **kwargs: Additional keyword arguments.
 
-    The operation branches on whether ``dest/.git`` is a directory (read
-    through the git-local ``_DirectoryExists`` fact), so it is idempotent in
-    both directions:
+    Yields:
+        Command: Generated clone, remote-update, fetch, checkout, pull and
+            submodule-update commands.
 
-    * **Clone** (not a repository yet): yields one ``GitCloneCommand``,
-      carrying ``branch`` (``--branch``) and ``depth`` (``--depth``).
-    * **Update** (already a repository): reconciles ``origin`` against
-      ``src`` -- reading ``GitConfig``'s ``remote.origin.url``, pyinfra's
-      GH #1763 check -- and yields one ``GitRemoteSetUrlCommand`` only when
-      that URL exists and differs from ``src``; then, when ``branch`` is
-      given and differs from ``GitBranch``, yields one ``GitFetchCommand``
-      (carrying ``depth``/``fetch_tags``/``force``) and one
-      ``GitCheckoutCommand`` (carrying ``force``); then, when ``branch``
-      names a tag (found in ``GitTag``), yields a second ``GitCheckoutCommand``
-      detached onto it and marks the repository a tag checkout; finally,
-      when ``pull`` is set and it is not a tag checkout, it compares
-      ``GitLocalCommit`` against ``GitRemoteBranchCommit`` for the effective
-      branch (pyinfra's ``skip_pull``) and yields one ``GitRepoPullCommand``
-      (carrying ``depth``/``rebase``/``force``) only when the two differ or
-      cannot be resolved. ``origin`` never resets the comparison when the
-      remote URL just changed -- pyinfra skips ``skip_pull`` in that case,
-      since the cached remote tip was gathered against the old origin.
-
-    ``update_submodules`` is independent of all of the above and always
-    yields its ``GitSubmoduleUpdateCommand`` when set.
-
-    Cloning, fetching, checking out, pulling and updating submodules all
-    write under ``dest``, which is often root- or another-user-owned, so flag
-    the request ``sudo=True`` when the login user cannot write there.
-
-    Deliberate deviations from pyinfra: the ``user``/``group`` options (and
-    pyinfra's final ``chown -R`` command plus its ``safe.directory``
-    git-config prefix, which it only ever applies when ``user``/``group``
-    are set) are dropped -- reemote5 has no ``chown`` primitive and routes
-    ownership through the inventory ``privilege`` plus the ``sudo``/``su``
-    meta-parameters, the same decision already recorded for
-    ``git.worktree``. The ``ssh_keyscan`` option (pyinfra's
-    ``ssh.keyscan._inner(...)``, which reads the ``Home``/``FindInFile``
-    facts and yields ``ssh-keyscan``/``ssh-keygen -R`` commands against
-    ``~/.ssh/known_hosts``) is also dropped -- reemote5 has no ``ssh``
-    namespace or known_hosts primitive. pyinfra's initial
-    ``files.directory._inner(dest)`` ensure-directory step is dropped too
-    (no such operation exists to reuse), which is why ``GitCloneCommand``
-    names ``dest`` itself instead of cloning into ``.`` from inside a
-    pre-created directory. pyinfra's own operation fixtures still render
-    identically for every other command. Because reemote5 operations are
-    phase-unaware, an invalid ``branch``/``src`` combination is not
-    pre-validated -- git itself reports the failure when the command runs.
-    ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already strips
-    ``name``/``sudo``/``su``).
+    Examples:
+        Examples can be found in ``examples/modules/git/git_repo.py``.
     """
+
+    # Mirrors pyinfra's ``git.repo``. The operation branches on whether
+    # ``dest/.git`` is a directory (read through the git-local
+    # ``_DirectoryExists`` fact), so it is idempotent in both directions:
+    #
+    # * Clone (not a repository yet): yields one ``GitCloneCommand``,
+    #   carrying ``branch`` (``--branch``) and ``depth`` (``--depth``).
+    # * Update (already a repository): reconciles ``origin`` against ``src``
+    #   -- reading ``GitConfig``'s ``remote.origin.url``, pyinfra's GH #1763
+    #   check -- and yields one ``GitRemoteSetUrlCommand`` only when that URL
+    #   exists and differs from ``src``; then, when ``branch`` is given and
+    #   differs from ``GitBranch``, yields one ``GitFetchCommand`` (carrying
+    #   ``depth``/``fetch_tags``/``force``) and one ``GitCheckoutCommand``
+    #   (carrying ``force``); then, when ``branch`` names a tag (found in
+    #   ``GitTag``), yields a second ``GitCheckoutCommand`` detached onto it
+    #   and marks the repository a tag checkout; finally, when ``pull`` is
+    #   set and it is not a tag checkout, it compares ``GitLocalCommit``
+    #   against ``GitRemoteBranchCommit`` for the effective branch (pyinfra's
+    #   ``skip_pull``) and yields one ``GitRepoPullCommand`` (carrying
+    #   ``depth``/``rebase``/``force``) only when the two differ or cannot be
+    #   resolved. ``origin`` never resets the comparison when the remote URL
+    #   just changed -- pyinfra skips ``skip_pull`` in that case, since the
+    #   cached remote tip was gathered against the old origin.
+    #
+    # ``update_submodules`` is independent of all of the above and always
+    # yields its ``GitSubmoduleUpdateCommand`` when set.
+    #
+    # Cloning, fetching, checking out, pulling and updating submodules all
+    # write under ``dest``, which is often root- or another-user-owned, so
+    # flag the request ``sudo=True`` when the login user cannot write there.
+    #
+    # Deliberate deviations from pyinfra: the ``user``/``group`` options (and
+    # pyinfra's final ``chown -R`` command plus its ``safe.directory``
+    # git-config prefix, which it only ever applies when ``user``/``group``
+    # are set) are dropped -- reemote5 has no ``chown`` primitive and routes
+    # ownership through the inventory ``privilege`` plus the ``sudo``/``su``
+    # meta-parameters, the same decision already recorded for
+    # ``git.worktree``. The ``ssh_keyscan`` option (pyinfra's
+    # ``ssh.keyscan._inner(...)``, which reads the ``Home``/``FindInFile``
+    # facts and yields ``ssh-keyscan``/``ssh-keygen -R`` commands against
+    # ``~/.ssh/known_hosts``) is also dropped -- reemote5 has no ``ssh``
+    # namespace or known_hosts primitive. pyinfra's initial
+    # ``files.directory._inner(dest)`` ensure-directory step is dropped too
+    # (no such operation exists to reuse), which is why ``GitCloneCommand``
+    # names ``dest`` itself instead of cloning into ``.`` from inside a
+    # pre-created directory. pyinfra's own operation fixtures still render
+    # identically for every other command. Because reemote5 operations are
+    # phase-unaware, an invalid ``branch``/``src`` combination is not
+    # pre-validated -- git itself reports the failure when the command runs.
+    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
     reasons: list[str] = []
     git_dir = posixpath.join(dest, ".git")
     is_repo = await ctx.facts.get(_DirectoryExists, git_dir)
@@ -1739,7 +1833,8 @@ async def repo(
         yield GitCloneCommand(src=src, dest=dest, branch=branch, depth=depth)
     else:
         existing_config = await ctx.facts.get(GitConfig, repo=dest)
-        existing_remote = existing_config.get("remote.origin.url")
+        config_values = {item["key"]: item["values"] for item in existing_config}
+        existing_remote = config_values.get("remote.origin.url")
         remote_changed = existing_remote is not None and existing_remote != [src]
         if remote_changed:
             ctx.changed = True
@@ -1754,7 +1849,7 @@ async def repo(
             yield GitCheckoutCommand(dest=dest, branch=branch, force=force)
 
         tags = await ctx.facts.get(GitTag, dest)
-        is_tag = bool(branch) and branch in tags
+        is_tag = bool(branch) and any(tag["name"] == branch for tag in tags)
         if is_tag:
             ctx.changed = True
             reasons.append(f"{branch} is a tag, will check it out")
@@ -1801,6 +1896,7 @@ __all__ = [
     "GitCloneCommand",
     "GitConfig",
     "GitConfigCommand",
+    "GitConfigItem",
     "GitFetchCommand",
     "GitHeadDetached",
     "GitIsRepo",
@@ -1817,6 +1913,7 @@ __all__ = [
     "GitSubmoduleStatus",
     "GitSubmoduleUpdateCommand",
     "GitTag",
+    "GitTagInfo",
     "GitTrackingBranch",
     "GitWorktreeAddCommand",
     "GitWorktreeRemoveCommand",

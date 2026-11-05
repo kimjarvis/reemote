@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: gather the ``git.GitSubmoduleStatus`` fact on two real hosts.
+"""Example: gather the ``git.GitSubmodule`` fact on two real hosts.
 
 This is a *usage* example, not part of the library. Like
 ``examples/modules/hardware/hardware_block_devices.py``, it reads a single
@@ -14,18 +14,19 @@ driving the two-phase execution model:
 2. Materialize each entry into a plain ``Host`` with the default
    ``Host.from_inventory`` factory. Each ``Host`` lazily opens an asyncssh
    connection from its ``connection`` data when a fact is gathered.
-3. Gather ``GitSubmoduleStatus`` on every host at once with the driver's
+3. Gather ``GitSubmodule`` on every host at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather``, forwarding the repository
    path argument verbatim, and returns a host-name-keyed mapping -- then
    print each host's submodule list.
 
-``GitSubmoduleStatus`` is a reemote5-original fact -- pyinfra has no
+``GitSubmodule`` is a reemote5-original fact -- pyinfra has no
 equivalent. It runs ``! test -d <repo> || (cd <repo> && git submodule
-status)`` and returns one ``GitSubmodule`` per line -- the ``path``, the
-recorded ``sha``, the optional ``describe`` and a ``state`` mapped from the
-leading status character (a space for synced, ``-`` uninitialized, ``+``
-modified, ``U`` conflicted). A missing repository directory, or a repo
+status)`` and returns one ``GitSubmoduleStatus`` entry per line -- the
+``path``, the recorded ``sha``, the optional ``describe`` and a ``state``
+mapped from the leading status character (a space for synced, ``-``
+uninitialized, ``+`` modified, ``U`` conflicted). A missing repository
+directory, or a repo
 without submodules, reads as ``[]``. An operation can then update only the
 submodules that are actually out of sync, sparing needless network fetches.
 
@@ -35,7 +36,7 @@ async and driven by ``asyncio.run``.
 
 Run it with::
 
-    uv run python examples/modules/git/git_git_submodule_status.py
+    uv run python examples/modules/git/git_git_submodule.py
 """
 
 import asyncio
@@ -44,7 +45,7 @@ import sys
 
 from reemote5 import (
     CommandError,
-    GitSubmoduleStatus,
+    GitSubmodule,
     Host,
     HostConnectionError,
     gather_fact,
@@ -84,11 +85,11 @@ async def main() -> None:
     hosts = [Host.from_inventory(entry) for entry in INVENTORY]
     try:
         # Gather the fact across the whole inventory concurrently:
-        # gather_fact fans GitSubmoduleStatus.process out with
+        # gather_fact fans GitSubmodule.process out with
         # asyncio.gather -- forwarding REPO to every host -- and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead
         # of running one host at a time.
-        submodules = await gather_fact(hosts, GitSubmoduleStatus, REPO)
+        submodules = await gather_fact(hosts, GitSubmodule, REPO)
     except (CommandError, HostConnectionError) as exc:
         # The library reports an unreachable host or a failed fact command
         # as a typed error whose message already names the host. Print that
@@ -101,7 +102,7 @@ async def main() -> None:
         await asyncio.gather(*(host.aclose() for host in hosts))
     # Print in inventory order (gather_fact keys the results by host name).
     for host in hosts:
-        print(f"== {host.name}: git.GitSubmoduleStatus({REPO}) ==")
+        print(f"== {host.name}: git.GitSubmodule({REPO}) ==")
         print(json.dumps(submodules[host.name], indent=2))
 
 

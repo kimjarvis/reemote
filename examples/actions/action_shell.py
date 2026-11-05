@@ -15,8 +15,8 @@ about -- driven through ``gather_action``, the action counterpart of
    mapping of ``Result`` objects -- one per host -- in input order. The awaited
    call is a barrier: every host's command has finished before the next line
    runs.
-3. Each ``Result`` is a tiny frozen record -- ``exit_status``, ``stdout``,
-   ``stderr`` -- with an ``.ok`` convenience (``exit_status == 0``).
+3. Each ``Result`` is a tiny ``TypedDict`` -- ``exit_status``, ``stdout``,
+   ``stderr``; success is ``exit_status == 0``.
 
 The key difference from a fact or an operation: an action interprets NOTHING.
 A non-zero exit is *data in the Result*, not an exception. The second command
@@ -75,11 +75,11 @@ def report(label: str, results: dict) -> None:
     """Print each host's Result for one action command, in inventory order."""
     print(f"== {label} ==")
     for name, result in results.items():
-        print(f"{name}: exit={result.exit_status} ok={result.ok}")
-        if result.stdout:
-            print(f"  stdout: {result.stdout.strip()}")
-        if result.stderr:
-            print(f"  stderr: {result.stderr.strip()}")
+        print(f"{name}: exit={result['exit_status']} ok={result['exit_status'] == 0}")
+        if result["stdout"]:
+            print(f"  stdout: {result['stdout'].strip()}")
+        if result["stderr"]:
+            print(f"  stderr: {result['stderr'].strip()}")
 
 
 async def main() -> None:

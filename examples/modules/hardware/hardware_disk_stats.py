@@ -22,7 +22,8 @@ driving the two-phase execution model:
 
 ``DiskStats`` is a reemote5 original (pyinfra has no counterpart): it runs
 ``cat /proc/diskstats`` and maps each block device -- mounted or not -- to
-the kernel's IO counters as ints (``reads_completed``, ``sectors_read``,
+the kernel's IO counters as a ``DiskStat`` entry of ints
+(``reads_completed``, ``sectors_read``,
 ``writes_completed``, ``sectors_written``, ``ios_in_progress``, ...), with
 the discard and flush counter groups included on kernels that print them.
 Reading ``/proc/diskstats`` directly needs no sysstat package on the

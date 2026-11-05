@@ -15,11 +15,20 @@
         - GitRemoteUrl
         - GitSshKeyConfigured
         - GitStatus
-        - GitStatusSummary
         - GitSubmodule
-        - GitSubmoduleStatus
         - GitTag
         - GitTrackingBranch
+
+## git Returns
+
+::: reemote5.modules.git.git
+    options:
+      show_root_heading: false
+      members:
+        - GitConfigItem
+        - GitStatusSummary
+        - GitSubmoduleStatus
+        - GitTagInfo
 
 ## git Operations
 
@@ -28,26 +37,19 @@
       show_root_heading: false
       members:
         - worktree
-
-
-::: reemote5.modules.git.git
-    options:
-      show_root_heading: false
-      members:
         - config
-
-::: reemote5.modules.git.git
-    options:
-      show_root_heading: false
-      members:
         - repo
+
+
+
 
 <!---
 
 `reemote5.modules.git.git` holds the git facts — `GitBranch`, the branch a
 repository is on, read from `git describe --all`, `GitConfig`, the
 configuration items of a repository's local config or of the login user's
-global/system config, read from `git config -l`, `GitHeadDetached`, whether
+global/system config, as `GitConfigItem` entries, read from `git config -l`,
+`GitHeadDetached`, whether
 the checked-out HEAD is detached from any branch, read from
 `git symbolic-ref -q HEAD`, `GitIsRepo`, whether a directory is a valid git
 work tree, read from `git rev-parse --is-inside-work-tree`, `GitLocalCommit`,
@@ -57,15 +59,17 @@ the SHA a local ref resolves to, read from `git rev-parse`,
 `git remote get-url`, `GitSshKeyConfigured`, whether the login user's SSH key
 authenticates to a git remote host, read from `ssh -T git@<host>`,
 `GitStatus`, the working tree's staged, unstaged and untracked changes, read
-from `git status --porcelain`, `GitSubmoduleStatus`, the repository's
-submodules and their sync state, read from `git submodule status`, `GitTag`,
-the repository's tag list, read from `git tag`, and `GitTrackingBranch`, the
+from `git status --porcelain`, `GitSubmodule`, the repository's
+submodules and their sync state, as `GitSubmoduleStatus` entries, read from
+`git submodule status`, `GitTag`,
+the repository's tags as `GitTagInfo` entries, read from `git tag`, and
+`GitTrackingBranch`, the
 upstream tracking branch of the checked-out branch, read from the
 `git status --branch --porcelain` header. Every fact but `GitSshKeyConfigured`
 — which probes an SSH remote host rather than a repository — takes the
 repository path it reads, and each repo-scoped command carries pyinfra's
 `! test -d <repo> ||` guard, so a missing repository directory
-short-circuits to the fact's empty answer (`""`, `{}`, `[]`, `False` or
+short-circuits to the fact's empty answer (`""`, `[]`, `False` or
 `None`) instead of failing the read. The repo path — and every other user-supplied
 operand — is `shlex`-quoted, a deliberate deviation from pyinfra, which
 interpolates them raw. Alongside the facts the namespace holds operations
@@ -97,12 +101,15 @@ the directory present, a missing `git` exits 127 — reported as
 `system=True`), with a `repo` it runs the `--local` read behind the
 directory guard, mirroring pyinfra's `git.GitConfig`. Each `key=value` row
 appends its value to the key's list — the split is on the first `=`, so a
-value may itself contain `=` — and a multi-valued key (`safe.directory`)
-keeps every entry in listing order, for example
-`{"user.email": ["nick@gmail.com"]}`. Rows without an `=` are skipped
+value may itself contain `=` — and the rows fold into one `GitConfigItem`
+entry per key, in first-appearance order, where a multi-valued key
+(`safe.directory`) keeps every value in its `values` list, for example
+`[{"key": "user.email", "values": ["nick@gmail.com"]}]`. Rows without an
+`=` are skipped
 (pyinfra would raise `ValueError` on them; reemote5 hardens the parser).
-The `|| true` guard maps a missing git or config file to `{}`, pyinfra's
-`default = dict`, as does a missing repository directory.
+The `|| true` guard maps a missing git or config file to `[]` (pyinfra's
+`default = dict`, projected onto entries), as does a missing repository
+directory.
 
 `GitHeadDetached` takes the repository path: it runs a reemote5-original
 probe with no pyinfra equivalent,
@@ -168,20 +175,20 @@ path. It gives an operation the working-tree state it needs to refuse a pull
 or checkout that would clobber local changes. A missing repository directory
 reads as a clean, empty summary.
 
-`GitSubmoduleStatus` takes the repository path: it runs
+`GitSubmodule` takes the repository path: it runs
 `! test -d <repo> || (cd <repo> && git submodule status)`, a reemote5-original
-fact, and returns one `GitSubmodule` per line — the `path`, the recorded
-`sha`, the optional `describe` and a `state` mapped from the leading status
-character (a space for synced, `-` uninitialized, `+` modified, `U`
+fact, and returns one `GitSubmoduleStatus` entry per line — the `path`, the
+recorded `sha`, the optional `describe` and a `state` mapped from the leading
+status character (a space for synced, `-` uninitialized, `+` modified, `U`
 conflicted). An operation can then update only the submodules that are
 actually out of sync, sparing needless network fetches. A missing repository
 directory, or a repo without submodules, reads as `[]`.
 
 `GitTag` takes the repository path: it runs
-`! test -d <repo> || (cd <repo> && git tag)` and returns the lines verbatim,
-in listing order, mirroring pyinfra's `git.GitTag` — for example
-`["v1.0.0", "v1.0.1"]`. A missing repository directory reads as `[]`, as
-does a tagless repository.
+`! test -d <repo> || (cd <repo> && git tag)` and returns one `GitTagInfo`
+entry (a `name`) per line, in listing order, mirroring pyinfra's `git.GitTag`
+— for example `[{"name": "v1.0.0"}, {"name": "v1.0.1"}]`. A missing
+repository directory reads as `[]`, as does a tagless repository.
 
 `GitTrackingBranch` takes the repository path: it runs
 `! test -d <repo> || (cd <repo> && git status --branch --porcelain)` and
@@ -214,7 +221,7 @@ value list is not exactly `[value]`, and a `multi_value` key only when
 existing config only when `repo/.git` is a directory, so `git.config` probes
 the git-local `_DirectoryExists` fact first and reads `GitConfig` only behind
 that gate — when the repository directory is absent the existing config reads
-as `{}` and the write still runs, exactly as pyinfra does. Setting a
+as `[]` and the write still runs, exactly as pyinfra does. Setting a
 repository's `--local` config or the `--system` config often needs root or the
 repository owner, so flag the request `sudo=True` when the login user cannot
 write there. The command it yields (`GitConfigCommand`) `shlex`-quotes the
@@ -300,12 +307,12 @@ The read-only fact-gathering scripts `git_git_branch.py`,
 `git_git_config.py`, `git_git_head_detached.py`, `git_git_is_repo.py`,
 `git_git_local_commit.py`, `git_git_remote_branch_commit.py`,
 `git_git_remote_url.py`, `git_git_ssh_key_configured.py`,
-`git_git_status.py`, `git_git_submodule_status.py`, `git_git_tag.py` and
+`git_git_status.py`, `git_git_submodule.py`, `git_git_tag.py` and
 `git_git_tracking_branch.py` under
 [`examples/modules/git/`](../examples/modules/git.md) gather `GitBranch`,
 `GitConfig`, `GitHeadDetached`, `GitIsRepo`, `GitLocalCommit`,
 `GitRemoteBranchCommit`, `GitRemoteUrl`, `GitSshKeyConfigured`, `GitStatus`,
-`GitSubmoduleStatus`, `GitTag` and `GitTrackingBranch` respectively across an
+`GitSubmodule`, `GitTag` and `GitTrackingBranch` respectively across an
 inventory with [`gather_fact`][reemote5.drivers.gather_fact] and print each
 host's result as JSON.
 

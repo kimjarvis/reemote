@@ -194,8 +194,8 @@ async def test_when_guard_skips_only_ineligible_hosts_end_to_end():
     assert "[skipped: when guard is_canary]" in format_log(report)
     assert report.changed is True  # the baseline still changed both hosts
 
-    assert hosts[0].packages == {"curl", "strace"}
-    assert hosts[1].packages == {"curl"}
+    assert hosts[0].packages == {"curl": [""], "strace": [""]}
+    assert hosts[1].packages == {"curl": [""]}
 
 
 async def test_when_guard_skips_without_materializing_or_reading_facts():
@@ -232,8 +232,8 @@ async def test_when_guard_composes_with_sub_deploy_end_to_end():
     assert plans["web2"][0].skipped is True
     assert report is not None
     assert "[skipped: when guard is_canary]" in format_log(report)
-    assert hosts[0].packages == {"strace"}
-    assert hosts[1].packages == set()
+    assert hosts[0].packages == {"strace": [""]}
+    assert hosts[1].packages == {}
 
 
 async def test_when_guard_skip_decision_is_visible_in_dry_run():
@@ -243,8 +243,8 @@ async def test_when_guard_skip_decision_is_visible_in_dry_run():
     assert report is None
     assert plans["web2"][1].skipped is True
     assert "[skipped: when guard is_canary]" in format_plan(plans)
-    assert hosts[0].packages == set()  # dry run changed nothing anywhere
-    assert hosts[1].packages == set()
+    assert hosts[0].packages == {}  # dry run changed nothing anywhere
+    assert hosts[1].packages == {}
 
 
 async def test_inline_lambda_guard_diverges_between_phases_and_raises():

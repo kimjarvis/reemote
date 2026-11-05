@@ -21,13 +21,16 @@ two-phase execution model:
 3. Gather ``AptHeldPackages`` on every host at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's raw sorted list of held package names
-   with ``json.dumps(..., indent=2)``.
+   mapping -- then print each host's sorted list of ``AptPackageInfo``
+   entries with ``json.dumps(..., indent=2)``.
 
 ``AptHeldPackages`` runs ``apt-mark showhold``, which prints one held
 package name per line -- the names marked with ``apt-mark hold``, which
-keeps them out of upgrades. Blank lines are skipped and the names are
-de-duplicated and sorted; architecture-suffixed names like ``libc6:i386``
+keeps them out of upgrades. Blank lines are skipped and the entries are
+de-duplicated and sorted, each carrying an empty ``versions`` list
+(``showhold`` prints no version -- the shared ``AptPackageInfo`` shape
+``AptPackages`` and ``AptAutoremovable`` also return);
+architecture-suffixed names like ``libc6:i386``
 keep their suffix, and nothing held reads as ``[]``. This is the hold
 state ``AptPackages`` cannot see: its ``apt list --installed`` rows report
 versions but never which packages are held, so a deploy that must not
@@ -82,7 +85,8 @@ async def main() -> None:
         # Gather the fact across the whole inventory concurrently: gather_fact
         # fans AptHeldPackages.process out with asyncio.gather and returns a
         # host-name-keyed mapping. process runs apt-mark showhold over SSH and
-        # parses the lines into a sorted list of held package names.
+        # parses the lines into sorted AptPackageInfo entries, each with an
+        # empty versions list.
         held_packages = await gather_fact(hosts, AptHeldPackages)
     except (CommandError, HostConnectionError) as exc:
         # The library reports an unreachable host or a failed fact command as a

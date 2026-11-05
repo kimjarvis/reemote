@@ -15,16 +15,17 @@ succeeded":
    -v")`` runs a command the library knows nothing about and returns a
    ``{host.name: Result}`` mapping. ``nginx -v`` prints its version to stderr
    and exits 0 where nginx is installed (127 where it is not), so each
-   ``Result.ok`` reports whether the install actually put nginx on the box.
+   ``Result``'s ``exit_status`` reports whether the install actually put nginx
+   on the box.
    The apply-phase join of run 1 is the barrier: every host has finished
    installing before any host's probe runs; the awaited ``gather_action`` is
    itself a barrier, so every probe has finished before run 2 is built.
 3. ``build_configure_nginx(probe)`` -- a factory closing over that frozen
    ``Result`` dict, returning the second deploy. Its ``if`` consults
-   ``probe[host.name].ok`` -- an ordinary lookup on a snapshot taken BEFORE
-   this deploy's prepare phase -- so the generator is a pure function of static
-   input: prepare and apply resolve the branch identically and the determinism
-   guard holds.
+   ``probe[host.name]["exit_status"] == 0`` -- an ordinary lookup on a snapshot
+   taken BEFORE this deploy's prepare phase -- so the generator is a pure
+   function of static input: prepare and apply resolve the branch identically
+   and the determinism guard holds.
 
 This is exactly the two-deploy split, with an action ``Result`` playing the
 role the ``DnfPackages`` fact snapshot plays there. The action is the escape
@@ -114,15 +115,15 @@ def build_configure_nginx(
 ) -> Callable[[Host], Generator[OperationRequest]]:
     """Deploy 2 factory: close over the frozen post-install action Results.
 
-    The returned generator branches on ``probe[host.name].ok`` -- an ordinary
-    dict lookup on a snapshot taken BEFORE this deploy's prepare phase -- so
-    both phases resolve the branch identically. Running the action live here
-    instead would trip the in-deploy guard (and could not be awaited in a sync
-    generator anyway).
+    The returned generator branches on ``probe[host.name]["exit_status"] == 0``
+    -- an ordinary dict lookup on a snapshot taken BEFORE this deploy's prepare
+    phase -- so both phases resolve the branch identically. Running the action
+    live here instead would trip the in-deploy guard (and could not be awaited
+    in a sync generator anyway).
     """
 
     def configure_nginx(host: Host) -> Generator[OperationRequest]:
-        if probe[host.name].ok:
+        if probe[host.name]["exit_status"] == 0:
             yield op(
                 files.put,
                 name="Stage nginx.conf",
@@ -150,9 +151,9 @@ async def main() -> None:
         probe = await gather_action(hosts, Shell, command="nginx -v")
         print("\n== Between deploys: action probe (nginx -v) ==")
         for name, result in probe.items():
-            # nginx -v writes its version to stderr; .ok is exit_status == 0.
-            version = result.stderr.strip() or "(absent)"
-            print(f"{name}: ok={result.ok} {version}")
+            # nginx -v writes its version to stderr; ok is exit_status == 0.
+            version = result["stderr"].strip() or "(absent)"
+            print(f"{name}: ok={result['exit_status'] == 0} {version}")
 
         # Build deploy 2 ONCE, before either of its phases: both the dry run
         # and the real run use the very same callable closing over the same

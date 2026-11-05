@@ -32,14 +32,14 @@ streams let a host install one of several parallel versions of a component --
 here the PostgreSQL 16 stream, matching pyinfra's documented example.
 
 The operation is idempotent: enabling reads the ``DnfEnabledModules`` fact (a
-name-to-stream map) and is a no-op when the module is already enabled on exactly
-the requested stream -- re-enabling onto a new stream when it currently sits on
-a different one -- while disabling reads ``DnfDisabledModules``. The script
-yields the *same* enable request twice to show that idempotence across the two
-phases: the prepare phase plans both as changes (nothing is enabled yet, so both
-compare against the same pre-deployment state), while the apply phase enables on
-the first and reports the second as a no-op, because the fresh per-step fact
-cache now sees the stream the first step enabled.
+list of name-and-stream entries) and is a no-op when the module is already
+enabled on exactly the requested stream -- re-enabling onto a new stream when it
+currently sits on a different one -- while disabling reads ``DnfDisabledModules``.
+The script yields the *same* enable request twice to show that idempotence across
+the two phases: the prepare phase plans both as changes (nothing is enabled yet,
+so both compare against the same pre-deployment state), while the apply phase
+enables on the first and reports the second as a no-op, because the fresh
+per-step fact cache now sees the stream the first step enabled.
 
 Enabling a stream writes dnf's module state under ``/etc`` and the rpm
 database, so the request is flagged ``sudo=True`` and the driver elevates its

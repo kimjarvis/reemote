@@ -7,9 +7,10 @@ Re-exports everything from ``git.py`` so the facts
 (``git.GitBranch``, ``git.GitConfig``, ``git.GitHeadDetached``,
 ``git.GitIsRepo``, ``git.GitLocalCommit``, ``git.GitRemoteBranchCommit``,
 ``git.GitRemoteUrl``, ``git.GitSshKeyConfigured``, ``git.GitStatus``,
-``git.GitSubmoduleStatus``, ``git.GitTag``, ``git.GitTrackingBranch``) and
-their TypedDict result shapes (``git.GitStatusSummary``,
-``git.GitSubmodule``), the ``git.config``, ``git.repo`` and ``git.worktree``
+``git.GitSubmodule``, ``git.GitTag``, ``git.GitTrackingBranch``) and
+their TypedDict result shapes (``git.GitConfigItem``,
+``git.GitStatusSummary``, ``git.GitSubmoduleStatus``, ``git.GitTagInfo``),
+the ``git.config``, ``git.repo`` and ``git.worktree``
 operations and their typed command descriptors (``git.GitCheckoutCommand``,
 ``git.GitCloneCommand``, ``git.GitConfigCommand``, ``git.GitFetchCommand``,
 ``git.GitPullCommand``, ``git.GitRemoteSetUrlCommand``,
@@ -25,6 +26,7 @@ from .git import (
     GitCloneCommand,
     GitConfig,
     GitConfigCommand,
+    GitConfigItem,
     GitFetchCommand,
     GitHeadDetached,
     GitIsRepo,
@@ -41,6 +43,7 @@ from .git import (
     GitSubmoduleStatus,
     GitSubmoduleUpdateCommand,
     GitTag,
+    GitTagInfo,
     GitTrackingBranch,
     GitWorktreeAddCommand,
     GitWorktreeRemoveCommand,
@@ -55,6 +58,7 @@ __all__ = [
     "GitCloneCommand",
     "GitConfig",
     "GitConfigCommand",
+    "GitConfigItem",
     "GitFetchCommand",
     "GitHeadDetached",
     "GitIsRepo",
@@ -71,6 +75,7 @@ __all__ = [
     "GitSubmoduleStatus",
     "GitSubmoduleUpdateCommand",
     "GitTag",
+    "GitTagInfo",
     "GitTrackingBranch",
     "GitWorktreeAddCommand",
     "GitWorktreeRemoveCommand",

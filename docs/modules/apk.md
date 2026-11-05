@@ -1,4 +1,4 @@
-# apk module
+[//]: # (## apk module)
 
 ## apk Facts
 
@@ -7,16 +7,20 @@
       show_root_heading: false
       members:
         - ApkAutoremovablePackages
-        - ApkAutoremovablePackage
         - ApkExplicitPackages
-        - ApkExplicitPackage
         - ApkHeldPackages
-        - ApkHeldPackage
         - ApkInstalledPackages
-        - ApkInstalledPackage
         - ApkPackage
-        - ApkPackageInfo
         - ApkRepositories
+
+## apk Returns
+
+::: reemote5.modules.apk.apk
+    options:
+      show_root_heading: false
+      members:
+        - ApkPackageInfo
+        - ApkPackageVersion
         - ApkRepository
 
 ## apk Operations
@@ -36,17 +40,18 @@
 
 `reemote5.modules.apk.apk` combines the apk facts and the apk operations in a
 single source. The facts are `ApkAutoremovablePackages`, the orphaned packages an
-`apk add --purge` would remove — each one an `ApkAutoremovablePackage` dict
+`apk add --purge` would remove — each one an `ApkPackageVersion` dict
 naming it and its version-and-release — parsed from the `(N/M) Purging
 <name>-<version>` rows of its `--simulate` sibling, `ApkInstalledPackages`,
-the installed Alpine Linux (apk) packages as `ApkInstalledPackage` entries of
-a name and its versions, parsed from the
+the installed Alpine Linux (apk) packages as `ApkPackageVersion` entries of
+a name and one installed version each, parsed from the
 `name-version arch {origin} (license) [installed]` rows of
 `apk list --installed`, `ApkExplicitPackages`, the explicitly installed
-(world) packages as `ApkExplicitPackage` name-only entries parsed line
+(world) packages as `ApkPackageVersion` entries of name and version
+constraint parsed line
 by line from `/etc/apk/world`,
-`ApkHeldPackages`, the version-pinned (held) packages as `ApkHeldPackage`
-entries of name, constraint and repository tag parsed from the same
+`ApkHeldPackages`, the version-pinned (held) packages as `ApkPackageVersion`
+entries of name and constraint (kept as the `version`) parsed from the same
 `/etc/apk/world`,
 `ApkPackage`, one package's detailed metadata (version, description, size,
 dependencies, provides) parsed from the labelled field sections of
@@ -87,12 +92,12 @@ mistaken for package rows, and each row's `name-version-release` token
 splits at the same last `-<version>-r<release>` boundary `ApkInstalledPackages`
 splits at, so multi-dash names like `alpine-baselayout-data` and names
 carrying punctuation (`libstdc++`, `p11-kit`) stay intact — but the version
-is kept, not dropped, in one `ApkAutoremovablePackage` dict per row
+is kept, not dropped, in one `ApkPackageVersion` dict per row
 (`name` and `version`), the same `name`/`version` pair opening
-`ApkPackageInfo`'s detail. That is one deliberate deviation from the sibling
-`AptAutoremovable`, which drops the version its `Remv` rows carry and
-returns a bare name list: apk's purge row always prints a version, so
-there is one to keep. Entries come back sorted and de-duplicated by name,
+`ApkPackageInfo`'s detail; the sibling `AptAutoremovable` likewise keeps
+the version from its `Remv` rows, as a one-element `versions` list in its
+`AptPackageInfo` entries: apk's purge row always prints a version,
+so there is one to keep. Entries come back sorted and de-duplicated by name,
 so a deploy cleaning up after itself reads the purgable packages here —
 and only collects the list; removal stays an explicit operator decision,
 never a fact side effect — the `apk.autoremove` operation performs that
@@ -116,14 +121,15 @@ version-and-release at the last `-r<release>` boundary before the
 `json-c`) stay intact, and the `WARNING: Ignoring APKINDEX...: No such
 file or directory` index-noise lines — which carry no `{origin}
 (license)` tail — never match. The result is a list of
-`ApkInstalledPackage` entries — one per installed name, its `versions` the
-sorted, de-duplicated version list that pyinfra's `parse_packages` collects
-into a set per name — the typed-entry shape the sibling
+`ApkPackageVersion` entries — one per installed name-and-version pair,
+the `name` and `version` pyinfra's `parse_packages` collects into a set
+per name flattened into one entry each — the shared typed-entry shape the sibling
 `ApkAutoremovablePackages`, `ApkExplicitPackages` and `ApkHeldPackages`
-report, with the entries sorted by name so reads stay deterministic and
-JSON-printable; `apt.AptPackages` and `dnf.DnfPackages` still report the
-name-keyed mapping pyinfra documents, so apk is deliberately no longer
-shape-symmetric with them. Nothing installed reads as `[]` — the empty answer
+report, with the entries sorted by name, then version, so reads stay
+deterministic and JSON-printable; `apt.AptPackages` reports sorted typed
+entries too, though it groups every version under one name where apk's
+entries carry one pair each, while `dnf.DnfPackages` still
+reports the name-keyed mapping pyinfra documents. Nothing installed reads as `[]` — the empty answer
 every sibling typed-list apk fact gives, in place of pyinfra's
 `default = dict`.
 pyinfra's `requires_command` gating on `apk` is deliberately dropped: a
@@ -143,28 +149,29 @@ that fact it is a reemote5 original: pyinfra's `apk` namespace ships only
 `ApkPackages`, so nothing upstream separates the packages an operator
 explicitly installed from the ones that came in as dependencies. Each
 line of the file is one dependency constraint in
-`[!]name{@tag}{[<>~=]version}` notation and contributes a name-only
-`ApkExplicitPackage` entry; entries come back sorted and
-de-duplicated by name, the typed-list shape the sibling
-`ApkAutoremovablePackages` reports with its `ApkAutoremovablePackage` dicts — only
-this fact's entry keeps just the `name`, the name-only half of what
-`DnfPackages` returns — so the entries' names compare
+`[!]name{@tag}{[<>~=]version}` notation and contributes one
+`ApkPackageVersion` entry — the bare `name` plus the line's version
+constraint verbatim as the `version` (operator included, `""` for a bare
+name), the `@tag` dropped; entries come back sorted and
+de-duplicated by name and version, the shared typed-list shape the sibling
+`ApkAutoremovablePackages`, `ApkInstalledPackages` and `ApkHeldPackages`
+report with the same `ApkPackageVersion` dicts — so the entries' names compare
 directly against `ApkInstalledPackages`' entry names — the installed
 names missing from this list are the dependency-only ones an audit is
 after; the sibling `ApkAutoremovablePackages` names exactly the orphans
 `apk add --purge` would remove, and the `apk.autoremove` operation performs
-that cleanup. The
-constraint itself is deliberately dropped, exactly as `AptAutoremovable`
-drops the version its simulation rows carry: a `@tag` a package may be
-selected from and an `=`, `<`, `>`, `>=`, `~` or `><` version bound say
-nothing about *which* packages were asked for. The version bound a *hold*
-is after — the constraint this fact drops — is exactly what the sibling
+that cleanup. The `@tag` a package may be
+selected from is deliberately dropped — a tagged repository says nothing
+about *which* packages were asked for — while the `=`, `<`, `>`, `>=`, `~`
+or `><` version bound a line pins to is kept verbatim in `version`, so a
+changed constraint stays visible. The constrained subset of these lines is
+exactly what the sibling
 `ApkHeldPackages` keeps. A leading `!` marks a
 conflict constraint — a package that must NOT be installed — so it never
-contributes a name, and blank lines, `#` comments and lines carrying no
+contributes an entry, and blank lines, `#` comments and lines carrying no
 name (a lone `@tag` or operator) are skipped the way the siblings skip
-unparseable rows. Like the sibling entry types `ApkAutoremovablePackage` and
-`ApkHeldPackage` the entries are TypedDict-shaped plain dicts, so
+unparseable rows. Like every sibling fact's entries, these are
+TypedDict-shaped plain dicts, so
 equality and `json.dumps` work without a dual access style. The fact is
 named for the package-list family rather
 than for the file it reads (`ApkWorld` would name a file, not answer a
@@ -178,27 +185,28 @@ without apk reads as `[]` — but keeps only the lines carrying a version
 bound, answering the apk counterpart of `AptHeldPackages`: which packages
 are pinned back from upgrades, and to what. apk has no `apt-mark hold`; it
 holds a package by writing a version *constraint* into its world, so each
-held line becomes one `ApkHeldPackage` entry —
-`name`, the `constraint` (the operator and version kept together) and the
-`tag` repository selector the line may carry (`edge` for a
-`curl@edge=8.14.0-r0` line, the empty string when it carries none):
+held line becomes one `ApkPackageVersion` entry —
+the bare `name` with the constraint (the operator and version kept
+together) as its `version`; the `@tag` repository selector the line may
+carry is deliberately dropped, a tagged repository being a selection, not
+part of the version bound:
 
 ```python
 [
-    {"name": "curl", "constraint": "=8.14.0-r0", "tag": ""},
-    {"name": "openssh", "constraint": ">~9.7_p1-r4", "tag": "edge"},
+    {"name": "curl", "version": "=8.14.0-r0"},
+    {"name": "openssh", "version": ">~9.7_p1-r4"},
 ]
 ```
 
-The entry type follows the namespace convention: like
-`ApkAutoremovablePackage` and `ApkPackageInfo` the entries are TypedDict-shaped
+The entry type is the shared `ApkPackageVersion` all four package-list
+facts report: TypedDict-shaped
 plain dicts, so equality and `json.dumps` work without a dual access style —
 a deliberate usability choice over the bare constraint strings this
 fact returned before, the same one `apt.AptSources` made with its
-`AptSource` entries over pyinfra's collapse convention, and the `tag` field
-now keeps the `@tag` a name-only reading used to drop. The list shape still
-deliberately differs from the sibling `AptHeldPackages`' sorted name
-list: `apt-mark hold` records a bare name with no version, where an apk
+`AptSource` entries over pyinfra's collapse convention. The entry fields still
+deliberately differ from the sibling `AptHeldPackages`' version-less
+entries (its `AptPackageInfo` entries always carry `versions` as `[]`):
+`apt-mark hold` records a bare name with no version, where an apk
 pin's whole purpose is the constraint, so dropping it would make a re-pin to
 a different version undetectable. A bare name (`busybox`) and a
 repository-tag-only line (`nginx@edge`, a selection rather than a hold)
@@ -225,11 +233,10 @@ entries keep file order — no dedup, no sorting — like `apt.AptSources` and
 command style. The return shape deliberately differs in size, not kind,
 from the siblings: apk's one-line format carries only a URL and an
 optional tag, where apt entries hold distribution/components/options and
-dnf entries hold every INI option. Like the sibling entry types
-`ApkAutoremovablePackage`, `ApkExplicitPackage` and `ApkHeldPackage` the
-entries are TypedDict-shaped plain dicts named by the singular of the fact,
-so equality and `json.dumps` work without a dual access style and the shape
-is importable rather than anonymous.
+dnf entries hold every INI option. Like the shared `ApkPackageVersion` entry
+type the entries are TypedDict-shaped plain dicts — `ApkRepository` named by
+the singular of the fact — so equality and `json.dumps` work without a dual
+access style and the shape is importable rather than anonymous.
 
 `ApkPackage` takes a package name and runs `apk info -a <package>`, which
 prints every field apk knows about the package as a
@@ -346,12 +353,14 @@ image. `tag` names the group, `packages` accepts a single name, a list/tuple
 or `None` (a name can be pinned as `<pkg>=<version>`), and `present` selects
 the direction. Idempotence reads the
 [`ApkExplicitPackages`][reemote5.modules.apk.apk.ApkExplicitPackages] fact
-(the world entries, name-only `ApkExplicitPackage` dicts): the group is
+(the world entries, `ApkPackageVersion` dicts of name and version
+constraint): the group is
 present exactly when `tag` matches an entry's `name`, so
 `present=True` creates it with `apk add -t` only when `tag` is absent (and
 only when at least one member is requested), while `present=False` removes it
 with `apk del` only when `tag` is present. A deliberate simplification: the
-fact's entries carry the world *names* only, so a changed member set for an
+fact's entries carry the world names and version constraints only, so a
+changed member set for an
 already-existing `tag` is not detected — the group reads as present and the
 operation is a no-op — because apk records a virtual group's identity in
 world, not its membership. Both directions render through one present-flagged
@@ -371,8 +380,8 @@ accepts a single name or a list/tuple, `present` selects the direction, and
 `present=True` it pins each name to its currently installed version
 (`ApkInstalledPackages`' newest). Idempotence reads the
 [`ApkHeldPackages`][reemote5.modules.apk.apk.ApkHeldPackages] fact
-(a list of `ApkHeldPackage` entries, looked up by `name` and compared on the
-entry's `constraint`):
+(a list of `ApkPackageVersion` entries, looked up by `name` and compared on
+the entry's `version` — the world constraint verbatim):
 `present=True` re-adds with `apk add <pkg>=<version>`
 only the names whose current pin differs from the wanted constraint (a name
 already pinned to it is a no-op), while `present=False` re-adds the bare

@@ -7,11 +7,14 @@
 # autoremove would clean up, parsed from the ``Remv`` rows of an
 # ``apt-get --just-print autoremove`` simulation, ``AptHeldPackages``, the
 # package names marked as held via ``apt-mark hold``, parsed from
-# ``apt-mark showhold``, ``AptKeys``, the
+# ``apt-mark showhold``, and ``AptPackages``, the installed packages with
+# their versions, parsed from ``apt list --installed`` -- all three into
+# plain ``AptPackageInfo`` TypedDict-shaped dicts (name and versions),
+# ``AptKeys``, the
 # GPG keys available to APT, gathered from the modern keyring directories
-# with ``gpg --with-colons`` instead of the deprecated ``apt-key`` command,
-# ``AptPackages``, the installed packages with their versions, parsed from
-# ``apt list --installed``, ``AptPolicy``, the install candidate and
+# with ``gpg --with-colons`` instead of the deprecated ``apt-key`` command
+# into plain ``AptKey`` TypedDict-shaped dicts,
+# ``AptPolicy``, the install candidate and
 # repository origins of one package, parsed from ``apt-cache policy``,
 # ``AptSources``, the configured repositories, parsed from the legacy
 # ``.list`` files and the modern deb822 ``.sources`` files into plain
@@ -22,7 +25,8 @@
 # from ``apt list --upgradable`` into plain ``AptPackageUpgrade``
 # TypedDict-shaped dicts, ``DebPackage``, the name/version of a
 # ``.deb`` file or an installed dpkg package that ``apt.deb`` reads to
-# decide idempotence, and ``SimulateOperationWillChange``, the proposed
+# decide idempotence (a plain ``DebPackageInfo`` TypedDict-shaped dict),
+# and ``SimulateOperationWillChange``, the proposed
 # change counts of a simulated ``apt-get`` operation, parsed from the
 # ``N upgraded, ...`` summary line of a ``--dry-run`` into a plain
 # ``AptSimulationDict`` TypedDict-shaped dict. Like every fact
@@ -91,7 +95,7 @@ import shlex
 from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import IO, Any, TypedDict
+from typing import IO, Any, NotRequired, TypedDict
 from urllib.parse import urlparse
 
 from ...commands import Command, TransferCommand
@@ -138,19 +142,47 @@ def _noninteractive_apt(command: str, wait_for_lock: bool | int = False) -> str:
 # --- Facts -------------------------------------------------------------------
 
 
-class AptAutoremovable:
-    """Packages ``apt autoremove`` would remove, as a sorted list of names.
+class AptPackageInfo(TypedDict):
+    """
+    Attributes:
+        name: The package name, architecture suffixes (``libc6:i386``)
+            intact, exactly as the underlying apt command prints it.
+        versions: The package's versions, de-duplicated and sorted,
+            epoch prefixes (``5:24.0.7-1~ubuntu.22.04~jammy``) intact:
+            every installed version for ``AptPackages``, the single
+            bracketed ``Remv`` version for ``AptAutoremovable``, and
+            ``[]`` for ``AptHeldPackages`` (``apt-mark showhold`` prints
+            no version).
+    """
 
-    command:
+    # The shared package entry of ``AptPackages``, ``AptAutoremovable``
+    # and ``AptHeldPackages`` -- one shape for every apt package-list
+    # question.
+    #
+    # A TypedDict rather than a class instance, like ``AptSource``: entries
+    # are ordinary dicts, so equality against a literal dict works and
+    # ``json.dumps`` serializes them directly. Groups every version under
+    # one name, where apk's ``ApkPackageVersion`` entries carry one
+    # name-and-version pair each. The ``Info`` suffix follows the
+    # ``ApkPackageInfo`` / ``DebPackageInfo`` precedent.
+
+    name: str
+    versions: list[str]
+
+
+class AptAutoremovable:
+    """Packages ``apt autoremove`` would remove, as ``AptPackageInfo`` dicts.
+
+    **Commands:**
 
     ```bash
     apt-get --just-print autoremove 2>/dev/null
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    list[str]
+    list[AptPackageInfo]
     ```
 
     Examples:
@@ -163,15 +195,21 @@ class AptAutoremovable:
     # ``apt-get --just-print autoremove`` simulates the autoremove --
     # nothing is ever removed -- and prints one machine-readable
     # ``Remv <name> [<version>]`` row per package that would go, parsed
-    # into a sorted, de-duplicated name list, for example::
+    # into ``AptPackageInfo`` entries de-duplicated by name and
+    # sorted, for example::
     #
-    #     ["libllvm17t64", "linux-headers-6.8.0-45", "linux-headers-6.8.0-45-generic"]
+    #     [
+    #         {"name": "libllvm17t64", "versions": ["1:17.0.6-9ubuntu1"]},
+    #         {"name": "linux-headers-6.8.0-45", "versions": ["6.8.0-45.45"]},
+    #     ]
     #
     # Only the ``Remv`` rows are read: the progress lines, the indented
     # names under ``The following packages will be REMOVED:`` and the
     # ``0 upgraded, ...`` count line are never mistaken for package names,
-    # and the bracketed version each row carries is deliberately dropped
-    # (the names are what a cleanup audits). ``apt-mark showauto`` is
+    # and each row's bracketed version is kept as the entry's
+    # single-element ``versions`` list (the shared ``AptPackageInfo``
+    # shape ``AptPackages`` and ``AptHeldPackages`` also return).
+    # ``apt-mark showauto`` is
     # deliberately not used: it lists every auto-installed package,
     # including ones something still requires, while the simulation
     # reports exactly the no-longer-needed set. Architecture-suffixed
@@ -195,51 +233,59 @@ class AptAutoremovable:
 
     #: A simulation removal row: the ``Remv`` token followed by the
     #: package name (an optional ``:arch`` suffix included) and its
-    #: bracketed version, which the parser drops.
-    REMV_REGEX = re.compile(r"^Remv\s+(\S+)")
+    #: bracketed version, both kept in the entry.
+    REMV_REGEX = re.compile(r"^Remv\s+(\S+)\s+\[([^\]]+)\]")
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> list[str]:
-        """Parse autoremove-simulation rows into sorted, unique names.
+    def parse(cls, output: Iterable[str]) -> list[AptPackageInfo]:
+        """Parse autoremove-simulation rows into sorted, unique entries.
 
         Only lines starting with the ``Remv`` token contribute their
-        package name; every other line -- progress output, the indented
-        removal summary, the count line, blank lines -- is skipped.
-        Duplicates collapse into one entry and the result is sorted.
-        Pure and testable.
+        package name and bracketed version (wrapped as the single-element
+        ``versions`` list); every other line -- progress
+        output, the indented removal summary, the count line, blank lines
+        -- is skipped. A repeated name keeps its last row and the entries
+        are sorted by name. Pure and testable.
         """
-        names: set[str] = set()
+        removable: dict[str, AptPackageInfo] = {}
         for line in output:
             matches = cls.REMV_REGEX.match(line)
             if matches:
-                names.add(matches.group(1))
-        return sorted(names)
+                removable[matches.group(1)] = {
+                    "name": matches.group(1),
+                    "versions": [matches.group(2)],
+                }
+        return [removable[name] for name in sorted(removable)]
 
     @classmethod
-    async def process(cls, host: Host) -> list[str]:
+    async def process(cls, host: Host) -> list[AptPackageInfo]:
         apt_autoremovable = getattr(host, "apt_autoremovable", None)
         if apt_autoremovable is not None:
             # SimulatedHost seam: read the in-memory state directly. Copy
-            # the list so callers never mutate simulated state.
-            return list(apt_autoremovable)
+            # each entry dict (and its versions list) so callers never
+            # mutate simulated state.
+            return [
+                {"name": entry["name"], "versions": list(entry["versions"])}
+                for entry in apt_autoremovable
+            ]
         # Real transport: simulate the autoremove over asyncssh.
         stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
 
 
 class AptHeldPackages:
-    """Packages marked as held, as a sorted list of package names.
+    """Packages marked as held, as a sorted list of ``AptPackageInfo`` dicts.
 
-    command:
+    **Commands:**
 
     ```bash
     apt-mark showhold
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    list[str]
+    list[AptPackageInfo]
     ```
 
     Examples:
@@ -253,8 +299,17 @@ class AptHeldPackages:
     # de-duplicated and sorted so reads stay deterministic and
     # JSON-printable, for example::
     #
-    #     ["docker-ce", "libc6:i386", "linux-image-generic"]
+    #     [
+    #         {"name": "docker-ce", "versions": []},
+    #         {"name": "libc6:i386", "versions": []},
+    #         {"name": "linux-image-generic", "versions": []},
+    #     ]
     #
+    # Every entry carries an empty ``versions`` list: ``apt-mark
+    # showhold`` prints no version, so the shared ``AptPackageInfo``
+    # shape's version information is simply absent here (unlike
+    # ``ApkHeldPackages``, whose entries keep the world constraint as
+    # the version -- the constraint IS the hold state).
     # Architecture-suffixed names like ``libc6:i386`` keep their suffix,
     # exactly as ``apt-mark`` prints them. No held packages (or no output
     # at all) read as ``[]``. This fact fills a coverage gap of
@@ -270,34 +325,76 @@ class AptHeldPackages:
     COMMAND = "apt-mark showhold"
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> list[str]:
-        """Parse ``apt-mark showhold`` lines into sorted, unique names.
+    def parse(cls, output: Iterable[str]) -> list[AptPackageInfo]:
+        """Parse ``apt-mark showhold`` lines into sorted, unique entries.
 
         Each non-blank line is one package name, stripped of surrounding
         whitespace; duplicates collapse into one entry and the result is
-        sorted. Pure and testable.
+        sorted. Every entry carries an empty ``versions`` list --
+        ``showhold`` prints no version. Pure and testable.
         """
         names: set[str] = set()
         for line in output:
             name = line.strip()
             if name:
                 names.add(name)
-        return sorted(names)
+        return [{"name": name, "versions": []} for name in sorted(names)]
 
     @classmethod
-    async def process(cls, host: Host) -> list[str]:
+    async def process(cls, host: Host) -> list[AptPackageInfo]:
         apt_held_packages = getattr(host, "apt_held_packages", None)
         if apt_held_packages is not None:
             # SimulatedHost seam: read the in-memory state directly. Copy
-            # the list so callers never mutate simulated state.
-            return list(apt_held_packages)
+            # each entry dict (and its versions list) so callers never
+            # mutate simulated state.
+            return [
+                {"name": entry["name"], "versions": list(entry["versions"])}
+                for entry in apt_held_packages
+            ]
         # Real transport: list the held package names over asyncssh.
         stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
 
 
-def _parse_key_records(output: Iterable[str]) -> dict[str, dict[str, Any]]:
-    """Parse one keyring's ``gpg --with-colons`` records into key-id dicts.
+class AptKey(TypedDict):
+    """
+    Attributes:
+        id: The key id (the last 16 hex digits of the fingerprint), the
+            identity a keyring file lists the key under.
+        validity: GPG's validity letter for the key (``-`` unknown,
+            ``f`` fully trusted, ...), exactly as the colon record
+            prints it.
+        length: The key length in bits (e.g. 4096).
+        fingerprint: The full fingerprint, when a ``fpr`` record
+            attached one.
+        uid_hash: The hash of the user id, when a ``uid`` record
+            attached one.
+        uid: The user id string (name, comment and email), when a
+            ``uid`` record attached one.
+        subkeys: The key's subkeys as further ``AptKey`` entries (only
+            the last ``sub`` record before the next ``pub`` is kept);
+            present on primary keys, absent on subkey entries.
+    """
+
+    # One GPG key (``AptKeys``' entry), as a plain dict.
+    #
+    # A TypedDict rather than a class instance, like ``AptSource``: entries
+    # are ordinary dicts, so equality against a literal dict works and
+    # ``json.dumps`` serializes them directly. The optional fields are
+    # NotRequired because a colon record stream may carry no ``fpr``/``uid``
+    # line for a key, and subkey entries never carry ``subkeys``.
+
+    id: str
+    validity: str
+    length: int
+    fingerprint: NotRequired[str]
+    uid_hash: NotRequired[str]
+    uid: NotRequired[str]
+    subkeys: NotRequired[list["AptKey"]]
+
+
+def _parse_key_records(output: Iterable[str]) -> list[AptKey]:
+    """Parse one keyring's ``gpg --with-colons`` records into key entries.
 
     The colon-record parser behind pyinfra's ``GpgFactBase.process`` (see
     GnuPG's doc/DETAILS for the field values): a ``pub`` record starts a new
@@ -306,13 +403,12 @@ def _parse_key_records(output: Iterable[str]) -> dict[str, dict[str, Any]]:
     ``uid_hash`` and ``uid`` to whichever of the two is current. Only the
     last ``sub`` record before the next ``pub`` is kept, exactly like
     pyinfra. Blank lines and other record types (``tru``, ...) are skipped,
-    and records before the first ``pub`` are ignored. Each key's ``id``
-    becomes its dict key and its subkeys are re-keyed by their own ids
-    under ``subkeys``.
+    and records before the first ``pub`` are ignored. Each key keeps its
+    ``id`` and its subkeys stay a list of their own ``AptKey`` entries.
     """
-    keys: list[dict[str, Any]] = []
-    current_key: dict[str, Any] | None = None
-    current_subkey: dict[str, Any] | None = None
+    keys: list[AptKey] = []
+    current_key: AptKey | None = None
+    current_subkey: AptKey | None = None
 
     for line in output:
         if not line:
@@ -321,7 +417,7 @@ def _parse_key_records(output: Iterable[str]) -> dict[str, dict[str, Any]]:
         bits = line.split(":")
 
         if bits[0] in ("pub", "sub"):
-            key_details: dict[str, Any] = {
+            key_details: AptKey = {
                 "validity": bits[1],
                 "length": int(bits[2]),
                 "id": bits[4],
@@ -354,27 +450,22 @@ def _parse_key_records(output: Iterable[str]) -> dict[str, dict[str, Any]]:
             current_key["subkeys"].append(current_subkey)
         keys.append(current_key)
 
-    # Return as a dictionary of keyID -> details, subkeys keyed by their ids.
-    keys_by_id: dict[str, dict[str, Any]] = {}
-    for key in keys:
-        key["subkeys"] = {subkey.pop("id"): subkey for subkey in key["subkeys"]}
-        keys_by_id[key.pop("id")] = key
-    return keys_by_id
+    return keys
 
 
 class AptKeys:
-    r"""The GPG keys available to APT, as a dict of key id -> key details.
+    r"""The GPG keys available to APT, as a list of ``AptKey`` dicts.
 
-    command:
+    **Commands:**
 
     ```bash
     find "/etc/apt/trusted.gpg.d" "/etc/apt/keyrings" "/usr/share/keyrings" -type f \( -name '*.gpg' -o -name '*.kbx' \) 2>/dev/null -exec sh -c 'echo "KEYRING:$1"; gpg --list-keys --with-colons --keyring "$1" --no-default-keyring 2>/dev/null || true' _ {} \; ; find "/etc/apt/trusted.gpg.d" "/etc/apt/keyrings" "/usr/share/keyrings" -type f -name '*.asc' 2>/dev/null -exec sh -c 'echo "KEYRING:$1"; gpg --with-colons "$1" 2>/dev/null || true' _ {} \;
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    dict[str, dict[str, Any]]
+    list[AptKey]
     ```
 
     Examples:
@@ -386,28 +477,33 @@ class AptKeys:
     # ``directories`` (defaulting to ``/etc/apt/trusted.gpg.d``,
     # ``/etc/apt/keyrings`` and ``/usr/share/keyrings``), each is read with
     # ``gpg --with-colons`` behind a ``KEYRING:`` marker line, and the parsed
-    # keys are flattened into one mapping, for example::
+    # keys are flattened into one list of ``AptKey`` entries, for example::
     #
-    #     {
-    #         "3B4FE6ACC0B21F32": {
+    #     [
+    #         {
+    #             "id": "3B4FE6ACC0B21F32",
     #             "validity": "-",
     #             "length": 4096,
-    #             "subkeys": {},
+    #             "subkeys": [],
     #             "fingerprint": "790BC7277767219C42C86F933B4FE6ACC0B21F32",
     #             "uid_hash": "B7A02867A0C1D32B594B36C00E20C8C57E397748",
     #             "uid": "Ubuntu Archive Automatic Signing Key (2012) <ftpmaster@ubuntu.com>",
     #         },
-    #     }
+    #     ]
     #
     # ``directories`` is a list of paths, a single path string or None (the
     # defaults). If the same key id appears in several keyring files, the last
-    # one wins -- pyinfra's flattening order. pyinfra builds this fact on its
+    # one wins -- pyinfra's flattening order -- and entries keep the order
+    # their ids first appeared in. pyinfra keys its answer by key id (with
+    # subkeys re-keyed by their own ids); reemote5 returns the list of typed
+    # entries instead, each carrying its ``id`` and its subkeys as a list.
+    # pyinfra builds this fact on its
     # ``gpg.GpgKeyrings`` infrastructure; reemote5 collapses that stack into
     # this one class, so the per-keyring paths and formats the parent reports
     # are deliberately dropped (``AptKeys`` discards them anyway) and only the
     # flattened keys remain. pyinfra's ``requires_command`` gating on ``gpg``
     # is deliberately dropped too: a missing ``gpg`` is swallowed by the
-    # command's ``|| true`` and reads as ``{}``, while a missing ``find`` exits
+    # command's ``|| true`` and reads as ``[]``, while a missing ``find`` exits
     # 127, which ``run_shell`` reports as ``CommandNotFoundError``.
 
     #: APT's modern keyring directories, searched when ``directories`` is
@@ -451,17 +547,18 @@ class AptKeys:
         )
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> dict[str, dict[str, Any]]:
+    def parse(cls, output: Iterable[str]) -> list[AptKey]:
         """Parse marker-grouped ``gpg --with-colons`` output into flat keys.
 
         Each ``KEYRING:`` line starts a new keyring group whose colon
         records are parsed by ``_parse_key_records``; the groups' keys are
-        merged into one dict where a later keyring's key id wins over an
-        earlier one. Lines before the first marker are ignored, and a
-        keyring with a marker but no records (an unreadable file) contributes
-        nothing. Pure and testable.
+        merged by id where a later keyring's key wins over an earlier one,
+        and the entries keep the order their ids first appeared in. Lines
+        before the first marker are ignored, and a keyring with a marker
+        but no records (an unreadable file) contributes nothing. Pure and
+        testable.
         """
-        keys: dict[str, dict[str, Any]] = {}
+        keys: dict[str, AptKey] = {}
         current_keyring: str | None = None
         current_output: list[str] = []
 
@@ -472,56 +569,54 @@ class AptKeys:
 
             if line.startswith(cls.KEYRING_MARKER):
                 if current_keyring and current_output:
-                    keys.update(_parse_key_records(current_output))
+                    keys.update(
+                        {key["id"]: key for key in _parse_key_records(current_output)}
+                    )
                 current_keyring = line[len(cls.KEYRING_MARKER) :]
                 current_output = []
             else:
                 current_output.append(line)
 
         if current_keyring and current_output:
-            keys.update(_parse_key_records(current_output))
+            keys.update({key["id"]: key for key in _parse_key_records(current_output)})
 
-        return keys
+        return list(keys.values())
 
     @classmethod
     async def process(
         cls, host: Host, directories: str | list[str] | None = None
-    ) -> dict[str, dict[str, Any]]:
+    ) -> list[AptKey]:
         apt_keys = getattr(host, "apt_keys", None)
         if apt_keys is not None:
             # SimulatedHost seam: read the in-memory state directly. The seam
             # holds the already-flattened answer, so ``directories`` does not
-            # filter it. Copy the nested dicts (and the subkeys dicts) so
+            # filter it. Copy each entry dict (and its subkey dicts) so
             # callers never mutate the simulated state.
-            return {
-                key_id: {
-                    field: (
-                        {sub_id: dict(sub) for sub_id, sub in value.items()}
-                        if isinstance(value, dict)
-                        else value
-                    )
-                    for field, value in info.items()
-                }
-                for key_id, info in apt_keys.items()
-            }
+            copies: list[AptKey] = []
+            for key in apt_keys:
+                copy: AptKey = {**key}
+                if "subkeys" in key:
+                    copy["subkeys"] = [{**sub} for sub in key["subkeys"]]
+                copies.append(copy)
+            return copies
         # Real transport: sweep the keyring directories over asyncssh.
         stdout = await host.run_shell(cls.command(directories))
         return cls.parse(stdout.splitlines())
 
 
 class AptPackages:
-    """Installed apt packages, as a dict of name -> sorted version list.
+    """Installed apt packages, as a list of ``AptPackageInfo`` dicts.
 
-    command:
+    **Commands:**
 
     ```bash
     apt list --installed 2>/dev/null
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    dict[str, list[str]]
+    list[AptPackageInfo]
     ```
 
     Examples:
@@ -534,20 +629,20 @@ class AptPackages:
     # ``libc6:i386`` keep their suffix and the ``Listing...`` header and any
     # other noise lines are ignored, for example::
     #
-    #     {
-    #         "adduser": ["3.118ubuntu5"],
-    #         "docker-ce": ["5:24.0.7-1~ubuntu.22.04~jammy"],
-    #         "libc6:i386": ["2.35-0ubuntu3.4"],
-    #     }
+    #     [
+    #         {"name": "adduser", "versions": ["3.118ubuntu5"]},
+    #         {"name": "docker-ce", "versions": ["5:24.0.7-1~ubuntu.22.04~jammy"]},
+    #         {"name": "libc6:i386", "versions": ["2.35-0ubuntu3.4"]},
+    #     ]
     #
-    # The list-of-versions shape mirrors pyinfra's ``deb.DebPackages`` so
-    # callers can swap between the two without reshaping their code; the
-    # main reason to reach for ``AptPackages`` is packages whose presence is
+    # Entries are sorted by name with de-duplicated, sorted version lists:
+    # pyinfra's ``parse_packages`` collects versions into a set per name
+    # and keys its answer by name, while reemote5 returns the typed entry
+    # list (the same deliberate divergence ``ApkInstalledPackages`` made)
+    # so reads stay deterministic and JSON-printable; the main reason to
+    # reach for ``AptPackages`` is packages whose presence is
     # more reliably visible from ``apt`` than from ``dpkg`` (for example
-    # architecture-suffixed names). Versions are de-duplicated and sorted:
-    # pyinfra's ``parse_packages`` collects them into a set per name, while
-    # reemote5 returns the sorted list so the documented list shape holds
-    # and reads stay deterministic (and JSON-printable). pyinfra's
+    # architecture-suffixed names). pyinfra's
     # ``requires_command`` gating on ``apt`` is deliberately dropped: a
     # missing ``apt`` exits 127, which ``run_shell`` reports as
     # ``CommandNotFoundError``. Hold state is not visible in these rows:
@@ -575,29 +670,36 @@ class AptPackages:
     )
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> dict[str, list[str]]:
-        """Parse ``apt list --installed`` rows into name -> sorted versions.
+    def parse(cls, output: Iterable[str]) -> list[AptPackageInfo]:
+        """Parse ``apt list --installed`` rows into sorted package entries.
 
         Each matching line contributes its version to the name's set
         (pyinfra's ``parse_packages`` de-dup); non-matching lines -- the
         ``Listing...`` header, blank lines, rows not marked ``[installed``
-        -- are skipped. The sets are returned as sorted lists. Pure and
-        testable.
+        -- are skipped. The entries are sorted by name with sorted version
+        lists. Pure and testable.
         """
         packages: dict[str, set[str]] = {}
         for line in output:
             matches = re.match(cls.PACKAGE_REGEX, line)
             if matches:
                 packages.setdefault(matches.group(1), set()).add(matches.group(2))
-        return {name: sorted(versions) for name, versions in packages.items()}
+        return [
+            {"name": name, "versions": sorted(versions)}
+            for name, versions in sorted(packages.items())
+        ]
 
     @classmethod
-    async def process(cls, host: Host) -> dict[str, list[str]]:
+    async def process(cls, host: Host) -> list[AptPackageInfo]:
         apt_packages = getattr(host, "apt_packages", None)
         if apt_packages is not None:
-            # SimulatedHost seam: read the in-memory state directly. Copy
-            # the version lists so callers never mutate simulated state.
-            return {name: list(versions) for name, versions in apt_packages.items()}
+            # SimulatedHost seam: the state store stays the name -> versions
+            # dict the mutators edit; project it into the sorted entry list.
+            # Copy the version lists so callers never mutate simulated state.
+            return [
+                {"name": name, "versions": list(versions)}
+                for name, versions in sorted(apt_packages.items())
+            ]
         # Real transport: list installed packages over asyncssh.
         stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
@@ -650,13 +752,13 @@ class AptPackagePolicy(TypedDict):
 class AptPolicy:
     """One package's install candidate and origins, as an ``AptPackagePolicy``.
 
-    command:
+    **Commands:**
 
     ```bash
     LC_ALL=C apt-cache policy <package>
     ```
 
-    return:
+    **Returns:**
 
     ```python
     AptPackagePolicy | None
@@ -840,13 +942,13 @@ class AptSource(TypedDict):
 class AptSources:
     """The configured apt sources, as a list of ``AptSource`` dicts.
 
-    command:
+    **Commands:**
 
     ```bash
     for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do [ -e "$f" ] || continue; printf "#reemote5-aptsource %s\\n" "$f"; cat "$f"; echo; done
     ```
 
-    return:
+    **Returns:**
 
     ```python
     list[AptSource]
@@ -1079,13 +1181,13 @@ class AptSources:
 class AptSourcesFile:
     """The current content of one ``.sources`` file, or None when it is absent.
 
-    command:
+    **Commands:**
 
     ```bash
     test -e <path> && { printf '#reemote5-sourcesfile\\n'; cat -- <path>; }
     ```
 
-    return:
+    **Returns:**
 
     ```python
     str | None
@@ -1142,6 +1244,8 @@ class AptSourcesFile:
 class AptPackageUpgrade(TypedDict):
     """
     Attributes:
+        name: The package name, architecture suffixes (``libc6:i386``)
+            intact, exactly as ``apt list --upgradable`` prints it.
         installed: The currently installed version (the row's
             ``[upgradable from: ...]`` value), epoch prefixes
             (``2:9.1.0016-1ubuntu7.4``) intact, exactly as apt prints it.
@@ -1157,23 +1261,24 @@ class AptPackageUpgrade(TypedDict):
     # ``candidate`` keys match ``AptPackagePolicy``'s, so the two facts'
     # answers line up per package.
 
+    name: str
     installed: str
     candidate: str
 
 
 class AptUpgradable:
-    """Packages with a pending upgrade, as a dict of name -> upgrade.
+    """Packages with a pending upgrade, as a list of ``AptPackageUpgrade`` dicts.
 
-    command:
+    **Commands:**
 
     ```bash
     apt list --upgradable 2>/dev/null
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    dict[str, AptPackageUpgrade]
+    list[AptPackageUpgrade]
     ```
 
     Examples:
@@ -1188,16 +1293,18 @@ class AptUpgradable:
     # epoch-prefixed versions stay intact and the ``Listing...`` header
     # and any other noise lines are ignored, for example::
     #
-    #     {
-    #         "libc6:i386": {
+    #     [
+    #         {
+    #             "name": "libc6:i386",
     #             "installed": "2.39-0ubuntu8.3",
     #             "candidate": "2.39-0ubuntu8.4",
     #         },
-    #         "vim": {
+    #         {
+    #             "name": "vim",
     #             "installed": "2:9.1.0016-1ubuntu7.4",
     #             "candidate": "2:9.1.0016-1ubuntu7.6",
     #         },
-    #     }
+    #     ]
     #
     # Each entry is an ``AptPackageUpgrade`` dict naming both ends of the
     # version jump ``apt upgrade`` would perform. This fact fills a
@@ -1210,9 +1317,9 @@ class AptUpgradable:
     # architecture columns are deliberately dropped, like ``AptPackages``
     # drops them; ``AptPolicy`` reports the offering repositories when
     # they matter. If a name appears twice the last row wins (apt prints
-    # one row per package). No pending upgrades (or no output at all)
-    # read as ``{}``. A missing ``apt`` exits 127, which ``run_shell``
-    # reports as ``CommandNotFoundError``.
+    # one row per package) and the entries are sorted by name. No pending
+    # upgrades (or no output at all) read as ``[]``. A missing ``apt``
+    # exits 127, which ``run_shell`` reports as ``CommandNotFoundError``.
 
     #: Shell listing the upgradable packages over SSH. The ``2>/dev/null``
     #: suppresses the "Listing..." progress notice modern apt writes to
@@ -1231,51 +1338,73 @@ class AptUpgradable:
     )
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> dict[str, AptPackageUpgrade]:
-        """Parse ``apt list --upgradable`` rows into name -> upgrade dicts.
+    def parse(cls, output: Iterable[str]) -> list[AptPackageUpgrade]:
+        """Parse ``apt list --upgradable`` rows into sorted upgrade entries.
 
         Each matching line contributes its candidate version (the row's
         main version column) and installed version (the ``[upgradable
         from: ...]`` value); non-matching lines -- the ``Listing...``
         header, blank lines, rows without the ``[upgradable from:`` tail
-        -- are skipped, and a repeated name keeps its last row. Pure and
-        testable.
+        -- are skipped, a repeated name keeps its last row and the entries
+        are sorted by name. Pure and testable.
         """
         upgrades: dict[str, AptPackageUpgrade] = {}
         for line in output:
             matches = re.match(cls.PACKAGE_REGEX, line)
             if matches:
                 upgrades[matches.group(1)] = {
+                    "name": matches.group(1),
                     "installed": matches.group(3),
                     "candidate": matches.group(2),
                 }
-        return upgrades
+        return [upgrades[name] for name in sorted(upgrades)]
 
     @classmethod
-    async def process(cls, host: Host) -> dict[str, AptPackageUpgrade]:
+    async def process(cls, host: Host) -> list[AptPackageUpgrade]:
         apt_upgradable = getattr(host, "apt_upgradable", None)
         if apt_upgradable is not None:
             # SimulatedHost seam: read the in-memory state directly. Copy
             # each entry dict so callers never mutate simulated state.
-            return {name: {**upgrade} for name, upgrade in apt_upgradable.items()}
+            return [{**upgrade} for upgrade in apt_upgradable]
         # Real transport: list the upgradable packages over asyncssh.
         stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
 
 
+class DebPackageInfo(TypedDict):
+    """
+    Attributes:
+        name: The package name from the ``Package:`` control field.
+        version: The package version from the ``Version:`` control
+            field, epoch prefixes intact.
+    """
+
+    # One ``.deb`` file's or installed package's identity (``DebPackage``'s
+    # result). The bare singular ``DebPackage`` slot is taken by the fact
+    # class, so the entry carries the ``Info`` suffix (the ``ApkPackageInfo``
+    # convention).
+    #
+    # A TypedDict rather than a class instance, like ``AptPackagePolicy``:
+    # the answer is an ordinary dict, so equality against a literal dict
+    # works and ``json.dumps`` serializes it directly.
+
+    name: str
+    version: str
+
+
 class DebPackage:
     """The name and version of a ``.deb`` file or an installed dpkg package.
 
-    command:
+    **Commands:**
 
     ```bash
     test -f <package> && case <package> in *.deb) dpkg -I <package> ;; *) dpkg -s <package> 2>/dev/null || true ;; esac || dpkg -s <package> 2>/dev/null || true
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    dict[str, str] | None
+    DebPackageInfo | None
     ```
 
     Examples:
@@ -1283,8 +1412,9 @@ class DebPackage:
     """
 
     # Mirrors pyinfra's ``deb.DebPackage``: given a ``.deb`` file *path* or a
-    # package *name*, returns ``{"name": ..., "version": ...}``, or None when
-    # neither an existing ``.deb`` file nor an installed package answers.
+    # package *name*, returns a ``DebPackageInfo`` dict (``{"name": ...,
+    # "version": ...}``), or None when neither an existing ``.deb`` file nor
+    # an installed package answers.
     # ``apt.deb`` reads it for the ``.deb`` file's metadata, then compares the
     # file's version against the installed versions ``AptPackages`` reports for
     # that name to decide whether the file's package is already installed at
@@ -1327,28 +1457,31 @@ class DebPackage:
         )
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> dict[str, str] | None:
+    def parse(cls, output: Iterable[str]) -> DebPackageInfo | None:
         """Parse ``dpkg``'s ``Package:``/``Version:`` control fields.
 
-        Returns ``{"name", "version"}`` from the matching lines (each line
-        stripped first, so ``dpkg -I``'s tab-indented fields parse), or None
-        when neither field appears -- an unknown name or an absent ``.deb``
-        file. Pure and testable.
+        Returns a ``DebPackageInfo`` from the matching lines (each line
+        stripped first, so ``dpkg -I``'s tab-indented fields parse), or
+        None when either field is missing -- an unknown name or an absent
+        ``.deb`` file. Pure and testable.
         """
-        data: dict[str, str] = {}
+        name: str | None = None
+        version: str | None = None
         for raw in output:
             line = raw.strip()
             name_match = cls.NAME_REGEX.match(line)
             if name_match:
-                data["name"] = name_match.group(1)
+                name = name_match.group(1)
                 continue
             version_match = cls.VERSION_REGEX.match(line)
             if version_match:
-                data["version"] = version_match.group(1)
-        return data or None
+                version = version_match.group(1)
+        if name is None or version is None:
+            return None
+        return {"name": name, "version": version}
 
     @classmethod
-    async def process(cls, host: Host, package: str) -> dict[str, str] | None:
+    async def process(cls, host: Host, package: str) -> DebPackageInfo | None:
         deb_files = getattr(host, "deb_files", None)
         if deb_files is not None:
             # SimulatedHost seam: a ``.deb`` file path (``deb_files``) is
@@ -1393,13 +1526,13 @@ class AptSimulationDict(TypedDict):
 class SimulateOperationWillChange:
     """Proposed change counts of a simulated ``apt-get`` operation.
 
-    command:
+    **Commands:**
 
     ```bash
     LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" <command> --dry-run
     ```
 
-    return:
+    **Returns:**
 
     ```python
     AptSimulationDict | None
@@ -1622,11 +1755,12 @@ async def deb(
 
     info = await ctx.facts.get(DebPackage, src)
     current = await ctx.facts.get(AptPackages)
+    installed = {entry["name"]: entry["versions"] for entry in current}
     # ``installed_name`` is set only when the file's package is installed at
     # the file's exact version, so it doubles as pyinfra's ``exists`` flag and
     # carries the name the removal needs.
     installed_name: str | None = None
-    if info is not None and info.get("version") in current.get(info.get("name"), []):
+    if info is not None and info["version"] in installed.get(info["name"], []):
         installed_name = info["name"]
 
     if present:
@@ -1773,7 +1907,8 @@ async def auto_remove(
     removable = await ctx.facts.get(AptAutoremovable)
     if removable:
         ctx.changed = True
-        ctx.reason = f"autoremovable packages will be removed: {', '.join(removable)}"
+        names = ", ".join(entry["name"] for entry in removable)
+        ctx.reason = f"autoremovable packages will be removed: {names}"
         yield AptAutoRemoveCommand(wait_for_lock=wait_for_lock)
     else:
         ctx.reason = "no autoremovable packages"
@@ -2021,8 +2156,9 @@ async def mark(
         return
 
     current = await ctx.facts.get(AptHeldPackages)
+    held_names = {entry["name"] for entry in current}
     if held:
-        to_hold = tuple(pkg for pkg in requested if pkg not in current)
+        to_hold = tuple(pkg for pkg in requested if pkg not in held_names)
         if to_hold:
             ctx.changed = True
             ctx.reason = f"{len(to_hold)} package(s) to hold"
@@ -2030,7 +2166,7 @@ async def mark(
         else:
             ctx.reason = "all packages held"
     else:
-        to_unhold = tuple(pkg for pkg in requested if pkg in current)
+        to_unhold = tuple(pkg for pkg in requested if pkg in held_names)
         if to_unhold:
             ctx.changed = True
             ctx.reason = f"{len(to_unhold)} package(s) to unhold"
@@ -2197,7 +2333,8 @@ async def packages(
     # Deliberate deviations from pyinfra: the installed-versions fact is
     # ``AptPackages`` (``apt list --installed``) rather than pyinfra's
     # ``DebPackages`` (``dpkg -l``) -- the same substitution ``apt.deb``
-    # made, with the same name -> versions shape. pyinfra's ``cache_time``
+    # made, reading the same per-name version information from its
+    # ``AptPackageInfo`` entries. pyinfra's ``cache_time``
     # option (skip ``update`` when the
     # ``/var/lib/apt/periodic/update-success-stamp`` file is fresh, and
     # ``touch`` it after updating) is deliberately dropped: ``update`` is
@@ -2242,10 +2379,11 @@ async def packages(
 
     if requested:
         installed = await ctx.facts.get(AptPackages)
+        versions_by_name = {entry["name"]: entry["versions"] for entry in installed}
 
         def is_installed(package: str) -> bool:
             name, version = _split_version(package)
-            versions = installed.get(name)
+            versions = versions_by_name.get(name)
             if versions is None:
                 return False
             return version is None or version in versions
@@ -2864,11 +3002,13 @@ __all__ = [
     "AptHeldPackages",
     "AptInstallCommand",
     "AptInstallFixCommand",
+    "AptKey",
     "AptKeyInstallCommand",
     "AptKeyUploadCommand",
     "AptKeys",
     "AptMarkHoldCommand",
     "AptMarkUnholdCommand",
+    "AptPackageInfo",
     "AptPackagePolicy",
     "AptPackageUpgrade",
     "AptPackages",
@@ -2890,6 +3030,7 @@ __all__ = [
     "AptUpgradeCommand",
     "DebInstallCommand",
     "DebPackage",
+    "DebPackageInfo",
     "SimulateOperationWillChange",
     "auto_remove",
     "deb",

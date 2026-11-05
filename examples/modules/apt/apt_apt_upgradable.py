@@ -21,16 +21,17 @@ two-phase execution model:
 3. Gather ``AptUpgradable`` on every host at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's raw name -> upgrade dict with
-   ``json.dumps(..., indent=2)``.
+   mapping -- then print each host's sorted list of ``AptPackageUpgrade``
+   entries with ``json.dumps(..., indent=2)``.
 
 ``AptUpgradable`` runs ``apt list --upgradable 2>/dev/null`` and parses
 each ``name/source-info version arch [upgradable from: old-version]``
-row into an ``AptPackageUpgrade`` dict -- ``{installed, candidate}`` --
-naming both ends of the version jump ``apt upgrade`` would perform.
+row into an ``AptPackageUpgrade`` dict -- ``{name, installed, candidate}``
+-- naming both ends of the version jump ``apt upgrade`` would perform.
 Architecture-suffixed names like ``libc6:i386`` keep their suffix,
 epoch-prefixed versions stay intact, the ``Listing...`` header is
-ignored, and a fully up-to-date machine reads as ``{}``. This is the
+ignored, the entries are sorted by name, and a fully up-to-date machine
+reads as ``[]``. This is the
 change-management and auditing view to read *before* executing
 ``apt upgrade``: ``AptPackages`` reports only what is installed and
 ``AptPolicy`` answers one package at a time, while this listing names
@@ -85,7 +86,7 @@ async def main() -> None:
         # Gather the fact across the whole inventory concurrently: gather_fact
         # fans AptUpgradable.process out with asyncio.gather and returns a
         # host-name-keyed mapping. process runs apt list --upgradable over SSH
-        # and parses the rows into name -> {installed, candidate} dicts.
+        # and parses the rows into sorted {name, installed, candidate} entries.
         upgradable = await gather_fact(hosts, AptUpgradable)
     except (CommandError, HostConnectionError) as exc:
         # The library reports an unreachable host or a failed fact command as a

@@ -10,7 +10,7 @@ script follows.
 
 The same operations as the files examples, run inside a local container
 instead of over SSH: the inventory's `connection.connector` selects
-[`DockerHost`][reemote5.connectors.docker.DockerHost], the deploy executes
+`DockerHost`, the deploy executes
 through `docker exec`/`docker cp`, and closing the host commits the
 container into a new image whose ID the script prints. Needs a local
 `docker` (or `podman`) CLI — no remote host, no SSH. See the

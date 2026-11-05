@@ -22,8 +22,9 @@ the two-phase execution model:
 
 ``NetworkDevices`` mirrors pyinfra's ``hardware.NetworkDevices``: it runs
 ``ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a``
-and maps each interface to its details dict -- the state, the optional
-ether MAC and mtu, and an ipv4/ipv6 block per address family with the
+and maps each interface to its ``NetworkDevice`` entry -- the state, the
+optional ether MAC and mtu, and an ``Ipv4Address``/``Ipv6Address`` block
+per address family with the
 primary address, its mask/broadcast details and any ``additional_ips``
 aliases (the ``Ipv4Addrs``/``Ipv6Addrs`` siblings are the address-only
 projections of this dict). An unreachable host or a failed command is a

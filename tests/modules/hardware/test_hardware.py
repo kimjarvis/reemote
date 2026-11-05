@@ -20,21 +20,31 @@ devices, malformed JSON, non-dict nodes), ``ip``/``ifconfig`` parsing
 edge cases (the JSON sniff, alias ordering, other-family-only interfaces,
 malformed JSON, duplicate sections, mask normalization, the state
 heuristic), empty output, the ``SimulatedHost`` seams (read, default,
-copy semantics) and the ``gather_fact`` fan-out across hosts.
+copy semantics) and the ``gather_fact`` fan-out across hosts. The entry
+TypedDicts (``BlockDevice``, ``DiskStat``, ``LsBlkNode``,
+``NetworkDevice``, ``Ipv4Address``, ``Ipv6Address``) are covered through
+the same literal-dict assertions -- a TypedDict entry IS a plain dict at
+runtime -- plus the namespace export identity checks.
 """
 
 from reemote5.drivers import gather_fact
 from reemote5.hosts import Host
 from reemote5.modules import hardware
 from reemote5.modules.hardware.hardware import (
+    BlockDevice,
     BlockDevices,
     CpuInfo,
     Cpus,
+    DiskStat,
     DiskStats,
     DmiInfo,
+    Ipv4Address,
     Ipv4Addrs,
+    Ipv6Address,
     Ipv6Addrs,
     LsBlk,
+    LsBlkNode,
+    NetworkDevice,
     NetworkDevices,
     SmbiosInfo,
 )
@@ -248,9 +258,12 @@ async def test_block_devices_gather_fact_across_hosts():
 
 def test_block_devices_is_exported_through_the_namespace():
     # Both import paths resolve to the same class: hardware.BlockDevices
-    # through the package and BlockDevices through the module source.
+    # through the package and BlockDevices through the module source. The
+    # BlockDevice entry TypedDict rides the same two paths.
     assert hardware.BlockDevices is BlockDevices
     assert "BlockDevices" in hardware.__all__
+    assert hardware.BlockDevice is BlockDevice
+    assert "BlockDevice" in hardware.__all__
 
 
 # --- CpuInfo -------------------------------------------------------------------
@@ -678,9 +691,12 @@ async def test_disk_stats_gather_fact_across_hosts():
 
 def test_disk_stats_is_exported_through_the_namespace():
     # Both import paths resolve to the same class: hardware.DiskStats
-    # through the package and DiskStats through the module source.
+    # through the package and DiskStats through the module source. The
+    # DiskStat entry TypedDict rides the same two paths.
     assert hardware.DiskStats is DiskStats
     assert "DiskStats" in hardware.__all__
+    assert hardware.DiskStat is DiskStat
+    assert "DiskStat" in hardware.__all__
 
 
 # --- DmiInfo -------------------------------------------------------------------
@@ -1550,9 +1566,12 @@ async def test_lsblk_gather_fact_across_hosts():
 
 def test_lsblk_is_exported_through_the_namespace():
     # Both import paths resolve to the same class: hardware.LsBlk through
-    # the package and LsBlk through the module source.
+    # the package and LsBlk through the module source. The LsBlkNode entry
+    # TypedDict rides the same two paths.
     assert hardware.LsBlk is LsBlk
     assert "LsBlk" in hardware.__all__
+    assert hardware.LsBlkNode is LsBlkNode
+    assert "LsBlkNode" in hardware.__all__
 
 
 # --- NetworkDevices ------------------------------------------------------------
@@ -2053,8 +2072,16 @@ async def test_network_devices_gather_fact_across_hosts():
 def test_network_devices_is_exported_through_the_namespace():
     # Both import paths resolve to the same class: hardware.NetworkDevices
     # through the package and NetworkDevices through the module source.
+    # The NetworkDevice entry TypedDict and its Ipv4Address/Ipv6Address
+    # address blocks ride the same two paths.
     assert hardware.NetworkDevices is NetworkDevices
     assert "NetworkDevices" in hardware.__all__
+    assert hardware.NetworkDevice is NetworkDevice
+    assert "NetworkDevice" in hardware.__all__
+    assert hardware.Ipv4Address is Ipv4Address
+    assert "Ipv4Address" in hardware.__all__
+    assert hardware.Ipv6Address is Ipv6Address
+    assert "Ipv6Address" in hardware.__all__
 
 
 # --- SmbiosInfo ----------------------------------------------------------------

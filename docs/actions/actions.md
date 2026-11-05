@@ -1,10 +1,14 @@
 # Actions
 
-`reemote5.actions` is the escape hatch for **bespoke shell commands** — the
-pragmatic case the deploy model cannot serve: software on your servers that
-reemote5 knows nothing about, with no [fact](guide.md#facts) to read it and no
-[operation](guide.md#operations) to manage it. An action runs a command on the
-target servers *now* and hands back what the command produced.
+<!---
+
+`reemote5.actions` is the escape hatch for acting on servers **outside the
+deploy model** — the pragmatic cases the deploy model cannot serve: bespoke
+software with no [fact](guide.md#facts) to read it and no
+[operation](guide.md#operations) to manage it ([`Shell`][reemote5.actions.Shell]),
+and connectivity itself — waiting for hosts to come back after a reboot
+([`WaitForConnection`][reemote5.actions.WaitForConnection]). An action acts on
+the target servers *now* and hands back what happened.
 
 Actions are conceptually **orthogonal** to the prepare/apply model, and the
 split is *enforced*, not conventional. They are deliberately not facts, not
@@ -35,19 +39,20 @@ plans, report, hosts = await run(inventory, deploy)
 # After a deploy: read the bespoke software's state again.
 results = await gather_action(hosts, Shell, command="/opt/acme/bin/status", sudo=True)
 for name, result in results.items():
-    print(name, result.exit_status, result.stdout)
+    print(name, result["exit_status"], result["stdout"])
 ```
 
 ## The Result object
 
-[`Result`][reemote5.actions.Result] is a tiny frozen, library-owned record:
+[`Result`][reemote5.actions.Result] is a tiny library-owned `TypedDict`:
 
-| Field | Meaning |
+| Key | Meaning |
 | --- | --- |
 | `exit_status` | The command's own exit code (`None` when the transport reports none). |
 | `stdout` | Captured standard output as text (bytes are decoded UTF-8). |
 | `stderr` | Captured standard error as text. |
-| `ok` | Convenience property: `exit_status == 0`. |
+
+Success is `result["exit_status"] == 0`.
 
 It is copied from the transport's own completion record (asyncssh's
 `SSHCompletedProcess`), so **no asyncssh type reaches the public API** and the
@@ -76,6 +81,10 @@ raise**, exactly as they do elsewhere:
   raises, with the credential-free rendering and the would-be `CommandError` as
   its cause, and is aggregated across hosts like
   [`run_apply`][reemote5.drivers.run_apply] does.
+- [`ConnectionTimeoutError`][reemote5.actions.ConnectionTimeoutError] — a host
+  [`WaitForConnection`][reemote5.actions.WaitForConnection] waited for never
+  became reachable within its timeout. Fatal by design: the next deploy must
+  not start against a dead machine. Aggregated across hosts the same way.
 
 Connection failures are reported first when both kinds occur. Any other
 exception propagates unchanged.
@@ -102,6 +111,75 @@ the raw-result variant of
 escalation is built identically, but the command's own exit status travels back
 in the result instead of raising `CommandError`. The unprivileged path rides
 [`Host.run_shell_result`][reemote5.hosts.Host.run_shell_result].
+
+## Selecting hosts: group and tags
+
+[`gather_action`][reemote5.actions.gather_action] accepts `group` and `tags`
+keywords that select which hosts run, from the inventory's static classifiers
+(the same `host.group` / `host.tags` a deploy branches on):
+
+- `group="webservers"` keeps hosts whose `host.group` equals it;
+- `tags=("web", "ubuntu")` keeps hosts carrying **every** listed tag;
+- the two combine (AND), and `None` (the default) means no filter on that
+  dimension.
+
+An empty selection is legal: nothing runs and an empty mapping comes back.
+The filters apply to every action kind — `Shell` and `WaitForConnection`
+alike — and are consumed by the fan-out, never forwarded to `process`.
+
+```python
+# Wait only for the ubuntu webservers to come back after their reboot.
+await gather_action(
+    hosts, WaitForConnection, timeout=300, retry=5,
+    group="webservers", tags=("ubuntu",),
+)
+```
+
+## Waiting for connections
+
+[`WaitForConnection`][reemote5.actions.WaitForConnection] is the reboot
+companion to `Shell`: after a deploy configures hosts and a `Shell` action
+reboots them, it waits for every selected host to accept an SSH connection
+again **before the next deploy starts**.
+
+```python
+from reemote5 import Host, Shell, WaitForConnection, gather_action, run
+
+# Deploy 1: configure the hosts.
+plans, report, hosts = await run(inventory, configure)
+
+# Reboot them -- an immediate action, outside any deploy.
+await gather_action(hosts, Shell, command="reboot", sudo=True)
+
+# Wait for every host to come back. The await is the barrier: it returns
+# only once all selected hosts have connected, so deploy 2 is safe to start.
+hosts = [Host.from_inventory(entry) for entry in inventory]
+await gather_action(hosts, WaitForConnection, timeout=300, retry=5)
+
+# Deploy 2: the hosts are reachable again.
+plans, report, hosts = await run(inventory, finish)
+```
+
+The parameters, both in seconds:
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `timeout` | `300` | Overall wait budget per host, from the start of its wait. Exhausting it raises the fatal [`ConnectionTimeoutError`][reemote5.actions.ConnectionTimeoutError]. |
+| `retry` | `5` | Pause between failed attempts. The final pause is clamped so the wait never sleeps past its deadline. |
+
+Each attempt is a full `Host.connect` — the SSH handshake and authentication,
+not a bare TCP probe — and is itself bounded by the time remaining, so a
+hanging handshake cannot outlive the timeout. Any cached connection is
+discarded first: a pre-reboot one is stale, and `connect` would hand it back
+without touching the network.
+
+Hosts are waited for **concurrently**, and success maps `host.name` to `None`
+— the key's presence is the success signal; no command is run. A host that
+never comes back raises `ConnectionTimeoutError`, merged across hosts into one
+aggregate naming every timed-out host, with the last connection failure
+chained as its cause. Like every action call, the fan-out closes the
+connections when it finishes, so the next deploy opens fresh ones to the
+freshly booted hosts.
 
 ## Connection lifecycle
 
@@ -153,10 +231,28 @@ split; see the [example](examples/actions.md#deploy-action-deploy).
 
 ## Reference
 
+--->
+
+## shell Actions
+
 ::: reemote5.actions
     options:
+      show_root_heading: false
       members:
         - Shell
+        - WaitForConnection
+
+[//]: # (        - gather_action)
+
+[//]: # (        - ActionInDeployError)
+
+[//]: # (        - ConnectionTimeoutError)
+
+## shell Returns
+
+::: reemote5.actions
+    options:
+      show_root_heading: false
+      members:
         - Result
-        - gather_action
-        - ActionInDeployError
+

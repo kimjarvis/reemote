@@ -1,17 +1,18 @@
 # Action examples
 
 Scripts under `examples/actions/` — runnable demonstrations of
-[`action.Shell`][reemote5.actions.Shell] and
-[`gather_action`][reemote5.actions.gather_action], the escape hatch for bespoke
-shell commands. See the [Examples overview](../examples.md) for the shared
-"connects for real" warning and the error-reporting contract, and the
-[Actions reference](../actions.md) for the feature itself.
+[`action.Shell`][reemote5.actions.Shell],
+[`WaitForConnection`][reemote5.actions.WaitForConnection] and
+`gather_action`, the escape hatch for acting
+on servers outside the deploy model. See the [Examples overview](../examples.md)
+for the shared "connects for real" warning and the error-reporting contract,
+and the [Actions reference](../actions/actions.md) for the feature itself.
 
 ## Running a bespoke command
 
 `action_shell` fans a command out across two hosts with
-`gather_action` and inspects the [`Result`][reemote5.actions.Result] objects —
-`exit_status`, `stdout`, `stderr`, `.ok`. It runs a command that succeeds
+`gather_action` and inspects the [`Result`][reemote5.actions.Result] dicts —
+`exit_status`, `stdout`, `stderr`. It runs a command that succeeds
 (`uname -r`) and one that fails (`cat` of an absent file, exit 1) to show that a
 non-zero exit is **data in the Result, not an exception**: the caller decides
 what a bespoke command's failure means.
@@ -34,11 +35,28 @@ the command's own exit is data, but a *rejected credential* raises
     options:
       members: []
 
+## Waiting for connections after a reboot
+
+`action_wait_for_connection` demonstrates
+[`WaitForConnection`][reemote5.actions.WaitForConnection]: the wait that
+re-establishes SSH connections after a reboot, so the next deploy starts only
+once every selected host is reachable. It selects hosts with the fan-out's
+`group`/`tags` keywords, shows the `timeout`/`retry` parameters, and
+demonstrates the fatal
+`ConnectionTimeoutError` against a
+deliberately unreachable TEST-NET address. The full **deploy → reboot → wait →
+deploy** recipe is in the script's docstring; the script itself never reboots
+the shared demo hosts.
+
+::: action_wait_for_connection
+    options:
+      members: []
+
 ## The in-deploy guard
 
 `action_in_deploy_guard` demonstrates the rule that an
 action cannot run inside a deploy: a generator that calls `gather_action` raises
-[`ActionInDeployError`][reemote5.actions.ActionInDeployError] at the call site.
+`ActionInDeployError` at the call site.
 This script needs **no real host** — the guard fires during prepare, before any
 fact is gathered or connection opened — so it runs offline and treats the error
 as the expected outcome.

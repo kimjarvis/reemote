@@ -3,17 +3,17 @@
 
 # The ``apk`` module: facts in one source.
 #
-# Fact side: ``ApkInstalledPackages``, the installed Alpine Linux (apk) packages
-# with their versions, as ``ApkInstalledPackage`` entries parsed from
+# Fact side: every package-list fact reports ``ApkPackageVersion`` entries
+# (name plus version): ``ApkInstalledPackages``, the installed Alpine Linux
+# (apk) packages, one entry per installed name-and-version parsed from
 # ``apk list --installed`` rows,
-# ``ApkExplicitPackages``, the explicitly installed (world) packages as
-# ``ApkExplicitPackage`` entries parsed from ``/etc/apk/world``,
-# ``ApkHeldPackages``, the version-pinned
-# (held) packages as a list of ``ApkHeldPackage`` entries of name, constraint
-# and repository tag parsed from the same ``/etc/apk/world``,
-# ``ApkAutoremovablePackages``, the orphan packages ``apk add --purge`` would remove
-# parsed from its ``--simulate`` rows, ``ApkRepositories``, the configured apk
-# repositories as ``ApkRepository`` entries parsed from
+# ``ApkExplicitPackages``, the explicitly installed (world) packages parsed
+# from ``/etc/apk/world`` with the line's version constraint as the version,
+# ``ApkHeldPackages``, the version-pinned (held) packages parsed from the same
+# ``/etc/apk/world`` with the constraint (operator included) as the version,
+# ``ApkAutoremovablePackages``, the orphan packages ``apk add --purge`` would
+# remove, parsed from its ``--simulate`` rows. ``ApkRepositories``, the
+# configured apk repositories as ``ApkRepository`` entries parsed from
 # ``/etc/apk/repositories``, and ``ApkPackage``, one
 # package's detailed metadata (version, description, size, dependencies,
 # provides) parsed from the labelled sections of ``apk info -a``. Like every
@@ -152,14 +152,31 @@ def _normalize_constraint(version: str) -> str:
 # --- Facts -------------------------------------------------------------------
 
 
-class ApkAutoremovablePackage(TypedDict):
+class ApkPackageVersion(TypedDict):
     """
     Attributes:
-        name: The package name, e.g. ``"libllvm17"``.
-        version: The version-and-release apk's solver reported purging, e.g.
-            ``"17.0.6-r0"`` -- the same shape ``ApkInstalledPackages`` groups
-            in its ``versions`` list.
+        name: The bare package name, e.g. ``"curl"`` -- the ``@tag`` a world
+            line may carry is not part of it.
+        version: The version-and-release (``"8.14.0-r0"``) for
+            ``ApkInstalledPackages`` and ``ApkAutoremovablePackages``; the
+            world constraint verbatim, operator included (``"=8.14.0-r0"``,
+            ``">~9.7_p1-r4"``), for the world-derived ``ApkExplicitPackages``
+            and ``ApkHeldPackages``, ``""`` when a world line carries no
+            version bound.
     """
+
+    # One apk package at one version -- the shared entry of every apk
+    # package-list fact: ``ApkInstalledPackages``, ``ApkAutoremovablePackages``,
+    # ``ApkExplicitPackages`` and ``ApkHeldPackages`` all return
+    # ``list[ApkPackageVersion]``, so one typed shape answers every
+    # package-and-version question the namespace asks.
+    #
+    # A TypedDict rather than a class instance: entries are ordinary dicts, so
+    # equality against a literal dict works and ``json.dumps`` serializes them
+    # directly. The world-derived facts keep the constraint's operator inside
+    # ``version`` so a re-pin to a different bound stays detectable; the
+    # ``@tag`` repository selector a world line may carry is deliberately
+    # dropped everywhere.
 
     name: str
     version: str
@@ -168,16 +185,22 @@ class ApkAutoremovablePackage(TypedDict):
 class ApkAutoremovablePackages:
     """Orphaned packages that purge would remove.
 
-    command:
+    **Commands:**
 
     ```bash
     apk add --purge --simulate 2>/dev/null
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    list[ApkAutoremovablePackage]
+    list[ApkPackageVersion]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -192,7 +215,7 @@ class ApkAutoremovablePackages:
     # installed package nothing in ``/etc/apk/world`` reaches any more, and
     # adding ``--simulate`` prints the same plan without touching the system,
     # one ``(N/M) Purging <name>-<version>`` row per orphan, collected into
-    # one ``ApkAutoremovablePackage`` dict per row, for example::
+    # one ``ApkPackageVersion`` dict per row, for example::
     #
     #     [
     #         {"name": "libllvm17", "version": "17.0.6-r0"},
@@ -228,10 +251,9 @@ class ApkAutoremovablePackages:
     # whose format changed, so a future apk release reads as ``[]`` rather
     # than reporting garbage -- and, unlike the apt sibling (which drops the
     # version its rows carry and returns a bare name list), this fact keeps
-    # the version alongside the name in an ``ApkAutoremovablePackage`` entry,
+    # the version alongside the name in an ``ApkPackageVersion`` entry,
     # the same ``name``/``version`` pair opening ``ApkPackageInfo``'s detail,
     # since apk's purge row always prints one.
-
 
     #: Shell simulating the orphan purge over SSH, one ``(N/M) Purging`` row
     #: per package that would go. ``--simulate`` never removes anything (the
@@ -252,11 +274,11 @@ class ApkAutoremovablePackages:
     PURGE_REGEX = re.compile(r"^\(\d+/\d+\) Purging (.+)-([^-]+-r[^-]+)$")
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> list[ApkAutoremovablePackage]:
+    def parse(cls, output: Iterable[str]) -> list[ApkPackageVersion]:
         """Parse ``apk add --purge --simulate`` rows into sorted, unique entries.
 
         Only lines matching ``PURGE_REGEX`` contribute one
-        ``ApkAutoremovablePackage`` dict naming their package and its
+        ``ApkPackageVersion`` dict naming their package and its
         version-and-release; every other line -- the summary count, the
         ``OK:`` footer, progress output, blank lines -- is skipped. A name
         repeated across rows collapses into the one entry seen last (apk's
@@ -272,7 +294,7 @@ class ApkAutoremovablePackages:
         return [{"name": name, "version": by_name[name]} for name in sorted(by_name)]
 
     @classmethod
-    async def process(cls, host: Host) -> list[ApkAutoremovablePackage]:
+    async def process(cls, host: Host) -> list[ApkPackageVersion]:
         apk_autoremovable = getattr(host, "apk_autoremovable", None)
         if apk_autoremovable is not None:
             # SimulatedHost seam: read the in-memory state directly. Copy
@@ -283,43 +305,25 @@ class ApkAutoremovablePackages:
         return cls.parse(stdout.splitlines())
 
 
-class ApkExplicitPackage(TypedDict):
-    """
-    Attributes:
-        name: The bare package name, e.g. ``"curl"`` -- the ``@tag`` and the
-            version bound a world line may carry are not part of it.
-    """
-
-    # """One explicitly installed (world) apk package (``ApkExplicitPackages``'s entry).
-    #
-    # A TypedDict rather than a class instance, like ``ApkAutoremovablePackage``:
-    # entries are ordinary dicts, so equality against a literal dict works and
-    # ``json.dumps`` serializes them directly. Only the name is carried: the
-    # ``@tag`` and the version bound a world line may hold are deliberately
-    # dropped here -- the constraint a *hold* is after is exactly what the
-    # sibling ``ApkHeldPackages`` keeps in its richer entry.
-    #
-    # Attributes:
-    #     name: The bare package name, e.g. ``"curl"`` -- the ``@tag`` and the
-    #         version bound a world line may carry are not part of it.
-    # """
-
-    name: str
-
-
 class ApkExplicitPackages:
     """The explicitly installed apk packages.
 
-    command:
+    **Commands:**
 
     ```bash
     cat -- /etc/apk/world 2>/dev/null || true
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    list[ApkExplicitPackage]
+    list[ApkPackageVersion]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
     ```
 
     Examples:
@@ -331,20 +335,20 @@ class ApkExplicitPackages:
     # operator asked for from the ones apk pulled in as dependencies. apk
     # records the former -- its *world* -- in ``/etc/apk/world``, one
     # dependency constraint per line in ``[!]name{@tag}{[<>~=]version}``
-    # notation, and each line's bare package name becomes one
-    # ``ApkExplicitPackage`` entry, for example::
+    # notation, and each line becomes one ``ApkPackageVersion`` entry: the
+    # bare package name plus the line's version constraint verbatim as the
+    # ``version`` (``""`` for a bare name), for example::
     #
     #     [
-    #         {"name": "busybox"},
-    #         {"name": "curl"},
-    #         {"name": "openssh"},
+    #         {"name": "busybox", "version": ""},
+    #         {"name": "curl", "version": "=8.14.0-r0"},
+    #         {"name": "openssh", "version": ""},
     #     ]
     #
-    # Entries are de-duplicated and sorted by name, each a TypedDict-shaped
-    # dict like the sibling entry types ``ApkAutoremovablePackage`` and
-    # ``ApkHeldPackage`` -- the same typed-list shape
-    # ``apk.ApkAutoremovablePackages`` reports, with the name-only half of what
-    # ``dnf.DnfPackages`` returns kept --
+    # Entries are de-duplicated and sorted by name, then version, each a
+    # TypedDict-shaped dict like every sibling package-list fact reports --
+    # the same ``ApkPackageVersion`` shape ``apk.ApkAutoremovablePackages``
+    # and ``apk.ApkInstalledPackages`` return --
     # so the entries' names compare directly against ``ApkInstalledPackages``'
     # entry names: the
     # installed names missing from this list are the dependency-only ones an
@@ -353,13 +357,13 @@ class ApkExplicitPackages:
     # ``ApkAutoremovablePackages`` reports, and cleaning them up is what the
     # ``apk.autoremove`` operation does; this fact only lists the world, so
     # cleanup stays an explicit operator decision, never a side effect of
-    # reading the world. Each line's constraint is
-    # deliberately dropped, exactly as ``AptAutoremovable`` drops the version
-    # its simulation rows carry: the ``@tag`` a package may be selected from
-    # and the ``=``, ``<``, ``>``, ``>=``, ``~`` or ``><`` version bound it is
-    # pinned to say nothing about *which* packages were asked for. The version
-    # bound a *hold* is after -- the constraint this fact drops -- is exactly
-    # what the sibling ``ApkHeldPackages`` keeps. A leading
+    # reading the world. The ``@tag`` a package may be selected from is
+    # deliberately dropped -- a tagged repository says nothing about *which*
+    # packages were asked for -- while the ``=``, ``<``, ``>``, ``>=``, ``~``
+    # or ``><`` version bound a line pins to is kept verbatim in ``version``,
+    # operator included, so a changed constraint stays visible; the sibling
+    # ``ApkHeldPackages`` reports exactly the constrained subset of these
+    # lines. A leading
     # ``!`` marks a conflict constraint -- a package that must NOT be
     # installed -- so it never contributes an entry. Blank lines and ``#``
     # comments are skipped and a line carrying no name (a lone operator or
@@ -386,34 +390,38 @@ class ApkExplicitPackages:
     #: The characters that start a world constraint's repository tag or
     #: version bound: the first of them ends the package name, so
     #: everything before it is the name and everything from it on is the
-    #: constraint the parser drops.
+    #: tag (dropped) or the constraint the entry keeps as its ``version``.
     BOUNDARY_REGEX = re.compile(r"[@<>~=]")
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> list[ApkExplicitPackage]:
+    def parse(cls, output: Iterable[str]) -> list[ApkPackageVersion]:
         """Parse ``/etc/apk/world`` lines into sorted, unique entries.
 
         Comments (``#``) and blank lines are skipped; so is a conflict
         constraint (a line starting with ``!``), which names a package that
         must not be installed. Each remaining line contributes an
-        ``ApkExplicitPackage`` whose ``name`` is the text up to the
-        first tag or version-boundary character, stripped; a line whose name
-        is empty is not a package constraint and is ignored. Duplicates
-        collapse into one entry and the result is sorted by name. Pure and
-        testable.
+        ``ApkPackageVersion`` whose ``name`` is the bare package name (the
+        text up to the first tag or version-boundary character, stripped)
+        and whose ``version`` is the line's version constraint verbatim,
+        operator included -- ``""`` when the line carries none; the ``@tag``
+        selector is dropped. A line whose name is empty is not a package
+        constraint and is ignored. Duplicate entries collapse into one and
+        the result is sorted by name, then version. Pure and testable.
         """
-        names: set[str] = set()
+        entries: set[tuple[str, str]] = set()
         for raw in output:
             line = raw.strip()
             if not line or line.startswith(("#", "!")):
                 continue
-            name = cls.BOUNDARY_REGEX.split(line, maxsplit=1)[0].strip()
+            name, _tag, constraint = _split_world_line(line)
             if name:
-                names.add(name)
-        return [{"name": name} for name in sorted(names)]
+                entries.add((name, constraint))
+        return [
+            {"name": name, "version": version} for name, version in sorted(entries)
+        ]
 
     @classmethod
-    async def process(cls, host: Host) -> list[ApkExplicitPackage]:
+    async def process(cls, host: Host) -> list[ApkPackageVersion]:
         apk_explicit_packages = getattr(host, "apk_explicit_packages", None)
         if apk_explicit_packages is not None:
             # SimulatedHost seam: read the in-memory state directly. Copy
@@ -424,56 +432,25 @@ class ApkExplicitPackages:
         return cls.parse(stdout.splitlines())
 
 
-class ApkHeldPackage(TypedDict):
-    """
-    Attributes:
-        name: The bare package name, e.g. ``"curl"`` -- the ``@tag`` a line
-            may carry is not part of it, exactly as ``ApkExplicitPackages``
-            drops it from the world names.
-        constraint: The version bound pinning the package, operator included
-            (``"=8.14.0-r0"``, ``">~9.7_p1-r4"``) -- the answer's whole
-            point, so a re-pin to a different version stays detectable.
-        tag: The repository tag selecting the tagged repository the pin
-            reads from (apk's ``@edge``-style selector), kept without the
-            leading ``@``, or the empty string when the line carries none.
-    """
-
-    # """One held (version-pinned) world line (an ``ApkHeldPackages`` entry).
-    #
-    # A TypedDict rather than a class instance, like ``ApkAutoremovablePackage``:
-    # entries are ordinary dicts, so equality against a literal dict works and
-    # ``json.dumps`` serializes them directly.
-    #
-    # Attributes:
-    #     name: The bare package name, e.g. ``"curl"`` -- the ``@tag`` a line
-    #         may carry is not part of it, exactly as ``ApkExplicitPackages``
-    #         drops it from the world names.
-    #     constraint: The version bound pinning the package, operator included
-    #         (``"=8.14.0-r0"``, ``">~9.7_p1-r4"``) -- the answer's whole
-    #         point, so a re-pin to a different version stays detectable.
-    #     tag: The repository tag selecting the tagged repository the pin
-    #         reads from (apk's ``@edge``-style selector), kept without the
-    #         leading ``@``, or the empty string when the line carries none.
-    # """
-
-    name: str
-    constraint: str
-    tag: str
-
-
 class ApkHeldPackages:
     """The version-pinned apk packages.
 
-    command:
+    **Commands:**
 
     ```bash
     cat -- /etc/apk/world 2>/dev/null || true
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    list[ApkHeldPackage]
+    list[ApkPackageVersion]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
     ```
 
     Examples:
@@ -481,31 +458,28 @@ class ApkHeldPackages:
     """
 
     # The apk counterpart of ``apt.AptHeldPackages``: a list of
-    # ``ApkHeldPackage`` entries in world-file order.
-    #
-    # The held (version-pinned) apk packages, as a list of ``ApkHeldPackage``
-    # entries in world-file order.
+    # ``ApkPackageVersion`` entries in world-file order.
     #
     # apk has no ``apt-mark hold`` -- it keeps a package out of upgrades by
     # pinning a *version constraint* into its world, ``/etc/apk/world``, so a
     # held package is exactly a world line carrying a version bound. Each such
-    # line becomes
-    # one ``ApkHeldPackage`` entry of the name, its constraint (the operator
-    # and version kept together) and the repository tag the line may carry,
+    # line becomes one ``ApkPackageVersion`` entry: the bare name plus the
+    # constraint (the operator and version kept together) as the ``version``,
     # collected into a list that keeps file order, for example::
     #
     #     [
-    #         {"name": "curl", "constraint": "=8.14.0-r0", "tag": ""},
-    #         {"name": "openssh", "constraint": ">~9.7_p1-r4", "tag": "edge"},
+    #         {"name": "curl", "version": "=8.14.0-r0"},
+    #         {"name": "openssh", "version": ">~9.7_p1-r4"},
     #     ]
     #
     # The shape deliberately differs from the sibling ``AptHeldPackages``'
     # sorted name list: ``apt-mark hold`` records a bare name with no version,
     # where an apk pin's whole purpose is the constraint, so dropping it would
-    # make a re-pin to a different version undetectable. It reads the same
-    # ``/etc/apk/world`` file as ``ApkExplicitPackages`` -- which reports the
-    # world names in ``name``-only entries and deliberately drops every
-    # constraint -- and keeps only the
+    # make a re-pin to a different version undetectable -- the operator stays
+    # inside ``version`` for exactly that reason. It reads the same
+    # ``/etc/apk/world`` file as ``ApkExplicitPackages`` -- which reports
+    # every world line, unconstrained ones with an empty ``version`` -- and
+    # keeps only the
     # lines ``_VERSION_OP_REGEX`` finds a version operator in, so a bare name
     # (``busybox``) and a repository-tag-only line (``nginx@edge``, a selection
     # not a hold) never contribute. Comments (``#``), blank lines and a leading
@@ -514,11 +488,12 @@ class ApkHeldPackages:
     # order (a repeated name's last line wins) in one entry per name. A
     # missing or unreadable file -- any host without apk -- reads as ``[]``
     # through the command's ``|| true``.
-    # Like every typed sibling in this namespace the entries are
-    # ``ApkHeldPackage`` TypedDict-shaped dicts rather than bare
+    # Like every package-list sibling in this namespace the entries are
+    # ``ApkPackageVersion`` TypedDict-shaped dicts rather than bare
     # strings -- the same usability choice ``apt.AptSources`` made over
-    # pyinfra's collapse convention -- and the ``tag`` field is what carries
-    # the ``@tag`` a name-only reading would silently drop. The ``apk.hold``
+    # pyinfra's collapse convention. The ``@tag`` repository selector a line
+    # may carry is deliberately dropped: a tagged repository is a selection,
+    # not part of the version bound. The ``apk.hold``
     # operation reads this fact for version-aware idempotence and writes it
     # back through ``apk add <pkg><constraint>``.
 
@@ -536,13 +511,13 @@ class ApkHeldPackages:
 
     #: The characters that start a world constraint's repository tag or
     #: version bound: the first of them ends the bare package name, so
-    #: everything before it is the name the entry keys on and the ``@tag`` a
-    #: pinned line may also carry becomes the entry's ``tag`` field
+    #: everything before it is the name the entry keys on; the ``@tag`` a
+    #: pinned line may also carry is dropped
     #: (``_split_world_line`` splits the three parts of the line).
     BOUNDARY_REGEX = re.compile(r"[@<>~=]")
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> list[ApkHeldPackage]:
+    def parse(cls, output: Iterable[str]) -> list[ApkPackageVersion]:
         """Parse ``/etc/apk/world`` lines into held-package entries.
 
         Comments (``#``), blank lines and a ``!`` conflict constraint are
@@ -551,24 +526,24 @@ class ApkHeldPackages:
         and constraint and the entry is kept when the constraint is
         non-empty -- so a bare name and a repository-tag-only line
         (``nginx@edge``) are not holds and never appear. The entry's ``name``
-        is the bare name (the text up to the first tag or version boundary),
-        the ``tag`` the ``@`` selector between (``""`` when the line carries
-        none), the ``constraint`` the bound from its operator on
-        (``=8.14.0-r0``). Entries keep file order; a repeated name keeps the
+        is the bare name (the text up to the first tag or version boundary)
+        and its ``version`` the constraint from its operator on
+        (``=8.14.0-r0``); the ``@tag`` selector is dropped. Entries keep file
+        order; a repeated name keeps the
         last line's constraint at its first position. Pure and testable.
         """
-        held: dict[str, ApkHeldPackage] = {}
+        held: dict[str, ApkPackageVersion] = {}
         for raw in output:
             line = raw.strip()
             if not line or line.startswith(("#", "!")):
                 continue
-            name, tag, constraint = _split_world_line(line)
+            name, _tag, constraint = _split_world_line(line)
             if name and constraint:
-                held[name] = {"name": name, "constraint": constraint, "tag": tag}
+                held[name] = {"name": name, "version": constraint}
         return list(held.values())
 
     @classmethod
-    async def process(cls, host: Host) -> list[ApkHeldPackage]:
+    async def process(cls, host: Host) -> list[ApkPackageVersion]:
         apk_held_packages = getattr(host, "apk_held_packages", None)
         if apk_held_packages is not None:
             # SimulatedHost seam: read the in-memory state directly. Copy
@@ -579,40 +554,25 @@ class ApkHeldPackages:
         return cls.parse(stdout.splitlines())
 
 
-class ApkInstalledPackage(TypedDict):
-    """
-    Attributes:
-        name: The package name, e.g. ``"musl"``.
-        versions: Every version-and-release installed under that name
-            (``["1.1.22-r3"]``), de-duplicated and sorted.
-    """
-
-    # One installed apk package (``ApkInstalledPackages``' entry).
-    #
-    # A TypedDict rather than a class instance, like ``ApkAutoremovablePackage``:
-    # entries are ordinary dicts, so equality against a literal dict works and
-    # ``json.dumps`` serializes them directly. The versions stay grouped as a
-    # list under the one name rather than becoming one entry per version: the
-    # question the fact answers is which versions of which names are installed,
-    # and apk lists a name once per installed version.
-
-    name: str
-    versions: list[str]
-
-
 class ApkInstalledPackages:
     """The installed apk packages.
 
-    command:
+    **Commands:**
 
     ```bash
     apk list --installed
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    list[ApkInstalledPackage]
+    list[ApkPackageVersion]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -621,7 +581,7 @@ class ApkInstalledPackages:
 
     # Ported from pyinfra's ``apk.ApkPackages`` -- the same
     # ``apk list --installed`` command and the same row regex, but reported in
-    # reemote5's own shape: a list of ``ApkInstalledPackage`` entries rather
+    # reemote5's own shape: a list of ``ApkPackageVersion`` entries rather
     # than pyinfra's name-keyed dict of version lists. The
     # ``name-version arch {origin} (license) [installed]`` rows are matched
     # with pyinfra's Superuser-derived pattern, which keeps version and release
@@ -629,22 +589,26 @@ class ApkInstalledPackages:
     # from their ``3.6.5-r0``-style versions at the last ``-r<release>``
     # boundary, names carrying punctuation (``libstdc++``, ``p11-kit``,
     # ``json-c``) stay intact, and the ``WARNING: Ignoring APKINDEX...: No such
-    # file or directory`` index-noise lines never match. Each name's versions
-    # are de-duplicated and sorted -- pyinfra's ``parse_packages`` collects them
-    # into a set per name -- and the entries are sorted by name, so the read is
+    # file or directory`` index-noise lines never match. Each installed
+    # name-and-version pair becomes one entry -- apk lists a name once per
+    # installed version, so a name installed at two versions contributes two
+    # entries -- de-duplicated and sorted by name, then version (pyinfra's
+    # ``parse_packages`` de-dups into a set per name), so the read is
     # deterministic and ``json.dumps``-printable, for example::
     #
     #     [
-    #         {"name": "apk-tools", "versions": ["2.10.4-r2"]},
-    #         {"name": "musl", "versions": ["1.1.22-r3"]},
-    #         {"name": "zlib", "versions": ["1.2.11-r1"]},
+    #         {"name": "apk-tools", "version": "2.10.4-r2"},
+    #         {"name": "musl", "version": "1.1.22-r3"},
+    #         {"name": "zlib", "version": "1.2.11-r1"},
     #     ]
     #
     # Entry-list ordering follows the rest of this namespace
     # (``ApkAutoremovablePackages``, ``ApkExplicitPackages``,
-    # ``ApkHeldPackages``); ``apt.AptPackages`` and ``dnf.DnfPackages`` still
-    # report the name-keyed mapping pyinfra documents, so apk is deliberately
-    # no longer shape-symmetric with them. Nothing installed reads as ``[]`` --
+    # ``ApkHeldPackages``); ``apt.AptPackages`` reports sorted typed entries
+    # too, though it groups every version under one name where apk's entries
+    # carry one pair each, while ``dnf.DnfPackages`` still reports the
+    # name-keyed mapping pyinfra documents, so apk is deliberately no longer
+    # shape-symmetric with dnf. Nothing installed reads as ``[]`` --
     # the empty answer every sibling typed-list fact gives -- in place of
     # pyinfra's ``default = dict``. pyinfra's ``requires_command`` gating on
     # ``apk`` is deliberately dropped: a missing ``apk`` exits 127, which
@@ -670,38 +634,38 @@ class ApkInstalledPackages:
     APK_REGEX = r"(.+)-([^-]+-r[^-]+) \S+ \{\S+\} \(.+?\)"
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> list[ApkInstalledPackage]:
+    def parse(cls, output: Iterable[str]) -> list[ApkPackageVersion]:
         """Parse ``apk list --installed`` rows into sorted entries.
 
-        Each matching line contributes its version-and-release to the
-        name's set (pyinfra's ``parse_packages`` de-dup); non-matching
+        Each matching line contributes its name-and-version pair (pyinfra's
+        ``parse_packages`` de-dup); non-matching
         lines -- the ``WARNING:`` index noise, blank lines, rows without
         the ``{origin} (license)`` tail -- are skipped. One
-        ``ApkInstalledPackage`` per name is returned, its ``versions`` the
-        sorted version list, and the entries are sorted by name. Pure and
-        testable.
+        ``ApkPackageVersion`` per installed name-and-version pair is
+        returned, sorted by name, then version. Pure and testable.
         """
-        versions_by_name: dict[str, set[str]] = {}
+        pairs: set[tuple[str, str]] = set()
         for line in output:
             matches = re.match(cls.APK_REGEX, line)
             if matches:
-                versions_by_name.setdefault(matches.group(1), set()).add(matches.group(2))
+                pairs.add((matches.group(1), matches.group(2)))
         return [
-            {"name": name, "versions": sorted(versions_by_name[name])}
-            for name in sorted(versions_by_name)
+            {"name": name, "version": version} for name, version in sorted(pairs)
         ]
 
     @classmethod
-    async def process(cls, host: Host) -> list[ApkInstalledPackage]:
+    async def process(cls, host: Host) -> list[ApkPackageVersion]:
         apk_packages = getattr(host, "apk_packages", None)
         if apk_packages is not None:
             # SimulatedHost seam: the state store keeps the name -> version
             # list mapping the install/remove mutators edit, so project it
-            # into the sorted entry list this fact reports. The version lists
-            # are copied so callers never mutate simulated state.
+            # into the sorted one-entry-per-version list this fact reports,
+            # de-duplicated exactly as ``parse`` reads the real rows. Entries
+            # are rebuilt so callers never mutate simulated state.
             return [
-                {"name": name, "versions": list(apk_packages[name])}
+                {"name": name, "version": version}
                 for name in sorted(apk_packages)
+                for version in sorted(set(apk_packages[name]))
             ]
         # Real transport: list installed packages over asyncssh.
         stdout = await host.run_shell(cls.COMMAND)
@@ -713,8 +677,8 @@ class ApkPackageInfo(TypedDict):
     Attributes:
         name: The package name, e.g. ``"curl"``.
         version: The version-and-release apk reports, e.g. ``"8.14.0-r0"``
-            -- the same shape ``ApkInstalledPackages`` groups in its
-            ``versions`` list.
+            -- the same shape ``ApkInstalledPackages`` reports in its
+            entries' ``version`` field.
         description: The one-line package description (apk's ``description``).
         url: The upstream homepage (apk's ``webpage`` field), ``""`` when the
             package prints none.
@@ -747,16 +711,22 @@ class ApkPackageInfo(TypedDict):
 class ApkPackage:
     """Detailed information about a specific apk package, as an ``ApkPackageInfo``.
 
-    command:
+    **Commands:**
 
     ```bash
     apk info -a <package> 2>/dev/null || true
     ```
 
-    return:
+    **Returns:**
 
     ```python
     ApkPackageInfo | None
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
     ```
 
     Examples:
@@ -935,8 +905,8 @@ class ApkRepository(TypedDict):
 
     # One configured apk repository (``ApkRepositories``'s entry).
     #
-    # A TypedDict rather than a class instance, like ``ApkAutoremovablePackage``
-    # and ``ApkHeldPackage``: entries are ordinary dicts, so equality against a
+    # A TypedDict rather than a class instance, like ``ApkPackageVersion``:
+    # entries are ordinary dicts, so equality against a
     # literal dict works and ``json.dumps`` serializes them directly -- the same
     # choice ``apt.AptSources`` made with its ``AptSource`` entries over pyinfra's
     # dataclass/dict hybrid.
@@ -948,16 +918,22 @@ class ApkRepository(TypedDict):
 class ApkRepositories:
     """The configured apk repositories, as a list of ``ApkRepository`` dicts.
 
-    command:
+    **Commands:**
 
     ```bash
     cat -- /etc/apk/repositories 2>/dev/null || true
     ```
 
-    return:
+    **Returns:**
 
     ```python
     list[ApkRepository]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
     ```
 
     Examples:
@@ -990,9 +966,9 @@ class ApkRepositories:
     # upstream). The return shape deliberately differs in size, not kind,
     # from the siblings: apk's one-line format carries only a URL and an
     # optional tag, where apt entries hold distribution/components/options
-    # and dnf entries hold every INI option. Like every typed sibling entry
-    # type in this namespace -- ``ApkAutoremovablePackage``,
-    # ``ApkExplicitPackage``, ``ApkHeldPackage`` -- the entry is an
+    # and dnf entries hold every INI option. Like the shared
+    # ``ApkPackageVersion`` entry of this namespace's package-list facts,
+    # the entry is an
     # ``ApkRepository`` TypedDict rather than an anonymous dict, so the shape
     # is named and importable.
 
@@ -1137,7 +1113,7 @@ async def packages(
         no_cache: bool = False,
         no_scripts: bool = False,
         **kwargs: Any,
-) -> AsyncGenerator[Command, None]:
+) -> AsyncGenerator[Command]:
     """Add/remove/update apk packages.
 
     Args:
@@ -1160,6 +1136,12 @@ async def packages(
 
     Yields:
         Command: Generated apk package commands.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
 
     Examples:
         Examples can be found in ``examples/modules/apk/apk_apk_packages.py``.
@@ -1208,10 +1190,12 @@ async def packages(
 
     if requested:
         installed = await ctx.facts.get(ApkInstalledPackages)
-        # The fact is a list of entries; index it by name so the lookups below
-        # read as the version-list comparison pyinfra's ``ensure_packages``
-        # does (a repeated name's entry is already merged by the fact).
-        versions_by_name = {entry["name"]: entry["versions"] for entry in installed}
+        # The fact reports one entry per installed name-and-version; group
+        # the versions by name so the lookups below read as the version-list
+        # comparison pyinfra's ``ensure_packages`` does.
+        versions_by_name: dict[str, list[str]] = {}
+        for entry in installed:
+            versions_by_name.setdefault(entry["name"], []).append(entry["version"])
 
         def is_installed(package: str) -> bool:
             name, version = _split_version(package)
@@ -1321,6 +1305,12 @@ async def virtual(
     Yields:
         Command: Generated apk virtual package commands.
 
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/apk/apk_virtual.py``.
     """
@@ -1340,7 +1330,8 @@ async def virtual(
     # ``apk add -t`` only when ``tag`` is absent (and only when at least one
     # member package is requested); ``present=False`` removes it with ``apk del``
     # only when ``tag`` is present. A deliberate simplification: the fact's
-    # entries carry the world *names* only, so a changed member set for an already-existing
+    # entries carry the world names and version constraints only, so a changed
+    # member set for an already-existing
     # ``tag`` is NOT detected -- the group reads as present and the operation is a
     # no-op -- because apk records a virtual group's identity in world, not its
     # membership, and comparing members would need the fuzzy version-constrained
@@ -1444,6 +1435,12 @@ async def hold(
     Yields:
         Command: Generated apk hold commands.
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/apk/apk_hold.py``.
     """
@@ -1451,9 +1448,10 @@ async def hold(
     # The apk counterpart of ``apt.mark``: pyinfra ships no apk hold, and apk
     # has no ``apt-mark`` verb -- it keeps a package out of upgrades by pinning
     # a version constraint into ``/etc/apk/world``. Idempotent on
-    # ``ApkHeldPackages`` (the ``ApkHeldPackage`` entries, looked up by
+    # ``ApkHeldPackages`` (the ``ApkPackageVersion`` entries, looked up by
     # ``name`` and compared on
-    # the entry's ``constraint``): ``present=True`` yields one
+    # the entry's ``version`` -- the world constraint, operator included):
+    # ``present=True`` yields one
     # ``ApkHoldCommand`` for only the requested names whose current pin differs
     # from the wanted constraint (a name already pinned to it is a no-op), and
     # ``present=False`` one for only the names currently held. The command keeps
@@ -1479,8 +1477,9 @@ async def hold(
 
     current = await ctx.facts.get(ApkHeldPackages)
     # The fact is a list of entries in world order; index it by name so the
-    # lookups below read as before (a repeated name's last entry wins).
-    held_constraint = {entry["name"]: entry["constraint"] for entry in current}
+    # lookups below read as before (a repeated name's last entry wins). The
+    # entry's ``version`` is the world constraint, operator included.
+    held_constraint = {entry["name"]: entry["version"] for entry in current}
     reasons: list[str] = []
 
     if present:
@@ -1498,9 +1497,13 @@ async def hold(
             # only on this branch (``version`` is a fixed kwarg, so the gather
             # set is identical in both phases).
             installed = await ctx.facts.get(ApkInstalledPackages)
-            versions_by_name = {
-                entry["name"]: entry["versions"] for entry in installed
-            }
+            # One entry per installed name-and-version, sorted by name then
+            # version, so grouping keeps each name's newest version last.
+            versions_by_name: dict[str, list[str]] = {}
+            for entry in installed:
+                versions_by_name.setdefault(entry["name"], []).append(
+                    entry["version"]
+                )
             for name in requested:
                 versions = versions_by_name.get(name)
                 if not versions:
@@ -1563,6 +1566,12 @@ async def autoremove(ctx: OpContext, **kwargs: Any) -> AsyncGenerator[Command]:
     Yields:
         Command: The apk purge command, when orphans are purgable.
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/apk/apk_autoremove.py``.
     """
@@ -1599,18 +1608,15 @@ async def autoremove(ctx: OpContext, **kwargs: Any) -> AsyncGenerator[Command]:
 
 
 __all__ = [
-    "ApkAutoremovablePackage",
     "ApkAutoremovablePackages",
-    "ApkExplicitPackage",
     "ApkExplicitPackages",
-    "ApkHeldPackage",
     "ApkHeldPackages",
     "ApkHoldCommand",
     "ApkInstallCommand",
-    "ApkInstalledPackage",
     "ApkInstalledPackages",
     "ApkPackage",
     "ApkPackageInfo",
+    "ApkPackageVersion",
     "ApkPurgeCommand",
     "ApkRemoveCommand",
     "ApkRepositories",

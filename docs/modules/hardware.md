@@ -17,6 +17,28 @@
         - NetworkDevices
         - SmbiosInfo
 
+## hardware Returns
+
+::: reemote5.modules.hardware.hardware
+    options:
+      show_root_heading: false
+      members:
+        - BlockDevice
+        - DiskStat
+        - Ipv4Address
+        - Ipv6Address
+        - LsBlkNode
+        - NetworkDevice
+
+## hardware Operations
+
+::: reemote5.modules.hardware.hardware
+    options:
+      show_root_heading: false
+      members: []
+
+
+
 <!---
 
 `reemote5.modules.hardware.hardware` holds the hardware facts — `BlockDevices`,
@@ -35,6 +57,14 @@ with no pyinfra counterpart: `DiskStats` and `LsBlk` complement
 `DmiInfo` and `SmbiosInfo` report the machine's firmware identity —
 manufacturer, product name, serial number, BIOS version and chassis
 type — for asset tracking and conditional execution.
+`BlockDevices`, `DiskStats`, `LsBlk` and `NetworkDevices` type their
+record dicts as the exported `BlockDevice`, `DiskStat`, `LsBlkNode` and
+`NetworkDevice` TypedDicts (the latter with `Ipv4Address`/`Ipv6Address`
+address blocks), keeping the outer device-keyed mappings unchanged.
+`CpuInfo`, `DmiInfo` and `SmbiosInfo` keep plain dicts because their keys
+are dynamic tool labels, and the `Ipv4Addrs`/`Ipv6Addrs` projections keep
+their interface → address-string lists — the agreed exceptions to the
+"facts return TypedDicts" rule.
 It is a fact-only namespace so far: no operations live here yet.
 
 ## Facts
@@ -44,8 +74,8 @@ implemented as a `process` coroutine returning the raw value (over asyncssh in
 the real implementation). Read facts through
 [`FactCache.get`][reemote5.core.FactCache.get], which is itself a coroutine,
 so results are awaited and cached within a phase step. `BlockDevices` takes
-no arguments: it runs `df` and returns a dict of device → `{blocks, used,
-available, used_percent, mount}` dict, mirroring pyinfra's
+no arguments: it runs `df` and returns a dict of device → `BlockDevice`
+entry (`{blocks, used, available, used_percent, mount}`), mirroring pyinfra's
 `hardware.BlockDevices`. Every value stays a raw string — the block counts
 and the percentage are not converted to ints, exactly like pyinfra. The
 header row and any line that does not match the `df` row shape are skipped,
@@ -66,7 +96,10 @@ the first colon, so a second colon in a value truncates it; lines without a
 colon are skipped. Empty output (a failed read) reads as `None`, exactly like
 pyinfra's `invalid` fixture, and a missing `lscpu` exits 127 — reported as
 [`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError] rather than
-`None` (pyinfra's `requires_command` gating is deliberately dropped).
+`None` (pyinfra's `requires_command` gating is deliberately dropped). The
+dict stays plain (no entry TypedDict): its keys are `lscpu`'s open-ended
+labels, which vary with the tool version — the agreed dynamic-key
+exception to the "facts return TypedDicts" rule.
 
 `Cpus` also takes no arguments: it runs
 `getconf NPROCESSORS_ONLN 2> /dev/null || getconf _NPROCESSORS_ONLN` (the
@@ -78,7 +111,8 @@ integer reads as `None` — pyinfra's `invalid` fixture — as does empty output
 `None`.
 
 `DiskStats` also takes no arguments: it runs `cat /proc/diskstats` and maps
-each device name to the kernel's IO counters as ints — a reemote5 original
+each device name to the kernel's IO counters as a `DiskStat` entry of ints
+— a reemote5 original
 with no pyinfra counterpart, reading `/proc/diskstats` directly so no
 sysstat package (`iostat`) is required on the target. The eleven classic
 counters (`reads_completed`, `reads_merged`, `sectors_read`, `ms_reading`,
@@ -110,7 +144,9 @@ decoded label instead). The directory's `uevent`/`modalias` entries,
 empty values and lines outside the `/sys/class/dmi/id/` prefix are
 skipped. A machine without DMI (most containers, many ARM boards and
 VMs) has no such directory: the failed read maps to `{}`, so an empty
-dict means "no DMI identity available".
+dict means "no DMI identity available". The dict stays plain (no entry
+TypedDict): its keys are the sysfs file basenames the kernel exposes, an
+open-ended set — the agreed dynamic-key exception, the same as `CpuInfo`.
 
 `Ipv4Addrs` also takes no arguments: it runs
 `ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a`
@@ -124,7 +160,10 @@ collapses that indirection into this single class, keeping only the IPv4
 address lists (the IPv6 addresses are the sibling `Ipv6Addrs` fact's
 projection); the richer device dict — ether, mtu, state and each address's
 mask/broadcast details — is the sibling `NetworkDevices` fact. Empty or
-undecodable output reads as `{}`, pyinfra's `default = dict`.
+undecodable output reads as `{}`, pyinfra's `default = dict`. The
+projection keeps its plain `dict[str, list[str]]` shape (no entry
+TypedDict): the values are lists of scalar address strings, not record
+dicts — the agreed exception to the "facts return TypedDicts" rule.
 
 `Ipv6Addrs` also takes no arguments: it runs the same
 `ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a`
@@ -140,11 +179,14 @@ indirection into this single sibling class sharing `Ipv4Addrs`' command
 and projection helpers, keeping only the IPv6 address lists; the richer
 device dict — ether, mtu, state and each address's mask details — is the
 sibling `NetworkDevices` fact. Empty or undecodable output reads as `{}`,
-pyinfra's `default = dict`.
+pyinfra's `default = dict`. The projection keeps its plain
+`dict[str, list[str]]` shape (no entry TypedDict), the same exception as
+`Ipv4Addrs`.
 
 `LsBlk` also takes no arguments: it runs
 `lsblk -J -b -o NAME,TYPE,SIZE,MOUNTPOINT` and returns the JSON document's
-`blockdevices` array — a reemote5 original with no pyinfra counterpart,
+`blockdevices` array as `LsBlkNode` entries — a reemote5 original with no
+pyinfra counterpart,
 reporting the complete block device tree including unmounted disks,
 partitions, LVM volumes and raw devices that the `df`-based
 `BlockDevices` sibling never sees. Each node carries `name`, `type`
@@ -161,9 +203,10 @@ as `[]`; non-dict nodes are skipped at every level and a non-list
 
 `NetworkDevices` also takes no arguments: it runs the same
 `ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a`
-and maps each interface to its details dict — the `state`
+and maps each interface to its `NetworkDevice` entry — the `state`
 (`UP`/`DOWN`/`UNKNOWN`), the optional `ether` MAC and `mtu`, and an
-`ipv4`/`ipv6` block per address family carrying the primary `address`
+`Ipv4Address`/`Ipv6Address` block per address family carrying the primary
+`address`
 plus, when present, `mask_bits`, `netmask` (IPv4 only), `broadcast`
 (IPv4 only, possibly `None`) and any further addresses under
 `additional_ips` — mirroring pyinfra's `hardware.NetworkDevices`. The
@@ -206,7 +249,9 @@ occurrence — the identity, BIOS and chassis sections each appear once.
 A failed read (missing `dmidecode`, no root or passwordless sudo, no
 SMBIOS tables) is swallowed by the command and maps to `{}` — an empty
 dict cannot distinguish "no tables" from "no access"; use `DmiInfo` for
-an unprivileged read.
+an unprivileged read. The dict stays plain (no entry TypedDict): its keys
+are `dmidecode`'s verbatim section titles and field names, an open-ended
+set — the agreed dynamic-key exception, the same as `CpuInfo`.
 
 
 ## Example

@@ -23,8 +23,9 @@ driving the two-phase execution model:
 ``LsBlk`` is a reemote5 original (pyinfra has no counterpart): it runs
 ``lsblk -J -b -o NAME,TYPE,SIZE,MOUNTPOINT`` and returns the complete block
 device tree -- including unmounted disks, partitions, LVM volumes and raw
-devices that the ``df``-based ``BlockDevices`` fact never sees. Each node
-carries ``name``, ``type`` (``disk``/``part``/``lvm``/...), ``size`` (a byte
+devices that the ``df``-based ``BlockDevices`` fact never sees. Each
+``LsBlkNode`` entry carries ``name``, ``type``
+(``disk``/``part``/``lvm``/...), ``size`` (a byte
 count as an int) and ``mountpoint`` (None when unmounted), with stacked
 devices nested under their parent's ``children`` list. A failed or
 undecodable read reports no devices (``[]``).

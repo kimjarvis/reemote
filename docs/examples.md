@@ -9,7 +9,8 @@ of a library module (currently `apk`, `apt`, `dnf`, `files`, `git`,
 `hardware` and `server`),
 `examples/general/`
 holds general scenario scripts built on more than one module,
-`examples/actions/` holds bespoke-shell [action](actions.md) demonstrations, and
+`examples/actions/` holds [action](actions.md) demonstrations (bespoke shell,
+connection waits), and
 `examples/demonstrations/<topic>/` holds scenario scripts — `composition/`,
 `connectors/`, `inventory/` and `privilege/` — that cross module boundaries.
 Each explanation
@@ -96,9 +97,11 @@ Python traceback.
 The [action](actions.md) examples follow the same contract with one difference:
 a bespoke command's own non-zero exit is **data in the
 [`Result`][reemote5.actions.Result]**, not a raised `CommandError` — only
-library-level failures (`HostConnectionError`, `PrivilegeError`) raise. The
-in-deploy guard example catches
+library-level failures (`HostConnectionError`, `PrivilegeError`,
+`ConnectionTimeoutError`) raise. The in-deploy guard example catches
 [`ActionInDeployError`][reemote5.actions.ActionInDeployError] as its *expected*
-outcome and exits zero.
+outcome and exits zero, and the connection-wait example likewise treats the
+[`ConnectionTimeoutError`][reemote5.actions.ConnectionTimeoutError] from a
+deliberately unreachable TEST-NET address as its expected demonstration.
 
 --->

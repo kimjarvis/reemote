@@ -103,12 +103,15 @@ from reemote5.modules.apt.apt import (
     AptHeldPackages,
     AptInstallCommand,
     AptInstallFixCommand,
+    AptKey,
     AptKeyInstallCommand,
     AptKeys,
     AptKeyUploadCommand,
     AptMarkHoldCommand,
     AptMarkUnholdCommand,
+    AptPackageInfo,
     AptPackages,
+    AptPackageUpgrade,
     AptPolicy,
     AptPpaCommand,
     AptRemoveCommand,
@@ -124,6 +127,7 @@ from reemote5.modules.apt.apt import (
     AptUpgradeCommand,
     DebInstallCommand,
     DebPackage,
+    DebPackageInfo,
     SimulateOperationWillChange,
 )
 from tests.simulated_host import SimulatedHost
@@ -235,11 +239,30 @@ UBUNTU_APT_KEYS = {
 }
 
 
+def _key_entries(fixture: dict[str, dict]) -> list[AptKey]:
+    """A pyinfra key fixture as reemote5's typed entry list.
+
+    pyinfra keys its answer by key id and re-keys subkeys by their ids;
+    reemote5's documented shape keeps each entry's ``id`` and its subkeys
+    as a list (the ``_list_valued`` AptSources precedent), so fixture
+    parity compares against this normalization.
+    """
+    entries: list[AptKey] = []
+    for key_id, details in fixture.items():
+        entry: AptKey = {"id": key_id, **details}
+        entry["subkeys"] = [
+            {"id": sub_id, **sub} for sub_id, sub in details["subkeys"].items()
+        ]
+        entries.append(entry)
+    return entries
+
+
 async def test_apt_keys_parses_the_documented_example():
     """Over the real-transport path, ``AptKeys`` flattens the three keyring
-    groups into pyinfra's documented example result (the keys.json fact)."""
+    groups into pyinfra's documented example keys (the keys.json fact) as
+    typed entries."""
     host = CannedShellHost("\n".join(KEYS_OUTPUT))
-    assert await AptKeys.process(host) == UBUNTU_APT_KEYS
+    assert await AptKeys.process(host) == _key_entries(UBUNTU_APT_KEYS)
     assert host.last_shell == DEFAULT_COMMAND
 
 
@@ -297,10 +320,10 @@ ASC_ONLY_KEYS = {
 
 
 async def test_apt_keys_parses_subkeys_from_armored_keyrings():
-    """A ``sub`` record becomes a subkeys entry keyed by its own id, and the
-    ``fpr`` after it attaches to the subkey, not the primary key."""
+    """A ``sub`` record becomes a subkey entry in the key's subkeys list, and
+    the ``fpr`` after it attaches to the subkey, not the primary key."""
     host = CannedShellHost("\n".join(ASC_ONLY_OUTPUT))
-    assert await AptKeys.process(host) == ASC_ONLY_KEYS
+    assert await AptKeys.process(host) == _key_entries(ASC_ONLY_KEYS)
 
 
 # The ``output`` field of pyinfra's ``gpg.GpgKeyrings/mixed_formats.json``
@@ -353,16 +376,16 @@ MIXED_FORMATS_KEYS = {
 
 async def test_apt_keys_mixes_gpg_asc_and_kbx_formats():
     """Keys from binary (.gpg/.kbx) and armored (.asc) keyrings merge into
-    one flat dict; an empty uid_hash field stays the empty string."""
+    one entry list; an empty uid_hash field stays the empty string."""
     host = CannedShellHost("\n".join(MIXED_FORMATS_OUTPUT))
-    assert await AptKeys.process(host) == MIXED_FORMATS_KEYS
+    assert await AptKeys.process(host) == _key_entries(MIXED_FORMATS_KEYS)
 
 
-async def test_apt_keys_empty_output_reads_as_empty_dict():
+async def test_apt_keys_empty_output_reads_as_empty_list():
     """No keyring files found (pyinfra's empty_directory fixture) -- the find
-    sweeps print nothing, so the fact reports {}."""
+    sweeps print nothing, so the fact reports []."""
     host = CannedShellHost("")
-    assert await AptKeys.process(host) == {}
+    assert await AptKeys.process(host) == []
 
 
 async def test_apt_keys_duplicate_key_id_last_keyring_wins():
@@ -378,9 +401,10 @@ uid:-::::1336770936::NEWHASH::New Copy <new@example.com>::::::::::0:
 """
     host = CannedShellHost(stdout)
     keys = await AptKeys.process(host)
-    assert keys["3B4FE6ACC0B21F32"]["uid"] == "New Copy <new@example.com>"
-    assert keys["3B4FE6ACC0B21F32"]["uid_hash"] == "NEWHASH"
     assert len(keys) == 1
+    assert keys[0]["id"] == "3B4FE6ACC0B21F32"
+    assert keys[0]["uid"] == "New Copy <new@example.com>"
+    assert keys[0]["uid_hash"] == "NEWHASH"
 
 
 async def test_apt_keys_ignores_records_before_the_first_marker():
@@ -394,7 +418,7 @@ async def test_apt_keys_ignores_records_before_the_first_marker():
         ]
     )
     host = CannedShellHost(stdout)
-    assert await AptKeys.process(host) == UBUNTU_APT_KEYS
+    assert await AptKeys.process(host) == _key_entries(UBUNTU_APT_KEYS)
 
 
 async def test_apt_keys_marker_only_keyring_contributes_nothing():
@@ -408,11 +432,11 @@ async def test_apt_keys_marker_only_keyring_contributes_nothing():
         ]
     )
     host = CannedShellHost(stdout)
-    assert await AptKeys.process(host) == {
-        "3B4FE6ACC0B21F32": UBUNTU_APT_KEYS["3B4FE6ACC0B21F32"]
-    }
-    # The marker alone -- every keyring unreadable -- reads as {}.
-    assert await AptKeys.process(CannedShellHost("KEYRING:/etc/apt/keyrings/broken.gpg")) == {}
+    assert await AptKeys.process(host) == _key_entries(
+        {"3B4FE6ACC0B21F32": UBUNTU_APT_KEYS["3B4FE6ACC0B21F32"]}
+    )
+    # The marker alone -- every keyring unreadable -- reads as [].
+    assert await AptKeys.process(CannedShellHost("KEYRING:/etc/apt/keyrings/broken.gpg")) == []
 
 
 # --- SimulatedHost seam -------------------------------------------------------
@@ -421,23 +445,23 @@ async def test_apt_keys_marker_only_keyring_contributes_nothing():
 async def test_apt_keys_reads_the_simulated_seam():
     """A SimulatedHost exposes ``apt_keys`` directly, bypassing the shell;
     the directories argument does not filter the already-flattened seam."""
-    host = SimulatedHost(name="h", apt_keys=UBUNTU_APT_KEYS)
-    assert await AptKeys.process(host) == UBUNTU_APT_KEYS
-    assert await AptKeys.process(host, ["/custom/keyring/path"]) == UBUNTU_APT_KEYS
-    # The default seam is {} -- a simulated machine with no keyrings found.
-    assert await AptKeys.process(SimulatedHost(name="h")) == {}
+    host = SimulatedHost(name="h", apt_keys=_key_entries(UBUNTU_APT_KEYS))
+    assert await AptKeys.process(host) == _key_entries(UBUNTU_APT_KEYS)
+    assert await AptKeys.process(host, ["/custom/keyring/path"]) == _key_entries(UBUNTU_APT_KEYS)
+    # The default seam is [] -- a simulated machine with no keyrings found.
+    assert await AptKeys.process(SimulatedHost(name="h")) == []
 
 
 async def test_apt_keys_seam_returns_copies():
-    """Mutating the returned dict, a key's details or its subkeys never
+    """Mutating the returned list, a key entry or its subkey entries never
     touches the simulated state."""
-    host = SimulatedHost(name="h", apt_keys=ASC_ONLY_KEYS)
+    host = SimulatedHost(name="h", apt_keys=_key_entries(ASC_ONLY_KEYS))
     keys = await AptKeys.process(host)
-    keys["B7C5D7D6350947F8"]["uid"] = "mutated"
-    keys["B7C5D7D6350947F8"]["subkeys"]["16E0B0B5FC11C3A7"]["length"] = 1
-    keys["B7C5D7D6350947F8"]["subkeys"]["FFFFFFFFFFFFFFFF"] = {}
-    del keys["4F368D5D67269BAC"]
-    assert await AptKeys.process(host) == ASC_ONLY_KEYS
+    keys[0]["uid"] = "mutated"
+    keys[0]["subkeys"][0]["length"] = 1
+    keys[0]["subkeys"].append({"id": "FFFFFFFFFFFFFFFF", "validity": "-", "length": 1})
+    del keys[1]
+    assert await AptKeys.process(host) == _key_entries(ASC_ONLY_KEYS)
 
 
 # --- gather_fact fan-out ------------------------------------------------------
@@ -451,17 +475,17 @@ async def test_gather_fact_apt_keys_forwards_directories():
     host2 = CannedShellHost("")
     host2.name = "web2"
     keys = await gather_fact([host1, host2], AptKeys, ["/custom/keyring/path"])
-    assert keys == {"web1": UBUNTU_APT_KEYS, "web2": {}}
+    assert keys == {"web1": _key_entries(UBUNTU_APT_KEYS), "web2": []}
     assert host1.last_shell == CUSTOM_COMMAND
     assert host2.last_shell == CUSTOM_COMMAND
 
 
 async def test_gather_fact_apt_keys_reads_simulated_seams():
     """Across a simulated fleet each host answers from its own seam state."""
-    host1 = SimulatedHost(name="web1", apt_keys=UBUNTU_APT_KEYS)
+    host1 = SimulatedHost(name="web1", apt_keys=_key_entries(UBUNTU_APT_KEYS))
     host2 = SimulatedHost(name="web2")
     keys = await gather_fact([host1, host2], AptKeys)
-    assert keys == {"web1": UBUNTU_APT_KEYS, "web2": {}}
+    assert keys == {"web1": _key_entries(UBUNTU_APT_KEYS), "web2": []}
 
 
 # --- AptPackages: command parity (pyinfra's apt.AptPackages fixtures) ---------
@@ -497,22 +521,35 @@ UBUNTU_APT_PACKAGES = {
 }
 
 
+def _package_entries(fixture: dict[str, list[str]]) -> list[AptPackageInfo]:
+    """A pyinfra package fixture as reemote5's sorted typed entry list.
+
+    pyinfra keys its answer by name; reemote5's documented shape returns
+    ``AptPackageInfo`` entries sorted by name (the ``ApkInstalledPackages``
+    divergence), so fixture parity compares against this normalization.
+    """
+    return [
+        {"name": name, "versions": list(versions)}
+        for name, versions in sorted(fixture.items())
+    ]
+
+
 async def test_apt_packages_parses_the_fixture():
     """Over the real-transport path, ``AptPackages`` parses the fixture's
-    rows into pyinfra's fixture fact, keeping the :i386 suffix and the
-    epoch-prefixed versions intact."""
+    rows into pyinfra's fixture fact as typed entries, keeping the :i386
+    suffix and the epoch-prefixed versions intact."""
     host = CannedShellHost("\n".join(PACKAGES_OUTPUT))
-    assert await AptPackages.process(host) == UBUNTU_APT_PACKAGES
+    assert await AptPackages.process(host) == _package_entries(UBUNTU_APT_PACKAGES)
     assert host.last_shell == AptPackages.COMMAND
 
 
-async def test_apt_packages_listing_only_reads_as_empty_dict():
+async def test_apt_packages_listing_only_reads_as_empty_list():
     """Only the Listing... header (pyinfra's empty.yaml fixture) -- no
-    package rows match, so the fact reports {}."""
+    package rows match, so the fact reports []."""
     host = CannedShellHost("Listing...\n")
-    assert await AptPackages.process(host) == {}
-    # Completely empty stdout reads as {} too (pyinfra's default = dict).
-    assert await AptPackages.process(CannedShellHost("")) == {}
+    assert await AptPackages.process(host) == []
+    # Completely empty stdout reads as [] too.
+    assert await AptPackages.process(CannedShellHost("")) == []
 
 
 # --- Parser edge cases ---------------------------------------------------------
@@ -531,7 +568,7 @@ async def test_apt_packages_ignores_noise_and_non_installed_rows():
         ]
     )
     host = CannedShellHost(stdout)
-    assert await AptPackages.process(host) == UBUNTU_APT_PACKAGES
+    assert await AptPackages.process(host) == _package_entries(UBUNTU_APT_PACKAGES)
 
 
 async def test_apt_packages_dedups_and_sorts_versions():
@@ -545,7 +582,9 @@ htop/jammy-security,now 3.0.5-7build2 amd64 [installed]
 htop/jammy,now 3.0.4-1 amd64 [installed,automatic]
 """
     host = CannedShellHost(stdout)
-    assert await AptPackages.process(host) == {"htop": ["3.0.4-1", "3.0.5-7build2"]}
+    assert await AptPackages.process(host) == [
+        {"name": "htop", "versions": ["3.0.4-1", "3.0.5-7build2"]}
+    ]
 
 
 # --- SimulatedHost seam -------------------------------------------------------
@@ -553,21 +592,22 @@ htop/jammy,now 3.0.4-1 amd64 [installed,automatic]
 
 async def test_apt_packages_reads_the_simulated_seam():
     """A SimulatedHost exposes ``apt_packages`` directly, bypassing the
-    shell; the default seam is {} -- no installed packages listed."""
+    shell; the fact projects the name -> versions store into entries and
+    the default seam is {} -- no installed packages, read as []."""
     host = SimulatedHost(name="h", apt_packages=UBUNTU_APT_PACKAGES)
-    assert await AptPackages.process(host) == UBUNTU_APT_PACKAGES
-    assert await AptPackages.process(SimulatedHost(name="h")) == {}
+    assert await AptPackages.process(host) == _package_entries(UBUNTU_APT_PACKAGES)
+    assert await AptPackages.process(SimulatedHost(name="h")) == []
 
 
 async def test_apt_packages_seam_returns_copies():
-    """Mutating the returned dict or a version list never touches the
-    simulated state."""
+    """Mutating the returned list, an entry or its version list never
+    touches the simulated state."""
     host = SimulatedHost(name="h", apt_packages=UBUNTU_APT_PACKAGES)
     packages = await AptPackages.process(host)
-    packages["htop"].append("9.9")
-    packages["stray"] = ["1.0"]
-    del packages["adduser"]
-    assert await AptPackages.process(host) == UBUNTU_APT_PACKAGES
+    packages[2]["versions"].append("9.9")  # htop, third in sorted order
+    packages.append({"name": "stray", "versions": ["1.0"]})
+    del packages[0]  # adduser
+    assert await AptPackages.process(host) == _package_entries(UBUNTU_APT_PACKAGES)
 
 
 # --- gather_fact fan-out ------------------------------------------------------
@@ -579,7 +619,7 @@ async def test_gather_fact_apt_packages_reads_simulated_seams():
     host1 = SimulatedHost(name="web1", apt_packages=UBUNTU_APT_PACKAGES)
     host2 = SimulatedHost(name="web2")
     packages = await gather_fact([host1, host2], AptPackages)
-    assert packages == {"web1": UBUNTU_APT_PACKAGES, "web2": {}}
+    assert packages == {"web1": _package_entries(UBUNTU_APT_PACKAGES), "web2": []}
 
 
 async def test_gather_fact_apt_packages_over_canned_shells():
@@ -590,7 +630,7 @@ async def test_gather_fact_apt_packages_over_canned_shells():
     host2 = CannedShellHost("Listing...\n")
     host2.name = "web2"
     packages = await gather_fact([host1, host2], AptPackages)
-    assert packages == {"web1": UBUNTU_APT_PACKAGES, "web2": {}}
+    assert packages == {"web1": _package_entries(UBUNTU_APT_PACKAGES), "web2": []}
     assert host1.last_shell == AptPackages.COMMAND
     assert host2.last_shell == AptPackages.COMMAND
 
@@ -1073,18 +1113,19 @@ HELD_OUTPUT = [
     "linux-headers-generic",
 ]
 
-# The parsed answer: de-duplicated, sorted names, the :i386 suffix intact.
-HELD_PACKAGES = [
-    "docker-ce",
-    "libc6:i386",
-    "linux-headers-generic",
-    "linux-image-generic",
+# The parsed answer: de-duplicated, sorted entries, the :i386 suffix intact
+# and an empty versions list (showhold prints no version).
+HELD_PACKAGES: list[AptPackageInfo] = [
+    {"name": "docker-ce", "versions": []},
+    {"name": "libc6:i386", "versions": []},
+    {"name": "linux-headers-generic", "versions": []},
+    {"name": "linux-image-generic", "versions": []},
 ]
 
 
 async def test_apt_held_packages_parses_realistic_output():
     """Over the real-transport path, ``AptHeldPackages`` parses the showhold
-    lines into the sorted name list, keeping the :i386 suffix intact."""
+    lines into sorted entries, keeping the :i386 suffix intact."""
     host = CannedShellHost("\n".join(HELD_OUTPUT))
     assert await AptHeldPackages.process(host) == HELD_PACKAGES
     assert host.last_shell == AptHeldPackages.COMMAND
@@ -1128,11 +1169,14 @@ async def test_apt_held_packages_reads_the_simulated_seam():
 
 
 async def test_apt_held_packages_seam_returns_copies():
-    """Mutating the returned list never touches the simulated state."""
+    """Mutating the returned list, an entry or its versions list never
+    touches the simulated state."""
     host = SimulatedHost(name="h", apt_held_packages=HELD_PACKAGES)
     held = await AptHeldPackages.process(host)
-    held.append("stray")
-    held.remove("docker-ce")
+    held.append({"name": "stray", "versions": []})
+    held.remove({"name": "docker-ce", "versions": []})
+    held[0]["name"] = "mutated"
+    held[0]["versions"].append("9.9")
     assert await AptHeldPackages.process(host) == HELD_PACKAGES
 
 
@@ -1405,22 +1449,26 @@ vim/noble-updates,noble-security 2:9.1.0016-1ubuntu7.6 amd64 [upgradable from: 2
 libc6:i386/noble-updates 2.39-0ubuntu8.4 i386 [upgradable from: 2.39-0ubuntu8.3]
 """
 
-# The parsed answer: name -> {installed, candidate}, the :i386 suffix and
-# the epoch prefixes intact, suite and architecture columns dropped.
-UPGRADABLE_PACKAGES = {
-    "libssl3t64": {
-        "installed": "3.0.13-0ubuntu3.4",
-        "candidate": "3.0.13-0ubuntu3.5",
-    },
-    "vim": {
-        "installed": "2:9.1.0016-1ubuntu7.4",
-        "candidate": "2:9.1.0016-1ubuntu7.6",
-    },
-    "libc6:i386": {
+# The parsed answer: name -> installed/candidate entries sorted by name,
+# the :i386 suffix and the epoch prefixes intact, suite and architecture
+# columns dropped.
+UPGRADABLE_PACKAGES: list[AptPackageUpgrade] = [
+    {
+        "name": "libc6:i386",
         "installed": "2.39-0ubuntu8.3",
         "candidate": "2.39-0ubuntu8.4",
     },
-}
+    {
+        "name": "libssl3t64",
+        "installed": "3.0.13-0ubuntu3.4",
+        "candidate": "3.0.13-0ubuntu3.5",
+    },
+    {
+        "name": "vim",
+        "installed": "2:9.1.0016-1ubuntu7.4",
+        "candidate": "2:9.1.0016-1ubuntu7.6",
+    },
+]
 
 
 async def test_apt_upgradable_parses_realistic_output():
@@ -1432,19 +1480,19 @@ async def test_apt_upgradable_parses_realistic_output():
 
 
 async def test_apt_upgradable_result_is_json_printable():
-    """The answer is a plain dict of string-valued dicts -- json.dumps
+    """The answer is a list of plain string-valued dicts -- json.dumps
     round-trips it directly, like every gather_fact example needs."""
     host = CannedShellHost(UPGRADABLE_OUTPUT)
     upgrades = await AptUpgradable.process(host)
-    assert isinstance(upgrades, dict)
+    assert isinstance(upgrades, list)
     assert json.loads(json.dumps(upgrades)) == UPGRADABLE_PACKAGES
 
 
-async def test_apt_upgradable_empty_output_reads_as_empty_dict():
+async def test_apt_upgradable_empty_output_reads_as_empty_list():
     """A fully up-to-date machine prints only the header (or nothing at
-    all) -- both read as {}."""
-    assert await AptUpgradable.process(CannedShellHost("")) == {}
-    assert await AptUpgradable.process(CannedShellHost("Listing... Done\n")) == {}
+    all) -- both read as []."""
+    assert await AptUpgradable.process(CannedShellHost("")) == []
+    assert await AptUpgradable.process(CannedShellHost("Listing... Done\n")) == []
 
 
 # --- Parser edge cases ---------------------------------------------------------
@@ -1461,12 +1509,13 @@ vim/noble-updates 2:9.1.0016-1ubuntu7.6 amd64 [upgradable from: 2:9.1.0016-1ubun
 broken/noble-updates 1.0 amd64 [upgradable from:
 """
     host = CannedShellHost(stdout)
-    assert await AptUpgradable.process(host) == {
-        "vim": {
+    assert await AptUpgradable.process(host) == [
+        {
+            "name": "vim",
             "installed": "2:9.1.0016-1ubuntu7.4",
             "candidate": "2:9.1.0016-1ubuntu7.6",
         },
-    }
+    ]
 
 
 async def test_apt_upgradable_duplicate_name_last_row_wins():
@@ -1477,12 +1526,13 @@ vim/noble-updates 2:9.1.0016-1ubuntu7.5 amd64 [upgradable from: 2:9.1.0016-1ubun
 vim/noble-security 2:9.1.0016-1ubuntu7.6 amd64 [upgradable from: 2:9.1.0016-1ubuntu7.4]
 """
     host = CannedShellHost(stdout)
-    assert await AptUpgradable.process(host) == {
-        "vim": {
+    assert await AptUpgradable.process(host) == [
+        {
+            "name": "vim",
             "installed": "2:9.1.0016-1ubuntu7.4",
             "candidate": "2:9.1.0016-1ubuntu7.6",
         },
-    }
+    ]
 
 
 # --- SimulatedHost seam -------------------------------------------------------
@@ -1490,20 +1540,20 @@ vim/noble-security 2:9.1.0016-1ubuntu7.6 amd64 [upgradable from: 2:9.1.0016-1ubu
 
 async def test_apt_upgradable_reads_the_simulated_seam():
     """A SimulatedHost exposes ``apt_upgradable`` directly, bypassing the
-    shell; the default seam is {} -- a fully up-to-date machine."""
+    shell; the default seam is [] -- a fully up-to-date machine."""
     host = SimulatedHost(name="h", apt_upgradable=UPGRADABLE_PACKAGES)
     assert await AptUpgradable.process(host) == UPGRADABLE_PACKAGES
-    assert await AptUpgradable.process(SimulatedHost(name="h")) == {}
+    assert await AptUpgradable.process(SimulatedHost(name="h")) == []
 
 
 async def test_apt_upgradable_seam_returns_copies():
-    """Mutating the returned dict or one of its entry dicts never touches
+    """Mutating the returned list or one of its entry dicts never touches
     the simulated state."""
     host = SimulatedHost(name="h", apt_upgradable=UPGRADABLE_PACKAGES)
     upgrades = await AptUpgradable.process(host)
-    upgrades["vim"]["candidate"] = "mutated"
-    del upgrades["libssl3t64"]
-    upgrades["stray"] = {"installed": "1", "candidate": "2"}
+    upgrades[2]["candidate"] = "mutated"  # vim, third in sorted order
+    del upgrades[1]  # libssl3t64
+    upgrades.append({"name": "stray", "installed": "1", "candidate": "2"})
     assert await AptUpgradable.process(host) == UPGRADABLE_PACKAGES
 
 
@@ -1516,7 +1566,7 @@ async def test_gather_fact_apt_upgradable_reads_simulated_seams():
     host1 = SimulatedHost(name="web1", apt_upgradable=UPGRADABLE_PACKAGES)
     host2 = SimulatedHost(name="web2")
     upgrades = await gather_fact([host1, host2], AptUpgradable)
-    assert upgrades == {"web1": UPGRADABLE_PACKAGES, "web2": {}}
+    assert upgrades == {"web1": UPGRADABLE_PACKAGES, "web2": []}
 
 
 async def test_gather_fact_apt_upgradable_over_canned_shells():
@@ -1527,7 +1577,7 @@ async def test_gather_fact_apt_upgradable_over_canned_shells():
     host2 = CannedShellHost("Listing... Done\n")
     host2.name = "web2"
     upgrades = await gather_fact([host1, host2], AptUpgradable)
-    assert upgrades == {"web1": UPGRADABLE_PACKAGES, "web2": {}}
+    assert upgrades == {"web1": UPGRADABLE_PACKAGES, "web2": []}
     assert host1.last_shell == AptUpgradable.COMMAND
     assert host2.last_shell == AptUpgradable.COMMAND
 
@@ -1559,18 +1609,19 @@ Remv linux-headers-6.8.0-45 [6.8.0-45.45]
 Remv libllvm17t64 [1:17.0.6-9ubuntu1]
 """
 
-# The parsed answer: only the Remv names, de-duplicated and sorted, the
-# bracketed versions dropped.
-AUTOREMOVABLE_PACKAGES = [
-    "libllvm17t64",
-    "linux-headers-6.8.0-45",
-    "linux-headers-6.8.0-45-generic",
+# The parsed answer: only the Remv rows, de-duplicated and sorted, each
+# keeping its bracketed version as a one-element versions list.
+AUTOREMOVABLE_PACKAGES: list[AptPackageInfo] = [
+    {"name": "libllvm17t64", "versions": ["1:17.0.6-9ubuntu1"]},
+    {"name": "linux-headers-6.8.0-45", "versions": ["6.8.0-45.45"]},
+    {"name": "linux-headers-6.8.0-45-generic", "versions": ["6.8.0-45.45"]},
 ]
 
 
 async def test_apt_autoremovable_parses_realistic_output():
     """Over the real-transport path, ``AptAutoremovable`` collects only the
-    Remv rows into the sorted name list -- never the summary names."""
+    Remv rows into sorted entries, each keeping its bracketed version as a
+    one-element versions list -- never the summary names."""
     host = CannedShellHost(AUTOREMOVE_OUTPUT)
     assert await AptAutoremovable.process(host) == AUTOREMOVABLE_PACKAGES
     assert host.last_shell == AptAutoremovable.COMMAND
@@ -1613,9 +1664,9 @@ Remv linux-image-generic [6.8.0-45.45]
 """
     host = CannedShellHost(stdout)
     assert await AptAutoremovable.process(host) == [
-        "docker-ce",
-        "libc6:i386",
-        "linux-image-generic",
+        {"name": "docker-ce", "versions": ["5:24.0.7-1~ubuntu.22.04~jammy"]},
+        {"name": "libc6:i386", "versions": ["2.39-0ubuntu8.3"]},
+        {"name": "linux-image-generic", "versions": ["6.8.0-45.45"]},
     ]
 
 
@@ -1631,11 +1682,13 @@ async def test_apt_autoremovable_reads_the_simulated_seam():
 
 
 async def test_apt_autoremovable_seam_returns_copies():
-    """Mutating the returned list never touches the simulated state."""
+    """Mutating the returned list, an entry or its versions list never
+    touches the simulated state."""
     host = SimulatedHost(name="h", apt_autoremovable=AUTOREMOVABLE_PACKAGES)
     removable = await AptAutoremovable.process(host)
-    removable.append("stray")
-    removable.remove("libllvm17t64")
+    removable.append({"name": "stray", "versions": ["1.0"]})
+    removable.remove({"name": "libllvm17t64", "versions": ["1:17.0.6-9ubuntu1"]})
+    removable[0]["versions"].append("mutated")
     assert await AptAutoremovable.process(host) == AUTOREMOVABLE_PACKAGES
 
 
@@ -1672,7 +1725,7 @@ async def test_gather_fact_apt_autoremovable_over_canned_shells():
 DEB_FILE_PATH = "/tmp/google-chrome-stable_current_amd64.deb"
 DEB_FILE_NAME = "google-chrome-stable"
 DEB_FILE_VERSION = "131.0.6778.85-1"
-DEB_FILE_INFO = {"name": DEB_FILE_NAME, "version": DEB_FILE_VERSION}
+DEB_FILE_INFO: DebPackageInfo = {"name": DEB_FILE_NAME, "version": DEB_FILE_VERSION}
 
 
 def test_deb_package_command_matches_pyinfra():
@@ -2316,11 +2369,13 @@ async def test_apt_dist_upgrade_simulated_seam_mutates_state():
         name="h",
         apt_simulations={"dist-upgrade": DIST_UPGRADE_CHANGES},
         apt_packages={"vim": ["2:9.1.0016-1ubuntu7.4"]},
-        apt_upgradable={"vim": {"installed": "2:9.1.0016-1ubuntu7.4", "candidate": "2:9.1.0016-1ubuntu7.6"}},
+        apt_upgradable=[
+            {"name": "vim", "installed": "2:9.1.0016-1ubuntu7.4", "candidate": "2:9.1.0016-1ubuntu7.6"}
+        ],
     )
     await send_command(host, AptDistUpgradeCommand())
     assert host.apt_packages == {"vim": ["2:9.1.0016-1ubuntu7.6"]}
-    assert host.apt_upgradable == {}
+    assert host.apt_upgradable == []
     assert host.apt_simulations["dist-upgrade"] == SIM_ZERO_FACT
 
 
@@ -2334,7 +2389,7 @@ async def test_apt_dist_upgrade_end_to_end_upgrade_then_noop():
     host = SimulatedHost(
         name="h",
         apt_simulations={"dist-upgrade": DIST_UPGRADE_CHANGES},
-        apt_upgradable={"vim": {"installed": "2:9.1-1", "candidate": "2:9.1-2"}},
+        apt_upgradable=[{"name": "vim", "installed": "2:9.1-1", "candidate": "2:9.1-2"}],
     )
 
     def factory(entry):
@@ -2451,7 +2506,9 @@ async def test_apt_auto_remove_simulated_seam_mutates_state():
     host = SimulatedHost(
         name="h",
         apt_autoremovable=list(AUTOREMOVABLE_PACKAGES),
-        apt_packages={name: ["1.0"] for name in [*AUTOREMOVABLE_PACKAGES, "vim"]},
+        apt_packages={
+            entry["name"]: ["1.0"] for entry in [*AUTOREMOVABLE_PACKAGES, {"name": "vim"}]
+        },
     )
     await send_command(host, AptAutoRemoveCommand())
     assert host.apt_packages == {"vim": ["1.0"]}
@@ -2469,7 +2526,7 @@ async def test_apt_auto_remove_end_to_end_remove_then_noop():
     host = SimulatedHost(
         name="h",
         apt_autoremovable=list(AUTOREMOVABLE_PACKAGES),
-        apt_packages={name: ["1.0"] for name in AUTOREMOVABLE_PACKAGES},
+        apt_packages={entry["name"]: ["1.0"] for entry in AUTOREMOVABLE_PACKAGES},
     )
 
     def factory(entry):
@@ -2505,9 +2562,12 @@ async def test_apt_dist_upgrade_then_auto_remove_in_one_deploy():
     host = SimulatedHost(
         name="h",
         apt_simulations={"dist-upgrade": DIST_UPGRADE_CHANGES},
-        apt_upgradable={"vim": {"installed": "2:9.1-1", "candidate": "2:9.1-2"}},
+        apt_upgradable=[{"name": "vim", "installed": "2:9.1-1", "candidate": "2:9.1-2"}],
         apt_autoremovable=list(AUTOREMOVABLE_PACKAGES),
-        apt_packages={"vim": ["2:9.1-1"], **{name: ["1.0"] for name in AUTOREMOVABLE_PACKAGES}},
+        apt_packages={
+            "vim": ["2:9.1-1"],
+            **{entry["name"]: ["1.0"] for entry in AUTOREMOVABLE_PACKAGES},
+        },
     )
     runtimes, plans = await run_prepare([host], upgrade_and_clean)
     assert plans["h"][0].changed  # upgrade: changes proposed
@@ -2519,7 +2579,7 @@ async def test_apt_dist_upgrade_then_auto_remove_in_one_deploy():
     assert cleanup.changed
     assert cleanup.commands == (AptAutoRemoveCommand(),)
     assert host.apt_packages == {"vim": ["2:9.1-2"]}
-    assert host.apt_upgradable == {}
+    assert host.apt_upgradable == []
     assert host.apt_autoremovable == []
     log = format_log(report)
     assert log.index(f"sudo {DIST_UPGRADE_SHELL}") < log.index(f"sudo {AUTOREMOVE_SHELL}")
@@ -2785,7 +2845,7 @@ def test_apt_mark_command_shell_and_elevation():
 async def test_apt_mark_holds_only_the_unheld_names():
     """held=True yields one hold for only the names not already held, in
     request order; architecture-suffixed names pass through verbatim."""
-    host = SimulatedHost(name="h", apt_held_packages=["docker-ce"])
+    host = SimulatedHost(name="h", apt_held_packages=[{"name": "docker-ce", "versions": []}])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
         c
@@ -2803,7 +2863,11 @@ async def test_apt_mark_holds_only_the_unheld_names():
 async def test_apt_mark_hold_noop_when_all_held():
     """Every requested name already held is a no-op with no commands."""
     host = SimulatedHost(
-        name="h", apt_held_packages=["docker-ce", "linux-image-generic"]
+        name="h",
+        apt_held_packages=[
+            {"name": "docker-ce", "versions": []},
+            {"name": "linux-image-generic", "versions": []},
+        ],
     )
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
@@ -2818,7 +2882,13 @@ async def test_apt_mark_hold_noop_when_all_held():
 async def test_apt_mark_unholds_only_the_held_names():
     """held=False yields one unhold for only the names currently held; an
     unheld name never reaches the command."""
-    host = SimulatedHost(name="h", apt_held_packages=["docker-ce", "vim"])
+    host = SimulatedHost(
+        name="h",
+        apt_held_packages=[
+            {"name": "docker-ce", "versions": []},
+            {"name": "vim", "versions": []},
+        ],
+    )
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
         c
@@ -2874,21 +2944,37 @@ async def test_apt_mark_simulated_hold_seam_mutates_state():
     holding never touches the installed versions."""
     installed = {"docker-ce": ["5:27.0"], "vim": ["2:9.1"]}
     host = SimulatedHost(
-        name="h", apt_held_packages=["vim"], apt_packages=dict(installed)
+        name="h",
+        apt_held_packages=[{"name": "vim", "versions": []}],
+        apt_packages=dict(installed),
     )
     await send_command(host, AptMarkHoldCommand(packages=("docker-ce", "vim", "libc6:i386")))
-    assert host.apt_held_packages == ["docker-ce", "libc6:i386", "vim"]
+    assert host.apt_held_packages == [
+        {"name": "docker-ce", "versions": []},
+        {"name": "libc6:i386", "versions": []},
+        {"name": "vim", "versions": []},
+    ]
     assert host.apt_packages == installed
-    assert await AptHeldPackages.process(host) == ["docker-ce", "libc6:i386", "vim"]
+    assert await AptHeldPackages.process(host) == [
+        {"name": "docker-ce", "versions": []},
+        {"name": "libc6:i386", "versions": []},
+        {"name": "vim", "versions": []},
+    ]
 
 
 async def test_apt_mark_simulated_unhold_seam_tolerates_absent():
     """``send_command`` drops the held marks; an unheld name is tolerated
     (the real ``apt-mark unhold`` exits 0 on one)."""
-    host = SimulatedHost(name="h", apt_held_packages=["docker-ce", "vim"])
+    host = SimulatedHost(
+        name="h",
+        apt_held_packages=[
+            {"name": "docker-ce", "versions": []},
+            {"name": "vim", "versions": []},
+        ],
+    )
     await send_command(host, AptMarkUnholdCommand(packages=("docker-ce", "nginx")))
-    assert host.apt_held_packages == ["vim"]
-    assert await AptHeldPackages.process(host) == ["vim"]
+    assert host.apt_held_packages == [{"name": "vim", "versions": []}]
+    assert await AptHeldPackages.process(host) == [{"name": "vim", "versions": []}]
 
 
 async def test_apt_mark_end_to_end_hold_then_noop():
@@ -2925,7 +3011,10 @@ async def test_apt_mark_end_to_end_hold_then_noop():
     assert not second.changed
     assert second.reason == "all packages held"
     assert second.commands == ()
-    assert host.apt_held_packages == ["docker-ce", "linux-image-generic"]
+    assert host.apt_held_packages == [
+        {"name": "docker-ce", "versions": []},
+        {"name": "linux-image-generic", "versions": []},
+    ]
     log = format_log(report)
     assert f"sudo {HOLD_SHELL}" in log
 
@@ -3377,13 +3466,13 @@ async def test_apt_packages_simulated_seam_upgrade_and_update():
         name="h",
         apt_simulations={"upgrade": DIST_UPGRADE_CHANGES},
         apt_packages={"vim": ["2:9.1-1"]},
-        apt_upgradable={"vim": {"installed": "2:9.1-1", "candidate": "2:9.1-2"}},
+        apt_upgradable=[{"name": "vim", "installed": "2:9.1-1", "candidate": "2:9.1-2"}],
     )
     await send_command(host, AptUpdateCommand())
     assert host.apt_simulations["upgrade"] == DIST_UPGRADE_CHANGES
     await send_command(host, AptUpgradeCommand())
     assert host.apt_packages == {"vim": ["2:9.1-2"]}
-    assert host.apt_upgradable == {}
+    assert host.apt_upgradable == []
     assert host.apt_simulations["upgrade"] == SIM_ZERO_FACT
 
 
@@ -3467,7 +3556,7 @@ async def test_apt_packages_upgrade_end_to_end_then_noop():
     host = SimulatedHost(
         name="h",
         apt_simulations={"upgrade": DIST_UPGRADE_CHANGES},
-        apt_upgradable={"vim": {"installed": "2:9.1-1", "candidate": "2:9.1-2"}},
+        apt_upgradable=[{"name": "vim", "installed": "2:9.1-1", "candidate": "2:9.1-2"}],
     )
 
     def factory(entry):
@@ -3754,11 +3843,11 @@ async def test_apt_upgrade_simulated_seam_mutates_state():
         name="h",
         apt_simulations={"upgrade": SIM_UPGRADE_FACT},
         apt_packages={"vim": ["2:9.1-1"]},
-        apt_upgradable={"vim": {"installed": "2:9.1-1", "candidate": "2:9.1-2"}},
+        apt_upgradable=[{"name": "vim", "installed": "2:9.1-1", "candidate": "2:9.1-2"}],
     )
     await send_command(host, AptUpgradeCommand())
     assert host.apt_packages == {"vim": ["2:9.1-2"]}
-    assert host.apt_upgradable == {}
+    assert host.apt_upgradable == []
     assert host.apt_simulations["upgrade"] == SIM_ZERO_FACT
 
 
@@ -3772,7 +3861,7 @@ async def test_apt_upgrade_end_to_end_upgrade_then_noop():
     host = SimulatedHost(
         name="h",
         apt_simulations={"upgrade": SIM_UPGRADE_FACT},
-        apt_upgradable={"vim": {"installed": "2:9.1-1", "candidate": "2:9.1-2"}},
+        apt_upgradable=[{"name": "vim", "installed": "2:9.1-1", "candidate": "2:9.1-2"}],
     )
 
     def factory(entry):
@@ -3806,7 +3895,7 @@ async def test_apt_update_then_upgrade_in_one_deploy():
     host = SimulatedHost(
         name="h",
         apt_simulations={"upgrade": SIM_UPGRADE_FACT},
-        apt_upgradable={"vim": {"installed": "2:9.1-1", "candidate": "2:9.1-2"}},
+        apt_upgradable=[{"name": "vim", "installed": "2:9.1-1", "candidate": "2:9.1-2"}],
     )
     _plans, report, _hosts = await run(
         [{"host": "h", "connection": {}}],

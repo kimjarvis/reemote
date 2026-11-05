@@ -368,7 +368,7 @@ async def test_composed_deploy_runs_end_to_end_with_dedupe():
     assert report is not None
     assert all(entry.changed for entry in report.log)
     # The removal saw the file the install created in the previous step.
-    assert hosts[0].packages == {"curl", "httpd"}
+    assert hosts[0].packages == {"curl": [""], "httpd": [""]}
     assert HTTPD_WELCOME_CONF not in hosts[0].existing_files
 
 
@@ -415,7 +415,7 @@ async def test_forced_elevation_with_opt_out_flows_into_the_log():
     assert "$ sudo dnf install -y git" in log
     assert "$ dnf install -y vim" in log
     assert "$ sudo dnf install -y vim" not in log
-    assert hosts[0].packages == {"curl", "vim", "git"}
+    assert hosts[0].packages == {"curl": [""], "vim": [""], "git": [""]}
 
 
 async def test_doas_meta_parameter_flows_into_plan_and_log():
@@ -437,4 +437,4 @@ async def test_doas_meta_parameter_flows_into_plan_and_log():
     assert entry.sudo is False
     assert entry.su is False
     assert "$ doas -n dnf install -y httpd" in format_log(report)
-    assert hosts[0].packages == {"httpd"}
+    assert hosts[0].packages == {"httpd": [""]}

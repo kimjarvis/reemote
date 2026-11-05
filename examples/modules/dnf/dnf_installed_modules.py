@@ -17,8 +17,8 @@ two-phase execution model:
 3. Gather ``DnfInstalledModules`` on every host at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's raw mapping of module name to installed
-   stream with ``json.dumps(..., indent=2)``.
+   mapping -- then print each host's raw sorted list of installed-module
+   entries (name and stream) with ``json.dumps(..., indent=2)``.
 
 Where ``DnfEnabledModules`` reports the streams dnf has *enabled*, this fact
 reports the streams that actually have packages *installed*: a module can be
@@ -77,8 +77,8 @@ async def main() -> None:
         # fans DnfInstalledModules.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
         # running one host at a time. process runs ``dnf module list
-        # --installed`` and parses the [i]-flagged rows into a
-        # {module name: stream} mapping.
+        # --installed`` and parses the [i]-flagged rows into a sorted list of
+        # ``DnfModule`` entries (name and stream).
         installed_modules = await gather_fact(hosts, DnfInstalledModules)
     except (CommandError, HostConnectionError) as exc:
         # The library reports an unreachable host or a failed fact command as a

@@ -4,8 +4,8 @@
 """The ``files`` module namespace.
 
 Re-exports everything from ``files.py`` so the operations (``files.link``,
-``files.file``, ``files.put``, ``files.get``, ``files.edit``, ``files.move``)
-and the facts
+``files.file``, ``files.put``, ``files.get``, ``files.edit``, ``files.move``,
+``files.copy``) and the facts
 (``files.FileLink``, ``files.FileExists``, ``files.LocalSha1``,
 ``files.RemoteFileSha1``, ``files.FileContents``, ``files.File``,
 ``files.Directory``, ``files.Link``) are reachable through the package name
@@ -14,6 +14,7 @@ alone.
 
 from . import files
 from .files import (
+    CopyCommand,
     Directory,
     File,
     FileCommand,
@@ -28,6 +29,7 @@ from .files import (
     PutCommand,
     RemoteFileSha1,
     RemoveTreeCommand,
+    copy,
     edit,
     file,
     get,
@@ -37,6 +39,7 @@ from .files import (
 )
 
 __all__ = [
+    "CopyCommand",
     "Directory",
     "File",
     "FileCommand",
@@ -51,6 +54,7 @@ __all__ = [
     "PutCommand",
     "RemoteFileSha1",
     "RemoveTreeCommand",
+    "copy",
     "edit",
     "file",
     "files",

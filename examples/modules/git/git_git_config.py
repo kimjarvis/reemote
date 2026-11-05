@@ -17,16 +17,17 @@ driving the two-phase execution model:
 3. Gather ``GitConfig`` on every host at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a
-   host-name-keyed mapping -- then print each host's config dict with
+   host-name-keyed mapping -- then print each host's config item list with
    ``json.dumps(..., indent=2)``.
 
 ``GitConfig`` mirrors pyinfra's ``git.GitConfig``. This script reads the
 login user's *global* scope -- no ``repo`` argument -- by running
 ``git config --global -l || true`` and parsing the ``key=value`` rows into
-a dict of key -> value list, so a multi-valued key (``safe.directory``)
-keeps every entry. Passing a ``repo`` reads that repository's ``--local``
+a list of ``GitConfigItem`` entries (``key`` plus its ``values`` list), so
+a multi-valued key (``safe.directory``) keeps every value. Passing a
+``repo`` reads that repository's ``--local``
 config instead, and ``system=True`` reads the machine-wide ``--system``
-scope; the ``|| true`` guard maps a missing git or config file to ``{}``,
+scope; the ``|| true`` guard maps a missing git or config file to ``[]``,
 so the read never fails.
 
 Every host's connection is closed with ``aclose`` once the facts are

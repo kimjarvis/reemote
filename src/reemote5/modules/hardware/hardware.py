@@ -23,6 +23,15 @@
 # filesystems, while ``DmiInfo`` and ``SmbiosInfo`` report the machine's
 # firmware identity -- manufacturer, product name, serial number, BIOS
 # version and chassis type -- for asset tracking and conditional execution.
+# ``BlockDevices``, ``DiskStats``, ``LsBlk`` and ``NetworkDevices`` type
+# their record dicts as the exported ``BlockDevice``, ``DiskStat``,
+# ``LsBlkNode`` and ``NetworkDevice`` TypedDicts (the latter with
+# ``Ipv4Address``/``Ipv6Address`` address blocks), keeping the outer
+# device-keyed mappings unchanged. ``CpuInfo``, ``DmiInfo`` and
+# ``SmbiosInfo`` keep plain dicts because their keys are dynamic tool
+# labels, and the ``Ipv4Addrs``/``Ipv6Addrs`` projections keep their
+# interface -> address-string lists -- the agreed exceptions to the
+# "facts return TypedDicts" rule.
 # Like every fact they are phase-unaware: the ``process`` coroutine just gathers
 # the raw value. The namespace holds no operations yet.
 # """
@@ -30,7 +39,7 @@
 import json
 import re
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, NotRequired, TypedDict, cast
 
 from ...hosts import Host
 
@@ -188,7 +197,7 @@ def _mask(value: str) -> tuple[int, str]:
     return mask_bits, netmask
 
 
-def _devices_from_json(lines: list[str]) -> dict[str, dict[str, Any]]:
+def _devices_from_json(lines: list[str]) -> "dict[str, NetworkDevice]":
     """Parse ``ip -j addr show`` JSON into the device -> details dict.
 
     Malformed JSON reads as {} (pyinfra logs an error and returns its
@@ -205,7 +214,7 @@ def _devices_from_json(lines: list[str]) -> dict[str, dict[str, Any]]:
     # parser by skipping them instead.
     if not isinstance(decoded, list):
         return {}
-    devices: dict[str, dict[str, Any]] = {}
+    devices: dict[str, NetworkDevice] = {}
     for info in decoded:
         if not isinstance(info, dict) or "ifname" not in info:
             continue
@@ -231,11 +240,13 @@ def _devices_from_json(lines: list[str]) -> dict[str, dict[str, Any]]:
                 device[family] = addr_blk
             else:
                 device[family].setdefault("additional_ips", []).append(addr_blk)
-        devices[info["ifname"]] = device
+        # The family blocks are filled dynamically above, so the device
+        # dict is cast to the TypedDict shape the parser documents.
+        devices[info["ifname"]] = cast("NetworkDevice", device)
     return devices
 
 
-def _devices_from_text(lines: list[str]) -> dict[str, dict[str, Any]]:
+def _devices_from_text(lines: list[str]) -> "dict[str, NetworkDevice]":
     """Parse ``ip addr show``/``ifconfig -a`` text into the device dict.
 
     Each device section contributes its state heuristic (``UP``/``DOWN``
@@ -245,7 +256,7 @@ def _devices_from_text(lines: list[str]) -> dict[str, dict[str, Any]]:
     same name wins outright, like pyinfra's device map.
     """
     text = "\n".join(line.strip() for line in lines)
-    devices: dict[str, dict[str, Any]] = {}
+    devices: dict[str, NetworkDevice] = {}
     for section in _DEVICE_SECTION_RE.split(text):
         name_match = _DEVICE_NAME_RE.match(section)
         if not name_match:
@@ -290,11 +301,13 @@ def _devices_from_text(lines: list[str]) -> dict[str, dict[str, Any]]:
             device[family] = addrs[0]
             if len(addrs) > 1:
                 device[family]["additional_ips"] = addrs[1:]
-        devices[name] = device
+        # The family blocks are filled dynamically above, so the device
+        # dict is cast to the TypedDict shape the parser documents.
+        devices[name] = cast("NetworkDevice", device)
     return devices
 
 
-def _copy_lsblk_nodes(entries: Any) -> list[dict[str, Any]]:
+def _copy_lsblk_nodes(entries: Any) -> "list[LsBlkNode]":
     """Copy ``lsblk -J`` tree nodes, keeping only well-formed dict entries.
 
     Each node dict is copied and its ``children`` list rebuilt recursively,
@@ -315,10 +328,13 @@ def _copy_lsblk_nodes(entries: Any) -> list[dict[str, Any]]:
         elif "children" in node:
             del node["children"]
         nodes.append(node)
-    return nodes
+    # The nodes carry whatever keys the JSON document held (the parser
+    # hardens rather than validates), so the copy is cast to the TypedDict
+    # shape the fact's ``-o`` column list documents.
+    return cast("list[LsBlkNode]", nodes)
 
 
-def _copy_device(info: dict[str, Any]) -> dict[str, Any]:
+def _copy_device(info: "NetworkDevice") -> "NetworkDevice":
     """Copy a device details dict, including the nested address blocks.
 
     The ipv4/ipv6 blocks and any ``additional_ips`` entry dicts are copied
@@ -331,25 +347,52 @@ def _copy_device(info: dict[str, Any]) -> dict[str, Any]:
             if "additional_ips" in addr:
                 addr["additional_ips"] = [dict(ip) for ip in addr["additional_ips"]]
             copied[family] = addr
-    return copied
+    return cast("NetworkDevice", copied)
 
 
 # --- Facts -------------------------------------------------------------------
 
 
-class BlockDevices:
-    """The mounted block devices, as a dict of device -> usage dict.
+class BlockDevice(TypedDict):
+    """
+    Attributes:
+        blocks: The filesystem's total 1K-block count, as the raw string
+            ``df`` prints.
+        used: The used block count, as a raw string.
+        available: The available block count, as a raw string.
+        used_percent: The use percentage without the ``%`` sign, as a
+            raw string.
+        mount: The mount point path.
+    """
 
-    command:
+    # One mounted block device (``BlockDevices``' entry), as a plain dict.
+    #
+    # A TypedDict rather than a class instance, like ``AptKey``: entries
+    # are ordinary dicts, so equality against a literal dict works and
+    # ``json.dumps`` serializes them directly. Every value stays a raw
+    # string -- pyinfra does not convert the block counts or the
+    # percentage to ints.
+
+    blocks: str
+    used: str
+    available: str
+    used_percent: str
+    mount: str
+
+
+class BlockDevices:
+    """The mounted block devices, as a dict of device -> ``BlockDevice`` dict.
+
+    **Commands:**
 
     ```bash
     df
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    dict[str, dict[str, str]]
+    dict[str, BlockDevice]
     ```
 
     Examples:
@@ -358,7 +401,8 @@ class BlockDevices:
 
     # Mirrors pyinfra's ``hardware.BlockDevices``: ``df`` lists the mounted
     # filesystems and each matching row maps the device to its
-    # ``{blocks, used, available, used_percent, mount}`` dict, for example::
+    # ``BlockDevice`` entry -- {blocks, used, available, used_percent,
+    # mount} -- for example::
     #
     #     {
     #         "/dev/sda1": {
@@ -385,14 +429,14 @@ class BlockDevices:
     COMMAND = "df"
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> dict[str, dict[str, str]]:
+    def parse(cls, output: Iterable[str]) -> dict[str, BlockDevice]:
         """Parse ``df`` rows into the device -> usage dict. Pure and testable.
 
         Non-matching lines (the header, blank lines, devices or mount
         points outside the regex's character classes) and ``none`` rows
         are skipped; all five values are kept as raw strings.
         """
-        devices: dict[str, dict[str, str]] = {}
+        devices: dict[str, BlockDevice] = {}
         for line in output:
             matches = _BLOCK_DEVICE_ROW_RE.match(line)
             if matches:
@@ -408,12 +452,16 @@ class BlockDevices:
         return devices
 
     @classmethod
-    async def process(cls, host: Host) -> dict[str, dict[str, str]]:
+    async def process(cls, host: Host) -> dict[str, BlockDevice]:
         state = getattr(host, "block_devices", None)
         if state is not None:
             # SimulatedHost seam: read the in-memory state directly. Copy
-            # the nested dicts so callers never mutate the simulated state.
-            return {device: dict(info) for device, info in state.items()}
+            # the nested dicts so callers never mutate the simulated state
+            # (a TypedDict entry IS a plain dict at runtime).
+            return {
+                device: cast("BlockDevice", dict(info))
+                for device, info in state.items()
+            }
         # Real transport: `df` over asyncssh from the host's connection.
         stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
@@ -422,13 +470,13 @@ class BlockDevices:
 class CpuInfo:
     """The CPU details reported by ``lscpu``, as a dict (or None).
 
-    command:
+    **Commands:**
 
     ```bash
     LANG=C lscpu
     ```
 
-    return:
+    **Returns:**
 
     ```python
     dict[str, str | list[str]] | None
@@ -460,6 +508,12 @@ class CpuInfo:
     # exactly like pyinfra's ``invalid`` fixture. pyinfra's ``requires_command``
     # gating is deliberately dropped: a *missing* ``lscpu`` exits 127, which
     # ``run_shell`` reports as ``CommandNotFoundError`` rather than ``None``.
+    #
+    # The dict stays plain (no entry TypedDict): its keys are ``lscpu``'s
+    # open-ended labels, which vary with the tool version, so a fixed field
+    # list would go stale -- the agreed dynamic-key exception to the
+    # "facts return TypedDicts" rule (``DmiInfo`` and ``SmbiosInfo`` are the
+    # same case).
 
     #: Shell used to gather the CPU details over SSH.
     COMMAND = "LANG=C lscpu"
@@ -504,13 +558,13 @@ class CpuInfo:
 class Cpus:
     """The number of online CPUs on the machine, as an int (or None).
 
-    command:
+    **Commands:**
 
     ```bash
     getconf NPROCESSORS_ONLN 2> /dev/null || getconf _NPROCESSORS_ONLN
     ```
 
-    return:
+    **Returns:**
 
     ```python
     int | None
@@ -562,19 +616,77 @@ class Cpus:
         return cls.parse(stdout.splitlines())
 
 
-class DiskStats:
-    """The per-device IO counters, as a dict of device -> counter dict.
+class DiskStat(TypedDict):
+    """
+    Attributes:
+        reads_completed: Reads completed successfully.
+        reads_merged: Reads merged before queueing.
+        sectors_read: Sectors read (512-byte units).
+        ms_reading: Milliseconds spent reading.
+        writes_completed: Writes completed successfully.
+        writes_merged: Writes merged before queueing.
+        sectors_written: Sectors written (512-byte units).
+        ms_writing: Milliseconds spent writing.
+        ios_in_progress: IOs currently in flight.
+        ms_doing_io: Milliseconds spent doing IOs.
+        weighted_ms_doing_io: Milliseconds spent doing IOs, weighted by
+            the number of IOs in flight.
+        discards_completed: Discards completed successfully, on a 4.18+
+            kernel that prints the discard group.
+        discards_merged: Discards merged before queueing, on a 4.18+
+            kernel that prints the discard group.
+        sectors_discarded: Sectors discarded (512-byte units), on a
+            4.18+ kernel that prints the discard group.
+        ms_discarding: Milliseconds spent discarding, on a 4.18+ kernel
+            that prints the discard group.
+        flush_requests: Flush requests completed, on a 5.5+ kernel that
+            prints the flush group.
+        ms_flushing: Milliseconds spent flushing, on a 5.5+ kernel that
+            prints the flush group.
+    """
 
-    command:
+    # One device's IO counters (``DiskStats``' entry), as a plain dict.
+    #
+    # A TypedDict rather than a class instance, like ``BlockDevice``:
+    # entries are ordinary dicts, so equality against a literal dict
+    # works and ``json.dumps`` serializes them directly. The eleven
+    # classic counters are always present; the discard group (kernel
+    # 4.18+) and the flush group (kernel 5.5+) are NotRequired because
+    # the parser includes each group only when the /proc/diskstats row
+    # carries it. All counters are cumulative since boot.
+
+    reads_completed: int
+    reads_merged: int
+    sectors_read: int
+    ms_reading: int
+    writes_completed: int
+    writes_merged: int
+    sectors_written: int
+    ms_writing: int
+    ios_in_progress: int
+    ms_doing_io: int
+    weighted_ms_doing_io: int
+    discards_completed: NotRequired[int]
+    discards_merged: NotRequired[int]
+    sectors_discarded: NotRequired[int]
+    ms_discarding: NotRequired[int]
+    flush_requests: NotRequired[int]
+    ms_flushing: NotRequired[int]
+
+
+class DiskStats:
+    """The per-device IO counters, as a dict of device -> ``DiskStat`` dict.
+
+    **Commands:**
 
     ```bash
     cat /proc/diskstats
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    dict[str, dict[str, int]]
+    dict[str, DiskStat]
     ```
 
     Examples:
@@ -583,8 +695,8 @@ class DiskStats:
 
     # A reemote5 original (pyinfra has no counterpart): ``cat
     # /proc/diskstats`` lists one row per block device -- mounted or not --
-    # and each maps its device name to the kernel's IO counters as ints,
-    # for example::
+    # and each maps its device name to the kernel's IO counters as a
+    # ``DiskStat`` entry of ints, for example::
     #
     #     {
     #         "sda": {
@@ -621,7 +733,7 @@ class DiskStats:
     COMMAND = "cat /proc/diskstats"
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> dict[str, dict[str, int]]:
+    def parse(cls, output: Iterable[str]) -> dict[str, DiskStat]:
         """Parse ``/proc/diskstats`` rows into the counter dict. Pure/testable.
 
         Each row's third field keys the device; the counter columns are
@@ -629,7 +741,7 @@ class DiskStats:
         only when the row is long enough to carry them. Short rows and
         rows whose counters are not all integers are skipped.
         """
-        stats: dict[str, dict[str, int]] = {}
+        stats: dict[str, DiskStat] = {}
         for line in output:
             fields = line.split()
             if len(fields) < 3 + len(_DISKSTATS_FIELDS):
@@ -643,16 +755,22 @@ class DiskStats:
                 values = [int(value) for value in fields[3 : 3 + len(names)]]
             except ValueError:
                 continue
-            stats[fields[2]] = dict(zip(names, values, strict=True))
+            # The counter names are assembled per kernel group, so the
+            # zip-built dict is cast to the TypedDict shape it matches.
+            stats[fields[2]] = cast("DiskStat", dict(zip(names, values, strict=True)))
         return stats
 
     @classmethod
-    async def process(cls, host: Host) -> dict[str, dict[str, int]]:
+    async def process(cls, host: Host) -> dict[str, DiskStat]:
         state = getattr(host, "disk_stats", None)
         if state is not None:
             # SimulatedHost seam: read the in-memory state directly. Copy
-            # the nested dicts so callers never mutate the simulated state.
-            return {device: dict(counters) for device, counters in state.items()}
+            # the nested dicts so callers never mutate the simulated state
+            # (a TypedDict entry IS a plain dict at runtime).
+            return {
+                device: cast("DiskStat", dict(counters))
+                for device, counters in state.items()
+            }
         # Real transport: `cat /proc/diskstats` over asyncssh from the
         # host's connection.
         stdout = await host.run_shell(cls.COMMAND)
@@ -662,13 +780,13 @@ class DiskStats:
 class DmiInfo:
     """The DMI identity fields from sysfs, as a dict of field -> value.
 
-    command:
+    **Commands:**
 
     ```bash
     grep -H '' /sys/class/dmi/id/* 2> /dev/null || true
     ```
 
-    return:
+    **Returns:**
 
     ```python
     dict[str, str]
@@ -707,6 +825,13 @@ class DmiInfo:
     # without DMI (most containers, many ARM boards and VMs) has no such
     # directory: the failed read maps to ``{}``, the house dict-fact
     # fallback, so an empty dict means "no DMI identity available".
+    #
+    # The dict stays plain (no entry TypedDict): its keys are the sysfs
+    # file basenames the kernel exposes, an open-ended set that varies
+    # with the kernel version and the login user's read access, so a
+    # fixed field list would go stale -- the agreed dynamic-key exception
+    # to the "facts return TypedDicts" rule (``CpuInfo`` and ``SmbiosInfo``
+    # are the same case).
 
     #: Shell used to gather the DMI identity fields over SSH: grep prefixes
     #: each value with its file path; unreadable files and a missing
@@ -750,13 +875,13 @@ class DmiInfo:
 class Ipv4Addrs:
     """The IPv4 addresses per network interface, as interface -> list.
 
-    command:
+    **Commands:**
 
     ```bash
     ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a
     ```
 
-    return:
+    **Returns:**
 
     ```python
     dict[str, list[str]]
@@ -789,6 +914,12 @@ class Ipv4Addrs:
     # address's mask/broadcast details -- is the sibling ``NetworkDevices``
     # fact. Entries the JSON walker cannot read (non-dict devices or address
     # entries) are skipped rather than raising; reemote5 hardens the parser.
+    #
+    # The projection keeps its plain dict[str, list[str]] shape (no entry
+    # TypedDict): the values are lists of scalar address strings, not
+    # record dicts -- the agreed exception to the "facts return
+    # TypedDicts" rule. The typed address blocks live on the
+    # ``NetworkDevices`` sibling instead.
 
     #: Shell used to gather the interface addresses over SSH: JSON first,
     #: then the plain-text `ip` and `ifconfig` fallbacks (pyinfra verbatim).
@@ -823,13 +954,13 @@ class Ipv4Addrs:
 class Ipv6Addrs:
     """The IPv6 addresses per network interface, as interface -> list.
 
-    command:
+    **Commands:**
 
     ```bash
     ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a
     ```
 
-    return:
+    **Returns:**
 
     ```python
     dict[str, list[str]]
@@ -864,6 +995,12 @@ class Ipv6Addrs:
     # ``NetworkDevices`` fact. Entries the JSON walker cannot read (non-dict
     # devices or address entries) are skipped rather than raising; reemote5
     # hardens the parser.
+    #
+    # The projection keeps its plain dict[str, list[str]] shape (no entry
+    # TypedDict): the values are lists of scalar address strings, not
+    # record dicts -- the agreed exception to the "facts return
+    # TypedDicts" rule, the same as ``Ipv4Addrs``. The typed address
+    # blocks live on the ``NetworkDevices`` sibling instead.
 
     #: Shell used to gather the interface addresses over SSH: JSON first,
     #: then the plain-text `ip` and `ifconfig` fallbacks (pyinfra verbatim,
@@ -896,19 +1033,50 @@ class Ipv6Addrs:
         return cls.parse(stdout.splitlines())
 
 
-class LsBlk:
-    """The complete block device tree, as a list of ``lsblk -J`` nodes.
+class LsBlkNode(TypedDict):
+    """
+    Attributes:
+        name: The device name (e.g. ``sda``, ``sda1``).
+        type: The device type (``disk``/``part``/``lvm``/...).
+        size: The device size in bytes (``lsblk -b``).
+        mountpoint: The mount point path, or None when unmounted (the
+            singular ``MOUNTPOINT`` column reports only the last mount
+            when a device is mounted at several paths).
+        children: The stacked devices nested under this node, as further
+            ``LsBlkNode`` entries; absent on a leaf device.
+    """
 
-    command:
+    # One node of the ``lsblk -J`` tree (``LsBlk``'s entry), as a plain
+    # dict.
+    #
+    # A TypedDict rather than a class instance, like ``BlockDevice``:
+    # entries are ordinary dicts, so equality against a literal dict
+    # works and ``json.dumps`` serializes them directly. The four fields
+    # are the columns the fact's ``-o NAME,TYPE,SIZE,MOUNTPOINT`` list
+    # requests; ``children`` is NotRequired because a leaf device carries
+    # none, and it recurses so the tree structure stays typed at every
+    # level.
+
+    name: str
+    type: str
+    size: int
+    mountpoint: str | None
+    children: NotRequired[list["LsBlkNode"]]
+
+
+class LsBlk:
+    """The complete block device tree, as a list of ``LsBlkNode`` dicts.
+
+    **Commands:**
 
     ```bash
     lsblk -J -b -o NAME,TYPE,SIZE,MOUNTPOINT
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    list[dict[str, Any]]
+    list[LsBlkNode]
     ```
 
     Examples:
@@ -919,7 +1087,8 @@ class LsBlk:
     # NAME,TYPE,SIZE,MOUNTPOINT`` prints the whole block device tree as
     # JSON -- including unmounted disks, partitions, LVM volumes and raw
     # devices that the ``df``-based ``BlockDevices`` sibling never sees --
-    # and the fact returns its ``blockdevices`` array, for example::
+    # and the fact returns its ``blockdevices`` array as ``LsBlkNode``
+    # entries, for example::
     #
     #     [
     #         {
@@ -955,7 +1124,7 @@ class LsBlk:
     COMMAND = "lsblk -J -b -o NAME,TYPE,SIZE,MOUNTPOINT"
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> list[dict[str, Any]]:
+    def parse(cls, output: Iterable[str]) -> list[LsBlkNode]:
         """Parse ``lsblk -J`` output into the tree node list. Pure/testable.
 
         The JSON document's ``blockdevices`` array is returned with every
@@ -971,7 +1140,7 @@ class LsBlk:
         return _copy_lsblk_nodes(decoded.get("blockdevices"))
 
     @classmethod
-    async def process(cls, host: Host) -> list[dict[str, Any]]:
+    async def process(cls, host: Host) -> list[LsBlkNode]:
         state = getattr(host, "lsblk_devices", None)
         if state is not None:
             # SimulatedHost seam: read the in-memory state directly. Copy
@@ -983,19 +1152,100 @@ class LsBlk:
         return cls.parse(stdout.splitlines())
 
 
-class NetworkDevices:
-    """The network devices, as a dict of interface -> details dict.
+class Ipv4Address(TypedDict):
+    """
+    Attributes:
+        address: The IPv4 address string, as the command printed it.
+        mask_bits: The prefix length in bits, when the listing carried a
+            mask token.
+        netmask: The dotted-quad netmask, when the listing carried a mask
+            token (a prefix length is expanded to its netmask).
+        broadcast: The broadcast address, or None when the listing
+            carried none.
+        additional_ips: The alias addresses, as further ``Ipv4Address``
+            entries in listing order; absent when the interface carries
+            only one IPv4 address.
+    """
 
-    command:
+    # The ``ipv4`` block of a ``NetworkDevice`` (and of each of its
+    # ``additional_ips`` aliases), as a plain dict.
+    #
+    # ``mask_bits``/``netmask`` are NotRequired because the JSON branch
+    # only attaches them when the addr entry carries a ``prefixlen``;
+    # ``broadcast`` is always present on an IPv4 block but may be None.
+
+    address: str
+    mask_bits: NotRequired[int]
+    netmask: NotRequired[str]
+    broadcast: str | None
+    additional_ips: NotRequired[list["Ipv4Address"]]
+
+
+class Ipv6Address(TypedDict):
+    """
+    Attributes:
+        address: The IPv6 address string, as the command printed it.
+        mask_bits: The prefix length in bits, when the listing carried a
+            mask token.
+        additional_ips: The alias addresses, as further ``Ipv6Address``
+            entries in listing order; absent when the interface carries
+            only one IPv6 address.
+    """
+
+    # The ``ipv6`` block of a ``NetworkDevice`` (and of each of its
+    # ``additional_ips`` aliases), as a plain dict.
+    #
+    # The IPv6 sibling of ``Ipv4Address`` without the IPv4-only
+    # ``netmask``/``broadcast`` fields; ``mask_bits`` is NotRequired for
+    # the same prefixlen-less JSON addr entries.
+
+    address: str
+    mask_bits: NotRequired[int]
+    additional_ips: NotRequired[list["Ipv6Address"]]
+
+
+class NetworkDevice(TypedDict):
+    """
+    Attributes:
+        state: The interface state (``UP``/``DOWN``/``UNKNOWN``).
+        ether: The MAC address, when the listing carried one.
+        mtu: The interface MTU, when the listing carried one.
+        ipv4: The primary IPv4 address block, when the interface carries
+            an IPv4 address.
+        ipv6: The primary IPv6 address block, when the interface carries
+            an IPv6 address.
+    """
+
+    # One network interface's details (``NetworkDevices``' entry), as a
+    # plain dict.
+    #
+    # A TypedDict rather than a class instance, like ``BlockDevice``:
+    # entries are ordinary dicts, so equality against a literal dict
+    # works and ``json.dumps`` serializes them directly. Only ``state``
+    # is always present; the ether/mtu details and the per-family
+    # ``Ipv4Address``/``Ipv6Address`` blocks are NotRequired because a
+    # listing may carry none of them.
+
+    state: str
+    ether: NotRequired[str]
+    mtu: NotRequired[int]
+    ipv4: NotRequired[Ipv4Address]
+    ipv6: NotRequired[Ipv6Address]
+
+
+class NetworkDevices:
+    """The network devices, as a dict of interface -> ``NetworkDevice`` dict.
+
+    **Commands:**
 
     ```bash
     ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    dict[str, dict[str, Any]]
+    dict[str, NetworkDevice]
     ```
 
     Examples:
@@ -1004,12 +1254,13 @@ class NetworkDevices:
 
     # Mirrors pyinfra's ``hardware.NetworkDevices``: ``ip -j addr show``
     # (JSON) or, failing that, ``ip addr show`` / ``ifconfig -a`` (text)
-    # lists the interfaces, and each maps to its details -- the ``state``
-    # (``UP``/``DOWN``/``UNKNOWN``), the optional ``ether`` MAC and ``mtu``,
-    # and an ``ipv4``/``ipv6`` block per address family carrying the primary
-    # ``address`` plus, when present, ``mask_bits``, ``netmask`` (IPv4 only),
-    # ``broadcast`` (IPv4 only, possibly None) and any further addresses
-    # under ``additional_ips``, for example::
+    # lists the interfaces, and each maps to its ``NetworkDevice`` entry
+    # -- the ``state`` (``UP``/``DOWN``/``UNKNOWN``), the optional ``ether``
+    # MAC and ``mtu``, and an ``Ipv4Address``/``Ipv6Address`` block per
+    # address family carrying the primary ``address`` plus, when present,
+    # ``mask_bits``, ``netmask`` (IPv4 only), ``broadcast`` (IPv4 only,
+    # possibly None) and any further addresses under ``additional_ips``,
+    # for example::
     #
     #     {
     #         "enp1s0": {
@@ -1059,7 +1310,7 @@ class NetworkDevices:
     COMMAND = "ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a"
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> dict[str, dict[str, Any]]:
+    def parse(cls, output: Iterable[str]) -> dict[str, NetworkDevice]:
         """Parse ``ip``/``ifconfig`` output into the device dict. Pure/testable.
 
         pyinfra's JSON sniff decides the branch: when the first two
@@ -1072,7 +1323,7 @@ class NetworkDevices:
         return _devices_from_text(lines)
 
     @classmethod
-    async def process(cls, host: Host) -> dict[str, dict[str, Any]]:
+    async def process(cls, host: Host) -> dict[str, NetworkDevice]:
         state = getattr(host, "network_devices", None)
         if state is not None:
             # SimulatedHost seam: read the in-memory state directly. Copy
@@ -1087,13 +1338,13 @@ class NetworkDevices:
 class SmbiosInfo:
     """The decoded SMBIOS/DMI tables, as a dict of section -> field dict.
 
-    command:
+    **Commands:**
 
     ```bash
     dmidecode -q 2> /dev/null || sudo -n dmidecode -q 2> /dev/null || true
     ```
 
-    return:
+    **Returns:**
 
     ```python
     dict[str, dict[str, str | list[str]]]
@@ -1218,14 +1469,20 @@ class SmbiosInfo:
 
 
 __all__ = [
+    "BlockDevice",
     "BlockDevices",
     "CpuInfo",
     "Cpus",
+    "DiskStat",
     "DiskStats",
     "DmiInfo",
+    "Ipv4Address",
     "Ipv4Addrs",
+    "Ipv6Address",
     "Ipv6Addrs",
     "LsBlk",
+    "LsBlkNode",
+    "NetworkDevice",
     "NetworkDevices",
     "SmbiosInfo",
 ]

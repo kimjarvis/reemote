@@ -18,8 +18,8 @@ themselves are documented on the [`apk` module page](../../modules/apk.md).
 The package operation: `apk.packages` installs (or with `present=False`
 removes) packages by name, reading the
 [`ApkInstalledPackages`][reemote5.modules.apk.apk.ApkInstalledPackages] fact
-(a list of `ApkInstalledPackage` entries, indexed by `name` and compared on the
-entry's `versions`) for exact-version idempotence — a `<pkg>=<version>` pin
+(a list of `ApkPackageVersion` entries, grouped by `name` and compared on the
+entries' `version`s) for exact-version idempotence — a `<pkg>=<version>` pin
 counts as present only when that exact version is installed, so re-running is
 a no-op. `latest=True` additionally upgrades every installed, *unpinned* name
 with `apk upgrade` (pyinfra's legacy blind upgrade). apk never prompts, so the
@@ -109,8 +109,8 @@ re-adds it with `apk add <pkg>=<version>` and `present=False` re-adds the
 bare `apk add <pkg>`, rewriting the world line without a bound so the
 package stays installed and only the pin goes. The operation reads the
 [`ApkHeldPackages`][reemote5.modules.apk.apk.ApkHeldPackages] fact
-(a list of `ApkHeldPackage` entries, looked up by `name` and compared on the
-entry's `constraint`) for
+(a list of `ApkPackageVersion` entries, looked up by `name` and compared on
+the entry's `version` — the world constraint verbatim) for
 version-aware idempotence — a name is held exactly
 when its world constraint matches the wanted pin, so re-running is a no-op
 and re-pinning to a *different* version is detected. With `version` omitted,

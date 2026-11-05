@@ -869,7 +869,7 @@ class Host:
         failure still raises ``HostConnectionError`` from ``connect``. The
         returned record is the transport's own (asyncssh's
         ``SSHCompletedProcess``); ``Shell.process`` copies it into the
-        library-owned ``Result`` dataclass so no asyncssh type reaches the
+        library-owned ``Result`` TypedDict so no asyncssh type reaches the
         public API.
         """
         return await self._run_shell(shell)
@@ -1009,7 +1009,7 @@ class Host:
         credential-free rendering and the would-be ``CommandError`` as its cause
         -- a rejected credential is never reported as a mere exit status. The
         returned record is the transport's own; ``Shell.process`` copies it into
-        the library-owned ``Result`` dataclass.
+        the library-owned ``Result`` TypedDict.
         """
         command, safe = await self._build_privileged_command(
             shell, sudo=sudo, su=su, doas=doas

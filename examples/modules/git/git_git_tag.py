@@ -21,8 +21,9 @@ driving the two-phase execution model:
    print each host's tag list with ``json.dumps(..., indent=2)``.
 
 ``GitTag`` mirrors pyinfra's ``git.GitTag``: it runs
-``! test -d <repo> || (cd <repo> && git tag)`` and returns the lines
-verbatim, in listing order. A missing repository directory short-circuits
+``! test -d <repo> || (cd <repo> && git tag)`` and returns one
+``GitTagInfo`` entry (a ``name``) per line, in listing order. A missing
+repository directory short-circuits
 the guard, so a host without ``REPO`` -- or with a tagless repository --
 simply reports ``[]`` instead of failing the read.
 

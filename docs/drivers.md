@@ -80,13 +80,13 @@ run_prepare ──► materialize() ──► (changed, reason, commands)   [pla
 run_apply   ──► materialize() ──► await send_command() per cmd  [host mutated]
 ```
 
-This invariant also powers the **in-deploy guard** for [actions](actions.md).
+This invariant also powers the **in-deploy guard** for [actions](actions/actions.md).
 `run_prepare` and `run_apply` are wrapped by `_deploy_phase`, which sets a
 `ContextVar` for their duration (propagating into the per-host tasks
 `asyncio.gather` spawns) and resets it cleanly even when a phase raises. Only
 the drivers toggle it, so facts, operations and actions stay phase-unaware;
-[`gather_action`][reemote5.actions.gather_action] merely reads the flag and
-raises [`ActionInDeployError`][reemote5.actions.ActionInDeployError] at the call
+`gather_action` merely reads the flag and
+raises `ActionInDeployError` at the call
 site if an action is attempted inside a deploy. The guard is reinforced from
 the other side: [`materialize`][reemote5.drivers.materialize] requires an
 async-generator operation, so wrapping an action class as `op(Shell, ...)` is

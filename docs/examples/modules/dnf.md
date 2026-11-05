@@ -106,9 +106,9 @@ The application-stream operation: `dnf.module` enables a module stream
 (`dnf module enable -y <module>:<stream>`) or, with `enabled=False`, disables a
 module outright (`dnf module disable -y <module>`). Enabling compares against the
 [`DnfEnabledModules`][reemote5.modules.dnf.dnf.DnfEnabledModules] fact — a
-name→stream map — so it is a no-op when the module is already enabled on exactly
-the requested stream, and re-enables onto the new stream when it currently sits
-on a different one; disabling compares against
+list of name-and-stream entries — so it is a no-op when the module is already
+enabled on exactly the requested stream, and re-enables onto the new stream when
+it currently sits on a different one; disabling compares against
 [`DnfDisabledModules`][reemote5.modules.dnf.dnf.DnfDisabledModules]. `stream` is
 required when `enabled=True` (a missing one raises `ValueError`, mirroring
 pyinfra's `OperationValueError`). Enabling or disabling writes dnf's module

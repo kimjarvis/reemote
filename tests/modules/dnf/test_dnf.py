@@ -92,15 +92,45 @@ class CannedShellHost(Host):
         return self._stdout
 
 
+def _module_entries(modules: dict[str, str]) -> list[dict[str, str]]:
+    """Adapt a documented name->stream mapping to sorted ``DnfModule`` entries.
+
+    Keeps pyinfra's documented dict fixtures verbatim while the facts return
+    the shared TypedDict entry list.
+    """
+    return [
+        {"name": name, "stream": stream} for name, stream in sorted(modules.items())
+    ]
+
+
+def _group_entries(names: list[str]) -> list[dict[str, str]]:
+    """Adapt documented group names to sorted ``DnfGroup`` entries."""
+    return [{"name": name} for name in sorted(names)]
+
+
 # --- DnfPackages fact ---------------------------------------------------------
 
 
-async def test_dnf_packages_parses_rpm_names_sorted_and_unique():
-    """Over the real-transport path, ``DnfPackages`` parses ``rpm -qa`` name
-    lines into the apt-side sorted-list shape: blank lines dropped, surrounding
-    whitespace stripped, duplicates collapsed, names sorted."""
-    host = CannedShellHost("vim\nnginx\n\nnginx\n  coreutils  \n")
-    assert await DnfPackages.process(host) == ["coreutils", "nginx", "vim"]
+async def test_dnf_packages_parses_rpm_rows_sorted_and_unique():
+    """Over the real-transport path, ``DnfPackages`` parses ``rpm -qa``
+    name-and-version rows into sorted ``DnfPackageInfo`` entries: blank lines
+    dropped, surrounding whitespace stripped, duplicate rows collapsed,
+    versions grouped per name and sorted."""
+    host = CannedShellHost(
+        "vim 9.0-1.el9\n"
+        "nginx 1.24.0-1.el9\n"
+        "\n"
+        "nginx 1.24.0-1.el9\n"
+        "  coreutils 8.32-1.el9  \n"
+        "kernel 5.14.0-2.el9\n"
+        "kernel 5.14.0-1.el9\n"
+    )
+    assert await DnfPackages.process(host) == [
+        {"name": "coreutils", "versions": ["8.32-1.el9"]},
+        {"name": "kernel", "versions": ["5.14.0-1.el9", "5.14.0-2.el9"]},
+        {"name": "nginx", "versions": ["1.24.0-1.el9"]},
+        {"name": "vim", "versions": ["9.0-1.el9"]},
+    ]
 
 
 def test_dnf_packages_parse_empty_output_is_an_empty_list():
@@ -109,30 +139,40 @@ def test_dnf_packages_parse_empty_output_is_an_empty_list():
 
 
 async def test_dnf_packages_seam_read_is_a_sorted_copy():
-    """The seam answer is sorted and copy-on-read: mutating the returned list
-    never touches simulated state."""
-    host = SimulatedHost(name="h", packages={"vim", "nginx"})
+    """The seam answer is sorted and copy-on-read: mutating the returned
+    entries (or their versions lists) never touches simulated state."""
+    host = SimulatedHost(
+        name="h", packages={"vim": ["9.0"], "nginx": ["1.24.0", "1.20.0"]}
+    )
     result = await DnfPackages.process(host)
-    assert result == ["nginx", "vim"]
-    result.append("mutated")
-    assert host.packages == {"vim", "nginx"}
+    assert result == [
+        {"name": "nginx", "versions": ["1.20.0", "1.24.0"]},
+        {"name": "vim", "versions": ["9.0"]},
+    ]
+    result[0]["versions"].append("mutated")
+    result.append({"name": "mutated", "versions": []})
+    assert host.packages == {"vim": ["9.0"], "nginx": ["1.24.0", "1.20.0"]}
 
 
 # --- DnfRepositories fact (pyinfra parity) -----------------------------------
 
 # The example result from the pyinfra ``dnf.DnfRepositories`` documentation: a
-# single AlmaLinux BaseOS repository parsed out of its ``.repo`` file.
+# single AlmaLinux BaseOS repository parsed out of its ``.repo`` file. pyinfra
+# flattens every option into the entry; reemote5 keeps the identifying fields
+# fixed and moves the open-ended options into the ``options`` sub-dict.
 ALMALINUX_BASEOS_REPO = {
     "repoid": "baseos",
     "name": "AlmaLinux $releasever - BaseOS",
-    "mirrorlist": "https://mirrors.almalinux.org/mirrorlist/$releasever/baseos",
-    "enabled": "1",
-    "gpgcheck": "1",
-    "countme": "1",
-    "gpgkey": "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux-9",
-    "metadata_expire": "86400",
-    "enabled_metadata": "1",
     "filename": "/etc/yum.repos.d/almalinux.repo",
+    "options": {
+        "mirrorlist": "https://mirrors.almalinux.org/mirrorlist/$releasever/baseos",
+        "enabled": "1",
+        "gpgcheck": "1",
+        "countme": "1",
+        "gpgkey": "file:///etc/pki/rpm-gpg/RPM-GPG-KEY-AlmaLinux-9",
+        "metadata_expire": "86400",
+        "enabled_metadata": "1",
+    },
 }
 
 
@@ -238,23 +278,28 @@ Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled"""
 async def test_dnf_enabled_modules_parses_the_documented_example():
     """Over the real-transport path, ``DnfEnabledModules`` parses a
     ``dnf module list --enabled`` table into pyinfra's documented example
-    result, skipping the header, blank lines and the trailing hint line."""
+    result (as sorted ``DnfModule`` entries), skipping the header, blank
+    lines and the trailing hint line."""
     host = CannedShellHost(DNF_MODULE_LIST_ENABLED_OUTPUT)
-    assert await DnfEnabledModules.process(host) == DOCUMENTED_ENABLED_MODULES
+    assert await DnfEnabledModules.process(host) == _module_entries(
+        DOCUMENTED_ENABLED_MODULES
+    )
 
 
 async def test_dnf_enabled_modules_reads_the_simulated_seam():
-    """A SimulatedHost exposes ``enabled_modules`` directly, bypassing the
-    shell."""
+    """A SimulatedHost exposes the ``enabled_modules`` name->stream store
+    directly, bypassing the shell; the fact projects it into entries."""
     host = SimulatedHost(name="h", enabled_modules=DOCUMENTED_ENABLED_MODULES)
-    assert await DnfEnabledModules.process(host) == DOCUMENTED_ENABLED_MODULES
+    assert await DnfEnabledModules.process(host) == _module_entries(
+        DOCUMENTED_ENABLED_MODULES
+    )
 
 
 # --- DnfDisabledModules fact (pyinfra parity) ---------------------------------
 
 # The example result from the pyinfra ``dnf.DnfDisabledModules`` documentation
-# lists ``["ruby", "php"]``; the fact returns the names *sorted*, so the same
-# two modules come back as ``["php", "ruby"]``.
+# lists ``["ruby", "php"]``; the fact returns ``DnfModule`` entries *sorted* by
+# name, each keeping the stream its ``[x]`` row carries.
 DOCUMENTED_DISABLED_MODULES = ["php", "ruby"]
 
 DNF_MODULE_LIST_DISABLED_OUTPUT = """\
@@ -268,39 +313,51 @@ Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled"""
 async def test_dnf_disabled_modules_parses_the_documented_example():
     """Over the real-transport path, ``DnfDisabledModules`` parses a
     ``dnf module list --disabled`` table into pyinfra's documented example
-    module names (sorted), skipping the header, blank lines and the trailing
-    hint line."""
+    modules (sorted entries keeping each row's stream), skipping the header,
+    blank lines and the trailing hint line."""
     host = CannedShellHost(DNF_MODULE_LIST_DISABLED_OUTPUT)
-    assert await DnfDisabledModules.process(host) == DOCUMENTED_DISABLED_MODULES
+    assert await DnfDisabledModules.process(host) == [
+        {"name": "php", "stream": "8.2"},
+        {"name": "ruby", "stream": "3.1"},
+    ]
 
 
-async def test_dnf_disabled_modules_dedups_across_streams():
-    """A module disabled on several streams is listed once, and the names come
-    back sorted (the ``multi_stream_dedup`` case from pyinfra's fact tests)."""
+async def test_dnf_disabled_modules_keeps_each_flagged_stream():
+    """A module disabled on several streams contributes one entry per flagged
+    row, sorted by name then stream (the ``multi_stream_dedup`` case from
+    pyinfra's fact tests, which collapsed the streams into one name)."""
     stdout = """\
 Name         Stream        Profiles              Summary
-postgresql   15 [x]        client, server [d]    PostgreSQL server and client module
 postgresql   16 [x]        client, server [d]    PostgreSQL server and client module
+postgresql   15 [x]        client, server [d]    PostgreSQL server and client module
 ruby         3.1 [x]       common [d]            An interpreter of object-oriented scripting language
 
 Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled"""
     host = CannedShellHost(stdout)
-    assert await DnfDisabledModules.process(host) == ["postgresql", "ruby"]
+    assert await DnfDisabledModules.process(host) == [
+        {"name": "postgresql", "stream": "15"},
+        {"name": "postgresql", "stream": "16"},
+        {"name": "ruby", "stream": "3.1"},
+    ]
 
 
 async def test_dnf_disabled_modules_reads_the_simulated_seam():
-    """A SimulatedHost exposes ``disabled_modules`` directly, bypassing the
-    shell."""
+    """A SimulatedHost exposes the ``disabled_modules`` name store directly,
+    bypassing the shell; the fact projects it into entries with stream ""
+    (a simulated disable names no stream)."""
     host = SimulatedHost(name="h", disabled_modules=DOCUMENTED_DISABLED_MODULES)
-    assert await DnfDisabledModules.process(host) == DOCUMENTED_DISABLED_MODULES
+    assert await DnfDisabledModules.process(host) == [
+        {"name": "php", "stream": ""},
+        {"name": "ruby", "stream": ""},
+    ]
 
 
 # --- DnfInstalledModules fact -------------------------------------------------
 
 # ``dnf module list --installed`` marks installed streams with ``[i]``; the
-# fact maps each such row's name to its stream, ignoring the header, blank
-# lines and the trailing ``Hint:`` line (whose ``[i]nstalled`` word must not be
-# mistaken for a flag).
+# fact turns each such row into a ``DnfModule`` entry, ignoring the header,
+# blank lines and the trailing ``Hint:`` line (whose ``[i]nstalled`` word must
+# not be mistaken for a flag).
 DOCUMENTED_INSTALLED_MODULES = {"postgresql": "16", "nodejs": "20"}
 
 DNF_MODULE_LIST_INSTALLED_OUTPUT = """\
@@ -313,10 +370,13 @@ Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled"""
 
 async def test_dnf_installed_modules_parses_the_installed_table():
     """Over the real-transport path, ``DnfInstalledModules`` parses a
-    ``dnf module list --installed`` table into a name-to-stream map, keeping
-    only the ``[i]``-flagged rows and skipping the header and hint line."""
+    ``dnf module list --installed`` table into sorted ``DnfModule`` entries,
+    keeping only the ``[i]``-flagged rows and skipping the header and hint
+    line."""
     host = CannedShellHost(DNF_MODULE_LIST_INSTALLED_OUTPUT)
-    assert await DnfInstalledModules.process(host) == DOCUMENTED_INSTALLED_MODULES
+    assert await DnfInstalledModules.process(host) == _module_entries(
+        DOCUMENTED_INSTALLED_MODULES
+    )
 
 
 async def test_dnf_installed_modules_ignores_the_hint_and_headers():
@@ -324,15 +384,17 @@ async def test_dnf_installed_modules_ignores_the_hint_and_headers():
     flag, so it is not parsed as a module row."""
     host = CannedShellHost(DNF_MODULE_LIST_INSTALLED_OUTPUT)
     modules = await DnfInstalledModules.process(host)
-    assert "Hint:" not in modules
-    assert all(stream.isdigit() for stream in modules.values())
+    assert all(entry["name"] != "Hint:" for entry in modules)
+    assert all(entry["stream"].isdigit() for entry in modules)
 
 
 async def test_dnf_installed_modules_reads_the_simulated_seam():
-    """A SimulatedHost exposes ``installed_modules`` directly, bypassing the
-    shell."""
+    """A SimulatedHost exposes the ``installed_modules`` name->stream store
+    directly, bypassing the shell; the fact projects it into entries."""
     host = SimulatedHost(name="h", installed_modules=DOCUMENTED_INSTALLED_MODULES)
-    assert await DnfInstalledModules.process(host) == DOCUMENTED_INSTALLED_MODULES
+    assert await DnfInstalledModules.process(host) == _module_entries(
+        DOCUMENTED_INSTALLED_MODULES
+    )
 
 
 # --- DnfGroups / DnfAvailableGroups facts ------------------------------------
@@ -375,20 +437,20 @@ async def test_dnf_groups_parses_the_installed_table():
     """Over the real-transport path, ``DnfGroups`` collects every indented name
     under an ``Installed ... Groups:`` header, environment groups included."""
     host = CannedShellHost(DNF_GROUP_LIST_INSTALLED_OUTPUT)
-    assert await DnfGroups.process(host) == DOCUMENTED_INSTALLED_GROUPS
+    assert await DnfGroups.process(host) == _group_entries(DOCUMENTED_INSTALLED_GROUPS)
 
 
 async def test_dnf_groups_ignores_available_sections():
     """In a mixed listing, ``DnfGroups`` keeps only the ``Installed`` names."""
     host = CannedShellHost(DNF_GROUP_LIST_MIXED_OUTPUT)
-    assert await DnfGroups.process(host) == ["Core", "Server with GUI"]
+    assert await DnfGroups.process(host) == _group_entries(["Core", "Server with GUI"])
 
 
 async def test_dnf_groups_reads_the_simulated_seam():
-    """A SimulatedHost exposes ``installed_groups`` directly, bypassing the
-    shell."""
+    """A SimulatedHost exposes the ``installed_groups`` name store directly,
+    bypassing the shell; the fact projects it into sorted entries."""
     host = SimulatedHost(name="h", installed_groups=set(DOCUMENTED_INSTALLED_GROUPS))
-    assert await DnfGroups.process(host) == DOCUMENTED_INSTALLED_GROUPS
+    assert await DnfGroups.process(host) == _group_entries(DOCUMENTED_INSTALLED_GROUPS)
 
 
 async def test_dnf_available_groups_parses_the_available_table():
@@ -403,31 +465,37 @@ Available Groups:
    Administration Tools
    Authoring and Publishing"""
     host = CannedShellHost(stdout)
-    assert await DnfAvailableGroups.process(host) == [
-        "3D Printing",
-        "Administration Tools",
-        "Authoring and Publishing",
-        "Fedora Custom Operating System",
-        "Minimal Install",
-    ]
+    assert await DnfAvailableGroups.process(host) == _group_entries(
+        [
+            "3D Printing",
+            "Administration Tools",
+            "Authoring and Publishing",
+            "Fedora Custom Operating System",
+            "Minimal Install",
+        ]
+    )
 
 
 async def test_dnf_available_groups_ignores_installed_sections():
     """In a mixed listing, ``DnfAvailableGroups`` keeps only the ``Available``
     names."""
     host = CannedShellHost(DNF_GROUP_LIST_MIXED_OUTPUT)
-    assert await DnfAvailableGroups.process(host) == [
-        "3D Printing",
-        "Audio Production",
-        "KDE Plasma Workspaces",
-    ]
+    assert await DnfAvailableGroups.process(host) == _group_entries(
+        [
+            "3D Printing",
+            "Audio Production",
+            "KDE Plasma Workspaces",
+        ]
+    )
 
 
 async def test_dnf_available_groups_reads_the_simulated_seam():
-    """A SimulatedHost exposes ``available_groups`` directly, bypassing the
-    shell."""
+    """A SimulatedHost exposes the ``available_groups`` name store directly,
+    bypassing the shell; the fact projects it into sorted entries."""
     host = SimulatedHost(name="h", available_groups={"3D Printing", "Core"})
-    assert await DnfAvailableGroups.process(host) == ["3D Printing", "Core"]
+    assert await DnfAvailableGroups.process(host) == _group_entries(
+        ["3D Printing", "Core"]
+    )
 
 
 # --- DnfRepoList fact ---------------------------------------------------------
@@ -569,7 +637,7 @@ WEB_INVENTORY = [
 WEB_INITIAL_STATE = {
     "web1": {"installs_links": {"nginx": {NGINX_DEFAULT_SITE: DEFAULT_TARGET}}},
     "web2": {
-        "packages": {"nginx"},
+        "packages": {"nginx": [""]},
         "links": {NGINX_DEFAULT_SITE: DEFAULT_TARGET},
     },
 }
@@ -1375,16 +1443,19 @@ async def test_run_shell_tolerates_a_shell_guarded_missing_command():
 
 
 async def test_fact_cache_caches_per_key():
-    host = SimulatedHost(name="h", packages={"nginx"})
+    host = SimulatedHost(name="h", packages={"nginx": [""]})
     cache = FactCache(host, phase="prepare")
-    assert await cache.get(DnfPackages) == ["nginx"]
+    assert await cache.get(DnfPackages) == [{"name": "nginx", "versions": [""]}]
 
-    host.packages.add("vim")
+    host.packages["vim"] = [""]
     # Cached: the mutation is not visible through the same cache...
-    assert await cache.get(DnfPackages) == ["nginx"]
+    assert await cache.get(DnfPackages) == [{"name": "nginx", "versions": [""]}]
     # ...but a fresh cache sees it, which is exactly the per-step
     # recreation the apply driver relies on.
-    assert await FactCache(host, phase="apply").get(DnfPackages) == ["nginx", "vim"]
+    assert await FactCache(host, phase="apply").get(DnfPackages) == [
+        {"name": "nginx", "versions": [""]},
+        {"name": "vim", "versions": [""]},
+    ]
 
 
 async def test_fact_cache_keys_include_args():
@@ -1401,13 +1472,16 @@ async def test_gather_fact_returns_a_host_aligned_mapping():
     """gather_fact runs one fact across all hosts and keys the results by host
     name, so a single await yields every host's value."""
     hosts = [
-        SimulatedHost(name="web1", packages={"nginx"}),
-        SimulatedHost(name="web2", packages={"nginx", "vim"}),
-        SimulatedHost(name="web3", packages=set()),
+        SimulatedHost(name="web1", packages={"nginx": [""]}),
+        SimulatedHost(name="web2", packages={"nginx": [""], "vim": [""]}),
+        SimulatedHost(name="web3", packages={}),
     ]
     assert await gather_fact(hosts, DnfPackages) == {
-        "web1": ["nginx"],
-        "web2": ["nginx", "vim"],
+        "web1": [{"name": "nginx", "versions": [""]}],
+        "web2": [
+            {"name": "nginx", "versions": [""]},
+            {"name": "vim", "versions": [""]},
+        ],
         "web3": [],
     }
 
@@ -1465,7 +1539,7 @@ async def test_dnf_packages_sets_changed_and_yields_command():
 
 
 async def test_dnf_packages_no_change_reason_recorded():
-    host = SimulatedHost(name="h", packages={"nginx"})
+    host = SimulatedHost(name="h", packages={"nginx": [""]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in dnf.packages(ctx, packages=("nginx",))]
     assert not ctx.changed
@@ -1539,7 +1613,7 @@ async def test_dnf_packages_nobest_and_extra_install_args():
 
 
 async def test_dnf_packages_extra_uninstall_args():
-    host = SimulatedHost(name="h", packages={"nginx"})
+    host = SimulatedHost(name="h", packages={"nginx": [""]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
         c
@@ -1558,7 +1632,7 @@ async def test_dnf_packages_extra_uninstall_args():
 
 async def test_dnf_packages_latest_upgrades_installed_unpinned_packages():
     """``latest`` upgrades present, unpinned packages; missing ones install."""
-    host = SimulatedHost(name="h", packages={"nginx"})
+    host = SimulatedHost(name="h", packages={"nginx": [""]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
         c async for c in dnf.packages(ctx, packages=("nginx", "vim"), latest=True)
@@ -1574,8 +1648,8 @@ async def test_dnf_packages_latest_upgrades_installed_unpinned_packages():
 
 async def test_dnf_packages_latest_skips_version_pins():
     """A pinned ``<pkg>=<version>`` is never an upgrade candidate, and the
-    name-only fact treats any installed version as present."""
-    host = SimulatedHost(name="h", packages={"nginx"})
+    name-only comparison treats any installed version as present."""
+    host = SimulatedHost(name="h", packages={"nginx": [""]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
         c async for c in dnf.packages(ctx, packages=("nginx=1.23.0",), latest=True)
@@ -1597,7 +1671,7 @@ async def test_dnf_packages_version_pin_splits_on_the_last_equals():
     """The pin splits on the *last* ``=`` (pyinfra's ``rsplit`` join, apt's
     ``rpartition``), so an ``=`` inside the version never cuts the name short:
     the installed name ``foo=1.0`` matches the pin ``foo=1.0=2``."""
-    host = SimulatedHost(name="h", packages={"foo=1.0"})
+    host = SimulatedHost(name="h", packages={"foo=1.0": [""]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
         c async for c in dnf.packages(ctx, packages=("foo=1.0=2",), latest=True)
@@ -1653,7 +1727,7 @@ async def test_dnf_options_flow_through_run_and_format_log():
         DnfUpdateCommand(),
         DnfInstallCommand(packages=("nginx",)),
     )
-    assert host.packages == {"nginx"}
+    assert host.packages == {"nginx": [""]}
     log = format_log(report)
     assert "$ dnf clean all" in log
     assert "$ dnf update -y" in log
@@ -1661,8 +1735,9 @@ async def test_dnf_options_flow_through_run_and_format_log():
 
 
 async def test_dnf_version_pin_install_simulates_by_name():
-    """The simulated seam strips version pins, so the name-only state and
-    the fresh-fact-cache property hold for pinned installs too."""
+    """The simulated seam records the pin's version under the bare name, so
+    the name-only comparison and the fresh-fact-cache property hold for
+    pinned installs too."""
 
     def pinned_deploy(host):
         yield op(dnf.packages, name="Install pinned nginx", packages=("nginx=1.23.0",))
@@ -1672,7 +1747,7 @@ async def test_dnf_version_pin_install_simulates_by_name():
     assert plans["h"][0].changed
     report = await run_apply(runtimes, plans=plans)
     assert report.log[0].changed
-    assert host.packages == {"nginx"}
+    assert host.packages == {"nginx": ["1.23.0"]}
     # A second prepare sees the name as installed: no change.
     _runtimes, plans2 = await run_prepare([host], pinned_deploy)
     assert not plans2["h"][0].changed
@@ -2512,7 +2587,7 @@ async def test_dnf_update_is_non_idempotent_with_packages_installed():
     """A host that already has packages still plans an update: there is no fact
     to compare against, so the operation never becomes a no-op -- matching
     pyinfra's ``is_idempotent=False``."""
-    host = SimulatedHost(name="h", packages={"nginx", "vim"})
+    host = SimulatedHost(name="h", packages={"nginx": [""], "vim": [""]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in dnf.update(ctx)]
     assert ctx.changed
@@ -2539,11 +2614,11 @@ def test_dnf_update_command_shell_and_elevation():
 
 async def test_dnf_update_simulated_seam_is_recognised_and_a_noop():
     """``send_command`` maps the descriptor onto the seam without error: the
-    simulation tracks no package versions, so an update leaves the in-memory
+    simulated update resolves no new versions, so it leaves the in-memory
     state untouched rather than raising ``TypeError`` for an unknown command."""
-    host = SimulatedHost(name="h", packages={"nginx"})
+    host = SimulatedHost(name="h", packages={"nginx": [""]})
     await send_command(host, DnfUpdateCommand())
-    assert host.packages == {"nginx"}
+    assert host.packages == {"nginx": [""]}
 
 
 async def test_dnf_update_end_to_end_over_run():
@@ -2571,7 +2646,7 @@ async def test_dnf_update_dry_run_plans_without_sending():
     def update_deploy(host):
         yield op(dnf.update, name="Update all packages", sudo=True)
 
-    host = SimulatedHost(name="h", packages={"nginx"})
+    host = SimulatedHost(name="h", packages={"nginx": [""]})
     plans, report, _hosts = await run(
         [{"host": "h", "connection": {}}],
         update_deploy,
@@ -2641,7 +2716,7 @@ async def test_apply_sequential_facts_the_section_9_trace():
 
     # Final state: nginx installed on both, default site gone on both.
     for host in (web1, web2):
-        assert host.packages == {"nginx"}
+        assert host.packages == {"nginx": [""]}
         assert host.links == {}
 
 
@@ -2670,7 +2745,7 @@ async def test_apply_sequential_facts_with_file_side_effects():
     assert remove.changed and remove.reason == "file present, will remove"
     assert remove.commands == (FileCommand(src=HTTPD_WELCOME_CONF, present=False),)
     # Final state: httpd installed, welcome.conf gone.
-    assert host.packages == {"httpd"}
+    assert host.packages == {"httpd": [""]}
     assert host.existing_files == set()
 
 
@@ -2749,8 +2824,8 @@ async def test_hosts_finishing_at_different_steps():
         "Install nginx",
         "Install vim",
     ]
-    assert a.packages == {"nginx"}
-    assert b.packages == {"nginx", "vim"}
+    assert a.packages == {"nginx": [""]}
+    assert b.packages == {"nginx": [""], "vim": [""]}
 
 
 async def test_sudo_flag_flows_into_the_apply_log():
@@ -2768,7 +2843,7 @@ async def test_sudo_flag_flows_into_the_apply_log():
     assert entry.sudo is True
     # The simulated seam ignores privilege (nginx is still installed), but the
     # rendered log shows the elevated shell that would go over SSH.
-    assert _hosts[0].packages == {"nginx"}
+    assert _hosts[0].packages == {"nginx": [""]}
     assert "sudo dnf install -y nginx" in format_log(report)
 
 
@@ -2868,7 +2943,7 @@ async def test_dry_run_reports_plan_without_touching_hosts():
     assert [p.changed for p in plans["web2"]] == [False, True]
     assert plans["web2"][1].reason == "link present, will remove"
     # Hosts untouched.
-    assert web1.packages == set()
+    assert web1.packages == {}
     assert web1.links == {}
 
 

@@ -4,15 +4,19 @@
 # """The ``dnf`` module: facts and operations in one source.
 #
 # Fact side (design doc section 5): ``DnfPackages``, the fact read by
-# ``dnf.packages`` to learn which packages are already installed,
-# ``DnfRepositories``, the configured dnf repositories, ``DnfRepoFile``, the
-# raw content of a single ``.repo`` file (read by ``dnf.repo``),
-# ``DnfRepoList``, the runtime repository list (enabled and disabled, as
-# plain ``DnfRepoListEntry`` TypedDict-shaped dicts),
+# ``dnf.packages`` to learn which packages are already installed (sorted
+# ``DnfPackageInfo`` entries grouping each name's installed versions),
+# ``DnfRepositories``, the configured dnf repositories (``DnfRepository``
+# entries with their open-ended config options in an ``options`` sub-dict),
+# ``DnfRepoFile``, the raw content of a single ``.repo`` file (read by
+# ``dnf.repo``), ``DnfRepoList``, the runtime repository list (enabled and
+# disabled, as plain ``DnfRepoListEntry`` TypedDict-shaped dicts),
 # ``DnfEnabledModules``, ``DnfDisabledModules`` and ``DnfInstalledModules``, the
-# enabled, disabled and installed dnf modules, and
+# enabled, disabled and installed dnf modules (shared ``DnfModule``
+# name-and-stream entries), and
 # ``DnfGroups``/``DnfAvailableGroups``, the installed and available package
-# groups, and ``RpmPackage``, the name/version of a ``.rpm`` file or an
+# groups (shared ``DnfGroup`` entries), and ``RpmPackage``, the
+# name/version (``RpmPackageInfo``) of a ``.rpm`` file or an
 # installed package that ``dnf.rpm`` reads to decide idempotence. Like every
 # fact they are phase-unaware: each ``process`` coroutine just gathers the raw
 # value.
@@ -61,74 +65,141 @@ from ...hosts import Host
 # --- Facts -------------------------------------------------------------------
 
 
-class DnfPackages:
-    """The installed dnf package names, as a sorted list.
+class DnfPackageInfo(TypedDict):
+    """
+    Attributes:
+        name: The package name, exactly as ``rpm -qa`` prints it.
+        versions: The package's installed versions (rpm's
+            ``VERSION-RELEASE``), de-duplicated and sorted -- every
+            version groups under one name, so a multi-version package
+            (``kernel``) carries all its installed versions here.
+    """
 
-    command:
+    # The package entry of ``DnfPackages`` -- the dnf counterpart of apt's
+    # ``AptPackageInfo``: one shape grouping every installed version under
+    # one name, where apk's ``ApkPackageVersion`` entries carry one
+    # name-and-version pair each.
+    #
+    # A TypedDict rather than a class instance, like ``AptPackageInfo``:
+    # entries are ordinary dicts, so equality against a literal dict works
+    # and ``json.dumps`` serializes them directly. The ``Info`` suffix
+    # follows the ``AptPackageInfo`` / ``ApkPackageInfo`` precedent.
+
+    name: str
+    versions: list[str]
+
+
+class DnfPackages:
+    """The installed dnf packages, as a sorted list of ``DnfPackageInfo`` dicts.
+
+    **Commands:**
 
     ```bash
-    rpm -qa --queryformat '%{NAME}\\n'
+    rpm -qa --queryformat '%{NAME} %{VERSION}-%{RELEASE}\\n'
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    list[str]
+    list[DnfPackageInfo]
     ```
 
     Examples:
         Examples can be found in ``examples/modules/dnf/dnf_packages.py``.
     """
 
-    # Mirrors pyinfra's ``dnf.DnfPackages``: every name ``rpm -qa`` prints
-    # becomes one entry. Names are de-duplicated and sorted -- the apt-side
+    # Mirrors pyinfra's ``dnf.DnfPackages`` with one deliberate extension:
+    # pyinfra's query prints names only, while the query format here also
+    # prints each package's ``VERSION-RELEASE`` (the same version string
+    # ``RpmPackage`` reports), so every installed version is kept in the
+    # entry's ``versions`` list rather than dropped. Names are
+    # de-duplicated and sorted, versions grouped per name -- the apt-side
     # convention (``AptPackages``' sorted version lists) rather than
     # pyinfra's runtime set -- so reads stay deterministic and
     # JSON-printable for the ``gather_fact`` example scripts.
 
-    #: Shell used to list installed package names over SSH.
-    COMMAND = "rpm -qa --queryformat '%{NAME}\n'"
+    #: Shell used to list installed package names and versions over SSH.
+    COMMAND = "rpm -qa --queryformat '%{NAME} %{VERSION}-%{RELEASE}\n'"
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> list[str]:
-        """Parse ``rpm -qa`` name lines into a sorted, unique name list.
+    def parse(cls, output: Iterable[str]) -> list[DnfPackageInfo]:
+        """Parse ``rpm -qa`` rows into sorted, unique entries.
 
-        Each non-blank line is one package name, stripped of surrounding
-        whitespace; duplicates collapse into one entry and the result is
-        sorted. Pure and testable.
+        Each non-blank line carries one package name and its
+        ``VERSION-RELEASE``, whitespace-separated; versions group under
+        their name, de-duplicated and sorted, and the entries are sorted
+        by name. Pure and testable.
         """
-        names: set[str] = set()
+        versions_by_name: dict[str, set[str]] = {}
         for line in output:
-            name = line.strip()
-            if name:
-                names.add(name)
-        return sorted(names)
+            tokens = line.split()
+            if len(tokens) != 2:
+                continue
+            name, version = tokens
+            versions_by_name.setdefault(name, set()).add(version)
+        return [
+            {"name": name, "versions": sorted(versions_by_name[name])}
+            for name in sorted(versions_by_name)
+        ]
 
     @classmethod
-    async def process(cls, host: Host) -> list[str]:
+    async def process(cls, host: Host) -> list[DnfPackageInfo]:
         packages = getattr(host, "packages", None)
         if packages is not None:
-            # SimulatedHost seam: read the in-memory state directly, as a
-            # sorted copy so callers never mutate simulated state.
-            return sorted(packages)
+            # SimulatedHost seam: the name -> versions state store the
+            # mutators edit, projected into sorted entries (the
+            # ``apt_packages`` precedent). Copy each versions list so
+            # callers never mutate simulated state.
+            return [
+                {"name": name, "versions": sorted(set(versions))}
+                for name, versions in sorted(packages.items())
+            ]
         # Real transport: gather over asyncssh from the host's connection.
         stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
 
 
-class DnfRepositories:
-    """The configured dnf repositories, as a list of repo-option dicts.
+class DnfRepository(TypedDict):
+    """
+    Attributes:
+        repoid: The repository id (the ``[section]`` header).
+        name: The human-readable repository name (the ``name=`` option,
+            defaulting to the section id).
+        filename: The config/``.repo`` file the section was read from;
+            absent when no filename marker preceded it.
+        options: The section's remaining ``key=value`` options
+            (``baseurl``, ``enabled``, ``gpgcheck``, ...) verbatim --
+            repo options are open-ended, so they ride in a sub-dict
+            rather than as fixed fields (the ``AptSource`` precedent).
+    """
 
-    command:
+    # One configured repository (``DnfRepositories``' entry).
+    #
+    # A TypedDict rather than a class instance, like ``AptSource``: entries
+    # are ordinary dicts, so equality against a literal dict works and
+    # ``json.dumps`` serializes them directly. The identifying fields are
+    # fixed; the open-ended ``key=value`` config lines a closed TypedDict
+    # cannot express stay verbatim in ``options``.
+
+    repoid: str
+    name: str
+    filename: NotRequired[str]
+    options: dict[str, str]
+
+
+class DnfRepositories:
+    """The configured dnf repositories, as a list of ``DnfRepository`` dicts.
+
+    **Commands:**
 
     ```bash
     for f in /etc/dnf.conf /etc/dnf.repos.d/*.repo /etc/yum.repos.d/*.repo; do [ -f "$f" ] && { printf "#reemote5-filename: %s\\n" "$f"; cat "$f"; }; done || true
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    list[dict[str, str]]
+    list[DnfRepository]
     ```
 
     Examples:
@@ -136,9 +207,9 @@ class DnfRepositories:
     """
 
     # Mirrors pyinfra's ``dnf.DnfRepositories``: every ``[section]`` of the dnf
-    # config and ``.repo`` files becomes one dict keyed by ``repoid``/``name``
-    # (both defaulting to the section id), the source ``filename``, and each
-    # ``key=value`` option.
+    # config and ``.repo`` files becomes one ``DnfRepository`` entry with
+    # ``repoid``/``name`` (both defaulting to the section id), the source
+    # ``filename``, and each remaining ``key=value`` option in ``options``.
 
     #: Marker prefixing each cat'd file in ``COMMAND``'s output, naming the
     #: source file so ``parse`` can attribute a repository to its ``.repo``
@@ -156,17 +227,17 @@ class DnfRepositories:
     )
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> list[dict[str, str]]:
+    def parse(cls, output: Iterable[str]) -> list[DnfRepository]:
         """Parse INI-style repo config lines into a list of repository dicts.
 
         A ``[section]`` header starts a new repository whose ``repoid`` and
         ``name`` default to the section id; a preceding filename-marker line
-        supplies its ``filename``; ``key=value`` lines fill in the remaining
-        options (a ``name=`` line overrides the default); ``#`` comments and
+        supplies its ``filename``; ``key=value`` lines fill in ``options``
+        (a ``name=`` line overrides the default name); ``#`` comments and
         blank lines are ignored.
         """
-        repos: list[dict[str, str]] = []
-        current: dict[str, str] = {}
+        repos: list[DnfRepository] = []
+        current: DnfRepository | None = None
         current_file: str | None = None
 
         for raw in output:
@@ -175,9 +246,9 @@ class DnfRepositories:
                 continue
 
             if line.startswith(cls.FILENAME_MARKER):
-                if current:
+                if current is not None:
                     repos.append(current)
-                    current = {}
+                    current = None
                 current_file = line[len(cls.FILENAME_MARKER) :].strip() or None
                 continue
 
@@ -185,29 +256,38 @@ class DnfRepositories:
                 continue
 
             if line.startswith("["):
-                if current:
+                if current is not None:
                     repos.append(current)
-                    current = {}
-                current["repoid"] = line[1:-1]
-                current["name"] = line[1:-1]
+                section = line[1:-1]
+                current = {"repoid": section, "name": section, "options": {}}
                 if current_file is not None:
                     current["filename"] = current_file
 
-            if current and "=" in line:
+            if current is not None and "=" in line:
                 key, value = re.split(r"\s*=\s*", line, maxsplit=1)
-                current[key] = value
+                if key == "name":
+                    current["name"] = value
+                else:
+                    current["options"][key] = value
 
-        if current:
+        if current is not None:
             repos.append(current)
 
         return repos
 
     @classmethod
-    async def process(cls, host: Host) -> list[dict[str, str]]:
+    async def process(cls, host: Host) -> list[DnfRepository]:
         repositories = getattr(host, "repositories", None)
         if repositories is not None:
-            # SimulatedHost seam: read the in-memory state directly.
-            return list(repositories)
+            # SimulatedHost seam: read the in-memory state directly. Copy
+            # each entry (and its options dict) so callers never mutate
+            # simulated state.
+            copies: list[DnfRepository] = []
+            for repo in repositories:
+                copy = dict(repo)
+                copy["options"] = dict(repo["options"])
+                copies.append(copy)
+            return copies
         # Real transport: cat the repo files over asyncssh and parse the INI.
         stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
@@ -216,13 +296,13 @@ class DnfRepositories:
 class DnfRepoFile:
     """The current content of one ``.repo`` file, or None when it is absent.
 
-    command:
+    **Commands:**
 
     ```bash
     test -e <path> && { printf '#reemote5-repofile\\n'; cat -- <path>; }
     ```
 
-    return:
+    **Returns:**
 
     ```python
     str | None
@@ -275,19 +355,46 @@ class DnfRepoFile:
         return stdout[len(prefix) :]
 
 
-class DnfEnabledModules:
-    """The enabled dnf modules, mapping module name to its enabled stream.
+class DnfModule(TypedDict):
+    """
+    Attributes:
+        name: The dnf module name (an application-stream family).
+        stream: The module stream the row's flag applies to. For
+            ``DnfDisabledModules`` a simulated whole-module disable
+            carries ``""`` -- ``dnf module disable`` names no stream, so
+            the simulation has none to report (the real listing's rows
+            always carry one).
+    """
 
-    command:
+    # One module-and-stream row -- the shared entry of every dnf module
+    # fact: ``DnfEnabledModules``, ``DnfDisabledModules`` and
+    # ``DnfInstalledModules`` all return ``list[DnfModule]``, so one typed
+    # shape answers every module-state question the namespace asks (the
+    # ``ApkPackageVersion`` shared-entry precedent).
+    #
+    # A TypedDict rather than a class instance: entries are ordinary dicts,
+    # so equality against a literal dict works and ``json.dumps`` serializes
+    # them directly. A module disabled across several streams contributes
+    # one entry per flagged row, keeping each stream rather than collapsing
+    # to the bare name.
+
+    name: str
+    stream: str
+
+
+class DnfEnabledModules:
+    """The enabled dnf modules, as a sorted list of ``DnfModule`` dicts.
+
+    **Commands:**
 
     ```bash
     dnf module list --enabled
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    dict[str, str]
+    list[DnfModule]
     ```
 
     Examples:
@@ -296,8 +403,8 @@ class DnfEnabledModules:
 
     # Mirrors pyinfra's ``dnf.DnfEnabledModules``: every row of the
     # ``dnf module list --enabled`` table carrying an ``[e]`` flag becomes a
-    # ``{name: stream}`` entry; headers, blank lines and the trailing hint
-    # line are ignored.
+    # ``DnfModule`` entry naming the module and its enabled stream; headers,
+    # blank lines and the trailing hint line are ignored.
 
     #: Shell used to list the enabled modules over SSH.
     COMMAND = "dnf module list --enabled"
@@ -308,48 +415,53 @@ class DnfEnabledModules:
     ENABLED_FLAG = re.compile(r"\[e\](?!\w)")
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> dict[str, str]:
-        """Parse ``dnf module list --enabled`` rows into a name-to-stream map.
+    def parse(cls, output: Iterable[str]) -> list[DnfModule]:
+        """Parse ``dnf module list --enabled`` rows into sorted entries.
 
         Only lines carrying the ``[e]`` flag are kept; the first two
         whitespace-separated tokens of such a line are the module name and
-        its enabled stream.
+        its enabled stream. Entries are de-duplicated and sorted by name,
+        then stream.
         """
-        modules: dict[str, str] = {}
+        seen: set[tuple[str, str]] = set()
         for line in output:
             if not cls.ENABLED_FLAG.search(line):
                 continue
             tokens = line.split()
             if len(tokens) < 2:
                 continue
-            name, stream = tokens[0], tokens[1]
-            modules[name] = stream
-        return modules
+            seen.add((tokens[0], tokens[1]))
+        return [{"name": name, "stream": stream} for name, stream in sorted(seen)]
 
     @classmethod
-    async def process(cls, host: Host) -> dict[str, str]:
+    async def process(cls, host: Host) -> list[DnfModule]:
         enabled_modules = getattr(host, "enabled_modules", None)
         if enabled_modules is not None:
-            # SimulatedHost seam: read the in-memory state directly.
-            return dict(enabled_modules)
+            # SimulatedHost seam: the name -> stream state store the
+            # mutators edit, projected into sorted entries. Freshly built
+            # dicts so callers never mutate simulated state.
+            return [
+                {"name": name, "stream": stream}
+                for name, stream in sorted(enabled_modules.items())
+            ]
         # Real transport: list the enabled modules over asyncssh and parse.
         stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
 
 
 class DnfDisabledModules:
-    """The sorted names of the explicitly disabled dnf modules.
+    """The disabled dnf modules, as a sorted list of ``DnfModule`` dicts.
 
-    command:
+    **Commands:**
 
     ```bash
     dnf module list --disabled
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    list[str]
+    list[DnfModule]
     ```
 
     Examples:
@@ -357,10 +469,11 @@ class DnfDisabledModules:
     """
 
     # Mirrors pyinfra's ``dnf.DnfDisabledModules``: every row of the
-    # ``dnf module list --disabled`` table carrying an ``[x]`` flag contributes
-    # its module name; a module disabled across several streams is listed once,
-    # and the names are returned sorted. Headers, blank lines and the trailing
-    # hint line are ignored.
+    # ``dnf module list --disabled`` table carrying an ``[x]`` flag becomes a
+    # ``DnfModule`` entry naming the module and the flagged stream; a module
+    # disabled across several streams contributes one entry per row, and the
+    # entries are de-duplicated and sorted by name, then stream. Headers,
+    # blank lines and the trailing hint line are ignored.
 
     #: Shell used to list the disabled modules over SSH.
     COMMAND = "dnf module list --disabled"
@@ -371,47 +484,54 @@ class DnfDisabledModules:
     DISABLED_FLAG = re.compile(r"\[x\](?!\w)")
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> list[str]:
-        """Parse ``dnf module list --disabled`` rows into a sorted name list.
+    def parse(cls, output: Iterable[str]) -> list[DnfModule]:
+        """Parse ``dnf module list --disabled`` rows into sorted entries.
 
-        Only lines carrying the ``[x]`` flag are kept; the first
-        whitespace-separated token of such a line is the module name. Names
-        are deduplicated across streams and returned sorted.
+        Only lines carrying the ``[x]`` flag are kept; the first two
+        whitespace-separated tokens of such a line are the module name and
+        the flagged stream. Entries are de-duplicated across repeated rows
+        and sorted by name, then stream.
         """
-        seen: set[str] = set()
+        seen: set[tuple[str, str]] = set()
         for line in output:
             if not cls.DISABLED_FLAG.search(line):
                 continue
             tokens = line.split()
-            if not tokens:
+            if len(tokens) < 2:
                 continue
-            seen.add(tokens[0])
-        return sorted(seen)
+            seen.add((tokens[0], tokens[1]))
+        return [{"name": name, "stream": stream} for name, stream in sorted(seen)]
 
     @classmethod
-    async def process(cls, host: Host) -> list[str]:
+    async def process(cls, host: Host) -> list[DnfModule]:
         disabled_modules = getattr(host, "disabled_modules", None)
         if disabled_modules is not None:
-            # SimulatedHost seam: read the in-memory state directly.
-            return list(disabled_modules)
+            # SimulatedHost seam: the disabled-name state store the
+            # mutators edit, projected into sorted entries. A simulated
+            # ``dnf module disable`` names no stream (it disables the whole
+            # module), so each entry carries "" -- the placeholder the
+            # real listing's per-stream rows never need.
+            return [
+                {"name": name, "stream": ""} for name in sorted(disabled_modules)
+            ]
         # Real transport: list the disabled modules over asyncssh and parse.
         stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
 
 
 class DnfInstalledModules:
-    """The installed dnf modules, mapping module name to its installed stream.
+    """The installed dnf modules, as a sorted list of ``DnfModule`` dicts.
 
-    command:
+    **Commands:**
 
     ```bash
     dnf module list --installed
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    dict[str, str]
+    list[DnfModule]
     ```
 
     Examples:
@@ -424,8 +544,8 @@ class DnfInstalledModules:
     # ``dnf module list --installed`` table. A module can be enabled without any
     # of its packages installed, or installed on a stream that is not the enabled
     # default, so the two facts answer different questions. Every ``[i]``-flagged
-    # row becomes a ``{name: stream}`` entry; headers, blank lines and the
-    # trailing hint line are ignored.
+    # row becomes a ``DnfModule`` entry naming the module and its installed
+    # stream; headers, blank lines and the trailing hint line are ignored.
 
     #: Shell used to list the installed modules over SSH.
     COMMAND = "dnf module list --installed"
@@ -435,36 +555,60 @@ class DnfInstalledModules:
     INSTALLED_FLAG = re.compile(r"\[i\](?!\w)")
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> dict[str, str]:
-        """Parse ``dnf module list --installed`` rows into a name-to-stream map.
+    def parse(cls, output: Iterable[str]) -> list[DnfModule]:
+        """Parse ``dnf module list --installed`` rows into sorted entries.
 
         Only lines carrying the ``[i]`` flag are kept; the first two
         whitespace-separated tokens of such a line are the module name and its
-        installed stream.
+        installed stream. Entries are de-duplicated and sorted by name,
+        then stream.
         """
-        modules: dict[str, str] = {}
+        seen: set[tuple[str, str]] = set()
         for line in output:
             if not cls.INSTALLED_FLAG.search(line):
                 continue
             tokens = line.split()
             if len(tokens) < 2:
                 continue
-            name, stream = tokens[0], tokens[1]
-            modules[name] = stream
-        return modules
+            seen.add((tokens[0], tokens[1]))
+        return [{"name": name, "stream": stream} for name, stream in sorted(seen)]
 
     @classmethod
-    async def process(cls, host: Host) -> dict[str, str]:
+    async def process(cls, host: Host) -> list[DnfModule]:
         installed_modules = getattr(host, "installed_modules", None)
         if installed_modules is not None:
-            # SimulatedHost seam: read the in-memory state directly.
-            return dict(installed_modules)
+            # SimulatedHost seam: the name -> stream state store, projected
+            # into sorted entries. Freshly built dicts so callers never
+            # mutate simulated state.
+            return [
+                {"name": name, "stream": stream}
+                for name, stream in sorted(installed_modules.items())
+            ]
         # Real transport: list the installed modules over asyncssh and parse.
         stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
 
 
-def _parse_group_list(output: Iterable[str], *, section: str) -> list[str]:
+class DnfGroup(TypedDict):
+    """
+    Attributes:
+        name: The package-group name, exactly as ``dnf group list``
+            prints it (environment groups and regular groups alike).
+    """
+
+    # One package group -- the shared entry of ``DnfGroups`` and
+    # ``DnfAvailableGroups``: one typed shape answers both group-list
+    # questions (the ``DnfModule`` shared-entry precedent).
+    #
+    # A TypedDict rather than a class instance: entries are ordinary dicts,
+    # so equality against a literal dict works and ``json.dumps`` serializes
+    # them directly. ``dnf group list`` prints names only, so the entry
+    # carries just the name.
+
+    name: str
+
+
+def _parse_group_list(output: Iterable[str], *, section: str) -> list[DnfGroup]:
     """Collect the group names listed under ``section`` headers.
 
     ``dnf group list`` prints its section headers at column 0, each ending in a
@@ -475,8 +619,9 @@ def _parse_group_list(output: Iterable[str], *, section: str) -> list[str]:
     ``DnfAvailableGroups``); any other header -- or a blank line, or a stray
     non-indented prompt line -- switches collection off, so environment-group
     and regular-group names are gathered together while names from the unwanted
-    sections are not. Names are de-duplicated and returned as a sorted list
-    (the apt-side determinism/JSON convention, not pyinfra's runtime set).
+    sections are not. Names are de-duplicated and returned as ``DnfGroup``
+    entries sorted by name (the apt-side determinism/JSON convention, not
+    pyinfra's runtime set).
     """
     names: set[str] = set()
     in_section = False
@@ -491,22 +636,22 @@ def _parse_group_list(output: Iterable[str], *, section: str) -> list[str]:
             continue
         if in_section:
             names.add(raw.strip())
-    return sorted(names)
+    return [{"name": name} for name in sorted(names)]
 
 
 class DnfGroups:
-    """The names of the installed dnf groups.
+    """The installed dnf groups, as a sorted list of ``DnfGroup`` dicts.
 
-    command:
+    **Commands:**
 
     ```bash
     dnf group list --installed
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    list[str]
+    list[DnfGroup]
     ```
 
     Examples:
@@ -517,15 +662,16 @@ class DnfGroups:
     # *groups* are already installed, so a ``dnf group install`` cannot be made
     # idempotent. This fact parses ``dnf group list --installed`` and returns the
     # installed group names -- both environment groups (``Installed Environment
-    # Groups:``) and regular groups (``Installed Groups:``) -- as a sorted list,
-    # so a later group operation can skip the ones already present.
+    # Groups:``) and regular groups (``Installed Groups:``) -- as sorted
+    # ``DnfGroup`` entries, so a later group operation can skip the ones already
+    # present.
 
     #: Shell used to list the installed groups over SSH.
     COMMAND = "dnf group list --installed"
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> list[str]:
-        """Parse ``dnf group list --installed`` into a sorted name list.
+    def parse(cls, output: Iterable[str]) -> list[DnfGroup]:
+        """Parse ``dnf group list --installed`` into sorted entries.
 
         Only the names indented under an ``Installed ... Groups:`` header are
         kept; the ``Available`` sections (and any prompt or blank line) are
@@ -534,30 +680,31 @@ class DnfGroups:
         return _parse_group_list(output, section="Installed")
 
     @classmethod
-    async def process(cls, host: Host) -> list[str]:
+    async def process(cls, host: Host) -> list[DnfGroup]:
         installed_groups = getattr(host, "installed_groups", None)
         if installed_groups is not None:
-            # SimulatedHost seam: read the in-memory state directly, as a
-            # sorted copy so callers never mutate simulated state.
-            return sorted(installed_groups)
+            # SimulatedHost seam: the group-name state store, projected
+            # into sorted entries. Freshly built dicts so callers never
+            # mutate simulated state.
+            return [{"name": name} for name in sorted(installed_groups)]
         # Real transport: list the installed groups over asyncssh and parse.
         stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
 
 
 class DnfAvailableGroups:
-    """The names of the available (not-yet-installed) dnf groups.
+    """The available (not-yet-installed) dnf groups, as ``DnfGroup`` dicts.
 
-    command:
+    **Commands:**
 
     ```bash
     dnf group list --available
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    list[str]
+    list[DnfGroup]
     ```
 
     Examples:
@@ -567,15 +714,16 @@ class DnfAvailableGroups:
     # The counterpart of ``DnfGroups``: parses ``dnf group list --available`` and
     # returns the group names dnf could install -- both environment groups
     # (``Available Environment Groups:``) and regular groups (``Available
-    # Groups:``) -- as a sorted list. Useful to check that a group name is valid
-    # before installing it, and to decide whether an install is needed at all.
+    # Groups:``) -- as sorted ``DnfGroup`` entries. Useful to check that a group
+    # name is valid before installing it, and to decide whether an install is
+    # needed at all.
 
     #: Shell used to list the available groups over SSH.
     COMMAND = "dnf group list --available"
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> list[str]:
-        """Parse ``dnf group list --available`` into a sorted name list.
+    def parse(cls, output: Iterable[str]) -> list[DnfGroup]:
+        """Parse ``dnf group list --available`` into sorted entries.
 
         Only the names indented under an ``Available ... Groups:`` header are
         kept; the ``Installed`` sections (and any prompt or blank line) are
@@ -584,12 +732,13 @@ class DnfAvailableGroups:
         return _parse_group_list(output, section="Available")
 
     @classmethod
-    async def process(cls, host: Host) -> list[str]:
+    async def process(cls, host: Host) -> list[DnfGroup]:
         available_groups = getattr(host, "available_groups", None)
         if available_groups is not None:
-            # SimulatedHost seam: read the in-memory state directly, as a
-            # sorted copy so callers never mutate simulated state.
-            return sorted(available_groups)
+            # SimulatedHost seam: the group-name state store, projected
+            # into sorted entries. Freshly built dicts so callers never
+            # mutate simulated state.
+            return [{"name": name} for name in sorted(available_groups)]
         # Real transport: list the available groups over asyncssh and parse.
         stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
@@ -609,8 +758,9 @@ class DnfRepoListEntry(TypedDict):
     # A TypedDict rather than a class instance, like ``AptSource``: entries
     # are ordinary dicts, so equality against a literal dict works and
     # ``json.dumps`` serializes them directly. (``DnfRepositories``' entries
-    # stay plain ``dict[str, str]``: their option keys are open-ended
-    # ``key=value`` config lines a closed TypedDict cannot express.)
+    # are ``DnfRepository`` dicts: their open-ended ``key=value`` config
+    # options ride in an ``options`` sub-dict a closed TypedDict expresses
+    # only that way.)
 
     repoid: str
     name: str
@@ -620,13 +770,13 @@ class DnfRepoListEntry(TypedDict):
 class DnfRepoList:
     """The runtime dnf repositories, as a list of ``DnfRepoListEntry`` dicts.
 
-    command:
+    **Commands:**
 
     ```bash
     dnf repolist --all
     ```
 
-    return:
+    **Returns:**
 
     ```python
     list[DnfRepoListEntry]
@@ -695,19 +845,39 @@ class DnfRepoList:
         return cls.parse(stdout.splitlines())
 
 
+class RpmPackageInfo(TypedDict):
+    """
+    Attributes:
+        name: The package name rpm reports for the queried name/file.
+        version: The package's version -- rpm's ``VERSION-RELEASE``.
+    """
+
+    # The name-and-version detail of one queried package (``RpmPackage``'s
+    # answer). The ``Info`` suffix follows the ``ApkPackageInfo`` /
+    # ``DebPackageInfo`` precedent: the bare singular slot is taken by the
+    # fact class itself.
+    #
+    # A TypedDict rather than a class instance: the entry is an ordinary
+    # dict, so equality against a literal dict works and ``json.dumps``
+    # serializes it directly.
+
+    name: str
+    version: str
+
+
 class RpmPackage:
     """The name and version of a ``.rpm`` file or an installed package.
 
-    command:
+    **Commands:**
 
     ```bash
     rpm --queryformat '%{NAME} %{VERSION}-%{RELEASE}\\n' -q <package> || ! test -e <package> || rpm --queryformat '%{NAME} %{VERSION}-%{RELEASE}\\n' -qp <package> 2> /dev/null
     ```
 
-    return:
+    **Returns:**
 
     ```python
-    dict[str, str] | None
+    RpmPackageInfo | None
     ```
 
     Examples:
@@ -715,7 +885,7 @@ class RpmPackage:
     """
 
     # Mirrors pyinfra's ``rpm.RpmPackage``: given a package *name* or a ``.rpm``
-    # file *path*, returns ``{"name": ..., "version": ...}`` (``version`` is
+    # file *path*, returns a ``RpmPackageInfo`` entry (``version`` is
     # rpm's ``VERSION-RELEASE``), or None when the name is not installed and the
     # path is not an existing file. ``dnf.rpm`` reads it twice -- once for the
     # ``.rpm`` file, once for the installed package of that file's name -- and
@@ -749,10 +919,10 @@ class RpmPackage:
         )
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> dict[str, str] | None:
-        """Parse ``rpm``'s ``NAME VERSION-RELEASE`` output into a dict.
+    def parse(cls, output: Iterable[str]) -> RpmPackageInfo | None:
+        """Parse ``rpm``'s ``NAME VERSION-RELEASE`` output into an entry.
 
-        Returns the first matching line as ``{"name", "version"}``, or None
+        Returns the first matching line as a ``RpmPackageInfo`` dict, or None
         when no line matches (an unknown name, or an absent ``.rpm`` file).
         """
         for line in output:
@@ -762,7 +932,7 @@ class RpmPackage:
         return None
 
     @classmethod
-    async def process(cls, host: Host, package: str) -> dict[str, str] | None:
+    async def process(cls, host: Host, package: str) -> RpmPackageInfo | None:
         rpm_files = getattr(host, "rpm_files", None)
         if rpm_files is not None:
             # SimulatedHost seam: an installed name (``rpm_packages``) is
@@ -870,9 +1040,10 @@ async def packages(
     + extra_uninstall_args: additional arguments to the dnf remove command
 
     ``clean`` and ``update`` are stateless (always yield, like pyinfra's
-    non-idempotent operations). The ``DnfPackages`` fact reports names
-    only, so a pinned ``<pkg>=<version>`` is considered present when
-    *any* version of ``pkg`` is installed, and ``latest`` follows
+    non-idempotent operations). The ``DnfPackages`` fact reports each
+    name's installed versions, but the comparison stays name-only
+    (pyinfra parity): a pinned ``<pkg>=<version>`` is considered present
+    when *any* version of ``pkg`` is installed, and ``latest`` follows
     pyinfra's name-only behavior: every installed, unpinned package is
     upgraded without checking whether an upgrade actually exists.
     ``kwargs`` absorbs any further keyword arguments (pyinfra's global
@@ -900,17 +1071,18 @@ async def packages(
 
     if requested:
         installed = await ctx.facts.get(DnfPackages)
+        installed_names = {entry["name"] for entry in installed}
 
         if present:
             to_install = tuple(
-                pkg for pkg in requested if _split_version(pkg)[0] not in installed
+                pkg for pkg in requested if _split_version(pkg)[0] not in installed_names
             )
             # ``latest``: installed, unpinned packages are upgrade candidates.
             to_upgrade = (
                 tuple(
                     pkg
                     for pkg in requested
-                    if _split_version(pkg)[1] is None and pkg in installed
+                    if _split_version(pkg)[1] is None and pkg in installed_names
                 )
                 if latest
                 else ()
@@ -931,7 +1103,7 @@ async def packages(
                 reasons.append("all packages present")
         else:
             to_remove = tuple(
-                pkg for pkg in requested if _split_version(pkg)[0] in installed
+                pkg for pkg in requested if _split_version(pkg)[0] in installed_names
             )
             if to_remove:
                 ctx.changed = True
@@ -1390,13 +1562,14 @@ async def module(
     + enabled: ``True`` (default) enables ``module:stream``; ``False`` disables
       the module, so every one of its streams becomes inactive
 
-    ``enabled=True`` compares against ``DnfEnabledModules`` (a name->stream
-    map): when ``module`` is already enabled on exactly ``stream`` the request
-    is a no-op, otherwise it yields one ``dnf module enable`` command -- so a
-    ``module`` enabled on a *different* stream is re-enabled onto the requested
-    one. ``enabled=False`` compares against ``DnfDisabledModules`` (a sorted
-    name list): when ``module`` is already disabled the request is a no-op,
-    otherwise it yields one ``dnf module disable`` command. Either way enabling
+    ``enabled=True`` compares against ``DnfEnabledModules`` (a list of
+    ``DnfModule`` entries): when ``module`` is already enabled on exactly
+    ``stream`` the request is a no-op, otherwise it yields one ``dnf module
+    enable`` command -- so a ``module`` enabled on a *different* stream is
+    re-enabled onto the requested one. ``enabled=False`` compares against
+    ``DnfDisabledModules`` (also ``DnfModule`` entries): when ``module`` is
+    already disabled the request is a no-op, otherwise it yields one ``dnf
+    module disable`` command. Either way enabling
     or disabling writes dnf's module state, so flag the request ``sudo=True``
     (or ``su=True``).
 
@@ -1415,7 +1588,10 @@ async def module(
         if stream is None:
             raise ValueError("stream is required when enabled=True")
         enabled_modules = await ctx.facts.get(DnfEnabledModules)
-        current = enabled_modules.get(module)
+        current = next(
+            (entry["stream"] for entry in enabled_modules if entry["name"] == module),
+            None,
+        )
         if current == stream:
             ctx.reason = f"dnf module {module}:{stream} is already enabled"
             return
@@ -1430,7 +1606,7 @@ async def module(
         return
 
     disabled = await ctx.facts.get(DnfDisabledModules)
-    if module in disabled:
+    if any(entry["name"] == module for entry in disabled):
         ctx.reason = f"dnf module {module} is already disabled"
         return
     ctx.changed = True
@@ -1443,13 +1619,16 @@ __all__ = [
     "DnfCleanCommand",
     "DnfDisabledModules",
     "DnfEnabledModules",
+    "DnfGroup",
     "DnfGroups",
     "DnfInstallCommand",
     "DnfInstalledModules",
     "DnfKeyImportCommand",
     "DnfKeyUploadCommand",
+    "DnfModule",
     "DnfModuleDisableCommand",
     "DnfModuleEnableCommand",
+    "DnfPackageInfo",
     "DnfPackages",
     "DnfRemoveCommand",
     "DnfRepoFile",
@@ -1459,9 +1638,11 @@ __all__ = [
     "DnfRepoRemoveCommand",
     "DnfRepoUploadCommand",
     "DnfRepositories",
+    "DnfRepository",
     "DnfUpdateCommand",
     "RpmInstallCommand",
     "RpmPackage",
+    "RpmPackageInfo",
     "key",
     "module",
     "packages",

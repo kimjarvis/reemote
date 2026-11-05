@@ -44,7 +44,7 @@ a real asyncssh transport is missing:
   ``DiskStats``, ``DmiInfo``, ``GitBranch``, ``GitConfig``,
   ``GitHeadDetached``, ``GitIsRepo``, ``GitLocalCommit``,
   ``GitRemoteBranchCommit``, ``GitRemoteUrl``, ``GitSshKeyConfigured``,
-  ``GitStatus``, ``GitSubmoduleStatus``, ``GitTag``,
+  ``GitStatus``, ``GitSubmodule``, ``GitTag``,
   ``GitTrackingBranch``, ``Groups``,
   ``HasGui``, ``Home``, ``Hostname``, ``Ipv4Addrs``, ``Ipv6Addrs``, ``Kernel``,
   ``KernelModules``, ``KernelVersion``, ``Last``,
@@ -71,12 +71,10 @@ from typing import Any
 from reemote5.commands import Command, StringCommand, WaitTimeoutError
 from reemote5.hosts import Host
 from reemote5.modules.apk.apk import (
-    ApkAutoremovablePackage,
-    ApkExplicitPackage,
-    ApkHeldPackage,
     ApkHoldCommand,
     ApkInstallCommand,
     ApkPackageInfo,
+    ApkPackageVersion,
     ApkPurgeCommand,
     ApkRemoveCommand,
     ApkRepository,
@@ -89,10 +87,12 @@ from reemote5.modules.apt.apt import (
     AptDistUpgradeCommand,
     AptInstallCommand,
     AptInstallFixCommand,
+    AptKey,
     AptKeyInstallCommand,
     AptKeyUploadCommand,
     AptMarkHoldCommand,
     AptMarkUnholdCommand,
+    AptPackageInfo,
     AptPackagePolicy,
     AptPackageUpgrade,
     AptPpaCommand,
@@ -108,6 +108,7 @@ from reemote5.modules.apt.apt import (
     AptUpdateCommand,
     AptUpgradeCommand,
     DebInstallCommand,
+    DebPackageInfo,
     _repo_line_pattern,
 )
 from reemote5.modules.dnf.dnf import (
@@ -119,12 +120,16 @@ from reemote5.modules.dnf.dnf import (
     DnfModuleEnableCommand,
     DnfRemoveCommand,
     DnfRepoInstallCommand,
+    DnfRepoListEntry,
     DnfRepoRemoveCommand,
+    DnfRepository,
     DnfRepoUploadCommand,
     DnfUpdateCommand,
     RpmInstallCommand,
+    RpmPackageInfo,
 )
 from reemote5.modules.files.files import (
+    CopyCommand,
     FileCommand,
     GetCommand,
     LinkCommand,
@@ -143,10 +148,17 @@ from reemote5.modules.git.git import (
     GitRemoteSetUrlCommand,
     GitRepoPullCommand,
     GitStatusSummary,
-    GitSubmodule,
+    GitSubmoduleStatus,
     GitSubmoduleUpdateCommand,
+    GitTagInfo,
     GitWorktreeAddCommand,
     GitWorktreeRemoveCommand,
+)
+from reemote5.modules.hardware.hardware import (
+    BlockDevice,
+    DiskStat,
+    LsBlkNode,
+    NetworkDevice,
 )
 from reemote5.modules.server.server import (
     GroupAddCommand,
@@ -172,7 +184,12 @@ class SimulatedHost(Host):
     library itself.
     """
 
-    packages: set[str] = field(default_factory=set)
+    # Installed dnf packages -- the state store the fact reads, kept as the
+    # installed-name -> version list the mutators edit (e.g. ``nginx`` ->
+    # ``[""]`` for an unpinned install, ``["1.24.0-1.el9"]`` for a pinned or
+    # ``.rpm`` one), which ``DnfPackages.process`` projects into the sorted
+    # ``DnfPackageInfo`` entries it returns (the ``apt_packages`` precedent).
+    packages: dict[str, list[str]] = field(default_factory=dict)
     links: dict[str, str] = field(default_factory=dict)  # src -> target
     existing_files: set[str] = field(default_factory=set)
     # Remote path -> the content bytes the simulated remote filesystem holds
@@ -190,24 +207,36 @@ class SimulatedHost(Host):
     # transfer a no-op: execute_command mutates it, and the next step's fresh
     # fact cache sees the mutation.
     remote_files: dict[str, bytes] = field(default_factory=dict)
-    repositories: list[dict[str, str]] = field(default_factory=list)
+    # Configured dnf repositories (the ``DnfRepository`` entries
+    # ``DnfRepositories`` returns -- repoid/name, the source filename and the
+    # open-ended config options in an ``options`` sub-dict).
+    repositories: list[DnfRepository] = field(default_factory=list)
     # Runtime repository list (``dnf repolist --all``), backing ``DnfRepoList``:
-    # each entry is a ``{repoid, name, status}`` dict.
-    repo_list: list[dict[str, str]] = field(default_factory=list)
+    # each entry is a ``DnfRepoListEntry`` dict ({repoid, name, status}).
+    repo_list: list[DnfRepoListEntry] = field(default_factory=list)
+    # Enabled/installed dnf modules -- name -> stream state stores that
+    # ``DnfEnabledModules``/``DnfInstalledModules`` project into sorted
+    # ``DnfModule`` entries; ``enable_module`` mutates the enabled store.
     enabled_modules: dict[str, str] = field(default_factory=dict)  # name -> stream
+    # Disabled dnf module names -- the state store ``DnfDisabledModules``
+    # projects into ``DnfModule`` entries with stream "" (a simulated
+    # ``dnf module disable`` names no stream; the real listing's [x] rows
+    # always carry one). ``enable_module``/``disable_module`` mutate it.
     disabled_modules: list[str] = field(default_factory=list)  # disabled module names
     installed_modules: dict[str, str] = field(default_factory=dict)  # name -> stream
     # Installed/available package-group names (``dnf group list``), backing
-    # ``DnfGroups``/``DnfAvailableGroups``. Named distinctly from ``Host.group``
+    # ``DnfGroups``/``DnfAvailableGroups`` -- name stores the facts project
+    # into sorted ``DnfGroup`` entries. Named distinctly from ``Host.group``
     # (the inventory classifier) so the two are never confused.
     installed_groups: set[str] = field(default_factory=set)
     available_groups: set[str] = field(default_factory=set)
-    # ``.rpm`` files present on the host (path -> {name, version}) and the
+    # ``.rpm`` files present on the host (path -> ``RpmPackageInfo``) and the
     # packages installed from them (name -> version), backing ``RpmPackage``.
     # ``dnf.rpm`` installs the file's package: ``install_rpm`` copies the file's
-    # name/version into ``rpm_packages`` (and the name into ``packages``), so a
-    # repeat is a no-op and a removal (``present=False``) clears both.
-    rpm_files: dict[str, dict[str, str]] = field(default_factory=dict)
+    # name/version into ``rpm_packages`` (and the name/version into
+    # ``packages``), so a repeat is a no-op and a removal (``present=False``)
+    # clears both.
+    rpm_files: dict[str, RpmPackageInfo] = field(default_factory=dict)
     rpm_packages: dict[str, str] = field(default_factory=dict)
     # GPG key content imported via ``dnf.key`` (the raw bytes of each imported
     # key). ``dnf.key`` is non-idempotent and reads no fact, so nothing in the
@@ -223,7 +252,7 @@ class SimulatedHost(Host):
     # None (as the fact reports when systemd answers nothing).
     services: dict[str, str] = field(default_factory=dict)
     enabled_services: set[str] = field(default_factory=set)
-    # Orphan apk packages (the sorted, de-duplicated ``ApkAutoremovablePackage``
+    # Orphan apk packages (the sorted, de-duplicated ``ApkPackageVersion``
     # dicts -- name and version-and-release -- ``ApkAutoremovablePackages`` returns,
     # the packages ``apk add --purge`` would drop because nothing in
     # ``/etc/apk/world`` reaches them any more), backing ``ApkAutoremovablePackages``.
@@ -235,16 +264,17 @@ class SimulatedHost(Host):
     # definition NOT an orphan. Named with the apk_ prefix (like
     # ``apk_packages``) so the apk-side state never mixes with the apt/dnf-
     # side stores -- in particular with ``apt_autoremovable``, the sibling
-    # apt-side seam this one mirrors in role (its bare-name shape deliberately
-    # differs: the apk side keeps the version apk's purge row prints). Defaults
+    # apt-side seam this one mirrors in role.
+    # Defaults
     # to [] -- a simulated machine with nothing a purge would remove, like the
     # fact's answer for a simulation with no ``(N/M) Purging`` rows. A test
     # seeds it directly; ``autoremove_apk_packages`` (the simulated
     # ``apk.autoremove``) clears it and pops the names from ``apk_packages``.
-    apk_autoremovable: list[ApkAutoremovablePackage] = field(default_factory=list)
+    apk_autoremovable: list[ApkPackageVersion] = field(default_factory=list)
     # Explicitly installed (world) apk packages (the sorted, de-duplicated
-    # ``ApkExplicitPackage`` dicts -- name-only entries with each
-    # line's ``@tag``/version constraint already dropped -- that
+    # ``ApkPackageVersion`` dicts -- the bare name plus each line's version
+    # constraint as the ``version``, ``""`` for a bare name, with the
+    # ``@tag`` selector already dropped -- that
     # ``ApkExplicitPackages`` returns), backing
     # ``ApkExplicitPackages``. Kept separate from ``apk_packages`` (the
     # installed-name -> versions state store) because the ``apk list
@@ -255,17 +285,17 @@ class SimulatedHost(Host):
     # simulated machine whose ``/etc/apk/world`` holds nothing, like the
     # fact's answer for a missing or empty file. A test seeds it directly;
     # ``add_apk_virtual``/``remove_apk_virtual`` (the simulated
-    # ``apk.virtual``) insert/drop the virtual group's tag as a name-only
-    # entry, keeping the list sorted and de-duplicated as the world file's
-    # parsed entries read.
-    apk_explicit_packages: list[ApkExplicitPackage] = field(default_factory=list)
-    # Held (version-pinned) apk packages (the list of ``ApkHeldPackage``
-    # entries ``ApkHeldPackages`` returns -- each the bare name, its version
-    # constraint (e.g. ``curl`` pinned ``=8.14.0-r0``) and the ``@tag`` selector
-    # or ``""`` when the line carries none), backing
+    # ``apk.virtual``) insert/drop the virtual group's tag as an
+    # unconstrained entry, keeping the list sorted and de-duplicated as the
+    # world file's parsed entries read.
+    apk_explicit_packages: list[ApkPackageVersion] = field(default_factory=list)
+    # Held (version-pinned) apk packages (the list of ``ApkPackageVersion``
+    # entries ``ApkHeldPackages`` returns -- each the bare name and its
+    # version constraint as the ``version`` (e.g. ``curl`` pinned
+    # ``=8.14.0-r0``), the ``@tag`` selector dropped), backing
     # ``ApkHeldPackages``. Kept separate from ``apk_explicit_packages`` (the
-    # world entries) because that list deliberately drops every
-    # constraint, and from ``apk_packages`` (the installed-name -> versions
+    # world entries) because that list reports every world line, held or
+    # not, and from ``apk_packages`` (the installed-name -> versions
     # state store)
     # because the ``apk list --installed`` rows that seam models never show
     # the world's version pins. Named with the apk_ prefix (like
@@ -274,15 +304,16 @@ class SimulatedHost(Host):
     # ``/etc/apk/world`` pins nothing, like the fact's answer for a missing
     # or empty file. A test seeds it directly; ``hold_apk_packages``/
     # ``unhold_apk_packages`` (the simulated ``apk.hold``) append/remove the
-    # entries as the corresponding apk commands would, the entry's ``tag``
-    # always ``""`` because the hold command the simulation models never
-    # writes a ``@tag`` selector.
-    apk_held_packages: list[ApkHeldPackage] = field(default_factory=list)
+    # entries as the corresponding apk commands would, the ``@tag`` selector
+    # always dropped because the hold command the simulation models never
+    # writes one.
+    apk_held_packages: list[ApkPackageVersion] = field(default_factory=list)
     # Installed apk packages -- the state store the fact reads, kept as the
     # installed-name -> sorted version-and-release list the mutators edit
     # (e.g. ``musl`` -> ``["1.1.22-r3"]``), which ``ApkInstalledPackages.process``
-    # projects into the sorted ``ApkInstalledPackage`` entries it returns. Named
-    # distinctly from ``packages`` (the name-only set
+    # projects into the sorted ``ApkPackageVersion`` entries it returns, one
+    # per name-and-version pair. Named
+    # distinctly from ``packages`` (the name -> versions store
     # ``DnfPackages`` reads) and ``apt_packages`` (name -> versions) so the
     # dnf-, apt- and apk-side state never mix. Defaults to {} -- a simulated
     # Alpine machine with no installed packages listed, so the fact answers
@@ -315,47 +346,54 @@ class SimulatedHost(Host):
     # the namespace has no operations yet, so no ``execute_command`` mutator
     # maintains it and a test seeds it directly.
     apk_package_info: dict[str, ApkPackageInfo] = field(default_factory=dict)
-    # No-longer-needed apt package names (the sorted, de-duplicated name
-    # list ``AptAutoremovable`` returns, architecture-suffixed names like
+    # No-longer-needed apt packages (the sorted, de-duplicated
+    # ``AptPackageInfo`` dicts -- name plus the single bracketed Remv
+    # version as a one-element ``versions`` list --
+    # ``AptAutoremovable`` returns, architecture-suffixed names like
     # ``libc6:i386`` included), backing ``AptAutoremovable``. Kept separate
     # from ``apt_packages`` (name -> versions) because the installed rows
     # cannot tell a legacy dependency from one still in use. Defaults to
     # [] -- a simulated machine with nothing an autoremove would remove,
     # like the fact's answer for a simulation with no Remv rows. A test
     # seeds it directly; ``auto_remove_apt_packages`` (the simulated
-    # ``apt.auto_remove``) clears it and pops the names from
+    # ``apt.auto_remove``) clears it and pops the entry names from
     # ``apt_packages``.
-    apt_autoremovable: list[str] = field(default_factory=list)
-    # Held apt package names (the sorted, de-duplicated name list
-    # ``AptHeldPackages`` returns, architecture-suffixed names like
-    # ``libc6:i386`` included), backing ``AptHeldPackages``. Kept separate
+    apt_autoremovable: list[AptPackageInfo] = field(default_factory=list)
+    # Held apt packages (the sorted, de-duplicated ``AptPackageInfo``
+    # entries ``AptHeldPackages`` returns -- name plus an empty
+    # ``versions`` list, since ``apt-mark showhold`` prints no version,
+    # architecture-suffixed
+    # names like ``libc6:i386`` included), backing ``AptHeldPackages``. Kept
+    # separate
     # from ``apt_packages`` (name -> versions) because the hold state is
     # invisible in the ``apt list --installed`` rows that seam models.
     # Defaults to [] -- a simulated machine with nothing marked
     # ``apt-mark hold``, like the fact's answer for empty showhold output.
     # A test seeds it directly; ``hold_apt_packages``/``unhold_apt_packages``
-    # (the simulated ``apt.mark``) add/drop names, keeping the list sorted
+    # (the simulated ``apt.mark``) add/drop entries, keeping the list sorted
     # and de-duplicated as ``apt-mark showhold`` output parses.
-    apt_held_packages: list[str] = field(default_factory=list)
+    apt_held_packages: list[AptPackageInfo] = field(default_factory=list)
     # The machine architecture (``uname -m``), backing ``Arch``. Defaults to
     # ``x86_64`` -- a real machine always answers ``uname -m`` with something.
     arch: str = "x86_64"
-    # GPG keys available to APT (key id -> the details dict ``AptKeys``
-    # returns -- validity, length, subkeys, fingerprint, uid_hash, uid),
+    # GPG keys available to APT (the list of ``AptKey`` dicts ``AptKeys``
+    # returns -- id, validity, length, subkeys, fingerprint, uid_hash, uid),
     # backing ``AptKeys``. The seam holds the already-flattened answer the
     # fact produces after merging every keyring file, so the fact's
-    # ``directories`` argument does not filter it. Defaults to {} -- a
+    # ``directories`` argument does not filter it. Defaults to [] -- a
     # simulated machine with no keyring files found, like the fact's
     # answer when the find sweep lists nothing. A read-only seam: no
     # ``execute_command`` mutator maintains it, so a test sets it directly.
-    apt_keys: dict[str, dict[str, Any]] = field(default_factory=dict)
-    # Installed apt packages (name -> the sorted version list
-    # ``AptPackages`` returns, architecture-suffixed names like
-    # ``libc6:i386`` included), backing ``AptPackages``. Named distinctly
+    apt_keys: list[AptKey] = field(default_factory=list)
+    # Installed apt packages -- the state store the fact reads, kept as the
+    # name -> sorted version list the mutators edit (architecture-suffixed
+    # names like ``libc6:i386`` included), which ``AptPackages.process``
+    # projects into the sorted ``AptPackageInfo`` entries it returns. Named
+    # distinctly
     # from ``packages`` (the name-only set ``DnfPackages`` reads) so the
     # dnf- and apt-side state never mix. Defaults to {} -- a simulated
-    # machine with no installed packages listed, like pyinfra's
-    # ``default = dict`` for a failed read. A test seeds it directly;
+    # machine with no installed packages listed, so the fact answers ``[]``.
+    # A test seeds it directly;
     # ``install_deb``, ``install_apt_packages``, ``remove_apt_packages``,
     # ``upgrade_apt_packages``, ``dist_upgrade_apt_packages`` and
     # ``auto_remove_apt_packages`` mutate it as the corresponding
@@ -398,38 +436,40 @@ class SimulatedHost(Host):
     # content parses into, keeping the seam consistent across a simulated
     # sources-file write/remove too.
     apt_sources: list[AptSource] = field(default_factory=list)
-    # Pending apt upgrades (name -> the ``AptPackageUpgrade`` dict
-    # ``AptUpgradable`` returns -- installed and candidate versions,
+    # Pending apt upgrades (the list of ``AptPackageUpgrade`` dicts
+    # ``AptUpgradable`` returns -- name, installed and candidate versions,
     # architecture-suffixed names like ``libc6:i386`` included), backing
     # ``AptUpgradable``. Kept separate from ``apt_packages`` (name ->
     # installed versions) and ``apt_policy`` (one package's full policy)
     # because neither the installed rows nor a per-package policy query
-    # names the whole set an upgrade would move. Defaults to {} -- a
+    # names the whole set an upgrade would move. Defaults to [] -- a
     # simulated machine fully up to date, like the fact's answer for a
     # listing with no upgradable rows. A test seeds it directly;
     # ``dist_upgrade_apt_packages`` (the simulated ``apt.dist_upgrade``) and
     # ``upgrade_apt_packages`` (the simulated ``apt.upgrade`` /
     # ``apt.packages(upgrade=True)``) apply the candidates into
     # ``apt_packages`` and clear it.
-    apt_upgradable: dict[str, AptPackageUpgrade] = field(default_factory=dict)
-    # ``.deb`` files present on the host (path -> {name, version}), backing
+    apt_upgradable: list[AptPackageUpgrade] = field(default_factory=list)
+    # ``.deb`` files present on the host (path -> the ``DebPackageInfo``
+    # dict -- name and version), backing
     # ``DebPackage``'s file query. ``apt.deb`` installs the file's package:
     # ``install_deb`` copies the file's version into ``apt_packages`` (the
     # name -> sorted version list ``AptPackages`` reads), so a repeat is a
     # no-op and a removal (``present=False``) clears it. Kept separate from
     # ``rpm_files`` (the dnf-side ``.rpm`` store) so apt and dnf never mix.
-    deb_files: dict[str, dict[str, str]] = field(default_factory=dict)
+    deb_files: dict[str, DebPackageInfo] = field(default_factory=dict)
     # SSH public keys, backing ``AuthorizedKeys``: keyed by username for the
     # default ``~user/.ssh/authorized_keys`` path and by the explicit path
     # when the fact is given one; each value is the list of full key strings
     # the file lists (already stripped, no comments -- the parsed form).
     authorized_keys: dict[str, list[str]] = field(default_factory=dict)
-    # Mounted block devices (device -> {blocks, used, available,
-    # used_percent, mount}), backing ``BlockDevices``. Each value is the
-    # parsed form the fact returns -- all five entries raw strings, as
-    # ``df`` prints them. Defaults to {} -- a simulated machine with no
-    # devices listed, like pyinfra's ``default = dict`` for a failed read.
-    block_devices: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Mounted block devices (device -> the ``BlockDevice`` entry the fact
+    # returns -- {blocks, used, available, used_percent, mount}), backing
+    # ``BlockDevices``. Each value is the parsed form the fact returns --
+    # all five entries raw strings, as ``df`` prints them. Defaults to {}
+    # -- a simulated machine with no devices listed, like pyinfra's
+    # ``default = dict`` for a failed read.
+    block_devices: dict[str, BlockDevice] = field(default_factory=dict)
     # CPU details (the parsed ``LANG=C lscpu`` rows), backing ``CpuInfo``:
     # each key maps to its stripped string value, except a ``flag``-bearing
     # key (e.g. ``Flags``) whose value is the list of whitespace-split tokens.
@@ -448,13 +488,13 @@ class SimulatedHost(Host):
     # answers ``date``, so the seam never falls through to the shell, and a
     # fixed default keeps simulated reads deterministic.
     date: datetime = datetime(2019, 1, 1, tzinfo=UTC)
-    # Per-device IO counters (device -> the int counter dict the fact
-    # returns), backing ``DiskStats``. Each value holds whichever counter
-    # groups the simulated kernel prints -- the eleven classic counters,
-    # plus the discard/flush groups on a modern kernel. Defaults to {} --
-    # a simulated machine with no /proc/diskstats rows, like the fact's
-    # {} fallback for a failed read.
-    disk_stats: dict[str, dict[str, int]] = field(default_factory=dict)
+    # Per-device IO counters (device -> the ``DiskStat`` int counter entry
+    # the fact returns), backing ``DiskStats``. Each value holds whichever
+    # counter groups the simulated kernel prints -- the eleven classic
+    # counters, plus the discard/flush groups on a modern kernel. Defaults
+    # to {} -- a simulated machine with no /proc/diskstats rows, like the
+    # fact's {} fallback for a failed read.
+    disk_stats: dict[str, DiskStat] = field(default_factory=dict)
     # DMI identity fields (the parsed /sys/class/dmi/id/ dump: sys_vendor,
     # product_name, bios_version, chassis_type, ...), backing ``DmiInfo``.
     # Each value is the raw string the sysfs file holds, with uevent/
@@ -497,10 +537,13 @@ class SimulatedHost(Host):
     # so a repeat ``git.repo`` sees the branch already checked out.
     git_branches: dict[str, str] = field(default_factory=dict)
     # Git configuration items (the parsed ``git config -l`` rows), backing
-    # ``GitConfig``: scope key -> the key -> value-list dict. The scope
+    # ``GitConfig``: scope key -> the key -> value-list dict, which the fact
+    # projects into its ``GitConfigItem`` entry list (the apk/apt mutated-
+    # dict-store precedent). The scope
     # key is the repo path for a ``--local`` read, or the "global"/
     # "system" sentinels for the two repo-less login-user scopes. An
-    # absent scope reads as {} (pyinfra's ``default = dict``). A test
+    # absent scope reads as [] (pyinfra's ``default = dict``, projected).
+    # A test
     # seeds it directly; ``set_git_config`` (the simulated ``git.config``)
     # sets or adds a key's value list under the targeted scope, so a
     # repeat ``git.config`` reads the value back and is a no-op.
@@ -560,15 +603,15 @@ class SimulatedHost(Host):
     # directly.
     git_statuses: dict[str, GitStatusSummary] = field(default_factory=dict)
     # Submodule rows (the parsed ``git submodule status`` output), backing
-    # ``GitSubmoduleStatus``: repo path -> ``GitSubmodule`` list. An absent
+    # ``GitSubmodule``: repo path -> ``GitSubmoduleStatus`` list. An absent
     # repo reads as [], like the short-circuited directory guard. A read-only
     # seam: a test seeds it directly.
-    git_submodules: dict[str, list[GitSubmodule]] = field(default_factory=dict)
+    git_submodules: dict[str, list[GitSubmoduleStatus]] = field(default_factory=dict)
     # The repository's tags (the ``git tag`` lines), backing ``GitTag``:
-    # repo path -> tag list in listing order. An absent repo reads as [],
-    # like the short-circuited directory guard. A read-only seam: a test
-    # seeds it directly.
-    git_tags: dict[str, list[str]] = field(default_factory=dict)
+    # repo path -> ``GitTagInfo`` entry list in listing order. An absent repo
+    # reads as [], like the short-circuited directory guard. A read-only
+    # seam: a test seeds it directly.
+    git_tags: dict[str, list[GitTagInfo]] = field(default_factory=dict)
     # Upstream tracking branches (the ``...`` token of
     # ``git status --branch --porcelain``), backing ``GitTrackingBranch``:
     # repo path -> upstream branch. An absent repo reads as None, like a
@@ -689,12 +732,12 @@ class SimulatedHost(Host):
     # ``lsb_release`` raises ``CommandNotFoundError`` on the real transport).
     lsb_release: dict[str, str] = field(default_factory=dict)
     # The block device tree (the parsed ``lsblk -J`` node list), backing
-    # ``LsBlk``: each node is the dict the fact returns -- name, type,
-    # size (int bytes), mountpoint (None when unmounted) -- with stacked
-    # devices nested under ``children``. Defaults to [] -- a simulated
-    # machine with no block devices listed, like the fact's [] fallback
-    # for a failed or undecodable read.
-    lsblk_devices: list[dict[str, Any]] = field(default_factory=list)
+    # ``LsBlk``: each node is the ``LsBlkNode`` entry the fact returns --
+    # name, type, size (int bytes), mountpoint (None when unmounted) --
+    # with stacked devices nested under ``children``. Defaults to [] -- a
+    # simulated machine with no block devices listed, like the fact's []
+    # fallback for a failed or undecodable read.
+    lsblk_devices: list[LsBlkNode] = field(default_factory=list)
     # Mounted filesystems (mount point -> {device, type, options}), backing
     # ``Mounts``. Each value is the parsed form the fact returns, with the
     # options already combined and octal escapes decoded -- the seam holds
@@ -705,13 +748,14 @@ class SimulatedHost(Host):
     # the requested options into the entry and ``unmount_filesystem`` drops
     # the mount point, so the next step's fresh fact cache sees the change.
     mounts: dict[str, dict[str, Any]] = field(default_factory=dict)
-    # Network devices (interface -> {state, ether?, mtu?, ipv4?, ipv6?}),
-    # backing ``NetworkDevices``. Each value is the parsed form the fact
-    # returns -- an ipv4/ipv6 block holds the primary address plus its
+    # Network devices (interface -> the ``NetworkDevice`` entry the fact
+    # returns -- {state, ether?, mtu?, ipv4?, ipv6?}), backing
+    # ``NetworkDevices``. Each value is the parsed form the fact returns
+    # -- an ipv4/ipv6 block holds the primary address plus its
     # mask/broadcast details and any ``additional_ips`` aliases. Defaults
     # to {} -- a simulated machine with no interfaces listed, like pyinfra's
     # ``default = dict`` for a failed read.
-    network_devices: dict[str, dict[str, Any]] = field(default_factory=dict)
+    network_devices: dict[str, NetworkDevice] = field(default_factory=dict)
     # The login user's PATH environment variable (the raw colon-separated
     # ``echo $PATH`` string), backing ``Path``. Named ``os_path`` with the
     # os_ prefix (like ``os_kernel``) so it stays clear of any inventory
@@ -890,6 +934,8 @@ class SimulatedHost(Host):
                 self.move_path(src, dest)
             case RemoveTreeCommand(src=src):
                 self.remove_tree(src)
+            case CopyCommand(src=src, dest=dest):
+                self.copy_path(src, dest)
             case GitConfigCommand(
                 key=key,
                 value=value,
@@ -1006,15 +1052,18 @@ class SimulatedHost(Host):
         ``apk.virtual``'s create mutation. apk records the virtual group's
         ``tag`` in ``/etc/apk/world`` and installs the member packages as its
         dependencies, so this both inserts ``tag`` into ``apk_explicit_packages``
-        (the sorted, de-duplicated ``ApkExplicitPackage`` entries
-        ``ApkExplicitPackages`` reads) -- as a name-only entry, kept
+        (the sorted, de-duplicated ``ApkPackageVersion`` entries
+        ``ApkExplicitPackages`` reads) -- as an unconstrained entry
+        (``version`` ``""``), kept
         sorted and de-duplicated as the parsed world entries
         read -- and delegates the members to ``install_apk_packages`` so
         ``ApkInstalledPackages`` stays consistent for any later ``apk.packages`` read.
         """
         if not any(entry["name"] == tag for entry in self.apk_explicit_packages):
-            self.apk_explicit_packages.append({"name": tag})
-            self.apk_explicit_packages.sort(key=lambda entry: entry["name"])
+            self.apk_explicit_packages.append({"name": tag, "version": ""})
+            self.apk_explicit_packages.sort(
+                key=lambda entry: (entry["name"], entry["version"])
+            )
         self.install_apk_packages(packages)
 
     def remove_apk_virtual(self, tag: str, packages: tuple[str, ...]) -> None:
@@ -1044,10 +1093,11 @@ class SimulatedHost(Host):
         ``apk.hold``'s ``present=True`` mutation. Each entry carries its
         version constraint (``curl=8.14.0-r0``), so ``_split_constraint``
         separates the bare name from the bound and the pair lands in
-        ``apk_held_packages`` (the list of ``ApkHeldPackage`` entries
-        ``ApkHeldPackages`` reads), exactly as the fact parses the world
-        line the real command writes -- with an empty ``tag``, since a hold
-        command the simulation models carries no ``@tag`` selector. A repeat
+        ``apk_held_packages`` (the list of ``ApkPackageVersion`` entries
+        ``ApkHeldPackages`` reads) as the entry's ``version``, exactly as
+        the fact parses the world
+        line the real command writes -- the ``@tag`` selector dropped, since
+        a hold command the simulation models carries none. A repeat
         hold of the same pin is a no-op once the fresh per-step fact cache
         sees it. Holding does not touch ``apk_packages``
         -- the pin keeps a package out of upgrades, it never installs or
@@ -1055,7 +1105,7 @@ class SimulatedHost(Host):
         """
         for package in packages:
             name, constraint = _split_constraint(package)
-            entry = {"name": name, "constraint": constraint, "tag": ""}
+            entry = {"name": name, "version": constraint}
             held = [e for e in self.apk_held_packages if e["name"] != name]
             held.append(entry)
             self.apk_held_packages = held
@@ -1097,21 +1147,26 @@ class SimulatedHost(Host):
 
     def install_packages(self, packages: tuple[str, ...]) -> None:
         for package in packages:
-            # Version pins (``pkg=version``) carry no simulated state: only
-            # the name is tracked, matching the name-only DnfPackages fact.
-            package = package.split("=", 1)[0]
-            if package in self.packages:
+            # A version pin (``pkg=version``) records exactly that version in
+            # the name -> versions store; an unpinned name carries no
+            # repository metadata to resolve a version from, so it gets the
+            # [""] placeholder (the ``install_apt_packages`` precedent). The
+            # dnf.packages operation itself still compares names only.
+            name, sep, version = package.rpartition("=")
+            if not sep:
+                name, version = package, ""
+            if name in self.packages:
                 continue
-            self.packages.add(package)
-            for src, target in self.installs_links.get(package, {}).items():
+            self.packages[name] = [version]
+            for src, target in self.installs_links.get(name, {}).items():
                 self.links[src] = target
-            for path in self.installs_files.get(package, set()):
+            for path in self.installs_files.get(name, set()):
                 self.existing_files.add(path)
 
     def remove_packages(self, packages: tuple[str, ...]) -> None:
         for package in packages:
-            name = package.split("=", 1)[0]
-            self.packages.discard(name)
+            name = package.rpartition("=")[0] or package
+            self.packages.pop(name, None)
             # A package installed from a ``.rpm`` (``dnf.rpm`` ``present=False``
             # reuses DnfRemoveCommand) must also leave ``rpm_packages``, or
             # ``RpmPackage`` would still report it installed.
@@ -1123,15 +1178,15 @@ class SimulatedHost(Host):
         Reads the ``.rpm``'s name/version from ``rpm_files`` (the seam
         ``RpmPackage`` reads for a file path) and records them in
         ``rpm_packages`` plus ``packages``, so a repeat ``dnf.rpm`` is a no-op
-        and ``DnfPackages`` also sees the package. An unknown ``.rpm`` path has
-        no metadata to install, so nothing changes.
+        and ``DnfPackages`` also sees the package at that version. An unknown
+        ``.rpm`` path has no metadata to install, so nothing changes.
         """
         info = self.rpm_files.get(src)
         if info is None:
             return
         name = info["name"]
         self.rpm_packages[name] = info["version"]
-        self.packages.add(name)
+        self.packages[name] = [info["version"]]
 
     def install_deb(self, src: str) -> None:
         """Record a simulated ``dpkg -i``: mark the ``.deb``'s package installed.
@@ -1210,8 +1265,8 @@ class SimulatedHost(Host):
         ``apt_simulations`` -- the phrase both operations simulate -- so
         a repeat upgrade is a no-op.
         """
-        for name, upgrade in self.apt_upgradable.items():
-            self.apt_packages[name] = [upgrade["candidate"]]
+        for upgrade in self.apt_upgradable:
+            self.apt_packages[upgrade["name"]] = [upgrade["candidate"]]
         self.apt_upgradable.clear()
         self.apt_simulations["upgrade"] = {
             "upgraded": 0,
@@ -1231,8 +1286,8 @@ class SimulatedHost(Host):
         Orphaned dependencies are left alone -- a plain dist-upgrade does
         not autoremove; that is ``auto_remove_apt_packages``' job.
         """
-        for name, upgrade in self.apt_upgradable.items():
-            self.apt_packages[name] = [upgrade["candidate"]]
+        for upgrade in self.apt_upgradable:
+            self.apt_packages[upgrade["name"]] = [upgrade["candidate"]]
         self.apt_upgradable.clear()
         self.apt_simulations["dist-upgrade"] = {
             "upgraded": 0,
@@ -1244,15 +1299,16 @@ class SimulatedHost(Host):
     def auto_remove_apt_packages(self) -> None:
         """Record a simulated ``apt-get autoremove``: drop the removable names.
 
-        ``apt.auto_remove``'s mutation. Pops each ``apt_autoremovable`` name
-        from ``apt_packages`` so ``AptPackages`` no longer reports it,
+        ``apt.auto_remove``'s mutation. Pops each ``apt_autoremovable``
+        entry's name from ``apt_packages`` so ``AptPackages`` no longer
+        reports it,
         clears ``apt_autoremovable`` (nothing left to remove) and zeroes the
         ``autoremove`` entry in ``apt_simulations``, so a repeat
         ``apt.auto_remove`` is a no-op. An absent name is tolerated (the
         operation's fact check only yields names the simulation reported).
         """
-        for name in self.apt_autoremovable:
-            self.apt_packages.pop(name, None)
+        for entry in self.apt_autoremovable:
+            self.apt_packages.pop(entry["name"], None)
         self.apt_autoremovable.clear()
         self.apt_simulations["autoremove"] = {
             "upgraded": 0,
@@ -1264,7 +1320,7 @@ class SimulatedHost(Host):
     def hold_apt_packages(self, packages: tuple[str, ...]) -> None:
         """Record a simulated ``apt-mark hold``: mark the names held.
 
-        ``apt.mark``'s ``held=True`` mutation. Adds the names to
+        ``apt.mark``'s ``held=True`` mutation. Adds the names as entries to
         ``apt_held_packages`` (the list ``AptHeldPackages`` reads), keeping
         it sorted and de-duplicated as the fact's ``showhold`` parsing
         would, so a repeat hold is a no-op once the fresh per-step fact
@@ -1272,12 +1328,16 @@ class SimulatedHost(Host):
         the mark keeps a package out of upgrades, it never installs or
         removes anything.
         """
-        self.apt_held_packages[:] = sorted(set(self.apt_held_packages) | set(packages))
+        held = {entry["name"] for entry in self.apt_held_packages}
+        self.apt_held_packages[:] = [
+            {"name": name, "versions": []} for name in sorted(held | set(packages))
+        ]
 
     def unhold_apt_packages(self, packages: tuple[str, ...]) -> None:
         """Record a simulated ``apt-mark unhold``: drop the held marks.
 
-        ``apt.mark``'s ``held=False`` mutation. Removes the names from
+        ``apt.mark``'s ``held=False`` mutation. Removes the names' entries
+        from
         ``apt_held_packages`` so ``AptHeldPackages`` no longer reports them
         (the list stays sorted). An absent name is tolerated -- the real
         ``apt-mark unhold`` reports "was already not on hold" and exits 0,
@@ -1285,7 +1345,7 @@ class SimulatedHost(Host):
         """
         dropped = set(packages)
         self.apt_held_packages[:] = [
-            name for name in self.apt_held_packages if name not in dropped
+            entry for entry in self.apt_held_packages if entry["name"] not in dropped
         ]
 
     @staticmethod
@@ -1514,7 +1574,8 @@ class SimulatedHost(Host):
 
         The mirror of ``enable_module``: clears any enabled stream and keeps
         ``disabled_modules`` sorted, matching what ``DnfDisabledModules`` reports
-        (its ``parse`` returns sorted, de-duplicated names), so a repeat disable
+        (its seam projection yields sorted entries with stream "" -- a
+        simulated disable names no stream), so a repeat disable
         is a no-op.
         """
         self.enabled_modules.pop(module, None)
@@ -1727,6 +1788,40 @@ class SimulatedHost(Host):
         if stats is not None:
             self.file_stats[full_dest] = stats
 
+    def copy_path(self, src: str, dest: str) -> None:
+        """Record a simulated ``cp -r``: duplicate ``src`` into the directory ``dest``.
+
+        The copied path is ``dest/basename(src)``, exactly as the operation
+        computes it, and the source stays in place -- the difference from
+        ``move_path``. The content bytes are duplicated within
+        ``remote_files`` (so ``FileContents`` and ``RemoteFileSha1`` read
+        them at both paths, which is what makes a repeat ``files.copy``
+        with ``overwrite`` unset a no-op), ``existing_files`` gains the new
+        member, and seeded ``file_stats``/``directory_stats`` rows are
+        copied as fresh dicts so the two paths never share one mutable
+        row. Nested paths inside a copied directory are not modelled --
+        the simulation's stores are flat. An absent source copies nothing:
+        the real ``cp`` would exit non-zero and fail the apply step. The
+        ``overwrite`` flag needs no separate arm: ``cp -r -f`` replaces the
+        target's content exactly as the plain copy does.
+        """
+        full_dest = posixpath.join(dest, PurePosixPath(src).name)
+        data = self.remote_files.get(src)
+        if data is not None:
+            self.remote_files[full_dest] = data
+        if src in self.existing_files:
+            self.existing_files.add(full_dest)
+        stats = self.file_stats.get(src)
+        if stats is not None:
+            self.file_stats[full_dest] = (
+                dict(stats) if isinstance(stats, dict) else stats
+            )
+        dir_stats = self.directory_stats.get(src)
+        if dir_stats is not None:
+            self.directory_stats[full_dest] = (
+                dict(dir_stats) if isinstance(dir_stats, dict) else dir_stats
+            )
+
     def remove_tree(self, src: str) -> None:
         """Record a simulated ``rm -rf``: drop the path from every file store.
 
@@ -1826,9 +1921,9 @@ class SimulatedHost(Host):
         directory that the operation's ``_DirectoryExists`` probe reads --
         with that present the next pass takes the reconcile/branch/pull
         branch instead of re-cloning. ``git_configs[dest]`` records the
-        ``remote.origin.url`` list ``GitConfig`` returns for the freshly
-        cloned repository (matching pyinfra's own fixture shape, a one-
-        element list), so the origin-reconcile check reads equal on the
+        ``remote.origin.url`` value list ``GitConfig``'s entry carries for
+        the freshly cloned repository (matching pyinfra's own fixture shape,
+        a one-element list), so the origin-reconcile check reads equal on the
         second pass. ``git_branches[dest]`` becomes the requested ``branch``,
         or ``"main"`` when none was named -- the modern ``init.defaultBranch``
         a real clone resolves HEAD to -- so the branch-match check reads

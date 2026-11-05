@@ -48,10 +48,11 @@ held. Given (as for ``openssl`` below), it is an explicit constraint: a bare
 ``<2.0`` is kept as written, and the pin is written whether or not the package
 is installed yet.
 
-Idempotence reads the ``ApkHeldPackages`` fact (a list of ``ApkHeldPackage``
-entries -- name, constraint and tag -- parsed from the same
+Idempotence reads the ``ApkHeldPackages`` fact (a list of ``ApkPackageVersion``
+entries -- the bare name with the world constraint, operator included, as its
+``version``, the ``@tag`` dropped -- parsed from the same
 ``/etc/apk/world``, looked up by name and compared on the entry's
-constraint): a name is held exactly when its
+``version``): a name is held exactly when its
 world constraint already matches the wanted pin, so re-running is a no-op and
 re-pinning to a *different* version is detected as a change. The script yields
 each direction twice to show that idempotence across the two phases: in the

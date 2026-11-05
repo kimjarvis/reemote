@@ -14,6 +14,36 @@ in `examples/modules/files/`. They are not rendered here — each reads a
 single fact, and the facts themselves are documented on the
 [`files` module page](../../modules/files.md).
 
+## Creating a symbolic link
+
+`files.link` reads the link's current target through the `FileLink` fact
+(`readlink`) and yields a command only when it differs — `ln -sf` creates or
+retargets the link, `present=False` removes it with `rm -f`. The example
+ensures the same link twice under the login user's home (no elevation
+needed) — the second request is a guaranteed no-op because the first
+request's `ln -sf` is visible to it through the fresh per-step fact cache.
+The readlink-based check only sees symlinks; removing a regular file needs
+`files.file` below.
+
+::: files_op_link
+    options:
+      members: []
+
+## Ensuring a regular file
+
+`files.file` reads existence through the boolean `FileExists` fact
+(`test -e`) and yields a command only on a difference — `touch` creates a
+missing file, `present=False` removes a present one with `rm -f`. Unlike
+`files.link`'s readlink-based check this probe also sees regular files,
+which makes it the removal primitive for them. The example touches the same
+marker file twice under the login user's home — the second request is a
+guaranteed no-op through the fresh per-step fact cache; a root-owned path
+would carry `sudo=True`.
+
+::: files_op_file
+    options:
+      members: []
+
 ## Uploading a stream with sha1 idempotence
 
 The first non-shell operation: `files.put` compares the sha1 of an IO-like
@@ -105,6 +135,23 @@ in run 2, each run shown as a `--dry` plan followed by the real apply log.
 Nothing is elevated here; a root-owned destination would carry `sudo=True`.
 
 ::: files_move
+    options:
+      members: []
+
+## Copying a remote file into a remote directory
+
+`files.copy` (pyinfra parity): `src` is a remote path, `dest` the remote
+*directory* to copy it into, and the source stays in place — the difference
+from `files.move`. `overwrite=True` forces the copy (`cp -r -f`, no `rm -rf`
+prelude); without it an existing target with equal sha1 content is a no-op
+and a different one raises `ValueError`. Absent source / absent or
+non-directory destination raise in *both* phases (the same phase-unaware
+strictness as `files.move`), so the example stages the payload with
+`files.put` into `/tmp` in run 1, then copies it into the login user's home
+in run 2, each run shown as a `--dry` plan followed by the real apply log.
+Nothing is elevated here; a root-owned destination would carry `sudo=True`.
+
+::: files_copy
     options:
       members: []
 

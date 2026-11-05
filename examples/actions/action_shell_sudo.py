@@ -95,8 +95,10 @@ async def main() -> None:
     for label, results in (("id (unprivileged)", plain), ("id (sudo=True)", elevated)):
         print(f"== {label} ==")
         for name, result in results.items():
-            print(f"{name}: exit={result.exit_status} ok={result.ok}")
-            print(f"  {result.stdout.strip()}")
+            print(
+                f"{name}: exit={result['exit_status']} ok={result['exit_status'] == 0}"
+            )
+            print(f"  {result['stdout'].strip()}")
         print()
 
 

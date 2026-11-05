@@ -9,19 +9,31 @@
         - AptAutoremovable
         - AptHeldPackages
         - AptKeys
-        - AptPackagePolicy
-        - AptPackageUpgrade
         - AptPackages
         - AptPolicy
-        - AptPolicyVersion
-        - AptSimulationDict
-        - AptSource
         - AptSources
         - AptSourcesFile
         - AptUpgradable
         - DebPackage
 
 [//]: # (        - SimulateOperationWillChange)
+
+## apt Returns 
+
+::: reemote5.modules.apt.apt
+    options:
+      show_root_heading: false
+      members:
+        - AptKey
+        - AptPackageInfo
+        - AptPackagePolicy
+        - AptPackageUpgrade
+        - AptPolicyVersion
+        - AptSource
+        - DebPackageInfo
+
+[//]: # (        - AptSimulationDict)
+
 
 ## apt Operations
 
@@ -46,15 +58,20 @@
 
 `reemote5.modules.apt.apt` holds the apt facts — `AptAutoremovable`, the
 no-longer-needed packages an autoremove would clean up, parsed from the
-`Remv` rows of an `apt-get --just-print autoremove` simulation,
-`AptHeldPackages`, the
+`Remv` rows of an `apt-get --just-print autoremove` simulation into plain
+`AptPackageInfo` TypedDict-shaped dicts (name and a one-element versions
+list), `AptHeldPackages`, the
 package names marked as held via `apt-mark hold`, parsed from
-`apt-mark showhold`, `AptKeys`, the GPG keys available to APT, gathered
+`apt-mark showhold` into plain `AptPackageInfo` TypedDict-shaped dicts
+with an empty versions list,
+`AptKeys`, the GPG keys available to APT, gathered
 from the modern keyring directories
 (`/etc/apt/trusted.gpg.d`, `/etc/apt/keyrings`, `/usr/share/keyrings`) with
-`gpg --with-colons` instead of the deprecated `apt-key` command,
+`gpg --with-colons` instead of the deprecated `apt-key` command into plain
+`AptKey` TypedDict-shaped dicts,
 `AptPackages`, the installed packages with their versions, parsed from
-`apt list --installed`, `AptPolicy`, the install candidate and repository
+`apt list --installed` into plain `AptPackageInfo` TypedDict-shaped dicts,
+`AptPolicy`, the install candidate and repository
 origins of one package, parsed from `apt-cache policy` into a plain
 `AptPackagePolicy` TypedDict-shaped dict, `AptSources`, the configured
 repositories, parsed from the legacy `.list` files and the modern deb822
@@ -65,7 +82,8 @@ absent), read behind a `test -e`-guarded marker, and
 each version jump, parsed from `apt list --upgradable` into plain
 `AptPackageUpgrade` TypedDict-shaped dicts, `DebPackage`, the name and
 version of a `.deb` file or an installed dpkg package, parsed from
-`dpkg -I`/`dpkg -s`, and `SimulateOperationWillChange`, the proposed change
+`dpkg -I`/`dpkg -s` into a plain `DebPackageInfo` TypedDict-shaped dict,
+and `SimulateOperationWillChange`, the proposed change
 counts of a simulated `apt-get` operation, parsed from the `--dry-run`
 summary line into a plain `AptSimulationDict` TypedDict-shaped dict.
 Beside the facts live the operations: `apt.deb`, which installs or removes a
@@ -110,12 +128,16 @@ only counts a simulation's changes, never names them). Only the
 machine-readable `Remv <name> [<version>]` rows are read — the progress
 lines, the indented names under `The following packages will be REMOVED:`
 and the `0 upgraded, ...` count line are never mistaken for package
-names, and the bracketed versions are deliberately dropped. `apt-mark
+names, and each row's bracketed version is kept alongside the name as a
+one-element `versions` list — the shared `AptPackageInfo` shape
+`AptPackages` and `AptHeldPackages` return too. `apt-mark
 showauto` is deliberately not used: it lists every auto-installed
 package, including ones something still requires, while the simulation
 reports exactly the no-longer-needed set. The result is a deterministic,
-JSON-printable sorted name list like `["libllvm17t64",
-"linux-headers-6.8.0-45"]`, with architecture-suffixed names keeping
+JSON-printable sorted list of `AptPackageInfo` entries like
+`[{"name": "libllvm17t64", "versions": ["1:17.0.6-9ubuntu1"]},
+{"name": "linux-headers-6.8.0-45", "versions": ["6.8.0-45.45"]}]`, with
+architecture-suffixed names keeping
 their suffix; nothing autoremovable reads as `[]`. The fact fills a
 coverage gap of `AptPackages`: the `apt list --installed` rows cannot
 tell a legacy dependency from one still in use, so a deploy cleaning up
@@ -130,11 +152,16 @@ simulation needs no root, and a missing `apt-get` exits
 takes no arguments and runs `apt-mark showhold`, which prints one held
 package name per line — the names marked with `apt-mark hold`, which keeps
 them out of upgrades. It is a reemote5 original: pyinfra ships no
-`apt.AptHeldPackages` counterpart. Blank lines are skipped and the names
+`apt.AptHeldPackages` counterpart. Blank lines are skipped and the entries
 are de-duplicated and sorted, so the result is a deterministic,
-JSON-printable list like `["docker-ce", "libc6:i386", "linux-image-generic"]`,
+JSON-printable list of `AptPackageInfo` entries like
+`[{"name": "docker-ce", "versions": []},
+{"name": "libc6:i386", "versions": []},
+{"name": "linux-image-generic", "versions": []}]`,
 with architecture-suffixed names keeping their suffix exactly as `apt-mark`
-prints them; nothing held reads as `[]`. The fact fills a coverage gap of
+prints them; `apt-mark showhold` prints no version, so `versions` is
+always `[]` — the shared `AptPackageInfo` shape `AptPackages` and
+`AptAutoremovable` return too; nothing held reads as `[]`. The fact fills a coverage gap of
 `AptPackages`: the `apt list --installed` rows that fact parses report
 versions but never the hold state, so a deploy that must not upgrade
 critical packages reads the held names here — and only collects the
@@ -148,15 +175,19 @@ optional `directories` argument — a list of paths, a single path string or
 `None` for the three defaults — and runs two `find` sweeps that read every
 `.gpg`/`.kbx` binary keyring and every `.asc` armored keyring with
 `gpg --with-colons`, each behind a `KEYRING:` marker line, mirroring pyinfra's
-`apt.AptKeys`. The parsed keys are flattened into one dict of key id →
-`{validity, length, subkeys, fingerprint, uid_hash, uid}` dict, with `length`
-an int and `subkeys` keyed by the subkeys' own ids; if the same key id appears
-in several keyring files, the last one wins. pyinfra builds the fact on its
+`apt.AptKeys`. The parsed keys are flattened into one list of `AptKey`
+entries — `{id, validity, length, subkeys, fingerprint, uid_hash, uid}`
+dicts, with `length` an int and `subkeys` a list of further `AptKey`
+entries; if the same key id appears
+in several keyring files, the last one wins and entries keep the order
+their ids first appeared in. pyinfra keys its answer by key id (with
+subkeys re-keyed by their own ids); reemote5 returns the typed entry list
+instead. pyinfra builds the fact on its
 `gpg.GpgKeyrings` infrastructure; reemote5 collapses that stack into the one
 class, so the per-keyring paths and formats the parent reports are
 deliberately dropped (`AptKeys` discards them anyway). pyinfra's
 `requires_command` gating on `gpg` is deliberately dropped too: a missing
-`gpg` is swallowed by the command's `|| true` and reads as `{}`, while a
+`gpg` is swallowed by the command's `|| true` and reads as `[]`, while a
 missing `find` exits 127 — reported as
 [`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
 
@@ -167,10 +198,12 @@ to stderr), mirroring pyinfra's `apt.AptPackages`. Each
 pyinfra's package regex, so architecture-suffixed names like `libc6:i386`
 keep their suffix, epoch-prefixed versions stay intact, and the
 `Listing...` header and any other noise lines are ignored. The result is a
-dict of package name → sorted, de-duplicated version list — the
-list-of-versions shape pyinfra documents (and shares with `deb.DebPackages`);
-pyinfra's `parse_packages` collects versions into a set per name, reemote5
-returns the sorted list so reads stay deterministic and JSON-printable.
+sorted list of `AptPackageInfo` entries — each a name plus its sorted,
+de-duplicated version list, the shared shape `AptAutoremovable` and
+`AptHeldPackages` return too; pyinfra keys its answer by name (the
+list-of-versions shape it shares with `deb.DebPackages`), while reemote5
+returns the typed entry list (the same deliberate divergence
+`ApkInstalledPackages` made) so reads stay deterministic and JSON-printable.
 pyinfra's `requires_command` gating on `apt` is deliberately dropped: a
 missing `apt` exits 127 — reported as
 [`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError]. Hold state
@@ -255,8 +288,9 @@ removal idempotent without importing another namespace's facts.
 matched with a package regex modeled on `AptPackages`', so
 architecture-suffixed names like `libc6:i386` keep their suffix,
 epoch-prefixed versions stay intact, and the `Listing...` header and any
-other noise lines are ignored. The result is a dict of package name →
-`AptPackageUpgrade` dict — `{installed, candidate}`, the same keys
+other noise lines are ignored. The result is a sorted list of
+`AptPackageUpgrade` entries — `{name, installed, candidate}`, the same
+`installed`/`candidate` keys
 `AptPackagePolicy` uses — naming both ends of the version jump
 `apt upgrade` would perform; the row's source-info (offering suite) and
 architecture columns are deliberately dropped, like `AptPackages` drops
@@ -266,7 +300,7 @@ and a repeated name keeps its last row. The fact fills a coverage gap of
 the machine and a policy query answers one package at a time, while this
 listing names every package an upgrade would move and both versions of
 each jump — the change-management and auditing view to read before
-executing `apt upgrade`. No pending upgrades reads as `{}`. A missing
+executing `apt upgrade`. No pending upgrades reads as `[]`. A missing
 `apt` exits 127 — reported as
 [`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
 
@@ -275,7 +309,8 @@ pyinfra's `test -f ... && case ...` form: when the path exists and ends in
 `.deb` it inspects the archive (`dpkg -I`), otherwise it queries the installed
 package database (`dpkg -s`), with a trailing `|| true` so an unknown name
 produces no output rather than failing the gather. The `Package:`/`Version:`
-control fields parse into `{"name", "version"}` (each line stripped first, so
+control fields parse into a `DebPackageInfo` dict — `{"name", "version"}`
+(each line stripped first, so
 `dpkg -I`'s tab-indented fields parse); a name that is neither an existing
 `.deb` file nor installed reads as `None`. pyinfra returns an empty dict in
 that case; reemote5 reports `None`, mirroring `RpmPackage`'s None-on-absent

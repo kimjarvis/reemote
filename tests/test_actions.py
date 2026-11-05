@@ -17,19 +17,23 @@ is never imported:
 Covered: the ``gather_action`` fan-out (host-keyed dict, verbatim forwarding,
 non-zero and 127 exits as data, bytes decoding), privilege escalation through
 the raw-result path (sudo/su rendering, askpass, ``PrivilegeError`` still
-raised and aggregated), the per-call reconnect lifecycle, and the in-deploy
+raised and aggregated), the per-call reconnect lifecycle, the in-deploy
 guard -- raised synchronously at the call site in both phases, reset
-afterwards, and ``op(Shell, ...)`` rejected by ``materialize``.
+afterwards, and ``op(Shell, ...)`` rejected by ``materialize`` -- the
+``group``/``tags`` host selection, and ``WaitForConnection`` (retry until
+reachable, the fatal aggregated ``ConnectionTimeoutError``, stale-connection
+discard and the attempt bound).
 """
 
+import asyncio
 from collections.abc import Generator
-from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 
 import pytest
 
 from reemote5 import (
     ActionInDeployError,
+    ConnectionTimeoutError,
     Host,
     HostConnectionError,
     OperationError,
@@ -37,6 +41,7 @@ from reemote5 import (
     PrivilegeError,
     Result,
     Shell,
+    WaitForConnection,
     gather_action,
     op,
 )
@@ -123,10 +128,13 @@ async def test_gather_action_returns_a_result_per_host():
     results = await gather_action(hosts, Shell, command="ls -ltr")
 
     assert list(results) == ["web1", "web2"]
-    assert all(isinstance(r, Result) for r in results.values())
-    assert results["web1"].stdout == "one\n"
-    assert results["web2"].stdout == "two\n"
-    assert all(r.exit_status == 0 and r.ok for r in results.values())
+    assert all(
+        isinstance(r, dict) and set(r) == {"exit_status", "stdout", "stderr"}
+        for r in results.values()
+    )
+    assert results["web1"]["stdout"] == "one\n"
+    assert results["web2"]["stdout"] == "two\n"
+    assert all(r["exit_status"] == 0 for r in results.values())
 
 
 async def test_command_is_forwarded_verbatim():
@@ -143,9 +151,8 @@ async def test_nonzero_exit_travels_back_as_data():
     results = await gather_action([host], Shell, command="bespoke-tool --check")
 
     result = results["web1"]
-    assert result.exit_status == 2
-    assert result.stderr == "boom"
-    assert not result.ok
+    assert result["exit_status"] == 2
+    assert result["stderr"] == "boom"
 
 
 async def test_exit_127_is_data_not_command_not_found():
@@ -155,8 +162,7 @@ async def test_exit_127_is_data_not_command_not_found():
 
     results = await gather_action([host], Shell, command="bespoke-tool")
 
-    assert results["web1"].exit_status == 127
-    assert not results["web1"].ok
+    assert results["web1"]["exit_status"] == 127
 
 
 async def test_bytes_output_is_decoded_and_none_becomes_empty():
@@ -166,14 +172,14 @@ async def test_bytes_output_is_decoded_and_none_becomes_empty():
 
     results = await gather_action([host], Shell, command="echo café")
 
-    assert results["web1"].stdout == "café\n"
-    assert results["web1"].stderr == ""
+    assert results["web1"]["stdout"] == "café\n"
+    assert results["web1"]["stderr"] == ""
 
 
-def test_result_is_frozen():
+def test_result_is_a_plain_typed_dict():
     result = Result(exit_status=0, stdout="", stderr="")
-    with pytest.raises(FrozenInstanceError):
-        result.exit_status = 1
+    assert type(result) is dict
+    assert result == {"exit_status": 0, "stdout": "", "stderr": ""}
 
 
 # --- privilege escalation through the raw-result path --------------------------
@@ -265,12 +271,12 @@ async def test_sudo_password_rides_the_askpass_helper():
 
     results = await gather_action([host], Shell, command="whoami", sudo=True)
 
-    assert results["web1"].stdout == "root\n"
+    assert results["web1"]["stdout"] == "root\n"
     assert "SUDO_ASKPASS=/tmp/reemote5-askpass-cached" in host.shells[0]
     assert "sudo -A -k" in host.shells[0]
     # The password lives only in the execution string, never in the Result.
-    assert PASSWORD not in results["web1"].stdout
-    assert PASSWORD not in results["web1"].stderr
+    assert PASSWORD not in results["web1"]["stdout"]
+    assert PASSWORD not in results["web1"]["stderr"]
 
 
 async def test_rejected_sudo_raises_privilege_error_aggregated():
@@ -310,8 +316,8 @@ async def test_command_failure_under_sudo_stays_data():
 
     results = await gather_action([host], Shell, command="bespoke-tool", sudo=True)
 
-    assert results["web1"].exit_status == 1
-    assert "licence expired" in results["web1"].stderr
+    assert results["web1"]["exit_status"] == 1
+    assert "licence expired" in results["web1"]["stderr"]
 
 
 # --- connection errors and the per-call reconnect lifecycle --------------------
@@ -402,7 +408,7 @@ async def test_guard_resets_after_a_guarded_run():
     # The ContextVar was reset even though the phase raised.
     results = await gather_action([ActionHost("web1")], Shell, command="ls")
 
-    assert results["web1"].ok
+    assert results["web1"]["exit_status"] == 0
 
 
 async def test_op_shell_is_rejected_by_materialize():
@@ -416,3 +422,242 @@ async def test_op_shell_is_rejected_by_materialize():
         await run(INVENTORY, deploy, host_factory=action_factory, dry=True)
 
     assert "async-generator operation" in str(excinfo.value)
+
+
+# --- WaitForConnection ----------------------------------------------------------
+
+
+class RebootingHost(ActionHost):
+    """A host that refuses ``connect`` ``failures`` times, then comes back.
+
+    Models a rebooting machine: the first attempts land while sshd is down,
+    a later one succeeds. ``attempts`` counts every connect try.
+    """
+
+    def __init__(self, name: str, *, failures: int = 2):
+        super().__init__(name)
+        self.failures = failures
+        self.attempts = 0
+
+    async def connect(self):
+        self.attempts += 1
+        if self.attempts <= self.failures:
+            raise HostConnectionError([(self.name, "10.0.0.1", OSError("rebooting"))])
+        return SimpleNamespace()
+
+
+class HangingHost(ActionHost):
+    """A host whose connect attempt never completes on its own."""
+
+    async def connect(self):
+        await asyncio.sleep(30)
+
+
+class CachingHost(ActionHost):
+    """Mimics ``Host.connect``'s cache so a stale connection is observable.
+
+    Like the real transport, a cached ``_conn`` is handed back without any
+    network attempt, and ``aclose`` clears it.
+    """
+
+    async def connect(self):
+        conn = getattr(self, "_conn", None)
+        if conn is not None:
+            return conn
+        self.connects += 1
+        self._conn = SimpleNamespace(label="fresh")
+        return self._conn
+
+    async def aclose(self) -> None:
+        self.closes += 1
+        self._conn = None
+
+
+async def test_wait_returns_none_per_host_on_first_success():
+    hosts = [ActionHost("web1"), ActionHost("web2")]
+
+    results = await gather_action(hosts, WaitForConnection, timeout=1, retry=0.01)
+
+    # No command runs: the key's presence is the success signal.
+    assert results == {"web1": None, "web2": None}
+    assert all(host.connects == 1 for host in hosts)
+    assert all(host.shells == [] for host in hosts)
+    assert all(host.closes >= 1 for host in hosts)
+
+
+async def test_wait_retries_until_the_host_comes_back():
+    host = RebootingHost("web1", failures=2)
+
+    results = await gather_action([host], WaitForConnection, timeout=5, retry=0.01)
+
+    assert results == {"web1": None}
+    assert host.attempts == 3
+
+
+async def test_wait_timeout_raises_connection_timeout_error():
+    host = UnreachableActionHost("web1")
+
+    with pytest.raises(ConnectionTimeoutError) as excinfo:
+        await gather_action([host], WaitForConnection, timeout=0.05, retry=0.01)
+
+    err = excinfo.value
+    assert err.host_names == ("web1",)
+    assert "0.05" in str(err)
+    # The last connection failure stays reachable for diagnosis.
+    assert isinstance(err.__cause__, HostConnectionError)
+    # Teardown still ran despite the failure.
+    assert host.closes >= 1
+
+
+async def test_wait_timeouts_are_aggregated_across_hosts():
+    hosts = [UnreachableActionHost("web1"), UnreachableActionHost("web2")]
+
+    with pytest.raises(ConnectionTimeoutError) as excinfo:
+        await gather_action(hosts, WaitForConnection, timeout=0.05, retry=0.01)
+
+    assert excinfo.value.host_names == ("web1", "web2")
+    assert all(host.closes >= 1 for host in hosts)
+
+
+async def test_wait_only_the_timed_out_host_is_named():
+    hosts = [RebootingHost("web1", failures=0), UnreachableActionHost("web2")]
+
+    with pytest.raises(ConnectionTimeoutError) as excinfo:
+        await gather_action(hosts, WaitForConnection, timeout=0.05, retry=0.01)
+
+    assert excinfo.value.host_names == ("web2",)
+
+
+async def test_wait_bounds_a_hanging_attempt_by_the_timeout():
+    """A handshake that never completes must not outlive the overall timeout."""
+    host = HangingHost("web1")
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+
+    with pytest.raises(ConnectionTimeoutError):
+        await gather_action([host], WaitForConnection, timeout=0.05, retry=0.01)
+
+    assert loop.time() - started < 5
+
+
+async def test_wait_discards_a_stale_cached_connection():
+    """A pre-reboot cached connection must not satisfy the wait: connect would
+    hand it back without touching the network, so the wait closes it first."""
+    host = CachingHost("web1")
+    stale = SimpleNamespace(label="stale")
+    host._conn = stale
+
+    results = await gather_action([host], WaitForConnection, timeout=1, retry=0.01)
+
+    assert results == {"web1": None}
+    assert host.connects == 1  # a real attempt happened despite the cache
+    assert host._conn is None  # the fan-out's teardown closed the fresh one
+
+
+async def test_wait_rejects_non_positive_timeout_and_retry():
+    host = ActionHost("web1")
+
+    with pytest.raises(ValueError, match="timeout"):
+        await gather_action([host], WaitForConnection, timeout=0)
+    with pytest.raises(ValueError, match="retry"):
+        await gather_action([host], WaitForConnection, retry=0)
+
+
+async def test_wait_in_deploy_raises_immediately():
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        gather_action([host], WaitForConnection, timeout=1)
+        yield from ()
+
+    with pytest.raises(ActionInDeployError) as excinfo:
+        await run(INVENTORY, deploy, host_factory=action_factory, dry=True)
+
+    assert "WaitForConnection" in str(excinfo.value)
+
+
+# --- group/tags host selection ---------------------------------------------------
+
+
+def classified_hosts() -> list[ActionHost]:
+    web1 = ActionHost("web1")
+    web1.group = "webservers"
+    web1.tags = ["web", "ubuntu"]
+    web2 = ActionHost("web2")
+    web2.group = "webservers"
+    web2.tags = ["web"]
+    db1 = ActionHost("db1")
+    db1.group = "databases"
+    db1.tags = ["db", "ubuntu"]
+    return [web1, web2, db1]
+
+
+async def test_group_filter_selects_only_matching_hosts():
+    hosts = classified_hosts()
+
+    results = await gather_action(
+        hosts, WaitForConnection, timeout=1, retry=0.01, group="webservers"
+    )
+
+    assert list(results) == ["web1", "web2"]
+    assert hosts[2].connects == 0  # db1 was never attempted
+
+
+async def test_tags_filter_requires_every_listed_tag():
+    hosts = classified_hosts()
+
+    results = await gather_action(
+        hosts, WaitForConnection, timeout=1, retry=0.01, tags=("web", "ubuntu")
+    )
+
+    assert list(results) == ["web1"]
+    assert hosts[1].connects == 0
+    assert hosts[2].connects == 0
+
+
+async def test_group_and_tags_combine():
+    hosts = classified_hosts()
+
+    results = await gather_action(
+        hosts,
+        WaitForConnection,
+        timeout=1,
+        retry=0.01,
+        group="webservers",
+        tags=("ubuntu",),
+    )
+
+    assert list(results) == ["web1"]
+
+
+async def test_empty_selection_runs_nothing():
+    hosts = classified_hosts()
+
+    results = await gather_action(
+        hosts, WaitForConnection, timeout=1, retry=0.01, group="nosuchgroup"
+    )
+
+    assert results == {}
+    assert all(host.connects == 0 for host in hosts)
+
+
+async def test_filters_apply_to_shell_too():
+    hosts = classified_hosts()
+
+    results = await gather_action(hosts, Shell, command="id", group="databases")
+
+    assert list(results) == ["db1"]
+    assert hosts[0].shells == []
+    assert hosts[1].shells == []
+    assert hosts[2].shells == ["id"]
+
+
+async def test_filters_are_not_forwarded_to_process():
+    """group/tags are consumed by the fan-out: Shell.process never sees them."""
+    host = ActionHost("web1")
+    host.group = "webservers"
+
+    results = await gather_action(
+        [host], Shell, command="id", group="webservers", tags=()
+    )
+
+    assert results["web1"]["exit_status"] == 0
+    assert host.shells == ["id"]

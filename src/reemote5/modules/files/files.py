@@ -18,10 +18,10 @@
 # value.
 #
 # Operation side (design doc section 6): ``files.link``, ``files.file``,
-# ``files.put``, ``files.get``, ``files.edit`` and ``files.move`` plus the typed
-# command descriptors they yield
+# ``files.put``, ``files.get``, ``files.edit``, ``files.move`` and
+# ``files.copy`` plus the typed command descriptors they yield
 # (``LinkCommand``/``FileCommand``/``PutCommand``/``GetCommand``/
-# ``MoveCommand``/``RemoveTreeCommand``). Operations
+# ``MoveCommand``/``RemoveTreeCommand``/``CopyCommand``). Operations
 # are async generators that receive an ``OpContext``, await facts, set
 # ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never
 # touch the host directly. ``PutCommand`` and ``GetCommand`` are the *non-shell*
@@ -54,13 +54,13 @@ from ...hosts import Host
 class FileLink:
     """The target of a symlink, or None if the link does not exist.
 
-    command:
+    **Commands:**
 
     ```bash
     readlink <path>
     ```
 
-    return:
+    **Returns:**
 
     ```python
     str | None
@@ -87,13 +87,13 @@ class FileLink:
 class FileExists:
     """Whether a regular file exists at the path.
 
-    command:
+    **Commands:**
 
     ```bash
     test -e <path> && echo yes
     ```
 
-    return:
+    **Returns:**
 
     ```python
     bool
@@ -165,13 +165,13 @@ def write_dest_bytes(dest: IO[Any], data: bytes) -> None:
 class LocalSha1:
     """The sha1 hex digest of an IO-like source on the *control* machine.
 
-    command:
+    **Commands:**
 
     ```text
     none -- the digest is computed locally with hashlib.sha1, no host command is issued
     ```
 
-    return:
+    **Returns:**
 
     ```python
     str
@@ -196,13 +196,13 @@ class LocalSha1:
 class RemoteFileSha1:
     """The sha1 hex digest of a file on the remote host, or None if absent.
 
-    command:
+    **Commands:**
 
     ```bash
     sha1sum <path>
     ```
 
-    return:
+    **Returns:**
 
     ```python
     str | None
@@ -234,13 +234,13 @@ class RemoteFileSha1:
 class FileContents:
     """The text content of a file on the remote host, or None when absent.
 
-    command:
+    **Commands:**
 
     ```bash
     test -e <path> && { printf '#reemote5-filecontents\\n'; cat -- <path>; }
     ```
 
-    return:
+    **Returns:**
 
     ```python
     str | None
@@ -468,13 +468,13 @@ def _parse_ls_line(line: str) -> tuple[dict[str, Any], str] | None:
 class File:
     """Metadata for a regular file, False for a non-file path, None if absent.
 
-    command:
+    **Commands:**
 
     ```bash
     ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' <path> || ls -ld <path> )
     ```
 
-    return:
+    **Returns:**
 
     ```python
     dict[str, Any] | Literal[False] | None
@@ -589,13 +589,13 @@ class File:
 class Directory(File):
     """Metadata for a directory, False for a non-directory path, None if absent.
 
-    command:
+    **Commands:**
 
     ```bash
     ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' <path> || ls -ld <path> )
     ```
 
-    return:
+    **Returns:**
 
     ```python
     dict[str, Any] | Literal[False] | None
@@ -642,13 +642,13 @@ class Directory(File):
 class Link(File):
     """Metadata for a symlink plus its target, False for non-link, None if absent.
 
-    command:
+    **Commands:**
 
     ```bash
     ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' <path> || ls -ld <path> )
     ```
 
-    return:
+    **Returns:**
 
     ```python
     dict[str, Any] | Literal[False] | None
@@ -718,6 +718,29 @@ class LinkCommand(Command):
 async def link(
     ctx: OpContext, src: str, target: str | None = None, present: bool = True
 ) -> AsyncGenerator[Command]:
+    """Create or remove a symbolic link.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        src (str): The path of the link to manage.
+        target (str | None, optional): The path the link should point at.
+            Defaults to None.
+        present (bool, optional): Whether the link should exist. Defaults to
+            True.
+
+    Yields:
+        Command: The link command, when the link differs from the request.
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_op_link.py``.
+    """
+
+    # Idempotent: the current target is read through the ``FileLink`` fact
+    # (``readlink``) and a ``LinkCommand`` is yielded only when it differs --
+    # ``ln -sf`` sets the link, ``rm -f`` removes it when ``present=False``.
+    # The readlink-based check only sees symlinks: removing a regular file
+    # needs ``files.file``, whose ``FileExists`` fact is a boolean existence
+    # probe.
     current = await ctx.facts.get(FileLink, src)
 
     if present:
@@ -750,6 +773,26 @@ class FileCommand(Command):
 async def file(
     ctx: OpContext, src: str, present: bool = True
 ) -> AsyncGenerator[Command]:
+    """Create or remove a regular file.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        src (str): The path of the file to manage.
+        present (bool, optional): Whether the file should exist. Defaults to
+            True.
+
+    Yields:
+        Command: The file command, when existence differs from the request.
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_op_file.py``.
+    """
+
+    # Idempotent: existence is read through the boolean ``FileExists`` fact
+    # and a ``FileCommand`` is yielded only on a difference -- ``touch``
+    # creates a missing file, ``rm -f`` removes a present one. Unlike
+    # ``files.link``'s readlink-based check, this also sees regular files,
+    # so it is the removal primitive for them.
     exists = await ctx.facts.get(FileExists, src)
 
     if present:
@@ -792,24 +835,34 @@ class PutCommand(TransferCommand):
 
 
 async def put(ctx: OpContext, src: IO[Any], dest: str) -> AsyncGenerator[Command]:
-    """Ensure the remote ``dest`` matches the IO-like source ``src``, uploading
-    if not.
+    """Upload an IO-like source to a remote path.
 
-    ``src`` is a seekable IO-like object on the control machine (a file
-    opened with ``open()``, an ``io.BytesIO``/``io.StringIO``, ...); unlike
-    pyinfra's ``files.put``, which accepts ``str | IO[Any]``, a *path string
-    is deliberately not supported* -- the content source is always a stream,
-    rewound to position 0 before every read. Idempotence is content-based:
-    the source's sha1 (``LocalSha1``) is compared against the remote file's
-    (``RemoteFileSha1``, gathered over SSH), and a ``PutCommand`` is yielded
-    only when they differ.
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        src (IO[Any]): The seekable IO-like source on the control machine.
+        dest (str): The remote path to write.
 
-    The transfer is unprivileged: it rides the connection's scp channel as
-    the login user, so the ``sudo``/``su`` escalation flags do not apply to
-    it and ``dest`` must be writable by that user (put into a writable path
-    first and move it with ``files.move`` flagged ``sudo=True`` when it must
-    end up root-owned).
+    Yields:
+        Command: The upload transfer, when the content differs.
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_put.py``.
     """
+
+    # ``src`` is a seekable IO-like object on the control machine (a file
+    # opened with ``open()``, an ``io.BytesIO``/``io.StringIO``, ...); unlike
+    # pyinfra's ``files.put``, which accepts ``str | IO[Any]``, a *path string
+    # is deliberately not supported* -- the content source is always a stream,
+    # rewound to position 0 before every read. Idempotence is content-based:
+    # the source's sha1 (``LocalSha1``) is compared against the remote file's
+    # (``RemoteFileSha1``, gathered over SSH), and a ``PutCommand`` is yielded
+    # only when they differ.
+    #
+    # The transfer is unprivileged: it rides the connection's scp channel as
+    # the login user, so the ``sudo``/``su`` escalation flags do not apply to
+    # it and ``dest`` must be writable by that user (put into a writable path
+    # first and move it with ``files.move`` flagged ``sudo=True`` when it must
+    # end up root-owned).
     local_sha1 = await ctx.facts.get(LocalSha1, src)
     remote_sha1 = await ctx.facts.get(RemoteFileSha1, dest)
 
@@ -846,25 +899,37 @@ class GetCommand(TransferCommand):
 
 
 async def get(ctx: OpContext, src: str, dest: IO[Any]) -> AsyncGenerator[Command]:
-    """Ensure the IO-like destination ``dest`` holds the remote file ``src``.
+    """Download a remote file into an IO-like destination.
 
-    The mirror of ``files.put``: ``src`` is the remote path to download and
-    ``dest`` is a seekable, writable IO-like object on the control machine (an
-    ``io.BytesIO``/``io.StringIO``, a file opened for writing, ...) that
-    receives the content -- *not* a local filename. Idempotence is
-    content-based: the remote file's sha1 (``RemoteFileSha1``, gathered over
-    SSH) is compared against the destination's current content sha1
-    (``LocalSha1``), and a ``GetCommand`` is yielded only when they differ, so
-    a fresh or empty destination always downloads and a second get of the same
-    file is a no-op. pyinfra's ``add_deploy_dir``, ``create_local_dir`` and
-    ``force`` options are deliberately dropped: there is no local path to
-    place, create or force. Like pyinfra, an absent remote source still plans
-    a download (which fails at scp if the file truly is not there).
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        src (str): The remote path to download.
+        dest (IO[Any]): The seekable, writable IO-like destination on the
+            control machine.
 
-    The transfer is unprivileged: it rides the connection's scp channel as the
-    login user, so the ``sudo``/``su`` escalation flags do not apply to it and
-    ``src`` must be readable by that user.
+    Yields:
+        Command: The download transfer, when the content differs.
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_get.py``.
     """
+
+    # The mirror of ``files.put``: ``dest`` is a seekable, writable IO-like
+    # object on the control machine (an ``io.BytesIO``/``io.StringIO``, a file
+    # opened for writing, ...) that receives the content -- *not* a local
+    # filename. Idempotence is content-based: the remote file's sha1
+    # (``RemoteFileSha1``, gathered over SSH) is compared against the
+    # destination's current content sha1 (``LocalSha1``), and a ``GetCommand``
+    # is yielded only when they differ, so a fresh or empty destination always
+    # downloads and a second get of the same file is a no-op. pyinfra's
+    # ``add_deploy_dir``, ``create_local_dir`` and ``force`` options are
+    # deliberately dropped: there is no local path to place, create or force.
+    # Like pyinfra, an absent remote source still plans a download (which
+    # fails at scp if the file truly is not there).
+    #
+    # The transfer is unprivileged: it rides the connection's scp channel as
+    # the login user, so the ``sudo``/``su`` escalation flags do not apply to
+    # it and ``src`` must be readable by that user.
     remote_sha1 = await ctx.facts.get(RemoteFileSha1, src)
     local_sha1 = await ctx.facts.get(LocalSha1, dest)
 
@@ -879,43 +944,53 @@ async def get(ctx: OpContext, src: str, dest: IO[Any]) -> AsyncGenerator[Command
 async def edit(
     ctx: OpContext, path: str, transform: Callable[[str | None], str]
 ) -> AsyncGenerator[Command]:
-    """Ensure the remote file ``path`` matches ``transform`` of its current content.
+    """Edit a remote file through a pure content transform.
 
-    The generic content-editing primitive: instead of a bespoke operation per
-    config-file format (pyinfra's ``server.etc_hosts``, ``files.line``,
-    ``files.replace`` and friends each hard-code one shape of edit), this reads
-    the file's current text with the ``FileContents`` fact, applies a
-    caller-supplied *pure* ``transform``, and writes the result back with a
-    ``PutCommand`` only when it differs. Any "edit a file in place" task --
-    adding an ``/etc/hosts`` entry, setting a ``sysctl`` key, appending a
-    managed block -- is then just a transform, with no new operation needed.
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        path (str): The remote file to edit.
+        transform (Callable[[str | None], str]): A pure, idempotent callable
+            taking the current content (``str``, or ``None`` when the file is
+            absent) and returning the desired content as a ``str``.
 
-    + path: the remote file to edit.
-    + transform: a pure callable taking the current content (``str``, or
-      ``None`` when the file is absent) and returning the desired content as a
-      ``str``. It must be *idempotent* -- ``transform(transform(x)) ==
-      transform(x)`` -- so a second run is a no-op, and side-effect free, since
-      it runs once per phase (prepare, then each apply step).
+    Yields:
+        Command: The rewrite upload, when the transformed content differs.
 
-    Idempotence is content-equality based: the transform's result is compared
-    against the current content, and a ``PutCommand`` is yielded only when they
-    differ, so a repeat edit whose transform is a fixpoint reports no change.
-    An absent file always counts as a change (``transform(None)`` produces the
-    content to create it from).
-
-    ``transform`` must be a *stable, hashable* object -- a module-level
-    function, not a lambda or closure built inside the deploy generator. It is
-    stored in the ``OperationRequest`` kwargs, which the determinism guard
-    compares by value across phases; a fresh callable per phase would diverge
-    and raise ``DeterminismError``, exactly as a fresh IO stream would for
-    ``files.put``/``files.get``.
-
-    The write rides ``files.put``'s unprivileged scp transfer, so ``sudo``/``su``
-    do not apply to it and ``path`` must be writable by the login user. A
-    root-owned target (``/etc/hosts``, a file under ``/etc``) must instead be
-    transformed into a writable path and moved into place with ``files.move``
-    flagged ``sudo=True``, since a transfer cannot be escalated.
+    Examples:
+        Examples can be found in ``examples/modules/files/files_edit.py``.
     """
+
+    # The generic content-editing primitive: instead of a bespoke operation
+    # per config-file format (pyinfra's ``server.etc_hosts``, ``files.line``,
+    # ``files.replace`` and friends each hard-code one shape of edit), this
+    # reads the file's current text with the ``FileContents`` fact, applies a
+    # caller-supplied *pure* ``transform``, and writes the result back with a
+    # ``PutCommand`` only when it differs. Any "edit a file in place" task --
+    # adding an ``/etc/hosts`` entry, setting a ``sysctl`` key, appending a
+    # managed block -- is then just a transform, with no new operation needed.
+    #
+    # The transform must be *idempotent* -- ``transform(transform(x)) ==
+    # transform(x)`` -- so a second run is a no-op, and side-effect free,
+    # since it runs once per phase (prepare, then each apply step).
+    # Idempotence is content-equality based: the transform's result is
+    # compared against the current content, and a ``PutCommand`` is yielded
+    # only when they differ, so a repeat edit whose transform is a fixpoint
+    # reports no change. An absent file always counts as a change
+    # (``transform(None)`` produces the content to create it from).
+    #
+    # ``transform`` must be a *stable, hashable* object -- a module-level
+    # function, not a lambda or closure built inside the deploy generator. It
+    # is stored in the ``OperationRequest`` kwargs, which the determinism
+    # guard compares by value across phases; a fresh callable per phase would
+    # diverge and raise ``DeterminismError``, exactly as a fresh IO stream
+    # would for ``files.put``/``files.get``.
+    #
+    # The write rides ``files.put``'s unprivileged scp transfer, so
+    # ``sudo``/``su`` do not apply to it and ``path`` must be writable by the
+    # login user. A root-owned target (``/etc/hosts``, a file under ``/etc``)
+    # must instead be transformed into a writable path and moved into place
+    # with ``files.move`` flagged ``sudo=True``, since a transfer cannot be
+    # escalated.
     current = await ctx.facts.get(FileContents, path)
     new = transform(current)
 
@@ -962,42 +1037,52 @@ async def move(
     src: str,
     dest: str,
     overwrite: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Move a remote file/directory/link into a remote directory
-    (pyinfra ``files.move`` parity).
+    """Move a remote file/directory/link into a remote directory.
 
-    + src: the remote path to move.
-    + dest: the remote *directory* to move ``src`` into; the moved path
-      becomes ``dest/basename(src)``.
-    + overwrite: when the destination path already exists, remove it
-      first (``rm -rf``) instead of raising.
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        src (str): The remote path to move.
+        dest (str): The remote directory to move ``src`` into; the moved path
+            becomes ``dest/basename(src)``.
+        overwrite (bool, optional): When the destination path already exists,
+            remove it first (``rm -rf``) instead of raising. Defaults to False.
+        **kwargs: Additional keyword arguments.
 
-    Stateless like pyinfra: there is no no-op branch -- a valid move
-    always yields a ``MoveCommand`` (preceded by a ``RemoveTreeCommand``
-    when ``overwrite`` clears an existing target), so ``ctx.changed`` is
-    always True. Repeating the same move fails at apply when ``mv`` exits
-    non-zero on the now-absent source (``CommandError``, fail-fast).
+    Yields:
+        Command: The move command, always, preceded by a removal when
+            ``overwrite`` clears an existing target.
 
-    Reads ``File(src)`` (a directory or symlink reads False, which pyinfra
-    accepts -- only absence is rejected), ``Directory(dest)`` and
-    ``File(dest/basename(src))``. An absent ``src``, a ``dest`` that is not
-    a directory or does not exist, and an existing target without
-    ``overwrite`` all raise ``ValueError``. pyinfra's phase-aware handling
-    of the two absence cases (a soft log while planning, an error only
-    while executing) is deliberately dropped because reemote5 operations
-    are phase-unaware: they raise in *both* phases. A consequence is that
-    a "create a file then move it" flow cannot share one deploy -- the
-    prepare phase would raise on the not-yet-created source -- so it spans
-    two runs (see the ``files.edit`` + ``files.move`` ``/etc/hosts``
-    recipe example).
-
-    Both commands are shell text, so flagging the request ``sudo=True``
-    elevates the whole move -- the vehicle for installing a login-user
-    spool file into a root-owned directory such as ``/etc``. ``**kwargs``
-    absorbs pyinfra's global arguments (``op()`` already strips
-    ``name``/``sudo``/``su``).
+    Examples:
+        Examples can be found in ``examples/modules/files/files_move.py``.
     """
+
+    # Mirrors pyinfra's ``files.move``. Stateless like pyinfra: there is no
+    # no-op branch -- a valid move always yields a ``MoveCommand`` (preceded
+    # by a ``RemoveTreeCommand`` when ``overwrite`` clears an existing
+    # target), so ``ctx.changed`` is always True. Repeating the same move
+    # fails at apply when ``mv`` exits non-zero on the now-absent source
+    # (``CommandError``, fail-fast).
+    #
+    # Reads ``File(src)`` (a directory or symlink reads False, which pyinfra
+    # accepts -- only absence is rejected), ``Directory(dest)`` and
+    # ``File(dest/basename(src))``. An absent ``src``, a ``dest`` that is not
+    # a directory or does not exist, and an existing target without
+    # ``overwrite`` all raise ``ValueError``. pyinfra's phase-aware handling
+    # of the two absence cases (a soft log while planning, an error only
+    # while executing) is deliberately dropped because reemote5 operations
+    # are phase-unaware: they raise in *both* phases. A consequence is that
+    # a "create a file then move it" flow cannot share one deploy -- the
+    # prepare phase would raise on the not-yet-created source -- so it spans
+    # two runs (see the ``files.edit`` + ``files.move`` ``/etc/hosts``
+    # recipe example).
+    #
+    # Both commands are shell text, so flagging the request ``sudo=True``
+    # elevates the whole move -- the vehicle for installing a login-user
+    # spool file into a root-owned directory such as ``/etc``. ``**kwargs``
+    # absorbs pyinfra's global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
     if await ctx.facts.get(File, src) is None:
         raise ValueError(f"src {src} does not exist")
 
@@ -1023,7 +1108,112 @@ async def move(
     yield MoveCommand(src=src, dest=dest)
 
 
+@dataclass(frozen=True)
+class CopyCommand(Command):
+    """Copy a remote path into a remote directory (``cp -r [-f] src dest``).
+
+    Unlike ``files.move``'s overwrite branch there is no ``rm -rf`` prelude:
+    pyinfra's copy expresses overwrite as ``cp``'s own ``-f`` flag, so one
+    descriptor with an ``overwrite`` field covers both forms.
+    """
+
+    src: str
+    dest: str
+    overwrite: bool = False
+
+    def shell(self) -> str:
+        force = " -f" if self.overwrite else ""
+        return f"cp -r{force} {shlex.quote(self.src)} {shlex.quote(self.dest)}"
+
+
+async def copy(
+    ctx: OpContext,
+    src: str,
+    dest: str,
+    overwrite: bool = False,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Copy a remote file/directory into a remote directory.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        src (str): The remote path to copy.
+        dest (str): The remote directory to copy ``src`` into; the copied path
+            becomes ``dest/basename(src)`` and the source stays in place.
+        overwrite (bool, optional): When the destination path already exists,
+            force the copy (``cp -r -f``) instead of comparing or raising.
+            Defaults to False.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The copy command, when a copy is needed.
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_copy.py``.
+    """
+
+    # Mirrors pyinfra's ``files.copy``. Unlike ``files.move`` there is no
+    # ``rm -rf`` prelude -- pyinfra's copy expresses overwrite as ``cp``'s own
+    # ``-f`` flag (which merges into an existing directory target rather than
+    # replacing it).
+    #
+    # Reads ``Directory(src)`` and ``File(src)`` and requires one of them to
+    # be truthy, exactly pyinfra's check: a *symlink* source reads False for
+    # both and raises, even though ``files.move`` accepts links (upstream's
+    # own asymmetry, kept). ``Directory(dest)`` must be a present directory,
+    # and ``File(dest/basename(src))`` probes the target.
+    #
+    # Idempotence differs from the stateless ``files.move``: with an existing
+    # regular-file target and ``overwrite`` unset, the source's and target's
+    # ``RemoteFileSha1`` are compared -- equal content is a no-op
+    # ("<target> already exists"), different content raises ``ValueError``.
+    # pyinfra's ``Sha1File`` -> ``Md5File`` -> ``Sha256File`` fallback chain
+    # is deliberately reduced to the sha1-only ``RemoteFileSha1``, the same
+    # single-hash precedent as ``files.put``/``files.get``. A target that is
+    # not a regular file (``File`` reads False/None) skips the comparison
+    # and the copy is planned, pyinfra's truthiness kept verbatim.
+    #
+    # An absent ``src``, a ``dest`` that is not a directory or does not
+    # exist, and an existing *different* target without ``overwrite`` all
+    # raise ``ValueError``. pyinfra's phase-aware handling of the two
+    # absence cases (a soft log while planning, an error only while
+    # executing) is deliberately dropped because reemote5 operations are
+    # phase-unaware: they raise in *both* phases, the same strictness chosen
+    # for ``files.move``. A consequence is that a "create a file then copy
+    # it" flow cannot share one deploy -- the prepare phase would raise on
+    # the not-yet-created source -- so it spans two runs.
+    #
+    # The command is shell text, so flagging the request ``sudo=True``
+    # elevates the whole copy. ``**kwargs`` absorbs pyinfra's global
+    # arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    src_is_dir = await ctx.facts.get(Directory, src)
+    src_is_file = await ctx.facts.get(File, src)
+    if not src_is_file and not src_is_dir:
+        raise ValueError(f"src {src} does not exist")
+
+    dest_info = await ctx.facts.get(Directory, dest)
+    if dest_info is False:
+        raise ValueError(f"dest {dest} is not a directory")
+    if dest_info is None:
+        raise ValueError(f"dest directory {dest} does not exist")
+
+    full_dest = posixpath.join(dest, PurePosixPath(src).name)
+    dest_file_exists = await ctx.facts.get(File, full_dest)
+    if dest_file_exists and not overwrite:
+        src_sha1 = await ctx.facts.get(RemoteFileSha1, src)
+        dest_sha1 = await ctx.facts.get(RemoteFileSha1, full_dest)
+        if src_sha1 and dest_sha1 and src_sha1 == dest_sha1:
+            ctx.reason = f"{full_dest} already exists"
+            return
+        raise ValueError(f"{full_dest} already exists and is different than src")
+
+    ctx.changed = True
+    ctx.reason = f"will copy {src} into {dest}"
+    yield CopyCommand(src=src, dest=dest, overwrite=overwrite)
+
+
 __all__ = [
+    "CopyCommand",
     "Directory",
     "File",
     "FileCommand",
@@ -1038,6 +1228,7 @@ __all__ = [
     "PutCommand",
     "RemoteFileSha1",
     "RemoveTreeCommand",
+    "copy",
     "edit",
     "file",
     "get",

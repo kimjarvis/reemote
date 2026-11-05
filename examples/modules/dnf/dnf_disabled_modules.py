@@ -17,8 +17,8 @@ execution model:
 3. Gather ``DnfDisabledModules`` on every host at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's raw sorted list of disabled module names
-   with ``json.dumps(..., indent=2)``.
+   mapping -- then print each host's raw sorted list of disabled-module
+   entries (name and stream) with ``json.dumps(..., indent=2)``.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
 ``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven
@@ -73,7 +73,8 @@ async def main() -> None:
         # fans DnfDisabledModules.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
         # running one host at a time. process runs ``dnf module list --disabled``
-        # and parses the [x]-flagged rows into a sorted, de-duplicated list.
+        # and parses the [x]-flagged rows into a sorted list of ``DnfModule``
+        # entries (name and stream), one per flagged row.
         disabled_modules = await gather_fact(hosts, DnfDisabledModules)
     except (CommandError, HostConnectionError) as exc:
         # The library reports an unreachable host or a failed fact command as a

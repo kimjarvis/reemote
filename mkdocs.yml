@@ -63,21 +63,20 @@ plugins:
             show_signature_annotations: true
             signature_crossrefs: true
             show_bases: false
+            # TypedDict fields and command-descriptor fields are documented
+            # once (in the class docstring's Attributes table / the class
+            # signature); the extension drops their duplicate member entries
+            # by kind, so new entry types need no filter updates.
+            extensions:
+              - scripts/hide_data_fields.py
             # Render class/function docstrings, but not the docstrings of
             # UPPERCASE class constants (e.g. FILENAME_MARKER, COMMAND), which
             # are implementation detail rather than part of the documented API.
             filters:
               - "!^_"
               - "!^[A-Z][A-Z0-9_]*$"
-              - "!^(parse|process|name|version)$"
-              - "!^(command)$"
-              - "!^(depends|description|license|provides|size|url)$" # ApkPackageInfo, ApkRepository
-              - "!^(constraint|tag)$" # ApkHeldPackage, ApkRepository
-              - "!^(versions)$" # ApkInstalledPackage
-              - "!^(candidate|installed|origins|priority|newly_installed|not_upgraded|removed|upgraded|components|distribution|options|type)$" # apt
-              - "!^(repoid|status)$" # dnf
-              - "!^(dirty|staged|unstaged|untracked)$" # git
-              - "!^(describe|path|sha|state)$" # git
+              - "!^(parse|process|command|shell|transfer|wait)$" # fact/descriptor plumbing, not public API
+              - "!^(name|group|args|kwargs)$" # Host/OperationRequest/LogEntry/InventoryEntry plumbing fields
 
 nav:
   - Home: index.md
@@ -112,6 +111,8 @@ nav:
           - git: modules/git.md
           - hardware: modules/hardware.md
           - server: modules/server.md
-      - Actions: actions.md
+      - Actions:
+          - actions: actions/actions.md
       - Connectors:
           - docker: connectors/docker.md
+          - ssh: connectors/ssh.md

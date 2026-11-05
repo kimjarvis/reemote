@@ -73,7 +73,8 @@ async def main() -> None:
         # fans DnfRepositories.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
         # running one host at a time. process cats the dnf config and every
-        # .repo file, then parses them into a list of repo-option dictionaries.
+        # .repo file, then parses them into a list of ``DnfRepository`` entries
+        # (repoid, name, filename and an open-ended ``options`` sub-dict).
         repositories = await gather_fact(hosts, DnfRepositories)
     except (CommandError, HostConnectionError) as exc:
         # The library reports an unreachable host or a failed fact command as a

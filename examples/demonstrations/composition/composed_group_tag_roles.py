@@ -91,7 +91,7 @@ INVENTORY = [
 # there while web1's is a real change -- which is what makes the plan show
 # both ``changed`` and ``no change`` for the same role.
 INITIAL_STATE: dict[str, dict[str, object]] = {
-    "web2": {"packages": {"nginx"}},
+    "web2": {"packages": {"nginx": [""]}},
 }
 
 

@@ -4,7 +4,7 @@
 """Tests for the git module: ``GitBranch``, ``GitConfig``,
 ``GitHeadDetached``, ``GitIsRepo``, ``GitLocalCommit``,
 ``GitRemoteBranchCommit``, ``GitRemoteUrl``, ``GitSshKeyConfigured``,
-``GitStatus``, ``GitSubmoduleStatus``, ``GitTag`` and ``GitTrackingBranch``,
+``GitStatus``, ``GitSubmodule``, ``GitTag`` and ``GitTrackingBranch``,
 plus the ``config``, ``repo`` and ``worktree`` operations.
 
 Covers ``reemote5.modules.git.git``: pyinfra's own fixtures over the
@@ -17,7 +17,7 @@ status detail), empty output, the repo-path ``shlex`` quoting, the
 ``SimulatedHost`` seams (read, defaults, copy semantics) and the
 ``gather_fact`` fan-out across hosts. The six reemote5-original facts
 (``GitHeadDetached``, ``GitIsRepo``, ``GitRemoteUrl``,
-``GitSshKeyConfigured``, ``GitStatus`` and ``GitSubmoduleStatus``) have no
+``GitSshKeyConfigured``, ``GitStatus`` and ``GitSubmodule``) have no
 pyinfra fixture, so they are exercised with realistic canned output plus
 their tri-state, state-map, summary and describe-splitting edge cases.
 
@@ -87,7 +87,7 @@ from reemote5.modules.git.git import (
     GitRepoPullCommand,
     GitSshKeyConfigured,
     GitStatus,
-    GitSubmoduleStatus,
+    GitSubmodule,
     GitSubmoduleUpdateCommand,
     GitTag,
     GitTrackingBranch,
@@ -171,16 +171,18 @@ async def test_git_branch_gathers_across_hosts():
 
 async def test_git_config_parses_pyinfras_global_fixture():
     # pyinfra's own fact fixture (tests/facts/git.GitConfig, global scope):
-    # the rendered command and the parsed key -> value-list dict match
-    # verbatim.
+    # the rendered command matches verbatim and the key -> value-list dict
+    # pyinfra returns is projected onto GitConfigItem entries.
     host = CannedShellHost("user.email=nick@gmail.com\n")
-    assert await GitConfig.process(host) == {"user.email": ["nick@gmail.com"]}
+    assert await GitConfig.process(host) == [
+        {"key": "user.email", "values": ["nick@gmail.com"]}
+    ]
     assert host.shells == ["git config --global -l || true"]
 
 
 async def test_git_config_system_scope_renders_the_system_flag():
     host = CannedShellHost("")
-    assert await GitConfig.process(host, system=True) == {}
+    assert await GitConfig.process(host, system=True) == []
     assert host.shells == ["git config --system -l || true"]
 
 
@@ -192,18 +194,18 @@ async def test_git_config_parses_pyinfras_multi_value_fixture():
 safe.directory=/another/safe/repo
 """
     )
-    assert await GitConfig.process(host) == {
-        "safe.directory": ["/a/safe/repo", "/another/safe/repo"]
-    }
+    assert await GitConfig.process(host) == [
+        {"key": "safe.directory", "values": ["/a/safe/repo", "/another/safe/repo"]}
+    ]
 
 
 async def test_git_config_parses_pyinfras_repo_fixture():
     # pyinfra's repo-scoped fixture: the --local read behind the directory
     # guard, rendered verbatim.
     host = CannedShellHost("user.email=nick@gmail.com\n")
-    assert await GitConfig.process(host, "myrepo") == {
-        "user.email": ["nick@gmail.com"]
-    }
+    assert await GitConfig.process(host, "myrepo") == [
+        {"key": "user.email", "values": ["nick@gmail.com"]}
+    ]
     assert host.shells == [
         "! test -d myrepo || (cd myrepo && git config --local -l)"
     ]
@@ -218,13 +220,13 @@ def test_git_config_parse_splits_on_the_first_equals_only():
             "no equals sign",
             "user.name=nick",
         ]
-    ) == {
-        "url.https://example.com/.insteadof": ["git@example.com:"],
-        "user.name": ["nick"],
-    }
-    # Empty output (missing config, swallowed by `|| true`) reads as {},
-    # pyinfra's ``default = dict``.
-    assert GitConfig.parse([]) == {}
+    ) == [
+        {"key": "url.https://example.com/.insteadof", "values": ["git@example.com:"]},
+        {"key": "user.name", "values": ["nick"]},
+    ]
+    # Empty output (missing config, swallowed by `|| true`) reads as [],
+    # pyinfra's ``default = dict`` projected onto entries.
+    assert GitConfig.parse([]) == []
 
 
 def test_git_config_command_quotes_the_repo_path():
@@ -242,15 +244,18 @@ async def test_git_config_reads_the_simulated_seam():
             "system": {"core.pager": ["less"]},
         },
     )
-    # Repo scope, global scope and system scope each read their own key.
-    assert await GitConfig.process(host, "/srv/app") == {
-        "user.email": ["app@example.com"]
-    }
-    assert await GitConfig.process(host) == {"user.name": ["kim"]}
-    assert await GitConfig.process(host, system=True) == {"core.pager": ["less"]}
-    # An unknown scope reads as {}; the seam defaults to {} everywhere.
-    assert await GitConfig.process(host, "/srv/other") == {}
-    assert await GitConfig.process(SimulatedHost(name="h")) == {}
+    # Repo scope, global scope and system scope each read their own key,
+    # projected from the mutated dict store into entry lists.
+    assert await GitConfig.process(host, "/srv/app") == [
+        {"key": "user.email", "values": ["app@example.com"]}
+    ]
+    assert await GitConfig.process(host) == [{"key": "user.name", "values": ["kim"]}]
+    assert await GitConfig.process(host, system=True) == [
+        {"key": "core.pager", "values": ["less"]}
+    ]
+    # An unknown scope reads as []; the seam defaults to {} everywhere.
+    assert await GitConfig.process(host, "/srv/other") == []
+    assert await GitConfig.process(SimulatedHost(name="h")) == []
 
 
 async def test_git_config_seam_returns_a_copy():
@@ -258,10 +263,10 @@ async def test_git_config_seam_returns_a_copy():
         name="h", git_configs={"/srv/app": {"user.email": ["app@example.com"]}}
     )
     config = await GitConfig.process(host, "/srv/app")
-    config["user.email"].append("mutated@example.com")
-    config["extra"] = ["leak"]
-    # The simulated state is untouched: both the dict and the value lists
-    # are copied on read.
+    config[0]["values"].append("mutated@example.com")
+    config.append({"key": "extra", "values": ["leak"]})
+    # The simulated state is untouched: both the entry dicts and the value
+    # lists are copied on read.
     assert host.git_configs["/srv/app"] == {"user.email": ["app@example.com"]}
 
 
@@ -768,14 +773,14 @@ async def test_git_status_seam_returns_a_copy():
     }
 
 
-# --- GitSubmoduleStatus ------------------------------------------------------
+# --- GitSubmodule ------------------------------------------------------------
 
 
-async def test_git_submodule_status_reads_the_rows():
+async def test_git_submodule_reads_the_rows():
     # A reemote5-original fact: each `git submodule status` row folds into a
     # path/sha/state/describe dict behind the directory guard.
     host = CannedShellHost(f" {SHA40} vendor/foo (heads/main)\n")
-    assert await GitSubmoduleStatus.process(host, "myrepo") == [
+    assert await GitSubmodule.process(host, "myrepo") == [
         {
             "path": "vendor/foo",
             "sha": SHA40,
@@ -788,8 +793,8 @@ async def test_git_submodule_status_reads_the_rows():
     ]
 
 
-def test_git_submodule_status_parse_maps_every_state_prefix():
-    assert GitSubmoduleStatus.parse(
+def test_git_submodule_parse_maps_every_state_prefix():
+    assert GitSubmodule.parse(
         [
             f" {SHA40} vendor/synced (heads/main)",
             f"-{SHA40} vendor/uninit",
@@ -824,19 +829,19 @@ def test_git_submodule_status_parse_maps_every_state_prefix():
     ]
 
 
-def test_git_submodule_status_parse_of_an_unknown_prefix_and_empty():
+def test_git_submodule_parse_of_an_unknown_prefix_and_empty():
     # An unrecognized leading character (a future git state) reads as
     # "unknown" rather than raising; empty output is [].
-    assert GitSubmoduleStatus.parse([f"?{SHA40} vendor/x"]) == [
+    assert GitSubmodule.parse([f"?{SHA40} vendor/x"]) == [
         {"path": "vendor/x", "sha": SHA40, "state": "unknown", "describe": None}
     ]
-    assert GitSubmoduleStatus.parse([]) == []
+    assert GitSubmodule.parse([]) == []
 
 
-def test_git_submodule_status_parse_splits_the_describe_on_the_last_paren():
+def test_git_submodule_parse_splits_the_describe_on_the_last_paren():
     # The describe is split off the LAST " (", so a path that itself contains
     # " (" stays whole and only the trailing detail becomes the describe.
-    assert GitSubmoduleStatus.parse([f" {SHA40} vendor/lib (old) (heads/main)"]) == [
+    assert GitSubmodule.parse([f" {SHA40} vendor/lib (old) (heads/main)"]) == [
         {
             "path": "vendor/lib (old)",
             "sha": SHA40,
@@ -846,13 +851,13 @@ def test_git_submodule_status_parse_splits_the_describe_on_the_last_paren():
     ]
 
 
-def test_git_submodule_status_command_quotes_the_repo_path():
-    assert GitSubmoduleStatus.command("my repo") == (
+def test_git_submodule_command_quotes_the_repo_path():
+    assert GitSubmodule.command("my repo") == (
         "! test -d 'my repo' || (cd 'my repo' && git submodule status)"
     )
 
 
-async def test_git_submodule_status_reads_the_simulated_seam():
+async def test_git_submodule_reads_the_simulated_seam():
     host = SimulatedHost(
         name="h",
         git_submodules={
@@ -866,7 +871,7 @@ async def test_git_submodule_status_reads_the_simulated_seam():
             ]
         },
     )
-    assert await GitSubmoduleStatus.process(host, "/srv/app") == [
+    assert await GitSubmodule.process(host, "/srv/app") == [
         {
             "path": "vendor/foo",
             "sha": SHA40,
@@ -875,13 +880,13 @@ async def test_git_submodule_status_reads_the_simulated_seam():
         }
     ]
     # An unknown repo reads as []; the seam defaults to {}.
-    assert await GitSubmoduleStatus.process(host, "/srv/other") == []
+    assert await GitSubmodule.process(host, "/srv/other") == []
     assert (
-        await GitSubmoduleStatus.process(SimulatedHost(name="h"), "/srv/app") == []
+        await GitSubmodule.process(SimulatedHost(name="h"), "/srv/app") == []
     )
 
 
-async def test_git_submodule_status_seam_returns_a_copy():
+async def test_git_submodule_seam_returns_a_copy():
     host = SimulatedHost(
         name="h",
         git_submodules={
@@ -895,7 +900,7 @@ async def test_git_submodule_status_seam_returns_a_copy():
             ]
         },
     )
-    rows = await GitSubmoduleStatus.process(host, "/srv/app")
+    rows = await GitSubmodule.process(host, "/srv/app")
     rows[0]["state"] = "mutated"
     rows.append({"path": "leak", "sha": "", "state": "", "describe": None})
     # The simulated state is untouched: each row dict is copied on read.
@@ -913,19 +918,22 @@ async def test_git_submodule_status_seam_returns_a_copy():
 
 
 async def test_git_tag_parses_pyinfras_fixture():
-    # pyinfra's own fact fixture (tests/facts/git.GitTag): the tag lines
-    # are returned verbatim, in listing order.
+    # pyinfra's own fact fixture (tests/facts/git.GitTag): each tag line
+    # becomes one GitTagInfo entry, in listing order.
     host = CannedShellHost(
         """v1.0.0
 v1.0.1
 """
     )
-    assert await GitTag.process(host, "myrepo") == ["v1.0.0", "v1.0.1"]
+    assert await GitTag.process(host, "myrepo") == [
+        {"name": "v1.0.0"},
+        {"name": "v1.0.1"},
+    ]
     assert host.shells == ["! test -d myrepo || (cd myrepo && git tag)"]
 
 
 def test_git_tag_parse_keeps_every_line_verbatim():
-    assert GitTag.parse(["b-tag", "a-tag"]) == ["b-tag", "a-tag"]
+    assert GitTag.parse(["b-tag", "a-tag"]) == [{"name": "b-tag"}, {"name": "a-tag"}]
     # Empty output (the short-circuited guard, or a tagless repo) is [].
     assert GitTag.parse([]) == []
 
@@ -937,19 +945,25 @@ def test_git_tag_command_quotes_the_repo_path():
 
 
 async def test_git_tag_reads_the_simulated_seam():
-    host = SimulatedHost(name="h", git_tags={"/srv/app": ["v1.0.0", "v1.0.1"]})
-    assert await GitTag.process(host, "/srv/app") == ["v1.0.0", "v1.0.1"]
+    host = SimulatedHost(
+        name="h", git_tags={"/srv/app": [{"name": "v1.0.0"}, {"name": "v1.0.1"}]}
+    )
+    assert await GitTag.process(host, "/srv/app") == [
+        {"name": "v1.0.0"},
+        {"name": "v1.0.1"},
+    ]
     # An unknown repo reads as []; the seam defaults to {} everywhere.
     assert await GitTag.process(host, "/srv/other") == []
     assert await GitTag.process(SimulatedHost(name="h"), "/srv/app") == []
 
 
 async def test_git_tag_seam_returns_a_copy():
-    host = SimulatedHost(name="h", git_tags={"/srv/app": ["v1.0.0"]})
+    host = SimulatedHost(name="h", git_tags={"/srv/app": [{"name": "v1.0.0"}]})
     tags = await GitTag.process(host, "/srv/app")
-    tags.append("v2.0.0")
-    # The simulated state is untouched: the list is copied on read.
-    assert host.git_tags["/srv/app"] == ["v1.0.0"]
+    tags[0]["name"] = "mutated"
+    tags.append({"name": "v2.0.0"})
+    # The simulated state is untouched: each entry dict is copied on read.
+    assert host.git_tags["/srv/app"] == [{"name": "v1.0.0"}]
 
 
 # --- GitTrackingBranch -------------------------------------------------------
@@ -1006,10 +1020,11 @@ async def test_git_tracking_branch_reads_the_simulated_seam():
 
 def test_git_namespace_exports_every_fact():
     # The package, the module and the top-level package all reach the
-    # same twelve fact classes and the two TypedDict result shapes.
+    # same twelve fact classes and the four TypedDict result shapes.
     for name in (
         "GitBranch",
         "GitConfig",
+        "GitConfigItem",
         "GitHeadDetached",
         "GitIsRepo",
         "GitLocalCommit",
@@ -1021,6 +1036,7 @@ def test_git_namespace_exports_every_fact():
         "GitSubmodule",
         "GitSubmoduleStatus",
         "GitTag",
+        "GitTagInfo",
         "GitTrackingBranch",
     ):
         module_cls = getattr(git.git, name)
@@ -2120,7 +2136,7 @@ async def test_git_repo_tag_branch_detaches_and_skips_pull():
         directory_stats={"/home/myrepo/.git": {"mode": 755}},
         git_configs={"/home/myrepo": {"remote.origin.url": ["myrepo"]}},
         git_branches={"/home/myrepo": "v1.0"},
-        git_tags={"/home/myrepo": ["v1.0"]},
+        git_tags={"/home/myrepo": [{"name": "v1.0"}]},
     )
     ctx, commands = await materialize_repo(
         host, src="myrepo", dest="/home/myrepo", branch="v1.0", pull=False

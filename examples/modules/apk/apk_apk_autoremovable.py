@@ -33,7 +33,7 @@ hard-coded: the inventory comes from a JSON file, the way
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
    mapping -- then print each host's raw list of purgable package entries
-   (each an ``ApkAutoremovablePackage`` ``{name, version}`` dict) with
+   (each an ``ApkPackageVersion`` ``{name, version}`` dict) with
    ``json.dumps(..., indent=2)``.
 
 ``ApkAutoremovablePackages`` runs ``apk add --purge --simulate 2>/dev/null`` --
@@ -41,12 +41,13 @@ apk's own orphan-purge simulation, which never removes anything (the
 ``2>/dev/null`` suppresses the index-noise warnings an offline simulation
 writes to stderr) -- and collects only the machine-readable
 ``(N/M) Purging <name>-<version>-r<release>`` rows, one
-``ApkAutoremovablePackage`` ``{name, version}`` dict per row, sorted and
+``ApkPackageVersion`` ``{name, version}`` dict per row, sorted and
 de-duplicated by name (the ``name-version-release`` token splits at the
 last ``-<version>-r<release>`` boundary, the same split ``ApkInstalledPackages``
 uses, so multi-dash names like ``alpine-baselayout-data`` stay intact --
-unlike the sibling ``AptAutoremovable``, which drops the version its rows
-carry, apk's purge row always prints one, so it is kept).
+the sibling ``AptAutoremovable`` likewise keeps the version from its
+``Remv`` rows, as a one-element ``versions`` list in its ``AptPackageInfo``
+entries).
 ``apk fix --purge`` is deliberately not used: it also reinstalls damaged
 packages, so its simulation output mixes a repair plan with the purge
 plan, while ``apk add --purge --simulate`` names exactly the orphan set.
@@ -143,7 +144,7 @@ async def main() -> None:
         # fans ApkAutoremovablePackages.process out with asyncio.gather and returns a
         # host-name-keyed mapping. process simulates the purge over SSH and
         # parses the Purging rows into a sorted list of
-        # ``ApkAutoremovablePackage`` ``{name, version}`` dicts.
+        # ``ApkPackageVersion`` ``{name, version}`` dicts.
         apk_autoremovable = await gather_fact(hosts, ApkAutoremovablePackages)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's

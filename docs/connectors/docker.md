@@ -17,6 +17,8 @@ inventory = [
 ]
 ```
 
+<!---
+
 [`Host.from_inventory`][reemote5.hosts.Host.from_inventory] then materializes
 a [`DockerHost`][reemote5.connectors.docker.DockerHost] instead of a plain
 [`Host`][reemote5.hosts.Host]. `DockerHost` overrides exactly the transport
@@ -46,6 +48,8 @@ A missing binary or an unreachable daemon surfaces as
 hosts. Containers on a *remote* SSH host (pyinfra's `@dockerssh`) are not
 covered by this connector.
 
+--->
+
 ## Connection options
 
 The docker `connection` mapping is a *closed* set — an unknown or SSH-only
@@ -60,6 +64,8 @@ forbidden SSH options.
 | `user` | The `docker exec --user` identity for every command, facts included (pyinfra's `docker_user`) |
 | `platform` | `docker run --platform`, e.g. `linux/amd64` (pyinfra's `docker_platform`) |
 | `docker_cmd` | Required: the CLI binary to invoke, `docker` or `podman` — no default |
+
+<!---
 
 pyinfra's `docker_architecture` is deliberately dropped: `--arch` is not a
 `docker run` flag, and `platform` covers the same need.
@@ -116,3 +122,5 @@ gathering.
       members:
         - DockerHost
         - validate_docker_connection
+
+-->

@@ -17,8 +17,8 @@ execution model:
 3. Gather ``DnfAvailableGroups`` on every host at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's sorted list of installable group names with
-   ``json.dumps(..., indent=2)``.
+   mapping -- then print each host's sorted list of installable group entries
+   (each a name) with ``json.dumps(..., indent=2)``.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
 ``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven
@@ -75,7 +75,8 @@ async def main() -> None:
         # running one host at a time. process runs ``dnf group list
         # --available`` and collects the group names indented under the
         # ``Available ... Groups:`` headers into a sorted, de-duplicated list
-        # -- handy to check that a group name is valid before installing it.
+        # of ``DnfGroup`` entries (each a name) -- handy to check that a group
+        # name is valid before installing it.
         available_groups = await gather_fact(hosts, DnfAvailableGroups)
     except (CommandError, HostConnectionError) as exc:
         # The library reports an unreachable host or a failed fact command as a

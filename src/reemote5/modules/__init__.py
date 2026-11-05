@@ -19,7 +19,7 @@ command descriptors it yields, ``modules/files/files.py`` holds
 ``modules/git/git.py`` holds the ``GitBranch``, ``GitConfig``,
 ``GitHeadDetached``, ``GitIsRepo``, ``GitLocalCommit``,
 ``GitRemoteBranchCommit``, ``GitRemoteUrl``, ``GitSshKeyConfigured``,
-``GitStatus``, ``GitSubmoduleStatus``, ``GitTag`` and ``GitTrackingBranch``
+``GitStatus``, ``GitSubmodule``, ``GitTag`` and ``GitTrackingBranch``
 facts beside the ``config``, ``repo`` and ``worktree`` operations,
 ``modules/hardware/hardware.py`` holds the ``BlockDevices``, ``CpuInfo``,
 ``Cpus``, ``DiskStats``, ``DmiInfo``, ``Ipv4Addrs``, ``Ipv6Addrs``,

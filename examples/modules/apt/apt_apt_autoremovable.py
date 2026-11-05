@@ -21,15 +21,18 @@ two-phase execution model:
 3. Gather ``AptAutoremovable`` on every host at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's raw sorted list of removable package
-   names with ``json.dumps(..., indent=2)``.
+   mapping -- then print each host's sorted list of
+   ``AptPackageInfo`` entries (name plus a one-element version list) with
+   ``json.dumps(..., indent=2)``.
 
 ``AptAutoremovable`` runs ``apt-get --just-print autoremove 2>/dev/null``
 -- a simulation that never removes anything -- and collects only the
-machine-readable ``Remv <name> [<version>]`` rows into a sorted,
-de-duplicated name list (the bracketed versions are dropped, and the
-progress lines and indented removal summary are never mistaken for
-names). ``apt-mark showauto`` is deliberately not used: it lists every
+machine-readable ``Remv <name> [<version>]`` rows into sorted,
+de-duplicated ``AptPackageInfo`` entries -- each keeping its
+bracketed version as a one-element ``versions`` list, the same shape
+``AptPackages`` and ``AptHeldPackages`` return (the progress lines and
+indented removal summary are never mistaken for names). ``apt-mark showauto`` is
+deliberately not used: it lists every
 auto-installed package, including ones something still requires, while
 the simulation reports exactly the no-longer-needed set. This is the
 legacy-dependency cleanup view ``AptPackages`` cannot see: its
@@ -87,7 +90,8 @@ async def main() -> None:
         # Gather the fact across the whole inventory concurrently: gather_fact
         # fans AptAutoremovable.process out with asyncio.gather and returns a
         # host-name-keyed mapping. process simulates the autoremove over SSH
-        # and parses the Remv rows into a sorted list of removable names.
+        # and parses the Remv rows into sorted entries, each keeping its
+        # bracketed version as a one-element versions list.
         autoremovable = await gather_fact(hosts, AptAutoremovable)
     except (CommandError, HostConnectionError) as exc:
         # The library reports an unreachable host or a failed fact command as a

@@ -15,6 +15,13 @@
         - RemoteFileSha1
         - FileContents
 
+## file Returns
+
+::: reemote5.modules.files.files
+    options:
+      show_root_heading: false
+      members: []
+
 ## file Operations
 
 ::: reemote5.modules.files.files
@@ -27,6 +34,7 @@
         - get
         - edit
         - move
+        - copy
 
 
 

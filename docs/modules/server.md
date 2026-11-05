@@ -1,18 +1,5 @@
 # server module
 
-## server Operations
-
-::: reemote5.modules.server.server
-    options:
-      show_root_heading: false
-      members:
-        - group
-        - hostname
-        - kill
-        - modprobe
-        - mount
-        - service
-        - timezone
 
 ## server Facts
 
@@ -48,6 +35,29 @@
         - User
         - Users
         - Which
+
+## server Returns
+
+::: reemote5.modules.server.server
+    options:
+      show_root_heading: false
+      members: []
+
+## server Operations
+
+::: reemote5.modules.server.server
+    options:
+      show_root_heading: false
+      members:
+        - group
+        - hostname
+        - kill
+        - modprobe
+        - mount
+        - service
+        - timezone
+        - wait_service
+        - is_active
 
 
 <!---
@@ -477,7 +487,6 @@ already holds or the simulated wait raises `WaitTimeoutError` immediately.
     options:
       show_root_heading: false
       members:
-        - wait_service
         - is_active
 
 ## Example

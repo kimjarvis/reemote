@@ -32,8 +32,8 @@ inventory comes from a JSON file, the way
 4. Gather ``ApkInstalledPackages`` on the guarded hosts at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's list of ``ApkInstalledPackage`` entries
-   (a package ``name`` with the sorted ``versions`` installed under it) with
+   mapping -- then print each host's list of ``ApkPackageVersion`` entries
+   (a package ``name`` with one installed ``version`` each) with
    ``json.dumps(..., indent=2)``.
 
 ``ApkInstalledPackages`` runs ``apk list --installed`` and matches each
@@ -41,9 +41,10 @@ inventory comes from a JSON file, the way
 apk regex: multi-dash names like ``alpine-baselayout-data`` split from
 their ``3.6.5-r0``-style versions at the last ``-r<release>`` boundary,
 names carrying punctuation (``libstdc++``, ``p11-kit``) stay intact, and
-``WARNING: Ignoring APKINDEX...`` noise lines are ignored. Each name's
-versions are de-duplicated and sorted, and one ``ApkInstalledPackage``
-entry per name is returned, the entries sorted by name. The fact takes no
+``WARNING: Ignoring APKINDEX...`` noise lines are ignored. The
+name-and-version pairs are de-duplicated and sorted, and one
+``ApkPackageVersion`` entry per installed name-and-version pair is
+returned, sorted by name, then version. The fact takes no
 arguments, so the default gather needs none.
 
 The path is resolved from ``__file__``, so the example works from any
@@ -129,8 +130,8 @@ async def main() -> None:
         # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans ApkInstalledPackages.process out with asyncio.gather and returns a
         # host-name-keyed mapping. process runs apk list --installed over SSH
-        # and parses the rows into a list of ``ApkInstalledPackage`` entries,
-        # each one package name with its sorted version list.
+        # and parses the rows into a list of ``ApkPackageVersion`` entries,
+        # each one package name with one installed version.
         apk_packages = await gather_fact(hosts, ApkInstalledPackages)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's

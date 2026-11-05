@@ -21,16 +21,16 @@ two-phase execution model:
 3. Gather ``AptPackages`` on every host at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's raw mapping of package name to sorted
-   version list with ``json.dumps(..., indent=2)``.
+   mapping -- then print each host's list of ``AptPackageInfo`` entries (each
+   a name plus its sorted version list) with ``json.dumps(..., indent=2)``.
 
 ``AptPackages`` runs ``apt list --installed 2>/dev/null`` (the redirect
 suppresses apt's "Listing..." progress notice) and matches each
 ``name/source-info version arch [installed,...]`` row with pyinfra's
 package regex: architecture-suffixed names like ``libc6:i386`` keep their
 suffix, epoch-prefixed versions stay intact, and noise lines are ignored.
-Versions are de-duplicated and sorted per name. The fact takes no
-arguments, so the default gather needs none.
+The entries are sorted by name with de-duplicated, sorted version lists.
+The fact takes no arguments, so the default gather needs none.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
 ``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven
@@ -80,8 +80,8 @@ async def main() -> None:
         # Gather the fact across the whole inventory concurrently: gather_fact
         # fans AptPackages.process out with asyncio.gather and returns a
         # host-name-keyed mapping. process runs apt list --installed over SSH
-        # and parses the rows into a {package name: sorted version list}
-        # mapping.
+        # and parses the rows into a sorted list of AptPackageInfo entries (each a
+        # name plus its sorted version list).
         apt_packages = await gather_fact(hosts, AptPackages)
     except (CommandError, HostConnectionError) as exc:
         # The library reports an unreachable host or a failed fact command as a

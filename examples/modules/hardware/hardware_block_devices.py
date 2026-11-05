@@ -21,11 +21,11 @@ two-phase execution model:
    ``json.dumps(..., indent=2)``.
 
 ``BlockDevices`` mirrors pyinfra's ``hardware.BlockDevices``: it runs
-``df`` and maps each mounted device to its ``{blocks, used, available,
-used_percent, mount}`` usage dict, with every value kept as the raw string
-``df`` prints. The header row, the ``none`` pseudo-filesystem and any line
-that does not match the ``df`` row shape are skipped; a failed read reports
-no devices (``{}``).
+``df`` and maps each mounted device to its ``BlockDevice`` entry
+(``{blocks, used, available, used_percent, mount}``), with every value
+kept as the raw string ``df`` prints. The header row, the ``none``
+pseudo-filesystem and any line that does not match the ``df`` row shape
+are skipped; a failed read reports no devices (``{}``).
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
 ``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven

@@ -274,12 +274,14 @@ report = await run_apply(runtimes, plans=plans)  # plans= enables the determinis
 ## Actions
 
 Not everything on a server is a fact reemote5 can read or an operation it can
-manage. For the pragmatic case — bespoke software with no fact and no
-operation — an **action** runs a shell command *now* and hands back what it
-produced. [`Shell`][reemote5.actions.Shell] is the first action kind, and
-[`gather_action`][reemote5.actions.gather_action] fans it out across the
+manage. For the pragmatic cases — bespoke software with no fact and no
+operation, or connectivity itself — an **action** acts *now* and hands back
+what happened. [`Shell`][reemote5.actions.Shell] runs a shell command,
+[`WaitForConnection`][reemote5.actions.WaitForConnection] waits for hosts to
+become reachable again (e.g. after a reboot), and
+`gather_action` fans either out across the
 inventory exactly as [`gather_fact`][reemote5.drivers.gather_fact] does a fact,
-returning a `{host.name: Result}` mapping:
+returning a `{host.name: value}` mapping (a `Result` per host for `Shell`):
 
 ```python
 from reemote5 import Host, Shell, gather_action
@@ -287,7 +289,7 @@ from reemote5 import Host, Shell, gather_action
 hosts = [Host.from_inventory(entry) for entry in inventory]
 results = await gather_action(hosts, Shell, command="/opt/acme/bin/status", sudo=True)
 for name, result in results.items():
-    print(name, result.exit_status, result.stdout)
+    print(name, result["exit_status"], result["stdout"])
 ```
 
 Actions are **orthogonal** to the prepare/apply model, and the split is
@@ -296,13 +298,14 @@ enforced, not conventional:
 - **Call them before, between or after deploys — never inside one.** The
   awaited `gather_action` is a barrier: every host's command has completed
   before the next deploy or fact read. Calling it inside a deploy generator
-  raises [`ActionInDeployError`][reemote5.actions.ActionInDeployError] at the
+  raises `ActionInDeployError` at the
   call site (a deploy runs once per phase, so an immediate action would run
   twice and mutate the host during prepare).
 - **The outcome is data, not an exception.** A non-zero exit — including 127,
-  command-not-found — travels back in the frozen
-  [`Result`][reemote5.actions.Result] (`exit_status`, `stdout`, `stderr`, `.ok`);
-  the caller decides what a bespoke command's failure means. Library-level
+  command-not-found — travels back in the
+  [`Result`][reemote5.actions.Result] `TypedDict` (`exit_status`, `stdout`,
+  `stderr`); the caller decides what a bespoke command's failure means.
+  Library-level
   failures still raise: [`HostConnectionError`][reemote5.hosts.HostConnectionError]
   for an unreachable host and [`PrivilegeError`][reemote5.hosts.PrivilegeError]
   for a rejected credential, each aggregated across hosts.
@@ -313,6 +316,19 @@ enforced, not conventional:
 - **Each call re-connects.** Outside a deploy the fan-out closes every host's
   connection when it finishes, so the next call opens a fresh one — an action
   can follow a [`run`][reemote5.drivers.run] transparently.
+- **Hosts can be selected.** The fan-out's `group`/`tags` keywords filter the
+  inventory's static classifiers before anything runs (`group` matches
+  `host.group`, `tags` requires every listed tag), so an action can target a
+  subset of the inventory.
+
+[`WaitForConnection`][reemote5.actions.WaitForConnection] is the reboot
+companion: after a deploy configures hosts and a `Shell` action reboots them,
+`await gather_action(hosts, WaitForConnection, timeout=300, retry=5)` polls
+each selected host's SSH connect — retrying every `retry` seconds — until all
+have come back, so the next deploy starts only against reachable hosts. A host
+still down when its `timeout` expires raises the fatal
+`ConnectionTimeoutError`, aggregated
+across hosts.
 
 To let a deploy depend on a bespoke command's outcome, use the **deploy →
 action → deploy** split: run the action *between* two complete prepare/apply
@@ -320,7 +336,7 @@ cycles, freeze its `Result` dict, and build the second deploy from a factory
 closing over that snapshot — a pure function of static input, so both phases
 resolve identically and the [determinism](#determinism) guard holds. This is
 the action analogue of the two-deploy fact split. See the
-[Actions reference](actions.md) for the full contract and the
+[Actions reference](actions/actions.md) for the full contract and the
 [worked examples](examples/actions.md).
 
 ## Hosts and the inventory
@@ -362,7 +378,7 @@ later over SSH.
 The `connection` mapping may also carry a `connector` key selecting the
 transport: the default `"ssh"` builds the asyncssh-backed `Host` shown here,
 while `"docker"` builds a
-[`DockerHost`][reemote5.connectors.docker.DockerHost] that runs the very same
+`DockerHost` that runs the very same
 deploy inside a local Docker/Podman container (see
 [the docker connector](connectors/docker.md)).
 
@@ -611,7 +627,9 @@ See the [Guide](guide.md) for the rules this imposes on deploy scripts, the
 [Examples](examples.md) for runnable scripts demonstrating them (including
 deploy composition), and the API reference below for every object involved.
 
-Orthogonal to the deploy model, [**actions**](actions.md) run bespoke shell
-commands immediately — before, between or after deploys, never inside one — and
-return a [`Result`][reemote5.actions.Result] per host. They are the escape hatch
-for software the library knows nothing about.
+Orthogonal to the deploy model, [**actions**](actions/actions.md) act immediately —
+before, between or after deploys, never inside one: `Shell` runs a bespoke
+shell command and returns a [`Result`][reemote5.actions.Result] per host,
+`WaitForConnection` waits for hosts to become reachable again after a reboot.
+They are the escape hatch for software the library knows nothing about, and
+for the connectivity gaps between deploys.

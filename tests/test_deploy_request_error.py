@@ -107,7 +107,7 @@ async def test_dropped_request_aborts_before_anything_is_sent():
     with pytest.raises(DeployRequestError):
         await run_prepare([host], deploy)
 
-    assert host.packages == set()
+    assert host.packages == {}
 
 
 # --- a yielded item that is not a request -------------------------------------
@@ -160,7 +160,7 @@ async def test_apply_phase_reports_a_dropped_request():
         await run_apply([runtime])
 
     # The yielded request ran; the dropped one aborted the run at the next pull.
-    assert host.packages == {"curl"}
+    assert host.packages == {"curl": [""]}
 
 
 async def test_apply_phase_aggregates_every_host_of_the_step():
@@ -207,7 +207,7 @@ async def test_compose_dedupe_collapses_are_not_lost_requests():
         "Install httpd",
     ]
     assert report is not None
-    assert hosts[0].packages == {"curl", "httpd"}
+    assert hosts[0].packages == {"curl": [""], "httpd": [""]}
 
 
 async def test_requests_built_outside_the_deploy_invocation_are_untracked():
@@ -238,4 +238,4 @@ async def test_wellformed_deploy_with_several_yields_runs_clean():
     assert len(plans["web1"]) == 1
     assert report is not None
     assert len(report.log) == 2
-    assert hosts[0].packages == {"curl"}
+    assert hosts[0].packages == {"curl": [""]}

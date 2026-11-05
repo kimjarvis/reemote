@@ -118,8 +118,9 @@ by `_FORBIDDEN_OPTIONS` in [`reemote5.hosts`][reemote5.hosts] and is checked by
 
 The `connection` mapping may also select an alternative transport with a
 `connector` key. The default `"ssh"` builds a plain
-[`Host`][reemote5.hosts.Host]; `"docker"` builds a
-[`DockerHost`][reemote5.connectors.docker.DockerHost], which drives a local
+[`Host`][reemote5.hosts.Host] (see [the ssh connector](connectors/ssh.md)
+for its connection options); `"docker"` builds a
+`DockerHost`, which drives a local
 Docker/Podman container through the very same seams (shell, transfers,
 close) — see [the docker connector](connectors/docker.md) for its connection
 options and container lifecycle. Any other connector value raises
@@ -265,7 +266,7 @@ every host whose credentials were rejected is reported at once.
 ### Raw-result seams for actions
 
 The fail-fast paths above serve facts and operations, where a non-zero exit is
-a problem the library must surface. [Actions](actions.md) need the opposite:
+a problem the library must surface. [Actions](actions/actions.md) need the opposite:
 the command's own exit status must travel back as *data*, so the caller decides
 what a bespoke command's failure means. Two raw-result seams provide that
 without re-interpreting the outcome:

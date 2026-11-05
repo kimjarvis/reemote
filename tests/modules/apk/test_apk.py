@@ -10,12 +10,12 @@ canned ``apk list --installed`` output, reusing the rows of pyinfra's own
 ``apk.ApkPackages`` fact fixtures verbatim -- the small
 ``packages_2.json`` fixture in full and a selected row set of the large
 alpine ``packages.json`` fixture -- and asserting them in reemote5's own
-``ApkInstalledPackage`` entry shape) and through the ``SimulatedHost`` seam,
+``ApkPackageVersion`` entry shape) and through the ``SimulatedHost`` seam,
 plus the de-dup/sort and ``WARNING:`` noise-filtering edge cases and the
 ``gather_fact`` fan-out. ``ApkExplicitPackages`` and ``ApkRepositories`` --
 reemote5 originals with no pyinfra fixtures -- are fed a realistic canned
 ``/etc/apk/world`` and ``/etc/apk/repositories`` file respectively, plus the
-constraint-dropping, comment/conflict and malformed-line skips, the seam
+tag-dropping, comment/conflict and malformed-line skips, the seam
 copy semantics and their own fan-outs. ``ApkPackage`` -- a reemote5 original
 querying one package's detail with no pyinfra fixture -- is fed a realistic
 canned ``apk info -a`` block, plus the untracked-section skip, the scalar
@@ -48,13 +48,13 @@ The ``apk.hold`` operation -- the apk counterpart of ``apt.mark``, pinning
 packages back from upgrades through a version constraint in ``/etc/apk/world``
 -- is exercised over its single present-flagged ``ApkHoldCommand`` descriptor's
 hold/unhold rendering and elevation, its version-aware idempotence against the
-``ApkHeldPackages`` fact (a list of ``ApkHeldPackage`` entries) in both directions, the explicit
+``ApkHeldPackages`` fact (a list of ``ApkPackageVersion`` entries) in both directions, the explicit
 ``version`` and pin-to-installed paths, the uninstalled-name skip, the
 string/empty normalization and request-order preservation, the ``SimulatedHost``
 seam dispatch, and end-to-end through ``run_prepare`` + ``run_apply``
 (hold-then-noop, a hold-then-unhold cycle, and a dry run). ``ApkHeldPackages``
 itself -- reading the same world file as ``ApkExplicitPackages`` but keeping
-only the version-bound lines as a list of ``ApkHeldPackage`` entries -- is
+only the version-bound lines as a list of ``ApkPackageVersion`` entries -- is
 fed the same canned ``/etc/apk/world``, plus
 the tag-only and operator-form edges, the seam copy semantics and its fan-outs.
 
@@ -87,18 +87,15 @@ from reemote5.drivers import (
 from reemote5.hosts import Host
 from reemote5.modules import apk
 from reemote5.modules.apk.apk import (
-    ApkAutoremovablePackage,
     ApkAutoremovablePackages,
-    ApkExplicitPackage,
     ApkExplicitPackages,
-    ApkHeldPackage,
     ApkHeldPackages,
     ApkHoldCommand,
     ApkInstallCommand,
-    ApkInstalledPackage,
     ApkInstalledPackages,
     ApkPackage,
     ApkPackageInfo,
+    ApkPackageVersion,
     ApkPurgeCommand,
     ApkRemoveCommand,
     ApkRepositories,
@@ -122,19 +119,20 @@ class CannedShellHost(Host):
         return self._stdout
 
 
-def _held(name: str, constraint: str, tag: str = "") -> ApkHeldPackage:
-    """One ``ApkHeldPackage`` entry, spelled once per test."""
-    return {"name": name, "constraint": constraint, "tag": tag}
+def _held(name: str, constraint: str) -> ApkPackageVersion:
+    """One held ``ApkPackageVersion`` entry -- the world constraint is the
+    ``version`` -- spelled once per test."""
+    return {"name": name, "version": constraint}
 
 
-def _world(name: str) -> ApkExplicitPackage:
-    """One ``ApkExplicitPackage`` entry, spelled once per test."""
-    return {"name": name}
+def _world(name: str, version: str = "") -> ApkPackageVersion:
+    """One world ``ApkPackageVersion`` entry, spelled once per test."""
+    return {"name": name, "version": version}
 
 
-def _installed(name: str, versions: list[str]) -> ApkInstalledPackage:
-    """One ``ApkInstalledPackage`` entry, spelled once per test."""
-    return {"name": name, "versions": versions}
+def _installed(name: str, version: str) -> ApkPackageVersion:
+    """One installed ``ApkPackageVersion`` entry, spelled once per test."""
+    return {"name": name, "version": version}
 
 
 def _repository(url: str, tag: str = "") -> ApkRepository:
@@ -180,15 +178,15 @@ PACKAGES_2_SEAM = {
     "linux-firmware-rtl_nic": ["20220509-r1"],
 }
 
-# The same answer in reemote5's shape: one ``ApkInstalledPackage`` entry per
-# name, the entries sorted by name and each ``versions`` list sorted.
+# The same answer in reemote5's shape: one ``ApkPackageVersion`` entry per
+# installed name-and-version pair, sorted by name, then version.
 PACKAGES_2_FACT = [
-    _installed("apk-tools", ["2.10.4-r2"]),
-    _installed("iproute2", ["5.17.0-r0"]),
-    _installed("linux-firmware-rtl_nic", ["20220509-r1"]),
-    _installed("musl", ["1.1.22-r3"]),
-    _installed("musl-utils", ["1.1.22-r3"]),
-    _installed("zlib", ["1.2.11-r1"]),
+    _installed("apk-tools", "2.10.4-r2"),
+    _installed("iproute2", "5.17.0-r0"),
+    _installed("linux-firmware-rtl_nic", "20220509-r1"),
+    _installed("musl", "1.1.22-r3"),
+    _installed("musl-utils", "1.1.22-r3"),
+    _installed("zlib", "1.2.11-r1"),
 ]
 
 
@@ -231,21 +229,21 @@ xz-libs-5.6.2-r0 x86_64 {xz} (GPL-2.0-or-later AND 0BSD AND Public-Domain AND LG
 
 # What the fact answers for the rows above: every name split at the last
 # ``-r<release>`` boundary before the ``{origin}`` tail, as one
-# ``ApkInstalledPackage`` entry sorted by name.
+# ``ApkPackageVersion`` entry per name-and-version pair sorted by name.
 ALPINE_PACKAGES = [
-    _installed("alpine-baselayout-data", ["3.6.5-r0"]),
-    _installed("alpine-keys", ["2.4-r1"]),
-    _installed("apk-tools", ["2.14.4-r0"]),
-    _installed("argon2-libs", ["20190702-r5"]),
-    _installed("busybox", ["1.36.1-r29"]),
-    _installed("json-c", ["0.17-r0"]),
-    _installed("libgcc", ["13.2.1_git20240309-r0"]),
-    _installed("libstdc++", ["13.2.1_git20240309-r0"]),
-    _installed("musl-utils", ["1.2.5-r0"]),
-    _installed("openssh-client-common", ["9.7_p1-r4"]),
-    _installed("p11-kit", ["0.25.3-r0"]),
-    _installed("syslinux", ["6.04_pre1-r15"]),
-    _installed("xz-libs", ["5.6.2-r0"]),
+    _installed("alpine-baselayout-data", "3.6.5-r0"),
+    _installed("alpine-keys", "2.4-r1"),
+    _installed("apk-tools", "2.14.4-r0"),
+    _installed("argon2-libs", "20190702-r5"),
+    _installed("busybox", "1.36.1-r29"),
+    _installed("json-c", "0.17-r0"),
+    _installed("libgcc", "13.2.1_git20240309-r0"),
+    _installed("libstdc++", "13.2.1_git20240309-r0"),
+    _installed("musl-utils", "1.2.5-r0"),
+    _installed("openssh-client-common", "9.7_p1-r4"),
+    _installed("p11-kit", "0.25.3-r0"),
+    _installed("syslinux", "6.04_pre1-r15"),
+    _installed("xz-libs", "5.6.2-r0"),
 ]
 
 
@@ -281,13 +279,13 @@ musl-1.2.5-r0 x86_64 {musl} (MIT) [installed]
 ( 100% installed)
 """
     host = CannedShellHost(stdout)
-    assert await ApkInstalledPackages.process(host) == [_installed("musl", ["1.2.5-r0"])]
+    assert await ApkInstalledPackages.process(host) == [_installed("musl", "1.2.5-r0")]
 
 
 async def test_apk_packages_dedups_and_sorts_versions():
-    """The same name listed twice contributes one entry whose ``versions``
-    are sorted and de-duplicated -- pyinfra's parse_packages set semantics,
-    returned inside the one entry."""
+    """The same name listed at two versions contributes one entry per
+    name-and-version pair, sorted and de-duplicated -- pyinfra's
+    parse_packages set semantics, one entry per pair."""
     stdout = """\
 musl-1.2.5-r0 x86_64 {musl} (MIT) [installed]
 musl-1.1.22-r3 x86_64 {musl} (MIT) [installed]
@@ -295,7 +293,8 @@ musl-1.2.5-r0 x86_64 {musl} (MIT) [installed]
 """
     host = CannedShellHost(stdout)
     assert await ApkInstalledPackages.process(host) == [
-        _installed("musl", ["1.1.22-r3", "1.2.5-r0"])
+        _installed("musl", "1.1.22-r3"),
+        _installed("musl", "1.2.5-r0"),
     ]
 
 
@@ -313,12 +312,12 @@ async def test_apk_packages_reads_the_simulated_seam():
 
 
 async def test_apk_packages_seam_returns_copies():
-    """Mutating a returned entry's version list -- or the entry list itself --
+    """Mutating a returned entry -- or the entry list itself --
     never touches the simulated state."""
     host = SimulatedHost(name="h", apk_packages=PACKAGES_2_SEAM)
     packages = await ApkInstalledPackages.process(host)
-    packages[0]["versions"].append("9.9-r0")
-    packages.append(_installed("stray", ["1.0-r0"]))
+    packages[0]["version"] = "9.9-r0"
+    packages.append(_installed("stray", "1.0-r0"))
     del packages[1]
     assert await ApkInstalledPackages.process(host) == PACKAGES_2_FACT
     assert host.apk_packages == PACKAGES_2_SEAM
@@ -383,24 +382,25 @@ openssh>~9.7_p1-r4
 """
 
 # What the file above selects: the eight package names, in sorted order, as
-# name-only ``ApkExplicitPackage`` entries -- the tag, the version bounds
-# and the conflict line all dropped.
+# ``ApkPackageVersion`` entries -- each line's version constraint kept as the
+# ``version`` (``""`` for a bare name), the tag and the conflict line dropped.
 WORLD_FACT = [
     _world("alpine-baselayout"),
     _world("alpine-keys"),
     _world("apk-tools"),
     _world("busybox"),
     _world("ca-certificates"),
-    _world("curl"),
+    _world("curl", "=8.14.0-r0"),
     _world("nginx"),
-    _world("openssh"),
+    _world("openssh", ">~9.7_p1-r4"),
 ]
 
 
 async def test_apk_explicit_packages_parses_the_canned_file():
     """Over the real-transport path, ``ApkExplicitPackages`` parses the
-    canned world file into the sorted name-only entries: every constraint
-    character ends the name, the comment line never contributes, and the
+    canned world file into the sorted entries: every constraint
+    character ends the name, the version bound is kept as the entry's
+    ``version``, the comment line never contributes, and the
     ``!`` conflict constraint names a package that must NOT be installed."""
     host = CannedShellHost(WORLD_OUTPUT)
     assert await ApkExplicitPackages.process(host) == WORLD_FACT
@@ -435,12 +435,16 @@ busybox
 musl=1.2.5-r0
 """
     host = CannedShellHost(stdout)
-    assert await ApkExplicitPackages.process(host) == [_world("busybox"), _world("musl")]
+    assert await ApkExplicitPackages.process(host) == [
+        _world("busybox"),
+        _world("musl", "=1.2.5-r0"),
+    ]
 
 
-async def test_apk_explicit_packages_dedups_and_sorts_names():
-    """The same name pinned and tagged in separate lines collapses into one
-    entry of the sorted list -- the constraint never splits the name."""
+async def test_apk_explicit_packages_dedups_and_sorts_entries():
+    """Identical name-and-constraint pairs collapse into one entry of the
+    sorted list; the same name with a different constraint stays a separate
+    entry, sorted by name then version, and a ``@tag`` never splits a pair."""
     stdout = """\
 nginx@edge
 musl=1.2.5-r0
@@ -448,7 +452,11 @@ musl
 nginx
 """
     host = CannedShellHost(stdout)
-    assert await ApkExplicitPackages.process(host) == [_world("musl"), _world("nginx")]
+    assert await ApkExplicitPackages.process(host) == [
+        _world("musl"),
+        _world("musl", "=1.2.5-r0"),
+        _world("nginx"),
+    ]
 
 
 # --- ApkExplicitPackages: SimulatedHost seam -----------------------------------
@@ -518,9 +526,8 @@ def test_apk_held_packages_command_cats_the_world_file():
 # What the WORLD_OUTPUT file above holds: only the two lines carrying a
 # version bound. The bare base-system names, the ``nginx@edge`` tag-only
 # selection (a repository choice, not a hold) and the ``!legacy-package``
-# conflict line all drop out; each kept line becomes an ``ApkHeldPackage``
-# entry carrying the constraint from the operator on
-# and the empty tag neither of these lines writes.
+# conflict line all drop out; each kept line becomes an ``ApkPackageVersion``
+# entry carrying the constraint from the operator on as its ``version``.
 HELD_FACT = [
     _held("curl", "=8.14.0-r0"),
     _held("openssh", ">~9.7_p1-r4"),
@@ -529,7 +536,7 @@ HELD_FACT = [
 
 async def test_apk_held_packages_parses_the_canned_file():
     """Over the real-transport path, ``ApkHeldPackages`` parses the canned
-    world file into ``ApkHeldPackage`` entries in file order: only the
+    world file into ``ApkPackageVersion`` entries in file order: only the
     version-bound lines contribute, the tag-only ``nginx@edge`` and the
     bare names drop out."""
     host = CannedShellHost(WORLD_OUTPUT)
@@ -542,7 +549,7 @@ async def test_apk_held_packages_result_is_json_printable():
     entries are ordinary dicts -- the example prints the fact with
     ``json.dumps``."""
     parsed = json.dumps(HELD_FACT, indent=2)
-    assert '"constraint": "=8.14.0-r0"' in parsed
+    assert '"version": "=8.14.0-r0"' in parsed
 
 
 async def test_apk_held_packages_empty_or_missing_reads_as_empty_list():
@@ -566,27 +573,27 @@ curl=8.14.0-r0
     assert await ApkHeldPackages.process(host) == [_held("curl", "=8.14.0-r0")]
 
 
-async def test_apk_held_packages_keeps_the_repository_tag():
+async def test_apk_held_packages_drops_the_repository_tag():
     """A pin line may carry a ``@tag`` selector *and* a version bound: the
-    tag lands in the entry's ``tag`` field (kept without the ``@``) instead
-    of vanishing from the bare name, and a tag-less pin keeps an empty
-    ``tag``."""
+    tag is deliberately dropped -- a tagged repository is a selection, not
+    part of the version bound -- so the entry keeps only the bare name and
+    the constraint as its ``version``."""
     stdout = """\
 redis@edge=7.2.5-r0
 curl=8.14.0-r0
 """
     host = CannedShellHost(stdout)
     assert await ApkHeldPackages.process(host) == [
-        _held("redis", "=7.2.5-r0", tag="edge"),
+        _held("redis", "=7.2.5-r0"),
         _held("curl", "=8.14.0-r0"),
     ]
 
 
 async def test_apk_held_packages_keeps_every_operator_form():
     """Each apk version operator (``=``, ``<``, ``~`` and the doubled ``>~``)
-    is kept verbatim in the constraint, and the bare name is split at the
-    first boundary character so a ``@tag`` never lands in the name or the
-    constraint -- it becomes the entry's ``tag``."""
+    is kept verbatim in the entry's ``version``, and the bare name is split
+    at the first boundary character so a ``@tag`` never lands in the name or
+    the constraint -- it is dropped."""
     stdout = """\
 a=1.0-r0
 b<2.0-r0
@@ -600,7 +607,7 @@ e@edge=5.0-r0
         _held("b", "<2.0-r0"),
         _held("c", ">~3.0-r0"),
         _held("d", "~4.0"),
-        _held("e", "=5.0-r0", tag="edge"),
+        _held("e", "=5.0-r0"),
     ]
 
 
@@ -649,7 +656,7 @@ async def test_apk_held_packages_seam_returns_copies():
     held = await ApkHeldPackages.process(host)
     held.append(_held("stray", "=1.0"))
     held.pop(0)
-    held[0]["constraint"] = "=mutated"
+    held[0]["version"] = "=mutated"
     assert await ApkHeldPackages.process(host) == HELD_FACT
 
 
@@ -1908,8 +1915,8 @@ async def test_apk_hold_absorbs_unknown_kwargs():
 async def test_apk_hold_seam_pins_name_to_constraint():
     """``send_command`` maps the hold descriptor onto the seam: each spec's
     bare name and constraint land in ``apk_held_packages`` as an
-    ``ApkHeldPackage`` entry -- exactly as the fact parses the world
-    line the real command writes, with an empty ``tag``."""
+    ``ApkPackageVersion`` entry -- exactly as the fact parses the world
+    line the real command writes, the constraint kept as the ``version``."""
     host = SimulatedHost(name="h")
     await send_command(
         host, ApkHoldCommand(packages=("curl=8.14.0-r0", "nginx~1.2"), present=True)
@@ -2068,7 +2075,7 @@ WARNING: Ignoring APKINDEX.00740ba1.tar.gz: No such file or directory
 OK: 500 MiB in 100 packages
 """
 
-AUTOREMOVE_FACT: list[ApkAutoremovablePackage] = [
+AUTOREMOVE_FACT: list[ApkPackageVersion] = [
     {"name": "alpine-baselayout-data", "version": "3.6.5-r0"},
     {"name": "libstdc++", "version": "13.2.1_git20240309-r0"},
     {"name": "py3-pycparser", "version": "2.22-r0"},
@@ -2077,7 +2084,7 @@ AUTOREMOVE_FACT: list[ApkAutoremovablePackage] = [
 
 async def test_apk_autoremovable_parses_purge_rows():
     """Over the real-transport path, the ``(N/M) Purging`` rows parse into a
-    sorted, de-duplicated list of ``ApkAutoremovablePackage`` dicts keeping
+    sorted, de-duplicated list of ``ApkPackageVersion`` dicts keeping
     each row's name and version-and-release; the summary count, the ``OK:``
     footer and the ``WARNING:`` cache noise never match the row regex."""
     host = CannedShellHost(AUTOREMOVE_OUTPUT)
