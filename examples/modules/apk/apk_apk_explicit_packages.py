@@ -32,17 +32,19 @@ inventory comes from a JSON file, the way
 4. Gather ``ApkExplicitPackages`` on the guarded hosts at once with the
    driver's ``gather_fact`` helper -- it fans the fact's ``process`` coroutine
    out across the inventory with ``asyncio.gather`` and returns a
-   host-name-keyed mapping -- then print each host's raw list of package
-   names with ``json.dumps(..., indent=2)``.
+   host-name-keyed mapping -- then print each host's raw list of
+   name-only ``ApkExplicitPackage`` entries with
+   ``json.dumps(..., indent=2)``.
 
 ``ApkExplicitPackages`` cats ``/etc/apk/world`` -- apk's *world*, the
 constraints the package selection must fulfil -- behind a ``|| true``, so a
 host without apk simply reports ``[]``, and parses each constraint line
-(``[!]name{@tag}{[<>~=]version}`` notation) into its bare package name. The
-names come back sorted and de-duplicated, with the ``@tag`` and the version
-bound dropped and a ``!`` conflict constraint (a package that must NOT be
-installed) never contributing a name. This is the audit view pyinfra's apk
-namespace has no fact for: read beside ``ApkPackages`` -- whose
+(``[!]name{@tag}{[<>~=]version}`` notation) into a name-only
+``{"name": ...}`` entry. Entries come back sorted and de-duplicated by
+name, with the ``@tag`` and the version bound dropped and a ``!`` conflict
+constraint (a package that must NOT be installed) never contributing an
+entry. This is the audit view pyinfra's apk
+namespace has no fact for: read beside ``ApkInstalledPackages`` -- whose
 ``apk list --installed`` rows cannot tell an explicitly requested package
 from a dependency -- the installed names missing from this list are exactly
 the dependency-only ones a cleanup would consider removing (apk has no
@@ -132,7 +134,7 @@ async def main() -> None:
         # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans ApkExplicitPackages.process out with asyncio.gather and returns
         # a host-name-keyed mapping. process cats /etc/apk/world over SSH and
-        # parses each constraint line into its package name, sorted and
+        # parses each constraint line into a name-only entry, sorted and
         # de-duplicated.
         apk_explicit_packages = await gather_fact(hosts, ApkExplicitPackages)
     except (OSError, json.JSONDecodeError) as exc:

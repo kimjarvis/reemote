@@ -1,5 +1,49 @@
 # git module
 
+## git Facts 
+
+::: reemote5.modules.git.git
+    options:
+      show_root_heading: false
+      members:
+        - GitBranch
+        - GitConfig
+        - GitHeadDetached
+        - GitIsRepo
+        - GitLocalCommit
+        - GitRemoteBranchCommit
+        - GitRemoteUrl
+        - GitSshKeyConfigured
+        - GitStatus
+        - GitStatusSummary
+        - GitSubmodule
+        - GitSubmoduleStatus
+        - GitTag
+        - GitTrackingBranch
+
+## git Operations
+
+::: reemote5.modules.git.git
+    options:
+      show_root_heading: false
+      members:
+        - worktree
+
+
+::: reemote5.modules.git.git
+    options:
+      show_root_heading: false
+      members:
+        - config
+
+::: reemote5.modules.git.git
+    options:
+      show_root_heading: false
+      members:
+        - repo
+
+<!---
+
 `reemote5.modules.git.git` holds the git facts — `GitBranch`, the branch a
 repository is on, read from `git describe --all`, `GitConfig`, the
 configuration items of a repository's local config or of the login user's
@@ -148,23 +192,6 @@ upstream carries no separator and reads as `None`, as does a missing
 repository directory; the trailing `[ahead N, behind M]` detail never
 reaches the match.
 
-::: reemote5.modules.git.git
-    options:
-      members:
-        - GitBranch
-        - GitConfig
-        - GitHeadDetached
-        - GitIsRepo
-        - GitLocalCommit
-        - GitRemoteBranchCommit
-        - GitRemoteUrl
-        - GitSshKeyConfigured
-        - GitStatus
-        - GitStatusSummary
-        - GitSubmodule
-        - GitSubmoduleStatus
-        - GitTag
-        - GitTrackingBranch
 
 ## Operations
 
@@ -195,10 +222,6 @@ key, value and repo path — a deliberate deviation from pyinfra, which wraps
 the value in literal double quotes — so a value carrying shell metacharacters
 is read literally rather than double-quote-expanded.
 
-::: reemote5.modules.git.git
-    options:
-      members:
-        - config
 
 `git.repo` clones a new repository or updates an existing one (pyinfra's
 `git.repo`). `src` is the URL to clone from or keep `origin` pointed at and
@@ -241,10 +264,6 @@ the leading `files.directory` ensure-directory step — which is why
 `GitCloneCommand` names `dest` itself instead of cloning into `.` from inside
 a pre-created directory.
 
-::: reemote5.modules.git.git
-    options:
-      members:
-        - repo
 
 `git.worktree` manages a linked git working tree (pyinfra's `git.worktree`):
 the `worktree` directory is what it creates, pulls or removes, and `repo`
@@ -274,11 +293,6 @@ a bare `git pull`, naming the remote and branch only for the explicit
 `chown` commands they emit are deliberately dropped: reemote5 has no `chown`
 primitive and routes ownership through the inventory `privilege` plus the
 `sudo`/`su` meta-parameters.
-
-::: reemote5.modules.git.git
-    options:
-      members:
-        - worktree
 
 ## Example
 
@@ -314,3 +328,5 @@ through the same two-phase [`run`][reemote5.drivers.run], ensuring a linked
 working tree checked out on a new branch from a repository and yielding the
 request twice so the second, seeing the tree already present, is a guaranteed
 apply-phase no-op.
+
+--->

@@ -53,17 +53,31 @@ plugins:
             - examples/demonstrations/privilege
           options:
             docstring_style: google
-            show_root_heading: false
+            show_root_heading: true
+            show_root_toc_entry: true
+            heading_level: 2
             show_source: false
             show_if_no_docstring: true
             merge_init_into_class: true
             separate_signature: true
             show_signature_annotations: true
             signature_crossrefs: true
+            show_bases: false
             # Render class/function docstrings, but not the docstrings of
             # UPPERCASE class constants (e.g. FILENAME_MARKER, COMMAND), which
             # are implementation detail rather than part of the documented API.
-            filters: ["!^_", "!^[A-Z][A-Z0-9_]*$"]
+            filters:
+              - "!^_"
+              - "!^[A-Z][A-Z0-9_]*$"
+              - "!^(parse|process|name|version)$"
+              - "!^(command)$"
+              - "!^(depends|description|license|provides|size|url)$" # ApkPackageInfo, ApkRepository
+              - "!^(constraint|tag)$" # ApkHeldPackage, ApkRepository
+              - "!^(versions)$" # ApkInstalledPackage
+              - "!^(candidate|installed|origins|priority|newly_installed|not_upgraded|removed|upgraded|components|distribution|options|type)$" # apt
+              - "!^(repoid|status)$" # dnf
+              - "!^(dirty|staged|unstaged|untracked)$" # git
+              - "!^(describe|path|sha|state)$" # git
 
 nav:
   - Home: index.md

@@ -1,5 +1,57 @@
 # server module
 
+## server Operations
+
+::: reemote5.modules.server.server
+    options:
+      show_root_heading: false
+      members:
+        - group
+        - hostname
+        - kill
+        - modprobe
+        - mount
+        - service
+        - timezone
+
+## server Facts
+
+::: reemote5.modules.server.server
+    options:
+      show_root_heading: false
+      members:
+        - Arch
+        - AuthorizedKeys
+        - Date
+        - Groups
+        - HasGui
+        - Home
+        - Hostname
+        - Kernel
+        - KernelModules
+        - KernelVersion
+        - Last
+        - LinuxDistribution
+        - LinuxGui
+        - LinuxName
+        - Locales
+        - LsbRelease
+        - Mounts
+        - Path
+        - Processes
+        - Sysctl
+        - unit_name
+        - SystemdServiceState
+        - SystemdServiceEnabled
+        - Timezone
+        - Uptime
+        - User
+        - Users
+        - Which
+
+
+<!---
+
 `reemote5.modules.server.server` combines the server facts and the server
 operations in a single source, so the read side (`Arch`, `AuthorizedKeys`,
 `Date`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
@@ -225,37 +277,6 @@ exit swallowed by `|| true` — reads as `None`, pyinfra's `FactBase` default,
 so callers can branch on the answer directly. `Processes` reads this fact
 for its BusyBox probe.
 
-::: reemote5.modules.server.server
-    options:
-      members:
-        - Arch
-        - AuthorizedKeys
-        - Date
-        - Groups
-        - HasGui
-        - Home
-        - Hostname
-        - Kernel
-        - KernelModules
-        - KernelVersion
-        - Last
-        - LinuxDistribution
-        - LinuxGui
-        - LinuxName
-        - Locales
-        - LsbRelease
-        - Mounts
-        - Path
-        - Processes
-        - Sysctl
-        - unit_name
-        - SystemdServiceState
-        - SystemdServiceEnabled
-        - Timezone
-        - Uptime
-        - User
-        - Users
-        - Which
 
 ## Operations
 
@@ -399,16 +420,6 @@ value with an elevated raw command, spools the desired config to a
 writable path and installs it with an elevated `files.move` in a second
 deploy — no bespoke operation and no new descriptor.
 
-::: reemote5.modules.server.server
-    options:
-      members:
-        - group
-        - hostname
-        - kill
-        - modprobe
-        - mount
-        - service
-        - timezone
 
 ## Waiting for a condition
 
@@ -464,6 +475,7 @@ already holds or the simulated wait raises `WaitTimeoutError` immediately.
 
 ::: reemote5.modules.server.server
     options:
+      show_root_heading: false
       members:
         - wait_service
         - is_active
@@ -512,3 +524,5 @@ web1: Wait for httpd to become active [changed: wait for httpd.service to be act
 
 On a second run `Start httpd` reports no change while the wait is planned
 again and passes on its first poll.
+
+--->

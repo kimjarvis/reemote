@@ -33,7 +33,7 @@ driven by ``asyncio.run``.
 ``apk.packages`` installs (or with ``present=False`` removes) packages by
 name -- here two small CLI utilities, the kind of baseline tooling a deploy
 ensures on every Alpine machine. It reads the installed versions through the
-``ApkPackages`` fact and installs only what is missing with ``apk add``, so
+``ApkInstalledPackages`` fact and installs only what is missing with ``apk add``, so
 re-running is a no-op. A name can be pinned as ``<pkg>=<version>``: a pin
 counts as present only when that *exact* version is installed, pyinfra's
 ``ensure_packages`` version match. ``latest=True`` would additionally upgrade
@@ -83,7 +83,7 @@ skipped by the *driver*, so every host keeps the identical three-request
 schedule (no ``if`` in the deploy body) and each request still consumes its
 lockstep slot. On a host the guard rejects, the plan and the run log render
 the step as ``[skipped: when guard is_alpine]`` and none of its commands --
-nor the ``ApkPackages`` fact behind it -- is materialized at all, which is
+nor the ``ApkInstalledPackages`` fact behind it -- is materialized at all, which is
 exactly why a package manager's operations must be guarded rather than run
 blind on a host without ``apk``. The project root's ``inventory.json`` holds
 one host in the ``"alpine"`` group alongside hosts in other groups, so the

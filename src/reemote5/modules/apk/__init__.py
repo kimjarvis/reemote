@@ -3,10 +3,14 @@
 
 """The ``apk`` module namespace.
 
-Re-exports everything from ``apk.py`` so the facts (``apk.ApkAutoremovable``,
-``apk.ApkPackages``, ``apk.ApkExplicitPackages``, ``apk.ApkHeldPackages``,
+Re-exports everything from ``apk.py`` so the facts (``apk.ApkAutoremovablePackages``
+with its ``apk.ApkAutoremovablePackage`` entry type, ``apk.ApkExplicitPackages``
+with its ``apk.ApkExplicitPackage`` entry type, ``apk.ApkHeldPackages`` with its
+``apk.ApkHeldPackage`` entry type, ``apk.ApkInstalledPackages`` with its
+``apk.ApkInstalledPackage`` entry type,
 ``apk.ApkPackage`` with its ``apk.ApkPackageInfo`` entry type,
-``apk.ApkRepositories``), the ``apk.autoremove``, ``apk.packages``,
+``apk.ApkRepositories`` with its ``apk.ApkRepository`` entry type), the
+``apk.autoremove``, ``apk.packages``,
 ``apk.virtual`` and ``apk.hold`` operations and their typed command
 descriptors (``apk.ApkInstallCommand``, ``apk.ApkPurgeCommand``,
 ``apk.ApkRemoveCommand``, ``apk.ApkUpgradeCommand``,
@@ -16,17 +20,22 @@ package name alone.
 
 from . import apk
 from .apk import (
-    ApkAutoremovable,
+    ApkAutoremovablePackage,
+    ApkAutoremovablePackages,
+    ApkExplicitPackage,
     ApkExplicitPackages,
+    ApkHeldPackage,
     ApkHeldPackages,
     ApkHoldCommand,
     ApkInstallCommand,
+    ApkInstalledPackage,
+    ApkInstalledPackages,
     ApkPackage,
     ApkPackageInfo,
-    ApkPackages,
     ApkPurgeCommand,
     ApkRemoveCommand,
     ApkRepositories,
+    ApkRepository,
     ApkUpgradeCommand,
     ApkVirtualCommand,
     autoremove,
@@ -36,17 +45,22 @@ from .apk import (
 )
 
 __all__ = [
-    "ApkAutoremovable",
+    "ApkAutoremovablePackage",
+    "ApkAutoremovablePackages",
+    "ApkExplicitPackage",
     "ApkExplicitPackages",
+    "ApkHeldPackage",
     "ApkHeldPackages",
     "ApkHoldCommand",
     "ApkInstallCommand",
+    "ApkInstalledPackage",
+    "ApkInstalledPackages",
     "ApkPackage",
     "ApkPackageInfo",
-    "ApkPackages",
     "ApkPurgeCommand",
     "ApkRemoveCommand",
     "ApkRepositories",
+    "ApkRepository",
     "ApkUpgradeCommand",
     "ApkVirtualCommand",
     "apk",

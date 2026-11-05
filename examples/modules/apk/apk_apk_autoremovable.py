@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: gather the ``apk.ApkAutoremovable`` fact on real Alpine servers.
+"""Example: gather the ``apk.ApkAutoremovablePackages`` fact on real Alpine servers.
 
 This is a *usage* example, not part of the library. Like
 ``examples/modules/apk/apk_apk_explicit_packages.py``, it reads a single
@@ -29,20 +29,24 @@ hard-coded: the inventory comes from a JSON file, the way
    ``"alpine"`` group alongside hosts in other groups, so the run prints its
    Alpine result plus a ``== Skipped (when guard is_alpine): ... ==`` line
    naming every other one.
-4. Gather ``ApkAutoremovable`` on the guarded hosts at once with the driver's
+4. Gather ``ApkAutoremovablePackages`` on the guarded hosts at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's raw sorted list of purgable package
-   names with ``json.dumps(..., indent=2)``.
+   mapping -- then print each host's raw list of purgable package entries
+   (each an ``ApkAutoremovablePackage`` ``{name, version}`` dict) with
+   ``json.dumps(..., indent=2)``.
 
-``ApkAutoremovable`` runs ``apk add --purge --simulate 2>/dev/null`` --
+``ApkAutoremovablePackages`` runs ``apk add --purge --simulate 2>/dev/null`` --
 apk's own orphan-purge simulation, which never removes anything (the
 ``2>/dev/null`` suppresses the index-noise warnings an offline simulation
 writes to stderr) -- and collects only the machine-readable
-``(N/M) Purging <name>-<version>-r<release>`` rows into a sorted,
-de-duplicated name list (the version-and-release tail is dropped at the
-last ``-<version>-r<release>`` boundary, the same split ``ApkPackages``
-uses, so multi-dash names like ``alpine-baselayout-data`` stay intact).
+``(N/M) Purging <name>-<version>-r<release>`` rows, one
+``ApkAutoremovablePackage`` ``{name, version}`` dict per row, sorted and
+de-duplicated by name (the ``name-version-release`` token splits at the
+last ``-<version>-r<release>`` boundary, the same split ``ApkInstalledPackages``
+uses, so multi-dash names like ``alpine-baselayout-data`` stay intact --
+unlike the sibling ``AptAutoremovable``, which drops the version its rows
+carry, apk's purge row always prints one, so it is kept).
 ``apk fix --purge`` is deliberately not used: it also reinstalls damaged
 packages, so its simulation output mixes a repair plan with the purge
 plan, while ``apk add --purge --simulate`` names exactly the orphan set.
@@ -76,7 +80,7 @@ from pathlib import Path
 from typing import Any
 
 from reemote5 import (
-    ApkAutoremovable,
+    ApkAutoremovablePackages,
     CommandError,
     Host,
     HostConnectionError,
@@ -136,10 +140,11 @@ async def main() -> None:
         if skipped:
             print("\n== Skipped (when guard is_alpine): " + ", ".join(skipped) + " ==")
         # Gather the fact across the guarded hosts concurrently: gather_fact
-        # fans ApkAutoremovable.process out with asyncio.gather and returns a
+        # fans ApkAutoremovablePackages.process out with asyncio.gather and returns a
         # host-name-keyed mapping. process simulates the purge over SSH and
-        # parses the Purging rows into a sorted list of orphaned names.
-        apk_autoremovable = await gather_fact(hosts, ApkAutoremovable)
+        # parses the Purging rows into a sorted list of
+        # ``ApkAutoremovablePackage`` ``{name, version}`` dicts.
+        apk_autoremovable = await gather_fact(hosts, ApkAutoremovablePackages)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's
         # own message already names the file and the reason, so print just that
@@ -166,7 +171,7 @@ async def main() -> None:
         await asyncio.gather(*(host.aclose() for host in hosts))
     # Print in inventory order (gather_fact keys the results by host name).
     for host in hosts:
-        print(f"== {host.name}: apk.ApkAutoremovable ==")
+        print(f"== {host.name}: apk.ApkAutoremovablePackages ==")
         print(json.dumps(apk_autoremovable[host.name], indent=2))
 
 

@@ -40,7 +40,7 @@ installed and drops only the pin -- the mirror image of ``apt-mark unhold``.
 
 The ``version`` argument selects what to pin to. Omitted (as for the core
 packages below), each name is pinned to its *currently installed* version --
-the newest ``ApkPackages`` reports -- which is the usual "freeze these at what
+the newest ``ApkInstalledPackages`` reports -- which is the usual "freeze these at what
 is on the box now" patch-window move; a name that is not installed cannot be
 pinned this way (there is no version to pin to) and is reported rather than
 held. Given (as for ``openssl`` below), it is an explicit constraint: a bare
@@ -48,8 +48,10 @@ held. Given (as for ``openssl`` below), it is an explicit constraint: a bare
 ``<2.0`` is kept as written, and the pin is written whether or not the package
 is installed yet.
 
-Idempotence reads the ``ApkHeldPackages`` fact (a name -> constraint map
-parsed from the same ``/etc/apk/world``): a name is held exactly when its
+Idempotence reads the ``ApkHeldPackages`` fact (a list of ``ApkHeldPackage``
+entries -- name, constraint and tag -- parsed from the same
+``/etc/apk/world``, looked up by name and compared on the entry's
+constraint): a name is held exactly when its
 world constraint already matches the wanted pin, so re-running is a no-op and
 re-pinning to a *different* version is detected as a change. The script yields
 each direction twice to show that idempotence across the two phases: in the
@@ -83,7 +85,7 @@ make it deterministic: the predicate reads only **static** inventory data --
 mutable fact, and it is a stable module-level function, so the prepare and
 apply phases reach the same skip decision. On a host the guard rejects, the
 plan and the run log render the step as ``[skipped: when guard is_alpine]``
-and none of its commands -- nor the ``ApkHeldPackages`` and ``ApkPackages``
+and none of its commands -- nor the ``ApkHeldPackages`` and ``ApkInstalledPackages``
 facts behind them -- is materialized at all, which is exactly why an
 apk-native operation must be guarded rather than run blind on a host without
 ``apk``. The project root's ``inventory.json`` holds one host in the
@@ -119,7 +121,7 @@ from reemote5 import (
 
 # Core packages to freeze at whatever version is installed now -- pinned with
 # no explicit ``version``, so the operation reads each name's installed version
-# from ``ApkPackages``. A tuple, since ``OperationRequest`` kwargs must stay
+# from ``ApkInstalledPackages``. A tuple, since ``OperationRequest`` kwargs must stay
 # hashable. Both are always present on an Alpine box.
 HELD_PACKAGES = ("busybox", "musl")
 

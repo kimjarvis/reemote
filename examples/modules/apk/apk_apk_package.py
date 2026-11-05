@@ -42,13 +42,13 @@ upstream webpage, license, installed size and its ``depends on``/``provides``
 lists. An absent package (or a host without apk) prints no field header -- the
 command's ``2>/dev/null || true`` swallows the non-zero exit -- so it reports
 ``None`` outright, the ``apt.DebPackage`` tolerance. This is the detail view
-``ApkPackages`` cannot give: its ``apk list --installed`` rows report only
+``ApkInstalledPackages`` cannot give: its ``apk list --installed`` rows report only
 whether a name is installed and at which version, never its dependencies, size
 or description, so a deploy validating a specific package's version or
 dependency set reads it here. One deliberate gap against the sibling
 ``apt.AptPolicy``: apk's ``apk info`` prints no repository field, so the
 package's own metadata is all this fact reports -- the ``{origin}`` source
-package of every installed name is what ``ApkPackages`` parses and the
+package of every installed name is what ``ApkInstalledPackages`` parses and the
 configured repositories are what ``ApkRepositories`` reports.
 
 The path is resolved from ``__file__``, so the example works from any

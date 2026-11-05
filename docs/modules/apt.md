@@ -1,5 +1,49 @@
 # apt module
 
+## apt Facts
+
+::: reemote5.modules.apt.apt
+    options:
+      show_root_heading: false
+      members:
+        - AptAutoremovable
+        - AptHeldPackages
+        - AptKeys
+        - AptPackagePolicy
+        - AptPackageUpgrade
+        - AptPackages
+        - AptPolicy
+        - AptPolicyVersion
+        - AptSimulationDict
+        - AptSource
+        - AptSources
+        - AptSourcesFile
+        - AptUpgradable
+        - DebPackage
+
+[//]: # (        - SimulateOperationWillChange)
+
+## apt Operations
+
+::: reemote5.modules.apt.apt
+    options:
+      show_root_heading: false
+      members:
+        - auto_remove
+        - deb
+        - dist_upgrade
+        - key
+        - mark
+        - packages
+        - ppa
+        - repo
+        - sources_file
+        - update
+        - upgrade
+
+
+<!---
+
 `reemote5.modules.apt.apt` holds the apt facts — `AptAutoremovable`, the
 no-longer-needed packages an autoremove would clean up, parsed from the
 `Remv` rows of an `apt-get --just-print autoremove` simulation,
@@ -263,24 +307,6 @@ still raises `CommandError` — reemote5's fail-fast convention. pyinfra's
 `apt-get` exits 127 — reported as
 [`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
 
-::: reemote5.modules.apt.apt
-    options:
-      members:
-        - AptAutoremovable
-        - AptHeldPackages
-        - AptKeys
-        - AptPackagePolicy
-        - AptPackageUpgrade
-        - AptPackages
-        - AptPolicy
-        - AptPolicyVersion
-        - AptSimulationDict
-        - AptSource
-        - AptSources
-        - AptSourcesFile
-        - AptUpgradable
-        - DebPackage
-        - SimulateOperationWillChange
 
 ## Operations
 
@@ -514,21 +540,6 @@ with no effect. Yielding `apt.update` then `apt.upgrade` in one deploy
 composes the classic refresh-then-patch flow, each half an explicit,
 separately plannable step.
 
-::: reemote5.modules.apt.apt
-    options:
-      members:
-        - auto_remove
-        - deb
-        - dist_upgrade
-        - key
-        - mark
-        - packages
-        - ppa
-        - repo
-        - sources_file
-        - update
-        - upgrade
-
 ## Example
 
 The read-only fact-gathering scripts `apt_apt_autoremovable.py`,
@@ -576,3 +587,5 @@ demonstrates `apt.upgrade`: it upgrades all packages gated by the dry-run
 simulation, yielding the same request twice to show simulation-gated
 idempotence. All eleven are rendered on the
 [apt examples page](../examples/modules/apt.md).
+
+--->

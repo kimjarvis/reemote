@@ -1,55 +1,55 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""The ``git`` module: the ``GitBranch``, ``GitConfig``, ``GitHeadDetached``,
-``GitIsRepo``, ``GitLocalCommit``, ``GitRemoteBranchCommit``, ``GitRemoteUrl``,
-``GitSshKeyConfigured``, ``GitStatus``, ``GitSubmoduleStatus``, ``GitTag`` and
-``GitTrackingBranch`` facts plus the ``config``, ``repo`` and ``worktree``
-operations and their typed command descriptors.
-
-Fact side: ``GitBranch`` (the branch or tag ``git describe --all`` reports
-for a repository), ``GitConfig`` (the configuration items of a repository's
-local config, or of the login user's global/system config),
-``GitHeadDetached`` (whether ``HEAD`` is detached on a commit rather than a
-branch, a tri-state), ``GitIsRepo`` (whether a directory is a valid git work
-tree), ``GitLocalCommit`` (the SHA a local ref resolves to),
-``GitRemoteBranchCommit`` (the tip SHA of a branch on a remote, via
-``git ls-remote``), ``GitRemoteUrl`` (a remote's fetch or push URL),
-``GitSshKeyConfigured`` (whether ``ssh -T`` authenticates to a git remote
-host), ``GitStatus`` (the working tree's staged, unstaged and untracked
-changes), ``GitSubmoduleStatus`` (each submodule's path, SHA and sync state),
-``GitTag`` (the repository's tag list) and ``GitTrackingBranch`` (the
-upstream tracking branch of the checked-out branch). ``GitHeadDetached``,
-``GitIsRepo``, ``GitRemoteUrl``, ``GitSshKeyConfigured``, ``GitStatus`` and
-``GitSubmoduleStatus`` are reemote5-original -- pyinfra has no counterpart --
-and back the safe-pull, idempotency and pre-flight checks the migrated facts
-cannot. Every fact but ``GitSshKeyConfigured`` takes the repository path it
-reads, and each repo-scoped command carries pyinfra's ``! test -d <repo> ||``
-guard, so a missing repository directory short-circuits to no output instead
-of failing the read. Like every fact they are phase-unaware: the ``process``
-coroutine just gathers the raw value.
-
-Operation side: ``git.config`` manages a git configuration item at the
-repository, user or system level, comparing against ``GitConfig`` and yielding
-the ``GitConfigCommand`` descriptor only on a difference; ``git.repo``
-clones or updates a repository -- reconciling ``origin`` against ``src``
-through ``GitConfig``/``GitBranch``/``GitTag``/``GitLocalCommit``/
-``GitRemoteBranchCommit`` and yielding the
-``GitCloneCommand``/``GitRemoteSetUrlCommand``/``GitFetchCommand``/
-``GitCheckoutCommand``/``GitRepoPullCommand``/``GitSubmoduleUpdateCommand``
-descriptors; ``git.worktree``
-manages git working trees -- adding one from a source repository, pulling an
-existing one, or removing it -- and yields the
-``GitWorktreeAddCommand``/``GitWorktreeRemoveCommand``/``GitPullCommand``
-descriptors. All three read the in-namespace git facts plus a private
-``_DirectoryExists`` stand-in for ``files.Directory`` (the
-zero-cross-module-import invariant forbids reaching into the ``files``
-namespace, so the existence check lives here -- the ``apt.sources_file``
-pattern): ``git.worktree`` gates on the worktree and the source ``.git``,
-``git.repo`` gates its clone/update branch on ``dest/.git``, and
-``git.config`` gates a repo-scoped write on ``repo/.git``, exactly as
-pyinfra gates it on ``files.Directory``.
-"""
+# """The ``git`` module: the ``GitBranch``, ``GitConfig``, ``GitHeadDetached``,
+# ``GitIsRepo``, ``GitLocalCommit``, ``GitRemoteBranchCommit``, ``GitRemoteUrl``,
+# ``GitSshKeyConfigured``, ``GitStatus``, ``GitSubmoduleStatus``, ``GitTag`` and
+# ``GitTrackingBranch`` facts plus the ``config``, ``repo`` and ``worktree``
+# operations and their typed command descriptors.
+#
+# Fact side: ``GitBranch`` (the branch or tag ``git describe --all`` reports
+# for a repository), ``GitConfig`` (the configuration items of a repository's
+# local config, or of the login user's global/system config),
+# ``GitHeadDetached`` (whether ``HEAD`` is detached on a commit rather than a
+# branch, a tri-state), ``GitIsRepo`` (whether a directory is a valid git work
+# tree), ``GitLocalCommit`` (the SHA a local ref resolves to),
+# ``GitRemoteBranchCommit`` (the tip SHA of a branch on a remote, via
+# ``git ls-remote``), ``GitRemoteUrl`` (a remote's fetch or push URL),
+# ``GitSshKeyConfigured`` (whether ``ssh -T`` authenticates to a git remote
+# host), ``GitStatus`` (the working tree's staged, unstaged and untracked
+# changes), ``GitSubmoduleStatus`` (each submodule's path, SHA and sync state),
+# ``GitTag`` (the repository's tag list) and ``GitTrackingBranch`` (the
+# upstream tracking branch of the checked-out branch). ``GitHeadDetached``,
+# ``GitIsRepo``, ``GitRemoteUrl``, ``GitSshKeyConfigured``, ``GitStatus`` and
+# ``GitSubmoduleStatus`` are reemote5-original -- pyinfra has no counterpart --
+# and back the safe-pull, idempotency and pre-flight checks the migrated facts
+# cannot. Every fact but ``GitSshKeyConfigured`` takes the repository path it
+# reads, and each repo-scoped command carries pyinfra's ``! test -d <repo> ||``
+# guard, so a missing repository directory short-circuits to no output instead
+# of failing the read. Like every fact they are phase-unaware: the ``process``
+# coroutine just gathers the raw value.
+#
+# Operation side: ``git.config`` manages a git configuration item at the
+# repository, user or system level, comparing against ``GitConfig`` and yielding
+# the ``GitConfigCommand`` descriptor only on a difference; ``git.repo``
+# clones or updates a repository -- reconciling ``origin`` against ``src``
+# through ``GitConfig``/``GitBranch``/``GitTag``/``GitLocalCommit``/
+# ``GitRemoteBranchCommit`` and yielding the
+# ``GitCloneCommand``/``GitRemoteSetUrlCommand``/``GitFetchCommand``/
+# ``GitCheckoutCommand``/``GitRepoPullCommand``/``GitSubmoduleUpdateCommand``
+# descriptors; ``git.worktree``
+# manages git working trees -- adding one from a source repository, pulling an
+# existing one, or removing it -- and yields the
+# ``GitWorktreeAddCommand``/``GitWorktreeRemoveCommand``/``GitPullCommand``
+# descriptors. All three read the in-namespace git facts plus a private
+# ``_DirectoryExists`` stand-in for ``files.Directory`` (the
+# zero-cross-module-import invariant forbids reaching into the ``files``
+# namespace, so the existence check lives here -- the ``apt.sources_file``
+# pattern): ``git.worktree`` gates on the worktree and the source ``.git``,
+# ``git.repo`` gates its clone/update branch on ``dest/.git``, and
+# ``git.config`` gates a repo-scoped write on ``repo/.git``, exactly as
+# pyinfra gates it on ``files.Directory``.
+# """
 
 import posixpath
 import re
@@ -99,21 +99,36 @@ _SUBMODULE_STATES = {
 class GitBranch:
     """The branch a repository is on, according to ``git describe --all``.
 
-    Mirrors pyinfra's ``git.GitBranch``: ``git describe --all`` prints the
-    current ref as ``heads/<branch>`` (or ``tags/<tag>`` on a tagged
-    commit) and the ``heads/``/``tags/`` prefix is stripped, so a checkout
-    of ``develop`` reads as::
+    command:
 
-        "develop"
+    ```bash
+    ! test -d <repo> || (cd <repo> && git describe --all)
+    ```
 
-    A missing repository directory short-circuits pyinfra's
-    ``! test -d <repo> ||`` guard to no output, which reads as ``""``.
-    The repo path is ``shlex``-quoted -- a deliberate deviation from
-    pyinfra, which interpolates it raw. pyinfra's ``requires_command``
-    gating is deliberately dropped: with the directory present, a *missing*
-    ``git`` exits 127, which ``run_shell`` reports as ``CommandNotFoundError``
-    rather than ``""``.
+    return:
+
+    ```python
+    str
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/git/git_git_branch.py``.
     """
+
+    # Mirrors pyinfra's ``git.GitBranch``: ``git describe --all`` prints the
+    # current ref as ``heads/<branch>`` (or ``tags/<tag>`` on a tagged
+    # commit) and the ``heads/``/``tags/`` prefix is stripped, so a checkout
+    # of ``develop`` reads as::
+    #
+    #     "develop"
+    #
+    # A missing repository directory short-circuits pyinfra's
+    # ``! test -d <repo> ||`` guard to no output, which reads as ``""``.
+    # The repo path is ``shlex``-quoted -- a deliberate deviation from
+    # pyinfra, which interpolates it raw. pyinfra's ``requires_command``
+    # gating is deliberately dropped: with the directory present, a *missing*
+    # ``git`` exits 127, which ``run_shell`` reports as ``CommandNotFoundError``
+    # rather than ``""``.
 
     @classmethod
     def command(cls, repo: str) -> str:
@@ -150,23 +165,39 @@ class GitBranch:
 class GitConfig:
     """The git configuration items, as a dict of key -> value list.
 
-    Mirrors pyinfra's ``git.GitConfig``: ``git config -l`` prints
-    ``key=value`` rows and each key maps to the list of its values -- a
-    multi-valued key (``safe.directory``) keeps every entry in listing
-    order -- for example::
+    command:
 
-        {"user.email": ["nick@gmail.com"]}
+    ```bash
+    ! test -d <repo> || (cd <repo> && git config --local -l)
+    ```
 
-    Without a ``repo`` the login user's scope is read -- ``git config
-    --global -l``, or ``--system`` with ``system=True`` -- where the
-    ``|| true`` guard maps a missing git or config file to ``{}``,
-    pyinfra's ``default = dict``. With a ``repo`` the repository's
-    ``--local`` config is read, and a missing directory short-circuits the
-    ``! test -d`` guard to ``{}`` as well. Rows without an ``=`` are
-    skipped (pyinfra would raise ``ValueError`` on them; reemote5 hardens
-    the parser). The repo path is ``shlex``-quoted -- a deliberate
-    deviation from pyinfra, which interpolates it raw.
+    return:
+
+    ```python
+    dict[str, list[str]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/git/git_git_config.py``.
     """
+
+    # Mirrors pyinfra's ``git.GitConfig``: ``git config -l`` prints
+    # ``key=value`` rows and each key maps to the list of its values -- a
+    # multi-valued key (``safe.directory``) keeps every entry in listing
+    # order -- for example::
+    #
+    #     {"user.email": ["nick@gmail.com"]}
+    #
+    # Without a ``repo`` the login user's scope is read -- ``git config
+    # --global -l || true``, or ``git config --system -l || true`` with
+    # ``system=True`` -- where the
+    # ``|| true`` guard maps a missing git or config file to ``{}``,
+    # pyinfra's ``default = dict``. With a ``repo`` the repository's
+    # ``--local`` config is read, and a missing directory short-circuits the
+    # ``! test -d`` guard to ``{}`` as well. Rows without an ``=`` are
+    # skipped (pyinfra would raise ``ValueError`` on them; reemote5 hardens
+    # the parser). The repo path is ``shlex``-quoted -- a deliberate
+    # deviation from pyinfra, which interpolates it raw.
 
     @classmethod
     def command(cls, repo: str | None = None, system: bool = False) -> str:
@@ -221,23 +252,38 @@ class GitConfig:
 class GitHeadDetached:
     """Whether the repository's ``HEAD`` is detached, or None if undetermined.
 
-    A reemote5-original fact (pyinfra has no counterpart). ``git symbolic-ref
-    -q HEAD`` succeeds -- printing ``refs/heads/<branch>`` -- while ``HEAD``
-    points at a branch, and fails silently when ``HEAD`` is detached on a bare
-    commit, the state a tag checkout leaves behind and where a later ``git
-    pull`` fails. The probe is wrapped so the three outcomes stay
-    distinguishable, and the answer is that tri-state, for example::
+    command:
 
-        True   # detached: a tag or commit is checked out directly
+    ```bash
+    ! test -d <repo> || (cd <repo> && if git symbolic-ref -q HEAD >/dev/null 2>&1; then echo attached; elif git rev-parse --git-dir >/dev/null 2>&1; then echo detached; fi)
+    ```
 
-    ``attached`` reads as ``False`` (``HEAD`` is on a branch), ``detached`` as
-    ``True``, and *no* token -- a missing repository directory (the
-    ``! test -d`` guard) or a directory that is not a repository (the ``git
-    rev-parse --git-dir`` fallback also fails) -- reads as ``None``, so an
-    absent or invalid repository is never mistaken for a detached one (an
-    operation can then clone instead of skipping the pull). The repo path is
-    ``shlex``-quoted, like every sibling fact.
+    return:
+
+    ```python
+    bool | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/git/git_git_head_detached.py``.
     """
+
+    # A reemote5-original fact (pyinfra has no counterpart). ``git symbolic-ref
+    # -q HEAD`` succeeds -- printing ``refs/heads/<branch>`` -- while ``HEAD``
+    # points at a branch, and fails silently when ``HEAD`` is detached on a bare
+    # commit, the state a tag checkout leaves behind and where a later ``git
+    # pull`` fails. The probe is wrapped so the three outcomes stay
+    # distinguishable, and the answer is that tri-state, for example::
+    #
+    #     True   # detached: a tag or commit is checked out directly
+    #
+    # ``attached`` reads as ``False`` (``HEAD`` is on a branch), ``detached`` as
+    # ``True``, and *no* token -- a missing repository directory (the
+    # ``! test -d`` guard) or a directory that is not a repository (the ``git
+    # rev-parse --git-dir`` fallback also fails) -- reads as ``None``, so an
+    # absent or invalid repository is never mistaken for a detached one (an
+    # operation can then clone instead of skipping the pull). The repo path is
+    # ``shlex``-quoted, like every sibling fact.
 
     @classmethod
     def command(cls, repo: str) -> str:
@@ -289,23 +335,38 @@ class GitHeadDetached:
 class GitIsRepo:
     """Whether a directory is a valid git working-tree repository.
 
-    A reemote5-original fact (pyinfra has no counterpart). ``git rev-parse
-    --is-inside-work-tree`` asks git itself to resolve the working tree, so it
-    *validates* the repository instead of merely trusting that a ``.git``
-    directory exists -- a corrupt or half-initialized ``.git`` answers
-    nothing::
+    command:
 
-        True
+    ```bash
+    ! test -d <repo> || (cd <repo> && git rev-parse --is-inside-work-tree 2>/dev/null)
+    ```
 
-    The answer is ``True`` only when the first output line is exactly ``true``.
-    A missing repository directory (the ``! test -d`` guard), a directory that
-    is not a repository, a *bare* repository (which has no work tree, so
-    ``--is-inside-work-tree`` prints ``false``) and a corrupt ``.git`` all read
-    as ``False`` (``2>/dev/null`` swallows git's ``fatal:`` diagnostic). This
-    is a more precise validity check than probing for a ``.git`` directory, so
-    an operation can refuse to act on a broken checkout. The repo path is
-    ``shlex``-quoted, like every sibling fact.
+    return:
+
+    ```python
+    bool
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/git/git_git_is_repo.py``.
     """
+
+    # A reemote5-original fact (pyinfra has no counterpart). ``git rev-parse
+    # --is-inside-work-tree`` asks git itself to resolve the working tree, so it
+    # *validates* the repository instead of merely trusting that a ``.git``
+    # directory exists -- a corrupt or half-initialized ``.git`` answers
+    # nothing::
+    #
+    #     True
+    #
+    # The answer is ``True`` only when the first output line is exactly ``true``.
+    # A missing repository directory (the ``! test -d`` guard), a directory that
+    # is not a repository, a *bare* repository (which has no work tree, so
+    # ``--is-inside-work-tree`` prints ``false``) and a corrupt ``.git`` all read
+    # as ``False`` (``2>/dev/null`` swallows git's ``fatal:`` diagnostic). This
+    # is a more precise validity check than probing for a ``.git`` directory, so
+    # an operation can refuse to act on a broken checkout. The repo path is
+    # ``shlex``-quoted, like every sibling fact.
 
     @classmethod
     def command(cls, repo: str) -> str:
@@ -350,19 +411,34 @@ class GitIsRepo:
 class GitLocalCommit:
     """The SHA of a local ref (default ``HEAD``) in a repository, or None.
 
-    Mirrors pyinfra's ``git.GitLocalCommit``: ``git rev-parse <ref>``
-    prints the commit digest the ref resolves to, and the first line is
-    kept only when it fullmatches a 40-character (SHA-1) or 64-character
-    (SHA-256) lowercase hex digest, for example::
+    command:
 
-        "1a2b3c4d5e6f7890abcdef1234567890abcdef12"
+    ```bash
+    ! test -d <repo> || (cd <repo> && git rev-parse <ref> 2>/dev/null) || true
+    ```
 
-    A missing repository directory (the ``! test -d`` guard), an unknown
-    ref (``2>/dev/null`` plus the trailing ``|| true`` swallow the
-    failure) or any non-SHA answer reads as ``None``, exactly like
-    pyinfra's fixtures. The repo path and the ref are ``shlex``-quoted --
-    a deliberate deviation from pyinfra, which interpolates both raw.
+    return:
+
+    ```python
+    str | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/git/git_git_local_commit.py``.
     """
+
+    # Mirrors pyinfra's ``git.GitLocalCommit``: ``git rev-parse <ref>``
+    # prints the commit digest the ref resolves to, and the first line is
+    # kept only when it fullmatches a 40-character (SHA-1) or 64-character
+    # (SHA-256) lowercase hex digest, for example::
+    #
+    #     "1a2b3c4d5e6f7890abcdef1234567890abcdef12"
+    #
+    # A missing repository directory (the ``! test -d`` guard), an unknown
+    # ref (``2>/dev/null`` plus the trailing ``|| true`` swallow the
+    # failure) or any non-SHA answer reads as ``None``, exactly like
+    # pyinfra's fixtures. The repo path and the ref are ``shlex``-quoted --
+    # a deliberate deviation from pyinfra, which interpolates both raw.
 
     @classmethod
     def command(cls, repo: str, ref: str = "HEAD") -> str:
@@ -406,22 +482,37 @@ class GitLocalCommit:
 class GitRemoteBranchCommit:
     """The tip SHA of a branch on a remote, via ``git ls-remote``, or None.
 
-    Mirrors pyinfra's ``git.GitRemoteBranchCommit``: ``git ls-remote
-    <remote> <branch>`` prints ``<sha>\\t<ref>`` rows and the first column
-    of the first row (``| head -n1``) is kept when it fullmatches the SHA
-    digest shape, for example::
+    command:
 
-        "1a2b3c4d5e6f7890abcdef1234567890abcdef12"
+    ```bash
+    ! test -d <repo> || (cd <repo> && git ls-remote <remote> <branch> 2>/dev/null | head -n1)
+    ```
 
-    ``branch`` defaults to ``None``, which asks for the remote's ``HEAD``;
-    a falsy branch (``None`` or ``""``) takes that default, exactly like
-    pyinfra's truthiness check. A missing repository directory (the
-    ``! test -d`` guard), an unreachable remote or an unknown branch
-    (``2>/dev/null``) reads as ``None``, as does a first column that is
-    not a full digest. The repo path, remote name and ref are
-    ``shlex``-quoted -- a deliberate deviation from pyinfra, which
-    interpolates them raw.
+    return:
+
+    ```python
+    str | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/git/git_git_remote_branch_commit.py``.
     """
+
+    # Mirrors pyinfra's ``git.GitRemoteBranchCommit``: ``git ls-remote
+    # <remote> <branch>`` prints ``<sha>\\t<ref>`` rows and the first column
+    # of the first row (``| head -n1``) is kept when it fullmatches the SHA
+    # digest shape, for example::
+    #
+    #     "1a2b3c4d5e6f7890abcdef1234567890abcdef12"
+    #
+    # ``branch`` defaults to ``None``, which asks for the remote's ``HEAD``;
+    # a falsy branch (``None`` or ``""``) takes that default, exactly like
+    # pyinfra's truthiness check. A missing repository directory (the
+    # ``! test -d`` guard), an unreachable remote or an unknown branch
+    # (``2>/dev/null``) reads as ``None``, as does a first column that is
+    # not a full digest. The repo path, remote name and ref are
+    # ``shlex``-quoted -- a deliberate deviation from pyinfra, which
+    # interpolates them raw.
 
     @classmethod
     def command(cls, repo: str, remote: str = "origin", branch: str | None = None) -> str:
@@ -472,20 +563,35 @@ class GitRemoteBranchCommit:
 class GitRemoteUrl:
     """A remote's fetch (or push) URL, or None when it cannot be resolved.
 
-    A reemote5-original fact (pyinfra has no counterpart). ``git remote
-    get-url <remote>`` prints the URL a repository fetches from -- or, with
-    ``push=True``, the one it pushes to (``--push``) -- for example::
+    command:
 
-        "git@github.com:acme/app.git"
+    ```bash
+    ! test -d <repo> || (cd <repo> && git remote get-url <remote> 2>/dev/null)
+    ```
 
-    ``remote`` defaults to ``origin``. A missing repository directory (the
-    ``! test -d`` guard), an unknown remote (``git remote get-url`` exits 2
-    with ``error: No such remote``, swallowed by ``2>/dev/null``) and any
-    other failure all read as ``None``, so an operation can compare the
-    answer against the URL it expects and re-point a migrated remote instead
-    of pulling from the wrong one. The repo path and the remote name are
-    ``shlex``-quoted, like every sibling fact.
+    return:
+
+    ```python
+    str | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/git/git_git_remote_url.py``.
     """
+
+    # A reemote5-original fact (pyinfra has no counterpart). ``git remote
+    # get-url <remote>`` prints the URL a repository fetches from -- or, with
+    # ``push=True``, the one it pushes to (``--push``) -- for example::
+    #
+    #     "git@github.com:acme/app.git"
+    #
+    # ``remote`` defaults to ``origin``. A missing repository directory (the
+    # ``! test -d`` guard), an unknown remote (``git remote get-url`` exits 2
+    # with ``error: No such remote``, swallowed by ``2>/dev/null``) and any
+    # other failure all read as ``None``, so an operation can compare the
+    # answer against the URL it expects and re-point a migrated remote instead
+    # of pulling from the wrong one. The repo path and the remote name are
+    # ``shlex``-quoted, like every sibling fact.
 
     @classmethod
     def command(cls, repo: str, remote: str = "origin", push: bool = False) -> str:
@@ -536,26 +642,41 @@ class GitRemoteUrl:
 class GitSshKeyConfigured:
     """Whether ``ssh -T`` authenticates the user to a git remote host.
 
-    A reemote5-original fact (pyinfra has no counterpart), and the one fact
-    here that is *not* repository-scoped: it probes the login user's SSH
-    configuration against a remote host before a clone or pull depends on it.
-    ``ssh -T <user>@<host>`` attempts a non-interactive authentication; the
-    probe normalizes ssh's exit status in-shell because a *successful* git
-    handshake still exits non-zero (GitHub answers ``1`` -- it grants no
-    shell -- while printing its welcome banner on stderr), and only ``255``
-    means the connection or the authentication itself failed::
+    command:
 
-        True
+    ```bash
+    ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=<timeout> <user>@<remote_host> >/dev/null 2>&1; rc=$?; test "$rc" -eq 127 && exit 127; test "$rc" -ne 255 && echo authenticated || echo unauthenticated
+    ```
 
-    The answer is ``True`` when the probe prints ``authenticated`` (any exit
-    status but ``255``) and ``False`` when it prints ``unauthenticated``
-    (``255``: unreachable host, refused key, no agent). ``BatchMode=yes``
-    forbids password prompts so the fact never blocks, and
-    ``StrictHostKeyChecking=accept-new`` records an unseen host key instead of
-    failing on it. A missing ``ssh`` exits ``127``, which the probe re-raises
-    so ``run_shell`` reports ``CommandNotFoundError`` rather than a false
-    ``False``. The ``user``@``remote_host`` target is ``shlex``-quoted.
+    return:
+
+    ```python
+    bool
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/git/git_git_ssh_key_configured.py``.
     """
+
+    # A reemote5-original fact (pyinfra has no counterpart), and the one fact
+    # here that is *not* repository-scoped: it probes the login user's SSH
+    # configuration against a remote host before a clone or pull depends on it.
+    # ``ssh -T <user>@<host>`` attempts a non-interactive authentication; the
+    # probe normalizes ssh's exit status in-shell because a *successful* git
+    # handshake still exits non-zero (GitHub answers ``1`` -- it grants no
+    # shell -- while printing its welcome banner on stderr), and only ``255``
+    # means the connection or the authentication itself failed::
+    #
+    #     True
+    #
+    # The answer is ``True`` when the probe prints ``authenticated`` (any exit
+    # status but ``255``) and ``False`` when it prints ``unauthenticated``
+    # (``255``: unreachable host, refused key, no agent). ``BatchMode=yes``
+    # forbids password prompts so the fact never blocks, and
+    # ``StrictHostKeyChecking=accept-new`` records an unseen host key instead of
+    # failing on it. A missing ``ssh`` exits ``127``, which the probe re-raises
+    # so ``run_shell`` reports ``CommandNotFoundError`` rather than a false
+    # ``False``. The ``user``@``remote_host`` target is ``shlex``-quoted.
 
     @classmethod
     def command(cls, remote_host: str, user: str = "git", timeout: int = 10) -> str:
@@ -604,12 +725,7 @@ class GitSshKeyConfigured:
 
 
 class GitStatusSummary(TypedDict):
-    """The working-tree state ``GitStatus`` reports for a repository.
-
-    A TypedDict rather than a class instance, like ``AptSource``: the answer
-    is an ordinary dict, so equality against a literal dict works and
-    ``json.dumps`` serializes it directly.
-
+    """
     Attributes:
         dirty: ``True`` when any of the three path lists is non-empty.
         staged: Paths with an index (``git add``-ed) change.
@@ -617,6 +733,12 @@ class GitStatusSummary(TypedDict):
             staged and modified in the work tree appears in both lists.
         untracked: Paths git does not track (the porcelain ``??`` rows).
     """
+
+    # The working-tree state ``GitStatus`` reports for a repository.
+    #
+    # A TypedDict rather than a class instance, like ``AptSource``: the answer
+    # is an ordinary dict, so equality against a literal dict works and
+    # ``json.dumps`` serializes it directly.
 
     dirty: bool
     staged: list[str]
@@ -627,22 +749,37 @@ class GitStatusSummary(TypedDict):
 class GitStatus:
     """The working tree's staged, unstaged and untracked changes.
 
-    A reemote5-original fact (pyinfra has no counterpart). ``git status
-    --porcelain`` prints one row per changed path as two status columns
-    (index, then work tree) plus the path, and ``??`` marks an untracked
-    file; the rows are folded into a ``GitStatusSummary``, for example::
+    command:
 
-        {"dirty": True, "staged": [], "unstaged": ["app.py"], "untracked": []}
+    ```bash
+    ! test -d <repo> || (cd <repo> && git status --porcelain)
+    ```
 
-    A row whose index column is not a space is staged, one whose work-tree
-    column is not a space is unstaged (a path can be both), and ``??`` is
-    untracked; ``dirty`` is ``True`` when any list is non-empty. A rename row
-    keeps its ``orig -> new`` path verbatim. A missing repository directory
-    short-circuits the ``! test -d`` guard to no output, which reads as a
-    clean summary (``dirty=False``, empty lists), as does a repository with
-    no changes -- so an operation can refuse to pull over a dirty tree. The
-    repo path is ``shlex``-quoted, like every sibling fact.
+    return:
+
+    ```python
+    GitStatusSummary
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/git/git_git_status.py``.
     """
+
+    # A reemote5-original fact (pyinfra has no counterpart). ``git status
+    # --porcelain`` prints one row per changed path as two status columns
+    # (index, then work tree) plus the path, and ``??`` marks an untracked
+    # file; the rows are folded into a ``GitStatusSummary``, for example::
+    #
+    #     {"dirty": True, "staged": [], "unstaged": ["app.py"], "untracked": []}
+    #
+    # A row whose index column is not a space is staged, one whose work-tree
+    # column is not a space is unstaged (a path can be both), and ``??`` is
+    # untracked; ``dirty`` is ``True`` when any list is non-empty. A rename row
+    # keeps its ``orig -> new`` path verbatim. A missing repository directory
+    # short-circuits the ``! test -d`` guard to no output, which reads as a
+    # clean summary (``dirty=False``, empty lists), as does a repository with
+    # no changes -- so an operation can refuse to pull over a dirty tree. The
+    # repo path is ``shlex``-quoted, like every sibling fact.
 
     @classmethod
     def command(cls, repo: str) -> str:
@@ -704,12 +841,7 @@ class GitStatus:
 
 
 class GitSubmodule(TypedDict):
-    """One submodule row ``GitSubmoduleStatus`` reports.
-
-    A TypedDict rather than a class instance, like ``AptSource``: rows are
-    ordinary dicts, so equality against a literal dict works and
-    ``json.dumps`` serializes them directly.
-
+    """
     Attributes:
         path: The submodule's path within the repository.
         sha: The commit the submodule is checked out at.
@@ -718,6 +850,12 @@ class GitSubmodule(TypedDict):
         describe: The ``git describe`` detail git appends in parentheses, or
             ``None`` when the row carries none (an uninitialized submodule).
     """
+
+    # One submodule row ``GitSubmoduleStatus`` reports.
+    #
+    # A TypedDict rather than a class instance, like ``AptSource``: rows are
+    # ordinary dicts, so equality against a literal dict works and
+    # ``json.dumps`` serializes them directly.
 
     path: str
     sha: str
@@ -728,24 +866,39 @@ class GitSubmodule(TypedDict):
 class GitSubmoduleStatus:
     """The repository's submodules and their synchronization state.
 
-    A reemote5-original fact (pyinfra has no counterpart). ``git submodule
-    status`` prints one row per submodule as a leading state character, the
-    recorded SHA, the path and -- for an initialized submodule -- a
-    ``git describe`` detail in parentheses; the rows fold into a list of
-    ``GitSubmodule`` dicts, for example::
+    command:
 
-        [{"path": "vendor/lib", "sha": "1a2b...", "state": "synced",
-          "describe": "heads/main"}]
+    ```bash
+    ! test -d <repo> || (cd <repo> && git submodule status)
+    ```
 
-    The leading character maps through ``_SUBMODULE_STATES``: a space is
-    ``synced`` (initialized, at the recorded commit), ``-`` is
-    ``uninitialized``, ``+`` is ``modified`` (checked out elsewhere) and
-    ``U`` is ``conflicted``; any other character reads as ``unknown``. A
-    missing repository directory short-circuits the ``! test -d`` guard to no
-    output, which reads as ``[]``, as does a repository with no submodules --
-    so an operation can run ``submodule update`` only when a row is out of
-    sync. The repo path is ``shlex``-quoted, like every sibling fact.
+    return:
+
+    ```python
+    list[GitSubmodule]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/git/git_git_submodule_status.py``.
     """
+
+    # A reemote5-original fact (pyinfra has no counterpart). ``git submodule
+    # status`` prints one row per submodule as a leading state character, the
+    # recorded SHA, the path and -- for an initialized submodule -- a
+    # ``git describe`` detail in parentheses; the rows fold into a list of
+    # ``GitSubmodule`` dicts, for example::
+    #
+    #     [{"path": "vendor/lib", "sha": "1a2b...", "state": "synced",
+    #       "describe": "heads/main"}]
+    #
+    # The leading character maps through ``_SUBMODULE_STATES``: a space is
+    # ``synced`` (initialized, at the recorded commit), ``-`` is
+    # ``uninitialized``, ``+`` is ``modified`` (checked out elsewhere) and
+    # ``U`` is ``conflicted``; any other character reads as ``unknown``. A
+    # missing repository directory short-circuits the ``! test -d`` guard to no
+    # output, which reads as ``[]``, as does a repository with no submodules --
+    # so an operation can run ``submodule update`` only when a row is out of
+    # sync. The repo path is ``shlex``-quoted, like every sibling fact.
 
     @classmethod
     def command(cls, repo: str) -> str:
@@ -801,16 +954,31 @@ class GitSubmoduleStatus:
 class GitTag:
     """The repository's tags, as a list of tag names in ``git tag`` order.
 
-    Mirrors pyinfra's ``git.GitTag``: ``git tag`` lists one tag per line,
-    sorted by name, and the lines are returned verbatim, for example::
+    command:
 
-        ["v1.0.0", "v1.0.1"]
+    ```bash
+    ! test -d <repo> || (cd <repo> && git tag)
+    ```
 
-    A missing repository directory short-circuits pyinfra's
-    ``! test -d <repo> ||`` guard to no output, which reads as ``[]``.
-    The repo path is ``shlex``-quoted -- a deliberate deviation from
-    pyinfra, which interpolates it raw.
+    return:
+
+    ```python
+    list[str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/git/git_git_tag.py``.
     """
+
+    # Mirrors pyinfra's ``git.GitTag``: ``git tag`` lists one tag per line,
+    # sorted by name, and the lines are returned verbatim, for example::
+    #
+    #     ["v1.0.0", "v1.0.1"]
+    #
+    # A missing repository directory short-circuits pyinfra's
+    # ``! test -d <repo> ||`` guard to no output, which reads as ``[]``.
+    # The repo path is ``shlex``-quoted -- a deliberate deviation from
+    # pyinfra, which interpolates it raw.
 
     @classmethod
     def command(cls, repo: str) -> str:
@@ -843,21 +1011,36 @@ class GitTag:
 class GitTrackingBranch:
     """The upstream tracking branch of the checked-out branch, or None.
 
-    Mirrors pyinfra's ``git.GitTrackingBranch``: ``git status --branch
-    --porcelain`` heads its output with ``## <branch>...<upstream>`` (plus
-    an optional ``[ahead N, behind M]`` detail) and the token after the
-    ``...`` separator is the upstream, for example::
+    command:
 
-        "origin/master"
+    ```bash
+    ! test -d <repo> || (cd <repo> && git status --branch --porcelain)
+    ```
 
-    A branch without an upstream (``## branch1``) carries no separator and
-    reads as ``None`` -- pyinfra's fixture -- as does a missing repository
-    directory (the ``! test -d`` guard short-circuits to no output). Only
-    the first output line is searched, and the ``\\S+`` token stops at the
-    first space, so the trailing status detail never reaches the match.
-    The repo path is ``shlex``-quoted -- a deliberate deviation from
-    pyinfra, which interpolates it raw.
+    return:
+
+    ```python
+    str | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/git/git_git_tracking_branch.py``.
     """
+
+    # Mirrors pyinfra's ``git.GitTrackingBranch``: ``git status --branch
+    # --porcelain`` heads its output with ``## <branch>...<upstream>`` (plus
+    # an optional ``[ahead N, behind M]`` detail) and the token after the
+    # ``...`` separator is the upstream, for example::
+    #
+    #     "origin/master"
+    #
+    # A branch without an upstream (``## branch1``) carries no separator and
+    # reads as ``None`` -- pyinfra's fixture -- as does a missing repository
+    # directory (the ``! test -d`` guard short-circuits to no output). Only
+    # the first output line is searched, and the ``\\S+`` token stops at the
+    # first space, so the trailing status detail never reaches the match.
+    # The repo path is ``shlex``-quoted -- a deliberate deviation from
+    # pyinfra, which interpolates it raw.
 
     @classmethod
     def command(cls, repo: str) -> str:

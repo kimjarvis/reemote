@@ -1,89 +1,89 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""The ``apt`` module: facts and operations in one source.
-
-Fact side: ``AptAutoremovable``, the no-longer-needed packages an
-autoremove would clean up, parsed from the ``Remv`` rows of an
-``apt-get --just-print autoremove`` simulation, ``AptHeldPackages``, the
-package names marked as held via ``apt-mark hold``, parsed from
-``apt-mark showhold``, ``AptKeys``, the
-GPG keys available to APT, gathered from the modern keyring directories
-with ``gpg --with-colons`` instead of the deprecated ``apt-key`` command,
-``AptPackages``, the installed packages with their versions, parsed from
-``apt list --installed``, ``AptPolicy``, the install candidate and
-repository origins of one package, parsed from ``apt-cache policy``,
-``AptSources``, the configured repositories, parsed from the legacy
-``.list`` files and the modern deb822 ``.sources`` files into plain
-``AptSource`` TypedDict-shaped dicts, ``AptSourcesFile``, the raw content
-of a single ``.sources`` file (read by ``apt.sources_file``), and
-``AptUpgradable``, the packages
-``apt upgrade`` would move with both ends of each version jump, parsed
-from ``apt list --upgradable`` into plain ``AptPackageUpgrade``
-TypedDict-shaped dicts, ``DebPackage``, the name/version of a
-``.deb`` file or an installed dpkg package that ``apt.deb`` reads to
-decide idempotence, and ``SimulateOperationWillChange``, the proposed
-change counts of a simulated ``apt-get`` operation, parsed from the
-``N upgraded, ...`` summary line of a ``--dry-run`` into a plain
-``AptSimulationDict`` TypedDict-shaped dict. Like every fact
-they are phase-unaware: their ``process`` coroutines just gather the raw
-value.
-
-Operation side: ``apt.deb`` plus the typed command descriptors it yields
-(``DebInstallCommand``/``AptInstallFixCommand``/``AptRemoveCommand``),
-``apt.dist_upgrade`` (``AptDistUpgradeCommand``), ``apt.auto_remove``
-(``AptAutoRemoveCommand``), ``apt.key``
-(``AptKeyUploadCommand``/``AptKeyInstallCommand``), ``apt.mark``
-(``AptMarkHoldCommand``/``AptMarkUnholdCommand``), ``apt.packages``
-(``AptUpdateCommand``/``AptUpgradeCommand``/``AptInstallCommand`` plus the
-shared ``AptRemoveCommand``), ``apt.ppa`` (``AptPpaCommand``),
-``apt.repo`` (``AptRepoAddCommand``/``AptRepoRemoveCommand``) and
-``apt.sources_file``
-(``AptSourcesFileUploadCommand``/``AptSourcesFileInstallCommand``/``AptSourcesFileRemoveCommand``).
-``apt.deb`` mirrors pyinfra's ``apt.deb`` (``src``, ``present``,
-``wait_for_lock``) for a ``.deb`` file already on the target host;
-pyinfra's URL source -- which downloads the file mid-deploy -- is dropped,
-since reemote5 has no download operation, so a URL ``src`` raises
-``ValueError``, and pyinfra's ``force`` option (the deprecated
-``--force-yes`` apt flag) is deliberately dropped. ``apt.dist_upgrade``
-mirrors pyinfra's ``apt.dist_upgrade`` (simulate ``dist-upgrade``, skip
-when nothing would change), with pyinfra's ``auto_remove`` parameter
-split out into the standalone ``apt.auto_remove`` operation -- a reemote5
-original that cleans up orphaned dependencies without an upgrade,
-idempotent on ``AptAutoremovable``. ``apt.key`` mirrors the install half
-of pyinfra's ``apt.key``: a GPG key stream is spooled over scp and
-installed as a keyring file for ``signed-by=`` references, dearmored on
-the target when the content is ASCII-armored; it is deliberately
-non-idempotent (always installs, like ``dnf.key``), and pyinfra's
-``keyserver``/``keyid`` fetch and ``present=False`` removal are dropped.
-``apt.mark`` is a reemote5 original -- pyinfra ships no operation managing
-package hold states -- holding packages back from upgrades (or releasing
-held ones) with ``apt-mark hold``/``unhold``, idempotent on
-``AptHeldPackages``. ``apt.packages`` mirrors pyinfra's ``apt.packages`` (install/remove/update
-packages with version pins, ``latest`` upgrades and ``update``/``upgrade``
-prefixes), reading ``AptPackages`` rather than pyinfra's ``DebPackages``
-(the same substitution ``apt.deb`` made); pyinfra's ``cache_time``
-stamp-file caching and ``force`` (the deprecated ``--force-yes`` flag) are
-deliberately dropped. ``apt.ppa`` mirrors pyinfra's ``apt.ppa`` (add/remove
-an Ubuntu PPA with ``apt-add-repository``), deliberately non-idempotent --
-it always yields one command and reads no fact, exactly as pyinfra marks
-it. ``apt.repo`` mirrors pyinfra's ``apt.repo`` (add/remove one source
-line in ``/etc/apt/sources.list`` or a ``sources.list.d`` file), idempotent
-on ``AptSources``; pyinfra's delegation to ``files.line`` is replaced by
-self-contained apt descriptors -- reemote5 has no line operation and
-namespaces never reuse each other's operations.
-``apt.sources_file`` mirrors pyinfra's ``apt.sources_file`` (manage a
-deb822 ``.sources`` file under ``sources.list.d``), idempotent on
-``AptSources`` for the write direction: the generated content is spooled
-over scp and installed with an elevated shell (the ``apt.key`` pattern
-replacing pyinfra's ``files.put`` delegation, since transfers are
-unprivileged); the ``present=False`` removal is idempotent on the
-in-namespace ``AptSourcesFile`` content fact (the ``DnfRepoFile``
-pattern), so an absent file is a no-op. Operations are async
-generators that receive an ``OpContext``, await facts, set
-``ctx.changed``/``ctx.reason``, and yield command descriptors; they never
-touch the host directly.
-"""
+# """The ``apt`` module: facts and operations in one source.
+#
+# Fact side: ``AptAutoremovable``, the no-longer-needed packages an
+# autoremove would clean up, parsed from the ``Remv`` rows of an
+# ``apt-get --just-print autoremove`` simulation, ``AptHeldPackages``, the
+# package names marked as held via ``apt-mark hold``, parsed from
+# ``apt-mark showhold``, ``AptKeys``, the
+# GPG keys available to APT, gathered from the modern keyring directories
+# with ``gpg --with-colons`` instead of the deprecated ``apt-key`` command,
+# ``AptPackages``, the installed packages with their versions, parsed from
+# ``apt list --installed``, ``AptPolicy``, the install candidate and
+# repository origins of one package, parsed from ``apt-cache policy``,
+# ``AptSources``, the configured repositories, parsed from the legacy
+# ``.list`` files and the modern deb822 ``.sources`` files into plain
+# ``AptSource`` TypedDict-shaped dicts, ``AptSourcesFile``, the raw content
+# of a single ``.sources`` file (read by ``apt.sources_file``), and
+# ``AptUpgradable``, the packages
+# ``apt upgrade`` would move with both ends of each version jump, parsed
+# from ``apt list --upgradable`` into plain ``AptPackageUpgrade``
+# TypedDict-shaped dicts, ``DebPackage``, the name/version of a
+# ``.deb`` file or an installed dpkg package that ``apt.deb`` reads to
+# decide idempotence, and ``SimulateOperationWillChange``, the proposed
+# change counts of a simulated ``apt-get`` operation, parsed from the
+# ``N upgraded, ...`` summary line of a ``--dry-run`` into a plain
+# ``AptSimulationDict`` TypedDict-shaped dict. Like every fact
+# they are phase-unaware: their ``process`` coroutines just gather the raw
+# value.
+#
+# Operation side: ``apt.deb`` plus the typed command descriptors it yields
+# (``DebInstallCommand``/``AptInstallFixCommand``/``AptRemoveCommand``),
+# ``apt.dist_upgrade`` (``AptDistUpgradeCommand``), ``apt.auto_remove``
+# (``AptAutoRemoveCommand``), ``apt.key``
+# (``AptKeyUploadCommand``/``AptKeyInstallCommand``), ``apt.mark``
+# (``AptMarkHoldCommand``/``AptMarkUnholdCommand``), ``apt.packages``
+# (``AptUpdateCommand``/``AptUpgradeCommand``/``AptInstallCommand`` plus the
+# shared ``AptRemoveCommand``), ``apt.ppa`` (``AptPpaCommand``),
+# ``apt.repo`` (``AptRepoAddCommand``/``AptRepoRemoveCommand``) and
+# ``apt.sources_file``
+# (``AptSourcesFileUploadCommand``/``AptSourcesFileInstallCommand``/``AptSourcesFileRemoveCommand``).
+# ``apt.deb`` mirrors pyinfra's ``apt.deb`` (``src``, ``present``,
+# ``wait_for_lock``) for a ``.deb`` file already on the target host;
+# pyinfra's URL source -- which downloads the file mid-deploy -- is dropped,
+# since reemote5 has no download operation, so a URL ``src`` raises
+# ``ValueError``, and pyinfra's ``force`` option (the deprecated
+# ``--force-yes`` apt flag) is deliberately dropped. ``apt.dist_upgrade``
+# mirrors pyinfra's ``apt.dist_upgrade`` (simulate ``dist-upgrade``, skip
+# when nothing would change), with pyinfra's ``auto_remove`` parameter
+# split out into the standalone ``apt.auto_remove`` operation -- a reemote5
+# original that cleans up orphaned dependencies without an upgrade,
+# idempotent on ``AptAutoremovable``. ``apt.key`` mirrors the install half
+# of pyinfra's ``apt.key``: a GPG key stream is spooled over scp and
+# installed as a keyring file for ``signed-by=`` references, dearmored on
+# the target when the content is ASCII-armored; it is deliberately
+# non-idempotent (always installs, like ``dnf.key``), and pyinfra's
+# ``keyserver``/``keyid`` fetch and ``present=False`` removal are dropped.
+# ``apt.mark`` is a reemote5 original -- pyinfra ships no operation managing
+# package hold states -- holding packages back from upgrades (or releasing
+# held ones) with ``apt-mark hold``/``unhold``, idempotent on
+# ``AptHeldPackages``. ``apt.packages`` mirrors pyinfra's ``apt.packages`` (install/remove/update
+# packages with version pins, ``latest`` upgrades and ``update``/``upgrade``
+# prefixes), reading ``AptPackages`` rather than pyinfra's ``DebPackages``
+# (the same substitution ``apt.deb`` made); pyinfra's ``cache_time``
+# stamp-file caching and ``force`` (the deprecated ``--force-yes`` flag) are
+# deliberately dropped. ``apt.ppa`` mirrors pyinfra's ``apt.ppa`` (add/remove
+# an Ubuntu PPA with ``apt-add-repository``), deliberately non-idempotent --
+# it always yields one command and reads no fact, exactly as pyinfra marks
+# it. ``apt.repo`` mirrors pyinfra's ``apt.repo`` (add/remove one source
+# line in ``/etc/apt/sources.list`` or a ``sources.list.d`` file), idempotent
+# on ``AptSources``; pyinfra's delegation to ``files.line`` is replaced by
+# self-contained apt descriptors -- reemote5 has no line operation and
+# namespaces never reuse each other's operations.
+# ``apt.sources_file`` mirrors pyinfra's ``apt.sources_file`` (manage a
+# deb822 ``.sources`` file under ``sources.list.d``), idempotent on
+# ``AptSources`` for the write direction: the generated content is spooled
+# over scp and installed with an elevated shell (the ``apt.key`` pattern
+# replacing pyinfra's ``files.put`` delegation, since transfers are
+# unprivileged); the ``present=False`` removal is idempotent on the
+# in-namespace ``AptSourcesFile`` content fact (the ``DnfRepoFile``
+# pattern), so an absent file is a no-op. Operations are async
+# generators that receive an ``OpContext``, await facts, set
+# ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never
+# touch the host directly.
+# """
 
 import io
 import re
@@ -141,35 +141,50 @@ def _noninteractive_apt(command: str, wait_for_lock: bool | int = False) -> str:
 class AptAutoremovable:
     """Packages ``apt autoremove`` would remove, as a sorted list of names.
 
-    A reemote5 original: pyinfra ships no ``apt.AptAutoremovable``
-    counterpart (its ``apt.SimulateOperationWillChange`` only counts a
-    simulation's changes, never names them).
-    ``apt-get --just-print autoremove`` simulates the autoremove --
-    nothing is ever removed -- and prints one machine-readable
-    ``Remv <name> [<version>]`` row per package that would go, parsed
-    into a sorted, de-duplicated name list, for example::
+    command:
 
-        ["libllvm17t64", "linux-headers-6.8.0-45", "linux-headers-6.8.0-45-generic"]
+    ```bash
+    apt-get --just-print autoremove 2>/dev/null
+    ```
 
-    Only the ``Remv`` rows are read: the progress lines, the indented
-    names under ``The following packages will be REMOVED:`` and the
-    ``0 upgraded, ...`` count line are never mistaken for package names,
-    and the bracketed version each row carries is deliberately dropped
-    (the names are what a cleanup audits). ``apt-mark showauto`` is
-    deliberately not used: it lists every auto-installed package,
-    including ones something still requires, while the simulation
-    reports exactly the no-longer-needed set. Architecture-suffixed
-    names like ``libc6:i386`` keep their suffix, exactly as apt prints
-    them. Nothing autoremovable (or no output at all) reads as ``[]``.
-    This fact fills a coverage gap of ``AptPackages``: the ``apt list
-    --installed`` rows that fact parses cannot tell a legacy dependency
-    from one still in use, so a deploy cleaning up after itself reads
-    the removable names here -- and only collects the list; removal
-    stays an explicit operator decision, never a fact side effect -- the
-    ``apt.auto_remove`` operation performs that cleanup. The
-    simulation needs no root, and a missing ``apt-get`` exits 127, which
-    ``run_shell`` reports as ``CommandNotFoundError``.
+    return:
+
+    ```python
+    list[str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_apt_autoremovable.py``.
     """
+
+    # A reemote5 original: pyinfra ships no ``apt.AptAutoremovable``
+    # counterpart (its ``apt.SimulateOperationWillChange`` only counts a
+    # simulation's changes, never names them).
+    # ``apt-get --just-print autoremove`` simulates the autoremove --
+    # nothing is ever removed -- and prints one machine-readable
+    # ``Remv <name> [<version>]`` row per package that would go, parsed
+    # into a sorted, de-duplicated name list, for example::
+    #
+    #     ["libllvm17t64", "linux-headers-6.8.0-45", "linux-headers-6.8.0-45-generic"]
+    #
+    # Only the ``Remv`` rows are read: the progress lines, the indented
+    # names under ``The following packages will be REMOVED:`` and the
+    # ``0 upgraded, ...`` count line are never mistaken for package names,
+    # and the bracketed version each row carries is deliberately dropped
+    # (the names are what a cleanup audits). ``apt-mark showauto`` is
+    # deliberately not used: it lists every auto-installed package,
+    # including ones something still requires, while the simulation
+    # reports exactly the no-longer-needed set. Architecture-suffixed
+    # names like ``libc6:i386`` keep their suffix, exactly as apt prints
+    # them. Nothing autoremovable (or no output at all) reads as ``[]``.
+    # This fact fills a coverage gap of ``AptPackages``: the ``apt list
+    # --installed`` rows that fact parses cannot tell a legacy dependency
+    # from one still in use, so a deploy cleaning up after itself reads
+    # the removable names here -- and only collects the list; removal
+    # stays an explicit operator decision, never a fact side effect -- the
+    # ``apt.auto_remove`` operation performs that cleanup. The
+    # simulation needs no root, and a missing ``apt-get`` exits 127, which
+    # ``run_shell`` reports as ``CommandNotFoundError``.
 
     #: Shell simulating the autoremove over SSH, one ``Remv`` row per
     #: removable package. ``--just-print`` never removes anything (the
@@ -215,26 +230,41 @@ class AptAutoremovable:
 class AptHeldPackages:
     """Packages marked as held, as a sorted list of package names.
 
-    A reemote5 original: pyinfra ships no ``apt.AptHeldPackages``
-    counterpart. ``apt-mark showhold`` prints one held package name per
-    line (the names marked with ``apt-mark hold``, which keeps them out
-    of upgrades); blank lines are skipped and the names are
-    de-duplicated and sorted so reads stay deterministic and
-    JSON-printable, for example::
+    command:
 
-        ["docker-ce", "libc6:i386", "linux-image-generic"]
+    ```bash
+    apt-mark showhold
+    ```
 
-    Architecture-suffixed names like ``libc6:i386`` keep their suffix,
-    exactly as ``apt-mark`` prints them. No held packages (or no output
-    at all) read as ``[]``. This fact fills a coverage gap of
-    ``AptPackages``: the ``apt list --installed`` rows that fact parses
-    report versions but never the hold state, so a deploy that must not
-    upgrade critical packages reads the held names here -- and only
-    collects the list; marking stays an explicit operator decision, never
-    a fact side effect -- the ``apt.mark`` operation sets or clears those
-    marks. A missing ``apt-mark`` exits 127, which ``run_shell`` reports as
-    ``CommandNotFoundError``.
+    return:
+
+    ```python
+    list[str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_apt_held_packages.py``.
     """
+
+    # A reemote5 original: pyinfra ships no ``apt.AptHeldPackages``
+    # counterpart. ``apt-mark showhold`` prints one held package name per
+    # line (the names marked with ``apt-mark hold``, which keeps them out
+    # of upgrades); blank lines are skipped and the names are
+    # de-duplicated and sorted so reads stay deterministic and
+    # JSON-printable, for example::
+    #
+    #     ["docker-ce", "libc6:i386", "linux-image-generic"]
+    #
+    # Architecture-suffixed names like ``libc6:i386`` keep their suffix,
+    # exactly as ``apt-mark`` prints them. No held packages (or no output
+    # at all) read as ``[]``. This fact fills a coverage gap of
+    # ``AptPackages``: the ``apt list --installed`` rows that fact parses
+    # report versions but never the hold state, so a deploy that must not
+    # upgrade critical packages reads the held names here -- and only
+    # collects the list; marking stays an explicit operator decision, never
+    # a fact side effect -- the ``apt.mark`` operation sets or clears those
+    # marks. A missing ``apt-mark`` exits 127, which ``run_shell`` reports as
+    # ``CommandNotFoundError``.
 
     #: Shell listing the held package names over SSH, one name per line.
     COMMAND = "apt-mark showhold"
@@ -333,37 +363,52 @@ def _parse_key_records(output: Iterable[str]) -> dict[str, dict[str, Any]]:
 
 
 class AptKeys:
-    """The GPG keys available to APT, as a dict of key id -> key details.
+    r"""The GPG keys available to APT, as a dict of key id -> key details.
 
-    Mirrors pyinfra's ``apt.AptKeys``: two ``find`` sweeps list every
-    ``.gpg``/``.kbx`` binary keyring and every ``.asc`` armored keyring under
-    ``directories`` (defaulting to ``/etc/apt/trusted.gpg.d``,
-    ``/etc/apt/keyrings`` and ``/usr/share/keyrings``), each is read with
-    ``gpg --with-colons`` behind a ``KEYRING:`` marker line, and the parsed
-    keys are flattened into one mapping, for example::
+    command:
 
-        {
-            "3B4FE6ACC0B21F32": {
-                "validity": "-",
-                "length": 4096,
-                "subkeys": {},
-                "fingerprint": "790BC7277767219C42C86F933B4FE6ACC0B21F32",
-                "uid_hash": "B7A02867A0C1D32B594B36C00E20C8C57E397748",
-                "uid": "Ubuntu Archive Automatic Signing Key (2012) <ftpmaster@ubuntu.com>",
-            },
-        }
+    ```bash
+    find "/etc/apt/trusted.gpg.d" "/etc/apt/keyrings" "/usr/share/keyrings" -type f \( -name '*.gpg' -o -name '*.kbx' \) 2>/dev/null -exec sh -c 'echo "KEYRING:$1"; gpg --list-keys --with-colons --keyring "$1" --no-default-keyring 2>/dev/null || true' _ {} \; ; find "/etc/apt/trusted.gpg.d" "/etc/apt/keyrings" "/usr/share/keyrings" -type f -name '*.asc' 2>/dev/null -exec sh -c 'echo "KEYRING:$1"; gpg --with-colons "$1" 2>/dev/null || true' _ {} \;
+    ```
 
-    ``directories`` is a list of paths, a single path string or None (the
-    defaults). If the same key id appears in several keyring files, the last
-    one wins -- pyinfra's flattening order. pyinfra builds this fact on its
-    ``gpg.GpgKeyrings`` infrastructure; reemote5 collapses that stack into
-    this one class, so the per-keyring paths and formats the parent reports
-    are deliberately dropped (``AptKeys`` discards them anyway) and only the
-    flattened keys remain. pyinfra's ``requires_command`` gating on ``gpg``
-    is deliberately dropped too: a missing ``gpg`` is swallowed by the
-    command's ``|| true`` and reads as ``{}``, while a missing ``find`` exits
-    127, which ``run_shell`` reports as ``CommandNotFoundError``.
+    return:
+
+    ```python
+    dict[str, dict[str, Any]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_apt_keys.py``.
     """
+
+    # Mirrors pyinfra's ``apt.AptKeys``: two ``find`` sweeps list every
+    # ``.gpg``/``.kbx`` binary keyring and every ``.asc`` armored keyring under
+    # ``directories`` (defaulting to ``/etc/apt/trusted.gpg.d``,
+    # ``/etc/apt/keyrings`` and ``/usr/share/keyrings``), each is read with
+    # ``gpg --with-colons`` behind a ``KEYRING:`` marker line, and the parsed
+    # keys are flattened into one mapping, for example::
+    #
+    #     {
+    #         "3B4FE6ACC0B21F32": {
+    #             "validity": "-",
+    #             "length": 4096,
+    #             "subkeys": {},
+    #             "fingerprint": "790BC7277767219C42C86F933B4FE6ACC0B21F32",
+    #             "uid_hash": "B7A02867A0C1D32B594B36C00E20C8C57E397748",
+    #             "uid": "Ubuntu Archive Automatic Signing Key (2012) <ftpmaster@ubuntu.com>",
+    #         },
+    #     }
+    #
+    # ``directories`` is a list of paths, a single path string or None (the
+    # defaults). If the same key id appears in several keyring files, the last
+    # one wins -- pyinfra's flattening order. pyinfra builds this fact on its
+    # ``gpg.GpgKeyrings`` infrastructure; reemote5 collapses that stack into
+    # this one class, so the per-keyring paths and formats the parent reports
+    # are deliberately dropped (``AptKeys`` discards them anyway) and only the
+    # flattened keys remain. pyinfra's ``requires_command`` gating on ``gpg``
+    # is deliberately dropped too: a missing ``gpg`` is swallowed by the
+    # command's ``|| true`` and reads as ``{}``, while a missing ``find`` exits
+    # 127, which ``run_shell`` reports as ``CommandNotFoundError``.
 
     #: APT's modern keyring directories, searched when ``directories`` is
     #: None (pyinfra's ``AptKeys.command`` defaults).
@@ -467,37 +512,52 @@ class AptKeys:
 class AptPackages:
     """Installed apt packages, as a dict of name -> sorted version list.
 
-    Mirrors pyinfra's ``apt.AptPackages``: ``apt list --installed`` rows
-    (``name/source-info version arch [installed,...]``) are matched with
-    pyinfra's package regex, so architecture-suffixed names like
-    ``libc6:i386`` keep their suffix and the ``Listing...`` header and any
-    other noise lines are ignored, for example::
+    command:
 
-        {
-            "adduser": ["3.118ubuntu5"],
-            "docker-ce": ["5:24.0.7-1~ubuntu.22.04~jammy"],
-            "libc6:i386": ["2.35-0ubuntu3.4"],
-        }
+    ```bash
+    apt list --installed 2>/dev/null
+    ```
 
-    The list-of-versions shape mirrors pyinfra's ``deb.DebPackages`` so
-    callers can swap between the two without reshaping their code; the
-    main reason to reach for ``AptPackages`` is packages whose presence is
-    more reliably visible from ``apt`` than from ``dpkg`` (for example
-    architecture-suffixed names). Versions are de-duplicated and sorted:
-    pyinfra's ``parse_packages`` collects them into a set per name, while
-    reemote5 returns the sorted list so the documented list shape holds
-    and reads stay deterministic (and JSON-printable). pyinfra's
-    ``requires_command`` gating on ``apt`` is deliberately dropped: a
-    missing ``apt`` exits 127, which ``run_shell`` reports as
-    ``CommandNotFoundError``. Hold state is not visible in these rows:
-    ``AptHeldPackages`` reports the names marked with ``apt-mark hold``.
-    Candidate versions and repository origins are not visible either:
-    ``AptPolicy`` reports which version ``apt install`` would pick and
-    which repositories offer it. Which packages an upgrade would move
-    is not visible either: ``AptUpgradable`` reports every pending
-    version jump, and ``AptAutoremovable`` the no-longer-needed packages
-    an autoremove would clean up.
+    return:
+
+    ```python
+    dict[str, list[str]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_apt_packages.py``.
     """
+
+    # Mirrors pyinfra's ``apt.AptPackages``: ``apt list --installed`` rows
+    # (``name/source-info version arch [installed,...]``) are matched with
+    # pyinfra's package regex, so architecture-suffixed names like
+    # ``libc6:i386`` keep their suffix and the ``Listing...`` header and any
+    # other noise lines are ignored, for example::
+    #
+    #     {
+    #         "adduser": ["3.118ubuntu5"],
+    #         "docker-ce": ["5:24.0.7-1~ubuntu.22.04~jammy"],
+    #         "libc6:i386": ["2.35-0ubuntu3.4"],
+    #     }
+    #
+    # The list-of-versions shape mirrors pyinfra's ``deb.DebPackages`` so
+    # callers can swap between the two without reshaping their code; the
+    # main reason to reach for ``AptPackages`` is packages whose presence is
+    # more reliably visible from ``apt`` than from ``dpkg`` (for example
+    # architecture-suffixed names). Versions are de-duplicated and sorted:
+    # pyinfra's ``parse_packages`` collects them into a set per name, while
+    # reemote5 returns the sorted list so the documented list shape holds
+    # and reads stay deterministic (and JSON-printable). pyinfra's
+    # ``requires_command`` gating on ``apt`` is deliberately dropped: a
+    # missing ``apt`` exits 127, which ``run_shell`` reports as
+    # ``CommandNotFoundError``. Hold state is not visible in these rows:
+    # ``AptHeldPackages`` reports the names marked with ``apt-mark hold``.
+    # Candidate versions and repository origins are not visible either:
+    # ``AptPolicy`` reports which version ``apt install`` would pick and
+    # which repositories offer it. Which packages an upgrade would move
+    # is not visible either: ``AptUpgradable`` reports every pending
+    # version jump, and ``AptAutoremovable`` the no-longer-needed packages
+    # an autoremove would clean up.
 
     #: Shell listing installed packages over SSH. The ``2>/dev/null``
     #: suppresses the "Listing..." progress notice modern apt writes to
@@ -544,8 +604,7 @@ class AptPackages:
 
 
 class AptPolicyVersion(TypedDict):
-    """One version-table row of ``AptPolicy``'s answer, as a plain dict.
-
+    """
     Attributes:
         version: The version string, epoch prefixes (``5:24.0.7-1``)
             intact, exactly as ``apt-cache policy`` prints it.
@@ -558,18 +617,15 @@ class AptPolicyVersion(TypedDict):
             or the local ``"/var/lib/dpkg/status"`` for the installed copy.
     """
 
+    # One version-table row of ``AptPolicy``'s answer, as a plain dict.
+
     version: str
     priority: int
     origins: list[str]
 
 
 class AptPackagePolicy(TypedDict):
-    """One package's ``apt-cache policy`` answer (``AptPolicy``'s result).
-
-    A TypedDict rather than a class instance, like ``AptSource``: entries
-    are ordinary dicts, so equality against a literal dict works and
-    ``json.dumps`` serializes them directly.
-
+    """
     Attributes:
         installed: The installed version, or None when apt prints
             ``(none)`` (the package is known but not installed).
@@ -580,6 +636,12 @@ class AptPackagePolicy(TypedDict):
             order apt prints them (highest-priority offering first).
     """
 
+    # One package's ``apt-cache policy`` answer (``AptPolicy``'s result).
+    #
+    # A TypedDict rather than a class instance, like ``AptSource``: entries
+    # are ordinary dicts, so equality against a literal dict works and
+    # ``json.dumps`` serializes them directly.
+
     installed: str | None
     candidate: str | None
     versions: list[AptPolicyVersion]
@@ -588,49 +650,64 @@ class AptPackagePolicy(TypedDict):
 class AptPolicy:
     """One package's install candidate and origins, as an ``AptPackagePolicy``.
 
-    A reemote5 original: pyinfra ships no ``apt.AptPolicy`` counterpart.
-    ``apt-cache policy <package>`` prints the installed version, the
-    candidate ``apt install`` would pick, and a version table listing
-    every offering with its pin priority and repository origins, parsed
-    into a plain dict, for example::
+    command:
 
-        {
-            "installed": "1.24.0-2ubuntu7.1",
-            "candidate": "1.24.0-2ubuntu7.3",
-            "versions": [
-                {
-                    "version": "1.24.0-2ubuntu7.3",
-                    "priority": 500,
-                    "origins": [
-                        "http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages",
-                    ],
-                },
-                {
-                    "version": "1.24.0-2ubuntu7.1",
-                    "priority": 500,
-                    "origins": [
-                        "http://security.ubuntu.com/ubuntu noble-security/main amd64 Packages",
-                        "/var/lib/dpkg/status",
-                    ],
-                },
-            ],
-        }
+    ```bash
+    LC_ALL=C apt-cache policy <package>
+    ```
 
-    This fact fills a coverage gap of ``AptPackages``: the ``apt list
-    --installed`` rows that fact parses report only installed versions,
-    never which version an install would pick or which repository offers
-    it, so a deploy validating that a specific version is available
-    before rolling it out reads the candidate and origins here. A
-    ``(none)`` installed or candidate reads as None; the ``***`` marker
-    on the installed version-table row is ignored (``installed`` already
-    conveys it) and rows keep apt's printed order. An unknown package
-    prints nothing on stdout (apt's "Unable to locate package" notice
-    goes to stderr), which reads as None. The command is prefixed with
-    ``LC_ALL=C`` (like ``SimulateOperationWillChange``) so the ``Installed:`` /
-    ``Candidate:`` labels stay untranslated on localized hosts. A missing
-    ``apt-cache`` exits 127, which ``run_shell`` reports as
-    ``CommandNotFoundError``.
+    return:
+
+    ```python
+    AptPackagePolicy | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_apt_policy.py``.
     """
+
+    # A reemote5 original: pyinfra ships no ``apt.AptPolicy`` counterpart.
+    # ``apt-cache policy <package>`` prints the installed version, the
+    # candidate ``apt install`` would pick, and a version table listing
+    # every offering with its pin priority and repository origins, parsed
+    # into a plain dict, for example::
+    #
+    #     {
+    #         "installed": "1.24.0-2ubuntu7.1",
+    #         "candidate": "1.24.0-2ubuntu7.3",
+    #         "versions": [
+    #             {
+    #                 "version": "1.24.0-2ubuntu7.3",
+    #                 "priority": 500,
+    #                 "origins": [
+    #                     "http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages",
+    #                 ],
+    #             },
+    #             {
+    #                 "version": "1.24.0-2ubuntu7.1",
+    #                 "priority": 500,
+    #                 "origins": [
+    #                     "http://security.ubuntu.com/ubuntu noble-security/main amd64 Packages",
+    #                     "/var/lib/dpkg/status",
+    #                 ],
+    #             },
+    #         ],
+    #     }
+    #
+    # This fact fills a coverage gap of ``AptPackages``: the ``apt list
+    # --installed`` rows that fact parses report only installed versions,
+    # never which version an install would pick or which repository offers
+    # it, so a deploy validating that a specific version is available
+    # before rolling it out reads the candidate and origins here. A
+    # ``(none)`` installed or candidate reads as None; the ``***`` marker
+    # on the installed version-table row is ignored (``installed`` already
+    # conveys it) and rows keep apt's printed order. An unknown package
+    # prints nothing on stdout (apt's "Unable to locate package" notice
+    # goes to stderr), which reads as None. The command is prefixed with
+    # ``LC_ALL=C`` (like ``SimulateOperationWillChange``) so the ``Installed:`` /
+    # ``Candidate:`` labels stay untranslated on localized hosts. A missing
+    # ``apt-cache`` exits 127, which ``run_shell`` reports as
+    # ``CommandNotFoundError``.
 
     #: A version-table row: an optional ``***`` installed marker, the
     #: version, then its pin priority (which apt pinning can make
@@ -727,15 +804,7 @@ class AptPolicy:
 
 
 class AptSource(TypedDict):
-    """One configured apt repository, as a plain dict (``AptSources``' entry).
-
-    A TypedDict rather than a class instance: entries are ordinary dicts,
-    so there is exactly one access style (``source["url"]``), equality
-    against a literal dict works, and ``json.dumps`` serializes them
-    directly. pyinfra's ``AptRepo`` frozen-dataclass/dict hybrid -- built
-    for backward compatibility with its old dict results -- is deliberately
-    dropped in favor of this shape.
-
+    """
     Attributes:
         type: ``"deb"`` (binary packages) or ``"deb-src"`` (source packages).
         url: The repository URL, e.g. ``"http://archive.ubuntu.com/ubuntu"``.
@@ -752,6 +821,15 @@ class AptSource(TypedDict):
             whole key text.
     """
 
+    # One configured apt repository, as a plain dict (``AptSources``' entry).
+    #
+    # A TypedDict rather than a class instance: entries are ordinary dicts,
+    # so there is exactly one access style (``source["url"]``), equality
+    # against a literal dict works, and ``json.dumps`` serializes them
+    # directly. pyinfra's ``AptRepo`` frozen-dataclass/dict hybrid -- built
+    # for backward compatibility with its old dict results -- is deliberately
+    # dropped in favor of this shape.
+
     type: str
     url: str
     distribution: str
@@ -762,42 +840,57 @@ class AptSource(TypedDict):
 class AptSources:
     """The configured apt sources, as a list of ``AptSource`` dicts.
 
-    Mirrors pyinfra's ``apt.AptSources``: the shell cats
-    ``/etc/apt/sources.list``, every ``/etc/apt/sources.list.d/*.list``
-    (legacy one-line format) and every ``/etc/apt/sources.list.d/*.sources``
-    (modern deb822 format), each behind a marker line naming the file so
-    the parser can pick the format by extension, for example::
+    command:
 
-        [
-            {
-                "type": "deb",
-                "url": "http://archive.ubuntu.com/ubuntu",
-                "distribution": "trusty",
-                "components": ["restricted"],
-                "options": {},
-            },
-        ]
+    ```bash
+    for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do [ -e "$f" ] || continue; printf "#reemote5-aptsource %s\\n" "$f"; cat "$f"; echo; done
+    ```
 
-    Legacy lines parse with pyinfra's regex (options in brackets, flat
-    ``/``-suite repositories with no components included); deb822 stanzas
-    are split on blank lines, continuation lines fold into their field
-    (a bare ``.`` encodes an empty line, inline PGP blocks stay whole),
-    stanzas missing ``Types``/``URIs``/``Suites`` or carrying ``Enabled:
-    no`` are skipped, and multi-valued ``Types``/``URIs``/``Suites`` expand
-    into one entry per combination -- pyinfra's expansion order. Entries
-    keep file order (no dedup, no sorting); no sources files at all read
-    as ``[]`` (pyinfra's ``default = list``).
+    return:
 
-    Deliberate usability deviations from pyinfra: entries are the plain
-    ``AptSource`` TypedDict-shaped dicts instead of its ``AptRepo``
-    dataclass/dict hybrid, and every ``options`` value is a list of strings
-    instead of pyinfra's single-value-collapses-to-str mix. The file
-    marker is reemote5's own (``#reemote5-aptsource``, like
-    ``DnfRepositories``' filename marker) instead of ``##PYINFRA_FILE``.
-    pyinfra's ``requires_command`` gating on ``apt`` is deliberately
-    dropped: the command is pure shell and ``cat`` and never runs ``apt``,
-    so a host without apt simply reports its files (usually ``[]``).
+    ```python
+    list[AptSource]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_apt_sources.py``.
     """
+
+    # Mirrors pyinfra's ``apt.AptSources``: the shell cats
+    # ``/etc/apt/sources.list``, every ``/etc/apt/sources.list.d/*.list``
+    # (legacy one-line format) and every ``/etc/apt/sources.list.d/*.sources``
+    # (modern deb822 format), each behind a marker line naming the file so
+    # the parser can pick the format by extension, for example::
+    #
+    #     [
+    #         {
+    #             "type": "deb",
+    #             "url": "http://archive.ubuntu.com/ubuntu",
+    #             "distribution": "trusty",
+    #             "components": ["restricted"],
+    #             "options": {},
+    #         },
+    #     ]
+    #
+    # Legacy lines parse with pyinfra's regex (options in brackets, flat
+    # ``/``-suite repositories with no components included); deb822 stanzas
+    # are split on blank lines, continuation lines fold into their field
+    # (a bare ``.`` encodes an empty line, inline PGP blocks stay whole),
+    # stanzas missing ``Types``/``URIs``/``Suites`` or carrying ``Enabled:
+    # no`` are skipped, and multi-valued ``Types``/``URIs``/``Suites`` expand
+    # into one entry per combination -- pyinfra's expansion order. Entries
+    # keep file order (no dedup, no sorting); no sources files at all read
+    # as ``[]`` (pyinfra's ``default = list``).
+    #
+    # Deliberate usability deviations from pyinfra: entries are the plain
+    # ``AptSource`` TypedDict-shaped dicts instead of its ``AptRepo``
+    # dataclass/dict hybrid, and every ``options`` value is a list of strings
+    # instead of pyinfra's single-value-collapses-to-str mix. The file
+    # marker is reemote5's own (``#reemote5-aptsource``, like
+    # ``DnfRepositories``' filename marker) instead of ``##PYINFRA_FILE``.
+    # pyinfra's ``requires_command`` gating on ``apt`` is deliberately
+    # dropped: the command is pure shell and ``cat`` and never runs ``apt``,
+    # so a host without apt simply reports its files (usually ``[]``).
 
     #: Marker prefixing each cat'd file in ``COMMAND``'s output, naming the
     #: source file so ``parse`` can pick the format by extension
@@ -986,15 +1079,30 @@ class AptSources:
 class AptSourcesFile:
     """The current content of one ``.sources`` file, or None when it is absent.
 
-    The fact ``apt.sources_file(present=False)`` reads to make its removal
-    idempotent -- the ``DnfRepoFile`` pattern in this namespace: where
-    ``AptSources`` parses *every* configured repository into ``AptSource``
-    dicts, this reports the raw text of a *single* file so the operation
-    can tell an existing file from a missing one. Absence is reported as
-    ``None`` -- never the empty string -- so a file that exists but is
-    empty stays distinguishable from one that is missing, which is what
-    lets the removal delete an empty leftover.
+    command:
+
+    ```bash
+    test -e <path> && { printf '#reemote5-sourcesfile\\n'; cat -- <path>; }
+    ```
+
+    return:
+
+    ```python
+    str | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_sources_file.py``.
     """
+
+    # The fact ``apt.sources_file(present=False)`` reads to make its removal
+    # idempotent -- the ``DnfRepoFile`` pattern in this namespace: where
+    # ``AptSources`` parses *every* configured repository into ``AptSource``
+    # dicts, this reports the raw text of a *single* file so the operation
+    # can tell an existing file from a missing one. Absence is reported as
+    # ``None`` -- never the empty string -- so a file that exists but is
+    # empty stays distinguishable from one that is missing, which is what
+    # lets the removal delete an empty leftover.
 
     #: Marker printed before the ``cat``'d content, only when ``test -e``
     #: passes, so ``process`` can tell an existing (possibly empty) file from
@@ -1032,14 +1140,7 @@ class AptSourcesFile:
 
 
 class AptPackageUpgrade(TypedDict):
-    """One package's pending upgrade (``AptUpgradable``'s entry).
-
-    A TypedDict rather than a class instance, like ``AptPackagePolicy``:
-    entries are ordinary dicts, so equality against a literal dict works
-    and ``json.dumps`` serializes them directly. The ``installed`` /
-    ``candidate`` keys match ``AptPackagePolicy``'s, so the two facts'
-    answers line up per package.
-
+    """
     Attributes:
         installed: The currently installed version (the row's
             ``[upgradable from: ...]`` value), epoch prefixes
@@ -1048,6 +1149,14 @@ class AptPackageUpgrade(TypedDict):
             to, epoch prefixes intact.
     """
 
+    # One package's pending upgrade (``AptUpgradable``'s entry).
+    #
+    # A TypedDict rather than a class instance, like ``AptPackagePolicy``:
+    # entries are ordinary dicts, so equality against a literal dict works
+    # and ``json.dumps`` serializes them directly. The ``installed`` /
+    # ``candidate`` keys match ``AptPackagePolicy``'s, so the two facts'
+    # answers line up per package.
+
     installed: str
     candidate: str
 
@@ -1055,40 +1164,55 @@ class AptPackageUpgrade(TypedDict):
 class AptUpgradable:
     """Packages with a pending upgrade, as a dict of name -> upgrade.
 
-    A reemote5 original: pyinfra ships no ``apt.AptUpgradable``
-    counterpart. ``apt list --upgradable`` rows
-    (``name/source-info version arch [upgradable from: old-version]``)
-    are matched with a package regex modeled on ``AptPackages``', so
-    architecture-suffixed names like ``libc6:i386`` keep their suffix,
-    epoch-prefixed versions stay intact and the ``Listing...`` header
-    and any other noise lines are ignored, for example::
+    command:
 
-        {
-            "libc6:i386": {
-                "installed": "2.39-0ubuntu8.3",
-                "candidate": "2.39-0ubuntu8.4",
-            },
-            "vim": {
-                "installed": "2:9.1.0016-1ubuntu7.4",
-                "candidate": "2:9.1.0016-1ubuntu7.6",
-            },
-        }
+    ```bash
+    apt list --upgradable 2>/dev/null
+    ```
 
-    Each entry is an ``AptPackageUpgrade`` dict naming both ends of the
-    version jump ``apt upgrade`` would perform. This fact fills a
-    coverage gap of ``AptPackages`` and ``AptPolicy``: the installed
-    rows report only what is on the machine and a policy query answers
-    one package at a time, while this listing names every package an
-    upgrade would move and both versions of each jump -- the
-    change-management and auditing view to read before executing
-    ``apt upgrade``. The row's source-info (offering suite) and
-    architecture columns are deliberately dropped, like ``AptPackages``
-    drops them; ``AptPolicy`` reports the offering repositories when
-    they matter. If a name appears twice the last row wins (apt prints
-    one row per package). No pending upgrades (or no output at all)
-    read as ``{}``. A missing ``apt`` exits 127, which ``run_shell``
-    reports as ``CommandNotFoundError``.
+    return:
+
+    ```python
+    dict[str, AptPackageUpgrade]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_apt_upgradable.py``.
     """
+
+    # A reemote5 original: pyinfra ships no ``apt.AptUpgradable``
+    # counterpart. ``apt list --upgradable`` rows
+    # (``name/source-info version arch [upgradable from: old-version]``)
+    # are matched with a package regex modeled on ``AptPackages``', so
+    # architecture-suffixed names like ``libc6:i386`` keep their suffix,
+    # epoch-prefixed versions stay intact and the ``Listing...`` header
+    # and any other noise lines are ignored, for example::
+    #
+    #     {
+    #         "libc6:i386": {
+    #             "installed": "2.39-0ubuntu8.3",
+    #             "candidate": "2.39-0ubuntu8.4",
+    #         },
+    #         "vim": {
+    #             "installed": "2:9.1.0016-1ubuntu7.4",
+    #             "candidate": "2:9.1.0016-1ubuntu7.6",
+    #         },
+    #     }
+    #
+    # Each entry is an ``AptPackageUpgrade`` dict naming both ends of the
+    # version jump ``apt upgrade`` would perform. This fact fills a
+    # coverage gap of ``AptPackages`` and ``AptPolicy``: the installed
+    # rows report only what is on the machine and a policy query answers
+    # one package at a time, while this listing names every package an
+    # upgrade would move and both versions of each jump -- the
+    # change-management and auditing view to read before executing
+    # ``apt upgrade``. The row's source-info (offering suite) and
+    # architecture columns are deliberately dropped, like ``AptPackages``
+    # drops them; ``AptPolicy`` reports the offering repositories when
+    # they matter. If a name appears twice the last row wins (apt prints
+    # one row per package). No pending upgrades (or no output at all)
+    # read as ``{}``. A missing ``apt`` exits 127, which ``run_shell``
+    # reports as ``CommandNotFoundError``.
 
     #: Shell listing the upgradable packages over SSH. The ``2>/dev/null``
     #: suppresses the "Listing..." progress notice modern apt writes to
@@ -1142,25 +1266,40 @@ class AptUpgradable:
 class DebPackage:
     """The name and version of a ``.deb`` file or an installed dpkg package.
 
-    Mirrors pyinfra's ``deb.DebPackage``: given a ``.deb`` file *path* or a
-    package *name*, returns ``{"name": ..., "version": ...}``, or None when
-    neither an existing ``.deb`` file nor an installed package answers.
-    ``apt.deb`` reads it for the ``.deb`` file's metadata, then compares the
-    file's version against the installed versions ``AptPackages`` reports for
-    that name to decide whether the file's package is already installed at
-    that version.
+    command:
 
-    The shell queries the *file* first when the path exists and ends in
-    ``.deb`` (``dpkg -I``), and otherwise falls back to the *installed*
-    package database (``dpkg -s``) -- pyinfra's ``test -f ... && case ...``
-    form. A name that is neither an existing ``.deb`` file nor installed
-    produces no ``Package:``/``Version:`` line, so ``process`` reports None.
-    pyinfra returns an empty dict in that case; reemote5 reports None,
-    mirroring ``RpmPackage``'s None-on-absent convention so the operation can
-    test ``info is not None``. pyinfra's ``requires_command`` gating on
-    ``dpkg`` is deliberately dropped: a missing ``dpkg`` is swallowed by the
-    command's ``|| true`` and reads as None.
+    ```bash
+    test -f <package> && case <package> in *.deb) dpkg -I <package> ;; *) dpkg -s <package> 2>/dev/null || true ;; esac || dpkg -s <package> 2>/dev/null || true
+    ```
+
+    return:
+
+    ```python
+    dict[str, str] | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_deb.py``.
     """
+
+    # Mirrors pyinfra's ``deb.DebPackage``: given a ``.deb`` file *path* or a
+    # package *name*, returns ``{"name": ..., "version": ...}``, or None when
+    # neither an existing ``.deb`` file nor an installed package answers.
+    # ``apt.deb`` reads it for the ``.deb`` file's metadata, then compares the
+    # file's version against the installed versions ``AptPackages`` reports for
+    # that name to decide whether the file's package is already installed at
+    # that version.
+    #
+    # The shell queries the *file* first when the path exists and ends in
+    # ``.deb`` (``dpkg -I``), and otherwise falls back to the *installed*
+    # package database (``dpkg -s``) -- pyinfra's ``test -f ... && case ...``
+    # form. A name that is neither an existing ``.deb`` file nor installed
+    # produces no ``Package:``/``Version:`` line, so ``process`` reports None.
+    # pyinfra returns an empty dict in that case; reemote5 reports None,
+    # mirroring ``RpmPackage``'s None-on-absent convention so the operation can
+    # test ``info is not None``. pyinfra's ``requires_command`` gating on
+    # ``dpkg`` is deliberately dropped: a missing ``dpkg`` is swallowed by the
+    # command's ``|| true`` and reads as None.
 
     #: Matches the ``Package: <name>`` control field (pyinfra's name regex).
     NAME_REGEX = re.compile(r"^Package:\s+([a-zA-Z0-9\+\-\.]+)$")
@@ -1229,13 +1368,7 @@ class DebPackage:
 
 
 class AptSimulationDict(TypedDict):
-    """One simulation's proposed change counts (``SimulateOperationWillChange``).
-
-    A TypedDict rather than a class instance, like ``AptPackageUpgrade``:
-    entries are ordinary dicts, so equality against a literal dict works
-    and ``json.dumps`` serializes them directly. Mirrors pyinfra's
-    ``AptSimulationDict`` field for field.
-
+    """
     Attributes:
         upgraded: Packages the simulated operation would upgrade.
         newly_installed: Packages the simulated operation would install
@@ -1243,6 +1376,13 @@ class AptSimulationDict(TypedDict):
         removed: Packages the simulated operation would remove.
         not_upgraded: Packages the simulated operation would hold back.
     """
+
+    # One simulation's proposed change counts (``SimulateOperationWillChange``).
+    #
+    # A TypedDict rather than a class instance, like ``AptPackageUpgrade``:
+    # entries are ordinary dicts, so equality against a literal dict works
+    # and ``json.dumps`` serializes them directly. Mirrors pyinfra's
+    # ``AptSimulationDict`` field for field.
 
     upgraded: int
     newly_installed: int
@@ -1253,40 +1393,55 @@ class AptSimulationDict(TypedDict):
 class SimulateOperationWillChange:
     """Proposed change counts of a simulated ``apt-get`` operation.
 
-    Mirrors pyinfra's ``apt.SimulateOperationWillChange``: given an
-    ``apt-get`` subcommand phrase (e.g. ``"dist-upgrade"``), runs it with
-    ``--dry-run`` behind the non-interactive prefix and ``LC_ALL=C`` (so
-    the summary line stays English on localized hosts) and parses the
-    ``N upgraded, N newly installed, N to remove and N not upgraded.``
-    line into an ``AptSimulationDict``, for example::
+    command:
 
-        {
-            "upgraded": 15,
-            "newly_installed": 0,
-            "removed": 0,
-            "not_upgraded": 0,
-        }
+    ```bash
+    LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" <command> --dry-run
+    ```
 
-    The simulation never changes anything and needs no root; every other
-    line -- the ``NOTE: This is only a simulation!`` banner, the progress
-    rows, the indented package lists, the ``Inst``/``Conf``/``Remv`` detail
-    rows -- is skipped. ``apt.dist_upgrade`` reads it to decide whether the
-    real ``dist-upgrade`` would do anything, counting newly-installed and
-    removed packages too -- which ``AptUpgradable`` (a plain ``upgrade``
-    listing) cannot see. ``command`` is interpolated verbatim (pyinfra
-    parity): it is an ``apt-get`` subcommand phrase, possibly with flags,
-    not a single quoted argument.
+    return:
 
-    Deliberate deviation from pyinfra: when no summary line appears,
-    upstream raises an exception (which its caller swallows into "run the
-    real command anyway"); reemote5 reports None instead, so the caller
-    branches on a value rather than on exception control flow. A non-zero
-    exit of the simulation itself still raises ``CommandError`` through
-    ``run_shell`` -- reemote5's fail-fast convention. pyinfra's
-    ``requires_command`` gating on ``apt-get`` is deliberately dropped: a
-    missing ``apt-get`` exits 127, which ``run_shell`` reports as
-    ``CommandNotFoundError``.
+    ```python
+    AptSimulationDict | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_simulate_operation_will_change.py``.
     """
+
+    # Mirrors pyinfra's ``apt.SimulateOperationWillChange``: given an
+    # ``apt-get`` subcommand phrase (e.g. ``"dist-upgrade"``), runs it with
+    # ``--dry-run`` behind the non-interactive prefix and ``LC_ALL=C`` (so
+    # the summary line stays English on localized hosts) and parses the
+    # ``N upgraded, N newly installed, N to remove and N not upgraded.``
+    # line into an ``AptSimulationDict``, for example::
+    #
+    #     {
+    #         "upgraded": 15,
+    #         "newly_installed": 0,
+    #         "removed": 0,
+    #         "not_upgraded": 0,
+    #     }
+    #
+    # The simulation never changes anything and needs no root; every other
+    # line -- the ``NOTE: This is only a simulation!`` banner, the progress
+    # rows, the indented package lists, the ``Inst``/``Conf``/``Remv`` detail
+    # rows -- is skipped. ``apt.dist_upgrade`` reads it to decide whether the
+    # real ``dist-upgrade`` would do anything, counting newly-installed and
+    # removed packages too -- which ``AptUpgradable`` (a plain ``upgrade``
+    # listing) cannot see. ``command`` is interpolated verbatim (pyinfra
+    # parity): it is an ``apt-get`` subcommand phrase, possibly with flags,
+    # not a single quoted argument.
+    #
+    # Deliberate deviation from pyinfra: when no summary line appears,
+    # upstream raises an exception (which its caller swallows into "run the
+    # real command anyway"); reemote5 reports None instead, so the caller
+    # branches on a value rather than on exception control flow. A non-zero
+    # exit of the simulation itself still raises ``CommandError`` through
+    # ``run_shell`` -- reemote5's fail-fast convention. pyinfra's
+    # ``requires_command`` gating on ``apt-get`` is deliberately dropped: a
+    # missing ``apt-get`` exits 127, which ``run_shell`` reports as
+    # ``CommandNotFoundError``.
 
     #: pyinfra's ``APT_CHANGES_RE``: the simulation's summary count line.
     CHANGES_REGEX = re.compile(
@@ -1413,39 +1568,52 @@ async def deb(
     src: str,
     present: bool = True,
     wait_for_lock: bool | int = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Add/remove a ``.deb`` file package (pyinfra ``apt.deb`` parity).
+    """Add/remove a ``.deb`` file package.
 
-    + src: path to the ``.deb`` file on the *target host*
-    + present: whether the package should be installed
-    + wait_for_lock: wait for the apt lock instead of failing instantly;
-      ``True`` waits up to 60 seconds, an int sets the timeout in seconds
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        src (str): Path to the ``.deb`` file on the *target host*.
+        present (bool, optional): Whether the package should be installed.
+            Defaults to True.
+        wait_for_lock (bool | int, optional): Wait for the apt lock instead of
+            failing instantly; ``True`` waits up to 60 seconds, an int sets
+            the timeout in seconds. Defaults to False.
+        **kwargs: Additional keyword arguments.
 
-    ``src`` names a ``.deb`` that already exists on the target host (upload
-    one from the controller with ``files.put`` first). The ``DebPackage`` fact
-    reads the file's ``name``/``version``; the package counts as present only
-    when ``AptPackages`` lists that exact version for the file's name.
-    ``present=True`` installs when it does not, with pyinfra's three-pass
-    sequence -- a tolerant ``dpkg -i`` (ignoring unmet dependencies), an
-    ``apt-get install -f`` to resolve them, then a final ``dpkg -i`` that
-    configures the package and fails if dependencies are still missing -- and
-    is otherwise a no-op. ``present=False`` removes the file's package by name
-    with ``apt-get remove`` only when that exact version is installed.
-    Installing or removing needs root, so flag the request ``sudo=True`` (or
-    ``su=True``).
+    Yields:
+        Command: Generated apt deb package commands.
 
-    pyinfra's URL ``src`` -- downloading a remote ``.deb`` mid-deploy via
-    ``files.download`` -- is deliberately dropped: reemote5 has no download
-    operation, so a ``src`` with a URL scheme raises ``ValueError`` (mirroring
-    ``dnf.rpm``). Because removal reads the package name from the file, a
-    ``present=False`` request whose ``.deb`` is absent from the host cannot
-    resolve a name and is a no-op -- the same limitation pyinfra documents for
-    an un-downloaded URL source. pyinfra's ``force`` option (``--force-yes``)
-    is deliberately dropped: the flag is deprecated in modern apt.
-    ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already strips
-    ``name``/``sudo``/``su``).
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_deb.py``.
     """
+
+    # pyinfra ``apt.deb`` parity.
+    #
+    # ``src`` names a ``.deb`` that already exists on the target host (upload
+    # one from the controller with ``files.put`` first). The ``DebPackage`` fact
+    # reads the file's ``name``/``version``; the package counts as present only
+    # when ``AptPackages`` lists that exact version for the file's name.
+    # ``present=True`` installs when it does not, with pyinfra's three-pass
+    # sequence -- a tolerant ``dpkg -i`` (ignoring unmet dependencies), an
+    # ``apt-get install -f`` to resolve them, then a final ``dpkg -i`` that
+    # configures the package and fails if dependencies are still missing -- and
+    # is otherwise a no-op. ``present=False`` removes the file's package by name
+    # with ``apt-get remove`` only when that exact version is installed.
+    # Installing or removing needs root, so flag the request ``sudo=True`` (or
+    # ``su=True``).
+    #
+    # pyinfra's URL ``src`` -- downloading a remote ``.deb`` mid-deploy via
+    # ``files.download`` -- is deliberately dropped: reemote5 has no download
+    # operation, so a ``src`` with a URL scheme raises ``ValueError`` (mirroring
+    # ``dnf.rpm``). Because removal reads the package name from the file, a
+    # ``present=False`` request whose ``.deb`` is absent from the host cannot
+    # resolve a name and is a no-op -- the same limitation pyinfra documents for
+    # an un-downloaded URL source. pyinfra's ``force`` option (``--force-yes``)
+    # is deliberately dropped: the flag is deprecated in modern apt.
+    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
     if urlparse(src).scheme:
         raise ValueError(
             "apt.deb does not support a URL src (reemote5 has no download "
@@ -1500,31 +1668,43 @@ class AptDistUpgradeCommand(Command):
 async def dist_upgrade(
     ctx: OpContext,
     wait_for_lock: bool | int = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Update all apt packages, employing dist-upgrade (pyinfra parity).
+    """Update all apt packages, employing dist-upgrade.
 
-    + wait_for_lock: wait for the apt lock instead of failing instantly;
-      ``True`` waits up to 60 seconds, an int sets the timeout in seconds
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        wait_for_lock (bool | int, optional): Wait for the apt lock instead of
+            failing instantly; ``True`` waits up to 60 seconds, an int sets
+            the timeout in seconds. Defaults to False.
+        **kwargs: Additional keyword arguments.
 
-    The ``SimulateOperationWillChange`` fact simulates ``dist-upgrade``
-    first: when every proposed count is zero the operation is a no-op,
-    otherwise it yields the ``dist-upgrade`` -- which, unlike a plain
-    ``upgrade``, may also install new dependencies and remove conflicting
-    packages, all of which the simulation counts. A failed simulation
-    (None, no summary line) runs the real command anyway, pyinfra's
-    fallback: if the dry-run cannot propose changes the operation will
-    probably fail too, and failing on the real command reports the true
-    error. Upgrading needs root, so flag the request ``sudo=True`` (or
-    ``su=True``).
+    Yields:
+        Command: Generated apt dist-upgrade commands.
 
-    pyinfra's ``auto_remove`` parameter (appending ``--autoremove`` to the
-    same command) is deliberately split out into the standalone
-    ``apt.auto_remove`` operation, so orphaned dependencies can be cleaned
-    up without also performing an upgrade; this operation never passes
-    ``--autoremove``. ``**kwargs`` absorbs pyinfra's global arguments
-    (``op()`` already strips ``name``/``sudo``/``su``).
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_dist_upgrade.py``.
     """
+
+    # pyinfra ``apt.dist_upgrade`` parity.
+    #
+    # The ``SimulateOperationWillChange`` fact simulates ``dist-upgrade``
+    # first: when every proposed count is zero the operation is a no-op,
+    # otherwise it yields the ``dist-upgrade`` -- which, unlike a plain
+    # ``upgrade``, may also install new dependencies and remove conflicting
+    # packages, all of which the simulation counts. A failed simulation
+    # (None, no summary line) runs the real command anyway, pyinfra's
+    # fallback: if the dry-run cannot propose changes the operation will
+    # probably fail too, and failing on the real command reports the true
+    # error. Upgrading needs root, so flag the request ``sudo=True`` (or
+    # ``su=True``).
+    #
+    # pyinfra's ``auto_remove`` parameter (appending ``--autoremove`` to the
+    # same command) is deliberately split out into the standalone
+    # ``apt.auto_remove`` operation, so orphaned dependencies can be cleaned
+    # up without also performing an upgrade; this operation never passes
+    # ``--autoremove``. ``**kwargs`` absorbs pyinfra's global arguments
+    # (``op()`` already strips ``name``/``sudo``/``su``).
     changes = await ctx.facts.get(SimulateOperationWillChange, "dist-upgrade")
     if changes is not None and not any(changes.values()):
         ctx.reason = "dist-upgrade skipped, no changes would be performed"
@@ -1561,25 +1741,35 @@ class AptAutoRemoveCommand(Command):
 async def auto_remove(
     ctx: OpContext,
     wait_for_lock: bool | int = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Remove transitive dependencies that are no longer needed.
 
-    + wait_for_lock: wait for the apt lock instead of failing instantly;
-      ``True`` waits up to 60 seconds, an int sets the timeout in seconds
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        wait_for_lock (bool | int, optional): Wait for the apt lock instead of
+            failing instantly; ``True`` waits up to 60 seconds, an int sets
+            the timeout in seconds. Defaults to False.
+        **kwargs: Additional keyword arguments.
 
-    A reemote5 original: pyinfra only offers autoremove as the
-    ``auto_remove`` parameter of ``apt.dist_upgrade``/``apt.upgrade``,
-    never as a standalone operation, so orphaned dependencies cannot be
-    cleaned up without also performing an upgrade. The
-    ``AptAutoremovable`` fact simulates the autoremove and names exactly
-    the no-longer-needed packages: a non-empty list yields the
-    ``autoremove`` (the names are already sorted, so the reason reads
-    identically in both phases), an empty list is a no-op. Removing
-    packages needs root, so flag the request ``sudo=True`` (or
-    ``su=True``). ``**kwargs`` absorbs pyinfra's global arguments
-    (``op()`` already strips ``name``/``sudo``/``su``).
+    Yields:
+        Command: Generated apt autoremove commands.
+
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_auto_remove.py``.
     """
+
+    # A reemote5 original: pyinfra only offers autoremove as the
+    # ``auto_remove`` parameter of ``apt.dist_upgrade``/``apt.upgrade``,
+    # never as a standalone operation, so orphaned dependencies cannot be
+    # cleaned up without also performing an upgrade. The
+    # ``AptAutoremovable`` fact simulates the autoremove and names exactly
+    # the no-longer-needed packages: a non-empty list yields the
+    # ``autoremove`` (the names are already sorted, so the reason reads
+    # identically in both phases), an empty list is a no-op. Removing
+    # packages needs root, so flag the request ``sudo=True`` (or
+    # ``su=True``). ``**kwargs`` absorbs pyinfra's global arguments
+    # (``op()`` already strips ``name``/``sudo``/``su``).
     removable = await ctx.facts.get(AptAutoremovable)
     if removable:
         ctx.changed = True
@@ -1666,52 +1856,63 @@ class AptKeyInstallCommand(Command):
 
 
 async def key(
-    ctx: OpContext, src: IO[Any], dest: str, **kwargs
+    ctx: OpContext, src: IO[Any], dest: str, **kwargs: Any
 ) -> AsyncGenerator[Command]:
-    """Install a GPG keyring file for APT (pyinfra ``apt.key``, install half).
+    """Install a GPG keyring file for APT.
 
-    + src: the key content as a seekable IO-like object on the control machine
-      (an ``io.BytesIO``/``io.StringIO``, a file opened with ``open()``, ...),
-      rewound to position 0 before it is read; ASCII-armored and binary key
-      content are both accepted
-    + dest: the keyring filename or absolute path on the target host; a
-      relative name is resolved under ``/etc/apt/keyrings/`` so a sources
-      entry can reference it via ``signed-by=`` (the modern, non-deprecated
-      replacement for ``apt-key add``)
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        src (IO[Any]): The key content as a seekable IO-like object on the
+            control machine (an ``io.BytesIO``/``io.StringIO``, a file opened
+            with ``open()``, ...), rewound to position 0 before it is read;
+            ASCII-armored and binary key content are both accepted.
+        dest (str): The keyring filename or absolute path on the target host;
+            a relative name is resolved under ``/etc/apt/keyrings/`` so a
+            sources entry can reference it via ``signed-by=`` (the modern,
+            non-deprecated replacement for ``apt-key add``).
+        **kwargs: Additional keyword arguments.
 
-    This is **non-idempotent**: it always installs, so it always reports a
-    change and yields its commands on every run -- a deliberate deviation
-    from pyinfra's ``apt.key``, which skips installation when the destination
-    file already exists (and, like the existence check, its mode-repair step
-    is dropped). It yields *two* descriptors from the one request -- an
-    ``AptKeyUploadCommand`` transfer that spools the stream to a ``/tmp`` path
-    over scp, then an ``AptKeyInstallCommand`` running the elevated install:
-    create the destination directory, dearmor the key with ``gpg`` when the
-    content is ASCII-armored (copy it verbatim when already binary), chmod the
-    keyring ``0644`` and remove the spool file. Because the install needs
-    root, flag the request ``sudo=True`` (or ``su=True``); the transfer stays
-    unprivileged regardless (transfers ride the connection as the login
-    user), so the two commands of one request run at different privilege
-    levels -- the driver dispatches the transfer to scp and elevates only the
-    shell install.
+    Yields:
+        Command: Generated apt GPG keyring commands.
 
-    pyinfra's ``src`` is a *filename or URL* the target host reads itself.
-    reemote5 does not support controller-side file locations, so ``src`` is an
-    IO-like *stream* of the key content instead and the bytes reach the host
-    over the connection's scp channel; a ``str`` ``src`` raises ``ValueError``
-    (fetch a URL on the controller and pass its bytes). ``dest`` is required:
-    pyinfra derives a destination name from the source URL or key IDs, which
-    an anonymous stream cannot provide; an explicit ``dest`` is used verbatim
-    after the directory resolution (upstream's "``.gpg`` extension is
-    enforced" applies only to *derived* names, not explicit ones).
-    ``mode`` is fixed at ``0644`` as pyinfra's ``apt.key`` hard-codes it.
-    pyinfra's ``keyserver``/``keyid`` fetch (a target-side ``gpg --recv-keys``
-    into a temporary ``GNUPGHOME``) and its ``present=False`` removal (whole
-    keyring file, or individual keys with empty-file pruning) are deliberately
-    dropped: keys arrive as streams from the controller, and removal is
-    expressible with the ``files`` primitives. ``**kwargs`` absorbs pyinfra's
-    global arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_key.py``.
     """
+
+    # pyinfra ``apt.key`` parity, install half only.
+    #
+    # This is **non-idempotent**: it always installs, so it always reports a
+    # change and yields its commands on every run -- a deliberate deviation
+    # from pyinfra's ``apt.key``, which skips installation when the destination
+    # file already exists (and, like the existence check, its mode-repair step
+    # is dropped). It yields *two* descriptors from the one request -- an
+    # ``AptKeyUploadCommand`` transfer that spools the stream to a ``/tmp`` path
+    # over scp, then an ``AptKeyInstallCommand`` running the elevated install:
+    # create the destination directory, dearmor the key with ``gpg`` when the
+    # content is ASCII-armored (copy it verbatim when already binary), chmod the
+    # keyring ``0644`` and remove the spool file. Because the install needs
+    # root, flag the request ``sudo=True`` (or ``su=True``); the transfer stays
+    # unprivileged regardless (transfers ride the connection as the login
+    # user), so the two commands of one request run at different privilege
+    # levels -- the driver dispatches the transfer to scp and elevates only the
+    # shell install.
+    #
+    # pyinfra's ``src`` is a *filename or URL* the target host reads itself.
+    # reemote5 does not support controller-side file locations, so ``src`` is an
+    # IO-like *stream* of the key content instead and the bytes reach the host
+    # over the connection's scp channel; a ``str`` ``src`` raises ``ValueError``
+    # (fetch a URL on the controller and pass its bytes). ``dest`` is required:
+    # pyinfra derives a destination name from the source URL or key IDs, which
+    # an anonymous stream cannot provide; an explicit ``dest`` is used verbatim
+    # after the directory resolution (upstream's "``.gpg`` extension is
+    # enforced" applies only to *derived* names, not explicit ones).
+    # ``mode`` is fixed at ``0644`` as pyinfra's ``apt.key`` hard-codes it.
+    # pyinfra's ``keyserver``/``keyid`` fetch (a target-side ``gpg --recv-keys``
+    # into a temporary ``GNUPGHOME``) and its ``present=False`` removal (whole
+    # keyring file, or individual keys with empty-file pruning) are deliberately
+    # dropped: keys arrive as streams from the controller, and removal is
+    # expressible with the ``files`` primitives. ``**kwargs`` absorbs pyinfra's
+    # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
     if isinstance(src, str):
         # ValueError (not TypeError) keeps apt.key consistent with apt.deb and
         # dnf.key, which also reject an unusable string ``src`` with
@@ -1771,36 +1972,47 @@ async def mark(
     ctx: OpContext,
     packages: str | list[str] | tuple[str, ...],
     held: bool = True,
-    **kwargs,
+    **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Hold packages back from upgrades, or release held ones.
 
-    + packages: package names to mark; a single string or a list/tuple.
-      Prefer tuples when building requests via ``op()``, since
-      ``OperationRequest`` kwargs must stay hashable.
-    + held: whether the packages should be held (``apt-mark hold``,
-      keeping them out of upgrades) or released (``apt-mark unhold``)
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        packages (str | list[str] | tuple[str, ...]): Package names to mark; a
+            single string or a list/tuple. Prefer tuples when building requests
+            via ``op()``, since ``OperationRequest`` kwargs must stay hashable.
+        held (bool, optional): Whether the packages should be held
+            (``apt-mark hold``, keeping them out of upgrades) or released
+            (``apt-mark unhold``). Defaults to True.
+        **kwargs: Additional keyword arguments.
 
-    A reemote5 original: pyinfra ships no operation managing package hold
-    states. Idempotent on ``AptHeldPackages``: ``held=True`` yields one
-    ``AptMarkHoldCommand`` for only the requested names not already held,
-    ``held=False`` one ``AptMarkUnholdCommand`` for only the names
-    currently held; a request whose names are all in the wanted state is a
-    no-op. The command keeps the requested order (stable across phases),
-    and names compare verbatim against what ``apt-mark showhold`` prints,
-    so an architecture-suffixed package must be requested in its suffixed
-    form (``libc6:i386``). Marking writes to the root-owned dpkg database,
-    so flag the request ``sudo=True`` (or ``su=True``); a missing
-    ``apt-mark`` exits 127 -- reported as ``CommandNotFoundError``.
+    Yields:
+        Command: Generated apt-mark hold/unhold commands.
 
-    ``apt-mark``'s ``auto``/``manual`` installation-reason marks are
-    deliberately out of scope: this operation manages only the hold state
-    ``AptHeldPackages`` reports. There is no ``wait_for_lock`` option --
-    ``apt-mark`` is not ``apt-get`` and takes no ``DPkg::Lock::Timeout``
-    wrapper (the fact's ``showhold`` command is bare for the same reason).
-    ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
-    strips ``name``/``sudo``/``su``).
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_mark.py``.
     """
+
+    # A reemote5 original: pyinfra ships no operation managing package hold
+    # states. Idempotent on ``AptHeldPackages``: ``held=True`` yields one
+    # ``AptMarkHoldCommand`` for only the requested names not already held,
+    # ``held=False`` one ``AptMarkUnholdCommand`` for only the names
+    # currently held; a request whose names are all in the wanted state is a
+    # no-op. The command keeps the requested order (stable across phases),
+    # and names compare verbatim against what ``apt-mark showhold`` prints,
+    # so an architecture-suffixed package must be requested in its suffixed
+    # form (``libc6:i386``). Marking writes to the root-owned dpkg database,
+    # so flag the request ``sudo=True`` (or ``su=True``); a missing
+    # ``apt-mark`` exits 127 -- reported as ``CommandNotFoundError``.
+    #
+    # ``apt-mark``'s ``auto``/``manual`` installation-reason marks are
+    # deliberately out of scope: this operation manages only the hold state
+    # ``AptHeldPackages`` reports. There is no ``wait_for_lock`` option --
+    # ``apt-mark`` is not ``apt-get`` and takes no ``DPkg::Lock::Timeout``
+    # wrapper (the fact's ``showhold`` command is bare for the same reason).
+    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
+    # strips ``name``/``sudo``/``su``).
+
     # Normalize like apt.packages: a bare string is one name.
     requested = (packages,) if isinstance(packages, str) else tuple(packages)
 
@@ -1924,55 +2136,78 @@ async def packages(
     extra_install_args: str | None = None,
     extra_uninstall_args: str | None = None,
     wait_for_lock: bool | int = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Install/remove/update apt packages (pyinfra ``apt.packages`` parity).
+    """Install/remove/update apt packages.
 
-    + packages: packages to ensure; a single string, a list/tuple, or None.
-      Prefer tuples when building requests via ``op()``, since
-      ``OperationRequest`` kwargs must stay hashable. Versions can be
-      pinned as ``<pkg>=<version>``.
-    + present: whether the packages should be installed
-    + latest: whether to upgrade installed packages without a pinned version
-    + update: run ``apt-get update`` before installing packages
-    + upgrade: run ``apt-get upgrade`` before installing packages
-    + no_recommends: add ``--no-install-recommends`` to the install command
-    + allow_downgrades: add ``--allow-downgrades`` to the install command
-    + purge: when removing (``present=False``), use ``apt-get purge`` so
-      configuration files are removed alongside the package
-    + extra_install_args: additional arguments to the apt install command
-    + extra_uninstall_args: additional arguments to the apt remove command
-    + wait_for_lock: wait for the apt lock instead of failing instantly;
-      ``True`` waits up to 60 seconds, an int sets the timeout in seconds
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        packages (str | list[str] | tuple[str, ...] | None, optional): Packages
+            to ensure; a single string, a list/tuple, or None. Prefer tuples
+            when building requests via ``op()``, since ``OperationRequest``
+            kwargs must stay hashable. Versions can be pinned as
+            ``<pkg>=<version>``. Defaults to None.
+        present (bool, optional): Whether the packages should be installed.
+            Defaults to True.
+        latest (bool, optional): Whether to upgrade installed packages without
+            a pinned version. Defaults to False.
+        update (bool, optional): Run ``apt-get update`` before installing
+            packages. Defaults to False.
+        upgrade (bool, optional): Run ``apt-get upgrade`` before installing
+            packages. Defaults to False.
+        no_recommends (bool, optional): Add ``--no-install-recommends`` to the
+            install command. Defaults to False.
+        allow_downgrades (bool, optional): Add ``--allow-downgrades`` to the
+            install command. Defaults to False.
+        purge (bool, optional): When removing (``present=False``), use
+            ``apt-get purge`` so configuration files are removed alongside
+            the package. Defaults to False.
+        extra_install_args (str | None, optional): Additional arguments to the
+            apt install command. Defaults to None.
+        extra_uninstall_args (str | None, optional): Additional arguments to
+            the apt remove command. Defaults to None.
+        wait_for_lock (bool | int, optional): Wait for the apt lock instead of
+            failing instantly; ``True`` waits up to 60 seconds, an int sets
+            the timeout in seconds. Defaults to False.
+        **kwargs: Additional keyword arguments.
 
-    ``update`` is stateless (always yields, like pyinfra's non-idempotent
-    ``apt.update``). ``upgrade`` is gated on the
-    ``SimulateOperationWillChange`` fact exactly like ``apt.dist_upgrade``:
-    all-zero proposed counts are a no-op, a failed simulation (None)
-    runs the real ``upgrade`` anyway. The ``AptPackages`` fact supplies
-    the installed versions, so a pinned ``<pkg>=<version>`` is present
-    only when that *exact* version is installed (pyinfra's
-    ``ensure_packages`` version match), and ``latest`` follows pyinfra's
-    legacy behavior: every installed, unpinned package is upgraded
-    without checking whether an upgrade actually exists (the upgrade
-    command reuses ``install`` without ``extra_install_args``, as pyinfra
-    builds it). Removing needs root, as do installing and upgrading, so
-    flag the request ``sudo=True`` (or ``su=True``).
+    Yields:
+        Command: Generated apt package commands.
 
-    Deliberate deviations from pyinfra: the installed-versions fact is
-    ``AptPackages`` (``apt list --installed``) rather than pyinfra's
-    ``DebPackages`` (``dpkg -l``) -- the same substitution ``apt.deb``
-    made, with the same name -> versions shape. pyinfra's ``cache_time``
-    option (skip ``update`` when the
-    ``/var/lib/apt/periodic/update-success-stamp`` file is fresh, and
-    ``touch`` it after updating) is deliberately dropped: ``update`` is
-    always stateless, and a ``cache_time`` keyword is absorbed by
-    ``**kwargs`` with no effect. pyinfra's ``force`` option
-    (``--force-yes``) is deliberately dropped: the flag is deprecated in
-    modern apt (the same decision as ``apt.deb``). ``**kwargs`` absorbs
-    pyinfra's global arguments (``op()`` already strips
-    ``name``/``sudo``/``su``).
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_packages.py``.
     """
+
+    # pyinfra ``apt.packages`` parity.
+    #
+    # ``update`` is stateless (always yields, like pyinfra's non-idempotent
+    # ``apt.update``). ``upgrade`` is gated on the
+    # ``SimulateOperationWillChange`` fact exactly like ``apt.dist_upgrade``:
+    # all-zero proposed counts are a no-op, a failed simulation (None)
+    # runs the real ``upgrade`` anyway. The ``AptPackages`` fact supplies
+    # the installed versions, so a pinned ``<pkg>=<version>`` is present
+    # only when that *exact* version is installed (pyinfra's
+    # ``ensure_packages`` version match), and ``latest`` follows pyinfra's
+    # legacy behavior: every installed, unpinned package is upgraded
+    # without checking whether an upgrade actually exists (the upgrade
+    # command reuses ``install`` without ``extra_install_args``, as pyinfra
+    # builds it). Removing needs root, as do installing and upgrading, so
+    # flag the request ``sudo=True`` (or ``su=True``).
+    #
+    # Deliberate deviations from pyinfra: the installed-versions fact is
+    # ``AptPackages`` (``apt list --installed``) rather than pyinfra's
+    # ``DebPackages`` (``dpkg -l``) -- the same substitution ``apt.deb``
+    # made, with the same name -> versions shape. pyinfra's ``cache_time``
+    # option (skip ``update`` when the
+    # ``/var/lib/apt/periodic/update-success-stamp`` file is fresh, and
+    # ``touch`` it after updating) is deliberately dropped: ``update`` is
+    # always stateless, and a ``cache_time`` keyword is absorbed by
+    # ``**kwargs`` with no effect. pyinfra's ``force`` option
+    # (``--force-yes``) is deliberately dropped: the flag is deprecated in
+    # modern apt (the same decision as ``apt.deb``). ``**kwargs`` absorbs
+    # pyinfra's global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
+
     reasons: list[str] = []
 
     if update:
@@ -2073,27 +2308,39 @@ async def packages(
 async def update(
     ctx: OpContext,
     wait_for_lock: bool | int = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Update apt repositories (pyinfra ``apt.update`` parity).
+    """Update apt repositories.
 
-    + wait_for_lock: wait for the apt lock instead of failing instantly;
-      ``True`` waits up to 60 seconds, an int sets the timeout in seconds
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        wait_for_lock (bool | int, optional): Wait for the apt lock instead of
+            failing instantly; ``True`` waits up to 60 seconds, an int sets
+            the timeout in seconds. Defaults to False.
+        **kwargs: Additional keyword arguments.
 
-    This is **non-idempotent**: refreshing the package lists always yields
-    the bare ``apt-get update`` and reports a change, exactly like the
-    stateless ``update=True`` prefix of ``apt.packages``. Updating the
-    lists needs root, so flag the request ``sudo=True`` (or ``su=True``).
+    Yields:
+        Command: Generated apt update commands.
 
-    pyinfra's ``cache_time`` option (skip the update when the
-    ``/var/lib/apt/periodic/update-success-stamp`` file is fresh, and
-    ``touch`` it after updating) is deliberately dropped -- the same
-    decision ``apt.packages`` made, since the ``File``/``Date`` fact reads
-    it needs would break the zero-cross-module-import invariant; a
-    ``cache_time`` keyword is absorbed by ``**kwargs`` with no effect.
-    ``**kwargs`` also absorbs pyinfra's global arguments (``op()`` already
-    strips ``name``/``sudo``/``su``).
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_update.py``.
     """
+
+    # pyinfra ``apt.update`` parity.
+    #
+    # This is **non-idempotent**: refreshing the package lists always yields
+    # the bare ``apt-get update`` and reports a change, exactly like the
+    # stateless ``update=True`` prefix of ``apt.packages``. Updating the
+    # lists needs root, so flag the request ``sudo=True`` (or ``su=True``).
+    #
+    # pyinfra's ``cache_time`` option (skip the update when the
+    # ``/var/lib/apt/periodic/update-success-stamp`` file is fresh, and
+    # ``touch`` it after updating) is deliberately dropped -- the same
+    # decision ``apt.packages`` made, since the ``File``/``Date`` fact reads
+    # it needs would break the zero-cross-module-import invariant; a
+    # ``cache_time`` keyword is absorbed by ``**kwargs`` with no effect.
+    # ``**kwargs`` also absorbs pyinfra's global arguments (``op()`` already
+    # strips ``name``/``sudo``/``su``).
     ctx.changed = True
     ctx.reason = "apt update"
     yield AptUpdateCommand(wait_for_lock=wait_for_lock)
@@ -2102,33 +2349,45 @@ async def update(
 async def upgrade(
     ctx: OpContext,
     wait_for_lock: bool | int = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Upgrade all apt packages (pyinfra ``apt.upgrade`` parity).
+    """Upgrade all apt packages.
 
-    + wait_for_lock: wait for the apt lock instead of failing instantly;
-      ``True`` waits up to 60 seconds, an int sets the timeout in seconds
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        wait_for_lock (bool | int, optional): Wait for the apt lock instead of
+            failing instantly; ``True`` waits up to 60 seconds, an int sets
+            the timeout in seconds. Defaults to False.
+        **kwargs: Additional keyword arguments.
 
-    The ``SimulateOperationWillChange`` fact simulates ``upgrade`` first,
-    exactly like the ``upgrade=True`` branch of ``apt.packages``: when
-    every proposed count is zero the operation is a no-op, otherwise it
-    yields the ``upgrade`` -- which, unlike ``dist-upgrade``, never
-    installs new dependencies or removes conflicting packages. A failed
-    simulation (None, no summary line) runs the real command anyway,
-    pyinfra's fallback: if the dry-run cannot propose changes the
-    operation will probably fail too, and failing on the real command
-    reports the true error. Upgrading needs root, so flag the request
-    ``sudo=True`` (or ``su=True``).
+    Yields:
+        Command: Generated apt upgrade commands.
 
-    pyinfra's ``auto_remove`` parameter (appending ``--autoremove`` to the
-    same command) is deliberately dropped in favour of the standalone
-    ``apt.auto_remove`` operation -- the same split ``apt.dist_upgrade``
-    made -- so orphaned dependencies can be cleaned up without also
-    performing an upgrade; this operation never passes ``--autoremove``
-    and an ``auto_remove`` keyword is absorbed by ``**kwargs`` with no
-    effect. ``**kwargs`` also absorbs pyinfra's global arguments (``op()``
-    already strips ``name``/``sudo``/``su``).
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_upgrade.py``.
     """
+
+    # pyinfra ``apt.upgrade`` parity.
+    #
+    # The ``SimulateOperationWillChange`` fact simulates ``upgrade`` first,
+    # exactly like the ``upgrade=True`` branch of ``apt.packages``: when
+    # every proposed count is zero the operation is a no-op, otherwise it
+    # yields the ``upgrade`` -- which, unlike ``dist-upgrade``, never
+    # installs new dependencies or removes conflicting packages. A failed
+    # simulation (None, no summary line) runs the real command anyway,
+    # pyinfra's fallback: if the dry-run cannot propose changes the
+    # operation will probably fail too, and failing on the real command
+    # reports the true error. Upgrading needs root, so flag the request
+    # ``sudo=True`` (or ``su=True``).
+    #
+    # pyinfra's ``auto_remove`` parameter (appending ``--autoremove`` to the
+    # same command) is deliberately dropped in favour of the standalone
+    # ``apt.auto_remove`` operation -- the same split ``apt.dist_upgrade``
+    # made -- so orphaned dependencies can be cleaned up without also
+    # performing an upgrade; this operation never passes ``--autoremove``
+    # and an ``auto_remove`` keyword is absorbed by ``**kwargs`` with no
+    # effect. ``**kwargs`` also absorbs pyinfra's global arguments (``op()``
+    # already strips ``name``/``sudo``/``su``).
     changes = await ctx.facts.get(SimulateOperationWillChange, "upgrade")
     if changes is not None and not any(changes.values()):
         ctx.reason = "upgrade skipped, no changes would be performed"
@@ -2175,29 +2434,41 @@ async def ppa(
     ctx: OpContext,
     src: str,
     present: bool = True,
-    **kwargs,
+    **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Add/remove an Ubuntu PPA repository (pyinfra ``apt.ppa`` parity).
+    """Add/remove an Ubuntu PPA repository.
 
-    + src: the PPA name, in full ``ppa:user/repo`` format
-    + present: whether the repository should exist
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        src (str): The PPA name, in full ``ppa:user/repo`` format.
+        present (bool, optional): Whether the repository should exist.
+            Defaults to True.
+        **kwargs: Additional keyword arguments.
 
-    The operation is **non-idempotent** -- like pyinfra's ``apt.ppa`` it
-    always reports a change and yields one ``AptPpaCommand``:
-    ``present=True`` runs ``apt-add-repository -y <src>``, ``present=False``
-    runs ``apt-add-repository -y --remove <src>``. No fact is read: pyinfra
-    marks the operation non-idempotent and never compares against the
-    configured sources, so a repeat add re-runs the command
-    (``apt-add-repository`` is itself idempotent on the host). Adding or
-    removing a repository writes to the root-owned apt sources, so flag the
-    request ``sudo=True`` (or ``su=True``).
+    Yields:
+        Command: Generated apt PPA repository commands.
 
-    Requires ``apt-add-repository`` (from ``software-properties-common``) on
-    the target host; pyinfra's ``requires_command`` gating is deliberately
-    dropped, so a missing binary exits 127 -- reported as
-    ``CommandNotFoundError``. ``**kwargs`` absorbs pyinfra's global arguments
-    (``op()`` already strips ``name``/``sudo``/``su``).
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_ppa.py``.
     """
+
+    # pyinfra ``apt.ppa`` parity.
+    #
+    # The operation is **non-idempotent** -- like pyinfra's ``apt.ppa`` it
+    # always reports a change and yields one ``AptPpaCommand``:
+    # ``present=True`` runs ``apt-add-repository -y <src>``, ``present=False``
+    # runs ``apt-add-repository -y --remove <src>``. No fact is read: pyinfra
+    # marks the operation non-idempotent and never compares against the
+    # configured sources, so a repeat add re-runs the command
+    # (``apt-add-repository`` is itself idempotent on the host). Adding or
+    # removing a repository writes to the root-owned apt sources, so flag the
+    # request ``sudo=True`` (or ``su=True``).
+    #
+    # Requires ``apt-add-repository`` (from ``software-properties-common``) on
+    # the target host; pyinfra's ``requires_command`` gating is deliberately
+    # dropped, so a missing binary exits 127 -- reported as
+    # ``CommandNotFoundError``. ``**kwargs`` absorbs pyinfra's global arguments
+    # (``op()`` already strips ``name``/``sudo``/``su``).
     ctx.changed = True
     if present:
         ctx.reason = f"ppa {src} will be added"
@@ -2276,37 +2547,49 @@ async def repo(
     src: str,
     present: bool = True,
     filename: str | None = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Add/remove an apt repository line (pyinfra ``apt.repo`` parity).
+    """Add/remove an apt repository line.
 
-    + src: apt source string, e.g. ``deb http://X hardy main``
-    + present: whether the repository should exist on the system
-    + filename: optional base name under ``/etc/apt/sources.list.d/``
-      (the ``.list`` extension is appended); by default
-      ``/etc/apt/sources.list`` is managed
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        src (str): Apt source string, e.g. ``deb http://X hardy main``.
+        present (bool, optional): Whether the repository should exist on the
+            system. Defaults to True.
+        filename (str | None, optional): Base name under
+            ``/etc/apt/sources.list.d/`` (the ``.list`` extension is appended);
+            by default ``/etc/apt/sources.list`` is managed. Defaults to None.
+        **kwargs: Additional keyword arguments.
 
-    Presence is decided by parsing ``src`` with ``AptSources``' legacy
-    line parser and comparing against the fact's entries -- pyinfra's
-    ``parse_apt_repo(src) in AptSources`` check -- so a repository already
-    configured in *any* sources file (legacy or deb822) counts as present,
-    and an unparseable ``src`` counts as absent but is still appended
-    when ``present=True`` (pyinfra's tolerance). Absent and wanted yields
-    one ``AptRepoAddCommand`` appending the line; present and unwanted
-    yields one ``AptRepoRemoveCommand`` deleting it; otherwise the
-    operation is a no-op. Writing the apt sources needs root, so flag
-    the request ``sudo=True`` (or ``su=True``).
+    Yields:
+        Command: Generated apt repository line commands.
 
-    Deliberate deviations from pyinfra: the mutation rides self-contained
-    apt descriptors instead of delegating to ``files.line`` (reemote5 has
-    no line operation -- ``files.edit`` is its generic editing primitive
-    -- and namespaces never reuse each other's operations), the append
-    wraps ``sh -c`` so ``sudo`` elevates the redirect, and the removal
-    uses a bare ``sed -i`` without pyinfra's timestamped backup dance
-    (the timestamp is non-deterministic across phases).
-    ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
-    strips ``name``/``sudo``/``su``).
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_repo.py``.
     """
+
+    # pyinfra ``apt.repo`` parity.
+    #
+    # Presence is decided by parsing ``src`` with ``AptSources``' legacy
+    # line parser and comparing against the fact's entries -- pyinfra's
+    # ``parse_apt_repo(src) in AptSources`` check -- so a repository already
+    # configured in *any* sources file (legacy or deb822) counts as present,
+    # and an unparseable ``src`` counts as absent but is still appended
+    # when ``present=True`` (pyinfra's tolerance). Absent and wanted yields
+    # one ``AptRepoAddCommand`` appending the line; present and unwanted
+    # yields one ``AptRepoRemoveCommand`` deleting it; otherwise the
+    # operation is a no-op. Writing the apt sources needs root, so flag
+    # the request ``sudo=True`` (or ``su=True``).
+    #
+    # Deliberate deviations from pyinfra: the mutation rides self-contained
+    # apt descriptors instead of delegating to ``files.line`` (reemote5 has
+    # no line operation -- ``files.edit`` is its generic editing primitive
+    # -- and namespaces never reuse each other's operations), the append
+    # wraps ``sh -c`` so ``sudo`` elevates the redirect, and the removal
+    # uses a bare ``sed -i`` without pyinfra's timestamped backup dance
+    # (the timestamp is non-deterministic across phases).
+    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
+    # strips ``name``/``sudo``/``su``).
     path = f"/etc/apt/sources.list.d/{filename}.list" if filename else "/etc/apt/sources.list"
     sources = await ctx.facts.get(AptSources)
     parsed = AptSources._parse_list_line(src)
@@ -2440,53 +2723,73 @@ async def sources_file(
     architectures: str | list[str] | tuple[str, ...] | None = None,
     signed_by: str | None = None,
     present: bool = True,
-    **kwargs,
+    **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Manage a deb822 ``.sources`` file (pyinfra ``apt.sources_file`` parity).
+    """Manage a deb822 ``.sources`` file.
 
-    + filename: base name for the file (without extension); the
-      ``.sources`` extension is added automatically under
-      ``/etc/apt/sources.list.d/``
-    + types: repository type(s) -- ``"deb"``, ``"deb-src"``, or both
-    + uris: one or more repository URLs
-    + suites: one or more suite/distribution names (e.g. ``"bookworm"``)
-    + components: one or more components (e.g. ``["main", "contrib"]``)
-    + architectures: restrict to specific architectures (e.g. ``"amd64"``)
-    + signed_by: absolute path to the keyring file used for signature
-      verification
-    + present: whether the sources file should exist
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        filename (str): Base name for the file (without extension); the
+            ``.sources`` extension is added automatically under
+            ``/etc/apt/sources.list.d/``.
+        types (str | list[str] | tuple[str, ...], optional): Repository
+            type(s) -- ``"deb"``, ``"deb-src"``, or both. Defaults to "deb".
+        uris (str | list[str] | tuple[str, ...] | None, optional): One or more
+            repository URLs. Defaults to None.
+        suites (str | list[str] | tuple[str, ...] | None, optional): One or
+            more suite/distribution names (e.g. ``"bookworm"``). Defaults to
+            None.
+        components (str | list[str] | tuple[str, ...] | None, optional): One
+            or more components (e.g. ``["main", "contrib"]``). Defaults to
+            None.
+        architectures (str | list[str] | tuple[str, ...] | None, optional):
+            Restrict to specific architectures (e.g. ``"amd64"``). Defaults
+            to None.
+        signed_by (str | None, optional): Absolute path to the keyring file
+            used for signature verification. Defaults to None.
+        present (bool, optional): Whether the sources file should exist.
+            Defaults to True.
+        **kwargs: Additional keyword arguments.
 
-    Each multi-value field accepts a list, a tuple or a space-separated
-    string (pyinfra's normalization). ``present=True`` requires at least
-    one URI and one suite -- otherwise ``ValueError`` is raised with
-    pyinfra's message (the plain ``ValueError`` the sibling operations
-    raise for argument validation) -- and is **idempotent** on
-    ``AptSources``: the
-    fields expand into one desired ``AptSource`` dict per type/URI/suite
-    combination (list-valued ``arch``/``signed-by`` options, the fact's
-    shape), and when every combination is already configured the
-    operation is a no-op. Otherwise it yields *two* descriptors from the
-    one request -- an ``AptSourcesFileUploadCommand`` transfer spooling
-    the generated deb822 text to a ``/tmp`` path over scp, then an
-    ``AptSourcesFileInstallCommand`` running the elevated install: create
-    the directory, copy the file, chmod it ``0644`` and remove the spool.
-    Writing the apt sources needs root, so flag the request ``sudo=True``
-    (or ``su=True``); the transfer stays unprivileged regardless.
+    Yields:
+        Command: Generated apt deb822 sources file commands.
 
-    ``present=False`` is **idempotent** on the in-namespace
-    ``AptSourcesFile`` content fact (the ``DnfRepoFile`` pattern): an
-    absent file is a no-op, an existing one -- empty or not -- yields one
-    ``AptSourcesFileRemoveCommand`` (``rm -f``). pyinfra checks its
-    ``files.File`` fact for the same guard; the in-namespace content fact
-    provides it without a cross-module fact import.
-
-    Deliberate deviations from pyinfra: the write rides the spool-and-install
-    descriptor pair instead of delegating to ``files.put`` (reemote5's
-    transfers are unprivileged scp and namespaces never reuse each other's
-    operations -- the ``apt.key`` pattern), with the ``0644`` mode kept as
-    pyinfra hard-codes it. ``**kwargs`` absorbs pyinfra's global arguments
-    (``op()`` already strips ``name``/``sudo``/``su``).
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_sources_file.py``.
     """
+
+    # pyinfra ``apt.sources_file`` parity.
+    #
+    # Each multi-value field accepts a list, a tuple or a space-separated
+    # string (pyinfra's normalization). ``present=True`` requires at least
+    # one URI and one suite -- otherwise ``ValueError`` is raised with
+    # pyinfra's message (the plain ``ValueError`` the sibling operations
+    # raise for argument validation) -- and is **idempotent** on
+    # ``AptSources``: the
+    # fields expand into one desired ``AptSource`` dict per type/URI/suite
+    # combination (list-valued ``arch``/``signed-by`` options, the fact's
+    # shape), and when every combination is already configured the
+    # operation is a no-op. Otherwise it yields *two* descriptors from the
+    # one request -- an ``AptSourcesFileUploadCommand`` transfer spooling
+    # the generated deb822 text to a ``/tmp`` path over scp, then an
+    # ``AptSourcesFileInstallCommand`` running the elevated install: create
+    # the directory, copy the file, chmod it ``0644`` and remove the spool.
+    # Writing the apt sources needs root, so flag the request ``sudo=True``
+    # (or ``su=True``); the transfer stays unprivileged regardless.
+    #
+    # ``present=False`` is **idempotent** on the in-namespace
+    # ``AptSourcesFile`` content fact (the ``DnfRepoFile`` pattern): an
+    # absent file is a no-op, an existing one -- empty or not -- yields one
+    # ``AptSourcesFileRemoveCommand`` (``rm -f``). pyinfra checks its
+    # ``files.File`` fact for the same guard; the in-namespace content fact
+    # provides it without a cross-module fact import.
+    #
+    # Deliberate deviations from pyinfra: the write rides the spool-and-install
+    # descriptor pair instead of delegating to ``files.put`` (reemote5's
+    # transfers are unprivileged scp and namespaces never reuse each other's
+    # operations -- the ``apt.key`` pattern), with the ``0644`` mode kept as
+    # pyinfra hard-codes it. ``**kwargs`` absorbs pyinfra's global arguments
+    # (``op()`` already strips ``name``/``sudo``/``su``).
     dest = f"/etc/apt/sources.list.d/{filename}.sources"
 
     # Removal path -- idempotent on the file's existence (DnfRepoFile pattern).

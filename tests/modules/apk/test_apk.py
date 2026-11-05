@@ -1,15 +1,16 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Tests for the apk module: ``ApkAutoremovable``, ``ApkExplicitPackages``,
-``ApkHeldPackages``, ``ApkPackages`` and ``ApkRepositories``.
+"""Tests for the apk module: ``ApkAutoremovablePackages``, ``ApkExplicitPackages``,
+``ApkHeldPackages``, ``ApkInstalledPackages`` and ``ApkRepositories``.
 
 Covers the read-only state discovery in ``reemote5.modules.apk.apk``:
-``ApkPackages`` is exercised both over the real-transport path (parsing
-canned ``apk list --installed`` output, reusing pyinfra's own
+``ApkInstalledPackages`` is exercised both over the real-transport path (parsing
+canned ``apk list --installed`` output, reusing the rows of pyinfra's own
 ``apk.ApkPackages`` fact fixtures verbatim -- the small
 ``packages_2.json`` fixture in full and a selected row set of the large
-alpine ``packages.json`` fixture) and through the ``SimulatedHost`` seam,
+alpine ``packages.json`` fixture -- and asserting them in reemote5's own
+``ApkInstalledPackage`` entry shape) and through the ``SimulatedHost`` seam,
 plus the de-dup/sort and ``WARNING:`` noise-filtering edge cases and the
 ``gather_fact`` fan-out. ``ApkExplicitPackages`` and ``ApkRepositories`` --
 reemote5 originals with no pyinfra fixtures -- are fed a realistic canned
@@ -20,13 +21,13 @@ querying one package's detail with no pyinfra fixture -- is fed a realistic
 canned ``apk info -a`` block, plus the untracked-section skip, the scalar
 absent-field defaults, the size coercion, the shell-quoting and None-on-
 absent edges, the seam copy semantics and its package-argument fan-out.
-``ApkAutoremovable`` -- the apk counterpart of ``apt.AptAutoremovable``,
+``ApkAutoremovablePackages`` -- the apk counterpart of ``apt.AptAutoremovable``,
 also a reemote5 original with no pyinfra fixture -- is fed a realistic
 canned ``apk add --purge --simulate`` block, plus the summary/footer skip,
 the multi-dash and punctuation name preservation, the dedup+sort and the
 seam copy semantics and fan-out.
 
-The ``apk.packages`` operation -- a pyinfra port reading ``ApkPackages`` --
+The ``apk.packages`` operation -- a pyinfra port reading ``ApkInstalledPackages`` --
 is exercised over its three command descriptors (``ApkInstallCommand`` /
 ``ApkRemoveCommand`` / ``ApkUpgradeCommand``), its idempotence and
 version-pin matching, the ``latest`` upgrade path, the deliberately dropped
@@ -47,19 +48,20 @@ The ``apk.hold`` operation -- the apk counterpart of ``apt.mark``, pinning
 packages back from upgrades through a version constraint in ``/etc/apk/world``
 -- is exercised over its single present-flagged ``ApkHoldCommand`` descriptor's
 hold/unhold rendering and elevation, its version-aware idempotence against the
-``ApkHeldPackages`` fact (name -> constraint) in both directions, the explicit
+``ApkHeldPackages`` fact (a list of ``ApkHeldPackage`` entries) in both directions, the explicit
 ``version`` and pin-to-installed paths, the uninstalled-name skip, the
 string/empty normalization and request-order preservation, the ``SimulatedHost``
 seam dispatch, and end-to-end through ``run_prepare`` + ``run_apply``
 (hold-then-noop, a hold-then-unhold cycle, and a dry run). ``ApkHeldPackages``
 itself -- reading the same world file as ``ApkExplicitPackages`` but keeping
-only the version-bound lines -- is fed the same canned ``/etc/apk/world``, plus
+only the version-bound lines as a list of ``ApkHeldPackage`` entries -- is
+fed the same canned ``/etc/apk/world``, plus
 the tag-only and operator-form edges, the seam copy semantics and its fan-outs.
 
 The ``apk.autoremove`` operation -- the apk counterpart of ``apt.auto_remove``,
 purging orphan packages through its argument-less ``ApkPurgeCommand``
 (``apk add --purge``) -- is exercised over the descriptor's rendering and
-elevation, its idempotence against the ``ApkAutoremovable`` fact in both the
+elevation, its idempotence against the ``ApkAutoremovablePackages`` fact in both the
 non-empty (yield) and empty (no-op) directions, the sorted-name reason string,
 the ``**kwargs`` absorption, the ``SimulatedHost`` seam dispatch (clearing the
 fact and popping the names from ``apk_packages`` while leaving the world and
@@ -85,16 +87,22 @@ from reemote5.drivers import (
 from reemote5.hosts import Host
 from reemote5.modules import apk
 from reemote5.modules.apk.apk import (
-    ApkAutoremovable,
+    ApkAutoremovablePackage,
+    ApkAutoremovablePackages,
+    ApkExplicitPackage,
     ApkExplicitPackages,
+    ApkHeldPackage,
     ApkHeldPackages,
     ApkHoldCommand,
     ApkInstallCommand,
+    ApkInstalledPackage,
+    ApkInstalledPackages,
     ApkPackage,
-    ApkPackages,
+    ApkPackageInfo,
     ApkPurgeCommand,
     ApkRemoveCommand,
     ApkRepositories,
+    ApkRepository,
     ApkUpgradeCommand,
     ApkVirtualCommand,
 )
@@ -114,6 +122,26 @@ class CannedShellHost(Host):
         return self._stdout
 
 
+def _held(name: str, constraint: str, tag: str = "") -> ApkHeldPackage:
+    """One ``ApkHeldPackage`` entry, spelled once per test."""
+    return {"name": name, "constraint": constraint, "tag": tag}
+
+
+def _world(name: str) -> ApkExplicitPackage:
+    """One ``ApkExplicitPackage`` entry, spelled once per test."""
+    return {"name": name}
+
+
+def _installed(name: str, versions: list[str]) -> ApkInstalledPackage:
+    """One ``ApkInstalledPackage`` entry, spelled once per test."""
+    return {"name": name, "versions": versions}
+
+
+def _repository(url: str, tag: str = "") -> ApkRepository:
+    """One ``ApkRepository`` entry, spelled once per test."""
+    return {"url": url, "tag": tag}
+
+
 # --- Command parity (pyinfra's apk.ApkPackages fixtures) ----------------------
 
 
@@ -121,7 +149,7 @@ def test_apk_packages_command_matches_pyinfra():
     """The command is pyinfra's fixture command verbatim: apk list of the
     installed packages (pyinfra's ``requires_command`` gating on ``apk`` is
     deliberately dropped)."""
-    assert ApkPackages.COMMAND == "apk list --installed"
+    assert ApkInstalledPackages.COMMAND == "apk list --installed"
 
 
 # --- Real-transport parity (pyinfra's apk.ApkPackages/packages_2.json) --------
@@ -140,8 +168,10 @@ iproute2-5.17.0-r0 x86_64 {iproute2} (GPL-2.0-or-later) [installed]
 linux-firmware-rtl_nic-20220509-r1 x86_64 {linux-firmware} (custom:multiple) [installed]
 """
 
-# The fixture's ``fact`` field -- the documented list-of-versions shape.
-PACKAGES_2_FACT = {
+# The fixture's ``fact`` field -- pyinfra's name-keyed dict of version lists,
+# which is also the shape of the ``apk_packages`` SimulatedHost seam (the state
+# store the install/remove mutators edit).
+PACKAGES_2_SEAM = {
     "musl": ["1.1.22-r3"],
     "zlib": ["1.2.11-r1"],
     "apk-tools": ["2.10.4-r2"],
@@ -150,14 +180,26 @@ PACKAGES_2_FACT = {
     "linux-firmware-rtl_nic": ["20220509-r1"],
 }
 
+# The same answer in reemote5's shape: one ``ApkInstalledPackage`` entry per
+# name, the entries sorted by name and each ``versions`` list sorted.
+PACKAGES_2_FACT = [
+    _installed("apk-tools", ["2.10.4-r2"]),
+    _installed("iproute2", ["5.17.0-r0"]),
+    _installed("linux-firmware-rtl_nic", ["20220509-r1"]),
+    _installed("musl", ["1.1.22-r3"]),
+    _installed("musl-utils", ["1.1.22-r3"]),
+    _installed("zlib", ["1.2.11-r1"]),
+]
+
 
 async def test_apk_packages_parses_the_warning_fixture():
-    """Over the real-transport path, ``ApkPackages`` parses the fixture's
-    rows into pyinfra's fixture fact: the ``WARNING:`` lines carry no
-    ``{origin} (license)`` tail and never match the regex."""
+    """Over the real-transport path, ``ApkInstalledPackages`` parses the
+    fixture's rows into the fixture fact's answer, in reemote5's entry shape:
+    the ``WARNING:`` lines carry no ``{origin} (license)`` tail and never match
+    the regex."""
     host = CannedShellHost(PACKAGES_2_OUTPUT)
-    assert await ApkPackages.process(host) == PACKAGES_2_FACT
-    assert host.last_shell == ApkPackages.COMMAND
+    assert await ApkInstalledPackages.process(host) == PACKAGES_2_FACT
+    assert host.last_shell == ApkInstalledPackages.COMMAND
 
 
 # --- Real-transport parity (pyinfra's apk.ApkPackages/packages.json) ----------
@@ -187,43 +229,46 @@ syslinux-6.04_pre1-r15 x86_64 {syslinux} (GPL-2.0-or-later) [installed]
 xz-libs-5.6.2-r0 x86_64 {xz} (GPL-2.0-or-later AND 0BSD AND Public-Domain AND LGPL-2.1-or-later) [installed]
 """
 
-# The fixture fact restricted to the selected rows above -- every name
-# split at the last ``-r<release>`` boundary before the ``{origin}`` tail.
-ALPINE_PACKAGES = {
-    "alpine-baselayout-data": ["3.6.5-r0"],
-    "alpine-keys": ["2.4-r1"],
-    "apk-tools": ["2.14.4-r0"],
-    "argon2-libs": ["20190702-r5"],
-    "busybox": ["1.36.1-r29"],
-    "json-c": ["0.17-r0"],
-    "libgcc": ["13.2.1_git20240309-r0"],
-    "libstdc++": ["13.2.1_git20240309-r0"],
-    "musl-utils": ["1.2.5-r0"],
-    "openssh-client-common": ["9.7_p1-r4"],
-    "p11-kit": ["0.25.3-r0"],
-    "syslinux": ["6.04_pre1-r15"],
-    "xz-libs": ["5.6.2-r0"],
-}
+# What the fact answers for the rows above: every name split at the last
+# ``-r<release>`` boundary before the ``{origin}`` tail, as one
+# ``ApkInstalledPackage`` entry sorted by name.
+ALPINE_PACKAGES = [
+    _installed("alpine-baselayout-data", ["3.6.5-r0"]),
+    _installed("alpine-keys", ["2.4-r1"]),
+    _installed("apk-tools", ["2.14.4-r0"]),
+    _installed("argon2-libs", ["20190702-r5"]),
+    _installed("busybox", ["1.36.1-r29"]),
+    _installed("json-c", ["0.17-r0"]),
+    _installed("libgcc", ["13.2.1_git20240309-r0"]),
+    _installed("libstdc++", ["13.2.1_git20240309-r0"]),
+    _installed("musl-utils", ["1.2.5-r0"]),
+    _installed("openssh-client-common", ["9.7_p1-r4"]),
+    _installed("p11-kit", ["0.25.3-r0"]),
+    _installed("syslinux", ["6.04_pre1-r15"]),
+    _installed("xz-libs", ["5.6.2-r0"]),
+]
 
 
 async def test_apk_packages_parses_the_alpine_fixture():
-    """The selected fixture rows parse into the fixture's fact subset: the
-    greedy name group splits at the last ``-<version>-r<release>``
-    boundary, keeping ``+``, ``:`` and ``_`` punctuation intact."""
+    """The selected fixture rows parse into the fixture's fact subset as
+    entries: the greedy name group splits at the last
+    ``-<version>-r<release>`` boundary, keeping ``+``, ``:`` and ``_``
+    punctuation intact."""
     host = CannedShellHost(PACKAGES_OUTPUT)
-    assert await ApkPackages.process(host) == ALPINE_PACKAGES
+    assert await ApkInstalledPackages.process(host) == ALPINE_PACKAGES
 
 
 # --- Parser edge cases ---------------------------------------------------------
 
 
-async def test_apk_packages_empty_reads_as_empty_dict():
+async def test_apk_packages_empty_reads_as_empty_list():
     """No rows at all -- empty stdout or only blank lines and warnings --
-    reads as {} (pyinfra's ``default = dict``)."""
-    assert await ApkPackages.process(CannedShellHost("")) == {}
-    assert await ApkPackages.process(CannedShellHost("\n\n")) == {}
+    reads as ``[]``, the empty answer every sibling typed-list apk fact
+    gives (in place of pyinfra's ``default = dict``)."""
+    assert await ApkInstalledPackages.process(CannedShellHost("")) == []
+    assert await ApkInstalledPackages.process(CannedShellHost("\n\n")) == []
     noise = "WARNING: Ignoring APKINDEX.00740ba1.tar.gz: No such file or directory\n"
-    assert await ApkPackages.process(CannedShellHost(noise)) == {}
+    assert await ApkInstalledPackages.process(CannedShellHost(noise)) == []
 
 
 async def test_apk_packages_ignores_rows_without_the_origin_tail():
@@ -236,42 +281,47 @@ musl-1.2.5-r0 x86_64 {musl} (MIT) [installed]
 ( 100% installed)
 """
     host = CannedShellHost(stdout)
-    assert await ApkPackages.process(host) == {"musl": ["1.2.5-r0"]}
+    assert await ApkInstalledPackages.process(host) == [_installed("musl", ["1.2.5-r0"])]
 
 
 async def test_apk_packages_dedups_and_sorts_versions():
-    """The same name listed twice contributes one sorted, de-duplicated
-    version list -- pyinfra's parse_packages set semantics, returned as
-    the documented sorted list."""
+    """The same name listed twice contributes one entry whose ``versions``
+    are sorted and de-duplicated -- pyinfra's parse_packages set semantics,
+    returned inside the one entry."""
     stdout = """\
 musl-1.2.5-r0 x86_64 {musl} (MIT) [installed]
 musl-1.1.22-r3 x86_64 {musl} (MIT) [installed]
 musl-1.2.5-r0 x86_64 {musl} (MIT) [installed]
 """
     host = CannedShellHost(stdout)
-    assert await ApkPackages.process(host) == {"musl": ["1.1.22-r3", "1.2.5-r0"]}
+    assert await ApkInstalledPackages.process(host) == [
+        _installed("musl", ["1.1.22-r3", "1.2.5-r0"])
+    ]
 
 
 # --- SimulatedHost seam -------------------------------------------------------
 
 
 async def test_apk_packages_reads_the_simulated_seam():
-    """A SimulatedHost exposes ``apk_packages`` directly, bypassing the
-    shell; the default seam is {} -- no installed packages listed."""
-    host = SimulatedHost(name="h", apk_packages=PACKAGES_2_FACT)
-    assert await ApkPackages.process(host) == PACKAGES_2_FACT
-    assert await ApkPackages.process(SimulatedHost(name="h")) == {}
+    """A SimulatedHost exposes ``apk_packages`` (the installed-name -> version
+    list state store) directly, bypassing the shell, and the fact projects it
+    into entries; the default seam is ``{}`` -- no installed packages, so the
+    fact answers ``[]``."""
+    host = SimulatedHost(name="h", apk_packages=PACKAGES_2_SEAM)
+    assert await ApkInstalledPackages.process(host) == PACKAGES_2_FACT
+    assert await ApkInstalledPackages.process(SimulatedHost(name="h")) == []
 
 
 async def test_apk_packages_seam_returns_copies():
-    """Mutating the returned dict or a version list never touches the
-    simulated state."""
-    host = SimulatedHost(name="h", apk_packages=PACKAGES_2_FACT)
-    packages = await ApkPackages.process(host)
-    packages["musl"].append("9.9-r0")
-    packages["stray"] = ["1.0-r0"]
-    del packages["zlib"]
-    assert await ApkPackages.process(host) == PACKAGES_2_FACT
+    """Mutating a returned entry's version list -- or the entry list itself --
+    never touches the simulated state."""
+    host = SimulatedHost(name="h", apk_packages=PACKAGES_2_SEAM)
+    packages = await ApkInstalledPackages.process(host)
+    packages[0]["versions"].append("9.9-r0")
+    packages.append(_installed("stray", ["1.0-r0"]))
+    del packages[1]
+    assert await ApkInstalledPackages.process(host) == PACKAGES_2_FACT
+    assert host.apk_packages == PACKAGES_2_SEAM
 
 
 # --- gather_fact fan-out ------------------------------------------------------
@@ -280,10 +330,10 @@ async def test_apk_packages_seam_returns_copies():
 async def test_gather_fact_apk_packages_reads_simulated_seams():
     """Across a simulated fleet each host answers from its own seam state,
     keyed by host name in inventory order."""
-    host1 = SimulatedHost(name="web1", apk_packages=PACKAGES_2_FACT)
+    host1 = SimulatedHost(name="web1", apk_packages=PACKAGES_2_SEAM)
     host2 = SimulatedHost(name="web2")
-    packages = await gather_fact([host1, host2], ApkPackages)
-    assert packages == {"web1": PACKAGES_2_FACT, "web2": {}}
+    packages = await gather_fact([host1, host2], ApkInstalledPackages)
+    assert packages == {"web1": PACKAGES_2_FACT, "web2": []}
 
 
 async def test_gather_fact_apk_packages_over_canned_shells():
@@ -293,10 +343,10 @@ async def test_gather_fact_apk_packages_over_canned_shells():
     host1.name = "web1"
     host2 = CannedShellHost("")
     host2.name = "web2"
-    packages = await gather_fact([host1, host2], ApkPackages)
-    assert packages == {"web1": PACKAGES_2_FACT, "web2": {}}
-    assert host1.last_shell == ApkPackages.COMMAND
-    assert host2.last_shell == ApkPackages.COMMAND
+    packages = await gather_fact([host1, host2], ApkInstalledPackages)
+    assert packages == {"web1": PACKAGES_2_FACT, "web2": []}
+    assert host1.last_shell == ApkInstalledPackages.COMMAND
+    assert host2.last_shell == ApkInstalledPackages.COMMAND
 
 
 # --- ApkExplicitPackages: command parity ---------------------------------------
@@ -332,33 +382,34 @@ openssh>~9.7_p1-r4
 !legacy-package
 """
 
-# What the file above selects: the eight package names, in sorted order, with
-# the tag, the version bounds and the conflict line all dropped.
+# What the file above selects: the eight package names, in sorted order, as
+# name-only ``ApkExplicitPackage`` entries -- the tag, the version bounds
+# and the conflict line all dropped.
 WORLD_FACT = [
-    "alpine-baselayout",
-    "alpine-keys",
-    "apk-tools",
-    "busybox",
-    "ca-certificates",
-    "curl",
-    "nginx",
-    "openssh",
+    _world("alpine-baselayout"),
+    _world("alpine-keys"),
+    _world("apk-tools"),
+    _world("busybox"),
+    _world("ca-certificates"),
+    _world("curl"),
+    _world("nginx"),
+    _world("openssh"),
 ]
 
 
 async def test_apk_explicit_packages_parses_the_canned_file():
     """Over the real-transport path, ``ApkExplicitPackages`` parses the
-    canned world file into the sorted name list: every constraint character
-    ends the name, the comment line never contributes, and the ``!``
-    conflict constraint names a package that must NOT be installed."""
+    canned world file into the sorted name-only entries: every constraint
+    character ends the name, the comment line never contributes, and the
+    ``!`` conflict constraint names a package that must NOT be installed."""
     host = CannedShellHost(WORLD_OUTPUT)
     assert await ApkExplicitPackages.process(host) == WORLD_FACT
     assert host.last_shell == ApkExplicitPackages.COMMAND
 
 
 async def test_apk_explicit_packages_result_is_json_printable():
-    """The plain list of names serializes directly, like the sibling
-    name-list facts -- the example prints the fact with ``json.dumps``."""
+    """The plain dicts serialize directly, like the sibling TypedDict
+    entries -- the example prints the fact with ``json.dumps``."""
     parsed = json.dumps(WORLD_FACT, indent=2)
     assert '"nginx"' in parsed
 
@@ -384,7 +435,7 @@ busybox
 musl=1.2.5-r0
 """
     host = CannedShellHost(stdout)
-    assert await ApkExplicitPackages.process(host) == ["busybox", "musl"]
+    assert await ApkExplicitPackages.process(host) == [_world("busybox"), _world("musl")]
 
 
 async def test_apk_explicit_packages_dedups_and_sorts_names():
@@ -397,7 +448,7 @@ musl
 nginx
 """
     host = CannedShellHost(stdout)
-    assert await ApkExplicitPackages.process(host) == ["musl", "nginx"]
+    assert await ApkExplicitPackages.process(host) == [_world("musl"), _world("nginx")]
 
 
 # --- ApkExplicitPackages: SimulatedHost seam -----------------------------------
@@ -412,11 +463,13 @@ async def test_apk_explicit_packages_reads_the_simulated_seam():
 
 
 async def test_apk_explicit_packages_seam_returns_copies():
-    """Mutating the returned list never touches the simulated state."""
+    """Mutating the returned list or its entries never touches the simulated
+    state."""
     host = SimulatedHost(name="h", apk_explicit_packages=WORLD_FACT)
-    names = await ApkExplicitPackages.process(host)
-    names.append("stray")
-    del names[0]
+    entries = await ApkExplicitPackages.process(host)
+    entries.append(_world("stray"))
+    del entries[0]
+    entries[0]["name"] = "mutated"
     assert await ApkExplicitPackages.process(host) == WORLD_FACT
 
 
@@ -451,7 +504,7 @@ async def test_gather_fact_apk_explicit_packages_over_canned_shells():
 def test_apk_held_packages_command_cats_the_world_file():
     """The command is the same plain cat of ``/etc/apk/world`` behind a
     ``|| true`` that ``ApkExplicitPackages`` builds -- the two facts read the
-    one file -- so a missing file (any non-Alpine host) reads as ``{}``."""
+    one file -- so a missing file (any non-Alpine host) reads as ``[]``."""
     assert ApkHeldPackages.PATH == "/etc/apk/world"
     assert (
         ApkHeldPackages.COMMAND
@@ -465,34 +518,40 @@ def test_apk_held_packages_command_cats_the_world_file():
 # What the WORLD_OUTPUT file above holds: only the two lines carrying a
 # version bound. The bare base-system names, the ``nginx@edge`` tag-only
 # selection (a repository choice, not a hold) and the ``!legacy-package``
-# conflict line all drop out; each kept line maps its bare name to the
-# constraint from the operator on.
-HELD_FACT = {"curl": "=8.14.0-r0", "openssh": ">~9.7_p1-r4"}
+# conflict line all drop out; each kept line becomes an ``ApkHeldPackage``
+# entry carrying the constraint from the operator on
+# and the empty tag neither of these lines writes.
+HELD_FACT = [
+    _held("curl", "=8.14.0-r0"),
+    _held("openssh", ">~9.7_p1-r4"),
+]
 
 
 async def test_apk_held_packages_parses_the_canned_file():
     """Over the real-transport path, ``ApkHeldPackages`` parses the canned
-    world file into name -> constraint: only the version-bound lines
-    contribute, the tag-only ``nginx@edge`` and the bare names drop out."""
+    world file into ``ApkHeldPackage`` entries in file order: only the
+    version-bound lines contribute, the tag-only ``nginx@edge`` and the
+    bare names drop out."""
     host = CannedShellHost(WORLD_OUTPUT)
     assert await ApkHeldPackages.process(host) == HELD_FACT
     assert host.last_shell == ApkHeldPackages.COMMAND
 
 
 async def test_apk_held_packages_result_is_json_printable():
-    """The plain dict of name -> constraint serializes directly -- the
-    example prints the fact with ``json.dumps``."""
+    """The plain list of entry dicts serializes directly -- TypedDict
+    entries are ordinary dicts -- the example prints the fact with
+    ``json.dumps``."""
     parsed = json.dumps(HELD_FACT, indent=2)
-    assert '"curl": "=8.14.0-r0"' in parsed
+    assert '"constraint": "=8.14.0-r0"' in parsed
 
 
-async def test_apk_held_packages_empty_or_missing_reads_as_empty_dict():
+async def test_apk_held_packages_empty_or_missing_reads_as_empty_list():
     """Empty stdout -- what the ``|| true`` command leaves behind for a
-    missing or empty file -- reads as ``{}``, and so does a file holding
+    missing or empty file -- reads as ``[]``, and so does a file holding
     only comments, blank lines and unpinned names."""
-    assert await ApkHeldPackages.process(CannedShellHost("")) == {}
+    assert await ApkHeldPackages.process(CannedShellHost("")) == []
     only_unpinned = "# nothing pinned\n\nbusybox\nalpine-keys\n"
-    assert await ApkHeldPackages.process(CannedShellHost(only_unpinned)) == {}
+    assert await ApkHeldPackages.process(CannedShellHost(only_unpinned)) == []
 
 
 async def test_apk_held_packages_tag_only_line_is_not_a_hold():
@@ -504,13 +563,30 @@ nginx@edge
 curl=8.14.0-r0
 """
     host = CannedShellHost(stdout)
-    assert await ApkHeldPackages.process(host) == {"curl": "=8.14.0-r0"}
+    assert await ApkHeldPackages.process(host) == [_held("curl", "=8.14.0-r0")]
+
+
+async def test_apk_held_packages_keeps_the_repository_tag():
+    """A pin line may carry a ``@tag`` selector *and* a version bound: the
+    tag lands in the entry's ``tag`` field (kept without the ``@``) instead
+    of vanishing from the bare name, and a tag-less pin keeps an empty
+    ``tag``."""
+    stdout = """\
+redis@edge=7.2.5-r0
+curl=8.14.0-r0
+"""
+    host = CannedShellHost(stdout)
+    assert await ApkHeldPackages.process(host) == [
+        _held("redis", "=7.2.5-r0", tag="edge"),
+        _held("curl", "=8.14.0-r0"),
+    ]
 
 
 async def test_apk_held_packages_keeps_every_operator_form():
     """Each apk version operator (``=``, ``<``, ``~`` and the doubled ``>~``)
     is kept verbatim in the constraint, and the bare name is split at the
-    first boundary character so a ``@tag`` never lands in the key."""
+    first boundary character so a ``@tag`` never lands in the name or the
+    constraint -- it becomes the entry's ``tag``."""
     stdout = """\
 a=1.0-r0
 b<2.0-r0
@@ -519,13 +595,13 @@ d~4.0
 e@edge=5.0-r0
 """
     host = CannedShellHost(stdout)
-    assert await ApkHeldPackages.process(host) == {
-        "a": "=1.0-r0",
-        "b": "<2.0-r0",
-        "c": ">~3.0-r0",
-        "d": "~4.0",
-        "e": "=5.0-r0",
-    }
+    assert await ApkHeldPackages.process(host) == [
+        _held("a", "=1.0-r0"),
+        _held("b", "<2.0-r0"),
+        _held("c", ">~3.0-r0"),
+        _held("d", "~4.0"),
+        _held("e", "=5.0-r0", tag="edge"),
+    ]
 
 
 async def test_apk_held_packages_skips_lines_without_a_name():
@@ -540,18 +616,19 @@ busybox
 musl=1.2.5-r0
 """
     host = CannedShellHost(stdout)
-    assert await ApkHeldPackages.process(host) == {"musl": "=1.2.5-r0"}
+    assert await ApkHeldPackages.process(host) == [_held("musl", "=1.2.5-r0")]
 
 
 async def test_apk_held_packages_last_line_wins_for_a_repeated_name():
-    """A name pinned on two world lines keeps the last constraint -- entries
-    follow file order, so a later assignment overwrites the earlier."""
+    """A name pinned on two world lines keeps the last constraint at its
+    first position -- entries follow file order, so a later assignment
+    overwrites the earlier one's constraint."""
     stdout = """\
 musl=1.2.5-r0
 musl=1.2.6-r0
 """
     host = CannedShellHost(stdout)
-    assert await ApkHeldPackages.process(host) == {"musl": "=1.2.6-r0"}
+    assert await ApkHeldPackages.process(host) == [_held("musl", "=1.2.6-r0")]
 
 
 # --- ApkHeldPackages: SimulatedHost seam -------------------------------------
@@ -559,18 +636,20 @@ musl=1.2.6-r0
 
 async def test_apk_held_packages_reads_the_simulated_seam():
     """A SimulatedHost exposes ``apk_held_packages`` directly, bypassing the
-    shell; the default seam is ``{}`` -- nothing pinned."""
+    shell; the default seam is ``[]`` -- nothing pinned."""
     host = SimulatedHost(name="h", apk_held_packages=HELD_FACT)
     assert await ApkHeldPackages.process(host) == HELD_FACT
-    assert await ApkHeldPackages.process(SimulatedHost(name="h")) == {}
+    assert await ApkHeldPackages.process(SimulatedHost(name="h")) == []
 
 
 async def test_apk_held_packages_seam_returns_copies():
-    """Mutating the returned dict never touches the simulated state."""
+    """Mutating the returned list -- or one entry in it -- never touches
+    the simulated state."""
     host = SimulatedHost(name="h", apk_held_packages=HELD_FACT)
     held = await ApkHeldPackages.process(host)
-    held["stray"] = "=1.0"
-    del held["curl"]
+    held.append(_held("stray", "=1.0"))
+    held.pop(0)
+    held[0]["constraint"] = "=mutated"
     assert await ApkHeldPackages.process(host) == HELD_FACT
 
 
@@ -583,7 +662,7 @@ async def test_gather_fact_apk_held_packages_reads_simulated_seams():
     host1 = SimulatedHost(name="web1", apk_held_packages=HELD_FACT)
     host2 = SimulatedHost(name="web2")
     held = await gather_fact([host1, host2], ApkHeldPackages)
-    assert held == {"web1": HELD_FACT, "web2": {}}
+    assert held == {"web1": HELD_FACT, "web2": []}
 
 
 async def test_gather_fact_apk_held_packages_over_canned_shells():
@@ -594,7 +673,7 @@ async def test_gather_fact_apk_held_packages_over_canned_shells():
     host2 = CannedShellHost("")
     host2.name = "web2"
     held = await gather_fact([host1, host2], ApkHeldPackages)
-    assert held == {"web1": HELD_FACT, "web2": {}}
+    assert held == {"web1": HELD_FACT, "web2": []}
     assert host1.last_shell == ApkHeldPackages.COMMAND
     assert host2.last_shell == ApkHeldPackages.COMMAND
 
@@ -626,25 +705,26 @@ https://dl-cdn.alpinelinux.org/alpine/v3.19/community
 
 # What the file above configures: four repositories in file order, the
 # tagged one carrying its tag without the leading ``@``.
-REPOSITORIES_FACT = [
-    {"url": "https://dl-cdn.alpinelinux.org/alpine/v3.19/main", "tag": ""},
-    {"url": "https://dl-cdn.alpinelinux.org/alpine/v3.19/community", "tag": ""},
-    {"url": "https://dl-cdn.alpinelinux.org/alpine/edge/testing", "tag": "testing"},
+REPOSITORIES_FACT: list[ApkRepository] = [
+    _repository("https://dl-cdn.alpinelinux.org/alpine/v3.19/main"),
+    _repository("https://dl-cdn.alpinelinux.org/alpine/v3.19/community"),
+    _repository("https://dl-cdn.alpinelinux.org/alpine/edge/testing", "testing"),
 ]
 
 
 async def test_apk_repositories_parses_the_canned_file():
     """Over the real-transport path, ``ApkRepositories`` parses the canned
-    file into ``{url, tag}`` dicts in file order; comments and blank lines
-    never contribute entries."""
+    file into ``ApkRepository`` entries in file order; comments and blank
+    lines never contribute entries."""
     host = CannedShellHost(REPOSITORIES_OUTPUT)
     assert await ApkRepositories.process(host) == REPOSITORIES_FACT
     assert host.last_shell == ApkRepositories.COMMAND
 
 
 async def test_apk_repositories_result_is_json_printable():
-    """The plain-dict shape serializes directly, like ``AptSources``'
-    entries -- the examples print the fact with ``json.dumps``."""
+    """The TypedDict-shaped plain-dict shape serializes directly, like
+    ``AptSources``' entries -- the examples print the fact with
+    ``json.dumps``."""
     parsed = json.dumps(REPOSITORIES_FACT, indent=2)
     assert '"tag": "testing"' in parsed
 
@@ -673,8 +753,8 @@ https://dl-cdn.alpinelinux.org/alpine/v3.19/main
 """
     host = CannedShellHost(stdout)
     assert await ApkRepositories.process(host) == [
-        {"url": "https://dl-cdn.alpinelinux.org/alpine/v3.19/main", "tag": ""},
-        {"url": "https://dl-cdn.alpinelinux.org/alpine/edge/community", "tag": "edge"},
+        _repository("https://dl-cdn.alpinelinux.org/alpine/v3.19/main"),
+        _repository("https://dl-cdn.alpinelinux.org/alpine/edge/community", "edge"),
     ]
 
 
@@ -695,7 +775,7 @@ async def test_apk_repositories_seam_returns_copies():
     host = SimulatedHost(name="h", apk_repositories=REPOSITORIES_FACT)
     repositories = await ApkRepositories.process(host)
     repositories[0]["tag"] = "mutated"
-    repositories.append({"url": "https://stray.example.com", "tag": ""})
+    repositories.append(_repository("https://stray.example.com"))
     assert await ApkRepositories.process(host) == REPOSITORIES_FACT
 
 
@@ -770,7 +850,7 @@ wget-1.21.4-r2
 
 # What the block above selects: the six tracked scalars and lists, with the
 # untracked ``Contains``/``is required by`` sections dropped.
-CURL_FACT = {
+CURL_FACT: ApkPackageInfo = {
     "name": "curl",
     "version": "8.14.0-r0",
     "description": "URL retrieval utility and library",
@@ -841,7 +921,7 @@ async def test_apk_package_non_numeric_size_reads_as_zero():
 
 async def test_apk_package_splits_multi_dash_names_from_versions():
     """The header token splits at the last ``-r<release>`` boundary, exactly
-    as ``ApkPackages`` splits its listing rows, so a multi-dash name keeps
+    as ``ApkInstalledPackages`` splits its listing rows, so a multi-dash name keeps
     every dash before its version."""
     stdout = "alpine-baselayout-data-3.6.5-r0 Description:\nAlpine base dir structure\n"
     info = await ApkPackage.process(CannedShellHost(stdout), "alpine-baselayout-data")
@@ -994,7 +1074,7 @@ async def test_apk_packages_remove_noop_when_absent():
 
 
 async def test_apk_packages_version_pin_present_only_on_exact_version():
-    """``ApkPackages`` reports versions, so a pinned ``<pkg>=<version>`` is
+    """``ApkInstalledPackages`` reports versions, so a pinned ``<pkg>=<version>`` is
     present only when that exact version is installed (apt's rule, not dnf's
     name-only match)."""
     host = SimulatedHost(name="h", apk_packages={"nginx": ["1.23.0-r0"]})
@@ -1187,7 +1267,7 @@ async def test_apk_packages_flows_both_modifiers_into_the_latest_upgrade():
 
 
 async def test_apk_packages_modifiers_do_not_affect_idempotence():
-    """The flags change only how the install runs, never what ``ApkPackages``
+    """The flags change only how the install runs, never what ``ApkInstalledPackages``
     reports, so an already-present package is still a no-op with both set."""
     host = SimulatedHost(name="h", apk_packages={"nginx": ["1.23.0-r0"]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1402,9 +1482,9 @@ async def test_apk_virtual_creates_absent_group():
 
 
 async def test_apk_virtual_no_change_when_group_present():
-    """The tag already in the world reads as present, so nothing is yielded --
-    the reason is recorded even when unchanged (the plan shows it)."""
-    host = SimulatedHost(name="h", apk_explicit_packages=["build-deps", "curl"])
+    """The tag already in the world reads as present, so nothing is yielded
+    -- the reason is recorded even when unchanged (the plan shows it)."""
+    host = SimulatedHost(name="h", apk_explicit_packages=[_world("build-deps"), _world("curl")])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
         c async for c in apk.virtual(ctx, tag="build-deps", packages=("gcc",))
@@ -1437,7 +1517,7 @@ async def test_apk_virtual_present_without_packages_is_a_noop():
 
 
 async def test_apk_virtual_removes_present_group():
-    host = SimulatedHost(name="h", apk_explicit_packages=["build-deps"])
+    host = SimulatedHost(name="h", apk_explicit_packages=[_world("build-deps")])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
         c async for c in apk.virtual(ctx, tag="build-deps", present=False)
@@ -1481,26 +1561,28 @@ async def test_apk_virtual_absorbs_unknown_kwargs():
 
 async def test_apk_virtual_add_seam_mutates_world_and_packages():
     """``send_command`` maps the create descriptor onto both seams the real
-    ``apk add -t`` touches: the tag lands in ``apk_explicit_packages`` (sorted,
-    de-duplicated) and the members in ``apk_packages``."""
-    host = SimulatedHost(name="h", apk_explicit_packages=["curl"])
+    ``apk add -t`` touches: the tag lands in ``apk_explicit_packages`` as a
+    name-only entry (sorted, de-duplicated) and the members in
+    ``apk_packages``."""
+    host = SimulatedHost(name="h", apk_explicit_packages=[_world("curl")])
     await send_command(
         host, ApkVirtualCommand(tag="build-deps", packages=("gcc", "musl-dev"))
     )
-    assert host.apk_explicit_packages == ["build-deps", "curl"]
+    assert host.apk_explicit_packages == [_world("build-deps"), _world("curl")]
     assert host.apk_packages == {"gcc": [""], "musl-dev": [""]}
 
 
 async def test_apk_virtual_remove_seam_drops_tag():
-    """The remove descriptor drops the tag from the world; a tag-only removal
-    (no members named) leaves ``apk_packages`` untouched, as documented."""
+    """The remove descriptor drops the tag's entry from the world; a tag-only
+    removal (no members named) leaves ``apk_packages`` untouched, as
+    documented."""
     host = SimulatedHost(
         name="h",
-        apk_explicit_packages=["build-deps", "curl"],
+        apk_explicit_packages=[_world("build-deps"), _world("curl")],
         apk_packages={"gcc": [""]},
     )
     await send_command(host, ApkVirtualCommand(tag="build-deps", present=False))
-    assert host.apk_explicit_packages == ["curl"]
+    assert host.apk_explicit_packages == [_world("curl")]
     assert host.apk_packages == {"gcc": [""]}
 
 
@@ -1531,7 +1613,7 @@ async def test_apk_virtual_end_to_end_create_then_noop():
         ApkVirtualCommand(tag="build-deps", packages=("gcc", "musl-dev"), present=True),
     )
     assert "$ sudo apk add -t build-deps gcc musl-dev" in format_log(report)
-    assert host.apk_explicit_packages == ["build-deps"]
+    assert host.apk_explicit_packages == [_world("build-deps")]
     # A second prepare sees the tag in the world: no change.
     _runtimes, plans2 = await run_prepare([host], create_deploy)
     assert not plans2["h"][0].changed
@@ -1671,7 +1753,7 @@ async def test_apk_hold_keeps_an_operator_version_verbatim():
 
 async def test_apk_hold_pins_to_the_installed_version_by_default():
     """With no ``version``, each name is pinned to its currently installed
-    version (``ApkPackages``' newest), read from the installed-version fact."""
+    version (``ApkInstalledPackages``' newest), read from the installed-version fact."""
     host = SimulatedHost(name="h", apk_packages={"nginx": ["1.2.3-r0"]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apk.hold(ctx, packages=("nginx",))]
@@ -1683,7 +1765,7 @@ async def test_apk_hold_pins_to_the_installed_version_by_default():
 async def test_apk_hold_no_change_when_already_pinned():
     """A name already pinned to the wanted constraint reads as held, so
     nothing is yielded -- the reason is recorded even when unchanged."""
-    host = SimulatedHost(name="h", apk_held_packages={"curl": "=8.14.0-r0"})
+    host = SimulatedHost(name="h", apk_held_packages=[_held("curl", "=8.14.0-r0")])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
         c async for c in apk.hold(ctx, packages=("curl",), version="8.14.0-r0")
@@ -1697,7 +1779,7 @@ async def test_apk_hold_repins_when_the_constraint_differs():
     """A name pinned to a *different* constraint is re-held: version-aware
     idempotence detects the change the bare-name ``ApkExplicitPackages``
     could not."""
-    host = SimulatedHost(name="h", apk_held_packages={"curl": "=8.13.0-r0"})
+    host = SimulatedHost(name="h", apk_held_packages=[_held("curl", "=8.13.0-r0")])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
         c async for c in apk.hold(ctx, packages=("curl",), version="8.14.0-r0")
@@ -1772,7 +1854,8 @@ async def test_apk_unhold_releases_held_names():
     """``present=False`` yields one bare-name command for the requested names
     that are currently held."""
     host = SimulatedHost(
-        name="h", apk_held_packages={"curl": "=8.14.0-r0", "nginx": "=1.2.3-r0"}
+        name="h",
+        apk_held_packages=[_held("curl", "=8.14.0-r0"), _held("nginx", "=1.2.3-r0")],
     )
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
@@ -1786,7 +1869,7 @@ async def test_apk_unhold_releases_held_names():
 async def test_apk_unhold_only_releases_held_names():
     """A name that is not held is filtered out, so only the held ones are
     released."""
-    host = SimulatedHost(name="h", apk_held_packages={"curl": "=8.14.0-r0"})
+    host = SimulatedHost(name="h", apk_held_packages=[_held("curl", "=8.14.0-r0")])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
         c async for c in apk.hold(ctx, packages=("curl", "ghost"), present=False)
@@ -1824,25 +1907,30 @@ async def test_apk_hold_absorbs_unknown_kwargs():
 
 async def test_apk_hold_seam_pins_name_to_constraint():
     """``send_command`` maps the hold descriptor onto the seam: each spec's
-    bare name and constraint land in ``apk_held_packages``, exactly as the
-    fact parses the world line the real command writes."""
+    bare name and constraint land in ``apk_held_packages`` as an
+    ``ApkHeldPackage`` entry -- exactly as the fact parses the world
+    line the real command writes, with an empty ``tag``."""
     host = SimulatedHost(name="h")
     await send_command(
         host, ApkHoldCommand(packages=("curl=8.14.0-r0", "nginx~1.2"), present=True)
     )
-    assert host.apk_held_packages == {"curl": "=8.14.0-r0", "nginx": "~1.2"}
+    assert host.apk_held_packages == [
+        _held("curl", "=8.14.0-r0"),
+        _held("nginx", "~1.2"),
+    ]
 
 
 async def test_apk_unhold_seam_drops_the_pin():
-    """The unhold descriptor pops the bare names from ``apk_held_packages``;
+    """The unhold descriptor removes the bare names' entries from
+    ``apk_held_packages``;
     an absent name is tolerated and the installed versions are untouched."""
     host = SimulatedHost(
         name="h",
-        apk_held_packages={"curl": "=8.14.0-r0", "nginx": "=1.2.3-r0"},
+        apk_held_packages=[_held("curl", "=8.14.0-r0"), _held("nginx", "=1.2.3-r0")],
         apk_packages={"curl": ["8.14.0-r0"]},
     )
     await send_command(host, ApkHoldCommand(packages=("curl", "ghost"), present=False))
-    assert host.apk_held_packages == {"nginx": "=1.2.3-r0"}
+    assert host.apk_held_packages == [_held("nginx", "=1.2.3-r0")]
     assert host.apk_packages == {"curl": ["8.14.0-r0"]}
 
 
@@ -1873,7 +1961,7 @@ async def test_apk_hold_end_to_end_hold_then_noop():
         ApkHoldCommand(packages=("curl=8.14.0-r0",), present=True),
     )
     assert "$ sudo apk add curl=8.14.0-r0" in format_log(report)
-    assert host.apk_held_packages == {"curl": "=8.14.0-r0"}
+    assert host.apk_held_packages == [_held("curl", "=8.14.0-r0")]
     # A second prepare sees the pin: no change.
     _runtimes, plans2 = await run_prepare([host], hold_deploy)
     assert not plans2["h"][0].changed
@@ -1920,7 +2008,7 @@ async def test_apk_hold_end_to_end_hold_then_unhold_cycle():
     assert unhold_entry.commands == (
         ApkHoldCommand(packages=("curl",), present=False),
     )
-    assert host.apk_held_packages == {}
+    assert host.apk_held_packages == []
 
 
 async def test_apk_hold_dry_run_plans_without_sending():
@@ -1950,10 +2038,10 @@ async def test_apk_hold_dry_run_plans_without_sending():
         ApkHoldCommand(packages=("curl=8.14.0-r0",), present=True),
     )
     # Nothing ran: the dry run sent no command.
-    assert host.apk_held_packages == {}
+    assert host.apk_held_packages == []
 
 
-# --- ApkAutoremovable: command parity ----------------------------------------
+# --- ApkAutoremovablePackages: command parity ----------------------------------------
 
 
 def test_apk_autoremovable_command_simulates_the_purge():
@@ -1962,10 +2050,10 @@ def test_apk_autoremovable_command_simulates_the_purge():
     cache/index warnings there. The ``--simulate`` flag is what keeps the
     fact read-only -- the same shape ``AptAutoremovable`` uses with
     ``apt-get --just-print autoremove 2>/dev/null``."""
-    assert ApkAutoremovable.COMMAND == "apk add --purge --simulate 2>/dev/null"
+    assert ApkAutoremovablePackages.COMMAND == "apk add --purge --simulate 2>/dev/null"
 
 
-# --- ApkAutoremovable: real-transport parse ----------------------------------
+# --- ApkAutoremovablePackages: real-transport parse ----------------------------------
 
 # Realistic canned ``apk add --purge --simulate`` output: the leading solver
 # summary, three ``(N/M) Purging`` rows carrying multi-dash and punctuation
@@ -1980,34 +2068,43 @@ WARNING: Ignoring APKINDEX.00740ba1.tar.gz: No such file or directory
 OK: 500 MiB in 100 packages
 """
 
-AUTOREMOVE_FACT = ["alpine-baselayout-data", "libstdc++", "py3-pycparser"]
+AUTOREMOVE_FACT: list[ApkAutoremovablePackage] = [
+    {"name": "alpine-baselayout-data", "version": "3.6.5-r0"},
+    {"name": "libstdc++", "version": "13.2.1_git20240309-r0"},
+    {"name": "py3-pycparser", "version": "2.22-r0"},
+]
 
 
 async def test_apk_autoremovable_parses_purge_rows():
     """Over the real-transport path, the ``(N/M) Purging`` rows parse into a
-    sorted, de-duplicated bare-name list; the summary count, the ``OK:``
+    sorted, de-duplicated list of ``ApkAutoremovablePackage`` dicts keeping
+    each row's name and version-and-release; the summary count, the ``OK:``
     footer and the ``WARNING:`` cache noise never match the row regex."""
     host = CannedShellHost(AUTOREMOVE_OUTPUT)
-    assert await ApkAutoremovable.process(host) == AUTOREMOVE_FACT
-    assert host.last_shell == ApkAutoremovable.COMMAND
+    assert await ApkAutoremovablePackages.process(host) == AUTOREMOVE_FACT
+    assert host.last_shell == ApkAutoremovablePackages.COMMAND
 
 
 async def test_apk_autoremovable_dedups_and_sorts():
-    """Repeated rows collapse into one entry and the result is sorted, the
-    same determinism ``AptAutoremovable`` guarantees."""
+    """Repeated rows collapse into one entry and the result is sorted by name,
+    the same determinism ``AptAutoremovable`` guarantees (its bare-name shape
+    this fact deliberately departs from by keeping the version)."""
     output = (
         "(1/2) Purging zlib-1.2.11-r1\n"
         "(2/2) Purging zlib-1.2.11-r1\n"
         "(3/3) Purging curl-8.14.0-r0\n"
     )
     host = CannedShellHost(output)
-    assert await ApkAutoremovable.process(host) == ["curl", "zlib"]
+    assert await ApkAutoremovablePackages.process(host) == [
+        {"name": "curl", "version": "8.14.0-r0"},
+        {"name": "zlib", "version": "1.2.11-r1"},
+    ]
 
 
 async def test_apk_autoremovable_skips_malformed_rows():
     """Rows without the ``(N/M)`` progress prefix, without a ``-r<release>``
-    tail, or with an unknown verb are never mistaken for names -- the parser
-    is strict so a future apk output change reads as ``[]`` rather than
+    tail, or with an unknown verb are never mistaken for package rows -- the
+    parser is strict so a future apk output change reads as ``[]`` rather than
     reporting garbage."""
     output = (
         "Purging noindex-1.0-r0\n"          # missing (N/M) prefix
@@ -2017,7 +2114,7 @@ async def test_apk_autoremovable_skips_malformed_rows():
         "\n"
     )
     host = CannedShellHost(output)
-    assert await ApkAutoremovable.process(host) == []
+    assert await ApkAutoremovablePackages.process(host) == []
 
 
 async def test_apk_autoremovable_reads_empty_output_as_empty_list():
@@ -2025,46 +2122,69 @@ async def test_apk_autoremovable_reads_empty_output_as_empty_list():
     non-zero exit the driver already surfaces separately) reads as ``[]``,
     matching the sibling ``AptAutoremovable``."""
     host = CannedShellHost("")
-    assert await ApkAutoremovable.process(host) == []
+    assert await ApkAutoremovablePackages.process(host) == []
 
 
 async def test_apk_autoremovable_result_is_json_printable():
-    """The returned list serializes with ``json.dumps`` directly, matching
-    the fact-family contract."""
+    """The returned list of dicts serializes with ``json.dumps`` directly,
+    matching the fact-family contract."""
     host = CannedShellHost(AUTOREMOVE_OUTPUT)
-    result = await ApkAutoremovable.process(host)
+    result = await ApkAutoremovablePackages.process(host)
     assert json.loads(json.dumps(result)) == AUTOREMOVE_FACT
 
 
-# --- ApkAutoremovable: SimulatedHost seam ------------------------------------
+# --- ApkAutoremovablePackages: SimulatedHost seam ------------------------------------
 
 
 async def test_apk_autoremovable_reads_the_seam():
     """When the host carries the ``apk_autoremovable`` seam, the fact reads
     it verbatim and never shells out."""
-    host = SimulatedHost(name="h", apk_autoremovable=["curl", "zlib"])
-    assert await ApkAutoremovable.process(host) == ["curl", "zlib"]
+    host = SimulatedHost(
+        name="h",
+        apk_autoremovable=[
+            {"name": "curl", "version": "8.14.0-r0"},
+            {"name": "zlib", "version": "1.2.11-r1"},
+        ],
+    )
+    assert await ApkAutoremovablePackages.process(host) == [
+        {"name": "curl", "version": "8.14.0-r0"},
+        {"name": "zlib", "version": "1.2.11-r1"},
+    ]
 
 
 async def test_apk_autoremovable_seam_copies_the_list():
-    """The seam read returns a fresh list so a caller mutating it cannot
-    reach into the simulated state."""
-    host = SimulatedHost(name="h", apk_autoremovable=["curl"])
-    first = await ApkAutoremovable.process(host)
-    first.append("poison")
-    assert host.apk_autoremovable == ["curl"]
+    """The seam read returns fresh dicts so a caller mutating the list, or an
+    entry in it, cannot reach into the simulated state."""
+    host = SimulatedHost(name="h", apk_autoremovable=[{"name": "curl", "version": "8.14.0-r0"}])
+    first = await ApkAutoremovablePackages.process(host)
+    first.append({"name": "poison", "version": "0-r0"})
+    first[0]["version"] = "poisoned"
+    assert host.apk_autoremovable == [{"name": "curl", "version": "8.14.0-r0"}]
 
 
 async def test_apk_autoremovable_gather_fact_fans_out_over_hosts():
     """``gather_fact`` runs the fact's ``process`` concurrently across the
     inventory and returns a host-name-keyed mapping."""
     hosts = [
-        SimulatedHost(name="a", apk_autoremovable=["curl"]),
+        SimulatedHost(name="a", apk_autoremovable=[{"name": "curl", "version": "8.14.0-r0"}]),
         SimulatedHost(name="b", apk_autoremovable=[]),
-        SimulatedHost(name="c", apk_autoremovable=["zlib", "openssl"]),
+        SimulatedHost(
+            name="c",
+            apk_autoremovable=[
+                {"name": "openssl", "version": "3.3.1-r0"},
+                {"name": "zlib", "version": "1.2.11-r1"},
+            ],
+        ),
     ]
-    result = await gather_fact(hosts, ApkAutoremovable)
-    assert result == {"a": ["curl"], "b": [], "c": ["zlib", "openssl"]}
+    result = await gather_fact(hosts, ApkAutoremovablePackages)
+    assert result == {
+        "a": [{"name": "curl", "version": "8.14.0-r0"}],
+        "b": [],
+        "c": [
+            {"name": "openssl", "version": "3.3.1-r0"},
+            {"name": "zlib", "version": "1.2.11-r1"},
+        ],
+    }
 
 
 # --- apk.autoremove: command descriptor --------------------------------------
@@ -2098,10 +2218,16 @@ def test_apk_purge_command_has_no_arguments():
 
 
 async def test_apk_autoremove_yields_when_the_fact_names_orphans():
-    """A non-empty ``ApkAutoremovable`` yields one ``ApkPurgeCommand``; the
-    reason lists the sorted names, identical across phases."""
+    """A non-empty ``ApkAutoremovablePackages`` yields one ``ApkPurgeCommand``; the
+    reason lists the sorted names (the entry versions are not repeated -- the
+    purge names packages, not versions), identical across phases."""
     host = SimulatedHost(
-        name="h", apk_autoremovable=["curl", "openssl", "zlib"]
+        name="h",
+        apk_autoremovable=[
+            {"name": "curl", "version": "8.14.0-r0"},
+            {"name": "openssl", "version": "3.3.1-r0"},
+            {"name": "zlib", "version": "1.2.11-r1"},
+        ],
     )
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apk.autoremove(ctx)]
@@ -2113,7 +2239,7 @@ async def test_apk_autoremove_yields_when_the_fact_names_orphans():
 
 
 async def test_apk_autoremove_noop_when_nothing_to_purge():
-    """An empty ``ApkAutoremovable`` is a no-op: nothing is yielded and the
+    """An empty ``ApkAutoremovablePackages`` is a no-op: nothing is yielded and the
     reason records the empty state."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2128,7 +2254,9 @@ async def test_apk_autoremove_absorbs_unknown_kwargs():
     strips the ``name``/``sudo``/``su`` meta-parameters, the rest is
     ignored -- including apt's ``wait_for_lock``, which apk deliberately
     does not offer."""
-    host = SimulatedHost(name="h", apk_autoremovable=["curl"])
+    host = SimulatedHost(
+        name="h", apk_autoremovable=[{"name": "curl", "version": "8.14.0-r0"}]
+    )
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
         c async for c in apk.autoremove(ctx, wait_for_lock=60, future_flag=True)
@@ -2141,12 +2269,15 @@ async def test_apk_autoremove_absorbs_unknown_kwargs():
 
 async def test_apk_autoremove_seam_clears_the_fact_and_pops_installed():
     """``send_command`` maps the purge descriptor onto the seam: every
-    ``apk_autoremovable`` name is popped from ``apk_packages`` (so
-    ``ApkPackages`` no longer reports it) and the fact itself is cleared (so
+    ``apk_autoremovable`` entry's name is popped from ``apk_packages`` (so
+    ``ApkInstalledPackages`` no longer reports it) and the fact itself is cleared (so
     a repeat purge reads empty)."""
     host = SimulatedHost(
         name="h",
-        apk_autoremovable=["curl", "zlib"],
+        apk_autoremovable=[
+            {"name": "curl", "version": "8.14.0-r0"},
+            {"name": "zlib", "version": "1.2.11-r1"},
+        ],
         apk_packages={
             "curl": ["8.14.0-r0"],
             "zlib": ["1.2.11-r1"],
@@ -2165,14 +2296,14 @@ async def test_apk_autoremove_seam_leaves_world_and_holds_untouched():
     ``apk_held_packages``."""
     host = SimulatedHost(
         name="h",
-        apk_autoremovable=["orphan"],
+        apk_autoremovable=[{"name": "orphan", "version": "1.0-r0"}],
         apk_packages={"orphan": ["1.0-r0"], "curl": ["8.14.0-r0"]},
         apk_explicit_packages=["busybox", "curl"],
-        apk_held_packages={"curl": "=8.14.0-r0"},
+        apk_held_packages=[_held("curl", "=8.14.0-r0")],
     )
     await send_command(host, ApkPurgeCommand())
     assert host.apk_explicit_packages == ["busybox", "curl"]
-    assert host.apk_held_packages == {"curl": "=8.14.0-r0"}
+    assert host.apk_held_packages == [_held("curl", "=8.14.0-r0")]
     assert host.apk_packages == {"curl": ["8.14.0-r0"]}
 
 
@@ -2181,7 +2312,7 @@ async def test_apk_autoremove_seam_leaves_world_and_holds_untouched():
 
 async def test_apk_autoremove_end_to_end_purge_then_noop():
     """Through run_prepare/run_apply: the purge executes under sudo and
-    renders in the log; a second prepare sees an empty ``ApkAutoremovable``
+    renders in the log; a second prepare sees an empty ``ApkAutoremovablePackages``
     and plans no change (the fresh per-step fact cache observes the
     mutation)."""
 
@@ -2190,7 +2321,10 @@ async def test_apk_autoremove_end_to_end_purge_then_noop():
 
     host = SimulatedHost(
         name="h",
-        apk_autoremovable=["curl", "zlib"],
+        apk_autoremovable=[
+            {"name": "curl", "version": "8.14.0-r0"},
+            {"name": "zlib", "version": "1.2.11-r1"},
+        ],
         apk_packages={
             "curl": ["8.14.0-r0"],
             "zlib": ["1.2.11-r1"],
@@ -2221,7 +2355,7 @@ async def test_apk_autoremove_dry_run_plans_without_sending():
 
     host = SimulatedHost(
         name="h",
-        apk_autoremovable=["curl"],
+        apk_autoremovable=[{"name": "curl", "version": "8.14.0-r0"}],
         apk_packages={"curl": ["8.14.0-r0"]},
     )
     plans, report, _hosts = await run(
@@ -2235,5 +2369,5 @@ async def test_apk_autoremove_dry_run_plans_without_sending():
     assert planned.changed
     assert planned.commands == (ApkPurgeCommand(),)
     # Nothing ran: the dry run sent no command.
-    assert host.apk_autoremovable == ["curl"]
+    assert host.apk_autoremovable == [{"name": "curl", "version": "8.14.0-r0"}]
     assert host.apk_packages == {"curl": ["8.14.0-r0"]}

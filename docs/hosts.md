@@ -283,7 +283,7 @@ without re-interpreting the outcome:
   raises [`PrivilegeError`][reemote5.hosts.PrivilegeError]: a rejected credential
   is a library-level failure, never a mere exit status.
 
-[`Shell.process`][reemote5.actions.Shell.process] rides these seams and copies
+[`Shell.process`][reemote5.actions.Shell] rides these seams and copies
 the record into a library-owned [`Result`][reemote5.actions.Result], so no
 asyncssh type reaches the public API.
 

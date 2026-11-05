@@ -1,5 +1,24 @@
 # hardware module
 
+## hardware Facts
+
+::: reemote5.modules.hardware.hardware
+    options:
+      show_root_heading: false
+      members:
+        - BlockDevices
+        - CpuInfo
+        - Cpus
+        - DiskStats
+        - DmiInfo
+        - Ipv4Addrs
+        - Ipv6Addrs
+        - LsBlk
+        - NetworkDevices
+        - SmbiosInfo
+
+<!---
+
 `reemote5.modules.hardware.hardware` holds the hardware facts — `BlockDevices`,
 the mounted block devices and their disk usage read from `df`, `CpuInfo`,
 the CPU details reported by `lscpu`, `Cpus`, the number of online CPUs
@@ -189,19 +208,6 @@ SMBIOS tables) is swallowed by the command and maps to `{}` — an empty
 dict cannot distinguish "no tables" from "no access"; use `DmiInfo` for
 an unprivileged read.
 
-::: reemote5.modules.hardware.hardware
-    options:
-      members:
-        - BlockDevices
-        - CpuInfo
-        - Cpus
-        - DiskStats
-        - DmiInfo
-        - Ipv4Addrs
-        - Ipv6Addrs
-        - LsBlk
-        - NetworkDevices
-        - SmbiosInfo
 
 ## Example
 
@@ -217,3 +223,5 @@ under
 across an inventory with
 [`gather_fact`][reemote5.drivers.gather_fact] and print each host's result
 as JSON.
+
+--->

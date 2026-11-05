@@ -5,8 +5,8 @@
 
 Each subpackage combines the facts and operations of one namespace in a
 single source, so ``modules/apk/apk.py`` holds the apk fact classes
-(``ApkAutoremovable``, ``ApkExplicitPackages``, ``ApkHeldPackages``,
-``ApkPackage``, ``ApkPackages``, ``ApkRepositories``) beside the
+(``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``,
+``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``) beside the
 ``autoremove``/``hold``/``packages``/``virtual`` operations and the typed
 command descriptors they yield,
 ``modules/apt/apt.py`` holds the apt fact classes (``AptKeys``,
@@ -28,7 +28,7 @@ facts beside the ``config``, ``repo`` and ``worktree`` operations,
 and ``wait_service`` operations. The subpackages are re-exported here, so a
 deploy can keep writing
 ``from reemote5.modules import apk, apt, dnf, files, git, hardware, server``
-and read ``apk.ApkPackages`` / ``apt.AptKeys`` / ``dnf.packages`` /
+and read ``apk.ApkInstalledPackages`` / ``apt.AptKeys`` / ``dnf.packages`` /
 ``files.link`` / ``git.GitBranch`` / ``hardware.BlockDevices`` /
 ``server.service``.
 """

@@ -1,5 +1,39 @@
 # dnf module
 
+## dnf Facts
+
+::: reemote5.modules.dnf.dnf
+    options:
+      show_root_heading: false
+      members:
+        - DnfPackages
+        - DnfRepositories
+        - DnfRepoFile
+        - DnfRepoList
+        - DnfRepoListEntry
+        - DnfEnabledModules
+        - DnfDisabledModules
+        - DnfInstalledModules
+        - DnfGroups
+        - DnfAvailableGroups
+        - RpmPackage
+
+## dnf Operations
+
+::: reemote5.modules.dnf.dnf
+    options:
+      show_root_heading: false
+      members:
+        - packages
+        - update
+        - repo
+        - rpm
+        - key
+        - module
+
+
+<!---
+
 `reemote5.modules.dnf.dnf` combines the dnf facts and the dnf operations in a
 single source, so the read side (`DnfPackages` and friends) sits beside the
 `dnf.packages`, `dnf.repo`, `dnf.rpm` and `dnf.module` operations that consume
@@ -20,21 +54,6 @@ runtime sets — so reads stay deterministic and JSON-printable, and
 `DnfRepoList` rows are plain `DnfRepoListEntry` dicts (`status` is
 omitted when the listing has no status column).
 
-::: reemote5.modules.dnf.dnf
-    options:
-      members:
-        - DnfPackages
-        - DnfRepositories
-        - DnfRepoFile
-        - DnfRepoList
-        - DnfRepoListEntry
-        - DnfEnabledModules
-        - DnfDisabledModules
-        - DnfInstalledModules
-        - DnfGroups
-        - DnfAvailableGroups
-        - RpmPackage
-
 ## Operations
 
 Operations live in namespace modules so a deploy reads `dnf.packages`,
@@ -49,12 +68,4 @@ It awaits facts via `ctx.facts`, sets `ctx.changed` and `ctx.reason` where it
 decides a change is needed, and yields one descriptor per command that would
 mutate the host.
 
-::: reemote5.modules.dnf.dnf
-    options:
-      members:
-        - packages
-        - update
-        - repo
-        - rpm
-        - key
-        - module
+--->

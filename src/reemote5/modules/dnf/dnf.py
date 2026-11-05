@@ -1,49 +1,49 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""The ``dnf`` module: facts and operations in one source.
-
-Fact side (design doc section 5): ``DnfPackages``, the fact read by
-``dnf.packages`` to learn which packages are already installed,
-``DnfRepositories``, the configured dnf repositories, ``DnfRepoFile``, the
-raw content of a single ``.repo`` file (read by ``dnf.repo``),
-``DnfRepoList``, the runtime repository list (enabled and disabled, as
-plain ``DnfRepoListEntry`` TypedDict-shaped dicts),
-``DnfEnabledModules``, ``DnfDisabledModules`` and ``DnfInstalledModules``, the
-enabled, disabled and installed dnf modules, and
-``DnfGroups``/``DnfAvailableGroups``, the installed and available package
-groups, and ``RpmPackage``, the name/version of a ``.rpm`` file or an
-installed package that ``dnf.rpm`` reads to decide idempotence. Like every
-fact they are phase-unaware: each ``process`` coroutine just gathers the raw
-value.
-
-Operation side (design doc section 6): ``dnf.packages``, ``dnf.update``, ``dnf.repo``,
-``dnf.rpm``, ``dnf.key`` and ``dnf.module`` plus the typed command descriptors
-they yield (``DnfInstallCommand``/``DnfRemoveCommand``/``DnfUpdateCommand``/
-``DnfCleanCommand``/``DnfRepoUploadCommand``/``DnfRepoInstallCommand``/
-``DnfRepoRemoveCommand``/``RpmInstallCommand``/
-``DnfKeyUploadCommand``/``DnfKeyImportCommand``/``DnfModuleEnableCommand``/
-``DnfModuleDisableCommand``). Operations are
-async generators that receive an ``OpContext``, await facts, set
-``ctx.changed``/``ctx.reason``, and yield command descriptors; they never touch
-the host directly.
-
-``dnf.packages`` mirrors pyinfra's option set (``present``, ``latest``,
-``update``, ``clean``, ``nobest``, ``extra_install_args``,
-``extra_uninstall_args``) with the same names and semantics. ``dnf.repo``
-mirrors pyinfra's ``dnf.repo`` for the manual-construction case (``present``,
-``baseurl``, ``description``, ``enabled``, ``gpgcheck``, ``gpgkey``);
-pyinfra's URL source is dropped, since reemote5 has no download operation.
-``dnf.rpm`` mirrors pyinfra's ``dnf.rpm`` (``src``, ``present``) for a ``.rpm``
-file already on the target host; pyinfra's URL source -- which downloads the
-file mid-deploy -- is dropped for the same reason, so a URL ``src`` raises
-``ValueError``. ``dnf.key`` mirrors pyinfra's non-idempotent ``dnf.key`` but
-takes the GPG key content as an IO-like *stream* -- reemote5 has no
-controller-side file locations -- spooling it to a ``/tmp`` path over scp and
-running an elevated ``rpm --import`` on it, so a ``str`` ``src`` raises
-``ValueError``. ``dnf.update`` mirrors pyinfra's non-idempotent ``dnf.update``:
-it reads no fact and always runs ``dnf update -y`` over every package.
-"""
+# """The ``dnf`` module: facts and operations in one source.
+#
+# Fact side (design doc section 5): ``DnfPackages``, the fact read by
+# ``dnf.packages`` to learn which packages are already installed,
+# ``DnfRepositories``, the configured dnf repositories, ``DnfRepoFile``, the
+# raw content of a single ``.repo`` file (read by ``dnf.repo``),
+# ``DnfRepoList``, the runtime repository list (enabled and disabled, as
+# plain ``DnfRepoListEntry`` TypedDict-shaped dicts),
+# ``DnfEnabledModules``, ``DnfDisabledModules`` and ``DnfInstalledModules``, the
+# enabled, disabled and installed dnf modules, and
+# ``DnfGroups``/``DnfAvailableGroups``, the installed and available package
+# groups, and ``RpmPackage``, the name/version of a ``.rpm`` file or an
+# installed package that ``dnf.rpm`` reads to decide idempotence. Like every
+# fact they are phase-unaware: each ``process`` coroutine just gathers the raw
+# value.
+#
+# Operation side (design doc section 6): ``dnf.packages``, ``dnf.update``, ``dnf.repo``,
+# ``dnf.rpm``, ``dnf.key`` and ``dnf.module`` plus the typed command descriptors
+# they yield (``DnfInstallCommand``/``DnfRemoveCommand``/``DnfUpdateCommand``/
+# ``DnfCleanCommand``/``DnfRepoUploadCommand``/``DnfRepoInstallCommand``/
+# ``DnfRepoRemoveCommand``/``RpmInstallCommand``/
+# ``DnfKeyUploadCommand``/``DnfKeyImportCommand``/``DnfModuleEnableCommand``/
+# ``DnfModuleDisableCommand``). Operations are
+# async generators that receive an ``OpContext``, await facts, set
+# ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never touch
+# the host directly.
+#
+# ``dnf.packages`` mirrors pyinfra's option set (``present``, ``latest``,
+# ``update``, ``clean``, ``nobest``, ``extra_install_args``,
+# ``extra_uninstall_args``) with the same names and semantics. ``dnf.repo``
+# mirrors pyinfra's ``dnf.repo`` for the manual-construction case (``present``,
+# ``baseurl``, ``description``, ``enabled``, ``gpgcheck``, ``gpgkey``);
+# pyinfra's URL source is dropped, since reemote5 has no download operation.
+# ``dnf.rpm`` mirrors pyinfra's ``dnf.rpm`` (``src``, ``present``) for a ``.rpm``
+# file already on the target host; pyinfra's URL source -- which downloads the
+# file mid-deploy -- is dropped for the same reason, so a URL ``src`` raises
+# ``ValueError``. ``dnf.key`` mirrors pyinfra's non-idempotent ``dnf.key`` but
+# takes the GPG key content as an IO-like *stream* -- reemote5 has no
+# controller-side file locations -- spooling it to a ``/tmp`` path over scp and
+# running an elevated ``rpm --import`` on it, so a ``str`` ``src`` raises
+# ``ValueError``. ``dnf.update`` mirrors pyinfra's non-idempotent ``dnf.update``:
+# it reads no fact and always runs ``dnf update -y`` over every package.
+# """
 
 import io
 import re
@@ -64,12 +64,27 @@ from ...hosts import Host
 class DnfPackages:
     """The installed dnf package names, as a sorted list.
 
-    Mirrors pyinfra's ``dnf.DnfPackages``: every name ``rpm -qa`` prints
-    becomes one entry. Names are de-duplicated and sorted -- the apt-side
-    convention (``AptPackages``' sorted version lists) rather than
-    pyinfra's runtime set -- so reads stay deterministic and
-    JSON-printable for the ``gather_fact`` example scripts.
+    command:
+
+    ```bash
+    rpm -qa --queryformat '%{NAME}\\n'
+    ```
+
+    return:
+
+    ```python
+    list[str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/dnf/dnf_packages.py``.
     """
+
+    # Mirrors pyinfra's ``dnf.DnfPackages``: every name ``rpm -qa`` prints
+    # becomes one entry. Names are de-duplicated and sorted -- the apt-side
+    # convention (``AptPackages``' sorted version lists) rather than
+    # pyinfra's runtime set -- so reads stay deterministic and
+    # JSON-printable for the ``gather_fact`` example scripts.
 
     #: Shell used to list installed package names over SSH.
     COMMAND = "rpm -qa --queryformat '%{NAME}\n'"
@@ -104,11 +119,26 @@ class DnfPackages:
 class DnfRepositories:
     """The configured dnf repositories, as a list of repo-option dicts.
 
-    Mirrors pyinfra's ``dnf.DnfRepositories``: every ``[section]`` of the dnf
-    config and ``.repo`` files becomes one dict keyed by ``repoid``/``name``
-    (both defaulting to the section id), the source ``filename``, and each
-    ``key=value`` option.
+    command:
+
+    ```bash
+    for f in /etc/dnf.conf /etc/dnf.repos.d/*.repo /etc/yum.repos.d/*.repo; do [ -f "$f" ] && { printf "#reemote5-filename: %s\\n" "$f"; cat "$f"; }; done || true
+    ```
+
+    return:
+
+    ```python
+    list[dict[str, str]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/dnf/dnf_repositories.py``.
     """
+
+    # Mirrors pyinfra's ``dnf.DnfRepositories``: every ``[section]`` of the dnf
+    # config and ``.repo`` files becomes one dict keyed by ``repoid``/``name``
+    # (both defaulting to the section id), the source ``filename``, and each
+    # ``key=value`` option.
 
     #: Marker prefixing each cat'd file in ``COMMAND``'s output, naming the
     #: source file so ``parse`` can attribute a repository to its ``.repo``
@@ -186,14 +216,29 @@ class DnfRepositories:
 class DnfRepoFile:
     """The current content of one ``.repo`` file, or None when it is absent.
 
-    The fact ``dnf.repo`` reads to make its write idempotent: where
-    ``DnfRepositories`` parses *every* configured repository into option
-    dicts, this reports the raw text of a *single* file so the operation can
-    compare it against the content it would write. Absence is reported as
-    ``None`` -- never the empty string -- so a file that exists but is empty
-    stays distinguishable from one that is missing, which is what lets
-    ``dnf.repo(present=False)`` remove an empty leftover.
+    command:
+
+    ```bash
+    test -e <path> && { printf '#reemote5-repofile\\n'; cat -- <path>; }
+    ```
+
+    return:
+
+    ```python
+    str | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/dnf/dnf_repo.py``.
     """
+
+    # The fact ``dnf.repo`` reads to make its write idempotent: where
+    # ``DnfRepositories`` parses *every* configured repository into option
+    # dicts, this reports the raw text of a *single* file so the operation can
+    # compare it against the content it would write. Absence is reported as
+    # ``None`` -- never the empty string -- so a file that exists but is empty
+    # stays distinguishable from one that is missing, which is what lets
+    # ``dnf.repo(present=False)`` remove an empty leftover.
 
     #: Marker printed before the ``cat``'d content, only when ``test -e``
     #: passes, so ``process`` can tell an existing (possibly empty) file from
@@ -233,11 +278,26 @@ class DnfRepoFile:
 class DnfEnabledModules:
     """The enabled dnf modules, mapping module name to its enabled stream.
 
-    Mirrors pyinfra's ``dnf.DnfEnabledModules``: every row of the
-    ``dnf module list --enabled`` table carrying an ``[e]`` flag becomes a
-    ``{name: stream}`` entry; headers, blank lines and the trailing hint
-    line are ignored.
+    command:
+
+    ```bash
+    dnf module list --enabled
+    ```
+
+    return:
+
+    ```python
+    dict[str, str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/dnf/dnf_enabled_modules.py``.
     """
+
+    # Mirrors pyinfra's ``dnf.DnfEnabledModules``: every row of the
+    # ``dnf module list --enabled`` table carrying an ``[e]`` flag becomes a
+    # ``{name: stream}`` entry; headers, blank lines and the trailing hint
+    # line are ignored.
 
     #: Shell used to list the enabled modules over SSH.
     COMMAND = "dnf module list --enabled"
@@ -280,12 +340,27 @@ class DnfEnabledModules:
 class DnfDisabledModules:
     """The sorted names of the explicitly disabled dnf modules.
 
-    Mirrors pyinfra's ``dnf.DnfDisabledModules``: every row of the
-    ``dnf module list --disabled`` table carrying an ``[x]`` flag contributes
-    its module name; a module disabled across several streams is listed once,
-    and the names are returned sorted. Headers, blank lines and the trailing
-    hint line are ignored.
+    command:
+
+    ```bash
+    dnf module list --disabled
+    ```
+
+    return:
+
+    ```python
+    list[str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/dnf/dnf_disabled_modules.py``.
     """
+
+    # Mirrors pyinfra's ``dnf.DnfDisabledModules``: every row of the
+    # ``dnf module list --disabled`` table carrying an ``[x]`` flag contributes
+    # its module name; a module disabled across several streams is listed once,
+    # and the names are returned sorted. Headers, blank lines and the trailing
+    # hint line are ignored.
 
     #: Shell used to list the disabled modules over SSH.
     COMMAND = "dnf module list --disabled"
@@ -327,15 +402,30 @@ class DnfDisabledModules:
 class DnfInstalledModules:
     """The installed dnf modules, mapping module name to its installed stream.
 
-    The counterpart of ``DnfEnabledModules``: where that fact reports the
-    streams dnf has *enabled* (``[e]``), this one reports the streams that
-    actually have packages *installed* (``[i]``) out of the
-    ``dnf module list --installed`` table. A module can be enabled without any
-    of its packages installed, or installed on a stream that is not the enabled
-    default, so the two facts answer different questions. Every ``[i]``-flagged
-    row becomes a ``{name: stream}`` entry; headers, blank lines and the
-    trailing hint line are ignored.
+    command:
+
+    ```bash
+    dnf module list --installed
+    ```
+
+    return:
+
+    ```python
+    dict[str, str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/dnf/dnf_installed_modules.py``.
     """
+
+    # The counterpart of ``DnfEnabledModules``: where that fact reports the
+    # streams dnf has *enabled* (``[e]``), this one reports the streams that
+    # actually have packages *installed* (``[i]``) out of the
+    # ``dnf module list --installed`` table. A module can be enabled without any
+    # of its packages installed, or installed on a stream that is not the enabled
+    # default, so the two facts answer different questions. Every ``[i]``-flagged
+    # row becomes a ``{name: stream}`` entry; headers, blank lines and the
+    # trailing hint line are ignored.
 
     #: Shell used to list the installed modules over SSH.
     COMMAND = "dnf module list --installed"
@@ -407,13 +497,28 @@ def _parse_group_list(output: Iterable[str], *, section: str) -> list[str]:
 class DnfGroups:
     """The names of the installed dnf groups.
 
-    Fills a gap pyinfra leaves open: there is no way to ask which package
-    *groups* are already installed, so a ``dnf group install`` cannot be made
-    idempotent. This fact parses ``dnf group list --installed`` and returns the
-    installed group names -- both environment groups (``Installed Environment
-    Groups:``) and regular groups (``Installed Groups:``) -- as a sorted list,
-    so a later group operation can skip the ones already present.
+    command:
+
+    ```bash
+    dnf group list --installed
+    ```
+
+    return:
+
+    ```python
+    list[str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/dnf/dnf_groups.py``.
     """
+
+    # Fills a gap pyinfra leaves open: there is no way to ask which package
+    # *groups* are already installed, so a ``dnf group install`` cannot be made
+    # idempotent. This fact parses ``dnf group list --installed`` and returns the
+    # installed group names -- both environment groups (``Installed Environment
+    # Groups:``) and regular groups (``Installed Groups:``) -- as a sorted list,
+    # so a later group operation can skip the ones already present.
 
     #: Shell used to list the installed groups over SSH.
     COMMAND = "dnf group list --installed"
@@ -443,12 +548,27 @@ class DnfGroups:
 class DnfAvailableGroups:
     """The names of the available (not-yet-installed) dnf groups.
 
-    The counterpart of ``DnfGroups``: parses ``dnf group list --available`` and
-    returns the group names dnf could install -- both environment groups
-    (``Available Environment Groups:``) and regular groups (``Available
-    Groups:``) -- as a sorted list. Useful to check that a group name is valid
-    before installing it, and to decide whether an install is needed at all.
+    command:
+
+    ```bash
+    dnf group list --available
+    ```
+
+    return:
+
+    ```python
+    list[str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/dnf/dnf_available_groups.py``.
     """
+
+    # The counterpart of ``DnfGroups``: parses ``dnf group list --available`` and
+    # returns the group names dnf could install -- both environment groups
+    # (``Available Environment Groups:``) and regular groups (``Available
+    # Groups:``) -- as a sorted list. Useful to check that a group name is valid
+    # before installing it, and to decide whether an install is needed at all.
 
     #: Shell used to list the available groups over SSH.
     COMMAND = "dnf group list --available"
@@ -476,20 +596,21 @@ class DnfAvailableGroups:
 
 
 class DnfRepoListEntry(TypedDict):
-    """One runtime repository row (``DnfRepoList``'s entry), as a plain dict.
-
-    A TypedDict rather than a class instance, like ``AptSource``: entries
-    are ordinary dicts, so equality against a literal dict works and
-    ``json.dumps`` serializes them directly. (``DnfRepositories``' entries
-    stay plain ``dict[str, str]``: their option keys are open-ended
-    ``key=value`` config lines a closed TypedDict cannot express.)
-
+    """
     Attributes:
         repoid: The repository id (the row's first column).
         name: The human-readable repository name (possibly multi-word).
         status: ``"enabled"`` or ``"disabled"`` when the listing carries a
             status column; absent for a two-column ``dnf repolist``.
     """
+
+    # One runtime repository row (``DnfRepoList``'s entry), as a plain dict.
+    #
+    # A TypedDict rather than a class instance, like ``AptSource``: entries
+    # are ordinary dicts, so equality against a literal dict works and
+    # ``json.dumps`` serializes them directly. (``DnfRepositories``' entries
+    # stay plain ``dict[str, str]``: their option keys are open-ended
+    # ``key=value`` config lines a closed TypedDict cannot express.)
 
     repoid: str
     name: str
@@ -499,14 +620,29 @@ class DnfRepoListEntry(TypedDict):
 class DnfRepoList:
     """The runtime dnf repositories, as a list of ``DnfRepoListEntry`` dicts.
 
-    Where ``DnfRepositories`` parses the ``.repo`` *configuration* files -- and
-    so cannot tell which repositories dnf actually has loaded, or whether a
-    configured repo is enabled -- this fact reports the *runtime* list from
-    ``dnf repolist --all``: every repository dnf knows about, enabled or
-    disabled. Each row becomes a dict with the ``repoid``, its human-readable
-    ``name`` and, when the listing carries one, its ``status`` (``enabled`` or
-    ``disabled``).
+    command:
+
+    ```bash
+    dnf repolist --all
+    ```
+
+    return:
+
+    ```python
+    list[DnfRepoListEntry]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/dnf/dnf_repo_list.py``.
     """
+
+    # Where ``DnfRepositories`` parses the ``.repo`` *configuration* files -- and
+    # so cannot tell which repositories dnf actually has loaded, or whether a
+    # configured repo is enabled -- this fact reports the *runtime* list from
+    # ``dnf repolist --all``: every repository dnf knows about, enabled or
+    # disabled. Each row becomes a dict with the ``repoid``, its human-readable
+    # ``name`` and, when the listing carries one, its ``status`` (``enabled`` or
+    # ``disabled``).
 
     #: Shell used to list every repository (enabled and disabled) over SSH.
     COMMAND = "dnf repolist --all"
@@ -562,14 +698,29 @@ class DnfRepoList:
 class RpmPackage:
     """The name and version of a ``.rpm`` file or an installed package.
 
-    Mirrors pyinfra's ``rpm.RpmPackage``: given a package *name* or a ``.rpm``
-    file *path*, returns ``{"name": ..., "version": ...}`` (``version`` is
-    rpm's ``VERSION-RELEASE``), or None when the name is not installed and the
-    path is not an existing file. ``dnf.rpm`` reads it twice -- once for the
-    ``.rpm`` file, once for the installed package of that file's name -- and
-    compares the two versions to decide whether the file's package is already
-    installed at that version.
+    command:
+
+    ```bash
+    rpm --queryformat '%{NAME} %{VERSION}-%{RELEASE}\\n' -q <package> || ! test -e <package> || rpm --queryformat '%{NAME} %{VERSION}-%{RELEASE}\\n' -qp <package> 2> /dev/null
+    ```
+
+    return:
+
+    ```python
+    dict[str, str] | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/dnf/dnf_rpm.py``.
     """
+
+    # Mirrors pyinfra's ``rpm.RpmPackage``: given a package *name* or a ``.rpm``
+    # file *path*, returns ``{"name": ..., "version": ...}`` (``version`` is
+    # rpm's ``VERSION-RELEASE``), or None when the name is not installed and the
+    # path is not an existing file. ``dnf.rpm`` reads it twice -- once for the
+    # ``.rpm`` file, once for the installed package of that file's name -- and
+    # compares the two versions to decide whether the file's package is already
+    # installed at that version.
 
     #: rpm query format printing ``NAME VERSION-RELEASE`` on one line
     #: (pyinfra's ``rpm_query_format``).

@@ -1,35 +1,35 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""The ``files`` module: facts and operations in one source.
-
-Fact side (design doc section 5): ``FileLink`` (the fact read by
-``files.link`` to learn the current target of a symlink), ``FileExists``
-(the fact read by ``files.file`` to learn whether a regular file exists),
-the ``LocalSha1``/``RemoteFileSha1`` pair ``files.put`` and ``files.get``
-compare to decide whether a transfer is needed, ``FileContents`` (the
-raw text of a remote file, or None when absent, that ``files.edit`` reads to
-transform it), and ``File`` (pyinfra's stat-level metadata for a regular
-file -- owner, group, mode, timestamps, size -- False for a non-file path,
-None when absent) with its ``Directory`` and ``Link`` siblings (the same
-metadata for a directory or a symlink, False for a non-directory/non-link
-path; ``Link``'s dict additionally carries the ``link_target``). Like every
-fact they are phase-unaware: each ``process`` coroutine just gathers the raw
-value.
-
-Operation side (design doc section 6): ``files.link``, ``files.file``,
-``files.put``, ``files.get``, ``files.edit`` and ``files.move`` plus the typed
-command descriptors they yield
-(``LinkCommand``/``FileCommand``/``PutCommand``/``GetCommand``/
-``MoveCommand``/``RemoveTreeCommand``). Operations
-are async generators that receive an ``OpContext``, await facts, set
-``ctx.changed``/``ctx.reason``, and yield command descriptors; they never
-touch the host directly. ``PutCommand`` and ``GetCommand`` are the *non-shell*
-descriptors: they transfer bytes over the host's asyncssh connection (scp)
-instead of running shell text -- ``PutCommand`` uploads an IO-like source to a
-remote path, ``GetCommand`` downloads a remote path into an IO-like
-destination.
-"""
+# """The ``files`` module: facts and operations in one source.
+#
+# Fact side (design doc section 5): ``FileLink`` (the fact read by
+# ``files.link`` to learn the current target of a symlink), ``FileExists``
+# (the fact read by ``files.file`` to learn whether a regular file exists),
+# the ``LocalSha1``/``RemoteFileSha1`` pair ``files.put`` and ``files.get``
+# compare to decide whether a transfer is needed, ``FileContents`` (the
+# raw text of a remote file, or None when absent, that ``files.edit`` reads to
+# transform it), and ``File`` (pyinfra's stat-level metadata for a regular
+# file -- owner, group, mode, timestamps, size -- False for a non-file path,
+# None when absent) with its ``Directory`` and ``Link`` siblings (the same
+# metadata for a directory or a symlink, False for a non-directory/non-link
+# path; ``Link``'s dict additionally carries the ``link_target``). Like every
+# fact they are phase-unaware: each ``process`` coroutine just gathers the raw
+# value.
+#
+# Operation side (design doc section 6): ``files.link``, ``files.file``,
+# ``files.put``, ``files.get``, ``files.edit`` and ``files.move`` plus the typed
+# command descriptors they yield
+# (``LinkCommand``/``FileCommand``/``PutCommand``/``GetCommand``/
+# ``MoveCommand``/``RemoveTreeCommand``). Operations
+# are async generators that receive an ``OpContext``, await facts, set
+# ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never
+# touch the host directly. ``PutCommand`` and ``GetCommand`` are the *non-shell*
+# descriptors: they transfer bytes over the host's asyncssh connection (scp)
+# instead of running shell text -- ``PutCommand`` uploads an IO-like source to a
+# remote path, ``GetCommand`` downloads a remote path into an IO-like
+# destination.
+# """
 
 import asyncio
 import hashlib
@@ -52,7 +52,23 @@ from ...hosts import Host
 
 
 class FileLink:
-    """The target of a symlink, or None if the link does not exist."""
+    """The target of a symlink, or None if the link does not exist.
+
+    command:
+
+    ```bash
+    readlink <path>
+    ```
+
+    return:
+
+    ```python
+    str | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_link.py``.
+    """
 
     @classmethod
     async def process(cls, host: Host, path: str) -> str | None:
@@ -69,7 +85,23 @@ class FileLink:
 
 
 class FileExists:
-    """Whether a regular file exists at the path."""
+    """Whether a regular file exists at the path.
+
+    command:
+
+    ```bash
+    test -e <path> && echo yes
+    ```
+
+    return:
+
+    ```python
+    bool
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_file.py``.
+    """
 
     @classmethod
     async def process(cls, host: Host, path: str) -> bool:
@@ -133,12 +165,28 @@ def write_dest_bytes(dest: IO[Any], data: bytes) -> None:
 class LocalSha1:
     """The sha1 hex digest of an IO-like source on the *control* machine.
 
-    The one fact whose input is not the host: ``files.put`` compares this
-    against ``RemoteFileSha1`` to decide whether an upload is needed. The
-    digest is computed in a worker thread so the read never blocks the event
-    loop, and the stream is rewound first so repeated materializations (the
-    prepare and apply phases read the same object) hash identical content.
+    command:
+
+    ```text
+    none -- the digest is computed locally with hashlib.sha1, no host command is issued
+    ```
+
+    return:
+
+    ```python
+    str
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_put.py`` and
+        ``examples/modules/files/files_get.py``.
     """
+
+    # The one fact whose input is not the host: ``files.put`` compares this
+    # against ``RemoteFileSha1`` to decide whether an upload is needed. The
+    # digest is computed in a worker thread so the read never blocks the event
+    # loop, and the stream is rewound first so repeated materializations (the
+    # prepare and apply phases read the same object) hash identical content.
 
     @classmethod
     async def process(cls, host: Host, src: IO[Any]) -> str:
@@ -146,7 +194,24 @@ class LocalSha1:
 
 
 class RemoteFileSha1:
-    """The sha1 hex digest of a file on the remote host, or None if absent."""
+    """The sha1 hex digest of a file on the remote host, or None if absent.
+
+    command:
+
+    ```bash
+    sha1sum <path>
+    ```
+
+    return:
+
+    ```python
+    str | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_put.py`` and
+        ``examples/modules/files/files_get.py``.
+    """
 
     @classmethod
     async def process(cls, host: Host, path: str) -> str | None:
@@ -169,14 +234,29 @@ class RemoteFileSha1:
 class FileContents:
     """The text content of a file on the remote host, or None when absent.
 
-    Mirrors pyinfra's ``files.FileContents`` (gathered with ``cat``), with one
-    deliberate deviation: reemote5 returns the content as a single ``str``
-    rather than pyinfra's list of lines, so a content transform (``files.edit``)
-    can treat the file as one blob and re-split it however it likes. Like
-    ``dnf.DnfRepoFile`` -- the same read-content-or-None shape -- absence is
-    reported as ``None``, never the empty string, so a file that exists but is
-    empty stays distinguishable from one that is missing.
+    command:
+
+    ```bash
+    test -e <path> && { printf '#reemote5-filecontents\\n'; cat -- <path>; }
+    ```
+
+    return:
+
+    ```python
+    str | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_edit.py``.
     """
+
+    # Mirrors pyinfra's ``files.FileContents`` (gathered with ``cat``), with one
+    # deliberate deviation: reemote5 returns the content as a single ``str``
+    # rather than pyinfra's list of lines, so a content transform (``files.edit``)
+    # can treat the file as one blob and re-split it however it likes. Like
+    # ``dnf.DnfRepoFile`` -- the same read-content-or-None shape -- absence is
+    # reported as ``None``, never the empty string, so a file that exists but is
+    # empty stays distinguishable from one that is missing.
 
     #: Marker printed before the ``cat``'d content, only when ``test -e``
     #: passes, so ``process`` can tell an existing (possibly empty) file from
@@ -388,25 +468,40 @@ def _parse_ls_line(line: str) -> tuple[dict[str, Any], str] | None:
 class File:
     """Metadata for a regular file, False for a non-file path, None if absent.
 
-    Mirrors pyinfra's ``files.File``: the path is guarded with
-    ``test -e``/``test -L`` (so a dangling symlink is still probed), then
-    described by GNU ``stat -c``, falling back to BSD ``stat -f`` and
-    finally ``ls -ld``. The parsed result is a dict, for example::
+    command:
 
-        {"user": "pyinfra", "group": "pyinfra", "mode": 644, "size": 3928}
+    ```bash
+    ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' <path> || ls -ld <path> )
+    ```
 
-    plus ``atime``/``mtime``/``ctime`` -- epoch timestamps parsed into
-    *naive UTC* ``datetime``s, pyinfra's convention (the ``ls -ld`` fallback
-    provides only an mtime, so its atime/ctime read as None). ``mode`` is
-    the octal-looking int pyinfra returns (644, 4755, ...), including the
-    setuid/setgid/sticky bits. A path that does not exist (no output) reads
-    as ``None``; one that exists but is not a regular file (a directory,
-    symlink, socket, ...) reads as ``False`` -- ``Directory`` and ``Link``
-    are the directory- and link-accepting siblings, and only ``Link``'s
-    dict carries the ``link_target`` key. Like pyinfra,
-    a leading ``~/`` stays unquoted so the remote shell expands it; the
-    rest of the path is quoted.
+    return:
+
+    ```python
+    dict[str, Any] | Literal[False] | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_file.py``.
     """
+
+    # Mirrors pyinfra's ``files.File``: the path is guarded with
+    # ``test -e``/``test -L`` (so a dangling symlink is still probed), then
+    # described by GNU ``stat -c``, falling back to BSD ``stat -f`` and
+    # finally ``ls -ld``. The parsed result is a dict, for example::
+    #
+    #     {"user": "pyinfra", "group": "pyinfra", "mode": 644, "size": 3928}
+    #
+    # plus ``atime``/``mtime``/``ctime`` -- epoch timestamps parsed into
+    # *naive UTC* ``datetime``s, pyinfra's convention (the ``ls -ld`` fallback
+    # provides only an mtime, so its atime/ctime read as None). ``mode`` is
+    # the octal-looking int pyinfra returns (644, 4755, ...), including the
+    # setuid/setgid/sticky bits. A path that does not exist (no output) reads
+    # as ``None``; one that exists but is not a regular file (a directory,
+    # symlink, socket, ...) reads as ``False`` -- ``Directory`` and ``Link``
+    # are the directory- and link-accepting siblings, and only ``Link``'s
+    # dict carries the ``link_target`` key. Like pyinfra,
+    # a leading ``~/`` stays unquoted so the remote shell expands it; the
+    # rest of the path is quoted.
 
     #: pyinfra's ``type`` field: only a regular file is accepted; every other
     #: path type (directory, link, socket, ...) reads as False.
@@ -494,14 +589,29 @@ class File:
 class Directory(File):
     """Metadata for a directory, False for a non-directory path, None if absent.
 
-    Mirrors pyinfra's ``files.Directory`` -- its ``File`` subclass with
-    ``type = "directory"``: the same ``test -e``/``test -L`` guard and
-    stat/ls chain (``command`` and ``parse`` are inherited), but the type
-    flag must be ``d``, so a regular file, symlink, socket, ... reads as
-    ``False`` instead. The dict shape, *naive UTC* timestamps and
-    octal-looking ``mode`` int are exactly ``File``'s, and a leading ``~/``
-    likewise stays unquoted for the remote shell to expand.
+    command:
+
+    ```bash
+    ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' <path> || ls -ld <path> )
+    ```
+
+    return:
+
+    ```python
+    dict[str, Any] | Literal[False] | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_directory.py``.
     """
+
+    # Mirrors pyinfra's ``files.Directory`` -- its ``File`` subclass with
+    # ``type = "directory"``: the same ``test -e``/``test -L`` guard and
+    # stat/ls chain (``command`` and ``parse`` are inherited), but the type
+    # flag must be ``d``, so a regular file, symlink, socket, ... reads as
+    # ``False`` instead. The dict shape, *naive UTC* timestamps and
+    # octal-looking ``mode`` int are exactly ``File``'s, and a leading ``~/``
+    # likewise stays unquoted for the remote shell to expand.
 
     #: pyinfra's ``type`` field: only a directory is accepted; every other
     #: path type (file, link, socket, ...) reads as False.
@@ -532,23 +642,38 @@ class Directory(File):
 class Link(File):
     """Metadata for a symlink plus its target, False for non-link, None if absent.
 
-    Mirrors pyinfra's ``files.Link`` -- its ``File`` subclass with
-    ``type = "link"``: the same ``test -e``/``test -L`` guard and stat/ls
-    chain (``command`` and ``parse`` are inherited), but the type flag must
-    be ``l``, so a regular file, directory, socket, ... reads as ``False``
-    instead. The dict is ``File``'s shape plus a ``link_target`` key -- the
-    target path with the stat/ls quoting stripped, exactly as the link
-    records it (a relative target stays relative), for example::
+    command:
 
-        {"user": "pyinfra", "group": "pyinfra", "link_target": "/path/to/link/target"}
+    ```bash
+    ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' <path> || ls -ld <path> )
+    ```
 
-    The ``test -L`` guard lets a *dangling* symlink through to the
-    ``ls -ld`` fallback (both ``stat`` forms follow the link and fail), so
-    a broken link is still reported with its target. Where ``FileLink`` is
-    the cheap ``readlink`` probe ``files.link`` consumes, ``Link`` is the
-    richer stat-level read for auditing the link itself -- ownership, mode,
-    timestamps -- alongside where it points.
+    return:
+
+    ```python
+    dict[str, Any] | Literal[False] | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_link.py``.
     """
+
+    # Mirrors pyinfra's ``files.Link`` -- its ``File`` subclass with
+    # ``type = "link"``: the same ``test -e``/``test -L`` guard and stat/ls
+    # chain (``command`` and ``parse`` are inherited), but the type flag must
+    # be ``l``, so a regular file, directory, socket, ... reads as ``False``
+    # instead. The dict is ``File``'s shape plus a ``link_target`` key -- the
+    # target path with the stat/ls quoting stripped, exactly as the link
+    # records it (a relative target stays relative), for example::
+    #
+    #     {"user": "pyinfra", "group": "pyinfra", "link_target": "/path/to/link/target"}
+    #
+    # The ``test -L`` guard lets a *dangling* symlink through to the
+    # ``ls -ld`` fallback (both ``stat`` forms follow the link and fail), so
+    # a broken link is still reported with its target. Where ``FileLink`` is
+    # the cheap ``readlink`` probe ``files.link`` consumes, ``Link`` is the
+    # richer stat-level read for auditing the link itself -- ownership, mode,
+    # timestamps -- alongside where it points.
 
     #: pyinfra's ``type`` field: only a symlink is accepted; every other
     #: path type (file, directory, socket, ...) reads as False.

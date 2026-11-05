@@ -1,31 +1,31 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""The ``hardware`` module: ``BlockDevices``, ``CpuInfo``, ``Cpus``,
-``DiskStats``, ``DmiInfo``, ``Ipv4Addrs``, ``Ipv6Addrs``, ``LsBlk``,
-``NetworkDevices`` and ``SmbiosInfo``.
-
-Fact side: ``BlockDevices`` (the mounted block devices and their disk usage,
-parsed from ``df``), ``CpuInfo`` (the CPU details reported by ``lscpu``),
-``Cpus`` (the number of online CPUs reported by ``getconf``),
-``DiskStats`` (the per-device IO counters read from ``/proc/diskstats``),
-``DmiInfo`` (the system identity, BIOS and chassis fields exposed under
-``/sys/class/dmi/id/``), ``Ipv4Addrs`` (the IPv4 addresses per network
-interface), ``Ipv6Addrs`` (the IPv6 addresses per network interface),
-``LsBlk`` (the complete block device tree reported by ``lsblk -J``,
-mounted or not), ``NetworkDevices`` (the full network device details --
-ether, mtu, state and both address families with their mask/broadcast
-details), the last three parsed from ``ip addr show`` or ``ifconfig -a``,
-and ``SmbiosInfo`` (the full SMBIOS/DMI tables decoded by ``dmidecode``).
-``DiskStats``, ``DmiInfo``, ``LsBlk`` and ``SmbiosInfo`` are reemote5
-originals with no pyinfra counterpart: ``DiskStats`` and ``LsBlk``
-complement ``BlockDevices``, whose ``df`` listing only shows mounted
-filesystems, while ``DmiInfo`` and ``SmbiosInfo`` report the machine's
-firmware identity -- manufacturer, product name, serial number, BIOS
-version and chassis type -- for asset tracking and conditional execution.
-Like every fact they are phase-unaware: the ``process`` coroutine just gathers
-the raw value. The namespace holds no operations yet.
-"""
+# """The ``hardware`` module: ``BlockDevices``, ``CpuInfo``, ``Cpus``,
+# ``DiskStats``, ``DmiInfo``, ``Ipv4Addrs``, ``Ipv6Addrs``, ``LsBlk``,
+# ``NetworkDevices`` and ``SmbiosInfo``.
+#
+# Fact side: ``BlockDevices`` (the mounted block devices and their disk usage,
+# parsed from ``df``), ``CpuInfo`` (the CPU details reported by ``lscpu``),
+# ``Cpus`` (the number of online CPUs reported by ``getconf``),
+# ``DiskStats`` (the per-device IO counters read from ``/proc/diskstats``),
+# ``DmiInfo`` (the system identity, BIOS and chassis fields exposed under
+# ``/sys/class/dmi/id/``), ``Ipv4Addrs`` (the IPv4 addresses per network
+# interface), ``Ipv6Addrs`` (the IPv6 addresses per network interface),
+# ``LsBlk`` (the complete block device tree reported by ``lsblk -J``,
+# mounted or not), ``NetworkDevices`` (the full network device details --
+# ether, mtu, state and both address families with their mask/broadcast
+# details), the last three parsed from ``ip addr show`` or ``ifconfig -a``,
+# and ``SmbiosInfo`` (the full SMBIOS/DMI tables decoded by ``dmidecode``).
+# ``DiskStats``, ``DmiInfo``, ``LsBlk`` and ``SmbiosInfo`` are reemote5
+# originals with no pyinfra counterpart: ``DiskStats`` and ``LsBlk``
+# complement ``BlockDevices``, whose ``df`` listing only shows mounted
+# filesystems, while ``DmiInfo`` and ``SmbiosInfo`` report the machine's
+# firmware identity -- manufacturer, product name, serial number, BIOS
+# version and chassis type -- for asset tracking and conditional execution.
+# Like every fact they are phase-unaware: the ``process`` coroutine just gathers
+# the raw value. The namespace holds no operations yet.
+# """
 
 import json
 import re
@@ -340,31 +340,46 @@ def _copy_device(info: dict[str, Any]) -> dict[str, Any]:
 class BlockDevices:
     """The mounted block devices, as a dict of device -> usage dict.
 
-    Mirrors pyinfra's ``hardware.BlockDevices``: ``df`` lists the mounted
-    filesystems and each matching row maps the device to its
-    ``{blocks, used, available, used_percent, mount}`` dict, for example::
+    command:
 
-        {
-            "/dev/sda1": {
-                "available": "39489508",
-                "used_percent": "3",
-                "mount": "/",
-                "used": "836392",
-                "blocks": "40325900",
-            },
-        }
+    ```bash
+    df
+    ```
 
-    Every value stays a raw string (pyinfra does not convert the block
-    counts or the percentage to ints). The header row and any line that
-    does not match the ``df`` row shape are skipped, as is the ``none``
-    pseudo-filesystem; a repeated device keeps the last row. Empty output
-    (a failed read) maps to ``{}``, pyinfra's ``default = dict``.
+    return:
 
-    Because ``df`` only lists mounted filesystems, unmounted disks, LVM
-    volumes and raw devices never appear here; the reemote5-original
-    ``LsBlk`` sibling reports the complete block device tree and
-    ``DiskStats`` the per-device IO counters.
+    ```python
+    dict[str, dict[str, str]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/hardware/hardware_block_devices.py``.
     """
+
+    # Mirrors pyinfra's ``hardware.BlockDevices``: ``df`` lists the mounted
+    # filesystems and each matching row maps the device to its
+    # ``{blocks, used, available, used_percent, mount}`` dict, for example::
+    #
+    #     {
+    #         "/dev/sda1": {
+    #             "available": "39489508",
+    #             "used_percent": "3",
+    #             "mount": "/",
+    #             "used": "836392",
+    #             "blocks": "40325900",
+    #         },
+    #     }
+    #
+    # Every value stays a raw string (pyinfra does not convert the block
+    # counts or the percentage to ints). The header row and any line that
+    # does not match the ``df`` row shape are skipped, as is the ``none``
+    # pseudo-filesystem; a repeated device keeps the last row. Empty output
+    # (a failed read) maps to ``{}``, pyinfra's ``default = dict``.
+    #
+    # Because ``df`` only lists mounted filesystems, unmounted disks, LVM
+    # volumes and raw devices never appear here; the reemote5-original
+    # ``LsBlk`` sibling reports the complete block device tree and
+    # ``DiskStats`` the per-device IO counters.
 
     #: Shell used to gather the mounted block devices over SSH.
     COMMAND = "df"
@@ -407,29 +422,44 @@ class BlockDevices:
 class CpuInfo:
     """The CPU details reported by ``lscpu``, as a dict (or None).
 
-    Mirrors pyinfra's ``hardware.CpuInfo``: ``LANG=C lscpu`` prints
-    ``Key: value`` rows, and each row maps its stripped key to its stripped
-    value, for example::
+    command:
 
-        {
-            "Architecture": "x86_64",
-            "CPU(s)": "4",
-            "Vendor ID": "GenuineIntel",
-            "Model name": "Intel(R) Atom(TM) CPU N2800   @ 1.86GHz",
-            "Flags": ["fpu", "vme", "de", "pse", "tsc", "msr"],
-        }
+    ```bash
+    LANG=C lscpu
+    ```
 
-    A key containing ``flag`` (case-insensitively, e.g. ``Flags``) has its
-    value split on whitespace into a list of tokens; every other value stays
-    a raw string. As in pyinfra the value is the segment after the *first*
-    colon (``line.split(":")[1]``), so a second colon in a value truncates it
-    -- no ``lscpu`` row in pyinfra's fixtures carries one. Lines without a
-    colon are skipped (pyinfra would raise ``IndexError`` on them; reemote5
-    hardens the parser). Empty output (a failed read) reads as ``None``,
-    exactly like pyinfra's ``invalid`` fixture. pyinfra's ``requires_command``
-    gating is deliberately dropped: a *missing* ``lscpu`` exits 127, which
-    ``run_shell`` reports as ``CommandNotFoundError`` rather than ``None``.
+    return:
+
+    ```python
+    dict[str, str | list[str]] | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/hardware/hardware_cpu_info.py``.
     """
+
+    # Mirrors pyinfra's ``hardware.CpuInfo``: ``LANG=C lscpu`` prints
+    # ``Key: value`` rows, and each row maps its stripped key to its stripped
+    # value, for example::
+    #
+    #     {
+    #         "Architecture": "x86_64",
+    #         "CPU(s)": "4",
+    #         "Vendor ID": "GenuineIntel",
+    #         "Model name": "Intel(R) Atom(TM) CPU N2800   @ 1.86GHz",
+    #         "Flags": ["fpu", "vme", "de", "pse", "tsc", "msr"],
+    #     }
+    #
+    # A key containing ``flag`` (case-insensitively, e.g. ``Flags``) has its
+    # value split on whitespace into a list of tokens; every other value stays
+    # a raw string. As in pyinfra the value is the segment after the *first*
+    # colon (``line.split(":")[1]``), so a second colon in a value truncates it
+    # -- no ``lscpu`` row in pyinfra's fixtures carries one. Lines without a
+    # colon are skipped (pyinfra would raise ``IndexError`` on them; reemote5
+    # hardens the parser). Empty output (a failed read) reads as ``None``,
+    # exactly like pyinfra's ``invalid`` fixture. pyinfra's ``requires_command``
+    # gating is deliberately dropped: a *missing* ``lscpu`` exits 127, which
+    # ``run_shell`` reports as ``CommandNotFoundError`` rather than ``None``.
 
     #: Shell used to gather the CPU details over SSH.
     COMMAND = "LANG=C lscpu"
@@ -474,18 +504,33 @@ class CpuInfo:
 class Cpus:
     """The number of online CPUs on the machine, as an int (or None).
 
-    Mirrors pyinfra's ``hardware.Cpus``: ``getconf NPROCESSORS_ONLN`` (with
-    a fallback to the underscore-prefixed ``_NPROCESSORS_ONLN`` name for
-    platforms without the plain one) prints the count of online processors,
-    and the first output line is converted with ``int()``, for example::
+    command:
 
-        1
+    ```bash
+    getconf NPROCESSORS_ONLN 2> /dev/null || getconf _NPROCESSORS_ONLN
+    ```
 
-    Anything after the first line is ignored (pyinfra's ``list(output)[0]``).
-    A first line that is not an integer reads as ``None`` -- pyinfra's
-    ``invalid`` fixture ("nope") -- as does empty output (a failed read),
-    which pyinfra answers with its ``default()`` fallback of ``None``.
+    return:
+
+    ```python
+    int | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/hardware/hardware_cpus.py``.
     """
+
+    # Mirrors pyinfra's ``hardware.Cpus``: ``getconf NPROCESSORS_ONLN`` (with
+    # a fallback to the underscore-prefixed ``_NPROCESSORS_ONLN`` name for
+    # platforms without the plain one) prints the count of online processors,
+    # and the first output line is converted with ``int()``, for example::
+    #
+    #     1
+    #
+    # Anything after the first line is ignored (pyinfra's ``list(output)[0]``).
+    # A first line that is not an integer reads as ``None`` -- pyinfra's
+    # ``invalid`` fixture ("nope") -- as does empty output (a failed read),
+    # which pyinfra answers with its ``default()`` fallback of ``None``.
 
     #: Shell used to gather the online CPU count over SSH.
     COMMAND = "getconf NPROCESSORS_ONLN 2> /dev/null || getconf _NPROCESSORS_ONLN"
@@ -520,42 +565,57 @@ class Cpus:
 class DiskStats:
     """The per-device IO counters, as a dict of device -> counter dict.
 
-    A reemote5 original (pyinfra has no counterpart): ``cat
-    /proc/diskstats`` lists one row per block device -- mounted or not --
-    and each maps its device name to the kernel's IO counters as ints,
-    for example::
+    command:
 
-        {
-            "sda": {
-                "reads_completed": 12345,
-                "reads_merged": 678,
-                "sectors_read": 901234,
-                "ms_reading": 5678,
-                "writes_completed": 23456,
-                "writes_merged": 7890,
-                "sectors_written": 1234567,
-                "ms_writing": 8901,
-                "ios_in_progress": 0,
-                "ms_doing_io": 12345,
-                "weighted_ms_doing_io": 14567,
-            },
-        }
+    ```bash
+    cat /proc/diskstats
+    ```
 
-    ``/proc/diskstats`` is read directly rather than through ``iostat``
-    so no sysstat package is required on the target. The eleven classic
-    counters are always present; a 4.18+ kernel adds the four
-    ``discards_*``/``ms_discarding`` counters and a 5.5+ kernel the two
-    ``flush_requests``/``ms_flushing`` counters, each group included only
-    when the row carries it. Sectors are 512-byte units regardless of the
-    device's physical sector size. The counters are cumulative since
-    boot: a single gather is a snapshot, and a rate needs two gathers
-    subtracted over their elapsed time. Every row is kept -- including
-    ``loop``/``ram``/``dm-*`` devices -- so the caller can filter; a
-    repeated device keeps the last row. Rows with fewer than the eleven
-    classic counters or a non-integer counter are skipped, and any
-    columns beyond the flush group (a future kernel) are ignored. Empty
-    output (a failed read) maps to ``{}``, the house dict-fact fallback.
+    return:
+
+    ```python
+    dict[str, dict[str, int]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/hardware/hardware_disk_stats.py``.
     """
+
+    # A reemote5 original (pyinfra has no counterpart): ``cat
+    # /proc/diskstats`` lists one row per block device -- mounted or not --
+    # and each maps its device name to the kernel's IO counters as ints,
+    # for example::
+    #
+    #     {
+    #         "sda": {
+    #             "reads_completed": 12345,
+    #             "reads_merged": 678,
+    #             "sectors_read": 901234,
+    #             "ms_reading": 5678,
+    #             "writes_completed": 23456,
+    #             "writes_merged": 7890,
+    #             "sectors_written": 1234567,
+    #             "ms_writing": 8901,
+    #             "ios_in_progress": 0,
+    #             "ms_doing_io": 12345,
+    #             "weighted_ms_doing_io": 14567,
+    #         },
+    #     }
+    #
+    # ``/proc/diskstats`` is read directly rather than through ``iostat``
+    # so no sysstat package is required on the target. The eleven classic
+    # counters are always present; a 4.18+ kernel adds the four
+    # ``discards_*``/``ms_discarding`` counters and a 5.5+ kernel the two
+    # ``flush_requests``/``ms_flushing`` counters, each group included only
+    # when the row carries it. Sectors are 512-byte units regardless of the
+    # device's physical sector size. The counters are cumulative since
+    # boot: a single gather is a snapshot, and a rate needs two gathers
+    # subtracted over their elapsed time. Every row is kept -- including
+    # ``loop``/``ram``/``dm-*`` devices -- so the caller can filter; a
+    # repeated device keeps the last row. Rows with fewer than the eleven
+    # classic counters or a non-integer counter are skipped, and any
+    # columns beyond the flush group (a future kernel) are ignored. Empty
+    # output (a failed read) maps to ``{}``, the house dict-fact fallback.
 
     #: Shell used to gather the per-device IO counters over SSH.
     COMMAND = "cat /proc/diskstats"
@@ -602,36 +662,51 @@ class DiskStats:
 class DmiInfo:
     """The DMI identity fields from sysfs, as a dict of field -> value.
 
-    A reemote5 original (pyinfra has no counterpart): ``grep -H ''
-    /sys/class/dmi/id/*`` dumps the kernel-exposed DMI identity files as
-    ``path:value`` rows, and each maps its file name to its stripped
-    value, for example::
+    command:
 
-        {
-            "sys_vendor": "Dell Inc.",
-            "product_name": "PowerEdge R640",
-            "product_serial": "7XYZ123",
-            "bios_vendor": "Dell Inc.",
-            "bios_version": "2.12.2",
-            "bios_date": "07/09/2021",
-            "chassis_type": "23",
-        }
+    ```bash
+    grep -H '' /sys/class/dmi/id/* 2> /dev/null || true
+    ```
 
-    Reading sysfs needs no ``dmidecode`` binary and no root for most
-    fields, so this is the unprivileged sibling of ``SmbiosInfo`` (which
-    decodes the full SMBIOS tables but usually requires root). The
-    root-only files (``product_serial``, ``product_uuid``,
-    ``board_serial``, ``chassis_serial``) are simply absent when the
-    login user cannot read them -- their read errors go to ``/dev/null``.
-    Values stay raw strings: ``chassis_type`` is the numeric SMBIOS
-    chassis code (e.g. ``3`` desktop, ``10`` notebook, ``23`` rack mount;
-    ``SmbiosInfo`` reports the decoded label instead). The directory's
-    ``uevent`` and ``modalias`` entries are skipped, as are empty values
-    and any line outside the ``/sys/class/dmi/id/`` prefix. A machine
-    without DMI (most containers, many ARM boards and VMs) has no such
-    directory: the failed read maps to ``{}``, the house dict-fact
-    fallback, so an empty dict means "no DMI identity available".
+    return:
+
+    ```python
+    dict[str, str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/hardware/hardware_dmi_info.py``.
     """
+
+    # A reemote5 original (pyinfra has no counterpart): ``grep -H ''
+    # /sys/class/dmi/id/*`` dumps the kernel-exposed DMI identity files as
+    # ``path:value`` rows, and each maps its file name to its stripped
+    # value, for example::
+    #
+    #     {
+    #         "sys_vendor": "Dell Inc.",
+    #         "product_name": "PowerEdge R640",
+    #         "product_serial": "7XYZ123",
+    #         "bios_vendor": "Dell Inc.",
+    #         "bios_version": "2.12.2",
+    #         "bios_date": "07/09/2021",
+    #         "chassis_type": "23",
+    #     }
+    #
+    # Reading sysfs needs no ``dmidecode`` binary and no root for most
+    # fields, so this is the unprivileged sibling of ``SmbiosInfo`` (which
+    # decodes the full SMBIOS tables but usually requires root). The
+    # root-only files (``product_serial``, ``product_uuid``,
+    # ``board_serial``, ``chassis_serial``) are simply absent when the
+    # login user cannot read them -- their read errors go to ``/dev/null``.
+    # Values stay raw strings: ``chassis_type`` is the numeric SMBIOS
+    # chassis code (e.g. ``3`` desktop, ``10`` notebook, ``23`` rack mount;
+    # ``SmbiosInfo`` reports the decoded label instead). The directory's
+    # ``uevent`` and ``modalias`` entries are skipped, as are empty values
+    # and any line outside the ``/sys/class/dmi/id/`` prefix. A machine
+    # without DMI (most containers, many ARM boards and VMs) has no such
+    # directory: the failed read maps to ``{}``, the house dict-fact
+    # fallback, so an empty dict means "no DMI identity available".
 
     #: Shell used to gather the DMI identity fields over SSH: grep prefixes
     #: each value with its file path; unreadable files and a missing
@@ -675,30 +750,45 @@ class DmiInfo:
 class Ipv4Addrs:
     """The IPv4 addresses per network interface, as interface -> list.
 
-    Mirrors pyinfra's ``hardware.Ipv4Addrs``: ``ip -j addr show`` (JSON)
-    or, failing that, ``ip addr show`` / ``ifconfig -a`` (text) lists the
-    interfaces, and each interface carrying IPv4 addresses maps to the
-    list of those addresses -- the primary address first, then any
-    aliases in listing order, for example::
+    command:
 
-        {
-            "eth0": ["127.0.0.1"],
-        }
+    ```bash
+    ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a
+    ```
 
-    Interfaces without an IPv4 address are not part of the dict. The
-    addresses are the raw strings the command printed (no octet
-    validation, as pyinfra's own fixture shows). Empty or undecodable
-    output reads as ``{}``, pyinfra's ``default = dict``.
+    return:
 
-    pyinfra implements this as a ``ShortFactBase`` projection over
-    ``hardware.NetworkDevices``; reemote5 collapses that indirection into
-    this single class (like ``HasGui``), keeping only the IPv4 address
-    lists (the IPv6 addresses are the sibling ``Ipv6Addrs`` fact's
-    projection); the richer device dict -- ether, mtu, state and each
-    address's mask/broadcast details -- is the sibling ``NetworkDevices``
-    fact. Entries the JSON walker cannot read (non-dict devices or address
-    entries) are skipped rather than raising; reemote5 hardens the parser.
+    ```python
+    dict[str, list[str]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/hardware/hardware_ipv4_addrs.py``.
     """
+
+    # Mirrors pyinfra's ``hardware.Ipv4Addrs``: ``ip -j addr show`` (JSON)
+    # or, failing that, ``ip addr show`` / ``ifconfig -a`` (text) lists the
+    # interfaces, and each interface carrying IPv4 addresses maps to the
+    # list of those addresses -- the primary address first, then any
+    # aliases in listing order, for example::
+    #
+    #     {
+    #         "eth0": ["127.0.0.1"],
+    #     }
+    #
+    # Interfaces without an IPv4 address are not part of the dict. The
+    # addresses are the raw strings the command printed (no octet
+    # validation, as pyinfra's own fixture shows). Empty or undecodable
+    # output reads as ``{}``, pyinfra's ``default = dict``.
+    #
+    # pyinfra implements this as a ``ShortFactBase`` projection over
+    # ``hardware.NetworkDevices``; reemote5 collapses that indirection into
+    # this single class (like ``HasGui``), keeping only the IPv4 address
+    # lists (the IPv6 addresses are the sibling ``Ipv6Addrs`` fact's
+    # projection); the richer device dict -- ether, mtu, state and each
+    # address's mask/broadcast details -- is the sibling ``NetworkDevices``
+    # fact. Entries the JSON walker cannot read (non-dict devices or address
+    # entries) are skipped rather than raising; reemote5 hardens the parser.
 
     #: Shell used to gather the interface addresses over SSH: JSON first,
     #: then the plain-text `ip` and `ifconfig` fallbacks (pyinfra verbatim).
@@ -733,32 +823,47 @@ class Ipv4Addrs:
 class Ipv6Addrs:
     """The IPv6 addresses per network interface, as interface -> list.
 
-    Mirrors pyinfra's ``hardware.Ipv6Addrs``: ``ip -j addr show`` (JSON)
-    or, failing that, ``ip addr show`` / ``ifconfig -a`` (text) lists the
-    interfaces, and each interface carrying IPv6 addresses maps to the
-    list of those addresses -- the primary address first, then any
-    aliases in listing order, for example::
+    command:
 
-        {
-            "eth0": ["fe80::a00:27ff::2"],
-        }
+    ```bash
+    ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a
+    ```
 
-    Interfaces without an IPv6 address are not part of the dict. The
-    addresses are the raw strings the command printed (no address
-    validation -- pyinfra's documented example above even carries a
-    doubled ``::``). Empty or undecodable output reads as ``{}``,
-    pyinfra's ``default = dict``.
+    return:
 
-    pyinfra implements this as a ``ShortFactBase`` projection over
-    ``hardware.NetworkDevices`` (a subclass of its ``Ipv4Addrs`` swapping
-    the projected family); reemote5 collapses that indirection into this
-    single sibling class sharing ``Ipv4Addrs``' command and projection
-    helpers, keeping only the IPv6 address lists; the richer device dict
-    -- ether, mtu, state and each address's mask details -- is the sibling
-    ``NetworkDevices`` fact. Entries the JSON walker cannot read (non-dict
-    devices or address entries) are skipped rather than raising; reemote5
-    hardens the parser.
+    ```python
+    dict[str, list[str]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/hardware/hardware_ipv6_addrs.py``.
     """
+
+    # Mirrors pyinfra's ``hardware.Ipv6Addrs``: ``ip -j addr show`` (JSON)
+    # or, failing that, ``ip addr show`` / ``ifconfig -a`` (text) lists the
+    # interfaces, and each interface carrying IPv6 addresses maps to the
+    # list of those addresses -- the primary address first, then any
+    # aliases in listing order, for example::
+    #
+    #     {
+    #         "eth0": ["fe80::a00:27ff::2"],
+    #     }
+    #
+    # Interfaces without an IPv6 address are not part of the dict. The
+    # addresses are the raw strings the command printed (no address
+    # validation -- pyinfra's documented example above even carries a
+    # doubled ``::``). Empty or undecodable output reads as ``{}``,
+    # pyinfra's ``default = dict``.
+    #
+    # pyinfra implements this as a ``ShortFactBase`` projection over
+    # ``hardware.NetworkDevices`` (a subclass of its ``Ipv4Addrs`` swapping
+    # the projected family); reemote5 collapses that indirection into this
+    # single sibling class sharing ``Ipv4Addrs``' command and projection
+    # helpers, keeping only the IPv6 address lists; the richer device dict
+    # -- ether, mtu, state and each address's mask details -- is the sibling
+    # ``NetworkDevices`` fact. Entries the JSON walker cannot read (non-dict
+    # devices or address entries) are skipped rather than raising; reemote5
+    # hardens the parser.
 
     #: Shell used to gather the interface addresses over SSH: JSON first,
     #: then the plain-text `ip` and `ifconfig` fallbacks (pyinfra verbatim,
@@ -794,41 +899,56 @@ class Ipv6Addrs:
 class LsBlk:
     """The complete block device tree, as a list of ``lsblk -J`` nodes.
 
-    A reemote5 original (pyinfra has no counterpart): ``lsblk -J -b -o
-    NAME,TYPE,SIZE,MOUNTPOINT`` prints the whole block device tree as
-    JSON -- including unmounted disks, partitions, LVM volumes and raw
-    devices that the ``df``-based ``BlockDevices`` sibling never sees --
-    and the fact returns its ``blockdevices`` array, for example::
+    command:
 
-        [
-            {
-                "name": "sda",
-                "type": "disk",
-                "size": 21474836480,
-                "mountpoint": None,
-                "children": [
-                    {
-                        "name": "sda1",
-                        "type": "part",
-                        "size": 1073741824,
-                        "mountpoint": "/boot",
-                    },
-                ],
-            },
-        ]
+    ```bash
+    lsblk -J -b -o NAME,TYPE,SIZE,MOUNTPOINT
+    ```
 
-    Sizes are byte counts as ints (``-b``); ``mountpoint`` is None for an
-    unmounted device, and the singular ``MOUNTPOINT`` column reports only
-    the last mount when a device is mounted at several paths. Partitions,
-    LVM logical volumes and other stacked devices nest under their
-    parent's ``children`` list, so the tree structure is preserved
-    verbatim. Empty or undecodable output, a non-dict JSON document and a
-    missing/non-list ``blockdevices`` key all read as ``[]``, the house
-    empty-fallback for list facts. Non-dict nodes are skipped at every
-    level and a non-list ``children`` value is dropped rather than
-    raising; reemote5 hardens the parser. A *missing* ``lsblk`` exits
-    127, which ``run_shell`` reports as ``CommandNotFoundError``.
+    return:
+
+    ```python
+    list[dict[str, Any]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/hardware/hardware_lsblk.py``.
     """
+
+    # A reemote5 original (pyinfra has no counterpart): ``lsblk -J -b -o
+    # NAME,TYPE,SIZE,MOUNTPOINT`` prints the whole block device tree as
+    # JSON -- including unmounted disks, partitions, LVM volumes and raw
+    # devices that the ``df``-based ``BlockDevices`` sibling never sees --
+    # and the fact returns its ``blockdevices`` array, for example::
+    #
+    #     [
+    #         {
+    #             "name": "sda",
+    #             "type": "disk",
+    #             "size": 21474836480,
+    #             "mountpoint": None,
+    #             "children": [
+    #                 {
+    #                     "name": "sda1",
+    #                     "type": "part",
+    #                     "size": 1073741824,
+    #                     "mountpoint": "/boot",
+    #                 },
+    #             ],
+    #         },
+    #     ]
+    #
+    # Sizes are byte counts as ints (``-b``); ``mountpoint`` is None for an
+    # unmounted device, and the singular ``MOUNTPOINT`` column reports only
+    # the last mount when a device is mounted at several paths. Partitions,
+    # LVM logical volumes and other stacked devices nest under their
+    # parent's ``children`` list, so the tree structure is preserved
+    # verbatim. Empty or undecodable output, a non-dict JSON document and a
+    # missing/non-list ``blockdevices`` key all read as ``[]``, the house
+    # empty-fallback for list facts. Non-dict nodes are skipped at every
+    # level and a non-list ``children`` value is dropped rather than
+    # raising; reemote5 hardens the parser. A *missing* ``lsblk`` exits
+    # 127, which ``run_shell`` reports as ``CommandNotFoundError``.
 
     #: Shell used to gather the block device tree over SSH: JSON output,
     #: byte sizes and the four name/type/size/mountpoint columns.
@@ -866,57 +986,72 @@ class LsBlk:
 class NetworkDevices:
     """The network devices, as a dict of interface -> details dict.
 
-    Mirrors pyinfra's ``hardware.NetworkDevices``: ``ip -j addr show``
-    (JSON) or, failing that, ``ip addr show`` / ``ifconfig -a`` (text)
-    lists the interfaces, and each maps to its details -- the ``state``
-    (``UP``/``DOWN``/``UNKNOWN``), the optional ``ether`` MAC and ``mtu``,
-    and an ``ipv4``/``ipv6`` block per address family carrying the primary
-    ``address`` plus, when present, ``mask_bits``, ``netmask`` (IPv4 only),
-    ``broadcast`` (IPv4 only, possibly None) and any further addresses
-    under ``additional_ips``, for example::
+    command:
 
-        {
-            "enp1s0": {
-                "ether": "12:34:56:78:9A:BC",
-                "mtu": 1500,
-                "state": "UP",
-                "ipv4": {
-                    "address": "192.168.1.100",
-                    "mask_bits": 24,
-                    "netmask": "255.255.255.0"
-                },
-                "ipv6": {
-                    "address": "2001:db8:85a3::8a2e:370:7334",
-                    "mask_bits": 64,
-                    "additional_ips": [
-                        {"address": "fe80::1234:5678:9abc:def0", "mask_bits": 64}
-                    ]
-                }
-            },
-            "wlo1": {
-                "ether": "77:88:99:AA:BB:CC",
-                "mtu": 1500,
-                "state": "UNKNOWN"
-            }
-        }
+    ```bash
+    ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a
+    ```
 
-    The ``Ipv4Addrs``/``Ipv6Addrs`` siblings are the address-only
-    projections of this dict. Mask tokens are normalized by pyinfra's
-    ``mask`` helper: a prefix length expands to its dotted-quad netmask,
-    a hex (``0xffffff00``) or dotted-quad netmask counts its bits. In the
-    text branch the state is a token heuristic (``UP`` or ``DOWN``
-    anywhere in the device section, else ``UNKNOWN``), device names keep
-    any ``@parent`` suffix, and a later section for the same name wins
-    outright; the JSON branch reads ``operstate`` and keeps an ``ether``
-    even for loopback. Addresses stay raw strings, without validation.
-    Empty or undecodable output reads as ``{}``, pyinfra's
-    ``default = dict``.
+    return:
 
-    Deviations from pyinfra: parse errors on unreadable entries are
-    skipped silently (pyinfra logs them through its logger), and non-dict
-    JSON devices or address entries are skipped rather than raising;
-    reemote5 hardens the parser.
+    ```python
+    dict[str, dict[str, Any]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/hardware/hardware_network_devices.py``.
     """
+
+    # Mirrors pyinfra's ``hardware.NetworkDevices``: ``ip -j addr show``
+    # (JSON) or, failing that, ``ip addr show`` / ``ifconfig -a`` (text)
+    # lists the interfaces, and each maps to its details -- the ``state``
+    # (``UP``/``DOWN``/``UNKNOWN``), the optional ``ether`` MAC and ``mtu``,
+    # and an ``ipv4``/``ipv6`` block per address family carrying the primary
+    # ``address`` plus, when present, ``mask_bits``, ``netmask`` (IPv4 only),
+    # ``broadcast`` (IPv4 only, possibly None) and any further addresses
+    # under ``additional_ips``, for example::
+    #
+    #     {
+    #         "enp1s0": {
+    #             "ether": "12:34:56:78:9A:BC",
+    #             "mtu": 1500,
+    #             "state": "UP",
+    #             "ipv4": {
+    #                 "address": "192.168.1.100",
+    #                 "mask_bits": 24,
+    #                 "netmask": "255.255.255.0"
+    #             },
+    #             "ipv6": {
+    #                 "address": "2001:db8:85a3::8a2e:370:7334",
+    #                 "mask_bits": 64,
+    #                 "additional_ips": [
+    #                     {"address": "fe80::1234:5678:9abc:def0", "mask_bits": 64}
+    #                 ]
+    #             }
+    #         },
+    #         "wlo1": {
+    #             "ether": "77:88:99:AA:BB:CC",
+    #             "mtu": 1500,
+    #             "state": "UNKNOWN"
+    #         }
+    #     }
+    #
+    # The ``Ipv4Addrs``/``Ipv6Addrs`` siblings are the address-only
+    # projections of this dict. Mask tokens are normalized by pyinfra's
+    # ``mask`` helper: a prefix length expands to its dotted-quad netmask,
+    # a hex (``0xffffff00``) or dotted-quad netmask counts its bits. In the
+    # text branch the state is a token heuristic (``UP`` or ``DOWN``
+    # anywhere in the device section, else ``UNKNOWN``), device names keep
+    # any ``@parent`` suffix, and a later section for the same name wins
+    # outright; the JSON branch reads ``operstate`` and keeps an ``ether``
+    # even for loopback. Addresses stay raw strings, without validation.
+    # Empty or undecodable output reads as ``{}``, pyinfra's
+    # ``default = dict``.
+    #
+    # Deviations from pyinfra: parse errors on unreadable entries are
+    # skipped silently (pyinfra logs them through its logger), and non-dict
+    # JSON devices or address entries are skipped rather than raising;
+    # reemote5 hardens the parser.
 
     #: Shell used to gather the network device details over SSH: JSON
     #: first, then the plain-text `ip` and `ifconfig` fallbacks (pyinfra
@@ -952,53 +1087,68 @@ class NetworkDevices:
 class SmbiosInfo:
     """The decoded SMBIOS/DMI tables, as a dict of section -> field dict.
 
-    A reemote5 original (pyinfra has no counterpart): ``dmidecode -q``
-    prints the firmware's SMBIOS structures as titled sections of
-    tab-indented ``Key: value`` rows, and each section maps its verbatim
-    title to its field dict, for example::
+    command:
 
-        {
-            "BIOS Information": {
-                "Vendor": "Dell Inc.",
-                "Version": "2.12.2",
-                "Release Date": "07/09/2021",
-            },
-            "System Information": {
-                "Manufacturer": "Dell Inc.",
-                "Product Name": "PowerEdge R640",
-                "Serial Number": "7XYZ123",
-            },
-            "Chassis Information": {
-                "Manufacturer": "Dell Inc.",
-                "Type": "Rack Mount Chassis",
-            },
-        }
+    ```bash
+    dmidecode -q 2> /dev/null || sudo -n dmidecode -q 2> /dev/null || true
+    ```
 
-    This is the privileged sibling of ``DmiInfo``: ``dmidecode`` usually
-    requires root (and the binary must be installed), but in exchange it
-    decodes the full tables -- the chassis ``Type`` arrives as a label
-    (``Rack Mount Chassis``, ``Notebook``, ``Other``, ...) rather than
-    ``DmiInfo``'s numeric code, and sections beyond the identity fields
-    (processor, memory, ports, ...) are included too. When the direct
-    read fails, the command retries through ``sudo -n dmidecode -q`` -- a
-    deliberate, documented deviation from "facts never elevate": ``-n``
-    never prompts, so the retry succeeds only for a root login or
-    passwordless (``NOPASSWD``) sudo, creates no askpass file and raises
-    no ``PrivilegeError``; the inventory's ``sudo_password`` is
-    deliberately NOT consulted (the library's askpass elevation belongs
-    to operations). The ``-q`` flag suppresses the handle/SMBIOS-version
-    preamble. A field whose value is
-    a list of deeper-indented items (e.g. ``Characteristics``) collects
-    them into a list of strings; every other value stays a raw string,
-    and a colon-bearing field with no value and no items reads as ``""``.
-    A repeated section title (``Memory Device`` appears once per DIMM)
-    keeps the last occurrence, the house last-wins rule -- the identity,
-    BIOS and chassis sections this fact targets each appear once. A
-    failed read (missing ``dmidecode``, no root or passwordless sudo, no
-    SMBIOS tables) is swallowed by the command and maps to ``{}``, the
-    house dict-fact fallback -- an empty dict cannot distinguish "no
-    tables" from "no access"; use ``DmiInfo`` for an unprivileged read.
+    return:
+
+    ```python
+    dict[str, dict[str, str | list[str]]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/hardware/hardware_smbios_info.py``.
     """
+
+    # A reemote5 original (pyinfra has no counterpart): ``dmidecode -q``
+    # prints the firmware's SMBIOS structures as titled sections of
+    # tab-indented ``Key: value`` rows, and each section maps its verbatim
+    # title to its field dict, for example::
+    #
+    #     {
+    #         "BIOS Information": {
+    #             "Vendor": "Dell Inc.",
+    #             "Version": "2.12.2",
+    #             "Release Date": "07/09/2021",
+    #         },
+    #         "System Information": {
+    #             "Manufacturer": "Dell Inc.",
+    #             "Product Name": "PowerEdge R640",
+    #             "Serial Number": "7XYZ123",
+    #         },
+    #         "Chassis Information": {
+    #             "Manufacturer": "Dell Inc.",
+    #             "Type": "Rack Mount Chassis",
+    #         },
+    #     }
+    #
+    # This is the privileged sibling of ``DmiInfo``: ``dmidecode`` usually
+    # requires root (and the binary must be installed), but in exchange it
+    # decodes the full tables -- the chassis ``Type`` arrives as a label
+    # (``Rack Mount Chassis``, ``Notebook``, ``Other``, ...) rather than
+    # ``DmiInfo``'s numeric code, and sections beyond the identity fields
+    # (processor, memory, ports, ...) are included too. When the direct
+    # read fails, the command retries through ``sudo -n dmidecode -q`` -- a
+    # deliberate, documented deviation from "facts never elevate": ``-n``
+    # never prompts, so the retry succeeds only for a root login or
+    # passwordless (``NOPASSWD``) sudo, creates no askpass file and raises
+    # no ``PrivilegeError``; the inventory's ``sudo_password`` is
+    # deliberately NOT consulted (the library's askpass elevation belongs
+    # to operations). The ``-q`` flag suppresses the handle/SMBIOS-version
+    # preamble. A field whose value is
+    # a list of deeper-indented items (e.g. ``Characteristics``) collects
+    # them into a list of strings; every other value stays a raw string,
+    # and a colon-bearing field with no value and no items reads as ``""``.
+    # A repeated section title (``Memory Device`` appears once per DIMM)
+    # keeps the last occurrence, the house last-wins rule -- the identity,
+    # BIOS and chassis sections this fact targets each appear once. A
+    # failed read (missing ``dmidecode``, no root or passwordless sudo, no
+    # SMBIOS tables) is swallowed by the command and maps to ``{}``, the
+    # house dict-fact fallback -- an empty dict cannot distinguish "no
+    # tables" from "no access"; use ``DmiInfo`` for an unprivileged read.
 
     #: Shell used to gather the SMBIOS tables over SSH: quiet mode (no
     #: handle/version preamble), retried through passwordless ``sudo -n``

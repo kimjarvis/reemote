@@ -54,7 +54,7 @@ upgrades installed unpinned names (pyinfra's legacy blind upgrade), and
 `present=False` removes only what is installed, `purge=True` switching
 `remove` to `purge`. `update=True` runs a stateless `apt-get update` first;
 `upgrade=True` runs `apt-get upgrade`, gated by the
-[`SimulateOperationWillChange`][reemote5.modules.apt.apt.SimulateOperationWillChange]
+`SimulateOperationWillChange`
 fact exactly like `apt.dist_upgrade`. Where pyinfra's `cache_time` skips the
 update while its stamp file is fresh, reemote5 deliberately drops the option
 (update is always stateless); `force` (`--force-yes`) is dropped as
@@ -91,7 +91,7 @@ change.
 
 The standalone form of `apt.packages`' `upgrade=True` prefix:
 `apt.upgrade` mirrors pyinfra's `apt.upgrade`, gated by the
-[`SimulateOperationWillChange`][reemote5.modules.apt.apt.SimulateOperationWillChange]
+`SimulateOperationWillChange`
 fact — an `upgrade --dry-run` whose `N upgraded, N newly installed, N to
 remove and N not upgraded.` summary line decides whether the real upgrade
 would do anything. All-zero counts are a no-op; a failed simulation (no
@@ -116,7 +116,7 @@ nothing is sent, both plan as changes). Yielding `apt.update` then
 
 The whole-machine upgrade: `apt.dist_upgrade` mirrors pyinfra's
 `apt.dist_upgrade`, gated by the
-[`SimulateOperationWillChange`][reemote5.modules.apt.apt.SimulateOperationWillChange]
+`SimulateOperationWillChange`
 fact — a `dist-upgrade --dry-run` whose `N upgraded, N newly installed,
 N to remove and N not upgraded.` summary line decides whether the real
 upgrade would do anything. All-zero counts are a no-op; a failed simulation

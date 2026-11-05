@@ -32,13 +32,14 @@ inventory comes from a JSON file, the way
 4. Gather ``ApkRepositories`` on the guarded hosts at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's raw list of ``{url, tag}`` dictionaries
+   mapping -- then print each host's raw list of ``ApkRepository`` entries
    with ``json.dumps(..., indent=2)``.
 
 ``ApkRepositories`` cats ``/etc/apk/repositories`` behind a ``|| true``, so
 a host without apk simply reports ``[]``, and parses each non-comment line
-into a dict of the repository ``url`` and its apk ``tag`` (the empty string
-for an untagged line; ``@testing``-style tags lose the leading ``@``).
+into an ``ApkRepository`` dict of the repository ``url`` and its apk ``tag``
+(the empty string for an untagged line; ``@testing``-style tags lose the
+leading ``@``).
 Comments, blank lines and malformed lines are skipped and entries keep file
 order. This is the auditing view pyinfra's apk namespace has no fact for --
 read it before conditionally rewriting repository sources. The fact takes
@@ -127,7 +128,7 @@ async def main() -> None:
         # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans ApkRepositories.process out with asyncio.gather and returns a
         # host-name-keyed mapping. process cats /etc/apk/repositories over SSH
-        # and parses the lines into a list of {url, tag} dictionaries.
+        # and parses the lines into a list of ApkRepository entries.
         apk_repositories = await gather_fact(hosts, ApkRepositories)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's

@@ -31,7 +31,7 @@ your machines.
 and apk itself has no ``autoremove`` verb -- it exposes orphan purge as the
 ``--purge`` flag of ``apk add``/``apk fix``, which reemote5 splits out into
 this standalone operation so a deploy can clean up orphans without also
-performing an install or a repair. The ``ApkAutoremovable`` fact simulates
+performing an install or a repair. The ``ApkAutoremovablePackages`` fact simulates
 the purge (``apk add --purge --simulate``, which never removes anything
 and needs no root) and names exactly the orphaned packages: a non-empty
 list runs the real ``apk add --purge``, an empty list is a no-op. The
@@ -50,7 +50,7 @@ before reaching ``apk``. ``doas`` is passwordless here: reemote5 always runs
 login user a ``permit nopass`` rule in ``/etc/doas.conf`` (see
 ``examples/demonstrations/privilege/privilege_doas.py``); without one the
 driver raises ``PrivilegeError``. The read-only purge simulation behind
-``ApkAutoremovable`` needs no root, so only the purge itself is elevated.
+``ApkAutoremovablePackages`` needs no root, so only the purge itself is elevated.
 Pair this with
 ``apk_packages.py``'s ``apk.packages`` (``present=False``) to compose the
 remove-then-cleanup flow as two explicit, separately plannable steps -- the
@@ -65,7 +65,7 @@ make it deterministic: the predicate reads only **static** inventory data --
 mutable fact, and it is a stable module-level function, so the prepare and
 apply phases reach the same skip decision. On a host the guard rejects, the
 plan and the run log render the step as ``[skipped: when guard is_alpine]``
-and none of its commands -- nor the ``ApkAutoremovable`` fact behind it, the
+and none of its commands -- nor the ``ApkAutoremovablePackages`` fact behind it, the
 purge simulation -- is materialized at all, which is exactly why an
 apk-native operation must be guarded rather than run blind on a host without
 ``apk``. The project root's ``inventory.json`` holds one host in the

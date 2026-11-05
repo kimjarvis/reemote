@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: gather the ``apk.ApkPackages`` fact on a real Alpine server.
+"""Example: gather the ``apk.ApkInstalledPackages`` fact on a real Alpine server.
 
 This is a *usage* example, not part of the library. Like
 ``examples/modules/apt/apt_apt_packages.py``, it reads a single **fact**
@@ -29,20 +29,22 @@ inventory comes from a JSON file, the way
    ``"alpine"`` group alongside hosts in other groups, so the run prints its
    Alpine result plus a ``== Skipped (when guard is_alpine): ... ==`` line
    naming every other one.
-4. Gather ``ApkPackages`` on the guarded hosts at once with the driver's
+4. Gather ``ApkInstalledPackages`` on the guarded hosts at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
-   mapping -- then print each host's raw mapping of package name to sorted
-   version-and-release list with ``json.dumps(..., indent=2)``.
+   mapping -- then print each host's list of ``ApkInstalledPackage`` entries
+   (a package ``name`` with the sorted ``versions`` installed under it) with
+   ``json.dumps(..., indent=2)``.
 
-``ApkPackages`` runs ``apk list --installed`` and matches each
+``ApkInstalledPackages`` runs ``apk list --installed`` and matches each
 ``name-version arch {origin} (license) [installed]`` row with pyinfra's
 apk regex: multi-dash names like ``alpine-baselayout-data`` split from
 their ``3.6.5-r0``-style versions at the last ``-r<release>`` boundary,
 names carrying punctuation (``libstdc++``, ``p11-kit``) stay intact, and
-``WARNING: Ignoring APKINDEX...`` noise lines are ignored. Versions are
-de-duplicated and sorted per name. The fact takes no arguments, so the
-default gather needs none.
+``WARNING: Ignoring APKINDEX...`` noise lines are ignored. Each name's
+versions are de-duplicated and sorted, and one ``ApkInstalledPackage``
+entry per name is returned, the entries sorted by name. The fact takes no
+arguments, so the default gather needs none.
 
 The path is resolved from ``__file__``, so the example works from any
 working directory. Point ``INVENTORY_PATH`` at your own file (or edit
@@ -65,7 +67,7 @@ from pathlib import Path
 from typing import Any
 
 from reemote5 import (
-    ApkPackages,
+    ApkInstalledPackages,
     CommandError,
     Host,
     HostConnectionError,
@@ -125,11 +127,11 @@ async def main() -> None:
         if skipped:
             print("\n== Skipped (when guard is_alpine): " + ", ".join(skipped) + " ==")
         # Gather the fact across the guarded hosts concurrently: gather_fact
-        # fans ApkPackages.process out with asyncio.gather and returns a
+        # fans ApkInstalledPackages.process out with asyncio.gather and returns a
         # host-name-keyed mapping. process runs apk list --installed over SSH
-        # and parses the rows into a {package name: sorted version list}
-        # mapping.
-        apk_packages = await gather_fact(hosts, ApkPackages)
+        # and parses the rows into a list of ``ApkInstalledPackage`` entries,
+        # each one package name with its sorted version list.
+        apk_packages = await gather_fact(hosts, ApkInstalledPackages)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's
         # own message already names the file and the reason, so print just that
@@ -155,7 +157,7 @@ async def main() -> None:
         await asyncio.gather(*(host.aclose() for host in hosts))
     # Print in inventory order (gather_fact keys the results by host name).
     for host in hosts:
-        print(f"== {host.name}: apk.ApkPackages ==")
+        print(f"== {host.name}: apk.ApkInstalledPackages ==")
         print(json.dumps(apk_packages[host.name], indent=2))
 
 

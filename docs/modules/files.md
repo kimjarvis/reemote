@@ -1,5 +1,37 @@
 # files module
 
+## file Facts
+
+::: reemote5.modules.files.files
+    options:
+      show_root_heading: false
+      members:
+        - File
+        - Directory
+        - Link
+        - FileLink
+        - FileExists
+        - LocalSha1
+        - RemoteFileSha1
+        - FileContents
+
+## file Operations
+
+::: reemote5.modules.files.files
+    options:
+      show_root_heading: false
+      members:
+        - link
+        - file
+        - put
+        - get
+        - edit
+        - move
+
+
+
+<!---
+
 `reemote5.modules.files.files` combines the file facts and the file operations
 in a single source, so the read side (`FileLink`, `FileExists`,
 `LocalSha1`, `RemoteFileSha1`, `FileContents`, `File`, `Directory`, `Link`)
@@ -51,17 +83,6 @@ link is still reported with its target. Where `FileLink` is the cheap
 read for auditing the link itself — ownership, mode, timestamps —
 alongside where it points.
 
-::: reemote5.modules.files.files
-    options:
-      members:
-        - File
-        - Directory
-        - Link
-        - FileLink
-        - FileExists
-        - LocalSha1
-        - RemoteFileSha1
-        - FileContents
 
 ## Operations
 
@@ -131,12 +152,4 @@ content into a login-user-writable path in one run, then `files.move`
 installs it into `/etc` elevated in a second run (see the
 [example](../examples/modules/files.md)).
 
-::: reemote5.modules.files.files
-    options:
-      members:
-        - link
-        - file
-        - put
-        - get
-        - edit
-        - move
+--->

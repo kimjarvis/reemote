@@ -1,89 +1,89 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""The ``server`` module: systemd facts, ``Arch``, the ``group``/``service`` operations and waiting.
-
-Fact side (design doc section 5): ``Arch`` (the machine architecture from
-``uname -m``), ``AuthorizedKeys`` (the SSH public keys listed in a user's
-``~/.ssh/authorized_keys`` file), ``Date`` (the current datetime on the
-server, parsed from an ISO 8601 ``date`` timestamp), ``Groups`` (the group
-names listed in ``/etc/group``), ``HasGui`` (whether a known desktop-session
-binary is installed), ``Home`` (a user's home directory, resolved by shell
-tilde expansion), ``Hostname`` (the server's hostname from ``uname -n``),
-``Kernel`` (the kernel name from ``uname -s``), ``KernelModules`` (the
-loaded kernel modules from ``/proc/modules``, or ``kldstat`` on FreeBSD),
-``KernelVersion`` (the kernel release from ``uname -r``),
-``Last`` (the login records parsed from ``last``), ``LinuxDistribution``
-(the distribution name and version parsed from the ``/etc/*-release``
-files), ``LinuxGui`` (the installed desktop sessions' GUI names),
-``LinuxName`` (the distribution's pretty name, a shortcut over
-``LinuxDistribution``), ``Locales`` (the installed locales from
-``locale -a``, normalized to ``UTF-8`` spellings), ``LsbRelease`` (the
-release information parsed from ``lsb_release -ca``), ``Mounts`` (the
-mounted filesystems, keyed by mount point, read from
-``/proc/self/mountinfo`` or the BSD ``mount`` variants), ``Path`` (the
-current user's ``PATH`` environment variable, as the raw colon-separated
-string), ``Processes`` (the running processes keyed by PID, parsed from
-``ps``), ``Sysctl`` (the sysctl settings keyed by name, parsed from
-``sysctl -a`` or the named keys), ``SystemdServiceState`` (a unit's
-``ActiveState`` -- ``active``, ``inactive``, ``activating``, ... -- read by
-``server.service`` to decide whether to start or stop, and polled by
-``server.wait_service``) and ``SystemdServiceEnabled`` (whether a unit is
-enabled on boot), ``Timezone`` (the system timezone resolved from
-``/etc/localtime``) and ``Uptime`` (the seconds since boot, from
-``/proc/uptime`` or the BSD boot-time difference), ``User`` (the
-current user's name from ``echo $USER``), ``Users`` (the system users
-keyed by name, joined from ``/etc/passwd``, ``id``, ``lastlog`` and the
-shadow password files) and ``Which`` (the path of a given command from
-``command -v``, or None when unavailable). Like every fact they are
-phase-unaware: each ``process`` coroutine just gathers the raw value.
-
-Operation side (design doc section 6): ``server.group`` plus the
-``GroupAddCommand``/``GroupDelCommand`` descriptors it yields,
-``server.hostname`` plus the ``SetHostnameCommand`` descriptor it yields,
-``server.kill`` plus the ``KillCommand`` descriptor it yields,
-``server.modprobe`` plus the ``ModprobeCommand`` descriptor it yields,
-``server.mount`` plus the ``MountCommand`` descriptor it yields,
-``server.service`` plus the ``SystemctlCommand`` descriptor it yields,
-``server.timezone`` plus the ``SetTimezoneCommand`` descriptor it yields, and
-``server.wait_service`` plus the ``WaitForFactCommand`` descriptor it yields.
-``server.group`` mirrors pyinfra's ``server.group`` for ``group``,
-``present``, ``system`` and ``gid``, dispatching on the ``Kernel`` fact
-(pyinfra's deprecated ``Os``) exactly like ``KernelModules``: FreeBSD gets
-``pw groupadd``/``pw groupdel``, every other kernel ``groupadd``/``groupdel``.
-``server.hostname`` mirrors pyinfra's ``server.hostname`` for the hostname
-itself: the ``Which`` fact picks ``hostnamectl set-hostname`` when
-``hostnamectl`` is available and the bare ``hostname`` command otherwise;
-pyinfra's ``hostname_file`` upload branch is deliberately dropped.
-``server.kill`` mirrors pyinfra's ``server.kill`` for ``pid`` and
-``signal``: stateless and non-idempotent, it reads no fact and always
-yields one ``kill -<signal> <pid>`` command.
-``server.modprobe`` mirrors pyinfra's ``server.modprobe`` for ``module``,
-``present`` and ``force``: it compares the names against the
-``KernelModules`` fact and yields one ``modprobe [-f] [-r] -a <modules>``
-command only for the modules that differ from the request.
-``server.mount`` mirrors pyinfra's ``server.mount`` for ``path``,
-``mounted``, ``options``, ``device`` and ``fs_type``: it compares against
-the ``Mounts`` fact (with a lookup-by-device fallback) and yields one
-``MountCommand`` -- a fresh ``mount``, an ``umount`` or an options remount
-(the ``Kernel`` fact picks the BSD remount form).
-``server.service`` mirrors pyinfra's ``systemd.service`` for ``service``,
-``running``, ``restarted``, ``enabled`` and ``daemon_reload``; pyinfra's
-``reloaded``, ``command``, ``user_mode``, ``machine`` and ``user_name``
-options are deliberately dropped.
-``server.timezone`` mirrors pyinfra's ``server.timezone`` for ``timezone``
-on systemd systems only: it compares against the ``Timezone`` fact and
-yields ``timedatectl set-timezone`` when they differ; pyinfra's non-systemd
-fallback (symlinking ``/etc/localtime`` and writing ``/etc/timezone``) is
-deliberately dropped, and a host without ``timedatectl`` raises
-``OperationError`` during prepare instead.
-
-``WaitForFactCommand`` is the *non-shell* wait descriptor: it carries a fact,
-its arguments and a predicate, and its ``wait`` polls the fact (bypassing
-the per-step ``FactCache``) until the predicate holds or the timeout
-expires. It is generic -- any fact and predicate -- and lives here beside its
-first consumer, ``server.wait_service``.
-"""
+# """The ``server`` module: systemd facts, ``Arch``, the ``group``/``service`` operations and waiting.
+#
+# Fact side (design doc section 5): ``Arch`` (the machine architecture from
+# ``uname -m``), ``AuthorizedKeys`` (the SSH public keys listed in a user's
+# ``~/.ssh/authorized_keys`` file), ``Date`` (the current datetime on the
+# server, parsed from an ISO 8601 ``date`` timestamp), ``Groups`` (the group
+# names listed in ``/etc/group``), ``HasGui`` (whether a known desktop-session
+# binary is installed), ``Home`` (a user's home directory, resolved by shell
+# tilde expansion), ``Hostname`` (the server's hostname from ``uname -n``),
+# ``Kernel`` (the kernel name from ``uname -s``), ``KernelModules`` (the
+# loaded kernel modules from ``/proc/modules``, or ``kldstat`` on FreeBSD),
+# ``KernelVersion`` (the kernel release from ``uname -r``),
+# ``Last`` (the login records parsed from ``last``), ``LinuxDistribution``
+# (the distribution name and version parsed from the ``/etc/*-release``
+# files), ``LinuxGui`` (the installed desktop sessions' GUI names),
+# ``LinuxName`` (the distribution's pretty name, a shortcut over
+# ``LinuxDistribution``), ``Locales`` (the installed locales from
+# ``locale -a``, normalized to ``UTF-8`` spellings), ``LsbRelease`` (the
+# release information parsed from ``lsb_release -ca``), ``Mounts`` (the
+# mounted filesystems, keyed by mount point, read from
+# ``/proc/self/mountinfo`` or the BSD ``mount`` variants), ``Path`` (the
+# current user's ``PATH`` environment variable, as the raw colon-separated
+# string), ``Processes`` (the running processes keyed by PID, parsed from
+# ``ps``), ``Sysctl`` (the sysctl settings keyed by name, parsed from
+# ``sysctl -a`` or the named keys), ``SystemdServiceState`` (a unit's
+# ``ActiveState`` -- ``active``, ``inactive``, ``activating``, ... -- read by
+# ``server.service`` to decide whether to start or stop, and polled by
+# ``server.wait_service``) and ``SystemdServiceEnabled`` (whether a unit is
+# enabled on boot), ``Timezone`` (the system timezone resolved from
+# ``/etc/localtime``) and ``Uptime`` (the seconds since boot, from
+# ``/proc/uptime`` or the BSD boot-time difference), ``User`` (the
+# current user's name from ``echo $USER``), ``Users`` (the system users
+# keyed by name, joined from ``/etc/passwd``, ``id``, ``lastlog`` and the
+# shadow password files) and ``Which`` (the path of a given command from
+# ``command -v``, or None when unavailable). Like every fact they are
+# phase-unaware: each ``process`` coroutine just gathers the raw value.
+#
+# Operation side (design doc section 6): ``server.group`` plus the
+# ``GroupAddCommand``/``GroupDelCommand`` descriptors it yields,
+# ``server.hostname`` plus the ``SetHostnameCommand`` descriptor it yields,
+# ``server.kill`` plus the ``KillCommand`` descriptor it yields,
+# ``server.modprobe`` plus the ``ModprobeCommand`` descriptor it yields,
+# ``server.mount`` plus the ``MountCommand`` descriptor it yields,
+# ``server.service`` plus the ``SystemctlCommand`` descriptor it yields,
+# ``server.timezone`` plus the ``SetTimezoneCommand`` descriptor it yields, and
+# ``server.wait_service`` plus the ``WaitForFactCommand`` descriptor it yields.
+# ``server.group`` mirrors pyinfra's ``server.group`` for ``group``,
+# ``present``, ``system`` and ``gid``, dispatching on the ``Kernel`` fact
+# (pyinfra's deprecated ``Os``) exactly like ``KernelModules``: FreeBSD gets
+# ``pw groupadd``/``pw groupdel``, every other kernel ``groupadd``/``groupdel``.
+# ``server.hostname`` mirrors pyinfra's ``server.hostname`` for the hostname
+# itself: the ``Which`` fact picks ``hostnamectl set-hostname`` when
+# ``hostnamectl`` is available and the bare ``hostname`` command otherwise;
+# pyinfra's ``hostname_file`` upload branch is deliberately dropped.
+# ``server.kill`` mirrors pyinfra's ``server.kill`` for ``pid`` and
+# ``signal``: stateless and non-idempotent, it reads no fact and always
+# yields one ``kill -<signal> <pid>`` command.
+# ``server.modprobe`` mirrors pyinfra's ``server.modprobe`` for ``module``,
+# ``present`` and ``force``: it compares the names against the
+# ``KernelModules`` fact and yields one ``modprobe [-f] [-r] -a <modules>``
+# command only for the modules that differ from the request.
+# ``server.mount`` mirrors pyinfra's ``server.mount`` for ``path``,
+# ``mounted``, ``options``, ``device`` and ``fs_type``: it compares against
+# the ``Mounts`` fact (with a lookup-by-device fallback) and yields one
+# ``MountCommand`` -- a fresh ``mount``, an ``umount`` or an options remount
+# (the ``Kernel`` fact picks the BSD remount form).
+# ``server.service`` mirrors pyinfra's ``systemd.service`` for ``service``,
+# ``running``, ``restarted``, ``enabled`` and ``daemon_reload``; pyinfra's
+# ``reloaded``, ``command``, ``user_mode``, ``machine`` and ``user_name``
+# options are deliberately dropped.
+# ``server.timezone`` mirrors pyinfra's ``server.timezone`` for ``timezone``
+# on systemd systems only: it compares against the ``Timezone`` fact and
+# yields ``timedatectl set-timezone`` when they differ; pyinfra's non-systemd
+# fallback (symlinking ``/etc/localtime`` and writing ``/etc/timezone``) is
+# deliberately dropped, and a host without ``timedatectl`` raises
+# ``OperationError`` during prepare instead.
+#
+# ``WaitForFactCommand`` is the *non-shell* wait descriptor: it carries a fact,
+# its arguments and a predicate, and its ``wait`` polls the fact (bypassing
+# the per-step ``FactCache``) until the predicate holds or the timeout
+# expires. It is generic -- any fact and predicate -- and lives here beside its
+# first consumer, ``server.wait_service``.
+# """
 
 import asyncio
 import json
@@ -140,11 +140,26 @@ def unit_name(service: str) -> str:
 class Arch:
     """The system architecture according to ``uname`` (e.g. ``x86_64``).
 
-    Mirrors pyinfra's ``server.Arch``: the first line of ``uname -m`` output
-    is the architecture string. ``uname -m`` is used rather than ``uname -p``
-    because the latter is not portable and reports ``unknown`` on Debian.
-    Empty output (the command failed) maps to ``""``.
+    command:
+
+    ```bash
+    uname -m
+    ```
+
+    return:
+
+    ```python
+    str
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_arch.py``.
     """
+
+    # Mirrors pyinfra's ``server.Arch``: the first line of ``uname -m`` output
+    # is the architecture string. ``uname -m`` is used rather than ``uname -p``
+    # because the latter is not portable and reports ``unknown`` on Debian.
+    # Empty output (the command failed) maps to ``""``.
 
     #: Shell used to gather the architecture over SSH.
     COMMAND = "uname -m"
@@ -186,24 +201,40 @@ def _check_tilde_username(user: str) -> None:
 class AuthorizedKeys:
     """The SSH public keys listed in a user's ``~/.ssh/authorized_keys`` file.
 
-    Mirrors pyinfra's ``server.AuthorizedKeys``: the full key strings are
-    returned as a list in the file's order; empty lines and lines starting
-    with ``#`` are skipped. A missing or empty file reads as ``[]`` (the
-    command swallows ``cat``'s error), for example::
+    command:
 
-        [
-            "ssh-ed25519 AAAAC3Nz... user@host",
-            "ssh-rsa AAAAB3Nz... other@host",
-        ]
+    ```bash
+    cat ~<user>/.ssh/authorized_keys 2>/dev/null || true
+    ```
 
-    ``user`` selects whose file is read via shell tilde expansion
-    (``~user/.ssh/authorized_keys``); an empty ``user`` means the login
-    user's own ``~``. Because ``~user`` must stay an unquoted bare word, an
-    unsafe username raises ``ValueError`` instead of reaching the shell.
-    An explicit ``path`` reads that file instead (``shlex``-quoted), which
-    is how pyinfra's ``server.authorized_keys`` operation supports
-    non-default key files.
+    return:
+
+    ```python
+    list[str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_authorized_keys.py``.
     """
+
+    # Mirrors pyinfra's ``server.AuthorizedKeys``: the full key strings are
+    # returned as a list in the file's order; empty lines and lines starting
+    # with ``#`` are skipped. A missing or empty file reads as ``[]`` (the
+    # command swallows ``cat``'s error), for example::
+    #
+    #     [
+    #         "ssh-ed25519 AAAAC3Nz... user@host",
+    #         "ssh-rsa AAAAB3Nz... other@host",
+    #     ]
+    #
+    # ``user`` selects whose file is read via shell tilde expansion
+    # (``~user/.ssh/authorized_keys``); an empty ``user`` means the login
+    # user's own ``~``. Because ``~user`` must stay an unquoted bare word, an
+    # unsafe username raises ``ValueError`` instead of reaching the shell.
+    # An explicit ``path`` reads that file instead (``shlex``-quoted:
+    # ``cat <path> 2>/dev/null || true``), which
+    # is how pyinfra's ``server.authorized_keys`` operation supports
+    # non-default key files.
 
     @classmethod
     def command(cls, user: str, path: str | None = None) -> str:
@@ -260,18 +291,33 @@ _ISO_DATE_FORMAT = "%Y-%m-%dT%H:%M:%S%z"
 class Date:
     """The current datetime on the server, as a timezone-aware ``datetime``.
 
-    Mirrors pyinfra's ``server.Date``: ``date +'%Y-%m-%dT%H:%M:%S%z'`` prints
-    an ISO 8601 timestamp with a numeric UTC offset (e.g.
-    ``2019-01-01T00:00:00+0000``), which is parsed with ``datetime.strptime``
-    into an aware ``datetime``, for example::
+    command:
 
-        datetime(2019, 1, 1, 0, 0, tzinfo=timezone.utc)
+    ```bash
+    date +'%Y-%m-%dT%H:%M:%S%z'
+    ```
 
-    The first non-blank line is the answer; anything after it is ignored.
-    Empty output (the command failed) maps to ``None`` -- pyinfra's
-    ``default = datetime.now`` fallback to the *control* machine's clock is
-    deliberately dropped, so a failed read never masquerades as a host time.
+    return:
+
+    ```python
+    datetime | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_date.py``.
     """
+
+    # Mirrors pyinfra's ``server.Date``: ``date +'%Y-%m-%dT%H:%M:%S%z'`` prints
+    # an ISO 8601 timestamp with a numeric UTC offset (e.g.
+    # ``2019-01-01T00:00:00+0000``), which is parsed with ``datetime.strptime``
+    # into an aware ``datetime``, for example::
+    #
+    #     datetime(2019, 1, 1, 0, 0, tzinfo=timezone.utc)
+    #
+    # The first non-blank line is the answer; anything after it is ignored.
+    # Empty output (the command failed) maps to ``None`` -- pyinfra's
+    # ``default = datetime.now`` fallback to the *control* machine's clock is
+    # deliberately dropped, so a failed read never masquerades as a host time.
 
     #: Shell used to gather the server's clock over SSH.
     COMMAND = f"date +'{_ISO_DATE_FORMAT}'"
@@ -304,15 +350,30 @@ class Date:
 class Groups:
     """The list of group names on the system, from ``/etc/group``.
 
-    Mirrors pyinfra's ``server.Groups``: ``cat /etc/group`` is parsed by
-    taking the first ``:``-separated field of every line that contains a
-    colon; lines without one (blank lines, stray output) are skipped. The
-    file's order is preserved -- no dedup, no sorting -- for example::
+    command:
 
-        ["lpadmin", "sambashare", "vboxsf"]
+    ```bash
+    cat /etc/group
+    ```
 
-    Empty output (the command failed or the file is empty) reads as ``[]``.
+    return:
+
+    ```python
+    list[str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_groups.py``.
     """
+
+    # Mirrors pyinfra's ``server.Groups``: ``cat /etc/group`` is parsed by
+    # taking the first ``:``-separated field of every line that contains a
+    # colon; lines without one (blank lines, stray output) are skipped. The
+    # file's order is preserved -- no dedup, no sorting -- for example::
+    #
+    #     ["lpadmin", "sambashare", "vboxsf"]
+    #
+    # Empty output (the command failed or the file is empty) reads as ``[]``.
 
     #: Shell used to gather the group list over SSH.
     COMMAND = "cat /etc/group"
@@ -357,16 +418,31 @@ _KNOWN_GUI_BINARIES = {
 class HasGui:
     """Whether the host has GUI capabilities (Linux only).
 
-    Mirrors pyinfra's ``server.HasGui``: ``ls /usr/bin/*session || true``
-    lists the desktop-session binaries under ``/usr/bin``, and the host has
-    a GUI when any listed path is a known session binary (GNOME, MATE,
-    LXDE, KDE Plasma, XFCE 4). Empty output -- no ``*session`` match, the
-    ``ls`` error swallowed by ``|| true`` -- reads as ``False``. pyinfra
-    implements this as a ``ShortFactBase`` over its ``LinuxGui`` fact; here
-    the two are separate facts sharing the same shell and known-binary
-    map, so ``HasGui`` is the boolean projection of ``LinuxGui``'s list of
-    GUI names.
+    command:
+
+    ```bash
+    ls /usr/bin/*session || true
+    ```
+
+    return:
+
+    ```python
+    bool
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_has_gui.py``.
     """
+
+    # Mirrors pyinfra's ``server.HasGui``: ``ls /usr/bin/*session || true``
+    # lists the desktop-session binaries under ``/usr/bin``, and the host has
+    # a GUI when any listed path is a known session binary (GNOME, MATE,
+    # LXDE, KDE Plasma, XFCE 4). Empty output -- no ``*session`` match, the
+    # ``ls`` error swallowed by ``|| true`` -- reads as ``False``. pyinfra
+    # implements this as a ``ShortFactBase`` over its ``LinuxGui`` fact; here
+    # the two are separate facts sharing the same shell and known-binary
+    # map, so ``HasGui`` is the boolean projection of ``LinuxGui``'s list of
+    # GUI names.
 
     #: Shell used to look for desktop-session binaries over SSH.
     COMMAND = "ls /usr/bin/*session || true"
@@ -400,16 +476,31 @@ class HasGui:
 class Home:
     """A user's home directory (e.g. ``/home/pyinfra``), or None.
 
-    Mirrors pyinfra's ``server.Home``: ``echo ~user`` lets the shell resolve
-    the home directory; an empty ``user`` means the login user's own ``~``.
-    Because ``~user`` must stay an unquoted bare word, an unsafe username
-    raises ``ValueError`` instead of reaching the shell. The first non-blank
-    line is the answer; anything after it is ignored. Empty output (the
-    command failed) reads as ``None``, and so does an unexpanded ``~user``
-    echo -- the shell's answer for an unknown user, which pyinfra returns as
-    the literal string; reemote5 maps it to ``None`` so a missing user never
-    masquerades as a path.
+    command:
+
+    ```bash
+    echo ~<user>
+    ```
+
+    return:
+
+    ```python
+    str | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_home.py``.
     """
+
+    # Mirrors pyinfra's ``server.Home``: ``echo ~user`` lets the shell resolve
+    # the home directory; an empty ``user`` means the login user's own ``~``.
+    # Because ``~user`` must stay an unquoted bare word, an unsafe username
+    # raises ``ValueError`` instead of reaching the shell. The first non-blank
+    # line is the answer; anything after it is ignored. Empty output (the
+    # command failed) reads as ``None``, and so does an unexpanded ``~user``
+    # echo -- the shell's answer for an unknown user, which pyinfra returns as
+    # the literal string; reemote5 maps it to ``None`` so a missing user never
+    # masquerades as a path.
 
     @classmethod
     def command(cls, user: str = "") -> str:
@@ -454,11 +545,26 @@ class Home:
 class Hostname:
     """The server's hostname according to ``uname`` (e.g. ``my-host.net``).
 
-    Mirrors pyinfra's ``server.Hostname``: the first line of ``uname -n``
-    output is the hostname string. The first non-blank line is the answer;
-    anything after it is ignored (``uname -n`` prints exactly one line).
-    Empty output (the command failed) maps to ``""``, like ``Arch``.
+    command:
+
+    ```bash
+    uname -n
+    ```
+
+    return:
+
+    ```python
+    str
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_hostname.py``.
     """
+
+    # Mirrors pyinfra's ``server.Hostname``: the first line of ``uname -n``
+    # output is the hostname string. The first non-blank line is the answer;
+    # anything after it is ignored (``uname -n`` prints exactly one line).
+    # Empty output (the command failed) maps to ``""``, like ``Arch``.
 
     #: Shell used to gather the hostname over SSH.
     COMMAND = "uname -n"
@@ -490,14 +596,29 @@ class Hostname:
 class Kernel:
     """The kernel name according to ``uname`` (e.g. ``Linux``).
 
-    Mirrors pyinfra's ``server.Kernel``: the first line of ``uname -s``
-    output is the kernel name string (``Linux``, ``Darwin``, ``FreeBSD``,
-    ...). The first non-blank line is the answer; anything after it is
-    ignored (``uname -s`` prints exactly one line). Empty output (the
-    command failed) maps to ``""``, like ``Arch``. pyinfra's deprecated
-    ``server.Os`` alias is deliberately dropped -- only the new name lives
-    here.
+    command:
+
+    ```bash
+    uname -s
+    ```
+
+    return:
+
+    ```python
+    str
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_kernel.py``.
     """
+
+    # Mirrors pyinfra's ``server.Kernel``: the first line of ``uname -s``
+    # output is the kernel name string (``Linux``, ``Darwin``, ``FreeBSD``,
+    # ...). The first non-blank line is the answer; anything after it is
+    # ignored (``uname -s`` prints exactly one line). Empty output (the
+    # command failed) maps to ``""``, like ``Arch``. pyinfra's deprecated
+    # ``server.Os`` alias is deliberately dropped -- only the new name lives
+    # here.
 
     #: Shell used to gather the kernel name over SSH.
     COMMAND = "uname -s"
@@ -529,30 +650,45 @@ class Kernel:
 class KernelModules:
     """The loaded kernel modules, as a dict of module name -> info dict.
 
-    Mirrors pyinfra's ``server.KernelModules``: the shell is chosen from the
-    ``Kernel`` fact -- FreeBSD lists ``kldstat | tail +2``, every other
-    kernel cats ``/proc/modules`` (the ``! test -f`` guard short-circuits to
-    no output when the file is absent, so a failed read maps to ``{}``,
-    pyinfra's ``default = dict``).
+    command:
 
-    On Linux each ``/proc/modules`` row becomes, for example::
+    ```bash
+    ! test -f /proc/modules || cat /proc/modules
+    ```
 
-        {
-            "libahci": {
-                "size": "32768",
-                "instances": 1,
-                "state": "Live",
-                "depends": ["ahci"],
-            },
-        }
+    return:
 
-    ``size`` stays the raw string and only ``instances`` is converted to an
-    int (pyinfra's docstring example shows ints for both, but its parser
-    converts only ``instances``); ``depends`` is present only when the row
-    lists dependencies (``-`` means none). On FreeBSD each ``kldstat`` row
-    becomes ``{"id", "refs", "address", "size"}`` -- all raw strings, with
-    hex ``size`` and ``address``.
+    ```python
+    dict[str, dict[str, Any]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_kernel_modules.py``.
     """
+
+    # Mirrors pyinfra's ``server.KernelModules``: the shell is chosen from the
+    # ``Kernel`` fact -- FreeBSD lists ``kldstat | tail +2``, every other
+    # kernel cats ``/proc/modules`` (the ``! test -f`` guard short-circuits to
+    # no output when the file is absent, so a failed read maps to ``{}``,
+    # pyinfra's ``default = dict``).
+    #
+    # On Linux each ``/proc/modules`` row becomes, for example::
+    #
+    #     {
+    #         "libahci": {
+    #             "size": "32768",
+    #             "instances": 1,
+    #             "state": "Live",
+    #             "depends": ["ahci"],
+    #         },
+    #     }
+    #
+    # ``size`` stays the raw string and only ``instances`` is converted to an
+    # int (pyinfra's docstring example shows ints for both, but its parser
+    # converts only ``instances``); ``depends`` is present only when the row
+    # lists dependencies (``-`` means none). On FreeBSD each ``kldstat`` row
+    # becomes ``{"id", "refs", "address", "size"}`` -- all raw strings, with
+    # hex ``size`` and ``address``.
 
     #: Shell listing the loaded modules on Linux (pyinfra's non-FreeBSD
     #: branch): the guard yields no output when /proc/modules is absent.
@@ -651,13 +787,28 @@ class KernelModules:
 class KernelVersion:
     """The kernel version according to ``uname`` (e.g. ``6.1.0-26-amd64``).
 
-    Mirrors pyinfra's ``server.KernelVersion`` -- the renamed
-    ``server.OsVersion`` fact, whose deprecated alias is deliberately
-    dropped: the first line of ``uname -r`` output is the kernel release
-    string. The first non-blank line is the answer; anything after it is
-    ignored (``uname -r`` prints exactly one line). Empty output (the
-    command failed) maps to ``""``, like ``Arch``.
+    command:
+
+    ```bash
+    uname -r
+    ```
+
+    return:
+
+    ```python
+    str
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_kernel_version.py``.
     """
+
+    # Mirrors pyinfra's ``server.KernelVersion`` -- the renamed
+    # ``server.OsVersion`` fact, whose deprecated alias is deliberately
+    # dropped: the first line of ``uname -r`` output is the kernel release
+    # string. The first non-blank line is the answer; anything after it is
+    # ignored (``uname -r`` prints exactly one line). Empty output (the
+    # command failed) maps to ``""``, like ``Arch``.
 
     #: Shell used to gather the kernel version over SSH.
     COMMAND = "uname -r"
@@ -689,38 +840,53 @@ class KernelVersion:
 class Last:
     """The login records parsed from ``last``, as a list of dicts.
 
-    Mirrors pyinfra's ``server.Last``: each record holds ``user``, ``tty``,
-    ``host`` and ``time``, for example::
+    command:
 
-        [
-            {
-                "user": "alice",
-                "tty": "pts/0",
-                "host": "192.168.1.5",
-                "time": "Thu Apr 17 14:00 still logged in",
-            },
-            {
-                "user": "reboot",
-                "tty": "system boot",
-                "host": "6.19.10-arch1-1",
-                "time": "Thu Apr 17 11:00 - 12:00 (01:00)",
-            },
-        ]
+    ```bash
+    last -Fwi 2>/dev/null || last -w 2>/dev/null || last 2>/dev/null || true
+    ```
 
-    Parsing is intentionally light: ``time`` holds the raw trailing string
-    from the ``last`` output -- runs of whitespace collapsed to single
-    spaces by the token join (pyinfra's docstring example shows the column
-    padding, but its parser joins with single spaces too) -- so callers can
-    re-parse the date format that matches their system. Blank lines,
-    ``wtmp begins``/``btmp begins`` footers, ``user``/``username`` header
-    rows and rows with fewer than three fields are skipped; a ``reboot``
-    row's ``system boot`` counts as one tty, and a row whose remainder
-    starts with a weekday has no host column (``""``). Empty output --
-    ``last`` missing or failed, swallowed by the shell's ``|| true`` --
-    reads as ``[]`` (pyinfra's ``default = list``). pyinfra's
-    ``LastRecordDict`` TypedDict is represented as a plain dict, like
-    ``KernelModules``' info dicts.
+    return:
+
+    ```python
+    list[dict[str, str]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_last.py``.
     """
+
+    # Mirrors pyinfra's ``server.Last``: each record holds ``user``, ``tty``,
+    # ``host`` and ``time``, for example::
+    #
+    #     [
+    #         {
+    #             "user": "alice",
+    #             "tty": "pts/0",
+    #             "host": "192.168.1.5",
+    #             "time": "Thu Apr 17 14:00 still logged in",
+    #         },
+    #         {
+    #             "user": "reboot",
+    #             "tty": "system boot",
+    #             "host": "6.19.10-arch1-1",
+    #             "time": "Thu Apr 17 11:00 - 12:00 (01:00)",
+    #         },
+    #     ]
+    #
+    # Parsing is intentionally light: ``time`` holds the raw trailing string
+    # from the ``last`` output -- runs of whitespace collapsed to single
+    # spaces by the token join (pyinfra's docstring example shows the column
+    # padding, but its parser joins with single spaces too) -- so callers can
+    # re-parse the date format that matches their system. Blank lines,
+    # ``wtmp begins``/``btmp begins`` footers, ``user``/``username`` header
+    # rows and rows with fewer than three fields are skipped; a ``reboot``
+    # row's ``system boot`` counts as one tty, and a row whose remainder
+    # starts with a weekday has no host column (``""``). Empty output --
+    # ``last`` missing or failed, swallowed by the shell's ``|| true`` --
+    # reads as ``[]`` (pyinfra's ``default = list``). pyinfra's
+    # ``LastRecordDict`` TypedDict is represented as a plain dict, like
+    # ``KernelModules``' info dicts.
 
     #: Shell used to gather the login records over SSH: ``-Fwi``
     #: (util-linux) prints full timestamps, wide columns and IPs instead of
@@ -814,38 +980,53 @@ def _try_int(value: str) -> int | str:
 class LinuxDistribution:
     """The Linux distribution's name and version, as a dict.
 
-    Mirrors pyinfra's ``server.LinuxDistribution``: the shell cats every
-    ``/etc/*-release`` file, each preceded by its path and followed by a
-    ``---`` separator, and the parts are replayed into a scratch ``etc``
-    directory that the ``distro`` library parses -- the same library pyinfra
-    uses. ``major`` and ``minor`` are resolved from the most precise source
-    available: when ``/etc/os-release`` exposes only a major version (e.g.
-    CentOS 8's ``VERSION_ID="8"``), the minor is read from the
-    distro-specific release file instead; ``minor`` is None when no source
-    provides it (e.g. CentOS Stream). For example::
+    command:
 
-        {
-            "name": "Ubuntu",
-            "major": 20,
-            "minor": 4,
-            "release_meta": {
-                "NAME": "Ubuntu",
-                "VERSION": "20.04 LTS (Focal Fossa)",
-                "VERSION_ID": "20.04",
-                "CODENAME": "Focal Fossa",
-            },
-        }
+    ```bash
+    cd /etc/ && for file in $(ls -pdL *-release | grep -v /); do echo "/etc/${file}"; cat "/etc/${file}"; echo ---; done
+    ```
 
-    ``name`` is the pretty form of the distro id (``centos`` -> ``CentOS``,
-    ``rhel`` -> ``RedHat``); an id outside the known map keeps the name
-    ``distro`` reports. ``release_meta`` holds the upper-cased
-    ``/etc/os-release`` key/values (distro 1.7+'s ``RELEASE_CODENAME`` is
-    dropped, like pyinfra). Empty release files (Arch's empty
-    ``/etc/arch-release``) are skipped, and no release files at all read as
-    ``{"name": None, "major": None, "minor": None, "release_meta": {}}``
-    (pyinfra's ``default``). pyinfra's ``LinuxDistributionDict`` TypedDict is
-    represented as a plain dict, like ``Last``'s record dicts.
+    return:
+
+    ```python
+    dict[str, Any]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_linux_distribution.py``.
     """
+
+    # Mirrors pyinfra's ``server.LinuxDistribution``: the shell cats every
+    # ``/etc/*-release`` file, each preceded by its path and followed by a
+    # ``---`` separator, and the parts are replayed into a scratch ``etc``
+    # directory that the ``distro`` library parses -- the same library pyinfra
+    # uses. ``major`` and ``minor`` are resolved from the most precise source
+    # available: when ``/etc/os-release`` exposes only a major version (e.g.
+    # CentOS 8's ``VERSION_ID="8"``), the minor is read from the
+    # distro-specific release file instead; ``minor`` is None when no source
+    # provides it (e.g. CentOS Stream). For example::
+    #
+    #     {
+    #         "name": "Ubuntu",
+    #         "major": 20,
+    #         "minor": 4,
+    #         "release_meta": {
+    #             "NAME": "Ubuntu",
+    #             "VERSION": "20.04 LTS (Focal Fossa)",
+    #             "VERSION_ID": "20.04",
+    #             "CODENAME": "Focal Fossa",
+    #         },
+    #     }
+    #
+    # ``name`` is the pretty form of the distro id (``centos`` -> ``CentOS``,
+    # ``rhel`` -> ``RedHat``); an id outside the known map keeps the name
+    # ``distro`` reports. ``release_meta`` holds the upper-cased
+    # ``/etc/os-release`` key/values (distro 1.7+'s ``RELEASE_CODENAME`` is
+    # dropped, like pyinfra). Empty release files (Arch's empty
+    # ``/etc/arch-release``) are skipped, and no release files at all read as
+    # ``{"name": None, "major": None, "minor": None, "release_meta": {}}``
+    # (pyinfra's ``default``). pyinfra's ``LinuxDistributionDict`` TypedDict is
+    # represented as a plain dict, like ``Last``'s record dicts.
 
     #: Shell used to dump every ``/etc/*-release`` file over SSH: each file's
     #: path, its content and a ``---`` separator (``ls -pdL`` follows
@@ -957,17 +1138,32 @@ class LinuxDistribution:
 class LinuxGui:
     """The installed Linux GUIs, as a list of names (e.g. ``["GNOME"]``).
 
-    Mirrors pyinfra's ``server.LinuxGui``: ``ls /usr/bin/*session || true``
-    lists the desktop-session binaries under ``/usr/bin``, and each path
-    recognised in ``KNOWN_GUI_BINARIES`` contributes its GUI name (GNOME,
-    MATE, LXDE, KDE Plasma, XFCE 4). Lines are matched exactly (pyinfra
-    does not strip them); anything else -- other ``*session`` files, stray
-    output -- is ignored, and the listing order is preserved (no dedup, no
-    sorting). Empty output -- no ``*session`` match, the ``ls`` error
-    swallowed by ``|| true`` -- reads as ``[]`` (pyinfra's
-    ``default = list``). ``HasGui`` is the boolean projection of this
-    list, sharing the same shell and known-binary map.
+    command:
+
+    ```bash
+    ls /usr/bin/*session || true
+    ```
+
+    return:
+
+    ```python
+    list[str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_linux_gui.py``.
     """
+
+    # Mirrors pyinfra's ``server.LinuxGui``: ``ls /usr/bin/*session || true``
+    # lists the desktop-session binaries under ``/usr/bin``, and each path
+    # recognised in ``KNOWN_GUI_BINARIES`` contributes its GUI name (GNOME,
+    # MATE, LXDE, KDE Plasma, XFCE 4). Lines are matched exactly (pyinfra
+    # does not strip them); anything else -- other ``*session`` files, stray
+    # output -- is ignored, and the listing order is preserved (no dedup, no
+    # sorting). Empty output -- no ``*session`` match, the ``ls`` error
+    # swallowed by ``|| true`` -- reads as ``[]`` (pyinfra's
+    # ``default = list``). ``HasGui`` is the boolean projection of this
+    # list, sharing the same shell and known-binary map.
 
     #: Shell used to look for desktop-session binaries over SSH.
     COMMAND = "ls /usr/bin/*session || true"
@@ -1006,16 +1202,32 @@ class LinuxGui:
 class LinuxName:
     """The Linux distribution's pretty name (e.g. ``Ubuntu``), or None.
 
-    Mirrors pyinfra's ``server.LinuxName``: a shortcut for the ``name`` key
-    of the ``LinuxDistribution`` fact -- pyinfra implements it as a
-    ``ShortFactBase`` over that fact, and reemote5 likewise delegates to
-    ``LinuxDistribution.process`` rather than duplicating the shell and the
-    ``distro`` parsing. The delegation also means the two facts share the
-    ``linux_distribution`` SimulatedHost seam: there is deliberately no
-    separate state field, so a simulated name can never disagree with the
-    simulated distribution info. No release files at all read as ``None``
-    (the ``name`` of pyinfra's ``default()``).
+    command:
+
+    ```bash
+    cd /etc/ && for file in $(ls -pdL *-release | grep -v /); do echo "/etc/${file}"; cat "/etc/${file}"; echo ---; done
+    ```
+
+    return:
+
+    ```python
+    str | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_linux_name.py``.
     """
+
+    # Mirrors pyinfra's ``server.LinuxName``: a shortcut for the ``name`` key
+    # of the ``LinuxDistribution`` fact -- pyinfra implements it as a
+    # ``ShortFactBase`` over that fact, and reemote5 likewise delegates to
+    # ``LinuxDistribution.process`` rather than duplicating the shell and the
+    # ``distro`` parsing (the command shown is ``LinuxDistribution``'s). The
+    # delegation also means the two facts share the
+    # ``linux_distribution`` SimulatedHost seam: there is deliberately no
+    # separate state field, so a simulated name can never disagree with the
+    # simulated distribution info. No release files at all read as ``None``
+    # (the ``name`` of pyinfra's ``default()``).
 
     @classmethod
     async def process(cls, host: Host) -> str | None:
@@ -1029,17 +1241,32 @@ class LinuxName:
 class Locales:
     """The installed locales on the system, from ``locale -a``.
 
-    Mirrors pyinfra's ``server.Locales``: every output line is a locale
-    name, with lowercase ``utf8`` replaced by ``UTF-8`` to match the names
-    in ``/etc/locale.gen``. Lines are kept verbatim otherwise -- the
-    command's order is preserved, with no dedup or sorting -- for example::
+    command:
 
-        ["C.UTF-8", "en_US.UTF-8"]
+    ```bash
+    locale -a
+    ```
 
-    Empty output (the command failed) reads as ``[]``, pyinfra's
-    ``default = list``; a *missing* ``locale`` exits 127, which
-    ``run_shell`` reports as ``CommandNotFoundError`` instead.
+    return:
+
+    ```python
+    list[str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_locales.py``.
     """
+
+    # Mirrors pyinfra's ``server.Locales``: every output line is a locale
+    # name, with lowercase ``utf8`` replaced by ``UTF-8`` to match the names
+    # in ``/etc/locale.gen``. Lines are kept verbatim otherwise -- the
+    # command's order is preserved, with no dedup or sorting -- for example::
+    #
+    #     ["C.UTF-8", "en_US.UTF-8"]
+    #
+    # Empty output (the command failed) reads as ``[]``, pyinfra's
+    # ``default = list``; a *missing* ``locale`` exits 127, which
+    # ``run_shell`` reports as ``CommandNotFoundError`` instead.
 
     #: Shell used to gather the installed locales over SSH.
     COMMAND = "locale -a"
@@ -1068,25 +1295,40 @@ class Locales:
 class LsbRelease:
     """The release information reported by ``lsb_release``, as a dict.
 
-    Mirrors pyinfra's ``server.LsbRelease``: ``lsb_release -ca`` prints
-    ``Key: value`` rows, and each colon-bearing line becomes a dict entry
-    with a lower-cased key whose last word is kept (``Distributor ID``
-    turns into ``id``) and a stripped value, for example::
+    command:
 
-        {
-            "id": "Ubuntu",
-            "description": "Ubuntu 18.04.3 LTS",
-            "release": "18.04",
-            "codename": "bionic",
-        }
+    ```bash
+    lsb_release -ca
+    ```
 
-    Lines without a colon -- the ``No LSB modules are available.`` hint,
-    blank lines, stray output -- are skipped, and only the first colon
-    splits (a value may contain colons). Empty output (a failed read) parses
-    to ``{}``; pyinfra's ``requires_command`` gating is deliberately dropped.
-    A *missing* ``lsb_release`` exits 127, which ``run_shell`` reports as
-    ``CommandNotFoundError`` rather than an empty dict.
+    return:
+
+    ```python
+    dict[str, str]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_lsb_release.py``.
     """
+
+    # Mirrors pyinfra's ``server.LsbRelease``: ``lsb_release -ca`` prints
+    # ``Key: value`` rows, and each colon-bearing line becomes a dict entry
+    # with a lower-cased key whose last word is kept (``Distributor ID``
+    # turns into ``id``) and a stripped value, for example::
+    #
+    #     {
+    #         "id": "Ubuntu",
+    #         "description": "Ubuntu 18.04.3 LTS",
+    #         "release": "18.04",
+    #         "codename": "bionic",
+    #     }
+    #
+    # Lines without a colon -- the ``No LSB modules are available.`` hint,
+    # blank lines, stray output -- are skipped, and only the first colon
+    # splits (a value may contain colons). Empty output (a failed read) parses
+    # to ``{}``; pyinfra's ``requires_command`` gating is deliberately dropped.
+    # A *missing* ``lsb_release`` exits 127, which ``run_shell`` reports as
+    # ``CommandNotFoundError`` rather than an empty dict.
 
     #: Shell used to gather the release information over SSH.
     COMMAND = "lsb_release -ca"
@@ -1152,31 +1394,46 @@ def _replace_octal(value: str) -> str:
 class Mounts:
     """The mounted filesystems, as a dict of mount point -> info dict.
 
-    Mirrors pyinfra's ``server.Mounts``: the shell is chosen from the
-    ``Kernel`` fact -- FreeBSD lists ``mount -p --libxo json``, OpenBSD
-    ``mount -v``, every other kernel cats ``/proc/self/mountinfo``. Each
-    mount point maps to a ``{device, type, options}`` dict, for example::
+    command:
 
-        {
-            "/": {
-                "device": "/dev/mv2",
-                "type": "ext4",
-                "options": ["rw", "relatime"],
-            },
-        }
+    ```bash
+    cat /proc/self/mountinfo
+    ```
 
-    On Linux the octal escapes in mount points, devices and super-block
-    options (``\\040`` space, ``\\054`` comma, ``\\134`` backslash) are
-    decoded, the optional ``shared``/``master``/``propagate_from``/
-    ``unbindable`` tags are skipped, and ``options`` combines the per-mount
-    options with the super-block ones -- ``ro``/``rw`` are filtered from
-    the super-block side because the per-mount options override them
-    (pyinfra's parser). On OpenBSD the ``ctime=...`` flag is dropped and
-    lines that do not match the ``mount -v`` row shape are skipped.
-    Empty output reads as ``{}`` on every branch (pyinfra's
-    ``default = dict``; its FreeBSD JSON branch would raise on empty
-    output -- a failed read here simply reports no mounts).
+    return:
+
+    ```python
+    dict[str, dict[str, Any]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_mounts.py``.
     """
+
+    # Mirrors pyinfra's ``server.Mounts``: the shell is chosen from the
+    # ``Kernel`` fact -- FreeBSD lists ``mount -p --libxo json``, OpenBSD
+    # ``mount -v``, every other kernel cats ``/proc/self/mountinfo``. Each
+    # mount point maps to a ``{device, type, options}`` dict, for example::
+    #
+    #     {
+    #         "/": {
+    #             "device": "/dev/mv2",
+    #             "type": "ext4",
+    #             "options": ["rw", "relatime"],
+    #         },
+    #     }
+    #
+    # On Linux the octal escapes in mount points, devices and super-block
+    # options (``\\040`` space, ``\\054`` comma, ``\\134`` backslash) are
+    # decoded, the optional ``shared``/``master``/``propagate_from``/
+    # ``unbindable`` tags are skipped, and ``options`` combines the per-mount
+    # options with the super-block ones -- ``ro``/``rw`` are filtered from
+    # the super-block side because the per-mount options override them
+    # (pyinfra's parser). On OpenBSD the ``ctime=...`` flag is dropped and
+    # lines that do not match the ``mount -v`` row shape are skipped.
+    # Empty output reads as ``{}`` on every branch (pyinfra's
+    # ``default = dict``; its FreeBSD JSON branch would raise on empty
+    # output -- a failed read here simply reports no mounts).
 
     #: Shell listing the mounts on Linux (pyinfra's non-BSD branch).
     COMMAND_LINUX = "cat /proc/self/mountinfo"
@@ -1317,14 +1574,29 @@ class Mounts:
 class Path:
     """The current user's ``PATH`` environment variable (e.g. ``/usr/bin:/bin``).
 
-    Mirrors pyinfra's ``server.Path``: ``echo $PATH`` prints the
-    colon-separated search path of the login user's shell, returned as the
-    raw string -- not split into a list, so callers keep pyinfra's shape
-    and can ``split(":")`` themselves. The first non-blank line is the
-    answer; anything after it is ignored (``echo $PATH`` prints exactly one
-    line). Empty output -- the command failed, or ``PATH`` is unset or
-    empty -- maps to ``""``, like ``Arch``.
+    command:
+
+    ```bash
+    echo $PATH
+    ```
+
+    return:
+
+    ```python
+    str
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_path.py``.
     """
+
+    # Mirrors pyinfra's ``server.Path``: ``echo $PATH`` prints the
+    # colon-separated search path of the login user's shell, returned as the
+    # raw string -- not split into a list, so callers keep pyinfra's shape
+    # and can ``split(":")`` themselves. The first non-blank line is the
+    # answer; anything after it is ignored (``echo $PATH`` prints exactly one
+    # line). Empty output -- the command failed, or ``PATH`` is unset or
+    # empty -- maps to ``""``, like ``Arch``.
 
     #: Shell used to gather the PATH environment variable over SSH.
     COMMAND = "echo $PATH"
@@ -1371,40 +1643,55 @@ def _check_pid(pid: int | None) -> None:
 class Processes:
     """The running processes, as a dict of PID -> info dict.
 
-    Mirrors pyinfra's ``server.Processes``: the shell is chosen from the
-    ``Kernel`` fact and a BusyBox probe -- Linux lists
-    ``ps -eo pid,user,stat,%cpu,%mem,comm,args --no-headers``, FreeBSD the
-    same ``ps -eo`` without ``--no-headers``, BusyBox (Alpine) the limited
-    ``ps -o pid,user,vsz,stat,args`` columns, and Darwin runs ``ps`` twice
-    (``args`` last, then ``comm`` last, separated by a marker line) because
-    macOS truncates any non-last text column. Each PID maps to a
-    ``{user, state, cpu_percent, mem_percent, command, args}`` dict, for
-    example::
+    command:
 
-        {
-            1: {
-                "user": "root",
-                "state": "Ss",
-                "cpu_percent": 0.0,
-                "mem_percent": 0.1,
-                "command": "init",
-                "args": "/sbin/init",
-            },
-        }
+    ```bash
+    LANG=C ps -eo pid,user,stat,%cpu,%mem,comm,args --no-headers
+    ```
 
-    An optional ``pid`` restricts the listing to that single process (an
-    absent PID reads as ``{}``). On BusyBox ``cpu_percent``/``mem_percent``
-    are always ``0.0`` and ``command`` is the basename of ``args``' first
-    word; on Darwin a PID that vanished between the two ``ps`` snapshots
-    is dropped. Header rows, blank lines, short rows and non-integer PIDs
-    are skipped; empty output reads as ``{}`` (pyinfra's
-    ``default = dict``).
+    return:
 
-    The BusyBox detection reads the ``Which`` fact (``command -v busybox
-    || true``), exactly like pyinfra. One deliberate deviation: a missing
-    Darwin marker line raises ``ValueError`` rather than pyinfra's bare
-    ``Exception``.
+    ```python
+    dict[int, dict[str, Any]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_processes.py``.
     """
+
+    # Mirrors pyinfra's ``server.Processes``: the shell is chosen from the
+    # ``Kernel`` fact and a BusyBox probe -- Linux lists
+    # ``ps -eo pid,user,stat,%cpu,%mem,comm,args --no-headers``, FreeBSD the
+    # same ``ps -eo`` without ``--no-headers``, BusyBox (Alpine) the limited
+    # ``ps -o pid,user,vsz,stat,args`` columns, and Darwin runs ``ps`` twice
+    # (``args`` last, then ``comm`` last, separated by a marker line) because
+    # macOS truncates any non-last text column. Each PID maps to a
+    # ``{user, state, cpu_percent, mem_percent, command, args}`` dict, for
+    # example::
+    #
+    #     {
+    #         1: {
+    #             "user": "root",
+    #             "state": "Ss",
+    #             "cpu_percent": 0.0,
+    #             "mem_percent": 0.1,
+    #             "command": "init",
+    #             "args": "/sbin/init",
+    #         },
+    #     }
+    #
+    # An optional ``pid`` restricts the listing to that single process (an
+    # absent PID reads as ``{}``). On BusyBox ``cpu_percent``/``mem_percent``
+    # are always ``0.0`` and ``command`` is the basename of ``args``' first
+    # word; on Darwin a PID that vanished between the two ``ps`` snapshots
+    # is dropped. Header rows, blank lines, short rows and non-integer PIDs
+    # are skipped; empty output reads as ``{}`` (pyinfra's
+    # ``default = dict``).
+    #
+    # The BusyBox detection reads the ``Which`` fact (``command -v busybox
+    # || true``), exactly like pyinfra. One deliberate deviation: a missing
+    # Darwin marker line raises ``ValueError`` rather than pyinfra's bare
+    # ``Exception``.
 
     #: Shell listing every process on Linux (pyinfra's non-BSD, non-BusyBox
     #: branch): ``--no-headers`` drops the header row.
@@ -1631,25 +1918,40 @@ class Processes:
 class Sysctl:
     """The sysctl settings, as a dict of key -> value.
 
-    Mirrors pyinfra's ``server.Sysctl``: ``sysctl -a`` dumps every setting
-    (or ``sysctl <key> ...`` when ``keys`` is given), with stderr discarded
-    and the exit swallowed (``2>/dev/null || true``) so an unknown key or a
-    missing binary never fails the read. Each row is ``key = value``
-    (Linux) or ``key: value`` (BSD); a row carrying neither separator is
-    skipped. A value made only of alphanumeric, ``_``, ``-``, ``.`` and
-    whitespace characters is split on whitespace and each token
-    int-converted when possible, a single token collapsing to a scalar;
-    anything else stays the stripped raw string. For example::
+    command:
 
-        {
-            "fs.inotify.max_queued_events": 16384,
-            "fs.inode-state": [44565, 360],
-        }
+    ```bash
+    sysctl -a 2>/dev/null || true
+    ```
 
-    A value that is only whitespace keeps ``""`` (it is truthy before the
-    strip, pyinfra's check); a row with nothing at all after the separator
-    is skipped. Empty output reads as ``{}`` (pyinfra's ``default = dict``).
+    return:
+
+    ```python
+    dict[str, Any]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_sysctl.py``.
     """
+
+    # Mirrors pyinfra's ``server.Sysctl``: ``sysctl -a`` dumps every setting
+    # (or ``sysctl <key> ...`` when ``keys`` is given), with stderr discarded
+    # and the exit swallowed (``2>/dev/null || true``) so an unknown key or a
+    # missing binary never fails the read. Each row is ``key = value``
+    # (Linux) or ``key: value`` (BSD); a row carrying neither separator is
+    # skipped. A value made only of alphanumeric, ``_``, ``-``, ``.`` and
+    # whitespace characters is split on whitespace and each token
+    # int-converted when possible, a single token collapsing to a scalar;
+    # anything else stays the stripped raw string. For example::
+    #
+    #     {
+    #         "fs.inotify.max_queued_events": 16384,
+    #         "fs.inode-state": [44565, 360],
+    #     }
+    #
+    # A value that is only whitespace keeps ``""`` (it is truthy before the
+    # strip, pyinfra's check); a row with nothing at all after the separator
+    # is skipped. Empty output reads as ``{}`` (pyinfra's ``default = dict``).
 
     #: Shell used to dump every sysctl setting over SSH.
     COMMAND = "sysctl -a 2>/dev/null || true"
@@ -1725,12 +2027,27 @@ class Sysctl:
 class SystemdServiceState:
     """A unit's systemd ``ActiveState`` (``active``, ``inactive``, ...), or None.
 
-    ``None`` means systemd reported nothing for the unit (``systemctl`` is
-    missing or failed); an unknown unit reports ``inactive``, as systemd
-    does. The value is the raw state string so a predicate (``is_active``)
-    can decide what counts as "ready" -- ``activating`` is deliberately not
-    ``active``, which is exactly what ``server.wait_service`` waits through.
+    command:
+
+    ```bash
+    systemctl show -p ActiveState --value <unit>
+    ```
+
+    return:
+
+    ```python
+    str | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/wait_for_httpd.py``.
     """
+
+    # ``None`` means systemd reported nothing for the unit (``systemctl`` is
+    # missing or failed); an unknown unit reports ``inactive``, as systemd
+    # does. The value is the raw state string so a predicate (``is_active``)
+    # can decide what counts as "ready" -- ``activating`` is deliberately not
+    # ``active``, which is exactly what ``server.wait_service`` waits through.
 
     @classmethod
     async def process(cls, host: Host, service: str) -> str | None:
@@ -1751,10 +2068,25 @@ class SystemdServiceState:
 class SystemdServiceEnabled:
     """Whether a unit is enabled on boot.
 
-    Mirrors pyinfra's ``SystemdEnabled``: the unit's ``UnitFileState`` is
-    read and ``enabled`` or ``static`` count as enabled; anything else
-    (``disabled``, ``masked``, an empty answer) does not.
+    command:
+
+    ```bash
+    systemctl show -p UnitFileState --value <unit>
+    ```
+
+    return:
+
+    ```python
+    bool
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/wait_for_httpd.py``.
     """
+
+    # Mirrors pyinfra's ``SystemdEnabled``: the unit's ``UnitFileState`` is
+    # read and ``enabled`` or ``static`` count as enabled; anything else
+    # (``disabled``, ``masked``, an empty answer) does not.
 
     #: ``UnitFileState`` values that count as enabled (pyinfra's
     #: ``SystemdEnabled.state_values``).
@@ -1778,16 +2110,31 @@ class SystemdServiceEnabled:
 class Timezone:
     """The current system timezone (e.g. ``Europe/Amsterdam``).
 
-    Mirrors pyinfra's ``server.Timezone``: ``readlink -f /etc/localtime``
-    resolves the zoneinfo symlink and ``sed`` strips everything up to
-    ``zoneinfo/``, leaving the timezone name. When ``/etc/localtime`` is a
-    copied file rather than a symlink into zoneinfo, the sed matches
-    nothing and the resolved path is returned verbatim, exactly like
-    pyinfra. The first non-blank line is the answer; anything after it is
-    ignored (the pipeline prints exactly one line). Empty output (the
-    command failed) maps to ``""``, like ``Arch`` -- pyinfra's
-    ``output[0]`` would raise on empty output.
+    command:
+
+    ```bash
+    readlink -f /etc/localtime | sed 's|.*/zoneinfo/||'
+    ```
+
+    return:
+
+    ```python
+    str
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_timezone.py``.
     """
+
+    # Mirrors pyinfra's ``server.Timezone``: ``readlink -f /etc/localtime``
+    # resolves the zoneinfo symlink and ``sed`` strips everything up to
+    # ``zoneinfo/``, leaving the timezone name. When ``/etc/localtime`` is a
+    # copied file rather than a symlink into zoneinfo, the sed matches
+    # nothing and the resolved path is returned verbatim, exactly like
+    # pyinfra. The first non-blank line is the answer; anything after it is
+    # ignored (the pipeline prints exactly one line). Empty output (the
+    # command failed) maps to ``""``, like ``Arch`` -- pyinfra's
+    # ``output[0]`` would raise on empty output.
 
     #: Shell used to gather the timezone over SSH: resolve the
     #: ``/etc/localtime`` symlink and strip the ``zoneinfo/`` prefix.
@@ -1820,17 +2167,33 @@ class Timezone:
 class Uptime:
     """The number of seconds the system has been up, or None.
 
-    Mirrors pyinfra's ``server.Uptime``: the shell is chosen from the
-    ``Kernel`` fact -- Darwin and FreeBSD print the current epoch seconds
-    followed by the boot-time epoch seconds, and the uptime is their
-    difference; every other kernel cuts the integer part out of
-    ``/proc/uptime``, so the answer is whole seconds either way (e.g.
-    ``86400`` -- one day). Blank lines are skipped; empty output (the
-    command failed) reads as ``None``, pyinfra's ``FactBase`` default, so a
-    failed read never masquerades as a freshly booted host. A non-integer
-    line raises ``ValueError``, and a BSD answer missing its second line
-    raises ``IndexError``, exactly like pyinfra's parser.
+    command:
+
+    ```bash
+    cut -d. -f1 /proc/uptime
+    ```
+
+    return:
+
+    ```python
+    int | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_uptime.py``.
     """
+
+    # Mirrors pyinfra's ``server.Uptime``: the shell is chosen from the
+    # ``Kernel`` fact -- Darwin and FreeBSD print the current epoch seconds
+    # followed by the boot-time epoch seconds (``date +%s; sysctl -n
+    # kern.boottime | awk '{print $4}' | tr -d ','``), and the uptime is
+    # their difference; every other kernel cuts the integer part out of
+    # ``/proc/uptime``, so the answer is whole seconds either way (e.g.
+    # ``86400`` -- one day). Blank lines are skipped; empty output (the
+    # command failed) reads as ``None``, pyinfra's ``FactBase`` default, so a
+    # failed read never masquerades as a freshly booted host. A non-integer
+    # line raises ``ValueError``, and a BSD answer missing its second line
+    # raises ``IndexError``, exactly like pyinfra's parser.
 
     #: Shell reading the uptime on Linux (pyinfra's non-BSD branch): the
     #: integer seconds before ``/proc/uptime``'s decimal point.
@@ -1887,12 +2250,27 @@ class Uptime:
 class User:
     """The name of the current user (e.g. ``root``).
 
-    Mirrors pyinfra's ``server.User``: ``echo $USER`` prints the login
-    user's name from the shell environment, returned as the raw string.
-    The first non-blank line is the answer; anything after it is ignored
-    (``echo $USER`` prints exactly one line). Empty output -- the command
-    failed, or ``USER`` is unset or empty -- maps to ``""``, like ``Path``.
+    command:
+
+    ```bash
+    echo $USER
+    ```
+
+    return:
+
+    ```python
+    str
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_user.py``.
     """
+
+    # Mirrors pyinfra's ``server.User``: ``echo $USER`` prints the login
+    # user's name from the shell environment, returned as the raw string.
+    # The first non-blank line is the answer; anything after it is ignored
+    # (``echo $USER`` prints exactly one line). Empty output -- the command
+    # failed, or ``USER`` is unset or empty -- maps to ``""``, like ``Path``.
 
     #: Shell used to gather the current user's name over SSH.
     COMMAND = "echo $USER"
@@ -1924,43 +2302,63 @@ class User:
 class Users:
     """The system users, as a dict of username -> details dict.
 
-    Mirrors pyinfra's ``server.Users``: a shell loop joins each
-    ``/etc/passwd`` entry with ``id``'s primary and secondary groups, the
-    ``lastlog`` (``lastlogin`` on BSD) row and the shadow password hash,
-    ``|``-separated. Each row becomes, for example::
+    command:
 
-        {
-            "user_name": {
-                "home": "/home/user_name",
-                "comment": "Full Name",
-                "shell": "/bin/bash",
-                "group": "main_user_group",
-                "groups": ["other", "groups"],
-                "uid": 1000,
-                "gid": 1000,
-                "lastlog": "Sat Jun 5 12:03:23 -0600 2021",
-                "login_time": datetime(2021, 6, 5, 12, 3, 23, ...),
-                "password": "$6$...",
-            },
-        }
+    ```bash
+    for i in `cat /etc/passwd | cut -d: -f1`; do
+        ENTRY=`grep ^$i: /etc/passwd`;
+        LASTLOG=`(((lastlog -u $i || lastlogin $i) 2> /dev/null) | grep ^$i | tr -s ' ')`;
+        PASSWORD=`(grep ^$i: /etc/shadow || grep ^$i: /etc/master.passwd) 2> /dev/null | cut -d: -f2`;
+        echo "$ENTRY|`id -gn $i`|`id -Gn $i`|$LASTLOG|$PASSWORD";
+    done
+    ```
 
-    ``home``, ``comment`` and ``shell`` are ``None`` when the passwd field
-    is empty; ``groups`` holds only the secondary groups (``id -Gn``
-    repeats the primary one); ``uid``/``gid`` are ints; ``lastlog`` is the
-    raw timestamp matched out of the lastlog row (``None`` when the user
-    never logged in) and ``password`` is the raw hash string (``""`` when
-    the shadow file cannot be read). Empty output reads as ``{}``
-    (pyinfra's ``default = dict``); blank lines are skipped, and a row
-    missing its four ``|`` separators raises ``ValueError``, like
-    pyinfra's parser.
+    return:
 
-    Deliberate deviation: pyinfra parses ``login_time`` with dateutil's
-    fuzzy ``parse_date``; reemote5 shuns that dependency and instead tries
-    the two fixed ``strptime`` layouts -- Linux ``lastlog`` (numeric zone
-    before the year, an aware datetime) and BSD ``lastlogin`` (no zone, a
-    naive datetime). A matched ``lastlog`` string that fits neither layout
-    leaves ``login_time`` as ``None`` rather than guessing.
+    ```python
+    dict[str, dict[str, Any]]
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_users.py``.
     """
+
+    # Mirrors pyinfra's ``server.Users``: a shell loop joins each
+    # ``/etc/passwd`` entry with ``id``'s primary and secondary groups, the
+    # ``lastlog`` (``lastlogin`` on BSD) row and the shadow password hash,
+    # ``|``-separated. Each row becomes, for example::
+    #
+    #     {
+    #         "user_name": {
+    #             "home": "/home/user_name",
+    #             "comment": "Full Name",
+    #             "shell": "/bin/bash",
+    #             "group": "main_user_group",
+    #             "groups": ["other", "groups"],
+    #             "uid": 1000,
+    #             "gid": 1000,
+    #             "lastlog": "Sat Jun 5 12:03:23 -0600 2021",
+    #             "login_time": datetime(2021, 6, 5, 12, 3, 23, ...),
+    #             "password": "$6$...",
+    #         },
+    #     }
+    #
+    # ``home``, ``comment`` and ``shell`` are ``None`` when the passwd field
+    # is empty; ``groups`` holds only the secondary groups (``id -Gn``
+    # repeats the primary one); ``uid``/``gid`` are ints; ``lastlog`` is the
+    # raw timestamp matched out of the lastlog row (``None`` when the user
+    # never logged in) and ``password`` is the raw hash string (``""`` when
+    # the shadow file cannot be read). Empty output reads as ``{}``
+    # (pyinfra's ``default = dict``); blank lines are skipped, and a row
+    # missing its four ``|`` separators raises ``ValueError``, like
+    # pyinfra's parser.
+    #
+    # Deliberate deviation: pyinfra parses ``login_time`` with dateutil's
+    # fuzzy ``parse_date``; reemote5 shuns that dependency and instead tries
+    # the two fixed ``strptime`` layouts -- Linux ``lastlog`` (numeric zone
+    # before the year, an aware datetime) and BSD ``lastlogin`` (no zone, a
+    # naive datetime). A matched ``lastlog`` string that fits neither layout
+    # leaves ``login_time`` as ``None`` rather than guessing.
 
     #: Shell used to gather the user rows over SSH (pyinfra's loop,
     #: verbatim): each passwd entry joined with its groups, lastlog row
@@ -2057,17 +2455,32 @@ class Users:
 class Which:
     """The path of a given command according to ``command -v``, or None.
 
-    Mirrors pyinfra's ``server.Which``: ``command -v <command> || true``
-    prints the path the shell would run for the name (a builtin or alias
-    reads as its own name), and the ``|| true`` swallows the non-zero exit
-    of an unknown command so a missing binary never fails the read. The
-    name is ``shlex``-quoted (pyinfra's ``QuoteString``), so a name carrying
-    shell metacharacters is looked up literally rather than executed. The
-    first non-blank line is the answer; anything after it is ignored
-    (``command -v`` prints at most one line). Empty output -- the command
-    is unavailable -- reads as ``None``, pyinfra's ``FactBase`` default, so
-    callers can branch on the answer directly.
+    command:
+
+    ```bash
+    command -v <command> || true
+    ```
+
+    return:
+
+    ```python
+    str | None
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_which.py``.
     """
+
+    # Mirrors pyinfra's ``server.Which``: ``command -v <command> || true``
+    # prints the path the shell would run for the name (a builtin or alias
+    # reads as its own name), and the ``|| true`` swallows the non-zero exit
+    # of an unknown command so a missing binary never fails the read. The
+    # name is ``shlex``-quoted (pyinfra's ``QuoteString``), so a name carrying
+    # shell metacharacters is looked up literally rather than executed. The
+    # first non-blank line is the answer; anything after it is ignored
+    # (``command -v`` prints at most one line). Empty output -- the command
+    # is unavailable -- reads as ``None``, pyinfra's ``FactBase`` default, so
+    # callers can branch on the answer directly.
 
     @classmethod
     def command(cls, command: str) -> str:

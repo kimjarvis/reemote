@@ -6,23 +6,25 @@ Scripts under `examples/modules/apk/` — one per fact or operation of the
 warning and the error-reporting contract every script follows.
 
 The read-only fact-gathering examples (`apk_apk_packages.py` reading
-`ApkPackages`, `apk_apk_explicit_packages.py` reading `ApkExplicitPackages`,
-`apk_apk_autoremovable.py` reading `ApkAutoremovable`,
-`apk_apk_repositories.py` reading `ApkRepositories` and `apk_apk_package.py`
-reading `ApkPackage` for one package, all over `gather_fact`) are not rendered
-here — they read a single fact, and the facts themselves are documented on
-the [`apk` module page](../../modules/apk.md).
+`ApkInstalledPackages`, `apk_apk_explicit_packages.py` reading
+`ApkExplicitPackages`, `apk_apk_autoremovable.py` reading
+`ApkAutoremovablePackages`, `apk_apk_repositories.py` reading `ApkRepositories`
+and `apk_apk_package.py` reading `ApkPackage` for one package, all over
+`gather_fact`) are not rendered here — they read a single fact, and the facts
+themselves are documented on the [`apk` module page](../../modules/apk.md).
 
 ## Installing packages
 
 The package operation: `apk.packages` installs (or with `present=False`
 removes) packages by name, reading the
-[`ApkPackages`][reemote5.modules.apk.apk.ApkPackages] fact for exact-version
-idempotence — a `<pkg>=<version>` pin counts as present only when that exact
-version is installed, so re-running is a no-op. `latest=True` additionally
-upgrades every installed, *unpinned* name with `apk upgrade` (pyinfra's legacy
-blind upgrade). apk never prompts, so the commands carry no `-y` flag, unlike
-the apt and dnf package examples. Where pyinfra's `apk.packages` also takes
+[`ApkInstalledPackages`][reemote5.modules.apk.apk.ApkInstalledPackages] fact
+(a list of `ApkInstalledPackage` entries, indexed by `name` and compared on the
+entry's `versions`) for exact-version idempotence — a `<pkg>=<version>` pin
+counts as present only when that exact version is installed, so re-running is
+a no-op. `latest=True` additionally upgrades every installed, *unpinned* name
+with `apk upgrade` (pyinfra's legacy blind upgrade). apk never prompts, so the
+commands carry no `-y` flag, unlike the apt and dnf package examples. Where
+pyinfra's `apk.packages` also takes
 `update`/`upgrade` options that prefix a whole-system `apk update` /
 `apk upgrade`, reemote5 deliberately drops both. Two apk-native install
 modifiers ride on the add/upgrade verbs: `no_cache` adds `--no-cache` (bypass
@@ -49,8 +51,8 @@ front with `validate_inventory`), and every request carries
 for a canary tag. The predicate reads only static inventory data
 (`host.group`) and is a stable module-level function, so both phases reach the
 same decision; the driver skips a rejected request without materializing it,
-so on a non-Alpine host neither the `apk` commands nor the `ApkPackages` fact
-behind them run, and plan and log render
+so on a non-Alpine host neither the `apk` commands nor the
+`ApkInstalledPackages` fact behind them run, and plan and log render
 `[skipped: when guard is_alpine]` in the request's lockstep slot. That skip
 is visible on every run: the shared `inventory.json` holds one Alpine host
 alongside hosts in other groups, so the run installs on the Alpine host and
@@ -72,8 +74,9 @@ package `<tag>` depending on `<packages>` in `/etc/apk/world`, so a build step
 can pull in a toolchain and later tear the whole group down with a single
 `apk del <tag>`. The operation reads the
 [`ApkExplicitPackages`][reemote5.modules.apk.apk.ApkExplicitPackages] fact for
-world-name idempotence — the group is present exactly when `<tag>` appears in
-the world — so re-running is a no-op. The script wraps a compile in the classic
+world-name idempotence — the group is present exactly when `<tag>` appears
+as an entry name in the world — so re-running is a no-op. The script wraps a
+compile in the classic
 Alpine pattern: create a `.build-deps` group, then remove it, yielding each
 request twice so the second create and the second remove are guaranteed no-ops
 in the apply phase through the fresh per-step fact cache. Creating and removing
@@ -106,10 +109,12 @@ re-adds it with `apk add <pkg>=<version>` and `present=False` re-adds the
 bare `apk add <pkg>`, rewriting the world line without a bound so the
 package stays installed and only the pin goes. The operation reads the
 [`ApkHeldPackages`][reemote5.modules.apk.apk.ApkHeldPackages] fact
-(name → constraint) for version-aware idempotence — a name is held exactly
+(a list of `ApkHeldPackage` entries, looked up by `name` and compared on the
+entry's `constraint`) for
+version-aware idempotence — a name is held exactly
 when its world constraint matches the wanted pin, so re-running is a no-op
 and re-pinning to a *different* version is detected. With `version` omitted,
-each name is pinned to its currently installed version (`ApkPackages`'
+each name is pinned to its currently installed version (`ApkInstalledPackages`'
 newest); pass `version` to pin to an explicit constraint (`1.2.3-r0`,
 `~1.2`, `<2.0`) or to pin a package that is not yet installed. The script
 holds a package twice — the second is a guaranteed no-op in the apply phase,
@@ -125,9 +130,9 @@ passwordless, so the host needs a `permit nopass` rule in `/etc/doas.conf`.
 Like the other apk examples, this script reads the shared project-root
 `inventory.json` (validated up front with `validate_inventory`) and every
 request carries `when=is_alpine`, so on a non-Alpine host neither the
-`apk add` pin commands nor the `ApkHeldPackages` and `ApkPackages` facts
-behind them run — the driver skips each request without materializing it and
-plan and log render `[skipped: when guard is_alpine]`. Each run therefore
+`apk add` pin commands nor the `ApkHeldPackages` and `ApkInstalledPackages`
+facts behind them run — the driver skips each request without materializing it
+and plan and log render `[skipped: when guard is_alpine]`. Each run therefore
 pins and releases on the inventory's single Alpine host and skips the hosts
 in the other groups.
 
@@ -145,7 +150,7 @@ the apk sibling of [`apt.auto_remove`](../../modules/apt.md). apk has no
 `apk add`/`apk fix`, which reemote5 splits out into this standalone
 operation so a deploy can clean up orphans without also performing an
 install or a repair. The operation reads the
-[`ApkAutoremovable`][reemote5.modules.apk.apk.ApkAutoremovable] fact
+[`ApkAutoremovablePackages`][reemote5.modules.apk.apk.ApkAutoremovablePackages] fact
 (`apk add --purge --simulate`, a pure simulation that never removes
 anything): a non-empty list runs the real `apk add --purge` (the reason
 names the packages, already sorted so both phases report identically), an
@@ -166,7 +171,7 @@ steps.
 Like the other apk examples, this script reads the shared project-root
 `inventory.json` (validated up front with `validate_inventory`) and every
 request carries `when=is_alpine`, so on a non-Alpine host neither the
-`apk add --purge` command nor the `ApkAutoremovable` purge simulation behind
+`apk add --purge` command nor the `ApkAutoremovablePackages` purge simulation behind
 it runs — the driver skips each request without materializing it and plan and
 log render `[skipped: when guard is_alpine]`. Each run therefore purges on
 the inventory's single Alpine host and skips the hosts in the other groups.
