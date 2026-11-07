@@ -34,7 +34,8 @@ raise an error. The recipe mirrors all of that:
    ``/tmp/locale.gen`` (login-user-writable). Each host's transform is
    built ONCE by the ``make_transform`` factory closing over the frozen
    desired content -- a stable callable across both phases, the
-   determinism-safe split shown in ``examples/general/two_deploy_split.py``.
+   determinism-safe split shown in
+   ``examples/demonstrations/composition/two_deploy_split.py``.
 4. Run 2 installs and regenerates: ``files.move`` moves the spool file
    into ``/etc`` with ``overwrite=True``, then the demo-side ``locale_gen``
    operation runs ``locale-gen`` -- both flagged ``sudo=True``. reemote5

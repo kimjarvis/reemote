@@ -32,8 +32,12 @@
 # pyinfra's ``update`` and ``upgrade`` prefix options are deliberately
 # dropped -- reemote5 keeps the whole-system ``apk update``/``apk upgrade``
 # out of the package operation, and both keywords are absorbed by
-# ``**kwargs`` with no effect. The remaining pyinfra ``apk`` operations
-# (``apk.upgrade``, ``apk.key``, ``apk.repo``) are not migrated.
+# ``**kwargs`` with no effect. pyinfra's remaining ``apk`` operations
+# (``apk.upgrade``, ``apk.update``) are not migrated; upstream ships no
+# ``apk.key`` or ``apk.repo`` at all, so ``apk.repository`` -- the
+# ``apt.repo`` counterpart managing ``/etc/apk/repositories`` lines through
+# its ``ApkRepoAddCommand``/``ApkRepoRemoveCommand`` descriptors, reading
+# ``ApkRepositories`` for idempotence -- is a reemote5 original.
 # ``apk.virtual`` -- a reemote5 original with no pyinfra counterpart --
 # manages a *virtual package* group (``apk add -t <tag>`` to create it,
 # ``apk del <tag>`` to remove it) through its present-flagged
@@ -1607,6 +1611,151 @@ async def autoremove(ctx: OpContext, **kwargs: Any) -> AsyncGenerator[Command]:
         ctx.reason = "no purgable packages"
 
 
+# --- apk.repository ------------------------------------------------------------
+
+
+def _repo_line_pattern(line: str) -> str:
+    """The anchored, escaped whole-line regex for an apk repository line.
+
+    The same construction ``apt.repo``'s ``_repo_line_pattern`` ports from
+    pyinfra's ``adjust_regex(line, escape_regex_characters=True)``: every
+    regex metacharacter in ``line`` is escaped so the repository string
+    matches literally, then the pattern is anchored with ``^.*`` / ``.*$``
+    so a line carrying extra surrounding text still matches. Kept as a
+    self-contained copy -- namespaces never import each other's helpers --
+    and shared by ``ApkRepoRemoveCommand``'s sed script and the
+    SimulatedHost seam so both delete exactly the same lines.
+    """
+    escaped = re.sub(r"([\.\\\+\*\?\[\^\]\$\(\)\{\}\-])", r"\\\1", line)
+    return f"^.*{escaped}.*$"
+
+
+@dataclass(frozen=True)
+class ApkRepoAddCommand(Command):
+    """``sh -c 'echo <line> >> <path>'``: append one apk repository line.
+
+    The append mutation ``apk.repository`` yields, mirroring
+    ``AptRepoAddCommand``. The ``>>`` redirect is wrapped in ``sh -c`` so
+    it happens *inside* the shell the driver elevates: a bare
+    ``doas echo ... >> /etc/apk/repositories`` would open the redirect as
+    the login user and fail on the root-owned file. The line is
+    shell-quoted, so an ``@tag URL`` line reaches the file literally.
+    """
+
+    path: str
+    line: str
+
+    def shell(self) -> str:
+        inner = f"echo {shlex.quote(self.line)} >> {shlex.quote(self.path)}"
+        return f"sh -c {shlex.quote(inner)}"
+
+
+@dataclass(frozen=True)
+class ApkRepoRemoveCommand(Command):
+    """``sed -i '/<pattern>/d' <path>``: delete matching apk repository lines.
+
+    The removal mutation ``apk.repository`` yields, mirroring
+    ``AptRepoRemoveCommand``. ``line`` matches literally (regex
+    metacharacters escaped) inside the anchored whole-line pattern; ``/``
+    is then escaped for sed's script delimiter -- a repository URL is full
+    of them -- and the script is shell-quoted as one token. Busybox sed
+    (Alpine's sed) supports the bare ``-i`` in-place edit, no backup
+    suffix needed; like ``apt.repo`` there is deliberately no timestamped
+    backup dance (a per-phase timestamp would break the determinism
+    guard).
+    """
+
+    path: str
+    line: str
+
+    def shell(self) -> str:
+        pattern = _repo_line_pattern(self.line).replace("/", r"\/")
+        return f"sed -i {shlex.quote(f'/{pattern}/d')} {shlex.quote(self.path)}"
+
+
+async def repository(
+    ctx: OpContext,
+    src: str,
+    present: bool = True,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Add/remove an apk repository line in /etc/apk/repositories.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        src (str): Repository line -- a bare URL
+            (``https://dl-cdn.alpinelinux.org/alpine/v3.19/community``) or
+            an ``@tag URL`` line (``@testing https://.../edge/testing``).
+        present (bool, optional): Whether the repository should exist in
+            the file. Defaults to True.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: Generated apk repository line commands.
+
+    **Raises:**
+
+    ```python
+    HostConnectionError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/apk/apk_repository.py``.
+    """
+
+    # A reemote5 original modeled on ``apt.repo``: pyinfra's ``apk``
+    # namespace ships no repository operation (only upgrade/update/
+    # packages), so the ``ApkRepositories`` fact had no write counterpart.
+    # Presence is decided by parsing ``src`` with ``ApkRepositories.parse``
+    # and comparing the resulting ``ApkRepository`` entry (url and tag)
+    # against the fact's entries -- so a tagged ``@testing URL`` line and
+    # the bare URL are distinct repositories. Absent and wanted yields one
+    # ``ApkRepoAddCommand`` appending the line; present and unwanted
+    # yields one ``ApkRepoRemoveCommand`` deleting it; otherwise the
+    # operation is a no-op, with ``apt.repo``'s reason wordings.
+    #
+    # Deliberate deviations from ``apt.repo``: an unparseable ``src`` (a
+    # lone ``@tag``, several URLs on one line) raises ``ValueError`` while
+    # materializing instead of being appended blindly -- apk's one-line
+    # format is simple enough to validate strictly, where ``apt.repo``
+    # inherits pyinfra's tolerance for lines its parser cannot read. The
+    # removal sed is a *contains* match like ``apt.repo``'s, so removing a
+    # bare URL also drops a tagged line carrying it; gate removals on the
+    # exact line when both variants are configured. No ``filename``
+    # option: apk reads exactly one repositories file, with no
+    # ``sources.list.d`` drop-in directory. Refreshing the package index
+    # after a change is out of scope -- sequence an ``apk update`` (e.g.
+    # ``server.shell``) after this operation when needed.
+    #
+    # Writing the file needs root, so flag the request ``sudo=True``,
+    # ``doas=True`` or ``su=True`` -- stock Alpine ships no ``sudo``, so
+    # ``doas`` is usually the escalator on an apk host (see ``packages``
+    # for its passwordless ``doas -n`` prerequisites). ``**kwargs`` absorbs
+    # pyinfra's global arguments (``op()`` already strips ``name`` and the
+    # ``sudo``/``su``/``doas`` escalation flags).
+    parsed = ApkRepositories.parse([src])
+    if not parsed:
+        raise ValueError(f"not an apk repository line: {src!r}")
+    entry = parsed[0]
+    path = ApkRepositories.PATH
+    repositories = await ctx.facts.get(ApkRepositories)
+    is_present = entry in repositories
+
+    if present:
+        if is_present:
+            ctx.reason = f'apk repo "{src}" exists'
+        else:
+            ctx.changed = True
+            ctx.reason = f'apk repo "{src}" missing, will be added to {path}'
+            yield ApkRepoAddCommand(path=path, line=src)
+    elif is_present:
+        ctx.changed = True
+        ctx.reason = f'apk repo "{src}" present, will be removed from {path}'
+        yield ApkRepoRemoveCommand(path=path, line=src)
+    else:
+        ctx.reason = f'apk repo "{src}" does not exist'
+
+
 __all__ = [
     "ApkAutoremovablePackages",
     "ApkExplicitPackages",
@@ -1619,6 +1768,8 @@ __all__ = [
     "ApkPackageVersion",
     "ApkPurgeCommand",
     "ApkRemoveCommand",
+    "ApkRepoAddCommand",
+    "ApkRepoRemoveCommand",
     "ApkRepositories",
     "ApkRepository",
     "ApkUpgradeCommand",
@@ -1626,5 +1777,6 @@ __all__ = [
     "autoremove",
     "hold",
     "packages",
+    "repository",
     "virtual",
 ]

@@ -1,0 +1,141 @@
+# Module examples: systemd
+
+Scripts under `examples/modules/systemd/` — one per fact or operation of the
+[`systemd`](../../modules/systemd.md) module. See the
+[Examples overview](../../examples.md) for the shared "connects for real"
+warning and the error-reporting contract every script follows.
+
+The read-only fact-gathering examples (`systemd_systemd_status.py` reading
+`SystemdStatus`, `systemd_systemd_enabled.py` reading `SystemdEnabled`,
+`systemd_systemd_unit_properties.py` reading `SystemdUnitProperties`,
+`systemd_systemd_failed_units.py` reading `SystemdFailedUnits`,
+`systemd_systemd_timers.py` reading `SystemdTimers`,
+`systemd_systemd_unit_files.py` reading `SystemdUnitFiles`,
+`systemd_systemd_version.py` reading `SystemdVersion`,
+`systemd_systemd_system_state.py` reading `SystemdSystemState` and
+`systemd_systemd_dependencies.py` reading `SystemdDependencies`, all over
+`gather_fact`) are not rendered here — they read a single fact, and the facts
+themselves are documented on the
+[`systemd` module page](../../modules/systemd.md).
+
+Every operation example reads the project root's `inventory.json` (validated
+up front with `validate_inventory`) and guards each request with
+`when=is_systemd`, a stable module-level predicate reading only static
+`host.group` so the OpenRC `alpine` host is skipped rather than failing on a
+missing `systemctl`. The `systemctl` and file-writing operations need root, so
+their requests are flagged `sudo=True`. The destructive examples (mask,
+drop-in, tmpfiles, sysusers, preset) are compile-checked and exercised by the
+offline example harness rather than run against shared hosts; point
+`INVENTORY_PATH` at your own throwaway machines to execute them for real.
+
+## Managing a service
+
+The service operation: `systemd.service` is the canonical home of the
+operation formerly known as `server.service` (which remains a deprecated
+alias). It ports pyinfra's `systemd.service` and manages one unit along two
+independent axes — `running` against the
+[`SystemdServiceState`][reemote5.modules.systemd.systemd.SystemdServiceState]
+fact and `enabled` against
+[`SystemdServiceEnabled`][reemote5.modules.systemd.systemd.SystemdServiceEnabled]
+— yielding a command only where the unit differs from the request. The script
+also shows the reemote5 extensions: `reloaded=True` with `soft_reload=True`
+issues `systemctl reload-or-try-restart`, gated on the unit actually running.
+
+::: systemd_service
+    options:
+      members: []
+
+## Reloading the daemon
+
+The daemon-reload operation: `systemd.daemon_reload` ports pyinfra's stateless
+`systemctl daemon-reload`. It reads no fact and always yields, so every planned
+reload shows as a change — the step that makes systemd re-read unit files
+after an edit.
+
+::: systemd_daemon_reload
+    options:
+      members: []
+
+## Masking a unit
+
+The mask operation: `systemd.mask` is a reemote5 original, bidirectional and
+idempotent through one present-flagged path. It reads the unit's
+`UnitFileState` from
+[`SystemdUnitProperties`][reemote5.modules.systemd.systemd.SystemdUnitProperties]
+and yields `systemctl mask` only when the unit is not already masked
+(`masked=False` yields `unmask`). Masking symlinks the unit to `/dev/null` so
+neither a manual start nor a dependency can activate it — stronger than
+`disable`, which only clears the boot setting.
+
+::: systemd_mask
+    options:
+      members: []
+
+## Clearing a failed state
+
+The reset-failed operation: `systemd.reset_failed` is a reemote5 original
+covering the reset-only case (the enhanced `service` keeps a `reset_failed`
+flag too). It reads
+[`SystemdServiceState`][reemote5.modules.systemd.systemd.SystemdServiceState]
+and yields `systemctl reset-failed` only when the unit's `ActiveState` is
+`failed` — the recovery step before a start, since a failed unit otherwise
+refuses to start.
+
+::: systemd_reset_failed
+    options:
+      members: []
+
+## Installing a drop-in override
+
+The drop-in operation: `systemd.dropin` is a reemote5 original that manages a
+fragment under `/etc/systemd/system/<unit>.d/<filename>.conf`, overriding
+selected settings of a vendor unit without editing the packaged file. It
+writes only when the content differs (idempotent through the in-namespace
+content fact), then chains `daemon-reload`; `restart=True` would also restart
+the unit. The write follows the `dnf.repo` spool pattern — an unprivileged scp
+transfer to `/tmp` then an elevated install — and the file-name parameter is
+`filename`, not the reserved `op` meta-parameter `name`. System-scope only.
+
+::: systemd_dropin
+    options:
+      members: []
+
+## Declaring runtime files and directories
+
+The tmpfiles operation: `systemd.tmpfiles` is a reemote5 original managing a
+`/etc/tmpfiles.d/<filename>.conf` fragment. It writes only when the content
+differs, then applies it with `systemd-tmpfiles --create` so the declared
+runtime paths exist immediately rather than at the next boot. `present=False`
+removes the config file only. Same spool-and-install pattern and `filename`
+parameter as the drop-in; system-scope only.
+
+::: systemd_tmpfiles
+    options:
+      members: []
+
+## Declaring system users and groups
+
+The sysusers operation: `systemd.sysusers` is a reemote5 original managing a
+`/etc/sysusers.d/<filename>.conf` fragment — the declarative alternative to
+imperative `useradd`. It writes only when the content differs, then applies it
+with `systemd-sysusers` so the declared accounts exist immediately.
+`present=False` removes the config file only; it does **not** delete the
+users/groups it created. Same spool-and-install pattern and `filename`
+parameter; system-scope only.
+
+::: systemd_sysusers
+    options:
+      members: []
+
+## Applying a preset policy
+
+The preset operation: `systemd.preset` is a reemote5 original applying a unit's
+vendor preset policy. It reads
+[`SystemdUnitFiles`][reemote5.modules.systemd.systemd.SystemdUnitFiles] and
+yields `systemctl preset <unit>` only when the unit's current state differs
+from its preset policy; a unit already matching, or with no policy, is a no-op.
+`all_units=True` would instead issue a stateless `systemctl preset-all`.
+
+::: systemd_preset
+    options:
+      members: []

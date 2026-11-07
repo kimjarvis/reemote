@@ -5,8 +5,8 @@
 
 The source is always a seekable IO-like object on the control machine -- a
 path string is deliberately not supported (unlike pyinfra's ``str | IO[Any]``
-signature). Covers the content-hash comparison (``LocalSha1`` of the stream
-vs remote ``RemoteFileSha1``), the non-shell ``PutCommand`` descriptor and
+signature). Covers the content-hash comparison (the stream's locally computed
+sha1 vs remote ``RemoteFileSha1``), the non-shell ``PutCommand`` descriptor and
 its loggable rendering, the ``send_command`` dispatch onto the host's
 ``upload_file`` seam, the rewind-and-normalize reading rule for repeated
 materializations, and the ``SimulatedHost`` ``remote_files`` state that makes a
@@ -20,13 +20,13 @@ from collections.abc import Generator
 import pytest
 
 from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import format_log, format_plan, gather_fact, run, send_command
+from reemote5.drivers import format_log, format_plan, run, send_command
 from reemote5.hosts import Host
 from reemote5.modules import files
 from reemote5.modules.files.files import (
-    LocalSha1,
     PutCommand,
     RemoteFileSha1,
+    _sha1_of_source,
     read_source_bytes,
 )
 from tests.simulated_host import SimulatedHost
@@ -165,11 +165,9 @@ async def test_put_reuploads_when_remote_content_differs(src_stream):
 # --- The source: IO-like only, rewound and normalized -----------------------------
 
 
-async def test_local_sha1_hashes_the_stream_content(src_stream):
-    """``LocalSha1`` reads the control-machine stream, not the host."""
-    host = SimulatedHost.from_inventory(INVENTORY[0])
-    values = await gather_fact([host], LocalSha1, src_stream)
-    assert values["web1"] == CONTENT_SHA1
+async def test_sha1_of_source_hashes_the_stream_content(src_stream):
+    """The local hash reads the control-machine stream, not the host."""
+    assert _sha1_of_source(src_stream) == CONTENT_SHA1
 
 
 async def test_read_source_bytes_rewinds_and_normalizes():
@@ -184,19 +182,14 @@ async def test_read_source_bytes_rewinds_and_normalizes():
 
 async def test_repeated_materializations_hash_identically(src_stream):
     """Prepare and apply read the same object; each read must rewind first."""
-    host = SimulatedHost.from_inventory(INVENTORY[0])
-    prepare = FactCache(host, phase="prepare")
-    apply = FactCache(host, phase="apply")
-    first = await prepare.get(LocalSha1, src_stream)
-    second = await apply.get(LocalSha1, src_stream)
+    first = _sha1_of_source(src_stream)
+    second = _sha1_of_source(src_stream)
     assert first == second == CONTENT_SHA1
 
 
 async def test_text_stream_source_hashes_as_utf8():
     stream = io.StringIO("hello from reemote5\n")
-    host = SimulatedHost.from_inventory(INVENTORY[0])
-    values = await gather_fact([host], LocalSha1, stream)
-    assert values["web1"] == CONTENT_SHA1
+    assert _sha1_of_source(stream) == CONTENT_SHA1
 
 
 async def test_named_stream_renders_its_name_in_the_log(tmp_path):

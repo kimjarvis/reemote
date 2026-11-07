@@ -4,11 +4,20 @@
 """Example: a site-wide privilege policy over unprivileged third-party roles.
 
 This is a *usage* example, not part of the library. It builds on
-``dnf_packages.py`` (same inventory, same two-phase ``run`` flow over the
-real asyncssh transport) and shows the third composition scenario: role
-functions written elsewhere -- here, as if by a colleague targeting a root
-login -- that carry no ``sudo`` flags at all, adopted under a site policy
-that connects as an ordinary user and elevates everywhere.
+``dnf_packages.py`` (same two-phase ``run`` flow over the real asyncssh
+transport) and shows the third composition scenario: role functions written
+elsewhere -- here, as if by a colleague targeting a root login -- that carry
+no ``sudo`` flags at all, adopted under a site policy that connects as an
+ordinary user and elevates everywhere.
+
+The inventory is read from the project root's ``inventory.json`` (validated
+up front with ``validate_inventory``), which holds hosts in the ``"centos"``
+group alongside hosts in other groups. The same ``sub_deploy`` wrapper that
+sets the elevation policy also carries ``when=is_centos``, so the redis role
+is eligible only on the CentOS hosts; the driver skips it -- without reading
+the ``DnfPackages`` fact -- on the Alpine and Ubuntu hosts. Privilege and
+eligibility are independent axes: ``sudo`` fills the unflagged requests
+(inner-wins), while ``when`` restricts who may run them at all (conjunction).
 
 ``sub_deploy(role_redis, sudo=True)`` retro-fits the policy without editing
 the role: ``sudo=True`` is a *forced-elevation* policy that fills in every
@@ -38,13 +47,17 @@ Run it with::
 """
 
 import asyncio
+import json
 import sys
 from collections.abc import Generator
+from pathlib import Path
+from typing import Any
 
 from reemote5 import (
     CommandError,
     Host,
     HostConnectionError,
+    InventoryError,
     OperationRequest,
     PrivilegeError,
     compose,
@@ -55,31 +68,44 @@ from reemote5 import (
     op,
     run,
     sub_deploy,
+    validate_inventory,
 )
 
 REDIS_UNIT = "/usr/lib/systemd/system/redis.service"
 REDIS_WANTS_LINK = "/etc/systemd/system/multi-user.target.wants/redis.service"
 
-# Same real-host inventory as dnf_packages.py; the default host_factory
-# materializes each entry into a plain Host connecting over asyncssh.
-INVENTORY = [
-    {
-        "host": "web1",
-        "connection": {
-            "address": "192.168.0.240",
-            "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
-        },
-    },
-    {
-        "host": "web2",
-        "connection": {
-            "address": "192.168.0.242",
-            "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
-        },
-    },
-]
+# examples/demonstrations/composition/composed_sudo_policy.py -> the project
+# root, so the inventory is found whatever the current working directory is.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
+
+
+def load_inventory(path: Path) -> list[dict[str, Any]]:
+    """Read an inventory from a JSON file and validate it.
+
+    The file must hold a JSON array of inventory entries -- dictionaries
+    each carrying at least ``host`` and ``connection``. Returns the parsed
+    list, ready to hand to ``run``, which materializes it with the default
+    ``Host.from_inventory`` factory; raises ``InventoryError`` (via
+    ``validate_inventory``) when the document is not an array or an entry
+    does not match the schema.
+    """
+    inventory = json.loads(path.read_text(encoding="utf-8"))
+    validate_inventory(inventory)
+    return inventory
+
+
+def is_centos(host: Host) -> bool:
+    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+
+    Reads only static inventory data (``host.group``, set by the ``"group"``
+    key of the inventory entry), never a mutable fact, and stays a stable
+    module-level function -- the two rules every ``when`` predicate follows
+    so both deploy phases reach the same eligibility decision. The redis role
+    installs through ``dnf``, so the guard keeps it (and the facts it reads)
+    off the Alpine and Ubuntu hosts.
+    """
+    return host.group == "centos"
 
 
 def role_redis(host: Host) -> Generator[OperationRequest]:
@@ -108,23 +134,42 @@ def role_redis(host: Host) -> Generator[OperationRequest]:
     )
 
 
-# The policy statement: everything this role yields runs elevated.
-deploy = compose(sub_deploy(role_redis, name_prefix="redis", sudo=True))
+# The policy statement: everything this role yields runs elevated, and only
+# on the CentOS hosts -- ``sudo`` fills the unflagged requests (inner-wins),
+# ``when`` restricts eligibility (conjunction), both at the composition site.
+deploy = compose(sub_deploy(role_redis, name_prefix="redis", sudo=True, when=is_centos))
 
 
 async def main() -> None:
     try:
+        inventory = load_inventory(INVENTORY_PATH)
+        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        print(", ".join(entry["host"] for entry in inventory))
+
         # --dry: prepare phase only. The plan already carries the wrapper's
-        # names and privilege flags; no mutating command is sent.
-        plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
-        print("== Plan (prepare phase, --dry) ==")
+        # names and privilege flags; no mutating command is sent. On the
+        # non-CentOS hosts every step is [skipped: when guard is_centos].
+        plans, _, _hosts = await run(inventory, deploy, dry=True)
+        print("\n== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))
 
         # Real run: prepare, then apply in lockstep across hosts over SSH.
-        plans, report, _hosts = await run(INVENTORY, deploy)
+        plans, report, _hosts = await run(inventory, deploy)
         print("\n== Run log (apply phase) ==")
         assert report is not None
         print(format_log(report))
+    except (OSError, json.JSONDecodeError) as exc:
+        # The inventory file is missing, unreadable or not valid JSON. Python's
+        # own message already names the file and the reason, so print just that
+        # -- no host was contacted and there is no traceback worth showing.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except InventoryError as exc:
+        # The document parsed but did not match the inventory schema. The
+        # message names the offending entry by its list index, which is the
+        # whole report -- and it fails before any host is materialized.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # The library already reports every host-level failure as a typed error
         # whose message names the host and the failing command. Print that

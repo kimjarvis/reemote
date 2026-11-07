@@ -21,36 +21,111 @@ a real asyncssh transport is missing:
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``services`` / ``enabled_services``
   / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``deb_files``
-  / ``date`` / ``disk_stats`` / ``dmi_info`` / ``git_branches``
+  / ``date`` / ``disk_stats`` / ``dmi_info`` / ``firewalld_default_zone``
+  / ``firewalld_ipsets`` / ``firewalld_lockdown`` / ``firewalld_panic_mode``
+  / ``firewalld_permanent_ipsets`` / ``firewalld_permanent_policies``
+  / ``firewalld_permanent_zones`` / ``firewalld_policies``
+  / ``firewalld_services`` / ``firewalld_status`` / ``firewalld_zones``
+  / ``git_branches``
   / ``git_configs`` / ``git_head_detached`` / ``git_local_commits``
   / ``git_remote_commits`` / ``git_remote_urls`` / ``git_repos``
   / ``git_ssh_authenticated`` / ``git_statuses`` / ``git_submodules``
-  / ``git_tags`` / ``git_tracking_branches`` / ``os_groups`` / ``has_gui``
-  / ``home_directories`` / ``os_hostname`` / ``ipv4_addrs`` / ``ipv6_addrs``
+  / ``git_tags`` / ``git_tracking_branches`` / ``gpg_key``
+  / ``gpg_key_details`` / ``gpg_keyrings``
+  / ``gpg_keys`` / ``gpg_secret_keys`` / ``gpg_trust`` / ``gpg_verify``
+  / ``os_groups`` / ``has_gui``
+  / ``home_directories`` / ``os_hostname`` / ``ip6tables_chains``
+  / ``ip6tables_ordered_rules`` / ``ip6tables_persistence`` / ``ip6tables_rules``
+  / ``ip6tables_tables`` / ``ip6tables_version`` / ``ipsets``
+  / ``iptables_chains`` / ``iptables_modules`` / ``iptables_ordered_rules``
+  / ``iptables_persistence`` / ``iptables_rules`` / ``iptables_tables``
+  / ``iptables_version`` / ``ipv4_addrs`` / ``ipv6_addrs``
   / ``os_kernel``
   / ``kernel_modules`` / ``os_kernel_version`` / ``login_records``
   / ``linux_distribution``
-  / ``linux_gui`` / ``locales`` / ``lsb_release`` / ``lsblk_devices`` / ``mounts``
-  / ``network_devices`` / ``os_path``
-  / ``processes`` / ``smbios_info`` / ``sysctls`` / ``os_timezone`` / ``os_user`` / ``os_users``
+  / ``linux_gui`` / ``locales`` / ``lsb_release`` / ``lsblk_devices``
+  / ``lxd_containers`` / ``lxd_image_aliases`` / ``lxd_images``
+  / ``lxd_instance_configs`` / ``lxd_instance_snapshots``
+  / ``lxd_instance_states`` / ``lxd_instances`` / ``lxd_networks``
+  / ``lxd_operations`` / ``lxd_profiles`` / ``lxd_project_configs``
+  / ``lxd_projects`` / ``lxd_server_info`` / ``lxd_server_resources``
+  / ``lxd_storage_pools`` / ``lxd_storage_volumes`` / ``mounts``
+  / ``mysql_binary_logs`` / ``mysql_columns`` / ``mysql_connections``
+  / ``mysql_databases`` / ``mysql_engines`` / ``mysql_indexes``
+  / ``mysql_plugins`` / ``mysql_replication`` / ``mysql_status``
+  / ``mysql_tables`` / ``mysql_user_grants`` / ``mysql_users``
+  / ``mysql_variables``
+  / ``network_devices`` / ``openrc_runlevels`` / ``openrc_service_states``
+  / ``openrc_version`` / ``os_path``
+  / ``processes``
+  / ``postgres_connections`` / ``postgres_databases`` / ``postgres_extensions``
+  / ``postgres_indexes`` / ``postgres_privileges`` / ``postgres_publications``
+  / ``postgres_replication`` / ``postgres_role_memberships`` / ``postgres_roles``
+  / ``postgres_schemas`` / ``postgres_settings`` / ``postgres_subscriptions``
+  / ``postgres_tables`` / ``postgres_tablespaces``
+  / ``selinux_booleans`` / ``selinux_file_contexts``
+  / ``selinux_fcontext_mappings`` / ``selinux_ports`` / ``selinux_mode``
+  / ``selinux_logins`` / ``selinux_users`` / ``selinux_modules``
+  / ``selinux_permissive_domains``
+  / ``smbios_info`` / ``sysctls`` / ``systemd_dependencies`` / ``systemd_failed_units``
+  / ``systemd_system_state`` / ``systemd_timers`` / ``systemd_unit_files``
+  / ``systemd_unit_properties`` / ``systemd_version`` / ``os_timezone`` / ``os_user`` / ``os_users``
+  / ``ufw_applications`` / ``ufw_rules`` / ``ufw_status``
   / ``uptime_seconds`` / ``command_paths``:
   the state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
   ``File``, ``Directory``, ``Link``, ``RemoteFileSha1``, ``FileContents``, ``DnfRepoFile``, ``DnfRepositories``,
   ``DnfRepoList``,
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``,
-  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpgradable``, ``Arch``,
+  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``SystemdStatus``, ``SystemdEnabled``, ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState``, ``SystemdDependencies``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpgradable``, ``Arch``,
   ``AuthorizedKeys``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``, ``DebPackage``,
-  ``DiskStats``, ``DmiInfo``, ``GitBranch``, ``GitConfig``,
+  ``DiskStats``, ``DmiInfo``, ``FirewalldStatus``, ``FirewalldDefaultZone``,
+  ``FirewalldZones``, ``FirewalldServices``, ``FirewalldIpSets``,
+  ``FirewalldPolicies`` (the firewalld-local ``_FirewalldLockdown`` and
+  ``_FirewalldPanicMode`` probes read the ``firewalld_lockdown`` and
+  ``firewalld_panic_mode`` seams), ``GitBranch``, ``GitConfig``,
   ``GitHeadDetached``, ``GitIsRepo``, ``GitLocalCommit``,
   ``GitRemoteBranchCommit``, ``GitRemoteUrl``, ``GitSshKeyConfigured``,
   ``GitStatus``, ``GitSubmodule``, ``GitTag``,
-  ``GitTrackingBranch``, ``Groups``,
-  ``HasGui``, ``Home``, ``Hostname``, ``Ipv4Addrs``, ``Ipv6Addrs``, ``Kernel``,
+  ``GitTrackingBranch``, ``GpgKey``, ``GpgKeyDetails``, ``GpgKeyrings``,
+  ``GpgKeys``, ``GpgSecretKeys``, ``GpgTrust``, ``GpgVerify`` (the gpg-local
+  ``_KeyringFileExists`` probe reads the shared ``existing_files`` seam),
+  ``Groups``,
+  ``HasGui``, ``Home``, ``Hostname``, ``Ip6tablesChains``,
+  ``Ip6tablesRules``, ``Ip6tablesRulesOrdered``, ``Ip6tablesTables``,
+  ``Ip6tablesVersion``, ``IpSets``, ``IptablesChains``, ``IptablesRules``,
+  ``IptablesRulesOrdered``, ``IptablesTables``, ``IptablesVersion``,
+  ``IptablesModules``, ``IptablesPersistence``, ``Ip6tablesPersistence``,
+  ``Ipv4Addrs``, ``Ipv6Addrs``, ``Kernel``,
   ``KernelModules``, ``KernelVersion``, ``Last``,
   ``LinuxDistribution``, ``LinuxGui``, ``LinuxName``, ``Locales``,
-  ``LsbRelease``, ``LsBlk``, ``Mounts``, ``NetworkDevices``, ``Path``, ``Processes``,
-  ``SmbiosInfo``, ``SimulateOperationWillChange``, ``Sysctl``, ``Timezone``,
+  ``LsbRelease``, ``LsBlk``, ``LxdContainers``, ``LxdImageAliases``,
+  ``LxdImages``, ``LxdInstanceConfig``, ``LxdInstanceSnapshots``,
+  ``LxdInstanceState``, ``LxdInstances``, ``LxdNetworks``,
+  ``LxdOperations``, ``LxdProfiles``, ``LxdProjectConfig``,
+  ``LxdProjects``, ``LxdServerInfo``, ``LxdServerResources``,
+  ``LxdStoragePools``, ``LxdStorageVolumes``, ``Mounts``, ``MysqlBinaryLogs``, ``MysqlColumns``,
+  ``MysqlConnections``, ``MysqlDatabases``, ``MysqlEngines``, ``MysqlIndexes``,
+  ``MysqlPlugins``, ``MysqlReplication``, ``MysqlStatus``, ``MysqlTables``,
+  ``MysqlUserGrants``, ``MysqlUsers``, ``MysqlVariables``, ``NetworkDevices``,
+  ``OpenrcEnabled``,
+  ``OpenrcRunlevels``, ``OpenrcServices``, ``OpenrcStatus``, ``OpenrcVersion``,
+  ``Path``, ``Processes``,
+  ``PostgresqlConnections``, ``PostgresqlDatabases``,
+  ``PostgresqlExtensions``, ``PostgresqlIndexes``, ``PostgresqlPrivileges``,
+  ``PostgresqlPublications``, ``PostgresqlReplication``,
+  ``PostgresqlRoleMemberships``, ``PostgresqlRoles``, ``PostgresqlSchemas``,
+  ``PostgresqlSettings``, ``PostgresqlSubscriptions``, ``PostgresqlTables``,
+  ``PostgresqlTablespaces``,
+  ``SEBoolean``, ``Booleans``, ``FileContext``, ``FileContextMapping``,
+  ``SEPorts``, ``SEPort``, ``Mode``, ``SELogin``, ``SEUser``, ``Modules``,
+  ``PermissiveDomains`` (the selinux-local ``_Which`` and
+  ``_AutorelabelPending`` probes read the shared ``command_paths`` and
+  ``existing_files`` seams),
+  ``SmbiosInfo``, ``SimulateOperationWillChange``, ``Sysctl``, ``SysctlFile``,
+  ``SysctlFiles`` (the two persistence reads project the shared
+  ``remote_files`` seam onto the standard sysctl paths), ``Timezone``,
+  ``UfwApplications``, ``UfwRules``, ``UfwStatus``,
   ``Uptime``, ``User``, ``Users``, ``Which``) read as a
   stand-in for gathering over SSH.
 
@@ -60,6 +135,7 @@ state when an operation is changed, and the next operation's fact reads see
 the mutation.
 """
 
+import hashlib
 import io
 import posixpath
 import re
@@ -77,10 +153,16 @@ from reemote5.modules.apk.apk import (
     ApkPackageVersion,
     ApkPurgeCommand,
     ApkRemoveCommand,
+    ApkRepoAddCommand,
+    ApkRepoRemoveCommand,
+    ApkRepositories,
     ApkRepository,
     ApkUpgradeCommand,
     ApkVirtualCommand,
     _split_constraint,
+)
+from reemote5.modules.apk.apk import (
+    _repo_line_pattern as _apk_repo_line_pattern,
 )
 from reemote5.modules.apt.apt import (
     AptAutoRemoveCommand,
@@ -139,6 +221,30 @@ from reemote5.modules.files.files import (
     read_source_bytes,
     write_dest_bytes,
 )
+from reemote5.modules.firewalld.firewalld import (
+    _SERVICE_MEMBER_FIELDS,
+    _ZONE_MEMBER_FIELDS,
+    FirewalldDefaultZoneCommand,
+    FirewalldIpSet,
+    FirewalldIpsetCommand,
+    FirewalldIpsetEntryCommand,
+    FirewalldLockdownCommand,
+    FirewalldMasqueradeCommand,
+    FirewalldPanicCommand,
+    FirewalldPolicy,
+    FirewalldReloadCommand,
+    FirewalldService,
+    FirewalldServiceCommand,
+    FirewalldServiceEntryCommand,
+    FirewalldServiceTextCommand,
+    FirewalldStatusInfo,
+    FirewalldZone,
+    FirewalldZoneCommand,
+    FirewalldZoneEntryCommand,
+    FirewalldZoneTargetCommand,
+    FirewalldZoneTextCommand,
+    _copy_record,
+)
 from reemote5.modules.git.git import (
     GitCheckoutCommand,
     GitCloneCommand,
@@ -154,11 +260,166 @@ from reemote5.modules.git.git import (
     GitWorktreeAddCommand,
     GitWorktreeRemoveCommand,
 )
+from reemote5.modules.gpg.gpg import (
+    GpgDearmorCommand,
+    GpgDeleteKeyCommand,
+    GpgExportCommand,
+    GpgGenKeyCommand,
+    GpgImportCommand,
+    GpgImportUploadCommand,
+    GpgKeyDeleteKeysCommand,
+    GpgKeyEmptyCleanupCommand,
+    GpgKeyInfo,
+    GpgKeyInstallCommand,
+    GpgKeyMetadata,
+    GpgKeyRemoveCommand,
+    GpgKeyring,
+    GpgKeyTrust,
+    GpgKeyUploadCommand,
+    GpgRefreshKeysCommand,
+    GpgTrustCommand,
+    GpgVerification,
+)
 from reemote5.modules.hardware.hardware import (
     BlockDevice,
     DiskStat,
     LsBlkNode,
     NetworkDevice,
+)
+from reemote5.modules.iptables.iptables import (
+    IpSet,
+    IpsetCreateCommand,
+    IpsetDestroyCommand,
+    IpsetEntryCommand,
+    IptablesChainCommand,
+    IptablesFlushCommand,
+    IptablesOrderedRule,
+    IptablesPolicyCommand,
+    IptablesRestoreCommand,
+    IptablesRule,
+    IptablesRuleCommand,
+    IptablesSaveCommand,
+    IptablesZeroCommand,
+    _normalize_host,
+    _parse_iptables_rule,
+)
+from reemote5.modules.lxd.lxd import (
+    LxdContainer,
+    LxdCopyCommand,
+    LxdDeleteCommand,
+    LxdDeviceCommand,
+    LxdImage,
+    LxdImageAlias,
+    LxdImageAliasCommand,
+    LxdImageCommand,
+    LxdInstance,
+    LxdInstanceStateData,
+    LxdLaunchCommand,
+    LxdNetwork,
+    LxdNetworkCommand,
+    LxdOperation,
+    LxdOperationCancelCommand,
+    LxdOperationWaitCommand,
+    LxdProfile,
+    LxdProfileAssignCommand,
+    LxdProfileCommand,
+    LxdProject,
+    LxdProjectCommand,
+    LxdRestoreCommand,
+    LxdServerInfoData,
+    LxdServerResourcesData,
+    LxdSetCommand,
+    LxdSnapshot,
+    LxdSnapshotCommand,
+    LxdStateCommand,
+    LxdStoragePool,
+    LxdStoragePoolCommand,
+    LxdStorageVolume,
+    LxdStorageVolumeCommand,
+    _config_pairs,
+)
+from reemote5.modules.mysql.mysql import (
+    MysqlBinaryLog,
+    MysqlColumn,
+    MysqlConnection,
+    MysqlDatabase,
+    MysqlDatabaseCommand,
+    MysqlDumpCommand,
+    MysqlEngine,
+    MysqlIndex,
+    MysqlIndexCommand,
+    MysqlKillCommand,
+    MysqlLoadCommand,
+    MysqlOptimizeCommand,
+    MysqlPlugin,
+    MysqlPluginCommand,
+    MysqlPrivilegesCommand,
+    MysqlReplicaCommand,
+    MysqlReplicaStatus,
+    MysqlRoleCommand,
+    MysqlSqlCommand,
+    MysqlTable,
+    MysqlTableCommand,
+    MysqlUser,
+    MysqlUserCommand,
+    MysqlVariableCommand,
+)
+from reemote5.modules.openrc.openrc import (
+    RcServiceCommand,
+    RcUpdateCommand,
+    RunlevelCommand,
+)
+from reemote5.modules.postgresql.postgresql import (
+    _PRIVILEGE_ALIASES,
+    PostgresqlConnection,
+    PostgresqlDatabase,
+    PostgresqlDatabaseCommand,
+    PostgresqlDumpCommand,
+    PostgresqlExtension,
+    PostgresqlExtensionCommand,
+    PostgresqlIndex,
+    PostgresqlIndexCommand,
+    PostgresqlLoadCommand,
+    PostgresqlMembershipCommand,
+    PostgresqlPrivilege,
+    PostgresqlPrivilegeCommand,
+    PostgresqlPublication,
+    PostgresqlPublicationCommand,
+    PostgresqlReplicationClient,
+    PostgresqlRole,
+    PostgresqlRoleCommand,
+    PostgresqlRoleMembership,
+    PostgresqlSchema,
+    PostgresqlSchemaCommand,
+    PostgresqlSetting,
+    PostgresqlSettingCommand,
+    PostgresqlSqlCommand,
+    PostgresqlSubscription,
+    PostgresqlSubscriptionCommand,
+    PostgresqlTable,
+    PostgresqlTablespace,
+    PostgresqlTablespaceCommand,
+    _normalize_object,
+)
+from reemote5.modules.selinux.selinux import (
+    AUTORELABEL_PATH,
+    AutorelabelCommand,
+    ChconCommand,
+    ModeInfo,
+    Module,
+    RestoreconCommand,
+    SeContext,
+    SeLogin,
+    SemanageFcontextCommand,
+    SemanageLoginCommand,
+    SemanagePermissiveCommand,
+    SemanagePortCommand,
+    SemoduleEnableCommand,
+    SemoduleInstallCommand,
+    SemoduleRemoveCommand,
+    SetenforceCommand,
+    SetseboolCommand,
+    SeUser,
 )
 from reemote5.modules.server.server import (
     GroupAddCommand,
@@ -168,9 +429,40 @@ from reemote5.modules.server.server import (
     MountCommand,
     SetHostnameCommand,
     SetTimezoneCommand,
-    SystemctlCommand,
-    SystemdServiceState,
     WaitForFactCommand,
+)
+from reemote5.modules.sysctl.sysctl import (
+    Sysctl,
+    SysctlFileInstallCommand,
+    SysctlFileRemoveCommand,
+    SysctlFileUploadCommand,
+    SysctlReloadCommand,
+    SysctlSetCommand,
+    _parse_conf,
+)
+from reemote5.modules.systemd.systemd import (
+    SystemctlCommand,
+    SystemdFailedUnit,
+    SystemdFileInstallCommand,
+    SystemdFileRemoveCommand,
+    SystemdFileUploadCommand,
+    SystemdServiceState,
+    SystemdSysusersCommand,
+    SystemdTimer,
+    SystemdTmpfilesCommand,
+    SystemdUnitFile,
+)
+from reemote5.modules.ufw.ufw import (
+    UfwDefaultPolicyCommand,
+    UfwLoggingCommand,
+    UfwResetCommand,
+    UfwRule,
+    UfwRuleCommand,
+    UfwStateCommand,
+    UfwStatusInfo,
+    _command_rule_key,
+    _is_v6,
+    _rule_key,
 )
 
 
@@ -198,10 +490,14 @@ class SimulatedHost(Host):
     # a simulated ``files.put`` writes the source
     # stream's bytes into it, and a simulated ``files.get`` reads them back out
     # into the destination stream. The ``dnf.key``/``dnf.repo``/``apt.key``/
-    # ``apt.sources_file`` spool uploads land here too:
+    # ``apt.sources_file``/``gpg.key``/``gpg.import_key`` spool uploads land
+    # here too:
     # ``import_key``/``install_repo_file``/``install_apt_key``/
-    # ``install_apt_sources_file`` pop the spool entry, and the install
-    # mutators store the content bytes back at their dest path.
+    # ``install_apt_sources_file``/``install_gpg_key``/``import_gpg_key`` pop
+    # the spool entry, and
+    # the install mutators store the content bytes back at their dest path
+    # (``dearmor_gpg_key`` copies between two remote paths in the same store,
+    # ``export_gpg_key`` writes a placeholder export file into it).
     # Storing content (not just a hash) is what
     # lets a put then a get of the same path round-trip, and what makes a repeat
     # transfer a no-op: execute_command mutates it, and the next step's fresh
@@ -252,6 +548,34 @@ class SimulatedHost(Host):
     # None (as the fact reports when systemd answers nothing).
     services: dict[str, str] = field(default_factory=dict)
     enabled_services: set[str] = field(default_factory=set)
+    # Simulated OpenRC: runlevel -> service -> raw state word
+    # (``started``/``stopped``/``crashed``/...), backing ``OpenrcServices``
+    # (the raw words) and ``OpenrcStatus`` (projected to the running bool,
+    # only ``started`` reads True) -- one lossless store for both facts,
+    # keyed by runlevel because ``rc-status <runlevel>`` lists the services
+    # assigned to that runlevel. An unknown runlevel reads as {}.
+    # ``set_openrc_service_state`` (the simulated ``rc-service``) and the
+    # ``rc-update add``/``del`` mutators maintain it alongside
+    # ``openrc_runlevels``.
+    openrc_service_states: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Simulated OpenRC runlevel assignments: runlevel -> assigned names
+    # (service names, plus stacked runlevel names -- a stacked runlevel is
+    # a symlink inside its target's directory), backing ``OpenrcRunlevels``
+    # (the raw mapping) and ``OpenrcEnabled`` (projected to per-runlevel
+    # membership bools; a service assigned to no runlevel is absent from
+    # the projection, so consumers read ``.get(service, False)``).
+    # ``enable_openrc_service``/``disable_openrc_service`` (the simulated
+    # ``rc-update add``/``del``), ``stack_openrc_runlevel``/
+    # ``unstack_openrc_runlevel`` (``rc-update -s``) and
+    # ``create_openrc_runlevel``/``remove_openrc_runlevel`` (the runlevel
+    # directory commands) maintain it.
+    openrc_runlevels: dict[str, list[str]] = field(default_factory=dict)
+    # The installed OpenRC release (``OpenrcVersion``), e.g. ``"0.54.1"``.
+    # The empty-string default projects to None -- a simulated host
+    # without OpenRC -- because None itself is the seam-absent sentinel
+    # the fact's getattr check relies on. A read-only seam: no operation
+    # installs or upgrades OpenRC itself, so a test seeds it directly.
+    openrc_version: str = ""
     # Orphan apk packages (the sorted, de-duplicated ``ApkPackageVersion``
     # dicts -- name and version-and-release -- ``ApkAutoremovablePackages`` returns,
     # the packages ``apk add --purge`` would drop because nothing in
@@ -328,9 +652,11 @@ class SimulatedHost(Host):
     # ``repositories`` (the dnf-side ``DnfRepositories`` store) so the two
     # never mix. Defaults to [] -- a
     # simulated machine with no ``/etc/apk/repositories`` entries, like the
-    # fact's answer for a missing or empty file. A read-only seam: the
-    # namespace has no repository operation yet, so no ``execute_command``
-    # mutator maintains it and a test seeds it directly.
+    # fact's answer for a missing or empty file. A test seeds it directly;
+    # ``add_apk_repo_line``/``remove_apk_repo_line`` (the simulated
+    # ``apk.repository``) append/drop the parsed entries as the
+    # corresponding echo/sed commands would, keeping the ``remote_files``
+    # content at the path in sync.
     apk_repositories: list[ApkRepository] = field(default_factory=list)
     # Per-package detailed metadata (package name -> the ``ApkPackageInfo``
     # dict ``ApkPackage`` returns -- name, version, description, url, license,
@@ -529,6 +855,51 @@ class SimulatedHost(Host):
     # (``move_path``/``remove_tree``) relocates or drops a row so the ``File``
     # fact stays consistent across a simulated move.
     file_stats: dict[str, dict[str, Any] | bool] = field(default_factory=dict)
+    # The firewalld daemon record ({running, version}), backing
+    # ``FirewalldStatus``. The default projects a stopped daemon with no
+    # version; a test seeds it directly (read-only -- no operation starts
+    # or stops the daemon; that is systemd.service's job).
+    firewalld_status: FirewalldStatusInfo = field(
+        default_factory=lambda: FirewalldStatusInfo(running=False, version="")
+    )
+    # The global default zone name, backing ``FirewalldDefaultZone``. An
+    # unseeded host reads "" (a stopped daemon or an unprivileged read).
+    # The simulated ``firewalld.default_zone`` arm writes it directly --
+    # the setting is inherently dual-scope, so one field serves both.
+    firewalld_default_zone: str = ""
+    # Simulated runtime zones: name -> the ``FirewalldZone`` record
+    # ``FirewalldZones`` returns, backing ``FirewalldZones``. The
+    # firewalld mutators maintain it alongside ``firewalld_permanent_zones``;
+    # ``reload_firewalld`` copies one scope over the other.
+    firewalld_zones: dict[str, FirewalldZone] = field(default_factory=dict)
+    # Simulated permanent zones (the on-disk configuration a reload
+    # applies), backing ``FirewalldZones(permanent=True)``. Zone
+    # creation/deletion is permanent-only, so a fresh zone lands here
+    # and reaches the runtime store only via ``reload_firewalld``.
+    firewalld_permanent_zones: dict[str, FirewalldZone] = field(default_factory=dict)
+    # Service definitions (name -> the ``FirewalldService`` record),
+    # backing ``FirewalldServices``. Definitions are permanent-only by
+    # firewall-cmd's design, so one store serves the fact.
+    firewalld_services: dict[str, FirewalldService] = field(default_factory=dict)
+    # Simulated runtime ipsets: name -> the ``FirewalldIpSet`` record,
+    # backing ``FirewalldIpSets``. Distinct from ``ipsets`` (the
+    # iptables.IpSets kernel-table store): firewalld manages its own
+    # prefixed containers.
+    firewalld_ipsets: dict[str, FirewalldIpSet] = field(default_factory=dict)
+    # Simulated permanent ipsets, backing ``FirewalldIpSets(permanent=True)``.
+    firewalld_permanent_ipsets: dict[str, FirewalldIpSet] = field(default_factory=dict)
+    # Simulated runtime policies: name -> the ``FirewalldPolicy`` record,
+    # backing ``FirewalldPolicies``. Read-only (no policy management
+    # operation); ``reload_firewalld`` keeps the scopes in sync.
+    firewalld_policies: dict[str, FirewalldPolicy] = field(default_factory=dict)
+    # Simulated permanent policies, backing ``FirewalldPolicies(permanent=True)``.
+    firewalld_permanent_policies: dict[str, FirewalldPolicy] = field(default_factory=dict)
+    # Whether lockdown mode is on, backing the private ``_FirewalldLockdown``
+    # probe the ``firewalld.lockdown`` operation compares against.
+    firewalld_lockdown: bool = False
+    # Whether panic mode is on, backing the private ``_FirewalldPanicMode``
+    # probe the ``firewalld.panic`` operation compares against.
+    firewalld_panic_mode: bool = False
     # The branch a repository is on (``git describe --all``, the
     # heads/tags prefix stripped), backing ``GitBranch``: repo path ->
     # branch name. An absent repo reads as "", like the short-circuited
@@ -618,6 +989,65 @@ class SimulatedHost(Host):
     # branch without an upstream. A read-only seam: a test seeds it
     # directly.
     git_tracking_branches: dict[str, str] = field(default_factory=dict)
+    # GPG key files' contents (src path -> the ``GpgKeyInfo`` entries
+    # ``GpgKey`` returns for that file), backing ``GpgKey``. An unseeded
+    # path reads as [], the simulated stand-in for a file gpg cannot read.
+    # Kept separate from ``gpg_keys`` (the default keychain's listing)
+    # because a key file can be read without importing it. A read-only
+    # seam: a test seeds it directly.
+    gpg_key: dict[str, list[GpgKeyInfo]] = field(default_factory=dict)
+    # One key's full metadata (keyid -> the ``GpgKeyMetadata`` dict
+    # ``GpgKeyDetails`` returns for that key), backing ``GpgKeyDetails``.
+    # An unseeded keyid reads as None, the simulated stand-in for an
+    # absent key. Kept separate from ``gpg_keys`` because the metadata
+    # carries algo/created/capabilities/uids the listing entries do not.
+    # A read-only seam: a test seeds it directly.
+    gpg_key_details: dict[str, GpgKeyMetadata] = field(default_factory=dict)
+    # Keyring files found under the searched directories (the
+    # ``GpgKeyring`` entries ``GpgKeyrings`` returns -- path, format and
+    # the keys each file holds), backing ``GpgKeyrings``. The seam holds
+    # the already-gathered answer, so the fact's ``directories`` argument
+    # does not filter it. Defaults to [] -- a simulated machine with no
+    # keyring files found. The ``gpg.key`` mutators maintain it alongside
+    # ``remote_files``/``existing_files``/``file_stats``: an install
+    # upserts an entry (with empty keys -- key material is not modeled,
+    # a test seeds keys directly), a selective delete drops the matching
+    # key entries, and a whole-file removal (or the empty-file cleanup)
+    # drops the entry.
+    gpg_keyrings: list[GpgKeyring] = field(default_factory=list)
+    # Public keys in the default keychain (the ``GpgKeyInfo`` entries
+    # ``GpgKeys`` returns -- id, validity, length, subkeys, fingerprint,
+    # uid_hash, uid), backing ``GpgKeys``. The seam holds the default
+    # keychain's answer, so the fact's ``keyring`` argument does not filter
+    # it. Named with the gpg_ prefix (like ``apt_keys``) so the gpg-side
+    # state never mixes with the apt projection. Defaults to [] -- a
+    # simulated machine with an empty keychain. Tests seed it directly;
+    # the ``import_gpg_key``/``gen_gpg_key``/``delete_gpg_key`` mutators
+    # keep it consistent with the keychain operations.
+    gpg_keys: list[GpgKeyInfo] = field(default_factory=list)
+    # Secret keys in the default keychain (the ``GpgKeyInfo`` entries
+    # ``GpgSecretKeys`` returns), backing ``GpgSecretKeys``. Kept separate
+    # from ``gpg_keys`` because a public listing cannot tell which keys
+    # have secret material on the host. Only metadata is modeled -- no
+    # secret key material ever enters the simulation. Defaults to [] --
+    # a simulated machine with no secret keys. Tests seed it directly;
+    # the ``gen_gpg_key``/``delete_gpg_key`` mutators keep it consistent
+    # (a simulated import models no secret material).
+    gpg_secret_keys: list[GpgKeyInfo] = field(default_factory=list)
+    # Ownertrust assignments in the trust database (the ``GpgKeyTrust``
+    # entries ``GpgTrust`` returns -- fingerprint, raw numeric ownertrust
+    # and level name), backing ``GpgTrust``. Defaults to [] -- a simulated
+    # machine with no trust assignments exported. The ``set_gpg_trust``/
+    # ``gen_gpg_key``/``delete_gpg_key`` mutators upsert/prune it alongside
+    # the key lists.
+    gpg_trust: list[GpgKeyTrust] = field(default_factory=list)
+    # Signature verification outcomes (signature path -> the
+    # ``GpgVerification`` dict ``GpgVerify`` returns for that signature),
+    # backing ``GpgVerify``. An unseeded path reads as the error answer
+    # {valid: False, status: "error"}, the simulated stand-in for a failed
+    # verification; the fact's ``file`` argument does not select between
+    # entries. A read-only seam: a test seeds it directly.
+    gpg_verify: dict[str, GpgVerification] = field(default_factory=dict)
     # Group names present on the system (the first ``/etc/group`` field of
     # each row, in file order), backing ``Groups``. Named distinctly from
     # ``Host.group`` (the inventory classifier) so the two are never confused.
@@ -641,6 +1071,87 @@ class SimulatedHost(Host):
     # reads deterministic. ``set_hostname`` (the simulated ``server.hostname``
     # effect) replaces it, so a repeat hostname set is a no-op.
     os_hostname: str = "my-host.net"
+    # Simulated ip6tables chains: table -> {chain: policy}, backing
+    # ``Ip6tablesChains``. A user chain created with -N carries policy
+    # "-"; an unseeded table reads as {}. The iptables mutators
+    # (``manage_iptables_chain``/``set_iptables_policy`` with version=6)
+    # maintain it alongside the other ip6tables_* seams.
+    ip6tables_chains: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Simulated ip6tables numbered rows: table -> the ``IptablesOrderedRule``
+    # entries across all chains, backing ``Ip6tablesRulesOrdered``. The
+    # rule/chain/flush mutators rebuild a table's rows from its rule
+    # definitions (per-chain renumbering, counters reset to 0 -- the
+    # simulation models no traffic); ``zero_iptables_counters`` zeroes
+    # counters in place. A test seeds rich rows directly for fact checks.
+    ip6tables_ordered_rules: dict[str, list[IptablesOrderedRule]] = field(default_factory=dict)
+    # Simulated ip6tables persistence: snapshot path -> synced bool,
+    # backing ``Ip6tablesPersistence``. An unseeded path reads False (an
+    # absent file). ``save_iptables_rules``/``restore_iptables_rules``
+    # set the path True; every rule/chain/policy/flush mutation flips the
+    # stored paths back to False (zeroing counters does not -- a save
+    # without -c omits counters).
+    ip6tables_persistence: dict[str, bool] = field(default_factory=dict)
+    # Simulated ip6tables rules: table -> the ``IptablesRule`` definitions
+    # in listing order, backing ``Ip6tablesRules``. Definitions use the
+    # iptables-save shape (bare hosts carry /128, a protocol implies its
+    # ``-m`` extras pair); ``apply_iptables_rule`` re-parses the yielded
+    # spec through the module's own parser so the stored form compares
+    # equal to what the operation builds.
+    ip6tables_rules: dict[str, list[IptablesRule]] = field(default_factory=dict)
+    # Loaded ip6tables table names, backing ``Ip6tablesTables``. Defaults
+    # to [] -- a simulated machine with no IPv6 tables loaded. A read-only
+    # seam: no operation loads kernel modules, so a test seeds it directly.
+    ip6tables_tables: list[str] = field(default_factory=list)
+    # The installed ip6tables release record ({version, backend}), backing
+    # ``Ip6tablesVersion``. The empty-dict default projects to None -- a
+    # simulated host whose version has not been seeded. A read-only seam.
+    ip6tables_version: dict[str, str] = field(default_factory=dict)
+    # Simulated ipset containers: name -> the ``IpSet`` record ``IpSets``
+    # returns, backing ``IpSets``. ``create_ipset``/``destroy_ipset``/
+    # ``manage_ipset_entry`` (the simulated ``iptables.ipset``) maintain
+    # it with the real commands' -exist tolerance.
+    ipsets: dict[str, IpSet] = field(default_factory=dict)
+    # Simulated iptables chains: table -> {chain: policy}, backing
+    # ``IptablesChains``. A user chain created with -N carries policy
+    # "-"; an unseeded table reads as {}. ``manage_iptables_chain``/
+    # ``set_iptables_policy`` maintain it alongside the other iptables_*
+    # seams.
+    iptables_chains: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Loaded ``xt_*`` match-extension module names, backing
+    # ``IptablesModules``. Defaults to [] -- a simulated machine with no
+    # extension modules listed. A read-only seam: loading a module is
+    # ``server.modprobe``'s job (the ``kernel_modules`` store), so a test
+    # seeds this list directly.
+    iptables_modules: list[str] = field(default_factory=list)
+    # Simulated iptables numbered rows: table -> the ``IptablesOrderedRule``
+    # entries across all chains, backing ``IptablesRulesOrdered``. The
+    # rule/chain/flush mutators rebuild a table's rows from its rule
+    # definitions (per-chain renumbering, counters reset to 0 -- the
+    # simulation models no traffic); ``zero_iptables_counters`` zeroes
+    # counters in place. A test seeds rich rows directly for fact checks.
+    iptables_ordered_rules: dict[str, list[IptablesOrderedRule]] = field(default_factory=dict)
+    # Simulated iptables persistence: snapshot path -> synced bool,
+    # backing ``IptablesPersistence``. An unseeded path reads False (an
+    # absent file). ``save_iptables_rules``/``restore_iptables_rules``
+    # set the path True; every rule/chain/policy/flush mutation flips the
+    # stored paths back to False (zeroing counters does not -- a save
+    # without -c omits counters).
+    iptables_persistence: dict[str, bool] = field(default_factory=dict)
+    # Simulated iptables rules: table -> the ``IptablesRule`` definitions
+    # in listing order, backing ``IptablesRules``. Definitions use the
+    # iptables-save shape (bare hosts carry /32, a protocol implies its
+    # ``-m`` extras pair); ``apply_iptables_rule`` re-parses the yielded
+    # spec through the module's own parser so the stored form compares
+    # equal to what the operation builds.
+    iptables_rules: dict[str, list[IptablesRule]] = field(default_factory=dict)
+    # Loaded iptables table names, backing ``IptablesTables``. Defaults
+    # to [] -- a simulated machine with no tables loaded. A read-only
+    # seam: no operation loads kernel modules, so a test seeds it directly.
+    iptables_tables: list[str] = field(default_factory=list)
+    # The installed iptables release record ({version, backend}), backing
+    # ``IptablesVersion``. The empty-dict default projects to None -- a
+    # simulated host whose version has not been seeded. A read-only seam.
+    iptables_version: dict[str, str] = field(default_factory=dict)
     # IPv4 addresses per network interface (the parsed `ip addr show` /
     # `ifconfig -a` listing), backing ``Ipv4Addrs``: interface name -> the
     # list of address strings the fact returns, primary first, with any
@@ -738,6 +1249,64 @@ class SimulatedHost(Host):
     # simulated machine with no block devices listed, like the fact's []
     # fallback for a failed or undecodable read.
     lsblk_devices: list[LsBlkNode] = field(default_factory=list)
+    # Simulated LXD: one daemon per host (the remote/project kwargs
+    # address that daemon, they do not key the seams). Server-wide seams
+    # hold the entry lists / documents their facts return verbatim;
+    # instance-scoped seams (``lxd_instance_configs`` /
+    # ``lxd_instance_states`` / ``lxd_instance_snapshots``) are keyed by
+    # instance name and ``lxd_storage_volumes`` by pool name -- an absent
+    # key reads as None (configs/states) or [] (snapshots/volumes). Every
+    # fact copies each entry on read, so a test can seed these directly.
+    # The ``execute_command`` arms maintain them as the corresponding lxc
+    # commands would: a launch fills instances + containers + configs +
+    # states (+ an empty snapshot list), a delete cascades all of them
+    # plus the instance's storage volumes, a state change updates every
+    # status copy, and config/device/profile-assign edits keep the
+    # listing entry and the expanded config document in step.
+    # The fast container listing (``lxc list --fast``), backing
+    # ``LxdContainers`` -- containers only, VMs never appear here.
+    lxd_containers: list[LxdContainer] = field(default_factory=list)
+    # Image alias -> fingerprint mappings, backing ``LxdImageAliases``.
+    lxd_image_aliases: list[LxdImageAlias] = field(default_factory=list)
+    # The cached image store, backing ``LxdImages``. A simulated copy
+    # derives a deterministic fake fingerprint from sha256(source).
+    lxd_images: list[LxdImage] = field(default_factory=list)
+    # Per-instance expanded configuration documents, backing
+    # ``LxdInstanceConfig`` (own config/devices plus the expanded_*
+    # views with profile inheritance applied).
+    lxd_instance_configs: dict[str, LxdInstance] = field(default_factory=dict)
+    # Per-instance snapshot entries, backing ``LxdInstanceSnapshots``.
+    lxd_instance_snapshots: dict[str, list[LxdSnapshot]] = field(default_factory=dict)
+    # Per-instance runtime state documents, backing ``LxdInstanceState``.
+    lxd_instance_states: dict[str, LxdInstanceStateData] = field(default_factory=dict)
+    # The full instance listing (containers AND VMs), backing
+    # ``LxdInstances``.
+    lxd_instances: list[LxdInstance] = field(default_factory=list)
+    # Managed and unmanaged networks, backing ``LxdNetworks``.
+    lxd_networks: list[LxdNetwork] = field(default_factory=list)
+    # Registered background operations, backing ``LxdOperations``. A
+    # cancel or a wait prunes the id (the daemon drops finished
+    # operations, and disappearance is the wait's completion signal).
+    lxd_operations: list[LxdOperation] = field(default_factory=list)
+    # Configuration profiles with their config/devices, backing
+    # ``LxdProfiles``.
+    lxd_profiles: list[LxdProfile] = field(default_factory=list)
+    # Per-project configuration documents, backing ``LxdProjectConfig``.
+    lxd_project_configs: dict[str, LxdProject] = field(default_factory=dict)
+    # The server's projects, backing ``LxdProjects``.
+    lxd_projects: list[LxdProject] = field(default_factory=list)
+    # The daemon metadata document, backing ``LxdServerInfo``. Defaults
+    # to {} -- a simulated daemon makes no version/capability claim
+    # until a test seeds one (the fact's empty-output fallback).
+    lxd_server_info: LxdServerInfoData = field(default_factory=dict)
+    # The host hardware document, backing ``LxdServerResources``.
+    # Defaults to {} for the same reason.
+    lxd_server_resources: LxdServerResourcesData = field(default_factory=dict)
+    # Storage pools and their drivers, backing ``LxdStoragePools``.
+    lxd_storage_pools: list[LxdStoragePool] = field(default_factory=list)
+    # Per-pool volume entries (custom AND instance/image volumes),
+    # backing ``LxdStorageVolumes``.
+    lxd_storage_volumes: dict[str, list[LxdStorageVolume]] = field(default_factory=dict)
     # Mounted filesystems (mount point -> {device, type, options}), backing
     # ``Mounts``. Each value is the parsed form the fact returns, with the
     # options already combined and octal escapes decoded -- the seam holds
@@ -748,6 +1317,51 @@ class SimulatedHost(Host):
     # the requested options into the entry and ``unmount_filesystem`` drops
     # the mount point, so the next step's fresh fact cache sees the change.
     mounts: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Simulated MySQL: one server per host (the connection kwargs address
+    # that server, they do not key the seams). Server-wide seams hold the
+    # entry lists / name-keyed dicts their facts return verbatim;
+    # database-scoped seams (``mysql_indexes`` / ``mysql_tables``) are
+    # keyed by database name and ``mysql_columns`` by "database.table" --
+    # an absent key reads as []. ``mysql_users`` is keyed "user@host";
+    # ``mysql_user_grants`` is keyed "user@host" -> grant target ->
+    # privilege list, where targets carry the server's own rendering
+    # (backticked "`db`.*", or "*.*" for global grants) and a role
+    # membership is the backticked "`role`@`host`" target holding the
+    # single "ROLE" privilege. Every fact copies each entry on read, so a
+    # test can seed these directly. The ``execute_command`` arms maintain
+    # them as the corresponding mysql commands would.
+    # Binary-log files (SHOW BINARY LOGS), backing ``MysqlBinaryLogs``.
+    mysql_binary_logs: list[MysqlBinaryLog] = field(default_factory=list)
+    # Column definitions per "database.table", backing ``MysqlColumns``.
+    mysql_columns: dict[str, list[MysqlColumn]] = field(default_factory=dict)
+    # Active client threads (SHOW PROCESSLIST without INFO), backing
+    # ``MysqlConnections``.
+    mysql_connections: list[MysqlConnection] = field(default_factory=list)
+    # The server's databases (name -> charset/collation), backing
+    # ``MysqlDatabases``.
+    mysql_databases: dict[str, MysqlDatabase] = field(default_factory=dict)
+    # Storage engines (information_schema.ENGINES), backing ``MysqlEngines``.
+    mysql_engines: list[MysqlEngine] = field(default_factory=list)
+    # Index definitions per database, backing ``MysqlIndexes``.
+    mysql_indexes: dict[str, list[MysqlIndex]] = field(default_factory=dict)
+    # Installed plugins (information_schema.PLUGINS), backing ``MysqlPlugins``.
+    mysql_plugins: list[MysqlPlugin] = field(default_factory=list)
+    # Per-channel replica status (SHOW REPLICA STATUS), backing
+    # ``MysqlReplication``.
+    mysql_replication: list[MysqlReplicaStatus] = field(default_factory=list)
+    # Runtime counters (SHOW GLOBAL STATUS), backing ``MysqlStatus``.
+    mysql_status: dict[str, str] = field(default_factory=dict)
+    # User tables per database, backing ``MysqlTables``.
+    mysql_tables: dict[str, list[MysqlTable]] = field(default_factory=dict)
+    # SHOW GRANTS output per "user@host" account (grant target -> the
+    # sorted privilege list), backing ``MysqlUserGrants``.
+    mysql_user_grants: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    # The server's accounts ("user@host" -> mysql.user attributes),
+    # backing ``MysqlUsers``.
+    mysql_users: dict[str, MysqlUser] = field(default_factory=dict)
+    # Global system variables (SHOW GLOBAL VARIABLES), backing
+    # ``MysqlVariables``.
+    mysql_variables: dict[str, str] = field(default_factory=dict)
     # Network devices (interface -> the ``NetworkDevice`` entry the fact
     # returns -- {state, ether?, mtu?, ipv4?, ipv6?}), backing
     # ``NetworkDevices``. Each value is the parsed form the fact returns
@@ -772,6 +1386,66 @@ class SimulatedHost(Host):
     # ``kill_process`` drops the PID, so the next step's fresh fact cache
     # no longer lists the killed process.
     processes: dict[int, dict[str, Any]] = field(default_factory=dict)
+    # Simulated PostgreSQL: one cluster per host. Cluster-wide seams
+    # (``postgres_connections`` / ``postgres_databases`` / ``postgres_roles``
+    # / ``postgres_role_memberships`` / ``postgres_settings`` /
+    # ``postgres_replication`` / ``postgres_tablespaces``) hold the entry
+    # lists / name-keyed dicts their facts return verbatim; database-scoped
+    # seams (``postgres_extensions`` / ``postgres_indexes`` /
+    # ``postgres_privileges`` / ``postgres_publications`` /
+    # ``postgres_schemas`` / ``postgres_subscriptions`` / ``postgres_tables``)
+    # are keyed by database name, with the fact's default database
+    # (``psql_database or "postgres"``) selecting the entry list -- an
+    # absent key reads as []. Every fact copies each entry on read, so a
+    # test can seed these directly. The ``execute_command`` arms maintain
+    # them as the corresponding psql commands would.
+    # Active client connections (pg_stat_activity without the query text),
+    # backing ``PostgresqlConnections``.
+    postgres_connections: list[PostgresqlConnection] = field(default_factory=list)
+    # The cluster's databases (name -> pg_database metadata), backing
+    # ``PostgresqlDatabases``.
+    postgres_databases: dict[str, PostgresqlDatabase] = field(default_factory=dict)
+    # Installed extensions per database, backing ``PostgresqlExtensions``.
+    postgres_extensions: dict[str, list[PostgresqlExtension]] = field(
+        default_factory=dict
+    )
+    # User indexes per database, backing ``PostgresqlIndexes``.
+    postgres_indexes: dict[str, list[PostgresqlIndex]] = field(default_factory=dict)
+    # Object-level grants per database, backing ``PostgresqlPrivileges``.
+    postgres_privileges: dict[str, list[PostgresqlPrivilege]] = field(
+        default_factory=dict
+    )
+    # Logical-replication publications per database, backing
+    # ``PostgresqlPublications``.
+    postgres_publications: dict[str, list[PostgresqlPublication]] = field(
+        default_factory=dict
+    )
+    # Streaming-replication standbys (pg_stat_replication), backing
+    # ``PostgresqlReplication``.
+    postgres_replication: list[PostgresqlReplicationClient] = field(
+        default_factory=list
+    )
+    # Role-to-role grants (pg_auth_members), backing
+    # ``PostgresqlRoleMemberships``.
+    postgres_role_memberships: list[PostgresqlRoleMembership] = field(
+        default_factory=list
+    )
+    # The cluster's roles (name -> pg_roles attributes), backing
+    # ``PostgresqlRoles``.
+    postgres_roles: dict[str, PostgresqlRole] = field(default_factory=dict)
+    # Non-system schemas per database, backing ``PostgresqlSchemas``.
+    postgres_schemas: dict[str, list[PostgresqlSchema]] = field(default_factory=dict)
+    # Active GUC configuration (pg_settings), backing ``PostgresqlSettings``.
+    postgres_settings: list[PostgresqlSetting] = field(default_factory=list)
+    # Logical-replication subscriptions per database (conninfo deliberately
+    # absent), backing ``PostgresqlSubscriptions``.
+    postgres_subscriptions: dict[str, list[PostgresqlSubscription]] = field(
+        default_factory=dict
+    )
+    # User tables per database, backing ``PostgresqlTables``.
+    postgres_tables: dict[str, list[PostgresqlTable]] = field(default_factory=dict)
+    # Tablespaces and their locations, backing ``PostgresqlTablespaces``.
+    postgres_tablespaces: list[PostgresqlTablespace] = field(default_factory=list)
     # Decoded SMBIOS tables (section title -> the field dict the fact
     # returns), backing ``SmbiosInfo``. Each field value is a raw string,
     # except a multi-item field (e.g. ``Characteristics``) whose value is
@@ -813,15 +1487,128 @@ class SimulatedHost(Host):
     # non-zero exit of ``command -v nosuchcommand || true``. Defaults to {} --
     # a simulated machine resolves no commands until a test names them.
     command_paths: dict[str, str] = field(default_factory=dict)
+    # Simulated SELinux booleans (name -> on/off bool), backing ``Booleans``
+    # (the whole map) and ``SEBoolean`` (one name projected to "on"/"off",
+    # an absent name ""). ``set_selinux_boolean`` (the simulated
+    # ``setsebool``) edits it.
+    selinux_booleans: dict[str, bool] = field(default_factory=dict)
+    # The runtime context of labelled paths (path -> SeContext), backing
+    # ``FileContext``. ``chcon_path`` (the simulated ``chcon``) edits the
+    # named components; ``relabel_path`` (the simulated ``restorecon``)
+    # reapplies the fcontext database to them.
+    selinux_file_contexts: dict[str, SeContext] = field(default_factory=dict)
+    # Persistent fcontext database rules (target expression -> SeContext),
+    # backing ``FileContextMapping``. ``manage_selinux_fcontext`` (the
+    # simulated ``semanage fcontext -a/-m/-d``) edits it; a new rule seeds
+    # the stock ``system_u:object_r:<type>:s0`` context.
+    selinux_fcontext_mappings: dict[str, SeContext] = field(default_factory=dict)
+    # Port type labels (protocol -> port -> type), backing ``SEPorts`` (the
+    # whole map, optionally filtered) and ``SEPort`` (one pair projected).
+    # ``manage_selinux_port`` (the simulated ``semanage port -a/-m/-d``)
+    # edits it, dropping a protocol left empty.
+    selinux_ports: dict[str, dict[int, str]] = field(default_factory=dict)
+    # The SELinux status record, backing ``Mode``. Defaults to an
+    # enforcing/targeted host; ``set_selinux_mode`` (the simulated
+    # ``setenforce``) edits the runtime ``mode`` key only, mirroring
+    # setenforce's runtime-only effect.
+    selinux_mode: ModeInfo = field(
+        default_factory=lambda: ModeInfo(
+            mode="enforcing", config_mode="enforcing", policy="targeted"
+        )
+    )
+    # Linux login -> SELinux user mappings, backing ``SELogin``.
+    # ``manage_selinux_login`` (the simulated ``semanage login -a/-m/-d``)
+    # edits it.
+    selinux_logins: dict[str, SeLogin] = field(default_factory=dict)
+    # SELinux user definitions (seuser -> SeUser), backing ``SEUser``. A
+    # read-only seam: no operation manages user definitions, so a test
+    # seeds it directly.
+    selinux_users: dict[str, SeUser] = field(default_factory=dict)
+    # Installed policy modules, backing ``Modules``. The semodule mutators
+    # edit it: install appends an enabled instance, remove drops the
+    # priority's instance, enable/disable flips every instance of the name.
+    selinux_modules: list[Module] = field(default_factory=list)
+    # Permissive domain exemptions, backing ``PermissiveDomains``.
+    # ``manage_selinux_permissive`` (the simulated ``semanage permissive
+    # -a/-d``) edits it.
+    selinux_permissive_domains: list[str] = field(default_factory=list)
     # Sysctl settings (key -> the parsed value ``Sysctl`` returns -- an int,
-    # a string, or a list of ints/strings), backing ``Sysctl``. A keys filter
-    # selects the named settings; an absent key reads as missing, like the
-    # swallowed ``sysctl nosuchkey`` error. Defaults to {} -- a simulated
-    # machine with no settings listed, like pyinfra's ``default = dict`` for
-    # an empty or failed read. A read-only seam: the demo-side ``sysctl``
-    # step is a raw ``StringCommand`` with no simulated effect, so a test
-    # mutates it directly to emulate a live value change.
+    # a string, or a list of ints/strings), backing the relocated
+    # ``sysctl.Sysctl`` fact. A keys filter selects the named settings; an
+    # absent key reads as missing, like the swallowed ``sysctl nosuchkey``
+    # error. Defaults to {} -- a simulated machine with no settings listed,
+    # like pyinfra's ``default = dict`` for an empty or failed read.
+    # ``set_sysctl`` (the simulated ``sysctl -w`` behind ``sysctl.setting``)
+    # and ``reload_sysctl_file`` (the ``sysctl -p`` arm) mutate it; the
+    # demo-side ``sysctl`` recipe step stays a raw ``StringCommand`` with no
+    # simulated effect.
     sysctls: dict[str, Any] = field(default_factory=dict)
+    # Simulated systemd visibility -- the read-side seams for the seven
+    # reemote5-original facts (the two pyinfra ports project the ``services``/
+    # ``enabled_services`` stores above). A test seeds each directly; the
+    # facts issue no write command, so no fact-only arm maintains them. The
+    # ``mask``/``preset`` operations (which change a unit's boot state) do
+    # mutate ``systemd_unit_files`` -- see their execute_command arms. The
+    # scope flags (user_mode/machine/user_name) are ignored: one system-scope
+    # store per fact, a documented approximation the real transport renders
+    # faithfully.
+    #
+    # A unit's dependency edges (full unit name -> property -> unit-name
+    # list), backing ``SystemdDependencies``. An absent unit reads as {}; the
+    # read copies each list.
+    systemd_dependencies: dict[str, dict[str, list[str]]] = field(default_factory=dict)
+    # The failed-unit table (the parsed ``SystemdFailedUnit`` entries),
+    # backing ``SystemdFailedUnits``. Defaults to [] -- a healthy host with no
+    # failed units; the read copies each entry dict.
+    systemd_failed_units: list[SystemdFailedUnit] = field(default_factory=list)
+    # The ``is-system-running`` health word (``running``/``degraded``/...),
+    # backing ``SystemdSystemState``. The empty-string default projects to
+    # ``unknown`` -- a simulated host whose systemctl could not be read.
+    systemd_system_state: str = ""
+    # The ``*.timer`` schedule (timer unit name -> ``SystemdTimer`` entry),
+    # backing ``SystemdTimers``; the read copies each entry dict.
+    systemd_timers: dict[str, SystemdTimer] = field(default_factory=dict)
+    # The installed unit files (unit name -> ``SystemdUnitFile`` state/preset),
+    # backing ``SystemdUnitFiles`` and read by the ``preset`` operation; the
+    # ``mask``/``unmask``/``preset`` arms mutate the named unit's state.
+    systemd_unit_files: dict[str, SystemdUnitFile] = field(default_factory=dict)
+    # A unit's curated ``systemctl show`` properties (full unit name -> the
+    # raw Key=Value dict), backing ``SystemdUnitProperties``. An absent unit
+    # reads as {}; the read copies the property dict. The ``mask``/``unmask``/
+    # ``preset`` arms also update the unit's ``UnitFileState`` here (the ``mask``
+    # operation reads it for idempotence), keeping it in sync with
+    # ``systemd_unit_files``.
+    systemd_unit_properties: dict[str, dict[str, str]] = field(default_factory=dict)
+    # The ``systemctl --version`` banner (a partial/empty dict normalizes to
+    # version None), backing ``SystemdVersion``. Defaults to {} -- a simulated
+    # host whose systemctl could not be read.
+    systemd_version: dict[str, Any] = field(default_factory=dict)
+    # Simulated ufw: the status record backing ``UfwStatus`` (the active
+    # flag, the logging level word and the three default policies).
+    # Defaults to the inactive/empty record -- an unseeded host reads like
+    # an inactive or uninstalled ufw (the fact's unprivileged answer).
+    # ``set_ufw_state`` (the enable/disable arm), ``set_ufw_default_policy``
+    # and ``set_ufw_logging`` mutate it; ``reset_ufw`` restores the empty
+    # record alongside the ruleset.
+    ufw_status: UfwStatusInfo = field(
+        default_factory=lambda: UfwStatusInfo(
+            active=False,
+            logging="",
+            default_incoming="",
+            default_outgoing="",
+            default_routed="",
+        )
+    )
+    # The numbered ruleset backing ``UfwRules`` -- ``UfwRule`` entries in
+    # listing order (the v4 section then the v6 twins, as ``ufw status
+    # numbered`` prints them; ``manage_ufw_rule`` renumbers after every
+    # mutation). Defaults to [] -- an inactive firewall reports no rules.
+    ufw_rules: list[UfwRule] = field(default_factory=list)
+    # Installed application profile names backing ``UfwApplications`` (the
+    # ``ufw app list`` answer, the names ``ufw.rule(app=...)`` references).
+    # A read-only seam: no operation installs profiles, so a test seeds it
+    # directly.
+    ufw_applications: list[str] = field(default_factory=list)
     # Side effects of installing a package: package -> {link src: target}
     # and package -> {file path}. This is what lets the demo reproduce the
     # design doc section 9 trace: installing a package creates the default
@@ -852,6 +1639,10 @@ class SimulatedHost(Host):
                 self.autoremove_apk_packages()
             case ApkRemoveCommand(packages=packages):
                 self.remove_apk_packages(packages)
+            case ApkRepoAddCommand(path=path, line=line):
+                self.add_apk_repo_line(path, line)
+            case ApkRepoRemoveCommand(path=path, line=line):
+                self.remove_apk_repo_line(path, line)
             case ApkUpgradeCommand():
                 pass  # the simulation tracks no newer versions to upgrade to
             case ApkVirtualCommand(tag=tag, packages=packages, present=False):
@@ -914,6 +1705,34 @@ class SimulatedHost(Host):
                 self.put_file(src, dest)
             case AptKeyInstallCommand(spool=spool, dest=dest):
                 self.install_apt_key(spool, dest)
+            case GpgKeyUploadCommand(src=src, dest=dest):
+                self.put_file(src, dest)
+            case GpgKeyInstallCommand(spool=spool, dest=dest):
+                self.install_gpg_key(spool, dest)
+            case GpgKeyRemoveCommand(path=path):
+                self.remove_gpg_keyring(path)
+            case GpgKeyDeleteKeysCommand(keyring=keyring, fingerprints=fingerprints):
+                self.delete_gpg_keys(keyring, fingerprints)
+            case GpgKeyEmptyCleanupCommand(keyring=keyring):
+                self.cleanup_empty_gpg_keyring(keyring)
+            case GpgDearmorCommand(src=src, dest=dest):
+                self.dearmor_gpg_key(src, dest)
+            case GpgImportUploadCommand(src=src, dest=dest):
+                self.put_file(src, dest)
+            case GpgImportCommand(spool=spool):
+                self.import_gpg_key(spool)
+            case GpgExportCommand(keyid=keyid, dest=dest, armor=armor, secret=secret):
+                self.export_gpg_key(keyid, dest, armor, secret)
+            case GpgDeleteKeyCommand(fingerprint=fingerprint, secret=secret):
+                self.delete_gpg_key(fingerprint, secret)
+            case GpgGenKeyCommand(
+                real_name=real_name, email=email, algo=algo, length=length, expire=expire
+            ):
+                self.gen_gpg_key(real_name, email, algo, length, expire)
+            case GpgTrustCommand(fingerprint=fingerprint, ownertrust=ownertrust):
+                self.set_gpg_trust(fingerprint, ownertrust)
+            case GpgRefreshKeysCommand():
+                pass  # refresh contacts keyservers; no key material is modeled
             case DnfModuleEnableCommand(module=module, stream=stream):
                 self.enable_module(module, stream)
             case DnfModuleDisableCommand(module=module):
@@ -988,14 +1807,242 @@ class SimulatedHost(Host):
                 self.mount_filesystem(path, device, fs_type, options)
             case SystemctlCommand(action="daemon-reload"):
                 pass  # the simulation tracks no unit files to reload
-            case SystemctlCommand(action="start" | "restart", unit=unit):
+            case SystemctlCommand(
+                action="start" | "restart" | "reload" | "reload-or-try-restart",
+                unit=unit,
+            ):
                 self.services[unit] = "active"
             case SystemctlCommand(action="stop", unit=unit):
                 self.services[unit] = "inactive"
-            case SystemctlCommand(action="enable", unit=unit):
+            case SystemctlCommand(action="reset-failed", unit=unit):
+                # reset-failed clears a failed unit back to inactive; any
+                # other state is left alone (the real command is a no-op then).
+                if self.services.get(unit) == "failed":
+                    self.services[unit] = "inactive"
+            case SystemctlCommand(action="enable", unit=unit, now=now):
                 self.enabled_services.add(unit)
-            case SystemctlCommand(action="disable", unit=unit):
+                if now:
+                    self.services[unit] = "active"
+            case SystemctlCommand(action="disable", unit=unit, now=now):
                 self.enabled_services.discard(unit)
+                if now:
+                    self.services[unit] = "inactive"
+            case SystemctlCommand(action="mask", unit=unit):
+                self.mask_systemd_unit(unit)
+            case SystemctlCommand(action="unmask", unit=unit):
+                self.unmask_systemd_unit(unit)
+            case SystemctlCommand(action="preset", unit=unit):
+                self.preset_systemd_unit(unit)
+            case SystemctlCommand(action="preset-all"):
+                self.preset_all_systemd_units()
+            case SystemdFileUploadCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
+            case SystemdFileInstallCommand(spool=spool, dest=dest):
+                self.install_systemd_conf_file(spool, dest)
+            case SystemdFileRemoveCommand(path=path):
+                self.remove_systemd_conf_file(path)
+            case SysctlSetCommand(key=key, value=value):
+                self.set_sysctl(key, value)
+            case SysctlFileUploadCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
+            case SysctlFileInstallCommand(spool=spool, dest=dest):
+                self.install_sysctl_conf_file(spool, dest)
+            case SysctlFileRemoveCommand(path=path):
+                self.remove_sysctl_conf_file(path)
+            case SysctlReloadCommand(path=path):
+                self.reload_sysctl_file(path)
+            case SystemdTmpfilesCommand():
+                pass  # the simulation models no runtime files/dirs to create
+            case SystemdSysusersCommand():
+                pass  # the simulation models no users/groups to create
+            case RcServiceCommand(service=service, action=action):
+                self.set_openrc_service_state(service, action)
+            case RcUpdateCommand(service=name, runlevel=level, present=False, stack=True):
+                self.unstack_openrc_runlevel(name, level)
+            case RcUpdateCommand(service=name, runlevel=level, stack=True):
+                self.stack_openrc_runlevel(name, level)
+            case RcUpdateCommand(service=name, runlevel=level, present=False):
+                self.disable_openrc_service(name, level)
+            case RcUpdateCommand(service=name, runlevel=level):
+                self.enable_openrc_service(name, level)
+            case RunlevelCommand(runlevel=level, present=False):
+                self.remove_openrc_runlevel(level)
+            case RunlevelCommand(runlevel=level):
+                self.create_openrc_runlevel(level)
+            case MysqlDatabaseCommand():
+                self.manage_mysql_database(cmd)
+            case MysqlDumpCommand():
+                self.dump_mysql_database(cmd)
+            case MysqlIndexCommand():
+                self.manage_mysql_index(cmd)
+            case MysqlKillCommand():
+                self.kill_mysql_connection(cmd)
+            case MysqlLoadCommand():
+                pass  # the simulation executes no SQL, so a load changes no catalog
+            case MysqlOptimizeCommand():
+                pass  # maintenance refreshes statistics the simulation does not model
+            case MysqlPluginCommand():
+                self.manage_mysql_plugin(cmd)
+            case MysqlPrivilegesCommand():
+                self.manage_mysql_privileges(cmd)
+            case MysqlReplicaCommand():
+                self.manage_mysql_replica(cmd)
+            case MysqlRoleCommand():
+                self.manage_mysql_role(cmd)
+            case MysqlSqlCommand():
+                pass  # the simulation interprets no SQL (FLUSH PRIVILEGES included)
+            case MysqlTableCommand():
+                self.manage_mysql_table(cmd)
+            case MysqlUserCommand():
+                self.manage_mysql_user(cmd)
+            case MysqlVariableCommand():
+                self.set_mysql_variable(cmd)
+            case PostgresqlDatabaseCommand():
+                self.manage_postgresql_database(cmd)
+            case PostgresqlDumpCommand():
+                self.dump_postgresql_database(cmd)
+            case PostgresqlExtensionCommand():
+                self.manage_postgresql_extension(cmd)
+            case PostgresqlIndexCommand():
+                self.manage_postgresql_index(cmd)
+            case PostgresqlLoadCommand():
+                pass  # the simulation executes no SQL, so a load changes no catalog
+            case PostgresqlMembershipCommand():
+                self.manage_postgresql_membership(cmd)
+            case PostgresqlPrivilegeCommand():
+                self.manage_postgresql_privileges(cmd)
+            case PostgresqlPublicationCommand():
+                self.manage_postgresql_publication(cmd)
+            case PostgresqlRoleCommand():
+                self.manage_postgresql_role(cmd)
+            case PostgresqlSchemaCommand():
+                self.manage_postgresql_schema(cmd)
+            case PostgresqlSettingCommand():
+                self.set_postgresql_setting(cmd)
+            case PostgresqlSqlCommand():
+                pass  # the simulation interprets no SQL (pg_reload_conf included)
+            case PostgresqlSubscriptionCommand():
+                self.manage_postgresql_subscription(cmd)
+            case PostgresqlTablespaceCommand():
+                self.manage_postgresql_tablespace(cmd)
+            case SetseboolCommand(boolean=boolean, value=value):
+                self.set_selinux_boolean(boolean, value)
+            case ChconCommand():
+                self.chcon_path(cmd)
+            case SemanageFcontextCommand():
+                self.manage_selinux_fcontext(cmd)
+            case SemanagePortCommand():
+                self.manage_selinux_port(cmd)
+            case SetenforceCommand(mode=mode):
+                self.set_selinux_mode(mode)
+            case SemanageLoginCommand():
+                self.manage_selinux_login(cmd)
+            case SemoduleInstallCommand(source=source, priority=priority):
+                self.install_selinux_module(source, priority)
+            case SemoduleRemoveCommand(name=name, priority=priority):
+                self.remove_selinux_module(name, priority)
+            case SemoduleEnableCommand(name=name, present=present):
+                self.enable_selinux_module(name, present)
+            case SemanagePermissiveCommand():
+                self.manage_selinux_permissive(cmd)
+            case RestoreconCommand():
+                self.relabel_path(cmd)
+            case AutorelabelCommand():
+                self.create_file(AUTORELABEL_PATH)
+            case IptablesChainCommand():
+                self.manage_iptables_chain(cmd)
+            case IptablesPolicyCommand():
+                self.set_iptables_policy(cmd)
+            case IptablesRuleCommand():
+                self.apply_iptables_rule(cmd)
+            case IptablesFlushCommand():
+                self.flush_iptables_rules(cmd)
+            case IptablesZeroCommand():
+                self.zero_iptables_counters(cmd)
+            case IptablesSaveCommand():
+                self.save_iptables_rules(cmd)
+            case IptablesRestoreCommand():
+                self.restore_iptables_rules(cmd)
+            case IpsetCreateCommand(set_name=set_name, set_type=set_type):
+                self.create_ipset(set_name, set_type)
+            case IpsetDestroyCommand(set_name=set_name):
+                self.destroy_ipset(set_name)
+            case IpsetEntryCommand(set_name=set_name, entry=entry, present=present):
+                self.manage_ipset_entry(set_name, entry, present)
+            case FirewalldZoneCommand():
+                self.manage_firewalld_zone(cmd)
+            case FirewalldZoneTargetCommand():
+                self.set_firewalld_zone_target(cmd)
+            case FirewalldZoneTextCommand():
+                self.set_firewalld_zone_text(cmd)
+            case FirewalldZoneEntryCommand():
+                self.manage_firewalld_zone_entry(cmd)
+            case FirewalldMasqueradeCommand():
+                self.set_firewalld_masquerade(cmd)
+            case FirewalldServiceCommand():
+                self.manage_firewalld_service(cmd)
+            case FirewalldServiceEntryCommand():
+                self.manage_firewalld_service_entry(cmd)
+            case FirewalldServiceTextCommand():
+                self.set_firewalld_service_text(cmd)
+            case FirewalldIpsetCommand():
+                self.manage_firewalld_ipset(cmd)
+            case FirewalldIpsetEntryCommand():
+                self.manage_firewalld_ipset_entry(cmd)
+            case FirewalldDefaultZoneCommand(zone=zone):
+                self.firewalld_default_zone = zone
+            case FirewalldLockdownCommand(enabled=enabled):
+                self.firewalld_lockdown = enabled
+            case FirewalldPanicCommand(enabled=enabled):
+                self.firewalld_panic_mode = enabled
+            case FirewalldReloadCommand():
+                self.reload_firewalld(cmd)
+            case UfwStateCommand(enabled=enabled):
+                self.set_ufw_state(enabled)
+            case UfwDefaultPolicyCommand(policy=policy, direction=direction):
+                self.set_ufw_default_policy(policy, direction)
+            case UfwLoggingCommand(level=level):
+                self.set_ufw_logging(level)
+            case UfwResetCommand():
+                self.reset_ufw()
+            case UfwRuleCommand():
+                self.manage_ufw_rule(cmd)
+            case LxdLaunchCommand():
+                self.launch_lxd_instance(cmd)
+            case LxdStateCommand():
+                self.set_lxd_instance_state(cmd)
+            case LxdDeleteCommand():
+                self.delete_lxd_instance(cmd)
+            case LxdImageCommand():
+                self.manage_lxd_image(cmd)
+            case LxdImageAliasCommand():
+                self.manage_lxd_image_alias(cmd)
+            case LxdSetCommand():
+                self.set_lxd_config(cmd)
+            case LxdDeviceCommand():
+                self.manage_lxd_device(cmd)
+            case LxdProfileAssignCommand():
+                self.assign_lxd_profiles(cmd)
+            case LxdCopyCommand():
+                self.copy_lxd_instance(cmd)
+            case LxdSnapshotCommand():
+                self.create_lxd_snapshot(cmd)
+            case LxdRestoreCommand():
+                self.restore_lxd_snapshot(cmd)
+            case LxdNetworkCommand():
+                self.manage_lxd_network(cmd)
+            case LxdOperationCancelCommand():
+                self.cancel_lxd_operation(cmd)
+            case LxdOperationWaitCommand():
+                self.finish_lxd_operation(cmd)
+            case LxdProfileCommand():
+                self.manage_lxd_profile(cmd)
+            case LxdProjectCommand():
+                self.manage_lxd_project(cmd)
+            case LxdStoragePoolCommand():
+                self.manage_lxd_storage_pool(cmd)
+            case LxdStorageVolumeCommand():
+                self.manage_lxd_storage_volume(cmd)
             case WaitForFactCommand():
                 self.check_wait(cmd)
             case _:
@@ -1144,6 +2191,180 @@ class SimulatedHost(Host):
         for entry in self.apk_autoremovable:
             self.apk_packages.pop(entry["name"], None)
         self.apk_autoremovable.clear()
+
+    def add_apk_repo_line(self, path: str, line: str) -> None:
+        """Record a simulated ``echo <line> >> <path>``: append a repo line.
+
+        ``apk.repository``'s ``present=True`` mutation, the
+        ``add_apt_repo_line`` mirror. The line (plus its newline) is
+        appended to the ``remote_files`` content at ``path``, creating the
+        file when absent, and the path is recorded in ``existing_files``
+        with a ``file_stats`` size refresh, so the content-read, existence
+        and metadata facts all see the appended file consistently. The
+        parsed ``ApkRepository`` entry (``ApkRepositories.parse``) also
+        lands in ``apk_repositories`` unless an equal entry is already
+        there, so a repeat ``apk.repository`` is a no-op once the fresh
+        per-step fact cache sees the change. The operation validates
+        ``src`` before yielding, so an unparseable line never reaches the
+        mutator.
+        """
+        data = self.remote_files.get(path, b"") + f"{line}\n".encode()
+        self.remote_files[path] = data
+        self.existing_files.add(path)
+        stats = self.file_stats.get(path)
+        if isinstance(stats, dict):
+            stats["size"] = len(data)
+        else:
+            self.file_stats[path] = {
+                "user": "root",
+                "group": "root",
+                "mode": 644,
+                "size": len(data),
+            }
+        parsed = ApkRepositories.parse([line])
+        if parsed and parsed[0] not in self.apk_repositories:
+            self.apk_repositories.append(parsed[0])
+
+    def remove_apk_repo_line(self, path: str, line: str) -> None:
+        """Record a simulated ``sed -i '/<pattern>/d'``: drop repo lines.
+
+        ``apk.repository``'s ``present=False`` mutation. Deletes every line
+        matching the same anchored, escaped whole-line pattern the sed
+        descriptor renders (apk's own ``_repo_line_pattern``) from the
+        ``remote_files`` content at ``path`` and refreshes the
+        ``file_stats`` size; entries whose reconstructed file line the
+        pattern matches are also dropped from ``apk_repositories`` -- the
+        sed is a *contains* match, so removing a bare URL drops a tagged
+        line carrying it too, exactly as the real command would. An absent
+        path or a line matching nothing is tolerated -- sed exits 0 when
+        it deletes nothing.
+        """
+        regex = re.compile(_apk_repo_line_pattern(line))
+        self.apk_repositories[:] = [
+            entry
+            for entry in self.apk_repositories
+            if regex.match(
+                f"@{entry['tag']} {entry['url']}" if entry["tag"] else entry["url"]
+            )
+            is None
+        ]
+        data = self.remote_files.get(path)
+        if data is None:
+            return
+        text = data.decode("utf-8")
+        kept = [row for row in text.splitlines() if regex.match(row) is None]
+        new = "\n".join(kept)
+        if kept and text.endswith("\n"):
+            new += "\n"
+        self.remote_files[path] = new.encode()
+        stats = self.file_stats.get(path)
+        if isinstance(stats, dict):
+            stats["size"] = len(self.remote_files[path])
+
+    def set_openrc_service_state(self, service: str, action: str) -> None:
+        """Record a simulated ``rc-service <service> <action>``.
+
+        ``openrc.service``'s runtime mutation. ``start``/``restart`` record
+        ``started``, ``stop`` records ``stopped``, ``reload`` leaves the
+        state word alone (a reload re-reads configuration without a state
+        change). The word is updated in every runlevel listing the service
+        appears in -- runtime state is global, while the seam is keyed by
+        runlevel because ``rc-status <runlevel>`` lists per-runlevel
+        assignments -- and a service no runlevel lists yet is inserted
+        into ``default``, so starting an unassigned service stays
+        observable through the default-runlevel facts (a documented
+        simulation simplification).
+        """
+        if action == "reload":
+            return
+        state = "stopped" if action == "stop" else "started"
+        found = False
+        for services in self.openrc_service_states.values():
+            if service in services:
+                services[service] = state
+                found = True
+        if not found:
+            self.openrc_service_states.setdefault("default", {})[service] = state
+
+    def enable_openrc_service(self, service: str, runlevel: str) -> None:
+        """Record a simulated ``rc-update add <service> <runlevel>``.
+
+        Appends the service to the runlevel's assignment list
+        (``openrc_runlevels``, which ``OpenrcRunlevels``/``OpenrcEnabled``
+        read) and seeds a ``stopped`` state word in the runlevel's
+        ``openrc_service_states`` listing -- enabling at boot never starts
+        a service, and ``rc-status <runlevel>`` lists it once assigned. An
+        already-assigned service is left alone (the operation's fact check
+        only yields the add when absent).
+        """
+        names = self.openrc_runlevels.setdefault(runlevel, [])
+        if service not in names:
+            names.append(service)
+        self.openrc_service_states.setdefault(runlevel, {}).setdefault(
+            service, "stopped"
+        )
+
+    def disable_openrc_service(self, service: str, runlevel: str) -> None:
+        """Record a simulated ``rc-update del <service> <runlevel>``.
+
+        Drops the service from the runlevel's assignment list and from its
+        ``openrc_service_states`` listing -- an unassigned service no
+        longer appears in ``rc-status <runlevel>`` rows. The state words
+        in *other* runlevels' listings are untouched (the real command
+        only removes the one boot assignment). Absent entries are
+        tolerated.
+        """
+        names = self.openrc_runlevels.get(runlevel)
+        if names is not None and service in names:
+            names.remove(service)
+        services = self.openrc_service_states.get(runlevel)
+        if services is not None:
+            services.pop(service, None)
+
+    def stack_openrc_runlevel(self, runlevel: str, target: str) -> None:
+        """Record a simulated ``rc-update -s add <runlevel> <target>``.
+
+        A stacked runlevel is a symlink inside the target's directory, so
+        the runlevel name is appended to the target's assignment list
+        (``OpenrcRunlevels`` reports it as an entry there). A repeat stack
+        is a no-op.
+        """
+        names = self.openrc_runlevels.setdefault(target, [])
+        if runlevel not in names:
+            names.append(runlevel)
+
+    def unstack_openrc_runlevel(self, runlevel: str, target: str) -> None:
+        """Record a simulated ``rc-update -s del <runlevel> <target>``.
+
+        Removes the runlevel's stack symlink from the target's assignment
+        list; an absent entry is tolerated.
+        """
+        names = self.openrc_runlevels.get(target)
+        if names is not None and runlevel in names:
+            names.remove(runlevel)
+
+    def create_openrc_runlevel(self, runlevel: str) -> None:
+        """Record a simulated ``mkdir -p /etc/runlevels/<runlevel>``.
+
+        Seeds the runlevel as an empty assignment list; ``mkdir -p`` on an
+        existing directory is a no-op, and so is this.
+        """
+        self.openrc_runlevels.setdefault(runlevel, [])
+
+    def remove_openrc_runlevel(self, runlevel: str) -> None:
+        """Record a simulated ``rm -rf /etc/runlevels/<runlevel>``.
+
+        Pops the runlevel's assignment list and state listing, and drops
+        its name from every other runlevel's list -- the operation
+        unstacks before removing, but the mutator stays consistent even
+        when a test drives the descriptor directly (no dangling stack
+        entry survives).
+        """
+        self.openrc_runlevels.pop(runlevel, None)
+        self.openrc_service_states.pop(runlevel, None)
+        for names in self.openrc_runlevels.values():
+            if runlevel in names:
+                names.remove(runlevel)
 
     def install_packages(self, packages: tuple[str, ...]) -> None:
         for package in packages:
@@ -1556,6 +2777,268 @@ class SimulatedHost(Host):
             "size": len(data),
         }
 
+    def _store_gpg_keyring_file(self, dest: str, data: bytes) -> None:
+        """Record a keyring file write consistently across every consulted seam.
+
+        The shared core of ``install_gpg_key`` and ``dearmor_gpg_key``: the
+        bytes land in ``remote_files``, the path joins ``existing_files``
+        (the ``_KeyringFileExists``/``FileExists`` probe) and a minimal
+        ``file_stats`` row (root-owned, mode 644 -- the real commands'
+        ``chmod 0644``), and the ``gpg_keyrings`` entry for ``dest`` is
+        upserted so ``GpgKeyrings`` sees the file too. The upserted entry
+        carries empty keys: the simulation models no key material, so a
+        test seeds the keys a keyring holds directly (an existing entry's
+        seeded keys are kept -- a re-install over a seeded keyring does not
+        erase the test's key fixture).
+        """
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        self.file_stats[dest] = {
+            "user": "root",
+            "group": "root",
+            "mode": 644,
+            "size": len(data),
+        }
+        for keyring in self.gpg_keyrings:
+            if keyring["path"] == dest:
+                break
+        else:
+            self.gpg_keyrings.append(
+                {"path": dest, "format": dest.split(".")[-1].lower(), "keys": []}
+            )
+
+    def install_gpg_key(self, spool: str, dest: str) -> None:
+        """Record a simulated ``gpg.key`` install of the spooled key at ``spool``.
+
+        ``gpg.key`` first uploads the key stream to a ``/tmp`` spool path (the
+        paired ``GpgKeyUploadCommand`` runs through ``put_file``, storing the
+        bytes in ``remote_files``), then installs it as the ``dest`` keyring
+        file and removes the spool. This mirrors the install-and-remove: the
+        spool bytes are popped out of ``remote_files`` and stored at ``dest``
+        via ``_store_gpg_keyring_file``, so ``FileExists``, ``File``,
+        ``GpgKeyrings`` and the content-read facts all see the installed file
+        consistently. The simulated install models no ``gpg --dearmor``:
+        armored content is stored verbatim (the real command would write its
+        binary conversion). An absent spool path installs nothing.
+        """
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        self._store_gpg_keyring_file(dest, data)
+
+    def remove_gpg_keyring(self, path: str) -> None:
+        """Record a simulated ``rm -f`` of a whole keyring file.
+
+        The ``present=False`` direction of ``gpg.key`` without ``keyid``
+        (and the all-keys-match removal of an armored keyring): the file
+        leaves ``remote_files``, ``existing_files`` and ``file_stats``, and
+        its ``gpg_keyrings`` entry is dropped, so every fact that consulted
+        the file sees it gone. An absent path is left alone (``rm -f`` never
+        fails on one).
+        """
+        self.remote_files.pop(path, None)
+        self.existing_files.discard(path)
+        self.file_stats.pop(path, None)
+        self.gpg_keyrings[:] = [kr for kr in self.gpg_keyrings if kr["path"] != path]
+
+    def delete_gpg_keys(self, keyring: str, fingerprints: tuple[str, ...]) -> None:
+        """Record a simulated selective ``gpg --delete-keys`` on one keyring.
+
+        Drops the key entries whose fingerprint (or id, when no fingerprint
+        was attached -- the operation's own fallback) is named, keeping the
+        rest and the file itself: the emptied-file pruning is the separate
+        ``cleanup_empty_gpg_keyring`` step that follows. An unseeded keyring
+        path deletes nothing (the simulation cannot list unmodeled keys).
+        """
+        for kr in self.gpg_keyrings:
+            if kr["path"] == keyring:
+                kr["keys"] = [
+                    key
+                    for key in kr["keys"]
+                    if key.get("fingerprint", key["id"]) not in fingerprints
+                ]
+                break
+
+    def cleanup_empty_gpg_keyring(self, keyring: str) -> None:
+        """Record the simulated empty-keyring pruning after a selective delete.
+
+        Mirrors the real command's ``--list-keys | grep -q '^pub' || rm -f``:
+        when the seeded keyring entry holds no keys left, the whole file is
+        removed (``remove_gpg_keyring``); a keyring with surviving keys -- or
+        an unseeded path, whose keys the simulation cannot list -- is left
+        alone.
+        """
+        for kr in self.gpg_keyrings:
+            if kr["path"] == keyring:
+                if not kr["keys"]:
+                    self.remove_gpg_keyring(keyring)
+                break
+
+    def dearmor_gpg_key(self, src: str, dest: str) -> None:
+        """Record a simulated ``gpg.dearmor`` conversion between remote paths.
+
+        Reads the armored bytes from ``remote_files`` at ``src`` (which stays
+        -- dearmor does not consume its input) and stores them at ``dest``
+        via ``_store_gpg_keyring_file``, so the output file is visible to
+        every consulted seam. Like the install mutator it models no actual
+        dearmoring: the content is stored verbatim (the real command would
+        write its binary conversion). An absent ``src`` writes nothing (the
+        real ``gpg`` would fail; the seam stays safe regardless).
+        """
+        data = self.remote_files.get(src)
+        if data is None:
+            return
+        self._store_gpg_keyring_file(dest, data)
+
+    def import_gpg_key(self, spool: str) -> None:
+        """Record a simulated ``gpg.import_key`` of the spooled key stream.
+
+        Pops the spool bytes out of ``remote_files`` (the paired
+        ``GpgImportUploadCommand`` stored them via ``put_file``) and appends
+        a stub ``GpgKeyInfo`` entry to ``gpg_keys`` so a repeat import with
+        ``keyid`` sees the key. The simulation models no OpenPGP parsing:
+        the stub's fingerprint is derived from the content hash (stable
+        across phases), it carries no uid, and secret material is not
+        modeled into ``gpg_secret_keys`` (a test seeds that directly). An
+        already-present fingerprint is left alone (gpg's merge is a
+        no-op); an absent spool path imports nothing.
+        """
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        fingerprint = hashlib.sha256(data).hexdigest().upper()[:40]
+        if any(key.get("fingerprint") == fingerprint for key in self.gpg_keys):
+            return
+        self.gpg_keys.append(
+            {
+                "id": fingerprint[-16:],
+                "validity": "u",
+                "length": 4096,
+                "fingerprint": fingerprint,
+                "subkeys": [],
+            }
+        )
+
+    def export_gpg_key(self, keyid: str, dest: str, armor: bool, secret: bool) -> None:
+        """Record a simulated ``gpg.export_key`` write of one key to ``dest``.
+
+        The export file lands in ``remote_files``, ``existing_files`` and a
+        minimal ``file_stats`` row, so the existence/content facts see it
+        consistently -- but *not* in ``gpg_keyrings``: an export is a key
+        dump, not an installed keyring. No real key material is modeled:
+        the bytes are a deterministic placeholder naming the exported key
+        (armored markers with ``armor``, a PRIVATE block for ``secret``).
+        """
+        if armor:
+            kind = "PRIVATE" if secret else "PUBLIC"
+            data = (
+                f"-----BEGIN PGP {kind} KEY BLOCK-----\n"
+                f"simulated export of {keyid}\n"
+                f"-----END PGP {kind} KEY BLOCK-----\n"
+            ).encode()
+        else:
+            data = f"\x99simulated export of {keyid}".encode()
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        self.file_stats[dest] = {
+            "user": "root",
+            "group": "root",
+            "mode": 644,
+            "size": len(data),
+        }
+
+    def delete_gpg_key(self, fingerprint: str, secret: bool) -> None:
+        """Record a simulated ``gpg.delete_key`` from the default keychain.
+
+        Drops the named key (matched by fingerprint, or id when none was
+        attached -- the operation's own fallback) from ``gpg_keys``, and
+        from ``gpg_secret_keys`` too with ``secret`` (the
+        ``--delete-secret-and-public-keys`` form removes both halves). The
+        key's ownertrust assignment leaves ``gpg_trust`` either way, like
+        the real trustdb prune. Keyring *files* are untouched -- this
+        mutator models the keychain, not ``gpg.key``'s removal. The real
+        gpg refusal to delete a public key that still has secret material
+        is not modeled; the seam stays safe regardless.
+        """
+        self.gpg_keys[:] = [
+            key
+            for key in self.gpg_keys
+            if key.get("fingerprint", key["id"]) != fingerprint
+        ]
+        if secret:
+            self.gpg_secret_keys[:] = [
+                key
+                for key in self.gpg_secret_keys
+                if key.get("fingerprint", key["id"]) != fingerprint
+            ]
+        self.gpg_trust[:] = [
+            entry for entry in self.gpg_trust if entry["fingerprint"] != fingerprint
+        ]
+
+    def gen_gpg_key(
+        self, real_name: str, email: str, algo: str, length: int, expire: str
+    ) -> None:
+        """Record a simulated ``gpg.gen_key`` in the default keychain.
+
+        Appends a stub key entry to ``gpg_keys`` *and* ``gpg_secret_keys``
+        (a real generation creates both halves) plus the ultimate
+        ownertrust assignment a fresh own key exports, so a repeat
+        ``gen_key`` sees the uid and every consulted fact stays consistent.
+        The stub's fingerprint/uid_hash derive from the uid's hash (stable
+        across phases); ``algo`` and ``expire`` are not recorded -- no
+        ``GpgKeyInfo`` field carries them. An already-present uid is left
+        alone.
+        """
+        uid = f"{real_name} <{email}>"
+        if any(key.get("uid") == uid for key in self.gpg_keys):
+            return
+        fingerprint = hashlib.sha256(uid.encode()).hexdigest().upper()[:40]
+        entry: GpgKeyInfo = {
+            "id": fingerprint[-16:],
+            "validity": "u",
+            "length": length,
+            "fingerprint": fingerprint,
+            "uid_hash": hashlib.sha256(uid.encode()).hexdigest().upper()[:40],
+            "uid": uid,
+            "subkeys": [],
+        }
+        self.gpg_keys.append({**entry})
+        self.gpg_secret_keys.append({**entry})
+        self.gpg_trust.append(
+            {"fingerprint": fingerprint, "ownertrust": 6, "level": "ultimate"}
+        )
+
+    def set_gpg_trust(self, fingerprint: str, ownertrust: int) -> None:
+        """Record a simulated ``gpg.trust`` ownertrust assignment.
+
+        Upserts the ``GpgKeyTrust`` entry for ``fingerprint`` in
+        ``gpg_trust`` so a repeat ``trust`` reads the level back and is a
+        no-op. The numeric-to-level mapping mirrors gpg's ``_TRUST_LEVELS``
+        (5 and 6 both mean ultimate; an unrecognized number keeps its raw
+        value under ``unknown``).
+        """
+        level = {
+            1: "unknown",
+            2: "never",
+            3: "marginal",
+            4: "full",
+            5: "ultimate",
+            6: "ultimate",
+        }.get(ownertrust, "unknown")
+        for entry in self.gpg_trust:
+            if entry["fingerprint"] == fingerprint:
+                entry["ownertrust"] = ownertrust
+                entry["level"] = level
+                break
+        else:
+            self.gpg_trust.append(
+                {
+                    "fingerprint": fingerprint,
+                    "ownertrust": ownertrust,
+                    "level": level,
+                }
+            )
+
     def enable_module(self, module: str, stream: str) -> None:
         """Record a simulated ``dnf module enable``: set the enabled stream.
 
@@ -1739,6 +3222,153 @@ class SimulatedHost(Host):
         self.remote_files.pop(path, None)
         self.existing_files.discard(path)
         self.file_stats.pop(path, None)
+
+    def install_systemd_conf_file(self, spool: str, dest: str) -> None:
+        """Record a simulated systemd file install of the spooled config text.
+
+        The ``dropin``/``tmpfiles``/``sysusers`` write direction: the paired
+        ``SystemdFileUploadCommand`` spools the content into ``remote_files``
+        (through ``put_file``), then this install pops the spool and stores the
+        bytes at ``dest`` -- the same store ``_SystemdConfFile`` reads back --
+        so a repeat with identical content is a no-op. Mirrors
+        ``install_repo_file``: the path is added to ``existing_files`` plus a
+        minimal root-owned mode-644 ``file_stats`` row (the real command's
+        ``chmod 0644``). An absent spool path installs nothing.
+        """
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        self.file_stats[dest] = {
+            "user": "root",
+            "group": "root",
+            "mode": 644,
+            "size": len(data),
+        }
+
+    def remove_systemd_conf_file(self, path: str) -> None:
+        """Record a simulated systemd config removal (``present=False``).
+
+        The content bytes (``remote_files``), the existence marker
+        (``existing_files``) and any ``file_stats`` row all go, so the file
+        facts stay consistent. An absent path is tolerated -- ``rm -f`` exits
+        0 on a missing file. Mirrors ``remove_repo_file``.
+        """
+        self.remote_files.pop(path, None)
+        self.existing_files.discard(path)
+        self.file_stats.pop(path, None)
+
+    def set_sysctl(self, key: str, value: str) -> None:
+        """Record a simulated ``sysctl -w``: store the parsed live value.
+
+        The runtime half of ``sysctl.setting`` (and every row of a
+        ``reload_sysctl_file`` pass). The ``key = value`` row goes through
+        ``Sysctl.parse`` so the store holds exactly the shape the fact
+        returns -- an int for digits, a list for multi-word values -- and a
+        repeat apply compares equal.
+        """
+        self.sysctls.update(Sysctl.parse([f"{key} = {value}"]))
+
+    def install_sysctl_conf_file(self, spool: str, dest: str) -> None:
+        """Record a simulated sysctl file install of the spooled config text.
+
+        The ``sysctl.setting``/``sysctl.conf`` write direction: the paired
+        ``SysctlFileUploadCommand`` spools the content into ``remote_files``
+        (through ``put_file``), then this install pops the spool and stores
+        the bytes at ``dest`` -- the same store ``SysctlFile``/``SysctlFiles``
+        read back -- so a repeat with identical content is a no-op. Mirrors
+        ``install_systemd_conf_file``: the path is added to ``existing_files``
+        plus a minimal root-owned mode-644 ``file_stats`` row (the real
+        command's ``chmod 0644``). An absent spool path installs nothing.
+        """
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        self.file_stats[dest] = {
+            "user": "root",
+            "group": "root",
+            "mode": 644,
+            "size": len(data),
+        }
+
+    def remove_sysctl_conf_file(self, path: str) -> None:
+        """Record a simulated sysctl config removal (``conf(present=False)``).
+
+        The content bytes (``remote_files``), the existence marker
+        (``existing_files``) and any ``file_stats`` row all go, so the file
+        facts stay consistent. An absent path is tolerated -- ``rm -f`` exits
+        0 on a missing file. Mirrors ``remove_systemd_conf_file``.
+        """
+        self.remote_files.pop(path, None)
+        self.existing_files.discard(path)
+        self.file_stats.pop(path, None)
+
+    def reload_sysctl_file(self, path: str) -> None:
+        """Record a simulated ``sysctl -p <path>``: apply the file's settings.
+
+        Each assignment in the installed config parses with ``_parse_conf``
+        (comments/blanks skipped) and applies through ``set_sysctl``, so the
+        ``Sysctl`` fact reflects the file after a reload -- exactly the
+        runtime effect of the real command. An absent path applies nothing.
+        """
+        data = self.remote_files.get(path)
+        if data is None:
+            return
+        for key, value in _parse_conf(data.decode("utf-8")).items():
+            self.set_sysctl(key, value)
+
+    def _set_systemd_unit_file_state(self, unit: str, state: str) -> None:
+        """Set a unit's boot state in both stores the systemd facts consult.
+
+        ``systemd_unit_files`` (the ``SystemdUnitFiles`` state/preset table the
+        ``preset`` operation reads) and ``systemd_unit_properties`` (the
+        ``UnitFileState`` property the ``mask`` operation reads) both carry a
+        unit's boot state, so a mask/unmask/preset mutation updates them
+        together -- otherwise one operation's idempotence read would miss the
+        change another made. An absent unit gains a minimal entry.
+        """
+        entry = self.systemd_unit_files.setdefault(unit, {"state": "", "preset": ""})
+        entry["state"] = state
+        props = self.systemd_unit_properties.setdefault(unit, {})
+        props["UnitFileState"] = state
+
+    def mask_systemd_unit(self, unit: str) -> None:
+        """Record a simulated ``systemctl mask``: the unit's state becomes
+        ``masked`` (in both unit-file stores). Masking is orthogonal to the
+        boot-enable set, so ``enabled_services`` is left alone."""
+        self._set_systemd_unit_file_state(unit, "masked")
+
+    def unmask_systemd_unit(self, unit: str) -> None:
+        """Record a simulated ``systemctl unmask``: the mask symlink is removed,
+        leaving the unit ``disabled`` (the common post-unmask state)."""
+        self._set_systemd_unit_file_state(unit, "disabled")
+
+    def preset_systemd_unit(self, unit: str) -> None:
+        """Record a simulated ``systemctl preset <unit>``: apply the unit's
+        preset policy. Only an ``enabled``/``disabled`` policy changes the
+        state (and the boot-enable set); an empty policy or an absent unit is a
+        no-op, exactly as the real command leaves the unit unchanged."""
+        entry = self.systemd_unit_files.get(unit)
+        if entry is None:
+            return
+        policy = entry.get("preset", "")
+        if policy not in ("enabled", "disabled"):
+            return
+        self._set_systemd_unit_file_state(unit, policy)
+        if policy == "enabled":
+            self.enabled_services.add(unit)
+        else:
+            self.enabled_services.discard(unit)
+
+    def preset_all_systemd_units(self) -> None:
+        """Record a simulated ``systemctl preset-all``: apply every installed
+        unit's preset policy (the per-unit ``preset_systemd_unit`` over a
+        snapshot of the keys, so the iteration never mutates mid-loop)."""
+        for unit in list(self.systemd_unit_files):
+            self.preset_systemd_unit(unit)
 
     def put_file(self, src, dest: str) -> None:
         """Record a simulated scp upload: store the IO-like source's content.
@@ -1988,6 +3618,2261 @@ class SimulatedHost(Host):
         tip = self.git_remote_commits.get(dest, {}).get("origin", {}).get(branch)
         if tip:
             self.git_local_commits.setdefault(dest, {})[branch] = tip
+
+    def _postgresql_tablespace_oid(self, name: str | None) -> int:
+        """Resolve a tablespace name to the OID ``pg_database`` reports.
+
+        The database operation compares OIDs (the fact's ``tablespace``
+        column), so the create/alter mutators must store one too. None
+        means the database default (``pg_default``, OID 1663 on a stock
+        cluster); an unknown name falls back to 1663 as well -- the
+        operation's own PostgresqlTablespaces check never yields a
+        command naming a tablespace the seam does not list.
+        """
+        wanted = name or "pg_default"
+        for space in self.postgres_tablespaces:
+            if space["name"] == wanted:
+                return space["oid"]
+        return 1663
+
+    def manage_postgresql_database(self, cmd: PostgresqlDatabaseCommand) -> None:
+        """Record a simulated CREATE/ALTER/DROP DATABASE.
+
+        ``postgresql.database``'s mutation, maintaining the
+        ``postgres_databases`` entry ``PostgresqlDatabases`` reads. A
+        create seeds the full ``pg_database`` shape with the catalog
+        defaults the clauses left unset imply (UTF8/C, connections
+        allowed, unlimited), the tablespace NAME resolved to its OID
+        through ``postgres_tablespaces``, and the owner's OID looked up
+        in ``postgres_roles`` (10, the bootstrap superuser, when the
+        role is unseeded); the xid placeholders mirror pyinfra's own
+        fact fixture. An alter applies only the non-None fields (the
+        operation yields exactly the diffs), and a drop pops the entry.
+        """
+        if not cmd.present:
+            self.postgres_databases.pop(cmd.database, None)
+            return
+        if cmd.alter:
+            entry = self.postgres_databases.get(cmd.database)
+            if entry is None:
+                return
+            if cmd.owner is not None:
+                entry["owner"] = cmd.owner
+                entry["dba"] = self.postgres_roles.get(cmd.owner, {}).get("oid", 10)
+            if cmd.tablespace is not None:
+                entry["tablespace"] = self._postgresql_tablespace_oid(cmd.tablespace)
+            if cmd.connection_limit is not None:
+                entry["connlimit"] = cmd.connection_limit
+            if cmd.allow_connections is not None:
+                entry["allowconn"] = cmd.allow_connections
+            return
+        owner = cmd.owner or "postgres"
+        self.postgres_databases[cmd.database] = {
+            "dba": self.postgres_roles.get(owner, {}).get("oid", 10),
+            "encoding": cmd.encoding or "UTF8",
+            "collate": cmd.lc_collate or "C",
+            "ctype": cmd.lc_ctype or "C",
+            "istemplate": False,
+            "allowconn": True if cmd.allow_connections is None else cmd.allow_connections,
+            "connlimit": -1 if cmd.connection_limit is None else cmd.connection_limit,
+            "lastsysoid": 13052,
+            "frozenxid": 548,
+            "minmxid": 1,
+            "tablespace": self._postgresql_tablespace_oid(cmd.tablespace),
+            "acl": None,
+            "owner": owner,
+        }
+
+    def dump_postgresql_database(self, cmd: PostgresqlDumpCommand) -> None:
+        """Record a simulated ``pg_dump ... > dest``.
+
+        ``postgresql.dump``'s mutation. The dump content itself is not
+        modelled (the simulation holds no table data); a marker line
+        naming the dumped database lands in ``remote_files`` so a test
+        can observe the file exists -- and a later ``files.get`` of the
+        path round-trips those bytes.
+        """
+        database = cmd.psql_database or "postgres"
+        self.remote_files[cmd.dest] = f"-- simulated pg_dump of {database}\n".encode()
+
+    def manage_postgresql_extension(self, cmd: PostgresqlExtensionCommand) -> None:
+        """Record a simulated CREATE/ALTER/DROP EXTENSION.
+
+        ``postgresql.extension``'s mutation on the database-keyed
+        ``postgres_extensions`` seam. A create records the requested
+        schema (``public`` when unset) and version -- an unset version
+        gets the ``""`` placeholder, since the simulation has no
+        control files to resolve a default version from and the
+        operation only compares a version the caller named. The
+        alter forms move the schema / bump the version in place.
+        """
+        database = cmd.psql_database or "postgres"
+        entries = self.postgres_extensions.setdefault(database, [])
+        if not cmd.present:
+            self.postgres_extensions[database] = [
+                e for e in entries if e["name"] != cmd.extension
+            ]
+            return
+        current = next((e for e in entries if e["name"] == cmd.extension), None)
+        if cmd.alter_schema:
+            if current is not None:
+                current["schema"] = cmd.schema or ""
+            return
+        if cmd.alter_version:
+            if current is not None:
+                current["version"] = cmd.version or ""
+            return
+        entries.append(
+            {
+                "name": cmd.extension,
+                "version": cmd.version or "",
+                "schema": cmd.schema or "public",
+            }
+        )
+
+    def manage_postgresql_index(self, cmd: PostgresqlIndexCommand) -> None:
+        """Record a simulated CREATE/DROP INDEX.
+
+        ``postgresql.index``'s mutation on the database-keyed
+        ``postgres_indexes`` seam. A create splits the (possibly
+        qualified) index name into schema (``public`` when bare) and
+        name, records the table's unqualified part (the fact reports
+        ``table_name`` bare) and the definition fields the operation
+        drift-checks; the owner is the simulated ``postgres`` run-as
+        user (no fact consumer compares it). A drop removes the entry
+        the operation's own lookup matched: bare name, optionally
+        pinned to the named schema.
+        """
+        database = cmd.psql_database or "postgres"
+        entries = self.postgres_indexes.setdefault(database, [])
+        schema, _, bare = cmd.index.rpartition(".")
+        if not cmd.present:
+            self.postgres_indexes[database] = [
+                e
+                for e in entries
+                if not (e["name"] == bare and (not schema or e["schema"] == schema))
+            ]
+            return
+        entries.append(
+            {
+                "schema": schema or "public",
+                "name": bare,
+                "table": cmd.table.rpartition(".")[2],
+                "owner": "postgres",
+                "tablespace": cmd.tablespace,
+                "unique": cmd.unique,
+                "method": cmd.method,
+            }
+        )
+
+    def manage_postgresql_membership(self, cmd: PostgresqlMembershipCommand) -> None:
+        """Record a simulated GRANT/REVOKE role membership.
+
+        ``postgresql.membership``'s mutation on ``postgres_role_memberships``.
+        A grant upserts the (role, member) pair with the requested
+        admin option; ``admin_only`` withdraws just the option (the
+        membership stays, the REVOKE ADMIN OPTION FOR direction); a
+        plain revoke drops the entry.
+        """
+        current = next(
+            (
+                m
+                for m in self.postgres_role_memberships
+                if m["role"] == cmd.role and m["member"] == cmd.member
+            ),
+            None,
+        )
+        if cmd.present:
+            if current is None:
+                self.postgres_role_memberships.append(
+                    {
+                        "role": cmd.role,
+                        "member": cmd.member,
+                        "admin_option": cmd.admin_option,
+                    }
+                )
+            else:
+                current["admin_option"] = cmd.admin_option
+            return
+        if cmd.admin_only:
+            if current is not None:
+                current["admin_option"] = False
+            return
+        if current is not None:
+            self.postgres_role_memberships.remove(current)
+
+    def manage_postgresql_privileges(self, cmd: PostgresqlPrivilegeCommand) -> None:
+        """Record a simulated GRANT/REVOKE of object privileges.
+
+        ``postgresql.privilege``'s mutation on the database-keyed
+        ``postgres_privileges`` seam. Targets resolve exactly as the
+        operation resolves them (the shared ``_normalize_object``
+        helper; an ALL IN SCHEMA grant addresses the objects the
+        grantee already holds grants on -- the same set the operation
+        derived its targets from, since the simulation has no object
+        catalog to enumerate). Matching uses ``_PRIVILEGE_ALIASES`` so
+        a "table" grant finds an existing "view" row. A grant upserts
+        one entry per (object, privilege), ORing the grant option in
+        (a plain re-grant never strips an existing option, as in real
+        SQL); REVOKE GRANT OPTION FOR only clears ``grantable``; a
+        plain revoke removes the entries.
+        """
+        database = cmd.psql_database or "postgres"
+        entries = self.postgres_privileges.setdefault(database, [])
+        aliases = _PRIVILEGE_ALIASES[cmd.object_type]
+        if cmd.all_in_schema:
+            targets = sorted(
+                {
+                    (e["schema"], e["name"])
+                    for e in entries
+                    if e["grantee"] == cmd.role
+                    and e["object_type"] in aliases
+                    and e["schema"] == cmd.all_in_schema
+                }
+            )
+        else:
+            targets = sorted(
+                {_normalize_object(cmd.object_type, name) for name in cmd.objects}
+            )
+        for schema, name in targets:
+            for privilege in cmd.privileges:
+                current = next(
+                    (
+                        e
+                        for e in entries
+                        if e["grantee"] == cmd.role
+                        and e["object_type"] in aliases
+                        and e["schema"] == schema
+                        and e["name"] == name
+                        and e["privilege"] == privilege
+                    ),
+                    None,
+                )
+                if cmd.present:
+                    if current is None:
+                        entries.append(
+                            {
+                                "object_type": cmd.object_type,
+                                "schema": schema,
+                                "name": name,
+                                "grantee": cmd.role,
+                                "privilege": privilege,
+                                "grantable": cmd.grant_option,
+                            }
+                        )
+                    else:
+                        current["grantable"] = current["grantable"] or cmd.grant_option
+                elif cmd.revoke_grant_option:
+                    if current is not None:
+                        current["grantable"] = False
+                elif current is not None:
+                    entries.remove(current)
+
+    def manage_postgresql_publication(self, cmd: PostgresqlPublicationCommand) -> None:
+        """Record a simulated CREATE/ALTER/DROP PUBLICATION.
+
+        ``postgresql.publication``'s mutation on the database-keyed
+        ``postgres_publications`` seam. A create records the table set
+        (or the ALL TABLES flag) under the simulated ``postgres``
+        run-as owner -- CREATE PUBLICATION has no OWNER clause, the
+        operation yields a separate OWNER TO alter the arm below then
+        applies. An alter replaces the table list when one is named
+        and re-owns when an owner is named; a drop removes the entry.
+        """
+        database = cmd.psql_database or "postgres"
+        entries = self.postgres_publications.setdefault(database, [])
+        if not cmd.present:
+            self.postgres_publications[database] = [
+                p for p in entries if p["name"] != cmd.publication
+            ]
+            return
+        current = next((p for p in entries if p["name"] == cmd.publication), None)
+        if cmd.alter:
+            if current is not None:
+                if cmd.tables:
+                    current["tables"] = list(cmd.tables)
+                if cmd.owner is not None:
+                    current["owner"] = cmd.owner
+            return
+        entries.append(
+            {
+                "name": cmd.publication,
+                "owner": "postgres",
+                "all_tables": cmd.all_tables,
+                "tables": list(cmd.tables),
+            }
+        )
+
+    def manage_postgresql_role(self, cmd: PostgresqlRoleCommand) -> None:
+        """Record a simulated CREATE/ALTER/DROP ROLE.
+
+        ``postgresql.role``'s mutation on ``postgres_roles``. A create
+        seeds the full ``pg_roles`` shape from the descriptor's flags
+        (the operation renders every flag explicitly, so None only
+        appears when a test builds the descriptor by hand -- the
+        catalog defaults apply then), no password (the namespace
+        credentials decision), and a synthetic OID one past the
+        highest seeded one. An alter applies only the non-None
+        tri-state fields onto the fact's catalog keys (canlogin,
+        super, connlimit, ... -- the same mapping the operation's
+        drift check uses); a drop pops the entry.
+        """
+        if not cmd.present:
+            self.postgres_roles.pop(cmd.role, None)
+            return
+        if cmd.alter:
+            entry = self.postgres_roles.get(cmd.role)
+            if entry is None:
+                return
+            for option, key in (
+                ("login", "canlogin"),
+                ("superuser", "super"),
+                ("inherit", "inherit"),
+                ("createdb", "createdb"),
+                ("createrole", "createrole"),
+                ("replication", "replication"),
+            ):
+                value = getattr(cmd, option)
+                if value is not None:
+                    entry[key] = value
+            if cmd.connection_limit is not None:
+                entry["connlimit"] = cmd.connection_limit
+            return
+        self.postgres_roles[cmd.role] = {
+            "super": False if cmd.superuser is None else cmd.superuser,
+            "inherit": True if cmd.inherit is None else cmd.inherit,
+            "createrole": False if cmd.createrole is None else cmd.createrole,
+            "createdb": False if cmd.createdb is None else cmd.createdb,
+            "canlogin": True if cmd.login is None else cmd.login,
+            "replication": False if cmd.replication is None else cmd.replication,
+            "connlimit": -1 if cmd.connection_limit is None else cmd.connection_limit,
+            "password": None,
+            "validuntil": None,
+            "bypassrls": False,
+            "config": None,
+            "oid": max(
+                (e["oid"] for e in self.postgres_roles.values()), default=16383
+            )
+            + 1,
+        }
+
+    def manage_postgresql_schema(self, cmd: PostgresqlSchemaCommand) -> None:
+        """Record a simulated CREATE/ALTER/DROP SCHEMA.
+
+        ``postgresql.schema``'s mutation on the database-keyed
+        ``postgres_schemas`` seam. A create records the owner (the
+        simulated ``postgres`` run-as user when no AUTHORIZATION was
+        named); an alter re-owns; a drop removes the entry (CASCADE
+        needs no extra modelling -- the simulation tracks no objects
+        living inside the schema beyond what other seams hold).
+        """
+        database = cmd.psql_database or "postgres"
+        entries = self.postgres_schemas.setdefault(database, [])
+        if not cmd.present:
+            self.postgres_schemas[database] = [
+                s for s in entries if s["name"] != cmd.schema
+            ]
+            return
+        current = next((s for s in entries if s["name"] == cmd.schema), None)
+        if cmd.alter:
+            if current is not None:
+                current["owner"] = cmd.owner or ""
+            return
+        entries.append({"name": cmd.schema, "owner": cmd.owner or "postgres"})
+
+    def set_postgresql_setting(self, cmd: PostgresqlSettingCommand) -> None:
+        """Record a simulated ALTER SYSTEM SET/RESET.
+
+        ``postgresql.setting``'s mutation on ``postgres_settings``. A
+        SET writes the value text and moves the source to
+        "configuration file" (ALTER SYSTEM writes postgresql.auto.conf);
+        a RESET moves the source back to "default" -- the boot value
+        itself is not modelled (the operation's reset branch compares
+        only the source, and its set branch only the value text). The
+        pending_restart flag is left as seeded: whether a GUC needs a
+        restart is server knowledge the simulation does not hold. An
+        absent parameter is tolerated -- the operation's unknown-GUC
+        check never yields for one.
+        """
+        current = next(
+            (s for s in self.postgres_settings if s["name"] == cmd.name), None
+        )
+        if current is None:
+            return
+        if cmd.present:
+            current["setting"] = cmd.value or ""
+            current["source"] = "configuration file"
+        else:
+            current["source"] = "default"
+
+    def manage_postgresql_subscription(self, cmd: PostgresqlSubscriptionCommand) -> None:
+        """Record a simulated CREATE/ALTER/DROP SUBSCRIPTION.
+
+        ``postgresql.subscription``'s mutation on the database-keyed
+        ``postgres_subscriptions`` seam. A create records the
+        publication list and enabled flag under the simulated
+        ``postgres`` run-as owner; the connection string is never
+        stored (the fact deliberately hides conninfo). An alter
+        replaces the publications when named and flips enabled when
+        set; a drop removes the entry.
+        """
+        database = cmd.psql_database or "postgres"
+        entries = self.postgres_subscriptions.setdefault(database, [])
+        if not cmd.present:
+            self.postgres_subscriptions[database] = [
+                s for s in entries if s["name"] != cmd.subscription
+            ]
+            return
+        current = next(
+            (s for s in entries if s["name"] == cmd.subscription), None
+        )
+        if cmd.alter:
+            if current is not None:
+                if cmd.publications:
+                    current["publications"] = list(cmd.publications)
+                if cmd.enabled is not None:
+                    current["enabled"] = cmd.enabled
+            return
+        entries.append(
+            {
+                "name": cmd.subscription,
+                "owner": "postgres",
+                "enabled": True if cmd.enabled is None else cmd.enabled,
+                "publications": list(cmd.publications),
+            }
+        )
+
+    def manage_postgresql_tablespace(self, cmd: PostgresqlTablespaceCommand) -> None:
+        """Record a simulated CREATE/ALTER/DROP TABLESPACE.
+
+        ``postgresql.tablespace``'s mutation on ``postgres_tablespaces``.
+        A create appends the entry with a synthetic OID one past the
+        highest seeded one (1663/1664 are the built-ins on a stock
+        cluster) so a later ``postgresql.database`` tablespace
+        resolution finds it; an alter re-owns; a drop removes the
+        entry (the real command fails while objects still live there,
+        but the simulation models no tablespace occupancy).
+        """
+        if not cmd.present:
+            self.postgres_tablespaces = [
+                t for t in self.postgres_tablespaces if t["name"] != cmd.tablespace
+            ]
+            return
+        current = next(
+            (t for t in self.postgres_tablespaces if t["name"] == cmd.tablespace),
+            None,
+        )
+        if cmd.alter:
+            if current is not None:
+                current["owner"] = cmd.owner or ""
+            return
+        self.postgres_tablespaces.append(
+            {
+                "oid": max(
+                    (t["oid"] for t in self.postgres_tablespaces), default=16384
+                )
+                + 1,
+                "name": cmd.tablespace,
+                "owner": cmd.owner or "postgres",
+                "location": cmd.location,
+            }
+        )
+
+    @staticmethod
+    def _mysql_ident(name: str) -> str:
+        """Backtick-quote an identifier the way SHOW GRANTS renders it."""
+        return "`" + name.replace("`", "``") + "`"
+
+    def manage_mysql_database(self, cmd: MysqlDatabaseCommand) -> None:
+        """Record a simulated CREATE/ALTER/DROP DATABASE.
+
+        ``mysql.database``'s mutation, maintaining the ``mysql_databases``
+        entry ``MysqlDatabases`` reads. A create seeds the server's
+        utf8mb4 defaults for the clauses left unset (the charset ->
+        default-collation mapping of a non-utf8mb4 charset is not
+        modelled); an alter applies only the non-None fields (the
+        operation yields exactly the diffs). A drop also clears what
+        DROP DATABASE destroys server-side: the database's tables,
+        indexes and column seams, and every grant target scoped to it.
+        """
+        if not cmd.present:
+            self.mysql_databases.pop(cmd.database, None)
+            self.mysql_tables.pop(cmd.database, None)
+            self.mysql_indexes.pop(cmd.database, None)
+            prefix = f"{cmd.database}."
+            for key in [k for k in self.mysql_columns if k.startswith(prefix)]:
+                del self.mysql_columns[key]
+            grant_prefix = f"{self._mysql_ident(cmd.database)}."
+            for grants in self.mysql_user_grants.values():
+                for target in [t for t in grants if t.startswith(grant_prefix)]:
+                    del grants[target]
+            return
+        if cmd.alter:
+            entry = self.mysql_databases.get(cmd.database)
+            if entry is None:
+                return
+            if cmd.charset is not None:
+                entry["character_set"] = cmd.charset
+            if cmd.collate is not None:
+                entry["collation_name"] = cmd.collate
+            return
+        self.mysql_databases[cmd.database] = {
+            "character_set": cmd.charset or "utf8mb4",
+            "collation_name": cmd.collate or "utf8mb4_0900_ai_ci",
+        }
+
+    def dump_mysql_database(self, cmd: MysqlDumpCommand) -> None:
+        """Record a simulated ``mysqldump ... > dest``.
+
+        ``mysql.dump``'s mutation. The dump content itself is not
+        modelled (the simulation holds no table data); a marker line
+        naming the dumped database lands in ``remote_files`` so a test
+        can observe the file exists -- and a later ``files.get`` of the
+        path round-trips those bytes.
+        """
+        database = cmd.mysql_database or "an unspecified database"
+        self.remote_files[cmd.dest] = f"-- simulated mysqldump of {database}\n".encode()
+
+    def manage_mysql_index(self, cmd: MysqlIndexCommand) -> None:
+        """Record a simulated CREATE/DROP INDEX.
+
+        ``mysql.index``'s mutation on the database-keyed ``mysql_indexes``
+        seam ``MysqlIndexes`` reads. A create replaces any same-named
+        entry on the table (the operation never yields one on drift, so
+        this only matters for a directly sent descriptor); a drop
+        filters the entry out, tolerating an absent index.
+        """
+        entries = self.mysql_indexes.setdefault(cmd.database, [])
+        entries[:] = [
+            e for e in entries if not (e["table"] == cmd.table and e["name"] == cmd.index)
+        ]
+        if cmd.present:
+            entries.append(
+                {
+                    "name": cmd.index,
+                    "table": cmd.table,
+                    "columns": list(cmd.columns),
+                    "unique": cmd.unique,
+                    "index_type": cmd.index_type,
+                }
+            )
+
+    def kill_mysql_connection(self, cmd: MysqlKillCommand) -> None:
+        """Record a simulated KILL / KILL QUERY.
+
+        ``mysql.kill``'s mutation on ``mysql_connections``. A full kill
+        drops the thread; KILL QUERY only cancels the running statement,
+        so the connection remains, idling (Sleep, no state, zero time).
+        An absent id is tolerated -- the real command errors, but the
+        state outcome is the same.
+        """
+        for entry in self.mysql_connections:
+            if entry["id"] == cmd.process_id:
+                if cmd.query_only:
+                    entry["command"] = "Sleep"
+                    entry["state"] = None
+                    entry["time"] = 0
+                else:
+                    self.mysql_connections.remove(entry)
+                return
+
+    def manage_mysql_plugin(self, cmd: MysqlPluginCommand) -> None:
+        """Record a simulated INSTALL/UNINSTALL PLUGIN.
+
+        ``mysql.plugin``'s mutation on ``mysql_plugins``. An install
+        records an ACTIVE plugin loaded from the named library; the
+        plugin type is server knowledge the INSTALL statement does not
+        carry, so it records empty (the operation compares only the
+        library). An uninstall drops the named plugin.
+        """
+        self.mysql_plugins[:] = [p for p in self.mysql_plugins if p["name"] != cmd.plugin]
+        if cmd.present:
+            self.mysql_plugins.append(
+                {
+                    "name": cmd.plugin,
+                    "status": "ACTIVE",
+                    "type": "",
+                    "library": cmd.soname,
+                    "license": "GPL",
+                }
+            )
+
+    def manage_mysql_privileges(self, cmd: MysqlPrivilegesCommand) -> None:
+        """Record a simulated GRANT/REVOKE ... ON ... TO/FROM.
+
+        ``mysql.privileges``' mutation on ``mysql_user_grants`` (also the
+        privileges bundle of ``mysql.database``/``mysql.user``). The
+        descriptor's database/table arrive already rendered (backticked
+        or ``*``), so the target key matches what SHOW GRANTS -- and the
+        planner's fact lookup -- uses. REVOKE ALL PRIVILEGES clears every
+        privilege except GRANT OPTION and role memberships; granting
+        real privileges overrides USAGE, exactly as the server does.
+        """
+        grants = self.mysql_user_grants.setdefault(f"{cmd.user}@{cmd.user_hostname}", {})
+        target = f"{cmd.database}.{cmd.table}"
+        current = set(grants.get(target, []))
+        if cmd.action == "GRANT":
+            current.update(cmd.privileges)
+            if cmd.with_statement == "GRANT OPTION":
+                current.add("GRANT OPTION")
+            if current - {"USAGE", "ROLE", "GRANT OPTION"}:
+                current.discard("USAGE")
+        else:
+            if "ALL PRIVILEGES" in cmd.privileges:
+                current &= {"GRANT OPTION", "ROLE"}
+            current.difference_update(cmd.privileges)
+        if current:
+            grants[target] = sorted(current)
+        else:
+            grants.pop(target, None)
+
+    def manage_mysql_replica(self, cmd: MysqlReplicaCommand) -> None:
+        """Record a simulated START/STOP/RESET REPLICA.
+
+        ``mysql.replica``'s mutation on ``mysql_replication``. A reset
+        (RESET REPLICA ALL) forgets every channel's configuration; a
+        start/stop flips both thread states on the named channel (the
+        default channel when none is named). Starting clears the last
+        error and the lag; stopping NULLs the lag, as SHOW REPLICA
+        STATUS reports it with the applier stopped.
+        """
+        if cmd.reset:
+            if cmd.channel is None:
+                self.mysql_replication.clear()
+            else:
+                self.mysql_replication[:] = [
+                    e for e in self.mysql_replication if e["channel"] != cmd.channel
+                ]
+            return
+        for entry in self.mysql_replication:
+            if entry["channel"] == (cmd.channel or ""):
+                state = "Yes" if cmd.running else "No"
+                entry["io_running"] = state
+                entry["sql_running"] = state
+                if cmd.running:
+                    entry["last_error"] = ""
+                    entry["seconds_behind_source"] = 0
+                else:
+                    entry["seconds_behind_source"] = None
+
+    def manage_mysql_role(self, cmd: MysqlRoleCommand) -> None:
+        """Record a simulated CREATE/DROP ROLE or GRANT/REVOKE role.
+
+        ``mysql.role``'s mutation. A create seeds the role account
+        (``is_role``, locked and password-expired, as CREATE ROLE leaves
+        it) in ``mysql_users``; a drop pops it and revokes every
+        membership server-side. A membership grant/revoke edits the
+        member's ``mysql_user_grants`` under the backticked role@host
+        target with the single "ROLE" privilege -- the same key the
+        operation's idempotence check reads.
+        """
+        role_key = f"{cmd.role}@{cmd.role_hostname}"
+        grant_key = f"{self._mysql_ident(cmd.role)}@{self._mysql_ident(cmd.role_hostname)}"
+        if cmd.member is not None:
+            grants = self.mysql_user_grants.setdefault(
+                f"{cmd.member}@{cmd.member_hostname}", {}
+            )
+            if cmd.member_present:
+                grants[grant_key] = ["ROLE"]
+            else:
+                grants.pop(grant_key, None)
+            return
+        if cmd.present:
+            self.mysql_users[role_key] = {
+                "privileges": [],
+                "password_expired": True,
+                "is_role": True,
+                "account_locked": True,
+            }
+            return
+        self.mysql_users.pop(role_key, None)
+        for grants in self.mysql_user_grants.values():
+            grants.pop(grant_key, None)
+
+    def manage_mysql_table(self, cmd: MysqlTableCommand) -> None:
+        """Record a simulated CREATE/DROP TABLE.
+
+        ``mysql.table``'s mutation on the database-keyed ``mysql_tables``
+        seam ``MysqlTables`` reads. A create seeds an empty table with
+        the InnoDB/utf8mb4 defaults for the clauses left unset; the
+        column definitions are free SQL text the simulation does not
+        parse, so ``mysql_columns`` is NOT seeded (a test wanting column
+        visibility seeds that seam directly). A drop also clears the
+        table's indexes and column entries, as DROP TABLE does.
+        """
+        entries = self.mysql_tables.setdefault(cmd.database, [])
+        entries[:] = [e for e in entries if e["name"] != cmd.table]
+        if cmd.present:
+            entries.append(
+                {
+                    "name": cmd.table,
+                    "engine": cmd.engine or "InnoDB",
+                    "rows": 0,
+                    "data_length": 0,
+                    "index_length": 0,
+                    "collation": cmd.collate or "utf8mb4_0900_ai_ci",
+                    "comment": cmd.comment or "",
+                }
+            )
+            return
+        indexes = self.mysql_indexes.get(cmd.database)
+        if indexes is not None:
+            indexes[:] = [e for e in indexes if e["table"] != cmd.table]
+        self.mysql_columns.pop(f"{cmd.database}.{cmd.table}", None)
+
+    def manage_mysql_user(self, cmd: MysqlUserCommand) -> None:
+        """Record a simulated CREATE/ALTER/DROP USER.
+
+        ``mysql.user``'s mutation on ``mysql_users``. A create seeds the
+        account with the caching_sha2_password default plugin (no
+        password is ever modelled -- the credentials decision), the
+        REQUIRE level mapped to its ssl_type column (SSL -> ANY,
+        X509 -> X509, or SPECIFIED with cipher/issuer/subject clauses)
+        and the resource limits in their mysql.user columns. An alter
+        applies only the non-None fields (the operation yields exactly
+        the diffs). A drop pops the account and its grants, as DROP
+        USER does.
+        """
+        key = f"{cmd.user}@{cmd.user_hostname}"
+        if not cmd.present:
+            self.mysql_users.pop(key, None)
+            self.mysql_user_grants.pop(key, None)
+            return
+
+        def ssl_type() -> str | None:
+            if cmd.require == "SSL":
+                return "ANY"
+            if cmd.require == "X509":
+                if cmd.require_cipher or cmd.require_issuer or cmd.require_subject:
+                    return "SPECIFIED"
+                return "X509"
+            return None
+
+        if cmd.alter:
+            entry = self.mysql_users.get(key)
+            if entry is None:
+                return
+            if cmd.auth_plugin is not None:
+                entry["plugin"] = cmd.auth_plugin
+            if cmd.require is not None:
+                entry["ssl_type"] = ssl_type()
+            if cmd.require_cipher is not None:
+                entry["ssl_cipher"] = cmd.require_cipher
+            if cmd.require_issuer is not None:
+                entry["x509_issuer"] = cmd.require_issuer
+            if cmd.require_subject is not None:
+                entry["x509_subject"] = cmd.require_subject
+            if cmd.max_connections is not None:
+                entry["max_user_connections"] = cmd.max_connections
+            if cmd.max_queries_per_hour is not None:
+                entry["max_questions"] = cmd.max_queries_per_hour
+            if cmd.max_updates_per_hour is not None:
+                entry["max_updates"] = cmd.max_updates_per_hour
+            if cmd.max_connections_per_hour is not None:
+                entry["max_connections"] = cmd.max_connections_per_hour
+            return
+        self.mysql_users[key] = {
+            "privileges": [],
+            "plugin": cmd.auth_plugin or "caching_sha2_password",
+            "authentication_string": None,
+            "ssl_type": ssl_type(),
+            "ssl_cipher": cmd.require_cipher,
+            "x509_issuer": cmd.require_issuer,
+            "x509_subject": cmd.require_subject,
+            "max_user_connections": cmd.max_connections or 0,
+            "max_questions": cmd.max_queries_per_hour or 0,
+            "max_updates": cmd.max_updates_per_hour or 0,
+            "max_connections": cmd.max_connections_per_hour or 0,
+            "password_expired": False,
+            "is_role": False,
+            "account_locked": False,
+        }
+
+    def set_mysql_variable(self, cmd: MysqlVariableCommand) -> None:
+        """Record a simulated SET GLOBAL/PERSIST or RESET PERSIST.
+
+        ``mysql.variable``'s mutation on ``mysql_variables``. A SET
+        writes the value text (both scopes change the runtime value);
+        the persisted-override set is not modelled, so RESET PERSIST
+        leaves the runtime value untouched -- it keeps until restart
+        either way, and the operation's reset branch is stateless.
+        """
+        if cmd.present:
+            self.mysql_variables[cmd.name] = cmd.value or ""
+
+    def set_selinux_boolean(self, boolean: str, value: str) -> None:
+        """Record a simulated ``setsebool``: store the on/off bool.
+
+        The ``SEBoolean``/``Booleans`` facts read ``selinux_booleans``, so
+        the next step's fresh fact cache sees the new value and a repeat
+        set is a no-op. ``persistent`` carries no simulated state: the
+        simulation models no separate policy store, the runtime value is
+        the only one the facts report.
+        """
+        self.selinux_booleans[boolean] = value == "on"
+
+    def chcon_path(self, cmd: ChconCommand) -> None:
+        """Record a simulated ``chcon``: edit the named context components.
+
+        Only the components the descriptor carries are changed; the path
+        gains a stock ``system_u:object_r:default_t:s0`` context first when
+        unlabelled (the real chcon on an unlabelled filesystem would fail;
+        the seam stays safe). ``FileContext`` reads the same store, so the
+        relabel is observable on the next step.
+        """
+        context = self.selinux_file_contexts.setdefault(
+            cmd.path,
+            SeContext(user="system_u", role="object_r", type="default_t", level="s0"),
+        )
+        for component, value in (
+            ("user", cmd.se_user),
+            ("role", cmd.se_role),
+            ("type", cmd.se_type),
+            ("level", cmd.se_level),
+        ):
+            if value is not None:
+                context[component] = value
+
+    def manage_selinux_fcontext(self, cmd: SemanageFcontextCommand) -> None:
+        """Record a simulated ``semanage fcontext -a/-m/-d``.
+
+        Add seeds the stock ``system_u:object_r:<type>:s0`` context (the
+        components semanage defaults when only ``-t`` is given), modify
+        changes the type only, delete drops the rule. The
+        ``FileContextMapping`` fact reads the same store; existing file
+        labels are untouched, exactly like the real database-only write.
+        """
+        if not cmd.present:
+            self.selinux_fcontext_mappings.pop(cmd.target, None)
+        elif cmd.modify:
+            if cmd.target in self.selinux_fcontext_mappings:
+                self.selinux_fcontext_mappings[cmd.target]["type"] = cmd.se_type
+        else:
+            self.selinux_fcontext_mappings[cmd.target] = SeContext(
+                user="system_u", role="object_r", type=cmd.se_type, level="s0"
+            )
+
+    def manage_selinux_port(self, cmd: SemanagePortCommand) -> None:
+        """Record a simulated ``semanage port -a/-m/-d``.
+
+        Add and modify both store the type at the protocol/port pair (the
+        simulation keeps no add-vs-modify distinction in the label map),
+        delete drops it and prunes a protocol left empty, so ``SEPorts``
+        never reports an empty protocol dict.
+        """
+        if not cmd.present:
+            ports = self.selinux_ports.get(cmd.protocol)
+            if ports is not None:
+                ports.pop(cmd.port, None)
+                if not ports:
+                    del self.selinux_ports[cmd.protocol]
+        else:
+            self.selinux_ports.setdefault(cmd.protocol, {})[cmd.port] = cmd.se_type
+
+    def set_selinux_mode(self, mode: str) -> None:
+        """Record a simulated ``setenforce``: switch the runtime mode only.
+
+        The ``Mode`` fact reads ``selinux_mode``; only its ``mode`` key
+        changes, mirroring setenforce's runtime-only effect -- the
+        config-file mode and policy survive untouched.
+        """
+        self.selinux_mode["mode"] = mode
+
+    def manage_selinux_login(self, cmd: SemanageLoginCommand) -> None:
+        """Record a simulated ``semanage login -a/-m/-d``.
+
+        Add and modify store the seuser/range with the universal ``*``
+        service (the simulation models no service-scoped mappings), delete
+        drops the login. ``SELogin`` reads the same store.
+        """
+        if not cmd.present:
+            self.selinux_logins.pop(cmd.login, None)
+        else:
+            self.selinux_logins[cmd.login] = SeLogin(
+                seuser=cmd.seuser, mls_range=cmd.mls_range, service="*"
+            )
+
+    def install_selinux_module(self, source: str, priority: int) -> None:
+        """Record a simulated ``semodule -X <priority> -i <source>``.
+
+        The module name is the source basename minus its ``.pp``/``.cil``
+        suffix (the name semodule derives from the package), the format is
+        that suffix, and the instance lands enabled. An instance already
+        stored at the same name/priority is replaced (a real reinstall
+        upgrades it); ``Modules`` reads the same list.
+        """
+        base = PurePosixPath(source).name
+        name, _, suffix = base.rpartition(".")
+        fmt = suffix if suffix in ("pp", "cil") else "pp"
+        if not name:
+            name, fmt = base, "pp"
+        self.selinux_modules = [
+            entry
+            for entry in self.selinux_modules
+            if not (entry["name"] == name and entry["priority"] == priority)
+        ]
+        self.selinux_modules.append(
+            Module(name=name, priority=priority, format=fmt, enabled=True)
+        )
+
+    def remove_selinux_module(self, name: str, priority: int) -> None:
+        """Record a simulated ``semodule -X <priority> -r <name>``.
+
+        Drops the priority's instance of the module; other priorities of
+        the same name survive, exactly like the real priority-scoped
+        removal. ``Modules`` reads the same list.
+        """
+        self.selinux_modules = [
+            entry
+            for entry in self.selinux_modules
+            if not (entry["name"] == name and entry["priority"] == priority)
+        ]
+
+    def enable_selinux_module(self, name: str, present: bool) -> None:
+        """Record a simulated ``semodule -e/-d <name>``: flip every instance.
+
+        semodule's enable/disable acts on the name, so every stored
+        priority of it flips together; ``Modules`` reads the same list.
+        """
+        for entry in self.selinux_modules:
+            if entry["name"] == name:
+                entry["enabled"] = present
+
+    def manage_selinux_permissive(self, cmd: SemanagePermissiveCommand) -> None:
+        """Record a simulated ``semanage permissive -a/-d``.
+
+        Add appends the domain (keeping listing order, no duplicates),
+        delete drops it; ``PermissiveDomains`` reads the same list.
+        """
+        if cmd.present:
+            if cmd.domain not in self.selinux_permissive_domains:
+                self.selinux_permissive_domains.append(cmd.domain)
+        elif cmd.domain in self.selinux_permissive_domains:
+            self.selinux_permissive_domains.remove(cmd.domain)
+
+    def relabel_path(self, cmd: RestoreconCommand) -> None:
+        """Record a simulated ``restorecon``: reapply the fcontext database.
+
+        Every labelled path the command covers (the path itself, plus the
+        paths under it when ``recurse``) is matched against the stored
+        fcontext rules -- a rule's target expression is a regex, matched
+        with ``re.fullmatch`` like semanage's own matching -- and the first
+        matching rule's context replaces the path's label. ``force`` carries
+        no extra simulated effect: the simulation keeps no user-customized
+        context parts to protect. An unmatched path keeps its label, like
+        the real restorecon falling back to a policy default the simulation
+        does not model.
+        """
+        for path in list(self.selinux_file_contexts):
+            covered = path == cmd.path or (
+                cmd.recurse and path.startswith(cmd.path.rstrip("/") + "/")
+            )
+            if not covered:
+                continue
+            for target, context in self.selinux_fcontext_mappings.items():
+                if re.fullmatch(target, path):
+                    self.selinux_file_contexts[path] = dict(context)  # type: ignore[assignment]
+                    break
+
+    def _iptables_seams(
+        self, version: int
+    ) -> tuple[
+        dict[str, dict[str, str]],
+        dict[str, list[IptablesRule]],
+        dict[str, list[IptablesOrderedRule]],
+        dict[str, bool],
+    ]:
+        """The four rule-state stores for one address family.
+
+        Every iptables mutator serves both families through this selector:
+        version 4 reads the ``iptables_*`` fields, version 6 the
+        ``ip6tables_*`` ones, so the two rule sets never mix.
+        """
+        prefix = "iptables" if version == 4 else "ip6tables"
+        return (
+            getattr(self, f"{prefix}_chains"),
+            getattr(self, f"{prefix}_rules"),
+            getattr(self, f"{prefix}_ordered_rules"),
+            getattr(self, f"{prefix}_persistence"),
+        )
+
+    def _iptables_definition(self, line: str, version: int) -> IptablesRule:
+        """Parse one rendered rule line into the iptables-save shape.
+
+        Reuses the module's own parser so a stored definition compares
+        equal to what ``iptables.rule`` builds, then mirrors the two
+        normalizations the real ``iptables-save`` output applies: a bare
+        source/destination gains its host prefix (/32 or /128), and a
+        protocol implies its ``-m <protocol>`` extras pair (iptables
+        auto-loads the matching extension, which the save file prints).
+        """
+        definition = _parse_iptables_rule(line)
+        for key in ("source", "not_source", "destination", "not_destination"):
+            if key in definition:
+                definition[key] = _normalize_host(definition[key], version)  # type: ignore[literal-required]
+        if "protocol" in definition:
+            extras = definition.get("extras", [])
+            if ["-m", definition["protocol"]] not in extras:
+                extras.append(["-m", definition["protocol"]])
+                extras.sort()
+                definition["extras"] = extras
+        return definition
+
+    def _rebuild_iptables_ordered(self, table: str, version: int) -> None:
+        """Reproject a table's numbered rows from its rule definitions.
+
+        The ordered-rules seam is a derived view: every rule mutation
+        rebuilds it with per-chain 1-based renumbering and zero counters
+        (the simulation models no traffic). Negated matches and the
+        free-form ``options`` detail text are not projected -- a test
+        seeding rich rows for fact checks should not mutate rules after.
+        """
+        _, rules, ordered, _ = self._iptables_seams(version)
+        any_host = "0.0.0.0/0" if version == 4 else "::/0"
+        rows: list[IptablesOrderedRule] = []
+        numbers: dict[str, int] = {}
+        for rule in rules.get(table, []):
+            chain = rule.get("chain", "")
+            numbers[chain] = numbers.get(chain, 0) + 1
+            rows.append(
+                {
+                    "chain": chain,
+                    "number": numbers[chain],
+                    "packets": 0,
+                    "bytes": 0,
+                    "target": rule.get("jump", "-"),
+                    "protocol": rule.get("protocol", "all"),
+                    "opt": "--",
+                    "in_interface": rule.get("in_interface", "*"),
+                    "out_interface": rule.get("out_interface", "*"),
+                    "source": rule.get("source", any_host),
+                    "destination": rule.get("destination", any_host),
+                    "options": "",
+                }
+            )
+        ordered[table] = rows
+
+    def _mark_iptables_drift(self, version: int) -> None:
+        """Flip every stored persistence path of one family to drifted.
+
+        Any rule-set change invalidates every snapshot the simulation
+        tracks (the live rules no longer match any previously synced
+        file). Counter zeroing deliberately does not call this -- a save
+        without -c omits counters.
+        """
+        _, _, _, persistence = self._iptables_seams(version)
+        for path in persistence:
+            persistence[path] = False
+
+    def manage_iptables_chain(self, cmd: IptablesChainCommand) -> None:
+        """Record a simulated ``iptables -N/-X``: create or delete a chain.
+
+        A created chain carries policy ``-`` (a user chain has none);
+        deleting a chain also drops its rules and rebuilds the numbered
+        rows, like the kernel refusing to leave orphaned rules behind.
+        """
+        chains, rules, _, _ = self._iptables_seams(cmd.version)
+        if cmd.present:
+            chains.setdefault(cmd.table, {}).setdefault(cmd.chain, "-")
+        else:
+            chains.get(cmd.table, {}).pop(cmd.chain, None)
+            rules[cmd.table] = [
+                r for r in rules.get(cmd.table, []) if r.get("chain") != cmd.chain
+            ]
+            self._rebuild_iptables_ordered(cmd.table, cmd.version)
+        self._mark_iptables_drift(cmd.version)
+
+    def set_iptables_policy(self, cmd: IptablesPolicyCommand) -> None:
+        """Record a simulated ``iptables -P``: set one chain's policy.
+
+        The chain is created in the store if absent (the real command
+        would fail on a missing chain; the simulation stays tolerant so
+        an unprivileged empty fact read cannot break the apply path).
+        """
+        chains, _, _, _ = self._iptables_seams(cmd.version)
+        chains.setdefault(cmd.table, {})[cmd.chain] = cmd.policy
+        self._mark_iptables_drift(cmd.version)
+
+    def apply_iptables_rule(self, cmd: IptablesRuleCommand) -> None:
+        """Record a simulated ``iptables -A/-I/-D``: one rule change.
+
+        The spec is re-rendered into a save line and parsed back through
+        the module's own parser, so the stored definition compares equal
+        to the operation's comparison form. An insert addresses the
+        1-based position within its chain (a position past the end
+        appends -- tolerant where the real command errors); a delete
+        removes the first equal definition and tolerates an absent one.
+        """
+        _, rules, _, _ = self._iptables_seams(cmd.version)
+        table_rules = rules.setdefault(cmd.table, [])
+        definition = self._iptables_definition(
+            f"-A {cmd.chain} " + " ".join(cmd.spec), cmd.version
+        )
+        if cmd.action == "-D":
+            if definition in table_rules:
+                table_rules.remove(definition)
+        elif cmd.action == "-I":
+            position = cmd.position if cmd.position is not None else 1
+            indices = [
+                i for i, r in enumerate(table_rules) if r.get("chain") == cmd.chain
+            ]
+            offset = min(position - 1, len(indices))
+            index = indices[offset] if offset < len(indices) else len(table_rules)
+            table_rules.insert(index, definition)
+        else:  # -A
+            table_rules.append(definition)
+        self._rebuild_iptables_ordered(cmd.table, cmd.version)
+        self._mark_iptables_drift(cmd.version)
+
+    def flush_iptables_rules(self, cmd: IptablesFlushCommand) -> None:
+        """Record a simulated ``iptables -F``: drop rules, keep chains.
+
+        A chain scopes the flush to its rules; None flushes the whole
+        table. Chain entries and policies survive, exactly like the real
+        command (only -X/-P touch those).
+        """
+        _, rules, _, _ = self._iptables_seams(cmd.version)
+        rules[cmd.table] = [
+            r
+            for r in rules.get(cmd.table, [])
+            if cmd.chain is not None and r.get("chain") != cmd.chain
+        ]
+        self._rebuild_iptables_ordered(cmd.table, cmd.version)
+        self._mark_iptables_drift(cmd.version)
+
+    def zero_iptables_counters(self, cmd: IptablesZeroCommand) -> None:
+        """Record a simulated ``iptables -Z``: zero counters in place.
+
+        Only the seeded numbered rows' counters change; the rule set and
+        the persistence flags are untouched (a save without -c omits
+        counters, so a synced snapshot stays synced across a zero).
+        """
+        _, _, ordered, _ = self._iptables_seams(cmd.version)
+        for row in ordered.get(cmd.table, []):
+            if cmd.chain is None or row["chain"] == cmd.chain:
+                row["packets"] = 0
+                row["bytes"] = 0
+
+    def save_iptables_rules(self, cmd: IptablesSaveCommand) -> None:
+        """Record a simulated ``iptables-save > path``: mark the path synced.
+
+        The simulation models persistence as the sync flag only -- no
+        snapshot bytes are written to ``remote_files`` (rendering a full
+        save file from definitions would need a spec renderer the facts
+        never read back).
+        """
+        _, _, _, persistence = self._iptables_seams(cmd.version)
+        persistence[cmd.path] = True
+
+    def restore_iptables_rules(self, cmd: IptablesRestoreCommand) -> None:
+        """Record a simulated ``iptables-restore < path``: load a snapshot.
+
+        When ``remote_files`` holds an iptables-save format file at the
+        path (a ``files.put`` upload, the atomic bulk-apply recipe), its
+        ``*table``/``:chain``/``-A`` lines load into the rule stores --
+        replacing each named table, or merging with ``noflush`` -- and
+        the numbered rows rebuild. Without stored content only the sync
+        flag is set (the simulation cannot diff what it cannot read).
+        """
+        chains, rules, _, persistence = self._iptables_seams(cmd.version)
+        content = self.remote_files.get(cmd.path)
+        if content is not None:
+            parsed_chains: dict[str, dict[str, str]] = {}
+            parsed_rules: dict[str, list[IptablesRule]] = {}
+            table: str | None = None
+            for raw in content.decode().splitlines():
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.startswith("*"):
+                    table = line[1:]
+                    parsed_chains.setdefault(table, {})
+                    parsed_rules.setdefault(table, [])
+                elif table is None:
+                    continue
+                elif line.startswith(":"):
+                    name, policy, _ = line[1:].split()
+                    parsed_chains[table][name] = policy
+                elif line.startswith("-A"):
+                    parsed_rules[table].append(
+                        self._iptables_definition(line, cmd.version)
+                    )
+            for t, table_chains in parsed_chains.items():
+                if cmd.noflush:
+                    chains.setdefault(t, {}).update(table_chains)
+                    rules.setdefault(t, []).extend(parsed_rules[t])
+                else:
+                    chains[t] = table_chains
+                    rules[t] = parsed_rules[t]
+                self._rebuild_iptables_ordered(t, cmd.version)
+        persistence[cmd.path] = True
+
+    def create_ipset(self, set_name: str, set_type: str) -> None:
+        """Record a simulated ``ipset create ... -exist``.
+
+        A missing set lands with default creation parameters and no
+        members; an existing set is left alone whatever its type (the
+        -exist tolerance -- the operation validates the type against the
+        fact before yielding).
+        """
+        if set_name not in self.ipsets:
+            self.ipsets[set_name] = {
+                "type": set_type,
+                "revision": 0,
+                "header": "family inet hashsize 1024 maxelem 65536",
+                "size_in_memory": 0,
+                "references": 0,
+                "members": [],
+            }
+
+    def destroy_ipset(self, set_name: str) -> None:
+        """Record a simulated ``ipset destroy``: drop the set, tolerantly."""
+        self.ipsets.pop(set_name, None)
+
+    def manage_ipset_entry(self, set_name: str, entry: str, present: bool) -> None:
+        """Record a simulated ``ipset add/del``: one membership change.
+
+        Adds are idempotent (-exist) and keep insertion order; deletes
+        drop the entry if present. An absent set is a tolerant no-op
+        (the operation only yields entry commands for sets the fact saw).
+        """
+        info = self.ipsets.get(set_name)
+        if info is None:
+            return
+        if present:
+            if entry not in info["members"]:
+                info["members"].append(entry)
+        elif entry in info["members"]:
+            info["members"].remove(entry)
+
+    def _firewalld_zone_store(self, permanent: bool) -> dict[str, FirewalldZone]:
+        """The zone record map for one configuration scope.
+
+        Every dual-apply firewalld mutator serves both scopes through
+        this selector (the ``_iptables_seams`` precedent): True reads
+        the ``firewalld_permanent_zones`` field, False the
+        ``firewalld_zones`` one, so the two configurations never mix.
+        """
+        return self.firewalld_permanent_zones if permanent else self.firewalld_zones
+
+    def manage_firewalld_zone(self, cmd: FirewalldZoneCommand) -> None:
+        """Record a simulated ``--new-zone``/``--delete-zone``.
+
+        Existence is permanent-only (both verbs reject a runtime
+        invocation): a created zone lands fully shaped with the defaults
+        a fresh zone carries, and a deleted zone's runtime copy lingers
+        until ``reload_firewalld`` -- the dual-state contract the
+        operation's reasons describe. A repeat create or delete is a
+        no-op.
+        """
+        if cmd.present:
+            if cmd.zone not in self.firewalld_permanent_zones:
+                self.firewalld_permanent_zones[cmd.zone] = FirewalldZone(
+                    active=False,
+                    target="default",
+                    short="",
+                    description="",
+                    icmp_block_inversion=False,
+                    interfaces=[],
+                    sources=[],
+                    services=[],
+                    ports=[],
+                    protocols=[],
+                    forward=False,
+                    masquerade=False,
+                    forward_ports=[],
+                    source_ports=[],
+                    icmp_blocks=[],
+                    rich_rules=[],
+                )
+        else:
+            self.firewalld_permanent_zones.pop(cmd.zone, None)
+
+    def set_firewalld_zone_target(self, cmd: FirewalldZoneTargetCommand) -> None:
+        """Record a simulated ``--set-target`` in one scope.
+
+        An absent zone is a tolerant no-op (the operation only yields
+        property commands for zones the fact saw).
+        """
+        record = self._firewalld_zone_store(cmd.permanent).get(cmd.zone)
+        if record is not None:
+            record["target"] = cmd.target
+
+    def set_firewalld_zone_text(self, cmd: FirewalldZoneTextCommand) -> None:
+        """Record a simulated ``--set-short``/``--set-description`` in one scope."""
+        record = self._firewalld_zone_store(cmd.permanent).get(cmd.zone)
+        if record is not None:
+            if cmd.kind == "short":
+                record["short"] = cmd.text
+            else:
+                record["description"] = cmd.text
+
+    def manage_firewalld_zone_entry(self, cmd: FirewalldZoneEntryCommand) -> None:
+        """Record a simulated zone membership add/remove in one scope.
+
+        An interface add rebinds: the value is removed from every other
+        zone of the scope first (the ``--change-interface`` semantics the
+        descriptor renders), so one interface lives in at most one zone
+        per scope. Other adds are idempotent and keep insertion order;
+        removes drop the value if present. An absent zone is a tolerant
+        no-op (the operations only yield for zones the fact saw).
+        """
+        zones = self._firewalld_zone_store(cmd.permanent)
+        record = zones.get(cmd.zone)
+        if record is None:
+            return
+        members = record[_ZONE_MEMBER_FIELDS[cmd.kind]]  # type: ignore[literal-required]
+        if cmd.present:
+            if cmd.kind == "interface":
+                for other in zones.values():
+                    if cmd.value in other["interfaces"]:
+                        other["interfaces"].remove(cmd.value)
+            if cmd.value not in members:
+                members.append(cmd.value)
+        elif cmd.value in members:
+            members.remove(cmd.value)
+
+    def set_firewalld_masquerade(self, cmd: FirewalldMasqueradeCommand) -> None:
+        """Record a simulated ``--add-masquerade``/``--remove-masquerade``."""
+        record = self._firewalld_zone_store(cmd.permanent).get(cmd.zone)
+        if record is not None:
+            record["masquerade"] = cmd.enabled
+
+    def manage_firewalld_service(self, cmd: FirewalldServiceCommand) -> None:
+        """Record a simulated ``--new-service``/``--delete-service``.
+
+        Definitions are permanent-only, so one store serves both the
+        fact and the mutator; a created definition lands fully shaped
+        and empty, a repeat create or delete is a no-op.
+        """
+        if cmd.present:
+            if cmd.service not in self.firewalld_services:
+                self.firewalld_services[cmd.service] = FirewalldService(
+                    short="",
+                    description="",
+                    ports=[],
+                    source_ports=[],
+                    protocols=[],
+                    modules=[],
+                    destination={},
+                )
+        else:
+            self.firewalld_services.pop(cmd.service, None)
+
+    def manage_firewalld_service_entry(self, cmd: FirewalldServiceEntryCommand) -> None:
+        """Record a simulated service-definition membership add/remove.
+
+        Adds are idempotent and keep insertion order; removes drop the
+        value if present. An absent definition is a tolerant no-op.
+        """
+        record = self.firewalld_services.get(cmd.service)
+        if record is None:
+            return
+        members = record[_SERVICE_MEMBER_FIELDS[cmd.kind]]  # type: ignore[literal-required]
+        if cmd.present:
+            if cmd.value not in members:
+                members.append(cmd.value)
+        elif cmd.value in members:
+            members.remove(cmd.value)
+
+    def set_firewalld_service_text(self, cmd: FirewalldServiceTextCommand) -> None:
+        """Record a simulated service ``--set-short``/``--set-description``."""
+        record = self.firewalld_services.get(cmd.service)
+        if record is not None:
+            if cmd.kind == "short":
+                record["short"] = cmd.text
+            else:
+                record["description"] = cmd.text
+
+    def _firewalld_ipset_store(self, permanent: bool) -> dict[str, FirewalldIpSet]:
+        """The ipset record map for one configuration scope."""
+        return self.firewalld_permanent_ipsets if permanent else self.firewalld_ipsets
+
+    def manage_firewalld_ipset(self, cmd: FirewalldIpsetCommand) -> None:
+        """Record a simulated ``--new-ipset``/``--delete-ipset``.
+
+        Existence is permanent-only; the ``key=value`` creation options
+        parse into the record's options map at creation only (an existing
+        set keeps its options -- the operation validates the type before
+        yielding). A deleted set's runtime copy lingers until
+        ``reload_firewalld``.
+        """
+        if cmd.present:
+            if cmd.ipset_name not in self.firewalld_permanent_ipsets:
+                options: dict[str, str] = {}
+                for token in cmd.options:
+                    key, sep, value = token.partition("=")
+                    if sep:
+                        options[key] = value
+                self.firewalld_permanent_ipsets[cmd.ipset_name] = FirewalldIpSet(
+                    type=cmd.ipset_type, options=options, entries=[]
+                )
+        else:
+            self.firewalld_permanent_ipsets.pop(cmd.ipset_name, None)
+
+    def manage_firewalld_ipset_entry(self, cmd: FirewalldIpsetEntryCommand) -> None:
+        """Record a simulated ipset ``--add-entry``/``--remove-entry`` in one scope."""
+        record = self._firewalld_ipset_store(cmd.permanent).get(cmd.ipset_name)
+        if record is None:
+            return
+        if cmd.present:
+            if cmd.entry not in record["entries"]:
+                record["entries"].append(cmd.entry)
+        elif cmd.entry in record["entries"]:
+            record["entries"].remove(cmd.entry)
+
+    def reload_firewalld(self, cmd: FirewalldReloadCommand) -> None:
+        """Record a simulated reload / complete-reload / runtime-to-permanent.
+
+        reload and complete_reload copy the permanent zone/ipset/policy
+        stores over the runtime ones (the simulation models no connection
+        state, so the two verbs coincide); the runtime zone records regain
+        their ``(active)`` marker from bound interfaces or sources.
+        runtime_to_permanent copies the other way, clearing the marker (a
+        permanent listing carries none). Records are copied through the
+        module's own ``_copy_record`` so the two scopes never share
+        mutable lists.
+        """
+        if cmd.mode == "runtime_to_permanent":
+            self.firewalld_permanent_zones = {
+                name: {**_copy_record(record), "active": False}  # type: ignore[assignment]
+                for name, record in self.firewalld_zones.items()
+            }
+            self.firewalld_permanent_ipsets = {
+                name: _copy_record(record)  # type: ignore[assignment]
+                for name, record in self.firewalld_ipsets.items()
+            }
+            self.firewalld_permanent_policies = {
+                name: _copy_record(record)  # type: ignore[assignment]
+                for name, record in self.firewalld_policies.items()
+            }
+        else:
+            self.firewalld_zones = {
+                name: {
+                    **_copy_record(record),
+                    "active": bool(record["interfaces"] or record["sources"]),
+                }  # type: ignore[assignment]
+                for name, record in self.firewalld_permanent_zones.items()
+            }
+            self.firewalld_ipsets = {
+                name: _copy_record(record)  # type: ignore[assignment]
+                for name, record in self.firewalld_permanent_ipsets.items()
+            }
+            self.firewalld_policies = {
+                name: _copy_record(record)  # type: ignore[assignment]
+                for name, record in self.firewalld_permanent_policies.items()
+            }
+
+    def set_ufw_state(self, enabled: bool) -> None:
+        """Record a simulated ``ufw --force enable`` / ``ufw disable``.
+
+        The seam models the REPORTED status record: an inactive ufw prints
+        only ``Status: inactive``, so disable restores the empty record
+        (the real configuration persists in /etc/default/ufw, which the
+        simulation does not model). Enable fills any empty field with the
+        installation defaults (low logging, deny incoming, allow outgoing,
+        disabled routed) a freshly enabled ufw reports; a seeded field is
+        kept, so a policy set before enabling survives.
+        """
+        if enabled:
+            self.ufw_status["active"] = True
+            if not self.ufw_status["logging"]:
+                self.ufw_status["logging"] = "low"
+            if not self.ufw_status["default_incoming"]:
+                self.ufw_status["default_incoming"] = "deny"
+            if not self.ufw_status["default_outgoing"]:
+                self.ufw_status["default_outgoing"] = "allow"
+            if not self.ufw_status["default_routed"]:
+                self.ufw_status["default_routed"] = "disabled"
+        else:
+            self.ufw_status = UfwStatusInfo(
+                active=False,
+                logging="",
+                default_incoming="",
+                default_outgoing="",
+                default_routed="",
+            )
+
+    def set_ufw_default_policy(self, policy: str, direction: str) -> None:
+        """Record a simulated ``ufw default <policy> <direction>``."""
+        self.ufw_status[f"default_{direction}"] = policy  # type: ignore[literal-required]
+
+    def set_ufw_logging(self, level: str) -> None:
+        """Record a simulated ``ufw logging <level>``.
+
+        ``on`` keeps the current level when already logging (ufw's
+        set_loglevel semantics) and reads as ``low`` when off or
+        unreadable; a concrete level replaces the word verbatim.
+        """
+        if level == "on":
+            if self.ufw_status["logging"] in ("", "off", "unknown"):
+                self.ufw_status["logging"] = "low"
+        else:
+            self.ufw_status["logging"] = level
+
+    def reset_ufw(self) -> None:
+        """Record a simulated ``ufw --force reset``.
+
+        The real command backs up the current rules, deletes every user
+        rule and disables the firewall; the post-reset status reads
+        inactive, so the seam clears the ruleset and restores the
+        inactive/empty record.
+        """
+        self.ufw_rules = []
+        self.ufw_status = UfwStatusInfo(
+            active=False,
+            logging="",
+            default_incoming="",
+            default_outgoing="",
+            default_routed="",
+        )
+
+    def manage_ufw_rule(self, cmd: UfwRuleCommand) -> None:
+        """Record a simulated ``ufw [route] allow/deny/reject/limit`` change.
+
+        The add form builds a ``UfwRule`` from the descriptor's identity
+        projection (``_command_rule_key`` -- the same projection the
+        operation matched against the fact) and appends it, or inserts it
+        at ``insert - 1``; a non-v6 add also appends the ``(v6)`` twin ufw
+        maintains itself, at the end of the v6 section the numbered
+        listing prints. The delete form removes ONE matching row per
+        descriptor (the operation yields one per match, so duplicates
+        each get their delete) plus its v6 twin for a non-v6 delete; a
+        comment-less delete ignores the stored comment, mirroring ufw's
+        own delete. Numbers are renumbered after every mutation, as
+        ``ufw status numbered`` always reads.
+        """
+        key = _command_rule_key(cmd)
+        v6 = _is_v6(cmd.from_ip or None, cmd.to_ip or None)
+        if cmd.present:
+            row = UfwRule(number=0, v6=v6, **key)
+            if cmd.insert is not None:
+                self.ufw_rules.insert(min(cmd.insert - 1, len(self.ufw_rules)), row)
+            else:
+                self.ufw_rules.append(row)
+            if not v6:
+                self.ufw_rules.append(UfwRule(number=0, v6=True, **key))
+        else:
+            commentless = not cmd.comment
+            self._remove_ufw_match(key, v6, commentless)
+            if not v6:
+                self._remove_ufw_match(key, True, commentless)
+        for number, row in enumerate(self.ufw_rules, start=1):
+            row["number"] = number
+
+    def _remove_ufw_match(
+        self, key: dict[str, Any], v6: bool, commentless: bool
+    ) -> None:
+        """Drop the first row of one family matching a rule key. Pure effect."""
+        target = dict(key)
+        if commentless:
+            target.pop("comment")
+        for index, row in enumerate(self.ufw_rules):
+            if row["v6"] != v6:
+                continue
+            row_key = _rule_key(row)
+            if commentless:
+                row_key.pop("comment")
+            if row_key == target:
+                del self.ufw_rules[index]
+                return
+
+    def _lxd_instance(self, name: str) -> LxdInstance | None:
+        """The stored listing entry for one instance, or None. Pure lookup."""
+        return next(
+            (entry for entry in self.lxd_instances if entry.get("name") == name), None
+        )
+
+    def _lxd_refresh_instance(self, name: str) -> None:
+        """Keep every per-instance seam in step with the listing entry.
+
+        Rebuilds the expanded config document (profile inheritance
+        merged under the own config/devices, in profile order), syncs
+        the fast container row's status and the runtime state
+        document's status + snapshots copy. Called after every mutation
+        that touches an instance, so no fact ever reads a stale view.
+        """
+        entry = self._lxd_instance(name)
+        if entry is None:
+            return
+        expanded_config: dict[str, Any] = {}
+        expanded_devices: dict[str, Any] = {}
+        for profile_name in entry.get("profiles") or []:
+            profile = next(
+                (p for p in self.lxd_profiles if p.get("name") == profile_name), None
+            )
+            if profile is not None:
+                expanded_config.update(profile.get("config") or {})
+                expanded_devices.update(profile.get("devices") or {})
+        expanded_config.update(entry.get("config") or {})
+        expanded_devices.update(entry.get("devices") or {})
+        self.lxd_instance_configs[name] = {
+            "name": name,
+            "description": entry.get("description", ""),
+            "config": dict(entry.get("config") or {}),
+            "devices": {
+                key: dict(value)
+                for key, value in (entry.get("devices") or {}).items()
+            },
+            "profiles": list(entry.get("profiles") or []),
+            "expanded_config": expanded_config,
+            "expanded_devices": expanded_devices,
+        }
+        container = next(
+            (c for c in self.lxd_containers if c.get("name") == name), None
+        )
+        if container is not None:
+            container["status"] = entry.get("status", "")
+        state = self.lxd_instance_states.get(name)
+        if state is not None:
+            state["status"] = entry.get("status", "")
+            state["snapshots"] = [
+                dict(s) for s in self.lxd_instance_snapshots.get(name, [])
+            ]
+
+    def launch_lxd_instance(self, cmd: LxdLaunchCommand) -> None:
+        """Record a simulated ``lxc launch``: create AND start an instance.
+
+        ``lxd.container``/``lxd.instance``'s create mutation. Fills every
+        seam the instance facts read: the full listing entry (status
+        Running), the fast container row for a container (a VM never
+        appears in ``lxc list --fast``), the expanded config document,
+        the runtime state document and an empty snapshot list. The base
+        image fingerprint resolves through the simulated image store
+        (by fingerprint or alias) and falls back to a deterministic
+        sha256 of the reference, recorded as ``volatile.base_image`` the
+        way LXD does at launch -- which is what ``lxd.instance``'s
+        image-drift report compares against.
+        """
+        name = cmd.instance
+        instance_type = (
+            "virtual-machine" if cmd.instance_type == "vm" else "container"
+        )
+        reference = cmd.image.partition(":")[2] if ":" in cmd.image else cmd.image
+        matched = next(
+            (
+                entry
+                for entry in self.lxd_images
+                if entry.get("fingerprint") == reference
+                or any(
+                    alias.get("name") == reference
+                    for alias in entry.get("aliases") or []
+                )
+            ),
+            None,
+        )
+        fingerprint = (
+            matched.get("fingerprint")
+            if matched is not None
+            else hashlib.sha256(cmd.image.encode()).hexdigest()
+        )
+        config = dict(_config_pairs(cmd.config))
+        config["volatile.base_image"] = fingerprint or ""
+        devices = {
+            device_name: {"type": device_type, **dict(_config_pairs(props))}
+            for device_name, device_type, props in cmd.devices
+        }
+        entry: LxdInstance = {
+            "name": name,
+            "description": "",
+            "status": "Running",
+            "type": instance_type,
+            "architecture": "x86_64",
+            "ephemeral": cmd.ephemeral,
+            "profiles": list(cmd.profiles) or ["default"],
+            "config": config,
+            "devices": devices,
+        }
+        self.lxd_instances = [
+            e for e in self.lxd_instances if e.get("name") != name
+        ]
+        self.lxd_instances.append(entry)
+        if instance_type == "container":
+            self.lxd_containers = [
+                c for c in self.lxd_containers if c.get("name") != name
+            ]
+            self.lxd_containers.append(
+                {"name": name, "status": "Running", "type": "container"}
+            )
+        self.lxd_instance_states[name] = {
+            "name": name,
+            "status": "Running",
+            "type": instance_type,
+            "pid": len(self.lxd_instances),
+        }
+        self.lxd_instance_snapshots.setdefault(name, [])
+        self._lxd_refresh_instance(name)
+
+    def set_lxd_instance_state(self, cmd: LxdStateCommand) -> None:
+        """Record a simulated ``lxc start/stop/restart/pause/resume``.
+
+        Updates the status in every seam that carries one (the listing
+        entry, the fast container row, the runtime state document --
+        created on first touch when a test seeded only the listing).
+        ``restart``/``resume`` read as Running. Stopping an EPHEMERAL
+        instance deletes it (LXD's own semantics), cascading through
+        ``delete_lxd_instance``. A missing instance is a tolerant no-op:
+        the stateless restarted/unfrozen requests never fact-check, and
+        the real CLI would fail at apply time.
+        """
+        status = {
+            "start": "Running",
+            "stop": "Stopped",
+            "restart": "Running",
+            "pause": "Frozen",
+            "resume": "Running",
+        }[cmd.action]
+        entry = self._lxd_instance(cmd.instance)
+        if entry is None:
+            return
+        if cmd.action == "stop" and entry.get("ephemeral"):
+            self.delete_lxd_instance(
+                LxdDeleteCommand(
+                    instance=cmd.instance, remote=cmd.remote, project=cmd.project
+                )
+            )
+            return
+        entry["status"] = status
+        if cmd.instance not in self.lxd_instance_states:
+            self.lxd_instance_states[cmd.instance] = {
+                "name": cmd.instance,
+                "status": status,
+                "type": entry.get("type", "container"),
+            }
+        self._lxd_refresh_instance(cmd.instance)
+
+    def delete_lxd_instance(self, cmd: LxdDeleteCommand) -> None:
+        """Record a simulated ``lxc delete <instance>[/snapshot]``.
+
+        The ``instance/snapshot`` name form (``lxd.instance_snapshot``'s
+        delete) drops one snapshot and refreshes the state document's
+        snapshots copy; a bare instance name cascades through every
+        seam: the listing entry, the fast container row, the config and
+        state documents, the snapshot list and the instance's own
+        storage volumes (type container/virtual-machine) in every pool.
+        An absent target is a tolerant no-op.
+        """
+        name = cmd.instance
+        if "/" in name:
+            instance, _, snapshot = name.partition("/")
+            snapshots = self.lxd_instance_snapshots.get(instance)
+            if snapshots is not None:
+                self.lxd_instance_snapshots[instance] = [
+                    s for s in snapshots if s.get("name") != snapshot
+                ]
+            self._lxd_refresh_instance(instance)
+            return
+        self.lxd_instances = [
+            e for e in self.lxd_instances if e.get("name") != name
+        ]
+        self.lxd_containers = [
+            c for c in self.lxd_containers if c.get("name") != name
+        ]
+        self.lxd_instance_configs.pop(name, None)
+        self.lxd_instance_states.pop(name, None)
+        self.lxd_instance_snapshots.pop(name, None)
+        for pool, volumes in self.lxd_storage_volumes.items():
+            self.lxd_storage_volumes[pool] = [
+                v
+                for v in volumes
+                if not (
+                    v.get("name") == name
+                    and v.get("type") in ("container", "virtual-machine")
+                )
+            ]
+
+    def copy_lxd_instance(self, cmd: LxdCopyCommand) -> None:
+        """Record a simulated ``lxc copy``: register the destination.
+
+        The destination inherits the source's config/devices/profiles
+        (copied, never shared) and its snapshots unless instance_only;
+        a stateless copy reads Stopped, otherwise the source's status
+        carries over. The source's instance storage volumes are cloned
+        alongside. A missing source or an already-registered destination
+        is a tolerant no-op (the operation fact-checks same-daemon
+        destinations; the real CLI fails otherwise).
+        """
+        source = self._lxd_instance(cmd.instance)
+        if source is None or self._lxd_instance(cmd.dest_instance) is not None:
+            return
+        entry: LxdInstance = {
+            "name": cmd.dest_instance,
+            "description": source.get("description", ""),
+            "status": "Stopped" if cmd.stateless else source.get("status", "Stopped"),
+            "type": source.get("type", "container"),
+            "architecture": source.get("architecture", "x86_64"),
+            "ephemeral": False,
+            "profiles": list(source.get("profiles") or []),
+            "config": dict(source.get("config") or {}),
+            "devices": {
+                key: dict(value)
+                for key, value in (source.get("devices") or {}).items()
+            },
+        }
+        self.lxd_instances.append(entry)
+        if entry.get("type") == "container":
+            self.lxd_containers.append(
+                {
+                    "name": cmd.dest_instance,
+                    "status": entry.get("status", "Stopped"),
+                    "type": "container",
+                }
+            )
+        self.lxd_instance_states[cmd.dest_instance] = {
+            "name": cmd.dest_instance,
+            "status": entry.get("status", "Stopped"),
+            "type": entry.get("type", "container"),
+            "pid": len(self.lxd_instances),
+        }
+        self.lxd_instance_snapshots[cmd.dest_instance] = (
+            []
+            if cmd.instance_only
+            else [dict(s) for s in self.lxd_instance_snapshots.get(cmd.instance, [])]
+        )
+        for volumes in self.lxd_storage_volumes.values():
+            volumes.extend(
+                {
+                    **v,
+                    "name": cmd.dest_instance,
+                    "config": dict(v.get("config") or {}),
+                }
+                for v in list(volumes)
+                if v.get("name") == cmd.instance
+                and v.get("type") in ("container", "virtual-machine")
+            )
+        self._lxd_refresh_instance(cmd.dest_instance)
+
+    def _lxd_refresh_profile(self, profile: str) -> None:
+        """Re-expand every instance applying one profile.
+
+        A profile's config/devices feed the expanded views of each
+        instance that applies it, so a profile edit refreshes those
+        instances too -- otherwise ``LxdInstanceConfig`` would report
+        the pre-edit inheritance.
+        """
+        for instance in self.lxd_instances:
+            if profile in (instance.get("profiles") or []):
+                self._lxd_refresh_instance(instance.get("name", ""))
+
+    def manage_lxd_image(self, cmd: LxdImageCommand) -> None:
+        """Record a simulated ``lxc image copy`` / ``lxc image delete``.
+
+        ``lxd.image``'s mutations. Caching registers an entry in
+        ``lxd_images`` -- the simulation downloads nothing, so the
+        fingerprint is the requested one when it already looks like a
+        full SHA-256, else a deterministic sha256 of the source
+        reference -- plus the ``--alias`` mapping in both alias views
+        (the ``lxd_image_aliases`` listing and the image's own aliases
+        array), so ``LxdImages`` and ``LxdImageAliases`` agree. Deleting
+        resolves the reference by fingerprint OR alias (the CLI accepts
+        both) and drops the image together with every alias targeting
+        it. An already-cached fingerprint or an absent reference is a
+        tolerant no-op: the operation fact-checks before yielding.
+        """
+        if not cmd.present:
+            target = next(
+                (
+                    entry
+                    for entry in self.lxd_images
+                    if entry.get("fingerprint") == cmd.image
+                    or any(
+                        alias.get("name") == cmd.image
+                        for alias in entry.get("aliases") or []
+                    )
+                ),
+                None,
+            )
+            if target is None:
+                return
+            fingerprint = target.get("fingerprint")
+            self.lxd_images = [
+                e for e in self.lxd_images if e.get("fingerprint") != fingerprint
+            ]
+            self.lxd_image_aliases = [
+                a for a in self.lxd_image_aliases if a.get("target") != fingerprint
+            ]
+            return
+
+        hex_digits = set("0123456789abcdef")
+        fingerprint = (
+            cmd.image
+            if len(cmd.image) == 64 and set(cmd.image) <= hex_digits
+            else hashlib.sha256(cmd.source.encode()).hexdigest()
+        )
+        if any(e.get("fingerprint") == fingerprint for e in self.lxd_images):
+            return
+        entry: LxdImage = {
+            "fingerprint": fingerprint,
+            "aliases": [{"name": cmd.alias, "description": ""}] if cmd.alias else [],
+            "public": False,
+            "cached": True,
+            "size": 0,
+            "type": "container",
+            "properties": {},
+            "auto_update": False,
+        }
+        self.lxd_images.append(entry)
+        if cmd.alias:
+            self.lxd_image_aliases = [
+                a for a in self.lxd_image_aliases if a.get("name") != cmd.alias
+            ]
+            self.lxd_image_aliases.append(
+                {
+                    "name": cmd.alias,
+                    "target": fingerprint,
+                    "type": "image",
+                    "description": "",
+                }
+            )
+
+    def manage_lxd_image_alias(self, cmd: LxdImageAliasCommand) -> None:
+        """Record a simulated ``lxc image alias create/delete``.
+
+        ``lxd.image_alias``'s mutations, keeping both alias views in
+        step: the ``lxd_image_aliases`` listing and the target image's
+        own aliases array in ``lxd_images``. Any same-name mapping is
+        dropped first (the CLI's create fails on a taken name, which is
+        why a repoint arrives as delete+create); deleting removes the
+        mapping only, never the image it targets. A fingerprint no
+        cached image carries is tolerated -- the alias listing then
+        points at a target ``LxdImages`` does not report, exactly as a
+        real daemon allows.
+        """
+        self.lxd_image_aliases = [
+            a for a in self.lxd_image_aliases if a.get("name") != cmd.alias
+        ]
+        for image in self.lxd_images:
+            image["aliases"] = [
+                a for a in image.get("aliases") or [] if a.get("name") != cmd.alias
+            ]
+        if not cmd.present:
+            return
+        self.lxd_image_aliases.append(
+            {
+                "name": cmd.alias,
+                "target": cmd.fingerprint,
+                "type": "image",
+                "description": "",
+            }
+        )
+        target = next(
+            (
+                e
+                for e in self.lxd_images
+                if e.get("fingerprint") == cmd.fingerprint
+            ),
+            None,
+        )
+        if target is not None:
+            aliases = list(target.get("aliases") or [])
+            aliases.append({"name": cmd.alias, "description": ""})
+            target["aliases"] = aliases
+
+    def set_lxd_config(self, cmd: LxdSetCommand) -> None:
+        """Record a simulated ``lxc <resource> set|unset <target> <key>``.
+
+        One arm for the five resource families ``LxdSetCommand``
+        renders: ``config`` (an instance's OWN keys), ``profile``,
+        ``project`` (both the listing entry and the per-project
+        configuration document), ``network`` and ``storage`` (the pool
+        listing). ``value=None`` is the ``unset`` verb and pops the key.
+        An instance or profile edit re-expands the affected instances;
+        a missing target is a tolerant no-op -- every operation
+        fact-checks existence before yielding a set.
+        """
+        if cmd.resource == "config":
+            instance = self._lxd_instance(cmd.target)
+            if instance is None:
+                return
+            config = dict(instance.get("config") or {})
+            if cmd.value is None:
+                config.pop(cmd.key, None)
+            else:
+                config[cmd.key] = cmd.value
+            instance["config"] = config
+            self._lxd_refresh_instance(cmd.target)
+            return
+
+        entries: list[Any]
+        if cmd.resource == "profile":
+            entries = self.lxd_profiles
+        elif cmd.resource == "project":
+            entries = self.lxd_projects
+        elif cmd.resource == "network":
+            entries = self.lxd_networks
+        elif cmd.resource == "storage":
+            entries = self.lxd_storage_pools
+        else:
+            raise TypeError(f"unknown lxd set resource: {cmd.resource!r}")
+        entry = next((e for e in entries if e.get("name") == cmd.target), None)
+        if entry is None:
+            return
+        config = dict(entry.get("config") or {})
+        if cmd.value is None:
+            config.pop(cmd.key, None)
+        else:
+            config[cmd.key] = cmd.value
+        entry["config"] = config
+        if cmd.resource == "profile":
+            self._lxd_refresh_profile(cmd.target)
+        elif cmd.resource == "project":
+            document = self.lxd_project_configs.get(cmd.target)
+            if document is not None:
+                document["config"] = dict(config)
+
+    def manage_lxd_device(self, cmd: LxdDeviceCommand) -> None:
+        """Record a simulated ``lxc config/profile device add|remove``.
+
+        Attaches a device (``{"type": ..., **props}``) to, or detaches it
+        from, an instance's OWN devices or a profile's devices; a drifted
+        device arrives as remove+add, which this models exactly. Both
+        edits re-expand the affected instances so ``LxdInstanceConfig``
+        never reports stale inheritance. A missing target is a tolerant
+        no-op.
+        """
+        entry: Any
+        if cmd.resource == "config":
+            entry = self._lxd_instance(cmd.target)
+        elif cmd.resource == "profile":
+            entry = next(
+                (p for p in self.lxd_profiles if p.get("name") == cmd.target), None
+            )
+        else:
+            raise TypeError(f"unknown lxd device resource: {cmd.resource!r}")
+        if entry is None:
+            return
+        devices = {key: dict(value) for key, value in (entry.get("devices") or {}).items()}
+        if cmd.present:
+            devices[cmd.device] = {
+                "type": cmd.device_type,
+                **dict(_config_pairs(cmd.props)),
+            }
+        else:
+            devices.pop(cmd.device, None)
+        entry["devices"] = devices
+        if cmd.resource == "config":
+            self._lxd_refresh_instance(cmd.target)
+        else:
+            self._lxd_refresh_profile(cmd.target)
+
+    def assign_lxd_profiles(self, cmd: LxdProfileAssignCommand) -> None:
+        """Record a simulated ``lxc profile assign``: replace the list.
+
+        The instance's profile list is replaced wholesale, in the given
+        order (profile application order matters in LXD), and the
+        expanded config/devices views are recomputed from the new list.
+        A missing instance is a tolerant no-op.
+        """
+        entry = self._lxd_instance(cmd.instance)
+        if entry is None:
+            return
+        entry["profiles"] = list(cmd.profiles)
+        self._lxd_refresh_instance(cmd.instance)
+
+    def create_lxd_snapshot(self, cmd: LxdSnapshotCommand) -> None:
+        """Record a simulated ``lxc snapshot``: register the snapshot.
+
+        ``lxd.instance_snapshot``'s create mutation. Upserts the entry in
+        the instance's snapshot list (the operation only yields for an
+        absent name) and refreshes the runtime state document, whose
+        ``snapshots`` array ``LxdInstanceSnapshots`` shares. The
+        ``stateful`` flag is recorded verbatim -- the simulation keeps no
+        snapshot contents, only the metadata the facts report.
+        """
+        snapshots = self.lxd_instance_snapshots.setdefault(cmd.instance, [])
+        entry: LxdSnapshot = {
+            "name": cmd.snapshot,
+            "stateful": cmd.stateful,
+            "description": "",
+        }
+        self.lxd_instance_snapshots[cmd.instance] = [
+            s for s in snapshots if s.get("name") != cmd.snapshot
+        ] + [entry]
+        self._lxd_refresh_instance(cmd.instance)
+
+    def restore_lxd_snapshot(self, cmd: LxdRestoreCommand) -> None:
+        """Record a simulated ``lxc restore``.
+
+        The simulation stores no snapshot contents, so a restore models
+        only what the facts can observe: a STATEFUL restore puts the
+        instance back Running (the runtime state comes with it), a
+        non-stateful one leaves the status alone (the CLI requires the
+        instance stopped first). A missing instance is a tolerant no-op:
+        ``restore=True`` is stateless and never fact-checks.
+        """
+        entry = self._lxd_instance(cmd.instance)
+        if entry is None:
+            return
+        if cmd.stateful:
+            entry["status"] = "Running"
+        self._lxd_refresh_instance(cmd.instance)
+
+    def manage_lxd_network(self, cmd: LxdNetworkCommand) -> None:
+        """Record a simulated ``lxc network create/delete``.
+
+        ``lxd.network``'s existence mutations. A create registers a
+        MANAGED network with its type, creation-time config and the
+        standalone-server ``["none"]`` location; a delete drops the
+        entry. Config drift on an existing network arrives separately
+        through ``set_lxd_config``. An unmanaged interface is never
+        touched here -- the operation refuses it in prepare.
+        """
+        if not cmd.present:
+            self.lxd_networks = [
+                n for n in self.lxd_networks if n.get("name") != cmd.network
+            ]
+            return
+        entry: LxdNetwork = {
+            "name": cmd.network,
+            "type": cmd.network_type,
+            "managed": True,
+            "status": "Created",
+            "config": dict(_config_pairs(cmd.config)),
+            "description": "",
+            "locations": ["none"],
+        }
+        self.lxd_networks = [
+            n for n in self.lxd_networks if n.get("name") != cmd.network
+        ]
+        self.lxd_networks.append(entry)
+
+    def cancel_lxd_operation(self, cmd: LxdOperationCancelCommand) -> None:
+        """Record a simulated ``lxc operation delete``: prune the id.
+
+        ``lxd.operation``'s cancel mutation. The daemon drops a
+        cancelled operation from the listing, so the id disappears from
+        ``lxd_operations`` and a following wait succeeds at once. An
+        already-pruned id is a tolerant no-op (the operation only yields
+        a cancel for a registered one).
+        """
+        self.lxd_operations = [
+            o for o in self.lxd_operations if o.get("id") != cmd.operation_id
+        ]
+
+    def finish_lxd_operation(self, cmd: LxdOperationWaitCommand) -> None:
+        """Model a simulated operation wait as immediate completion.
+
+        ``execute_command`` intercepts EVERY descriptor, wait commands
+        included, so ``LxdOperationWaitCommand.wait`` is never awaited
+        on a SimulatedHost: this arm prunes the id instead, which is
+        exactly the state the real poll loop waits for (the daemon
+        drops finished operations). An in-memory state never changes on
+        its own, so an already-absent id -- the common case -- succeeds
+        without any mutation, the ``check_wait`` precedent.
+        """
+        self.lxd_operations = [
+            o for o in self.lxd_operations if o.get("id") != cmd.operation_id
+        ]
+
+    def manage_lxd_profile(self, cmd: LxdProfileCommand) -> None:
+        """Record a simulated ``lxc profile create/delete``.
+
+        ``lxd.profile``'s existence mutations. A create registers an
+        EMPTY profile (the CLI's create verb takes no config flags --
+        the requested keys and devices arrive afterwards through
+        ``set_lxd_config``/``manage_lxd_device``); a delete drops the
+        entry. The real CLI refuses to delete a profile instances still
+        apply, which the simulation leaves to the operation's caller.
+        """
+        if not cmd.present:
+            self.lxd_profiles = [
+                p for p in self.lxd_profiles if p.get("name") != cmd.profile
+            ]
+            return
+        if any(p.get("name") == cmd.profile for p in self.lxd_profiles):
+            return
+        self.lxd_profiles.append(
+            {"name": cmd.profile, "description": "", "config": {}, "devices": {}}
+        )
+
+    def manage_lxd_project(self, cmd: LxdProjectCommand) -> None:
+        """Record a simulated ``lxc project create/delete``.
+
+        ``lxd.project``'s existence mutations. A create registers the
+        listing entry WITH its ``-c`` creation-time config and copies
+        the same document into ``lxd_project_configs`` (the two facts
+        read the same shape); a delete drops both. Config drift on an
+        existing project arrives through ``set_lxd_config``, which keeps
+        the two stores in step.
+        """
+        if not cmd.present:
+            self.lxd_projects = [
+                p for p in self.lxd_projects if p.get("name") != cmd.project
+            ]
+            self.lxd_project_configs.pop(cmd.project, None)
+            return
+        entry: LxdProject = {
+            "name": cmd.project,
+            "description": "",
+            "config": dict(_config_pairs(cmd.config)),
+            "used_by": [],
+        }
+        self.lxd_projects = [
+            p for p in self.lxd_projects if p.get("name") != cmd.project
+        ]
+        self.lxd_projects.append(entry)
+        self.lxd_project_configs[cmd.project] = {
+            **entry,
+            "config": dict(entry["config"]),
+            "used_by": list(entry["used_by"]),
+        }
+
+    def manage_lxd_storage_pool(self, cmd: LxdStoragePoolCommand) -> None:
+        """Record a simulated ``lxc storage create/delete``.
+
+        ``lxd.storage_pool``'s existence mutations. A create registers
+        the pool with its driver, creation-time config and the
+        standalone-server ``["none"]`` location; a delete drops the pool
+        AND its volume list (no pool, no volumes to report). Config
+        drift arrives through ``set_lxd_config``; a driver mismatch
+        never reaches here -- the operation raises in prepare.
+        """
+        if not cmd.present:
+            self.lxd_storage_pools = [
+                p for p in self.lxd_storage_pools if p.get("name") != cmd.pool
+            ]
+            self.lxd_storage_volumes.pop(cmd.pool, None)
+            return
+        entry: LxdStoragePool = {
+            "name": cmd.pool,
+            "driver": cmd.driver,
+            "status": "Created",
+            "config": dict(_config_pairs(cmd.config)),
+            "description": "",
+            "locations": ["none"],
+        }
+        self.lxd_storage_pools = [
+            p for p in self.lxd_storage_pools if p.get("name") != cmd.pool
+        ]
+        self.lxd_storage_pools.append(entry)
+
+    def manage_lxd_storage_volume(self, cmd: LxdStorageVolumeCommand) -> None:
+        """Record a simulated ``lxc storage volume create/delete``.
+
+        ``lxd.storage_volume``'s mutations. A create registers a CUSTOM
+        filesystem volume (the only user-manageable type) with its
+        creation-time config in the pool's list; a delete drops the
+        named volume. Instance/image volumes are never created here --
+        they appear through ``launch_lxd_instance``/``copy_lxd_instance``
+        seeding and are refused by the operation in prepare.
+        """
+        volumes = self.lxd_storage_volumes.setdefault(cmd.pool, [])
+        if not cmd.present:
+            self.lxd_storage_volumes[cmd.pool] = [
+                v for v in volumes if v.get("name") != cmd.volume
+            ]
+            return
+        entry: LxdStorageVolume = {
+            "name": cmd.volume,
+            "type": "custom",
+            "content_type": "filesystem",
+            "config": dict(_config_pairs(cmd.config)),
+            "description": "",
+            "location": "none",
+        }
+        self.lxd_storage_volumes[cmd.pool] = [
+            v for v in volumes if v.get("name") != cmd.volume
+        ] + [entry]
 
     def check_wait(self, cmd: WaitForFactCommand) -> None:
         """Evaluate a simulated wait once, without polling or sleeping.

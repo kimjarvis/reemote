@@ -3,13 +3,17 @@
 
 """Example: ensure a sysctl setting (pyinfra server.sysctl parity).
 
-This is a *usage* example, not part of the library. It is reemote5's answer
-to pyinfra's ``server.sysctl`` operation: no bespoke operation is ported,
-because the persist half is a file edit fully expressible with the generic
-``files.edit`` content-transform primitive plus the elevated ``files.move``
--- the same spool-and-install recipe as ``server_op_locale.py`` -- and the
-runtime half is a single ``sysctl key=value`` shell line this example
-defines itself over the public raw ``StringCommand`` descriptor.
+This is a *usage* example, not part of the library. It is reemote5's
+strict-parity demonstration of pyinfra's ``server.sysctl`` operation,
+built from generic primitives: the persist half is a file edit fully
+expressible with the ``files.edit`` content-transform primitive plus the
+elevated ``files.move`` -- the same spool-and-install recipe as
+``server_op_locale.py`` -- and the runtime half is a single
+``sysctl key=value`` shell line this example defines itself over the
+public raw ``StringCommand`` descriptor. The native ``sysctl`` module
+(``sysctl.setting`` / ``sysctl.conf``) now supersedes this recipe for
+everyday use; the recipe stays as the demonstration that pyinfra's
+semantics are expressible without a bespoke operation.
 
 pyinfra's ``server.sysctl(key, value, persist=False,
 persist_file="/etc/sysctl.conf")`` normalizes ``value`` (a list joins with
@@ -43,7 +47,8 @@ append when absent). The recipe mirrors all of that:
    ``/tmp/sysctl.conf`` (login-user-writable). Each host's transform is
    built ONCE by the ``make_transform`` factory closing over the frozen
    desired content -- a stable callable across both phases, the
-   determinism-safe split shown in ``examples/general/two_deploy_split.py``.
+   determinism-safe split shown in
+   ``examples/demonstrations/composition/two_deploy_split.py``.
 5. Run 3 installs: ``files.move`` moves the spool file into ``/etc`` with
    ``overwrite=True`` and ``sudo=True``. The edit and the move cannot share
    one deploy: ``files.move`` validates ``src`` in the prepare phase too,
@@ -75,8 +80,8 @@ Deliberate deviations from pyinfra, decided at migration time:
 
 Re-running the whole script is a no-op once the live value and the persist
 line both match: the snapshot gates skip every run. Reading the settings
-back without changing anything is the companion ``server_sysctl.py``
-example's job.
+back without changing anything is the companion
+``examples/modules/sysctl/sysctl_sysctl.py`` example's job.
 
 Run it with::
 

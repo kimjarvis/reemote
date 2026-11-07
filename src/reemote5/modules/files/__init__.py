@@ -6,7 +6,7 @@
 Re-exports everything from ``files.py`` so the operations (``files.link``,
 ``files.file``, ``files.put``, ``files.get``, ``files.edit``, ``files.move``,
 ``files.copy``) and the facts
-(``files.FileLink``, ``files.FileExists``, ``files.LocalSha1``,
+(``files.FileLink``, ``files.FileExists``,
 ``files.RemoteFileSha1``, ``files.FileContents``, ``files.File``,
 ``files.Directory``, ``files.Link``) are reachable through the package name
 alone.
@@ -24,7 +24,6 @@ from .files import (
     GetCommand,
     Link,
     LinkCommand,
-    LocalSha1,
     MoveCommand,
     PutCommand,
     RemoteFileSha1,
@@ -49,7 +48,6 @@ __all__ = [
     "GetCommand",
     "Link",
     "LinkCommand",
-    "LocalSha1",
     "MoveCommand",
     "PutCommand",
     "RemoteFileSha1",

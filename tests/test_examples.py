@@ -55,9 +55,10 @@ IMMUTABLE_WRAPPERS = {"tuple", "frozenset"}
 # deploy body can be exercised offline; keyed by script and function name,
 # because two scripts share the factory name but not the fact behind it.
 SNAPSHOT_ARGS = {
-    ("examples/general/two_deploy_split.py", "build_configure_nginx"): lambda name: {
-        name: ["nginx"]
-    },
+    (
+        "examples/demonstrations/composition/two_deploy_split.py",
+        "build_configure_nginx",
+    ): lambda name: {name: ["nginx"]},
     (
         "examples/actions/deploy_action_deploy.py",
         "build_configure_nginx",

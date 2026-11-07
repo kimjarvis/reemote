@@ -26,6 +26,12 @@ The deploy itself is unchanged from ``dnf_packages.py`` -- install httpd,
 then remove the welcome configuration the package drops -- and still runs
 end to end over a **real SSH transport** in both phases.
 
+The deploy is guarded by ``is_centos`` (``host.group == "centos"``), composed
+once with ``sub_deploy(..., when=is_centos)`` so the inner operations carry no
+``when`` of their own: the ``dnf`` work runs only on hosts in the ``centos``
+group, and a skipped request is never materialized, so its facts are never
+read on any other host either.
+
 The path is resolved from ``__file__``, so the example works from any
 working directory. Point ``INVENTORY_PATH`` at your own file (or edit
 ``inventory_centos.json``) to target your machines.
@@ -55,6 +61,7 @@ from reemote5 import (
     format_plan,
     op,
     run,
+    sub_deploy,
     validate_inventory,
 )
 
@@ -80,13 +87,24 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
+def is_centos(host: Host) -> bool:
+    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+
+    Reads only the host's static ``group`` field, so it is deterministic across
+    the prepare and apply phases.
+    """
+    return host.group == "centos"
+
+
 def deploy(host: Host) -> Generator[OperationRequest]:
     """Install httpd, then remove its default welcome configuration.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
     Both operations need root, so both are flagged ``sudo=True`` and the
-    driver elevates their commands over SSH.
+    driver elevates their commands over SSH. Neither carries a ``when``: the
+    ``is_centos`` group guard is composed onto the whole deploy below, so it
+    need not be repeated on the inner operations.
     """
     yield op(dnf.packages, name="Install httpd", packages=("httpd",), sudo=True)
     yield op(
@@ -96,6 +114,12 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         present=False,
         sudo=True,
     )
+
+
+# The group guard, composed once at the outermost level: every request above
+# runs only on a ``centos`` host, and a skipped request is never materialized,
+# so its facts are never read on the other hosts either.
+deploy = sub_deploy(deploy, when=is_centos)
 
 
 async def main() -> None:

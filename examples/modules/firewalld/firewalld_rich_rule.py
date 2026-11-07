@@ -1,0 +1,152 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
+"""Manage a rich language rule in a zone with ``firewalld.rich_rule``.
+
+This is a *usage* example, not part of the library. It shows how an
+application drives reemote5's two-phase execution model end to end over a
+**real SSH transport** (asyncssh):
+
+1. Specify the target hosts as an *inventory*: a list of dictionaries with
+   each host's name plus its SSH ``connection`` information (address,
+   username and client key). The hosts must run firewalld (RHEL-family);
+   point ``INVENTORY`` at your own machines to target them.
+2. Build the deploy script as a generator yielding ``OperationRequest``
+   objects.
+3. Run the prepare phase to get a plan, and the apply phase to execute it.
+
+Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
+via ``run``'s ``host_factory`` and never touches the network -- this example
+uses the *default* factory (``Host.from_inventory``). Each plain ``Host``
+lazily opens an asyncssh connection from its ``connection`` data, gathers
+facts and runs commands for real, and ``run`` closes those connections when
+it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
+``asyncio.run``.
+
+``firewalld.rich_rule`` is a reemote5 original (pyinfra ships no firewalld
+module): it manages firewalld's rich language -- the expressive rules for
+source/destination restrictions, logging and rate limiting that the
+simple membership operations cannot express. Here SSH is accepted only
+from the management subnet. The rule string is deliberately opaque: the
+operation never parses or rewrites it, it only ensures the *exact
+string* is present or absent in the zone's rich-rule list (the
+``FirewalldZones`` fact keeps the rules verbatim). A differently ordered
+spelling of the same semantics is a *different* rule -- keep the string
+in one module-level constant, as this script does, so every run compares
+and removes the same text. The command quotes the rule with ``shlex``,
+so the embedded double quotes survive the shell intact. With the default
+``permanent=True`` the operation dual-applies, permanent first. The
+script yields the *same* request twice: the prepare phase plans both as
+changes when the rule is missing, while the apply phase adds it on the
+first and reports the second as a no-op through the fresh per-step fact
+cache.
+
+``firewall-cmd`` writes daemon state, so both requests are flagged
+``sudo=True`` and the driver elevates their commands over SSH.
+
+Run it with::
+
+    uv run python examples/modules/firewalld/firewalld_rich_rule.py
+"""
+
+import asyncio
+import sys
+from collections.abc import Generator
+
+from reemote5 import (
+    CommandError,
+    Host,
+    HostConnectionError,
+    OperationRequest,
+    PrivilegeError,
+    firewalld,
+    format_log,
+    format_plan,
+    op,
+    run,
+)
+
+# The zone and the exact rich rule string. Shared by both requests below so
+# they carry identical operation kwargs (only the log ``name`` differs),
+# which makes the second a guaranteed no-op in the apply phase -- and keeps
+# the exact-string membership comparison stable across deploys.
+ZONE = "public"
+RULE = 'rule family="ipv4" source address="192.168.0.0/24" service name="ssh" accept'
+
+# The inventory: real hosts and their SSH connection information, supplied
+# by the application to the library. The default host_factory materializes
+# each entry into a plain Host that connects over asyncssh.
+INVENTORY = [
+    {
+        "host": "web1",
+        "connection": {
+            "address": "192.168.0.240",
+            "username": "kjarvis",
+            "key_path": "/home/kim/.ssh/id_ed25519",
+        },
+    },
+    {
+        "host": "web2",
+        "connection": {
+            "address": "192.168.0.242",
+            "username": "kjarvis",
+            "key_path": "/home/kim/.ssh/id_ed25519",
+        },
+    },
+]
+
+
+def deploy(host: Host) -> Generator[OperationRequest]:
+    """Ensure the SSH rich rule -- twice, to show idempotence.
+
+    Branch-free, so the request sequence is identical in the prepare and
+    apply phases (a branch on a mutable fact would raise DeterminismError).
+    The first request adds the rule to both scopes if missing; the second
+    carries the same arguments and is a guaranteed no-op in the apply
+    phase, because the first addition is already visible through the
+    fresh per-step fact cache.
+
+    ``firewall-cmd`` writes daemon state, so both requests are flagged
+    ``sudo=True`` and the driver elevates their commands over SSH.
+    """
+    yield op(
+        firewalld.rich_rule,
+        name="Restrict SSH to management subnet",
+        zone=ZONE,
+        rule=RULE,
+        sudo=True,
+    )
+    yield op(
+        firewalld.rich_rule,
+        name="Re-ensure SSH rich rule (no-op)",
+        zone=ZONE,
+        rule=RULE,
+        sudo=True,
+    )
+
+
+async def main() -> None:
+    try:
+        # --dry: prepare phase only. Facts are still gathered over SSH (read-only)
+        # so the plan reflects each host's real pre-deployment state; no command
+        # that mutates a host is sent.
+        plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
+        print("== Plan (prepare phase, --dry) ==")
+        print(format_plan(plans))
+
+        # Real run: prepare, then apply in lockstep across hosts over SSH.
+        plans, report, _hosts = await run(INVENTORY, deploy)
+        print("\n== Run log (apply phase) ==")
+        assert report is not None
+        print(format_log(report))
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
+        # The library already reports every host-level failure as a typed error
+        # whose message names the host and the failing command. Print that
+        # message -- no traceback -- and exit non-zero so the failure stays
+        # script-visible.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

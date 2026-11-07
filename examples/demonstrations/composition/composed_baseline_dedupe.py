@@ -4,9 +4,20 @@
 """Example: independently written roles sharing a baseline, deduplicated.
 
 This is a *usage* example, not part of the library. It builds on
-``dnf_packages.py`` (same inventory, same two-phase ``run`` flow over the
-real asyncssh transport) and shows the first composition scenario: roles
-written in isolation that each declare the same prerequisite.
+``dnf_packages.py`` (same two-phase ``run`` flow over the real asyncssh
+transport) and shows the first composition scenario: roles written in
+isolation that each declare the same prerequisite.
+
+The inventory is read from the project root's ``inventory.json`` (validated
+up front with ``validate_inventory``), which holds one host in the
+``"centos"`` group alongside hosts in other groups. The whole composed deploy
+is wrapped with ``sub_deploy(..., when=is_centos)``, so the ``dnf`` steps are
+eligible only on the CentOS hosts: the driver skips them on the Alpine and
+Ubuntu hosts without materializing them, and neither the ``dnf`` commands nor
+the ``DnfPackages`` fact behind them runs there. Because ``when`` composes by
+conjunction and the wrapper prepends the *same* predicate tuple to every
+request, the three baseline copies still share an effective identity and
+dedupe collapses them exactly as before.
 
 ``role_httpd`` and ``role_monitoring`` both re-declare ``role_baseline``'s
 request -- each under its *own* name ("Install baseline tools", "Install
@@ -33,13 +44,17 @@ Run it with::
 """
 
 import asyncio
+import json
 import sys
 from collections.abc import Generator
+from pathlib import Path
+from typing import Any
 
 from reemote5 import (
     CommandError,
     Host,
     HostConnectionError,
+    InventoryError,
     OperationRequest,
     PrivilegeError,
     compose,
@@ -50,30 +65,44 @@ from reemote5 import (
     op,
     run,
     sub_deploy,
+    validate_inventory,
 )
 
 HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
 
-# Same real-host inventory as dnf_packages.py; the default host_factory
-# materializes each entry into a plain Host connecting over asyncssh.
-INVENTORY = [
-    {
-        "host": "web1",
-        "connection": {
-            "address": "192.168.0.240",
-            "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
-        },
-    },
-    {
-        "host": "web2",
-        "connection": {
-            "address": "192.168.0.242",
-            "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
-        },
-    },
-]
+# examples/demonstrations/composition/composed_baseline_dedupe.py -> the
+# project root, so the inventory is found whatever the current working
+# directory is.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
+
+
+def load_inventory(path: Path) -> list[dict[str, Any]]:
+    """Read an inventory from a JSON file and validate it.
+
+    The file must hold a JSON array of inventory entries -- dictionaries
+    each carrying at least ``host`` and ``connection``. Returns the parsed
+    list, ready to hand to ``run``, which materializes it with the default
+    ``Host.from_inventory`` factory; raises ``InventoryError`` (via
+    ``validate_inventory``) when the document is not an array or an entry
+    does not match the schema.
+    """
+    inventory = json.loads(path.read_text(encoding="utf-8"))
+    validate_inventory(inventory)
+    return inventory
+
+
+def is_centos(host: Host) -> bool:
+    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+
+    Reads only static inventory data (``host.group``, set by the ``"group"``
+    key of the inventory entry), never a mutable fact, and stays a stable
+    module-level function -- the two rules every ``when`` predicate follows
+    so both deploy phases reach the same eligibility decision. The ``dnf``
+    operations below only make sense on a CentOS host, so the guard keeps
+    them (and the facts they read) off the Alpine and Ubuntu hosts.
+    """
+    return host.group == "centos"
 
 
 def role_baseline(host: Host) -> Generator[OperationRequest]:
@@ -122,28 +151,50 @@ def role_monitoring(host: Host) -> Generator[OperationRequest]:
 
 # Prefixed per role for readable plans; the shared baseline request still
 # collapses even though all three copies carry different names, because
-# the dedupe key ignores names (first name wins).
-deploy = compose(
-    sub_deploy(role_baseline, name_prefix="baseline"),
-    sub_deploy(role_httpd, name_prefix="httpd"),
-    sub_deploy(role_monitoring, name_prefix="monitoring"),
-    dedupe=True,
+# the dedupe key ignores names (first name wins). The outer ``sub_deploy``
+# adds the ``is_centos`` eligibility guard to every request at once -- the
+# same predicate tuple on each copy, so it does not disturb the dedupe.
+deploy = sub_deploy(
+    compose(
+        sub_deploy(role_baseline, name_prefix="baseline"),
+        sub_deploy(role_httpd, name_prefix="httpd"),
+        sub_deploy(role_monitoring, name_prefix="monitoring"),
+        dedupe=True,
+    ),
+    when=is_centos,
 )
 
 
 async def main() -> None:
     try:
+        inventory = load_inventory(INVENTORY_PATH)
+        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        print(", ".join(entry["host"] for entry in inventory))
+
         # --dry: prepare phase only. The deduplicated plan shows one baseline
         # entry despite three roles yielding it; no mutating command is sent.
-        plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
-        print("== Plan (prepare phase, --dry) ==")
+        # On the non-CentOS hosts every step is [skipped: when guard is_centos].
+        plans, _, _hosts = await run(inventory, deploy, dry=True)
+        print("\n== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))
 
         # Real run: prepare, then apply in lockstep across hosts over SSH.
-        plans, report, _hosts = await run(INVENTORY, deploy)
+        plans, report, _hosts = await run(inventory, deploy)
         print("\n== Run log (apply phase) ==")
         assert report is not None
         print(format_log(report))
+    except (OSError, json.JSONDecodeError) as exc:
+        # The inventory file is missing, unreadable or not valid JSON. Python's
+        # own message already names the file and the reason, so print just that
+        # -- no host was contacted and there is no traceback worth showing.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except InventoryError as exc:
+        # The document parsed but did not match the inventory schema. The
+        # message names the offending entry by its list index, which is the
+        # whole report -- and it fails before any host is materialized.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # The library already reports every host-level failure as a typed error
         # whose message names the host and the failing command. Print that

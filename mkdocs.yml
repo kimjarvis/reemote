@@ -42,11 +42,21 @@ plugins:
             - examples/modules/apt
             - examples/modules/dnf
             - examples/modules/files
+            - examples/modules/firewalld
             - examples/modules/git
+            - examples/modules/gpg
             - examples/modules/hardware
+            - examples/modules/iptables
+            - examples/modules/lxd
+            - examples/modules/mysql
+            - examples/modules/openrc
+            - examples/modules/postgresql
+            - examples/modules/selinux
             - examples/modules/server
+            - examples/modules/sysctl
+            - examples/modules/systemd
+            - examples/modules/ufw
             - examples/actions
-            - examples/general
             - examples/demonstrations/composition
             - examples/demonstrations/connectors
             - examples/demonstrations/inventory
@@ -88,10 +98,20 @@ nav:
 #          - apt: examples/modules/apt.md
 #          - dnf: examples/modules/dnf.md
 #          - files: examples/modules/files.md
+#          - firewalld: examples/modules/firewalld.md
 #          - git: examples/modules/git.md
+#          - gpg: examples/modules/gpg.md
 #          - hardware: examples/modules/hardware.md
+#          - iptables: examples/modules/iptables.md
+#          - lxd: examples/modules/lxd.md
+#          - mysql: examples/modules/mysql.md
+#          - openrc: examples/modules/openrc.md
+#          - postgresql: examples/modules/postgresql.md
+#          - selinux: examples/modules/selinux.md
 #          - server: examples/modules/server.md
-#      - General: examples/general.md
+#          - sysctl: examples/modules/sysctl.md
+#          - systemd: examples/modules/systemd.md
+#          - ufw: examples/modules/ufw.md
 #      - Actions: examples/actions.md
 #      - Demonstrations:
 #          - Composition: examples/demonstrations/composition.md
@@ -108,9 +128,20 @@ nav:
           - apt: modules/apt.md
           - dnf: modules/dnf.md
           - files: modules/files.md
+          - firewalld: modules/firewalld.md
           - git: modules/git.md
+          - gpg: modules/gpg.md
           - hardware: modules/hardware.md
+          - iptables: modules/iptables.md
+          - lxd: modules/lxd.md
+          - mysql: modules/mysql.md
+          - openrc: modules/openrc.md
+          - postgresql: modules/postgresql.md
+          - selinux: modules/selinux.md
           - server: modules/server.md
+          - sysctl: modules/sysctl.md
+          - systemd: modules/systemd.md
+          - ufw: modules/ufw.md
       - Actions:
           - actions: actions/actions.md
       - Connectors:

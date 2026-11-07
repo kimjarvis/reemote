@@ -185,7 +185,10 @@ subkeys re-keyed by their own ids); reemote5 returns the typed entry list
 instead. pyinfra builds the fact on its
 `gpg.GpgKeyrings` infrastructure; reemote5 collapses that stack into the one
 class, so the per-keyring paths and formats the parent reports are
-deliberately dropped (`AptKeys` discards them anyway). pyinfra's
+deliberately dropped (`AptKeys` discards them anyway). reemote5's own
+[`GpgKeyrings`][reemote5.modules.gpg.gpg.GpgKeyrings] in the gpg namespace
+is the general-purpose keyring inspection fact that keeps those
+per-keyring paths and formats. pyinfra's
 `requires_command` gating on `gpg` is deliberately dropped too: a missing
 `gpg` is swallowed by the command's `|| true` and reads as `[]`, while a
 missing `find` exits 127 — reported as

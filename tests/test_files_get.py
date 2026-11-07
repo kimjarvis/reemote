@@ -6,7 +6,7 @@
 The mirror of ``test_files_put.py``: the destination is always a seekable,
 writable IO-like object on the control machine -- a local filename is
 deliberately not supported. Covers the content-hash comparison (remote
-``RemoteFileSha1`` vs ``LocalSha1`` of the destination's current bytes), the
+``RemoteFileSha1`` vs a local ``hashlib`` sha1 of the destination's current bytes), the
 non-shell ``GetCommand`` descriptor and its loggable rendering, the
 ``send_command`` dispatch onto the host's ``download_file`` seam, the
 write-and-rewind rule (``write_dest_bytes``) for binary and text streams, the
@@ -23,10 +23,10 @@ from collections.abc import Generator
 import pytest
 
 from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import format_log, format_plan, gather_fact, run, send_command
+from reemote5.drivers import format_log, format_plan, run, send_command
 from reemote5.hosts import Host
 from reemote5.modules import files
-from reemote5.modules.files.files import GetCommand, LocalSha1, write_dest_bytes
+from reemote5.modules.files.files import GetCommand, _sha1_of_source, write_dest_bytes
 from tests.simulated_host import SimulatedHost
 
 INVENTORY = [
@@ -195,12 +195,10 @@ async def test_get_plans_a_download_when_remote_is_absent(dest_stream):
 # --- The destination: written and rewound, binary or text -----------------------
 
 
-async def test_local_sha1_of_an_empty_dest(dest_stream):
+async def test_sha1_of_an_empty_dest(dest_stream):
     """An empty destination hashes as the sha1 of no bytes, so it never matches
     a present remote file and the first get always downloads."""
-    host = SimulatedHost.from_inventory(INVENTORY[0])
-    values = await gather_fact([host], LocalSha1, dest_stream)
-    assert values["web1"] == hashlib.sha1(b"").hexdigest()
+    assert _sha1_of_source(dest_stream) == hashlib.sha1(b"").hexdigest()
 
 
 async def test_write_dest_bytes_replaces_and_rewinds():
@@ -213,7 +211,7 @@ async def test_write_dest_bytes_replaces_and_rewinds():
 
 async def test_write_dest_bytes_decodes_for_a_text_stream():
     """A text stream receives the bytes decoded as UTF-8 (read_source_bytes'
-    inverse), so a later LocalSha1 re-encodes to the identical digest."""
+    inverse), so a later local sha1 re-encodes to the identical digest."""
     text = io.StringIO()
     write_dest_bytes(text, CONTENT)
     assert text.getvalue() == CONTENT.decode("utf-8")

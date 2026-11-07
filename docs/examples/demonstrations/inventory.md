@@ -11,7 +11,10 @@ The `dnf_packages.py` deploy — install httpd, then remove its welcome
 configuration — with the target hosts kept in `inventory_centos.json`
 instead of in the source: read the file, validate it with
 [`validate_inventory`][reemote5.hosts.validate_inventory], and hand the
-plain list of dictionaries to `run`.
+plain list of dictionaries to `run`. The deploy is guarded by `is_centos`
+(`host.group == "centos"`), composed once with `sub_deploy(..., when=...)`
+so the inner operations carry no `when` of their own and a skipped host
+never has its facts read.
 
 ::: json_inventory_centos
     options:
@@ -20,7 +23,8 @@ plain list of dictionaries to `run`.
 ## Alpine hosts from a JSON file
 
 The same idea with `apk_packages.py`: install apache2, then remove its
-default homepage, reading the hosts from `inventory_alpine.json`.
+default homepage, reading the hosts from `inventory_alpine.json`, with the
+deploy guarded by `is_alpine` (`host.group == "alpine"`).
 
 ::: json_inventory_alpine
     options:
@@ -29,7 +33,8 @@ default homepage, reading the hosts from `inventory_alpine.json`.
 ## Ubuntu hosts from a JSON file
 
 The same idea with `apt_packages.py`: install apache2, then remove its
-default homepage, reading the hosts from `inventory_ubuntu.json`.
+default homepage, reading the hosts from `inventory_ubuntu.json`, with the
+deploy guarded by `is_ubuntu` (`host.group == "ubuntu"`).
 
 ::: json_inventory_ubuntu
     options:

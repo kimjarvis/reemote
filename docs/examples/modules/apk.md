@@ -48,7 +48,7 @@ The inventory is read from the project root's `inventory.json` (validated up
 front with `validate_inventory`), and every request carries
 `when=is_alpine` — the request-level counterpart of the `when` guard the
 [`composed_when_guard`](../demonstrations/composition.md) demonstration shows
-for a canary tag. The predicate reads only static inventory data
+for the `centos` group. The predicate reads only static inventory data
 (`host.group`) and is a stable module-level function, so both phases reach the
 same decision; the driver skips a rejected request without materializing it,
 so on a non-Alpine host neither the `apk` commands nor the
@@ -177,5 +177,48 @@ log render `[skipped: when guard is_alpine]`. Each run therefore purges on
 the inventory's single Alpine host and skips the hosts in the other groups.
 
 ::: apk_autoremove
+    options:
+      members: []
+
+## Managing repository lines
+
+The repository operation: `apk.repository` ensures one line in
+`/etc/apk/repositories` — a reemote5 original modeled on
+[`apt.repo`](../../modules/apt.md), because pyinfra's `apk` namespace
+ships no repository operation, so the
+[`ApkRepositories`][reemote5.modules.apk.apk.ApkRepositories] fact had no
+write counterpart. `src` is one line (a bare URL or an `@tag URL` line)
+and presence is entry-aware: the line is parsed into the same `url`/`tag`
+entry the fact reports, so a tagged line and the bare URL are *distinct*
+repositories, and an unparseable `src` raises `ValueError` in the prepare
+phase before anything is sent. The add wraps its `>>` redirect inside
+`sh -c` so it happens in the *elevated* shell — a bare
+`doas echo ... >> /etc/apk/repositories` would open the redirect as the
+login user and fail on the root-owned file. The script ensures the
+`community` repository — the source of most everyday Alpine packages
+beyond `main`, and the proposal's motivating case — using the CDN's
+`latest-stable` alias so no release is hard-coded; its docstring says to
+audit the configured sources with the read-only `apk_apk_repositories.py`
+fact example first and pin the URL to the hosts' release when they track a
+fixed one, because the presence check compares whole entries and mixing
+releases in one file invites dependency trouble. The same request is
+yielded twice — the second is a guaranteed no-op in the apply phase once
+the first append landed (both plan as changes when the line is missing).
+The removal direction (`present=False`, an escaped literal-matching
+`sed -i` delete) is left to the reader: it is a *contains* match, so
+removing a bare URL also drops a tagged line carrying it. Refreshing the
+package index after a change is out of the operation's scope — sequence
+an `apk update` after it when needed.
+
+Like the other apk examples, this script reads the shared project-root
+`inventory.json` (validated up front with `validate_inventory`) and every
+request carries `when=is_alpine` and `doas=True` (the Alpine host ships no
+`sudo`, and passwordless `doas -n` needs a `permit nopass` rule in
+`/etc/doas.conf`), so on a non-Alpine host neither the append nor the
+`ApkRepositories` fact behind it runs — the driver skips each request
+without materializing it and plan and log render
+`[skipped: when guard is_alpine]`.
+
+::: apk_repository
     options:
       members: []

@@ -6,8 +6,9 @@
 # Fact side (design doc section 5): ``FileLink`` (the fact read by
 # ``files.link`` to learn the current target of a symlink), ``FileExists``
 # (the fact read by ``files.file`` to learn whether a regular file exists),
-# the ``LocalSha1``/``RemoteFileSha1`` pair ``files.put`` and ``files.get``
-# compare to decide whether a transfer is needed, ``FileContents`` (the
+# ``RemoteFileSha1`` (the remote digest ``files.put`` and ``files.get``
+# compare against a locally computed sha1 to decide whether a transfer is
+# needed), ``FileContents`` (the
 # raw text of a remote file, or None when absent, that ``files.edit`` reads to
 # transform it), and ``File`` (pyinfra's stat-level metadata for a regular
 # file -- owner, group, mode, timestamps, size -- False for a non-file path,
@@ -66,6 +67,12 @@ class FileLink:
     str | None
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/files/files_link.py``.
     """
@@ -99,6 +106,12 @@ class FileExists:
     bool
     ```
 
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/files/files_file.py``.
     """
@@ -120,13 +133,13 @@ def read_source_bytes(src: IO[Any]) -> bytes:
     """Read an IO-like source from position 0 and normalize it to bytes.
 
     The single reading rule for ``files.put`` sources, shared by the local
-    hash fact and the transport's temp-file materialization so both always
-    see identical content: the stream is rewound first (an operation may be
-    materialized more than once -- prepare, then apply -- and each read must
-    start from the beginning), and a text stream's ``str`` payload is encoded
-    as UTF-8. The source must therefore be seekable; a missing local file is
-    impossible by construction (there is no path), and a non-seekable stream
-    fails fast with the IO error ``seek`` raises.
+    hash computation and the transport's temp-file materialization so both
+    always see identical content: the stream is rewound first (an operation
+    may be materialized more than once -- prepare, then apply -- and each read
+    must start from the beginning), and a text stream's ``str`` payload is
+    encoded as UTF-8. The source must therefore be seekable; a missing local
+    file is impossible by construction (there is no path), and a non-seekable
+    stream fails fast with the IO error ``seek`` raises.
     """
     src.seek(0)
     data = src.read()
@@ -162,37 +175,6 @@ def write_dest_bytes(dest: IO[Any], data: bytes) -> None:
     dest.seek(0)
 
 
-class LocalSha1:
-    """The sha1 hex digest of an IO-like source on the *control* machine.
-
-    **Commands:**
-
-    ```text
-    none -- the digest is computed locally with hashlib.sha1, no host command is issued
-    ```
-
-    **Returns:**
-
-    ```python
-    str
-    ```
-
-    Examples:
-        Examples can be found in ``examples/modules/files/files_put.py`` and
-        ``examples/modules/files/files_get.py``.
-    """
-
-    # The one fact whose input is not the host: ``files.put`` compares this
-    # against ``RemoteFileSha1`` to decide whether an upload is needed. The
-    # digest is computed in a worker thread so the read never blocks the event
-    # loop, and the stream is rewound first so repeated materializations (the
-    # prepare and apply phases read the same object) hash identical content.
-
-    @classmethod
-    async def process(cls, host: Host, src: IO[Any]) -> str:
-        return await asyncio.to_thread(_sha1_of_source, src)
-
-
 class RemoteFileSha1:
     """The sha1 hex digest of a file on the remote host, or None if absent.
 
@@ -208,6 +190,12 @@ class RemoteFileSha1:
     str | None
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/files/files_put.py`` and
         ``examples/modules/files/files_get.py``.
@@ -220,7 +208,7 @@ class RemoteFileSha1:
             # SimulatedHost seam: hash the content the simulated remote
             # filesystem holds at the path (None when absent). One content
             # store backs both files.put and files.get, so the digest is
-            # derived here exactly as LocalSha1 derives it from a stream.
+            # derived here exactly as _sha1_of_source derives it from a stream.
             data = remote_files.get(path)
             return hashlib.sha1(data).hexdigest() if data is not None else None
         # Real transport: `sha1sum` over asyncssh. A missing file exits
@@ -244,6 +232,12 @@ class FileContents:
 
     ```python
     str | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -480,6 +474,12 @@ class File:
     dict[str, Any] | Literal[False] | None
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/files/files_file.py``.
     """
@@ -601,6 +601,12 @@ class Directory(File):
     dict[str, Any] | Literal[False] | None
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/files/files_directory.py``.
     """
@@ -652,6 +658,12 @@ class Link(File):
 
     ```python
     dict[str, Any] | Literal[False] | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -731,6 +743,12 @@ async def link(
     Yields:
         Command: The link command, when the link differs from the request.
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/files/files_op_link.py``.
     """
@@ -783,6 +801,12 @@ async def file(
 
     Yields:
         Command: The file command, when existence differs from the request.
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
 
     Examples:
         Examples can be found in ``examples/modules/files/files_op_file.py``.
@@ -845,6 +869,12 @@ async def put(ctx: OpContext, src: IO[Any], dest: str) -> AsyncGenerator[Command
     Yields:
         Command: The upload transfer, when the content differs.
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, OSError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/files/files_put.py``.
     """
@@ -854,16 +884,17 @@ async def put(ctx: OpContext, src: IO[Any], dest: str) -> AsyncGenerator[Command
     # pyinfra's ``files.put``, which accepts ``str | IO[Any]``, a *path string
     # is deliberately not supported* -- the content source is always a stream,
     # rewound to position 0 before every read. Idempotence is content-based:
-    # the source's sha1 (``LocalSha1``) is compared against the remote file's
-    # (``RemoteFileSha1``, gathered over SSH), and a ``PutCommand`` is yielded
-    # only when they differ.
+    # the source's sha1 (hashed locally with ``hashlib`` in a worker thread,
+    # never a fact -- a control-machine digest is a plain library call) is
+    # compared against the remote file's (``RemoteFileSha1``, gathered over
+    # SSH), and a ``PutCommand`` is yielded only when they differ.
     #
     # The transfer is unprivileged: it rides the connection's scp channel as
     # the login user, so the ``sudo``/``su`` escalation flags do not apply to
     # it and ``dest`` must be writable by that user (put into a writable path
     # first and move it with ``files.move`` flagged ``sudo=True`` when it must
     # end up root-owned).
-    local_sha1 = await ctx.facts.get(LocalSha1, src)
+    local_sha1 = await asyncio.to_thread(_sha1_of_source, src)
     remote_sha1 = await ctx.facts.get(RemoteFileSha1, dest)
 
     if remote_sha1 == local_sha1:
@@ -910,6 +941,12 @@ async def get(ctx: OpContext, src: str, dest: IO[Any]) -> AsyncGenerator[Command
     Yields:
         Command: The download transfer, when the content differs.
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, OSError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/files/files_get.py``.
     """
@@ -919,8 +956,9 @@ async def get(ctx: OpContext, src: str, dest: IO[Any]) -> AsyncGenerator[Command
     # opened for writing, ...) that receives the content -- *not* a local
     # filename. Idempotence is content-based: the remote file's sha1
     # (``RemoteFileSha1``, gathered over SSH) is compared against the
-    # destination's current content sha1 (``LocalSha1``), and a ``GetCommand``
-    # is yielded only when they differ, so a fresh or empty destination always
+    # destination's current content sha1 (hashed locally with ``hashlib`` in a
+    # worker thread), and a ``GetCommand`` is yielded only when they differ,
+    # so a fresh or empty destination always
     # downloads and a second get of the same file is a no-op. pyinfra's
     # ``add_deploy_dir``, ``create_local_dir`` and ``force`` options are
     # deliberately dropped: there is no local path to place, create or force.
@@ -931,7 +969,7 @@ async def get(ctx: OpContext, src: str, dest: IO[Any]) -> AsyncGenerator[Command
     # the login user, so the ``sudo``/``su`` escalation flags do not apply to
     # it and ``src`` must be readable by that user.
     remote_sha1 = await ctx.facts.get(RemoteFileSha1, src)
-    local_sha1 = await ctx.facts.get(LocalSha1, dest)
+    local_sha1 = await asyncio.to_thread(_sha1_of_source, dest)
 
     if remote_sha1 == local_sha1:
         ctx.reason = f"local copy already up to date (from {src})"
@@ -955,6 +993,12 @@ async def edit(
 
     Yields:
         Command: The rewrite upload, when the transformed content differs.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
 
     Examples:
         Examples can be found in ``examples/modules/files/files_edit.py``.
@@ -1054,6 +1098,12 @@ async def move(
         Command: The move command, always, preceded by a removal when
             ``overwrite`` clears an existing target.
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/files/files_move.py``.
     """
@@ -1148,6 +1198,12 @@ async def copy(
     Yields:
         Command: The copy command, when a copy is needed.
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/files/files_copy.py``.
     """
@@ -1223,7 +1279,6 @@ __all__ = [
     "GetCommand",
     "Link",
     "LinkCommand",
-    "LocalSha1",
     "MoveCommand",
     "PutCommand",
     "RemoteFileSha1",

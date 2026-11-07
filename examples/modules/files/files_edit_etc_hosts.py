@@ -24,7 +24,7 @@ directly. The recipe therefore spools and installs:
    (login-user-writable). Each host's transform is built ONCE by the
    ``make_transform`` factory closing over the frozen snapshot -- a stable
    callable across both phases, exactly the determinism-safe split shown in
-   ``examples/general/two_deploy_split.py``.
+   ``examples/demonstrations/composition/two_deploy_split.py``.
 3. Run 2 installs: ``files.move`` moves ``/tmp/hosts`` into ``/etc`` with
    ``overwrite=True``, flagged ``sudo=True`` -- ``rm -rf /etc/hosts`` then
    ``mv /tmp/hosts /etc``, both elevated shell commands. The run-as user and

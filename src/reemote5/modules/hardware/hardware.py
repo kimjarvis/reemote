@@ -395,6 +395,12 @@ class BlockDevices:
     dict[str, BlockDevice]
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/hardware/hardware_block_devices.py``.
     """
@@ -480,6 +486,12 @@ class CpuInfo:
 
     ```python
     dict[str, str | list[str]] | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -568,6 +580,12 @@ class Cpus:
 
     ```python
     int | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -689,6 +707,12 @@ class DiskStats:
     dict[str, DiskStat]
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/hardware/hardware_disk_stats.py``.
     """
@@ -792,6 +816,12 @@ class DmiInfo:
     dict[str, str]
     ```
 
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/hardware/hardware_dmi_info.py``.
     """
@@ -887,6 +917,12 @@ class Ipv4Addrs:
     dict[str, list[str]]
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/hardware/hardware_ipv4_addrs.py``.
     """
@@ -964,6 +1000,12 @@ class Ipv6Addrs:
 
     ```python
     dict[str, list[str]]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -1077,6 +1119,12 @@ class LsBlk:
 
     ```python
     list[LsBlkNode]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -1248,6 +1296,12 @@ class NetworkDevices:
     dict[str, NetworkDevice]
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/hardware/hardware_network_devices.py``.
     """
@@ -1348,6 +1402,12 @@ class SmbiosInfo:
 
     ```python
     dict[str, dict[str, str | list[str]]]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
     ```
 
     Examples:

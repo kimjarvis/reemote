@@ -1,5 +1,25 @@
 # server module
 
+<!---
+
+The systemd surface that used to live here — the `SystemdServiceState` and
+`SystemdServiceEnabled` facts, the `unit_name` normalization helper and the
+`service` operation — has been **superseded by the
+[`systemd`](systemd.md) namespace** (`systemd.SystemdServiceState`,
+`systemd.SystemdServiceEnabled`, `systemd.unit_name`, `systemd.service`).
+`server` re-exports them for backward compatibility, and `server.service` is
+now a deprecated alias of `systemd.service`; new code should use the `systemd`
+namespace. `server.wait_service` and its `is_active` predicate stay here,
+polling the relocated `SystemdServiceState`.
+
+The `Sysctl` fact has likewise relocated — to the [`sysctl`](sysctl.md)
+namespace (`sysctl.Sysctl`) — but **without** a backward-compatibility
+re-export: `server` no longer exports it, and the top-level `reemote5.Sysctl`
+binding now points at `sysctl.Sysctl`. The `sysctl` namespace also owns the
+persistence facts (`SysctlFile`, `SysctlFiles`) and the `setting`/`conf`
+operations that supersede the `server_op_sysctl.py` recipe for everyday use.
+
+--->
 
 ## server Facts
 
@@ -26,10 +46,6 @@
         - Mounts
         - Path
         - Processes
-        - Sysctl
-        - unit_name
-        - SystemdServiceState
-        - SystemdServiceEnabled
         - Timezone
         - Uptime
         - User
@@ -54,10 +70,8 @@
         - kill
         - modprobe
         - mount
-        - service
         - timezone
         - wait_service
-        - is_active
 
 
 <!---
@@ -66,11 +80,10 @@
 operations in a single source, so the read side (`Arch`, `AuthorizedKeys`,
 `Date`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
 `KernelVersion`, `Last`, `LinuxDistribution`, `LinuxGui`, `LinuxName`,
-`Locales`, `LsbRelease`, `Mounts`, `Path`, `Processes`, `Sysctl`,
-`SystemdServiceState`,
-`SystemdServiceEnabled`, `Timezone`, `Uptime`, `User`, `Users`, `Which`)
+`Locales`, `LsbRelease`, `Mounts`, `Path`, `Processes`,
+`Timezone`, `Uptime`, `User`, `Users`, `Which`)
 sits beside the `server.group`, `server.hostname`, `server.kill`,
-`server.modprobe`, `server.mount`, `server.service`, `server.timezone` and
+`server.modprobe`, `server.mount`, `server.timezone` and
 `server.wait_service`
 operations that consume them. It is also where reemote5's
 **waiting** design lives: `server.wait_service` is the first operation that
@@ -82,14 +95,7 @@ A fact is an asynchronous, queryable resource — never yielded by a generator �
 implemented as a `process` coroutine returning the raw value (over asyncssh in
 the real implementation). Read facts through
 [`FactCache.get`][reemote5.core.FactCache.get], which is itself a coroutine,
-so results are awaited and cached within a phase step. The two systemd facts
-take a service name and normalize it with
-[`unit_name`][reemote5.modules.server.server.unit_name] (`httpd` →
-`httpd.service`), so the test framework's simulated state is keyed by full
-unit names too. `SystemdServiceState` returns the raw `ActiveState` string
-rather than a boolean so a predicate can decide what counts as ready —
-`activating` is deliberately *not* `active`, which is what a wait polls
-through. `Arch` takes no arguments: it runs `uname -m` and returns the
+so results are awaited and cached within a phase step. `Arch` takes no arguments: it runs `uname -m` and returns the
 machine's architecture string (e.g. `x86_64`), mirroring pyinfra's
 `server.Arch`. `AuthorizedKeys` takes a username (and an optional explicit
 `path`) and returns the SSH public keys listed in that user's
@@ -229,19 +235,10 @@ fact (`command -v busybox || true`), exactly like pyinfra; one deliberate
 deviation remains: a missing Darwin marker line raises `ValueError` rather
 than pyinfra's bare `Exception`. A non-int `pid` raises `TypeError` on both
 transports — the BusyBox branch interpolates it into an `awk` program,
-where shell quoting cannot protect it. `Sysctl` takes an optional `keys`
-list: it runs `sysctl -a 2>/dev/null || true` (or `sysctl <key> ...` for the
-named keys, each shell-quoted) and returns a dict of setting name → value,
-mirroring pyinfra's `server.Sysctl`. Rows separate on `=` (Linux) or `:`
-(BSD); a row carrying neither is skipped. A value made only of
-alphanumeric, `_`, `-`, `.` and whitespace characters is split on
-whitespace and each token int-converted when possible, a single token
-collapsing to a scalar (so `1024\t65535` reads as `[1024, 65535]`);
-anything else stays the stripped raw string. A whitespace-only value
-keeps `""` while a row with nothing after the separator is skipped
-(pyinfra's truthiness check), and empty output — an unknown key or a
-failed read, swallowed by `|| true` — reads as `{}`, pyinfra's
-`default = dict`. `Timezone` takes no arguments: it
+where shell quoting cannot protect it. `Sysctl` has relocated to the
+`sysctl` namespace (`sysctl.Sysctl`, keeping pyinfra's `server.Sysctl`
+parse verbatim); `server` no longer exports it, and the persistence facts
+and management operations live there too. `Timezone` takes no arguments: it
 runs `readlink -f /etc/localtime | sed 's|.*/zoneinfo/||'` and returns the
 current system timezone (e.g. `Europe/Amsterdam`), mirroring pyinfra's
 `server.Timezone`; when `/etc/localtime` is a copied file rather than a
@@ -382,14 +379,11 @@ Like pyinfra, `/etc/fstab` is never touched — persistence across reboots is
 a `files.edit` recipe. The commands need root, so flag the request
 `sudo=True`.
 
-`server.service` is the idempotent half, mirroring pyinfra's `systemd.service`
-for `service`, `running`, `restarted`, `enabled` and `daemon_reload`: it
-compares the unit against the two facts and yields a
-`SystemctlCommand` only
-where the unit differs from the request (`daemon_reload` and `restarted` are
-stateless and always yield when set). The `systemctl` commands need root, so
-flag the request `sudo=True`. pyinfra's `reloaded`, `command`, `user_mode`,
-`machine` and `user_name` options are not supported.
+`server.service` is a deprecated alias of `systemd.service`, re-exported here
+for backward compatibility; the operation now lives in the `systemd` namespace
+with the enhanced option set (`reloaded`, `reset_failed`, `soft_reload`, `now`
+and the `user_mode`/`machine`/`user_name` scope flags). See the
+[`systemd` module page](systemd.md).
 
 `server.timezone` mirrors pyinfra's `server.timezone` for `timezone`, on
 **systemd systems only**: it compares the requested zone against the
@@ -418,13 +412,13 @@ instead of a `FindInFile` grep), spools the desired content to a writable
 path, then installs it with an elevated `files.move` and regenerates — no
 bespoke operation and no new descriptor.
 
-pyinfra's `server.sysctl` is deliberately not ported either: its runtime
-half is a raw `sysctl key=value` shell command gated by the `Sysctl` fact,
-and its `persist` half edits root-owned `/etc/sysctl.conf` through
-`files.line` — fully expressible with the generic `files.edit` transform
-primitive. The
+pyinfra's `server.sysctl` is superseded by the native [`sysctl`](sysctl.md)
+namespace: `sysctl.setting` manages one parameter (runtime apply plus a
+keyed persistence edit) and `sysctl.conf` manages a whole drop-in file.
+The
 [sysctl recipe](../examples/modules/server.md#ensuring-a-sysctl-setting-pyinfra-serversysctl-parity)
-snapshots `Sysctl` and `FileContents`, applies pyinfra's value
+stays as the strict-parity demonstration: it snapshots `Sysctl` (now
+`sysctl.Sysctl`) and `FileContents`, applies pyinfra's value
 normalization and `files.line` semantics controller-side, applies the live
 value with an elevated raw command, spools the desired config to a
 writable path and installs it with an elevated `files.move` in a second

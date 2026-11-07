@@ -185,6 +185,12 @@ class AptAutoremovable:
     list[AptPackageInfo]
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/apt/apt_apt_autoremovable.py``.
     """
@@ -286,6 +292,12 @@ class AptHeldPackages:
 
     ```python
     list[AptPackageInfo]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -468,6 +480,12 @@ class AptKeys:
     list[AptKey]
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/apt/apt_apt_keys.py``.
     """
@@ -501,10 +519,13 @@ class AptKeys:
     # ``gpg.GpgKeyrings`` infrastructure; reemote5 collapses that stack into
     # this one class, so the per-keyring paths and formats the parent reports
     # are deliberately dropped (``AptKeys`` discards them anyway) and only the
-    # flattened keys remain. pyinfra's ``requires_command`` gating on ``gpg``
-    # is deliberately dropped too: a missing ``gpg`` is swallowed by the
-    # command's ``|| true`` and reads as ``[]``, while a missing ``find`` exits
-    # 127, which ``run_shell`` reports as ``CommandNotFoundError``.
+    # flattened keys remain. reemote5's own ``gpg.GpgKeyrings`` in the gpg
+    # namespace is the general-purpose keyring inspection fact that keeps
+    # those per-keyring paths and formats. pyinfra's ``requires_command``
+    # gating on ``gpg`` is deliberately dropped too: a missing ``gpg`` is
+    # swallowed by the command's ``|| true`` and reads as ``[]``, while a
+    # missing ``find`` exits 127, which ``run_shell`` reports as
+    # ``CommandNotFoundError``.
 
     #: APT's modern keyring directories, searched when ``directories`` is
     #: None (pyinfra's ``AptKeys.command`` defaults).
@@ -617,6 +638,12 @@ class AptPackages:
 
     ```python
     list[AptPackageInfo]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -762,6 +789,12 @@ class AptPolicy:
 
     ```python
     AptPackagePolicy | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -952,6 +985,12 @@ class AptSources:
 
     ```python
     list[AptSource]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
     ```
 
     Examples:
@@ -1193,6 +1232,12 @@ class AptSourcesFile:
     str | None
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/apt/apt_sources_file.py``.
     """
@@ -1279,6 +1324,12 @@ class AptUpgradable:
 
     ```python
     list[AptPackageUpgrade]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -1405,6 +1456,12 @@ class DebPackage:
 
     ```python
     DebPackageInfo | None
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
     ```
 
     Examples:
@@ -1536,6 +1593,12 @@ class SimulateOperationWillChange:
 
     ```python
     AptSimulationDict | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -1718,6 +1781,12 @@ async def deb(
     Yields:
         Command: Generated apt deb package commands.
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/apt/apt_deb.py``.
     """
@@ -1816,6 +1885,12 @@ async def dist_upgrade(
     Yields:
         Command: Generated apt dist-upgrade commands.
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/apt/apt_dist_upgrade.py``.
     """
@@ -1888,6 +1963,12 @@ async def auto_remove(
 
     Yields:
         Command: Generated apt autoremove commands.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
 
     Examples:
         Examples can be found in ``examples/modules/apt/apt_auto_remove.py``.
@@ -2010,6 +2091,12 @@ async def key(
     Yields:
         Command: Generated apt GPG keyring commands.
 
+    **Raises:**
+
+    ```python
+    ValueError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/apt/apt_key.py``.
     """
@@ -2123,6 +2210,12 @@ async def mark(
 
     Yields:
         Command: Generated apt-mark hold/unhold commands.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
 
     Examples:
         Examples can be found in ``examples/modules/apt/apt_mark.py``.
@@ -2310,6 +2403,12 @@ async def packages(
     Yields:
         Command: Generated apt package commands.
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/apt/apt_packages.py``.
     """
@@ -2460,6 +2559,12 @@ async def update(
     Yields:
         Command: Generated apt update commands.
 
+    **Raises:**
+
+    ```python
+    None
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/apt/apt_update.py``.
     """
@@ -2500,6 +2605,12 @@ async def upgrade(
 
     Yields:
         Command: Generated apt upgrade commands.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
 
     Examples:
         Examples can be found in ``examples/modules/apt/apt_upgrade.py``.
@@ -2585,6 +2696,12 @@ async def ppa(
 
     Yields:
         Command: Generated apt PPA repository commands.
+
+    **Raises:**
+
+    ```python
+    None
+    ```
 
     Examples:
         Examples can be found in ``examples/modules/apt/apt_ppa.py``.
@@ -2701,6 +2818,12 @@ async def repo(
 
     Yields:
         Command: Generated apt repository line commands.
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
 
     Examples:
         Examples can be found in ``examples/modules/apt/apt_repo.py``.
@@ -2891,6 +3014,12 @@ async def sources_file(
 
     Yields:
         Command: Generated apt deb822 sources file commands.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
 
     Examples:
         Examples can be found in ``examples/modules/apt/apt_sources_file.py``.

@@ -1,0 +1,2369 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
+"""Tests for the iptables module: ``IptablesChains``, ``IptablesRules``,
+``IptablesRulesOrdered``, ``IptablesTables``, ``IptablesVersion``,
+``IptablesModules``, ``IpSets``, ``IptablesPersistence`` and their
+``Ip6tables`` IPv6 siblings, plus all eight operations.
+
+Covers the read-only state discovery in ``reemote5.modules.iptables.iptables``:
+the four pyinfra fact ports are exercised over the real-transport path with
+pyinfra's own fact fixtures verbatim (the ``iptables-save -t filter`` rule
+lines including the quoted-spaces extras and the ``! -s`` negation, and the
+mangle chain/policy lines), plus the passwordless ``sudo -n`` retry shells
+and the ``SimulatedHost`` seam projections with their copy semantics. The
+ten reemote5 originals -- with no pyinfra fixtures -- are fed realistic
+canned ``iptables -L -n -v -x --line-numbers``, ``/proc/net/ip_tables_names``,
+``iptables --version``, ``lsmod``, ``ipset list`` and persistence-probe
+output respectively.
+
+The two pyinfra operation ports (``chain``, ``rule``) are exercised over
+their descriptors and every branch of pyinfra's own operation fixtures
+(the full-match add, the comment/extras idempotence no-ops, the NAT target
+arguments, the ``ValueError`` guards with pyinfra's message text and the
+verbatim no-op reasons including its "does not exists" grammar). The typed
+matcher extensions (``ctstate``, multiport, ``limit``, ``match_set``,
+``log_level``, ``position``) are exercised over their rendering and their
+seam round-trip idempotence. The six originals (``policy``, ``flush``,
+``zero``, ``save``, ``restore``, ``ipset``) are exercised over their
+fact-backed idempotence in both directions, zero's deliberate
+statelessness, the ``SimulatedHost`` seam dispatch (including the
+content-aware restore of an uploaded snapshot), and end-to-end through
+``run_prepare`` + ``run_apply`` (change-then-noop, the
+chain-rule-save composition, the files.put + restore atomic bulk recipe
+and a dry run).
+
+``asyncio_mode = "auto"`` lets the async tests below run without decorators.
+"""
+
+import shlex
+
+import pytest
+
+from reemote5.core import FactCache, OpContext, op
+from reemote5.drivers import (
+    command_shell,
+    format_log,
+    format_plan,
+    gather_fact,
+    run,
+    run_apply,
+    run_prepare,
+    send_command,
+)
+from reemote5.hosts import Host
+from reemote5.modules import iptables
+from reemote5.modules.iptables.iptables import (
+    Ip6tablesChains,
+    Ip6tablesPersistence,
+    Ip6tablesRules,
+    Ip6tablesRulesOrdered,
+    Ip6tablesTables,
+    Ip6tablesVersion,
+    IpSet,
+    IpsetCreateCommand,
+    IpsetDestroyCommand,
+    IpsetEntryCommand,
+    IpSets,
+    IptablesChainCommand,
+    IptablesChains,
+    IptablesFlushCommand,
+    IptablesModules,
+    IptablesOrderedRule,
+    IptablesPersistence,
+    IptablesPolicyCommand,
+    IptablesRestoreCommand,
+    IptablesRule,
+    IptablesRuleCommand,
+    IptablesRules,
+    IptablesRulesOrdered,
+    IptablesSaveCommand,
+    IptablesTables,
+    IptablesVersion,
+    IptablesVersionInfo,
+    IptablesZeroCommand,
+    _parse_extras,
+    _parse_iptables_rule,
+)
+from tests.simulated_host import SimulatedHost
+
+
+class CannedShellHost(Host):
+    """Returns fixed stdout from ``run_shell`` instead of connecting."""
+
+    def __init__(self, stdout: str):
+        super().__init__(name="canned")
+        self._stdout = stdout
+        self.last_shell: str | None = None
+
+    async def run_shell(self, shell: str) -> str:
+        self.last_shell = shell
+        return self._stdout
+
+
+def make_ctx(host: Host) -> OpContext:
+    """A prepare-phase context over one host, the operation-test pattern."""
+    return OpContext(host=host, facts=FactCache(host, phase="prepare"))
+
+
+def ordered_row(**overrides) -> IptablesOrderedRule:
+    """One numbered row with every column defaulted, for seam seeding."""
+    row: IptablesOrderedRule = {
+        "chain": "INPUT",
+        "number": 1,
+        "packets": 0,
+        "bytes": 0,
+        "target": "ACCEPT",
+        "protocol": "all",
+        "opt": "--",
+        "in_interface": "*",
+        "out_interface": "*",
+        "source": "0.0.0.0/0",
+        "destination": "0.0.0.0/0",
+        "options": "",
+    }
+    row.update(overrides)
+    return row
+
+
+def ipset_record(set_type: str = "hash:ip", members: tuple[str, ...] = ()) -> IpSet:
+    """One ipset record with realistic metadata, for seam seeding."""
+    return {
+        "type": set_type,
+        "revision": 4,
+        "header": "family inet hashsize 1024 maxelem 65536",
+        "size_in_memory": 448,
+        "references": 0,
+        "members": list(members),
+    }
+
+
+# --- IptablesRules / IptablesChains: pyinfra's fact fixtures -------------------------
+
+# pyinfra's ``iptables.IptablesRules`` filter fixture output verbatim.
+IPTABLES_SAVE_FILTER = (
+    "# Generated by iptables-save v1.6.0 on Thu Sep 15 08:57:45 2016\n"
+    "-A PREROUTING -i eth0 -p tcp -j DNAT --to-destination 10.10.10.10:8080\n"
+    "-A OUTPUT -o eth1 ! -s 10.10.10.10/32 -j DROP --another argument\n"
+    "-A OUTPUT -o eth1 ! -s 10.10.10.10/32 -j DROP --another 'argument with spaces'\n"
+    "-A INPUT -p tcp -m comment --comment 'This rule is amazing!' -j ACCEPT\n"
+)
+
+# The fixture's ``fact`` value verbatim: four parsed definitions.
+IPTABLES_RULES_FACT: list[IptablesRule] = [
+    {
+        "chain": "PREROUTING",
+        "protocol": "tcp",
+        "in_interface": "eth0",
+        "to_destination": "10.10.10.10:8080",
+        "jump": "DNAT",
+    },
+    {
+        "chain": "OUTPUT",
+        "out_interface": "eth1",
+        "not_source": "10.10.10.10/32",
+        "jump": "DROP",
+        "extras": [["--another", "argument"]],
+    },
+    {
+        "chain": "OUTPUT",
+        "out_interface": "eth1",
+        "not_source": "10.10.10.10/32",
+        "jump": "DROP",
+        "extras": [["--another", "argument with spaces"]],
+    },
+    {
+        "chain": "INPUT",
+        "protocol": "tcp",
+        "jump": "ACCEPT",
+        "extras": [
+            ["--comment", "This rule is amazing!"],
+            ["-m", "comment"],
+        ],
+    },
+]
+
+# pyinfra's ``iptables.IptablesChains`` fixture output verbatim (mangle).
+MANGLE_SAVE_OUTPUT = (
+    "# Generated by iptables-save v1.6.0 on Thu Sep 15 08:57:45 2016\n"
+    "*mangle\n"
+    ":PREROUTING ACCEPT [254:32482]\n"
+    ":INPUT ACCEPT [254:32482]\n"
+    ":FORWARD DROP [0:0]\n"
+    ":OUTPUT ACCEPT [212:42928]\n"
+)
+
+CHAINS_FACT = {
+    "PREROUTING": "ACCEPT",
+    "INPUT": "ACCEPT",
+    "FORWARD": "DROP",
+    "OUTPUT": "ACCEPT",
+}
+
+# pyinfra's ``iptables.Ip6tablesRules`` fixture output verbatim.
+IP6TABLES_SAVE_FILTER = (
+    "# Generated by iptables-save v1.6.0 on Thu Sep 15 08:57:45 2016\n"
+    "-A PREROUTING -i eth0 -p tcp -j DNAT --to-destination 2101::2:8080\n"
+    "-A OUTPUT -o eth1 ! -s 2101::2/32 -j DROP --another argument\n"
+    "-A OUTPUT -o eth1 ! -s 2101::2/32 -j DROP --another 'argument with spaces'\n"
+)
+
+IP6TABLES_RULES_FACT: list[IptablesRule] = [
+    {
+        "chain": "PREROUTING",
+        "protocol": "tcp",
+        "in_interface": "eth0",
+        "to_destination": "2101::2:8080",
+        "jump": "DNAT",
+    },
+    {
+        "chain": "OUTPUT",
+        "out_interface": "eth1",
+        "not_source": "2101::2/32",
+        "jump": "DROP",
+        "extras": [["--another", "argument"]],
+    },
+    {
+        "chain": "OUTPUT",
+        "out_interface": "eth1",
+        "not_source": "2101::2/32",
+        "jump": "DROP",
+        "extras": [["--another", "argument with spaces"]],
+    },
+]
+
+# The privileged-read shells the save facts issue (the sudo -n retry).
+SAVE_FILTER_SHELL = (
+    "iptables-save -t filter 2> /dev/null "
+    "|| sudo -n iptables-save -t filter 2> /dev/null || true"
+)
+SAVE_MANGLE_SHELL = (
+    "iptables-save -t mangle 2> /dev/null "
+    "|| sudo -n iptables-save -t mangle 2> /dev/null || true"
+)
+IP6_SAVE_FILTER_SHELL = (
+    "ip6tables-save -t filter 2> /dev/null "
+    "|| sudo -n ip6tables-save -t filter 2> /dev/null || true"
+)
+IP6_SAVE_MANGLE_SHELL = (
+    "ip6tables-save -t mangle 2> /dev/null "
+    "|| sudo -n ip6tables-save -t mangle 2> /dev/null || true"
+)
+
+
+async def test_iptables_rules_parses_the_pyinfra_fixture():
+    """Over the real-transport path, the fixture's four save lines read as
+    the fixture fact verbatim -- including the quoted-spaces extras value
+    and the sorted comment pairs -- through the sudo -n retry shell."""
+    host = CannedShellHost(IPTABLES_SAVE_FILTER)
+    assert await IptablesRules.process(host) == IPTABLES_RULES_FACT
+    assert host.last_shell == SAVE_FILTER_SHELL
+
+
+async def test_iptables_chains_parses_the_pyinfra_fixture():
+    """The mangle fixture: every ``:NAME POLICY [pkts:bytes]`` line maps
+    the chain to its policy word; the counters are ignored."""
+    host = CannedShellHost(MANGLE_SAVE_OUTPUT)
+    assert await IptablesChains.process(host, "mangle") == CHAINS_FACT
+    assert host.last_shell == SAVE_MANGLE_SHELL
+
+
+async def test_ip6tables_rules_parses_the_pyinfra_fixture():
+    """The IPv6 fixture: three definitions with the ``2101::2`` addresses
+    kept as printed, through the ip6tables-save retry shell."""
+    host = CannedShellHost(IP6TABLES_SAVE_FILTER)
+    assert await Ip6tablesRules.process(host) == IP6TABLES_RULES_FACT
+    assert host.last_shell == IP6_SAVE_FILTER_SHELL
+
+
+async def test_ip6tables_chains_parses_the_pyinfra_fixture():
+    """The IPv6 sibling shares the mangle fixture and the chain parse."""
+    host = CannedShellHost(MANGLE_SAVE_OUTPUT)
+    assert await Ip6tablesChains.process(host, "mangle") == CHAINS_FACT
+    assert host.last_shell == IP6_SAVE_MANGLE_SHELL
+
+
+async def test_save_facts_quote_the_table_argument():
+    """A table carrying shell metacharacters reaches the save binary
+    literally (the deliberate deviation from pyinfra's raw interpolation)."""
+    host = CannedShellHost("")
+    assert await IptablesRules.process(host, "nat;reboot") == []
+    assert host.last_shell == (
+        "iptables-save -t 'nat;reboot' 2> /dev/null "
+        "|| sudo -n iptables-save -t 'nat;reboot' 2> /dev/null || true"
+    )
+
+
+async def test_save_facts_empty_output_reads_as_empty():
+    """An unprivileged login (the ``|| true`` guard swallows the error)
+    reads the empty defaults, not an exception."""
+    assert await IptablesRules.process(CannedShellHost("")) == []
+    assert await IptablesChains.process(CannedShellHost("")) == {}
+    assert await Ip6tablesRules.process(CannedShellHost("")) == []
+    assert await Ip6tablesChains.process(CannedShellHost("")) == {}
+
+
+# --- Parser edge cases ---------------------------------------------------------------
+
+
+def test_parse_extras_sorts_and_joins_values():
+    """pyinfra's parse_extras semantics: multi-token values join with
+    spaces and the pairs sort, so argument order never breaks equality."""
+    assert _parse_extras(["--b", "2", "--a", "1"]) == [["--a", "1"], ["--b", "2"]]
+    assert _parse_extras(["--another", "argument", "with", "spaces"]) == [
+        ["--another", "argument with spaces"]
+    ]
+    assert _parse_extras([]) == []
+
+
+def test_parse_iptables_rule_negations_and_named_keys():
+    """The fixture's negated line: ``! -s`` becomes ``not_source`` and the
+    unmapped ``--another`` flag lands in extras."""
+    assert _parse_iptables_rule(
+        "-A OUTPUT -o eth1 ! -s 10.10.10.10/32 -j DROP --another argument"
+    ) == {
+        "chain": "OUTPUT",
+        "out_interface": "eth1",
+        "not_source": "10.10.10.10/32",
+        "jump": "DROP",
+        "extras": [["--another", "argument"]],
+    }
+
+
+def test_rules_parse_ignores_non_rule_lines():
+    """Only ``-``-prefixed lines are rules: the table marker, chain
+    lines, COMMIT and comments contribute nothing."""
+    assert IptablesRules.parse(
+        ["# header", "*filter", ":INPUT ACCEPT [0:0]", "COMMIT", ""]
+    ) == []
+
+
+# --- IptablesRulesOrdered: canned columnar listing ------------------------------------
+
+ORDERED_OUTPUT = (
+    "Chain INPUT (policy ACCEPT 12 packets, 720 bytes)\n"
+    "num   pkts bytes target     prot opt in     out     source               destination\n"
+    "1     1420 85200 ACCEPT     tcp  --  eth0   *       0.0.0.0/0            192.168.1.10         tcp dpt:22\n"
+    "2        0     0 DROP       all  --  *      *       10.0.0.5             0.0.0.0/0\n"
+    "\n"
+    "Chain FORWARD (policy DROP 0 packets, 0 bytes)\n"
+    "num   pkts bytes target     prot opt in     out     source               destination\n"
+    "Chain OUTPUT (policy ACCEPT 9 packets, 540 bytes)\n"
+    "num   pkts bytes target     prot opt in     out     source               destination\n"
+    "1       17  1020 ACCEPT     all  --  *      *       0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED\n"
+)
+
+ORDERED_FACT: list[IptablesOrderedRule] = [
+    {
+        "chain": "INPUT",
+        "number": 1,
+        "packets": 1420,
+        "bytes": 85200,
+        "target": "ACCEPT",
+        "protocol": "tcp",
+        "opt": "--",
+        "in_interface": "eth0",
+        "out_interface": "*",
+        "source": "0.0.0.0/0",
+        "destination": "192.168.1.10",
+        "options": "tcp dpt:22",
+    },
+    {
+        "chain": "INPUT",
+        "number": 2,
+        "packets": 0,
+        "bytes": 0,
+        "target": "DROP",
+        "protocol": "all",
+        "opt": "--",
+        "in_interface": "*",
+        "out_interface": "*",
+        "source": "10.0.0.5",
+        "destination": "0.0.0.0/0",
+        "options": "",
+    },
+    {
+        "chain": "OUTPUT",
+        "number": 1,
+        "packets": 17,
+        "bytes": 1020,
+        "target": "ACCEPT",
+        "protocol": "all",
+        "opt": "--",
+        "in_interface": "*",
+        "out_interface": "*",
+        "source": "0.0.0.0/0",
+        "destination": "0.0.0.0/0",
+        "options": "ctstate RELATED,ESTABLISHED",
+    },
+]
+
+
+def test_rules_ordered_parses_columnar_rows():
+    """Chain headers attribute the rows, the exact counters stay ints
+    (``-x``), the trailing detail text becomes ``options`` and a row
+    without detail reads ""."""
+    assert IptablesRulesOrdered.parse(ORDERED_OUTPUT.splitlines()) == ORDERED_FACT
+
+
+def test_rules_ordered_chain_filter():
+    """The chain argument keeps only that chain's rows; the empty
+    FORWARD chain contributes nothing."""
+    assert IptablesRulesOrdered.parse(
+        ORDERED_OUTPUT.splitlines(), "INPUT"
+    ) == ORDERED_FACT[:2]
+    assert IptablesRulesOrdered.parse(ORDERED_OUTPUT.splitlines(), "FORWARD") == []
+
+
+def test_rules_ordered_skips_rows_without_a_chain_header():
+    """A numbered row before any ``Chain`` header has no chain to belong
+    to and is skipped, as are column headers and blank lines."""
+    assert IptablesRulesOrdered.parse(
+        ["1 0 0 ACCEPT all -- * * 0.0.0.0/0 0.0.0.0/0", "", "num pkts bytes"]
+    ) == []
+
+
+async def test_rules_ordered_real_transport_shells():
+    """With a chain the listing narrows via ``-L INPUT``; without one
+    ``-L`` lists the whole table. Both ride the sudo -n retry."""
+    host = CannedShellHost(ORDERED_OUTPUT)
+    assert await IptablesRulesOrdered.process(host, "filter", "INPUT") == ORDERED_FACT[:2]
+    assert host.last_shell == (
+        "iptables -t filter -L INPUT -n -v -x --line-numbers 2> /dev/null "
+        "|| sudo -n iptables -t filter -L INPUT -n -v -x --line-numbers "
+        "2> /dev/null || true"
+    )
+    host = CannedShellHost(ORDERED_OUTPUT)
+    assert await IptablesRulesOrdered.process(host) == ORDERED_FACT
+    assert host.last_shell == (
+        "iptables -t filter -L -n -v -x --line-numbers 2> /dev/null "
+        "|| sudo -n iptables -t filter -L -n -v -x --line-numbers "
+        "2> /dev/null || true"
+    )
+
+
+async def test_ip6tables_rules_ordered_parses_ipv6_rows():
+    """The IPv6 sibling inherits the columnar parse; the address columns
+    simply hold IPv6 CIDRs and the binary flips."""
+    output = (
+        "Chain INPUT (policy ACCEPT 0 packets, 0 bytes)\n"
+        "num   pkts bytes target     prot opt in     out     source               destination\n"
+        "1        5   400 ACCEPT     tcp  --  *      *       ::/0                 ::/0                 tcp dpt:22\n"
+    )
+    host = CannedShellHost(output)
+    rows = await Ip6tablesRulesOrdered.process(host)
+    assert rows == [
+        {
+            "chain": "INPUT",
+            "number": 1,
+            "packets": 5,
+            "bytes": 400,
+            "target": "ACCEPT",
+            "protocol": "tcp",
+            "opt": "--",
+            "in_interface": "*",
+            "out_interface": "*",
+            "source": "::/0",
+            "destination": "::/0",
+            "options": "tcp dpt:22",
+        }
+    ]
+    assert host.last_shell.startswith("ip6tables -t filter -L -n -v -x --line-numbers")
+
+
+# --- IptablesTables: canned proc file --------------------------------------------------
+
+
+async def test_iptables_tables_parses_proc_lines():
+    """One name per line in load order; blank lines contribute nothing.
+    The proc file is world-readable -- no sudo retry."""
+    host = CannedShellHost("mangle\nnat\nfilter\n\n")
+    assert await IptablesTables.process(host) == ["mangle", "nat", "filter"]
+    assert host.last_shell == "cat /proc/net/ip_tables_names 2>/dev/null || true"
+    assert await IptablesTables.process(CannedShellHost("")) == []
+
+
+async def test_ip6tables_tables_reads_the_ipv6_proc_file():
+    """Only the proc path flips for the IPv6 sibling."""
+    host = CannedShellHost("mangle\nfilter\n")
+    assert await Ip6tablesTables.process(host) == ["mangle", "filter"]
+    assert host.last_shell == "cat /proc/net/ip6_tables_names 2>/dev/null || true"
+
+
+# --- IptablesVersion: canned banners ---------------------------------------------------
+
+
+def test_iptables_version_parses_the_backend_variants():
+    """The nft and legacy banners keep their backend word; a pre-1.8
+    banner without parentheses defaults to legacy."""
+    assert IptablesVersion.parse(["iptables v1.8.9 (nf_tables)"]) == {
+        "version": "1.8.9",
+        "backend": "nf_tables",
+    }
+    assert IptablesVersion.parse(["iptables v1.8.9 (legacy)"]) == {
+        "version": "1.8.9",
+        "backend": "legacy",
+    }
+    assert IptablesVersion.parse(["iptables v1.6.0"]) == {
+        "version": "1.6.0",
+        "backend": "legacy",
+    }
+
+
+def test_iptables_version_unparseable_reads_none():
+    """Empty or foreign output reads as None -- the parser is total."""
+    assert IptablesVersion.parse([]) is None
+    assert IptablesVersion.parse(["", "command not found"]) is None
+
+
+async def test_iptables_version_real_transport_shell():
+    """The version probe is unguarded and unprivileged: pyinfra-style
+    bare ``--version``, no sudo retry."""
+    host = CannedShellHost("iptables v1.8.9 (nf_tables)\n")
+    assert await IptablesVersion.process(host) == {
+        "version": "1.8.9",
+        "backend": "nf_tables",
+    }
+    assert host.last_shell == "iptables --version"
+
+
+async def test_ip6tables_version_banner_and_shell():
+    """The shared regex matches the ip6tables banner; only the probed
+    binary flips."""
+    host = CannedShellHost("ip6tables v1.8.9 (legacy)\n")
+    assert await Ip6tablesVersion.process(host) == {
+        "version": "1.8.9",
+        "backend": "legacy",
+    }
+    assert host.last_shell == "ip6tables --version"
+
+
+# --- IptablesModules: canned lsmod ------------------------------------------------------
+
+
+async def test_iptables_modules_parses_lsmod_rows():
+    """Only the ``xt_*`` name column is kept, in listing order; the
+    ``nf_*`` core modules and the header are out of scope."""
+    output = (
+        "Module                  Size  Used by\n"
+        "xt_conntrack           16384  3\n"
+        "nf_tables             307200  1234\n"
+        "xt_multiport           16384  2\n"
+        "xt_set                 20480  1\n"
+    )
+    host = CannedShellHost(output)
+    assert await IptablesModules.process(host) == [
+        "xt_conntrack",
+        "xt_multiport",
+        "xt_set",
+    ]
+    assert host.last_shell == "lsmod | grep '^xt_' || true"
+    assert await IptablesModules.process(CannedShellHost("")) == []
+
+
+# --- IpSets: canned ipset list -----------------------------------------------------------
+
+IPSET_LIST_OUTPUT = (
+    "Name: blacklist\n"
+    "Type: hash:ip\n"
+    "Revision: 4\n"
+    "Header: family inet hashsize 1024 maxelem 65536\n"
+    "Size in memory: 448\n"
+    "References: 2\n"
+    "Members:\n"
+    "10.0.0.5\n"
+    "192.168.100.0/24 timeout 300 packets 5 bytes 400\n"
+    "\n"
+    "Name: ports\n"
+    "Type: bitmap:port\n"
+    "Revision: 3\n"
+    "Header: range 0-65535\n"
+    "Size in memory: 8392\n"
+    "References: 0\n"
+    "Members:\n"
+)
+
+
+def test_ip_sets_parses_the_list_blocks():
+    """Each ``Name:`` block becomes one record; member rows keep only the
+    entry token (the timeout/counter suffixes are per-member options)."""
+    assert IpSets.parse(IPSET_LIST_OUTPUT.splitlines()) == {
+        "blacklist": {
+            "type": "hash:ip",
+            "revision": 4,
+            "header": "family inet hashsize 1024 maxelem 65536",
+            "size_in_memory": 448,
+            "references": 2,
+            "members": ["10.0.0.5", "192.168.100.0/24"],
+        },
+        "ports": {
+            "type": "bitmap:port",
+            "revision": 3,
+            "header": "range 0-65535",
+            "size_in_memory": 8392,
+            "references": 0,
+            "members": [],
+        },
+    }
+
+
+async def test_ip_sets_real_transport_and_empty_output():
+    """The listing rides the sudo -n retry; an unprivileged or
+    ipset-less host reads {}."""
+    host = CannedShellHost(IPSET_LIST_OUTPUT)
+    sets = await IpSets.process(host)
+    assert sets["blacklist"]["members"] == ["10.0.0.5", "192.168.100.0/24"]
+    assert host.last_shell == (
+        "ipset list 2> /dev/null || sudo -n ipset list 2> /dev/null || true"
+    )
+    assert await IpSets.process(CannedShellHost("")) == {}
+
+
+# --- IptablesPersistence: canned probe answers --------------------------------------------
+
+
+async def test_iptables_persistence_synced_and_drifted():
+    """Only the exact word ``synced`` reads True; drifted, empty and
+    foreign answers all read False. The probe is sh -c wrapped."""
+    assert await IptablesPersistence.process(CannedShellHost("synced\n")) is True
+    assert await IptablesPersistence.process(CannedShellHost("drifted\n")) is False
+    assert await IptablesPersistence.process(CannedShellHost("")) is False
+    host = CannedShellHost("synced\n")
+    await IptablesPersistence.process(host)
+    assert host.last_shell is not None
+    assert host.last_shell.startswith("sh -c ")
+    assert "iptables-save" in host.last_shell
+    assert "sudo -n iptables-save" in host.last_shell
+    assert "/etc/iptables/rules.v4" in host.last_shell
+
+
+async def test_ip6tables_persistence_default_path_and_binary():
+    """The IPv6 sibling compares ip6tables-save output against
+    rules.v6 by default; a custom path reaches the probe."""
+    host = CannedShellHost("drifted\n")
+    assert await Ip6tablesPersistence.process(host) is False
+    assert host.last_shell is not None
+    assert "ip6tables-save" in host.last_shell
+    assert "/etc/iptables/rules.v6" in host.last_shell
+    host = CannedShellHost("synced\n")
+    assert await Ip6tablesPersistence.process(host, "/tmp/my rules.v6") is True
+    assert host.last_shell is not None
+    assert "my rules.v6" in host.last_shell
+
+
+# --- SimulatedHost seams: projections and copy-on-read ------------------------------------
+
+
+async def test_chains_seam_projects_the_table_and_copies():
+    """The table-keyed store projects one table; an unseeded table reads
+    {} and mutating the result never mutates the state."""
+    host = SimulatedHost(name="h", iptables_chains={"filter": {"INPUT": "ACCEPT"}})
+    result = await IptablesChains.process(host)
+    assert result == {"INPUT": "ACCEPT"}
+    result["INPUT"] = "DROP"
+    assert host.iptables_chains == {"filter": {"INPUT": "ACCEPT"}}
+    assert await IptablesChains.process(host, "nat") == {}
+
+
+async def test_ip6_chains_seam_is_separate():
+    """The IPv6 fact reads only the ip6tables_chains field."""
+    host = SimulatedHost(
+        name="h",
+        iptables_chains={"filter": {"INPUT": "ACCEPT"}},
+        ip6tables_chains={"filter": {"INPUT": "DROP"}},
+    )
+    assert await Ip6tablesChains.process(host) == {"INPUT": "DROP"}
+
+
+async def test_rules_seam_copies_the_extras_pairs():
+    """The copy is deep enough for the nested extras pairs: mutating a
+    returned pair never mutates the stored definition."""
+    rule: IptablesRule = {
+        "chain": "INPUT",
+        "jump": "ACCEPT",
+        "extras": [["--comment", "keep"]],
+    }
+    host = SimulatedHost(name="h", iptables_rules={"filter": [rule]})
+    result = await IptablesRules.process(host)
+    assert result == [rule]
+    result[0]["extras"][0][1] = "changed"
+    result[0]["jump"] = "DROP"
+    assert host.iptables_rules["filter"][0]["extras"] == [["--comment", "keep"]]
+    assert host.iptables_rules["filter"][0]["jump"] == "ACCEPT"
+    assert await IptablesRules.process(host, "nat") == []
+
+
+async def test_ip6_rules_seam_is_separate():
+    """The IPv6 fact reads only the ip6tables_rules field."""
+    host = SimulatedHost(
+        name="h",
+        ip6tables_rules={"filter": [{"chain": "INPUT", "jump": "DROP"}]},
+    )
+    assert await Ip6tablesRules.process(host) == [{"chain": "INPUT", "jump": "DROP"}]
+    assert await IptablesRules.process(host) == []
+
+
+async def test_ordered_seam_filters_by_chain_and_copies():
+    """The chain argument filters the flat row list; each returned row
+    is a copy."""
+    host = SimulatedHost(
+        name="h",
+        iptables_ordered_rules={
+            "filter": [
+                ordered_row(number=1, packets=1420),
+                ordered_row(chain="OUTPUT", number=1),
+            ]
+        },
+    )
+    result = await IptablesRulesOrdered.process(host, "filter", "INPUT")
+    assert result == [ordered_row(number=1, packets=1420)]
+    result[0]["packets"] = 0
+    assert host.iptables_ordered_rules["filter"][0]["packets"] == 1420
+    assert len(await IptablesRulesOrdered.process(host)) == 2
+
+
+async def test_ip6_ordered_seam_is_separate():
+    """The IPv6 fact reads only the ip6tables_ordered_rules field."""
+    host = SimulatedHost(
+        name="h",
+        ip6tables_ordered_rules={"filter": [ordered_row(source="::/0", destination="::/0")]},
+    )
+    rows = await Ip6tablesRulesOrdered.process(host)
+    assert rows[0]["source"] == "::/0"
+    assert await IptablesRulesOrdered.process(host) == []
+
+
+async def test_tables_seams_copy_on_read():
+    """Both table-name lists are copied, never handed out by reference."""
+    host = SimulatedHost(
+        name="h", iptables_tables=["filter", "nat"], ip6tables_tables=["filter"]
+    )
+    result = await IptablesTables.process(host)
+    result.append("mangle")
+    assert host.iptables_tables == ["filter", "nat"]
+    assert await Ip6tablesTables.process(host) == ["filter"]
+    assert await IptablesTables.process(SimulatedHost(name="h")) == []
+
+
+async def test_version_seam_empty_dict_reads_none():
+    """The empty-dict default projects to None (an unseeded host); a
+    seeded record is returned as a copy."""
+    assert await IptablesVersion.process(SimulatedHost(name="h")) is None
+    record: IptablesVersionInfo = {"version": "1.8.9", "backend": "nf_tables"}
+    host = SimulatedHost(name="h", iptables_version=dict(record))
+    result = await IptablesVersion.process(host)
+    assert result == record
+    assert result is not None
+    result["backend"] = "legacy"
+    assert host.iptables_version == record
+
+
+async def test_ip6_version_seam_is_separate():
+    """The IPv6 fact reads only the ip6tables_version field."""
+    host = SimulatedHost(
+        name="h", ip6tables_version={"version": "1.8.9", "backend": "legacy"}
+    )
+    assert await Ip6tablesVersion.process(host) == {
+        "version": "1.8.9",
+        "backend": "legacy",
+    }
+    assert await IptablesVersion.process(host) is None
+
+
+async def test_modules_seam_copies_on_read():
+    """The module-name list is copied on read."""
+    host = SimulatedHost(name="h", iptables_modules=["xt_conntrack"])
+    result = await IptablesModules.process(host)
+    result.append("xt_set")
+    assert host.iptables_modules == ["xt_conntrack"]
+
+
+async def test_ipsets_seam_copies_the_member_lists():
+    """Each record is copied including its member list."""
+    host = SimulatedHost(
+        name="h", ipsets={"blacklist": ipset_record(members=("10.0.0.5",))}
+    )
+    result = await IpSets.process(host)
+    assert result["blacklist"]["members"] == ["10.0.0.5"]
+    result["blacklist"]["members"].append("10.0.0.6")
+    assert host.ipsets["blacklist"]["members"] == ["10.0.0.5"]
+
+
+async def test_persistence_seam_defaults_to_drifted():
+    """An unseeded path reads False (an absent snapshot file); a seeded
+    path answers its flag, per family."""
+    host = SimulatedHost(
+        name="h",
+        iptables_persistence={"/etc/iptables/rules.v4": True},
+        ip6tables_persistence={"/etc/iptables/rules.v6": True},
+    )
+    assert await IptablesPersistence.process(host) is True
+    assert await IptablesPersistence.process(host, "/tmp/other.v4") is False
+    assert await Ip6tablesPersistence.process(host) is True
+    assert await IptablesPersistence.process(SimulatedHost(name="h")) is False
+
+
+# --- gather_fact fan-outs -------------------------------------------------------------------
+
+
+async def test_gather_fact_chains_fans_out_the_table():
+    """The table argument fans out to every host's seam read, keyed by
+    host name."""
+    host1 = SimulatedHost(name="web1", iptables_chains={"nat": {"PREROUTING": "ACCEPT"}})
+    host2 = SimulatedHost(name="web2")
+    chains = await gather_fact([host1, host2], IptablesChains, "nat")
+    assert chains == {"web1": {"PREROUTING": "ACCEPT"}, "web2": {}}
+
+
+async def test_gather_fact_tables_over_canned_shells():
+    """The fan-out drives every host's real-transport path with the same
+    proc-file shell."""
+    host1 = CannedShellHost("filter\nnat\n")
+    host1.name = "web1"
+    host2 = CannedShellHost("")
+    host2.name = "web2"
+    tables = await gather_fact([host1, host2], IptablesTables)
+    assert tables == {"web1": ["filter", "nat"], "web2": []}
+    assert host1.last_shell == IptablesTables.COMMAND
+    assert host2.last_shell == IptablesTables.COMMAND
+
+
+# --- Command descriptors ---------------------------------------------------------------------
+
+
+def test_chain_command_renders_create_and_delete():
+    """The present flag toggles -N/-X; table, chain and version render,
+    metacharacters quoted."""
+    assert IptablesChainCommand(chain="MYCHAIN").shell() == "iptables -t filter -N MYCHAIN"
+    assert IptablesChainCommand(chain="MYCHAIN", present=False).shell() == (
+        "iptables -t filter -X MYCHAIN"
+    )
+    assert IptablesChainCommand(chain="MYCHAIN", table="mangle", version=6).shell() == (
+        "ip6tables -t mangle -N MYCHAIN"
+    )
+    assert IptablesChainCommand(chain="MY;CHAIN", table="na;t").shell() == (
+        "iptables -t 'na;t' -N 'MY;CHAIN'"
+    )
+
+
+def test_policy_command_renders_and_elevates():
+    """The -P form; sudo prefixes the whole shell, su wraps it."""
+    cmd = IptablesPolicyCommand(chain="INPUT", policy="DROP")
+    assert cmd.shell() == "iptables -t filter -P INPUT DROP"
+    assert command_shell(cmd) == "iptables -t filter -P INPUT DROP"
+    assert command_shell(cmd, sudo=True) == "sudo iptables -t filter -P INPUT DROP"
+    assert command_shell(cmd, su=True) == (
+        f"su -c {shlex.quote('iptables -t filter -P INPUT DROP')}"
+    )
+
+
+def test_rule_command_renders_the_three_verbs():
+    """-A appends, -I inserts (with the optional 1-based position), -D
+    deletes; a position on -A/-D never renders."""
+    spec = ("-p", "tcp", "-j", "DROP")
+    assert IptablesRuleCommand(action="-A", chain="INPUT", spec=spec).shell() == (
+        "iptables -t filter -A INPUT -p tcp -j DROP"
+    )
+    assert IptablesRuleCommand(action="-I", chain="INPUT", spec=spec, position=3).shell() == (
+        "iptables -t filter -I INPUT 3 -p tcp -j DROP"
+    )
+    assert IptablesRuleCommand(action="-I", chain="INPUT", spec=spec).shell() == (
+        "iptables -t filter -I INPUT -p tcp -j DROP"
+    )
+    assert IptablesRuleCommand(action="-D", chain="INPUT", spec=spec).shell() == (
+        "iptables -t filter -D INPUT -p tcp -j DROP"
+    )
+    assert IptablesRuleCommand(
+        action="-A", chain="INPUT", spec=spec, position=3
+    ).shell() == "iptables -t filter -A INPUT -p tcp -j DROP"
+
+
+def test_flush_and_zero_commands_render_the_scope():
+    """A chain scopes the -F/-Z; None omits the argument (whole table)."""
+    assert IptablesFlushCommand().shell() == "iptables -t filter -F"
+    assert IptablesFlushCommand(chain="INPUT").shell() == "iptables -t filter -F INPUT"
+    assert IptablesFlushCommand(table="nat", version=6).shell() == "ip6tables -t nat -F"
+    assert IptablesZeroCommand().shell() == "iptables -t filter -Z"
+    assert IptablesZeroCommand(chain="INPUT", version=6).shell() == (
+        "ip6tables -t filter -Z INPUT"
+    )
+
+
+def test_save_command_wraps_the_redirect():
+    """The ``>`` redirect lives inside sh -c so sudo covers the write;
+    the path is quoted inside the wrapper."""
+    cmd = IptablesSaveCommand(path="/etc/iptables/rules.v4")
+    assert cmd.shell() == "sh -c 'iptables-save > /etc/iptables/rules.v4'"
+    assert command_shell(cmd, sudo=True) == (
+        "sudo sh -c 'iptables-save > /etc/iptables/rules.v4'"
+    )
+    assert IptablesSaveCommand(path="/tmp/my rules.v6", version=6).shell() == (
+        "sh -c 'ip6tables-save > '\"'\"'/tmp/my rules.v6'\"'\"''"
+    )
+
+
+def test_restore_command_wraps_the_redirect():
+    """The ``<`` redirect lives inside sh -c; noflush adds -n."""
+    assert IptablesRestoreCommand(path="/tmp/rules.v4").shell() == (
+        "sh -c 'iptables-restore < /tmp/rules.v4'"
+    )
+    assert IptablesRestoreCommand(path="/tmp/rules.v6", version=6, noflush=True).shell() == (
+        "sh -c 'ip6tables-restore -n < /tmp/rules.v6'"
+    )
+    assert command_shell(
+        IptablesRestoreCommand(path="/tmp/rules.v4"), sudo=True
+    ) == "sudo sh -c 'iptables-restore < /tmp/rules.v4'"
+
+
+def test_ipset_commands_render_create_destroy_and_membership():
+    """Creates and adds ride -exist; deletes carry no tolerance flag;
+    names and entries are quoted."""
+    assert IpsetCreateCommand(set_name="blacklist").shell() == (
+        "ipset create blacklist hash:ip -exist"
+    )
+    assert IpsetCreateCommand(set_name="blacklist", set_type="hash:net").shell() == (
+        "ipset create blacklist hash:net -exist"
+    )
+    assert IpsetDestroyCommand(set_name="blacklist").shell() == "ipset destroy blacklist"
+    assert IpsetEntryCommand(set_name="blacklist", entry="10.0.0.5").shell() == (
+        "ipset add blacklist 10.0.0.5 -exist"
+    )
+    assert IpsetEntryCommand(
+        set_name="blacklist", entry="10.0.0.5", present=False
+    ).shell() == "ipset del blacklist 10.0.0.5"
+    assert IpsetEntryCommand(set_name="black;list", entry="1.2.3.4;id").shell() == (
+        "ipset add 'black;list' '1.2.3.4;id' -exist"
+    )
+
+
+# --- iptables.chain: pyinfra's operation fixtures ----------------------------------------------
+
+
+async def test_chain_edit_policy():
+    """pyinfra's ``edit_chain.json``: an existing chain with a differing
+    policy yields only the -P command."""
+    host = SimulatedHost(name="h", iptables_chains={"filter": {"MYCHAIN": "ACCEPT"}})
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.chain(ctx, "MYCHAIN", policy="DROP")]
+    assert ctx.changed
+    assert ctx.reason == (
+        "iptables chain MYCHAIN exists; iptables chain MYCHAIN policy will be set to DROP"
+    )
+    assert commands == [IptablesPolicyCommand(chain="MYCHAIN", policy="DROP")]
+    assert commands[0].shell() == "iptables -t filter -P MYCHAIN DROP"
+
+
+async def test_chain_add_with_policy():
+    """pyinfra's ``add_chain.json``: a missing chain yields -N then -P."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.chain(ctx, "MYCHAIN", policy="DROP")]
+    assert ctx.changed
+    assert ctx.reason == (
+        "iptables chain MYCHAIN will be created; "
+        "iptables chain MYCHAIN policy will be set to DROP"
+    )
+    assert commands == [
+        IptablesChainCommand(chain="MYCHAIN"),
+        IptablesPolicyCommand(chain="MYCHAIN", policy="DROP"),
+    ]
+    assert [c.shell() for c in commands] == [
+        "iptables -t filter -N MYCHAIN",
+        "iptables -t filter -P MYCHAIN DROP",
+    ]
+
+
+async def test_chain_delete():
+    """pyinfra's ``delete_chain.json``: an existing chain with
+    ``present=False`` yields -X."""
+    host = SimulatedHost(name="h", iptables_chains={"filter": {"MYCHAIN": "ACCEPT"}})
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.chain(ctx, "MYCHAIN", present=False)]
+    assert ctx.changed
+    assert ctx.reason == "iptables chain MYCHAIN will be deleted"
+    assert commands == [IptablesChainCommand(chain="MYCHAIN", present=False)]
+    assert commands[0].shell() == "iptables -t filter -X MYCHAIN"
+
+
+async def test_chain_delete_absent_noop():
+    """pyinfra's ``delete_chain_missing.json``: an absent chain is a
+    no-op with pyinfra's verbatim reason."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.chain(ctx, "MYCHAIN", present=False)]
+    assert not ctx.changed
+    assert ctx.reason == "iptables chain MYCHAIN does not exist"
+    assert commands == []
+
+
+async def test_chain_exists_noop():
+    """An existing chain without a policy request is left alone."""
+    host = SimulatedHost(name="h", iptables_chains={"filter": {"MYCHAIN": "-"}})
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.chain(ctx, "MYCHAIN")]
+    assert not ctx.changed
+    assert ctx.reason == "iptables chain MYCHAIN exists"
+    assert commands == []
+
+
+async def test_chain_policy_already_matches():
+    """A matching policy reports both halves present, no commands."""
+    host = SimulatedHost(name="h", iptables_chains={"filter": {"MYCHAIN": "DROP"}})
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.chain(ctx, "MYCHAIN", policy="DROP")]
+    assert not ctx.changed
+    assert ctx.reason == (
+        "iptables chain MYCHAIN exists; iptables chain MYCHAIN policy is already DROP"
+    )
+    assert commands == []
+
+
+async def test_chain_version_validation_and_kwargs():
+    """A version other than 4/6 raises before any fact read; unknown
+    keyword arguments (pyinfra's globals) are absorbed."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in iptables.chain(ctx, "MYCHAIN", version=5)]
+    assert str(excinfo.value) == "version must be 4 or 6 (got 5)"
+    commands = [
+        c async for c in iptables.chain(ctx, "MYCHAIN", some_global="ignored")
+    ]
+    assert ctx.changed
+    assert commands == [IptablesChainCommand(chain="MYCHAIN")]
+
+
+# --- iptables.rule: pyinfra's operation fixtures -------------------------------------------------
+
+
+async def test_rule_add_full_matches():
+    """pyinfra's ``add_rule.json``: every positive and negated match, the
+    port shortcuts and the uppercase protocol render the fixture command
+    verbatim (safe tokens quote to themselves)."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx,
+            "PREROUTING",
+            "OUTPUT",
+            table="nat",
+            destination_port=8080,
+            source_port=80,
+            protocol="TCP",
+            source="0.0.0.0",
+            destination="1.2.3.4",
+            in_interface="eth0",
+            out_interface="eth1",
+            not_protocol="UDP",
+            not_source="192.168.1.0/24",
+            not_destination="1.2.3.4",
+            not_in_interface="eth10",
+            not_out_interface="eth10",
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == "iptables PREROUTING rule will be added"
+    assert commands[0].shell() == (
+        "iptables -t nat -A PREROUTING -p tcp -s 0.0.0.0 -d 1.2.3.4 -i eth0 -o eth1 "
+        "! -p udp ! -s 192.168.1.0/24 ! -d 1.2.3.4 ! -i eth10 ! -o eth10 "
+        "--dport 8080 --sport 80 -j OUTPUT"
+    )
+
+
+async def test_rule_add_with_comment():
+    """pyinfra's ``add_rule_with_comment.json``: the comment shortcut
+    renders the quoted ``-m comment`` form."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "INPUT", "ACCEPT", protocol="TCP", comment="This rule is amazing!"
+        )
+    ]
+    assert ctx.changed
+    assert commands[0].shell() == (
+        "iptables -t filter -A INPUT -p tcp -m comment "
+        "--comment 'This rule is amazing!' -j ACCEPT"
+    )
+
+
+async def test_rule_comment_noop():
+    """pyinfra's ``noop_rule_with_comment.json``: the fact's parsed
+    comment pairs compare equal to the shortcut's comparison form."""
+    host = SimulatedHost(
+        name="h",
+        iptables_rules={
+            "filter": [
+                {
+                    "chain": "INPUT",
+                    "jump": "ACCEPT",
+                    "extras": [
+                        ["--comment", "This rule is amazing!"],
+                        ["-m", "comment"],
+                    ],
+                }
+            ]
+        },
+    )
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "INPUT", "ACCEPT", comment="This rule is amazing!"
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "iptables INPUT rule exists"
+    assert commands == []
+
+
+async def test_rule_add_log_prefix():
+    """pyinfra's ``add_log_rule.json``: the LOG prefix renders after the
+    jump."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    commands = [
+        c async for c in iptables.rule(ctx, "INPUT", "LOG", log_prefix="log-prefix")
+    ]
+    assert ctx.changed
+    assert commands[0].shell() == "iptables -t filter -A INPUT -j LOG --log-prefix log-prefix"
+
+
+async def test_rule_add_to_ports():
+    """pyinfra's ``add_to_ports.json``: an int to_ports stringifies."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "PREROUTING", "REDIRECT", table="nat", to_ports=8000
+        )
+    ]
+    assert ctx.changed
+    assert commands[0].shell() == (
+        "iptables -t nat -A PREROUTING -j REDIRECT --to-ports 8000"
+    )
+
+
+async def test_rule_dnat_noop():
+    """pyinfra's ``noop_rule.json``: an existing DNAT definition is left
+    alone with the verbatim reason."""
+    host = SimulatedHost(
+        name="h",
+        iptables_rules={
+            "nat": [
+                {
+                    "to_destination": "10.10.10.10",
+                    "chain": "PREROUTING",
+                    "jump": "DNAT",
+                }
+            ]
+        },
+    )
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "PREROUTING", "DNAT", table="nat", to_destination="10.10.10.10"
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "iptables PREROUTING rule exists"
+    assert commands == []
+
+
+async def test_rule_extras_noop():
+    """pyinfra's ``noop_rule_with_extras.json``: the quoted-spaces extras
+    string parses to the fact's pair list."""
+    host = SimulatedHost(
+        name="h",
+        iptables_rules={
+            "filter": [
+                {
+                    "chain": "INPUT",
+                    "extras": [["--another", "argument with spaces"]],
+                    "jump": "ACCEPT",
+                }
+            ]
+        },
+    )
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "INPUT", "ACCEPT", extras="--another 'argument with spaces'"
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "iptables INPUT rule exists"
+    assert commands == []
+
+
+async def test_rule_add_extras_with_spaces():
+    """pyinfra's ``add_rule_with_space.json``: the extras text renders
+    between the matches and the jump, quotes preserved."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx,
+            "INPUT",
+            "ACCEPT",
+            protocol="TCP",
+            extras="--another 'argument with spaces'",
+        )
+    ]
+    assert ctx.changed
+    assert commands[0].shell() == (
+        "iptables -t filter -A INPUT -p tcp --another 'argument with spaces' -j ACCEPT"
+    )
+
+
+async def test_rule_delete():
+    """pyinfra's ``delete_rule.json``: an existing unwanted rule yields
+    -D with the same spec rendering."""
+    host = SimulatedHost(
+        name="h",
+        iptables_rules={
+            "nat": [
+                {
+                    "to_destination": "10.10.10.10",
+                    "chain": "PREROUTING",
+                    "jump": "DNAT",
+                }
+            ]
+        },
+    )
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx,
+            "PREROUTING",
+            "DNAT",
+            table="nat",
+            to_destination="10.10.10.10",
+            present=False,
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == "iptables PREROUTING rule will be deleted"
+    assert commands[0].shell() == (
+        "iptables -t nat -D PREROUTING -j DNAT --to-destination 10.10.10.10"
+    )
+
+
+async def test_rule_add_v6():
+    """pyinfra's ``add_v6_rule.json``: version=6 flips the binary and the
+    fact family; the source renders as given."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "PREROUTING", "OUTPUT", version=6, table="nat",
+            protocol="TCP", source="0.0.0.0",
+        )
+    ]
+    assert ctx.changed
+    assert commands[0].shell() == "ip6tables -t nat -A PREROUTING -p tcp -s 0.0.0.0 -j OUTPUT"
+
+
+async def test_rule_add_to_source():
+    """pyinfra's ``add_to_source.json``: the SNAT target argument."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "PREROUTING", "SNAT", table="nat", to_source="10.0.0.0:8000"
+        )
+    ]
+    assert ctx.changed
+    assert commands[0].shell() == (
+        "iptables -t nat -A PREROUTING -j SNAT --to-source 10.0.0.0:8000"
+    )
+
+
+async def test_rule_delete_absent_noop():
+    """pyinfra's ``delete_rule_missing.json``: the verbatim "does not
+    exists" grammar is kept for parity."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "PREROUTING", "DNAT", table="nat",
+            to_destination="10.10.10.10", present=False,
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "iptables PREROUTING rule does not exists"
+    assert commands == []
+
+
+async def test_rule_port_without_protocol_raises():
+    """pyinfra's ``invalid_destination_port.json``: the message text is
+    pyinfra's verbatim (ValueError is reemote5's convention)."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in iptables.rule(ctx, "PREROUTING", "ACCEPT", destination_port=8080)]
+    assert str(excinfo.value) == (
+        "iptables cannot filter by destination_port/source_port without a protocol"
+    )
+
+
+async def test_rule_log_prefix_without_log_raises():
+    """pyinfra's ``invalid_log_prefix.json``."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in iptables.rule(ctx, "INPUT", "NOT_LOG", log_prefix="log-prefix")]
+    assert str(excinfo.value) == (
+        "iptables only supports log_prefix with the LOG jump (jump=NOT_LOG)"
+    )
+
+
+async def test_rule_to_destination_outside_nat_raises():
+    """pyinfra's ``invalid_to_destination.json``."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in iptables.rule(ctx, "PREROUTING", "DNAT", to_destination="8.8.8.8")]
+    assert str(excinfo.value) == (
+        "iptables only supports to_destination on the nat table and the DNAT jump "
+        "(table=filter, jump=DNAT)"
+    )
+
+
+async def test_rule_to_ports_outside_nat_raises():
+    """pyinfra's ``invalid_to_ports.json``."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in iptables.rule(ctx, "PREROUTING", "REDIRECT", to_ports="8.8.8.8")]
+    assert str(excinfo.value) == (
+        "iptables only supports to_ports on the nat table and the REDIRECT jump "
+        "(table=filter, jump=REDIRECT)"
+    )
+
+
+async def test_rule_to_source_outside_nat_raises():
+    """pyinfra's ``invalid_to_source.json``."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in iptables.rule(ctx, "PREROUTING", "SNAT", to_source="8.8.8.8")]
+    assert str(excinfo.value) == (
+        "iptables only supports to_source on the nat table and the SNAT jump "
+        "(table=filter, jump=SNAT)"
+    )
+
+
+# --- iptables.rule: the typed-matcher and position extensions --------------------------------
+
+
+async def test_rule_insert_at_top():
+    """``append=False`` inserts at the top with no position number."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    commands = [
+        c async for c in iptables.rule(ctx, "INPUT", "DROP", append=False)
+    ]
+    assert commands == [
+        IptablesRuleCommand(action="-I", chain="INPUT", spec=("-j", "DROP"))
+    ]
+    assert commands[0].shell() == "iptables -t filter -I INPUT -j DROP"
+
+
+async def test_rule_position_insert():
+    """``position`` overrides append and renders the 1-based number."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    commands = [
+        c async for c in iptables.rule(ctx, "INPUT", "DROP", position=3)
+    ]
+    assert commands[0].shell() == "iptables -t filter -I INPUT 3 -j DROP"
+
+
+async def test_rule_position_existing_rule_is_never_repositioned():
+    """An existing rule at a different position is a no-op -- the
+    destructive ``exact`` reordering proposal was deliberately dropped."""
+    host = SimulatedHost(
+        name="h", iptables_rules={"filter": [{"chain": "INPUT", "jump": "DROP"}]}
+    )
+    ctx = make_ctx(host)
+    commands = [
+        c async for c in iptables.rule(ctx, "INPUT", "DROP", position=1)
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "iptables INPUT rule exists"
+    assert commands == []
+
+
+async def test_rule_position_validation():
+    """A position below 1 is a ValueError, never a silent append."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in iptables.rule(ctx, "INPUT", "DROP", position=0)]
+    assert str(excinfo.value) == "position must be a positive rule number (got 0)"
+
+
+async def test_rule_typed_matchers_round_trip_through_the_seam():
+    """The typed-matcher decision end to end: the yielded spec applies
+    through the seam, and the stored definition (implicit ``-m tcp``
+    included) compares equal to the operation's comparison form, so the
+    second materialize is a no-op."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "INPUT", "ACCEPT",
+            protocol="tcp", destination_port=22,
+            ctstate=("NEW",), comment="allow-ssh",
+        )
+    ]
+    assert ctx.changed
+    assert commands[0].shell() == (
+        "iptables -t filter -A INPUT -p tcp --dport 22 -m conntrack --ctstate NEW "
+        "-m comment --comment allow-ssh -j ACCEPT"
+    )
+    await send_command(host, commands[0])
+    assert host.iptables_rules["filter"] == [
+        {
+            "chain": "INPUT",
+            "protocol": "tcp",
+            "jump": "ACCEPT",
+            "extras": [
+                ["--comment", "allow-ssh"],
+                ["--ctstate", "NEW"],
+                ["--dport", "22"],
+                ["-m", "comment"],
+                ["-m", "conntrack"],
+                ["-m", "tcp"],
+            ],
+        }
+    ]
+    ctx2 = make_ctx(host)
+    again = [
+        c
+        async for c in iptables.rule(
+            ctx2, "INPUT", "ACCEPT",
+            protocol="tcp", destination_port=22,
+            ctstate=("NEW",), comment="allow-ssh",
+        )
+    ]
+    assert not ctx2.changed
+    assert ctx2.reason == "iptables INPUT rule exists"
+    assert again == []
+
+
+async def test_rule_multiport_and_limit_render():
+    """Multiport joins the port list with commas; limit and its burst
+    render the ``-m limit`` form."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "INPUT", "ACCEPT",
+            protocol="tcp", destination_ports=(80, 443),
+            source_ports=("8000:9000",),
+        )
+    ]
+    assert commands[0].shell() == (
+        "iptables -t filter -A INPUT -p tcp -m multiport --dports 80,443 "
+        "-m multiport --sports 8000:9000 -j ACCEPT"
+    )
+    ctx = make_ctx(SimulatedHost(name="h"))
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "INPUT", "LOG", log_prefix="flood: ", limit="10/min", limit_burst=5
+        )
+    ]
+    assert commands[0].shell() == (
+        "iptables -t filter -A INPUT -m limit --limit 10/min --limit-burst 5 "
+        "-j LOG --log-prefix 'flood: '"
+    )
+
+
+async def test_rule_limit_burst_requires_limit():
+    """A burst without a rate is a ValueError, not a dangling flag."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in iptables.rule(ctx, "INPUT", "ACCEPT", limit_burst=5)]
+    assert str(excinfo.value) == "iptables limit_burst requires limit"
+
+
+async def test_rule_match_set_renders_the_ipset_match():
+    """The ``(set_name, direction)`` pair renders ``-m set --match-set``;
+    the comparison folds it into extras like every typed matcher."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "INPUT", "DROP", match_set=("blacklist", "src")
+        )
+    ]
+    assert commands[0].shell() == (
+        "iptables -t filter -A INPUT -m set --match-set blacklist src -j DROP"
+    )
+    await send_command(host, commands[0])
+    ctx2 = make_ctx(host)
+    again = [
+        c
+        async for c in iptables.rule(
+            ctx2, "INPUT", "DROP", match_set=("blacklist", "src")
+        )
+    ]
+    assert not ctx2.changed
+    assert again == []
+
+
+async def test_rule_log_level_renders_after_the_jump_and_compares():
+    """``log_level`` renders after -j LOG (target options must follow the
+    jump) but compares through extras -- a fact rule carrying the parsed
+    ``--log-level`` pair is a no-op."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    commands = [
+        c async for c in iptables.rule(ctx, "INPUT", "LOG", log_level=4)
+    ]
+    assert commands[0].shell() == "iptables -t filter -A INPUT -j LOG --log-level 4"
+    host = SimulatedHost(
+        name="h",
+        iptables_rules={
+            "filter": [
+                {"chain": "INPUT", "jump": "LOG", "extras": [["--log-level", "4"]]}
+            ]
+        },
+    )
+    ctx = make_ctx(host)
+    again = [c async for c in iptables.rule(ctx, "INPUT", "LOG", log_level=4)]
+    assert not ctx.changed
+    assert again == []
+
+
+async def test_rule_log_level_requires_log():
+    """A log level on a non-LOG jump is a ValueError."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in iptables.rule(ctx, "INPUT", "ACCEPT", log_level=4)]
+    assert str(excinfo.value) == (
+        "iptables only supports log_level with the LOG jump (jump=ACCEPT)"
+    )
+
+
+async def test_rule_not_protocol_case_idempotence():
+    """The deliberate deviation: not_protocol lowercases in the
+    comparison too, so an uppercase request matches the save output
+    (pyinfra lowercases only the command -- an idempotence bug)."""
+    host = SimulatedHost(
+        name="h",
+        iptables_rules={
+            "filter": [{"chain": "INPUT", "jump": "DROP", "not_protocol": "udp"}]
+        },
+    )
+    ctx = make_ctx(host)
+    commands = [
+        c async for c in iptables.rule(ctx, "INPUT", "DROP", not_protocol="UDP")
+    ]
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_rule_ipv6_bare_source_normalizes_to_128():
+    """The deliberate deviation: a slash-less IPv6 source compares as
+    /128 (what ip6tables-save prints), not pyinfra's /32."""
+    host = SimulatedHost(
+        name="h",
+        ip6tables_rules={
+            "filter": [
+                {"chain": "INPUT", "jump": "ACCEPT", "source": "2001:db8::1/128"}
+            ]
+        },
+    )
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "INPUT", "ACCEPT", version=6, source="2001:db8::1"
+        )
+    ]
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_rule_multiport_requires_protocol():
+    """The multiport extension needs -m [tcp|udp|...] too, so the
+    no-protocol guard covers destination_ports/source_ports."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in iptables.rule(ctx, "INPUT", "ACCEPT", destination_ports=(80,))]
+    assert str(excinfo.value) == (
+        "iptables cannot filter by destination_port/source_port without a protocol"
+    )
+
+
+# --- iptables.policy ------------------------------------------------------------------------
+
+
+async def test_policy_change():
+    """A differing policy yields -P with the standalone reason."""
+    host = SimulatedHost(name="h", iptables_chains={"filter": {"INPUT": "ACCEPT"}})
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.policy(ctx, "INPUT", "DROP")]
+    assert ctx.changed
+    assert ctx.reason == "iptables chain INPUT policy will be set to DROP"
+    assert commands == [IptablesPolicyCommand(chain="INPUT", policy="DROP")]
+
+
+async def test_policy_noop():
+    """A matching policy is left alone."""
+    host = SimulatedHost(name="h", iptables_chains={"filter": {"INPUT": "DROP"}})
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.policy(ctx, "INPUT", "DROP")]
+    assert not ctx.changed
+    assert ctx.reason == "iptables chain INPUT policy is already DROP"
+    assert commands == []
+
+
+async def test_policy_invalid_word():
+    """Only the built-in policy targets validate -- a static check, so
+    it raises even on an unprivileged (empty) fact read."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in iptables.policy(ctx, "INPUT", "REJECT")]
+    assert str(excinfo.value) == (
+        "policy must be ACCEPT, DROP, QUEUE or RETURN (got 'REJECT')"
+    )
+
+
+async def test_policy_missing_chain_plans_the_change():
+    """Chain existence is deliberately not validated against the fact:
+    an empty read still plans the -P (apply fails loudly if the chain is
+    really missing)."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    commands = [c async for c in iptables.policy(ctx, "INPUT", "DROP")]
+    assert ctx.changed
+    assert commands == [IptablesPolicyCommand(chain="INPUT", policy="DROP")]
+
+
+async def test_policy_v6_reads_the_ipv6_chains():
+    """version=6 compares the ip6tables chains and renders ip6tables."""
+    host = SimulatedHost(name="h", ip6tables_chains={"filter": {"INPUT": "ACCEPT"}})
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.policy(ctx, "INPUT", "DROP", version=6)]
+    assert ctx.changed
+    assert commands[0].shell() == "ip6tables -t filter -P INPUT DROP"
+
+
+# --- iptables.flush / iptables.zero ------------------------------------------------------------
+
+
+async def test_flush_table_with_rules():
+    """A table holding rules yields the unscoped -F with the count."""
+    host = SimulatedHost(
+        name="h",
+        iptables_rules={
+            "filter": [
+                {"chain": "INPUT", "jump": "ACCEPT"},
+                {"chain": "OUTPUT", "jump": "DROP"},
+            ]
+        },
+    )
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.flush(ctx)]
+    assert ctx.changed
+    assert ctx.reason == "iptables table filter holds 2 rule(s), will flush"
+    assert commands == [IptablesFlushCommand()]
+    assert commands[0].shell() == "iptables -t filter -F"
+
+
+async def test_flush_chain_scope_counts_only_that_chain():
+    """A chain-scoped flush counts and flushes only its rules."""
+    host = SimulatedHost(
+        name="h",
+        iptables_rules={
+            "filter": [
+                {"chain": "INPUT", "jump": "ACCEPT"},
+                {"chain": "OUTPUT", "jump": "DROP"},
+            ]
+        },
+    )
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.flush(ctx, "INPUT")]
+    assert ctx.changed
+    assert ctx.reason == "iptables chain INPUT holds 1 rule(s), will flush"
+    assert commands == [IptablesFlushCommand(chain="INPUT")]
+
+
+async def test_flush_empty_is_a_noop():
+    """Both scopes no-op when nothing is held -- a flush never shows
+    changed twice."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    assert [c async for c in iptables.flush(ctx)] == []
+    assert not ctx.changed
+    assert ctx.reason == "iptables table filter holds no rules"
+    ctx = make_ctx(host)
+    assert [c async for c in iptables.flush(ctx, "INPUT")] == []
+    assert ctx.reason == "iptables chain INPUT holds no rules"
+
+
+async def test_zero_is_stateless():
+    """Counters grow with every packet, so zero always yields -- both
+    scopes, even on a host whose counters are already 0."""
+    host = SimulatedHost(
+        name="h", iptables_ordered_rules={"filter": [ordered_row(packets=0, bytes=0)]}
+    )
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.zero(ctx)]
+    assert ctx.changed
+    assert ctx.reason == "iptables table filter counters will be zeroed"
+    assert commands == [IptablesZeroCommand()]
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.zero(ctx, "INPUT", version=6)]
+    assert ctx.changed
+    assert ctx.reason == "iptables chain INPUT counters will be zeroed"
+    assert commands == [IptablesZeroCommand(chain="INPUT", version=6)]
+
+
+# --- iptables.save / iptables.restore -------------------------------------------------------------
+
+
+async def test_save_drifted_writes_the_snapshot():
+    """An unseeded (drifted) persistence path yields the sh -c wrapped
+    save at the iptables-persistent default location."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    commands = [c async for c in iptables.save(ctx)]
+    assert ctx.changed
+    assert ctx.reason == "iptables rules drifted from /etc/iptables/rules.v4, will save"
+    assert commands == [IptablesSaveCommand(path="/etc/iptables/rules.v4")]
+    assert commands[0].shell() == "sh -c 'iptables-save > /etc/iptables/rules.v4'"
+
+
+async def test_save_synced_is_a_noop():
+    """A synced snapshot skips the write -- the comment-stripping
+    comparison means the fresh save timestamp never forces a rewrite."""
+    host = SimulatedHost(
+        name="h", iptables_persistence={"/etc/iptables/rules.v4": True}
+    )
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.save(ctx)]
+    assert not ctx.changed
+    assert ctx.reason == "iptables rules already match /etc/iptables/rules.v4"
+    assert commands == []
+
+
+async def test_save_v6_default_path():
+    """version=6 picks rules.v6 and the ip6tables-save binary."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    commands = [c async for c in iptables.save(ctx, version=6)]
+    assert ctx.changed
+    assert commands == [IptablesSaveCommand(path="/etc/iptables/rules.v6", version=6)]
+
+
+async def test_restore_drifted_loads_the_file():
+    """A drifted path yields the sh -c wrapped restore; noflush adds -n."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    commands = [c async for c in iptables.restore(ctx, "/tmp/rules.v4")]
+    assert ctx.changed
+    assert ctx.reason == "iptables rules drifted from /tmp/rules.v4, will restore"
+    assert commands == [IptablesRestoreCommand(path="/tmp/rules.v4")]
+    ctx = make_ctx(SimulatedHost(name="h"))
+    commands = [
+        c async for c in iptables.restore(ctx, "/tmp/rules.v6", version=6, noflush=True)
+    ]
+    assert commands[0].shell() == "sh -c 'ip6tables-restore -n < /tmp/rules.v6'"
+
+
+async def test_restore_synced_is_a_noop():
+    """A file that already reproduces the live rules is not reloaded."""
+    host = SimulatedHost(name="h", iptables_persistence={"/tmp/rules.v4": True})
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.restore(ctx, "/tmp/rules.v4")]
+    assert not ctx.changed
+    assert ctx.reason == "iptables rules already match /tmp/rules.v4"
+    assert commands == []
+
+
+# --- iptables.ipset --------------------------------------------------------------------------------
+
+
+async def test_ipset_create_with_entries():
+    """A missing set yields the create then the sorted missing entries;
+    the reason lists both halves."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    commands = [
+        c
+        async for c in iptables.ipset(
+            ctx, "blacklist", entries=("192.168.100.5", "10.0.0.5")
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == (
+        "ipset blacklist will be created (hash:ip); "
+        "ipset blacklist entries will be added: 10.0.0.5, 192.168.100.5"
+    )
+    assert commands == [
+        IpsetCreateCommand(set_name="blacklist"),
+        IpsetEntryCommand(set_name="blacklist", entry="10.0.0.5"),
+        IpsetEntryCommand(set_name="blacklist", entry="192.168.100.5"),
+    ]
+
+
+async def test_ipset_existing_entries_noop():
+    """An existing set holding every listed entry is a two-half no-op."""
+    host = SimulatedHost(
+        name="h",
+        ipsets={"blacklist": ipset_record(members=("10.0.0.5", "192.168.100.5"))},
+    )
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.ipset(
+            ctx, "blacklist", entries=("10.0.0.5", "192.168.100.5")
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "ipset blacklist exists; ipset blacklist entries already present"
+    assert commands == []
+
+
+async def test_ipset_adds_only_the_missing_entries():
+    """Membership is additive: unlisted members survive, only the
+    missing entries yield adds."""
+    host = SimulatedHost(
+        name="h", ipsets={"blacklist": ipset_record(members=("10.0.0.5",))}
+    )
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.ipset(
+            ctx, "blacklist", entries=("10.0.0.5", "10.0.0.6")
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == (
+        "ipset blacklist exists; ipset blacklist entries will be added: 10.0.0.6"
+    )
+    assert commands == [IpsetEntryCommand(set_name="blacklist", entry="10.0.0.6")]
+
+
+async def test_ipset_type_mismatch_raises():
+    """Recreating a set with another type would drop its members and
+    break referencing rules -- a ValueError instead."""
+    host = SimulatedHost(
+        name="h", ipsets={"blacklist": ipset_record(set_type="hash:net")}
+    )
+    ctx = make_ctx(host)
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in iptables.ipset(ctx, "blacklist", set_type="hash:ip")]
+    assert str(excinfo.value) == (
+        "ipset blacklist exists with type 'hash:net', not 'hash:ip'; "
+        "destroy it first to change its type"
+    )
+
+
+async def test_ipset_remove_entries_keeps_the_set():
+    """present=False with entries removes the held intersection (sorted)
+    and leaves the set itself alone."""
+    host = SimulatedHost(
+        name="h",
+        ipsets={"blacklist": ipset_record(members=("10.0.0.5", "10.0.0.6"))},
+    )
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.ipset(
+            ctx, "blacklist", entries=("10.0.0.6", "10.0.0.9"), present=False
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == "ipset blacklist entries will be removed: 10.0.0.6"
+    assert commands == [
+        IpsetEntryCommand(set_name="blacklist", entry="10.0.0.6", present=False)
+    ]
+
+
+async def test_ipset_remove_none_held_noop():
+    """Removing entries the set does not hold is a no-op."""
+    host = SimulatedHost(
+        name="h", ipsets={"blacklist": ipset_record(members=("10.0.0.5",))}
+    )
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.ipset(
+            ctx, "blacklist", entries=("10.0.0.9",), present=False
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "ipset blacklist holds none of the listed entries"
+    assert commands == []
+
+
+async def test_ipset_destroy():
+    """present=False with no entries destroys the whole set."""
+    host = SimulatedHost(name="h", ipsets={"blacklist": ipset_record()})
+    ctx = make_ctx(host)
+    commands = [c async for c in iptables.ipset(ctx, "blacklist", present=False)]
+    assert ctx.changed
+    assert ctx.reason == "ipset blacklist will be destroyed"
+    assert commands == [IpsetDestroyCommand(set_name="blacklist")]
+
+
+async def test_ipset_destroy_absent_noop():
+    """Destroying an absent set is a no-op."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    commands = [c async for c in iptables.ipset(ctx, "blacklist", present=False)]
+    assert not ctx.changed
+    assert ctx.reason == "ipset blacklist does not exist"
+    assert commands == []
+
+
+# --- SimulatedHost seam dispatch -------------------------------------------------------------
+
+
+async def test_chain_seam_create_and_delete_cascade():
+    """A created chain carries policy "-"; deleting it drops its rules
+    and rebuilds the numbered rows, and both drift the persistence."""
+    host = SimulatedHost(
+        name="h",
+        iptables_rules={
+            "filter": [
+                {"chain": "LOG_DROP", "jump": "LOG"},
+                {"chain": "INPUT", "jump": "ACCEPT"},
+            ]
+        },
+        iptables_chains={"filter": {"LOG_DROP": "-", "INPUT": "ACCEPT"}},
+        iptables_persistence={"/etc/iptables/rules.v4": True},
+    )
+    await send_command(host, IptablesChainCommand(chain="NEWCHAIN"))
+    assert host.iptables_chains["filter"]["NEWCHAIN"] == "-"
+    assert host.iptables_persistence == {"/etc/iptables/rules.v4": False}
+    await send_command(host, IptablesChainCommand(chain="LOG_DROP", present=False))
+    assert "LOG_DROP" not in host.iptables_chains["filter"]
+    assert host.iptables_rules["filter"] == [{"chain": "INPUT", "jump": "ACCEPT"}]
+    assert host.iptables_ordered_rules["filter"] == [
+        ordered_row(number=1, target="ACCEPT")
+    ]
+
+
+async def test_policy_seam_sets_the_policy():
+    """The -P arm records the policy word and drifts the snapshots."""
+    host = SimulatedHost(
+        name="h",
+        iptables_chains={"filter": {"INPUT": "ACCEPT"}},
+        iptables_persistence={"/etc/iptables/rules.v4": True},
+    )
+    await send_command(host, IptablesPolicyCommand(chain="INPUT", policy="DROP"))
+    assert host.iptables_chains["filter"]["INPUT"] == "DROP"
+    assert host.iptables_persistence == {"/etc/iptables/rules.v4": False}
+
+
+async def test_rule_seam_append_normalizes_like_iptables_save():
+    """The stored definition mirrors the save output: a bare source
+    gains /32 and the protocol implies its ``-m`` extras pair."""
+    host = SimulatedHost(name="h")
+    await send_command(
+        host,
+        IptablesRuleCommand(
+            action="-A",
+            chain="INPUT",
+            spec=("-p", "tcp", "-s", "10.0.0.5", "--dport 22", "-j", "ACCEPT"),
+        ),
+    )
+    assert host.iptables_rules["filter"] == [
+        {
+            "chain": "INPUT",
+            "protocol": "tcp",
+            "source": "10.0.0.5/32",
+            "jump": "ACCEPT",
+            "extras": [["--dport", "22"], ["-m", "tcp"]],
+        }
+    ]
+    assert host.iptables_ordered_rules["filter"] == [
+        ordered_row(
+            target="ACCEPT", protocol="tcp", source="10.0.0.5/32"
+        )
+    ]
+
+
+async def test_rule_seam_insert_position_and_clamp():
+    """An insert addresses the 1-based position within its chain; a
+    position past the end appends (tolerant where the real command
+    errors), and the rows renumber per chain."""
+    host = SimulatedHost(
+        name="h",
+        iptables_rules={
+            "filter": [
+                {"chain": "INPUT", "jump": "ACCEPT"},
+                {"chain": "INPUT", "jump": "LOG"},
+            ]
+        },
+    )
+    await send_command(
+        host,
+        IptablesRuleCommand(action="-I", chain="INPUT", spec=("-j", "DROP"), position=1),
+    )
+    assert [r["jump"] for r in host.iptables_rules["filter"]] == ["DROP", "ACCEPT", "LOG"]
+    await send_command(
+        host,
+        IptablesRuleCommand(action="-I", chain="INPUT", spec=("-j", "RETURN"), position=9),
+    )
+    assert [r["jump"] for r in host.iptables_rules["filter"]] == [
+        "DROP", "ACCEPT", "LOG", "RETURN"
+    ]
+    assert [r["number"] for r in host.iptables_ordered_rules["filter"]] == [1, 2, 3, 4]
+
+
+async def test_rule_seam_delete_removes_the_first_equal_definition():
+    """-D drops the first matching definition and tolerates an absent
+    one; the numbered rows rebuild."""
+    host = SimulatedHost(
+        name="h",
+        iptables_rules={
+            "filter": [
+                {"chain": "INPUT", "jump": "DROP"},
+                {"chain": "INPUT", "jump": "DROP"},
+            ]
+        },
+    )
+    cmd = IptablesRuleCommand(action="-D", chain="INPUT", spec=("-j", "DROP"))
+    await send_command(host, cmd)
+    assert host.iptables_rules["filter"] == [{"chain": "INPUT", "jump": "DROP"}]
+    await send_command(host, cmd)
+    assert host.iptables_rules["filter"] == []
+    await send_command(host, cmd)
+    assert host.iptables_rules["filter"] == []
+
+
+async def test_flush_seam_keeps_chains_and_policies():
+    """-F drops rules only; chain entries and policies survive, and a
+    chain scope flushes only its rules."""
+    host = SimulatedHost(
+        name="h",
+        iptables_chains={"filter": {"INPUT": "DROP", "MYCHAIN": "-"}},
+        iptables_rules={
+            "filter": [
+                {"chain": "INPUT", "jump": "ACCEPT"},
+                {"chain": "MYCHAIN", "jump": "LOG"},
+            ]
+        },
+    )
+    await send_command(host, IptablesFlushCommand(chain="INPUT"))
+    assert host.iptables_rules["filter"] == [{"chain": "MYCHAIN", "jump": "LOG"}]
+    await send_command(host, IptablesFlushCommand())
+    assert host.iptables_rules["filter"] == []
+    assert host.iptables_chains == {"filter": {"INPUT": "DROP", "MYCHAIN": "-"}}
+
+
+async def test_zero_seam_zeroes_counters_without_drifting():
+    """-Z zeroes the seeded rows in place; the rule set and the
+    persistence flags are untouched (a save without -c omits counters)."""
+    host = SimulatedHost(
+        name="h",
+        iptables_ordered_rules={
+            "filter": [
+                ordered_row(number=1, packets=1420, bytes=85200),
+                ordered_row(chain="OUTPUT", number=1, packets=17, bytes=1020),
+            ]
+        },
+        iptables_persistence={"/etc/iptables/rules.v4": True},
+    )
+    await send_command(host, IptablesZeroCommand(chain="INPUT"))
+    rows = host.iptables_ordered_rules["filter"]
+    assert (rows[0]["packets"], rows[0]["bytes"]) == (0, 0)
+    assert (rows[1]["packets"], rows[1]["bytes"]) == (17, 1020)
+    await send_command(host, IptablesZeroCommand())
+    assert all(r["packets"] == 0 and r["bytes"] == 0 for r in rows)
+    assert host.iptables_persistence == {"/etc/iptables/rules.v4": True}
+
+
+async def test_save_seam_syncs_then_a_rule_mutation_drifts():
+    """The save arm sets the path's flag; any later rule change flips
+    every stored path back to drifted."""
+    host = SimulatedHost(name="h")
+    await send_command(host, IptablesSaveCommand(path="/etc/iptables/rules.v4"))
+    assert host.iptables_persistence == {"/etc/iptables/rules.v4": True}
+    await send_command(
+        host, IptablesRuleCommand(action="-A", chain="INPUT", spec=("-j", "DROP"))
+    )
+    assert host.iptables_persistence == {"/etc/iptables/rules.v4": False}
+
+
+async def test_restore_seam_loads_an_uploaded_snapshot():
+    """The content-aware restore: an iptables-save format file in
+    remote_files (the files.put upload) loads its chains and rules,
+    replacing the named table, and the path reads synced afterwards."""
+    snapshot = (
+        "# Generated by reemote5\n"
+        "*filter\n"
+        ":INPUT DROP [0:0]\n"
+        ":FORWARD ACCEPT [0:0]\n"
+        ":OUTPUT ACCEPT [0:0]\n"
+        "-A INPUT -p tcp -m tcp --dport 22 -j ACCEPT\n"
+        "COMMIT\n"
+    )
+    host = SimulatedHost(
+        name="h",
+        iptables_chains={"filter": {"INPUT": "ACCEPT"}},
+        iptables_rules={"filter": [{"chain": "INPUT", "jump": "LOG"}]},
+        remote_files={"/tmp/rules.v4": snapshot.encode()},
+    )
+    await send_command(host, IptablesRestoreCommand(path="/tmp/rules.v4"))
+    assert host.iptables_chains["filter"] == {
+        "INPUT": "DROP",
+        "FORWARD": "ACCEPT",
+        "OUTPUT": "ACCEPT",
+    }
+    assert host.iptables_rules["filter"] == [
+        {
+            "chain": "INPUT",
+            "protocol": "tcp",
+            "jump": "ACCEPT",
+            "extras": [["--dport", "22"], ["-m", "tcp"]],
+        }
+    ]
+    assert host.iptables_persistence == {"/tmp/rules.v4": True}
+    assert host.iptables_ordered_rules["filter"] == [
+        ordered_row(target="ACCEPT", protocol="tcp")
+    ]
+
+
+async def test_restore_seam_noflush_merges_and_flag_only_without_content():
+    """noflush keeps the existing rules and appends the file's; without
+    stored content only the sync flag is set."""
+    snapshot = "*filter\n:INPUT DROP [0:0]\n-A INPUT -j ACCEPT\nCOMMIT\n"
+    host = SimulatedHost(
+        name="h",
+        iptables_rules={"filter": [{"chain": "INPUT", "jump": "LOG"}]},
+        remote_files={"/tmp/rules.v4": snapshot.encode()},
+    )
+    await send_command(host, IptablesRestoreCommand(path="/tmp/rules.v4", noflush=True))
+    assert [r["jump"] for r in host.iptables_rules["filter"]] == ["LOG", "ACCEPT"]
+    host = SimulatedHost(name="h")
+    await send_command(host, IptablesRestoreCommand(path="/tmp/absent.v4"))
+    assert host.iptables_persistence == {"/tmp/absent.v4": True}
+    assert host.iptables_rules == {}
+
+
+async def test_ipset_seam_tolerance():
+    """Creates are -exist tolerant (an existing set keeps its type and
+    members), adds dedupe, deletes and destroys tolerate absence."""
+    host = SimulatedHost(name="h")
+    await send_command(host, IpsetCreateCommand(set_name="blacklist"))
+    assert host.ipsets["blacklist"]["type"] == "hash:ip"
+    assert host.ipsets["blacklist"]["members"] == []
+    await send_command(host, IpsetCreateCommand(set_name="blacklist", set_type="hash:net"))
+    assert host.ipsets["blacklist"]["type"] == "hash:ip"
+    entry = IpsetEntryCommand(set_name="blacklist", entry="10.0.0.5")
+    await send_command(host, entry)
+    await send_command(host, entry)
+    assert host.ipsets["blacklist"]["members"] == ["10.0.0.5"]
+    await send_command(
+        host, IpsetEntryCommand(set_name="blacklist", entry="10.0.0.5", present=False)
+    )
+    assert host.ipsets["blacklist"]["members"] == []
+    await send_command(host, IpsetDestroyCommand(set_name="blacklist"))
+    await send_command(host, IpsetDestroyCommand(set_name="blacklist"))
+    assert host.ipsets == {}
+
+
+# --- End to end: run_prepare + run_apply --------------------------------------------------------
+
+
+async def test_rule_end_to_end_add_then_noop():
+    """Through the driver: the rule executes under sudo and renders in
+    the log; a second prepare sees the stored definition and plans no
+    change."""
+
+    def ssh_deploy(host):
+        yield op(
+            iptables.rule,
+            name="Allow SSH",
+            chain="INPUT",
+            jump="ACCEPT",
+            protocol="tcp",
+            destination_port=22,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], ssh_deploy)
+    assert plans["h"][0].changed
+    report = await run_apply(runtimes, plans=plans)
+    (entry,) = report.log
+    assert entry.changed
+    assert "$ sudo iptables -t filter -A INPUT -p tcp --dport 22 -j ACCEPT" in format_log(
+        report
+    )
+    assert host.iptables_rules["filter"][0]["jump"] == "ACCEPT"
+    _runtimes, plans2 = await run_prepare([host], ssh_deploy)
+    assert not plans2["h"][0].changed
+    assert plans2["h"][0].reason == "iptables INPUT rule exists"
+
+
+async def test_firewall_composition_end_to_end():
+    """The documented composition: create the LOG_DROP chain, add the
+    rate-limited LOG rule into it, save the snapshot. The lockstep apply
+    runs them in order; a second prepare no-ops all three (the save sees
+    the synced flag its own apply set)."""
+
+    def firewall_deploy(host):
+        yield op(
+            iptables.chain, name="Create LOG_DROP", chain="LOG_DROP", sudo=True
+        )
+        yield op(
+            iptables.rule,
+            name="Log dropped packets",
+            chain="LOG_DROP",
+            jump="LOG",
+            log_prefix="dropped: ",
+            limit="10/min",
+            sudo=True,
+        )
+        yield op(iptables.save, name="Persist the rules", sudo=True)
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], firewall_deploy)
+    assert [p.changed for p in plans["h"]] == [True, True, True]
+    report = await run_apply(runtimes, plans=plans)
+    assert len(report.log) == 3
+    log = format_log(report)
+    assert "$ sudo iptables -t filter -N LOG_DROP" in log
+    assert (
+        "$ sudo iptables -t filter -A LOG_DROP -m limit --limit 10/min "
+        "-j LOG --log-prefix 'dropped: '" in log
+    )
+    assert "$ sudo sh -c 'iptables-save > /etc/iptables/rules.v4'" in log
+    assert host.iptables_chains["filter"]["LOG_DROP"] == "-"
+    assert host.iptables_persistence == {"/etc/iptables/rules.v4": True}
+    _runtimes, plans2 = await run_prepare([host], firewall_deploy)
+    assert [p.changed for p in plans2["h"]] == [False, False, False]
+    assert plans2["h"][2].reason == (
+        "iptables rules already match /etc/iptables/rules.v4"
+    )
+
+
+async def test_restore_end_to_end_bulk_recipe():
+    """The atomic bulk-apply recipe: a host-side snapshot (uploaded with
+    files.put in a real deploy, seeded here) restores through the driver
+    and a second prepare reads it synced."""
+
+    def bulk_deploy(host):
+        yield op(
+            iptables.restore,
+            name="Apply the firewall snapshot",
+            path="/tmp/rules.v4",
+            sudo=True,
+        )
+
+    snapshot = (
+        "*filter\n"
+        ":INPUT DROP [0:0]\n"
+        ":FORWARD ACCEPT [0:0]\n"
+        ":OUTPUT ACCEPT [0:0]\n"
+        "-A INPUT -p tcp -m tcp --dport 22 -j ACCEPT\n"
+        "COMMIT\n"
+    )
+    host = SimulatedHost(
+        name="h", remote_files={"/tmp/rules.v4": snapshot.encode()}
+    )
+    runtimes, plans = await run_prepare([host], bulk_deploy)
+    assert plans["h"][0].changed
+    report = await run_apply(runtimes, plans=plans)
+    (entry,) = report.log
+    assert entry.commands == (IptablesRestoreCommand(path="/tmp/rules.v4"),)
+    assert "$ sudo sh -c 'iptables-restore < /tmp/rules.v4'" in format_log(report)
+    assert host.iptables_chains["filter"]["INPUT"] == "DROP"
+    assert len(host.iptables_rules["filter"]) == 1
+    _runtimes, plans2 = await run_prepare([host], bulk_deploy)
+    assert not plans2["h"][0].changed
+    assert plans2["h"][0].reason == "iptables rules already match /tmp/rules.v4"
+
+
+async def test_ipset_end_to_end_create_then_noop():
+    """The set and its members land in the seam through the driver; a
+    second prepare reads everything present."""
+
+    def blacklist_deploy(host):
+        yield op(
+            iptables.ipset,
+            name="Manage the blacklist",
+            set_name="blacklist",
+            entries=("10.0.0.5", "192.168.100.5"),
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], blacklist_deploy)
+    assert plans["h"][0].changed
+    report = await run_apply(runtimes, plans=plans)
+    (entry,) = report.log
+    assert len(entry.commands) == 3
+    log = format_log(report)
+    assert "$ sudo ipset create blacklist hash:ip -exist" in log
+    assert "$ sudo ipset add blacklist 10.0.0.5 -exist" in log
+    assert host.ipsets["blacklist"]["members"] == ["10.0.0.5", "192.168.100.5"]
+    _runtimes, plans2 = await run_prepare([host], blacklist_deploy)
+    assert not plans2["h"][0].changed
+    assert plans2["h"][0].reason == (
+        "ipset blacklist exists; ipset blacklist entries already present"
+    )
+
+
+async def test_two_host_lockstep_chain_creation():
+    """Across two hosts the driver pairs the Nth request: both chains
+    create in the same step and each host's log carries its own shell."""
+
+    def chain_deploy(host):
+        yield op(iptables.chain, name="Create LOG_DROP", chain="LOG_DROP", sudo=True)
+
+    hosts = [SimulatedHost(name="web1"), SimulatedHost(name="web2")]
+    runtimes, plans = await run_prepare(hosts, chain_deploy)
+    assert plans["web1"][0].changed
+    assert plans["web2"][0].changed
+    report = await run_apply(runtimes, plans=plans)
+    assert len(report.log) == 2
+    assert all(entry.changed for entry in report.log)
+    for host in hosts:
+        assert host.iptables_chains == {"filter": {"LOG_DROP": "-"}}
+
+
+async def test_rule_dry_run_plans_without_sending():
+    """``dry=True`` stops after prepare: the change is planned (and
+    renders in format_plan) but nothing runs, so the rule store stays
+    untouched."""
+
+    def ssh_deploy(host):
+        yield op(
+            iptables.rule,
+            name="Allow SSH",
+            chain="INPUT",
+            jump="ACCEPT",
+            protocol="tcp",
+            destination_port=22,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+    plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}],
+        ssh_deploy,
+        host_factory=lambda entry: host,
+        dry=True,
+    )
+    assert report is None
+    (planned,) = plans["h"]
+    assert planned.changed
+    assert planned.commands == (
+        IptablesRuleCommand(
+            action="-A",
+            chain="INPUT",
+            spec=("-p", "tcp", "--dport 22", "-j", "ACCEPT"),
+        ),
+    )
+    assert "Allow SSH" in format_plan(plans)
+    assert host.iptables_rules == {}

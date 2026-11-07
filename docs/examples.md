@@ -4,11 +4,11 @@
 
 Runnable showcase scripts living in `examples/` — *usage* demonstrations
 through the public API only, never part of the library. The tree is split in
-four: `examples/modules/<namespace>/` holds one script per fact or operation
-of a library module (currently `apk`, `apt`, `dnf`, `files`, `git`,
-`hardware` and `server`),
-`examples/general/`
-holds general scenario scripts built on more than one module,
+three: `examples/modules/<namespace>/` holds one script per fact or operation
+of a library module (currently `apk`, `apt`, `dnf`, `files`, `firewalld`,
+`git`, `gpg`, `hardware`, `iptables`, `lxd`, `mysql`, `openrc`, `postgresql`, `selinux`,
+`server`, `sysctl`, `systemd` and `ufw`), plus the cross-module `dnf_put_get`
+health-check scenario under `files/`,
 `examples/actions/` holds [action](actions.md) demonstrations (bespoke shell,
 connection waits), and
 `examples/demonstrations/<topic>/` holds scenario scripts — `composition/`,
@@ -27,10 +27,20 @@ sub-directory. Pick a page from the navigation, or start from this table:
 | `examples/modules/apt/` | [Module examples: apt](examples/modules/apt.md) |
 | `examples/modules/dnf/` | [Module examples: dnf](examples/modules/dnf.md) |
 | `examples/modules/files/` | [Module examples: files](examples/modules/files.md) |
+| `examples/modules/firewalld/` | [Module examples: firewalld](examples/modules/firewalld.md) |
 | `examples/modules/git/` | [Module examples: git](examples/modules/git.md) |
+| `examples/modules/gpg/` | [Module examples: gpg](examples/modules/gpg.md) |
 | `examples/modules/hardware/` | [Module examples: hardware](examples/modules/hardware.md) |
+| `examples/modules/iptables/` | [Module examples: iptables](examples/modules/iptables.md) |
+| `examples/modules/lxd/` | [Module examples: lxd](examples/modules/lxd.md) |
+| `examples/modules/mysql/` | [Module examples: mysql](examples/modules/mysql.md) |
+| `examples/modules/openrc/` | [Module examples: openrc](examples/modules/openrc.md) |
+| `examples/modules/postgresql/` | [Module examples: postgresql](examples/modules/postgresql.md) |
+| `examples/modules/selinux/` | [Module examples: selinux](examples/modules/selinux.md) |
 | `examples/modules/server/` | [Module examples: server](examples/modules/server.md) |
-| `examples/general/` | [General examples](examples/general.md) |
+| `examples/modules/sysctl/` | [Module examples: sysctl](examples/modules/sysctl.md) |
+| `examples/modules/systemd/` | [Module examples: systemd](examples/modules/systemd.md) |
+| `examples/modules/ufw/` | [Module examples: ufw](examples/modules/ufw.md) |
 | `examples/actions/` | [Action examples](examples/actions.md) |
 | `examples/demonstrations/inventory/` | [Inventory demonstrations](examples/demonstrations/inventory.md) |
 | `examples/demonstrations/privilege/` | [Privilege demonstrations](examples/demonstrations/privilege.md) |
@@ -42,15 +52,27 @@ sub-directory. Pick a page from the navigation, or start from this table:
     Every script on these pages uses the *default* `Host.from_inventory`
     factory and an inventory of real machines — hard-coded as
     `INVENTORY` in the script (most target the two hosts web1/web2 on
-    `192.168.0.x`; the [`apt` fact examples](examples/modules/apt.md) target
-    a single `ubuntu` host; the remaining [`apk` operation
-    examples](examples/modules/apk.md) target a single `alpine` host; the three
-    [`privilege`](examples/demonstrations/privilege.md)
-    demonstrations each target a single `centos9-*` host — the sudo and su ones
-    carry a plain-text password, the doas one is passwordless), or, for
-    the [JSON-inventory examples](examples/demonstrations/inventory.md),
-    the [`apk` fact examples](examples/modules/apk.md) and the
-    [`apk.packages` operation example](examples/modules/apk.md),
+    `192.168.0.x`), or, for
+    the [JSON-inventory examples](examples/demonstrations/inventory.md)
+    (each guarded by the group named in its file name),
+    the [`apk` examples](examples/modules/apk.md), the
+    [`apt` examples](examples/modules/apt.md) (whose `is_ubuntu`
+    guard keeps every gather and request on the single `ubuntu` host in
+    the shared file), the
+    [`openrc` examples](examples/modules/openrc.md) (whose `is_alpine`
+    guard keeps every gather and request on the single `alpine` host in
+    the shared file), the
+    [`dnf` examples](examples/modules/dnf.md) (whose `is_centos` guard
+    keeps every gather and request on the `centos` hosts), the
+    [`composition` demonstrations](examples/demonstrations/composition.md)
+    (whose `is_centos` guard keeps the `dnf` work on the `centos` hosts) and the
+    [`privilege` demonstrations](examples/demonstrations/privilege.md)
+    (whose `is_centos` guard likewise keeps the `dnf` work on the `centos`
+    hosts, each attaching its own `privilege` section — a plain-text password
+    for sudo and su, passwordless doas — to the loaded `centos` entries) and
+    the [`action` examples](examples/actions.md) (whose `is_centos` guard is
+    composed onto the deploys and filters the host list before each action
+    fan-out),
     read from the `inventory*.json` files in the project root — so running one opens
     real asyncssh connections: first read-only for the `dry=True` plan,
     then executing the apply phase. Edit the inventory (or keep only the

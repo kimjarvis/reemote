@@ -22,7 +22,7 @@ Two properties shape the script:
   A "create the file then move it" flow therefore cannot share one deploy:
   the prepare phase would raise on the not-yet-created source. That is why
   this script spans two complete runs, the sanctioned split also shown in
-  ``examples/general/two_deploy_split.py``.
+  ``examples/demonstrations/composition/two_deploy_split.py``.
 
 Run 1 stages the payload with ``files.put`` (an unprivileged scp transfer of
 a module-level stream -- one stable identity across both phases) into

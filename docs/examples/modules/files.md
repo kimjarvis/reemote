@@ -1,7 +1,8 @@
 # Module examples: files
 
 Scripts under `examples/modules/files/` — one per fact or operation of the
-[`files`](../../modules/files.md) module. See the
+[`files`](../../modules/files.md) module, plus the cross-module
+`dnf_put_get` health-check scenario. See the
 [Examples overview](../../examples.md) for the shared "connects for real"
 warning and the error-reporting contract every script follows.
 
@@ -173,5 +174,21 @@ prepare phase, which a single deploy's not-yet-created spool file would
 fail.
 
 ::: files_edit_etc_hosts
+    options:
+      members: []
+
+## A health-check deploy: dnf install, put and get
+
+The reemote5 take on a relatable pyinfra scenario — a simple web-server
+health-check / log-rotation deploy — in one flat generator: `dnf.packages`
+installs `htop` (elevated with `sudo=True`), `files.put` pushes an
+in-memory motd stream to `/tmp/remote_motd` (unprivileged scp), and
+`files.get` pulls `/etc/os-release` back into a per-host `io.BytesIO` sink
+whose content the script prints. Where the pyinfra original uses local paths
+(`files/motd`, `local_os_release.txt`, `add_deploy_dir=True`), reemote5's
+transfers take IO-like objects only — no local file is involved in either
+direction.
+
+::: dnf_put_get
     options:
       members: []

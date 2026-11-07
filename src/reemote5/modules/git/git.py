@@ -113,6 +113,12 @@ class GitBranch:
     str
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/git/git_git_branch.py``.
     """
@@ -195,6 +201,12 @@ class GitConfig:
 
     ```python
     list[GitConfigItem]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -291,6 +303,12 @@ class GitHeadDetached:
     bool | None
     ```
 
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/git/git_git_head_detached.py``.
     """
@@ -374,6 +392,12 @@ class GitIsRepo:
     bool
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/git/git_git_is_repo.py``.
     """
@@ -450,6 +474,12 @@ class GitLocalCommit:
     str | None
     ```
 
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/git/git_git_local_commit.py``.
     """
@@ -519,6 +549,12 @@ class GitRemoteBranchCommit:
 
     ```python
     str | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -602,6 +638,12 @@ class GitRemoteUrl:
     str | None
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/git/git_git_remote_url.py``.
     """
@@ -679,6 +721,12 @@ class GitSshKeyConfigured:
 
     ```python
     bool
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -786,6 +834,12 @@ class GitStatus:
 
     ```python
     GitStatusSummary
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -905,6 +959,12 @@ class GitSubmodule:
     list[GitSubmoduleStatus]
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/git/git_git_submodule.py``.
     """
@@ -1009,6 +1069,12 @@ class GitTag:
     list[GitTagInfo]
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/git/git_git_tag.py``.
     """
@@ -1068,6 +1134,12 @@ class GitTrackingBranch:
 
     ```python
     str | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -1291,6 +1363,12 @@ async def worktree(
     Yields:
         Command: Generated worktree add/remove and pull commands.
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, OperationError, ValueError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/git/git_worktree.py``.
     """
@@ -1481,6 +1559,12 @@ async def config(
 
     Yields:
         Command: The config-set command, when the value differs.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
 
     Examples:
         Examples can be found in ``examples/modules/git/git_config.py``.
@@ -1768,6 +1852,12 @@ async def repo(
     Yields:
         Command: Generated clone, remote-update, fetch, checkout, pull and
             submodule-update commands.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
 
     Examples:
         Examples can be found in ``examples/modules/git/git_repo.py``.

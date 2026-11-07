@@ -9,10 +9,11 @@ Re-exports everything from ``apk.py`` so the facts (``apk.ApkAutoremovablePackag
 ``apk.ApkPackageVersion`` entry type,
 ``apk.ApkPackage`` with its ``apk.ApkPackageInfo`` entry type,
 ``apk.ApkRepositories`` with its ``apk.ApkRepository`` entry type), the
-``apk.autoremove``, ``apk.packages``,
+``apk.autoremove``, ``apk.packages``, ``apk.repository``,
 ``apk.virtual`` and ``apk.hold`` operations and their typed command
 descriptors (``apk.ApkInstallCommand``, ``apk.ApkPurgeCommand``,
-``apk.ApkRemoveCommand``, ``apk.ApkUpgradeCommand``,
+``apk.ApkRemoveCommand``, ``apk.ApkRepoAddCommand``,
+``apk.ApkRepoRemoveCommand``, ``apk.ApkUpgradeCommand``,
 ``apk.ApkVirtualCommand``, ``apk.ApkHoldCommand``) are reachable through the
 package name alone.
 """
@@ -30,6 +31,8 @@ from .apk import (
     ApkPackageVersion,
     ApkPurgeCommand,
     ApkRemoveCommand,
+    ApkRepoAddCommand,
+    ApkRepoRemoveCommand,
     ApkRepositories,
     ApkRepository,
     ApkUpgradeCommand,
@@ -37,6 +40,7 @@ from .apk import (
     autoremove,
     hold,
     packages,
+    repository,
     virtual,
 )
 
@@ -52,6 +56,8 @@ __all__ = [
     "ApkPackageVersion",
     "ApkPurgeCommand",
     "ApkRemoveCommand",
+    "ApkRepoAddCommand",
+    "ApkRepoRemoveCommand",
     "ApkRepositories",
     "ApkRepository",
     "ApkUpgradeCommand",
@@ -60,5 +66,6 @@ __all__ = [
     "autoremove",
     "hold",
     "packages",
+    "repository",
     "virtual",
 ]

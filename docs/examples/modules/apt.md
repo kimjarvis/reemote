@@ -13,10 +13,23 @@ The read-only fact-gathering examples (`apt_apt_autoremovable.py` reading
 `AptSources`, `apt_apt_upgradable.py` reading `AptUpgradable` and
 `apt_simulate_operation_will_change.py` reading
 `SimulateOperationWillChange` for `dist-upgrade`,
-all over `gather_fact`, with the connection information of
-the Ubuntu server from `inventory_ubuntu.json`) are not rendered here —
+all over `gather_fact`, loading the shared `inventory.json` from the project
+root and filtering the host list with the `is_ubuntu` guard before the
+fan-out — `gather_fact` has no `when` parameter, so a skipped host is never
+connected) are not rendered here —
 each reads a single fact, and the facts themselves are documented on the
 [`apt` module page](../../modules/apt.md).
+
+Every example below loads that same shared `inventory.json` (validated up
+front with `validate_inventory`, so a malformed file fails before any host
+is materialized) and guards each request with `when=is_ubuntu` — a stable
+module-level predicate reading only the static `host.group` inventory data,
+so both deploy phases reach the same skip decision. The driver skips a
+rejected request without materializing it: neither its commands nor the
+facts behind them run on a non-Ubuntu host, and plan and log render
+`[skipped: when guard is_ubuntu]`. The shared file holds one host in the
+`ubuntu` group alongside hosts in other groups, so each run targets the
+Ubuntu host and visibly skips every other one.
 
 ## Installing a `.deb` file with version idempotence
 

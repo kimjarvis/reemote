@@ -22,7 +22,6 @@ for the login user and for `root`, `server_hostname.py`, reading
 `server_mounts.py`, reading `Mounts`,
 `server_path.py`, reading `Path`,
 `server_processes.py`, reading `Processes`,
-`server_sysctl.py`, reading `Sysctl` for three named keys,
 `server_timezone.py`, reading `Timezone`,
 `server_uptime.py`, reading `Uptime`,
 `server_user.py`, reading `User`,
@@ -79,10 +78,11 @@ deploy from a factory closing over that frozen mapping: the generator loops
 over the snapshot, never live state, so prepare and apply yield the
 identical `op(server.kill, pid=...)` sequence. No first deploy is needed —
 nothing mutates the process table before the read, so this is just the
-snapshot half of the [two-deploy split](../general.md) pattern. The
-operation is stateless and non-idempotent (every planned kill shows as a
-change), the signal flag and PID are shell-quoted, and the requests carry
-`sudo=True` because the nginx master runs as root. The frozen-snapshot
+snapshot half of the
+[two-deploy split](../demonstrations/composition.md#splitting-a-fact-dependent-deploy-in-two)
+pattern. The operation is stateless and non-idempotent (every planned kill
+shows as a change), the signal flag and PID are shell-quoted, and the
+requests carry `sudo=True` because the nginx master runs as root. The frozen-snapshot
 trade-off: a PID that exits before the apply makes `kill` exit non-zero
 (`CommandError`); re-running the script re-snapshots and plans an empty
 deploy once nginx is gone.
@@ -183,9 +183,12 @@ keep it distinct from the read-only `server_locales.py` fact example.
 
 ## Ensuring a sysctl setting (pyinfra server.sysctl parity)
 
-`server.sysctl` is deliberately not ported as a library operation — this
-recipe is reemote5's answer, built on the generic `files.edit` primitive
-(the `server.Sysctl` fact it compares against *is* part of the library).
+`server.sysctl` is superseded by the native
+[`sysctl`](../../modules/sysctl.md) module (`sysctl.setting` /
+`sysctl.conf`) — this recipe stays as the strict-parity demonstration,
+built on the generic `files.edit` primitive (the `Sysctl` fact it compares
+against relocated to that namespace as `sysctl.Sysctl`; the top-level
+`reemote5.Sysctl` binding still resolves).
 The script snapshots `Sysctl` for `fs.file-max` and
 `FileContents("/etc/sysctl.conf")` from every host, then applies pyinfra's
 two independent decisions to the frozen snapshots: the runtime gate is
@@ -204,8 +207,9 @@ frozen between the snapshot and the run; run 3 installs it into `/etc` with
 move cannot share one deploy — `files.move` validates its source in the
 prepare phase too, and prepare never sends. Re-running the script is a
 no-op once the live value and the persist line both match. The script is
-named `server_op_sysctl.py` to keep it distinct from the read-only
-`server_sysctl.py` fact example.
+named `server_op_sysctl.py`; the read-only fact example relocated to
+[`sysctl_sysctl.py`](sysctl.md), and everyday use should prefer the native
+[`sysctl.setting`](../../modules/sysctl.md#sysctl-operations) operation.
 
 ::: server_op_sysctl
     options:

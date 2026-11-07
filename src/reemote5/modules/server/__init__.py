@@ -19,7 +19,6 @@ Re-exports everything from ``server.py`` so the operations
 ``server.Mounts``,
 ``server.Path``,
 ``server.Processes``,
-``server.Sysctl``,
 ``server.SystemdServiceState``,
 ``server.SystemdServiceEnabled``,
 ``server.Timezone``,
@@ -34,6 +33,14 @@ descriptors (``server.GroupAddCommand``, ``server.GroupDelCommand``,
 ``server.SetTimezoneCommand``,
 ``server.SystemctlCommand``, ``server.WaitForFactCommand``) are
 reachable through the package name alone.
+
+The systemd surface (``server.service``, ``server.SystemctlCommand``,
+``server.SystemdServiceState``, ``server.SystemdServiceEnabled`` and
+``server.unit_name``) was relocated to the ``systemd`` namespace and is
+re-exported here for backward compatibility; ``server.service`` is a
+deprecated alias of ``systemd.service``. The ``Sysctl`` fact was relocated
+to the ``sysctl`` namespace (the canonical home for everything sysctl) and
+is no longer exported here.
 """
 
 from . import server
@@ -64,7 +71,6 @@ from .server import (
     Processes,
     SetHostnameCommand,
     SetTimezoneCommand,
-    Sysctl,
     SystemctlCommand,
     SystemdServiceEnabled,
     SystemdServiceState,
@@ -113,7 +119,6 @@ __all__ = [
     "Processes",
     "SetHostnameCommand",
     "SetTimezoneCommand",
-    "Sysctl",
     "SystemctlCommand",
     "SystemdServiceEnabled",
     "SystemdServiceState",

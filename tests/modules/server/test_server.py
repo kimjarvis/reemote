@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Tests for the server module: systemd facts, ``Arch``, ``service`` and ``wait_service``.
+"""Tests for the server module: host facts, ``Arch`` and ``wait_service``.
 
 Covers ``reemote5.modules.server.server``: the ``Arch`` fact, the
 ``AuthorizedKeys`` fact (pyinfra's own fixtures over the real-transport
@@ -50,10 +50,7 @@ edge cases, and the ``SimulatedHost`` seam), the ``Users`` fact (pyinfra's
 own mixed fixture over the real-transport path, passwd/lastlog parsing edge
 cases, and the ``SimulatedHost`` seam), the ``Which`` fact (pyinfra's own
 fixtures over the real-transport path, name quoting and parsing edge cases,
-and the ``SimulatedHost`` seam) and the
-``SystemdServiceState`` and ``SystemdServiceEnabled`` facts (over the
-real-transport path, parsing canned shell output, and through the
-``SimulatedHost`` seams), the ``group`` operation's option set and its
+and the ``SimulatedHost`` seam), the ``group`` operation's option set and its
 ``GroupAddCommand``/``GroupDelCommand`` descriptors (pyinfra's own eight
 operation fixtures replayed over the ``SimulatedHost`` seams, idempotence,
 the kernel dispatch and the end-to-end lockstep run), the ``hostname``
@@ -79,9 +76,6 @@ run), the ``timezone`` operation and its ``SetTimezoneCommand`` descriptor
 (pyinfra's own noop and set_timedatectl fixtures replayed over the
 ``SimulatedHost`` seams, the dropped non-systemd fallback raising
 ``OperationError`` instead, idempotence and the end-to-end lockstep run),
-the
-``service``
-operation's option set and its ``SystemctlCommand`` descriptors,
 and the waiting design: the ``WaitCommand`` base, the generic
 ``WaitForFactCommand`` poll loop (already met, met after several polls, and
 timeout -- all without real sleeping), the ``send_command`` dispatch onto
@@ -140,8 +134,6 @@ from reemote5.modules.server.server import (
     Processes,
     SetHostnameCommand,
     SetTimezoneCommand,
-    Sysctl,
-    SystemctlCommand,
     SystemdServiceEnabled,
     SystemdServiceState,
     Timezone,
@@ -151,7 +143,6 @@ from reemote5.modules.server.server import (
     WaitForFactCommand,
     Which,
     is_active,
-    unit_name,
 )
 from tests.simulated_host import SimulatedHost
 
@@ -221,16 +212,7 @@ async def materialize(host: Host, request: OperationRequest):
     return ctx, commands
 
 
-# --- Unit names and facts ----------------------------------------------------
-
-
-def test_unit_name_appends_service_to_a_bare_name():
-    assert unit_name("httpd") == "httpd.service"
-
-
-def test_unit_name_keeps_a_known_suffix():
-    assert unit_name("httpd.service") == "httpd.service"
-    assert unit_name("logrotate.timer") == "logrotate.timer"
+# --- Arch --------------------------------------------------------------------
 
 
 async def test_arch_parses_uname_m():
@@ -256,37 +238,6 @@ async def test_arch_reads_the_simulated_seam():
     assert await Arch.process(host) == "aarch64"
     # The seam defaults to x86_64: a simulated machine always answers uname.
     assert await Arch.process(SimulatedHost(name="h")) == "x86_64"
-
-
-async def test_systemd_service_state_parses_systemctl_show():
-    host = CannedShellHost("active\n")
-    assert await SystemdServiceState.process(host, "httpd") == "active"
-    assert host.shells == ["systemctl show -p ActiveState --value httpd.service"]
-
-
-async def test_systemd_service_state_is_none_on_empty_output():
-    assert await SystemdServiceState.process(CannedShellHost(""), "httpd") is None
-
-
-async def test_systemd_service_state_reads_the_simulated_seam():
-    host = SimulatedHost(name="h", services={"httpd.service": "activating"})
-    assert await SystemdServiceState.process(host, "httpd") == "activating"
-    assert await SystemdServiceState.process(host, "nginx") is None
-
-
-async def test_systemd_service_enabled_parses_unit_file_state():
-    assert await SystemdServiceEnabled.process(CannedShellHost("enabled\n"), "httpd")
-    assert await SystemdServiceEnabled.process(CannedShellHost("static\n"), "httpd")
-    assert not await SystemdServiceEnabled.process(
-        CannedShellHost("disabled\n"), "httpd"
-    )
-    assert not await SystemdServiceEnabled.process(CannedShellHost(""), "httpd")
-
-
-async def test_systemd_service_enabled_reads_the_simulated_seam():
-    host = SimulatedHost(name="h", enabled_services={"httpd.service"})
-    assert await SystemdServiceEnabled.process(host, "httpd")
-    assert not await SystemdServiceEnabled.process(host, "nginx")
 
 
 # --- AuthorizedKeys ----------------------------------------------------------
@@ -2769,149 +2720,9 @@ async def test_processes_gather_fact_across_hosts():
     }
 
 
-# --- Sysctl --------------------------------------------------------------------
-
-
-async def test_sysctl_parses_pyintras_linux_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.Sysctl/sysctl_linux.json):
-    # command "sysctl -a 2>/dev/null || true", int values including a negative
-    # one, and a row without a separator ("nope what") skipped.
-    host = CannedShellHost(
-        "net.ipv4.tcp_adv_win_scale = -2\n"
-        "vm.nr_hugepages_mempolicy = 0\n"
-        "nope what\n"
-        "vm.nr_overcommit_hugepages = 0\n"
-    )
-    assert await Sysctl.process(host) == {
-        "net.ipv4.tcp_adv_win_scale": -2,
-        "vm.nr_hugepages_mempolicy": 0,
-        "vm.nr_overcommit_hugepages": 0,
-    }
-    assert host.shells == ["sysctl -a 2>/dev/null || true"]
-
-
-async def test_sysctl_parses_pyintras_macos_fixture():
-    # pyinfra's sysctl_macos.json fixture: BSD rows separate with ":".
-    host = CannedShellHost(
-        "security.mac.sysvmsg_enforce: 1\n"
-        "security.mac.sysvsem_enforce: 1\n"
-        "security.mac.sysvshm_enforce: 1\n"
-    )
-    assert await Sysctl.process(host) == {
-        "security.mac.sysvmsg_enforce": 1,
-        "security.mac.sysvsem_enforce": 1,
-        "security.mac.sysvshm_enforce": 1,
-    }
-
-
-async def test_sysctl_parses_pyintras_port_range_fixture():
-    # pyinfra's sysctl_port_range.json fixture: a tab-separated pair becomes
-    # a list of ints, a whitespace-only value keeps "", and a simple word
-    # stays a string.
-    host = CannedShellHost(
-        "net.ipv4.ip_local_port_range = 1024\t65535\n"
-        "net.ipv4.ip_local_reserved_ports = \n"
-        "kern.hostname: example\n"
-    )
-    assert await Sysctl.process(host) == {
-        "net.ipv4.ip_local_port_range": [1024, 65535],
-        "net.ipv4.ip_local_reserved_ports": "",
-        "kern.hostname": "example",
-    }
-
-
-def test_sysctl_command_quotes_the_named_keys():
-    assert Sysctl.command() == "sysctl -a 2>/dev/null || true"
-    # Safe tokens stay unquoted (pyinfra's QuoteString), multiple keys join
-    # with spaces, and a key carrying metacharacters is a literal lookup.
-    assert (
-        Sysctl.command(["kern.max-files"])
-        == "sysctl kern.max-files 2>/dev/null || true"
-    )
-    assert (
-        Sysctl.command(["a.b", "c.d"]) == "sysctl a.b c.d 2>/dev/null || true"
-    )
-    assert (
-        Sysctl.command(["kern.evil; whoami"])
-        == "sysctl 'kern.evil; whoami' 2>/dev/null || true"
-    )
-
-
-async def test_sysctl_keyed_read_over_the_shell():
-    host = CannedShellHost("kern.max-files = 2000\n")
-    assert await Sysctl.process(host, keys=["kern.max-files"]) == {
-        "kern.max-files": 2000
-    }
-    assert host.shells == ["sysctl kern.max-files 2>/dev/null || true"]
-
-
-def test_sysctl_parse_edge_cases():
-    # A value outside the simple character set stays the stripped raw
-    # string -- no int conversion, no list split.
-    assert Sysctl.parse(["kernel.core_pattern = |/usr/sbin/coredump %p"]) == {
-        "kernel.core_pattern": "|/usr/sbin/coredump %p"
-    }
-    # Mixed tokens int-convert individually; a single token collapses.
-    assert Sysctl.parse(["kern.mix = 1 two"]) == {"kern.mix": [1, "two"]}
-    assert Sysctl.parse(["kern.one = 42"]) == {"kern.one": 42}
-    # Truthiness is tested BEFORE stripping: "key =" (nothing after the
-    # separator) is skipped, "key = " (whitespace) keeps "".
-    assert Sysctl.parse(["kern.none =", "kern.blank = "]) == {"kern.blank": ""}
-    # "=" wins over ":" when both appear (the first split is on "=").
-    assert Sysctl.parse(["kern.both: x = 5"]) == {"kern.both: x": 5}
-
-
-async def test_sysctl_is_empty_on_empty_output():
-    # An unknown key or a failed read maps to {} (pyinfra's default = dict).
-    assert await Sysctl.process(CannedShellHost("")) == {}
-
-
-async def test_sysctl_reads_the_simulated_seam():
-    host = SimulatedHost(
-        name="h",
-        sysctls={"fs.file-max": 100000, "net.ipv4.ip_local_port_range": [1024, 65535]},
-    )
-    assert await Sysctl.process(host) == {
-        "fs.file-max": 100000,
-        "net.ipv4.ip_local_port_range": [1024, 65535],
-    }
-    # A keys filter selects the named settings; an unknown key reads as
-    # absent, like the swallowed sysctl error.
-    assert await Sysctl.process(host, keys=["fs.file-max"]) == {"fs.file-max": 100000}
-    assert await Sysctl.process(host, keys=["fs.file-max", "no.such"]) == {
-        "fs.file-max": 100000
-    }
-    assert await Sysctl.process(host, keys=["no.such"]) == {}
-    # The seam defaults to {} -- a simulated machine with no settings listed.
-    assert await Sysctl.process(SimulatedHost(name="h")) == {}
-
-
-async def test_sysctl_seam_returns_a_copy():
-    host = SimulatedHost(name="h", sysctls={"kern.pair": [1, 2]})
-    result = await Sysctl.process(host)
-    result["kern.pair"].append(3)
-    result["kern.extra"] = 0
-    assert host.sysctls == {"kern.pair": [1, 2]}
-
-
-async def test_sysctl_gather_fact_across_hosts():
-    hosts = [
-        SimulatedHost(name="web1", sysctls={"fs.file-max": 100000}),
-        SimulatedHost(name="web2", sysctls={"fs.file-max": 200000}),
-    ]
-    assert await gather_fact(hosts, Sysctl) == {
-        "web1": {"fs.file-max": 100000},
-        "web2": {"fs.file-max": 200000},
-    }
-    # The keys argument is forwarded to process verbatim.
-    assert await gather_fact(hosts, Sysctl, keys=["fs.file-max"]) == {
-        "web1": {"fs.file-max": 100000},
-        "web2": {"fs.file-max": 200000},
-    }
-    assert await gather_fact(hosts, Sysctl, keys=["no.such"]) == {
-        "web1": {},
-        "web2": {},
-    }
+# The Sysctl fact's tests were relocated to tests/modules/sysctl/test_sysctl.py
+# alongside the class itself (the sysctl namespace is the canonical home for
+# everything sysctl; server no longer exports the fact).
 
 
 # --- Timezone ----------------------------------------------------------------
@@ -3329,126 +3140,6 @@ async def test_which_gather_fact_forwards_the_command():
         "web1": "/usr/bin/python3",
         "web2": "/usr/local/bin/python3",
     }
-
-
-# --- server.service ----------------------------------------------------------
-
-
-def test_systemctl_command_shell_rendering():
-    assert SystemctlCommand(action="daemon-reload").shell() == "systemctl daemon-reload"
-    assert (
-        SystemctlCommand(action="start", unit="httpd.service").shell()
-        == "systemctl start httpd.service"
-    )
-    assert command_shell(
-        SystemctlCommand(action="enable", unit="httpd.service"), sudo=True
-    ) == ("sudo systemctl enable httpd.service")
-
-
-async def test_service_starts_an_inactive_unit():
-    host = SimulatedHost(name="h", services={"httpd.service": "inactive"})
-    ctx, commands = await materialize(host, op(server.service, service="httpd"))
-    assert ctx.changed
-    assert "will start" in ctx.reason
-    assert commands == [SystemctlCommand(action="start", unit="httpd.service")]
-
-
-async def test_service_treats_activating_as_not_running():
-    host = SimulatedHost(name="h", services={"httpd.service": "activating"})
-    _ctx, commands = await materialize(host, op(server.service, service="httpd"))
-    assert commands == [SystemctlCommand(action="start", unit="httpd.service")]
-
-
-async def test_service_no_change_when_already_running():
-    host = SimulatedHost(name="h", services={"httpd.service": "active"})
-    ctx, commands = await materialize(host, op(server.service, service="httpd"))
-    assert not ctx.changed
-    assert ctx.reason == "httpd.service already running"
-    assert commands == []
-
-
-async def test_service_stops_a_running_unit():
-    host = SimulatedHost(name="h", services={"httpd.service": "active"})
-    ctx, commands = await materialize(
-        host, op(server.service, service="httpd", running=False)
-    )
-    assert ctx.changed
-    assert commands == [SystemctlCommand(action="stop", unit="httpd.service")]
-
-
-async def test_service_restart_only_when_running():
-    running = SimulatedHost(name="h", services={"httpd.service": "active"})
-    ctx, commands = await materialize(
-        running, op(server.service, service="httpd", restarted=True)
-    )
-    assert ctx.changed
-    assert commands == [SystemctlCommand(action="restart", unit="httpd.service")]
-
-    stopped = SimulatedHost(name="h", services={"httpd.service": "inactive"})
-    _, commands = await materialize(
-        stopped, op(server.service, service="httpd", restarted=True)
-    )
-    # A stopped unit is started, not restarted (pyinfra's handle_service_control).
-    assert commands == [SystemctlCommand(action="start", unit="httpd.service")]
-
-
-async def test_service_enables_and_disables_on_boot():
-    host = SimulatedHost(name="h", services={"httpd.service": "active"})
-    ctx, commands = await materialize(
-        host, op(server.service, service="httpd", enabled=True)
-    )
-    assert ctx.changed
-    assert commands == [SystemctlCommand(action="enable", unit="httpd.service")]
-
-    host.enabled_services.add("httpd.service")
-    ctx, commands = await materialize(
-        host, op(server.service, service="httpd", enabled=True)
-    )
-    assert not ctx.changed
-    assert commands == []
-
-    ctx, commands = await materialize(
-        host, op(server.service, service="httpd", enabled=False)
-    )
-    assert commands == [SystemctlCommand(action="disable", unit="httpd.service")]
-
-
-async def test_service_enabled_none_leaves_boot_setting_alone():
-    host = SimulatedHost(name="h", services={"httpd.service": "active"})
-    ctx, commands = await materialize(host, op(server.service, service="httpd"))
-    assert commands == []
-    assert "enabled" not in ctx.reason
-
-
-async def test_service_daemon_reload_always_yields_first():
-    host = SimulatedHost(
-        name="h", services={"httpd.service": "inactive"}, enabled_services=set()
-    )
-    ctx, commands = await materialize(
-        host,
-        op(server.service, service="httpd", enabled=True, daemon_reload=True),
-    )
-    assert ctx.changed
-    assert commands == [
-        SystemctlCommand(action="daemon-reload"),
-        SystemctlCommand(action="start", unit="httpd.service"),
-        SystemctlCommand(action="enable", unit="httpd.service"),
-    ]
-
-
-async def test_service_commands_mutate_the_simulated_host():
-    host = SimulatedHost(name="h", services={"httpd.service": "inactive"})
-    for cmd in (
-        SystemctlCommand(action="start", unit="httpd.service"),
-        SystemctlCommand(action="enable", unit="httpd.service"),
-    ):
-        await send_command(host, cmd)
-    assert host.services == {"httpd.service": "active"}
-    assert host.enabled_services == {"httpd.service"}
-    await send_command(host, SystemctlCommand(action="stop", unit="httpd.service"))
-    await send_command(host, SystemctlCommand(action="disable", unit="httpd.service"))
-    assert host.services == {"httpd.service": "inactive"}
-    assert host.enabled_services == set()
 
 
 # --- server.group ------------------------------------------------------------

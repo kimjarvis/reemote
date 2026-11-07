@@ -9,6 +9,16 @@ per host -- and shows the same idea driven by the inventory's static
 classifiers: a single ``deploy`` generator that branches on ``host.name``,
 ``host.group`` and ``host.tags`` to select which roles each machine gets.
 
+The inventory is read from the project root's ``inventory.json`` (validated
+up front with ``validate_inventory``), the same file the other composition
+examples use. Its four hosts carry the classifiers the deploy branches on:
+``web1`` and ``web2`` are in the ``"centos"`` group, ``ubuntu`` is in the
+``"ubuntu"`` group, and ``alpine`` is in the ``"alpine"`` group and carries the
+``apk_package_manager`` tag. Each branch selects the package manager that
+matches its group -- ``dnf`` for the CentOS web role, ``apt`` for the Ubuntu
+database role, ``apk`` for the tag-selected Alpine tooling -- so the example
+also crosses module boundaries.
+
 The rule that makes this safe is the one ``composed_per_host_roles.py``
 states: never branch on a *mutable* fact inside a deploy body (the prepare and
 apply phases would flatten differently and ``run_apply`` would raise
@@ -17,7 +27,10 @@ apply phases would flatten differently and ``run_apply`` would raise
 entry and read identically in both phases, so ``deploy(host)`` produces the
 same per-host sequence every time the driver re-invokes it -- even though the
 sequences differ in length across hosts (a finished host simply idles at the
-lockstep barrier while the others run their extra steps).
+lockstep barrier while the others run their extra steps). The ``is_centos``
+predicate used for the web branch is the same stable, static-data guard the
+other examples pass as ``when``; here it drives an ``if`` because the point of
+this example is per-host *sequences*, not a shared schedule with skips.
 
 The roles are delegated with plain ``yield from`` -- the simplest composition,
 needing no helper because nothing is renamed or elevated at the composition
@@ -38,53 +51,63 @@ Run it with::
 
 import asyncio
 import copy
+import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 from reemote5 import (
     Host,
+    InventoryError,
     OperationRequest,
+    apk,
+    apt,
     dnf,
     format_log,
     format_plan,
     op,
     run,
+    validate_inventory,
 )
 
 # examples/demonstrations/composition/composed_group_tag_roles.py -> the
-# project root, so ``tests`` is importable whatever the working directory is
-# (running a script by path puts its own folder, not the root, on sys.path).
+# project root, so ``tests`` is importable and the inventory is found whatever
+# the working directory is (running a script by path puts its own folder, not
+# the root, on sys.path).
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tests.simulated_host import SimulatedHost
 
-# Inventory carrying the static classifiers the deploy branches on: ``group``
-# (a single label) and ``tags`` (an unordered list of labels). web1 and web2
-# share the ``webservers`` group; only web1 carries the ``canary`` tag; db1 is
-# the lone ``databases`` host.
-INVENTORY = [
-    {
-        "host": "web1",
-        "connection": {},
-        "group": "webservers",
-        "tags": ["web", "canary"],
-    },
-    {
-        "host": "web2",
-        "connection": {},
-        "group": "webservers",
-        "tags": ["web"],
-    },
-    {
-        "host": "db1",
-        "connection": {},
-        "group": "databases",
-        "tags": ["db"],
-    },
-]
+INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
+
+
+def load_inventory(path: Path) -> list[dict[str, Any]]:
+    """Read an inventory from a JSON file and validate it.
+
+    The file must hold a JSON array of inventory entries -- dictionaries
+    each carrying at least ``host`` and ``connection``. Returns the parsed
+    list, ready to hand to ``run`` (here materialized by the simulated
+    factory); raises ``InventoryError`` (via ``validate_inventory``) when the
+    document is not an array or an entry does not match the schema.
+    """
+    inventory = json.loads(path.read_text(encoding="utf-8"))
+    validate_inventory(inventory)
+    return inventory
+
+
+def is_centos(host: Host) -> bool:
+    """Static predicate: the host belongs to the inventory group ``"centos"``.
+
+    Reads only static inventory data (``host.group``), never a mutable fact,
+    and stays a stable module-level function. The other composition examples
+    pass it as a ``when`` guard; here it drives the web-role ``if`` branch,
+    which is safe for the same reason -- it reads identically in both phases.
+    """
+    return host.group == "centos"
+
 
 # Simulated pre-deployment state per host name (test-framework data, NOT
 # inventory): web2 already has nginx, so the web role's install is a no-op
@@ -113,32 +136,32 @@ def simulated_factory(entry: dict) -> SimulatedHost:
 
 
 def role_web(host: Host) -> Generator[OperationRequest]:
-    """The web-server role, applied to every host in the ``webservers`` group."""
+    """The web-server role, applied to every host in the ``centos`` group."""
     yield op(dnf.packages, name="Install nginx", packages=("nginx",), sudo=True)
 
 
-def role_canary(host: Host) -> Generator[OperationRequest]:
-    """Extra live-debugging tooling, applied to hosts tagged ``canary``."""
+def role_apk_tools(host: Host) -> Generator[OperationRequest]:
+    """Extra tooling, applied to hosts tagged ``apk_package_manager`` (Alpine)."""
     yield op(
-        dnf.packages,
-        name="Install canary tooling",
+        apk.packages,
+        name="Install apk tooling",
         packages=("strace", "tcpdump"),
         sudo=True,
     )
 
 
 def role_database(host: Host) -> Generator[OperationRequest]:
-    """The database role, applied to every host in the ``databases`` group."""
+    """The database role, applied to every host in the ``ubuntu`` group."""
     yield op(
-        dnf.packages,
+        apt.packages,
         name="Install postgresql",
-        packages=("postgresql-server",),
+        packages=("postgresql",),
         sudo=True,
     )
 
 
 def role_backup(host: Host) -> Generator[OperationRequest]:
-    """Backup tooling for one named host, selected by ``host.name``."""
+    """Backup tooling for one named host, selected by ``host.name`` (web1)."""
     yield op(dnf.packages, name="Install backup agent", packages=("rsync",), sudo=True)
 
 
@@ -146,36 +169,51 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     """Compose per host from the inventory's static classifiers.
 
     Three independent branch kinds, all reading data that is identical in the
-    prepare and apply phases: ``host.group`` selects the webservers/databases
-    roles, ``host.tags`` opts a host into the canary role, and ``host.name``
-    pins the backup role to db1. Because the branches are static, each host's
-    request sequence is stable across phases and lockstep pairing holds even
-    though the sequences differ in length.
+    prepare and apply phases: ``host.group`` selects the centos web role (via
+    ``is_centos``) and the ubuntu database role, ``host.tags`` opts a host into
+    the apk tooling role, and ``host.name`` pins the backup role to web1.
+    Because the branches are static, each host's request sequence is stable
+    across phases and lockstep pairing holds even though the sequences differ
+    in length.
     """
-    if host.group == "webservers":
+    if is_centos(host):
         yield from role_web(host)
-    if host.group == "databases":
+    if host.group == "ubuntu":
         yield from role_database(host)
-    if "canary" in host.tags:
-        yield from role_canary(host)
-    if host.name == "db1":
+    if "apk_package_manager" in host.tags:
+        yield from role_apk_tools(host)
+    if host.name == "web1":
         yield from role_backup(host)
 
 
 async def main() -> None:
-    # --dry: prepare phase only. web1 plans two operations (web + canary),
-    # web2 one (web, already installed -> no change), db1 two (database +
-    # backup). Nothing is executed.
+    try:
+        inventory = load_inventory(INVENTORY_PATH)
+    except (OSError, json.JSONDecodeError) as exc:
+        # The inventory file is missing, unreadable or not valid JSON. Python's
+        # own message already names the file and the reason; no host is
+        # contacted (the run is in memory), so there is no traceback to show.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except InventoryError as exc:
+        # The document parsed but did not match the inventory schema. The
+        # message names the offending entry by its list index.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+    print(", ".join(entry["host"] for entry in inventory))
+
+    # --dry: prepare phase only. web1 plans two operations (web + backup),
+    # web2 one (web, already installed -> no change), ubuntu one (database),
+    # alpine one (apk tooling). Nothing is executed.
     plans, _, _hosts = await run(
-        INVENTORY, deploy, host_factory=simulated_factory, dry=True
+        inventory, deploy, host_factory=simulated_factory, dry=True
     )
-    print("== Plan (prepare phase, --dry) ==")
+    print("\n== Plan (prepare phase, --dry) ==")
     print(format_plan(plans))
 
     # Apply phase: the SimulatedHost seam mutates in-memory state in lockstep.
-    _plans, report, hosts = await run(
-        INVENTORY, deploy, host_factory=simulated_factory
-    )
+    _plans, report, hosts = await run(inventory, deploy, host_factory=simulated_factory)
     print("\n== Run log (apply phase) ==")
     assert report is not None
     print(format_log(report))
@@ -183,9 +221,16 @@ async def main() -> None:
     print("\n== Final simulated state ==")
     for host in hosts:
         assert isinstance(host, SimulatedHost)
+        # Each group's packages live in its own manager's seam: dnf in
+        # ``packages``, apt in ``apt_packages``, apk in ``apk_packages``.
+        if is_centos(host):
+            installed = sorted(host.packages)
+        elif host.group == "ubuntu":
+            installed = sorted(host.apt_packages)
+        else:
+            installed = sorted(host.apk_packages)
         print(
-            f"{host.name}: group={host.group!r} tags={host.tags} "
-            f"packages={sorted(host.packages)}"
+            f"{host.name}: group={host.group!r} tags={host.tags} packages={installed}"
         )
 
 

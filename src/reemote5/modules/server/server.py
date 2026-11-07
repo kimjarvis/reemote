@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-# """The ``server`` module: systemd facts, ``Arch``, the ``group``/``service`` operations and waiting.
+# """The ``server`` module: host facts, ``Arch``, the ``group`` operation and waiting.
 #
 # Fact side (design doc section 5): ``Arch`` (the machine architecture from
 # ``uname -m``), ``AuthorizedKeys`` (the SSH public keys listed in a user's
@@ -24,12 +24,7 @@
 # ``/proc/self/mountinfo`` or the BSD ``mount`` variants), ``Path`` (the
 # current user's ``PATH`` environment variable, as the raw colon-separated
 # string), ``Processes`` (the running processes keyed by PID, parsed from
-# ``ps``), ``Sysctl`` (the sysctl settings keyed by name, parsed from
-# ``sysctl -a`` or the named keys), ``SystemdServiceState`` (a unit's
-# ``ActiveState`` -- ``active``, ``inactive``, ``activating``, ... -- read by
-# ``server.service`` to decide whether to start or stop, and polled by
-# ``server.wait_service``) and ``SystemdServiceEnabled`` (whether a unit is
-# enabled on boot), ``Timezone`` (the system timezone resolved from
+# ``ps``), ``Timezone`` (the system timezone resolved from
 # ``/etc/localtime``) and ``Uptime`` (the seconds since boot, from
 # ``/proc/uptime`` or the BSD boot-time difference), ``User`` (the
 # current user's name from ``echo $USER``), ``Users`` (the system users
@@ -44,7 +39,6 @@
 # ``server.kill`` plus the ``KillCommand`` descriptor it yields,
 # ``server.modprobe`` plus the ``ModprobeCommand`` descriptor it yields,
 # ``server.mount`` plus the ``MountCommand`` descriptor it yields,
-# ``server.service`` plus the ``SystemctlCommand`` descriptor it yields,
 # ``server.timezone`` plus the ``SetTimezoneCommand`` descriptor it yields, and
 # ``server.wait_service`` plus the ``WaitForFactCommand`` descriptor it yields.
 # ``server.group`` mirrors pyinfra's ``server.group`` for ``group``,
@@ -67,10 +61,14 @@
 # the ``Mounts`` fact (with a lookup-by-device fallback) and yields one
 # ``MountCommand`` -- a fresh ``mount``, an ``umount`` or an options remount
 # (the ``Kernel`` fact picks the BSD remount form).
-# ``server.service`` mirrors pyinfra's ``systemd.service`` for ``service``,
-# ``running``, ``restarted``, ``enabled`` and ``daemon_reload``; pyinfra's
-# ``reloaded``, ``command``, ``user_mode``, ``machine`` and ``user_name``
-# options are deliberately dropped.
+# ``server.service``, the ``SystemctlCommand`` descriptor and the
+# ``SystemdServiceState``/``SystemdServiceEnabled`` facts were relocated to
+# the ``systemd`` namespace and are re-exported here for backward
+# compatibility (``server.service`` is a deprecated alias of
+# ``systemd.service``). ``server.wait_service`` below still polls the
+# relocated ``SystemdServiceState`` fact. ``Sysctl`` was relocated to the
+# ``sysctl`` namespace -- the canonical home for everything sysctl -- and
+# is NOT re-exported here: ``reemote5.Sysctl`` now binds ``sysctl.Sysctl``.
 # ``server.timezone`` mirrors pyinfra's ``server.timezone`` for ``timezone``
 # on systemd systems only: it compares against the ``Timezone`` fact and
 # yields ``timedatectl set-timezone`` when they differ; pyinfra's non-systemd
@@ -103,36 +101,13 @@ import distro
 from ...commands import Command, WaitCommand, WaitTimeoutError
 from ...core import OpContext, OperationError
 from ...hosts import Host
-
-#: Unit suffixes systemd recognises; a bare name gets ``.service`` appended
-#: (pyinfra's ``systemd.service`` normalization).
-_UNIT_SUFFIXES = (
-    ".service",
-    ".socket",
-    ".device",
-    ".mount",
-    ".automount",
-    ".swap",
-    ".target",
-    ".path",
-    ".timer",
-    ".slice",
-    ".scope",
+from ..systemd.systemd import (
+    SystemctlCommand,
+    SystemdServiceEnabled,
+    SystemdServiceState,
+    service,
+    unit_name,
 )
-
-
-def unit_name(service: str) -> str:
-    """Normalize a service name to a full systemd unit name.
-
-    ``httpd`` becomes ``httpd.service``; a name already carrying a systemd
-    unit suffix (``logrotate.timer``, ``httpd.service``) is returned as is.
-    Both the facts and the operations key on the normalized name, so the
-    test framework's simulated state must use full unit names too.
-    """
-    if service.endswith(_UNIT_SUFFIXES):
-        return service
-    return f"{service}.service"
-
 
 # --- Facts -------------------------------------------------------------------
 
@@ -150,6 +125,12 @@ class Arch:
 
     ```python
     str
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -211,6 +192,12 @@ class AuthorizedKeys:
 
     ```python
     list[str]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError, ValueError
     ```
 
     Examples:
@@ -303,6 +290,12 @@ class Date:
     datetime | None
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/server/server_date.py``.
     """
@@ -360,6 +353,12 @@ class Groups:
 
     ```python
     list[str]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -430,6 +429,12 @@ class HasGui:
     bool
     ```
 
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/server/server_has_gui.py``.
     """
@@ -486,6 +491,12 @@ class Home:
 
     ```python
     str | None
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError, ValueError
     ```
 
     Examples:
@@ -557,6 +568,12 @@ class Hostname:
     str
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/server/server_hostname.py``.
     """
@@ -606,6 +623,12 @@ class Kernel:
 
     ```python
     str
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -660,6 +683,12 @@ class KernelModules:
 
     ```python
     dict[str, dict[str, Any]]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -799,6 +828,12 @@ class KernelVersion:
     str
     ```
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/server/server_kernel_version.py``.
     """
@@ -850,6 +885,12 @@ class Last:
 
     ```python
     list[dict[str, str]]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
     ```
 
     Examples:
@@ -990,6 +1031,12 @@ class LinuxDistribution:
 
     ```python
     dict[str, Any]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
     ```
 
     Examples:
@@ -1150,6 +1197,12 @@ class LinuxGui:
     list[str]
     ```
 
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/server/server_linux_gui.py``.
     """
@@ -1214,6 +1267,12 @@ class LinuxName:
     str | None
     ```
 
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/server/server_linux_name.py``.
     """
@@ -1251,6 +1310,12 @@ class Locales:
 
     ```python
     list[str]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -1305,6 +1370,12 @@ class LsbRelease:
 
     ```python
     dict[str, str]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -1404,6 +1475,12 @@ class Mounts:
 
     ```python
     dict[str, dict[str, Any]]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -1586,6 +1663,12 @@ class Path:
     str
     ```
 
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/server/server_path.py``.
     """
@@ -1653,6 +1736,12 @@ class Processes:
 
     ```python
     dict[int, dict[str, Any]]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, TypeError
     ```
 
     Examples:
@@ -1915,198 +2004,6 @@ class Processes:
         return cls.parse(stdout.splitlines(), kernel, busybox)
 
 
-class Sysctl:
-    """The sysctl settings, as a dict of key -> value.
-
-    **Commands:**
-
-    ```bash
-    sysctl -a 2>/dev/null || true
-    ```
-
-    **Returns:**
-
-    ```python
-    dict[str, Any]
-    ```
-
-    Examples:
-        Examples can be found in ``examples/modules/server/server_sysctl.py``.
-    """
-
-    # Mirrors pyinfra's ``server.Sysctl``: ``sysctl -a`` dumps every setting
-    # (or ``sysctl <key> ...`` when ``keys`` is given), with stderr discarded
-    # and the exit swallowed (``2>/dev/null || true``) so an unknown key or a
-    # missing binary never fails the read. Each row is ``key = value``
-    # (Linux) or ``key: value`` (BSD); a row carrying neither separator is
-    # skipped. A value made only of alphanumeric, ``_``, ``-``, ``.`` and
-    # whitespace characters is split on whitespace and each token
-    # int-converted when possible, a single token collapsing to a scalar;
-    # anything else stays the stripped raw string. For example::
-    #
-    #     {
-    #         "fs.inotify.max_queued_events": 16384,
-    #         "fs.inode-state": [44565, 360],
-    #     }
-    #
-    # A value that is only whitespace keeps ``""`` (it is truthy before the
-    # strip, pyinfra's check); a row with nothing at all after the separator
-    # is skipped. Empty output reads as ``{}`` (pyinfra's ``default = dict``).
-
-    #: Shell used to dump every sysctl setting over SSH.
-    COMMAND = "sysctl -a 2>/dev/null || true"
-
-    #: Values matching this pattern are whitespace-split and int-converted
-    #: (pyinfra's regex); anything else stays a raw string.
-    _SIMPLE_VALUE_RE = re.compile(r"^[a-zA-Z0-9_\-\.\s]+$")
-
-    @classmethod
-    def command(cls, keys: list[str] | None = None) -> str:
-        """Shell reads the named keys, or dumps every setting when None.
-
-        Each key is quoted normally (pyinfra's ``QuoteString``), so a key
-        carrying shell metacharacters is a literal lookup, never executed.
-        """
-        if keys is None:
-            return cls.COMMAND
-        quoted = " ".join(shlex.quote(key) for key in keys)
-        return f"sysctl {quoted} 2>/dev/null || true"
-
-    @classmethod
-    def parse(cls, output: Iterable[str]) -> dict[str, Any]:
-        """Parse ``sysctl`` rows into the key -> value dict.
-
-        Rows without a ``=`` or ``:`` separator are skipped; simple values
-        become ints (or lists of ints/strings), everything else stays the
-        stripped raw string. Pure and testable.
-        """
-        sysctls: dict[str, Any] = {}
-        for line in output:
-            if "=" in line:
-                key, value = line.split("=", 1)
-            elif ":" in line:
-                key, value = line.split(":", 1)
-            else:
-                continue
-            # pyinfra tests truthiness BEFORE stripping: "key = " (a
-            # whitespace-only value) keeps "", "key =" is skipped.
-            if not (key and value):
-                continue
-            key = key.strip()
-            value = value.strip()
-            if cls._SIMPLE_VALUE_RE.match(value):
-                tokens = [_try_int(token) for token in value.split()]
-                sysctls[key] = tokens[0] if len(tokens) == 1 else tokens
-            else:
-                sysctls[key] = value
-        return sysctls
-
-    @classmethod
-    async def process(
-        cls, host: Host, keys: list[str] | None = None
-    ) -> dict[str, Any]:
-        sysctls = getattr(host, "sysctls", None)
-        if sysctls is not None:
-            # SimulatedHost seam: key -> parsed value. Copy any list value so
-            # callers never mutate the simulated state; a keys filter selects
-            # the named settings, and an unknown key reads as absent, like
-            # the swallowed sysctl error.
-            wanted = list(sysctls) if keys is None else keys
-            return {
-                key: list(sysctls[key])
-                if isinstance(sysctls[key], list)
-                else sysctls[key]
-                for key in wanted
-                if key in sysctls
-            }
-        # Real transport: the sysctl dump (or named keys) over asyncssh.
-        stdout = await host.run_shell(cls.command(keys))
-        return cls.parse(stdout.splitlines())
-
-
-class SystemdServiceState:
-    """A unit's systemd ``ActiveState`` (``active``, ``inactive``, ...), or None.
-
-    **Commands:**
-
-    ```bash
-    systemctl show -p ActiveState --value <unit>
-    ```
-
-    **Returns:**
-
-    ```python
-    str | None
-    ```
-
-    Examples:
-        Examples can be found in ``examples/modules/server/wait_for_httpd.py``.
-    """
-
-    # ``None`` means systemd reported nothing for the unit (``systemctl`` is
-    # missing or failed); an unknown unit reports ``inactive``, as systemd
-    # does. The value is the raw state string so a predicate (``is_active``)
-    # can decide what counts as "ready" -- ``activating`` is deliberately not
-    # ``active``, which is exactly what ``server.wait_service`` waits through.
-
-    @classmethod
-    async def process(cls, host: Host, service: str) -> str | None:
-        unit = unit_name(service)
-        services = getattr(host, "services", None)
-        if services is not None:
-            # SimulatedHost seam: read the in-memory state directly.
-            return services.get(unit)
-        # Real transport: `systemctl show` over asyncssh. A failure exits
-        # non-zero with empty stdout (check is off in run_shell), which maps
-        # to None just like the simulated absent-unit case.
-        stdout = await host.run_shell(
-            f"systemctl show -p ActiveState --value {shlex.quote(unit)}"
-        )
-        return stdout.strip() or None
-
-
-class SystemdServiceEnabled:
-    """Whether a unit is enabled on boot.
-
-    **Commands:**
-
-    ```bash
-    systemctl show -p UnitFileState --value <unit>
-    ```
-
-    **Returns:**
-
-    ```python
-    bool
-    ```
-
-    Examples:
-        Examples can be found in ``examples/modules/server/wait_for_httpd.py``.
-    """
-
-    # Mirrors pyinfra's ``SystemdEnabled``: the unit's ``UnitFileState`` is
-    # read and ``enabled`` or ``static`` count as enabled; anything else
-    # (``disabled``, ``masked``, an empty answer) does not.
-
-    #: ``UnitFileState`` values that count as enabled (pyinfra's
-    #: ``SystemdEnabled.state_values``).
-    ENABLED_STATES = ("enabled", "static")
-
-    @classmethod
-    async def process(cls, host: Host, service: str) -> bool:
-        unit = unit_name(service)
-        enabled_services = getattr(host, "enabled_services", None)
-        if enabled_services is not None:
-            # SimulatedHost seam: read the in-memory state directly.
-            return unit in enabled_services
-        # Real transport: `systemctl show` over asyncssh; a failure's empty
-        # stdout maps to False.
-        stdout = await host.run_shell(
-            f"systemctl show -p UnitFileState --value {shlex.quote(unit)}"
-        )
-        return stdout.strip() in cls.ENABLED_STATES
-
-
 class Timezone:
     """The current system timezone (e.g. ``Europe/Amsterdam``).
 
@@ -2120,6 +2017,12 @@ class Timezone:
 
     ```python
     str
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -2177,6 +2080,12 @@ class Uptime:
 
     ```python
     int | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -2262,6 +2171,12 @@ class User:
     str
     ```
 
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/server/server_user.py``.
     """
@@ -2317,6 +2232,12 @@ class Users:
 
     ```python
     dict[str, dict[str, Any]]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
     ```
 
     Examples:
@@ -2467,6 +2388,12 @@ class Which:
     str | None
     ```
 
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/server/server_which.py``.
     """
@@ -2588,6 +2515,12 @@ async def group(
     Yields:
         Command: Generated group add/remove commands.
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/server/server_group.py``.
     """
@@ -2661,6 +2594,12 @@ async def hostname(
     Yields:
         Command: The hostname-setting command, when the name differs.
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/server/server_op_hostname.py``.
     """
@@ -2725,6 +2664,12 @@ async def kill(
 
     Yields:
         Command: The kill command, always (the operation is stateless).
+
+    **Raises:**
+
+    ```python
+    None
+    ```
 
     Examples:
         Examples can be found in ``examples/modules/server/server_kill.py``.
@@ -2802,6 +2747,12 @@ async def modprobe(
 
     Yields:
         Command: The modprobe command, when modules differ from the request.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
 
     Examples:
         Examples can be found in ``examples/modules/server/server_modprobe.py``.
@@ -2919,6 +2870,12 @@ async def mount(
         Command: The mount/unmount/remount command, when state or options
             differ from the request.
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/server/server_mount.py``.
     """
@@ -3000,105 +2957,11 @@ async def mount(
         ctx.reason = f"filesystem {path} is {'mounted' if mounted else 'not mounted'}"
 
 
-@dataclass(frozen=True)
-class SystemctlCommand(Command):
-    """One ``systemctl <action> [<unit>]`` invocation.
-
-    ``action`` is one of ``daemon-reload`` (no unit), ``start``, ``stop``,
-    ``restart``, ``enable`` or ``disable``.
-    """
-
-    action: str
-    unit: str | None = None  # None only for daemon-reload
-
-    def shell(self) -> str:
-        if self.unit is None:
-            return f"systemctl {self.action}"
-        return f"systemctl {self.action} {shlex.quote(self.unit)}"
-
-
-async def service(
-    ctx: OpContext,
-    service: str,
-    running: bool = True,
-    restarted: bool = False,
-    enabled: bool | None = None,
-    daemon_reload: bool = False,
-) -> AsyncGenerator[Command]:
-    """Manage the state of a systemd unit.
-
-    Args:
-        ctx (OpContext): Execution context for the operation.
-        service (str): Name of the unit (``httpd`` or ``httpd.service``; a
-            bare name gets ``.service`` appended).
-        running (bool, optional): Whether the unit should be running.
-            Defaults to True.
-        restarted (bool, optional): Whether to restart the unit (only if it
-            is already running). Defaults to False.
-        enabled (bool | None, optional): Whether the unit should be enabled
-            on boot; ``None`` leaves the boot setting alone. Defaults to None.
-        daemon_reload (bool, optional): Reload the systemd daemon to read
-            updated unit files before anything else. Defaults to False.
-
-    Yields:
-        Command: Generated systemctl commands.
-
-    Examples:
-        Examples can be found in ``examples/modules/server/wait_for_httpd.py``.
-    """
-
-    # Mirrors pyinfra's ``systemd.service``. ``daemon_reload`` and ``restarted``
-    # are stateless (always yield when set, like pyinfra's non-idempotent
-    # operations); ``running`` and ``enabled`` compare against the
-    # ``SystemdServiceState``/``SystemdServiceEnabled`` facts and yield only
-    # when the unit differs from the request. A unit is considered running
-    # only when its ``ActiveState`` is ``active``, so a ``start`` is issued for
-    # an ``activating`` unit too. The commands need root: flag the request
-    # ``sudo=True``. pyinfra's ``reloaded``, ``command``, ``user_mode``,
-    # ``machine`` and ``user_name`` options are not supported.
-    unit = unit_name(service)
-    reasons: list[str] = []
-
-    if daemon_reload:
-        ctx.changed = True
-        reasons.append("daemon-reload")
-        yield SystemctlCommand(action="daemon-reload")
-
-    state = await ctx.facts.get(SystemdServiceState, unit)
-    is_running = state == "active"
-
-    if running and not is_running:
-        ctx.changed = True
-        reasons.append(f"{unit} not running ({state}), will start")
-        yield SystemctlCommand(action="start", unit=unit)
-    elif not running and is_running:
-        ctx.changed = True
-        reasons.append(f"{unit} running, will stop")
-        yield SystemctlCommand(action="stop", unit=unit)
-    else:
-        reasons.append(f"{unit} already {'running' if running else 'stopped'}")
-
-    # Only restart a unit that is already running (a stopped one was just
-    # started above, or is meant to stay stopped).
-    if restarted and is_running:
-        ctx.changed = True
-        reasons.append(f"{unit} will restart")
-        yield SystemctlCommand(action="restart", unit=unit)
-
-    if enabled is not None:
-        is_enabled = await ctx.facts.get(SystemdServiceEnabled, unit)
-        if enabled and not is_enabled:
-            ctx.changed = True
-            reasons.append(f"{unit} not enabled, will enable")
-            yield SystemctlCommand(action="enable", unit=unit)
-        elif not enabled and is_enabled:
-            ctx.changed = True
-            reasons.append(f"{unit} enabled, will disable")
-            yield SystemctlCommand(action="disable", unit=unit)
-        else:
-            reasons.append(f"{unit} already {'enabled' if enabled else 'disabled'}")
-
-    ctx.reason = "; ".join(reasons)
+# ``SystemctlCommand`` and the ``service`` operation relocated to the
+# ``systemd`` namespace; both are re-exported above for backward
+# compatibility (``server.service`` is a deprecated alias of
+# ``systemd.service``). ``server.wait_service`` below still polls the
+# relocated ``SystemdServiceState`` fact.
 
 
 @dataclass(frozen=True)
@@ -3131,6 +2994,12 @@ async def timezone(
 
     Yields:
         Command: The timezone-setting command, when the zone differs.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, OperationError
+    ```
 
     Examples:
         Examples can be found in ``examples/modules/server/server_op_timezone.py``.
@@ -3254,6 +3123,12 @@ async def wait_service(
     Yields:
         Command: The wait command, always (a wait is not idempotent).
 
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, WaitTimeoutError
+    ```
+
     Examples:
         Examples can be found in ``examples/modules/server/wait_for_httpd.py``.
     """
@@ -3305,7 +3180,6 @@ __all__ = [
     "Processes",
     "SetHostnameCommand",
     "SetTimezoneCommand",
-    "Sysctl",
     "SystemctlCommand",
     "SystemdServiceEnabled",
     "SystemdServiceState",

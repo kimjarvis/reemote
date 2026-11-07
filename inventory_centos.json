@@ -6,7 +6,7 @@
       "username": "kjarvis",
       "key_path": "/home/kim/.ssh/id_ed25519"
     },
-    "group": "webservers",
+    "group": "centos",
     "tags": ["ubuntu_host", "web","apt_package_manager"]
   },
   {
@@ -16,7 +16,7 @@
       "username": "kjarvis",
       "key_path": "/home/kim/.ssh/id_ed25519"
     },
-    "group": "webservers",
+    "group": "centos",
     "tags": ["ubuntu_host", "web","apt_package_manager"]
   }
 ]

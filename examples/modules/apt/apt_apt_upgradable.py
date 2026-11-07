@@ -6,19 +6,30 @@
 This is a *usage* example, not part of the library. Like
 ``examples/modules/apt/apt_apt_packages.py``, it reads a single **fact**
 directly over the *real SSH transport* (asyncssh) instead of driving the
-two-phase execution model:
+two-phase execution model -- the target hosts are not hard-coded: the
+inventory comes from a JSON file, the way
+``examples/demonstrations/inventory/json_inventory_ubuntu.py`` loads it:
 
-1. Specify the target hosts as an *inventory*: a list of dictionaries with
-   each host's name plus its SSH ``connection`` information (address,
-   username and client key). The entry below is modeled on
-   ``examples/demonstrations/inventory/json_inventory_ubuntu.py`` -- it
-   carries the connection information of the same Ubuntu server that
-   ``inventory_ubuntu.json`` describes, hard-coded here instead of loaded
-   from the file.
+1. Read ``inventory.json`` in the project root and parse it as JSON
+   -- an inventory is just a list of dictionaries, which is exactly what
+   JSON expresses -- then validate it up front with
+   ``validate_inventory`` so a malformed file fails with an
+   ``InventoryError`` naming the offending entry, *before* any host is
+   materialized or connected.
 2. Materialize each entry into a plain ``Host`` with the default
    ``Host.from_inventory`` factory. Each ``Host`` lazily opens an asyncssh
    connection from its ``connection`` data when a fact is gathered.
-3. Gather ``AptUpgradable`` on every host at once with the driver's
+3. Guard the gather with a ``when`` predicate, the same style as the deploy
+   meta-parameter (see ``examples/demonstrations/composition/
+   composed_when_guard.py``): ``is_ubuntu`` reads only **static** inventory
+   data -- ``host.group`` -- and the fact is gathered on the hosts that pass
+   it. ``gather_fact`` itself takes no ``when`` parameter, so the predicate
+   filters the host list before the fan-out -- the direct equivalent of a
+   driver-side skip. The shared ``inventory.json`` holds one host in the
+   ``"ubuntu"`` group alongside hosts in other groups, so the run prints its
+   Ubuntu result plus a ``== Skipped (when guard is_ubuntu): ... ==`` line
+   naming every other one.
+4. Gather ``AptUpgradable`` on the guarded hosts at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
    mapping -- then print each host's sorted list of ``AptPackageUpgrade``
@@ -38,6 +49,11 @@ change-management and auditing view to read *before* executing
 every package an upgrade would move. The fact takes no arguments, so
 the default gather needs none.
 
+The path is resolved from ``__file__``, so the example works from any
+working directory. Point ``INVENTORY_PATH`` at your own file (or edit
+``inventory.json``) to target your machines; hosts outside the
+``"ubuntu"`` group are skipped by the ``when`` guard.
+
 Every host's connection is closed with ``aclose`` once the facts are gathered.
 ``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven
 by ``asyncio.run``.
@@ -50,44 +66,86 @@ Run it with::
 import asyncio
 import json
 import sys
+from pathlib import Path
+from typing import Any
 
 from reemote5 import (
     AptUpgradable,
     CommandError,
     Host,
     HostConnectionError,
+    InventoryError,
     gather_fact,
+    validate_inventory,
 )
 
-# The inventory: a real Ubuntu server and its SSH connection information,
-# supplied by the application to the library (the same connection data as
-# the inventory_ubuntu.json entry the JSON-inventory demonstration loads).
-# Host.from_inventory materializes each entry into a plain Host that
-# connects over asyncssh.
-INVENTORY = [
-    {
-        "host": "ubuntu",
-        "connection": {
-            "address": "192.168.0.221",
-            "username": "kjarvis",
-            "key_path": "~/.ssh/id_ed25519",
-        },
-        "group": "ubuntu",
-        "tags": ["ubuntu_host"],
-    },
-]
+# examples/modules/apt/apt_apt_upgradable.py -> the project root, so the
+# inventory is found whatever the current working directory is.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
+
+
+def load_inventory(path: Path) -> list[dict[str, Any]]:
+    """Read an inventory from a JSON file and validate it.
+
+    The file must hold a JSON array of inventory entries -- dictionaries
+    each carrying at least ``host`` and ``connection``. Returns the parsed
+    list, ready to materialize into hosts; raises ``InventoryError`` (via
+    ``validate_inventory``) when the document is not an array or an entry
+    does not match the schema.
+    """
+    inventory = json.loads(path.read_text(encoding="utf-8"))
+    validate_inventory(inventory)
+    return inventory
+
+
+def is_ubuntu(host: Host) -> bool:
+    """``when`` guard: the host belongs to the inventory group ``"ubuntu"``.
+
+    Reads only static inventory data (``host.group``, set by the ``"group"``
+    key of the inventory entry), never a mutable fact, and stays a stable
+    module-level function -- the two rules every ``when`` predicate follows
+    so both deploy phases reach the same eligibility decision.
+    """
+    return host.group == "ubuntu"
 
 
 async def main() -> None:
-    # Materialize every inventory entry up front so the fact can be gathered on
-    # all hosts at once.
-    hosts = [Host.from_inventory(entry) for entry in INVENTORY]
+    hosts: list[Host] = []
     try:
-        # Gather the fact across the whole inventory concurrently: gather_fact
+        inventory = load_inventory(INVENTORY_PATH)
+        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        print(", ".join(entry["host"] for entry in inventory))
+
+        # Materialize every inventory entry up front, then guard the gather
+        # below -- a skipped host never reaches the fan-out at all.
+        all_hosts = [Host.from_inventory(entry) for entry in inventory]
+        # Apply the ``when`` guard before the fan-out: gather_fact has no
+        # ``when`` parameter of its own, so filtering the host list with the
+        # predicate is the equivalent of the driver skipping a guarded
+        # request on ineligible hosts -- the skipped hosts are never
+        # connected, exactly as a skipped request is never materialized.
+        hosts = [host for host in all_hosts if is_ubuntu(host)]
+        skipped = [host.name for host in all_hosts if host not in hosts]
+        if skipped:
+            print("\n== Skipped (when guard is_ubuntu): " + ", ".join(skipped) + " ==")
+        # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans AptUpgradable.process out with asyncio.gather and returns a
         # host-name-keyed mapping. process runs apt list --upgradable over SSH
         # and parses the rows into sorted {name, installed, candidate} entries.
         upgradable = await gather_fact(hosts, AptUpgradable)
+    except (OSError, json.JSONDecodeError) as exc:
+        # The inventory file is missing, unreadable or not valid JSON. Python's
+        # own message already names the file and the reason, so print just that
+        # -- no host was contacted and there is no traceback worth showing.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except InventoryError as exc:
+        # The document parsed but did not match the inventory schema. The
+        # message names the offending entry by its list index, which is the
+        # whole report -- and it fails before any host is materialized.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     except (CommandError, HostConnectionError) as exc:
         # The library reports an unreachable host or a failed fact command as a
         # typed error whose message already names the host (a missing apt

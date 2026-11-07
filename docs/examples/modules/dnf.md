@@ -12,6 +12,21 @@ examples in `examples/modules/dnf/`. They are not rendered here — each reads a
 single fact, and the facts themselves are documented on the
 [`dnf` module page](../../modules/dnf.md).
 
+Every script reads the shared project-root `inventory.json` (validated up
+front with `validate_inventory`) and guards on the `"centos"` group with a
+stable module-level `is_centos` predicate (`host.group == "centos"`), the
+same convention as the
+[`composition` demonstrations](../demonstrations/composition.md). The
+operation examples carry `when=is_centos` on every request: the driver skips
+a rejected request without materializing it, so on the Alpine and Ubuntu
+hosts neither the `dnf` commands nor the facts behind them run, and plan and
+log render `[skipped: when guard is_centos]` in the request's lockstep slot.
+The read-only fact examples guard differently by necessity — `gather_fact`
+takes no `when` parameter, so their predicate filters the host list before
+the fan-out and the run prints a `== Skipped (when guard is_centos): ... ==`
+line. The shared inventory holds two CentOS hosts (`web1`, `web2`) alongside
+hosts in other groups, so the skip is visible on every run.
+
 ## The base example
 
 The starting point for everything below: a single flat deploy generator

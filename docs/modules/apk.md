@@ -32,6 +32,7 @@
         - autoremove
         - hold
         - packages
+        - repository
         - virtual
 
 
@@ -67,10 +68,13 @@ package* group (`apk add -t <tag>` to create it, `apk del <tag>` to remove
 it) with world-name idempotence against `ApkExplicitPackages`' entries, and the
 `apk.hold` operation, the apk counterpart of `apt.mark`, which pins packages
 back from upgrades (`apk add <pkg>=<version>` to hold, `apk add <pkg>` to
-release the pin) with version-aware idempotence against `ApkHeldPackages`.
-pyinfra's
-remaining `apk` operations (`apk.upgrade`, `apk.key`, `apk.repo`) are not
-migrated.
+release the pin) with version-aware idempotence against `ApkHeldPackages`,
+and the `apk.repository` operation, a reemote5 original modeled on
+`apt.repo` that ensures one repository line in `/etc/apk/repositories`
+with entry-aware idempotence against `ApkRepositories`. pyinfra's `apk`
+namespace ships only `upgrade`, `update` and `packages` — it has no
+repository or key operation at all — and its remaining `apk.upgrade` is
+not migrated.
 
 ## Facts
 
@@ -397,6 +401,33 @@ so flag the request `sudo=True`, `doas=True` or `su=True` — stock Alpine
 ships no `sudo`, so `doas` is usually the escalator on an apk host (see its
 passwordless `doas -n` prerequisites above).
 
+`apk.repository` ensures one repository line in `/etc/apk/repositories` —
+a reemote5 original modeled on [`apt.repo`][reemote5.modules.apt.apt.repo]:
+pyinfra's `apk` namespace ships no repository operation, so the
+[`ApkRepositories`][reemote5.modules.apk.apk.ApkRepositories] fact had no
+write counterpart. `src` is one line — a bare URL or an `@tag URL` line —
+and `present` selects the direction. Presence is decided by parsing `src`
+with `ApkRepositories.parse` and comparing the resulting `ApkRepository`
+entry (url and tag) against the fact's entries, so a tagged `@testing URL`
+line and the bare URL are *distinct* repositories. Absent and wanted
+yields one `sh -c 'echo <line> >> /etc/apk/repositories'` append (the
+redirect wrapped inside the elevated shell — a bare `doas echo ... >>`
+would open the redirect as the login user and fail on the root-owned
+file); present and unwanted yields one `sed -i` delete whose pattern
+escapes every regex metacharacter so the line matches literally. An
+unparseable `src` (a lone `@tag`, several URLs on one line) raises
+`ValueError` while materializing, a deliberate hardening over `apt.repo`'s
+pyinfra-inherited tolerance. The removal sed is a *contains* match like
+`apt.repo`'s, so removing a bare URL also drops a tagged line carrying it;
+gate removals on the exact line when both variants are configured. There
+is no `filename` option — apk reads exactly one repositories file, with no
+`sources.list.d` drop-in directory — and refreshing the package index
+after a change is out of scope: sequence an `apk update` (e.g.
+`server.shell`) after the operation when needed. Writing the file needs
+root, so flag the request `sudo=True`, `doas=True` or `su=True` — stock
+Alpine ships no `sudo`, so `doas` is usually the escalator on an apk host
+(see its passwordless `doas -n` prerequisites above).
+
 --->
 
 
@@ -423,7 +454,10 @@ operation: it installs packages by name with exact-version idempotence,
 yielding the same request twice so the second is a guaranteed no-op in the
 apply phase. The `apk_autoremove.py` script demonstrates `apk.autoremove`
 the same way — it yields the purge request twice so the second is a
-guaranteed no-op once the first cleanup left nothing purgable. Both are
+guaranteed no-op once the first cleanup left nothing purgable. The
+`apk_repository.py` script demonstrates `apk.repository`: it ensures the
+community repository line, yielding the same request twice so the second
+is a guaranteed no-op once the first append landed. All are
 rendered on the [apk examples page](../examples/modules/apk.md).
 
 --->

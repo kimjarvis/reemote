@@ -32,6 +32,15 @@ Combining escalations. An operation may be flagged ``doas=True`` together with
 and ``su`` the innermost (``doas -n ... sudo ... su <user> -c ...``). This
 example uses ``doas`` alone.
 
+The hosts come from the shared ``inventory.json`` in the project root, read by
+``load_inventory`` and validated. ``is_centos`` (``host.group == "centos"``) is
+composed onto the deploy with ``sub_deploy(..., when=is_centos)``, so the
+``dnf`` work runs only on the ``centos`` hosts and is skipped -- facts included
+-- on the rest; the inner operations carry no ``when`` of their own. The
+``privilege`` section this demo needs is not in the shared file, so ``main``
+attaches it to the loaded ``centos`` entries: privilege stays an *inventory*
+parameter, never a deploy-script one.
+
 The rendered log shows the credential-free ``$ doas -n dnf install -y httpd``:
 ``format_log`` renders command descriptors through ``command_shell``, which never
 carries a credential -- and for doas there is none to carry anyway.
@@ -52,13 +61,17 @@ Run it with::
 """
 
 import asyncio
+import json
 import sys
 from collections.abc import Generator
+from pathlib import Path
+from typing import Any
 
 from reemote5 import (
     CommandError,
     Host,
     HostConnectionError,
+    InventoryError,
     OperationRequest,
     PrivilegeError,
     dnf,
@@ -67,31 +80,48 @@ from reemote5 import (
     format_plan,
     op,
     run,
+    sub_deploy,
+    validate_inventory,
 )
 
 HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
 
-# A single real host. ``connection.username`` (kjarvis) is the login user;
-# ``privilege.doas_user`` is the ``doas`` target -- ``root`` here, because
-# installing packages needs superuser. ``root`` is ``doas``'s own default target,
-# so the command sent is a bare ``doas -n dnf install ...`` with no explicit
-# user. There is NO password: doas is passwordless in reemote5, so the host must
-# grant kjarvis a ``permit nopass`` rule in ``/etc/doas.conf`` -- e.g.
-# ``permit nopass kjarvis``. The deploy script supplies neither the user nor a
-# credential -- it only asks for ``doas=True``.
-INVENTORY = [
-    {
-        "host": "centos9-doas",
-        "connection": {
-            "address": "192.168.0.141",
-            "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
-        },
-        "privilege": {
-            "doas_user": "root",
-        },
-    },
-]
+# The shared inventory in the project root -- the same inventory.json the
+# library's other examples read.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
+
+# The privilege section this demo attaches to the loaded ``centos`` inventory
+# entries (the shared file carries none). ``doas_user`` is the ``doas`` target
+# -- ``root`` here, because installing packages needs superuser. ``root`` is
+# ``doas``'s own default target, so the command sent is a bare
+# ``doas -n dnf install ...`` with no explicit user. There is NO password: doas
+# is passwordless in reemote5, so the host must grant the login user a
+# ``permit nopass`` rule in ``/etc/doas.conf`` -- e.g. ``permit nopass kim``.
+# The deploy script supplies neither the user nor a credential -- it only asks
+# for ``doas=True``.
+PRIVILEGE = {"doas_user": "root"}
+
+
+def load_inventory(path: Path) -> list[dict[str, Any]]:
+    """Read an inventory from a JSON file and validate it.
+
+    ``json.loads`` parses the file into a list of entry dicts, and
+    ``validate_inventory`` checks every entry against the inventory schema --
+    a malformed file raises before any connection is attempted.
+    """
+    inventory = json.loads(path.read_text(encoding="utf-8"))
+    validate_inventory(inventory)
+    return inventory
+
+
+def is_centos(host: Host) -> bool:
+    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+
+    Reads only the host's static ``group`` field, so it is deterministic across
+    the prepare and apply phases.
+    """
+    return host.group == "centos"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
@@ -99,11 +129,13 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
     Branch-free, so the request sequence is identical in the prepare and apply
     phases, and both operations are flagged ``doas=True``. Neither names a target
-    user -- the inventory's ``privilege`` section does.
+    user -- the inventory's ``privilege`` section does. Neither carries a
+    ``when``: the ``is_centos`` group guard is composed onto the whole deploy
+    below, so it need not be repeated on the inner operations.
     """
-    yield op(dnf.packages, name="Install httpd", packages=("httpd",),
-             present=True,
-             doas=True)
+    yield op(
+        dnf.packages, name="Install httpd", packages=("httpd",), present=True, doas=True
+    )
     yield op(
         files.file,
         name="Remove welcome configuration",
@@ -113,18 +145,44 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     )
 
 
+# The group guard, composed once at the outermost level: every request above
+# runs only on a ``centos`` host, and a skipped request is never materialized,
+# so its facts (``DnfPackages``, the welcome file's ``FilesInfo``) are never
+# read on the other hosts either.
+deploy = sub_deploy(deploy, when=is_centos)
+
+
 async def main() -> None:
+    try:
+        inventory = load_inventory(INVENTORY_PATH)
+    except (OSError, json.JSONDecodeError) as exc:
+        # The inventory file itself is missing or not valid JSON.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except InventoryError as exc:
+        # The file parsed, but an entry violates the inventory schema.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+
+    # The shared inventory carries no privilege section; attach this demo's to
+    # the centos entries, so elevation stays an inventory parameter and the
+    # credential is scoped to the group that actually elevates.
+    for entry in inventory:
+        if entry.get("group") == "centos":
+            entry["privilege"] = dict(PRIVILEGE)
+
+    print(f"== Inventory loaded from {INVENTORY_PATH} ==")
     try:
         # --dry: prepare phase only. Facts are still gathered over SSH
         # (read-only) so the plan reflects the host's real pre-deployment state;
         # no command that mutates the host is sent.
-        plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
+        plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))
 
         # Real run: prepare, then apply over SSH, running each ``doas=True``
         # command as the inventory's doas target via passwordless ``doas -n``.
-        plans, report, _hosts = await run(INVENTORY, deploy)
+        plans, report, _hosts = await run(inventory, deploy)
         print("\n== Run log (apply phase) ==")
         assert report is not None
         print(format_log(report))

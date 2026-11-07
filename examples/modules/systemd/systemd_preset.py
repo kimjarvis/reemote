@@ -1,0 +1,148 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
+"""Apply a unit's vendor preset policy with ``systemd.preset``.
+
+This is a *usage* example, not part of the library. It shows how an
+application drives reemote5's two-phase execution model end to end over a
+**real SSH transport** (asyncssh):
+
+1. Read the target hosts from ``inventory.json`` in the project root and
+   validate it up front with ``validate_inventory``, so a malformed file
+   fails with an ``InventoryError`` before any host is connected.
+2. Build the deploy script as a generator yielding ``OperationRequest``
+   objects, each guarded by a ``when`` predicate.
+3. Run the prepare phase to get a plan, and the apply phase to execute it.
+
+Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
+via ``run``'s ``host_factory`` and never touches the network -- this example
+uses the *default* factory (``Host.from_inventory``), opening real asyncssh
+connections that ``run`` closes when it finishes. The path is resolved from
+``__file__``, so the example works from any working directory.
+
+``systemd.preset`` is a reemote5 original. A distribution ships *preset*
+policies (``/usr/lib/systemd/system-preset``) saying which units should be
+enabled or disabled by default; ``systemctl preset <unit>`` applies that policy
+rather than an operator's explicit choice. The operation reads the
+``SystemdUnitFiles`` fact and yields ``systemctl preset <unit>`` only when the
+unit's current ``state`` differs from its ``preset`` policy -- a unit already
+matching its preset, or one with no policy at all, is a no-op, and a unit absent
+from the table is reported rather than preset blindly. ``all_units=True`` would
+instead issue a stateless ``systemctl preset-all`` for every unit.
+
+The script yields the *same* request twice to show idempotence across the two
+phases: the prepare phase plans both as changes when httpd's state differs from
+its preset (nothing is sent in prepare), while the apply phase presets on the
+first and reports the second as a no-op, because the fresh per-step fact cache
+now sees the state the preset produced.
+
+``systemctl preset`` writes root-owned boot state, so the requests are flagged
+``sudo=True``. The scope flags (``user_mode``/``machine``/``user_name``) stay at
+their system-scope defaults. Every request carries ``when=is_systemd``, reading
+only static ``host.group`` so the OpenRC ``alpine`` host is skipped rather than
+failing on a missing ``systemctl``.
+
+Run it with::
+
+    uv run python examples/modules/systemd/systemd_preset.py
+"""
+
+import asyncio
+import json
+import sys
+from collections.abc import Generator
+from pathlib import Path
+from typing import Any
+
+from reemote5 import (
+    CommandError,
+    Host,
+    HostConnectionError,
+    InventoryError,
+    OperationRequest,
+    PrivilegeError,
+    format_log,
+    format_plan,
+    op,
+    run,
+    systemd,
+    validate_inventory,
+)
+
+# examples/modules/systemd/systemd_preset.py -> the project root.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
+
+# The unit to preset. A bare name gets ``.service`` appended.
+UNIT = "httpd"
+
+
+def load_inventory(path: Path) -> list[dict[str, Any]]:
+    """Read an inventory from a JSON file and validate it."""
+    inventory = json.loads(path.read_text(encoding="utf-8"))
+    validate_inventory(inventory)
+    return inventory
+
+
+def is_systemd(host: Host) -> bool:
+    """``when`` guard: the host runs systemd rather than OpenRC.
+
+    Reads only static inventory data (``host.group``), never a mutable fact,
+    and stays a stable module-level function so both deploy phases reach the
+    same eligibility decision and the determinism guard holds.
+    """
+    return host.group != "alpine"
+
+
+def deploy(host: Host) -> Generator[OperationRequest]:
+    """Apply httpd's preset policy -- twice, to show idempotence.
+
+    Branch-free, so the request sequence is identical in the prepare and apply
+    phases; the ``when=is_systemd`` guard expresses eligibility, not an ``if``.
+    """
+    yield op(
+        systemd.preset,
+        name="Apply httpd preset",
+        unit=UNIT,
+        sudo=True,
+        when=is_systemd,
+    )
+    yield op(
+        systemd.preset,
+        name="Re-apply httpd preset (no-op)",
+        unit=UNIT,
+        sudo=True,
+        when=is_systemd,
+    )
+
+
+async def main() -> None:
+    try:
+        inventory = load_inventory(INVENTORY_PATH)
+        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        print(", ".join(entry["host"] for entry in inventory))
+
+        # --dry: prepare phase only. Facts are gathered over SSH (read-only) so
+        # the plan reflects each host's real state; no mutating command is sent.
+        plans, _, _hosts = await run(inventory, deploy, dry=True)
+        print("\n== Plan (prepare phase, --dry) ==")
+        print(format_plan(plans))
+
+        # Real run: prepare, then apply in lockstep across hosts over SSH.
+        plans, report, _hosts = await run(inventory, deploy)
+        print("\n== Run log (apply phase) ==")
+        assert report is not None
+        print(format_log(report))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except InventoryError as exc:
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
