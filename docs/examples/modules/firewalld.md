@@ -22,13 +22,24 @@ daemon, or a host without firewalld) rather than failing, so every gather
 is safe on any Linux target — point `INVENTORY` at your own machines
 before executing.
 
+The demo hosts ship without firewalld, so every operation script below
+first drives a small idempotent *install deploy* (`dnf.packages` for
+`firewalld` plus `systemd.service` to start/enable the daemon, both under
+`sudo=True`) before running its own deploy. firewalld's daemon performs
+the privileged kernel work, so `firewall-cmd` mutations succeed even when
+sudo lands in a confined SELinux domain — unlike the raw `iptables`
+examples, whose netlink calls the confined domain blocks.
+
 ## Creating a custom zone (then reloading it into runtime)
 
 The zone operation: `firewalld.zone` manages a zone's existence and
 properties, idempotent on the
 [`FirewalldZones`][reemote5.modules.firewalld.firewalld.FirewalldZones]
 fact. Existence is permanent-only — `--new-zone` has no runtime form —
-while target/short/description changes dual-apply (permanent first). The
+and so are the target/short/description properties: firewall-cmd rejects
+a runtime `--set-target`/`--set-short`/`--set-description` ("Option can be
+used only with --permanent"), so they are set in the permanent scope and
+the runtime copy inherits them on the reload below. The
 script ensures a `webapp` zone with an ACCEPT target twice (the second a
 guaranteed no-op in the apply phase through the fresh per-step fact
 cache) and then yields [`firewalld.reload`][reemote5.modules.firewalld.firewalld.reload]

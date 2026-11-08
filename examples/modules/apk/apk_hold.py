@@ -44,7 +44,7 @@ the newest ``ApkInstalledPackages`` reports -- which is the usual "freeze these 
 is on the box now" patch-window move; a name that is not installed cannot be
 pinned this way (there is no version to pin to) and is reported rather than
 held. Given (as for ``openssl`` below), it is an explicit constraint: a bare
-``1.2.3-r0`` is normalized to ``=1.2.3-r0``, while an operator-led ``~3.3`` or
+``1.2.3-r0`` is normalized to ``=1.2.3-r0``, while an operator-led ``>=3.0`` or
 ``<2.0`` is kept as written, and the pin is written whether or not the package
 is installed yet.
 
@@ -127,11 +127,15 @@ from reemote5 import (
 HELD_PACKAGES = ("busybox", "musl")
 
 # A single package pinned to an explicit constraint instead of its installed
-# version: ``~3.3`` holds openssl to any 3.3.x, and the pin is written whether
-# or not that series is installed yet. Passed as a bare string to show the
-# one-name shorthand (the operation normalizes it to a one-item tuple).
+# version: ``>=3.0`` holds openssl to any 3.x or newer, and the pin is written
+# whether or not the package is installed yet (openssl is not installed on the
+# demo host, so this also exercises the install-and-pin path). The constraint
+# must be satisfiable by the repository: the demo Alpine host ships openssl
+# 3.5.x, so the old ``~3.3`` pin failed with "unable to select packages" --
+# ``>=3.0`` is satisfied by 3.5.x. Passed as a bare string to show the one-name
+# shorthand (the operation normalizes it to a one-item tuple).
 PINNED_PACKAGE = "openssl"
-PINNED_VERSION = "~3.3"
+PINNED_VERSION = ">=3.0"
 
 # Every name the release direction drops the pin from: the two installed-version
 # holds plus the explicit openssl pin. Tuple concatenation keeps it hashable.
@@ -180,7 +184,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     hold pins ``busybox`` and ``musl`` to their installed versions; the second
     carries the same arguments and is a guaranteed no-op in the apply phase,
     because the first pin is already visible through the fresh per-step fact
-    cache. The openssl request pins one name to an explicit ``~3.3``
+    cache. The openssl request pins one name to an explicit ``>=3.0``
     constraint. The two release requests then drop every pin, the second a
     no-op for the same reason.
 
@@ -208,7 +212,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     )
     yield op(
         apk.hold,
-        name="Pin openssl to an explicit ~3.3 constraint",
+        name="Pin openssl to an explicit >=3.0 constraint",
         packages=PINNED_PACKAGE,
         version=PINNED_VERSION,
         doas=True,

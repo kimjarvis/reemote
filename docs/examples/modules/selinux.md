@@ -23,6 +23,24 @@ guard: every target is an SELinux (RHEL-family) host, so the
 `semanage`/`semodule`/`sestatus` shells are meant to run on all of them —
 point `INVENTORY` at your own machines before executing.
 
+**Host-policy prerequisite for the mutating operations.** The tools these
+scripts drive (`semanage`, `semodule`, `setsebool`, `chcon`, `restorecon`
+from `policycoreutils`/`checkpolicy`) are already installed on the demo
+hosts and every request is correctly flagged `sudo=True`. What the
+mutations additionally need is an **unconfined sudo domain**: they rewrite
+the root-owned policy store under `/var/lib/selinux` and relabel root-owned
+files. On the demo hosts sudo lands in the confined `staff_t` domain, which
+cannot access that store, so `semanage`/`semodule` fail with "SELinux policy
+is not managed or store cannot be accessed" and `chcon`/`restorecon` with
+"Permission denied" — even though `httpd` (and thus `/var/www/html`) is
+installed. This is a host-policy prerequisite, not a script gap: the host
+admin must map the login's sudo role to an unconfined domain (e.g.
+`unconfined_t`) or run the target domain permissive before these examples
+can apply. The read-only fact gathers and `selinux.mode` (which only reads
+or calls `setenforce`) are unaffected. `selinux.module` also needs its
+operator-supplied compiled package at `/tmp/myhttpd.pp` (upload it with
+`files.put` first — the library ships no on-host policy compiler).
+
 ## Enabling a boolean persistently
 
 The boolean operation: `selinux.boolean` sets one kernel security boolean

@@ -31,6 +31,14 @@ no-op in the apply phase, because the first set is visible to it through
 the fresh per-step fact cache (in the prepare phase, where nothing is
 sent, both plan as changes).
 
+**Host prerequisite.** This example needs the ``lxc`` CLI and a running,
+initialized LXD daemon (login user in the ``lxd`` group for fact reads;
+operations ride ``sudo=True``). The demo CentOS hosts have neither: LXD is
+snap-only on EL9 and their ``staff_t``-confined sudo cannot create ``/snap``
+or reach ``/run/snapd.socket``, so it cannot be installed. Compile-checked
+and exercised by the offline harness, not run against shared hosts; point
+``INVENTORY`` at LXD-enabled machines (or relax the demo hosts) to run live.
+
 Run it with::
 
     uv run python examples/modules/lxd/lxd_instance_config.py

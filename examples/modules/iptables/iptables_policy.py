@@ -33,6 +33,12 @@ The deploy yields the same policy request twice: in the prepare phase
 second request's fresh per-step fact cache sees the first ``-P`` and
 reports the policy is already DROP.
 
+The demo hosts ship without ``iptables`` or ``ipset``, so the deploy
+opens with an idempotent ``dnf.packages`` install under ``sudo=True``.
+The iptables facts are exit-masked, so the prepare phase reads them even
+before the binary is present; in apply the install runs first and the
+mutation that follows rides the freshly installed binary.
+
 Run it with::
 
     uv run python examples/modules/iptables/iptables_policy.py
@@ -48,6 +54,7 @@ from reemote5 import (
     HostConnectionError,
     OperationRequest,
     PrivilegeError,
+    dnf,
     format_log,
     format_plan,
     iptables,
@@ -88,6 +95,12 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     iptables -P needs CAP_NET_ADMIN, so every request is flagged
     ``sudo=True`` and rides under root.
     """
+    yield op(
+        dnf.packages,
+        name="Install iptables and ipset",
+        packages=("iptables", "ipset"),
+        sudo=True,
+    )
     yield op(
         iptables.policy,
         name="Drop forwarded traffic by default",

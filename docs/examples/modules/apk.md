@@ -79,8 +79,13 @@ as an entry name in the world — so re-running is a no-op. The script wraps a
 compile in the classic
 Alpine pattern: create a `.build-deps` group, then remove it, yielding each
 request twice so the second create and the second remove are guaranteed no-ops
-in the apply phase through the fresh per-step fact cache. Creating and removing
-both write the root-owned apk database and world file, so the requests are
+in the apply phase through the fresh per-step fact cache. The group's members
+are the lightweight `tcc` + `musl-dev` + `make` toolchain — `tcc` (the Tiny C
+Compiler, ~25 KiB) is a real C compiler used here in place of `gcc`, whose
+~159 MiB installed size does not fit the small demo Alpine host's disk (the
+earlier `gcc` member failed with "No space left on device"); the
+create-then-tear-down mechanics are identical for any member set. Creating and
+removing both write the root-owned apk database and world file, so the requests are
 flagged `doas=True` and the driver elevates the commands — `doas` rather than
 `sudo` because the Alpine host ships no `sudo` (a `sudo apk add -t` would
 fail with exit 127 before reaching `apk`) and `doas` is passwordless, so the
@@ -116,7 +121,10 @@ when its world constraint matches the wanted pin, so re-running is a no-op
 and re-pinning to a *different* version is detected. With `version` omitted,
 each name is pinned to its currently installed version (`ApkInstalledPackages`'
 newest); pass `version` to pin to an explicit constraint (`1.2.3-r0`,
-`~1.2`, `<2.0`) or to pin a package that is not yet installed. The script
+`~1.2`, `<2.0`) or to pin a package that is not yet installed — the constraint
+must be satisfiable by the repository, so the demo pins `openssl` (absent on
+the host) with `>=3.0`, which the repo's 3.5.x satisfies, rather than an
+`~3.3` pin that would fail with "unable to select packages". The script
 holds a package twice — the second is a guaranteed no-op in the apply phase,
 because the first pin is visible to it through the fresh per-step fact cache
 (in the prepare phase, where nothing is sent, both plan as changes) — then

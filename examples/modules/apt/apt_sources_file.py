@@ -48,11 +48,18 @@ fact reads the file's content (None when absent), so ``present=False`` yields
 
 ``apt.sources_file`` compares every desired entry against the ``AptSources``
 fact, so a file whose repositories are all already configured is a no-op.
-The script yields the *same* request twice to show that idempotence across
-the two phases: the prepare phase plans both as changes (nothing is written
-yet, so both compare against the same pre-deployment sources), while the
-apply phase writes on the first and reports the second as a no-op, because
-the fresh per-step fact cache now sees the entries the first step wrote.
+The script yields the *same* write request twice to show that idempotence
+across the two phases: the prepare phase plans both as changes (nothing is
+written yet, so both compare against the same pre-deployment sources), while
+the apply phase writes on the first and reports the second as a no-op, because
+the fresh per-step fact cache now sees the entries the first step wrote. A
+third request then removes the file again (``present=False``), so the example
+is *self-restoring*: it leaves the host's apt sources exactly as it found them.
+That matters because ``run_examples.py`` sweeps every example over the same
+shared hosts -- a lingering ``docker.sources`` whose ``signed-by`` keyring is
+not installed would make the later ``apt_update.py`` example fail (``apt-get
+update`` exits 100 on an unsigned repository). The write-then-remove cycle
+keeps the sweep clean.
 
 Installing under ``/etc/apt`` needs root -- the files are root-owned -- so
 the requests are flagged ``sudo=True``; the driver elevates the install
@@ -102,16 +109,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
 # The Docker repository as a deb822 sources file:
-# /etc/apt/sources.list.d/docker.sources, signed by the keyring apt.key (or
-# a manual step) placed at /etc/apt/keyrings/docker.gpg. Shared by both
-# requests below so they carry identical operation kwargs (only the log
-# ``name`` differs). Tuples keep the containers hashable and stable across
-# the prepare and apply phases.
+# /etc/apt/sources.list.d/docker.sources, for Ubuntu noble (the target host's
+# suite), signed by the keyring a manual step (or apt.key) places at
+# /etc/apt/keyrings/docker.gpg. Shared by the write requests below so they
+# carry identical operation kwargs (only the log ``name`` differs). Tuples
+# keep the containers hashable and stable across the prepare and apply phases.
 DOCKER_SOURCES = {
     "filename": "docker",
     "types": ("deb",),
-    "uris": ("https://download.docker.com/linux/debian",),
-    "suites": ("bookworm",),
+    "uris": ("https://download.docker.com/linux/ubuntu",),
+    "suites": ("noble",),
     "components": ("stable",),
     "architectures": ("amd64",),
     "signed_by": "/etc/apt/keyrings/docker.gpg",
@@ -148,16 +155,19 @@ def is_ubuntu(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Write the Docker deb822 sources file -- twice, to show idempotence.
+    """Write the Docker deb822 sources file -- twice, then remove it.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
     The first request spools and installs the file; the second carries the
     same arguments and is a guaranteed no-op in the apply phase, because
     the first write is already visible through the fresh per-step fact
-    cache.
+    cache. The third removes the file again (``present=False``), leaving the
+    host's sources as found so the shared-host example sweep is not polluted
+    -- a lingering ``docker.sources`` with no installed ``signed-by`` keyring
+    would break the later ``apt_update.py`` step.
 
-    Installing under the root-owned /etc/apt needs root, so both requests
+    Installing under the root-owned /etc/apt needs root, so all three requests
     are flagged ``sudo=True``; only the install shell is elevated -- the
     scp spool upload is a transfer and always runs unprivileged.
     """
@@ -174,6 +184,14 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         sudo=True,
         when=is_ubuntu,
         **DOCKER_SOURCES,
+    )
+    yield op(
+        apt.sources_file,
+        name="Remove Docker apt repository",
+        filename=DOCKER_SOURCES["filename"],
+        present=False,
+        sudo=True,
+        when=is_ubuntu,
     )
 
 

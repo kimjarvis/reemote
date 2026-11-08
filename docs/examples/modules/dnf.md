@@ -84,12 +84,24 @@ counts the package as present only when the installed version matches the
 file's, so `present=True` installs with `rpm -i` only when it does not and is
 otherwise a no-op, while `present=False` removes it with `dnf remove -y <name>`.
 Where pyinfra's `dnf.rpm` can also *download* a remote `.rpm` mid-deploy,
-reemote5 has no download operation, so a URL `src` raises `ValueError`; upload
-the file from the controller with `files.put` first. The install rides under
-`sudo` (installing a package needs root), and the script yields the same request
-twice — the second is a guaranteed no-op in the apply phase, because the first
-install is visible to it through the fresh per-step fact cache (in the prepare
-phase, where nothing is sent, both plan as changes).
+reemote5 has no download operation, so a URL `src` raises `ValueError`. The
+example therefore stages the file itself first: a demo-side `curl` one-liner (a
+raw `StringCommand`, the same pattern as `apt_deb.py`'s `download_deb`)
+downloads `sl` — the small steam-locomotive `ls` joke, whose only library
+dependency `ncurses-libs` is part of the CentOS base — onto the host before
+`dnf.rpm` reads it. The install rides under `sudo` (installing a package needs
+root), and the script yields the same install request twice — the second is a
+guaranteed no-op in the apply phase, because the first install is visible to it
+through the fresh per-step fact cache (in the prepare phase, where nothing is
+sent, both plan as changes). A final `present=False` request then removes `sl`
+again, so the example is **self-restoring**: it leaves the shared CentOS hosts
+as it found them and every run starts from the same not-installed state.
+
+Unlike `dnf.key` below, this example applies cleanly even on the SELinux
+`staff_t`-confined CentOS hosts: `dnf.rpm`'s install is a *plain* `sudo rpm -i
+<src>` (no `sh -c` wrapper), and a direct `sudo rpm` exec transitions to the
+privileged rpm domain that may write the rpm database; the removal is `sudo dnf
+remove -y sl`, which works the same way.
 
 ::: dnf_rpm
     options:
@@ -104,12 +116,28 @@ pyinfra's `src` is a *filename or URL* the target host reads directly
 (`rpm --import <src>`), reemote5 has no controller-side file locations, so the
 source is a *stream only* — the example uses a module-level `io.BytesIO`,
 defined once so both phases pass the identical object (request equality
-compares it by identity), and a `str` `src` raises `ValueError`. The one
+compares it by identity), and a `str` `src` raises `ValueError`. The stream
+embeds the **real** Docker Release (CE rpm) signing key (the armored body of
+`https://download.docker.com/linux/centos/gpg`), so `rpm --import` accepts it
+rather than rejecting placeholder bytes. The one
 request yields *two* commands at different privilege levels: a transfer that
 spools the stream to a `/tmp` path over scp as the login user (transfers are
 never elevated), then an elevated `rpm --import` of that spool file — wrapped
 in `sh -c` so the import *and* its cleanup `rm` both run as root — hence the
 request is flagged `sudo=True`.
+
+**Confinement caveat (CentOS hosts).** The dry-run plan and the pytest suite
+always pass, but the live apply is blocked on a CentOS host whose sudo is
+confined to SELinux `staff_t`. The scp spool lands as the login user's `0600`
+file, and the elevated `sh -c 'rpm --import …'` wrapper runs in `staff_t`
+without `CAP_DAC_OVERRIDE`, so it cannot even read that spool — rpm reports
+`import read failed`. (The `sh -c` wrapper is also why a *direct* `sudo rpm
+--import`, which transitions to the privileged rpm domain, would succeed where
+the wrapped form cannot take the rpmdb transaction lock.) This is the same
+`staff_t` confinement the `selinux`, `sysctl` and `systemd` examples document;
+the script is correct as written and imports for real once the host's sudo is
+unconfined (or SELinux is permissive). Contrast `dnf.rpm` above, whose plain
+`sudo rpm -i` is not wrapped in `sh -c` and so applies cleanly even here.
 
 ::: dnf_key
     options:

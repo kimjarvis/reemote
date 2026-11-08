@@ -32,6 +32,14 @@ Every host's connection is closed with ``aclose`` once the facts are
 gathered. ``gather_fact`` and ``process`` are coroutines, so ``main`` is
 async and driven by ``asyncio.run``.
 
+**Host prerequisite.** This example needs the ``lxc`` CLI and a running,
+initialized LXD daemon (login user in the ``lxd`` group for fact reads;
+operations ride ``sudo=True``). The demo CentOS hosts have neither: LXD is
+snap-only on EL9 and their ``staff_t``-confined sudo cannot create ``/snap``
+or reach ``/run/snapd.socket``, so it cannot be installed. Compile-checked
+and exercised by the offline harness, not run against shared hosts; point
+``INVENTORY`` at LXD-enabled machines (or relax the demo hosts) to run live.
+
 Run it with::
 
     uv run python examples/modules/lxd/lxd_lxd_project_config.py

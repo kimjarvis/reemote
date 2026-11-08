@@ -25,9 +25,15 @@ it finishes.
 working tree -- creating it from a main repository, pulling it, or removing it
 (``present=False``). This script ensures a ``hotfix`` worktree checked out on
 a new ``hotfix`` branch from the login user's ``/home/kjarvis/app`` repository
-into ``/home/kjarvis/app-hotfix``. The operation branches on the tree's
-existence, read through the git-local ``_DirectoryExists`` fact, so an absent
-tree yields one ``cd <repo> && git worktree add -b hotfix <worktree>`` command
+into ``/home/kjarvis/app-hotfix``. The demo hosts ship neither ``git`` nor
+that repository, so ``main`` first drives a tiny *install deploy*
+(``dnf.packages`` under ``sudo=True``, idempotent), and the deploy itself
+opens with a ``git.repo`` request cloning the public
+``https://github.com/octocat/Hello-World.git`` demo repository into
+``/home/kjarvis/app`` -- the worktree's main repository. The operation
+branches on the tree's existence, read through the git-local
+``_DirectoryExists`` fact, so an absent tree yields one
+``cd <repo> && git worktree add -b hotfix <worktree>`` command
 while an already-present tree does nothing. ``assume_repo_exists=True`` skips
 the ``repo/.git`` validity probe (the repository is known to be there);
 ``new_branch`` creates the branch alongside the tree.
@@ -66,6 +72,7 @@ from reemote5 import (
     HostConnectionError,
     OperationRequest,
     PrivilegeError,
+    dnf,
     format_log,
     format_plan,
     git,
@@ -96,15 +103,32 @@ INVENTORY = [
 ]
 
 
+def install(host: Host) -> Generator[OperationRequest]:
+    """Install the ``git`` binary the worktree deploy needs.
+
+    Branch-free and idempotent: an already-installed package plans and
+    applies as no change.
+    """
+    yield op(dnf.packages, name="Install git", packages=("git",), sudo=True)
+
+
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Ensure the ``hotfix`` worktree exists in the login user's home.
+    """Clone the main repository, then ensure the ``hotfix`` worktree.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
-    The same request is yielded twice: the apply phase's fresh per-step fact
-    cache sees the first add, so with ``pull=False`` the second converges to
-    a no-op.
+    The worktree request is yielded twice: the apply phase's fresh per-step
+    fact cache sees the first add, so with ``pull=False`` the second
+    converges to a no-op.
     """
+    yield op(
+        git.repo,
+        name="Clone the main app repository",
+        src="https://github.com/octocat/Hello-World.git",
+        dest="/home/kjarvis/app",
+        branch="master",
+        pull=False,
+    )
     yield op(
         git.worktree,
         name="Add the hotfix worktree",
@@ -127,6 +151,10 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
+        # Prerequisite run: put git on every host before the worktree deploy
+        # clones the main repository or shells out to the binary.
+        await run(INVENTORY, install)
+
         # --dry: prepare phase only. Facts are still gathered over SSH (read-only)
         # so the plan reflects each host's real pre-deployment state; no command
         # that mutates a host is sent.

@@ -32,6 +32,11 @@ The deploy yields the same state request twice: in the prepare phase
 second request's fresh per-step fact cache sees the first enable and
 reports ufw is already active.
 
+The demo hosts ship without ufw (EPEL-only on RHEL-family), so the deploy
+first installs ``epel-release`` and ``ufw`` via ``dnf.packages`` under
+``sudo=True``. Installing ufw does not activate it, so the install step is
+safe; the firewall mutations below remain compile-checked, not executed.
+
 Run it with::
 
     uv run python examples/modules/ufw/ufw_state.py
@@ -47,6 +52,7 @@ from reemote5 import (
     HostConnectionError,
     OperationRequest,
     PrivilegeError,
+    dnf,
     format_log,
     format_plan,
     op,
@@ -87,6 +93,12 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     ufw enable/disable needs root, so every request is flagged
     ``sudo=True``.
     """
+    # ufw is EPEL-only on RHEL-family: install the repo then ufw first
+    # (idempotent; the exit-masked ufw facts tolerate its absence in prepare).
+    yield op(
+        dnf.packages, name="Install EPEL repository", packages=("epel-release",), sudo=True
+    )
+    yield op(dnf.packages, name="Install ufw", packages=("ufw",), sudo=True)
     yield op(
         ufw.state,
         name="Ensure ufw is enabled",

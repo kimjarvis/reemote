@@ -23,10 +23,15 @@ up front with `validate_inventory`) and guards each request with
 `when=is_systemd`, a stable module-level predicate reading only static
 `host.group` so the OpenRC `alpine` host is skipped rather than failing on a
 missing `systemctl`. The `systemctl` and file-writing operations need root, so
-their requests are flagged `sudo=True`. The destructive examples (mask,
-drop-in, tmpfiles, sysusers, preset) are compile-checked and exercised by the
-offline example harness rather than run against shared hosts; point
-`INVENTORY_PATH` at your own throwaway machines to execute them for real.
+their requests are flagged `sudo=True`. `run_examples.py` runs every script
+live, so the state-mutating examples are written to be safe on the shared demo
+hosts: `mask` runs a full mask → no-op → unmask cycle that restores the unit
+before the deploy finishes, and `service`/`preset` converge an already-installed
+web server. The drop-in, tmpfiles and sysusers examples write root-owned
+configuration and are additionally compile-checked by the offline example
+harness; on the CentOS demo hosts their elevated install is blocked by SELinux
+`staff_t` confinement (see the host-policy note below). Point `INVENTORY_PATH`
+at your own throwaway machines to execute them for real.
 
 ## Managing a service
 
@@ -40,6 +45,10 @@ fact and `enabled` against
 — yielding a command only where the unit differs from the request. The script
 also shows the reemote5 extensions: `reloaded=True` with `soft_reload=True`
 issues `systemctl reload-or-try-restart`, gated on the unit actually running.
+The managed unit is chosen per OS family by `web_server_unit` — `httpd` on the
+RHEL-family `centos` hosts, `apache2` on the Debian-family `ubuntu` host — a
+branch on static `host.group` that stays identical across both phases, so the
+determinism guard holds even though the unit name differs per host.
 
 ::: systemd_service
     options:
@@ -65,7 +74,10 @@ idempotent through one present-flagged path. It reads the unit's
 and yields `systemctl mask` only when the unit is not already masked
 (`masked=False` yields `unmask`). Masking symlinks the unit to `/dev/null` so
 neither a manual start nor a dependency can activate it — stronger than
-`disable`, which only clears the boot setting.
+`disable`, which only clears the boot setting. The script runs a full
+mask → no-op → unmask cycle (the same shape as `selinux.permissive_domain`), so
+the unit is restored before the deploy finishes and a later `service`/`preset`
+deploy is not blocked by a lingering mask — safe to run live.
 
 ::: systemd_mask
     options:
@@ -84,6 +96,28 @@ refuses to start.
 ::: systemd_reset_failed
     options:
       members: []
+
+## Host-policy prerequisite (drop-in, tmpfiles, sysusers)
+
+The drop-in, tmpfiles and sysusers operations spool their fragment to a fixed
+`/tmp` path with an **unprivileged** scp transfer, then install it with an
+**elevated** `sh -c` (`mkdir` + `cp` + `chmod`). The scripts are correct —
+`sudo=True` is set and the transfer is never elevated — but on the CentOS demo
+hosts (`web1`/`web2`) SELinux is `Enforcing` and `sudo` transitions to the
+confined `staff_t` domain, which blocks the install two ways:
+
+- the scp spool lands mode `0600` owned by the connecting user, and `staff_t`
+  lacks `CAP_DAC_OVERRIDE`, so the elevated `cp` cannot read another user's
+  private file (`cp: cannot open '/tmp/reemote5-systemd.conf' for reading:
+  Permission denied`);
+- creating a new `etc_t`-labelled directory such as `/etc/sysusers.d` is denied
+  (`mkdir: cannot create directory '/etc/sysusers.d': Permission denied`),
+  whereas the existing `systemd_unit_file_t`-labelled `/etc/systemd/system` is
+  writable.
+
+These are host-policy limits, not script defects: the same examples converge on
+the unconfined `ubuntu` host. To run them on the CentOS hosts, give `sudo` an
+unconfined domain (e.g. `unconfined_t`) or set SELinux permissive, then re-run.
 
 ## Installing a drop-in override
 

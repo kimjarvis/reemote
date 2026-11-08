@@ -673,22 +673,21 @@ async def test_zone_create_with_properties_skips_runtime_with_reason():
         FirewalldZoneTextCommand(zone="dmz", kind="short", text="DMZ", permanent=True),
     ]
     assert "zone dmz target will be set to DROP (permanent)" in ctx.reason
-    assert ctx.reason.count("zone dmz not found in runtime configuration") == 2
+    # Properties are permanent-only: no runtime command or reason is emitted.
+    assert "(runtime)" not in ctx.reason
 
 
-async def test_zone_property_change_dual_applies_permanent_first():
+async def test_zone_property_change_is_permanent_only():
     ctx, commands = await materialize_op(
         seeded_host(), firewalld.zone, zone="public", target="DROP"
     )
     assert ctx.changed
     assert commands == [
         FirewalldZoneTargetCommand(zone="public", target="DROP", permanent=True),
-        FirewalldZoneTargetCommand(zone="public", target="DROP", permanent=False),
     ]
     assert ctx.reason == (
         "zone public exists (permanent); "
-        "zone public target will be set to DROP (permanent); "
-        "zone public target will be set to DROP (runtime)"
+        "zone public target will be set to DROP (permanent)"
     )
 
 
@@ -700,19 +699,20 @@ async def test_zone_already_in_state_is_a_noop():
     assert commands == []
     assert ctx.reason == (
         "zone public exists (permanent); "
-        "zone public target already default (permanent); "
-        "zone public target already default (runtime)"
+        "zone public target already default (permanent)"
     )
 
 
-async def test_zone_runtime_only_property_change():
+async def test_zone_runtime_only_property_change_is_skipped():
+    # firewall-cmd rejects a runtime --set-target/--set-short/--set-description,
+    # so permanent=False leaves the properties unmanaged (a no-op), never a
+    # guaranteed-fail runtime command.
     ctx, commands = await materialize_op(
         seeded_host(), firewalld.zone, zone="public", target="DROP", permanent=False
     )
-    assert ctx.changed
-    assert commands == [
-        FirewalldZoneTargetCommand(zone="public", target="DROP", permanent=False)
-    ]
+    assert not ctx.changed
+    assert commands == []
+    assert "zone public target is permanent-only (permanent=False skips it)" in ctx.reason
 
 
 async def test_zone_delete_and_delete_absent():

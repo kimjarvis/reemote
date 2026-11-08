@@ -35,6 +35,12 @@ nothing is sent) both plan as changes, but in the apply phase the second
 request's fresh per-step fact cache sees the created set and both
 entries, and reports everything already present.
 
+The demo hosts ship without ``iptables`` or ``ipset``, so the deploy
+opens with an idempotent ``dnf.packages`` install under ``sudo=True``.
+The ipset fact is exit-masked, so the prepare phase reads it even before
+the binary is present; in apply the install runs first and the mutation
+that follows rides the freshly installed binary.
+
 Run it with::
 
     uv run python examples/modules/iptables/iptables_ipset.py
@@ -50,6 +56,7 @@ from reemote5 import (
     HostConnectionError,
     OperationRequest,
     PrivilegeError,
+    dnf,
     format_log,
     format_plan,
     iptables,
@@ -90,6 +97,12 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     ipset create/add need CAP_NET_ADMIN, so every request is flagged
     ``sudo=True`` and rides under root.
     """
+    yield op(
+        dnf.packages,
+        name="Install iptables and ipset",
+        packages=("iptables", "ipset"),
+        sudo=True,
+    )
     yield op(
         iptables.ipset,
         name="Ensure the blacklist ipset and its entries",

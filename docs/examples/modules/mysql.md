@@ -32,6 +32,31 @@ reading `MysqlDatabases`, `mysql_mysql_users.py` reading `MysqlUsers`,
 facts themselves are documented on the
 [`mysql` module page](../../modules/mysql.md).
 
+**Host prerequisite.** These examples need a running MySQL server and the
+`mysql`/`mysqldump` client. On the demo CentOS Stream 9 hosts (web1/web2)
+the server **installs and starts** under the confined sudo —
+`sudo dnf install -y mysql-server` then `sudo systemctl start mysqld`
+both succeed and `mysqld` runs active — but **no client can connect**:
+`sudo mysql -Be 'SELECT 1'` (and the login-user fact reads) fail with
+`ERROR 2002 (HY000): Can't connect to local MySQL server through socket
+'/var/lib/mysql/mysql.sock' (13)`. Errno 13 is `EACCES`: SELinux denies the
+`staff_t`-confined sudo/login domain access to the `mysqld_db_t` socket
+(the datadir is `0755`, so this is MAC, not DAC). TCP to `127.0.0.1:3306`
+is reachable but auth-denied, and the namespace's no-password design
+requires unix-socket `auth_socket` as root, so TCP is not a workaround.
+This is the same `staff_t` confinement the `selinux`, `sysctl`, `systemd`,
+`lxd`, `dnf.key` and `gpg` examples document — a host-policy prerequisite,
+not a script gap: every request is correctly flagged `sudo=True` and rides
+root's socket auth. The scripts are therefore compile-checked and
+exercised by the offline example harness rather than run against the
+shared hosts. To run them for real, relax the demo hosts' sudo to an
+unconfined domain (or set SELinux permissive), install + start
+`mysql-server`, and provision the demo schema the later examples assume —
+`mysql_database.py` creates `shop`, `mysql_table.py` its `orders` table,
+`mysql_user.py` the `shop_app`@`localhost` account (run those first, in
+that order) — or point each script's `INVENTORY` at your own MySQL
+machines.
+
 ## Managing a database
 
 The database operation: `mysql.database` mirrors pyinfra's

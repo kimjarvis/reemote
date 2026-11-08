@@ -23,11 +23,13 @@ it finishes.
 
 ``git.repo`` mirrors pyinfra's ``git.repo``: it clones a fresh repository or
 reconciles an existing one. This script ensures the login user's
-``/home/kjarvis/deploy.git`` repository cloned from
-``git@github.com:acme/deploy.git`` on the ``main`` branch. The operation
+``/home/kjarvis/deploy`` repository cloned from the public
+``https://github.com/octocat/Hello-World.git`` demo repository on the
+``master`` branch -- a real, anonymously cloneable HTTPS source, so no
+deploy key is needed on the target hosts. The operation
 branches on whether ``dest/.git`` is a directory (read through the git-local
 ``_DirectoryExists`` fact), so a missing repository yields one
-``git clone --branch main <src> <dest>`` command, while an existing one walks
+``git clone --branch master <src> <dest>`` command, while an existing one walks
 the reconcile path -- comparing ``origin`` against ``src`` via ``GitConfig``,
 the current branch against the requested one via ``GitBranch`` and, when the
 two match, the local commit against the remote tip via ``GitLocalCommit``/
@@ -38,10 +40,15 @@ idempotence is purely the clone/existence comparison. In the prepare phase
 (where nothing is sent) both plan as the clone, while in the apply phase the
 first clone is visible to the second through the fresh per-step fact cache:
 ``dest/.git`` now exists, ``origin`` matches ``src`` and the branch is already
-``main``, so the second reports no commands -- a guaranteed no-op. (Left at
+``master``, so the second reports no commands -- a guaranteed no-op. (Left at
 the default ``pull=True``, the second request would additionally compare the
 local and remote commits for the effective branch and only short-circuit when
 they already match.)
+
+The demo hosts ship without ``git``, so ``main`` first drives a tiny
+*install deploy* (``dnf.packages`` under ``sudo=True``, idempotent) to put
+the binary on every host before the clone deploy runs -- the reconcile
+path's ``GitConfig``/``GitBranch`` fact reads need it too.
 
 Cloning writes under ``dest``, which is often owned by another user; flag the
 request ``sudo=True`` when the login user cannot write there -- the run-as
@@ -71,6 +78,7 @@ from reemote5 import (
     HostConnectionError,
     OperationRequest,
     PrivilegeError,
+    dnf,
     format_log,
     format_plan,
     git,
@@ -101,6 +109,15 @@ INVENTORY = [
 ]
 
 
+def install(host: Host) -> Generator[OperationRequest]:
+    """Install the ``git`` binary the clone deploy needs.
+
+    Branch-free and idempotent: an already-installed package plans and
+    applies as no change.
+    """
+    yield op(dnf.packages, name="Install git", packages=("git",), sudo=True)
+
+
 def deploy(host: Host) -> Generator[OperationRequest]:
     """Ensure the ``deploy`` repository is cloned into the login user's home.
 
@@ -108,29 +125,33 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     apply phases (a branch on a mutable fact would raise DeterminismError).
     The same request is yielded twice: the apply phase's fresh per-step fact
     cache sees the first clone, so with ``pull=False`` the second converges
-    to a no-op -- ``dest/.git`` present, ``origin`` reconciled and ``main``
+    to a no-op -- ``dest/.git`` present, ``origin`` reconciled and ``master``
     already checked out.
     """
     yield op(
         git.repo,
         name="Clone the deploy repository",
-        src="git@github.com:acme/deploy.git",
+        src="https://github.com/octocat/Hello-World.git",
         dest="/home/kjarvis/deploy",
-        branch="main",
+        branch="master",
         pull=False,
     )
     yield op(
         git.repo,
         name="Clone the deploy repository",
-        src="git@github.com:acme/deploy.git",
+        src="https://github.com/octocat/Hello-World.git",
         dest="/home/kjarvis/deploy",
-        branch="main",
+        branch="master",
         pull=False,
     )
 
 
 async def main() -> None:
     try:
+        # Prerequisite run: put git on every host before the clone deploy
+        # reads git-local facts or shells out to the binary.
+        await run(INVENTORY, install)
+
         # --dry: prepare phase only. Facts are still gathered over SSH (read-only)
         # so the plan reflects each host's real pre-deployment state; no command
         # that mutates a host is sent.

@@ -23,11 +23,16 @@ existence without a `keyid` (pyinfra's no-keyid semantics). The script
 yields the same install request twice (the second a guaranteed no-op in
 the apply phase through the fresh per-step existence probe); the stream
 is one module-level `io.BytesIO` constant because `OperationRequest`
-compares it by identity across the phases. **Compile-checked by the test
-suite, not executed against the shared demo hosts**: it writes under
-`/etc/apt/keyrings/` and the placeholder bytes are not a real key —
-replace the stream before running it against your own machines. The
-requests are flagged `sudo=True`; the spool transfer stays unprivileged.
+compares it by identity across the phases. The stream embeds the **real**
+Docker Release (CE rpm) signing key, so the dearmor has valid material to
+convert. The install writes under `/etc/apt/keyrings/` (`etc_t`), which a
+CentOS host's SELinux `staff_t`-confined sudo can neither create nor
+unlink: on the demo hosts a keyring from an earlier unconfined run already
+exists, so the existence-idempotent request no-ops and the script exits 0,
+while a *fresh* install there is denied until the host's sudo is unconfined
+(or SELinux is permissive) — the same confinement the `selinux`, `sysctl`
+and `dnf.key` examples document. The requests are flagged `sudo=True`; the
+spool transfer stays unprivileged.
 
 ::: gpg_key
     options:
@@ -39,9 +44,16 @@ The dearmor operation: `gpg.dearmor` converts an armored key file already
 on the target host to binary keyring form — both `src` and `dest` are
 remote paths, no bytes move over the connection. Like pyinfra's
 `gpg.dearmor` it is deliberately stateless: every run converts and
-reports a change. **Compile-checked by the test suite, not executed
-against the shared demo hosts**: it writes under `/etc/apt/keyrings/`
-and the armored source must already exist on each host. The request is
+reports a change. The deploy stages a **real** armored key (the Docker
+Release CE rpm signing key) with a `files.put` upload to a `/tmp` spool, so
+the dearmor always finds valid material; a `files.file` request with
+`present=False` clears any stale `dest` first (gpg refuses to overwrite an
+existing output). Both that cleanup and the dearmor's output write target
+`/etc/apt/keyrings/` (`etc_t`), which a CentOS host's SELinux
+`staff_t`-confined sudo can neither create nor unlink, so the apply is
+denied there until the host's sudo is unconfined (or SELinux is permissive)
+— the same confinement the `selinux`, `sysctl` and `dnf.key` examples
+document; the dry-run plan and pytest suite pass regardless. The request is
 flagged `sudo=True`.
 
 ::: gpg_dearmor
@@ -57,9 +69,12 @@ non-idempotent — the fingerprint of a raw stream is unknowable
 controller-side, so both requests in the script stay changed even in the
 apply log; pass `keyid=...` to compare against `GpgKeys` instead. The
 stream is one module-level `io.BytesIO` constant (identity across the
-phases). **Compile-checked by the test suite, not executed against the
-shared demo hosts**: the placeholder bytes are not a real key —
-`gpg --import` would reject them. The requests are flagged `sudo=True`
+phases) embedding the **real** Docker Release (CE rpm) signing key, so
+`gpg --import` accepts it. Unlike `gpg.key`/`gpg.dearmor`, this operation
+writes root's *keychain* (`~root/.gnupg`), not `/etc`, so it **applies for
+real even on the SELinux `staff_t`-confined CentOS hosts**: gpg reads the
+`/tmp` spool and imports into root's keychain, and the elevated `sh -c`
+removes the spool afterwards. The requests are flagged `sudo=True`
 for root's keychain; the spool transfer stays unprivileged.
 
 ::: gpg_import_key

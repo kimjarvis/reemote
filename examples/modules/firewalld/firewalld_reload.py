@@ -44,6 +44,13 @@ not need it.
 ``firewall-cmd`` writes daemon state, so the request is flagged
 ``sudo=True`` and the driver elevates its command over SSH.
 
+The demo hosts ship without firewalld, so ``main`` first drives a small
+idempotent *install deploy* (``dnf.packages`` + ``systemd.service`` under
+``sudo=True``) to install firewalld and start/enable the daemon, then runs
+the deploy below. firewalld's daemon performs the privileged kernel work,
+so ``firewall-cmd`` mutations succeed even when sudo lands in a confined
+SELinux domain.
+
 Run it with::
 
     uv run python examples/modules/firewalld/firewalld_reload.py
@@ -59,11 +66,13 @@ from reemote5 import (
     HostConnectionError,
     OperationRequest,
     PrivilegeError,
+    dnf,
     firewalld,
     format_log,
     format_plan,
     op,
     run,
+    systemd,
 )
 
 # The reload mode: apply permanent to runtime, keeping connection state.
@@ -92,6 +101,23 @@ INVENTORY = [
 ]
 
 
+def install(host: Host) -> Generator[OperationRequest]:
+    """Install firewalld and start/enable the daemon the deploy needs.
+
+    Branch-free and idempotent: an already-installed package and an
+    already-running, enabled service plan and apply as no change.
+    """
+    yield op(dnf.packages, name="Install firewalld", packages=("firewalld",), sudo=True)
+    yield op(
+        systemd.service,
+        name="Start and enable firewalld",
+        service="firewalld",
+        running=True,
+        enabled=True,
+        sudo=True,
+    )
+
+
 def deploy(host: Host) -> Generator[OperationRequest]:
     """Reload the firewall -- once, because the operation is stateless.
 
@@ -114,6 +140,14 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
+        # Prerequisite run: the demo hosts ship without firewalld, and every
+        # firewall-cmd command (and the FirewalldZones fact) needs the daemon
+        # running. Install firewalld and start/enable it first (idempotent,
+        # sudo=True) so the deploy below reads real zones and its mutations
+        # reach a live daemon. firewalld's daemon does the privileged kernel
+        # work, so these succeed even under a confined sudo domain.
+        await run(INVENTORY, install)
+
         # --dry: prepare phase only. Facts are still gathered over SSH (read-only)
         # so the plan reflects each host's real pre-deployment state; no command
         # that mutates a host is sent. (The stateless reload plans as changed

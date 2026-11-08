@@ -35,11 +35,22 @@ actual keys held in the keyring instead, or ``present=False`` to remove
 the file. For the APT repository-keyring use case with its ``/etc/apt/
 keyrings/`` defaults, ``apt.key`` is the specialized operation.
 
-**This example is compile-checked by the test suite, not executed
-against the shared demo hosts**: it writes a keyring file under
-``/etc/apt/keyrings/`` on every host, and the placeholder bytes below are
-not a real key -- ``gpg --dearmor`` would reject them. Replace the stream
-with a real vendor key before running it against your own hosts.
+**The stream below carries a real public key** -- the Docker CE release
+signing key for CentOS/rpm (fingerprint
+``060A61C51B558A7F742B77AAC52FEB6B621E9F35``, published at
+``https://download.docker.com/linux/centos/gpg``) -- so the dearmor has
+valid material to convert. The keyring still lands under
+``/etc/apt/keyrings/`` to demonstrate the explicit ``dest``; swap in your
+own vendor key and path when deploying elsewhere.
+
+One host-side caveat: ``/etc/apt/keyrings/`` is ``etc_t``, which a CentOS
+host's SELinux ``staff_t``-confined sudo can neither create nor unlink. On
+the demo hosts a keyring from an earlier unconfined run already exists, so
+the existence-idempotent request no-ops and the script exits 0; a *fresh*
+install into that directory is denied until the host's sudo is unconfined
+(or SELinux is permissive) -- the same confinement the ``selinux``,
+``sysctl`` and ``dnf.key`` examples document. ``gpg.import_key`` (which
+writes root's keychain, not ``/etc``) is unaffected and applies for real.
 
 The stream is compared *by identity* across the prepare and apply
 phases, so it is defined once at module level below -- building a fresh
@@ -76,11 +87,36 @@ from reemote5 import (
 
 # The key content, as ONE module-level stream: OperationRequest compares the
 # IO object by identity, so both phases must pass the same object (a stream
-# built inside the generator would trip the determinism guard). Placeholder
-# armored bytes -- replace with a real vendor key before deploying.
+# built inside the generator would trip the determinism guard). Real armored
+# bytes: the Docker CE release signing key for CentOS.
 GPG_KEY = io.BytesIO(
     b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n"
-    b"mQIN reemote5 example placeholder key material\n"
+    b"\n"
+    b"mQINBFit5IEBEADDt86QpYKz5flnCsOyZ/fk3WwBKxfDjwHf/GIflo+4GWAXS7wJ\n"
+    b"1PSzPsvSDATV10J44i5WQzh99q+lZvFCVRFiNhRmlmcXG+rk1QmDh3fsCCj9Q/yP\n"
+    b"w8jn3Hx0zDtz8PIB/18ReftYJzUo34COLiHn8WiY20uGCF2pjdPgfxE+K454c4G7\n"
+    b"gKFqVUFYgPug2CS0quaBB5b0rpFUdzTeI5RCStd27nHCpuSDCvRYAfdv+4Y1yiVh\n"
+    b"KKdoe3Smj+RnXeVMgDxtH9FJibZ3DK7WnMN2yeob6VqXox+FvKYJCCLkbQgQmE50\n"
+    b"uVK0uN71A1mQDcTRKQ2q3fFGlMTqJbbzr3LwnCBE6hV0a36t+DABtZTmz5O69xdJ\n"
+    b"WGdBeePCnWVqtDb/BdEYz7hPKskcZBarygCCe2Xi7sZieoFZuq6ltPoCsdfEdfbO\n"
+    b"+VBVKJnExqNZCcFUTEnbH4CldWROOzMS8BGUlkGpa59Sl1t0QcmWlw1EbkeMQNrN\n"
+    b"spdR8lobcdNS9bpAJQqSHRZh3cAM9mA3Yq/bssUS/P2quRXLjJ9mIv3dky9C3udM\n"
+    b"+q2unvnbNpPtIUly76FJ3s8g8sHeOnmYcKqNGqHq2Q3kMdA2eIbI0MqfOIo2+Xk0\n"
+    b"rNt3ctq3g+cQiorcN3rdHPsTRSAcp+NCz1QF9TwXYtH1XV24A6QMO0+CZwARAQAB\n"
+    b"tCtEb2NrZXIgUmVsZWFzZSAoQ0UgcnBtKSA8ZG9ja2VyQGRvY2tlci5jb20+iQI3\n"
+    b"BBMBCgAhBQJYrep4AhsvBQsJCAcDBRUKCQgLBRYCAwEAAh4BAheAAAoJEMUv62ti\n"
+    b"Hp816C0P/iP+1uhSa6Qq3TIc5sIFE5JHxOO6y0R97cUdAmCbEqBiJHUPNQDQaaRG\n"
+    b"VYBm0K013Q1gcJeUJvS32gthmIvhkstw7KTodwOM8Kl11CCqZ07NPFef1b2SaJ7l\n"
+    b"TYpyUsT9+e343ph+O4C1oUQw6flaAJe+8ATCmI/4KxfhIjD2a/Q1voR5tUIxfexC\n"
+    b"/LZTx05gyf2mAgEWlRm/cGTStNfqDN1uoKMlV+WFuB1j2oTUuO1/dr8mL+FgZAM3\n"
+    b"ntWFo9gQCllNV9ahYOON2gkoZoNuPUnHsf4Bj6BQJnIXbAhMk9H2sZzwUi9bgObZ\n"
+    b"XO8+OrP4D4B9kCAKqqaQqA+O46LzO2vhN74lm/Fy6PumHuviqDBdN+HgtRPMUuao\n"
+    b"xnuVJSvBu9sPdgT/pR1N9u/KnfAnnLtR6g+fx4mWz+ts/riB/KRHzXd+44jGKZra\n"
+    b"IhTMfniguMJNsyEOO0AN8Tqcl0eRBxcOArcri7xu8HFvvl+e+ILymu4buusbYEVL\n"
+    b"GBkYP5YMmScfKn+jnDVN4mWoN1Bq2yMhMGx6PA3hOvzPNsUoYy2BwDxNZyflzuAi\n"
+    b"g59mgJm2NXtzNbSRJbMamKpQ69mzLWGdFNsRd4aH7PT7uPAURaf7B5BVp3UyjERW\n"
+    b"5alSGnBqsZmvlRnVH5BDUhYsWZMPRQS9rRr4iGW0l+TH+O2VJ8aQ\n"
+    b"=0Zqq\n"
     b"-----END PGP PUBLIC KEY BLOCK-----\n"
 )
 

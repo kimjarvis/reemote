@@ -940,6 +940,22 @@ async def test_timers_parses_blocks_and_maps_zero_to_none():
     assert await SystemdTimers.process(CannedShellHost(_TIMERS_OUTPUT)) == _TIMERS_FACT
 
 
+async def test_timers_maps_a_formatted_timestamp_string_to_none():
+    # Some systemd versions render LastTriggerUSec/NextElapseUSecRealtime as a
+    # locale-formatted date string rather than the raw microsecond integer;
+    # the parser must map that non-machine-readable form to None, not raise
+    # ValueError (regression: a live `systemctl show '*.timer'` crashed int()).
+    output = (
+        "Id=logrotate.timer\nActiveState=active\nUnitFileState=enabled\n"
+        "NextElapseUSecRealtime=Sun 2026-11-08 00:00:00 CET\n"
+        "LastTriggerUSec=Sat 2026-11-07 05:52:09 CET\n"
+    )
+    assert await SystemdTimers.process(CannedShellHost(output)) == {
+        "logrotate.timer": {"active_state": "active", "unit_file_state": "enabled",
+                            "next_elapse_usec": None, "last_trigger_usec": None},
+    }
+
+
 async def test_timers_empty_output_is_empty_dict():
     assert await SystemdTimers.process(CannedShellHost("")) == {}
 

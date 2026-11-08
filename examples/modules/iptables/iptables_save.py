@@ -39,6 +39,14 @@ The deploy yields the same save request twice: in the prepare phase
 second request's fresh per-step fact cache sees the first write and
 reports the rules already match the file.
 
+The demo hosts ship without ``iptables``, so the deploy opens with an
+idempotent ``dnf.packages`` install under ``sudo=True``. The snapshot
+path is ``/etc/sysconfig/iptables`` -- the RHEL-family location whose
+parent directory already exists. ``iptables.save`` redirects into the
+file but does not create a missing parent, so the Debian-style default
+``/etc/iptables/rules.v4`` would fail on these hosts; passing ``path=``
+selects a snapshot directory that is already present.
+
 Run it with::
 
     uv run python examples/modules/iptables/iptables_save.py
@@ -54,6 +62,7 @@ from reemote5 import (
     HostConnectionError,
     OperationRequest,
     PrivilegeError,
+    dnf,
     format_log,
     format_plan,
     iptables,
@@ -86,22 +95,30 @@ INVENTORY = [
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Save the live rules to the default snapshot twice.
+    """Save the live rules to the RHEL snapshot twice.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
 
-    The write targets /etc/iptables/rules.v4, so every request is flagged
+    The write targets /etc/sysconfig/iptables, so every request is flagged
     ``sudo=True`` and the sh -c-wrapped redirect rides under root.
     """
     yield op(
+        dnf.packages,
+        name="Install iptables and ipset",
+        packages=("iptables", "ipset"),
+        sudo=True,
+    )
+    yield op(
         iptables.save,
         name="Persist the live iptables rules",
+        path="/etc/sysconfig/iptables",
         sudo=True,
     )
     yield op(
         iptables.save,
         name="Persist the live iptables rules (again)",
+        path="/etc/sysconfig/iptables",
         sudo=True,
     )
 

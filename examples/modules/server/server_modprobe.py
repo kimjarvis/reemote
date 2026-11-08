@@ -22,6 +22,16 @@ loaded. On modern hardware the ``floppy`` module may not exist at all;
 ``modprobe`` then exits non-zero and the run fails with a typed
 ``CommandError``, which ``main`` reports as one line.
 
+**Host-policy prerequisite.** On the CentOS demo hosts (``web1``/``web2``)
+SELinux is ``Enforcing`` and ``sudo`` runs in the confined ``staff_t``
+domain, which cannot load kernel modules: ``modprobe`` reports even a
+present, indexed module (``loop``, ``brd``) as "not found in directory".
+This is a host-policy limit, not a script defect or a missing package --
+``kernel-modules`` is installed and the ``depmod`` database lists the
+modules, yet the confined domain is denied the module-loading path. The
+requests already carry ``sudo=True``; run the script on a host whose
+``sudo`` is unconfined (e.g. ``unconfined_t``) or with SELinux permissive.
+
 Every failure mode of the run -- an unreachable host, a rejected elevation,
 or a ``modprobe`` that exits non-zero (an unknown module, or a module in
 use on removal) -- reaches ``main`` as a typed error whose message already

@@ -33,6 +33,11 @@ The deploy yields the same policy request twice: in the prepare phase
 second request's fresh per-step fact cache sees the first ``ufw default``
 and reports the routed policy is already deny.
 
+The demo hosts ship without ufw (EPEL-only on RHEL-family), so the deploy
+first installs ``epel-release`` and ``ufw`` via ``dnf.packages`` under
+``sudo=True``. Installing ufw does not activate it, so the install step is
+safe; the default-policy change below remains compile-checked, not executed.
+
 Run it with::
 
     uv run python examples/modules/ufw/ufw_default_policy.py
@@ -48,6 +53,7 @@ from reemote5 import (
     HostConnectionError,
     OperationRequest,
     PrivilegeError,
+    dnf,
     format_log,
     format_plan,
     op,
@@ -87,6 +93,12 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
     ufw default needs root, so every request is flagged ``sudo=True``.
     """
+    # ufw is EPEL-only on RHEL-family: install the repo then ufw first
+    # (idempotent; the exit-masked ufw facts tolerate its absence in prepare).
+    yield op(
+        dnf.packages, name="Install EPEL repository", packages=("epel-release",), sudo=True
+    )
+    yield op(dnf.packages, name="Install ufw", packages=("ufw",), sudo=True)
     yield op(
         ufw.default_policy,
         name="Deny routed traffic by default",

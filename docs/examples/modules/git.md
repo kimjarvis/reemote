@@ -32,7 +32,11 @@ existing config only when `repo/.git` is a directory, so the operation probes
 that gate first; with no `repo` it targets the login user's `--global` (or,
 with `system=True`, `--system`) config. Setting a repository's `--local`
 config or the `--system` config often needs root or the repository owner, so
-the request can ride under `sudo`. The script yields the same request twice —
+the request can ride under `sudo`. Because the demo hosts ship without
+`git` and the `GitConfig` fact itself shells out to the binary, `main` first
+drives a small idempotent install deploy (`dnf.packages` under `sudo=True`)
+before the config deploy, so the fact read in prepare finds the binary. The
+script yields the same request twice —
 the second is a guaranteed no-op in the apply phase, because the first write
 is visible to it through the fresh per-step fact cache (in the prepare phase,
 where nothing is sent, both plan as changes).
@@ -66,7 +70,12 @@ appends `git submodule update --init` at the end. Every command writes under
 there. pyinfra's `user`/`group` options, its `ssh_keyscan` preflight and its
 leading `files.directory` ensure-directory step are deliberately dropped; the
 clone therefore names `dest` itself instead of cloning into `.` from inside a
-pre-created directory. The script yields the same clone request twice with
+pre-created directory. The script clones the public
+`https://github.com/octocat/Hello-World.git` demo repository (branch
+`master`) over HTTPS, so no deploy key is needed on the targets, and `main`
+first drives a small idempotent `git` install deploy (`dnf.packages` under
+`sudo=True`) because the demo hosts ship without the binary. It yields the
+same clone request twice with
 `pull=False` — the second is a guaranteed no-op in the apply phase, because
 the first clone is visible to it through the fresh per-step fact cache (in
 the prepare phase, where nothing is sent, both plan as changes).
@@ -88,8 +97,14 @@ neither a tracking branch nor an explicit `from_remote_branch`, or one already
 at its remote tip (pyinfra's `skip_pull`), is a no-op. `assume_repo_exists`
 skips the `repo/.git` validity probe, and creating or removing a tree writes
 under the repository's `.git`, so the request can ride under `sudo` when the
-login user cannot write there. The script yields the same add request twice
-with `pull=False` — the second is a guaranteed no-op in the apply phase,
+login user cannot write there. The demo hosts ship neither `git` nor the
+main repository, so `main` first drives a small idempotent `git` install
+deploy (`dnf.packages` under `sudo=True`), and the deploy opens with a
+`git.repo` request cloning the public
+`https://github.com/octocat/Hello-World.git` demo repository into
+`/home/kjarvis/app` before the worktree requests. The script yields the same
+add request twice with `pull=False` — the second is a guaranteed no-op in the
+apply phase,
 because the first add is visible to it through the fresh per-step fact cache
 (in the prepare phase, where nothing is sent, both plan as changes).
 

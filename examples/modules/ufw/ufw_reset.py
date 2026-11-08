@@ -31,6 +31,11 @@ you intend to rebuild the ruleset from scratch (follow it with
 ``ufw.rule`` / ``ufw.default_policy`` / ``ufw.state`` requests in the
 same deploy to re-establish the desired baseline).
 
+The demo hosts ship without ufw (EPEL-only on RHEL-family), so the deploy
+first installs ``epel-release`` and ``ufw`` via ``dnf.packages`` under
+``sudo=True``. Installing ufw does not activate it, so the install step is
+safe; the destructive reset below remains compile-checked, not executed.
+
 Run it with::
 
     uv run python examples/modules/ufw/ufw_reset.py
@@ -46,6 +51,7 @@ from reemote5 import (
     HostConnectionError,
     OperationRequest,
     PrivilegeError,
+    dnf,
     format_log,
     format_plan,
     op,
@@ -85,6 +91,12 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
     ufw reset needs root, so the request is flagged ``sudo=True``.
     """
+    # ufw is EPEL-only on RHEL-family: install the repo then ufw first
+    # (idempotent; reset is stateless and reads no fact).
+    yield op(
+        dnf.packages, name="Install EPEL repository", packages=("epel-release",), sudo=True
+    )
+    yield op(dnf.packages, name="Install ufw", packages=("ufw",), sudo=True)
     yield op(
         ufw.reset,
         name="Reset ufw to installation defaults",

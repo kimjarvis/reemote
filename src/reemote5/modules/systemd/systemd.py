@@ -677,15 +677,19 @@ class SystemdTimer(TypedDict):
         active_state: The timer's ``ActiveState`` (``active``, ``inactive``).
         unit_file_state: The timer's ``UnitFileState`` (``enabled``, ...).
         next_elapse_usec: The next elapse time in microseconds since the
-            epoch, or None when systemd reports ``0``/empty (no next run).
+            epoch, or None when systemd reports ``0``/empty (no next run) or
+            a non-integer timestamp string.
         last_trigger_usec: The last trigger time in microseconds since the
-            epoch, or None when the timer has never fired (``0``/empty).
+            epoch, or None when the timer has never fired (``0``/empty) or
+            systemd renders the property as a date string.
     """
 
     # One ``*.timer`` unit (``SystemdTimers``' entry). The two timestamps are
     # the only converted values: systemd's ``...USec`` properties are integer
     # microseconds, and ``0``/empty means "never"/"not scheduled", mapped to
-    # None so a caller can test it directly.
+    # None so a caller can test it directly. Some systemd versions render a
+    # timestamp property as a locale-formatted date string instead of the raw
+    # integer; that non-machine-readable form maps to None too (never raises).
 
     active_state: str
     unit_file_state: str
@@ -724,7 +728,9 @@ class SystemdTimers:
     # the machine-readable ``systemctl show '*.timer'`` instead (a documented
     # deviation): it prints blank-line-separated ``Key=Value`` blocks, one per
     # timer, with the absolute ``...USec`` microsecond timestamps. A block's
-    # ``Id`` keys the entry; ``0``/empty timestamps map to None.
+    # ``Id`` keys the entry; ``0``/empty timestamps map to None, as does a
+    # locale-formatted date string some systemd versions print instead of the
+    # raw integer (e.g. ``LastTriggerUSec=Sat 2026-11-07 05:52:09 CET``).
     #
     # SimulatedHost seam: ``systemd_timers`` maps a timer unit name to its
     # entry dict; the read copies each dict. The scope flags are ignored by
@@ -744,17 +750,25 @@ class SystemdTimers:
 
     @staticmethod
     def _usec(value: str | None) -> int | None:
-        """Convert a ``...USec`` property to an int, or None for ``0``/empty."""
-        if not value or value == "0":
+        """Convert a ``...USec`` property to an int, or None when it carries none.
+
+        ``0``/empty map to None. Some systemd versions render a timestamp
+        property as a locale-formatted date string (e.g.
+        ``LastTriggerUSec=Sat 2026-11-07 05:52:09 CET``) instead of the raw
+        microsecond integer; that human-readable form is not machine-readable,
+        so it maps to None too rather than raising ``ValueError``.
+        """
+        if not value or not value.isdigit():
             return None
-        return int(value)
+        return int(value) or None
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> dict[str, SystemdTimer]:
         """Parse blank-line-separated ``show`` blocks into unit entries. Pure.
 
         Each block's ``Id`` keys the entry; a block without one is skipped.
-        The two ``...USec`` timestamps convert to int (``0``/empty -> None).
+        The two ``...USec`` timestamps convert to int (``0``/empty/non-integer
+        -> None).
         """
         timers: dict[str, SystemdTimer] = {}
         block: dict[str, str] = {}

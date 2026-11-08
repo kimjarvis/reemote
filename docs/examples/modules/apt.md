@@ -44,12 +44,16 @@ with `apt-get remove <name>`. The install runs pyinfra's three-pass sequence (a
 tolerant `dpkg -i`, an `apt-get install -f` to resolve dependencies, then a final
 `dpkg -i` that fails fast if they are still missing). Where pyinfra's `apt.deb`
 can also *download* a remote `.deb` mid-deploy, reemote5 has no download
-operation, so a URL `src` raises `ValueError`; upload the file from the
-controller with `files.put` first. The install rides under `sudo` (installing a
-package needs root), and the script yields the same request twice — the second
-is a guaranteed no-op in the apply phase, because the first install is visible
-to it through the fresh per-step fact cache (in the prepare phase, where nothing
-is sent, both plan as changes).
+operation, so a URL `src` raises `ValueError`. The example therefore stages the
+file itself first: a demo-side `curl` one-liner (a raw `StringCommand`, the same
+pattern as `server_op_locale.py`'s `locale_gen`) downloads the small,
+self-contained `bat` `.deb` (~2.4 MB, no library dependencies — chosen to fit the
+shared Ubuntu host's modest disk) to `/tmp`, unprivileged, before the install
+reads it. The install rides under `sudo` (installing a package needs root), and
+the script yields the same install request twice — the second is a guaranteed
+no-op in the apply phase, because the first install is visible to it through the
+fresh per-step fact cache (in the prepare phase, where nothing is sent, both plan
+as changes).
 
 ::: apt_deb
     options:
@@ -188,7 +192,11 @@ the spool file — so the log shows a plain `scp` line followed by
 deliberately non-idempotent (like `dnf.key`): it always installs and always
 reports a change. The stream is compared by identity across the prepare
 and apply phases, so the script defines it once at module level — building
-a fresh stream inside the deploy would raise `DeterminismError`.
+a fresh stream inside the deploy would raise `DeterminismError`. The embedded
+stream is the real Docker Release (CE deb) signing key (the armored body of
+`https://download.docker.com/linux/ubuntu/gpg`), so the elevated `gpg --dearmor`
+produces a valid keyring rather than failing on placeholder bytes; swap in your
+own vendor key's armor to trust a different repository.
 
 ::: apt_key
     options:
@@ -209,7 +217,10 @@ wanted state is a no-op. The hold rides under `sudo` (marking writes to the
 root-owned dpkg database), and the script yields the same request twice —
 the second is a guaranteed no-op in the apply phase, because the first
 hold is visible to it through the fresh per-step fact cache (in the prepare
-phase, where nothing is sent, both plan as changes). Composing `apt.mark`
+phase, where nothing is sent, both plan as changes). A third request then
+releases the holds again (`held=False`), so the example is *self-restoring*: it
+leaves the host's marks as found, because a lingering hold on `tree` would break
+the later `apt_packages.py` install in the shared-host sweep. Composing `apt.mark`
 then `apt.upgrade` in one deploy gives the hold-then-patch flow:
 everything except the held packages upgrades.
 
@@ -229,9 +240,12 @@ deliberately **non-idempotent**, exactly as pyinfra marks it: it reads no
 fact and always reports a change, yielding one command whether or not the
 PPA is already configured (`apt-add-repository` is itself idempotent on the
 host, so a repeat add is harmless). The add rides under `sudo` (writing the
-apt sources needs root), and the script yields the request only once — there
-is no state for a second request to converge on, so both the prepare plan and
-the apply log show it as a change.
+apt sources needs root), and the script yields an add followed by a
+`present=False` remove, so the example is *self-restoring*: it leaves the host's
+sources as found. The Bitcoin PPA publishes no `noble` Release file, so a
+lingering entry would make the later `apt_update.py` step fail (`apt-get update`
+exits 100 on a repository with no Release); both requests plan and apply as
+changes, since neither direction reads a fact.
 
 ::: apt_ppa
     options:
@@ -255,7 +269,11 @@ backup dance. The append rides under `sudo` (writing the apt sources needs
 root), and the script yields the same request twice — the second is a
 guaranteed no-op in the apply phase, because the first append is visible to
 it through the fresh per-step fact cache (in the prepare phase, where
-nothing is sent, both plan as changes).
+nothing is sent, both plan as changes). A third request then removes the line
+again (`present=False`), so the example is *self-restoring*: the Canonical
+partner archive is unreachable from the demo Ubuntu host, so leaving it
+configured would stall every later `apt-get update` on connection timeouts —
+the add-then-remove cycle keeps the shared-host sweep clean and fast.
 
 ::: apt_repo
     options:
@@ -266,8 +284,9 @@ nothing is sent, both plan as changes).
 The modern-format sibling of `apt.repo`: `apt.sources_file` mirrors
 pyinfra's `apt.sources_file`, writing (or with `present=False` removing) a
 complete deb822 `.sources` file under `/etc/apt/sources.list.d/` — here the
-Docker repository as `docker.sources`. The repository is described
-structurally (`types`, `uris`, `suites`, `components`, `architectures`,
+Docker repository for Ubuntu noble (the target host's suite) as `docker.sources`.
+The repository is described structurally (`types`, `uris`, `suites`,
+`components`, `architectures`,
 `signed_by`) rather than as a source line, and each list option expands into
 one entry per combination. The write direction compares every desired entry
 against the [`AptSources`][reemote5.modules.apt.apt.AptSources] fact, so a
@@ -279,9 +298,13 @@ the generated deb822 text is spooled to `/tmp` by an unprivileged scp upload
 same privilege split as `apt.key`. Removal is idempotent too: the
 [`AptSourcesFile`][reemote5.modules.apt.apt.AptSourcesFile] fact gates the
 `rm -f`, so an already-absent file is a no-op. The script yields the same
-request twice: the prepare phase plans both as changes, while the apply
+write request twice: the prepare phase plans both as changes, while the apply
 phase writes on the first and reports the second as a no-op through the
-fresh per-step fact cache.
+fresh per-step fact cache. A third request then removes the file again
+(`present=False`), so the example is *self-restoring*: a lingering `docker.sources`
+whose `signed-by` keyring is not installed would make the later `apt_update.py`
+step fail (`apt-get update` exits 100 on an unsigned repository), so the
+write-then-remove cycle keeps the shared-host sweep clean.
 
 ::: apt_sources_file
     options:

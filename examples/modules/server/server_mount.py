@@ -30,6 +30,15 @@ missing device or directory makes ``mount`` exit non-zero and the run fails
 with a typed ``CommandError``, which ``main`` reports as one line; an
 already-unmounted ``/scratch`` simply plans no change.
 
+**Host-policy and storage prerequisite.** The demo hosts have no
+``/dev/sdb1`` (only ``/dev/sda``), and on the CentOS hosts SELinux
+``staff_t`` confinement additionally denies creating the ``/data`` mount
+point and mounting filesystems. The script is correct (``sudo=True``); it
+needs a real block device provisioned by the operator, an existing mount
+point, and an unconfined ``sudo`` domain. Point ``INVENTORY`` at a host
+with the target device and directory -- or relax SELinux and attach a
+disk -- to run it for real.
+
 Every failure mode of the run -- an unreachable host, a rejected elevation,
 or a ``mount``/``umount`` that exits non-zero (a missing device, a busy
 filesystem on unmount) -- reaches ``main`` as a typed error whose message

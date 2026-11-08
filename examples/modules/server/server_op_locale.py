@@ -9,6 +9,16 @@ because the edit is fully expressible with the generic ``files.edit``
 content-transform primitive plus the elevated ``files.move`` -- the same
 spool-and-install recipe as ``files_edit_etc_hosts.py``.
 
+**Platform prerequisite.** This is a Debian-family recipe: pyinfra's
+``server.locale`` edits ``/etc/locale.gen`` and runs ``locale-gen``, both of
+which exist only on Debian/Ubuntu (the ``locales`` package). RHEL-family
+hosts such as the CentOS ``web1``/``web2`` demo servers have no
+``/etc/locale.gen`` -- they install locales through ``glibc-langpack-*`` and
+``localedef`` -- so the recipe targets the Debian-family ``ubuntu`` host,
+where ``/etc/locale.gen`` ships the commented ``fr_FR.UTF-8 UTF-8``
+definition line and ``locale-gen`` is on PATH. Point ``INVENTORY`` at your
+own Debian-family machines to run it elsewhere.
+
 pyinfra's ``server.locale(locale, present=True)`` reads the ``Locales`` fact
 (``locale -a``), finds the locale's definition line in ``/etc/locale.gen``
 with a ``FindInFile`` grep, comments it out (``present=False``) or
@@ -113,24 +123,18 @@ SPOOL_PATH = "/tmp/locale.gen"
 # the transform by value; a fresh closure per phase raises DeterminismError).
 SPOOL_TRANSFORMS: dict[str, Callable[[str | None], str]] = {}
 
-# The inventory: real hosts and their SSH connection information. No
-# ``privilege`` entry: the elevated install assumes passwordless sudo for
-# the login user; a password would come from ``privilege`` here, never the op.
+# The inventory: the Debian-family ``ubuntu`` host and its SSH connection
+# information. This recipe needs /etc/locale.gen + locale-gen (Debian/Ubuntu
+# only); the CentOS web1/web2 hosts have neither. No ``privilege`` entry: the
+# elevated install assumes passwordless sudo for the login user; a password
+# would come from ``privilege`` here, never the op.
 INVENTORY = [
     {
-        "host": "web1",
+        "host": "ubuntu",
         "connection": {
-            "address": "192.168.0.240",
+            "address": "192.168.0.221",
             "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
-        },
-    },
-    {
-        "host": "web2",
-        "connection": {
-            "address": "192.168.0.242",
-            "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
+            "key_path": "~/.ssh/id_ed25519",
         },
     },
 ]

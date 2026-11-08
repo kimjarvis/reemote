@@ -36,6 +36,15 @@ apply phase the second request's fresh per-step fact cache sees the
 first CREATE ROLE and GRANT and reports the role and membership already
 exist.
 
+**Host prerequisite.** This example needs a running MySQL server. The demo
+CentOS hosts install and start it fine (``sudo dnf install -y mysql-server``,
+``sudo systemctl start mysqld``), but their ``staff_t``-confined client
+cannot reach the unix socket ``/var/lib/mysql/mysql.sock`` (``ERROR 2002
+... (13)`` -- SELinux denies ``staff_t`` the ``mysqld_db_t`` socket the
+no-password design needs). Compile-checked and exercised by the offline
+harness, not run against shared hosts; relax the demo hosts' sudo or point
+``INVENTORY`` at your own MySQL machines to run live.
+
 Run it with::
 
     uv run python examples/modules/mysql/mysql_role.py

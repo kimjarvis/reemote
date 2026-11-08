@@ -30,6 +30,32 @@ reading `PostgresqlSubscriptions`, each over `gather_fact`) are not
 rendered here — they read a single fact, and the facts themselves are
 documented on the [`postgresql` module page](../../modules/postgresql.md).
 
+**Host prerequisite.** Every script here needs a running PostgreSQL server.
+On the demo CentOS hosts the packages install cleanly
+(`sudo dnf install -y postgresql-server postgresql-contrib`), but the cluster
+cannot be initialized under their `staff_t`-confined sudo:
+
+- `sudo postgresql-setup --initdb` fails with `runuser: cannot set user id:
+  Operation not permitted` — `staff_t` may not setuid to `postgres`.
+- `sudo -u postgres initdb -D /var/lib/pgsql/data` fails with
+  `/usr/bin/postgres: Permission denied` — `staff_t` may not execute the
+  `postgresql_exec_t` binary (no transition into `postgresql_t`).
+
+With no initialized data directory, `postgresql.service`'s
+`ExecStartPre=postgresql-check-db-dir` fails ("Directory ... is missing or
+empty") and the server never starts, so `/var/run/postgresql/.s.PGSQL.5432`
+does not exist. Both the read-only fact scripts (which run `psql` as the login
+user) and the operations (which ride `sudo -u postgres`) therefore have no
+socket to reach. This is a stricter blocker than MySQL, where the server at
+least starts and only the client socket connection is denied.
+
+The scripts are compile-checked and exercised by the offline harness
+(`tests/test_examples.py`), not run against the shared demo hosts. To run them
+live, relax the demo hosts' sudo confinement (permissive/unconfined, then
+`sudo postgresql-setup --initdb` and `sudo systemctl start postgresql`), or
+point `INVENTORY` at your own PostgreSQL machines whose `pg_hba.conf` admits
+the login user (facts) and the `postgres` OS user (operations).
+
 ## Managing a database
 
 The database operation: `postgresql.database` mirrors pyinfra's

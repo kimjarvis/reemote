@@ -30,17 +30,23 @@ the unit to ``/dev/null`` so neither a manual start nor a dependency can
 activate it -- a stronger guarantee than ``disable``, which only clears the
 boot setting. ``masked=False`` would instead yield ``systemctl unmask``.
 
-The script yields the *same* mask request twice to show idempotence across the
-two phases: the prepare phase plans both as changes when httpd is not yet
+The script runs a full mask -> no-op -> unmask cycle, the same shape the
+``selinux.permissive_domain`` example uses to leave the hosts exactly as it
+found them. The first request masks httpd and the second carries the same
+arguments: the prepare phase plans both as changes when httpd is not yet
 masked (nothing is sent in prepare, so both compare against the same
-pre-deployment state), while the apply phase masks on the first and reports the
-second as a no-op, because the fresh per-step fact cache now sees the masked
-state the first step produced.
+pre-deployment state), while the apply phase masks on the first and reports
+the second as a no-op through the fresh per-step fact cache. The third
+request (``masked=False``) then unmasks httpd again, restoring the original
+state so a later ``systemd.service`` / ``systemd.preset`` deploy is not
+blocked by a lingering mask -- in the prepare phase it plans as a no-op
+against the unmasked pre-deployment state, while the apply log sees the mask
+the first step added and removes it.
 
-**This is a destructive operation**: masking httpd prevents it from starting
-until it is unmasked. The script is therefore compile-checked and exercised by
-the offline example harness rather than run against shared hosts; point
-``INVENTORY_PATH`` at your own throwaway machines to execute it for real.
+Masking httpd momentarily prevents it from starting, but the cycle restores
+the unit before the deploy finishes, so the script is safe to run live; it is
+also compile-checked and exercised by the offline example harness. Point
+``INVENTORY_PATH`` at your own machines to target them.
 
 ``systemctl mask`` writes root-owned state, so the requests are flagged
 ``sudo=True``. The scope flags (``user_mode``/``machine``/``user_name``) stay at
@@ -101,11 +107,13 @@ def is_systemd(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Mask httpd -- twice, to show idempotence.
+    """Mask httpd -- twice, to show idempotence -- then unmask to restore it.
 
     Branch-free, so the request sequence is identical in the prepare and apply
     phases (a branch on a mutable fact would raise DeterminismError); the
-    ``when=is_systemd`` guard expresses eligibility, not an ``if``.
+    ``when=is_systemd`` guard expresses eligibility, not an ``if``. The final
+    ``masked=False`` request restores the original state so the hosts are left
+    as they were found and a later service/preset deploy is not blocked.
     """
     yield op(
         systemd.mask,
@@ -120,6 +128,14 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Re-mask httpd (no-op)",
         unit=UNIT,
         masked=True,
+        sudo=True,
+        when=is_systemd,
+    )
+    yield op(
+        systemd.mask,
+        name="Unmask httpd (restore)",
+        unit=UNIT,
+        masked=False,
         sudo=True,
         when=is_systemd,
     )

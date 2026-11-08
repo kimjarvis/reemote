@@ -31,24 +31,33 @@ target your machines.
 driven by ``asyncio.run``.
 
 ``apt.deb`` installs (or with ``present=False`` removes) a ``.deb`` file that
-already exists on the *target host* -- here the Google Chrome package, the
-kind of standalone ``.deb`` one commonly downloads to a machine and installs
-by hand. The ``src`` is therefore a **remote** path, not a controller-side
-one: upload the file first with ``files.put`` (or place it there by any other
-means). Unlike pyinfra -- whose ``apt.deb`` can also *download* a remote
-``.deb`` mid-deploy -- reemote5 has no download operation, so a ``src`` with a
-URL scheme raises ``ValueError``.
+already exists on the *target host* -- here ``bat``, the syntax-highlighting
+``cat`` clone, the kind of small standalone ``.deb`` one commonly downloads
+from a project's GitHub releases and installs by hand. The ``src`` is
+therefore a **remote** path, not a controller-side one: upload the file first
+with ``files.put`` (or place it there by any other means). Unlike pyinfra --
+whose ``apt.deb`` can also *download* a remote ``.deb`` mid-deploy -- reemote5
+has no download operation, so a ``src`` with a URL scheme raises
+``ValueError``. This example stages the file with a demo-side ``curl``
+one-liner (a raw ``StringCommand``, the same pattern as
+``server_op_locale.py``'s ``locale_gen``) yielded before the install, so the
+``.deb`` really exists on the host when ``apt.deb`` reads it. ``bat`` is
+deliberately small (~2.4 MB, a self-contained binary with no library
+dependencies) so the demo fits the shared Ubuntu host's modest disk; point
+``BAT_URL`` at any standalone ``.deb`` (e.g. Google Chrome) to install a
+larger package on a host with room for it.
 
 ``apt.deb`` reads the file's ``name``/``version`` through the ``DebPackage``
 fact, then reads the installed versions of that name through ``AptPackages``,
 and counts the package as present only when the installed version matches the
 file's. It installs only when it does not, so re-running is a no-op. The
 install runs pyinfra's three-pass sequence: a tolerant ``dpkg -i`` that
-ignores unmet dependencies, an ``apt-get install -f`` to resolve them (Chrome
-pulls in several libraries), then a final ``dpkg -i`` that configures the
-package and fails fast if dependencies are still missing. The script yields
-the *same* install request twice to show that idempotence across the two
-phases: the prepare phase plans both as changes (nothing is installed yet, so
+ignores unmet dependencies, an ``apt-get install -f`` to resolve them (a
+no-op for self-contained ``bat``, but it pulls in the libraries a package
+like Chrome needs), then a final ``dpkg -i`` that configures the package and
+fails fast if dependencies are still missing. The script yields the *same*
+install request twice to show that idempotence across the two phases: the
+prepare phase plans both as changes (nothing is installed yet, so
 both compare against the same pre-deployment state), while the apply phase
 installs on the first and reports the second as a no-op, because the fresh
 per-step fact cache now sees the package the first step installed.
@@ -78,17 +87,20 @@ Run it with::
 import asyncio
 import json
 import sys
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
 from typing import Any
 
 from reemote5 import (
+    Command,
     CommandError,
     Host,
     HostConnectionError,
     InventoryError,
+    OpContext,
     OperationRequest,
     PrivilegeError,
+    StringCommand,
     apt,
     format_log,
     format_plan,
@@ -102,10 +114,15 @@ from reemote5 import (
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
-# The ``.deb`` file to install, as a path on the *target host* (copy it there
-# with ``files.put`` first). Shared by both requests below so they carry
-# identical operation kwargs (only the log ``name`` differs).
-CHROME_DEB = "/tmp/google-chrome-stable_current_amd64.deb"
+# The ``.deb`` file to install, as a path on the *target host*, and the URL
+# the demo-side download step stages it from. reemote5 has no download
+# operation, so the example curls the file onto the host itself before
+# ``apt.deb`` reads it. BAT_DEB is shared by both install requests below so
+# they carry identical operation kwargs (only the log ``name`` differs).
+BAT_DEB = "/tmp/bat_0.24.0_amd64.deb"
+BAT_URL = (
+    "https://github.com/sharkdp/bat/releases/download/v0.24.0/bat_0.24.0_amd64.deb"
+)
 
 
 def load_inventory(path: Path) -> list[dict[str, Any]]:
@@ -137,30 +154,58 @@ def is_ubuntu(host: Host) -> bool:
     return host.group == "ubuntu"
 
 
+async def download_deb(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
+    """Stage the ``bat`` ``.deb`` on the host (demo-side download step).
+
+    reemote5 ships no download operation and ``apt.deb`` takes a *remote*
+    path, so the file must already exist on the target host. This example
+    stages it with a stateless one-liner over the public raw ``StringCommand``
+    descriptor -- the same demo-side pattern as ``server_op_locale.py``'s
+    ``locale_gen``. The ``test -f ... || curl`` guard downloads only when the
+    file is absent, so a re-run is cheap; like pyinfra's download step it
+    reads no fact and always reports a change. Writing to ``/tmp`` and running
+    ``curl`` need no root, so the request is *not* elevated (the ``apt.deb``
+    install that follows is). ``**kwargs`` absorbs pyinfra's global arguments
+    (``op()`` already strips ``name``/``sudo``/``su``).
+    """
+    ctx.changed = True
+    ctx.reason = "will stage the bat .deb on the host with curl"
+    yield StringCommand(f"test -f {BAT_DEB} || curl -fsSL -o {BAT_DEB} {BAT_URL}")
+
+
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Install the Chrome ``.deb`` -- twice, to show idempotence.
+    """Stage the ``bat`` ``.deb``, then install it -- twice, to show idempotence.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
-    The first request installs the file's package; the second carries the
-    same arguments and is a guaranteed no-op in the apply phase, because the
-    first install is already visible through the fresh per-step fact cache.
+    The first request stages the file on the host with a demo-side ``curl``
+    (reemote5 has no download operation, and ``apt.deb`` takes a remote path);
+    it is unprivileged, since writing ``/tmp`` and running ``curl`` need no
+    root. The next two requests install the file's package: the first
+    installs, the second carries the same arguments and is a guaranteed no-op
+    in the apply phase, because the first install is already visible through
+    the fresh per-step fact cache.
 
-    Installing a package writes to the root-owned dpkg database, so both
-    requests are flagged ``sudo=True`` and the driver elevates their commands
-    over SSH.
+    Installing a package writes to the root-owned dpkg database, so the two
+    ``apt.deb`` requests are flagged ``sudo=True`` and the driver elevates
+    their commands over SSH; the download step stays unprivileged.
     """
     yield op(
+        download_deb,
+        name="Stage bat deb on the host",
+        when=is_ubuntu,
+    )
+    yield op(
         apt.deb,
-        name="Install Chrome deb",
-        src=CHROME_DEB,
+        name="Install bat deb",
+        src=BAT_DEB,
         sudo=True,
         when=is_ubuntu,
     )
     yield op(
         apt.deb,
-        name="Re-install Chrome deb (no-op)",
-        src=CHROME_DEB,
+        name="Re-install bat deb (no-op)",
+        src=BAT_DEB,
         sudo=True,
         when=is_ubuntu,
     )

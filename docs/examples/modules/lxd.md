@@ -5,12 +5,12 @@ the [`lxd`](../../modules/lxd.md) module. See the
 [Examples overview](../../examples.md) for the shared "connects for real"
 warning and the error-reporting contract every script follows.
 
-Every script's inventory targets the two hosts web1/web2, each running
-an LXD daemon. The operation requests ride under `sudo=True`, so the
-`lxc` client talks to the daemon socket as root — no password travels
-through operation arguments, plans or logs. The fact-gathering scripts
-read as the login user, who needs access to the daemon socket (member
-of the `lxd` group) for the reads to succeed.
+Every script's inventory targets the two hosts web1/web2, which the
+scripts assume run an initialized LXD daemon. The operation requests ride
+under `sudo=True`, so the `lxc` client talks to the daemon socket as root
+— no password travels through operation arguments, plans or logs. The
+fact-gathering scripts read as the login user, who needs access to the
+daemon socket (member of the `lxd` group) for the reads to succeed.
 
 The read-only fact-gathering examples (`lxd_lxd_containers.py` reading
 `LxdContainers`, `lxd_lxd_image_aliases.py` reading `LxdImageAliases`,
@@ -32,6 +32,29 @@ an instance named `web1` (create it with `lxd_instance.py` first), the
 project read targets `default`, and the volume read targets the `fast`
 pool (create it with `lxd_storage_pool.py` first); a missing target
 reads as `None`/`[]` rather than failing the gather.
+
+**Host prerequisite.** None of these examples can run until LXD is
+installed and initialized on the target: the `lxc` CLI must be present,
+the daemon running (`lxd init` having created a storage pool and network),
+and the login user a member of the `lxd` group for the fact reads. The
+demo CentOS Stream 9 hosts (web1/web2) have **no LXD at all** — every
+script currently fails with `lxc: command not found` (exit 127). LXD is
+not packaged for EL9/EPEL; the only `lxc`-providing route is the snap
+(`sudo dnf install -y snapd`, `sudo systemctl enable --now snapd.socket`,
+`sudo ln -s /var/lib/snapd/snap /snap`, `sudo snap install lxd`, then
+`sudo lxd init --auto` and `sudo usermod -aG lxd <user>`). On the demo
+hosts that recipe is blocked by the same SELinux `staff_t`-confined sudo
+the `selinux`, `sysctl`, `systemd`, `dnf.key` and `gpg` examples document:
+snapd installs and its socket activates, but the confined sudo can
+neither create `/snap` (Permission denied) nor connect to
+`/run/snapd.socket` (`snap install lxd` fails with "dial unix
+/run/snapd.socket: connect: permission denied"). The scripts themselves
+are correct — `sudo=True` on every operation, the `lxc --format json` CLI
+throughout — so they are compile-checked and exercised by the offline
+example harness rather than run against the shared hosts. Relax the demo
+hosts' sudo to an unconfined domain (or set SELinux permissive) and
+install + initialize LXD, or point each script's `INVENTORY` at your own
+LXD-enabled machines, to execute them for real.
 
 ## Managing a container (pyinfra parity)
 

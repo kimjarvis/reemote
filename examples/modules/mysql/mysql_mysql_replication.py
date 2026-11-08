@@ -35,6 +35,15 @@ Every host's connection is closed with ``aclose`` once the facts are
 gathered. ``gather_fact`` and ``process`` are coroutines, so ``main`` is
 async and driven by ``asyncio.run``.
 
+**Host prerequisite.** This example needs a running MySQL server. The demo
+CentOS hosts install and start it fine (``sudo dnf install -y mysql-server``,
+``sudo systemctl start mysqld``), but their ``staff_t``-confined client
+cannot reach the unix socket ``/var/lib/mysql/mysql.sock`` (``ERROR 2002
+... (13)`` -- SELinux denies ``staff_t`` the ``mysqld_db_t`` socket the
+no-password design needs). Compile-checked and exercised by the offline
+harness, not run against shared hosts; relax the demo hosts' sudo or point
+``INVENTORY`` at your own MySQL machines to run live.
+
 Run it with::
 
     uv run python examples/modules/mysql/mysql_mysql_replication.py

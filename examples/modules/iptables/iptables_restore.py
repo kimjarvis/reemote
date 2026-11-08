@@ -40,6 +40,12 @@ changes; in the apply phase the first restore loads the uploaded file
 and the second's fresh per-step fact cache sees live rules matching it
 and reports no change.
 
+The demo hosts ship without ``iptables``, so the deploy opens with an
+idempotent ``dnf.packages`` install under ``sudo=True``; the
+``IptablesPersistence`` fact is exit-masked, so prepare reads it even
+before the binary is present and the restore rides the freshly installed
+``iptables-restore``.
+
 Run it with::
 
     uv run python examples/modules/iptables/iptables_restore.py
@@ -56,6 +62,7 @@ from reemote5 import (
     HostConnectionError,
     OperationRequest,
     PrivilegeError,
+    dnf,
     files,
     format_log,
     format_plan,
@@ -115,6 +122,12 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     The put is an unprivileged transfer (sudo/su do not apply to
     transfers); the restores need CAP_NET_ADMIN and ride ``sudo=True``.
     """
+    yield op(
+        dnf.packages,
+        name="Install iptables and ipset",
+        packages=("iptables", "ipset"),
+        sudo=True,
+    )
     yield op(
         files.put,
         name="Upload the rule snapshot",

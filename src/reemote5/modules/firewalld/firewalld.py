@@ -1059,10 +1059,14 @@ async def zone(
             None leaves it alone. Defaults to None.
         description (str | None, optional): The zone's description
             text; None leaves it alone. Defaults to None.
-        permanent (bool, optional): Whether the property changes also
-            apply to the permanent configuration (existence is always
-            permanent -- firewall-cmd has no runtime zone create/delete
-            verb). Defaults to True.
+        permanent (bool, optional): Whether to manage the zone's
+            properties in the permanent configuration. Existence and
+            properties are both permanent-only -- firewall-cmd has no
+            runtime zone create/delete verb and rejects a runtime
+            ``--set-target``/``--set-short``/``--set-description`` -- so
+            ``permanent=False`` leaves the properties unmanaged (the
+            runtime copy inherits them on the next ``firewalld.reload``).
+            Defaults to True.
         **kwargs: Additional keyword arguments.
 
     Yields:
@@ -1085,9 +1089,11 @@ async def zone(
     # zone's runtime copy appears only after it -- the operation says
     # so in its reasons rather than yielding a runtime command that
     # would certainly fail. Properties (target/short/description) are
-    # dual-apply when permanent=True: the permanent scope first, then
-    # runtime if the zone already exists there. A None property is
-    # unmanaged, never reset. The target word is validated statically
+    # PERMANENT-ONLY too: --set-target/--set-short/--set-description all
+    # reject a runtime invocation ("Option can be used only with
+    # --permanent"), so they are managed in the permanent scope alone and
+    # the runtime copy inherits them on the next firewalld.reload. A None
+    # property is unmanaged, never reset. The target word is validated statically
     # (ValueError) so an unprivileged empty fact read still plans the
     # change. Rules *inside* the zone are the membership operations'
     # job (port, zone_service, ...), not this one's. The commands need
@@ -1099,7 +1105,6 @@ async def zone(
             f"target must be one of {', '.join(_ZONE_TARGETS)} (got {target!r})"
         )
     perm_zones = await ctx.facts.get(FirewalldZones, permanent=True)
-    run_zones = await ctx.facts.get(FirewalldZones)
     reasons: list[str] = []
 
     if not present:
@@ -1126,34 +1131,29 @@ async def zone(
     ):
         if desired is None:
             continue
+        # target/short/description are permanent-only firewall-cmd options
+        # (--set-target/--set-short/--set-description reject a runtime
+        # invocation with "Option can be used only with --permanent"), so
+        # like the existence verbs they are managed in the permanent scope
+        # alone; the runtime copy inherits them on the next
+        # firewalld.reload. permanent=False leaves them unmanaged rather
+        # than yielding a runtime command that would certainly fail.
+        if not permanent:
+            reasons.append(f"zone {zone} {kind} is permanent-only (permanent=False skips it)")
+            continue
         # A zone being created carries the defaults the create produces.
         perm_current = perm_zones.get(zone, {}).get(kind, "default" if kind == "target" else "")
-        if permanent:
-            if perm_current != desired:
-                ctx.changed = True
-                reasons.append(f"zone {zone} {kind} will be set to {desired} (permanent)")
-                if kind == "target":
-                    yield FirewalldZoneTargetCommand(zone=zone, target=desired, permanent=True)
-                else:
-                    yield FirewalldZoneTextCommand(
-                        zone=zone, kind=kind, text=desired, permanent=True
-                    )
+        if perm_current != desired:
+            ctx.changed = True
+            reasons.append(f"zone {zone} {kind} will be set to {desired} (permanent)")
+            if kind == "target":
+                yield FirewalldZoneTargetCommand(zone=zone, target=desired, permanent=True)
             else:
-                reasons.append(f"zone {zone} {kind} already {desired} (permanent)")
-        if zone in run_zones:
-            if run_zones[zone][kind] != desired:  # type: ignore[literal-required]
-                ctx.changed = True
-                reasons.append(f"zone {zone} {kind} will be set to {desired} (runtime)")
-                if kind == "target":
-                    yield FirewalldZoneTargetCommand(zone=zone, target=desired, permanent=False)
-                else:
-                    yield FirewalldZoneTextCommand(
-                        zone=zone, kind=kind, text=desired, permanent=False
-                    )
-            else:
-                reasons.append(f"zone {zone} {kind} already {desired} (runtime)")
+                yield FirewalldZoneTextCommand(
+                    zone=zone, kind=kind, text=desired, permanent=True
+                )
         else:
-            reasons.append(f"zone {zone} not found in runtime configuration")
+            reasons.append(f"zone {zone} {kind} already {desired} (permanent)")
 
     ctx.reason = "; ".join(reasons)
 

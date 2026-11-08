@@ -26,8 +26,10 @@ your machines.
 
 ``systemd.service`` is the canonical home of the operation formerly known as
 ``server.service`` (which remains a deprecated alias). It ports pyinfra's
-``systemd.service`` and manages one unit -- here ``httpd`` -- along two
-independent axes. ``running=True`` compares the ``SystemdServiceState`` fact
+``systemd.service`` and manages one unit -- here the Apache web server, which
+RHEL-family hosts ship as ``httpd`` and Debian-family hosts ship as ``apache2``
+-- along two independent axes. ``running=True`` compares the
+``SystemdServiceState`` fact
 (a unit counts as running only when its ``ActiveState`` is ``active``) and
 yields ``systemctl start`` only when it differs; ``enabled=True`` compares the
 ``SystemdServiceEnabled`` fact and yields ``systemctl enable`` only when the
@@ -62,7 +64,14 @@ inventory data -- ``host.group`` -- never a mutable fact, and it is a stable
 module-level function, so the prepare and apply phases reach the same skip
 decision. The project root's ``inventory.json`` holds an ``alpine`` host
 (which uses OpenRC, not systemd) alongside systemd hosts, so the run visibly
-manages httpd on the systemd hosts and skips the Alpine one.
+manages the Apache unit on the systemd hosts and skips the Alpine one.
+
+The unit name itself is chosen per OS family by ``web_server_unit``, which
+reads only static ``host.group`` (``apache2`` for the Debian-family ``ubuntu``
+group, ``httpd`` otherwise). Like the ``when`` guard, that branch is stable
+across both phases, so each host's request sequence stays deterministic even
+though the unit name differs between hosts -- the same shape the
+``composed_per_host_roles`` demonstration uses for per-host variation.
 
 Run it with::
 
@@ -96,10 +105,6 @@ from reemote5 import (
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
-# The unit to manage. A bare name gets ``.service`` appended; any other
-# systemd suffix (``logrotate.timer``) would be kept as is.
-SERVICE = "httpd"
-
 
 def load_inventory(path: Path) -> list[dict[str, Any]]:
     """Read an inventory from a JSON file and validate it.
@@ -128,18 +133,34 @@ def is_systemd(host: Host) -> bool:
     return host.group != "alpine"
 
 
-def deploy(host: Host) -> Generator[OperationRequest]:
-    """Start and enable httpd -- twice, to show idempotence -- then soft-reload it.
+def web_server_unit(host: Host) -> str:
+    """Return the Apache web server's unit name for the host's OS family.
 
-    Branch-free, so the request sequence is identical in the prepare and
-    apply phases (a branch on a mutable fact would raise DeterminismError),
-    and identical on every host: eligibility is expressed with the
-    ``when=is_systemd`` guard each request carries, not with an ``if``.
+    RHEL-family hosts (the ``centos`` group) ship ``httpd``; Debian-family
+    hosts (the ``ubuntu`` group) ship the same server under ``apache2``. A
+    bare name gets ``.service`` appended by the operation; any other systemd
+    suffix (``logrotate.timer``) would be kept as is. The branch reads only
+    static inventory data (``host.group``), never a mutable fact, so the
+    choice is identical in the prepare and apply phases and the determinism
+    guard holds even though the unit name differs per host.
     """
+    return "apache2" if host.group == "ubuntu" else "httpd"
+
+
+def deploy(host: Host) -> Generator[OperationRequest]:
+    """Start and enable the Apache unit -- twice, to show idempotence -- then soft-reload it.
+
+    The only branch reads static ``host.group`` (via ``web_server_unit``), so
+    the request sequence is identical in the prepare and apply phases (a
+    branch on a mutable fact would raise DeterminismError). Eligibility is
+    expressed with the ``when=is_systemd`` guard each request carries, not
+    with an ``if``.
+    """
+    service = web_server_unit(host)
     yield op(
         systemd.service,
         name="Ensure httpd running and enabled",
-        service=SERVICE,
+        service=service,
         running=True,
         enabled=True,
         sudo=True,
@@ -148,7 +169,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     yield op(
         systemd.service,
         name="Re-ensure httpd (no-op)",
-        service=SERVICE,
+        service=service,
         running=True,
         enabled=True,
         sudo=True,
@@ -157,7 +178,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     yield op(
         systemd.service,
         name="Soft-reload httpd configuration",
-        service=SERVICE,
+        service=service,
         reloaded=True,
         soft_reload=True,
         sudo=True,

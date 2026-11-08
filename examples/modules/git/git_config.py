@@ -32,8 +32,16 @@ changes, while in the apply phase the first write is visible to the second
 through the fresh per-step fact cache, so the second is a guaranteed no-op --
 the idempotence the fact comparison provides.
 
+The demo hosts ship without ``git``, and the ``GitConfig`` fact itself
+shells out to the binary -- an unmasked read that raises
+``CommandNotFoundError`` during prepare. So ``main`` first drives a tiny
+*install deploy* (``dnf.packages`` under ``sudo=True``, idempotent) to put
+``git`` on every host, and only then runs the config deploy below. This is
+the same two-run split ``two_deploy_split.py`` demonstrates: facts that
+need prerequisite software must be read after that software is installed.
+
 Writing the login user's own ``--global`` config needs no root, so the
-requests are unprivileged. A ``repo``-scoped ``--local`` write into a
+config requests are unprivileged. A ``repo``-scoped ``--local`` write into a
 root-owned checkout, or a ``system=True`` write into the machine-wide config,
 would instead be flagged ``sudo=True`` so the driver elevates the command;
 ``multi_value=True`` would add a value with ``--add`` for a key that carries
@@ -57,6 +65,7 @@ from reemote5 import (
     HostConnectionError,
     OperationRequest,
     PrivilegeError,
+    dnf,
     format_log,
     format_plan,
     git,
@@ -87,6 +96,15 @@ INVENTORY = [
 ]
 
 
+def install(host: Host) -> Generator[OperationRequest]:
+    """Install the ``git`` binary the config deploy (and its fact) needs.
+
+    Branch-free and idempotent: an already-installed package plans and
+    applies as no change.
+    """
+    yield op(dnf.packages, name="Install git", packages=("git",), sudo=True)
+
+
 def deploy(host: Host) -> Generator[OperationRequest]:
     """Ensure the login user's global git ``user.name``.
 
@@ -101,6 +119,12 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
+        # Prerequisite run: the GitConfig fact shells out to git, so the
+        # binary must exist before the config deploy's prepare phase reads
+        # it. Installing first keeps that fact read from raising
+        # CommandNotFoundError on a host that ships without git.
+        await run(INVENTORY, install)
+
         # --dry: prepare phase only. Facts are still gathered over SSH (read-only)
         # so the plan reflects each host's real pre-deployment state; no command
         # that mutates a host is sent.

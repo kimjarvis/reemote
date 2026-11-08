@@ -33,6 +33,12 @@ the operation examples in
 fact, and the facts themselves are documented on the
 [`server` module page](../../modules/server.md).
 
+`server_lsb_release.py` first installs its prerequisite: the CentOS demo hosts
+do not ship `lsb_release` in their base repos (EPEL provides it), so a short
+`dnf.packages` deploy flagged `sudo=True` puts the binary in place before the
+fact is gathered. The install is idempotent, and the read never hits the
+missing-command path.
+
 ## Ensuring system groups
 
 `server.group` in action: the deploy creates the `docker` group (pyinfra's
@@ -105,7 +111,12 @@ module), and unloading is the mirror image: `present=False` yields
 `modprobe -r -a` only for the names that are loaded. On modern hardware the
 `floppy` module may not exist at all — `modprobe` then exits non-zero and
 the run fails with a typed `CommandError`, which the script reports as one
-line.
+line. On the CentOS demo hosts this is also a **host-policy limit**: SELinux
+`staff_t` confinement denies module loading, so `modprobe` reports even a
+present, indexed module (`loop`, `brd`) as "not found in directory" despite
+`kernel-modules` being installed and the `depmod` database listing them. The
+requests already carry `sudo=True`; run it with an unconfined `sudo` domain
+(e.g. `unconfined_t`) or SELinux permissive.
 
 ::: server_modprobe
     options:
@@ -130,7 +141,11 @@ mount made this way does not survive a reboot unless an fstab entry is
 managed separately. The mount target directory must already exist and the
 device must be present; a missing device or directory makes `mount` exit
 non-zero and the run fails with a typed `CommandError`, which the script
-reports as one line.
+reports as one line. The demo hosts have no `/dev/sdb1` (only `/dev/sda`), and
+CentOS `staff_t` confinement additionally denies creating `/data` and mounting
+filesystems — a **host-policy and storage prerequisite**, not a script defect:
+it needs an operator-provisioned device, an existing mount point and an
+unconfined `sudo` domain.
 
 ::: server_mount
     options:
@@ -160,6 +175,10 @@ read-only `server_timezone.py` fact example.
 
 `server.locale` is deliberately not ported as a library operation — this
 recipe is reemote5's answer, built on the generic `files.edit` primitive.
+It is a **Debian-family recipe**: `/etc/locale.gen` and `locale-gen` exist only
+on Debian/Ubuntu (the `locales` package), so it targets the `ubuntu` host, not
+the CentOS `web1`/`web2` servers — RHEL-family hosts install locales through
+`glibc-langpack-*` and `localedef` and have no `/etc/locale.gen`.
 The script snapshots `FileContents("/etc/locale.gen")` and `Locales` from
 every host, applies pyinfra's change condition to the frozen snapshot
 (enable only when the locale is absent from `locale -a`, disable only when

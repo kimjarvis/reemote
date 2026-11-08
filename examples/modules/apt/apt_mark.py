@@ -39,14 +39,19 @@ state is a no-op. The script yields the *same* hold request twice to show
 that idempotence across the two phases: the prepare phase plans both as
 changes (nothing is sent yet), while the apply phase holds on the first
 and reports the second as a no-op, because the fresh per-step fact cache
-re-reads ``showhold`` against the updated marks.
+re-reads ``showhold`` against the updated marks. A third request then
+releases the holds again (``held=False``), so the example is
+*self-restoring*: it leaves the host's marks exactly as it found them.
+That matters because ``run_examples.py`` sweeps every example over the
+same shared hosts -- a lingering hold on ``tree`` would make the later
+``apt_packages.py`` example fail to install it (``apt-get install`` refuses
+a held package), so the hold-then-release cycle keeps the sweep clean.
 
 Marking writes to the root-owned dpkg database, so the requests are
 flagged ``sudo=True`` and the driver elevates their commands. Pair this
 with ``apt_upgrade.py``'s ``apt.upgrade`` to compose the
-hold-then-patch flow: everything except the held packages upgrades, and a
-later ``op(apt.mark, packages=CRITICAL_PACKAGES, held=False, sudo=True)``
-releases them again.
+hold-then-patch flow: everything except the held packages upgrades, and
+the closing ``held=False`` request releases them again.
 
 Like the other apt examples, every request carries ``when=is_ubuntu``: the
 predicate reads only static inventory data (``host.group``) and is a stable
@@ -126,16 +131,20 @@ def is_ubuntu(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Hold the critical packages -- twice, to show idempotence.
+    """Hold the critical packages -- twice, to show idempotence -- then release.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
     The first request holds whatever names are not held yet; the second
     carries the same arguments and is a no-op in the apply phase once the
-    first hold marked them all.
+    first hold marked them all. The third releases the holds again
+    (``held=False``), leaving the host's marks as found so the shared-host
+    example sweep is not polluted -- a held ``tree`` would break the later
+    ``apt_packages.py`` install.
 
-    Marking writes to the root-owned dpkg database, so both requests are
-    flagged ``sudo=True`` and the driver elevates their commands over SSH.
+    Marking writes to the root-owned dpkg database, so all three requests
+    are flagged ``sudo=True`` and the driver elevates their commands over
+    SSH.
     """
     yield op(
         apt.mark,
@@ -148,6 +157,14 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         apt.mark,
         name="Re-run hold (no-op)",
         packages=CRITICAL_PACKAGES,
+        sudo=True,
+        when=is_ubuntu,
+    )
+    yield op(
+        apt.mark,
+        name="Release critical packages",
+        packages=CRITICAL_PACKAGES,
+        held=False,
         sudo=True,
         when=is_ubuntu,
     )

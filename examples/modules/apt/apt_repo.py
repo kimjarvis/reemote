@@ -44,11 +44,18 @@ between the prepare and apply phases).
 
 ``apt.repo`` parses ``src`` and compares it against the ``AptSources``
 fact, so a repository already configured in any sources file is a no-op.
-The script yields the *same* request twice to show that idempotence across
-the two phases: the prepare phase plans both as changes (nothing is written
-yet, so both compare against the same pre-deployment sources), while the
-apply phase appends on the first and reports the second as a no-op, because
-the fresh per-step fact cache now sees the line the first step wrote.
+The script yields the *same* add request twice to show that idempotence
+across the two phases: the prepare phase plans both as changes (nothing is
+written yet, so both compare against the same pre-deployment sources), while
+the apply phase appends on the first and reports the second as a no-op, because
+the fresh per-step fact cache now sees the line the first step wrote. A third
+request then removes the line again (``present=False``), so the example is
+*self-restoring*: it leaves the host's apt sources as it found them. That
+matters because ``run_examples.py`` sweeps every example over the same shared
+hosts -- the Canonical partner archive is unreachable from the demo Ubuntu
+host, so leaving it configured makes every later ``apt-get update`` (the
+``apt_update.py`` example) stall on connection timeouts and emit a warning.
+The add-then-remove cycle keeps the sweep clean and fast.
 
 Writing the apt sources needs root -- the files are root-owned -- so the
 requests are flagged ``sudo=True`` and the driver elevates their command
@@ -99,7 +106,7 @@ INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
 # The source line to add: the Canonical partner repository for Ubuntu
 # noble, managed in its own /etc/apt/sources.list.d/canonical-partner.list.
-# Shared by both requests below so they carry identical operation kwargs
+# Shared by the add requests below so they carry identical operation kwargs
 # (only the log ``name`` differs).
 PARTNER_REPO = {
     "src": "deb http://archive.canonical.com/ubuntu noble partner",
@@ -137,15 +144,19 @@ def is_ubuntu(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Add the partner repo line -- twice, to show idempotence.
+    """Add the partner repo line -- twice, to show idempotence -- then remove it.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
     The first request appends the line; the second carries the same
     arguments and is a guaranteed no-op in the apply phase, because the
     first append is already visible through the fresh per-step fact cache.
+    The third removes the line again (``present=False``), leaving the host's
+    sources as found so the shared-host example sweep is not polluted -- the
+    partner archive is unreachable from the demo host, so a lingering entry
+    would stall the later ``apt_update.py`` step on connection timeouts.
 
-    Writing the root-owned apt sources needs root, so both requests are
+    Writing the root-owned apt sources needs root, so all three requests are
     flagged ``sudo=True`` and the driver elevates their command over SSH.
     """
     yield op(
@@ -158,6 +169,14 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     yield op(
         apt.repo,
         name="Re-add the partner repo (no-op)",
+        sudo=True,
+        when=is_ubuntu,
+        **PARTNER_REPO,
+    )
+    yield op(
+        apt.repo,
+        name="Remove the partner repo",
+        present=False,
         sudo=True,
         when=is_ubuntu,
         **PARTNER_REPO,

@@ -80,7 +80,12 @@ definitions and ipsets are created permanent-only (`--new-zone`,
 `--new-service`, `--new-ipset` have no runtime form) and appear at runtime
 after `firewalld.reload` — which is still shipped as the explicit bridge
 (`reload`, `complete_reload`, `runtime_to_permanent`), deliberately
-stateless because a reload is an event, not a state. `default_zone` writes
+stateless because a reload is an event, not a state. A zone's
+`target`/`short`/`description` properties are permanent-only for the same
+reason: firewall-cmd rejects a runtime `--set-target`/`--set-short`/
+`--set-description`, so `zone` manages them in the permanent scope alone
+(`permanent=False` skips them with a reason) and the runtime copy
+inherits them on the next reload. `default_zone` writes
 both scopes in one command; `lockdown` and `panic` are runtime-only daemon
 switches with no permanent form.
 
@@ -167,8 +172,8 @@ it decides a change is needed, and yields one descriptor per command that
 would mutate the host. Every operation here writes daemon state, so flag
 the request `sudo=True`.
 
-`zone` manages existence (permanent-only) and the target/short/description
-properties (dual-apply). The eight membership operations — `zone_service`,
+`zone` manages existence and the target/short/description properties,
+both permanent-only (firewall-cmd has no runtime form for either). The eight membership operations — `zone_service`,
 `port`, `interface`, `source`, `rich_rule`, `protocol`, `icmp_block`,
 `forward_port` — share one comparison helper over the zone record's
 member lists, per scope, permanent first. `interface` renders

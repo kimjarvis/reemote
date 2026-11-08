@@ -116,8 +116,14 @@ VIRTUAL_TAG = ".build-deps"
 # The member packages the virtual group depends on, as a tuple --
 # OperationRequest kwargs must stay hashable. Shared by both create requests
 # below so they carry identical operation kwargs (only the log ``name``
-# differs).
-BUILD_DEPS = ("gcc", "musl-dev", "make")
+# differs). A *lightweight* but genuine compile toolchain: tcc (the Tiny C
+# Compiler, ~25 KiB installed) plus the musl C headers and make. The full gcc
+# toolchain is deliberately not used -- gcc alone is ~159 MiB installed and
+# does not fit the small demo Alpine host's disk (the earlier ``gcc`` member
+# failed with "No space left on device") -- while tcc + musl-dev + make really
+# can compile C, so the create-then-tear-down pattern is demonstrated for real
+# within the host's free space.
+BUILD_DEPS = ("tcc", "musl-dev", "make")
 
 # examples/modules/apk/apk_virtual.py -> the project root, so the
 # inventory is found whatever the current working directory is.

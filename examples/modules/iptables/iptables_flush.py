@@ -30,6 +30,12 @@ against the shared demo hosts**: even a chain-scoped flush is a firewall
 mutation an operator should opt into. The documentation-net source
 (``192.0.2.0/24``, RFC 5737) keeps the seeded rule inert.
 
+The demo hosts ship without ``iptables`` or ``ipset``, so the deploy
+opens with an idempotent ``dnf.packages`` install under ``sudo=True``.
+The iptables facts are exit-masked, so the prepare phase reads them even
+before the binary is present; in apply the install runs first and the
+mutations that follow ride the freshly installed binary.
+
 Run it with::
 
     uv run python examples/modules/iptables/iptables_flush.py
@@ -45,6 +51,7 @@ from reemote5 import (
     HostConnectionError,
     OperationRequest,
     PrivilegeError,
+    dnf,
     format_log,
     format_plan,
     iptables,
@@ -85,6 +92,12 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     Every iptables mutation needs CAP_NET_ADMIN, so every request is
     flagged ``sudo=True`` and rides under root.
     """
+    yield op(
+        dnf.packages,
+        name="Install iptables and ipset",
+        packages=("iptables", "ipset"),
+        sudo=True,
+    )
     yield op(
         iptables.chain,
         name="Create the REEMOTE5_DEMO chain",

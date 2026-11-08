@@ -17,6 +17,17 @@ the empty value on an unprivileged login (or a host without ufw) rather
 than failing, so every gather is safe on any Linux target — point
 `INVENTORY` at your own machines before executing.
 
+ufw is a Debian-family frontend that RHEL-family ships only through EPEL,
+so every operation script below first installs `epel-release` and `ufw`
+with `dnf.packages` (under `sudo=True`) as the opening requests of its
+deploy. The install is idempotent and the ufw facts are exit-masked, so
+the prepare phase tolerates ufw being absent until the apply phase
+installs it. Installing ufw does **not** activate it, so the install step
+is safe; the firewall mutations themselves stay compile-checked by the
+test suite, not executed against the shared demo hosts (which already run
+firewalld — enabling a second firewall, or resetting it, is an operator
+decision).
+
 ## Enabling the firewall
 
 The state operation: `ufw.state` ensures the firewall is active (and on

@@ -38,12 +38,15 @@ requires ``software-properties-common`` on the target host.
 
 The operation is **non-idempotent**, exactly as pyinfra marks it: it reads no
 fact and always reports a change, yielding one command whether or not the PPA
-is already configured. That is why this script yields the request only once --
-unlike the idempotent ``apt.deb``/``apt.packages`` examples there is no state
-for a second request to converge on, so a repeat would simply plan and run the
-same command again (``apt-add-repository`` itself is idempotent on the host, so
-re-adding an existing PPA is harmless). Both the prepare plan and the apply log
-therefore show the request as a change.
+is already configured (``apt-add-repository`` itself is idempotent on the host,
+so re-adding an existing PPA is harmless). The script therefore yields an add
+followed by a ``present=False`` remove, so the example is *self-restoring*: it
+leaves the host's apt sources exactly as it found them. That matters because
+``run_examples.py`` sweeps every example over the same shared hosts -- the
+Bitcoin PPA publishes no ``noble`` Release file, so leaving it configured would
+make the later ``apt_update.py`` example fail (``apt-get update`` exits 100 on a
+repository with no Release). The add-then-remove cycle keeps the sweep clean.
+Both requests plan and apply as changes, since neither direction reads a fact.
 
 Adding a repository writes to the root-owned apt sources, so the request is
 flagged ``sudo=True`` and the driver elevates its command over SSH.
@@ -125,18 +128,30 @@ def is_ubuntu(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Add the Bitcoin PPA.
+    """Add the Bitcoin PPA, then remove it again (self-restoring).
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
-    The operation is non-idempotent, so the single request plans and applies
-    as a change; adding a repository writes to the root-owned apt sources, so
-    it is flagged ``sudo=True`` and the driver elevates its command over SSH.
+    The operation is non-idempotent, so both the add and the ``present=False``
+    remove plan and apply as changes. The closing remove leaves the host's
+    sources as found -- the Bitcoin PPA has no ``noble`` Release, so a
+    lingering entry would break the later ``apt_update.py`` sweep step.
+    Adding or removing a repository writes to the root-owned apt sources, so
+    both requests are flagged ``sudo=True`` and the driver elevates their
+    commands over SSH.
     """
     yield op(
         apt.ppa,
         name="Add the Bitcoin ppa",
         src=BITCOIN_PPA,
+        sudo=True,
+        when=is_ubuntu,
+    )
+    yield op(
+        apt.ppa,
+        name="Remove the Bitcoin ppa",
+        src=BITCOIN_PPA,
+        present=False,
         sudo=True,
         when=is_ubuntu,
     )

@@ -30,6 +30,14 @@ and is *not* exit-masked: a host without the binary raises
 ``CommandNotFoundError`` (a ``CommandError`` subclass), which the guard
 below catches and reports.
 
+The demo hosts ship without ``ip6tables``, and ``Ip6tablesVersion`` is an
+unmasked read, so ``main`` first drives a tiny idempotent *install
+deploy* (``dnf.packages`` under ``sudo=True``) to put the binary on every
+host, then gathers the fact. The ``iptables`` package provides both the
+IPv4 and IPv6 binaries, so installing it covers this fact too. This is
+the same two-run split ``two_deploy_split.py`` demonstrates: a fact that
+needs prerequisite software must be read after that software is installed.
+
 Every host's connection is closed with ``aclose`` once the facts are
 gathered. ``gather_fact`` and ``process`` are coroutines, so ``main`` is
 async and driven by ``asyncio.run``.
@@ -42,13 +50,19 @@ Run it with::
 import asyncio
 import json
 import sys
+from collections.abc import Generator
 
 from reemote5 import (
     CommandError,
     Host,
     HostConnectionError,
     Ip6tablesVersion,
+    OperationRequest,
+    PrivilegeError,
+    dnf,
     gather_fact,
+    op,
+    run,
 )
 
 # The inventory: real hosts and their SSH connection information, supplied by
@@ -74,17 +88,32 @@ INVENTORY = [
 ]
 
 
+def install(host: Host) -> Generator[OperationRequest]:
+    """Install the ``iptables`` package, which provides ``ip6tables``.
+
+    Branch-free and idempotent: an already-installed package plans and
+    applies as no change.
+    """
+    yield op(dnf.packages, name="Install iptables", packages=("iptables",), sudo=True)
+
+
 async def main() -> None:
     # Materialize every inventory entry up front so the fact can be gathered on
     # all hosts at once.
     hosts = [Host.from_inventory(entry) for entry in INVENTORY]
     try:
+        # Prerequisite run: Ip6tablesVersion shells out to `ip6tables --version`,
+        # an unmasked read that raises CommandNotFoundError on a host without
+        # the binary. Install iptables first (idempotent, sudo=True) -- it
+        # provides ip6tables -- so the fact read below succeeds on the demo
+        # hosts, which ship without it.
+        await run(INVENTORY, install)
         # Gather the fact across the whole inventory concurrently: gather_fact
         # fans Ip6tablesVersion.process out with asyncio.gather and returns a
         # host-name-keyed mapping. The fact takes no arguments -- it always
         # reads the binary's --version banner.
         versions = await gather_fact(hosts, Ip6tablesVersion)
-    except (CommandError, HostConnectionError) as exc:
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # The library reports an unreachable host or a failed fact command as a
         # typed error whose message already names the host. CommandError also
         # covers CommandNotFoundError: a host without ip6tables installed fails

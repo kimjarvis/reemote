@@ -22,6 +22,16 @@ so they are compile-checked and exercised by the offline example harness
 rather than run against shared hosts; point `INVENTORY` at your own
 throwaway machines to execute them for real.
 
+**Host-policy prerequisite.** `sysctl` (from `procps-ng`) is already
+installed and the requests are correctly flagged `sudo=True`, but applying
+a kernel key (`sysctl -w`) and writing `/etc` both require an **unconfined
+sudo domain**. On the demo hosts sudo lands in the confined `staff_t`
+domain, so `sysctl -w vm.swappiness` fails with "permission denied on key"
+and the drop-in install fails reading its `/tmp` spool / writing
+`/etc/sysctl.d` — a host-policy prerequisite, not a script gap. Map the
+login's sudo role to an unconfined domain (e.g. `unconfined_t`) before
+these examples can apply; the read-only fact gathers are unaffected.
+
 ## Managing a single kernel parameter
 
 The setting operation: `sysctl.setting` is a reemote5 original superseding

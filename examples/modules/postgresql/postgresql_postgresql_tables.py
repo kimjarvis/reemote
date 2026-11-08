@@ -37,6 +37,17 @@ Every host's connection is closed with ``aclose`` once the facts are
 gathered. ``gather_fact`` and ``process`` are coroutines, so ``main`` is
 async and driven by ``asyncio.run``.
 
+**Host prerequisite.** This example needs a running PostgreSQL server. The
+demo CentOS hosts install the packages fine (``sudo dnf install -y
+postgresql-server``), but their ``staff_t``-confined sudo cannot initialize
+the cluster: ``initdb`` cannot exec ``/usr/bin/postgres`` and
+``postgresql-setup --initdb``'s ``runuser`` cannot setuid, so the server
+never starts and no ``/var/run/postgresql`` socket exists for either the
+login-user fact reads or the ``sudo -u postgres`` operations. Compile-checked
+and exercised by the offline harness, not run against shared hosts; relax the
+demo hosts' sudo or point ``INVENTORY`` at your own PostgreSQL machines to run
+live.
+
 Run it with::
 
     uv run python examples/modules/postgresql/postgresql_postgresql_tables.py

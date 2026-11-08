@@ -31,6 +31,15 @@ aggregates the per-host errors, so the guard below reports every host
 missing the command in one stderr message -- no traceback -- and a
 non-zero exit.
 
+The CentOS demo hosts do not ship ``lsb_release`` in their base repos, so
+the script first installs it: a short ``run(INVENTORY, install)`` deploy
+yields ``dnf.packages`` for the ``lsb_release`` package (provided by EPEL,
+which the demo hosts already enable), flagged ``sudo=True``. The install is
+idempotent -- a host that already has the binary plans no change -- and runs
+before the fact is gathered, so the read never hits the missing-command
+path. Point ``INVENTORY`` at hosts whose package manager provides
+``lsb_release`` (or pre-install it) to target your own machines.
+
 Every host's connection is closed with ``aclose`` once the facts are gathered.
 ``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven
 by ``asyncio.run``.
@@ -43,13 +52,20 @@ Run it with::
 import asyncio
 import json
 import sys
+from collections.abc import Generator
 
 from reemote5 import (
     CommandError,
     Host,
     HostConnectionError,
     LsbRelease,
+    OperationRequest,
+    PrivilegeError,
+    dnf,
+    format_log,
     gather_fact,
+    op,
+    run,
 )
 
 # The inventory: real hosts and their SSH connection information, supplied by
@@ -75,7 +91,36 @@ INVENTORY = [
 ]
 
 
+def install(host: Host) -> Generator[OperationRequest]:
+    """Install the ``lsb_release`` binary the fact shells out to.
+
+    Branch-free and identical on every host: ``dnf.packages`` is idempotent
+    (it compares against the installed-package fact), so a host that already
+    has ``lsb_release`` plans no change. ``sudo=True`` because package
+    installation writes root-owned state.
+    """
+    yield op(
+        dnf.packages,
+        name="Install lsb_release",
+        packages=("lsb_release",),
+        sudo=True,
+    )
+
+
 async def main() -> None:
+    # Install the prerequisite first: lsb_release is not in the CentOS base
+    # repos (EPEL provides it), so a short deploy puts the binary in place
+    # before the fact is gathered. Idempotent -- an already-installed host
+    # plans no change.
+    try:
+        _plans, report, _hosts = await run(INVENTORY, install)
+        print("== Prerequisite: install lsb_release ==")
+        assert report is not None
+        print(format_log(report))
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+
     # Materialize every inventory entry up front so the fact can be gathered on
     # all hosts at once.
     hosts = [Host.from_inventory(entry) for entry in INVENTORY]

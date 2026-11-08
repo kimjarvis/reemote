@@ -49,10 +49,16 @@ elevated), then an elevated ``rpm --import`` of that spool file -- wrapped in
 writes to the root-owned rpm keyring, so the request is flagged ``sudo=True``
 and the driver elevates only the shell half, never the scp half.
 
-The key below is an **illustrative placeholder**, not a valid armored GPG key:
-``rpm --import`` rejects malformed material, so a real apply needs a genuine
-public key in ``GPG_KEY``. The dry run plans regardless (nothing is sent), and
-the pytest suite never touches the network.
+The stream embeds the real Docker Release (CE rpm) signing key -- the armored
+body of ``https://download.docker.com/linux/centos/gpg`` -- so ``rpm --import``
+accepts it instead of rejecting placeholder bytes; swap in your own vendor
+key's armor to trust a different repository. The dry run plans regardless
+(nothing is sent), and the pytest suite never touches the network. Applying
+for real needs an unconfined sudo: on a CentOS host whose sudo is confined to
+SELinux ``staff_t``, the elevated ``sh -c 'rpm --import ...'`` wrapper cannot
+read the login user's ``0600`` scp spool (no ``CAP_DAC_OVERRIDE``), so the
+import fails with ``import read failed`` until the host is relaxed (see the
+``dnf`` examples page for the full caveat).
 
 The request also carries ``when=is_centos``, the declarative eligibility
 guard (see ``examples/demonstrations/composition/composed_when_guard.py``).
@@ -97,16 +103,42 @@ from reemote5 import (
 
 # The IO-like key content, created once on the control machine: the same object
 # is passed to the request in every phase, so the prepare and apply request
-# sequences compare equal (OperationRequest compares it by identity). This is a
-# placeholder armored block -- replace it with a real public GPG key before a
-# real apply, since ``rpm --import`` rejects invalid material.
-GPG_KEY = io.BytesIO(
-    b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n"
-    b"\n"
-    b"mQIN EXAMPLE -- replace with a real armored public GPG key before use.\n"
-    b"=reemote5-placeholder\n"
-    b"-----END PGP PUBLIC KEY BLOCK-----\n"
-)
+# sequences compare equal (OperationRequest compares it by identity). This is
+# the real Docker Release (CE rpm) signing key, ASCII-armored -- the body of
+# https://download.docker.com/linux/centos/gpg -- so ``rpm --import`` on the
+# host accepts it instead of rejecting placeholder bytes. Replace the armor
+# with your own vendor key to trust a different repository.
+_DOCKER_RPM_KEY_ARMOR = """\
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mQINBFit5IEBEADDt86QpYKz5flnCsOyZ/fk3WwBKxfDjwHf/GIflo+4GWAXS7wJ
+1PSzPsvSDATV10J44i5WQzh99q+lZvFCVRFiNhRmlmcXG+rk1QmDh3fsCCj9Q/yP
+w8jn3Hx0zDtz8PIB/18ReftYJzUo34COLiHn8WiY20uGCF2pjdPgfxE+K454c4G7
+gKFqVUFYgPug2CS0quaBB5b0rpFUdzTeI5RCStd27nHCpuSDCvRYAfdv+4Y1yiVh
+KKdoe3Smj+RnXeVMgDxtH9FJibZ3DK7WnMN2yeob6VqXox+FvKYJCCLkbQgQmE50
+uVK0uN71A1mQDcTRKQ2q3fFGlMTqJbbzr3LwnCBE6hV0a36t+DABtZTmz5O69xdJ
+WGdBeePCnWVqtDb/BdEYz7hPKskcZBarygCCe2Xi7sZieoFZuq6ltPoCsdfEdfbO
++VBVKJnExqNZCcFUTEnbH4CldWROOzMS8BGUlkGpa59Sl1t0QcmWlw1EbkeMQNrN
+spdR8lobcdNS9bpAJQqSHRZh3cAM9mA3Yq/bssUS/P2quRXLjJ9mIv3dky9C3udM
++q2unvnbNpPtIUly76FJ3s8g8sHeOnmYcKqNGqHq2Q3kMdA2eIbI0MqfOIo2+Xk0
+rNt3ctq3g+cQiorcN3rdHPsTRSAcp+NCz1QF9TwXYtH1XV24A6QMO0+CZwARAQAB
+tCtEb2NrZXIgUmVsZWFzZSAoQ0UgcnBtKSA8ZG9ja2VyQGRvY2tlci5jb20+iQI3
+BBMBCgAhBQJYrep4AhsvBQsJCAcDBRUKCQgLBRYCAwEAAh4BAheAAAoJEMUv62ti
+Hp816C0P/iP+1uhSa6Qq3TIc5sIFE5JHxOO6y0R97cUdAmCbEqBiJHUPNQDQaaRG
+VYBm0K013Q1gcJeUJvS32gthmIvhkstw7KTodwOM8Kl11CCqZ07NPFef1b2SaJ7l
+TYpyUsT9+e343ph+O4C1oUQw6flaAJe+8ATCmI/4KxfhIjD2a/Q1voR5tUIxfexC
+/LZTx05gyf2mAgEWlRm/cGTStNfqDN1uoKMlV+WFuB1j2oTUuO1/dr8mL+FgZAM3
+ntWFo9gQCllNV9ahYOON2gkoZoNuPUnHsf4Bj6BQJnIXbAhMk9H2sZzwUi9bgObZ
+XO8+OrP4D4B9kCAKqqaQqA+O46LzO2vhN74lm/Fy6PumHuviqDBdN+HgtRPMUuao
+xnuVJSvBu9sPdgT/pR1N9u/KnfAnnLtR6g+fx4mWz+ts/riB/KRHzXd+44jGKZra
+IhTMfniguMJNsyEOO0AN8Tqcl0eRBxcOArcri7xu8HFvvl+e+ILymu4buusbYEVL
+GBkYP5YMmScfKn+jnDVN4mWoN1Bq2yMhMGx6PA3hOvzPNsUoYy2BwDxNZyflzuAi
+g59mgJm2NXtzNbSRJbMamKpQ69mzLWGdFNsRd4aH7PT7uPAURaf7B5BVp3UyjERW
+5alSGnBqsZmvlRnVH5BDUhYsWZMPRQS9rRr4iGW0l+TH+O2VJ8aQ
+=0Zqq
+-----END PGP PUBLIC KEY BLOCK-----
+"""
+GPG_KEY = io.BytesIO(_DOCKER_RPM_KEY_ARMOR.encode("ascii"))
 
 # examples/modules/dnf/dnf_key.py -> the project root, so the inventory is
 # found whatever the current working directory is.
