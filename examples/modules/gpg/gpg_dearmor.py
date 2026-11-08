@@ -153,7 +153,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     yield op(
         files.file,
         name="Clear any stale keyring",
-        src=DEST,
+        path=DEST,
         present=False,
         sudo=True,
     )

@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""reemote5: a POC model for generator-based two-phase execution.
+"""reemote5: a generator-based two-phase execution model.
 
 An alternative to pyinfra's prepare/execute design in which deploy scripts
 are generators yielding ``OperationRequest`` descriptors, and the driver
@@ -14,10 +14,12 @@ asyncssh transport built from its inventory ``connection`` data (or, with
 ``connection.connector`` set to ``"docker"``, a ``DockerHost`` drives a
 local Docker/Podman container through the same seams).
 
-Beside the deploy model, ``actions`` (``Shell``, ``WaitForConnection``,
-``gather_action``) act immediately -- before, between or after deploys, never
-inside one: ``Shell`` runs a bespoke shell command and returns a ``Result``
-per host, ``WaitForConnection`` waits for hosts to become reachable again
+Beside the deploy model, ``actions`` (``Shell``, ``Script``,
+``WaitForConnection``, ``gather_action``) act immediately -- before, between
+or after deploys, never inside one: ``Shell`` runs a bespoke shell command
+and returns a ``Result`` per host, ``Script`` (also reachable as
+``server.script``) runs a script file already staged on the host, and
+``WaitForConnection`` waits for hosts to become reachable again
 (e.g. after a reboot) or raises a fatal ``ConnectionTimeoutError``.
 """
 
@@ -25,6 +27,7 @@ from .actions import (
     ActionInDeployError,
     ConnectionTimeoutError,
     Result,
+    Script,
     Shell,
     WaitForConnection,
     gather_action,
@@ -183,20 +186,28 @@ from .modules.dnf.dnf import (
     RpmPackageInfo,
 )
 from .modules.files.files import (
+    ChattrCommand,
+    ChmodCommand,
+    ChownCommand,
     CopyCommand,
     Directory,
     File,
     FileCommand,
     FileContents,
     FileExists,
+    FileFlags,
     FileLink,
     GetCommand,
+    InstallCommand,
+    InstallSpoolCommand,
     Link,
     LinkCommand,
+    MkdirCommand,
     MoveCommand,
     PutCommand,
     RemoteFileSha1,
     RemoveTreeCommand,
+    SameFile,
 )
 from .modules.firewalld.firewalld import (
     FirewalldDefaultZone,
@@ -504,7 +515,9 @@ from .modules.selinux.selinux import (
 from .modules.server.server import (
     Arch,
     AuthorizedKeys,
+    AuthorizedKeysAppendCommand,
     Date,
+    Env,
     GroupAddCommand,
     GroupDelCommand,
     Groups,
@@ -524,13 +537,17 @@ from .modules.server.server import (
     ModprobeCommand,
     MountCommand,
     Mounts,
-    Path,
+    Port,
+    PortInfo,
     Processes,
     SetHostnameCommand,
     SetTimezoneCommand,
     Timezone,
     Uptime,
     User,
+    UserAddCommand,
+    UserDelCommand,
+    UserModCommand,
     Users,
     WaitForFactCommand,
     Which,
@@ -640,11 +657,15 @@ __all__ = [
     "AptUpgradeCommand",
     "Arch",
     "AuthorizedKeys",
+    "AuthorizedKeysAppendCommand",
     "AutorelabelCommand",
     "BlockDevice",
     "BlockDevices",
     "Booleans",
+    "ChattrCommand",
     "ChconCommand",
+    "ChmodCommand",
+    "ChownCommand",
     "Command",
     "CommandError",
     "CommandNotFoundError",
@@ -688,6 +709,7 @@ __all__ = [
     "DnfRepository",
     "DnfUpdateCommand",
     "DockerHost",
+    "Env",
     "FactCache",
     "File",
     "FileCommand",
@@ -695,6 +717,7 @@ __all__ = [
     "FileContext",
     "FileContextMapping",
     "FileExists",
+    "FileFlags",
     "FileLink",
     "FirewalldDefaultZone",
     "FirewalldDefaultZoneCommand",
@@ -782,6 +805,8 @@ __all__ = [
     "HostConnectionError",
     "HostRuntime",
     "Hostname",
+    "InstallCommand",
+    "InstallSpoolCommand",
     "InventoryEntry",
     "InventoryError",
     "Ip6tablesChains",
@@ -879,6 +904,7 @@ __all__ = [
     "LxdStorageVolume",
     "LxdStorageVolumeCommand",
     "LxdStorageVolumes",
+    "MkdirCommand",
     "Mode",
     "ModeInfo",
     "ModprobeCommand",
@@ -934,9 +960,10 @@ __all__ = [
     "OpenrcVersion",
     "OperationError",
     "OperationRequest",
-    "Path",
     "PermissiveDomains",
     "PlannedOperation",
+    "Port",
+    "PortInfo",
     "PostgresqlConnection",
     "PostgresqlConnections",
     "PostgresqlDatabase",
@@ -998,6 +1025,8 @@ __all__ = [
     "SEPort",
     "SEPorts",
     "SEUser",
+    "SameFile",
+    "Script",
     "SeContext",
     "SeLogin",
     "SeUser",
@@ -1060,6 +1089,9 @@ __all__ = [
     "UnhashableArgumentError",
     "Uptime",
     "User",
+    "UserAddCommand",
+    "UserDelCommand",
+    "UserModCommand",
     "Users",
     "WaitCommand",
     "WaitForConnection",

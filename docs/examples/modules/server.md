@@ -7,7 +7,9 @@ warning and the error-reporting contract every script follows.
 
 The read-only fact-gathering examples (`server_arch.py`, reading `Arch`,
 `server_authorized_keys.py`, reading `AuthorizedKeys` for the login user,
-`server_date.py`, reading `Date`, `server_groups.py`, reading `Groups`,
+`server_date.py`, reading `Date`,
+`server_env.py`, reading `Env` for `PATH` and `HOME`,
+`server_groups.py`, reading `Groups`,
 `server_has_gui.py`, reading `HasGui`, `server_home.py`, reading `Home`
 for the login user and for `root`, `server_hostname.py`, reading
 `Hostname`, `server_kernel.py`, reading `Kernel`,
@@ -20,7 +22,7 @@ for the login user and for `root`, `server_hostname.py`, reading
 `server_locales.py`, reading `Locales`,
 `server_lsb_release.py`, reading `LsbRelease`,
 `server_mounts.py`, reading `Mounts`,
-`server_path.py`, reading `Path`,
+`server_port.py`, reading `Port` for TCP 80, UDP 53 and a closed port,
 `server_processes.py`, reading `Processes`,
 `server_timezone.py`, reading `Timezone`,
 `server_uptime.py`, reading `Uptime`,
@@ -171,6 +173,66 @@ read-only `server_timezone.py` fact example.
     options:
       members: []
 
+## Creating and removing user accounts
+
+`server.user` in action: the deploy creates a `deploy` service account with a
+login shell and a GECOS comment in the `apps` group, appends the `staff`
+group to it, then removes a `legacy` account — all under `sudo`, because
+`useradd`, `usermod`, `userdel` and the home-directory pair need root. The
+two groups come from `server.group` requests first, since the lockstep barrier
+finishes those steps before any host touches an account. The operation is
+idempotent — it compares the request against the `Users` fact and yields
+`useradd` for an absent account, a `usermod` carrying only the differing
+fields for a present one, and `userdel` for `present=False`, so a second run
+plans no change. `groups` is a tuple because `op()` arguments must stay
+hashable, and `append=True` adds memberships without removing any. The default
+`ensure_home` is pyinfra's `files.directory` delegation, inlined: with
+`create_home=False` (the default) `useradd` builds nothing from the skeleton,
+so the plan shows the `mkdir -p /home/deploy` plus `chown deploy:deploy
+/home/deploy` pair that actually creates the directory. The append step also
+makes the per-phase fact cache visible: in the plan both user requests read
+the same pre-deployment state and both show a change, while in the apply each
+step re-reads the facts, so the fourth step sees the groups the third wrote
+and sends only `usermod -a -G staff deploy`. pyinfra's
+`public_keys`/`delete_keys` options are deliberately dropped (reemote5 has no
+`files.line` operation and only unprivileged transfers), as are its plan-time
+`Which` guards, so a missing `useradd` surfaces at apply as
+`CommandNotFoundError`. The script mutates the shared demo inventory for
+real: the account, its home directory and the two groups stay on the hosts.
+The script is named `server_op_user.py` to keep it distinct from the
+read-only `server_user.py` fact example.
+
+::: server_op_user
+    options:
+      members: []
+
+## Authorising SSH public keys
+
+`server.user_authorized_keys` in action: the deploy ensures the login user's
+`~/.ssh` directory (mode `700`) and `authorized_keys` file (mode `600`) exist
+and are owned correctly, then appends the public keys not already listed —
+pyinfra's documented flow with its controller-side key-file paths dropped
+(every `public_keys` entry here is a literal key string, and it is a tuple
+because `op()` arguments must stay hashable). The operation is idempotent —
+it reads the `Home` fact to resolve the directory, a private `_KeysPathStat`
+probe for the directory/file owner and mode, and the `AuthorizedKeys` fact
+(read with the explicit key-file path) for which keys are present, yielding a
+command only where they differ, so a second run plans no change. Creating a
+key file from nothing shows the whole setup (`mkdir -p` + `chmod 700` +
+`chown` for `~/.ssh`, then `touch` + `chmod 600` + `chown` for the file)
+before the appends; the append command wraps its `>>` redirect in `sh -c` so
+the open happens inside the elevated shell. Here the keys are managed for the
+login user themselves, so no `sudo` is needed; managing another user's keys
+would flag `sudo=True`. pyinfra's `delete_keys` option is deliberately dropped
+(it rewrites the whole file through an elevated `files.put`, which reemote5
+cannot elevate), so this operation only ever adds keys. The script is named
+`server_user_authorized_keys.py` to keep it distinct from the read-only
+`server_authorized_keys.py` fact example.
+
+::: server_user_authorized_keys
+    options:
+      members: []
+
 ## Managing locales (pyinfra server.locale parity)
 
 `server.locale` is deliberately not ported as a library operation — this
@@ -234,6 +296,37 @@ named `server_op_sysctl.py`; the read-only fact example relocated to
     options:
       members: []
 
+## Ensuring a resource limit (pyinfra server.security_limit parity)
+
+`server.security_limit` is deliberately not ported as a library operation —
+like `server.etc_hosts` and `server.locale` it is a thin wrapper over
+pyinfra's `files.line`, and reemote5 ships one generic editor instead:
+this recipe, built on the `files.edit` primitive. The script snapshots
+`FileContents("/etc/security/limits.conf")` from every host and computes
+the desired content with the pure `security_limit_edit` function —
+pyinfra's `files.line` lookup (anchored
+`^{domain}\s+{limit_type}\s+{item}.*$`, the value *not* part of the
+pattern, so a stale `* soft nofile 65535` line is corrected in place and
+every match becomes the tab-formatted replacement; with no match the line
+appends) done with a Python regex instead of a `FindInFile` grep, the
+fields escaped literally where pyinfra interpolates them raw into a BRE.
+Hosts whose content already matches are skipped in `main` — the script-level
+idempotence pyinfra gets from its fact short-circuit. One deploy then
+spools the content to `/tmp/limits.conf` through `files.edit` with a
+closure-factory transform frozen between the snapshot and the run, and
+installs it with a demo-side stateless operation: an elevated
+`sh -c 'mv ... && chown root:root ... && chmod 0644 ...'` raw
+`StringCommand`. `files.move` is deliberately *not* the install vehicle
+here — `mv` preserves the spool's owner and mode, and a stock
+`pam_limits`-read system file must land `root:root 0644` — and because
+that step reads no facts and validates nothing in the prepare phase, the
+spool and the install share one deploy instead of the two-run
+`files.move` shape of the `etc_hosts` recipe.
+
+::: server_security_limit
+    options:
+      members: []
+
 ## Starting a service and waiting for it
 
 The waiting design in action: `server.service` starts and enables httpd under
@@ -248,5 +341,31 @@ the first poll. Both hosts finish the start step before either polls, and the
 two poll loops then run concurrently.
 
 ::: wait_for_httpd
+    options:
+      members: []
+
+## Waiting for a port to listen
+
+The same waiting design, asked of the kernel instead of systemd: `server.wait`
+yields the very same `WaitForFactCommand` — its `port` argument is pyinfra's
+only option — but polls the `Port` fact until its `listening` flag turns
+true. The deploy starts httpd under `sudo`, then waits up to forty-five
+seconds for TCP port 80 at a one second interval — a port on its way up
+usually appears within a second, where a unit's start takes longer, which is
+why the wait's default `interval` is `1.0` rather than `wait_service`'s
+`5.0`. Reading the socket table is the stronger claim of the two: a
+unit can report `active` while its daemon is still binding, and a service
+that systemd does not manage opens its port all the same. Like every wait
+the request reads no facts and is always planned as
+a change, so both phases yield it identically. The poll runs unprivileged
+(`ss -ltn` needs no root), and `Port` therefore keeps presence in its own
+`listening` flag instead of inferring it from the owning process — an
+unprivileged listing shows the socket but not `process`/`pid`, and
+`is_listening` reads the flag alone. `protocol="udp"` waits the other family;
+a port outside 1-65535 or an unknown protocol raises at plan time, before
+anything is sent. The script is named `server_op_wait.py` to keep it distinct
+from the read-only `server_port.py` fact example.
+
+::: server_op_wait
     options:
       members: []

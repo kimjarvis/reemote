@@ -71,7 +71,7 @@ def role_httpd(host: Host) -> Generator[OperationRequest]:
     yield op(
         files.file,
         name="Remove welcome configuration",
-        src=HTTPD_WELCOME_CONF,
+        path=HTTPD_WELCOME_CONF,
         present=False,
     )
 
@@ -159,7 +159,7 @@ def test_sub_deploy_prefixes_names_and_falls_back_to_func_name():
 def test_sub_deploy_sudo_elevates_only_unflagged_requests():
     def mixed(host: Host) -> Generator[OperationRequest]:
         yield op(dnf.packages, name="unprivileged", packages=("curl",))
-        yield op(files.file, name="privileged", src="/tmp/x", sudo=True)
+        yield op(files.file, name="privileged", path="/tmp/x", sudo=True)
 
     first, second = sub_deploy(mixed, sudo=True)(HOST)
     assert first.sudo is Privilege.ON

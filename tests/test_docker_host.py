@@ -326,7 +326,7 @@ async def test_connect_rejects_an_empty_run_stdout():
 
 async def test_run_prepare_aggregates_docker_connection_errors():
     def deploy(host: Host) -> Generator[OperationRequest]:
-        yield op(files.file, src="/etc/motd")
+        yield op(files.file, path="/etc/motd")
 
     hosts = []
     for name in ("build1", "build2"):

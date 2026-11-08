@@ -4,7 +4,7 @@
 """Example: gather the ``server.User`` fact on two real hosts.
 
 This is a *usage* example, not part of the library. Like
-``examples/modules/server/server_path.py``, it reads a single **fact**
+``examples/modules/server/server_env.py``, it reads a single **fact**
 directly over the *real SSH transport* (asyncssh) instead of driving the
 two-phase execution model:
 

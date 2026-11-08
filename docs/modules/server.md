@@ -19,6 +19,20 @@ binding now points at `sysctl.Sysctl`. The `sysctl` namespace also owns the
 persistence facts (`SysctlFile`, `SysctlFiles`) and the `setting`/`conf`
 operations that supersede the `server_op_sysctl.py` recipe for everyday use.
 
+The `Path` fact has been **superseded by `Env`**: `Env` with the name
+`PATH` issues the same `echo $PATH` shell and returns the same raw
+colon-separated string, while any other environment variable can now be
+read through the same fact. `Path` is no longer exported.
+
+`server.script` is an **action**, not an operation: an alias of
+[`Script`][reemote5.actions.Script] from `reemote5.actions`, driven by
+`gather_action` outside the deploy model. It runs a script file already on
+the host — stage it with `files.put` in a deploy first — executing an
+executable file directly (shebang honoured) and a non-executable one through
+`sh`, with an explicit `interpreter=` overriding both. A missing file comes
+back as an error `Result` (exit 127), never an exception. See the
+[Actions reference](../actions/actions.md).
+
 --->
 
 ## server Facts
@@ -30,6 +44,7 @@ operations that supersede the `server_op_sysctl.py` recipe for everyday use.
         - Arch
         - AuthorizedKeys
         - Date
+        - Env
         - Groups
         - HasGui
         - Home
@@ -44,7 +59,7 @@ operations that supersede the `server_op_sysctl.py` recipe for everyday use.
         - Locales
         - LsbRelease
         - Mounts
-        - Path
+        - Port
         - Processes
         - Timezone
         - Uptime
@@ -57,7 +72,8 @@ operations that supersede the `server_op_sysctl.py` recipe for everyday use.
 ::: reemote5.modules.server.server
     options:
       show_root_heading: false
-      members: []
+      members:
+        - PortInfo
 
 ## server Operations
 
@@ -71,6 +87,9 @@ operations that supersede the `server_op_sysctl.py` recipe for everyday use.
         - modprobe
         - mount
         - timezone
+        - user
+        - user_authorized_keys
+        - wait
         - wait_service
 
 
@@ -78,16 +97,20 @@ operations that supersede the `server_op_sysctl.py` recipe for everyday use.
 
 `reemote5.modules.server.server` combines the server facts and the server
 operations in a single source, so the read side (`Arch`, `AuthorizedKeys`,
-`Date`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
+`Date`, `Env`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
 `KernelVersion`, `Last`, `LinuxDistribution`, `LinuxGui`, `LinuxName`,
-`Locales`, `LsbRelease`, `Mounts`, `Path`, `Processes`,
+`Locales`, `LsbRelease`, `Mounts`, `Port`, `Processes`,
 `Timezone`, `Uptime`, `User`, `Users`, `Which`)
 sits beside the `server.group`, `server.hostname`, `server.kill`,
-`server.modprobe`, `server.mount`, `server.timezone` and
+`server.modprobe`, `server.mount`, `server.timezone`, `server.user`,
+`server.user_authorized_keys`,
+`server.wait` and
 `server.wait_service`
 operations that consume them. It is also where reemote5's
 **waiting** design lives: `server.wait_service` is the first operation that
-blocks until a condition on the host holds.
+blocks until a condition on the host holds, and `server.wait` is the second
+-- it asks the same question of the kernel's socket table through the `Port`
+fact.
 
 ## Facts
 
@@ -108,7 +131,16 @@ arguments: it runs `date +'%Y-%m-%dT%H:%M:%S%z'` and parses the ISO 8601
 timestamp into a timezone-aware `datetime`, mirroring pyinfra's
 `server.Date`; empty output (the command failed) reads as `None` — pyinfra's
 `default = datetime.now` fallback to the control machine's clock is
-deliberately dropped. `Groups` takes no arguments: it cats `/etc/group` and
+deliberately dropped. `Env` takes a variable name: it runs `echo $<name>`
+and returns that environment variable's value from the login shell as the
+raw string (e.g. `/usr/bin:/bin` for `PATH`) — an original reemote5 fact
+that replaces the migrated `server.Path` (`Env` with the name `PATH`
+issues the same shell and returns the same string, not split into a list,
+so callers can `split(":")` themselves). The name is validated rather than
+quoted — `$<name>` must stay a bare word for the shell to expand it — so
+an unsafe name raises `ValueError` instead of reaching the shell. The
+first non-blank line is the answer and empty output — the variable is
+unset or empty — reads as `""`, just like `Arch`. `Groups` takes no arguments: it cats `/etc/group` and
 returns the first `:`-separated field of every colon-bearing line — the
 group names in file order, with no dedup or sorting — mirroring pyinfra's
 `server.Groups`; lines without a colon are skipped and empty output reads
@@ -211,12 +243,28 @@ because the per-mount options override them. On OpenBSD the `ctime=...`
 flag is dropped and non-matching lines are skipped. Empty output reads as
 `{}` on every branch, pyinfra's `default = dict` (its FreeBSD JSON branch
 would raise on empty output — a failed read here simply reports no mounts).
-`Path` takes no arguments: it runs `echo $PATH` and returns the login
-user's `PATH` environment variable as the raw colon-separated string
-(e.g. `/usr/bin:/bin`), mirroring pyinfra's `server.Path` — the string is
-not split into a list, so callers can `split(":")` themselves. The first
-non-blank line is the answer and empty output — the command failed, or
-`PATH` is unset or empty — reads as `""`, just like `Arch`.
+`Port` takes a port and an optional protocol (default `tcp`): it reads the
+`Kernel` fact to pick its tool — FreeBSD runs `sockstat -l -p <port> -P
+<protocol>`, every other kernel prefers Linux `ss -lp<flag>n | grep
+':<port> ' || true` and falls back to `netstat -<flag>lnp ... | awk ...`
+when the `Which` fact reports no `ss` — and returns a
+[`PortInfo`][reemote5.modules.server.server.PortInfo] record: `listening`
+says whether the port has at least one listening socket, `process` and `pid`
+name the owner of the first row that carries one. `listening` is decided by
+any row surviving the port filter, so it is tool- and
+privilege-independent, while the owner pair is best-effort: an unprivileged
+listing shows the socket but not the process behind it, so `process`/`pid`
+come back `None` even though the port is up. That is the deliberate deviation
+from pyinfra: its `(process, pid)` tuple cannot tell "absent" from "present
+but unowned" — which is why its own `ss-tcp-no-process-info` fixture (two
+LISTEN rows, no process information) answers `[null, null]` — and it is the
+shape `server.wait` needs, since a wait is never elevated. The port and
+protocol are validated before anything is sent (`_check_port`): a non-int
+port raises `TypeError`, one outside 1-65535 or a protocol other than
+`tcp`/`udp` raises `ValueError`, and both values are shell-quoted after the
+check, so they can never reach the command line as syntax. Empty output — no
+matching row — reads as `listening=False`, and a malformed PID cell reads as
+no PID where pyinfra's parser would raise.
 `Processes` takes an optional `pid`: it reads the `Kernel` fact and probes
 for BusyBox to pick its shell — Linux lists `ps -eo
 pid,user,stat,%cpu,%mem,comm,args --no-headers`, FreeBSD the same `ps -eo`
@@ -259,7 +307,7 @@ read never masquerades as a freshly booted host. A non-integer line raises
 runs `echo $USER` and returns the current user's name (e.g. `root`),
 mirroring pyinfra's `server.User`; the first non-blank line is the answer
 and empty output — the command failed, or `USER` is unset or empty — reads
-as `""`, just like `Path`. `Users` takes no arguments: it runs pyinfra's
+as `""`, just like `Env`. `Users` takes no arguments: it runs pyinfra's
 shell loop joining each `/etc/passwd` entry with `id`'s primary and
 secondary groups, the `lastlog` (`lastlogin` on BSD) row and the shadow
 password hash, and returns a dict of username → `{home, comment, shell,
@@ -289,7 +337,9 @@ for its BusyBox probe.
 
 Operations live in namespace modules so a deploy reads `server.group`,
 `server.hostname`, `server.kill`, `server.modprobe`, `server.mount`,
-`server.service`, `server.timezone` and
+`server.service`, `server.timezone`, `server.user`,
+`server.user_authorized_keys`,
+`server.wait` and
 `server.wait_service`,
 mirroring pyinfra's API. Every
 operation is an async
@@ -402,6 +452,101 @@ into `/etc/timezone` — is deliberately dropped: reemote5 supports this
 operation on systemd systems only, where `timedatectl` already persists
 the zone.
 
+`server.user` mirrors pyinfra's `server.user` for `user`, `present`, `home`,
+`shell`, `group`, `groups`, `append`, `ensure_home`, `create_home`, `system`,
+`uid`, `comment`, `unique` and `password`: the requested state is compared
+against the `Users` fact and a descriptor is yielded only where they differ —
+a `UserDelCommand` when `present=False` finds the user, a `UserAddCommand`
+when the user is absent, and a `UserModCommand` carrying just the differing
+fields when it is present (pyinfra's per-field `mod_args`). The `Kernel` fact
+picks the command form — FreeBSD gets `pw useradd`/`pw usermod`/`pw userdel
+-n`, every other kernel the shadow-suite commands — the same dispatch
+`server.group` and `KernelModules` use. `uid`, `system` and `unique` only
+apply at creation: a present user is never re-id'd or turned into a system
+account, a falsy `uid` (`None` or `0`) renders nothing, exactly like
+pyinfra's `if uid:` check, and `system` is ignored on BSD kernels, which have
+no system accounts. `create_home` renders `-m` and the opposite default `-M`
+carries over only to kernels that have the skeleton flag at all — neither
+FreeBSD nor OpenBSD does. `home` defaults to `/home/<user>` for an absent
+user and to the recorded home for a present one, so omitting the option never
+plans a spurious change, and a creation with no primary `group` reuses an
+existing group of the user's name when there is one (pyinfra's "tell
+`useradd` to use it" fix). `groups` is compared as a set, and with
+`append=True` only the memberships the user lacks are written (`-a -G`) —
+appending never removes one. Pass `groups` as a tuple rather than a list:
+`op()` requests must stay hashable, so a list raises
+[`UnhashableArgumentError`][reemote5.core.UnhashableArgumentError].
+`password` is the *encrypted* hash. On Linux it rides the same `usermod -p`,
+while FreeBSD `pw` has no modify flag for it and gets a separate
+`echo '<hash>' | pw usermod -n <user> -H 0` pipe command, which is the only
+command a password-only change plans there. Removal is the one direction
+with no extras: `present=False` removes the user and nothing
+else, since neither `userdel` nor pyinfra's branch touches the home directory
+or any files.
+
+`ensure_home` (on by default) is pyinfra's delegation to `files.directory`,
+inlined: the server-local `_HomeDirectory` and `_HomeIsLink` probes decide
+whether the home still needs work, and `_HomeMkdirCommand` and
+`_HomeChownCommand` render the `mkdir -p` plus `chown <user>:<group>` pair.
+An absent home is created and owned, a wrong owner is chowned, a symlinked
+home is accepted as-is (pyinfra's `_no_fail_on_link=True`), and a home that
+exists as something other than a directory raises
+[`OperationError`][reemote5.core.OperationError] during the prepare phase —
+before anything is sent. Like every other check in the operation, the home
+probes are awaited in the generator body, so the request sequence stays
+identical in both phases. Every command here needs root, so flag the request
+`sudo=True`.
+
+pyinfra's `public_keys`/`delete_keys` options are deliberately dropped: that
+branch delegates to `server.user_authorized_keys`, which mixes an elevated
+`files.directory` mode change, `files.line` appends and a `files.put`
+rewrite of `~/.ssh/authorized_keys`, and reemote5 has no `files.line`
+operation and only unprivileged transfers. Manage key files from the caller,
+with the `AuthorizedKeys` fact and the `files` operations. pyinfra's
+plan-time `Which` guards ("`useradd` is not installed", with its Alpine
+shadow-package note) are dropped as well: a missing binary surfaces at apply
+as `CommandNotFoundError` from the exit status, the convention every other
+reemote5 operation follows.
+
+`server.user_authorized_keys` mirrors pyinfra's `server.user_authorized_keys`
+for `user`, `public_keys`, `group`, `authorized_key_directory` and
+`authorized_key_filename`: it is the append half of the key-file branch
+`server.user` above deliberately drops, extracted into its own operation.
+Idempotent, it ensures the `.ssh` directory first (mode `700`, owned by
+`user`/`group`, the `group` option defaulting to the user's own name exactly
+as pyinfra's `group or user` does) and the `authorized_keys` file second
+(mode `600`), each compared against the private `_KeysPathStat` in-namespace
+probe of the shared `directory_stats`/`file_stats` seams — the
+`files.Directory`/`files.File` facts it stands in for cannot be imported
+across namespaces. A missing directory is `mkdir -p`'d, chmod'd and chown'd
+(reusing `_HomeMkdirCommand`/`_HomeChownCommand` plus the private
+`_KeysChmodCommand`/`_KeysTouchCommand` stand-ins for the chmod/touch verbs
+that pair has no twin for); a wrong mode or owner re-runs just that half; a
+path that exists as the wrong type raises
+[`OperationError`][reemote5.core.OperationError] during the prepare phase.
+Key idempotence then rides the `AuthorizedKeys` fact read with an explicit
+`path` (never tilde-resolved): every requested key not already listed is
+appended with one `AuthorizedKeysAppendCommand` in the caller's own order,
+while keys already present are skipped. That descriptor renders pyinfra's
+`files.line` add idiom — a newline guard so a key never glues onto a
+newline-less last line — wrapped in `sh -c` so the `>>` redirect happens
+*inside* the elevated shell; a bare `sudo echo ... >> <path>` would open the
+redirect as the login user and fail on another user's `600` file. Writing
+into another user's `~/.ssh` needs root, so flag the request `sudo=True`.
+
+Two pyinfra behaviors are deliberately dropped (developer decisions). The
+`delete_keys` option is not ported: that branch rewrites the whole file
+through an *elevated* `files.put`, and reemote5 transfers are always
+unprivileged, so only the append direction is this operation's deliverable —
+it never removes a key already present (inspect with `AuthorizedKeys` and
+prune with a file-rewriting recipe of your own). And a `public_keys` entry is
+always a *literal* key string, never a controller-side file path: pyinfra's
+`read_any_pub_key_file` `os.path.exists` branch clashes with the same
+IO-only/no-controller-path rule `files.put`/`files.get`/`apt.key`/`dnf.key`
+follow, and reading a controller file in both phases would risk a
+[`DeterminismError`][reemote5.drivers.DeterminismError] if it changed in
+between.
+
 pyinfra's `server.locale` is deliberately not ported: the `/etc/locale.gen`
 edit is fully expressible with the generic `files.edit` transform primitive,
 and its `locale-gen` step is a raw shell command. The
@@ -424,6 +569,17 @@ value with an elevated raw command, spools the desired config to a
 writable path and installs it with an elevated `files.move` in a second
 deploy — no bespoke operation and no new descriptor.
 
+pyinfra's `server.security_limit` is deliberately not ported: like
+`server.etc_hosts` it is a thin wrapper over `files.line`, and the
+`/etc/security/limits.conf` edit is fully expressible with the generic
+`files.edit` transform primitive. The
+[security-limit recipe](../examples/modules/server.md#ensuring-a-resource-limit-pyinfra-serversecurity_limit-parity)
+snapshots `FileContents`, applies pyinfra's anchored line lookup
+controller-side (a Python regex over the content, fields escaped
+literally), spools the desired content to a writable path and installs
+it with an elevated `sh -c` `mv` plus `chown root:root`/`chmod 0644` —
+no bespoke operation and no new descriptor.
+
 
 ## Waiting for a condition
 
@@ -431,7 +587,7 @@ pyinfra waits in two ways: a remote-side shell loop (`server.wait` polls
 `netstat` in a `while` loop *on the host*) or a control-side Python callback
 (`server.reboot` yields a `FunctionCommand` that sleeps and re-reads the
 `Uptime` fact until the host is back). reemote5 takes the second shape and
-makes it a descriptor: `server.wait_service` yields a
+makes it a descriptor: `server.wait` and `server.wait_service` each yield a
 `WaitForFactCommand`,
 the second kind of *non-shell* descriptor after the transfers. It has no
 `shell()`; [`send_command`][reemote5.drivers.send_command] dispatches on the
@@ -441,30 +597,54 @@ predicate holds or `timeout` expires and
 [`WaitTimeoutError`][reemote5.commands.WaitTimeoutError] aborts the run. Like
 a transfer it is unprivileged — `sudo`/`su` do not apply to a poll.
 
+`server.wait` mirrors pyinfra's `server.wait` for its one option, `port`, and
+deviates in how the polling happens. pyinfra ships a `while true` shell loop
+over `netstat` with a fixed one second sleep and *no* timeout, so a port that
+never opens hangs the run forever; here the wait is described rather than
+scripted, so the driver bounds it with `timeout` and `interval` is adjustable.
+`wait` defaults to a 1.0s interval where `wait_service` uses 5.0s — a port on
+its way up usually appears within a second, where a unit's start takes longer
+— and takes `protocol` (`tcp` or `udp`) because the socket table is read per
+family. The polled fact is `Port`, the predicate
+[`is_listening`][reemote5.modules.server.server.is_listening], which reads the
+`listening` flag alone: because the poll is unprivileged it may well see the
+socket without seeing its owner, and the wait is about the port, not about who
+owns it. `server.wait_service` is the same descriptor over
+`SystemdServiceState` and `is_active`; which of the two a deploy uses depends
+on whether "ready" means *the unit reports active* or *the socket accepts
+connections* — the port is the stronger claim, since a unit can report
+`active` while its daemon is still binding, and a service systemd does not
+manage opens its port all the same. A bad port or protocol raises at plan
+time, before the wait is ever sent.
+
 Three constraints follow from the execution model:
 
 - **The operation body never polls.** The prepare phase never sends, and its
   `FactCache` persists across a host's requests, so a loop inside the
   generator would spin forever against a value that never changes. The
   operation only *describes* the wait; the driver performs it at send time.
-- **The wait is planned unconditionally.** `server.wait_service` reads no
-  facts and always sets `changed=True`, like pyinfra's non-idempotent
-  `server.wait`. Gating it on a fact would read pre-deployment state in
+- **The wait is planned unconditionally.** `server.wait` and
+  `server.wait_service` read no facts and always set `changed=True`, like
+  pyinfra's non-idempotent `server.wait`. Gating them on a fact would read
+  pre-deployment state in
   prepare and post-start state in apply, and branching on that would raise
   [`DeterminismError`][reemote5.drivers.DeterminismError]. Whether the unit is
-  *already* active is discovered by the first poll — a zero `timeout` still
+  *already* active (or the port *already* open) is discovered by the first
+  poll — a zero `timeout` still
   polls once, so an already-met condition always succeeds.
 - **The poll bypasses the cache.** `WaitForFactCommand.wait` calls
   `fact_cls.process` directly, never `ctx.facts.get`: the per-step cache would
   pin the first value and the loop would never observe the change.
 
 `WaitForFactCommand` is generic — any fact class, any arguments, any predicate
-— so a module can wait for a port, a file hash or a dnf lock with the same
-descriptor. Its fields end up compared by value in plans, so pass module-level
+— so a module can wait for a file hash or a dnf lock with the same
+descriptor; `server.wait` is precisely that reuse over `Port`. Its fields end
+up compared by value in plans, so pass module-level
 fact classes and predicates (such as
-[`is_active`][reemote5.modules.server.server.is_active]), never a lambda built
-inside the generator: the deploy is re-invoked per phase and a fresh lambda
-per invocation would not compare equal.
+[`is_active`][reemote5.modules.server.server.is_active] and
+[`is_listening`][reemote5.modules.server.server.is_listening]), never a lambda
+built inside the generator: the deploy is re-invoked per phase and a fresh
+lambda per invocation would not compare equal.
 
 In the apply phase the lockstep barrier guarantees every host has finished
 the preceding step (the `systemctl start`) before any host begins polling,
@@ -473,7 +653,10 @@ the step barrier, not the other hosts' polling.
 
 The test framework's `SimulatedHost` holds `services` (unit → `ActiveState`)
 and `enabled_services` as the seams the facts read, mutates them on
-`SystemctlCommand`, and evaluates a `WaitForFactCommand` *once* without
+`SystemctlCommand`, and holds `listening_ports` (the `(protocol, port)` →
+`PortInfo` table `Port.process` reads) as a read-only seam — nothing in the
+library's operation set opens a socket, so no command ever mutates it. Either
+way the simulated host evaluates a `WaitForFactCommand` *once* without
 sleeping: in-memory state never changes on its own, so the condition either
 already holds or the simulated wait raises `WaitTimeoutError` immediately.
 
@@ -482,6 +665,7 @@ already holds or the simulated wait raises `WaitTimeoutError` immediately.
       show_root_heading: false
       members:
         - is_active
+        - is_listening
 
 ## Example
 

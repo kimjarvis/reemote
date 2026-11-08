@@ -6,9 +6,10 @@
 # Fact side (design doc section 5): ``Arch`` (the machine architecture from
 # ``uname -m``), ``AuthorizedKeys`` (the SSH public keys listed in a user's
 # ``~/.ssh/authorized_keys`` file), ``Date`` (the current datetime on the
-# server, parsed from an ISO 8601 ``date`` timestamp), ``Groups`` (the group
-# names listed in ``/etc/group``), ``HasGui`` (whether a known desktop-session
-# binary is installed), ``Home`` (a user's home directory, resolved by shell
+# server, parsed from an ISO 8601 ``date`` timestamp), ``Env`` (the value
+# of a given environment variable from ``echo $<name>``), ``Groups`` (the
+# group names listed in ``/etc/group``), ``HasGui`` (whether a known
+# desktop-session binary is installed), ``Home`` (a user's home directory, resolved by shell
 # tilde expansion), ``Hostname`` (the server's hostname from ``uname -n``),
 # ``Kernel`` (the kernel name from ``uname -s``), ``KernelModules`` (the
 # loaded kernel modules from ``/proc/modules``, or ``kldstat`` on FreeBSD),
@@ -21,9 +22,9 @@
 # ``locale -a``, normalized to ``UTF-8`` spellings), ``LsbRelease`` (the
 # release information parsed from ``lsb_release -ca``), ``Mounts`` (the
 # mounted filesystems, keyed by mount point, read from
-# ``/proc/self/mountinfo`` or the BSD ``mount`` variants), ``Path`` (the
-# current user's ``PATH`` environment variable, as the raw colon-separated
-# string), ``Processes`` (the running processes keyed by PID, parsed from
+# ``/proc/self/mountinfo`` or the BSD ``mount`` variants), ``Port`` (whether a port has a listening socket, with the process
+# and PID that own it, listed by ``ss``, ``netstat`` or FreeBSD ``sockstat``),
+# ``Processes`` (the running processes keyed by PID, parsed from
 # ``ps``), ``Timezone`` (the system timezone resolved from
 # ``/etc/localtime``) and ``Uptime`` (the seconds since boot, from
 # ``/proc/uptime`` or the BSD boot-time difference), ``User`` (the
@@ -39,7 +40,15 @@
 # ``server.kill`` plus the ``KillCommand`` descriptor it yields,
 # ``server.modprobe`` plus the ``ModprobeCommand`` descriptor it yields,
 # ``server.mount`` plus the ``MountCommand`` descriptor it yields,
-# ``server.timezone`` plus the ``SetTimezoneCommand`` descriptor it yields, and
+# ``server.timezone`` plus the ``SetTimezoneCommand`` descriptor it yields,
+# ``server.user`` plus the ``UserAddCommand``/``UserModCommand``/
+# ``UserDelCommand`` descriptors it yields (with the private
+# ``_HomeMkdirCommand``/``_HomeChownCommand`` home-directory pair),
+# ``server.user_authorized_keys`` plus the ``AuthorizedKeysAppendCommand``
+# descriptor it yields (with the private ``_KeysPathStat`` probe and the
+# ``_KeysChmodCommand``/``_KeysTouchCommand`` stand-ins beside the reused
+# home-directory pair), and
+# ``server.wait`` plus the ``WaitForFactCommand`` descriptor it yields, and
 # ``server.wait_service`` plus the ``WaitForFactCommand`` descriptor it yields.
 # ``server.group`` mirrors pyinfra's ``server.group`` for ``group``,
 # ``present``, ``system`` and ``gid``, dispatching on the ``Kernel`` fact
@@ -69,6 +78,20 @@
 # relocated ``SystemdServiceState`` fact. ``Sysctl`` was relocated to the
 # ``sysctl`` namespace -- the canonical home for everything sysctl -- and
 # is NOT re-exported here: ``reemote5.Sysctl`` now binds ``sysctl.Sysctl``.
+# ``server.user`` mirrors pyinfra's ``server.user`` for ``user``, ``present``,
+# ``home``, ``shell``, ``group``, ``groups``, ``append``, ``ensure_home``,
+# ``create_home``, ``system``, ``uid``, ``comment``, ``unique`` and
+# ``password``: the requested state is compared against the ``Users`` fact
+# and one ``useradd``/``usermod``/``userdel`` (or the FreeBSD ``pw`` form,
+# picked by the ``Kernel`` fact) is yielded only where they differ; the
+# ``ensure_home`` branch reads a private ``_HomeDirectory`` stand-in for
+# ``files.Directory`` and yields the ``mkdir -p``/``chown`` pair. pyinfra's
+# ``public_keys``/``delete_keys`` branch and its ``Which``
+# useradd/usermod/userdel existence checks are deliberately dropped -- the
+# append half of that branch now lives in its own operation,
+# ``server.user_authorized_keys`` below, but ``server.user`` itself still
+# does not wire either option through it (see that operation's notes on
+# pyinfra's dropped removal half).
 # ``server.timezone`` mirrors pyinfra's ``server.timezone`` for ``timezone``
 # on systemd systems only: it compares against the ``Timezone`` fact and
 # yields ``timedatectl set-timezone`` when they differ; pyinfra's non-systemd
@@ -76,11 +99,16 @@
 # deliberately dropped, and a host without ``timedatectl`` raises
 # ``OperationError`` during prepare instead.
 #
+# ``server.wait`` mirrors pyinfra's ``server.wait`` for ``port``, the only
+# option upstream has: pyinfra loops remotely over ``netstat`` until the port
+# appears, reemote5 describes the wait and lets the driver poll the ``Port``
+# fact until ``is_listening`` holds, bounded by ``timeout``/``interval``.
+#
 # ``WaitForFactCommand`` is the *non-shell* wait descriptor: it carries a fact,
 # its arguments and a predicate, and its ``wait`` polls the fact (bypassing
 # the per-step ``FactCache``) until the predicate holds or the timeout
 # expires. It is generic -- any fact and predicate -- and lives here beside its
-# first consumer, ``server.wait_service``.
+# two consumers, ``server.wait`` and ``server.wait_service``.
 # """
 
 import asyncio
@@ -94,7 +122,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import PurePosixPath
 from tempfile import mkdtemp
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal, TypedDict
 
 import distro
 
@@ -337,6 +365,96 @@ class Date:
             return date
         # Real transport: `date` over asyncssh.
         stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
+# Environment variable names interpolated into ``echo $<name>`` cannot be
+# quoted without disabling the expansion, so the value must be a plain
+# shell identifier: a letter or underscore followed by letters, digits or
+# underscores (the ``_check_tilde_username`` validation pattern).
+_SAFE_ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _check_env_name(name: str) -> None:
+    if not _SAFE_ENV_NAME_RE.match(name):
+        raise ValueError(
+            f"Unsafe environment variable name for shell expansion: {name!r}"
+        )
+
+
+class Env:
+    """The value of a given environment variable on the server (e.g. ``PATH``).
+
+    **Commands:**
+
+    ```bash
+    echo $<name>
+    ```
+
+    **Returns:**
+
+    ```python
+    str
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_env.py``.
+    """
+
+    # Original reemote5 fact replacing the migrated ``server.Path``: it
+    # generalizes pyinfra's ``echo $PATH`` to any variable name, so
+    # ``Env.process(host, "PATH")`` issues the same shell and returns the
+    # same raw colon-separated string ``Path`` used to -- not split into a
+    # list, so callers can ``split(":")`` themselves. The first non-blank
+    # line is the answer; anything after it is ignored (``echo`` prints the
+    # value on one line). Empty output -- the variable is unset or empty --
+    # maps to ``""``, like ``Arch``. Because ``$<name>`` must stay an
+    # unquoted bare word for the shell to expand it, an unsafe name raises
+    # ``ValueError`` instead of reaching the shell (the ``Home``
+    # tilde-validation pattern). ``echo`` is a shell builtin, so the read
+    # never exits 127. ``User`` keeps its own dedicated ``echo $USER`` fact.
+
+    @classmethod
+    def command(cls, name: str) -> str:
+        """Shell echoes the named variable, an unset one printing a blank line.
+
+        The name is validated rather than quoted: quoting ``$name`` would
+        disable the expansion the fact relies on.
+        """
+        _check_env_name(name)
+        return f"echo ${name}"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> str:
+        """Parse ``echo $<name>`` output into the variable's value string.
+
+        The first non-blank line is the answer; anything after it is ignored.
+        """
+        for line in output:
+            stripped = line.strip()
+            if stripped:
+                return stripped
+        return ""
+
+    @classmethod
+    async def process(cls, host: Host, name: str) -> str:
+        # Build the shell first, even on the simulated path, so an unsafe
+        # variable name is rejected identically on both transports.
+        shell = cls.command(name)
+        env = getattr(host, "os_env", None)
+        if env is not None:
+            # SimulatedHost seam: variable name -> value. str is immutable,
+            # so no copy is needed; an unlisted variable reads as "", like
+            # the blank line echo prints for an unset one.
+            return env.get(name, "")
+        # Real transport: `echo $<name>` over asyncssh.
+        stdout = await host.run_shell(shell)
         return cls.parse(stdout.splitlines())
 
 
@@ -1128,8 +1246,6 @@ class LinuxDistribution:
 
         temp_root = mkdtemp()
         try:
-            # pathlib is module-qualified: the ``Path`` fact below owns the
-            # bare name in this module's namespace.
             temp_etc_dir = pathlib.Path(temp_root) / "etc"
             temp_etc_dir.mkdir()
             for filename, content in parts.items():
@@ -1648,64 +1764,233 @@ class Mounts:
         return cls.parse(stdout.splitlines(), kernel)
 
 
-class Path:
-    """The current user's ``PATH`` environment variable (e.g. ``/usr/bin:/bin``).
+class PortInfo(TypedDict):
+    """
+    Attributes:
+        listening: Whether the port has at least one listening socket; the
+            answer ``server.wait`` polls.
+        process: Name of the process owning one of those sockets, or ``None``
+            when the tool reports no owner -- an unprivileged read, or a
+            socket with no process information.
+        pid: PID behind ``process``, or ``None`` under the same conditions.
+    """
+
+    # The single record ``Port`` returns. ``listening`` is decided by any
+    # socket row that survives the port filter, so it is tool- and
+    # privilege-independent; the owner pair is best-effort. pyinfra has no
+    # equivalent record: its ``(process, pid)`` tuple cannot tell "absent"
+    # from "present but unowned", which is why it reports no port for the
+    # two LISTEN rows of its own ``ss-tcp-no-process-info`` fixture.
+
+    listening: bool
+    process: str | None
+    pid: int | None
+
+
+#: Protocol -> the one-letter ``ss``/``netstat`` flag (pyinfra's
+#: ``proto_flag``); FreeBSD's ``sockstat`` takes the protocol name verbatim.
+_PROTOCOL_FLAGS = {"tcp": "t", "udp": "u"}
+
+
+def _check_port(port: int, protocol: str) -> None:
+    # Both values are interpolated into a grep pattern or an awk program, so
+    # they are validated up front (pyinfra validates neither) and a bad
+    # argument is rejected identically on both transports.
+    if not isinstance(port, int):
+        raise TypeError(f"port must be an int, got {port!r}")
+    if not 1 <= port <= 65535:
+        raise ValueError(f"port must be between 1 and 65535, got {port!r}")
+    if protocol not in _PROTOCOL_FLAGS:
+        raise ValueError(
+            f"protocol must be one of {sorted(_PROTOCOL_FLAGS)}, got {protocol!r}"
+        )
+
+
+class Port:
+    """Whether a port has a listening socket, and what owns it.
 
     **Commands:**
 
     ```bash
-    echo $PATH
+    ss -lptn | grep ':<port> ' || true
     ```
 
     **Returns:**
 
     ```python
-    str
+    PortInfo
     ```
 
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandNotFoundError, HostConnectionError, TypeError, ValueError
     ```
 
     Examples:
-        Examples can be found in ``examples/modules/server/server_path.py``.
+        Examples can be found in ``examples/modules/server/server_port.py``.
     """
 
-    # Mirrors pyinfra's ``server.Path``: ``echo $PATH`` prints the
-    # colon-separated search path of the login user's shell, returned as the
-    # raw string -- not split into a list, so callers keep pyinfra's shape
-    # and can ``split(":")`` themselves. The first non-blank line is the
-    # answer; anything after it is ignored (``echo $PATH`` prints exactly one
-    # line). Empty output -- the command failed, or ``PATH`` is unset or
-    # empty -- maps to ``""``, like ``Arch``.
+    # Mirrors pyinfra's ``server.Port``: the ``Kernel`` fact picks the tool --
+    # FreeBSD runs ``sockstat -l -p <port> -P <protocol>``, every other kernel
+    # prefers Linux ``ss`` and falls back to ``netstat`` when the ``Which``
+    # fact reports no ``ss`` -- and one port's socket rows are the answer.
+    # Two deliberate deviations:
+    #
+    # 1. The value is a ``PortInfo`` record, not pyinfra's ``(process, pid)``
+    #    tuple. Presence is decided by any surviving row, because the tools
+    #    print rows without owner information to an unprivileged caller and
+    #    ``server.wait`` (like every wait) runs unprivileged -- so pyinfra's
+    #    shape could not answer the one question the wait asks. The owner
+    #    pair keeps pyinfra's best-effort meaning.
+    # 2. ``_check_port`` rejects a non-int or out-of-range port and an unknown
+    #    protocol, and a malformed PID reads as no PID rather than raising.
 
-    #: Shell used to gather the PATH environment variable over SSH.
-    COMMAND = "echo $PATH"
+    #: Shell listing one port's sockets with Linux ``ss`` (pyinfra's preferred
+    #: branch): ``{flag}`` is the protocol letter, ``{pattern}`` the
+    #: ``:<port> `` match, and the ``|| true`` swallows grep's no-match exit.
+    COMMAND_SS = "ss -lp{flag}n | grep {pattern} || true"
+
+    #: Shell listing one port's sockets with Linux ``netstat`` (the fallback
+    #: when ``Which`` finds no ``ss``): ``{flag}`` is the protocol letter and
+    #: ``{program}`` the awk filter on the local-address column.
+    COMMAND_NETSTAT = "netstat -{flag}lnp 2>/dev/null | awk {program}"
+
+    #: Shell listing one port's sockets on FreeBSD.
+    COMMAND_SOCKSTAT = "sockstat -l -p {port} -P {protocol}"
 
     @classmethod
-    def parse(cls, output: Iterable[str]) -> str:
-        """Parse ``echo $PATH`` output into the colon-separated path string.
+    def _tool(cls, kernel: str, has_ss: bool) -> str:
+        """Tool name for the kernel and whether ``ss`` is installed.
 
-        The first non-blank line is the answer; anything after it is ignored.
+        Only ``FreeBSD`` selects ``sockstat``; every other kernel (including a
+        failed ``uname -s``, which reads as ``""``) prefers ``ss`` and falls
+        back to ``netstat``, exactly like pyinfra.
         """
-        for line in output:
-            stripped = line.strip()
-            if stripped:
-                return stripped
-        return ""
+        if kernel.strip() == "FreeBSD":
+            return "sockstat"
+        return "ss" if has_ss else "netstat"
 
     @classmethod
-    async def process(cls, host: Host) -> str:
-        path = getattr(host, "os_path", None)
-        if path is not None:
-            # SimulatedHost seam: read the in-memory state directly.
-            # str is immutable, so no copy is needed.
-            return path
-        # Real transport: `echo $PATH` over asyncssh.
-        stdout = await host.run_shell(cls.COMMAND)
-        return cls.parse(stdout.splitlines())
+    def command(cls, tool: str, port: int, protocol: str = "tcp") -> str:
+        """Shell listing the port's sockets, as one tool prints them.
+
+        The port and protocol are quoted (pyinfra's ``QuoteString``) after
+        ``_check_port`` has rejected anything out of range, so a name
+        carrying shell metacharacters can never reach the command line.
+        """
+        _check_port(port, protocol)
+        flag = _PROTOCOL_FLAGS[protocol]
+        if tool == "ss":
+            return cls.COMMAND_SS.format(flag=flag, pattern=shlex.quote(f":{port} "))
+        if tool == "netstat":
+            return cls.COMMAND_NETSTAT.format(
+                flag=flag, program=shlex.quote(f"$4 ~ /:{port}$/")
+            )
+        return cls.COMMAND_SOCKSTAT.format(
+            port=shlex.quote(str(port)), protocol=shlex.quote(protocol)
+        )
+
+    @classmethod
+    def parse(cls, output: Iterable[str], tool: str) -> PortInfo:
+        """Parse the tool's rows into the ``PortInfo`` record. Pure.
+
+        Dispatches on the tool name exactly like ``command``. Blank lines are
+        never rows, and the ``ss``/``netstat`` shells have already filtered by
+        port while ``sockstat`` prints its ``USER`` header even when nothing
+        matches, so empty output reads as "nothing listening" (pyinfra's
+        ``(None, None)`` default). The owner pair comes from the first row
+        that carries one.
+        """
+        rows = [line.strip() for line in output if line.strip()]
+        if tool == "sockstat":
+            rows = [row for row in rows if not row.startswith("USER")]
+        if tool == "ss":
+            process, pid = cls._owner_ss(rows)
+        elif tool == "netstat":
+            process, pid = cls._owner_netstat(rows)
+        else:
+            process, pid = cls._owner_sockstat(rows)
+        return PortInfo(listening=bool(rows), process=process, pid=pid)
+
+    @classmethod
+    def _owner_ss(cls, rows: list[str]) -> tuple[str | None, int | None]:
+        """Owner from the first ``users:(("name",pid=N,fd=F))`` row.
+
+        A row without process information -- what an unprivileged ``ss -p``
+        prints -- is skipped and no owner is reported (pyinfra's
+        ``_process_ss``); the caller still counts the row as listening.
+        """
+        for line in rows:
+            if '"' not in line or "pid=" not in line:
+                continue
+            process = line.split('"')[1]
+            try:
+                return process, int(line.split("pid=")[1].split(",")[0])
+            except ValueError:
+                return process, None
+        return None, None
+
+    @classmethod
+    def _owner_netstat(cls, rows: list[str]) -> tuple[str | None, int | None]:
+        """Owner from the first ``PID/Program name`` cell (``1234/nginx``).
+
+        An unprivileged netstat prints ``-`` or ``?`` there, and a cell whose
+        PID is not a number is no owner either (pyinfra's
+        ``_process_netstat``).
+        """
+        for line in rows:
+            for part in line.split():
+                if "/" in part:
+                    pid_str, process = part.split("/", 1)
+                    if pid_str.isdigit():
+                        return process, int(pid_str)
+                    break
+        return None, None
+
+    @classmethod
+    def _owner_sockstat(cls, rows: list[str]) -> tuple[str | None, int | None]:
+        """Owner from the ``COMMAND``/``PID`` columns of the first row.
+
+        A row too short to carry both, or with a non-numeric PID, reports no
+        owner (pyinfra would raise on the latter).
+        """
+        for line in rows:
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            try:
+                return parts[1], int(parts[2])
+            except ValueError:
+                continue
+        return None, None
+
+    @classmethod
+    async def process(
+        cls, host: Host, port: int, protocol: str = "tcp"
+    ) -> PortInfo:
+        # Validate even on the simulated path so a bad argument is rejected
+        # identically on both transports (like ``Processes.process``).
+        _check_port(port, protocol)
+        ports = getattr(host, "listening_ports", None)
+        if ports is not None:
+            # SimulatedHost seam: (protocol, port) -> PortInfo. Copy the record
+            # so callers never mutate the simulated state; an unlisted port
+            # reads as "nothing listening", like empty command output.
+            info = ports.get((protocol, port))
+            if info is not None:
+                return dict(info)  # type: ignore[return-value]
+            return PortInfo(listening=False, process=None, pid=None)
+        # Real transport: the Kernel and Which facts pick the tool (pyinfra
+        # reads both inside command()), the FreeBSD branch never probing for
+        # ss; the output is then parsed the same way.
+        kernel = await Kernel.process(host)
+        has_ss = False
+        if kernel.strip() != "FreeBSD":
+            has_ss = bool(await Which.process(host, "ss"))
+        tool = cls._tool(kernel, has_ss)
+        stdout = await host.run_shell(cls.command(tool, port, protocol))
+        return cls.parse(stdout.splitlines(), tool)
 
 
 # macOS ps truncates any non-last text column (comm to 16 bytes, args to 64),
@@ -2185,7 +2470,7 @@ class User:
     # user's name from the shell environment, returned as the raw string.
     # The first non-blank line is the answer; anything after it is ignored
     # (``echo $USER`` prints exactly one line). Empty output -- the command
-    # failed, or ``USER`` is unset or empty -- maps to ``""``, like ``Path``.
+    # failed, or ``USER`` is unset or empty -- maps to ``""``, like ``Env``.
 
     #: Shell used to gather the current user's name over SSH.
     COMMAND = "echo $USER"
@@ -2557,6 +2842,849 @@ async def group(
         )
     else:
         ctx.reason = f"group {group} already {'present' if present else 'absent'}"
+
+
+class _HomeDirectory:
+    """Whether a path is a directory, with its owner pair (server-local probe).
+
+    A private, in-namespace stand-in for ``files.Directory``: ``server.user``
+    must learn whether a home directory exists and who owns it, but the
+    zero-cross-module-import invariant forbids reaching into the ``files``
+    namespace for its fact -- the ``git._DirectoryExists`` pattern of an
+    in-namespace probe instead. Only the ownership pair matters here, not
+    ``Directory``'s full metadata, so this reads the *same*
+    ``directory_stats`` seam and projects it: a dict (a directory's
+    metadata) answers a ``(user, group)`` pair, ``False`` (an existing
+    non-directory) and an absent key (a missing path) answer ``False`` and
+    ``None`` exactly like ``Directory``. On the real transport a
+    ``test -d`` guard short-circuits a missing path to no output, and the
+    GNU/BSD ``stat`` chain behind it prints only the owner fields.
+    """
+
+    # GNU and BSD stat owner-only formats, the two halves of pyinfra's
+    # ``Directory`` command that ``server.user`` actually consumes.
+    _GNU_STAT_FORMAT = "user=%U group=%G"
+    _BSD_STAT_FORMAT = "user=%Su group=%Sg"
+    _STAT_RE = re.compile(r"user=(\S+) group=(\S+)")
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell describing ``path``'s owners only when it is a directory.
+
+        A missing path produces no output at all (the ``test -d`` guard
+        short-circuits), like pyinfra's ``Directory`` chain.
+        """
+        quoted = shlex.quote(path)
+        return (
+            f"test -d {quoted} && "
+            f"( stat -c '{cls._GNU_STAT_FORMAT}' {quoted} 2> /dev/null || "
+            f"stat -f '{cls._BSD_STAT_FORMAT}' {quoted} )"
+        )
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> dict[str, Any] | Literal[False] | None:
+        """Parse the owner row into a ``{"user", "group"}`` dict, False or None.
+
+        The first line decides: a ``user= group=`` row is a directory's
+        pair, any other output means the path exists but is not a
+        directory (``False``), and empty output means absent (``None``).
+        """
+        line = next(iter(output), None)
+        if line is None or not line.strip():
+            return None
+        match = cls._STAT_RE.search(line)
+        if match:
+            return {"user": match.group(1), "group": match.group(2)}
+        return False
+
+    @classmethod
+    async def process(
+        cls, host: Host, path: str
+    ) -> dict[str, Any] | Literal[False] | None:
+        stats = getattr(host, "directory_stats", None)
+        if stats is not None:
+            # SimulatedHost seam (shared with files.Directory): a dict is a
+            # directory's metadata -- projected to the owner pair, copied --
+            # False an existing non-directory, an absent key None.
+            value = stats.get(path)
+            if isinstance(value, dict):
+                return {"user": value.get("user"), "group": value.get("group")}
+            return value
+        # Real transport: the guarded stat chain over asyncssh.
+        stdout = await host.run_shell(cls.command(path))
+        return cls.parse(stdout.splitlines())
+
+
+class _HomeIsLink:
+    """Whether a path is a symlink (server-local ``files.Link`` stand-in).
+
+    ``server.user``'s home check mirrors pyinfra's ``files.directory``
+    ``_no_fail_on_link`` knob: a home that exists as a symlink is accepted
+    as-is instead of raising. The boolean answer reads the *same*
+    ``link_stats`` seam ``files.Link`` uses (a dict row means a symlink is
+    there), and on the real transport runs ``test -L``, whose non-zero exit
+    on anything else maps to ``False`` exactly like the seam.
+    """
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell echoing ``yes`` only when the path is a symlink."""
+        return f"test -L {shlex.quote(path)} && echo yes"
+
+    @classmethod
+    async def process(cls, host: Host, path: str) -> bool:
+        stats = getattr(host, "link_stats", None)
+        if stats is not None:
+            # SimulatedHost seam: a dict row is a symlink's metadata; False
+            # (a non-link) and an absent key (missing path) are both no.
+            return isinstance(stats.get(path), dict)
+        # Real transport: `test -L` over asyncssh (check is off in run_shell).
+        stdout = await host.run_shell(cls.command(path))
+        return stdout.strip() == "yes"
+
+
+@dataclass(frozen=True)
+class _HomeMkdirCommand(Command):
+    """One ``mkdir -p <path>`` home-directory creation.
+
+    A server-local twin of ``files``' mkdir descriptor (the
+    zero-cross-module-import invariant forbids reusing it): it renders the
+    same ``mkdir -p`` shell pyinfra's ``files.directory`` emits behind
+    ``server.user``, and the simulated host maps it onto the same
+    ``make_directory`` mutation.
+    """
+
+    path: str
+
+    def shell(self) -> str:
+        return f"mkdir -p {shlex.quote(self.path)}"
+
+
+@dataclass(frozen=True)
+class _HomeChownCommand(Command):
+    """One ``chown <user>:<group> <path>`` home-ownership change.
+
+    A server-local twin of ``files``' chown descriptor: ``server.user``
+    always requests a full ``user:group`` pair (pyinfra passes both, the
+    group defaulting to the user name), so this renders only that form --
+    both halves ``shlex``-quoted inside the spec (pyinfra's
+    ``QuoteString``), like ``chown 'some user; whoami':'grp' /home/x``.
+    """
+
+    path: str
+    user: str
+    group: str
+
+    def shell(self) -> str:
+        spec = f"{shlex.quote(self.user)}:{shlex.quote(self.group)}"
+        return f"chown {spec} {shlex.quote(self.path)}"
+
+
+@dataclass(frozen=True)
+class UserAddCommand(Command):
+    """One ``useradd`` (``pw useradd`` on FreeBSD) invocation.
+
+    Renders pyinfra's argument order verbatim: ``-d`` home, ``-s`` shell,
+    ``-g`` group, ``-G`` the comma-joined secondary groups, ``-r`` for a
+    system account, the uid (``--uid`` on Linux, ``-u`` on FreeBSD),
+    ``-c`` comment, ``-o`` for a non-unique uid, then ``-m``/``-M`` for
+    ``create_home`` and ``-p`` for the encrypted password. On FreeBSD with
+    a password the whole form rides ``echo '<password>' | pw useradd -n
+    <user> -H 0`` (pyinfra's pipe). Only ``-M`` is BSD-gated: pyinfra skips
+    it on FreeBSD and OpenBSD, which have no such flag, while ``-m`` is
+    emitted on every kernel. Falsy ``uid`` renders nothing (pyinfra's
+    ``if uid:`` truthiness check).
+    """
+
+    user: str
+    home: str | None = None
+    shell_path: str | None = None
+    group: str | None = None
+    groups: tuple[str, ...] = ()
+    system: bool = False
+    uid: int | None = None
+    comment: str | None = None
+    unique: bool = True
+    create_home: bool = False
+    password: str | None = None
+    freebsd: bool = False
+    openbsd: bool = False
+
+    def shell(self) -> str:
+        args: list[str] = []
+        if self.home:
+            args.extend(["-d", shlex.quote(self.home)])
+        if self.shell_path:
+            args.extend(["-s", shlex.quote(self.shell_path)])
+        if self.group:
+            args.extend(["-g", shlex.quote(self.group)])
+        if self.groups:
+            args.extend(["-G", ",".join(shlex.quote(g) for g in self.groups)])
+        # BSD has no system accounts (pyinfra's "BSD" not in Os check).
+        if self.system and not self.freebsd:
+            args.append("-r")
+        # pyinfra's truthiness check: a uid of 0 is skipped, not rendered.
+        if self.uid:
+            args.extend(["-u" if self.freebsd else "--uid", shlex.quote(str(self.uid))])
+        if self.comment:
+            args.extend(["-c", shlex.quote(self.comment)])
+        if not self.unique:
+            args.append("-o")
+        if self.create_home:
+            args.append("-m")
+        elif not self.freebsd and not self.openbsd:
+            # FreeBSD/OpenBSD have no -M skeleton flag (pyinfra).
+            args.append("-M")
+        if self.password and not self.freebsd:
+            args.extend(["-p", shlex.quote(self.password)])
+        if self.freebsd:
+            # pw takes the login name first; the optional -H 0 (read the
+            # hash from stdin, pyinfra's echo-pipe form) leads the flags.
+            head = ["pw", "useradd", "-n", shlex.quote(self.user)]
+            if self.password:
+                # pyinfra pipes the hash to pw -H 0 instead of passing -p.
+                return (
+                    f"echo {shlex.quote(self.password)} | "
+                    f"{' '.join(head)} -H 0 {' '.join(args)}"
+                )
+            return " ".join([*head, *args])
+        return " ".join(["useradd", *args, shlex.quote(self.user)])
+
+
+@dataclass(frozen=True)
+class UserModCommand(Command):
+    """One ``usermod`` (``pw usermod`` on FreeBSD) invocation.
+
+    The operation fills only the fields that differ from the ``Users``
+    fact, in pyinfra's argument order: ``-d`` home, ``-s`` shell, ``-g``
+    primary group, ``-a -G``/``-G`` secondary groups, ``-c`` comment, and
+    ``-p`` password (Linux only -- FreeBSD takes the password through
+    ``echo '<password>' | pw usermod -n <user> -H 0`` instead of a modify
+    flag). The user name trails the flags on Linux and leads them as
+    ``-n <user>`` on FreeBSD (pyinfra's forms).
+    """
+
+    user: str
+    home: str | None = None
+    shell_path: str | None = None
+    group: str | None = None
+    groups: tuple[str, ...] = ()
+    append: bool = False
+    comment: str | None = None
+    password: str | None = None
+    freebsd: bool = False
+
+    def shell(self) -> str:
+        args: list[str] = []
+        if self.home:
+            args.extend(["-d", shlex.quote(self.home)])
+        if self.shell_path:
+            args.extend(["-s", shlex.quote(self.shell_path)])
+        if self.group:
+            args.extend(["-g", shlex.quote(self.group)])
+        if self.groups:
+            joined = ",".join(shlex.quote(g) for g in self.groups)
+            if self.append:
+                args.extend(["-a", "-G", joined])
+            else:
+                args.extend(["-G", joined])
+        if self.comment:
+            args.extend(["-c", shlex.quote(self.comment)])
+        if self.password and not self.freebsd:
+            args.extend(["-p", shlex.quote(self.password)])
+        if self.freebsd:
+            if self.password:
+                return (
+                    f"echo {shlex.quote(self.password)} | pw usermod"
+                    f" -n {shlex.quote(self.user)} -H 0"
+                )
+            return " ".join(["pw", "usermod", "-n", shlex.quote(self.user), *args])
+        return " ".join(["usermod", *args, shlex.quote(self.user)])
+
+
+@dataclass(frozen=True)
+class UserDelCommand(Command):
+    """One ``userdel`` (``pw userdel -n`` on FreeBSD) invocation.
+
+    The name is ``shlex``-quoted (pyinfra's ``QuoteString``), so a username
+    carrying shell metacharacters is removed literally rather than
+    executed.
+    """
+
+    user: str
+    freebsd: bool = False
+
+    def shell(self) -> str:
+        if self.freebsd:
+            return f"pw userdel -n {shlex.quote(self.user)}"
+        return f"userdel {shlex.quote(self.user)}"
+
+
+async def user(
+    ctx: OpContext,
+    user: str,
+    present: bool = True,
+    home: str | None = None,
+    shell: str | None = None,
+    group: str | None = None,
+    groups: tuple[str, ...] | None = None,
+    append: bool = False,
+    ensure_home: bool = True,
+    create_home: bool = False,
+    system: bool = False,
+    uid: int | None = None,
+    comment: str | None = None,
+    unique: bool = True,
+    password: str | None = None,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Add, update, or remove a system user.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        user (str): Name of the user to ensure.
+        present (bool, optional): Whether the user should exist.
+            Defaults to True.
+        home (str | None, optional): The user's home directory; defaults
+            to ``/home/<user>`` for a new user, or the recorded home for a
+            present one. Defaults to None.
+        shell (str | None, optional): The user's login shell. Defaults to
+            None.
+        group (str | None, optional): The user's primary group. Defaults
+            to None.
+        groups (tuple[str, ...] | None, optional): The user's secondary
+            groups. A tuple, never a list: ``OperationRequest`` hashes every
+            argument for ``compose(dedupe=True)``, so a list would be
+            rejected with ``UnhashableArgumentError``. Defaults to None.
+        append (bool, optional): Whether to add the user to ``groups``
+            without losing membership of other groups. Defaults to False.
+        ensure_home (bool, optional): Whether to ensure the ``home``
+            directory exists and belongs to the user. Defaults to True.
+        create_home (bool, optional): Whether a new user's home directory
+            is built from the system skeleton (``useradd -m``). Defaults
+            to False.
+        system (bool, optional): Whether to create a system account
+            (``useradd -r``); ignored on BSD kernels. Defaults to False.
+        uid (int | None, optional): Use a specific user id number; a
+            falsy uid (``None`` or ``0``) is skipped, exactly like
+            pyinfra's ``if uid:`` check. Defaults to None.
+        comment (str | None, optional): The user's GECOS comment.
+            Defaults to None.
+        unique (bool, optional): Whether to prevent creating a user with
+            a duplicate UID (``False`` renders ``-o``). Defaults to True.
+        password (str | None, optional): The *encrypted* password hash to
+            set. Defaults to None.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: Generated user add/update/remove and home-directory
+            commands.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, OperationError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_op_user.py``.
+    """
+
+    # Mirrors pyinfra's ``server.user``. Idempotent: the requested state is
+    # compared against the ``Users`` fact and a descriptor is yielded only
+    # where they differ -- ``userdel`` (an existing user, ``present=False``),
+    # ``useradd`` (an absent one), or ``usermod`` (a field-by-field update
+    # of a present one). The ``Kernel`` fact (pyinfra's deprecated ``Os``
+    # alias) picks the command form: FreeBSD gets ``pw useradd/usermod/
+    # userdel``, every other kernel the shadow-suite commands; OpenBSD keeps
+    # the plain forms and simply has no ``-m``/``-M`` skeleton flags, exactly
+    # pyinfra's branches. A creation with no primary ``group`` reuses an
+    # existing group of the user's name when there is one (pyinfra's
+    # tell-useradd-to-use-it fix). ``home`` defaults to ``/home/<user>`` for
+    # an absent user and to the recorded home for a present one. The
+    # ``ensure_home`` branch (on by default) mirrors pyinfra's delegation to
+    # ``files.directory`` with ``_no_fail_on_link=True`` through the private
+    # ``_HomeDirectory``/``_HomeIsLink`` stand-ins and the
+    # ``_HomeMkdirCommand``/``_HomeChownCommand`` pair: an absent home is
+    # created and owned, a wrong owner is ``chown``ed, a symlinked home is
+    # accepted, and a non-directory home raises ``OperationError`` (pyinfra's
+    # message). The commands need root: flag the request ``sudo=True``.
+    #
+    # pyinfra's ``public_keys``/``delete_keys`` options are deliberately
+    # dropped (developer decision): that branch delegates to
+    # ``server.user_authorized_keys``, which rides ``files.directory`` mode
+    # enforcement, ``files.line`` appends and an *elevated* ``files.put``
+    # rewrite -- reemote5 has no ``files.line`` operation and its transfers
+    # are always unprivileged, so no faithful equivalent exists; manage key
+    # files through the ``AuthorizedKeys`` fact and file operations instead.
+    # pyinfra's plan-time ``Which`` guards ("useradd is not installed", with
+    # the Alpine shadow-package note) are deliberately dropped too: a missing
+    # binary surfaces at apply as ``CommandNotFoundError`` (exit 127), the
+    # convention every other reemote5 operation follows. ``**kwargs``
+    # absorbs pyinfra's global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
+    users = await ctx.facts.get(Users)
+    existing_groups = await ctx.facts.get(Groups)
+    kernel = (await ctx.facts.get(Kernel)).strip()
+    freebsd = kernel == "FreeBSD"
+    # pyinfra gates the -M skeleton flag on os_type not in (FreeBSD, OpenBSD).
+    openbsd = kernel == "OpenBSD"
+    existing_user = users.get(user)
+    requested_groups = tuple(groups) if groups else ()
+
+    if home is None:
+        home = f"/home/{user}"
+        if existing_user:
+            home = existing_user.get("home", home)
+
+    reasons: list[str] = []
+
+    # User not wanted?: remove an existing one, then stop -- pyinfra's
+    # deletion branch never touches the home directory or keys.
+    if not present:
+        if existing_user:
+            ctx.changed = True
+            reasons.append(f"user {user} present, will remove")
+            yield UserDelCommand(user=user, freebsd=freebsd)
+        else:
+            reasons.append(f"user {user} already absent")
+        ctx.reason = "; ".join(reasons)
+        return
+
+    if existing_user is None:
+        # Creation. Fix the case where a group of the same name already
+        # exists: tell useradd to use it rather than failing (pyinfra).
+        if not group and user in existing_groups:
+            group = user
+        ctx.changed = True
+        reasons.append(f"user {user} absent, will create")
+        yield UserAddCommand(
+            user=user,
+            home=home,
+            shell_path=shell,
+            group=group,
+            groups=requested_groups,
+            # BSD doesn't do system accounts (pyinfra's "BSD" not in Os).
+            system=system and "BSD" not in kernel,
+            uid=uid,
+            comment=comment,
+            unique=unique,
+            create_home=create_home,
+            password=password,
+            freebsd=freebsd,
+            openbsd=openbsd,
+        )
+    else:
+        # Update: each requested field is compared against the fact and only
+        # the differing ones ride the usermod (pyinfra's mod_args).
+        mod_home = home if home != existing_user.get("home") else None
+        mod_shell = (
+            shell if shell and shell != existing_user.get("shell") else None
+        )
+        mod_group = (
+            group if group and group != existing_user.get("group") else None
+        )
+        mod_comment = (
+            comment if comment and comment != existing_user.get("comment") else None
+        )
+        password_changed = bool(
+            password and password != existing_user.get("password")
+        )
+        # Linux folds the hash into the same usermod; FreeBSD has no modify
+        # flag for it and rides the echo pipe instead (pyinfra).
+        mod_password = password if password_changed and not freebsd else None
+        current_groups = list(existing_user.get("groups") or [])
+        mod_groups: tuple[str, ...] = ()
+        groups_change = False
+        if requested_groups:
+            if append:
+                # Only membership the user lacks; append never removes.
+                if not set(requested_groups).issubset(current_groups):
+                    groups_change = True
+                    mod_groups = tuple(requested_groups)
+            elif set(current_groups) != set(requested_groups):
+                groups_change = True
+                mod_groups = tuple(requested_groups)
+        other_changes = bool(
+            mod_home or mod_shell or mod_group or groups_change or mod_comment
+        )
+        if not (other_changes or password_changed):
+            reasons.append(f"user {user} already as requested")
+        else:
+            ctx.changed = True
+            reasons.append(f"user {user} differs, will update")
+            if freebsd and password_changed:
+                # pw has no modify flag for the hash; -H 0 reads it from
+                # stdin, which pyinfra pipes as its own command.
+                yield UserModCommand(user=user, password=password, freebsd=True)
+            if other_changes or mod_password:
+                yield UserModCommand(
+                    user=user,
+                    home=mod_home,
+                    shell_path=mod_shell,
+                    group=mod_group,
+                    groups=mod_groups,
+                    append=append,
+                    comment=mod_comment,
+                    password=mod_password,
+                    freebsd=freebsd,
+                )
+
+    # Ensure home directory ownership (pyinfra's files.directory
+    # delegation, inlined via the stand-in probes and twin descriptors).
+    if ensure_home and home:
+        info = await ctx.facts.get(_HomeDirectory, home)
+        if info is False:
+            if await ctx.facts.get(_HomeIsLink, home):
+                reasons.append(f"home {home} already exists (as a link)")
+            else:
+                raise OperationError(f"{home} exists and is not a directory")
+        elif info is None:
+            ctx.changed = True
+            reasons.append(f"home {home} missing, will create")
+            yield _HomeMkdirCommand(path=home)
+            yield _HomeChownCommand(path=home, user=user, group=group or user)
+        elif info.get("user") != user or info.get("group") != (group or user):
+            ctx.changed = True
+            reasons.append(f"home {home} owner differs, will chown")
+            yield _HomeChownCommand(path=home, user=user, group=group or user)
+        else:
+            reasons.append(f"directory {home} already exists")
+
+    ctx.reason = "; ".join(reasons)
+
+
+# --- server.user_authorized_keys -------------------------------------------
+
+#: pyinfra's fixed modes for ``user_authorized_keys``: the ``.ssh`` directory
+#: is mode ``700`` and the ``authorized_keys`` file itself ``600``, never
+#: caller-configurable.
+_SSH_DIR_MODE = 700
+_AUTHORIZED_KEYS_MODE = 600
+
+
+class _KeysPathStat:
+    """Existence, ownership and mode of one ``user_authorized_keys`` path.
+
+    A private, in-namespace stand-in for ``files.File``/``files.Directory``:
+    ``server.user_authorized_keys`` must know whether the ``.ssh`` directory
+    and the ``authorized_keys`` file already carry the requested owner and
+    mode, but the zero-cross-module-import invariant forbids reaching into
+    the ``files`` namespace for either fact -- the ``_HomeDirectory`` pattern
+    of an in-namespace probe instead, extended to also project ``mode``
+    (which ``_HomeDirectory`` drops since ``server.user`` never requests one)
+    and to accept a ``directory`` flag picking which of the two shared seams
+    to read. Only the ``user``/``group``/``mode`` fields matter here, not the
+    full stat metadata, so this reads the *same* ``directory_stats``
+    (``directory=True``) or ``file_stats`` (``directory=False``) seam and
+    projects the three fields, or ``False``/``None`` for an existing path of
+    the wrong type or a missing one. Like ``_HomeDirectory``, the real
+    transport's ``test -d``/``test -f`` guard cannot distinguish "missing"
+    from "wrong type" (both short-circuit to no output and read as ``None``)
+    -- the same simplification ``_HomeDirectory`` already accepts, since
+    only a test seeds a deliberately wrong-typed path.
+    """
+
+    # GNU and BSD stat owner/mode formats. ``%a``/``%Lp`` print the mode as
+    # its octal digits spelled out (e.g. ``700``), which is exactly the
+    # octal-looking int convention ``files.File``/``files.Directory`` store
+    # and compare against (``int(oct(bits)[2:])``, not the raw bit value).
+    _GNU_STAT_FORMAT = "user=%U group=%G mode=%a"
+    _BSD_STAT_FORMAT = "user=%Su group=%Sg mode=%Lp"
+    _STAT_RE = re.compile(r"user=(\S+) group=(\S+) mode=(\S+)")
+
+    @classmethod
+    def command(cls, path: str, directory: bool) -> str:
+        """Shell describing ``path``'s owner/mode only for the wanted type.
+
+        A missing or wrong-typed path produces no output at all (the
+        ``test -d``/``test -f`` guard short-circuits), like
+        pyinfra's ``Directory``/``File`` chains.
+        """
+        test = "-d" if directory else "-f"
+        quoted = shlex.quote(path)
+        return (
+            f"test {test} {quoted} && "
+            f"( stat -c '{cls._GNU_STAT_FORMAT}' {quoted} 2> /dev/null || "
+            f"stat -f '{cls._BSD_STAT_FORMAT}' {quoted} )"
+        )
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> dict[str, Any] | Literal[False] | None:
+        """Parse the stat row into a ``{"user", "group", "mode"}`` dict, False or None.
+
+        The first line decides: a ``user= group= mode=`` row is the wanted
+        type's metadata, any other output means the path exists but is not
+        the wanted type (``False``), and empty output means absent
+        (``None``, unreachable on the real transport since the guard already
+        short-circuits both cases there -- only a seeded seam can produce a
+        literal ``False`` row).
+        """
+        line = next(iter(output), None)
+        if line is None or not line.strip():
+            return None
+        match = cls._STAT_RE.search(line)
+        if match:
+            return {
+                "user": match.group(1),
+                "group": match.group(2),
+                "mode": int(match.group(3)),
+            }
+        return False
+
+    @classmethod
+    async def process(
+        cls, host: Host, path: str, directory: bool = True
+    ) -> dict[str, Any] | Literal[False] | None:
+        stats = getattr(host, "directory_stats" if directory else "file_stats", None)
+        if stats is not None:
+            # SimulatedHost seam (shared with files.Directory/files.File): a
+            # dict is the wanted type's metadata -- projected to the
+            # owner/mode triple, copied -- False an existing wrong-typed
+            # path, an absent key None.
+            value = stats.get(path)
+            if isinstance(value, dict):
+                return {
+                    "user": value.get("user"),
+                    "group": value.get("group"),
+                    "mode": value.get("mode"),
+                }
+            return value
+        # Real transport: the guarded stat chain over asyncssh.
+        stdout = await host.run_shell(cls.command(path, directory))
+        return cls.parse(stdout.splitlines())
+
+
+@dataclass(frozen=True)
+class _KeysChmodCommand(Command):
+    """One ``chmod <mode> <path>`` for a ``user_authorized_keys`` path.
+
+    A server-local twin of ``files``' chmod descriptor (the
+    zero-cross-module-import invariant forbids reusing it): it renders the
+    same bare, non-recursive ``chmod`` shell pyinfra's ``files.file``/
+    ``files.directory`` emit behind ``server.user_authorized_keys``, and the
+    simulated host maps it onto the same ``chmod_path`` mutation. The mode
+    is always one of the two fixed, caller-invisible constants above, never
+    a user-supplied value, so it renders unquoted exactly as pyinfra's own
+    chmod helper does; only the target is shell-quoted.
+    """
+
+    path: str
+    mode: int
+
+    def shell(self) -> str:
+        return f"chmod {self.mode} {shlex.quote(self.path)}"
+
+
+@dataclass(frozen=True)
+class _KeysTouchCommand(Command):
+    """One ``touch <path>`` creating a missing ``authorized_keys`` file.
+
+    A server-local twin of ``files``' create-file descriptor (the
+    zero-cross-module-import invariant forbids reusing it): it renders the
+    same ``touch`` shell pyinfra's ``files.file`` emits behind
+    ``server.user_authorized_keys`` to bring a key file into existence
+    before its mode/ownership are fixed up, and the simulated host maps it
+    onto the same ``create_file`` mutation.
+    """
+
+    path: str
+
+    def shell(self) -> str:
+        return f"touch {shlex.quote(self.path)}"
+
+
+@dataclass(frozen=True)
+class AuthorizedKeysAppendCommand(Command):
+    """``sh -c '<newline guard>; echo <key> >> <path>'``: append one SSH key.
+
+    The append mutation ``server.user_authorized_keys`` yields. pyinfra's
+    own ``files.line`` add branch renders this exact idiom verbatim: an
+    empty ``echo`` first whenever the file's last byte is not a newline (the
+    ``tail -c1 ... | wc -l`` test), so the appended key never gets glued
+    onto the end of a newline-less last line. The ``>>`` redirect is wrapped
+    in ``sh -c`` so it happens *inside* the shell the driver elevates: a
+    bare ``sudo echo ... >> <path>`` would open the redirect as the login
+    user and fail on another user's ``600``-mode key file (the same wrapper
+    as ``AptRepoAddCommand``). Both the key and the path are shell-quoted --
+    pyinfra leaves the path unquoted in its own rendering since it comes
+    from the resolved ``Home`` fact, but reemote5 quotes every user-derived
+    path defensively, so the command string differs from pyinfra's fixture
+    text in that one respect while behaving identically.
+    """
+
+    path: str
+    key: str
+
+    def shell(self) -> str:
+        quoted_path = shlex.quote(self.path)
+        inner = (
+            f"( [ $(tail -c1 {quoted_path} | wc -l) -eq 0 ] && echo ; "
+            f"echo {shlex.quote(self.key)} ) >> {quoted_path}"
+        )
+        return f"sh -c {shlex.quote(inner)}"
+
+
+async def user_authorized_keys(
+    ctx: OpContext,
+    user: str,
+    public_keys: str | list[str] | tuple[str, ...],
+    group: str | None = None,
+    authorized_key_directory: str | None = None,
+    authorized_key_filename: str | None = None,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Add SSH public keys to a user's ``authorized_keys`` file.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        user (str): Name of the user whose keys to manage.
+        public_keys (str | list[str] | tuple[str, ...]): Public key strings
+            to attach to the user. Prefer tuples when building requests via
+            ``op()``, since ``OperationRequest`` kwargs must stay hashable.
+            Every entry is always a literal key, never a path to a key file.
+        group (str | None, optional): The group to own the ``.ssh``
+            directory and key file; defaults to the user's own name.
+            Defaults to None.
+        authorized_key_directory (str | None, optional): The directory to
+            write into; defaults to the user's ``Home`` fact resolved to
+            ``<home>/.ssh``. Defaults to None.
+        authorized_key_filename (str | None, optional): The file name to
+            write inside ``authorized_key_directory``; defaults to
+            ``authorized_keys``. Defaults to None.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: Generated ``.ssh`` directory/key-file and key-append
+            commands.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, OperationError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in
+        ``examples/modules/server/server_user_authorized_keys.py``.
+    """
+
+    # Mirrors pyinfra's ``server.user_authorized_keys`` for ``user``,
+    # ``public_keys``, ``group``, ``authorized_key_directory`` and
+    # ``authorized_key_filename``. Idempotent. The ``.ssh`` directory is
+    # ensured first (mode ``700``, owner ``user``/``group``, the ``group``
+    # option defaulting to the user's own name exactly as pyinfra's
+    # ``group or user`` does) and the ``authorized_keys`` file second (mode
+    # ``600``), each compared against a ``_KeysPathStat`` in-namespace probe
+    # of the shared ``directory_stats``/``file_stats`` seams: a missing
+    # directory is ``mkdir -p``'d, chmod'd and chown'd, a wrong mode or
+    # owner re-runs just that half, and a wrong-typed path raises
+    # ``OperationError`` (pyinfra's ``files.directory`` message shape). The
+    # ``_HomeMkdirCommand``/``_HomeChownCommand`` pair already renders
+    # exactly the mkdir/chown verbs needed, so it is reused rather than
+    # duplicated; only the chmod and touch verbs, which that pair has no
+    # twin for, get the new ``_KeysChmodCommand``/``_KeysTouchCommand``
+    # stand-ins. Key idempotence then rides the ``AuthorizedKeys`` fact
+    # (read with an explicit ``path``, never tilde-resolved): every
+    # requested key not already listed is appended with one
+    # ``AuthorizedKeysAppendCommand``, in the caller's own order; keys
+    # already present are skipped. Writing into another user's ``~/.ssh``
+    # needs root: flag the request ``sudo=True``.
+    #
+    # pyinfra's ``delete_keys`` option is deliberately dropped (developer
+    # decision): that branch rewrites the whole file through an *elevated*
+    # ``files.put`` -- reemote5's transfers are always unprivileged, so no
+    # faithful equivalent exists, and only the append direction was chosen
+    # as this operation's whole deliverable. It therefore never removes a
+    # key already present; use the ``AuthorizedKeys`` fact to inspect what
+    # is there and a file-rewriting recipe of your own to prune it.
+    # pyinfra's ``public_keys`` entries double as controller-side file paths
+    # (its ``read_any_pub_key_file`` checks ``os.path.exists`` and reads the
+    # file's lines); that is deliberately dropped too (developer decision,
+    # matching reemote5's IO-only/no-controller-path rule everywhere else --
+    # ``files.put``/``files.get``/``apt.key``/``dnf.key`` all reject a path
+    # string for the same reason): every entry here is always a literal key
+    # string, and reading a controller file twice across the prepare and
+    # apply phases would risk a ``DeterminismError`` anyway if it changed in
+    # between. ``**kwargs`` absorbs pyinfra's global arguments (``op()``
+    # already strips ``name``/``sudo``/``su``).
+    if isinstance(public_keys, str):
+        requested = (public_keys,)
+    else:
+        requested = tuple(public_keys)
+
+    if authorized_key_directory is None:
+        home = await ctx.facts.get(Home, user=user)
+        authorized_key_directory = f"{home}/.ssh"
+
+    if authorized_key_filename is None:
+        authorized_key_filename = "authorized_keys"
+
+    key_file = f"{authorized_key_directory}/{authorized_key_filename}"
+    key_group = group or user
+
+    reasons: list[str] = []
+
+    dir_info = await ctx.facts.get(_KeysPathStat, authorized_key_directory)
+    if dir_info is False:
+        raise OperationError(f"{authorized_key_directory} exists and is not a directory")
+    if dir_info is None:
+        ctx.changed = True
+        reasons.append(f"{authorized_key_directory} missing, will create")
+        yield _HomeMkdirCommand(path=authorized_key_directory)
+        yield _KeysChmodCommand(path=authorized_key_directory, mode=_SSH_DIR_MODE)
+        yield _HomeChownCommand(path=authorized_key_directory, user=user, group=key_group)
+    else:
+        if dir_info["mode"] != _SSH_DIR_MODE:
+            ctx.changed = True
+            reasons.append(
+                f"mode {dir_info['mode']} differs, will chmod {_SSH_DIR_MODE}"
+            )
+            yield _KeysChmodCommand(path=authorized_key_directory, mode=_SSH_DIR_MODE)
+        if dir_info["user"] != user or dir_info["group"] != key_group:
+            ctx.changed = True
+            reasons.append(
+                f"owner {dir_info['user']}:{dir_info['group']} differs, will chown"
+            )
+            yield _HomeChownCommand(path=authorized_key_directory, user=user, group=key_group)
+        if not ctx.changed:
+            reasons.append(f"directory {authorized_key_directory} already exists")
+
+    file_info = await ctx.facts.get(_KeysPathStat, key_file, directory=False)
+    if file_info is False:
+        raise OperationError(f"{key_file} exists and is not a file")
+    if file_info is None:
+        ctx.changed = True
+        reasons.append(f"{key_file} missing, will create")
+        yield _KeysTouchCommand(path=key_file)
+        yield _KeysChmodCommand(path=key_file, mode=_AUTHORIZED_KEYS_MODE)
+        yield _HomeChownCommand(path=key_file, user=user, group=key_group)
+    else:
+        if file_info["mode"] != _AUTHORIZED_KEYS_MODE:
+            ctx.changed = True
+            reasons.append(
+                f"mode {file_info['mode']} differs, will chmod {_AUTHORIZED_KEYS_MODE}"
+            )
+            yield _KeysChmodCommand(path=key_file, mode=_AUTHORIZED_KEYS_MODE)
+        if file_info["user"] != user or file_info["group"] != key_group:
+            ctx.changed = True
+            reasons.append(
+                f"owner {file_info['user']}:{file_info['group']} differs, will chown"
+            )
+            yield _HomeChownCommand(path=key_file, user=user, group=key_group)
+
+    current_keys = await ctx.facts.get(AuthorizedKeys, user, path=key_file)
+    current_key_set = set(current_keys)
+    missing = tuple(key for key in requested if key not in current_key_set)
+    if missing:
+        ctx.changed = True
+        reasons.append(f"{len(missing)} key(s) missing, will append")
+        for key in missing:
+            yield AuthorizedKeysAppendCommand(path=key_file, key=key)
+    elif not ctx.changed and file_info is not None:
+        reasons.append(f"file {key_file} already exists")
+
+    ctx.reason = "; ".join(reasons)
 
 
 @dataclass(frozen=True)
@@ -3047,6 +4175,20 @@ def is_active(state: str | None) -> bool:
     return state == "active"
 
 
+def is_listening(info: PortInfo) -> bool:
+    """The ``server.wait`` predicate: the port has a listening socket.
+
+    Reads only the ``listening`` flag, never the owner pair -- an
+    unprivileged poll sees a socket without its process, and the wait is
+    about the port, not about who owns it.
+
+    A module-level function, not a lambda: the deploy generator is re-invoked
+    per phase, and the predicate ends up in the yielded descriptor, so it
+    must be the same object every time.
+    """
+    return info["listening"]
+
+
 @dataclass(frozen=True)
 class WaitForFactCommand(WaitCommand):
     """Poll a fact until ``predicate(value)`` holds, or time out.
@@ -3105,6 +4247,66 @@ class WaitForFactCommand(WaitCommand):
             await asyncio.sleep(self.interval)
 
 
+async def wait(
+    ctx: OpContext,
+    port: int,
+    protocol: Literal["tcp", "udp"] = "tcp",
+    timeout: float = 300.0,
+    interval: float = 1.0,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Wait for a port to start listening.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        port (int): Number of the port to wait for.
+        protocol (Literal["tcp", "udp"], optional): Protocol family whose
+            sockets count as listening. Defaults to "tcp".
+        timeout (float, optional): Seconds to keep polling before raising
+            ``WaitTimeoutError``. Defaults to 300.0.
+        interval (float, optional): Seconds between polls. Defaults to 1.0.
+        **kwargs (Any): Additional keyword arguments.
+
+    Yields:
+        Command: The wait command, always (a wait is not idempotent).
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, TypeError, ValueError, WaitTimeoutError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_op_wait.py``.
+    """
+
+    # Mirrors pyinfra's ``server.wait`` for ``port``, the only option upstream
+    # has. pyinfra polls remotely -- a ``while true`` shell loop over
+    # ``netstat`` with a fixed sleep and no timeout at all -- where reemote5
+    # describes the wait and lets the driver poll the ``Port`` fact, bounded by
+    # ``timeout`` (pyinfra waits forever) and with an adjustable ``interval``.
+    # The interval defaults to 1s rather than ``wait_service``'s 5s: a port on
+    # its way up usually appears within a second, where a unit's start takes
+    # longer. Like every wait this one reads no facts and always yields: a
+    # plan-time fact read would reflect pre-deployment state in the prepare
+    # phase and post-deployment state in the apply phase, and branching on it
+    # would break the determinism guard. The plan therefore always shows the
+    # wait as a change. ``_check_port`` rejects a bad port or protocol here, at
+    # plan time, rather than from inside the descriptor deep in the apply
+    # phase. The wait is unprivileged -- so an owner-less socket (the only kind
+    # a restricted user may see) still satisfies it.
+    _check_port(port, protocol)
+    ctx.changed = True
+    ctx.reason = f"wait for {protocol} port {port} to be listening"
+    yield WaitForFactCommand(
+        fact_cls=Port,
+        args=(port, protocol),
+        predicate=is_listening,
+        timeout=timeout,
+        interval=interval,
+    )
+
+
 async def wait_service(
     ctx: OpContext,
     service: str,
@@ -3156,7 +4358,9 @@ async def wait_service(
 __all__ = [
     "Arch",
     "AuthorizedKeys",
+    "AuthorizedKeysAppendCommand",
     "Date",
+    "Env",
     "GroupAddCommand",
     "GroupDelCommand",
     "Groups",
@@ -3176,7 +4380,8 @@ __all__ = [
     "ModprobeCommand",
     "MountCommand",
     "Mounts",
-    "Path",
+    "Port",
+    "PortInfo",
     "Processes",
     "SetHostnameCommand",
     "SetTimezoneCommand",
@@ -3186,17 +4391,24 @@ __all__ = [
     "Timezone",
     "Uptime",
     "User",
+    "UserAddCommand",
+    "UserDelCommand",
+    "UserModCommand",
     "Users",
     "WaitForFactCommand",
     "Which",
     "group",
     "hostname",
     "is_active",
+    "is_listening",
     "kill",
     "modprobe",
     "mount",
     "service",
     "timezone",
     "unit_name",
+    "user",
+    "user_authorized_keys",
+    "wait",
     "wait_service",
 ]

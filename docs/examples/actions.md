@@ -2,6 +2,7 @@
 
 Scripts under `examples/actions/` — runnable demonstrations of
 [`action.Shell`][reemote5.actions.Shell],
+[`Script`][reemote5.actions.Script] (also reachable as `server.script`),
 [`WaitForConnection`][reemote5.actions.WaitForConnection] and
 `gather_action`, the escape hatch for acting
 on servers outside the deploy model. Each reads the shared `inventory.json`
@@ -40,6 +41,22 @@ the command's own exit is data, but a *rejected credential* raises
 [`PrivilegeError`][reemote5.hosts.PrivilegeError].
 
 ::: action_shell_sudo
+    options:
+      members: []
+
+## Running a staged script
+
+`action_script` demonstrates `server.script` — the namespace alias of the
+[`Script`][reemote5.actions.Script] action — end to end: a deploy stages the
+script with `files.put` (the action never transfers anything itself), then
+`gather_action` runs it. The staged file has no executable bit, so the first
+run falls back to `sh <path> <args>`; a `Shell` action adds `chmod +x` and the
+same call then executes the file directly via its shebang. A final call
+against an absent path shows that a missing file is an **error Result**
+(exit 127 with a `server.script: no such file` message on stderr), not an
+exception. The `is_centos` guard filters the host list before each fan-out.
+
+::: action_script
     options:
       members: []
 

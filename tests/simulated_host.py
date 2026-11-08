@@ -13,15 +13,19 @@ a real asyncssh transport is missing:
 
 - ``execute_command(cmd)``: applies the simulated effect of a command
   descriptor to the in-memory state. ``reemote5.drivers.send_command``
-  forwards to it when the host provides it, and raises ``NotImplementedError``
-  otherwise.
+  forwards to it when the host provides it. Without the seam the same call
+  takes the real-transport path instead, dispatching on the descriptor kind:
+  ``transfer`` for a ``TransferCommand``, ``wait`` for a ``WaitCommand``, and
+  the rendered shell over asyncssh for anything else.
 - ``packages`` / ``links`` / ``existing_files`` / ``file_stats`` /
-  ``directory_stats`` / ``link_stats`` / ``remote_files`` /
+  ``file_flags`` / ``directory_stats`` / ``link_stats`` / ``same_files`` /
+  ``remote_files`` /
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``services`` / ``enabled_services``
   / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``deb_files``
-  / ``date`` / ``disk_stats`` / ``dmi_info`` / ``firewalld_default_zone``
+  / ``date`` / ``disk_stats`` / ``dmi_info`` / ``os_env``
+  / ``firewalld_default_zone``
   / ``firewalld_ipsets`` / ``firewalld_lockdown`` / ``firewalld_panic_mode``
   / ``firewalld_permanent_ipsets`` / ``firewalld_permanent_policies``
   / ``firewalld_permanent_zones`` / ``firewalld_policies``
@@ -43,7 +47,8 @@ a real asyncssh transport is missing:
   / ``os_kernel``
   / ``kernel_modules`` / ``os_kernel_version`` / ``login_records``
   / ``linux_distribution``
-  / ``linux_gui`` / ``locales`` / ``lsb_release`` / ``lsblk_devices``
+  / ``linux_gui`` / ``listening_ports`` / ``locales`` / ``lsb_release``
+  / ``lsblk_devices``
   / ``lxd_containers`` / ``lxd_image_aliases`` / ``lxd_images``
   / ``lxd_instance_configs`` / ``lxd_instance_snapshots``
   / ``lxd_instance_states`` / ``lxd_instances`` / ``lxd_networks``
@@ -56,7 +61,7 @@ a real asyncssh transport is missing:
   / ``mysql_tables`` / ``mysql_user_grants`` / ``mysql_users``
   / ``mysql_variables``
   / ``network_devices`` / ``openrc_runlevels`` / ``openrc_service_states``
-  / ``openrc_version`` / ``os_path``
+  / ``openrc_version``
   / ``processes``
   / ``postgres_connections`` / ``postgres_databases`` / ``postgres_extensions``
   / ``postgres_indexes`` / ``postgres_privileges`` / ``postgres_publications``
@@ -73,13 +78,13 @@ a real asyncssh transport is missing:
   / ``ufw_applications`` / ``ufw_rules`` / ``ufw_status``
   / ``uptime_seconds`` / ``command_paths``:
   the state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
-  ``File``, ``Directory``, ``Link``, ``RemoteFileSha1``, ``FileContents``, ``DnfRepoFile``, ``DnfRepositories``,
+  ``File``, ``Directory``, ``Link``, ``SameFile``, ``FileFlags``, ``RemoteFileSha1``, ``FileContents``, ``DnfRepoFile``, ``DnfRepositories``,
   ``DnfRepoList``,
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``,
   ``SystemdServiceState``, ``SystemdServiceEnabled``, ``SystemdStatus``, ``SystemdEnabled``, ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState``, ``SystemdDependencies``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpgradable``, ``Arch``,
   ``AuthorizedKeys``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``, ``DebPackage``,
-  ``DiskStats``, ``DmiInfo``, ``FirewalldStatus``, ``FirewalldDefaultZone``,
+  ``DiskStats``, ``DmiInfo``, ``Env``, ``FirewalldStatus``, ``FirewalldDefaultZone``,
   ``FirewalldZones``, ``FirewalldServices``, ``FirewalldIpSets``,
   ``FirewalldPolicies`` (the firewalld-local ``_FirewalldLockdown`` and
   ``_FirewalldPanicMode`` probes read the ``firewalld_lockdown`` and
@@ -110,7 +115,7 @@ a real asyncssh transport is missing:
   ``MysqlUserGrants``, ``MysqlUsers``, ``MysqlVariables``, ``NetworkDevices``,
   ``OpenrcEnabled``,
   ``OpenrcRunlevels``, ``OpenrcServices``, ``OpenrcStatus``, ``OpenrcVersion``,
-  ``Path``, ``Processes``,
+  ``Port``, ``Processes``,
   ``PostgresqlConnections``, ``PostgresqlDatabases``,
   ``PostgresqlExtensions``, ``PostgresqlIndexes``, ``PostgresqlPrivileges``,
   ``PostgresqlPublications``, ``PostgresqlReplication``,
@@ -126,7 +131,9 @@ a real asyncssh transport is missing:
   ``SysctlFiles`` (the two persistence reads project the shared
   ``remote_files`` seam onto the standard sysctl paths), ``Timezone``,
   ``UfwApplications``, ``UfwRules``, ``UfwStatus``,
-  ``Uptime``, ``User``, ``Users``, ``Which``) read as a
+  ``Uptime``, ``User``, ``Users`` (the server-local ``_HomeDirectory`` and
+  ``_HomeIsLink`` home probes read the shared ``directory_stats`` and
+  ``link_stats`` seams), ``Which``) read as a
   stand-in for gathering over SSH.
 
 Holding this state is what makes the "fresh fact cache per lockstep step"
@@ -211,10 +218,16 @@ from reemote5.modules.dnf.dnf import (
     RpmPackageInfo,
 )
 from reemote5.modules.files.files import (
+    ChattrCommand,
+    ChmodCommand,
+    ChownCommand,
     CopyCommand,
     FileCommand,
     GetCommand,
+    InstallCommand,
+    InstallSpoolCommand,
     LinkCommand,
+    MkdirCommand,
     MoveCommand,
     PutCommand,
     RemoveTreeCommand,
@@ -422,14 +435,24 @@ from reemote5.modules.selinux.selinux import (
     SeUser,
 )
 from reemote5.modules.server.server import (
+    AuthorizedKeysAppendCommand,
     GroupAddCommand,
     GroupDelCommand,
     KillCommand,
     ModprobeCommand,
     MountCommand,
+    Port,
+    PortInfo,
     SetHostnameCommand,
     SetTimezoneCommand,
+    UserAddCommand,
+    UserDelCommand,
+    UserModCommand,
     WaitForFactCommand,
+    _HomeChownCommand,
+    _HomeMkdirCommand,
+    _KeysChmodCommand,
+    _KeysTouchCommand,
 )
 from reemote5.modules.sysctl.sysctl import (
     Sysctl,
@@ -482,7 +505,15 @@ class SimulatedHost(Host):
     # ``.rpm`` one), which ``DnfPackages.process`` projects into the sorted
     # ``DnfPackageInfo`` entries it returns (the ``apt_packages`` precedent).
     packages: dict[str, list[str]] = field(default_factory=dict)
-    links: dict[str, str] = field(default_factory=dict)  # src -> target
+    # Symlink path -> target: the store the cheap ``FileLink`` readlink
+    # probe answers from, maintained by ``make_link``/``remove_link``.
+    links: dict[str, str] = field(default_factory=dict)  # path -> target
+    # Pairs of paths naming one and the same inode, backing ``SameFile``
+    # (the hard-link half of ``files.link``'s idempotence): ``ln`` without
+    # ``-s`` records the ``(link path, target)`` pair and a test can seed
+    # pairs directly. The ``test -ef`` operator is symmetric, so the fact
+    # looks a pair up in either order.
+    same_files: set[tuple[str, str]] = field(default_factory=set)
     existing_files: set[str] = field(default_factory=set)
     # Remote path -> the content bytes the simulated remote filesystem holds
     # there. This single store backs both transfer directions: ``RemoteFileSha1``
@@ -490,10 +521,12 @@ class SimulatedHost(Host):
     # a simulated ``files.put`` writes the source
     # stream's bytes into it, and a simulated ``files.get`` reads them back out
     # into the destination stream. The ``dnf.key``/``dnf.repo``/``apt.key``/
-    # ``apt.sources_file``/``gpg.key``/``gpg.import_key`` spool uploads land
+    # ``apt.sources_file``/``gpg.key``/``gpg.import_key``/``files.install``
+    # spool uploads land
     # here too:
     # ``import_key``/``install_repo_file``/``install_apt_key``/
-    # ``install_apt_sources_file``/``install_gpg_key``/``import_gpg_key`` pop
+    # ``install_apt_sources_file``/``install_gpg_key``/``import_gpg_key``/
+    # ``install_file`` pop
     # the spool entry, and
     # the install mutators store the content bytes back at their dest path
     # (``dearmor_gpg_key`` copies between two remote paths in the same store,
@@ -788,6 +821,10 @@ class SimulatedHost(Host):
     # default ``~user/.ssh/authorized_keys`` path and by the explicit path
     # when the fact is given one; each value is the list of full key strings
     # the file lists (already stripped, no comments -- the parsed form).
+    # ``server.user_authorized_keys`` always reads the fact with an explicit
+    # path, so its ``append_authorized_key`` mutator writes only the
+    # path-keyed entries; a test seeding the username-keyed form exercises
+    # the fact directly, not that operation.
     authorized_keys: dict[str, list[str]] = field(default_factory=dict)
     # Mounted block devices (device -> the ``BlockDevice`` entry the fact
     # returns -- {blocks, used, available, used_percent, mount}), backing
@@ -828,6 +865,18 @@ class SimulatedHost(Host):
     # simulated machine with no DMI identity (a container), like the
     # fact's {} fallback for a failed read.
     dmi_info: dict[str, str] = field(default_factory=dict)
+    # The login shell's environment (variable name -> the raw ``echo $<name>``
+    # value), backing ``Env``. Named ``os_env`` with the os_ prefix (like
+    # ``os_kernel``) so it stays clear of any inventory field. An unlisted
+    # variable reads as "", like the blank line echo prints for an unset one.
+    # Defaults to a standard Linux PATH -- a real machine always answers
+    # ``echo $PATH``, and a fixed default keeps simulated reads deterministic
+    # (the replaced ``Path`` fact's seam default, now keyed by variable name).
+    os_env: dict[str, str] = field(
+        default_factory=lambda: {
+            "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin"
+        }
+    )
     # Directory metadata (path -> the stat dict ``Directory`` returns -- the
     # same shape as ``file_stats`` -- or False for a path that exists but is
     # not a directory), backing ``Directory``. A separate store from
@@ -840,8 +889,12 @@ class SimulatedHost(Host):
     # ``add_worktree``/``remove_worktree`` (the simulated ``git.worktree``)
     # add/drop the worktree path so a repeat add or remove is a no-op, and
     # ``clone_repo`` (the simulated ``git.repo``) adds both ``dest`` and
-    # ``<dest>/.git`` so a repeat clone short-circuits. A test seeds any
-    # other directory directly.
+    # ``<dest>/.git`` so a repeat clone short-circuits. The
+    # ``files.directory`` seam maintains it too: ``make_directory`` writes a
+    # ``755`` row for a simulated ``mkdir -p``, ``chmod_path``/``chown_path``
+    # replace the row's mode/owner for a simulated ``chmod``/``chown``, and
+    # ``remove_tree`` drops the row for a simulated ``rm -rf``. A test seeds
+    # any other directory directly.
     directory_stats: dict[str, dict[str, Any] | bool] = field(default_factory=dict)
     # File metadata (path -> the stat dict ``File`` returns -- user, group,
     # mode, atime, mtime, ctime, size -- or False for a path that exists but
@@ -852,9 +905,22 @@ class SimulatedHost(Host):
     # this cannot ride the literal-path ``remote_files`` store -- which also
     # holds content bytes, not metadata). An absent key reads as None, like
     # a missing path. A test seeds it directly; the ``files.move`` seam
-    # (``move_path``/``remove_tree``) relocates or drops a row so the ``File``
-    # fact stays consistent across a simulated move.
+    # (``move_path``/``remove_tree``) relocates or drops a row, the
+    # ``files.directory`` ``chmod_path``/``chown_path`` mutators rewrite a
+    # row's mode/owner, and the ``files.file`` ``create_file``/``remove_file``
+    # mutators seed (mode 644, root-owned -- what a plain ``touch`` creates)
+    # or drop the row, so the ``File`` fact stays consistent with the
+    # ``FileExists`` probe's ``existing_files`` marker.
     file_stats: dict[str, dict[str, Any] | bool] = field(default_factory=dict)
+    # Ext2-family attribute flags set on a path (the sorted one-letter
+    # ``lsattr`` codes, ``i`` for immutable, ``a`` for append-only, ...),
+    # backing ``FileFlags`` -- the read behind ``files.flags``. Keys are the
+    # caller-supplied path strings verbatim; an absent key reads as [], like
+    # a path with no attributes (or an absent one, which the fact's guard
+    # short-circuits). A test seeds it directly; ``set_file_flags``/
+    # ``clear_file_flags`` (the simulated ``chattr +flags``/``-flags``) add/
+    # drop letters so a repeat ``files.flags`` is a no-op.
+    file_flags: dict[str, set[str]] = field(default_factory=dict)
     # The firewalld daemon record ({running, version}), backing
     # ``FirewalldStatus``. The default projects a stopped daemon with no
     # version; a test seeds it directly (read-only -- no operation starts
@@ -1197,9 +1263,9 @@ class SimulatedHost(Host):
     # carries no type flag, so one store cannot answer the file-, directory-
     # and link-typed questions for the same path. Keys are the caller-supplied
     # path strings verbatim, ``~/...`` prefixes included; an absent key reads
-    # as None, like a missing path. A read-only seam: no ``execute_command``
-    # mutator maintains it (``make_link`` only fills the bare ``links`` store
-    # ``FileLink`` reads), so a test sets it directly.
+    # as None, like a missing path. ``make_link``/``remove_link`` (the
+    # simulated ``ln``/``rm -f`` of ``files.link``) maintain it alongside the
+    # bare ``links`` store; a test can also seed rows directly.
     link_stats: dict[str, dict[str, Any] | bool] = field(default_factory=dict)
     # Login records (the parsed ``last`` output), backing ``Last``. Each
     # entry is the dict the fact returns -- {user, tty, host, time} with
@@ -1370,13 +1436,15 @@ class SimulatedHost(Host):
     # to {} -- a simulated machine with no interfaces listed, like pyinfra's
     # ``default = dict`` for a failed read.
     network_devices: dict[str, NetworkDevice] = field(default_factory=dict)
-    # The login user's PATH environment variable (the raw colon-separated
-    # ``echo $PATH`` string), backing ``Path``. Named ``os_path`` with the
-    # os_ prefix (like ``os_kernel``) so it stays clear of any inventory
-    # field. Defaults to a standard Linux search path -- a real machine
-    # always answers ``echo $PATH``, and a fixed default keeps simulated
-    # reads deterministic (pyinfra ships no fixture for this fact).
-    os_path: str = "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin"
+    # Listening sockets (``(protocol, port)`` -> the ``PortInfo`` record the
+    # fact returns), backing ``Port`` and polled by ``server.wait``. An
+    # unlisted port reads as "nothing listening", like a command whose port
+    # filter matches no row; the read copies the record, so a test can seed
+    # these directly. A read-only seam: a wait never mutates state (see
+    # ``check_wait``), so a test that wants a port to appear seeds it between
+    # steps -- or lets a command arm (``start_service``, a future listener
+    # simulator) add it.
+    listening_ports: dict[tuple[str, int], PortInfo] = field(default_factory=dict)
     # Running processes (PID -> {user, state, cpu_percent, mem_percent,
     # command, args}), backing ``Processes``. Each value is the parsed form
     # the fact returns -- the seam holds the joined record regardless of
@@ -1462,7 +1530,7 @@ class SimulatedHost(Host):
     # effect) replaces it, so a repeat timezone set is a no-op.
     os_timezone: str = "Europe/Amsterdam"
     # The current user's name (the ``echo $USER`` answer), backing ``User``.
-    # Named ``os_user`` with the os_ prefix (like ``os_path``) so it stays
+    # Named ``os_user`` with the os_ prefix (like ``os_env``) so it stays
     # clear of the inventory's ``connection.user`` login name. Defaults to
     # ``root`` -- a real machine always answers ``echo $USER``, and a fixed
     # default keeps simulated reads deterministic (pyinfra ships no fixture
@@ -1474,7 +1542,9 @@ class SimulatedHost(Host):
     # (like ``os_user``) so it stays clear of the inventory's
     # ``connection.user`` login name. Defaults to {} -- a simulated machine
     # with no users listed, like pyinfra's ``default = dict`` for a failed
-    # or empty read.
+    # or empty read. ``add_user``/``modify_user``/``remove_user`` (the
+    # simulated ``useradd``/``usermod``/``userdel`` behind ``server.user``)
+    # mutate it.
     os_users: dict[str, dict[str, Any]] = field(default_factory=dict)
     # The seconds since boot (the parsed ``cut -d. -f1 /proc/uptime`` answer,
     # or the BSD now-minus-boottime difference), backing ``Uptime``. Defaults
@@ -1737,24 +1807,63 @@ class SimulatedHost(Host):
                 self.enable_module(module, stream)
             case DnfModuleDisableCommand(module=module):
                 self.disable_module(module)
-            case LinkCommand(src=src, target=None):
-                self.remove_link(src)
-            case LinkCommand(src=src, target=target):
-                self.make_link(src, target)
-            case FileCommand(src=src, present=False):
-                self.remove_file(src)
-            case FileCommand(src=src):
-                self.create_file(src)
+            case LinkCommand(path=path, target=None):
+                self.remove_link(path)
+            case LinkCommand(path=path, target=target, symbolic=symbolic):
+                self.make_link(path, target, symbolic)
+            case FileCommand(path=path, present=False):
+                self.remove_file(path)
+            case FileCommand(path=path):
+                self.create_file(path)
             case PutCommand(src=src, dest=dest):
                 self.put_file(src, dest)
             case GetCommand(src=src, dest=dest):
                 self.get_file(src, dest)
+            case InstallSpoolCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
+            case InstallCommand(spool=spool, dest=dest, mode=mode):
+                self.install_file(spool, dest, mode)
             case MoveCommand(src=src, dest=dest):
                 self.move_path(src, dest)
             case RemoveTreeCommand(src=src):
                 self.remove_tree(src)
             case CopyCommand(src=src, dest=dest):
                 self.copy_path(src, dest)
+            case MkdirCommand(path=path):
+                self.make_directory(path)
+            case _HomeMkdirCommand(path=path):
+                # server.user's inlined home-directory creation rides the
+                # same mutation as files.directory's mkdir descriptor.
+                self.make_directory(path)
+            case _KeysTouchCommand(path=path):
+                # server.user_authorized_keys's inlined authorized_keys
+                # file creation rides the same touch mutation as files.file's
+                # FileCommand descriptor; the paired _KeysChmodCommand then
+                # rewrites the seeded 644 row to the operation's 600 mode.
+                self.create_file(path)
+            case ChattrCommand(path=path, flags=flags, present=False):
+                self.clear_file_flags(path, flags)
+            case ChattrCommand(path=path, flags=flags):
+                self.set_file_flags(path, flags)
+            case ChmodCommand(path=path, mode=mode):
+                self.chmod_path(path, mode)
+            case _KeysChmodCommand(path=path, mode=mode):
+                # server.user_authorized_keys's inlined chmod for the .ssh
+                # directory and the key file rides the same mutation as
+                # files.directory's chmod descriptor.
+                self.chmod_path(path, mode)
+            case ChownCommand(path=path, user=user, group=group, dereference=dereference):
+                self.chown_path(path, user, group, dereference)
+            case _HomeChownCommand(path=path, user=user, group=group):
+                # server.user's inlined home-ownership change rides the same
+                # mutation as files.directory's chown descriptor.
+                self.chown_path(path, user, group)
+            case AuthorizedKeysAppendCommand(path=path, key=key):
+                # server.user_authorized_keys's key-append mutation updates
+                # the key-file content, its existence/metadata seams and the
+                # AuthorizedKeys fact seam in one place, so a repeat run
+                # reads the key as already listed.
+                self.append_authorized_key(path, key)
             case GitConfigCommand(
                 key=key,
                 value=value,
@@ -1789,6 +1898,12 @@ class SimulatedHost(Host):
                 self.add_group(name)
             case GroupDelCommand(group=name):
                 self.remove_group(name)
+            case UserAddCommand():
+                self.add_user(cmd)
+            case UserModCommand():
+                self.modify_user(cmd)
+            case UserDelCommand(user=name):
+                self.remove_user(name)
             case SetHostnameCommand(hostname=name):
                 self.set_hostname(name)
             case SetTimezoneCommand(timezone=timezone):
@@ -2381,8 +2496,28 @@ class SimulatedHost(Host):
             self.packages[name] = [version]
             for src, target in self.installs_links.get(name, {}).items():
                 self.links[src] = target
+                # The Link-fact seam too: files.link stats the path instead
+                # of only probing readlink, so a package-dropped link must
+                # answer with a row (root-owned, mode 777, the symlink
+                # defaults) carrying its target.
+                self.link_stats.setdefault(
+                    src,
+                    {
+                        "mode": 777,
+                        "user": "root",
+                        "group": "root",
+                        "link_target": target,
+                    },
+                )
             for path in self.installs_files.get(name, set()):
                 self.existing_files.add(path)
+                # The File-fact seam too: files.file(present=False) now
+                # stats the path instead of only probing existence, so a
+                # package-dropped file must answer with a metadata row
+                # (root-owned mode 644, the rpm default).
+                self.file_stats.setdefault(
+                    path, {"mode": 644, "user": "root", "group": "root"}
+                )
 
     def remove_packages(self, packages: tuple[str, ...]) -> None:
         for package in packages:
@@ -3066,17 +3201,81 @@ class SimulatedHost(Host):
             self.disabled_modules.append(module)
         self.disabled_modules.sort()
 
-    def make_link(self, src: str, target: str) -> None:
-        self.links[src] = target
+    def make_link(self, path: str, target: str, symbolic: bool = True) -> None:
+        """Record a simulated ``ln [-s] target path``.
 
-    def remove_link(self, src: str) -> None:
-        self.links.pop(src, None)
+        A symlink fills both link stores: the bare ``links`` mapping the
+        cheap ``FileLink`` readlink probe reads, and a ``link_stats`` row
+        (root-owned, mode 777 -- ``ln -s``'s own defaults) carrying the
+        ``link_target`` the stat-level ``Link`` fact ``files.link`` compares,
+        so the next step's fresh cache reads the link back as requested.
+        A hard link (``symbolic=False``) is not a symlink at all: it is one
+        more name for ``target``'s inode, so the pair lands in
+        ``same_files``, the path becomes a regular file answering with a
+        copy of ``target``'s metadata row, and the typed link stores record
+        the wrong-type existence (``False``) a real ``stat`` of a hard link
+        reports -- never ``None``, which would mean "absent".
+        """
+        if symbolic:
+            self.links[path] = target
+            existing = self.link_stats.get(path)
+            row = dict(existing) if isinstance(existing, dict) else {}
+            row.setdefault("mode", 777)
+            row.setdefault("user", "root")
+            row.setdefault("group", "root")
+            row["link_target"] = target
+            self.link_stats[path] = row
+            return
+        self.links.pop(path, None)
+        # stat reports "-" for a hard link: the Link/Directory facts answer
+        # False ("exists, wrong type"), which is exactly what files.link's
+        # hard-link idempotence branch keys on before re-reading File and
+        # SameFile.
+        self.link_stats[path] = False
+        self.directory_stats[path] = False
+        self.same_files.add((path, target))
+        self.existing_files.add(path)
+        source = self.file_stats.get(target)
+        self.file_stats[path] = (
+            dict(source)
+            if isinstance(source, dict)
+            else {"mode": 644, "user": "root", "group": "root"}
+        )
+
+    def remove_link(self, path: str) -> None:
+        """Record a simulated ``rm -f`` of a link: both link stores go.
+
+        ``links`` (the readlink probe) and ``link_stats`` (the stat-level
+        ``Link`` fact) stop answering for the path. A hard link is a plain
+        file name, so its side of the state goes too -- the ``same_files``
+        pairs naming the path, its existence marker and its ``file_stats``
+        row: the ``rm -f`` drops one name of the inode, never the inode.
+        """
+        self.links.pop(path, None)
+        self.link_stats.pop(path, None)
+        self.same_files = {pair for pair in self.same_files if path not in pair}
+        self.existing_files.discard(path)
+        self.file_stats.pop(path, None)
 
     def create_file(self, src: str) -> None:
+        """Record a simulated ``touch``: seed the existence marker and a
+        ``file_stats`` row (root-owned, mode 644 -- an unprivileged
+        ``touch`` creates exactly that), so the ``File`` fact ``files.file``
+        consults and the cheaper ``FileExists`` probe both answer for the
+        path. An existing row is kept: ``touch`` only moves timestamps.
+        """
         self.existing_files.add(src)
+        self.file_stats.setdefault(
+            src, {"mode": 644, "user": "root", "group": "root"}
+        )
 
     def remove_file(self, src: str) -> None:
+        """Record a simulated ``rm -f``: the existence marker and any
+        ``file_stats`` row go, so neither the ``File`` fact nor the
+        ``FileExists`` probe answers for the path afterwards.
+        """
         self.existing_files.discard(src)
+        self.file_stats.pop(src, None)
 
     def add_group(self, name: str) -> None:
         """Record a simulated ``groupadd``: append the name to ``os_groups``.
@@ -3094,6 +3293,113 @@ class SimulatedHost(Host):
         """Record a simulated ``groupdel``: drop the name from ``os_groups``."""
         if name in self.os_groups:
             self.os_groups.remove(name)
+
+    def add_user(self, cmd: UserAddCommand) -> None:
+        """Record a simulated ``useradd``/``pw useradd``: add an ``os_users`` row.
+
+        ``server.user``'s create mutation writes the row the ``Users`` fact
+        reads back, seeding every field the operation compared (home, shell,
+        group, groups, comment, password) so the next step's fresh fact cache
+        sees the user already as requested. A missing detail stays ``None``
+        (and ``groups`` ``[]``) exactly like an empty passwd field; ``uid``
+        is the requested one or the next number after the seeded users, and
+        the primary group defaults to the user's own name as useradd's
+        user-Private-Group mode does. The ``-m`` skeleton content and the
+        ``-r``/``-o``/``-M`` flags carry no simulated state. The home
+        directory itself is not touched here: the operation's paired
+        ``_HomeMkdirCommand``/``_HomeChownCommand`` write that seam.
+        """
+        info: dict[str, Any] = {
+            "home": cmd.home if cmd.home else f"/home/{cmd.user}",
+            "comment": cmd.comment,
+            "shell": cmd.shell_path,
+            "group": cmd.group or cmd.user,
+            "groups": list(cmd.groups),
+            "uid": cmd.uid if cmd.uid else 1000 + len(self.os_users),
+            "gid": None,
+            "lastlog": None,
+            "login_time": None,
+            "password": cmd.password,
+        }
+        self.os_users[cmd.user] = info
+
+    def modify_user(self, cmd: UserModCommand) -> None:
+        """Record a simulated ``usermod``/``pw usermod``: edit an ``os_users`` row.
+
+        Only the fields the operation deemed different are written (the
+        descriptor carries nothing else), so a repeat update reads back equal
+        and is a no-op. A ``groups`` write replaces the membership, or unions
+        it in when ``append`` set (``usermod -a -G``); the FreeBSD password
+        form (the ``echo '<hash>' | pw usermod -n <user> -H 0`` pipe) writes
+        the hash through the same path. An absent user changes nothing -- the
+        real command would exit non-zero and fail the apply step.
+        """
+        info = self.os_users.get(cmd.user)
+        if info is None:
+            return
+        if cmd.home:
+            info["home"] = cmd.home
+        if cmd.shell_path:
+            info["shell"] = cmd.shell_path
+        if cmd.group:
+            info["group"] = cmd.group
+        if cmd.comment:
+            info["comment"] = cmd.comment
+        if cmd.password:
+            info["password"] = cmd.password
+        if cmd.groups:
+            if cmd.append:
+                current = list(info.get("groups") or [])
+                info["groups"] = current + [g for g in cmd.groups if g not in current]
+            else:
+                info["groups"] = list(cmd.groups)
+
+    def remove_user(self, name: str) -> None:
+        """Record a simulated ``userdel``/``pw userdel``: drop the ``os_users`` row.
+
+        The home directory is deliberately left in place -- plain ``userdel``
+        removes no files (only ``userdel -r`` does, which pyinfra and this
+        operation never emit). An absent user is tolerated.
+        """
+        self.os_users.pop(name, None)
+
+    def append_authorized_key(self, path: str, key: str) -> None:
+        """Record a simulated ``user_authorized_keys`` append at ``path``.
+
+        ``server.user_authorized_keys``' key-append mutation. The newline-
+        guard idiom the descriptor renders is mirrored here: a leading
+        ``\n`` is inserted when the file's existing content ends without
+        one, so the appended key never gets glued onto a newline-less last
+        line, and the key is then written with its own trailing newline.
+        Every seam a later ``user_authorized_keys`` read consults goes in
+        together: the bytes land in ``remote_files`` (the same store
+        ``FileContents`` decodes), the path joins ``existing_files`` with a
+        ``file_stats`` size refresh (or, when the paired
+        ``_KeysTouchCommand`` never ran -- a descriptor-only test -- a
+        minimal root-owned mode-600 row), and the key is appended to
+        ``authorized_keys`` under the caller-supplied ``path`` key, so
+        ``AuthorizedKeys(user, path=...)`` -- the shape this operation
+        always reads -- sees the appended key and a repeat run takes the
+        no-op branch. An already-listed key is not stored twice.
+        """
+        existing = self.remote_files.get(path, b"")
+        prefix = b"\n" if existing and not existing.endswith(b"\n") else b""
+        data = existing + prefix + f"{key}\n".encode()
+        self.remote_files[path] = data
+        self.existing_files.add(path)
+        stats = self.file_stats.get(path)
+        if isinstance(stats, dict):
+            stats["size"] = len(data)
+        else:
+            self.file_stats[path] = {
+                "user": "root",
+                "group": "root",
+                "mode": 600,
+                "size": len(data),
+            }
+        keys = self.authorized_keys.setdefault(path, [])
+        if key not in keys:
+            keys.append(key)
 
     def set_hostname(self, name: str) -> None:
         """Record a simulated ``hostnamectl set-hostname``/``hostname``.
@@ -3396,6 +3702,35 @@ class SimulatedHost(Host):
         if data is not None:
             write_dest_bytes(dest, data)
 
+    def install_file(self, spool: str, dest: str, mode: int) -> None:
+        """Record a simulated ``files.install``: install the spooled content.
+
+        The elevated second half of ``files.install``: the paired
+        ``InstallSpoolCommand`` spools the content into ``remote_files``
+        (through ``put_file``), then this install pops the spool and stores
+        the bytes at ``dest`` -- the same store ``FileContents`` reads back
+        -- so a repeat with identical content is a no-op. Mirrors
+        ``install_systemd_conf_file`` with the caller-chosen mode: the path
+        is added to ``existing_files`` plus a root-owned ``file_stats`` row
+        carrying the operation's canonical octal-digit mode (the real
+        command's ``chmod``), and the ``mkdir -p`` parent lands in
+        ``directory_stats``. An absent spool path installs nothing.
+        """
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        self.existing_files.discard(spool)
+        self.file_stats.pop(spool, None)
+        self.make_directory(str(PurePosixPath(dest).parent))
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        self.file_stats[dest] = {
+            "user": "root",
+            "group": "root",
+            "mode": mode,
+            "size": len(data),
+        }
+
     def move_path(self, src: str, dest: str) -> None:
         """Record a simulated ``mv``: relocate ``src`` into the directory ``dest``.
 
@@ -3455,13 +3790,111 @@ class SimulatedHost(Host):
     def remove_tree(self, src: str) -> None:
         """Record a simulated ``rm -rf``: drop the path from every file store.
 
-        The overwrite branch of ``files.move`` removes the target before the
-        move lands, so the content bytes (``remote_files``), the existence
-        marker (``existing_files``) and any seeded ``file_stats`` row all go.
+        The overwrite branch of ``files.move`` and the removal/``force``
+        branches of ``files.directory``/``files.link`` remove the path
+        before anything lands, so the content bytes (``remote_files``), the
+        existence marker (``existing_files``), any seeded ``file_stats``,
+        ``directory_stats`` and ``link_stats`` rows, the ``links`` mapping
+        and any ``same_files`` pair naming the path all go -- a real
+        ``rm -rf`` clears a file, a directory or a symlink alike, and the
+        typed facts must stop answering for the path.
         """
         self.remote_files.pop(src, None)
         self.existing_files.discard(src)
+        self.links.pop(src, None)
+        self.same_files = {pair for pair in self.same_files if src not in pair}
         self.file_stats.pop(src, None)
+        self.directory_stats.pop(src, None)
+        self.link_stats.pop(src, None)
+
+    def make_directory(self, path: str) -> None:
+        """Record a simulated ``mkdir -p``: add a directory row if absent.
+
+        ``files.directory``'s create mutation writes into
+        ``directory_stats`` (the seam the ``Directory`` fact reads) with
+        the default umask-resolved ``755`` mode the real command produces,
+        with the root:root owner a fresh ``mkdir`` leaves -- the row is
+        complete from the start (like ``create_file``'s) so later owner
+        comparisons, which subscribe ``info["user"]``/``info["group"]``,
+        never KeyError. An existing path is left alone -- ``mkdir -p``
+        succeeds silently on an existing directory without touching its
+        metadata.
+        """
+        self.directory_stats.setdefault(
+            path, {"mode": 755, "user": "root", "group": "root"}
+        )
+
+    def chmod_path(self, path: str, mode: int | str) -> None:
+        """Record a simulated ``chmod``: replace the row's mode.
+
+        ``files.directory``'s mode mutation writes the canonical spelling
+        the operation normalised (an octal-digit int, or the symbolic
+        string verbatim -- the simulation does not fold a symbolic mode
+        into octal). ``chmod`` addresses files and directories alike, so
+        both stats stores are visited; a ``False`` row (wrong type) or an
+        absent path is left alone, and ``recursive`` has no separate
+        effect because the stores are flat.
+        """
+        for store in (self.file_stats, self.directory_stats):
+            stats = store.get(path)
+            if isinstance(stats, dict):
+                stats["mode"] = mode
+
+    def chown_path(
+        self,
+        path: str,
+        user: str | None,
+        group: str | None,
+        dereference: bool = True,
+    ) -> None:
+        """Record a simulated ``chown``/``chgrp``: replace the row's owner.
+
+        ``files.directory``'s owner mutation sets only the halves the
+        request named (``chgrp`` touches the group, a user-only ``chown``
+        the user), exactly as the real commands do. Like ``chmod_path``
+        both stats stores are visited and non-dict rows are left alone.
+        ``dereference=False`` (``chown -h``, what ``files.link`` requests for
+        the link itself) edits the symlink's own ``link_stats`` row instead;
+        only a dict row is a symlink -- a hard link's ``False`` row or an
+        absent path means the ownership lives with the file stores after
+        all.
+        """
+        if not dereference and isinstance(self.link_stats.get(path), dict):
+            stores: tuple[dict[str, dict[str, Any] | bool], ...] = (self.link_stats,)
+        else:
+            stores = (self.file_stats, self.directory_stats)
+        for store in stores:
+            stats = store.get(path)
+            if isinstance(stats, dict):
+                if user:
+                    stats["user"] = user
+                if group:
+                    stats["group"] = group
+
+    def set_file_flags(self, path: str, flags: tuple[str, ...]) -> None:
+        """Record a simulated ``chattr +flags``: add the letters to the path.
+
+        ``files.flags``' set mutation writes into ``file_flags`` (the seam
+        the ``FileFlags`` fact reads), merging the requested letters into any
+        already set so a repeat ``files.flags`` reads them back and is a
+        no-op. Flags outside the ext2 vocabulary cannot reach this arm --
+        the operation validates before yielding -- and ``chattr`` addresses
+        files and directories alike, so one flat store covers both.
+        """
+        self.file_flags.setdefault(path, set()).update(flags)
+
+    def clear_file_flags(self, path: str, flags: tuple[str, ...]) -> None:
+        """Record a simulated ``chattr -flags``: drop the letters from the path.
+
+        ``files.flags``' ``present=False`` mutation removes only the letters
+        the operation computed (``current & requested``), leaving any other
+        attribute set, exactly as the real command does; the operation only
+        yields the clear when at least one requested letter is present, so a
+        repeat reads back a no-op. An absent path is tolerated (the real
+        command would exit non-zero, but the fact short-circuits absence to
+        ``[]`` and the operation then plans no change).
+        """
+        self.file_flags.setdefault(path, set()).difference_update(flags)
 
     def add_worktree(self, worktree: str) -> None:
         """Record a simulated ``git worktree add``: create the tree directory.
@@ -5889,6 +6322,14 @@ class SimulatedHost(Host):
         if cmd.fact_cls is SystemdServiceState:
             (unit,) = cmd.args
             value = self.services.get(unit)
+        elif cmd.fact_cls is Port:
+            # The same seam ``Port.process`` reads, with the same
+            # nothing-listening record it returns for an unlisted port.
+            port, protocol = cmd.args
+            value = self.listening_ports.get(
+                (protocol, port),
+                PortInfo(listening=False, process=None, pid=None),
+            )
         else:
             raise TypeError(f"unsupported simulated wait fact: {cmd.fact_cls!r}")
         if not cmd.predicate(value):

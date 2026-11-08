@@ -6,7 +6,9 @@
 # An action acts on the target servers *now* and hands back what happened. It
 # exists for the pragmatic cases the library cannot serve: software on the
 # user's servers that reemote5 knows nothing about, with no fact to read it and
-# no operation to manage it (``Shell``), and connectivity itself -- waiting for
+# no operation to manage it (``Shell``), a script file already staged on the
+# host that just needs running (``Script``, also reachable as ``server.script``
+# from the server namespace), and connectivity itself -- waiting for
 # hosts to come back after a reboot, between one deploy and the next
 # (``WaitForConnection``).
 #
@@ -66,6 +68,7 @@
 # """
 
 import asyncio
+import shlex
 from collections.abc import Coroutine, Iterable
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -278,6 +281,119 @@ class Shell:
             stdout=_as_text(raw.stdout),
             stderr=_as_text(raw.stderr),
         )
+
+
+class Script:
+    """Run an existing script file on a host and return its ``Result``.
+
+    The file must already be on the host -- ``Script`` never transfers it;
+    stage it with ``files.put`` in a deploy first. A missing file is an error
+    RESULT, not an exception: the wrapper exits 127 with a
+    ``server.script: no such file`` message on stderr, read from the ``Result``
+    like any other non-zero exit. Also reachable as ``server.script`` -- an
+    alias in the ``server`` namespace for this same action class.
+
+    Other Parameters:
+        host (Host): The host to run on, supplied per host by
+            ``gather_action``'s fan-out.
+        path (str): Path of the script file on the host, used as given -- an
+            absolute path is recommended, since a bare name would be looked
+            up in ``PATH`` when the file is executed directly.
+        args (Iterable[str], optional): Arguments passed to the script, each
+            shell-quoted individually. A single string is rejected -- pass a
+            sequence of arguments, not one joined string. Defaults to ().
+        interpreter (str | None, optional): Explicit interpreter command,
+            e.g. ``"bash"`` or ``"python3 -u"`` (split into words, each
+            shell-quoted), run as ``<interpreter> <path> <args>`` regardless
+            of the file's executable bit. The default ``None`` chooses per
+            file: an executable file runs directly (the kernel honours its
+            shebang), a non-executable file runs through ``sh``. Defaults
+            to None.
+        sudo (bool, optional): Elevate with ``sudo``, using the run-as user
+            and password from the host's inventory ``privilege`` section.
+            Defaults to False.
+        su (bool, optional): Elevate with ``su``, using the run-as user and
+            password from the host's inventory ``privilege`` section.
+            Defaults to False.
+        doas (bool, optional): Elevate with ``doas`` (passwordless ``doas
+            -n``). The escalations combine in the fixed order ``doas`` then
+            ``sudo`` then ``su``. Defaults to False.
+
+    command:
+
+    ```bash
+    sh -c 'if [ ! -f <path> ]; then echo "server.script: no such file: <path>" >&2; exit 127; fi; if [ -x <path> ]; then <path> <args>; else sh <path> <args>; fi'
+    ```
+
+    return:
+
+    ```python
+    Result
+    ```
+
+    Examples:
+        Examples can be found in ``examples/actions/action_script.py``.
+    """
+
+    # The ``server.script`` counterpart of pyinfra's operation, rebuilt as an
+    # action: no transfer, no plan-phase counterpart, the outcome travels back
+    # whole. The existence check, the executable-bit branch and the invocation
+    # are ONE compound shell wrapper so a single round-trip decides everything,
+    # and the wrapper always rides an explicit ``sh -c``: sudo and doas exec
+    # their command directly rather than through a shell, so a bare ``sudo if
+    # ...`` would fail -- the ``sh -c`` carrier keeps the rendering identical
+    # unprivileged and under any escalation. Execution itself delegates to
+    # ``Shell.process``, so the raw-result seams, privilege handling and the
+    # ``Result`` copy are shared, never duplicated.
+
+    @classmethod
+    async def process(
+        cls,
+        host: Host,
+        *,
+        path: str,
+        args: Iterable[str] = (),
+        interpreter: str | None = None,
+        sudo: bool = False,
+        su: bool = False,
+        doas: bool = False,
+    ) -> Result:
+        """Execute the script at ``path`` on ``host`` and capture its outcome.
+
+        Raises:
+            TypeError: If ``args`` is a single string rather than an iterable
+                of strings.
+            ValueError: If ``interpreter`` is given but empty. A missing
+                script file is NOT an exception -- it comes back as a
+                ``Result`` with ``exit_status`` 127.
+        """
+        if isinstance(args, str):
+            raise TypeError("args must be an iterable of strings, not one string")
+        quoted_path = shlex.quote(path)
+        arg_text = "".join(f" {shlex.quote(arg)}" for arg in args)
+        if interpreter is not None:
+            words = shlex.split(interpreter)
+            if not words:
+                raise ValueError("interpreter must be a non-empty command")
+            invocation = (
+                " ".join(shlex.quote(word) for word in words)
+                + f" {quoted_path}{arg_text}"
+            )
+        else:
+            # Executable: run it directly so its shebang picks the
+            # interpreter; otherwise fall back to sh, which needs no
+            # executable bit (only read permission).
+            invocation = (
+                f"if [ -x {quoted_path} ]; then {quoted_path}{arg_text}; "
+                f"else sh {quoted_path}{arg_text}; fi"
+            )
+        missing = shlex.quote(f"server.script: no such file: {path}")
+        wrapper = (
+            f"if [ ! -f {quoted_path} ]; then echo {missing} >&2; exit 127; fi; "
+            f"{invocation}"
+        )
+        command = f"sh -c {shlex.quote(wrapper)}"
+        return await Shell.process(host, command=command, sudo=sudo, su=su, doas=doas)
 
 
 class WaitForConnection:
@@ -497,6 +613,7 @@ __all__ = [
     "ActionInDeployError",
     "ConnectionTimeoutError",
     "Result",
+    "Script",
     "Shell",
     "WaitForConnection",
     "gather_action",

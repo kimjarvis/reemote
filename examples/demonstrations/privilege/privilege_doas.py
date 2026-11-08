@@ -139,7 +139,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     yield op(
         files.file,
         name="Remove welcome configuration",
-        src=HTTPD_WELCOME_CONF,
+        path=HTTPD_WELCOME_CONF,
         present=False,
         doas=True,
     )

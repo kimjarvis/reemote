@@ -60,7 +60,8 @@ because the host cannot provide them), and apply logs a `skipped`
 still consumes its lockstep slot, so the shared schedule stays aligned across
 hosts; [`format_plan`][reemote5.drivers.format_plan] and
 [`format_log`][reemote5.drivers.format_log] render it as
-`[skipped: when guard <name>]` — a third outcome beside *changed* and
+`[skipped: when guard <predicate name>]` — the reason names the failing
+predicate, not the request — a third outcome beside *changed* and
 *no change*. See [Deploy scripts](guide.md#deploy-scripts) for the guard's
 static-data and stable-predicate rules.
 

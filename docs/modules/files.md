@@ -13,7 +13,9 @@
         - FileExists
         - LocalSha1
         - RemoteFileSha1
+        - SameFile
         - FileContents
+        - FileFlags
 
 ## file Returns
 
@@ -33,8 +35,11 @@
         - put
         - get
         - edit
+        - install
         - move
         - copy
+        - directory
+        - flags
 
 
 
@@ -42,9 +47,13 @@
 
 `reemote5.modules.files.files` combines the file facts and the file operations
 in a single source, so the read side (`FileLink`, `FileExists`,
-`LocalSha1`, `RemoteFileSha1`, `FileContents`, `File`, `Directory`, `Link`)
+`LocalSha1`, `RemoteFileSha1`, `SameFile`, `FileContents`, `File`,
+`Directory`, `Link`,
+`FileFlags`)
 sits beside the `files.link`, `files.file`, `files.put`, `files.get`,
-`files.edit` and `files.move` operations that consume it.
+`files.edit`, `files.install`, `files.move`, `files.copy`, `files.directory`
+and `files.flags`
+operations that consume it.
 
 ## Facts
 
@@ -69,8 +78,10 @@ symlink, socket, ...) reads as `False` — `Directory` and `Link` are the
 directory- and link-accepting siblings, and only `Link`'s dict carries the
 `link_target` key. Like
 pyinfra, a leading `~/` stays unquoted so the remote shell expands it. Where
-`FileExists` is the cheap existence probe `files.file` consumes, `File` is
-the richer stat-level read for auditing ownership, permissions or timestamps.
+`FileExists` is the cheap `test -e` probe for existence-only checks, `File`
+is the richer stat-level read — the one `files.file` consumes to compare the
+mode and owner it is asked for, and the right fact for auditing ownership,
+permissions or timestamps.
 
 `Directory` mirrors pyinfra's `files.Directory` — its `File` subclass with
 `type = "directory"`: the very same guard, stat/ls chain and metadata dict,
@@ -91,11 +102,36 @@ link is still reported with its target. Where `FileLink` is the cheap
 read for auditing the link itself — ownership, mode, timestamps —
 alongside where it points.
 
+`SameFile` mirrors pyinfra's `files.SameFile`: one `test <path> -ef <target>`
+probe whose `&& echo true || echo false` guard always exits zero, returning
+the plain bool — two paths name the same device *and* inode, or they do not.
+A nonexistent or unrelated path is the plain `False` answer, never a failed
+read. It is the hard-link half of `files.link`'s idempotence: a hard link is
+not a symlink (the `Link` fact reads `False` for one), so the operation
+re-reads the path through `File` and asks `SameFile` whether that file *is*
+the requested target. Use it on its own to audit whether a `cp`/`ln`
+destination truly shares an inode with its source. Unlike the `File` family
+there is no leading `~/` exception — both paths are quoted verbatim, so a
+tilde path simply reads as an absent file.
+
+`FileFlags` is the Linux reading of pyinfra's BSD `files.Flags` (the
+developer-chosen adaptation): it guards the path with `test -e`, then runs
+`lsattr -d` with stderr masked, and returns the attribute letters of the
+row's fixed-width flags field, padding dashes dropped and sorted — `i` for
+immutable, `a` for append-only, ... An absent path answers `[]`, exactly as
+pyinfra's `Flags` process answers for no output, and a filesystem without
+ext2-family attributes masks to the same `[]`. Use it to audit the
+attributes behind `files.flags` before a `+i` plan strands a removal, or to
+document what an append-only log file really carries. Like `File`, a
+leading `~/` stays unquoted so the remote shell expands it.
+
 
 ## Operations
 
 Operations live in namespace modules so a deploy reads `files.link`,
-`files.file`, `files.put`, `files.get`, `files.edit` and `files.move`,
+`files.file`, `files.put`, `files.get`, `files.edit`, `files.install`,
+`files.move`,
+`files.copy`, `files.directory` and `files.flags`,
 mirroring pyinfra's
 API. Every
 operation is an async generator taking an [`OpContext`][reemote5.core.OpContext],
@@ -139,7 +175,31 @@ across phases, so a lambda built inside the deploy generator would trip
 `DeterminismError`). Because the write rides the same unprivileged scp transfer
 as `files.put`, the target must be writable by the login user; a root-owned file
 such as `/etc/hosts` must be transformed into a writable path and moved into
-place with `files.move` flagged `sudo=True`.
+place with `files.move` flagged `sudo=True` — or written in one deploy with
+`files.install` below.
+
+`files.install` is a reemote5 original: the generic "write text content to a
+root-owned path" operation the namespace-specific spool-and-install operations
+(`apt.sources_file`, `dnf.repo`, `systemd.dropin`) each spell out for their own
+config paths. It reads the destination's current text with `FileContents` and,
+only when it differs from the desired `content`, yields two descriptors from
+one request — an `InstallSpoolCommand` transfer spooling the text to a
+dest-derived `/tmp` path over unprivileged scp, then an `InstallCommand` shell
+running the elevated `mkdir -p`/`cp`/`chmod`/`rm -f` install wrapped in `sh -c`
+(so a `sudo=True` request elevates every step, not just the chain head). Because
+both descriptors ride one request, the whole write fits a single deploy —
+unlike the put-then-`files.move` recipe, which spans two runs. `content` is a
+plain `str` (text is what `FileContents` compares; binary content stays
+`files.put`'s job), so no identity-stable stream is needed at the call site.
+The spool name is the destination's sha1 prefix — deterministic across phases
+and collision-free between different targets, though predictable on
+world-writable `/tmp` (collision avoidance, not a security boundary). `mode`
+accepts octal-digit text only (`"0644"`, `"600"`; a symbolic mode raises
+`ValueError`) and is applied on every write, but idempotence is content-only:
+a mode-only drift does not re-install (use `files.file` to converge metadata).
+There is no `present=False` branch — `files.file(present=False)` owns removal.
+Installing under `/etc` needs root, so flag the request `sudo=True`; the
+transfer stays unprivileged regardless.
 
 `files.move` mirrors pyinfra's `files.move`: `src` is a remote path, `dest`
 is the remote *directory* to move it into (the moved path becomes
@@ -159,5 +219,84 @@ vehicle for the `/etc/hosts` recipe: `files.edit` spools the transformed
 content into a login-user-writable path in one run, then `files.move`
 installs it into `/etc` elevated in a second run (see the
 [example](../examples/modules/files.md)).
+
+`files.directory` mirrors pyinfra's `files.directory`: it reads the
+`Directory` fact once and — for an absent path — yields `mkdir -p` plus,
+when requested, `chmod`/`chown` to create the tree with the desired
+`user`/`group`/`mode`; for an existing directory, only the `chmod`/`chown`
+whose requested values differ from the fact's metadata (`recursive=True`
+spells them `chmod -R`/`chown -R`); and for `present=False`, `rm -rf` when
+the path is a directory. A path held by a regular file or symlink raises
+`ValueError` unless `force=True`, which removes it first (`rm -rf`) and
+recreates. pyinfra's `force_backup`/`force_backup_dir` are deliberately
+dropped — their `mv` embeds a `datetime.now()` timestamp that would differ
+between the prepare and apply phases and break the determinism guard, so
+`force` always removes. The mode accepts every pyinfra spelling — `750`,
+`"750"`, `"0750"`, `"0o750"` normalise to the octal-looking int the fact
+carries, while a symbolic mode (`"u+x"`) never equals it, so the chmod
+always re-runs. The shells touch only root-owned paths in practice, so
+flag the request `sudo=True`.
+
+`files.file` mirrors pyinfra's `files.file` in the `files.directory` shape:
+it reads the `File` fact once and — for an absent path — yields `touch`
+plus, when requested, `chmod`/`chown` to create the file with the desired
+`user`/`group`/`mode`; for an existing file, only the `chmod`/`chown`
+whose requested values differ from the fact's metadata; and for
+`present=False`, `rm -f` when the path is a regular file. A path held by a
+directory or symlink raises `ValueError` unless `force=True`, which removes
+it first (`rm -rf`) and recreates. `create_remote_dir` (default `True`)
+`mkdir -p`s a *missing* parent before the touch — and chowns that new
+parent when an owner was requested — but never edits an existing one, so
+manage a directory's own mode/owner with `files.directory`. The `touch`
+option is deliberately **non-idempotent** exactly as upstream's is: it
+re-runs the `touch` on an existing file on every pass, timestamps only.
+pyinfra's `force_backup`/`force_backup_dir` are dropped for the same
+determinism reason as `files.directory`, and the mode accepts the same
+spellings. `touch`/`rm -f`/`chmod`/`chown` address arbitrary paths, so for
+root-owned locations flag the request `sudo=True`.
+
+`files.link` mirrors pyinfra's `files.link` in the `files.file`/
+`files.directory` shape: it reads the `Link` fact once and — for an absent
+path — yields `ln -s` (plain `ln` when `symbolic=False`) plus, when
+requested, `chown -h` to create the link with the desired `user`/`group`;
+for an existing link whose target differs, `rm -f` followed by a fresh `ln`
+(pyinfra's *remove and recreate* rule — the command never carries `ln -f`)
+and the `chown -h` whose requested owner differs from the row's; and for
+`present=False`, `rm -f` when the path is a link. `chown -h` owns the link
+itself, never its target. A hard link (`symbolic=False`) is not a symlink —
+`Link` reads `False` for one — so the path is re-read through `File` and
+equality with the target is decided by `SameFile`: same inode means the
+hard link already *is* what was asked for (a no-op), a different file
+follows the non-link rule below. A path held by a regular file or
+directory raises `ValueError` unless `force=True`, which removes it first
+(`rm -rf`) and recreates. `create_remote_dir` (default `True`) `mkdir -p`s
+a *missing* parent before the `ln` — and chowns that new parent when an
+owner was requested (the `files.directory` create branch, so no mode is
+copied) — but never edits an existing one, so manage a directory's own
+mode/owner with `files.directory`. The `target` is required whenever
+`present=True`, and `path` accepts a string or `os.PathLike` (pyinfra's
+`src` spelling is renamed to match `files.file`/`files.directory`).
+pyinfra's `force_backup`/`force_backup_dir` are dropped for the same
+determinism reason as `files.directory`/`files.file`, so `force` always
+removes, and its tolerance of a symlink parent is dropped with the
+internal `_no_fail_on_link` knob. `ln`/`rm -f`/`chown -h` address arbitrary
+paths, so for root-owned locations flag the request `sudo=True`.
+
+`files.flags` mirrors pyinfra's `files.flags` in the developer-chosen Linux
+adaptation: pyinfra's verb pair (`chflags` over BSD `stat -f %Sf` flag names
+like `hidden`) does not exist on Linux, so the same set/clear capability is
+expressed over `lsattr -d` letters (read through the `FileFlags` fact) and
+`chattr +flag`/`-flag`. The idempotence logic is kept verbatim: setting
+yields only the requested letters missing from the current set
+(`chattr +a,i`), clearing only the requested letters actually present
+(`chattr -i`), and anything else is a no-op whose reason mirrors pyinfra's
+noop text. `flags` accepts one letter as a string or a tuple of letters (a
+tuple at `op()` call sites, because request arguments must stay hashable);
+any letter outside the ext2 vocabulary — a BSD flag name, a signed `"+i"` —
+raises `ValueError` before anything reaches the host, and empty or absent
+flags are pyinfra's empty-list noop branch. An absent path reads no flags,
+so the request plans a `chattr` that fails at apply — pyinfra's `Flags`
+answers `[]` for absence identically. `chattr` is root's tool in practice,
+so for the common protected paths flag the request `sudo=True`.
 
 --->

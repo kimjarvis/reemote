@@ -23,7 +23,11 @@ connection's own protocol (asyncssh's scp) rather than through a shell, so
 the `doas`/`sudo`/`su` escalation flags do not apply to it. A `WaitCommand` is
 dispatched the same way — `send_command` awaits its `wait`, which polls the
 host until its condition holds or raises `WaitTimeoutError` — and is likewise
-unprivileged (see [server module](modules/server.md#waiting-for-a-condition)).
+unprivileged; see [`WaitCommand`][reemote5.commands.WaitCommand] here and the
+[`server.wait`][reemote5.modules.server.server.wait] and
+[`server.wait_service`][reemote5.modules.server.server.wait_service] operations
+that yield the concrete poll (both through the generic `WaitForFactCommand`,
+which polls a fact class until a module-level predicate holds).
 
 ## Reference
 

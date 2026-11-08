@@ -3,26 +3,34 @@
 
 # """The ``files`` module: facts and operations in one source.
 #
-# Fact side (design doc section 5): ``FileLink`` (the fact read by
-# ``files.link`` to learn the current target of a symlink), ``FileExists``
+# Fact side (design doc section 5): ``FileLink`` (the cheap ``readlink``
+# probe for the current target of a symlink), ``FileExists``
 # (the fact read by ``files.file`` to learn whether a regular file exists),
 # ``RemoteFileSha1`` (the remote digest ``files.put`` and ``files.get``
 # compare against a locally computed sha1 to decide whether a transfer is
 # needed), ``FileContents`` (the
 # raw text of a remote file, or None when absent, that ``files.edit`` reads to
-# transform it), and ``File`` (pyinfra's stat-level metadata for a regular
+# transform it), ``FileFlags`` (the list of ext2-family attribute letters
+# ``lsattr -d`` reports for a path, the read behind ``files.flags``), and
+# ``File`` (pyinfra's stat-level metadata for a regular
 # file -- owner, group, mode, timestamps, size -- False for a non-file path,
 # None when absent) with its ``Directory`` and ``Link`` siblings (the same
 # metadata for a directory or a symlink, False for a non-directory/non-link
-# path; ``Link``'s dict additionally carries the ``link_target``). Like every
+# path; ``Link``'s dict additionally carries the ``link_target``, and is the
+# fact ``files.link`` compares against) and ``SameFile`` (whether two paths
+# name one and the same inode, the hard-link half of ``files.link``'s
+# idempotence). Like every
 # fact they are phase-unaware: each ``process`` coroutine just gathers the raw
 # value.
 #
 # Operation side (design doc section 6): ``files.link``, ``files.file``,
-# ``files.put``, ``files.get``, ``files.edit``, ``files.move`` and
-# ``files.copy`` plus the typed command descriptors they yield
-# (``LinkCommand``/``FileCommand``/``PutCommand``/``GetCommand``/
-# ``MoveCommand``/``RemoveTreeCommand``/``CopyCommand``). Operations
+# ``files.put``, ``files.get``, ``files.edit``, ``files.install``,
+# ``files.move``, ``files.copy``,
+# ``files.directory`` and ``files.flags`` plus the typed command descriptors
+# they yield (``LinkCommand``/``FileCommand``/``PutCommand``/``GetCommand``/
+# ``InstallSpoolCommand``/``InstallCommand``/
+# ``MoveCommand``/``RemoveTreeCommand``/``CopyCommand``/``MkdirCommand``/
+# ``ChmodCommand``/``ChownCommand``/``ChattrCommand``). Operations
 # are async generators that receive an ``OpContext``, await facts, set
 # ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never
 # touch the host directly. ``PutCommand`` and ``GetCommand`` are the *non-shell*
@@ -35,6 +43,7 @@
 import asyncio
 import hashlib
 import io
+import os
 import posixpath
 import re
 import shlex
@@ -682,10 +691,11 @@ class Link(File):
     #
     # The ``test -L`` guard lets a *dangling* symlink through to the
     # ``ls -ld`` fallback (both ``stat`` forms follow the link and fail), so
-    # a broken link is still reported with its target. Where ``FileLink`` is
-    # the cheap ``readlink`` probe ``files.link`` consumes, ``Link`` is the
-    # richer stat-level read for auditing the link itself -- ownership, mode,
-    # timestamps -- alongside where it points.
+    # a broken link is still reported with its target. ``files.link``
+    # consumes this stat-level read for its idempotence (the target alone is
+    # not enough to tell "correct" from "wrong target" from "not a link");
+    # ``FileLink`` is the cheaper
+    # ``readlink`` probe for the callers that only want the target.
 
     #: pyinfra's ``type`` field: only a symlink is accepted; every other
     #: path type (file, directory, socket, ...) reads as False.
@@ -713,94 +723,20 @@ class Link(File):
         return cls.parse(stdout.splitlines())
 
 
-# --- Operations --------------------------------------------------------------
+class SameFile:
+    """Whether two paths name one and the same file (a hard link pair).
 
+    **Commands:**
 
-@dataclass(frozen=True)
-class LinkCommand(Command):
-    src: str
-    target: str | None = None  # None means "remove the link at src"
-
-    def shell(self) -> str:
-        if self.target is None:
-            return f"rm -f {self.src}"
-        return f"ln -sf {self.target} {self.src}"
-
-
-async def link(
-    ctx: OpContext, src: str, target: str | None = None, present: bool = True
-) -> AsyncGenerator[Command]:
-    """Create or remove a symbolic link.
-
-    Args:
-        ctx (OpContext): Execution context for the operation.
-        src (str): The path of the link to manage.
-        target (str | None, optional): The path the link should point at.
-            Defaults to None.
-        present (bool, optional): Whether the link should exist. Defaults to
-            True.
-
-    Yields:
-        Command: The link command, when the link differs from the request.
-
-    **Raises:**
-
-    ```python
-    CommandNotFoundError, HostConnectionError
+    ```bash
+    test <path> -ef <target> && echo true || echo false
     ```
 
-    Examples:
-        Examples can be found in ``examples/modules/files/files_op_link.py``.
-    """
+    **Returns:**
 
-    # Idempotent: the current target is read through the ``FileLink`` fact
-    # (``readlink``) and a ``LinkCommand`` is yielded only when it differs --
-    # ``ln -sf`` sets the link, ``rm -f`` removes it when ``present=False``.
-    # The readlink-based check only sees symlinks: removing a regular file
-    # needs ``files.file``, whose ``FileExists`` fact is a boolean existence
-    # probe.
-    current = await ctx.facts.get(FileLink, src)
-
-    if present:
-        if current == target:
-            ctx.reason = f"link already correct ({src} -> {target})"
-        else:
-            ctx.changed = True
-            ctx.reason = f"link {src} -> {target} missing or incorrect"
-            yield LinkCommand(src=src, target=target)
-    else:
-        if current is None:
-            ctx.reason = "link already absent"
-        else:
-            ctx.changed = True
-            ctx.reason = "link present, will remove"
-            yield LinkCommand(src=src, target=None)
-
-
-@dataclass(frozen=True)
-class FileCommand(Command):
-    src: str
-    present: bool = True
-
-    def shell(self) -> str:
-        if not self.present:
-            return f"rm -f {self.src}"
-        return f"touch {self.src}"
-
-
-async def file(
-    ctx: OpContext, src: str, present: bool = True
-) -> AsyncGenerator[Command]:
-    """Create or remove a regular file.
-
-    Args:
-        ctx (OpContext): Execution context for the operation.
-        src (str): The path of the file to manage.
-        present (bool, optional): Whether the file should exist. Defaults to
-            True.
-
-    Yields:
-        Command: The file command, when existence differs from the request.
+    ```python
+    bool
+    ```
 
     **Raises:**
 
@@ -809,30 +745,564 @@ async def file(
     ```
 
     Examples:
+        Examples can be found in ``examples/modules/files/files_same_file.py``.
+    """
+
+    # Mirrors pyinfra's ``files.SameFile``: the shell ``-ef`` operator reduced
+    # to the bool the fact returns. ``test`` ``stat``s the *resolved* paths
+    # (symlinks are dereferenced), so the verdict is about the inodes the two
+    # arguments resolve to: a hard link answers True for the file it is
+    # another name of, a symlink answers True for its own target, and
+    # anything resolving to a different inode -- an unrelated file, two
+    # different targets -- or a missing path answers False.
+    # ``test`` is a shell builtin and the ``|| echo false`` arm always runs,
+    # so the command exits zero whatever it compares: a nonexistent path is
+    # the plain False answer rather than a transport error, and there is no
+    # missing-binary case to report as ``CommandNotFoundError``. Both paths
+    # are quoted (pyinfra's ``QuoteString`` behaviour, which ``shlex.quote``
+    # matches for a safe path); unlike the ``File`` family this fact has no
+    # leading ``~/`` exception, because the operator compares inodes and a
+    # quoted tilde path simply reads as an absent one -- pyinfra's own
+    # fixture command, ``test /foo/hardlink -ef /foo/file``, stays bare.
+
+    @classmethod
+    def command(cls, path: str, target: str) -> str:
+        """Shell testing whether ``path`` and ``target`` are one file."""
+        return (
+            f"test {shlex.quote(path)} -ef {shlex.quote(target)} "
+            "&& echo true || echo false"
+        )
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> bool:
+        """Parse the ``echo``ed verdict; anything but a lone ``true`` is False.
+
+        pyinfra's ``process`` compares the whole output list, so empty (a
+        short-circuited or failed read) or unexpected output reports False.
+        """
+        return list(output) == ["true"]
+
+    @classmethod
+    async def process(cls, host: Host, path: str, target: str) -> bool:
+        pairs = getattr(host, "same_files", None)
+        if pairs is not None:
+            # SimulatedHost seam: the set of path pairs recorded as sharing
+            # one inode (``ln`` without ``-s`` adds the pair, and a test can
+            # seed it directly). The operator is symmetric, so the pair is
+            # looked up in either order. The seam models literally recorded
+            # pairs only -- no symlink resolution -- which is sound for the
+            # only consumer, ``files.link``'s hard-link branch, that is
+            # reached just after ``Link`` answered the path is not a symlink.
+            return (path, target) in pairs or (target, path) in pairs
+        # Real transport: the ``test -ef`` shell over asyncssh.
+        stdout = await host.run_shell(cls.command(path, target))
+        return cls.parse(stdout.splitlines())
+
+
+class FileFlags:
+    """The ext2-family attribute flags set on a path, empty or absent alike.
+
+    **Commands:**
+
+    ```bash
+    ! test -e <path> || lsattr -d <path> 2> /dev/null
+    ```
+
+    **Returns:**
+
+    ```python
+    list[str]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_flags.py``.
+    """
+
+    # Replaces pyinfra's ``files.Flags``, which read BSD ``stat -f %Sf``
+    # (comma-joined flag *names*) behind a ``requires_command("chflags")``
+    # gate: the Linux reading of the same capability (the developer-chosen
+    # adaptation) is ``lsattr -d``, whose flags field is a fixed-width string
+    # of one-letter attribute codes -- the fact returns those letters (``i``
+    # for immutable, ``a`` for append-only, ...) with the padding dashes and
+    # the trailing path dropped. Absence answers ``[]`` exactly as pyinfra's
+    # Flags process does: the ``! test -e`` guard short-circuits a missing
+    # path to empty output (no exit status reaches the transport, so the
+    # 127-as-CommandNotFoundError rule stays truthful -- ``lsattr`` is not
+    # even run), and a filesystem that does not support the attributes exits
+    # non-zero with only stderr noise, which ``2> /dev/null`` masks into the
+    # same empty answer rather than aborting the read. A *present* file on
+    # such a filesystem therefore also reads ``[]`` and the operation plans a
+    # change the ``chattr`` then fails on -- the documented consequence of
+    # the stand-in gate pyinfra expresses through ``requires_command``. The
+    # command guards existence but not a missing binary: no ``lsattr``
+    # installed raises ``CommandNotFoundError``. Like ``File.command``, a
+    # leading ``~/`` stays unquoted so the remote shell expands it; the rest
+    # of the path is quoted.
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell printing the ``lsattr -d`` row for ``path``, if it exists."""
+        if path.startswith("~/"):
+            quoted = "~/" + shlex.quote(path[2:])
+        else:
+            quoted = shlex.quote(path)
+        return f"! test -e {quoted} || lsattr -d {quoted} 2> /dev/null"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> list[str]:
+        """Parse the ``lsattr -d`` row into its sorted one-letter flags.
+
+        The whitespace-separated fields are ``<flags> <path>``; the flags
+        field keeps only the attribute letters, dropping the ``-`` padding.
+        No output (absent path, unsupported filesystem) or a row without a
+        flags field parses to ``[]``, pyinfra's Flags answer for "nothing
+        set".
+        """
+        line = next(iter(output), "")
+        fields = line.split()
+        if not fields:
+            return []
+        return sorted(char for char in fields[0] if char != "-")
+
+    @classmethod
+    async def process(cls, host: Host, path: str) -> list[str]:
+        file_flags = getattr(host, "file_flags", None)
+        if file_flags is not None:
+            # SimulatedHost seam: the set of letters seeded or mutated per
+            # path, as a sorted list so callers never see set iteration order
+            # and never mutate simulated state.
+            return sorted(file_flags.get(path, set()))
+        # Real transport: lsattr over asyncssh. A missing path short-circuits
+        # the guard to empty stdout, which parses to [] like pyinfra's.
+        stdout = await host.run_shell(cls.command(path))
+        return cls.parse(stdout.splitlines())
+
+
+# --- Operations --------------------------------------------------------------
+
+#: The ext2-family attribute letters ``lsattr`` prints in its flags field --
+#: the vocabulary ``files.flags`` accepts (pyinfra's BSD ``chflags`` verb
+#: names, like ``hidden``, are not valid here; the developer-chosen Linux
+#: adaptation of ``files.flags``). ``e`` (extent) is real ext4 state and
+#: readable, though ``chattr`` refuses to set or clear it -- the operation
+#: deliberately does not special-case it, so requesting it plans a
+#: ``chattr`` that fails at apply, exactly pyinfra's shape for a
+#: no-op-protection verb on a wrong-flavoured host.
+_LINUX_FLAG_LETTERS = "AaCcDeEFfiJlmPSsTtuXxz"
+
+
+@dataclass(frozen=True)
+class LinkCommand(Command):
+    """Create a link (``ln [-s] target path``), or remove the link at
+    ``path`` (``rm -f path``) when ``target`` is None.
+
+    Both paths are shell-quoted, so a name carrying spaces or shell
+    metacharacters stays a single argument -- matching pyinfra's quoting of
+    the link helpers. ``symbolic`` selects ``ln -s``; the command never
+    carries ``-f``: the operation removes an existing link before creating
+    the new one instead of forcing the write over it.
+    """
+
+    path: str
+    target: str | None = None  # None means "remove the link at path"
+    symbolic: bool = True
+
+    def shell(self) -> str:
+        if self.target is None:
+            return f"rm -f {shlex.quote(self.path)}"
+        flag = " -s" if self.symbolic else ""
+        return f"ln{flag} {shlex.quote(self.target)} {shlex.quote(self.path)}"
+
+
+async def link(
+    ctx: OpContext,
+    path: str,
+    target: str | None = None,
+    present: bool = True,
+    user: str | None = None,
+    group: str | None = None,
+    symbolic: bool = True,
+    create_remote_dir: bool = True,
+    force: bool = False,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Add, update or remove a link.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        path (str): The path of the link to manage.
+        target (str | None, optional): The path the link points to.
+            Required when ``present`` is True. Defaults to None.
+        present (bool, optional): Whether the link should exist.
+            Defaults to True.
+        user (str | None, optional): The user to own the link. Defaults to
+            None.
+        group (str | None, optional): The group to own the link. Defaults
+            to None.
+        symbolic (bool, optional): Whether to make a symbolic link rather
+            than a hard link. Defaults to True.
+        create_remote_dir (bool, optional): Whether to ``mkdir -p`` the
+            link's parent directory when it is missing. Defaults to True.
+        force (bool, optional): Replace an existing non-link at ``path``
+            (``rm -rf``) instead of raising. Defaults to False.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The link commands, only when the link differs from the
+            request.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, TypeError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_op_link.py``.
+    """
+
+    # pyinfra ``files.link`` parity -- the ``files.file``/``files.directory``
+    # shape with ``touch``/``mkdir`` traded for ``ln``. The ``Link`` fact is
+    # read once and only the differing commands are yielded: ``ln -s`` (or
+    # plain ``ln``, hard) creates a missing link, ``rm -f`` plus a second
+    # ``ln`` re-points an existing one whose target differs (pyinfra's
+    # "remove it and recreate a new one" rule), ``chown -h`` edits the
+    # ownership, and ``rm -f`` (the same ``LinkCommand`` with no target)
+    # removes it when ``present=False``. The link's own metadata is read
+    # through ``Link``, the stat-level fact also used for auditing, rather
+    # than through the cheaper ``FileLink`` ``readlink`` probe: an existing
+    # row is the only way to tell "correct" from "wrong target" from "not a
+    # link", and the owner comparison needs the row's user/group. ``-h``
+    # (``dereference=False``) chowns the link, never its target.
+    #
+    # Hard links (``symbolic=False``) need a second reading: ``Link``
+    # answers ``False`` for one because a hard link is not a symlink, so the
+    # path is re-read through ``File`` and compared to the target with
+    # ``SameFile`` -- same inode means the link already is exactly what was
+    # asked for. Where ``FileLink`` alone could not tell a hard link from an
+    # unrelated file, the pair of reads can.
+    #
+    # Known asymmetry, disclosed as upstream pyinfra parity rather than
+    # changed: ``symbolic`` is not compared on the update branch, so an
+    # existing symlink whose target matches is never converted into a hard
+    # link (nor the reverse) -- the ensure no-ops on the target and owner
+    # alone. pyinfra's ``files.link`` has the same gap.
+    #
+    # pyinfra's ``create_remote_dir=True`` delegates to ``files.directory``
+    # with ``_no_check_owner_mode``: a missing parent is ``mkdir -p``'d (and
+    # ``chown``'d to the requested user/group, as pyinfra's create branch
+    # does), an existing parent is left alone -- its mode is deliberately
+    # *not* copied over, pyinfra's doc note ("call ``files.directory``
+    # separately" for that). ``create_remote_dir=False`` skips the probe and
+    # lets the ``ln`` fail on a missing parent.
+    #
+    # pyinfra's ``force_backup``/``force_backup_dir`` are deliberately
+    # dropped (developer decision, same as ``files.file`` and
+    # ``files.directory``): the backup form ``mv``s the invalid path to a
+    # ``datetime.now()``-stamped name, which would differ between the
+    # prepare and apply phases and break the request-sequence determinism
+    # the driver guards. ``force=True`` therefore always removes the
+    # non-link first (``rm -rf``, exactly pyinfra's ``force`` with
+    # ``force_backup=False``), and ``force=False`` raises ``ValueError``
+    # (pyinfra's ``OperationError``). pyinfra's tolerance of a *symlink*
+    # parent (its internal ``_no_fail_on_link`` knob) is dropped with the
+    # knob, so a parent that is a link reads as "exists and is not a
+    # directory" and raises. The commands touch arbitrary paths, so for
+    # root-owned locations flag the request ``sudo=True``; ``**kwargs``
+    # absorbs pyinfra's global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
+    try:
+        path = os.fspath(path)
+    except TypeError:
+        raise TypeError(
+            "`path` must be a string or `os.PathLike` object"
+        ) from None
+
+    if target is not None:
+        # Normalized like ``path``: shlex.quote on a non-str would otherwise
+        # surface an opaque TypeError from deep inside the descriptor.
+        try:
+            target = os.fspath(target)
+        except TypeError:
+            raise TypeError(
+                "`target` must be a string or `os.PathLike` object"
+            ) from None
+
+    if present and not target:
+        raise ValueError("If present is True target must be provided")
+
+    info = await ctx.facts.get(Link, path)
+
+    if info is False and not symbolic and target is not None:
+        # The path exists but is not a symlink -- it may already be a hard
+        # link to the target, which only the file/inode reads can tell.
+        file_info = await ctx.facts.get(File, path)
+        same_file = await ctx.facts.get(SameFile, path, target)
+        if file_info and same_file:
+            info = {**file_info, "link_target": target}
+
+    reasons: list[str] = []
+    changed = False
+
+    if info is False:  # the path exists but is not a link
+        if not force:
+            raise ValueError(f"{path} exists and is not a link")
+        changed = True
+        reasons.append(f"{path} is not a link, will remove first")
+        yield RemoveTreeCommand(src=path)
+        info = None
+
+    if not present:
+        if info:
+            changed = True
+            reasons.append(f"{path} present, will remove")
+            yield LinkCommand(path=path)
+        else:
+            reasons.append(f"link {path} does not exist")
+        ctx.changed = changed
+        ctx.reason = "; ".join(reasons)
+        return
+
+    if info is None:  # create
+        changed = True
+        reasons.append(f"{path} missing, will create")
+        if create_remote_dir:
+            # posixpath, not os.path: the remote is always *nix while the
+            # controller might be Windows (pyinfra's own reasoning).
+            parent = posixpath.dirname(path)
+            if parent:
+                parent_info = await ctx.facts.get(Directory, parent)
+                if parent_info is False:
+                    raise ValueError(f"{parent} exists and is not a directory")
+                if parent_info is None:
+                    reasons.append(f"parent {parent} missing, will create")
+                    yield MkdirCommand(path=parent)
+                    if user or group:
+                        # pyinfra's delegated directory chowns a freshly
+                        # created parent (its create branch) but never
+                        # chmods it -- the mode is not copied over. The
+                        # parent is a directory, so the chown dereferences.
+                        yield ChownCommand(path=parent, user=user, group=group)
+        yield LinkCommand(path=path, target=target, symbolic=symbolic)
+        if user or group:
+            yield ChownCommand(
+                path=path, user=user, group=group, dereference=False
+            )
+        ctx.changed = changed
+        ctx.reason = "; ".join(reasons)
+        return
+
+    # update: compare the requested target/owner against the fact's metadata
+    # (.get: a dangling link read through the ls fallback carries no
+    # link_target at all, which pyinfra's subscription would KeyError on).
+    if info.get("link_target") != target:
+        changed = True
+        reasons.append(f"target {info.get('link_target')} differs, will relink")
+        yield LinkCommand(path=path)
+        yield LinkCommand(path=path, target=target, symbolic=symbolic)
+
+    if (user and info["user"] != user) or (group and info["group"] != group):
+        changed = True
+        reasons.append(f"owner {info['user']}:{info['group']} differs, will chown")
+        yield ChownCommand(path=path, user=user, group=group, dereference=False)
+
+    if not changed:
+        reasons.append(f"link {path} already exists")
+
+    ctx.changed = changed
+    ctx.reason = "; ".join(reasons)
+
+
+@dataclass(frozen=True)
+class FileCommand(Command):
+    """Create or refresh a regular file (``touch path``), or remove it
+    (``rm -f path``) when ``present`` is False.
+
+    The path is shell-quoted, so a filename carrying spaces or shell
+    metacharacters stays a single argument -- matching pyinfra's quoting of
+    the touch/rm helpers.
+    """
+
+    path: str
+    present: bool = True
+
+    def shell(self) -> str:
+        if not self.present:
+            return f"rm -f {shlex.quote(self.path)}"
+        return f"touch {shlex.quote(self.path)}"
+
+
+async def file(
+    ctx: OpContext,
+    path: str,
+    present: bool = True,
+    user: str | None = None,
+    group: str | None = None,
+    mode: int | str | None = None,
+    touch: bool = False,
+    create_remote_dir: bool = True,
+    force: bool = False,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Add, update or remove a regular file.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        path (str): The remote file path to manage.
+        present (bool, optional): Whether the file should exist.
+            Defaults to True.
+        user (str | None, optional): The user to own the file.
+            Defaults to None.
+        group (str | None, optional): The group to own the file.
+            Defaults to None.
+        mode (int | str | None, optional): The file's permissions --
+            an octal-digit int or string (``750``, ``"0750"``, ``"0o750"``)
+            or a symbolic mode. Defaults to None.
+        touch (bool, optional): Whether to ``touch`` an existing file.
+            The option is not idempotent: the ``touch`` always re-runs.
+            Defaults to False.
+        create_remote_dir (bool, optional): Whether to ``mkdir -p`` the
+            file's parent directory when it is missing. Defaults to True.
+        force (bool, optional): Replace an existing non-file at ``path``
+            (``rm -rf``) instead of raising. Defaults to False.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The file commands, only when the file differs from the
+            request.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, TypeError, ValueError
+    ```
+
+    Examples:
         Examples can be found in ``examples/modules/files/files_op_file.py``.
     """
 
-    # Idempotent: existence is read through the boolean ``FileExists`` fact
-    # and a ``FileCommand`` is yielded only on a difference -- ``touch``
-    # creates a missing file, ``rm -f`` removes a present one. Unlike
-    # ``files.link``'s readlink-based check, this also sees regular files,
-    # so it is the removal primitive for them.
-    exists = await ctx.facts.get(FileExists, src)
+    # pyinfra ``files.file`` parity -- the ``files.directory`` shape with
+    # ``mkdir -p``/``rm -rf`` traded for ``touch``/``rm -f``. The ``File``
+    # fact is read once and only the differing commands are yielded:
+    # ``touch`` (plus ``chmod``/``chown`` when requested) creates a missing
+    # file, the metadata comparison edits an existing one, and ``rm -f``
+    # (the same ``FileCommand`` with ``present=False``) removes it. Like
+    # pyinfra's ``touch`` option, ``touch=True`` always re-runs the
+    # ``touch`` on an existing file (a deliberately non-idempotent option),
+    # and a symbolic mode never equals the fact's octal int, so it re-runs
+    # the ``chmod`` on every materialization. The path is validated and the
+    # mode normalised exactly as in ``files.directory`` (``os.fspath``,
+    # ``_ensure_mode_int``). The commands touch arbitrary paths, so for
+    # root-owned locations flag the request ``sudo=True``.
+    #
+    # pyinfra's ``create_remote_dir=True`` delegates to ``files.directory``
+    # with ``_no_check_owner_mode``: a missing parent is ``mkdir -p``'d
+    # (and ``chown``'d to the requested user/group, as pyinfra's create
+    # branch does), an existing parent is left alone -- its mode is
+    # deliberately *not* copied over, pyinfra's doc note ("call
+    # ``files.directory`` separately" for that). ``create_remote_dir=False``
+    # skips the probe and lets the ``touch`` fail on a missing parent.
+    #
+    # pyinfra's ``force_backup``/``force_backup_dir`` are deliberately
+    # dropped (developer decision, same as ``files.directory``): the backup
+    # form ``mv``s the invalid path to a ``datetime.now()``-stamped name,
+    # which would differ between the prepare and apply phases and break the
+    # request-sequence determinism the driver guards. ``force=True``
+    # therefore always removes the non-file first (``rm -rf``, exactly
+    # pyinfra's ``force`` with ``force_backup=False``), and ``force=False``
+    # raises ``ValueError`` (pyinfra's ``OperationError``). pyinfra's
+    # tolerance of a *symlink* path or parent (its internal
+    # ``_no_fail_on_link`` knob) is dropped with the knob, so either one
+    # reads as "exists and is not a ..." and raises; ``**kwargs`` absorbs
+    # pyinfra's global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
+    try:
+        path = os.fspath(path)
+    except TypeError:
+        raise TypeError(
+            "`path` must be a string or `os.PathLike` object"
+        ) from None
 
-    if present:
-        if exists:
-            ctx.reason = f"file already present ({src})"
+    mode = _ensure_mode_int(mode)
+    info = await ctx.facts.get(File, path)
+
+    reasons: list[str] = []
+    changed = False
+
+    if info is False:  # the path exists but is not a regular file
+        if not force:
+            raise ValueError(f"{path} exists and is not a file")
+        changed = True
+        reasons.append(f"{path} is not a file, will remove first")
+        yield RemoveTreeCommand(src=path)
+        info = None
+
+    if not present:
+        if info:
+            changed = True
+            reasons.append(f"{path} present, will remove")
+            yield FileCommand(path=path, present=False)
         else:
-            ctx.changed = True
-            ctx.reason = f"file {src} missing"
-            yield FileCommand(src=src, present=True)
-    else:
-        if not exists:
-            ctx.reason = "file already absent"
-        else:
-            ctx.changed = True
-            ctx.reason = "file present, will remove"
-            yield FileCommand(src=src, present=False)
+            reasons.append(f"file {path} does not exist")
+        ctx.changed = changed
+        ctx.reason = "; ".join(reasons)
+        return
+
+    if info is None:  # create
+        changed = True
+        reasons.append(f"{path} missing, will create")
+        if create_remote_dir:
+            # posixpath, not os.path: the remote is always *nix while the
+            # controller might be Windows (pyinfra's own reasoning).
+            parent = posixpath.dirname(path)
+            if parent:
+                parent_info = await ctx.facts.get(Directory, parent)
+                if parent_info is False:
+                    raise ValueError(f"{parent} exists and is not a directory")
+                if parent_info is None:
+                    reasons.append(f"parent {parent} missing, will create")
+                    yield MkdirCommand(path=parent)
+                    if user or group:
+                        # pyinfra's delegated directory chowns a freshly
+                        # created parent (its create branch) but never
+                        # chmods it -- the mode is not copied over.
+                        yield ChownCommand(path=parent, user=user, group=group)
+        yield FileCommand(path=path, present=True)
+        if mode:
+            yield ChmodCommand(path=path, mode=mode)
+        if user or group:
+            yield ChownCommand(path=path, user=user, group=group)
+        ctx.changed = changed
+        ctx.reason = "; ".join(reasons)
+        return
+
+    # update: compare the requested mode/owner against the fact's metadata
+    if touch:
+        changed = True
+        reasons.append(f"touch requested, will touch {path}")
+        yield FileCommand(path=path, present=True)
+
+    if mode and info["mode"] != mode:
+        changed = True
+        reasons.append(f"mode {info['mode']} differs, will chmod {mode}")
+        yield ChmodCommand(path=path, mode=mode)
+
+    if (user and info["user"] != user) or (group and info["group"] != group):
+        changed = True
+        reasons.append(f"owner {info['user']}:{info['group']} differs, will chown")
+        yield ChownCommand(path=path, user=user, group=group)
+
+    if not changed:
+        reasons.append(f"file {path} already exists")
+
+    ctx.changed = changed
+    ctx.reason = "; ".join(reasons)
 
 
 @dataclass(frozen=True)
@@ -1048,6 +1518,176 @@ async def edit(
             else f"content {path} is absent, will create from the transform"
         )
         yield PutCommand(src=io.StringIO(new), dest=path)
+
+
+def _install_spool_path(dest: str) -> str:
+    """The deterministic ``/tmp`` spool path ``files.install`` uploads to.
+
+    Derived from the destination's sha1 so two installs targeting different
+    paths never share (and clobber) one spool file, while the same dest
+    always yields the same name in both phases -- the request sequence stays
+    deterministic. The name avoids *collisions*, not a hostile local user:
+    it is predictable, so on a multi-tenant host the ``/tmp`` spool is still
+    a symlink-race exposure (the same trade-off the namespace-specific
+    spool-and-install operations make with their fixed spool paths).
+    """
+    digest = hashlib.sha1(dest.encode()).hexdigest()[:16]
+    return f"/tmp/reemote5-install-{digest}"
+
+
+@dataclass(frozen=True)
+class InstallSpoolCommand(TransferCommand):
+    """Spool ``files.install``'s content to a ``/tmp`` path on the target.
+
+    The first half of ``files.install`` and a *non-shell* descriptor: it
+    copies the content over the connection's scp channel via
+    ``Host.upload_file`` rather than running shell text, so it has no
+    ``shell()`` and its loggable form is the ``__str__`` rendering
+    ``command_shell`` falls back to. Like ``SystemdFileUploadCommand`` the
+    content is a plain ``str`` -- hashable and identical across phases --
+    wrapped in a fresh ``io.BytesIO`` only at transfer time, so no
+    identity-stable stream is needed at the call site. The copy rides as the
+    login user (transfers are unprivileged, so the request's ``sudo`` does
+    not apply to it), which is why the spool path is world-writable ``/tmp``
+    rather than the root-owned destination directory.
+    """
+
+    content: str  # the text files.install writes
+    dest: str  # spool path on the target host
+
+    def __str__(self) -> str:
+        return f"scp <files install> -> {self.dest}"
+
+    async def transfer(self, host: Host) -> None:
+        await host.upload_file(io.BytesIO(self.content.encode()), self.dest)
+
+
+@dataclass(frozen=True)
+class InstallCommand(Command):
+    """Install the spooled file with ``mode``, then remove the spool file.
+
+    The second half of ``files.install`` and the elevated one: writing a
+    root-owned destination needs root, so the request is flagged
+    ``sudo=True`` and the whole sequence is wrapped in ``sh -c`` -- a bare
+    ``sudo`` prefix would elevate only the first command of the ``&&``
+    chain and leave the cleanup running as the login user, whereas
+    ``sudo sh -c '...'`` runs every step as root, which can always remove
+    the login-user spool file. The sequence creates the destination's
+    parent directory (``mkdir -p``), copies the spooled content over the
+    target file, chmods it to the requested mode and removes the spool
+    file -- the ``SystemdFileInstallCommand`` pattern with a caller-chosen
+    mode. All paths are shell-quoted; the mode is the canonical octal-digit
+    int the operation normalised it to and renders unquoted, exactly as
+    ``ChmodCommand`` does.
+    """
+
+    spool: str  # where InstallSpoolCommand wrote the content
+    dest: str  # the root-owned target path
+    mode: int  # canonical octal-digit mode (644 for "0644")
+
+    def shell(self) -> str:
+        spool = shlex.quote(self.spool)
+        dest = shlex.quote(self.dest)
+        parent = shlex.quote(str(PurePosixPath(self.dest).parent))
+        inner = (
+            f"mkdir -p {parent} && "
+            f"cp {spool} {dest} && "
+            f"chmod {self.mode} {dest} && rm -f {spool}"
+        )
+        return f"sh -c {shlex.quote(inner)}"
+
+
+async def install(
+    ctx: OpContext,
+    content: str,
+    dest: str,
+    mode: str = "0644",
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Install text content at a root-owned path via spool-and-install.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        content (str): The desired text content of the file.
+        dest (str): The remote path to install the content at.
+        mode (str, optional): The installed file's permissions as
+            octal-digit text (``"0644"``, ``"600"``). Defaults to "0644".
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The spool transfer and the elevated install command, only
+            when the content differs.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_install.py``.
+    """
+
+    # A reemote5 original: the generic "write content to a root-owned path"
+    # operation the namespace-specific spool-and-install operations
+    # (``apt.sources_file``, ``dnf.repo``, ``systemd.dropin``) each spell
+    # out for their own config paths. ``files.put``/``files.edit`` ride
+    # unprivileged scp and cannot write a root-owned target directly, and
+    # the put-then-``files.move`` recipe spans TWO runs (``files.move``
+    # raises on the not-yet-created spool in the prepare phase). This
+    # operation yields the transfer and the elevated install from ONE
+    # request -- prepare records both, apply runs them in order -- so the
+    # whole write fits a single deploy.
+    #
+    # Idempotent on ``FileContents``: when the destination already holds
+    # exactly ``content`` nothing is yielded; otherwise an
+    # ``InstallSpoolCommand`` transfer spools the text to a dest-derived
+    # ``/tmp`` path over scp (unprivileged regardless of the request's
+    # ``sudo``), then an ``InstallCommand`` runs the elevated
+    # ``mkdir -p``/``cp``/``chmod``/``rm`` install. Installing under
+    # ``/etc`` needs root, so flag the request ``sudo=True`` (or
+    # ``su=True``); the run-as user and any password come from the
+    # inventory ``privilege`` data, never the operation.
+    #
+    # ``content`` is a plain ``str``, not an IO stream (the
+    # ``systemd.dropin`` shape, developer-chosen): text is what
+    # ``FileContents`` compares, a str is hashable and equal across
+    # phases, and no identity-stable module-level stream is needed. Binary
+    # content stays ``files.put``'s job (into a login-user-writable path).
+    # The spool name is the destination's sha1 prefix, so different targets
+    # never collide on one spool file while the name stays deterministic
+    # across phases; it is collision avoidance, not a security boundary
+    # (the name is predictable on world-writable ``/tmp``).
+    #
+    # ``mode`` accepts octal-digit text only (``"0644"``, ``"600"``);
+    # a symbolic mode raises ``ValueError`` -- ``files.file``/``chmod``
+    # own relative edits. The mode is applied on every write, but
+    # idempotence is content-only: a mode-only drift does not re-install
+    # (use ``files.file`` to converge metadata). There is deliberately no
+    # ``present=False`` removal branch -- ``files.file(present=False)``
+    # already owns removal. ``**kwargs`` absorbs pyinfra-style global
+    # arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    if not mode or any(c not in "01234567" for c in mode):
+        raise ValueError(
+            f"Invalid file mode: {mode!r} expected octal digits "
+            "(eg '0644' or '600')"
+        )
+    mode_int = int(mode)
+
+    current = await ctx.facts.get(FileContents, dest)
+    if current == content:
+        ctx.reason = f"content already up to date ({dest})"
+        return
+
+    ctx.changed = True
+    ctx.reason = (
+        f"content {dest} differs, will install"
+        if current is not None
+        else f"content {dest} is absent, will install"
+    )
+    spool = _install_spool_path(dest)
+    yield InstallSpoolCommand(content=content, dest=spool)
+    yield InstallCommand(spool=spool, dest=dest, mode=mode_int)
 
 
 @dataclass(frozen=True)
@@ -1268,25 +1908,392 @@ async def copy(
     yield CopyCommand(src=src, dest=dest, overwrite=overwrite)
 
 
+def _ensure_mode_int(mode: int | str | None) -> int | str | None:
+    """Normalise a requested mode to pyinfra's canonical octal-digit int.
+
+    ``644``, ``"644"``, ``"0644"`` and ``"0o644"`` all mean ``rw-r--r--``;
+    symbolic modes (``"u+x"``) and ``None`` pass through unchanged. An
+    integer is read as its octal *digit representation* (``644`` means
+    ``rw-r--r--``): a true octal literal is indistinguishable from its
+    decimal value at runtime, so use the ``"0o644"`` string form instead.
+    """
+    # Ports pyinfra's ``operations.util.files.ensure_mode_int`` verbatim,
+    # including the non-octal-digit ``ValueError``.
+    if mode is None or isinstance(mode, bool):
+        return mode
+
+    if isinstance(mode, int):
+        digits = str(mode)
+    else:
+        digits = mode.strip().lower().removeprefix("0o")
+        if not digits.isdigit():
+            # Symbolic mode; return as-is (it always gets run).
+            return mode
+
+    if any(c not in "01234567" for c in digits):
+        raise ValueError(
+            f"Invalid file mode: {mode!r} contains non-octal digits "
+            "(expected octal digits 0-7, eg 644, '0644' or '0o644')",
+        )
+
+    # Drop any leading zeros ('0644' -> 644) for the canonical digit int.
+    return int(digits)
+
+
+@dataclass(frozen=True)
+class MkdirCommand(Command):
+    """Create a directory and its missing parents (``mkdir -p path``)."""
+
+    path: str
+
+    def shell(self) -> str:
+        return f"mkdir -p {shlex.quote(self.path)}"
+
+
+@dataclass(frozen=True)
+class ChmodCommand(Command):
+    """Set a path's mode (``chmod [-R] mode path``).
+
+    The mode is the canonical spelling ``directory`` normalised it to --
+    an octal-digit int, or the symbolic string verbatim -- and renders
+    unquoted exactly as pyinfra's chmod helper does; only the target is
+    shell-quoted.
+    """
+
+    path: str
+    mode: int | str
+    recursive: bool = False
+
+    def shell(self) -> str:
+        flags = " -R" if self.recursive else ""
+        return f"chmod{flags} {self.mode} {shlex.quote(self.path)}"
+
+
+@dataclass(frozen=True)
+class ChownCommand(Command):
+    """Set a path's owner and/or group (``chown``/``chgrp [-R] [-h] spec path``).
+
+    Mirrors pyinfra's chown helper: a user alone or a ``user:group`` pair
+    render ``chown``, a group alone switches to ``chgrp``. At least one of
+    the two must be set. ``recursive`` adds ``-R``, and ``dereference``
+    (False only for ``files.link``, which owns the link and not its target)
+    adds ``-h``.
+    """
+
+    path: str
+    user: str | None = None
+    group: str | None = None
+    recursive: bool = False
+    dereference: bool = True
+
+    def shell(self) -> str:
+        if self.user and self.group:
+            verb, spec = "chown", f"{self.user}:{self.group}"
+        elif self.user:
+            verb, spec = "chown", self.user
+        elif self.group:
+            verb, spec = "chgrp", self.group
+        else:
+            raise ValueError("chown requires at least one of user or group")
+        flags = ""
+        if self.recursive:
+            flags += " -R"
+        if not self.dereference:
+            flags += " -h"
+        return f"{verb}{flags} {shlex.quote(spec)} {shlex.quote(self.path)}"
+
+
+async def directory(
+    ctx: OpContext,
+    path: str,
+    present: bool = True,
+    user: str | None = None,
+    group: str | None = None,
+    mode: int | str | None = None,
+    recursive: bool = False,
+    force: bool = False,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Add, update or remove a directory.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        path (str): The remote directory path to manage.
+        present (bool, optional): Whether the directory should exist.
+            Defaults to True.
+        user (str | None, optional): The user to own the directory.
+            Defaults to None.
+        group (str | None, optional): The group to own the directory.
+            Defaults to None.
+        mode (int | str | None, optional): The directory's permissions --
+            an octal-digit int or string (``750``, ``"0750"``, ``"0o750"``)
+            or a symbolic mode. Defaults to None.
+        recursive (bool, optional): Whether to apply ``mode``, ``user``
+            and ``group`` recursively to the directory's contents.
+            Defaults to False.
+        force (bool, optional): Replace an existing non-directory at
+            ``path`` (``rm -rf``) instead of raising. Defaults to False.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The directory commands, only when the directory differs
+            from the request.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, TypeError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_op_directory.py``.
+    """
+
+    # pyinfra ``files.directory`` parity. The parameter is named ``path``
+    # exactly as upstream spells it (``files.file`` and ``files.link`` spell
+    # their own ``path`` too). Reads the ``Directory`` fact
+    # once and yields only on a difference: ``mkdir -p`` when the path is
+    # absent, ``chmod``/``chown`` when the requested mode or owner differs
+    # from the fact's metadata,
+    # and ``rm -rf`` (the shared ``RemoveTreeCommand``) when
+    # ``present=False``. Like pyinfra's ``recursive`` contract, mode is only
+    # applied recursively when the base directory's own mode does not
+    # match, and user/group only when the base directory misses either
+    # owner -- the ``-R`` flag then covers the whole tree. Symbolic modes
+    # never equal the fact's octal int, so they re-run the ``chmod`` on
+    # every materialization, pyinfra's behaviour kept. The commands touch
+    # arbitrary paths, so for root-owned locations flag the request
+    # ``sudo=True``.
+    #
+    # pyinfra's ``force_backup``/``force_backup_dir`` are deliberately
+    # dropped (developer decision): the backup form ``mv``s the invalid
+    # path to a name built from ``datetime.now()``, and a timestamp inside
+    # a yielded command would differ between the prepare and apply phases,
+    # breaking the request-sequence determinism the driver guards.
+    # ``force=True`` therefore always removes the non-directory first
+    # (``rm -rf``, exactly pyinfra's ``force`` with ``force_backup=False``),
+    # and ``force=False`` raises ``ValueError`` (pyinfra's
+    # ``OperationError``). pyinfra's internal ``_no_check_owner_mode`` and
+    # ``_no_fail_on_link`` knobs are deliberately dropped too; ``**kwargs``
+    # absorbs pyinfra's global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
+    try:
+        path = os.fspath(path)
+    except TypeError:
+        raise TypeError(
+            "`path` must be a string or `os.PathLike` object"
+        ) from None
+
+    mode = _ensure_mode_int(mode)
+    info = await ctx.facts.get(Directory, path)
+
+    reasons: list[str] = []
+    changed = False
+
+    if info is False:  # the path exists but is not a directory
+        if not force:
+            raise ValueError(f"{path} exists and is not a directory")
+        changed = True
+        reasons.append(f"{path} is not a directory, will remove first")
+        yield RemoveTreeCommand(src=path)
+        info = None
+
+    if not present:
+        if info:
+            changed = True
+            reasons.append(f"{path} present, will remove")
+            yield RemoveTreeCommand(src=path)
+        else:
+            reasons.append(f"directory {path} does not exist")
+        ctx.changed = changed
+        ctx.reason = "; ".join(reasons)
+        return
+
+    if info is None:  # create
+        changed = True
+        reasons.append(f"{path} missing, will create")
+        yield MkdirCommand(path=path)
+        if mode:
+            yield ChmodCommand(path=path, mode=mode, recursive=recursive)
+        if user or group:
+            yield ChownCommand(
+                path=path, user=user, group=group, recursive=recursive
+            )
+        ctx.changed = changed
+        ctx.reason = "; ".join(reasons)
+        return
+
+    # update: compare the requested mode/owner against the fact's metadata
+    if mode and info["mode"] != mode:
+        changed = True
+        reasons.append(f"mode {info['mode']} differs, will chmod {mode}")
+        yield ChmodCommand(path=path, mode=mode, recursive=recursive)
+
+    if (user and info["user"] != user) or (group and info["group"] != group):
+        changed = True
+        reasons.append(f"owner {info['user']}:{info['group']} differs, will chown")
+        yield ChownCommand(path=path, user=user, group=group, recursive=recursive)
+
+    if not changed:
+        reasons.append(f"directory {path} already exists")
+
+    ctx.changed = changed
+    ctx.reason = "; ".join(reasons)
+
+
+@dataclass(frozen=True)
+class ChattrCommand(Command):
+    """Set (``+``) or clear (``-``) ext2-family attribute flags (``chattr``).
+
+    One present-flagged descriptor covers both directions, mirroring
+    ``server.ModprobeCommand``: the flags render as a single comma-joined
+    ``+a,i``-style spec in the requested order, and only the path is
+    shell-quoted -- the spec carries no character ``shlex`` would mangle,
+    exactly as ``ChmodCommand`` renders its mode bare.
+    """
+
+    path: str
+    flags: tuple[str, ...]
+    present: bool = True
+
+    def shell(self) -> str:
+        prefix = "+" if self.present else "-"
+        spec = f"{prefix}{','.join(self.flags)}"
+        return f"chattr {spec} {shlex.quote(self.path)}"
+
+
+async def flags(
+    ctx: OpContext,
+    path: str,
+    flags: str | list[str] | tuple[str, ...] | None = None,
+    present: bool = True,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Set or clear a path's ext2-family attribute flags.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        path (str): The remote path whose attribute flags to manage.
+        flags (str | list[str] | tuple[str, ...] | None, optional): The
+            one-letter ext2 attribute flags to set or clear (``"i"``
+            immutable, ``"a"`` append-only, ...); a bare string names one
+            flag. Prefer a tuple when building requests via ``op()``,
+            because request arguments must stay hashable. Defaults to None.
+        present (bool, optional): Whether the flags should be set
+            (``True``) or cleared (``False``). Defaults to True.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The ``chattr`` command, only when some requested flag
+            differs from the current set.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, TypeError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_flags.py``.
+    """
+
+    # pyinfra ``files.flags`` parity, in the developer-chosen Linux
+    # adaptation: pyinfra's verb pair (``chflags`` over BSD ``stat -f %Sf``
+    # flag names like ``hidden``) does not exist on Linux, so the same
+    # set/clear capability is expressed over ``lsattr -d`` letters (the
+    # ``FileFlags`` fact) and ``chattr +flag``/``-flag``. The idempotence
+    # logic is kept verbatim: requested flags minus the current set decide
+    # a set, the current set intersected with the requested flags decide a
+    # clear, and anything else is a no-op whose reason mirrors pyinfra's
+    # noop text (``already has 'a,b' set``/``clear``) over the sorted
+    # requested spelling, so plan and apply phase report identically.
+    # pyinfra accepts a scalar ``flags`` string as its own spelling of the
+    # one-flag list (``flags="hidden"``), kept here as the same
+    # normalisation; empty or absent flags are pyinfra's empty-list noop
+    # branch. A list stays valid for direct generator calls but ``op()``
+    # rejects it (UnhashableArgumentError), hence the tuple preference.
+    # ``chattr`` addresses only the ``_LINUX_FLAG_LETTERS`` vocabulary -- a
+    # BSD flag name or a signed letter (``"+i"``) is rejected with
+    # ``ValueError`` rather than reaching the host, and ``e`` (extent) is
+    # left unfiltered: it is readable ext4 state ``chattr`` refuses to
+    # change, so requesting it plans a command that fails at apply.
+    # An absent path reads no flags (``FileFlags`` answers ``[]``), so the
+    # request plans a ``chattr`` that fails at apply -- pyinfra's Flags
+    # answers ``[]`` for absence identically. Setting or clearing
+    # attributes needs root in practice, so for the common protected paths
+    # flag the request ``sudo=True``. ``**kwargs`` absorbs pyinfra's global
+    # arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    if flags is None:
+        requested: tuple[str, ...] = ()
+    elif isinstance(flags, str):
+        requested = (flags,)
+    elif isinstance(flags, (list, tuple)):
+        requested = tuple(flags)
+    else:
+        raise TypeError("`flags` must be a string or a tuple/list of strings")
+    for flag in requested:
+        if len(flag) != 1 or flag not in _LINUX_FLAG_LETTERS:
+            raise ValueError(
+                f"invalid ext2 attribute flag {flag!r}: each flag must be one "
+                f"letter of {_LINUX_FLAG_LETTERS}"
+            )
+
+    if not requested:
+        ctx.reason = f"no changes requested to flags for '{path}'"
+        return
+
+    current = set(await ctx.facts.get(FileFlags, path))
+    requested_set = set(requested)
+    to_change = (
+        requested_set - current if present else current & requested_set
+    )
+
+    if not to_change:
+        verb = "set" if present else "clear"
+        ctx.reason = f"'{path}' already has '{','.join(sorted(requested))}' {verb}"
+        return
+
+    ctx.changed = True
+    ctx.reason = (
+        f"flags {','.join(sorted(to_change))} "
+        f"{'not set' if present else 'set'}, will "
+        f"{'set' if present else 'clear'} on {path}"
+    )
+    # Sorted so the spec, the request hash and both phases' logs agree
+    # regardless of the requested order (set iteration order is not one).
+    yield ChattrCommand(path=path, flags=tuple(sorted(to_change)), present=present)
+
+
 __all__ = [
+    "ChattrCommand",
+    "ChmodCommand",
+    "ChownCommand",
     "CopyCommand",
     "Directory",
     "File",
     "FileCommand",
     "FileContents",
     "FileExists",
+    "FileFlags",
     "FileLink",
     "GetCommand",
+    "InstallCommand",
+    "InstallSpoolCommand",
     "Link",
     "LinkCommand",
+    "MkdirCommand",
     "MoveCommand",
     "PutCommand",
     "RemoteFileSha1",
     "RemoveTreeCommand",
+    "SameFile",
     "copy",
+    "directory",
     "edit",
     "file",
+    "flags",
     "get",
+    "install",
     "link",
     "move",
     "put",

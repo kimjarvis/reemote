@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: ensure a regular file on two real hosts with files.file.
+"""Example: manage a regular file on two real hosts with files.file.
 
 This is a *usage* example, not part of the library. It drives the
 ``files.file`` operation through reemote5's two-phase execution model:
@@ -20,27 +20,42 @@ This is a *usage* example, not part of the library. It drives the
    apply in lockstep across hosts, with ``format_log`` showing every
    command and whether it changed anything.
 
-The operation is idempotent: it reads existence through the boolean
-``FileExists`` fact (``test -e`` over SSH) and yields a ``FileCommand`` only
-on a difference -- ``touch`` creates a missing file, while ``present=False``
-removes a present one with ``rm -f``. Unlike ``files.link``'s readlink-based
-check, this probe also sees *regular files*, which makes ``files.file`` the
-removal primitive for them. The deploy touches the same marker file twice
-to prove idempotence: the second request is a guaranteed no-op because the
-first request's ``touch`` is visible to it through the fresh per-step fact
-cache -- exactly the "act, then read" property the lockstep apply phase
-provides.
+The operation is idempotent in exactly the ``files.directory`` shape: it
+stats the path once through the ``File`` fact and yields only the commands
+that close a gap. An absent file is created with ``touch``, then
+``chmod``/``chown`` when ``mode``/``user``/``group`` are requested, and a
+missing parent directory is ``mkdir -p``'d first (``create_remote_dir``,
+on by default -- an *existing* parent is left alone, so manage its own
+mode/owner with ``files.directory``). An existing file re-runs only the
+``chmod``/``chown`` whose values differ from the fact's metadata, and
+``present=False`` removes a regular file with ``rm -f`` -- the primitive
+``files.link``'s readlink-based check cannot provide.
 
-The marker lives under the login user's home directory, so no ``sudo``/
-``su`` elevation is needed; a root-owned path (a config file under
-``/etc``) would carry ``sudo=True`` on the request instead.
+The deploy ensures the same file twice to prove idempotence: the second
+request is a guaranteed no-op because the first request's
+``mkdir``/``touch``/``chmod``/``chown`` are visible to it through the fresh
+per-step fact cache -- exactly the "act, then read" property the lockstep
+apply phase provides. A third request removes a stale marker to show the
+``rm -f`` branch.
+
+``/srv/web`` and the ``www`` ownership are root-owned, so those requests
+carry ``sudo=True``: the driver wraps every shell in ``sudo`` (the log shows
+``$ sudo touch ...``). ``www`` must exist as a user and group on the hosts
+-- otherwise the ``chown`` fails with a ``CommandError``. The marker lives
+under the login user's home, so its removal needs no elevation. pyinfra
+also offers ``force``/``force_backup`` here; reemote5 keeps ``force`` (a
+non-file is removed with ``rm -rf`` and recreated; without it such a path
+raises ``ValueError``) but deliberately drops the timestamped backup ``mv``,
+whose ``datetime.now()`` would differ between the phases. The ``touch``
+option is *not* used below: like pyinfra's, it is deliberately
+non-idempotent and would re-run the ``touch`` on every pass.
 
 Unlike the pytest suite -- which injects the test framework's
 ``SimulatedHost`` via ``run``'s ``host_factory`` and never touches the
 network -- this example uses the *default* factory
 (``Host.from_inventory``): each plain ``Host`` lazily opens an asyncssh
-connection, probes existence for real, and runs ``touch`` when the file is
-missing.
+connection, stats the file for real, and runs the shells when a gap needs
+closing.
 
 Run it with::
 
@@ -64,8 +79,13 @@ from reemote5 import (
     run,
 )
 
-# The marker file to ensure: under the login user's home, so the
-# unprivileged shell can create it.
+# The configuration file to ensure: a root-owned path and ownership, so the
+# requests are elevated. ``www`` must exist as a user and group. The parent
+# directory is created by the operation when it is missing.
+CONFIG_PATH = "/srv/web/conf.d/app.conf"
+
+# A stale marker under the login user's home: removal needs no elevation,
+# and files.file is the operation that can remove a *regular* file.
 MARKER_PATH = "/home/kjarvis/reemote5-marker"
 
 # The inventory: real hosts and their SSH connection information, supplied
@@ -92,19 +112,44 @@ INVENTORY = [
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Touch the same marker twice: the second request proves idempotence.
+    """Ensure the same file twice, then remove a marker.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
-    Neither request is elevated: the marker path is login-user writable.
+    The first two requests are elevated: ``/srv/web`` and the ``www``
+    ownership are root-owned. The octal mode spelling ``"640"`` normalises
+    to the int the ``File`` fact reports, so a repeat reads as already in
+    state. The removal is unprivileged -- the marker is login-user owned.
     """
-    yield op(files.file, name="Ensure marker", src=MARKER_PATH)
-    yield op(files.file, name="Re-ensure marker", src=MARKER_PATH)
+    yield op(
+        files.file,
+        name="Ensure app config",
+        path=CONFIG_PATH,
+        mode="640",
+        user="www",
+        group="www",
+        sudo=True,
+    )
+    yield op(
+        files.file,
+        name="Re-ensure app config",
+        path=CONFIG_PATH,
+        mode="640",
+        user="www",
+        group="www",
+        sudo=True,
+    )
+    yield op(
+        files.file,
+        name="Remove stale marker",
+        path=MARKER_PATH,
+        present=False,
+    )
 
 
 async def main() -> None:
     try:
-        # --dry: prepare phase only. Existence is still probed over SSH
+        # --dry: prepare phase only. The file is still stat'ed over SSH
         # (read-only) so the plan reflects each host's real pre-deployment
         # state; no command is sent.
         plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
@@ -112,8 +157,9 @@ async def main() -> None:
         print(format_plan(plans))
 
         # Real run: prepare, then apply in lockstep across hosts. The first
-        # request runs touch when the marker is missing; the second sees it
-        # present and reports no change.
+        # request runs mkdir/touch/chmod/chown as needed; the second sees
+        # the file in the desired state and reports no change; the third
+        # removes the marker only when it is there.
         plans, report, _hosts = await run(INVENTORY, deploy)
         print("\n== Run log (apply phase) ==")
         assert report is not None

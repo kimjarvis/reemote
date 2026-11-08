@@ -86,7 +86,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     inside the container, and neither needs elevation: ``docker exec``
     already runs as root on a stock alpine image.
     """
-    yield op(files.file, name="Mark image configured", src="/srv/.reemote5-configured")
+    yield op(files.file, name="Mark image configured", path="/srv/.reemote5-configured")
     yield op(files.put, name="Install app.conf", src=APP_CONF, dest="/srv/app.conf")
 
 

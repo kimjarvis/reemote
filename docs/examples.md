@@ -10,7 +10,7 @@ of a library module (currently `apk`, `apt`, `dnf`, `files`, `firewalld`,
 `server`, `sysctl`, `systemd` and `ufw`), plus the cross-module `dnf_put_get`
 health-check scenario under `files/`,
 `examples/actions/` holds [action](actions.md) demonstrations (bespoke shell,
-connection waits), and
+staged scripts, connection waits), and
 `examples/demonstrations/<topic>/` holds scenario scripts — `composition/`,
 `connectors/`, `inventory/` and `privilege/` — that cross module boundaries.
 Each explanation

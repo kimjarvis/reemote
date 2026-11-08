@@ -121,14 +121,14 @@ def role_redis(host: Host) -> Generator[OperationRequest]:
     yield op(
         files.link,
         name="Enable redis at boot",
-        src=REDIS_WANTS_LINK,
+        path=REDIS_WANTS_LINK,
         target=REDIS_UNIT,
         sudo=True,  # the author did flag this one; the policy preserves it
     )
     yield op(
         files.file,
         name="Write healthcheck marker",
-        src="/tmp/redis-managed",
+        path="/tmp/redis-managed",
         present=True,
         sudo=False,  # deliberate opt-out: stays unprivileged under the policy
     )

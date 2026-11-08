@@ -6,8 +6,10 @@
 Re-exports everything from ``server.py`` so the operations
 (``server.group``, ``server.hostname``, ``server.kill``,
 ``server.modprobe``, ``server.mount``, ``server.service``,
-``server.timezone``, ``server.wait_service``), the facts
+``server.timezone``, ``server.user``, ``server.user_authorized_keys``,
+``server.wait``, ``server.wait_service``), the facts
 (``server.Arch``, ``server.AuthorizedKeys``, ``server.Date``,
+``server.Env``,
 ``server.Groups``, ``server.HasGui``, ``server.Home``, ``server.Hostname``,
 ``server.Kernel``, ``server.KernelModules``, ``server.KernelVersion``,
 ``server.Last``,
@@ -17,7 +19,7 @@ Re-exports everything from ``server.py`` so the operations
 ``server.Locales``,
 ``server.LsbRelease``,
 ``server.Mounts``,
-``server.Path``,
+``server.Port``,
 ``server.Processes``,
 ``server.SystemdServiceState``,
 ``server.SystemdServiceEnabled``,
@@ -31,7 +33,10 @@ descriptors (``server.GroupAddCommand``, ``server.GroupDelCommand``,
 ``server.MountCommand``,
 ``server.SetHostnameCommand``,
 ``server.SetTimezoneCommand``,
-``server.SystemctlCommand``, ``server.WaitForFactCommand``) are
+``server.SystemctlCommand``, ``server.UserAddCommand``,
+``server.UserDelCommand``, ``server.UserModCommand``,
+``server.WaitForFactCommand``,
+``server.AuthorizedKeysAppendCommand``) are
 reachable through the package name alone.
 
 The systemd surface (``server.service``, ``server.SystemctlCommand``,
@@ -41,13 +46,23 @@ re-exported here for backward compatibility; ``server.service`` is a
 deprecated alias of ``systemd.service``. The ``Sysctl`` fact was relocated
 to the ``sysctl`` namespace (the canonical home for everything sysctl) and
 is no longer exported here.
+
+``server.script`` is an ACTION, not an operation: an alias of
+``reemote5.actions.Script``, driven by ``gather_action`` outside the deploy
+model. It runs a script file already on the host (stage it with
+``files.put``); a missing file comes back as an error ``Result``, never an
+exception. The implementation stays in ``reemote5.actions`` with the other
+actions -- only the pyinfra-familiar name is offered here.
 """
 
+from ...actions import Script as script
 from . import server
 from .server import (
     Arch,
     AuthorizedKeys,
+    AuthorizedKeysAppendCommand,
     Date,
+    Env,
     GroupAddCommand,
     GroupDelCommand,
     Groups,
@@ -67,7 +82,8 @@ from .server import (
     ModprobeCommand,
     MountCommand,
     Mounts,
-    Path,
+    Port,
+    PortInfo,
     Processes,
     SetHostnameCommand,
     SetTimezoneCommand,
@@ -77,25 +93,34 @@ from .server import (
     Timezone,
     Uptime,
     User,
+    UserAddCommand,
+    UserDelCommand,
+    UserModCommand,
     Users,
     WaitForFactCommand,
     Which,
     group,
     hostname,
     is_active,
+    is_listening,
     kill,
     modprobe,
     mount,
     service,
     timezone,
     unit_name,
+    user,
+    user_authorized_keys,
+    wait,
     wait_service,
 )
 
 __all__ = [
     "Arch",
     "AuthorizedKeys",
+    "AuthorizedKeysAppendCommand",
     "Date",
+    "Env",
     "GroupAddCommand",
     "GroupDelCommand",
     "Groups",
@@ -115,7 +140,8 @@ __all__ = [
     "ModprobeCommand",
     "MountCommand",
     "Mounts",
-    "Path",
+    "Port",
+    "PortInfo",
     "Processes",
     "SetHostnameCommand",
     "SetTimezoneCommand",
@@ -125,18 +151,26 @@ __all__ = [
     "Timezone",
     "Uptime",
     "User",
+    "UserAddCommand",
+    "UserDelCommand",
+    "UserModCommand",
     "Users",
     "WaitForFactCommand",
     "Which",
     "group",
     "hostname",
     "is_active",
+    "is_listening",
     "kill",
     "modprobe",
     "mount",
+    "script",
     "server",
     "service",
     "timezone",
     "unit_name",
+    "user",
+    "user_authorized_keys",
+    "wait",
     "wait_service",
 ]

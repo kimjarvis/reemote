@@ -1,13 +1,16 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Tests for the server module: host facts, ``Arch`` and ``wait_service``.
+"""Tests for the server module: host facts, ``Arch``, ``Port`` and the waits.
 
 Covers ``reemote5.modules.server.server``: the ``Arch`` fact, the
 ``AuthorizedKeys`` fact (pyinfra's own fixtures over the real-transport
 path, tilde-username validation, and the ``SimulatedHost`` seam), the
 ``Date`` fact (pyinfra's own fixture over the real-transport path, offset
-parsing, and the ``SimulatedHost`` seam), the ``Groups`` fact (pyinfra's own
+parsing, and the ``SimulatedHost`` seam), the ``Env`` fact (canned
+``echo $<name>`` output over the real-transport path, variable-name
+validation, parsing edge cases, and the ``SimulatedHost`` seam), the
+``Groups`` fact (pyinfra's own
 fixture over the real-transport path, ``/etc/group`` parsing edge cases, and
 the ``SimulatedHost`` seam), the ``HasGui`` fact (pyinfra's own fixtures over
 the real-transport path, session-binary parsing edge cases, and the
@@ -38,8 +41,13 @@ path, key-normalization parsing edge cases, and the ``SimulatedHost``
 seam), the ``Mounts`` fact (pyinfra's own Linux and OpenBSD fixtures over
 the real-transport path, kernel-dispatched command and parser edge cases
 including the FreeBSD JSON branch, and the ``SimulatedHost`` seam), the
-``Path`` fact (canned ``echo $PATH`` output over the real-transport path,
-parsing edge cases, and the ``SimulatedHost`` seam), the ``Processes`` fact
+``Port`` fact (pyinfra's own thirteen fixtures over the real-transport
+path, the ``Kernel``/``Which``-dispatched tool selection, the
+port/protocol validation and the parser edge cases -- including the
+owner-less rows an unprivileged read produces, which is where reemote5's
+record deliberately differs from pyinfra's tuple -- and the
+``listening_ports`` ``SimulatedHost`` seam), the
+``Processes`` fact
 (pyinfra's own eleven Linux, FreeBSD, BusyBox and Darwin fixtures over the
 real-transport path, kernel/busybox-dispatched command and parser edge
 cases, and the ``SimulatedHost`` seam), the ``Timezone`` fact (pyinfra's own
@@ -53,7 +61,14 @@ fixtures over the real-transport path, name quoting and parsing edge cases,
 and the ``SimulatedHost`` seam), the ``group`` operation's option set and its
 ``GroupAddCommand``/``GroupDelCommand`` descriptors (pyinfra's own eight
 operation fixtures replayed over the ``SimulatedHost`` seams, idempotence,
-the kernel dispatch and the end-to-end lockstep run), the ``hostname``
+the kernel dispatch and the end-to-end lockstep run), the ``user`` operation
+and its ``UserAddCommand``/``UserModCommand``/``UserDelCommand`` descriptors
+with the private ``_HomeMkdirCommand``/``_HomeChownCommand`` pair (pyinfra's
+own operation fixtures replayed over the ``SimulatedHost`` seams minus the
+dropped ``public_keys``/``delete_keys`` and ``Which`` guard cases, per-field
+update idempotence, the Linux/FreeBSD/OpenBSD dispatch, the
+``directory_stats``/``link_stats`` home branch, the argument-hashability
+boundary and the end-to-end lockstep run), the ``hostname``
 operation and its ``SetHostnameCommand`` descriptor (pyinfra's own six
 operation fixtures replayed over the ``SimulatedHost`` seams with the
 dropped ``hostname_file`` upload step, the ``Which`` dispatch between
@@ -76,15 +91,20 @@ run), the ``timezone`` operation and its ``SetTimezoneCommand`` descriptor
 (pyinfra's own noop and set_timedatectl fixtures replayed over the
 ``SimulatedHost`` seams, the dropped non-systemd fallback raising
 ``OperationError`` instead, idempotence and the end-to-end lockstep run),
+the ``wait`` operation (pyinfra's ``server.wait`` port argument, the
+protocol/timeout/interval options it adds, the port/protocol validation at
+plan time and the end-to-end lockstep run through ``run``),
 and the waiting design: the ``WaitCommand`` base, the generic
 ``WaitForFactCommand`` poll loop (already met, met after several polls, and
 timeout -- all without real sleeping), the ``send_command`` dispatch onto
 ``wait``, and the end-to-end ``wait_service`` behaviour through ``run`` with
 ``SimulatedHost``: the wait is planned unconditionally so the request
 sequence is identical in both phases (determinism), it passes when the unit
-is active and aborts the run with ``WaitTimeoutError`` when it is not.
+is active (or the port is listening) and aborts the run with
+``WaitTimeoutError`` when it is not.
 """
 
+import shlex
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
@@ -93,7 +113,14 @@ from types import SimpleNamespace
 import pytest
 
 from reemote5.commands import WaitCommand, WaitTimeoutError
-from reemote5.core import FactCache, OpContext, OperationError, OperationRequest, op
+from reemote5.core import (
+    FactCache,
+    OpContext,
+    OperationError,
+    OperationRequest,
+    UnhashableArgumentError,
+    op,
+)
 from reemote5.drivers import (
     DeterminismError,
     command_shell,
@@ -110,7 +137,9 @@ from reemote5.modules import server
 from reemote5.modules.server.server import (
     Arch,
     AuthorizedKeys,
+    AuthorizedKeysAppendCommand,
     Date,
+    Env,
     GroupAddCommand,
     GroupDelCommand,
     Groups,
@@ -130,7 +159,8 @@ from reemote5.modules.server.server import (
     ModprobeCommand,
     MountCommand,
     Mounts,
-    Path,
+    Port,
+    PortInfo,
     Processes,
     SetHostnameCommand,
     SetTimezoneCommand,
@@ -139,10 +169,20 @@ from reemote5.modules.server.server import (
     Timezone,
     Uptime,
     User,
+    UserAddCommand,
+    UserDelCommand,
+    UserModCommand,
     Users,
     WaitForFactCommand,
     Which,
+    _HomeChownCommand,
+    _HomeDirectory,
+    _HomeIsLink,
+    _HomeMkdirCommand,
+    _KeysChmodCommand,
+    _KeysTouchCommand,
     is_active,
+    is_listening,
 )
 from tests.simulated_host import SimulatedHost
 
@@ -202,6 +242,31 @@ class CannedProcessesHost(CannedKernelHost):
         if shell == Which.command("busybox"):
             self.shells.append(shell)
             return self._busybox
+        return await super().run_shell(shell)
+
+
+class CannedPortHost(CannedShellHost):
+    """A CannedShellHost that also answers the Kernel and ``ss`` probes.
+
+    ``Port`` reads the ``Kernel`` fact, probes ``command -v ss`` through the
+    ``Which`` fact on every kernel but FreeBSD and then runs the socket
+    listing those answers select, so the canned host must answer three
+    different shells: the kernel name for ``uname -s``, the probe's
+    path-or-empty answer, and the ``ss``/``netstat``/``sockstat`` output.
+    """
+
+    def __init__(self, kernel: str, ss: str, stdout: str):
+        super().__init__(stdout)
+        self._kernel = kernel
+        self._ss = ss
+
+    async def run_shell(self, shell: str, *, check: bool = False) -> str:
+        if shell == Kernel.COMMAND:
+            self.shells.append(shell)
+            return self._kernel
+        if shell == Which.command("ss"):
+            self.shells.append(shell)
+            return self._ss
         return await super().run_shell(shell)
 
 
@@ -387,6 +452,78 @@ async def test_date_gather_fact_across_hosts():
         SimulatedHost(name="web2", date=clock2),
     ]
     assert await gather_fact(hosts, Date) == {"web1": clock1, "web2": clock2}
+
+
+# --- Env -----------------------------------------------------------------------
+
+
+async def test_env_parses_echo_path():
+    # Env replaces the migrated server.Path: the name "PATH" issues the
+    # exact shell Path used and returns the raw colon-separated string
+    # (pyinfra's FactBase default joins the single output line).
+    host = CannedShellHost("/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin\n")
+    assert await Env.process(host, "PATH") == (
+        "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin"
+    )
+    assert host.shells == ["echo $PATH"]
+
+
+async def test_env_reads_any_named_variable():
+    host = CannedShellHost("/home/kjarvis\n")
+    assert await Env.process(host, "HOME") == "/home/kjarvis"
+    assert host.shells == ["echo $HOME"]
+
+
+def test_env_parse_takes_the_first_non_blank_line():
+    assert Env.parse(["/usr/bin:/bin"]) == "/usr/bin:/bin"
+    assert Env.parse(["", "  /usr/bin:/bin  ", "ignored"]) == "/usr/bin:/bin"
+    assert Env.parse([]) == ""
+    # Interior characters -- colons, spaces in directory names -- are kept
+    # verbatim: the string is not split into a list.
+    assert Env.parse(["/opt/my dir/bin:/usr/bin"]) == "/opt/my dir/bin:/usr/bin"
+
+
+async def test_env_is_empty_on_empty_output():
+    # An unset/empty variable (echo prints a blank line) maps to "" like Arch.
+    assert await Env.process(CannedShellHost(""), "PATH") == ""
+    assert await Env.process(CannedShellHost("\n"), "PATH") == ""
+
+
+async def test_env_rejects_unsafe_names_on_both_transports():
+    # $<name> must stay an unquoted bare word for the shell to expand it, so
+    # a name that is not a plain shell identifier never reaches the shell --
+    # identically on the canned and the simulated transport.
+    for name in ("", "1BAD", "BAD-NAME", "PATH; rm -rf /", "$(id)", "A B"):
+        with pytest.raises(ValueError):
+            await Env.process(CannedShellHost(""), name)
+        with pytest.raises(ValueError):
+            await Env.process(SimulatedHost(name="h"), name)
+
+
+async def test_env_reads_the_simulated_seam():
+    host = SimulatedHost(
+        name="h", os_env={"PATH": "/custom/bin:/usr/bin", "HOME": "/root"}
+    )
+    assert await Env.process(host, "PATH") == "/custom/bin:/usr/bin"
+    assert await Env.process(host, "HOME") == "/root"
+    # An unlisted variable reads as "", like an unset one on a real machine.
+    assert await Env.process(host, "LANG") == ""
+    # The seam defaults to a standard Linux PATH: a simulated machine
+    # always answers echo $PATH.
+    assert await Env.process(SimulatedHost(name="h"), "PATH") == (
+        "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin"
+    )
+
+
+async def test_env_gather_fact_across_hosts():
+    hosts = [
+        SimulatedHost(name="web1", os_env={"PATH": "/custom/bin:/usr/bin"}),
+        SimulatedHost(name="web2"),
+    ]
+    assert await gather_fact(hosts, Env, "PATH") == {
+        "web1": "/custom/bin:/usr/bin",
+        "web2": "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin",
+    }
 
 
 # --- Groups --------------------------------------------------------------------
@@ -2099,54 +2236,272 @@ async def test_mounts_gather_fact_across_hosts():
     }
 
 
-# --- Path ----------------------------------------------------------------------
+# --- Port ----------------------------------------------------------------------
+
+# The not-listening answer: what every tool reports when its port filter
+# matches no row, and what an unseeded ``listening_ports`` seam reads as.
+NOT_LISTENING = PortInfo(listening=False, process=None, pid=None)
+
+# The column header FreeBSD's sockstat prints even when nothing matches --
+# pyinfra's empty fixture holds nothing else, and it is no socket row.
+_SOCKSTAT_HEADER = "USER     COMMAND    PID   FD PROTO  LOCAL ADDRESS         FOREIGN ADDRESS"
 
 
-async def test_path_parses_echo_path():
-    # pyinfra ships no fixture for server.Path; a standard Linux search
-    # path is echoed verbatim and returned as the raw colon-separated
-    # string (pyinfra's FactBase default joins the single output line).
-    host = CannedShellHost("/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin\n")
-    assert await Path.process(host) == (
-        "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin"
+def _listening(process: str | None, pid: int | None) -> PortInfo:
+    """A listening record, with (or without, as ``None``) an owner."""
+    return PortInfo(listening=True, process=process, pid=pid)
+
+
+# pyinfra's own fact fixtures (tests/facts/server.Port/*.json), captured
+# verbatim: the kernel name and ``command -v ss`` answer its ``facts`` block
+# seeds, the port and protocol arguments, the command string the fixture
+# records, its raw output lines and the record reemote5 derives. The last
+# column is where reemote5 deliberately departs from pyinfra's
+# ``(process, pid)`` tuple: the ``ss_no_process_info`` rows are a listening
+# port with no owner to name, where pyinfra answers ``(None, None)`` and its
+# ``server.wait`` would keep looping.
+PORT_FIXTURES: list[tuple[str, str, str, int, str, str, list[str], PortInfo]] = [
+    ("ss_empty", "Linux", "/usr/sbin/ss", 53, "tcp", "ss -lptn | grep ':53 ' || true", [], NOT_LISTENING),
+    (
+        "ss_one_process",
+        "Linux",
+        "/usr/sbin/ss",
+        10025,
+        "tcp",
+        "ss -lptn | grep ':10025 ' || true",
+        [
+            'LISTEN 0      100        127.0.0.1:10025      0.0.0.0:*    users:(("smtpd",pid=3927036,fd=6),("master",pid=1997758,fd=97))'
+        ],
+        _listening("smtpd", 3927036),
+    ),
+    (
+        "ss_two_processes",
+        "Linux",
+        "/usr/sbin/ss",
+        443,
+        "tcp",
+        "ss -lptn | grep ':443 ' || true",
+        [
+            'LISTEN 0      511          0.0.0.0:443       0.0.0.0:*    users:(("nginx",pid=3759498,fd=3),("nginx",pid=3759496,fd=3),("nginx",pid=2274336,fd=3))',
+            'LISTEN 0      511             [::]:443          [::]:*    users:(("nginx",pid=3759498,fd=4),("nginx",pid=3759496,fd=4),("nginx",pid=2274336,fd=4))',
+        ],
+        _listening("nginx", 3759498),
+    ),
+    (
+        "ss_no_process_info",
+        "Linux",
+        "/usr/sbin/ss",
+        22,
+        "tcp",
+        "ss -lptn | grep ':22 ' || true",
+        [
+            "LISTEN 0      128          0.0.0.0:22        0.0.0.0:*",
+            "LISTEN 0      128             [::]:22           [::]:*",
+        ],
+        _listening(None, None),
+    ),
+    ("ss_udp_empty", "Linux", "/usr/sbin/ss", 53, "udp", "ss -lpun | grep ':53 ' || true", [], NOT_LISTENING),
+    (
+        "ss_udp_one_process",
+        "Linux",
+        "/usr/sbin/ss",
+        53,
+        "udp",
+        "ss -lpun | grep ':53 ' || true",
+        ['UNCONN 0      0          0.0.0.0:53        0.0.0.0:*    users:(("named",pid=1234,fd=512))'],
+        _listening("named", 1234),
+    ),
+    (
+        "netstat_tcp_empty",
+        "Linux",
+        "",
+        80,
+        "tcp",
+        "netstat -tlnp 2>/dev/null | awk '$4 ~ /:80$/'",
+        [],
+        NOT_LISTENING,
+    ),
+    (
+        "netstat_tcp_one_process",
+        "Linux",
+        "",
+        80,
+        "tcp",
+        "netstat -tlnp 2>/dev/null | awk '$4 ~ /:80$/'",
+        ["tcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN      1234/nginx"],
+        _listening("nginx", 1234),
+    ),
+    (
+        "netstat_tcp_truncated_name",
+        "Linux",
+        "",
+        22,
+        "tcp",
+        "netstat -tlnp 2>/dev/null | awk '$4 ~ /:22$/'",
+        ["tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      2316/sshd [listener"],
+        _listening("sshd", 2316),
+    ),
+    (
+        "netstat_udp_one_process",
+        "Linux",
+        "",
+        53,
+        "udp",
+        "netstat -ulnp 2>/dev/null | awk '$4 ~ /:53$/'",
+        ["udp        0      0 0.0.0.0:53              0.0.0.0:*                           1234/named"],
+        _listening("named", 1234),
+    ),
+    (
+        "sockstat_tcp_empty",
+        "FreeBSD",
+        "",
+        80,
+        "tcp",
+        "sockstat -l -p 80 -P tcp",
+        [_SOCKSTAT_HEADER],
+        NOT_LISTENING,
+    ),
+    (
+        "sockstat_tcp_one_process",
+        "FreeBSD",
+        "",
+        80,
+        "tcp",
+        "sockstat -l -p 80 -P tcp",
+        [_SOCKSTAT_HEADER, "www      nginx      1234  3  tcp4   *:80                  *:*"],
+        _listening("nginx", 1234),
+    ),
+    (
+        "sockstat_udp_one_process",
+        "FreeBSD",
+        "",
+        53,
+        "udp",
+        "sockstat -l -p 53 -P udp",
+        [_SOCKSTAT_HEADER, "root     named      5678  20 udp4   *:53                  *:*"],
+        _listening("named", 5678),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("name", "kernel", "ss", "port", "protocol", "command", "output", "expected"),
+    PORT_FIXTURES,
+    ids=[row[0] for row in PORT_FIXTURES],
+)
+async def test_port_matches_pyinfra_fixtures(
+    name, kernel, ss, port, protocol, command, output, expected
+):
+    host = CannedPortHost(kernel, ss, "\n".join(output))
+    assert await Port.process(host, port, protocol) == expected
+    # Kernel name first, then the ss probe FreeBSD never makes, then the
+    # listing the two answers select -- the fixture's own command string.
+    probe = [] if kernel == "FreeBSD" else ["command -v ss || true"]
+    assert host.shells == ["uname -s", *probe, command]
+
+
+def test_port_tool_dispatches_on_the_kernel_and_ss():
+    assert Port._tool("FreeBSD", has_ss=True) == "sockstat"
+    assert Port._tool(" FreeBSD ", has_ss=False) == "sockstat"
+    assert Port._tool("Linux", has_ss=True) == "ss"
+    # Anything else -- including a failed `uname -s` ("") -- is a Linux
+    # kernel, which prefers ss and falls back to netstat, like pyinfra.
+    assert Port._tool("Darwin", has_ss=True) == "ss"
+    for kernel in ("Linux", "Darwin", ""):
+        assert Port._tool(kernel, has_ss=False) == "netstat"
+
+
+def test_port_parse_skips_the_sockstat_header_and_blank_lines():
+    assert Port.parse(["", "  ", _SOCKSTAT_HEADER], "sockstat") == NOT_LISTENING
+    # A row is found by whitespace-splitting, so its padding is irrelevant.
+    assert Port.parse(["  root  named  5678  20  udp4  *:53  *:*  "], "sockstat") == _listening(
+        "named", 5678
     )
-    assert host.shells == ["echo $PATH"]
 
 
-def test_path_parse_takes_the_first_non_blank_line():
-    assert Path.parse(["/usr/bin:/bin"]) == "/usr/bin:/bin"
-    assert Path.parse(["", "  /usr/bin:/bin  ", "ignored"]) == "/usr/bin:/bin"
-    assert Path.parse([]) == ""
-    # Interior characters -- colons, spaces in directory names -- are kept
-    # verbatim: the string is not split into a list.
-    assert Path.parse(["/opt/my dir/bin:/usr/bin"]) == "/opt/my dir/bin:/usr/bin"
-
-
-async def test_path_is_empty_on_empty_output():
-    # A failed command, or an unset/empty PATH (echo prints a blank line),
-    # maps to "" like Arch.
-    assert await Path.process(CannedShellHost("")) == ""
-    assert await Path.process(CannedShellHost("\n")) == ""
-
-
-async def test_path_reads_the_simulated_seam():
-    host = SimulatedHost(name="h", os_path="/custom/bin:/usr/bin")
-    assert await Path.process(host) == "/custom/bin:/usr/bin"
-    # The seam defaults to a standard Linux search path: a simulated
-    # machine always answers echo $PATH.
-    assert await Path.process(SimulatedHost(name="h")) == (
-        "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin"
+def test_port_parse_owner_is_optional_but_the_row_still_listens():
+    # The deviation from pyinfra in three lines: an unprivileged read sees
+    # the socket without its owner, and that is a listening port.
+    assert Port.parse(["LISTEN 0 128 0.0.0.0:22 0.0.0.0:*"], "ss") == _listening(None, None)
+    assert Port.parse(["tcp 0 0 0.0.0.0:22 0.0.0.0:* LISTEN -"], "netstat") == _listening(
+        None, None
     )
+    assert Port.parse(["udp 0 0 0.0.0.0:53 0.0.0.0:* ?"], "netstat") == _listening(None, None)
 
 
-async def test_path_gather_fact_across_hosts():
+def test_port_parse_survives_a_malformed_owner_cell():
+    # A PID column that is not a number reports the name without a number
+    # (ss) or no owner at all (sockstat/netstat) -- never an exception.
+    assert Port.parse(['LISTEN users:(("nginx",pid=oops,fd=3))'], "ss") == _listening(
+        "nginx", None
+    )
+    assert Port.parse(["www nginx notapid 3 tcp4 *:80 *:*"], "sockstat") == _listening(
+        None, None
+    )
+    # netstat's unprivileged "-/nginx" cell has a separator but no PID, and
+    # the scan stops at the first slashed cell (pyinfra's `break`).
+    assert Port.parse(["tcp 0 0 0.0.0.0:80 0.0.0.0:* LISTEN -/nginx"], "netstat") == (
+        _listening(None, None)
+    )
+    # A short sockstat row carries no owner columns to read.
+    assert Port.parse(["www nginx"], "sockstat") == _listening(None, None)
+
+
+async def test_port_is_not_listening_on_empty_output():
+    # A failed or unmatched read maps to "nothing listening" on every branch
+    # (pyinfra's ``(None, None)`` default).
+    assert await Port.process(CannedPortHost("Linux", "/usr/sbin/ss", ""), 80) == NOT_LISTENING
+    assert await Port.process(CannedPortHost("Linux", "", ""), 80) == NOT_LISTENING
+    assert await Port.process(CannedPortHost("FreeBSD", "", ""), 80) == NOT_LISTENING
+
+
+async def test_port_rejects_a_bad_port_or_protocol():
+    # Both values are interpolated into a grep pattern or awk program, so a
+    # bad one is rejected identically on both transports and from command().
+    for host in (CannedPortHost("Linux", "/usr/sbin/ss", ""), SimulatedHost(name="h")):
+        with pytest.raises(TypeError, match="port must be an int"):
+            await Port.process(host, "80 || 1")
+    with pytest.raises(ValueError, match="protocol must be one of"):
+        await Port.process(SimulatedHost(name="h"), 80, "sctp")
+    with pytest.raises(ValueError, match="port must be between 1 and 65535"):
+        Port.command("ss", 70000)
+    with pytest.raises(ValueError, match="protocol must be one of"):
+        Port.command("ss", 80, "sctp")
+
+
+async def test_port_reads_the_simulated_seam():
+    record = _listening("nginx", 1234)
+    host = SimulatedHost(name="h", listening_ports={("tcp", 80): record})
+    assert await Port.process(host, 80) == record
+    # The other protocol and an unlisted port read as nothing listening.
+    assert await Port.process(host, 80, "udp") == NOT_LISTENING
+    assert await Port.process(host, 443) == NOT_LISTENING
+    # An owner-less entry is still a listening port (the unprivileged answer).
+    host = SimulatedHost(name="h", listening_ports={("tcp", 22): _listening(None, None)})
+    assert await Port.process(host, 22) == _listening(None, None)
+    # The seam defaults to {} -- a simulated machine with no sockets listed.
+    assert await Port.process(SimulatedHost(name="h"), 80) == NOT_LISTENING
+
+
+async def test_port_seam_returns_a_copy():
+    host = SimulatedHost(name="h", listening_ports={("tcp", 80): _listening("nginx", 1234)})
+    info = await Port.process(host, 80)
+    info["listening"] = False
+    info["process"] = "mutated"
+    assert host.listening_ports == {("tcp", 80): _listening("nginx", 1234)}
+
+
+async def test_port_gather_fact_across_hosts():
+    record = _listening("nginx", 1234)
     hosts = [
-        SimulatedHost(name="web1", os_path="/custom/bin:/usr/bin"),
+        SimulatedHost(name="web1", listening_ports={("tcp", 80): record}),
         SimulatedHost(name="web2"),
     ]
-    assert await gather_fact(hosts, Path) == {
-        "web1": "/custom/bin:/usr/bin",
-        "web2": "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin",
+    assert await gather_fact(hosts, Port, 80) == {"web1": record, "web2": NOT_LISTENING}
+    # The protocol argument is forwarded to process verbatim.
+    assert await gather_fact(hosts, Port, 80, protocol="udp") == {
+        "web1": NOT_LISTENING,
+        "web2": NOT_LISTENING,
     }
 
 
@@ -2872,7 +3227,7 @@ def test_user_parse_takes_the_first_non_blank_line():
 
 async def test_user_is_empty_on_empty_output():
     # A failed command, or an unset/empty USER (echo prints a blank line),
-    # maps to "" like Path.
+    # maps to "" like Env.
     assert await User.process(CannedShellHost("")) == ""
     assert await User.process(CannedShellHost("\n")) == ""
 
@@ -3382,6 +3737,677 @@ async def test_group_dry_run_sends_nothing():
     assert report is None
     for host in hosts:
         assert host.os_groups == ["wheel"]
+
+
+# --- server.user ------------------------------------------------------------
+
+
+def test_user_add_command_shell_rendering():
+    assert UserAddCommand(user="someuser").shell() == "useradd -M someuser"
+    # pyinfra's add.json argument order, verbatim.
+    assert (
+        UserAddCommand(
+            user="someuser",
+            home="homedir",
+            shell_path="shellbin",
+            group="mygroup",
+            groups=("secondary_group", "another"),
+            system=True,
+            uid=1000,
+            comment="Full Name",
+            create_home=True,
+            password="$somecryptedpassword$",
+        ).shell()
+        == "useradd -d homedir -s shellbin -g mygroup"
+        " -G secondary_group,another -r --uid 1000 -c 'Full Name' -m"
+        " -p '$somecryptedpassword$' someuser"
+    )
+    # unique=False renders -o; a uid of 0 is skipped (pyinfra's `if uid:`).
+    assert (
+        UserAddCommand(user="someuser", uid=0, unique=False).shell()
+        == "useradd -o -M someuser"
+    )
+    assert (
+        UserAddCommand(user="someuser", home="/home/someuser", uid=0, unique=False).shell()
+        == "useradd -d /home/someuser -o -M someuser"
+    )
+    # shlex leaves a safe name alone and quotes an unsafe one.
+    assert (
+        UserAddCommand(user="some user; whoami", comment="Full Name; rm -rf /").shell()
+        == "useradd -c 'Full Name; rm -rf /' -M 'some user; whoami'"
+    )
+    # FreeBSD: pw leads with -n, the uid is -u, and -M has no spelling there.
+    assert (
+        UserAddCommand(user="someuser", uid=1000, freebsd=True).shell()
+        == "pw useradd -n someuser -u 1000"
+    )
+    # ...and a password rides the echo | pw -H 0 pipe instead of -p.
+    assert (
+        UserAddCommand(user="someuser", home="homedir", password="$pw$", freebsd=True).shell()
+        == "echo '$pw$' | pw useradd -n someuser -H 0 -d homedir"
+    )
+    # OpenBSD has -m but no -M; the system flag is cleared by the operation.
+    assert UserAddCommand(user="someuser", create_home=True, openbsd=True).shell() == (
+        "useradd -m someuser"
+    )
+    assert command_shell(UserAddCommand(user="someuser"), sudo=True) == (
+        "sudo useradd -M someuser"
+    )
+
+
+def test_user_mod_command_shell_rendering():
+    assert UserModCommand(user="someuser", shell_path="/bin/false").shell() == (
+        "usermod -s /bin/false someuser"
+    )
+    assert (
+        UserModCommand(
+            user="someuser",
+            home="/home/someotheruser",
+            shell_path="/bin/false",
+            group="somegroup",
+            groups=("group1", "group2", "group3"),
+            comment="New Full Name",
+        ).shell()
+        == "usermod -d /home/someotheruser -s /bin/false -g somegroup"
+        " -G group1,group2,group3 -c 'New Full Name' someuser"
+    )
+    # append=True is the -a -G pair (pyinfra's append_secondary_groups).
+    assert (
+        UserModCommand(user="someuser", groups=("group3", "group4"), append=True).shell()
+        == "usermod -a -G group3,group4 someuser"
+    )
+    # Group names are quoted individually, so a separator never merges them.
+    assert (
+        UserModCommand(user="someuser", groups=("group one", "group; two")).shell()
+        == "usermod -G 'group one','group; two' someuser"
+    )
+    assert (
+        UserModCommand(user="someuser", password="$pw$").shell()
+        == "usermod -p '$pw$' someuser"
+    )
+    assert (
+        UserModCommand(user="someuser", group="somegroup", freebsd=True).shell()
+        == "pw usermod -n someuser -g somegroup"
+    )
+    # The FreeBSD password form is a pipe of its own, with no other flags.
+    assert (
+        UserModCommand(user="someuser", password="$pw$", freebsd=True).shell()
+        == "echo '$pw$' | pw usermod -n someuser -H 0"
+    )
+    assert command_shell(UserModCommand(user="someuser"), sudo=True) == (
+        "sudo usermod someuser"
+    )
+
+
+def test_user_del_command_shell_rendering():
+    assert UserDelCommand(user="someuser").shell() == "userdel someuser"
+    assert UserDelCommand(user="evil; rm -rf /").shell() == "userdel 'evil; rm -rf /'"
+    assert (
+        UserDelCommand(user="someuser", freebsd=True).shell()
+        == "pw userdel -n someuser"
+    )
+    assert command_shell(UserDelCommand(user="someuser"), sudo=True) == (
+        "sudo userdel someuser"
+    )
+
+
+def test_home_descriptor_shell_rendering():
+    assert _HomeMkdirCommand(path="/srv/deploy").shell() == "mkdir -p /srv/deploy"
+    assert _HomeMkdirCommand(path="/home/evil $(id)").shell() == (
+        "mkdir -p '/home/evil $(id)'"
+    )
+    assert _HomeChownCommand(path="homedir", user="someuser", group="mygroup").shell() == (
+        "chown someuser:mygroup homedir"
+    )
+    assert _HomeChownCommand(path="homedir", user="some user", group="grp").shell() == (
+        "chown 'some user':grp homedir"
+    )
+    assert command_shell(_HomeChownCommand(path="homedir", user="u", group="g"), sudo=True) == (
+        "sudo chown u:g homedir"
+    )
+
+
+# pyinfra's own operation fixtures (tests/operations/server.user/), replayed
+# verbatim: (fixture, user, kernel, os_users, os_groups, directory_stats,
+# link_stats, kwargs, expected shells). Its server.Os fact is the deprecated
+# alias of server.Kernel, so the fixture's Os value feeds os_kernel; a
+# fixture's files.Directory row of null/False/dict maps onto an absent,
+# False or dict directory_stats entry, and files.Link onto link_stats.
+# The keys* and *_missing_* fixtures are deliberately not replayed: the
+# public_keys/delete_keys branch and the plan-time Which guards were dropped.
+PYINFRA_USER_FIXTURES = [
+    ("add.json", "someuser", "Linux", {}, [], {}, {}, {
+        "home": "homedir", "shell": "shellbin", "group": "mygroup",
+        "groups": ("secondary_group", "another"), "uid": 1000, "system": True,
+        "comment": "Full Name", "create_home": True,
+        "password": "$somecryptedpassword$",
+    }, [
+        (
+            "useradd -d homedir -s shellbin -g mygroup -G secondary_group,another"
+            " -r --uid 1000 -c 'Full Name' -m -p '$somecryptedpassword$' someuser"
+        ),
+        "mkdir -p homedir",
+        "chown someuser:mygroup homedir",
+    ]),
+    ("add.freebsd.json", "someuser", "FreeBSD", {}, [], {}, {}, {
+        "home": "homedir", "shell": "shellbin", "group": "mygroup",
+        "groups": ("secondary_group", "another"), "uid": 1000, "system": True,
+        "comment": "Full Name", "create_home": True,
+        "password": "$somecryptedpassword$",
+    }, [
+        (
+            "echo '$somecryptedpassword$' | pw useradd -n someuser -H 0"
+            " -d homedir -s shellbin -g mygroup -G secondary_group,another"
+            " -u 1000 -c 'Full Name' -m"
+        ),
+        "mkdir -p homedir",
+        "chown someuser:mygroup homedir",
+    ]),
+    # -m is emitted on OpenBSD too, but never -M (no such flag there).
+    ("add_create_home_skeleton_openbsd.json", "someuser", "OpenBSD", {}, [], {}, {}, {
+        "home": "homedir", "create_home": True, "ensure_home": True,
+    }, [
+        "useradd -d homedir -m someuser",
+        "mkdir -p homedir",
+        "chown someuser:someuser homedir",
+    ]),
+    ("add_no_create_home_skeleton_openbsd.json", "someuser", "OpenBSD", {}, [], {}, {}, {
+        "home": "homedir", "create_home": False, "ensure_home": True,
+    }, [
+        "useradd -d homedir someuser",
+        "mkdir -p homedir",
+        "chown someuser:someuser homedir",
+    ]),
+    ("add_needs_quotes.json", "some user; whoami", "Linux", {}, [], {}, {}, {
+        "home": "/home/evil $(id)", "shell": "/bin/bash",
+        "comment": "Full Name; rm -rf /", "ensure_home": False,
+    }, [
+        (
+            "useradd -d '/home/evil $(id)' -s /bin/bash -c 'Full Name; rm -rf /'"
+            " -M 'some user; whoami'"
+        ),
+    ]),
+    ("add_freebsd_needs_quotes.json", "evil; whoami", "FreeBSD", {}, [], {}, {}, {
+        "home": "/home/evil $(id)", "shell": "/bin/bash",
+        "password": "$evil;password$", "ensure_home": False,
+    }, [
+        (
+            "echo '$evil;password$' | pw useradd -n 'evil; whoami' -H 0"
+            " -d '/home/evil $(id)' -s /bin/bash"
+        ),
+    ]),
+    ("add_groups_needs_quotes.json", "testuser", "Linux", {}, [], {}, {}, {
+        "groups": ("group one", "group; two"), "ensure_home": False,
+    }, [
+        "useradd -d /home/testuser -G 'group one','group; two' -M testuser",
+    ]),
+    # A group of the user's name already exists: useradd is told to use it.
+    ("add_group_exists.json", "someuser", "Linux", {}, ["someuser"], {}, {}, {}, [
+        "useradd -d /home/someuser -g someuser -M someuser",
+        "mkdir -p /home/someuser",
+        "chown someuser:someuser /home/someuser",
+    ]),
+    ("add_group_exists.freebsd.json", "someuser", "FreeBSD", {}, ["someuser"], {}, {}, {}, [
+        "pw useradd -n someuser -d /home/someuser -g someuser",
+        "mkdir -p /home/someuser",
+        "chown someuser:someuser /home/someuser",
+    ]),
+    ("add_non_unique.json", "someuser", "Linux", {}, [], {}, {}, {
+        "unique": False, "ensure_home": False,
+    }, ["useradd -d /home/someuser -o -M someuser"]),
+    ("add_non_unique.freebsd.json", "someuser", "FreeBSD", {}, [], {}, {}, {
+        "unique": False, "ensure_home": False,
+    }, ["pw useradd -n someuser -d /home/someuser -o"]),
+    # A symlinked home is accepted as-is (pyinfra's _no_fail_on_link).
+    ("add_home_is_link.json", "someuser", "Linux", {}, [], {"homedir": False},
+     {"homedir": {"mode": 777}}, {"home": "homedir"},
+     ["useradd -d homedir -M someuser"]),
+    ("add_home_is_link.freebsd.json", "someuser", "FreeBSD", {}, [],
+     {"homedir": False}, {"homedir": {"mode": 777}}, {"home": "homedir"},
+     ["pw useradd -n someuser -d homedir"]),
+    ("delete.json", "someuser", "Linux", {"someuser": {"home": "/home",
+     "shell": "/bin/bash"}}, [], {}, {}, {"present": False},
+     ["userdel someuser"]),
+    ("delete.freebsd.json", "someuser", "FreeBSD", {"someuser": {"home": "/home",
+     "shell": "/bin/bash"}}, [], {}, {}, {"present": False},
+     ["pw userdel -n someuser"]),
+    ("delete_needs_quotes.json", "evil; rm -rf /", "Linux",
+     {"evil; rm -rf /": {"home": "/home", "shell": "/bin/bash"}}, [], {}, {},
+     {"present": False}, ["userdel 'evil; rm -rf /'"]),
+    ("edit.json", "someuser", "Linux", {"someuser": {"comment": "Full Name",
+     "home": "/home/someuser", "shell": "/bin/bash", "group": "nowt",
+     "groups": ["group1", "group2"], "password": "$somepw$"}}, [],
+     {"/home/someotheruser": {"user": "someuser", "group": "somegroup"}}, {}, {
+        "shell": "/bin/false", "group": "somegroup",
+        "groups": ("group1", "group2", "group3"), "home": "/home/someotheruser",
+        "comment": "New Full Name",
+    }, [
+        (
+            "usermod -d /home/someotheruser -s /bin/false -g somegroup"
+            " -G group1,group2,group3 -c 'New Full Name' someuser"
+        ),
+    ]),
+    ("edit.freebsd.json", "someuser", "FreeBSD", {"someuser": {"comment": "Full Name",
+     "home": "/home/someuser", "shell": "/bin/bash", "group": "nowt",
+     "groups": ["group1", "group2"], "password": "$somepw$"}}, [],
+     {"/home/someotheruser": {"user": "someuser", "group": "somegroup"}}, {}, {
+        "shell": "/bin/false", "group": "somegroup",
+        "groups": ("group1", "group2", "group3"), "home": "/home/someotheruser",
+        "comment": "New Full Name",
+    }, [
+        (
+            "pw usermod -n someuser -d /home/someotheruser -s /bin/false"
+            " -g somegroup -G group1,group2,group3 -c 'New Full Name'"
+        ),
+    ]),
+    ("edit_needs_quotes.json", "some user; whoami", "Linux",
+     {"some user; whoami": {"comment": "Old Name", "home": "/home/old",
+      "shell": "/bin/sh", "group": "oldgroup", "groups": [], "password": ""}},
+     [], {}, {}, {
+        "home": "/home/evil $(id)", "shell": "/bin/bash; rm -rf /",
+        "group": "mygroup; inject", "comment": "Full Name; rm -rf /",
+        "ensure_home": False,
+    }, [
+        (
+            "usermod -d '/home/evil $(id)' -s '/bin/bash; rm -rf /'"
+            " -g 'mygroup; inject' -c 'Full Name; rm -rf /' 'some user; whoami'"
+        ),
+    ]),
+    ("append_secondary_groups.json", "someuser", "Linux", {"someuser":
+     {"home": "/home/someuser", "group": "somegroup",
+      "groups": ["group1", "group2"]}}, [],
+     {"/home/someuser": {"user": "someuser", "group": "somegroup"}}, {}, {
+        "group": "somegroup", "groups": ("group3", "group4"), "append": True,
+    }, ["usermod -a -G group3,group4 someuser"]),
+    ("append_secondary_groups.freebsd.json", "someuser", "FreeBSD", {"someuser":
+     {"home": "/home/someuser", "group": "somegroup",
+      "groups": ["group1", "group2"]}}, [],
+     {"/home/someuser": {"user": "someuser", "group": "somegroup"}}, {}, {
+        "group": "somegroup", "groups": ("group3", "group4"), "append": True,
+    }, ["pw usermod -n someuser -a -G group3,group4"]),
+    # append never removes, and membership the user already has is a no-op.
+    ("append_secondary_existing_groups.json", "someuser", "Linux", {"someuser":
+     {"home": "/home/someuser", "group": "somegroup",
+      "groups": ["group1", "group2", "group3"]}}, [],
+     {"/home/someuser": {"user": "someuser", "group": "somegroup"}}, {}, {
+        "group": "somegroup", "groups": ("group1", "group2"), "append": True,
+    }, []),
+    # exists_noop.json: the recorded user already matches, home included.
+    ("exists_noop.json", "someuser", "Linux", {"someuser": {"home": "/home/someuser",
+     "shell": "/bin/bash", "group": "someuser", "groups": [], "comment": "",
+     "password": ""}}, ["someuser"],
+     {"/home/someuser": {"user": "someuser", "group": "someuser"}}, {}, {}, []),
+]
+
+
+@pytest.mark.parametrize(
+    ("fixture", "user", "kernel", "users", "groups", "directories", "links",
+     "kwargs", "expected"),
+    PYINFRA_USER_FIXTURES,
+    ids=[row[0] for row in PYINFRA_USER_FIXTURES],
+)
+async def test_user_matches_pyinfra_operation_fixtures(
+    fixture: str,
+    user: str,
+    kernel: str,
+    users: dict,
+    groups: list,
+    directories: dict,
+    links: dict,
+    kwargs: dict,
+    expected: list[str],
+):
+    host = SimulatedHost(
+        name="h",
+        os_kernel=kernel,
+        os_users=users,
+        os_groups=groups,
+        directory_stats=directories,
+        link_stats=links,
+    )
+    ctx, commands = await materialize(host, op(server.user, user=user, **kwargs))
+    assert [cmd.shell() for cmd in commands] == expected, fixture
+    assert ctx.changed == bool(expected)
+
+
+async def test_user_creates_an_absent_user():
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(host, op(server.user, user="deploy"))
+    assert ctx.changed
+    assert ctx.reason == "user deploy absent, will create; home /home/deploy missing, will create"
+    assert commands == [
+        UserAddCommand(user="deploy", home="/home/deploy", groups=()),
+        _HomeMkdirCommand(path="/home/deploy"),
+        _HomeChownCommand(path="/home/deploy", user="deploy", group="deploy"),
+    ]
+
+
+async def test_user_removes_a_present_user():
+    host = SimulatedHost(name="h", os_users={"deploy": {"home": "/home/deploy"}})
+    ctx, commands = await materialize(
+        host, op(server.user, user="deploy", present=False)
+    )
+    assert ctx.changed
+    assert ctx.reason == "user deploy present, will remove"
+    # The deletion branch never touches the home directory (pyinfra parity).
+    assert commands == [UserDelCommand(user="deploy")]
+
+
+async def test_user_no_change_when_already_absent():
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host, op(server.user, user="deploy", present=False)
+    )
+    assert not ctx.changed
+    assert ctx.reason == "user deploy already absent"
+    assert commands == []
+
+
+async def test_user_home_already_owned_needs_no_command():
+    host = SimulatedHost(
+        name="h",
+        os_users={"deploy": {"home": "/srv/deploy", "group": "deploy"}},
+        directory_stats={"/srv/deploy": {"user": "deploy", "group": "deploy", "mode": 755}},
+    )
+    ctx, commands = await materialize(host, op(server.user, user="deploy"))
+    assert not ctx.changed
+    assert ctx.reason == "user deploy already as requested; directory /srv/deploy already exists"
+    assert commands == []
+
+
+async def test_user_wrong_home_owner_only_chowns():
+    host = SimulatedHost(
+        name="h",
+        os_users={"deploy": {"home": "/srv/deploy", "group": "deploy"}},
+        directory_stats={"/srv/deploy": {"user": "root", "group": "root", "mode": 755}},
+    )
+    ctx, commands = await materialize(host, op(server.user, user="deploy"))
+    assert ctx.changed
+    assert ctx.reason == (
+        "user deploy already as requested; home /srv/deploy owner differs, will chown"
+    )
+    assert commands == [
+        _HomeChownCommand(path="/srv/deploy", user="deploy", group="deploy")
+    ]
+
+
+async def test_user_rejects_a_non_directory_home():
+    # pyinfra's files.directory raises when the path exists as a plain file
+    # and is not a symlink either (_no_fail_on_link only covers links).
+    host = SimulatedHost(
+        name="h",
+        directory_stats={"homedir": False},
+        link_stats={"homedir": False},
+    )
+    with pytest.raises(OperationError, match="homedir exists and is not a directory"):
+        await materialize(host, op(server.user, user="someuser", home="homedir"))
+
+
+async def test_user_update_carries_only_the_differing_fields():
+    host = SimulatedHost(
+        name="h",
+        os_users={
+            "deploy": {
+                "home": "/home/deploy",
+                "shell": "/bin/bash",
+                "group": "web",
+                "groups": ["wheel"],
+                "comment": "Deploy User",
+            }
+        },
+    )
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.user,
+            user="deploy",
+            shell="/bin/bash",
+            group="web",
+            comment="Deploy User",
+            home="/srv/deploy",
+            ensure_home=False,
+        ),
+    )
+    assert ctx.changed
+    assert ctx.reason == "user deploy differs, will update"
+    # Only the home differs: shell/group/comment already match the fact.
+    assert commands == [UserModCommand(user="deploy", home="/srv/deploy", groups=())]
+
+
+async def test_user_password_only_change_on_freebsd_is_one_pipe_command():
+    # FreeBSD has no -p modify flag, so a lone password change yields the
+    # echo | pw -H 0 pipe and no empty argument-less usermod after it.
+    host = SimulatedHost(
+        name="h",
+        os_kernel="FreeBSD",
+        os_users={"deploy": {"home": "/home/deploy", "password": ""}},
+    )
+    _ctx, commands = await materialize(
+        host, op(server.user, user="deploy", password="$new$", ensure_home=False)
+    )
+    assert commands == [UserModCommand(user="deploy", password="$new$", freebsd=True)]
+
+
+async def test_user_uid_zero_is_skipped():
+    # pyinfra's `if uid:` truthiness check: a uid of 0 renders no flag.
+    host = SimulatedHost(name="h")
+    _ctx, commands = await materialize(
+        host, op(server.user, user="deploy", uid=0, ensure_home=False)
+    )
+    assert commands[0].shell() == "useradd -d /home/deploy -M deploy"
+
+
+async def test_user_absorbs_unknown_keyword_arguments():
+    host = SimulatedHost(name="h")
+    _ctx, commands = await materialize(
+        host, op(server.user, user="deploy", _pyinfra_global=True, ensure_home=False)
+    )
+    assert commands == [UserAddCommand(user="deploy", home="/home/deploy", groups=())]
+
+
+async def test_user_groups_kwarg_must_stay_hashable():
+    # op() hashes every argument for compose(dedupe=True), so a list is
+    # rejected at request construction -- the option is tuple-only.
+    with pytest.raises(UnhashableArgumentError):
+        op(server.user, user="deploy", groups=["wheel", "web"])
+    request = op(server.user, user="deploy", groups=("wheel", "web"), ensure_home=False)
+    assert request.kwargs["groups"] == ("wheel", "web")
+
+
+async def test_user_commands_mutate_the_simulated_host():
+    host = SimulatedHost(name="h", os_groups=["web", "wheel", "admins"])
+    await send_command(
+        host,
+        UserAddCommand(
+            user="deploy",
+            home="/srv/deploy",
+            shell_path="/bin/bash",
+            group="web",
+            groups=("wheel",),
+            comment="Deploy User",
+        ),
+    )
+    row = host.os_users["deploy"]
+    assert row["home"] == "/srv/deploy"
+    assert row["shell"] == "/bin/bash"
+    assert row["group"] == "web"
+    assert row["groups"] == ["wheel"]
+    assert row["comment"] == "Deploy User"
+    # The home pair rides the files.directory seams: mkdir then chown.
+    await send_command(host, _HomeMkdirCommand(path="/srv/deploy"))
+    assert host.directory_stats["/srv/deploy"] == {
+        "mode": 755,
+        "user": "root",
+        "group": "root",
+    }
+    await send_command(
+        host, _HomeChownCommand(path="/srv/deploy", user="deploy", group="web")
+    )
+    assert host.directory_stats["/srv/deploy"] == {
+        "mode": 755,
+        "user": "deploy",
+        "group": "web",
+    }
+    # A modify writes only the fields the descriptor carries, and -a unions.
+    await send_command(
+        host, UserModCommand(user="deploy", shell_path="/bin/sh", groups=("admins",), append=True)
+    )
+    assert host.os_users["deploy"]["shell"] == "/bin/sh"
+    assert host.os_users["deploy"]["groups"] == ["wheel", "admins"]
+    await send_command(host, UserModCommand(user="deploy", groups=("web",)))
+    assert host.os_users["deploy"]["groups"] == ["web"]
+    # userdel leaves the home directory alone (no -r is ever emitted).
+    await send_command(host, UserDelCommand(user="deploy"))
+    assert "deploy" not in host.os_users
+    assert "/srv/deploy" in host.directory_stats
+
+
+def ensure_deploy_users(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: create the deploy user, then drop the legacy one."""
+    yield op(
+        server.user,
+        name="Create the deploy user",
+        user="deploy",
+        home="/srv/deploy",
+        shell="/bin/bash",
+        group="web",
+        groups=("wheel",),
+        sudo=True,
+    )
+    yield op(
+        server.user,
+        name="Remove the legacy user",
+        user="legacy",
+        present=False,
+        sudo=True,
+    )
+
+
+def users_only_factory(entry: dict) -> Host:
+    """``host_factory`` building hosts whose only user is the legacy one."""
+    host = SimulatedHost.from_inventory(entry)
+    host.os_users = {"legacy": {"home": "/home/legacy", "group": "legacy"}}
+    host.os_groups = ["web", "wheel"]
+    return host
+
+
+async def test_user_runs_across_hosts_in_lockstep():
+    plans, report, hosts = await run(
+        INVENTORY, ensure_deploy_users, host_factory=users_only_factory
+    )
+    assert [[p.request.name, p.changed] for p in plans["web1"]] == [
+        ["Create the deploy user", True],
+        ["Remove the legacy user", True],
+    ]
+    assert report is not None
+    # Lockstep: every host creates the user before either removes one.
+    assert [e.name for e in report.log] == [
+        "Create the deploy user",
+        "Create the deploy user",
+        "Remove the legacy user",
+        "Remove the legacy user",
+    ]
+    log = format_log(report)
+    assert "$ sudo useradd -d /srv/deploy -s /bin/bash -g web -G wheel -M deploy" in log
+    assert "$ sudo mkdir -p /srv/deploy" in log
+    assert "$ sudo chown deploy:web /srv/deploy" in log
+    assert "$ sudo userdel legacy" in log
+    for host in hosts:
+        assert sorted(host.os_users) == ["deploy"]
+        assert host.directory_stats["/srv/deploy"]["user"] == "deploy"
+
+
+async def test_user_second_prepare_plans_no_change():
+    host = SimulatedHost(name="h", os_groups=["web", "wheel"])
+    host.os_users = {"legacy": {"home": "/home/legacy", "group": "legacy"}}
+    runtimes, plans = await run_prepare([host], ensure_deploy_users)
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    assert [e.changed for e in report.log] == [True, True]
+    # The apply mutated the seams, so a fresh prepare sees the requested
+    # state and plans no change -- the operation is idempotent across runs.
+    runtimes, plans = await run_prepare([host], ensure_deploy_users)
+    assert [p.changed for p in plans["h"]] == [False, False]
+    assert [p.reason for p in plans["h"]] == [
+        "user deploy already as requested; directory /srv/deploy already exists",
+        "user legacy already absent",
+    ]
+
+
+async def test_user_duplicate_requests_no_op_only_in_apply():
+    def twice(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.user, name="Create deploy", user="deploy", ensure_home=False, sudo=True
+        )
+        yield op(
+            server.user,
+            name="Create deploy again",
+            user="deploy",
+            ensure_home=False,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], twice)
+    # The prepare cache persists across a host's requests and prepare never
+    # sends, so both identical requests plan a change...
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # ...while the per-step cache recreation makes the second a no-op.
+    assert [e.changed for e in report.log] == [True, False]
+    assert sorted(host.os_users) == ["deploy"]
+
+
+async def test_user_dry_run_sends_nothing():
+    _plans, report, hosts = await run(
+        INVENTORY, ensure_deploy_users, host_factory=users_only_factory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert sorted(host.os_users) == ["legacy"]
+        assert host.directory_stats == {}
+
+
+async def test_user_never_branches_on_the_home_state():
+    # The ensure_home probes are awaited on every pass, so the request
+    # sequence cannot depend on what they return: an owned directory, a
+    # symlinked path and an absent one all take the same fact reads and
+    # plan the identical (empty) command list for an up-to-date user.
+    for directories, links in (
+        ({"homedir": {"user": "someuser", "group": "someuser"}}, {}),
+        ({"homedir": False}, {"homedir": {"mode": 777}}),
+    ):
+        host = SimulatedHost(
+            name="h",
+            os_users={"someuser": {"home": "homedir", "group": "someuser"}},
+            directory_stats=directories,
+            link_stats=links,
+        )
+        ctx, commands = await materialize(
+            host, op(server.user, user="someuser", home="homedir")
+        )
+        assert not ctx.changed
+        assert commands == []
+
+
+async def test_user_home_probe_facts_are_the_server_local_stand_ins():
+    # The zero-cross-module-import invariant keeps the home probes private
+    # to the server namespace, but they must read exactly the seams the
+    # files facts use and shell out the same guarded forms.
+    assert _HomeDirectory.command("/srv/deploy").startswith("test -d /srv/deploy && ")
+    assert "stat -c 'user=%U group=%G'" in _HomeDirectory.command("/srv/deploy")
+    assert _HomeIsLink.command("/srv/deploy") == "test -L /srv/deploy && echo yes"
+    host = CannedShellHost("")
+    assert await _HomeDirectory.process(host, "/srv/deploy") is None
+    assert host.shells == [_HomeDirectory.command("/srv/deploy")]
+    host = CannedShellHost("user=someuser group=mygroup")
+    assert await _HomeDirectory.process(host, "homedir") == {
+        "user": "someuser",
+        "group": "mygroup",
+    }
+    host = CannedShellHost("/srv/deploy: not a directory")
+    assert await _HomeDirectory.process(host, "/srv/deploy") is False
+    assert await _HomeIsLink.process(CannedShellHost("yes"), "homedir") is True
 
 
 # --- hostname operation -------------------------------------------------------
@@ -5003,3 +6029,624 @@ async def test_wait_service_times_out_and_aborts_the_run():
 
     with pytest.raises(WaitTimeoutError, match=r"host web1: .*'inactive'"):
         await run(INVENTORY, wait_only, host_factory=stopped_factory)
+
+
+# --- server.wait (port) -------------------------------------------------------
+
+# The seam record every port-wait test seeds: an owned listener on :8080.
+_LISTENING_8080 = PortInfo(listening=True, process="nginx", pid=4242)
+
+
+class FlippingPortHost(Host):
+    """A host whose simulated port opens after ``flip_after`` reads.
+
+    Drives the real poll loop over the ``Port`` fact without a transport:
+    ``Port`` reads the ``listening_ports`` seam, and each read is counted so
+    the test can assert how many polls the loop made.
+    """
+
+    def __init__(self, flip_after: int):
+        super().__init__(name="flipping-port")
+        self.flip_after = flip_after
+        self.reads = 0
+
+    @property
+    def listening_ports(self) -> dict[tuple[str, int], PortInfo]:
+        self.reads += 1
+        if self.reads < self.flip_after:
+            return {}
+        return {("tcp", 8080): _LISTENING_8080}
+
+
+def port_wait_cmd(
+    port: int = 8080,
+    protocol: str = "tcp",
+    timeout: float = 0.0,
+    interval: float = 0.0,
+) -> WaitForFactCommand:
+    return WaitForFactCommand(
+        fact_cls=Port,
+        args=(port, protocol),
+        predicate=is_listening,
+        timeout=timeout,
+        interval=interval,
+    )
+
+
+def test_port_wait_descriptor_renders_without_shell():
+    cmd = port_wait_cmd(protocol="udp", timeout=30.0, interval=0.5)
+    assert not hasattr(cmd, "shell")
+    assert (
+        command_shell(cmd)
+        == "wait for Port(8080, 'udp') <is_listening> every 0.5s up to 30.0s"
+    )
+
+
+def test_port_wait_descriptor_is_hashable_and_value_equal():
+    assert port_wait_cmd() == port_wait_cmd()
+    assert hash(port_wait_cmd()) == hash(port_wait_cmd())
+
+
+async def test_port_wait_polls_until_the_port_opens():
+    # A generous deadline with a zero interval: the loop yields to the event
+    # loop between polls but never actually sleeps.
+    host = FlippingPortHost(flip_after=3)
+    assert await port_wait_cmd(timeout=60.0).wait(host) == "condition met after 3 poll(s)"
+    assert host.reads == 3
+
+
+async def test_port_wait_times_out_with_the_last_record():
+    # The deadline is checked after the first poll, so the message carries the
+    # record that failed -- listening False, owner and all.
+    host = FlippingPortHost(flip_after=99)
+    with pytest.raises(WaitTimeoutError, match=r"not met within 0.0s.*'listening': False"):
+        await port_wait_cmd().wait(host)
+    assert host.reads == 1
+
+
+async def test_simulated_host_evaluates_a_port_wait_once():
+    met = SimulatedHost(name="h", listening_ports={("tcp", 8080): _LISTENING_8080})
+    await send_command(met, port_wait_cmd(timeout=60.0))
+
+    unmet = SimulatedHost(name="h")
+    with pytest.raises(WaitTimeoutError, match="'listening': False"):
+        await send_command(unmet, port_wait_cmd(timeout=60.0))
+
+
+async def test_wait_always_yields_and_reads_no_facts():
+    host = SimulatedHost(name="h", listening_ports={("tcp", 8080): _LISTENING_8080})
+    cache = FactCache(host, phase="test")
+    ctx = OpContext(host=host, facts=cache)
+    request = op(server.wait, port=8080, timeout=30.0, interval=0.5)
+    commands = [cmd async for cmd in request.func(ctx, **request.kwargs)]
+    assert ctx.changed
+    assert ctx.reason == "wait for tcp port 8080 to be listening"
+    assert commands == [port_wait_cmd(timeout=30.0, interval=0.5)]
+    assert cache._data == {}
+
+
+async def test_wait_defaults_to_tcp_and_a_one_second_interval():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="test"))
+    request = op(server.wait, port=8080)
+    (cmd,) = [cmd async for cmd in request.func(ctx, **request.kwargs)]
+    assert cmd.args == (8080, "tcp")
+    assert cmd.predicate is is_listening
+    assert cmd.timeout == 300.0
+    assert cmd.interval == 1.0
+
+
+async def test_wait_rejects_a_bad_port_or_protocol_at_plan_time():
+    # The check is in the generator body, so the deploy fails on the request
+    # rather than deep inside the driver's poll loop.
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="test"))
+    with pytest.raises(TypeError, match="port must be an int"):
+        async for _ in server.wait(ctx, port="80 || 1"):
+            pass
+    with pytest.raises(ValueError, match="protocol must be one of"):
+        async for _ in server.wait(ctx, port=8080, protocol="sctp"):
+            pass
+
+
+async def test_wait_absorbs_unknown_keyword_arguments():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="test"))
+    request = op(server.wait, port=8080, ignore_errors=True)
+    commands = [cmd async for cmd in request.func(ctx, **request.kwargs)]
+    assert commands == [port_wait_cmd(timeout=300.0, interval=1.0)]
+
+
+def wait_for_port(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: wait for the service port to start listening."""
+    yield op(server.wait, name="Wait for :8080", port=8080, timeout=5.0, interval=1.0)
+
+
+def listening_factory(entry: dict) -> Host:
+    """``host_factory`` building SimulatedHosts whose :8080 is listening."""
+    host = SimulatedHost.from_inventory(entry)
+    host.listening_ports = {("tcp", 8080): _LISTENING_8080}  # fresh dict per host
+    return host
+
+
+def closed_factory(entry: dict) -> Host:
+    """``host_factory`` building SimulatedHosts with nothing listening."""
+    host = SimulatedHost.from_inventory(entry)
+    host.listening_ports = {}  # fresh dict per host
+    return host
+
+
+async def test_wait_runs_across_hosts_in_lockstep():
+    plans, report, _hosts = await run(
+        INVENTORY, wait_for_port, host_factory=listening_factory
+    )
+    # The wait is always a change, on every host, and it passed on both.
+    assert [p.changed for p in plans["web1"]] == [True]
+    assert [p.changed for p in plans["web2"]] == [True]
+    assert report is not None
+    assert [e.name for e in report.log] == ["Wait for :8080", "Wait for :8080"]
+    assert (
+        "$ wait for Port(8080, 'tcp') <is_listening> every 1.0s up to 5.0s"
+        in format_log(report)
+    )
+
+
+async def test_wait_is_deterministic_across_phases():
+    # The wait is planned unconditionally, so even with the port already
+    # listening the apply-phase request sequence matches the plan and the
+    # determinism guard stays quiet.
+    host = SimulatedHost(name="h", listening_ports={("tcp", 8080): _LISTENING_8080})
+    runtimes, plans = await run_prepare([host], wait_for_port)
+    assert [p.changed for p in plans["h"]] == [True]
+    report = await run_apply(runtimes, plans=plans)
+    assert [e.changed for e in report.log] == [True]
+
+
+async def test_wait_never_converges():
+    # Unlike a state operation, a wait plans as a change every time: the port
+    # is discovered at apply time, so a second prepare is no less a change.
+    hosts = [SimulatedHost(name="h", listening_ports={("tcp", 8080): _LISTENING_8080})]
+    for _ in range(2):
+        _runtimes, plans = await run_prepare(hosts, wait_for_port)
+        assert [p.changed for p in plans["h"]] == [True]
+
+
+async def test_wait_dry_run_sends_nothing():
+    # These hosts' port is closed, so a clean dry run proves the plan never
+    # evaluates the predicate -- a real run below aborts on it.
+    _plans, report, hosts = await run(
+        INVENTORY, wait_for_port, host_factory=closed_factory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert host.listening_ports == {}
+
+
+async def test_wait_times_out_and_aborts_the_run():
+    with pytest.raises(WaitTimeoutError, match=r"host web1: .*'listening': False"):
+        await run(INVENTORY, wait_for_port, host_factory=closed_factory)
+
+
+# --- server.user_authorized_keys --------------------------------------------
+
+# pyinfra's own operation fixtures (tests/operations/server.user_authorized_
+# keys/) use these two keys; reused verbatim here for parity.
+UA_KEY_A = "ssh-ed25519 AAAAkey1 alice"
+UA_KEY_B = "ssh-rsa AAAAkey2 bob"
+UA_USER = "someuser"
+UA_HOME = "/home/someuser"
+UA_SSH_DIR = "/home/someuser/.ssh"
+UA_KEYS_FILE = "/home/someuser/.ssh/authorized_keys"
+# The newline-guard inner script pyinfra's ``files.line`` renders -- the
+# text inside the ``sh -c '...'`` wrapper the descriptor emits.
+UA_APPEND_INNER_TEMPLATE = (
+    "( [ $(tail -c1 {path} | wc -l) -eq 0 ] && echo ; echo '{key}' ) >> {path}"
+)
+
+
+def test_keys_chmod_touch_shell_rendering():
+    # Fixed-mode chmod and the plain touch mirror pyinfra's own chmod/touch
+    # helper shape: unquoted mode digit string, shell-quoted path.
+    assert _KeysChmodCommand(path=UA_SSH_DIR, mode=700).shell() == f"chmod 700 {UA_SSH_DIR}"
+    assert _KeysChmodCommand(path="/home/evil $(id)", mode=600).shell() == (
+        "chmod 600 '/home/evil $(id)'"
+    )
+    assert _KeysTouchCommand(path=UA_KEYS_FILE).shell() == f"touch {UA_KEYS_FILE}"
+    # Elevation prepends sudo to the whole shell (unprivileged touch/chmod
+    # would otherwise fail on another user's ~/.ssh).
+    assert command_shell(_KeysChmodCommand(path=UA_SSH_DIR, mode=700), sudo=True) == (
+        f"sudo chmod 700 {UA_SSH_DIR}"
+    )
+    assert command_shell(_KeysTouchCommand(path=UA_KEYS_FILE), sudo=True) == (
+        f"sudo touch {UA_KEYS_FILE}"
+    )
+
+
+def test_authorized_keys_append_command_shell_rendering():
+    cmd = AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_B)
+    # The outer shlex quoting escapes the inner single quotes, so a raw
+    # substring never matches: recover the inner script with shlex.split
+    # and assert against pyinfra's own fixture text (deviation: reemote5
+    # quotes the path defensively, where pyinfra leaves it bare).
+    inner = shlex.split(cmd.shell())[2]
+    assert inner == UA_APPEND_INNER_TEMPLATE.format(path=UA_KEYS_FILE, key=UA_KEY_B)
+    # An unsafe key/path payload stays a single-quoted token inside the
+    # inner script -- the whole inner then rides the outer sh -c wrapper.
+    evil = AuthorizedKeysAppendCommand(
+        path="/home/evil; rm -rf /", key="ssh-rsa AAAA evil; whoami"
+    )
+    evil_inner = shlex.split(evil.shell())[2]
+    assert "'ssh-rsa AAAA evil; whoami'" in evil_inner
+    assert "'/home/evil; rm -rf /'" in evil_inner
+    # Sudo elevates the whole sh -c, so the >> redirect opens the 600-mode
+    # key file as the elevated shell rather than the login user.
+    assert command_shell(cmd, sudo=True) == f"sudo {cmd.shell()}"
+
+
+@pytest.mark.parametrize(
+    ("seed", "kwargs", "expected"),
+    [
+        # pyinfra's all_keys_present.json: a fully-correct directory/file
+        # pair plus every requested key already listed -> no commands.
+        (
+            {
+                "directory_stats": {UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
+                "file_stats": {UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
+                "authorized_keys": {UA_KEYS_FILE: [UA_KEY_A, UA_KEY_B]},
+            },
+            {"public_keys": (UA_KEY_A, UA_KEY_B)},
+            [],
+        ),
+        # pyinfra's append_missing_only.json: one key already listed, the
+        # other absent -> one append of only the missing one.
+        (
+            {
+                "directory_stats": {UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
+                "file_stats": {UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
+                "authorized_keys": {UA_KEYS_FILE: [UA_KEY_A]},
+            },
+            {"public_keys": (UA_KEY_A, UA_KEY_B)},
+            [AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_B)],
+        ),
+        # pyinfra's long_inline_key_not_a_file.yaml: an inline key longer
+        # than PATH_MAX still appends because reemote5 never treats
+        # public_keys entries as controller-side paths (dropped branch).
+        (
+            {
+                "directory_stats": {UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
+                "file_stats": {UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
+                "authorized_keys": {UA_KEYS_FILE: []},
+            },
+            {"public_keys": ("ssh-rsa " + "A" * 2000 + " bob",)},
+            [
+                AuthorizedKeysAppendCommand(
+                    path=UA_KEYS_FILE, key="ssh-rsa " + "A" * 2000 + " bob"
+                )
+            ],
+        ),
+    ],
+)
+async def test_user_authorized_keys_matches_pyinfra_operation_fixtures(
+    seed: dict, kwargs: dict, expected: list
+):
+    host = SimulatedHost(
+        name="h", home_directories={UA_USER: UA_HOME}, **seed
+    )
+    ctx, commands = await materialize(
+        host, op(server.user_authorized_keys, user=UA_USER, **kwargs)
+    )
+    assert [cmd for cmd in commands] == expected
+    assert ctx.changed == bool(expected)
+
+
+async def test_user_authorized_keys_creates_missing_dir_and_file_and_appends():
+    # Fresh host with the user's home known: mkdir -p + chmod 700 + chown
+    # for the .ssh directory, then touch + chmod 600 + chown for the key
+    # file, then one append per requested key in caller order.
+    host = SimulatedHost(name="h", home_directories={UA_USER: UA_HOME})
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.user_authorized_keys,
+            user=UA_USER,
+            public_keys=(UA_KEY_A, UA_KEY_B),
+        ),
+    )
+    assert ctx.changed
+    assert ctx.reason == (
+        f"{UA_SSH_DIR} missing, will create; {UA_KEYS_FILE} missing, "
+        "will create; 2 key(s) missing, will append"
+    )
+    assert commands == [
+        _HomeMkdirCommand(path=UA_SSH_DIR),
+        _KeysChmodCommand(path=UA_SSH_DIR, mode=700),
+        _HomeChownCommand(path=UA_SSH_DIR, user=UA_USER, group=UA_USER),
+        _KeysTouchCommand(path=UA_KEYS_FILE),
+        _KeysChmodCommand(path=UA_KEYS_FILE, mode=600),
+        _HomeChownCommand(path=UA_KEYS_FILE, user=UA_USER, group=UA_USER),
+        AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_A),
+        AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_B),
+    ]
+
+
+async def test_user_authorized_keys_noop_when_everything_matches():
+    host = SimulatedHost(
+        name="h",
+        home_directories={UA_USER: UA_HOME},
+        directory_stats={UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
+        file_stats={UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
+        authorized_keys={UA_KEYS_FILE: [UA_KEY_A]},
+    )
+    ctx, commands = await materialize(
+        host, op(server.user_authorized_keys, user=UA_USER, public_keys=UA_KEY_A)
+    )
+    assert not ctx.changed
+    assert ctx.reason == (
+        f"directory {UA_SSH_DIR} already exists; file {UA_KEYS_FILE} already exists"
+    )
+    assert commands == []
+
+
+async def test_user_authorized_keys_fixes_directory_mode_only():
+    host = SimulatedHost(
+        name="h",
+        home_directories={UA_USER: UA_HOME},
+        directory_stats={UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 755}},
+        file_stats={UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
+        authorized_keys={UA_KEYS_FILE: [UA_KEY_A]},
+    )
+    ctx, commands = await materialize(
+        host, op(server.user_authorized_keys, user=UA_USER, public_keys=UA_KEY_A)
+    )
+    assert ctx.changed
+    assert commands == [_KeysChmodCommand(path=UA_SSH_DIR, mode=700)]
+
+
+async def test_user_authorized_keys_fixes_directory_owner_only():
+    # A ``group`` option overrides the chown target (pyinfra's ``group or
+    # user`` shape): a mismatch against the requested group yields a chown
+    # while the mode already matches.
+    host = SimulatedHost(
+        name="h",
+        home_directories={UA_USER: UA_HOME},
+        directory_stats={UA_SSH_DIR: {"user": UA_USER, "group": "root", "mode": 700}},
+        file_stats={UA_KEYS_FILE: {"user": UA_USER, "group": "root", "mode": 600}},
+        authorized_keys={UA_KEYS_FILE: [UA_KEY_A]},
+    )
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.user_authorized_keys,
+            user=UA_USER,
+            public_keys=UA_KEY_A,
+            group="sshusers",
+        ),
+    )
+    assert ctx.changed
+    assert commands == [
+        _HomeChownCommand(path=UA_SSH_DIR, user=UA_USER, group="sshusers"),
+        _HomeChownCommand(path=UA_KEYS_FILE, user=UA_USER, group="sshusers"),
+    ]
+
+
+async def test_user_authorized_keys_fixes_file_mode_and_appends():
+    host = SimulatedHost(
+        name="h",
+        home_directories={UA_USER: UA_HOME},
+        directory_stats={UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
+        file_stats={UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 644}},
+        authorized_keys={UA_KEYS_FILE: []},
+    )
+    ctx, commands = await materialize(
+        host, op(server.user_authorized_keys, user=UA_USER, public_keys=(UA_KEY_A,))
+    )
+    assert ctx.changed
+    assert commands == [
+        _KeysChmodCommand(path=UA_KEYS_FILE, mode=600),
+        AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_A),
+    ]
+
+
+async def test_user_authorized_keys_raises_on_wrong_typed_directory():
+    # A regular file where the .ssh directory must live: pyinfra's
+    # files.directory raises its OperationError with the same wording.
+    host = SimulatedHost(
+        name="h",
+        home_directories={UA_USER: UA_HOME},
+        directory_stats={UA_SSH_DIR: False},
+    )
+    with pytest.raises(OperationError, match="exists and is not a directory"):
+        await materialize(
+            host, op(server.user_authorized_keys, user=UA_USER, public_keys=UA_KEY_A)
+        )
+
+
+async def test_user_authorized_keys_raises_on_wrong_typed_file():
+    host = SimulatedHost(
+        name="h",
+        home_directories={UA_USER: UA_HOME},
+        directory_stats={UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
+        file_stats={UA_KEYS_FILE: False},
+    )
+    with pytest.raises(OperationError, match="exists and is not a file"):
+        await materialize(
+            host, op(server.user_authorized_keys, user=UA_USER, public_keys=UA_KEY_A)
+        )
+
+
+async def test_user_authorized_keys_honours_custom_directory_and_filename():
+    # The two directory/filename options bypass the Home read entirely,
+    # so an unseeded home_directories seam never causes a "None/.ssh" path.
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.user_authorized_keys,
+            user=UA_USER,
+            public_keys=(UA_KEY_A,),
+            authorized_key_directory="/etc/ssh/keys",
+            authorized_key_filename="alice",
+        ),
+    )
+    assert ctx.changed
+    assert commands == [
+        _HomeMkdirCommand(path="/etc/ssh/keys"),
+        _KeysChmodCommand(path="/etc/ssh/keys", mode=700),
+        _HomeChownCommand(path="/etc/ssh/keys", user=UA_USER, group=UA_USER),
+        _KeysTouchCommand(path="/etc/ssh/keys/alice"),
+        _KeysChmodCommand(path="/etc/ssh/keys/alice", mode=600),
+        _HomeChownCommand(path="/etc/ssh/keys/alice", user=UA_USER, group=UA_USER),
+        AuthorizedKeysAppendCommand(path="/etc/ssh/keys/alice", key=UA_KEY_A),
+    ]
+
+
+async def test_user_authorized_keys_absorbs_unknown_kwargs():
+    # ``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    # strips name/sudo/su, the rest is ignored.
+    host = SimulatedHost(
+        name="h",
+        home_directories={UA_USER: UA_HOME},
+        directory_stats={UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
+        file_stats={UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
+        authorized_keys={UA_KEYS_FILE: [UA_KEY_A]},
+    )
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.user_authorized_keys,
+            user=UA_USER,
+            public_keys=(UA_KEY_A,),
+            future_flag=True,
+        ),
+    )
+    assert commands == []
+    assert not ctx.changed
+
+
+async def test_append_authorized_key_seam_updates_every_store():
+    # send_command must keep remote_files, existing_files, file_stats and
+    # the authorized_keys path-keyed seam in lockstep so the next step's
+    # fact cache sees the appended key and the operation becomes a no-op.
+    host = SimulatedHost(name="h")
+    await send_command(
+        host, AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_A)
+    )
+    assert host.remote_files[UA_KEYS_FILE] == f"{UA_KEY_A}\n".encode()
+    assert UA_KEYS_FILE in host.existing_files
+    assert host.file_stats[UA_KEYS_FILE]["size"] == len(f"{UA_KEY_A}\n")
+    assert host.authorized_keys[UA_KEYS_FILE] == [UA_KEY_A]
+    # A second append on the newline-terminated file inserts no leading
+    # blank line and lands the key once.
+    await send_command(
+        host, AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_B)
+    )
+    assert host.remote_files[UA_KEYS_FILE] == f"{UA_KEY_A}\n{UA_KEY_B}\n".encode()
+    assert host.authorized_keys[UA_KEYS_FILE] == [UA_KEY_A, UA_KEY_B]
+    # The newline guard: content not ending in \n gets a leading newline
+    # before the appended key so a partial last line is never glued.
+    host2 = SimulatedHost(name="h", remote_files={UA_KEYS_FILE: b"trailing"})
+    await send_command(
+        host2, AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_A)
+    )
+    assert host2.remote_files[UA_KEYS_FILE] == f"trailing\n{UA_KEY_A}\n".encode()
+
+
+async def test_keys_chmod_and_touch_seam_rides_files_mutators():
+    # _KeysChmodCommand/_KeysTouchCommand dispatch to the same chmod_path/
+    # create_file mutators files.ChmodCommand/FileCommand use, so an
+    # existing 644 row flips to 600 and a fresh touch seeds one.
+    host = SimulatedHost(name="h", file_stats={UA_KEYS_FILE: {"mode": 644, "user": "root", "group": "root"}})
+    await send_command(host, _KeysChmodCommand(path=UA_KEYS_FILE, mode=600))
+    assert host.file_stats[UA_KEYS_FILE]["mode"] == 600
+    host2 = SimulatedHost(name="h")
+    await send_command(host2, _KeysTouchCommand(path=UA_KEYS_FILE))
+    assert host2.file_stats[UA_KEYS_FILE] == {
+        "mode": 644,
+        "user": "root",
+        "group": "root",
+    }
+    assert UA_KEYS_FILE in host2.existing_files
+
+
+def keys_deploy(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: attach one key to someuser (elevated)."""
+    yield op(
+        server.user_authorized_keys,
+        name=f"Authorise {UA_USER}",
+        user=UA_USER,
+        public_keys=(UA_KEY_A,),
+        sudo=True,
+    )
+
+
+def ua_seed_factory(entry: dict) -> Host:
+    """A SimulatedHost whose user has a home but no .ssh yet."""
+    host = SimulatedHost.from_inventory(entry)
+    host.home_directories = {UA_USER: UA_HOME}
+    return host
+
+
+async def test_user_authorized_keys_end_to_end_creates_then_noops():
+    plans, report, hosts = await run(
+        INVENTORY, keys_deploy, host_factory=ua_seed_factory
+    )
+    # Both hosts planned every mkdir/chmod/chown/touch/append under sudo.
+    assert [p.changed for p in plans["web1"]] == [True]
+    (entry,) = report.log[0:1]
+    assert entry.changed
+    log = format_log(report)
+    assert "$ sudo mkdir -p /home/someuser/.ssh" in log
+    assert "$ sudo chmod 700 /home/someuser/.ssh" in log
+    assert f"sudo chown {UA_USER}:{UA_USER} /home/someuser/.ssh" in log
+    assert "$ sudo touch /home/someuser/.ssh/authorized_keys" in log
+    assert "$ sudo chmod 600 /home/someuser/.ssh/authorized_keys" in log
+    assert "sh -c" in log
+    assert UA_KEY_A in log
+    for host in hosts:
+        assert host.authorized_keys[UA_KEYS_FILE] == [UA_KEY_A]
+    # The apply mutated the seams; a second run is a no-op.
+    plans2, _report2, _hosts2 = await run(
+        INVENTORY, keys_deploy, host_factory=ua_seed_factory
+    )
+    # Fresh host_factory -> fresh seams, so this second run creates again.
+    assert [p.changed for p in plans2["web1"]] == [True]
+
+
+async def test_user_authorized_keys_repeat_request_is_noop_in_apply():
+    def twice(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.user_authorized_keys,
+            name="Authorise first",
+            user=UA_USER,
+            public_keys=(UA_KEY_A,),
+            sudo=True,
+        )
+        yield op(
+            server.user_authorized_keys,
+            name="Authorise again",
+            user=UA_USER,
+            public_keys=(UA_KEY_A,),
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h", home_directories={UA_USER: UA_HOME})
+    runtimes, plans = await run_prepare([host], twice)
+    # Prepare shares one cache across the two requests and never sends, so
+    # both identical requests plan a change...
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # ...while the per-step cache recreation makes the second a no-op.
+    assert [e.changed for e in report.log] == [True, False]
+    assert host.authorized_keys[UA_KEYS_FILE] == [UA_KEY_A]
+
+
+async def test_user_authorized_keys_dry_run_sends_nothing():
+    _plans, report, hosts = await run(
+        INVENTORY, keys_deploy, host_factory=ua_seed_factory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert host.authorized_keys == {}
+        assert UA_SSH_DIR not in host.directory_stats
+        assert UA_KEYS_FILE not in host.file_stats
+

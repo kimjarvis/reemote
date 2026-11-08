@@ -15,7 +15,8 @@ command descriptors they yield,
 (``DnfPackages``, ``DnfRepositories``, ``DnfEnabledModules``,
 ``DnfDisabledModules``) beside the ``packages`` operation and the typed
 command descriptors it yields, ``modules/files/files.py`` holds
-``FileLink``/``FileExists`` beside the ``link``/``file`` operations,
+``FileLink``/``FileExists``/``Link``/``SameFile`` beside the
+``link``/``file`` operations,
 ``modules/firewalld/firewalld.py`` holds the ``FirewalldStatus``,
 ``FirewalldDefaultZone``, ``FirewalldZones``, ``FirewalldServices``,
 ``FirewalldIpSets`` and ``FirewalldPolicies`` facts beside the ``zone``,

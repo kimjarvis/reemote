@@ -4,8 +4,10 @@
 """Run every documented example and capture the output in a log.
 
 This is a *usage* helper, not part of the library. It discovers every
-``*.py`` script under ``examples/`` (recursively, sorted by path) -- the
-full tree documented in ``docs/examples.md``: ``examples/modules/<ns>/``,
+``*.py`` script under ``examples/`` (recursively, sorted by path, minus
+any script under the directories listed in ``EXCLUDED_DIRS`` -- currently
+the state-mutating ``examples/modules/selinux/`` namespace) -- the full
+tree documented in ``docs/examples.md``: ``examples/modules/<ns>/``,
 ``examples/actions/`` and ``examples/demonstrations/<topic>/`` -- runs
 each one as a subprocess with the current interpreter, and writes the
 combined stdout/stderr of every run -- framed by a header naming the
@@ -37,9 +39,17 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 EXAMPLES_DIRS = (PROJECT_ROOT / "examples",)
+# Example scripts under these directories (relative to the project root)
+# are skipped by the sweep.
+EXCLUDED_DIRS = (PROJECT_ROOT / "examples" / "modules" / "selinux",)
 LOG_PATH = PROJECT_ROOT / "examples.log"
 
 SEPARATOR = "=" * 78
+
+
+def is_excluded(script: Path) -> bool:
+    """Whether the example script lives under one of the excluded dirs."""
+    return any(directory in script.parents for directory in EXCLUDED_DIRS)
 
 
 def run_example(script: Path) -> tuple[int, float, str]:
@@ -78,7 +88,10 @@ def failure_reason(output: str) -> str:
 
 def main() -> int:
     scripts = sorted(
-        path for directory in EXAMPLES_DIRS for path in directory.rglob("*.py")
+        path
+        for directory in EXAMPLES_DIRS
+        for path in directory.rglob("*.py")
+        if not is_excluded(path)
     )
     if not scripts:
         dirs = ", ".join(str(directory) for directory in EXAMPLES_DIRS)

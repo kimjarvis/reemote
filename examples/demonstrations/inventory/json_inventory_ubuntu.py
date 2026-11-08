@@ -119,7 +119,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     yield op(
         files.file,
         name="Remove default homepage",
-        src=APACHE_INDEX_HTML,
+        path=APACHE_INDEX_HTML,
         present=False,
         sudo=True,
     )

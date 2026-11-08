@@ -20,26 +20,39 @@ This is a *usage* example, not part of the library. It drives the
    apply in lockstep across hosts, with ``format_log`` showing every
    command and whether it changed anything.
 
-The operation is idempotent: it reads the link's current target through the
-``FileLink`` fact (``readlink`` over SSH) and yields a ``LinkCommand`` only
-when it differs -- ``ln -sf`` creates or retargets the link, and
-``present=False`` would remove it with ``rm -f``. The deploy ensures the
-same link twice to prove it: the second request is a guaranteed no-op
-because the first request's ``ln -sf`` is visible to it through the fresh
-per-step fact cache -- exactly the "act, then read" property the lockstep
-apply phase provides.
+The operation is idempotent: it reads the link's current target and
+metadata through the ``Link`` fact (the stat/ls chain over SSH) and
+yields commands only where they differ -- ``ln -s`` (plain ``ln`` with
+``symbolic=False``) creates a missing link, a link pointing at another
+target is removed (``rm -f``) and recreated (never ``ln -sf``),
+``user``/``group`` ownership is edited with ``chown -h`` (the link
+itself, never its target), and ``present=False`` removes it with
+``rm -f``. A missing parent directory is ``mkdir -p``'d first unless
+``create_remote_dir=False``, and a path held by a regular file or
+directory raises unless ``force=True`` removes it first (pyinfra's
+timestamped ``force_backup`` is deliberately dropped -- the
+``datetime.now()`` in the ``mv`` would differ between the phases).
+The deploy ensures the same link twice to prove it: the second request
+is a guaranteed no-op because the first request's ``ln -s`` is visible
+to it through the fresh per-step fact cache -- exactly the "act, then
+read" property the lockstep apply phase provides.
 
-Note the readlink-based presence check only sees *symlinks*: removing a
-regular file needs ``files.file`` (see ``files_op_file.py``), whose
-``FileExists`` fact is a boolean existence probe. The link lives under the
-login user's home directory, so no ``sudo``/``su`` elevation is needed; a
-root-owned link path would carry ``sudo=True`` on the request instead.
+Hard links (``symbolic=False``) need a second reading: the ``Link``
+fact answers ``False`` for one, so the operation re-reads the path
+through ``File`` and asks ``SameFile`` whether that file already *is*
+the target. Link removals of regular files need ``force=True`` or
+``files.file`` (see ``files_op_file.py``). The link lives under the
+login user's home directory, so no ``sudo``/``su`` elevation is needed;
+the link's parent directory already exists, so ``create_remote_dir``
+probes it and leaves it alone. A root-owned link path would instead
+carry ``sudo=True`` on the request.
 
 Unlike the pytest suite -- which injects the test framework's
 ``SimulatedHost`` via ``run``'s ``host_factory`` and never touches the
 network -- this example uses the *default* factory
 (``Host.from_inventory``): each plain ``Host`` lazily opens an asyncssh
-connection, reads the link for real, and runs ``ln -sf`` when it differs.
+connection, reads the link for real, and runs ``ln -s`` (or the
+``rm -f`` + ``ln -s`` relink pair) when it differs.
 
 Run it with::
 
@@ -98,8 +111,8 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     apply phases (a branch on a mutable fact would raise DeterminismError).
     Neither request is elevated: the link path is login-user writable.
     """
-    yield op(files.link, name="Ensure link", src=LINK_PATH, target=LINK_TARGET)
-    yield op(files.link, name="Re-ensure link", src=LINK_PATH, target=LINK_TARGET)
+    yield op(files.link, name="Ensure link", path=LINK_PATH, target=LINK_TARGET)
+    yield op(files.link, name="Re-ensure link", path=LINK_PATH, target=LINK_TARGET)
 
 
 async def main() -> None:
@@ -112,8 +125,9 @@ async def main() -> None:
         print(format_plan(plans))
 
         # Real run: prepare, then apply in lockstep across hosts. The first
-        # request runs ln -sf when the link is missing or wrong; the second
-        # sees the corrected link and reports no change.
+        # request runs ln -s -- or the rm -f + ln -s relink pair -- when
+        # the link is missing or wrong; the second sees the corrected link
+        # and reports no change.
         plans, report, _hosts = await run(INVENTORY, deploy)
         print("\n== Run log (apply phase) ==")
         assert report is not None

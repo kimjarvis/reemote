@@ -639,6 +639,16 @@ WEB_INITIAL_STATE = {
     "web2": {
         "packages": {"nginx": [""]},
         "links": {NGINX_DEFAULT_SITE: DEFAULT_TARGET},
+        # ``files.link`` now stats the path through the ``Link`` fact, so
+        # the pre-deployment link needs its stat row alongside the target.
+        "link_stats": {
+            NGINX_DEFAULT_SITE: {
+                "mode": 777,
+                "user": "root",
+                "group": "root",
+                "link_target": DEFAULT_TARGET,
+            }
+        },
     },
 }
 
@@ -663,7 +673,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     yield op(
         files.link,
         name="Remove default site",
-        src=NGINX_DEFAULT_SITE,
+        path=NGINX_DEFAULT_SITE,
         present=False,
     )
 
@@ -2661,29 +2671,49 @@ async def test_dnf_update_dry_run_plans_without_sending():
 
 
 async def test_files_link_remove_when_present():
-    host = SimulatedHost(name="h", links={NGINX_DEFAULT_SITE: DEFAULT_TARGET})
+    # ``files.link`` stats the path through the ``Link`` fact, so the stat
+    # row -- not just the ``FileLink`` target map -- has to be seeded.
+    host = SimulatedHost(
+        name="h",
+        links={NGINX_DEFAULT_SITE: DEFAULT_TARGET},
+        link_stats={
+            NGINX_DEFAULT_SITE: {
+                "mode": 777,
+                "user": "root",
+                "group": "root",
+                "link_target": DEFAULT_TARGET,
+            }
+        },
+    )
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
-    commands = [c async for c in files.link(ctx, src=NGINX_DEFAULT_SITE, present=False)]
+    commands = [c async for c in files.link(ctx, path=NGINX_DEFAULT_SITE, present=False)]
     assert ctx.changed
-    assert ctx.reason == "link present, will remove"
-    assert commands == [LinkCommand(src=NGINX_DEFAULT_SITE, target=None)]
+    assert ctx.reason == f"{NGINX_DEFAULT_SITE} present, will remove"
+    assert commands == [LinkCommand(path=NGINX_DEFAULT_SITE, target=None)]
 
 
 async def test_files_file_remove_when_present():
-    host = SimulatedHost(name="h", existing_files={HTTPD_WELCOME_CONF})
+    # ``files.file`` stats the path through the ``File`` fact, so the row --
+    # not just the ``FileExists`` marker -- has to be seeded.
+    host = SimulatedHost(
+        name="h",
+        existing_files={HTTPD_WELCOME_CONF},
+        file_stats={HTTPD_WELCOME_CONF: {"mode": 644, "user": "root", "group": "root"}},
+    )
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
-    commands = [c async for c in files.file(ctx, src=HTTPD_WELCOME_CONF, present=False)]
+    commands = [c async for c in files.file(ctx, path=HTTPD_WELCOME_CONF, present=False)]
     assert ctx.changed
-    assert ctx.reason == "file present, will remove"
-    assert commands == [FileCommand(src=HTTPD_WELCOME_CONF, present=False)]
+    assert ctx.reason == f"{HTTPD_WELCOME_CONF} present, will remove"
+    assert commands == [FileCommand(path=HTTPD_WELCOME_CONF, present=False)]
 
 
 async def test_files_file_no_change_when_already_absent():
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
-    commands = [c async for c in files.file(ctx, src=HTTPD_WELCOME_CONF, present=False)]
+    commands = [c async for c in files.file(ctx, path=HTTPD_WELCOME_CONF, present=False)]
     assert not ctx.changed
-    assert ctx.reason == "file already absent"  # recorded even when unchanged (10)
+    # recorded even when unchanged (10)
+    assert ctx.reason == f"file {HTTPD_WELCOME_CONF} does not exist"
     assert commands == []
 
 
@@ -2705,14 +2735,17 @@ async def test_apply_sequential_facts_the_section_9_trace():
     assert w1_install.changed and w1_install.commands == (
         DnfInstallCommand(packages=("nginx",)),
     )
-    assert w1_link.changed and w1_link.reason == "link present, will remove"
-    assert w1_link.commands == (LinkCommand(src=NGINX_DEFAULT_SITE, target=None),)
+    assert w1_link.changed and w1_link.reason == f"{NGINX_DEFAULT_SITE} present, will remove"
+    assert w1_link.commands == (LinkCommand(path=NGINX_DEFAULT_SITE, target=None),)
 
     # web2: nginx already present (no-op), but the default-site link
     # still exists pre-deployment, so its removal is a real change.
     w2_install, w2_link = by_host["web2"]
     assert not w2_install.changed and w2_install.reason == "all packages present"
-    assert w2_link.changed and w2_link.reason == "link present, will remove"
+    assert (
+        w2_link.changed
+        and w2_link.reason == f"{NGINX_DEFAULT_SITE} present, will remove"
+    )
 
     # Final state: nginx installed on both, default site gone on both.
     for host in (web1, web2):
@@ -2729,7 +2762,7 @@ async def test_apply_sequential_facts_with_file_side_effects():
         yield op(
             files.file,
             name="Remove welcome configuration",
-            src=HTTPD_WELCOME_CONF,
+            path=HTTPD_WELCOME_CONF,
             present=False,
         )
 
@@ -2737,13 +2770,13 @@ async def test_apply_sequential_facts_with_file_side_effects():
     runtimes, plans = await run_prepare([host], httpd_deploy)
     # During prepare nothing has run, so the file is not there yet.
     assert not plans["h"][1].changed
-    assert plans["h"][1].reason == "file already absent"
+    assert plans["h"][1].reason == f"file {HTTPD_WELCOME_CONF} does not exist"
 
     report = await run_apply(runtimes, plans=plans)
     install, remove = report.log
     assert install.changed
-    assert remove.changed and remove.reason == "file present, will remove"
-    assert remove.commands == (FileCommand(src=HTTPD_WELCOME_CONF, present=False),)
+    assert remove.changed and remove.reason == f"{HTTPD_WELCOME_CONF} present, will remove"
+    assert remove.commands == (FileCommand(path=HTTPD_WELCOME_CONF, present=False),)
     # Final state: httpd installed, welcome.conf gone.
     assert host.packages == {"httpd": [""]}
     assert host.existing_files == set()
@@ -2938,10 +2971,10 @@ async def test_dry_run_reports_plan_without_touching_hosts():
     # exist yet, so the removal is reported as a no-op (section 9 prepare).
     assert [p.changed for p in plans["web1"]] == [True, False]
     assert plans["web1"][0].reason == "1 package(s) to install"
-    assert plans["web1"][1].reason == "link already absent"
+    assert plans["web1"][1].reason == f"link {NGINX_DEFAULT_SITE} does not exist"
     # web2: nginx present (no change), link present (would be removed).
     assert [p.changed for p in plans["web2"]] == [False, True]
-    assert plans["web2"][1].reason == "link present, will remove"
+    assert plans["web2"][1].reason == f"{NGINX_DEFAULT_SITE} present, will remove"
     # Hosts untouched.
     assert web1.packages == {}
     assert web1.links == {}

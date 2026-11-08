@@ -6,6 +6,8 @@
 deploy model** — the pragmatic cases the deploy model cannot serve: bespoke
 software with no [fact](guide.md#facts) to read it and no
 [operation](guide.md#operations) to manage it ([`Shell`][reemote5.actions.Shell]),
+a script file already staged on the host that just needs running
+([`Script`][reemote5.actions.Script], also reachable as `server.script`),
 and connectivity itself — waiting for hosts to come back after a reboot
 ([`WaitForConnection`][reemote5.actions.WaitForConnection]). An action acts on
 the target servers *now* and hands back what happened.
@@ -124,8 +126,9 @@ keywords that select which hosts run, from the inventory's static classifiers
   dimension.
 
 An empty selection is legal: nothing runs and an empty mapping comes back.
-The filters apply to every action kind — `Shell` and `WaitForConnection`
-alike — and are consumed by the fan-out, never forwarded to `process`.
+The filters apply to every action kind — `Shell`, `Script` and
+`WaitForConnection` alike — and are consumed by the fan-out, never forwarded
+to `process`.
 
 ```python
 # Wait only for the ubuntu webservers to come back after their reboot.
@@ -134,6 +137,35 @@ await gather_action(
     group="webservers", tags=("ubuntu",),
 )
 ```
+
+## Running a script file
+
+[`Script`][reemote5.actions.Script] — reachable as `server.script`, an alias
+in the `server` namespace — runs a script file that is **already on the
+host**. It never transfers anything: stage the file with `files.put` in a
+deploy first, then run it between deploys:
+
+```python
+from reemote5 import gather_action, server
+
+# The deploy staged /tmp/setup.sh with files.put; now run it.
+results = await gather_action(hosts, server.script, path="/tmp/setup.sh", args=("--verbose",))
+```
+
+How the file is executed depends on its executable bit, tested per run:
+
+- **Executable** — run directly, so the kernel honours its shebang.
+- **Non-executable** — run through `sh`, which needs only read permission.
+- **`interpreter="python3 -u"`** — an explicit interpreter command overrides
+  both branches: `<interpreter> <path> <args>`, whatever the bit says.
+
+Each argument in `args` is shell-quoted individually. A **missing file is an
+error Result, not an exception**: the wrapper exits 127 with a
+`server.script: no such file` message on stderr, read like any other non-zero
+exit. The existence check, the executable-bit branch and the invocation are
+one compound shell wrapper carried by an explicit `sh -c`, so the rendering
+is identical unprivileged and under `sudo`/`su`/`doas` elevation (sudo and
+doas exec their command directly rather than through a shell).
 
 ## Waiting for connections
 
@@ -240,6 +272,7 @@ split; see the [example](examples/actions.md#deploy-action-deploy).
       show_root_heading: false
       members:
         - Shell
+        - Script
         - WaitForConnection
 
 [//]: # (        - gather_action)

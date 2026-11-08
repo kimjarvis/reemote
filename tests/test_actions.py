@@ -20,12 +20,16 @@ the raw-result path (sudo/su rendering, askpass, ``PrivilegeError`` still
 raised and aggregated), the per-call reconnect lifecycle, the in-deploy
 guard -- raised synchronously at the call site in both phases, reset
 afterwards, and ``op(Shell, ...)`` rejected by ``materialize`` -- the
-``group``/``tags`` host selection, and ``WaitForConnection`` (retry until
+``group``/``tags`` host selection, ``WaitForConnection`` (retry until
 reachable, the fatal aggregated ``ConnectionTimeoutError``, stale-connection
-discard and the attempt bound).
+discard and the attempt bound), and ``Script`` / ``server.script`` (the
+wrapper rendering, the missing-file error Result, and real local-sh
+execution of the executable/non-executable/interpreter branches).
 """
 
 import asyncio
+import shlex
+import sys
 from collections.abc import Generator
 from types import SimpleNamespace
 
@@ -40,10 +44,12 @@ from reemote5 import (
     OperationRequest,
     PrivilegeError,
     Result,
+    Script,
     Shell,
     WaitForConnection,
     gather_action,
     op,
+    server,
 )
 from reemote5.core import FactCache, HostRuntime
 from reemote5.drivers import run, run_apply
@@ -661,3 +667,188 @@ async def test_filters_are_not_forwarded_to_process():
 
     assert results["web1"]["exit_status"] == 0
     assert host.shells == ["id"]
+
+
+# --- Script (server.script) -------------------------------------------------------
+
+
+def test_server_script_is_the_script_action():
+    """server.script is a namespace alias, not a second implementation."""
+    assert server.script is Script
+
+
+async def test_script_renders_the_check_and_executable_branch():
+    host = ActionHost("web1")
+
+    await gather_action([host], Script, path="/tmp/setup.sh")
+
+    wrapper = (
+        "if [ ! -f /tmp/setup.sh ]; then "
+        "echo 'server.script: no such file: /tmp/setup.sh' >&2; exit 127; fi; "
+        "if [ -x /tmp/setup.sh ]; then /tmp/setup.sh; "
+        "else sh /tmp/setup.sh; fi"
+    )
+    # The compound wrapper always rides an explicit sh -c so sudo/doas,
+    # which exec directly rather than through a shell, can carry it.
+    assert host.shells == [f"sh -c {shlex.quote(wrapper)}"]
+
+
+async def test_script_quotes_the_path_and_each_argument():
+    host = ActionHost("web1")
+
+    await gather_action([host], Script, path="/tmp/a b.sh", args=("x y", "it's"))
+
+    shell = host.shells[0]
+    assert shlex.quote("/tmp/a b.sh") in shell
+    assert "'x y'" in shell
+    assert shell.count("'x y'") == 2  # once per branch of the -x test
+
+
+async def test_script_interpreter_replaces_the_executable_branch():
+    host = ActionHost("web1")
+
+    await gather_action(
+        [host], Script, path="/tmp/s.py", args=("--flag",), interpreter="python3 -u"
+    )
+
+    wrapper = (
+        "if [ ! -f /tmp/s.py ]; then "
+        "echo 'server.script: no such file: /tmp/s.py' >&2; exit 127; fi; "
+        "python3 -u /tmp/s.py --flag"
+    )
+    assert host.shells == [f"sh -c {shlex.quote(wrapper)}"]
+    assert "[ -x" not in host.shells[0]
+
+
+async def test_script_sudo_wraps_the_sh_c_carrier():
+    host = ActionHost("web1", privilege={"sudo_user": "root"})
+
+    await gather_action([host], Script, path="/tmp/setup.sh", sudo=True)
+
+    assert host.shells[0].startswith("sudo sh -c ")
+
+
+async def test_script_rejects_a_single_string_args():
+    host = ActionHost("web1")
+
+    with pytest.raises(TypeError, match="iterable of strings"):
+        await gather_action([host], Script, path="/tmp/s.sh", args="one two")
+
+
+async def test_script_rejects_an_empty_interpreter():
+    host = ActionHost("web1")
+
+    with pytest.raises(ValueError, match="interpreter"):
+        await gather_action([host], Script, path="/tmp/s.sh", interpreter="  ")
+
+
+async def test_script_in_deploy_raises_immediately():
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        gather_action([host], server.script, path="/tmp/s.sh")
+        yield from ()
+
+    with pytest.raises(ActionInDeployError) as excinfo:
+        await run(INVENTORY, deploy, host_factory=action_factory, dry=True)
+
+    assert "Script" in str(excinfo.value)
+
+
+class LocalShellHost(ActionHost):
+    """An ``ActionHost`` that really executes each shell with the local sh.
+
+    Still offline -- no socket, no asyncssh -- but the wrapper's existence
+    check, executable-bit branch and interpreter override run for real, so
+    the ``Result`` reflects genuine shell behaviour.
+    """
+
+    async def _run_shell(self, shell: str):
+        await self.connect()
+        self.shells.append(shell)
+        proc = await asyncio.create_subprocess_shell(
+            shell,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        return SimpleNamespace(
+            exit_status=proc.returncode,
+            stdout=stdout.decode(),
+            stderr=stderr.decode(),
+        )
+
+
+async def test_script_missing_file_is_an_error_result_not_an_exception(tmp_path):
+    missing = tmp_path / "absent.sh"
+    host = LocalShellHost("web1")
+
+    results = await gather_action([host], server.script, path=str(missing))
+
+    result = results["web1"]
+    assert result["exit_status"] == 127
+    assert f"server.script: no such file: {missing}" in result["stderr"]
+    assert result["stdout"] == ""
+
+
+async def test_script_directory_is_reported_as_missing(tmp_path):
+    host = LocalShellHost("web1")
+
+    results = await gather_action([host], Script, path=str(tmp_path))
+
+    assert results["web1"]["exit_status"] == 127
+
+
+async def test_script_non_executable_file_runs_through_sh(tmp_path):
+    script = tmp_path / "plain.sh"
+    script.write_text('echo "hello $1"\n', encoding="utf-8")
+    script.chmod(0o644)  # readable, NOT executable
+    host = LocalShellHost("web1")
+
+    results = await gather_action([host], Script, path=str(script), args=("world",))
+
+    assert results["web1"]["exit_status"] == 0
+    assert results["web1"]["stdout"] == "hello world\n"
+
+
+async def test_script_executable_file_runs_directly_via_its_shebang(tmp_path):
+    # A Python shebang proves DIRECT execution: the sh fallback could not
+    # interpret the Python body, so exit 0 with this stdout means the
+    # kernel honoured the shebang on the executable file.
+    script = tmp_path / "direct.py"
+    script.write_text(f"#!{sys.executable}\nprint('direct')\n", encoding="utf-8")
+    script.chmod(0o755)
+    host = LocalShellHost("web1")
+
+    results = await gather_action([host], Script, path=str(script))
+
+    assert results["web1"]["exit_status"] == 0
+    assert results["web1"]["stdout"] == "direct\n"
+
+
+async def test_script_explicit_interpreter_ignores_the_executable_bit(tmp_path):
+    script = tmp_path / "interp.py"
+    script.write_text("import sys\nprint(' '.join(sys.argv[1:]))\n", encoding="utf-8")
+    script.chmod(0o644)  # no executable bit, and no shebang either
+    host = LocalShellHost("web1")
+
+    results = await gather_action(
+        [host],
+        Script,
+        path=str(script),
+        args=("a b", "c"),
+        interpreter=sys.executable,
+    )
+
+    assert results["web1"]["exit_status"] == 0
+    assert results["web1"]["stdout"] == "a b c\n"
+
+
+async def test_script_own_failure_travels_back_as_data(tmp_path):
+    script = tmp_path / "failing.sh"
+    script.write_text("echo boom >&2\nexit 3\n", encoding="utf-8")
+    script.chmod(0o644)
+    host = LocalShellHost("web1")
+
+    results = await gather_action([host], Script, path=str(script))
+
+    assert results["web1"]["exit_status"] == 3
+    assert results["web1"]["stderr"] == "boom\n"

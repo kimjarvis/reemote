@@ -705,9 +705,15 @@ async def run(
     ``connection`` -- and raises ``InventoryError`` on bad input before any
     host is materialized. Each entry is then materialized into a ``Host``
     via ``host_factory``. The default factory builds plain library hosts;
-    tests and examples inject a factory building ``SimulatedHost``\\ s (the
+    the pytest suites inject a factory building ``SimulatedHost`` objects (the
     test-framework class in ``tests/simulated_host.py``) so the simulation
-    stays out of the library.
+    stays out of the library. The ``examples/`` scripts use the default
+    factory and connect for real, so they mutate the hosts they target; the
+    two exceptions are
+    ``examples/demonstrations/composition/composed_group_tag_roles.py``, which
+    injects a simulated factory, and
+    ``examples/actions/action_in_deploy_guard.py``, whose guard fires during
+    prepare, before any transport is opened.
 
     Returns ``(plans, report, hosts)`` so callers can inspect the final
     host state. A coroutine: both the prepare phase (which materializes

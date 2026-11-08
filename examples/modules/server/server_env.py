@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: gather the ``server.Path`` fact on two real hosts.
+"""Example: gather the ``server.Env`` fact on two real hosts.
 
 This is a *usage* example, not part of the library. Like
 ``examples/modules/server/server_hostname.py``, it reads a single **fact**
@@ -14,17 +14,19 @@ two-phase execution model:
 2. Materialize each entry into a plain ``Host`` with the default
    ``Host.from_inventory`` factory. Each ``Host`` lazily opens an asyncssh
    connection from its ``connection`` data when a fact is gathered.
-3. Gather ``Path`` on every host at once with the driver's
-   ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
-   across the inventory with ``asyncio.gather`` and returns a
-   host-name-keyed mapping -- then print each host's PATH string with
-   ``json.dumps(..., indent=2)``.
+3. Gather ``Env`` on every host at once with the driver's ``gather_fact``
+   helper -- it fans the fact's ``process`` coroutine out across the
+   inventory with ``asyncio.gather`` and returns a host-name-keyed
+   mapping -- then print each host's values with ``json.dumps(..., indent=2)``.
 
-``Path`` mirrors pyinfra's ``server.Path``: it runs ``echo $PATH`` and
-returns the login user's ``PATH`` environment variable as the raw
-colon-separated string (e.g. ``/usr/local/bin:/usr/bin:/bin``) -- the
-directories the user's shell searches for commands, in order. The string
-is not split into a list; callers can ``split(":")`` themselves.
+``Env`` is an original reemote5 fact replacing the migrated ``server.Path``:
+it takes a variable name, runs ``echo $<name>`` and returns that environment
+variable's value from the login shell as the raw string. This script reads
+two variables -- ``PATH`` (the colon-separated directories the user's shell
+searches for commands, in order; the string is not split into a list, so
+callers can ``split(":")`` themselves) and ``HOME`` (the user's home
+directory). An unset or empty variable reads as ``""``; a name that is not a
+plain shell identifier raises ``ValueError`` before reaching the shell.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
 ``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven
@@ -32,7 +34,7 @@ by ``asyncio.run``.
 
 Run it with::
 
-    uv run python examples/modules/server/server_path.py
+    uv run python examples/modules/server/server_env.py
 """
 
 import asyncio
@@ -41,9 +43,9 @@ import sys
 
 from reemote5 import (
     CommandError,
+    Env,
     Host,
     HostConnectionError,
-    Path,
     gather_fact,
 )
 
@@ -76,11 +78,14 @@ async def main() -> None:
     hosts = [Host.from_inventory(entry) for entry in INVENTORY]
     try:
         # Gather the fact across the whole inventory concurrently: gather_fact
-        # fans Path.process out with asyncio.gather and returns a
-        # host-name-keyed mapping, so both SSH round-trips overlap instead of
-        # running one host at a time. process runs ``echo $PATH`` and returns
-        # the colon-separated search path from its first output line.
-        path = await gather_fact(hosts, Path)
+        # fans Env.process out with asyncio.gather and returns a
+        # host-name-keyed mapping, so the SSH round-trips overlap instead of
+        # running one host at a time. The variable name is a positional fact
+        # argument, forwarded by gather_fact after the fact class; each read
+        # runs ``echo $<name>`` and returns the value from its first output
+        # line.
+        path = await gather_fact(hosts, Env, "PATH")
+        home = await gather_fact(hosts, Env, "HOME")
     except (CommandError, HostConnectionError) as exc:
         # The library reports an unreachable host or a failed fact command as a
         # typed error whose message already names the host. Print that message
@@ -93,8 +98,8 @@ async def main() -> None:
         await asyncio.gather(*(host.aclose() for host in hosts))
     # Print in inventory order (gather_fact keys the results by host name).
     for host in hosts:
-        print(f"== {host.name}: server.Path ==")
-        print(json.dumps(path[host.name], indent=2))
+        print(f"== {host.name}: server.Env ==")
+        print(json.dumps({"PATH": path[host.name], "HOME": home[host.name]}, indent=2))
 
 
 if __name__ == "__main__":

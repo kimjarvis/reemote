@@ -1,7 +1,8 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Tests for the files module: the ``File``, ``Directory`` and ``Link`` facts.
+"""Tests for the files module: the ``File``, ``Directory``, ``Link`` and
+``SameFile`` facts.
 
 Covers ``reemote5.modules.files.files.File``: pyinfra's own thirteen
 ``files.File`` fixtures over the real-transport path (GNU stat rows, the
@@ -23,13 +24,19 @@ double-quote ``%N`` quoting, the ls fallback naming the target, file/
 directory False answers), ``link_target`` extraction edge cases (dangling
 links, arrow-bearing targets, rows without an arrow), and the separate
 ``link_stats`` seam.
+
+Covers ``reemote5.modules.files.files.SameFile``: pyinfra's two
+``files.SameFile`` fixtures verbatim (the ``test -ef`` probe answering true
+and false), the shell quoting of both arguments, and the ``same_files``
+``SimulatedHost`` seam (symmetric pair lookup, copy-on-read semantics for a
+frozen pair set, and ``gather_fact`` argument forwarding).
 """
 
 from datetime import UTC, datetime
 
 from reemote5.drivers import gather_fact
 from reemote5.hosts import Host
-from reemote5.modules.files.files import Directory, File, Link
+from reemote5.modules.files.files import Directory, File, Link, SameFile
 from tests.simulated_host import SimulatedHost
 
 # pyinfra's ls fallback assumes the *current* year for an "MMM DD HH:MM"
@@ -833,4 +840,93 @@ async def test_link_gather_fact_forwards_the_path():
     assert await gather_fact(hosts, Link, "/usr/bin/vi") == {
         "web1": LINK_STAT,
         "web2": None,
+    }
+
+
+# --- Real-transport parity: pyinfra's own files.SameFile fixtures ---------------
+
+
+async def test_same_file_parses_pyintras_same_file_fixture():
+    # pyinfra's same_file.json fixture, verbatim: /foo/hardlink and
+    # /foo/file name one inode, so the ``test -ef`` probe prints true.
+    host = CannedShellHost("true\n")
+    assert await SameFile.process(host, "/foo/hardlink", "/foo/file") is True
+    assert host.shells == [
+        "test /foo/hardlink -ef /foo/file && echo true || echo false"
+    ]
+
+
+async def test_same_file_parses_pyintras_different_file_fixture():
+    # pyinfra's different_file.json fixture, verbatim: two distinct inodes
+    # print false -- the || branch exits zero, so a difference is never a
+    # failed command (the reason the fact raises only HostConnectionError).
+    host = CannedShellHost("false\n")
+    assert await SameFile.process(host, "/foo/other", "/foo/file") is False
+    assert host.shells == [
+        "test /foo/other -ef /foo/file && echo true || echo false"
+    ]
+
+
+def test_same_file_command_quotes_both_arguments():
+    # shlex quoting on both paths: safe paths stay bare (the fixtures
+    # above) and a space-bearing path is quoted. Unlike the ``File``
+    # family there is no ``~/`` exception -- the fact quotes verbatim
+    # (pyinfra's QuoteString shape), so a tilde path reaches the shell as
+    # one quoted word and simply reads as an absent file.
+    assert SameFile.command("/foo a", "/foo b") == (
+        "test '/foo a' -ef '/foo b' && echo true || echo false"
+    )
+    assert SameFile.command("~/file", "/foo/file") == (
+        "test '~/file' -ef /foo/file && echo true || echo false"
+    )
+
+
+def test_same_file_parse_is_line_list_equality():
+    # Only the exact single "true" line is True; empty, noisy and near-miss
+    # output all read False (pyinfra's ``output == ["true"]`` rule).
+    assert SameFile.parse(["true"]) is True
+    assert SameFile.parse(["false"]) is False
+    assert SameFile.parse([]) is False
+    assert SameFile.parse(["true", "true"]) is False
+    assert SameFile.parse(["truetrue"]) is False
+
+
+async def test_same_file_is_false_on_empty_output():
+    # A missing path exits zero through the || guard and prints nothing --
+    # read as False, not as an error.
+    assert await SameFile.process(CannedShellHost(""), "/no/such", "/foo/file") is False
+
+
+# --- SameFile SimulatedHost seam ------------------------------------------------
+
+
+async def test_same_file_reads_the_simulated_seam():
+    host = SimulatedHost(name="h", same_files={("/foo/hardlink", "/foo/file")})
+    assert await SameFile.process(host, "/foo/hardlink", "/foo/file") is True
+    assert await SameFile.process(host, "/foo/other", "/foo/file") is False
+
+
+async def test_same_file_seam_is_symmetric():
+    # ``-ef`` asks a symmetric question, so the seam answers whichever way
+    # the pair is stored -- a hard link is no more "of" one name than the
+    # other, and the simulated ln makes no ordering promise.
+    host = SimulatedHost(name="h", same_files={("/foo/hardlink", "/foo/file")})
+    assert await SameFile.process(host, "/foo/file", "/foo/hardlink") is True
+
+
+async def test_same_file_seam_bypasses_the_shell():
+    # A SimulatedHost never shells out: an empty store answers False
+    # without any command recorded (the seam is the whole read path).
+    host = SimulatedHost(name="h")
+    assert await SameFile.process(host, "/foo/hardlink", "/foo/file") is False
+
+
+async def test_same_file_gather_fact_forwards_both_arguments():
+    hosts = [
+        SimulatedHost(name="web1", same_files={("/foo/hardlink", "/foo/file")}),
+        SimulatedHost(name="web2"),
+    ]
+    assert await gather_fact(hosts, SameFile, "/foo/hardlink", "/foo/file") == {
+        "web1": True,
+        "web2": False,
     }
