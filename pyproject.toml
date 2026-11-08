@@ -4,7 +4,7 @@
 [project]
 name = "reemote5"
 version = "0.1.0"
-description = "POC model for generator-based two-phase execution (an alternative to pyinfra's prepare/execute design)"
+description = "Generator-based two-phase execution model (an alternative to pyinfra's prepare/execute design)"
 readme = "README.md"
 authors = [
     { name = "kimjarvis", email = "kim.jarvis@tpfsystems.com" }

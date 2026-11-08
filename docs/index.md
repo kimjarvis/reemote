@@ -3,10 +3,7 @@
 **reemote5** is a python library for configuration management.
 It provides cross-host lockstep ordering and dry-run reporting. 
 
-<!---
-
-**reemote5** is a proof-of-concept execution model for configuration
-management. It explores an alternative to [pyinfra]'s two-phase
+Its execution model is an alternative to [pyinfra]'s two-phase
 *prepare → execute* design: **deploy scripts are Python generators** that
 yield operation descriptors instead of calling operations directly.
 
@@ -16,33 +13,33 @@ correct answer in both phases — while keeping the properties that the
 two-phase split exists to provide: cross-host lockstep ordering and dry-run
 reporting.
 
+!!! note "Scope"
 
+    reemote5 is a **library**, not a deployment tool: it ships no CLI, no
+    inventory file format and no plugin system. Hosts are a plain *inventory*
+    — a list of dictionaries — handed to [`run`][reemote5.drivers.run].
 
-!!! warning "POC scope"
+    The transport is **real**. The default `Host.from_inventory` factory opens
+    an [asyncssh] connection per entry, facts are gathered and commands run
+    over it, and `run` closes the connections when it finishes; a `connector`
+    of `"docker"` in an entry's `connection` replays the very same deploy
+    inside a local Docker/Podman container (see
+    [the docker connector](connectors/docker.md)).
 
-    reemote5 is a **library**, not a deployment tool. It is deliberately
-    restricted to *generating commands*:
+    `SimulatedHost`, the in-memory host that lets the model run without a
+    network, belongs to the *test framework* (`tests/simulated_host.py`) and is
+    injected through `run`'s `host_factory` keyword. The library never imports
+    or constructs one, so the test suite needs no SSH while the `examples/`
+    scripts connect for real.
 
-    - no SSH or any other connection transport,
-    - no CLI, inventory files or plugin system — hosts are specified as a
-      simple *inventory* (a list of dictionaries) passed to
-      [`run`][reemote5.drivers.run],
-    - without an injected transport, hosts are in-memory `SimulatedHost`
-      objects — part of the test framework (`tests/simulated_host.py`),
-      never of the library.
-
-    Nothing here connects to a real machine. The point of the project is the
-    execution model, demonstrated end to end and covered by tests.
-
-    The command-execution path *is* asynchronous:
-    [`send_command`][reemote5.drivers.send_command] — and therefore
+    Both phases are awaited end to end: [`send_command`][reemote5.drivers.send_command],
     [`run_apply`][reemote5.drivers.run_apply] and
-    [`run`][reemote5.drivers.run] — are coroutines, preparing for a real
-    [asyncssh]-based transport (pyinfra uses Paramiko + gevent instead).
-    Fact gathering is async for the same reason: a fact's `process`,
-    [`FactCache.get`][reemote5.core.FactCache.get], the operations that await
-    it, and [`run_prepare`][reemote5.drivers.run_prepare] are all coroutines,
-    so the whole prepare/apply path is awaited end to end.
+    [`run`][reemote5.drivers.run] drive the transport, and so does fact
+    gathering — each fact's `process`, the reads it makes through the
+    [`FactCache`][reemote5.core.FactCache], the operations that await them, and
+    [`run_prepare`][reemote5.drivers.run_prepare] are coroutines too (pyinfra
+    uses Paramiko + gevent here). Only the formatters stay synchronous, since
+    they render data a phase already collected.
 
 ## Why generators?
 
@@ -75,8 +72,6 @@ The prepare phase still yields a full plan, and the apply phase still runs
 every host in lockstep. Neither facts nor operations know which phase they are
 in; only the drivers do.
 
---->
-
 ## Installation
 
 The project is managed with [uv] and targets Python 3.13+:
@@ -89,68 +84,67 @@ uv sync --group docs       # + mkdocs-material and mkdocstrings
 ## Quick start
 
 A deploy script is a generator with a fixed signature, yielding requests built
-with the [`op`][reemote5.core.op] helper:
+with the [`op`][reemote5.core.op] helper. Every request can carry a `when`
+guard, so one script can target a subset of a mixed inventory without a single
+`if` in its body:
 
 ```python
 from collections.abc import Generator
 
-from reemote5 import Host, OperationRequest, dnf, files, op, run
+from reemote5 import Host, OperationRequest, dnf, files, op
 
-SITE = "/etc/nginx/sites-enabled/default"
-TARGET = "/etc/nginx/sites-available/default"
+HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
+
+
+def is_centos(host: Host) -> bool:
+    # Eligibility reads only static inventory data -- host.group, set by the
+    # entry's "group" key -- never a mutable fact, so the prepare and apply
+    # phases are guaranteed to reach the same skip decision.
+    return host.group == "centos"
 
 
 def deploy(host: Host) -> Generator[OperationRequest, None, None]:
-    yield op(dnf.packages, name="Install nginx", packages=("nginx",))
-    yield op(files.link, name="Remove default site", src=SITE, present=False)
+    yield op(
+        dnf.packages,
+        name="Install httpd",
+        packages=("httpd",),
+        sudo=True,
+        when=is_centos,
+    )
+    yield op(
+        files.file,
+        name="Remove welcome configuration",
+        path=HTTPD_WELCOME_CONF,
+        present=False,
+        sudo=True,
+        when=is_centos,
+    )
 ```
 
 Hosts are specified as an *inventory* — a list of dictionaries, each carrying
 at least a host's name (`host`) and SSH `connection` information — and passed
 to [`run`][reemote5.drivers.run], which validates
 it (every entry must have `host` and `connection`; a malformed inventory raises
-[`InventoryError`][reemote5.hosts.InventoryError]) and then prepares and applies
-in one call. `run` is a coroutine, so it must be awaited (here from an
+[`InventoryError`][reemote5.hosts.InventoryError]), materializes each entry
+with the default `Host.from_inventory` factory, and then prepares and applies
+in one call. With that default factory the hosts are real: `run` opens an
+asyncssh connection per entry from its `connection` data, runs the commands
+over it, and closes the connections when it finishes. `run` is a coroutine, so
+it must be awaited (here from an
 `asyncio.run` entry point):
 
 ```python
 import asyncio
+import json
+from pathlib import Path
 
 from reemote5 import format_log, format_plan, run
 
-# Test-framework stand-in, lives in tests/simulated_host.py — not part of
-# the library API.
-from tests.simulated_host import SimulatedHost
-
-inventory = [
-    {
-        "host": "web1",
-        "connection": {"key_path": "~/.ssh/id_ed25519"},
-    },
-    {
-        "host": "web2",
-        "connection": {"key_path": "~/.ssh/id_ed25519"},
-    },
-]
-
-
-def simulated_factory(entry: dict) -> SimulatedHost:
-    # Test-framework stand-in, injected via host_factory so this runs
-    # without SSH: web1 is fresh (installing nginx creates the
-    # default-site link); web2 already has nginx and the link.
-    host = SimulatedHost.from_inventory(entry)
-    if host.name == "web1":
-        host.installs_links = {"nginx": {SITE: TARGET}}
-    else:
-        host.packages = {"nginx"}
-        host.links = {SITE: TARGET}
-    return host
+inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
 
 
 async def main() -> None:
-    plans, report, hosts = await run(
-        inventory, deploy, host_factory=simulated_factory
-    )
+    plans, report, hosts = await run(inventory, deploy)
     print(format_plan(plans))
     print(format_log(report))
 
@@ -158,42 +152,60 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Pass `dry=True` to stop after the prepare phase — nothing is sent to the hosts
-and `report` is `None`.
+Pass `dry=True` to stop after the prepare phase — `report` is `None` and no
+command that mutates a host is sent. The plan is still accurate, because the
+facts behind it are read over SSH in both phases.
 
-A complete, runnable version of this example — including the final host state
-— lives in
-[`examples/dnf_install_nginx.py`](https://github.com/kimjarvis/reemote5/blob/main/examples/dnf_install_nginx.py):
+A complete, runnable version of this example — the inventory loaded from the
+project root, both phases run, and the errors reported — lives in
+[`examples/modules/dnf/dnf_packages.py`](https://github.com/kimjarvis/reemote5/blob/main/examples/modules/dnf/dnf_packages.py):
 
 ```bash
-uv run python examples/dnf_install_nginx.py
+uv run python examples/modules/dnf/dnf_packages.py
 ```
+
+What it prints depends on the current state of the machines. On the shared
+inventory — `alpine`, `web1`, `web2` and `ubuntu`, with only the two `web`
+hosts in the `centos` group — `web1` freshly provisioned and `web2` already
+running httpd with the welcome configuration its package dropped, the two
+phases come out like this:
 
 ```text
+== Inventory loaded from .../inventory.json ==
+alpine, web1, web2, ubuntu
+
 == Plan (prepare phase, --dry) ==
-web1: Install nginx            [changed: 1 package(s) to install]
-web1: Remove default site      [no change: link already absent]
-web2: Install nginx            [no change: all packages present]
-web2: Remove default site      [changed: link present, will remove]
+alpine: Install httpd            [skipped: when guard is_centos]
+alpine: Remove welcome configuration [skipped: when guard is_centos]
+web1: Install httpd            [changed: 1 package(s) to install]
+web1: Remove welcome configuration [no change: file /etc/httpd/conf.d/welcome.conf does not exist]
+web2: Install httpd            [no change: all packages present]
+web2: Remove welcome configuration [changed: /etc/httpd/conf.d/welcome.conf present, will remove]
+ubuntu: Install httpd            [skipped: when guard is_centos]
+ubuntu: Remove welcome configuration [skipped: when guard is_centos]
 
 == Run log (apply phase) ==
-web1: Install nginx            [changed: 1 package(s) to install]
-    $ dnf install -y nginx
-web2: Install nginx            [no change: all packages present]
-web1: Remove default site      [changed: link present, will remove]
-    $ rm -f /etc/nginx/sites-enabled/default
-web2: Remove default site      [changed: link present, will remove]
-    $ rm -f /etc/nginx/sites-enabled/default
-
-== Final host state ==
-web1: packages=['nginx'] links={}
-web2: packages=['nginx'] links={}
+alpine: Install httpd            [skipped: when guard is_centos]
+web1: Install httpd            [changed: 1 package(s) to install]
+    $ sudo dnf install -y httpd
+web2: Install httpd            [no change: all packages present]
+ubuntu: Install httpd            [skipped: when guard is_centos]
+alpine: Remove welcome configuration [skipped: when guard is_centos]
+web1: Remove welcome configuration [changed: /etc/httpd/conf.d/welcome.conf present, will remove]
+    $ sudo rm -f /etc/httpd/conf.d/welcome.conf
+web2: Remove welcome configuration [changed: /etc/httpd/conf.d/welcome.conf present, will remove]
+    $ sudo rm -f /etc/httpd/conf.d/welcome.conf
+ubuntu: Remove welcome configuration [skipped: when guard is_centos]
 ```
 
-The interesting line is `web1: Remove default site`. The plan says *no change*
-because nginx is not installed yet during prepare; the apply log says *changed*
-because installing nginx created the link and the fresh fact cache saw it. Same
-deploy script, same request sequence, correct outcome in both phases.
+The interesting line is `web1: Remove welcome configuration`. The plan says
+*no change* because httpd is not installed yet during prepare, so the file it
+ships is not there; the apply log says *changed* because installing httpd
+dropped the file and the fresh fact cache saw it. Same deploy script, same
+request sequence, correct outcome in both phases. The `alpine` and `ubuntu`
+entries show the other guard outcome: their steps are planned and logged as
+`skipped` and never materialized, so neither their commands nor the facts
+behind them reach a host that has no `dnf`.
 
 
 <!---
@@ -215,15 +227,16 @@ module that defines it:
 | **Drivers** | [`run`][reemote5.drivers.run], [`run_prepare`][reemote5.drivers.run_prepare], [`run_apply`][reemote5.drivers.run_apply], [`send_command`][reemote5.drivers.send_command], [`format_plan`][reemote5.drivers.format_plan], [`format_log`][reemote5.drivers.format_log] | [drivers](drivers.md) |
 | **Core objects** | [`OperationRequest`][reemote5.core.OperationRequest], [`op`][reemote5.core.op], [`OpContext`][reemote5.core.OpContext], [`FactCache`][reemote5.core.FactCache], [`HostRuntime`][reemote5.core.HostRuntime], [`OperationError`][reemote5.core.OperationError] | [core](core.md) |
 | **Commands** | [`Command`][reemote5.commands.Command], [`StringCommand`][reemote5.commands.StringCommand], [`TransferCommand`][reemote5.commands.TransferCommand], [`WaitCommand`][reemote5.commands.WaitCommand], [`WaitTimeoutError`][reemote5.commands.WaitTimeoutError] | [commands](commands.md) |
-| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`validate_inventory`][reemote5.hosts.validate_inventory], [`InventoryError`][reemote5.hosts.InventoryError], [`ApkAutoremovablePackages`][reemote5.modules.apk.apk.ApkAutoremovablePackages], [`ApkExplicitPackages`][reemote5.modules.apk.apk.ApkExplicitPackages], [`ApkHeldPackages`][reemote5.modules.apk.apk.ApkHeldPackages], [`ApkInstalledPackages`][reemote5.modules.apk.apk.ApkInstalledPackages], [`ApkRepositories`][reemote5.modules.apk.apk.ApkRepositories], [`AptKeys`][reemote5.modules.apt.apt.AptKeys], [`DnfPackages`][reemote5.modules.dnf.dnf.DnfPackages], [`FileLink`][reemote5.modules.files.files.FileLink], [`RemoteFileSha1`][reemote5.modules.files.files.RemoteFileSha1], [`FileContents`][reemote5.modules.files.files.FileContents], [`FirewalldStatus`][reemote5.modules.firewalld.firewalld.FirewalldStatus], [`FirewalldDefaultZone`][reemote5.modules.firewalld.firewalld.FirewalldDefaultZone], [`FirewalldZones`][reemote5.modules.firewalld.firewalld.FirewalldZones], [`FirewalldServices`][reemote5.modules.firewalld.firewalld.FirewalldServices], [`FirewalldIpSets`][reemote5.modules.firewalld.firewalld.FirewalldIpSets], [`FirewalldPolicies`][reemote5.modules.firewalld.firewalld.FirewalldPolicies], [`BlockDevices`][reemote5.modules.hardware.hardware.BlockDevices], [`GitBranch`][reemote5.modules.git.git.GitBranch], [`GpgKey`][reemote5.modules.gpg.gpg.GpgKey], [`GpgKeyDetails`][reemote5.modules.gpg.gpg.GpgKeyDetails], [`GpgKeyrings`][reemote5.modules.gpg.gpg.GpgKeyrings], [`GpgKeys`][reemote5.modules.gpg.gpg.GpgKeys], [`GpgSecretKeys`][reemote5.modules.gpg.gpg.GpgSecretKeys], [`GpgTrust`][reemote5.modules.gpg.gpg.GpgTrust], [`GpgVerify`][reemote5.modules.gpg.gpg.GpgVerify], [`OpenrcEnabled`][reemote5.modules.openrc.openrc.OpenrcEnabled], [`OpenrcRunlevels`][reemote5.modules.openrc.openrc.OpenrcRunlevels], [`OpenrcServices`][reemote5.modules.openrc.openrc.OpenrcServices], [`OpenrcStatus`][reemote5.modules.openrc.openrc.OpenrcStatus], [`OpenrcVersion`][reemote5.modules.openrc.openrc.OpenrcVersion], [`MysqlDatabases`][reemote5.modules.mysql.mysql.MysqlDatabases], [`MysqlUsers`][reemote5.modules.mysql.mysql.MysqlUsers], [`MysqlUserGrants`][reemote5.modules.mysql.mysql.MysqlUserGrants], [`MysqlBinaryLogs`][reemote5.modules.mysql.mysql.MysqlBinaryLogs], [`MysqlColumns`][reemote5.modules.mysql.mysql.MysqlColumns], [`MysqlConnections`][reemote5.modules.mysql.mysql.MysqlConnections], [`MysqlEngines`][reemote5.modules.mysql.mysql.MysqlEngines], [`MysqlIndexes`][reemote5.modules.mysql.mysql.MysqlIndexes], [`MysqlPlugins`][reemote5.modules.mysql.mysql.MysqlPlugins], [`MysqlReplication`][reemote5.modules.mysql.mysql.MysqlReplication], [`MysqlStatus`][reemote5.modules.mysql.mysql.MysqlStatus], [`MysqlTables`][reemote5.modules.mysql.mysql.MysqlTables], [`MysqlVariables`][reemote5.modules.mysql.mysql.MysqlVariables], [`PostgresqlRoles`][reemote5.modules.postgresql.postgresql.PostgresqlRoles], [`PostgresqlDatabases`][reemote5.modules.postgresql.postgresql.PostgresqlDatabases], [`PostgresqlRoleMemberships`][reemote5.modules.postgresql.postgresql.PostgresqlRoleMemberships], [`PostgresqlPrivileges`][reemote5.modules.postgresql.postgresql.PostgresqlPrivileges], [`PostgresqlSchemas`][reemote5.modules.postgresql.postgresql.PostgresqlSchemas], [`PostgresqlTables`][reemote5.modules.postgresql.postgresql.PostgresqlTables], [`PostgresqlIndexes`][reemote5.modules.postgresql.postgresql.PostgresqlIndexes], [`PostgresqlExtensions`][reemote5.modules.postgresql.postgresql.PostgresqlExtensions], [`PostgresqlSettings`][reemote5.modules.postgresql.postgresql.PostgresqlSettings], [`PostgresqlTablespaces`][reemote5.modules.postgresql.postgresql.PostgresqlTablespaces], [`PostgresqlReplication`][reemote5.modules.postgresql.postgresql.PostgresqlReplication], [`PostgresqlConnections`][reemote5.modules.postgresql.postgresql.PostgresqlConnections], [`PostgresqlPublications`][reemote5.modules.postgresql.postgresql.PostgresqlPublications], [`PostgresqlSubscriptions`][reemote5.modules.postgresql.postgresql.PostgresqlSubscriptions], [`SEBoolean`][reemote5.modules.selinux.selinux.SEBoolean], [`Booleans`][reemote5.modules.selinux.selinux.Booleans], [`FileContext`][reemote5.modules.selinux.selinux.FileContext], [`FileContextMapping`][reemote5.modules.selinux.selinux.FileContextMapping], [`SEPorts`][reemote5.modules.selinux.selinux.SEPorts], [`SEPort`][reemote5.modules.selinux.selinux.SEPort], [`Mode`][reemote5.modules.selinux.selinux.Mode], [`SELogin`][reemote5.modules.selinux.selinux.SELogin], [`SEUser`][reemote5.modules.selinux.selinux.SEUser], [`Modules`][reemote5.modules.selinux.selinux.Modules], [`PermissiveDomains`][reemote5.modules.selinux.selinux.PermissiveDomains], [`IptablesChains`][reemote5.modules.iptables.iptables.IptablesChains], [`IptablesRules`][reemote5.modules.iptables.iptables.IptablesRules], [`Ip6tablesChains`][reemote5.modules.iptables.iptables.Ip6tablesChains], [`Ip6tablesRules`][reemote5.modules.iptables.iptables.Ip6tablesRules], [`IptablesRulesOrdered`][reemote5.modules.iptables.iptables.IptablesRulesOrdered], [`Ip6tablesRulesOrdered`][reemote5.modules.iptables.iptables.Ip6tablesRulesOrdered], [`IptablesTables`][reemote5.modules.iptables.iptables.IptablesTables], [`Ip6tablesTables`][reemote5.modules.iptables.iptables.Ip6tablesTables], [`IptablesVersion`][reemote5.modules.iptables.iptables.IptablesVersion], [`Ip6tablesVersion`][reemote5.modules.iptables.iptables.Ip6tablesVersion], [`IptablesModules`][reemote5.modules.iptables.iptables.IptablesModules], [`IpSets`][reemote5.modules.iptables.iptables.IpSets], [`IptablesPersistence`][reemote5.modules.iptables.iptables.IptablesPersistence], [`Ip6tablesPersistence`][reemote5.modules.iptables.iptables.Ip6tablesPersistence], [`LxdContainers`][reemote5.modules.lxd.lxd.LxdContainers], [`LxdImageAliases`][reemote5.modules.lxd.lxd.LxdImageAliases], [`LxdImages`][reemote5.modules.lxd.lxd.LxdImages], [`LxdInstanceConfig`][reemote5.modules.lxd.lxd.LxdInstanceConfig], [`LxdInstanceSnapshots`][reemote5.modules.lxd.lxd.LxdInstanceSnapshots], [`LxdInstanceState`][reemote5.modules.lxd.lxd.LxdInstanceState], [`LxdInstances`][reemote5.modules.lxd.lxd.LxdInstances], [`LxdNetworks`][reemote5.modules.lxd.lxd.LxdNetworks], [`LxdOperations`][reemote5.modules.lxd.lxd.LxdOperations], [`LxdProfiles`][reemote5.modules.lxd.lxd.LxdProfiles], [`LxdProjectConfig`][reemote5.modules.lxd.lxd.LxdProjectConfig], [`LxdProjects`][reemote5.modules.lxd.lxd.LxdProjects], [`LxdServerInfo`][reemote5.modules.lxd.lxd.LxdServerInfo], [`LxdServerResources`][reemote5.modules.lxd.lxd.LxdServerResources], [`LxdStoragePools`][reemote5.modules.lxd.lxd.LxdStoragePools], [`LxdStorageVolumes`][reemote5.modules.lxd.lxd.LxdStorageVolumes], [`Sysctl`][reemote5.modules.sysctl.sysctl.Sysctl], [`SysctlFile`][reemote5.modules.sysctl.sysctl.SysctlFile], [`SysctlFiles`][reemote5.modules.sysctl.sysctl.SysctlFiles], [`SystemdServiceState`][reemote5.modules.systemd.systemd.SystemdServiceState], [`SystemdStatus`][reemote5.modules.systemd.systemd.SystemdStatus], [`SystemdEnabled`][reemote5.modules.systemd.systemd.SystemdEnabled], [`SystemdUnitProperties`][reemote5.modules.systemd.systemd.SystemdUnitProperties], [`SystemdFailedUnits`][reemote5.modules.systemd.systemd.SystemdFailedUnits], [`SystemdTimers`][reemote5.modules.systemd.systemd.SystemdTimers], [`SystemdUnitFiles`][reemote5.modules.systemd.systemd.SystemdUnitFiles], [`SystemdVersion`][reemote5.modules.systemd.systemd.SystemdVersion], [`SystemdSystemState`][reemote5.modules.systemd.systemd.SystemdSystemState], [`SystemdDependencies`][reemote5.modules.systemd.systemd.SystemdDependencies], [`UfwStatus`][reemote5.modules.ufw.ufw.UfwStatus], [`UfwRules`][reemote5.modules.ufw.ufw.UfwRules], [`UfwApplications`][reemote5.modules.ufw.ufw.UfwApplications], [`apk.autoremove`][reemote5.modules.apk.apk.autoremove], [`apk.hold`][reemote5.modules.apk.apk.hold], [`apk.packages`][reemote5.modules.apk.apk.packages], [`apk.repository`][reemote5.modules.apk.apk.repository], [`apk.virtual`][reemote5.modules.apk.apk.virtual], [`apt.deb`][reemote5.modules.apt.apt.deb], [`apt.dist_upgrade`][reemote5.modules.apt.apt.dist_upgrade], [`apt.auto_remove`][reemote5.modules.apt.apt.auto_remove], [`apt.key`][reemote5.modules.apt.apt.key], [`apt.mark`][reemote5.modules.apt.apt.mark], [`apt.packages`][reemote5.modules.apt.apt.packages], [`apt.ppa`][reemote5.modules.apt.apt.ppa], [`apt.repo`][reemote5.modules.apt.apt.repo], [`apt.sources_file`][reemote5.modules.apt.apt.sources_file], [`apt.update`][reemote5.modules.apt.apt.update], [`apt.upgrade`][reemote5.modules.apt.apt.upgrade], [`dnf.packages`][reemote5.modules.dnf.dnf.packages], [`dnf.update`][reemote5.modules.dnf.dnf.update], [`dnf.repo`][reemote5.modules.dnf.dnf.repo], [`dnf.rpm`][reemote5.modules.dnf.dnf.rpm], [`dnf.key`][reemote5.modules.dnf.dnf.key], [`dnf.module`][reemote5.modules.dnf.dnf.module], [`files.link`][reemote5.modules.files.files.link], [`files.put`][reemote5.modules.files.files.put], [`files.get`][reemote5.modules.files.files.get], [`files.edit`][reemote5.modules.files.files.edit], [`files.move`][reemote5.modules.files.files.move], [`files.copy`][reemote5.modules.files.files.copy], [`git.config`][reemote5.modules.git.git.config], [`git.repo`][reemote5.modules.git.git.repo], [`git.worktree`][reemote5.modules.git.git.worktree], [`gpg.dearmor`][reemote5.modules.gpg.gpg.dearmor], [`gpg.delete_key`][reemote5.modules.gpg.gpg.delete_key], [`gpg.export_key`][reemote5.modules.gpg.gpg.export_key], [`gpg.gen_key`][reemote5.modules.gpg.gpg.gen_key], [`gpg.import_key`][reemote5.modules.gpg.gpg.import_key], [`gpg.key`][reemote5.modules.gpg.gpg.key], [`gpg.refresh_keys`][reemote5.modules.gpg.gpg.refresh_keys], [`gpg.trust`][reemote5.modules.gpg.gpg.trust], [`openrc.custom_runlevel`][reemote5.modules.openrc.openrc.custom_runlevel], [`openrc.runlevel`][reemote5.modules.openrc.openrc.runlevel], [`openrc.service`][reemote5.modules.openrc.openrc.service], [`mysql.database`][reemote5.modules.mysql.mysql.database], [`mysql.user`][reemote5.modules.mysql.mysql.user], [`mysql.privileges`][reemote5.modules.mysql.mysql.privileges], [`mysql.sql`][reemote5.modules.mysql.mysql.sql], [`mysql.dump`][reemote5.modules.mysql.mysql.dump], [`mysql.load`][reemote5.modules.mysql.mysql.load], [`mysql.table`][reemote5.modules.mysql.mysql.table], [`mysql.index`][reemote5.modules.mysql.mysql.index], [`mysql.variable`][reemote5.modules.mysql.mysql.variable], [`mysql.plugin`][reemote5.modules.mysql.mysql.plugin], [`mysql.role`][reemote5.modules.mysql.mysql.role], [`mysql.replica`][reemote5.modules.mysql.mysql.replica], [`mysql.kill`][reemote5.modules.mysql.mysql.kill], [`mysql.optimize`][reemote5.modules.mysql.mysql.optimize], [`postgresql.database`][reemote5.modules.postgresql.postgresql.database], [`postgresql.role`][reemote5.modules.postgresql.postgresql.role], [`postgresql.sql`][reemote5.modules.postgresql.postgresql.sql], [`postgresql.dump`][reemote5.modules.postgresql.postgresql.dump], [`postgresql.load`][reemote5.modules.postgresql.postgresql.load], [`postgresql.privilege`][reemote5.modules.postgresql.postgresql.privilege], [`postgresql.membership`][reemote5.modules.postgresql.postgresql.membership], [`postgresql.schema`][reemote5.modules.postgresql.postgresql.schema], [`postgresql.extension`][reemote5.modules.postgresql.postgresql.extension], [`postgresql.index`][reemote5.modules.postgresql.postgresql.index], [`postgresql.setting`][reemote5.modules.postgresql.postgresql.setting], [`postgresql.tablespace`][reemote5.modules.postgresql.postgresql.tablespace], [`postgresql.publication`][reemote5.modules.postgresql.postgresql.publication], [`postgresql.subscription`][reemote5.modules.postgresql.postgresql.subscription], [`selinux.boolean`][reemote5.modules.selinux.selinux.boolean], [`selinux.file_context`][reemote5.modules.selinux.selinux.file_context], [`selinux.file_context_mapping`][reemote5.modules.selinux.selinux.file_context_mapping], [`selinux.port`][reemote5.modules.selinux.selinux.port], [`selinux.mode`][reemote5.modules.selinux.selinux.mode], [`selinux.login`][reemote5.modules.selinux.selinux.login], [`selinux.module`][reemote5.modules.selinux.selinux.module], [`selinux.permissive_domain`][reemote5.modules.selinux.selinux.permissive_domain], [`selinux.restorecon`][reemote5.modules.selinux.selinux.restorecon], [`selinux.autorelabel`][reemote5.modules.selinux.selinux.autorelabel], [`iptables.chain`][reemote5.modules.iptables.iptables.chain], [`iptables.policy`][reemote5.modules.iptables.iptables.policy], [`iptables.rule`][reemote5.modules.iptables.iptables.rule], [`iptables.flush`][reemote5.modules.iptables.iptables.flush], [`iptables.zero`][reemote5.modules.iptables.iptables.zero], [`iptables.save`][reemote5.modules.iptables.iptables.save], [`iptables.restore`][reemote5.modules.iptables.iptables.restore], [`iptables.ipset`][reemote5.modules.iptables.iptables.ipset], [`lxd.container`][reemote5.modules.lxd.lxd.container], [`lxd.image`][reemote5.modules.lxd.lxd.image], [`lxd.image_alias`][reemote5.modules.lxd.lxd.image_alias], [`lxd.instance`][reemote5.modules.lxd.lxd.instance], [`lxd.instance_config`][reemote5.modules.lxd.lxd.instance_config], [`lxd.instance_copy`][reemote5.modules.lxd.lxd.instance_copy], [`lxd.instance_snapshot`][reemote5.modules.lxd.lxd.instance_snapshot], [`lxd.instance_state`][reemote5.modules.lxd.lxd.instance_state], [`lxd.network`][reemote5.modules.lxd.lxd.network], [`lxd.operation`][reemote5.modules.lxd.lxd.operation], [`lxd.profile`][reemote5.modules.lxd.lxd.profile], [`lxd.project`][reemote5.modules.lxd.lxd.project], [`lxd.storage_pool`][reemote5.modules.lxd.lxd.storage_pool], [`lxd.storage_volume`][reemote5.modules.lxd.lxd.storage_volume], [`firewalld.zone`][reemote5.modules.firewalld.firewalld.zone], [`firewalld.zone_service`][reemote5.modules.firewalld.firewalld.zone_service], [`firewalld.port`][reemote5.modules.firewalld.firewalld.port], [`firewalld.interface`][reemote5.modules.firewalld.firewalld.interface], [`firewalld.source`][reemote5.modules.firewalld.firewalld.source], [`firewalld.rich_rule`][reemote5.modules.firewalld.firewalld.rich_rule], [`firewalld.protocol`][reemote5.modules.firewalld.firewalld.protocol], [`firewalld.icmp_block`][reemote5.modules.firewalld.firewalld.icmp_block], [`firewalld.forward_port`][reemote5.modules.firewalld.firewalld.forward_port], [`firewalld.masquerade`][reemote5.modules.firewalld.firewalld.masquerade], [`firewalld.service`][reemote5.modules.firewalld.firewalld.service], [`firewalld.ipset`][reemote5.modules.firewalld.firewalld.ipset], [`firewalld.default_zone`][reemote5.modules.firewalld.firewalld.default_zone], [`firewalld.lockdown`][reemote5.modules.firewalld.firewalld.lockdown], [`firewalld.panic`][reemote5.modules.firewalld.firewalld.panic], [`firewalld.reload`][reemote5.modules.firewalld.firewalld.reload], [`server.group`][reemote5.modules.server.server.group], [`server.hostname`][reemote5.modules.server.server.hostname], [`server.kill`][reemote5.modules.server.server.kill], [`server.modprobe`][reemote5.modules.server.server.modprobe], [`server.mount`][reemote5.modules.server.server.mount], [`sysctl.conf`][reemote5.modules.sysctl.sysctl.conf], [`sysctl.setting`][reemote5.modules.sysctl.sysctl.setting], [`systemd.service`][reemote5.modules.systemd.systemd.service], [`systemd.daemon_reload`][reemote5.modules.systemd.systemd.daemon_reload], [`systemd.mask`][reemote5.modules.systemd.systemd.mask], [`systemd.reset_failed`][reemote5.modules.systemd.systemd.reset_failed], [`systemd.dropin`][reemote5.modules.systemd.systemd.dropin], [`systemd.tmpfiles`][reemote5.modules.systemd.systemd.tmpfiles], [`systemd.sysusers`][reemote5.modules.systemd.systemd.sysusers], [`systemd.preset`][reemote5.modules.systemd.systemd.preset], [`ufw.state`][reemote5.modules.ufw.ufw.state], [`ufw.default_policy`][reemote5.modules.ufw.ufw.default_policy], [`ufw.logging`][reemote5.modules.ufw.ufw.logging], [`ufw.rule`][reemote5.modules.ufw.ufw.rule], [`ufw.reset`][reemote5.modules.ufw.ufw.reset], [`server.timezone`][reemote5.modules.server.server.timezone], [`server.wait_service`][reemote5.modules.server.server.wait_service] | [hosts](hosts.md), [modules/apk](modules/apk.md), [modules/apt](modules/apt.md), [modules/dnf](modules/dnf.md), [modules/files](modules/files.md), [modules/firewalld](modules/firewalld.md), [modules/git](modules/git.md), [modules/gpg](modules/gpg.md), [modules/hardware](modules/hardware.md), [modules/iptables](modules/iptables.md), [modules/lxd](modules/lxd.md), [modules/openrc](modules/openrc.md), [modules/mysql](modules/mysql.md), [modules/postgresql](modules/postgresql.md), [modules/selinux](modules/selinux.md), [modules/server](modules/server.md), [modules/sysctl](modules/sysctl.md), [modules/systemd](modules/systemd.md), [modules/ufw](modules/ufw.md) |
+| **Hosts, facts, operations** | [`Host`][reemote5.hosts.Host], [`validate_inventory`][reemote5.hosts.validate_inventory], [`InventoryError`][reemote5.hosts.InventoryError], [`ApkAutoremovablePackages`][reemote5.modules.apk.apk.ApkAutoremovablePackages], [`ApkExplicitPackages`][reemote5.modules.apk.apk.ApkExplicitPackages], [`ApkHeldPackages`][reemote5.modules.apk.apk.ApkHeldPackages], [`ApkInstalledPackages`][reemote5.modules.apk.apk.ApkInstalledPackages], [`ApkRepositories`][reemote5.modules.apk.apk.ApkRepositories], [`AptKeys`][reemote5.modules.apt.apt.AptKeys], [`DnfPackages`][reemote5.modules.dnf.dnf.DnfPackages], [`FileLink`][reemote5.modules.files.files.FileLink], [`RemoteFileSha1`][reemote5.modules.files.files.RemoteFileSha1], [`SameFile`][reemote5.modules.files.files.SameFile], [`FileContents`][reemote5.modules.files.files.FileContents], [`FileFlags`][reemote5.modules.files.files.FileFlags], [`FirewalldStatus`][reemote5.modules.firewalld.firewalld.FirewalldStatus], [`FirewalldDefaultZone`][reemote5.modules.firewalld.firewalld.FirewalldDefaultZone], [`FirewalldZones`][reemote5.modules.firewalld.firewalld.FirewalldZones], [`FirewalldServices`][reemote5.modules.firewalld.firewalld.FirewalldServices], [`FirewalldIpSets`][reemote5.modules.firewalld.firewalld.FirewalldIpSets], [`FirewalldPolicies`][reemote5.modules.firewalld.firewalld.FirewalldPolicies], [`BlockDevices`][reemote5.modules.hardware.hardware.BlockDevices], [`GitBranch`][reemote5.modules.git.git.GitBranch], [`GpgKey`][reemote5.modules.gpg.gpg.GpgKey], [`GpgKeyDetails`][reemote5.modules.gpg.gpg.GpgKeyDetails], [`GpgKeyrings`][reemote5.modules.gpg.gpg.GpgKeyrings], [`GpgKeys`][reemote5.modules.gpg.gpg.GpgKeys], [`GpgSecretKeys`][reemote5.modules.gpg.gpg.GpgSecretKeys], [`GpgTrust`][reemote5.modules.gpg.gpg.GpgTrust], [`GpgVerify`][reemote5.modules.gpg.gpg.GpgVerify], [`OpenrcEnabled`][reemote5.modules.openrc.openrc.OpenrcEnabled], [`OpenrcRunlevels`][reemote5.modules.openrc.openrc.OpenrcRunlevels], [`OpenrcServices`][reemote5.modules.openrc.openrc.OpenrcServices], [`OpenrcStatus`][reemote5.modules.openrc.openrc.OpenrcStatus], [`OpenrcVersion`][reemote5.modules.openrc.openrc.OpenrcVersion], [`MysqlDatabases`][reemote5.modules.mysql.mysql.MysqlDatabases], [`MysqlUsers`][reemote5.modules.mysql.mysql.MysqlUsers], [`MysqlUserGrants`][reemote5.modules.mysql.mysql.MysqlUserGrants], [`MysqlBinaryLogs`][reemote5.modules.mysql.mysql.MysqlBinaryLogs], [`MysqlColumns`][reemote5.modules.mysql.mysql.MysqlColumns], [`MysqlConnections`][reemote5.modules.mysql.mysql.MysqlConnections], [`MysqlEngines`][reemote5.modules.mysql.mysql.MysqlEngines], [`MysqlIndexes`][reemote5.modules.mysql.mysql.MysqlIndexes], [`MysqlPlugins`][reemote5.modules.mysql.mysql.MysqlPlugins], [`MysqlReplication`][reemote5.modules.mysql.mysql.MysqlReplication], [`MysqlStatus`][reemote5.modules.mysql.mysql.MysqlStatus], [`MysqlTables`][reemote5.modules.mysql.mysql.MysqlTables], [`MysqlVariables`][reemote5.modules.mysql.mysql.MysqlVariables], [`PostgresqlRoles`][reemote5.modules.postgresql.postgresql.PostgresqlRoles], [`PostgresqlDatabases`][reemote5.modules.postgresql.postgresql.PostgresqlDatabases], [`PostgresqlRoleMemberships`][reemote5.modules.postgresql.postgresql.PostgresqlRoleMemberships], [`PostgresqlPrivileges`][reemote5.modules.postgresql.postgresql.PostgresqlPrivileges], [`PostgresqlSchemas`][reemote5.modules.postgresql.postgresql.PostgresqlSchemas], [`PostgresqlTables`][reemote5.modules.postgresql.postgresql.PostgresqlTables], [`PostgresqlIndexes`][reemote5.modules.postgresql.postgresql.PostgresqlIndexes], [`PostgresqlExtensions`][reemote5.modules.postgresql.postgresql.PostgresqlExtensions], [`PostgresqlSettings`][reemote5.modules.postgresql.postgresql.PostgresqlSettings], [`PostgresqlTablespaces`][reemote5.modules.postgresql.postgresql.PostgresqlTablespaces], [`PostgresqlReplication`][reemote5.modules.postgresql.postgresql.PostgresqlReplication], [`PostgresqlConnections`][reemote5.modules.postgresql.postgresql.PostgresqlConnections], [`PostgresqlPublications`][reemote5.modules.postgresql.postgresql.PostgresqlPublications], [`PostgresqlSubscriptions`][reemote5.modules.postgresql.postgresql.PostgresqlSubscriptions], [`SEBoolean`][reemote5.modules.selinux.selinux.SEBoolean], [`Booleans`][reemote5.modules.selinux.selinux.Booleans], [`FileContext`][reemote5.modules.selinux.selinux.FileContext], [`FileContextMapping`][reemote5.modules.selinux.selinux.FileContextMapping], [`SEPorts`][reemote5.modules.selinux.selinux.SEPorts], [`SEPort`][reemote5.modules.selinux.selinux.SEPort], [`Mode`][reemote5.modules.selinux.selinux.Mode], [`SELogin`][reemote5.modules.selinux.selinux.SELogin], [`SEUser`][reemote5.modules.selinux.selinux.SEUser], [`Modules`][reemote5.modules.selinux.selinux.Modules], [`PermissiveDomains`][reemote5.modules.selinux.selinux.PermissiveDomains], [`IptablesChains`][reemote5.modules.iptables.iptables.IptablesChains], [`IptablesRules`][reemote5.modules.iptables.iptables.IptablesRules], [`Ip6tablesChains`][reemote5.modules.iptables.iptables.Ip6tablesChains], [`Ip6tablesRules`][reemote5.modules.iptables.iptables.Ip6tablesRules], [`IptablesRulesOrdered`][reemote5.modules.iptables.iptables.IptablesRulesOrdered], [`Ip6tablesRulesOrdered`][reemote5.modules.iptables.iptables.Ip6tablesRulesOrdered], [`IptablesTables`][reemote5.modules.iptables.iptables.IptablesTables], [`Ip6tablesTables`][reemote5.modules.iptables.iptables.Ip6tablesTables], [`IptablesVersion`][reemote5.modules.iptables.iptables.IptablesVersion], [`Ip6tablesVersion`][reemote5.modules.iptables.iptables.Ip6tablesVersion], [`IptablesModules`][reemote5.modules.iptables.iptables.IptablesModules], [`IpSets`][reemote5.modules.iptables.iptables.IpSets], [`IptablesPersistence`][reemote5.modules.iptables.iptables.IptablesPersistence], [`Ip6tablesPersistence`][reemote5.modules.iptables.iptables.Ip6tablesPersistence], [`LxdContainers`][reemote5.modules.lxd.lxd.LxdContainers], [`LxdImageAliases`][reemote5.modules.lxd.lxd.LxdImageAliases], [`LxdImages`][reemote5.modules.lxd.lxd.LxdImages], [`LxdInstanceConfig`][reemote5.modules.lxd.lxd.LxdInstanceConfig], [`LxdInstanceSnapshots`][reemote5.modules.lxd.lxd.LxdInstanceSnapshots], [`LxdInstanceState`][reemote5.modules.lxd.lxd.LxdInstanceState], [`LxdInstances`][reemote5.modules.lxd.lxd.LxdInstances], [`LxdNetworks`][reemote5.modules.lxd.lxd.LxdNetworks], [`LxdOperations`][reemote5.modules.lxd.lxd.LxdOperations], [`LxdProfiles`][reemote5.modules.lxd.lxd.LxdProfiles], [`LxdProjectConfig`][reemote5.modules.lxd.lxd.LxdProjectConfig], [`LxdProjects`][reemote5.modules.lxd.lxd.LxdProjects], [`LxdServerInfo`][reemote5.modules.lxd.lxd.LxdServerInfo], [`LxdServerResources`][reemote5.modules.lxd.lxd.LxdServerResources], [`LxdStoragePools`][reemote5.modules.lxd.lxd.LxdStoragePools], [`LxdStorageVolumes`][reemote5.modules.lxd.lxd.LxdStorageVolumes], [`Sysctl`][reemote5.modules.sysctl.sysctl.Sysctl], [`SysctlFile`][reemote5.modules.sysctl.sysctl.SysctlFile], [`SysctlFiles`][reemote5.modules.sysctl.sysctl.SysctlFiles], [`SystemdServiceState`][reemote5.modules.systemd.systemd.SystemdServiceState], [`SystemdStatus`][reemote5.modules.systemd.systemd.SystemdStatus], [`SystemdEnabled`][reemote5.modules.systemd.systemd.SystemdEnabled], [`SystemdUnitProperties`][reemote5.modules.systemd.systemd.SystemdUnitProperties], [`SystemdFailedUnits`][reemote5.modules.systemd.systemd.SystemdFailedUnits], [`SystemdTimers`][reemote5.modules.systemd.systemd.SystemdTimers], [`SystemdUnitFiles`][reemote5.modules.systemd.systemd.SystemdUnitFiles], [`SystemdVersion`][reemote5.modules.systemd.systemd.SystemdVersion], [`SystemdSystemState`][reemote5.modules.systemd.systemd.SystemdSystemState], [`SystemdDependencies`][reemote5.modules.systemd.systemd.SystemdDependencies], [`UfwStatus`][reemote5.modules.ufw.ufw.UfwStatus], [`UfwRules`][reemote5.modules.ufw.ufw.UfwRules], [`UfwApplications`][reemote5.modules.ufw.ufw.UfwApplications], [`apk.autoremove`][reemote5.modules.apk.apk.autoremove], [`apk.hold`][reemote5.modules.apk.apk.hold], [`apk.packages`][reemote5.modules.apk.apk.packages], [`apk.repository`][reemote5.modules.apk.apk.repository], [`apk.virtual`][reemote5.modules.apk.apk.virtual], [`apt.deb`][reemote5.modules.apt.apt.deb], [`apt.dist_upgrade`][reemote5.modules.apt.apt.dist_upgrade], [`apt.auto_remove`][reemote5.modules.apt.apt.auto_remove], [`apt.key`][reemote5.modules.apt.apt.key], [`apt.mark`][reemote5.modules.apt.apt.mark], [`apt.packages`][reemote5.modules.apt.apt.packages], [`apt.ppa`][reemote5.modules.apt.apt.ppa], [`apt.repo`][reemote5.modules.apt.apt.repo], [`apt.sources_file`][reemote5.modules.apt.apt.sources_file], [`apt.update`][reemote5.modules.apt.apt.update], [`apt.upgrade`][reemote5.modules.apt.apt.upgrade], [`dnf.packages`][reemote5.modules.dnf.dnf.packages], [`dnf.update`][reemote5.modules.dnf.dnf.update], [`dnf.repo`][reemote5.modules.dnf.dnf.repo], [`dnf.rpm`][reemote5.modules.dnf.dnf.rpm], [`dnf.key`][reemote5.modules.dnf.dnf.key], [`dnf.module`][reemote5.modules.dnf.dnf.module], [`files.link`][reemote5.modules.files.files.link], [`files.file`][reemote5.modules.files.files.file], [`files.put`][reemote5.modules.files.files.put], [`files.get`][reemote5.modules.files.files.get], [`files.edit`][reemote5.modules.files.files.edit], [`files.move`][reemote5.modules.files.files.move], [`files.copy`][reemote5.modules.files.files.copy], [`files.directory`][reemote5.modules.files.files.directory], [`files.flags`][reemote5.modules.files.files.flags], [`git.config`][reemote5.modules.git.git.config], [`git.repo`][reemote5.modules.git.git.repo], [`git.worktree`][reemote5.modules.git.git.worktree], [`gpg.dearmor`][reemote5.modules.gpg.gpg.dearmor], [`gpg.delete_key`][reemote5.modules.gpg.gpg.delete_key], [`gpg.export_key`][reemote5.modules.gpg.gpg.export_key], [`gpg.gen_key`][reemote5.modules.gpg.gpg.gen_key], [`gpg.import_key`][reemote5.modules.gpg.gpg.import_key], [`gpg.key`][reemote5.modules.gpg.gpg.key], [`gpg.refresh_keys`][reemote5.modules.gpg.gpg.refresh_keys], [`gpg.trust`][reemote5.modules.gpg.gpg.trust], [`openrc.custom_runlevel`][reemote5.modules.openrc.openrc.custom_runlevel], [`openrc.runlevel`][reemote5.modules.openrc.openrc.runlevel], [`openrc.service`][reemote5.modules.openrc.openrc.service], [`mysql.database`][reemote5.modules.mysql.mysql.database], [`mysql.user`][reemote5.modules.mysql.mysql.user], [`mysql.privileges`][reemote5.modules.mysql.mysql.privileges], [`mysql.sql`][reemote5.modules.mysql.mysql.sql], [`mysql.dump`][reemote5.modules.mysql.mysql.dump], [`mysql.load`][reemote5.modules.mysql.mysql.load], [`mysql.table`][reemote5.modules.mysql.mysql.table], [`mysql.index`][reemote5.modules.mysql.mysql.index], [`mysql.variable`][reemote5.modules.mysql.mysql.variable], [`mysql.plugin`][reemote5.modules.mysql.mysql.plugin], [`mysql.role`][reemote5.modules.mysql.mysql.role], [`mysql.replica`][reemote5.modules.mysql.mysql.replica], [`mysql.kill`][reemote5.modules.mysql.mysql.kill], [`mysql.optimize`][reemote5.modules.mysql.mysql.optimize], [`postgresql.database`][reemote5.modules.postgresql.postgresql.database], [`postgresql.role`][reemote5.modules.postgresql.postgresql.role], [`postgresql.sql`][reemote5.modules.postgresql.postgresql.sql], [`postgresql.dump`][reemote5.modules.postgresql.postgresql.dump], [`postgresql.load`][reemote5.modules.postgresql.postgresql.load], [`postgresql.privilege`][reemote5.modules.postgresql.postgresql.privilege], [`postgresql.membership`][reemote5.modules.postgresql.postgresql.membership], [`postgresql.schema`][reemote5.modules.postgresql.postgresql.schema], [`postgresql.extension`][reemote5.modules.postgresql.postgresql.extension], [`postgresql.index`][reemote5.modules.postgresql.postgresql.index], [`postgresql.setting`][reemote5.modules.postgresql.postgresql.setting], [`postgresql.tablespace`][reemote5.modules.postgresql.postgresql.tablespace], [`postgresql.publication`][reemote5.modules.postgresql.postgresql.publication], [`postgresql.subscription`][reemote5.modules.postgresql.postgresql.subscription], [`selinux.boolean`][reemote5.modules.selinux.selinux.boolean], [`selinux.file_context`][reemote5.modules.selinux.selinux.file_context], [`selinux.file_context_mapping`][reemote5.modules.selinux.selinux.file_context_mapping], [`selinux.port`][reemote5.modules.selinux.selinux.port], [`selinux.mode`][reemote5.modules.selinux.selinux.mode], [`selinux.login`][reemote5.modules.selinux.selinux.login], [`selinux.module`][reemote5.modules.selinux.selinux.module], [`selinux.permissive_domain`][reemote5.modules.selinux.selinux.permissive_domain], [`selinux.restorecon`][reemote5.modules.selinux.selinux.restorecon], [`selinux.autorelabel`][reemote5.modules.selinux.selinux.autorelabel], [`iptables.chain`][reemote5.modules.iptables.iptables.chain], [`iptables.policy`][reemote5.modules.iptables.iptables.policy], [`iptables.rule`][reemote5.modules.iptables.iptables.rule], [`iptables.flush`][reemote5.modules.iptables.iptables.flush], [`iptables.zero`][reemote5.modules.iptables.iptables.zero], [`iptables.save`][reemote5.modules.iptables.iptables.save], [`iptables.restore`][reemote5.modules.iptables.iptables.restore], [`iptables.ipset`][reemote5.modules.iptables.iptables.ipset], [`lxd.container`][reemote5.modules.lxd.lxd.container], [`lxd.image`][reemote5.modules.lxd.lxd.image], [`lxd.image_alias`][reemote5.modules.lxd.lxd.image_alias], [`lxd.instance`][reemote5.modules.lxd.lxd.instance], [`lxd.instance_config`][reemote5.modules.lxd.lxd.instance_config], [`lxd.instance_copy`][reemote5.modules.lxd.lxd.instance_copy], [`lxd.instance_snapshot`][reemote5.modules.lxd.lxd.instance_snapshot], [`lxd.instance_state`][reemote5.modules.lxd.lxd.instance_state], [`lxd.network`][reemote5.modules.lxd.lxd.network], [`lxd.operation`][reemote5.modules.lxd.lxd.operation], [`lxd.profile`][reemote5.modules.lxd.lxd.profile], [`lxd.project`][reemote5.modules.lxd.lxd.project], [`lxd.storage_pool`][reemote5.modules.lxd.lxd.storage_pool], [`lxd.storage_volume`][reemote5.modules.lxd.lxd.storage_volume], [`firewalld.zone`][reemote5.modules.firewalld.firewalld.zone], [`firewalld.zone_service`][reemote5.modules.firewalld.firewalld.zone_service], [`firewalld.port`][reemote5.modules.firewalld.firewalld.port], [`firewalld.interface`][reemote5.modules.firewalld.firewalld.interface], [`firewalld.source`][reemote5.modules.firewalld.firewalld.source], [`firewalld.rich_rule`][reemote5.modules.firewalld.firewalld.rich_rule], [`firewalld.protocol`][reemote5.modules.firewalld.firewalld.protocol], [`firewalld.icmp_block`][reemote5.modules.firewalld.firewalld.icmp_block], [`firewalld.forward_port`][reemote5.modules.firewalld.firewalld.forward_port], [`firewalld.masquerade`][reemote5.modules.firewalld.firewalld.masquerade], [`firewalld.service`][reemote5.modules.firewalld.firewalld.service], [`firewalld.ipset`][reemote5.modules.firewalld.firewalld.ipset], [`firewalld.default_zone`][reemote5.modules.firewalld.firewalld.default_zone], [`firewalld.lockdown`][reemote5.modules.firewalld.firewalld.lockdown], [`firewalld.panic`][reemote5.modules.firewalld.firewalld.panic], [`firewalld.reload`][reemote5.modules.firewalld.firewalld.reload], [`server.group`][reemote5.modules.server.server.group], [`server.hostname`][reemote5.modules.server.server.hostname], [`server.kill`][reemote5.modules.server.server.kill], [`server.modprobe`][reemote5.modules.server.server.modprobe], [`server.mount`][reemote5.modules.server.server.mount], [`sysctl.conf`][reemote5.modules.sysctl.sysctl.conf], [`sysctl.setting`][reemote5.modules.sysctl.sysctl.setting], [`systemd.service`][reemote5.modules.systemd.systemd.service], [`systemd.daemon_reload`][reemote5.modules.systemd.systemd.daemon_reload], [`systemd.mask`][reemote5.modules.systemd.systemd.mask], [`systemd.reset_failed`][reemote5.modules.systemd.systemd.reset_failed], [`systemd.dropin`][reemote5.modules.systemd.systemd.dropin], [`systemd.tmpfiles`][reemote5.modules.systemd.systemd.tmpfiles], [`systemd.sysusers`][reemote5.modules.systemd.systemd.sysusers], [`systemd.preset`][reemote5.modules.systemd.systemd.preset], [`ufw.state`][reemote5.modules.ufw.ufw.state], [`ufw.default_policy`][reemote5.modules.ufw.ufw.default_policy], [`ufw.logging`][reemote5.modules.ufw.ufw.logging], [`ufw.rule`][reemote5.modules.ufw.ufw.rule], [`ufw.reset`][reemote5.modules.ufw.ufw.reset], [`server.timezone`][reemote5.modules.server.server.timezone], [`server.user`][reemote5.modules.server.server.user], [`server.user_authorized_keys`][reemote5.modules.server.server.user_authorized_keys], [`server.wait`][reemote5.modules.server.server.wait], [`server.wait_service`][reemote5.modules.server.server.wait_service] | [hosts](hosts.md), [modules/apk](modules/apk.md), [modules/apt](modules/apt.md), [modules/dnf](modules/dnf.md), [modules/files](modules/files.md), [modules/firewalld](modules/firewalld.md), [modules/git](modules/git.md), [modules/gpg](modules/gpg.md), [modules/hardware](modules/hardware.md), [modules/iptables](modules/iptables.md), [modules/lxd](modules/lxd.md), [modules/openrc](modules/openrc.md), [modules/mysql](modules/mysql.md), [modules/postgresql](modules/postgresql.md), [modules/selinux](modules/selinux.md), [modules/server](modules/server.md), [modules/sysctl](modules/sysctl.md), [modules/systemd](modules/systemd.md), [modules/ufw](modules/ufw.md) |
 | **Connectors** | [`DockerHost`][reemote5.connectors.docker.DockerHost], [`validate_docker_connection`][reemote5.connectors.docker.validate_docker_connection] | [connectors/docker](connectors/docker.md) |
-| **Actions** | [`Shell`][reemote5.actions.Shell], [`WaitForConnection`][reemote5.actions.WaitForConnection], [`Result`][reemote5.actions.Result], [`gather_action`][reemote5.actions.gather_action], [`ActionInDeployError`][reemote5.actions.ActionInDeployError], [`ConnectionTimeoutError`][reemote5.actions.ConnectionTimeoutError] | [actions](actions.md) |
+| **Actions** | [`Shell`][reemote5.actions.Shell], [`Script`][reemote5.actions.Script], [`WaitForConnection`][reemote5.actions.WaitForConnection], [`Result`][reemote5.actions.Result], [`gather_action`][reemote5.actions.gather_action], [`ActionInDeployError`][reemote5.actions.ActionInDeployError], [`ConnectionTimeoutError`][reemote5.actions.ConnectionTimeoutError] | [actions](actions/actions.md) |
 
 !!! note "Design-doc references"
 
     Several docstrings cite *design doc section N*. Those are section numbers
-    from the original design notes for this POC; they are informational only
-    and are not published here.
+    from the project's original design notes, written while the execution
+    model was still being settled; they are informational only and are not
+    published here.
 
 ## Project layout
 
@@ -232,7 +245,7 @@ src/reemote5/
 ├── core.py            # OperationRequest, OpContext, FactCache, HostRuntime, OperationError, op()
 ├── commands.py        # Command descriptors (Command, StringCommand, TransferCommand, WaitCommand)
 ├── drivers.py         # run_prepare, run_apply, send_command, run, formatters
-├── actions.py         # Shell + WaitForConnection actions, Result, gather_action (immediate, outside deploys)
+├── actions.py         # Shell + Script + WaitForConnection actions, Result, gather_action (immediate, outside deploys)
 ├── hosts.py           # Host (materialized from inventory entries)
 ├── connectors/        # alternative transports selected by connection.connector
 │   └── docker.py      #   DockerHost (local Docker/Podman containers via the CLI)
@@ -244,7 +257,7 @@ src/reemote5/
     ├── dnf/
     │   └── dnf.py     #   DnfPackages…, dnf.packages + its command descriptors
     ├── files/
-    │   └── files.py   #   File/FileLink…, LocalSha1/RemoteFileSha1/FileContents, files.link/file/put/get/edit/move/copy + their command descriptors
+    │   └── files.py   #   File/FileLink…, SameFile (test -ef hard-link probe), LocalSha1/RemoteFileSha1/FileContents, FileFlags, files.link/file/put/get/edit/move/copy/directory/flags + their command descriptors
     ├── firewalld/
     │   └── firewalld.py  # FirewalldStatus/FirewalldDefaultZone, FirewalldZones (--list-all-zones both scopes), FirewalldServices/FirewalldIpSets/FirewalldPolicies (--info-* marker loops), firewalld.zone/zone_service/port/interface/source/rich_rule/protocol/icmp_block/forward_port/masquerade/service/ipset/default_zone/lockdown/panic/reload + their command descriptors
     ├── git/
@@ -266,7 +279,7 @@ src/reemote5/
     ├── selinux/
     │   └── selinux.py  #   SEBoolean/Booleans (getsebool), FileContext (stat -c %C), FileContextMapping (semanage fcontext), SEPorts/SEPort (semanage port / sepolicy network), Mode (sestatus), SELogin/SEUser (semanage login/user), Modules (semodule -lfull), PermissiveDomains (semanage permissive), selinux.boolean/file_context/file_context_mapping/port + mode/login/module/permissive_domain/restorecon/autorelabel + their command descriptors
     ├── server/
-    │   └── server.py  #   server.group/hostname/kill/modprobe/mount/timezone/wait_service + their command descriptors (the systemd surface relocated to systemd/, re-exported here; the Sysctl fact relocated to sysctl/)
+    │   └── server.py  #   server.group/hostname/kill/modprobe/mount/timezone/user/user_authorized_keys/wait/wait_service + their command descriptors (the systemd surface relocated to systemd/, re-exported here; the Sysctl fact relocated to sysctl/)
     ├── sysctl/
     │   └── sysctl.py  #   Sysctl (sysctl -a runtime dump), SysctlFile/SysctlFiles (persistent config visibility), sysctl.setting (one parameter: runtime apply + keyed persistence edit) + sysctl.conf (whole drop-in file) + their command descriptors
     ├── systemd/

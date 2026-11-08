@@ -3,7 +3,7 @@
 
 site_name: reemote5
 site_description: >-
-  POC model for generator-based two-phase execution: an alternative to
+  Generator-based two-phase execution model: an alternative to
   pyinfra's prepare/execute design.
 repo_url: https://github.com/kimjarvis/reemote5
 repo_name: kimjarvis/reemote5
