@@ -210,9 +210,10 @@ operation does not trigger.
 
 The read-only fact-gathering scripts under
 [`examples/modules/selinux/`](../examples/modules/selinux.md) gather one
-fact each over `gather_fact` on the inline web1/web2 inventory (the dnf
-convention — every target is an SELinux host, so no `when` guard is
-needed): `selinux_se_boolean.py`, `selinux_booleans.py`,
+fact each over `gather_fact` on the shared `inventory.json`'s CentOS
+hosts (the dnf convention — every target is an SELinux host, and the
+`is_centos` guard filters the host list before the fan-out):
+`selinux_se_boolean.py`, `selinux_booleans.py`,
 `selinux_file_context.py`, `selinux_file_context_mapping.py`,
 `selinux_se_ports.py` (full table plus a protocol/type-filtered gather),
 `selinux_se_port.py`, `selinux_mode.py`, `selinux_se_login.py`,

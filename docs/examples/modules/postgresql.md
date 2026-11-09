@@ -5,8 +5,12 @@ the [`postgresql`](../../modules/postgresql.md) module. See the
 [Examples overview](../../examples.md) for the shared "connects for real"
 warning and the error-reporting contract every script follows.
 
-Every script's inventory carries `privilege={"sudo_user": "postgres"}` and
-the requests ride under `sudo`, so the `psql` client connects as the
+Every script reads the shared project-root `inventory.json` and guards on
+the `"centos"` group (`is_centos` on every operation request, a host-list
+filter before each `gather_fact` fan-out). The shared file carries no
+`privilege` section, so each operation script attaches
+`{"sudo_user": "postgres"}` to the loaded `centos` entries and the
+requests ride under `sudo`, so the `psql` client connects as the
 `postgres` OS user through peer authentication — no password travels
 through operation arguments, plans or logs (pyinfra's `psql_password`
 option and `postgresql.role`'s `password` parameter are deliberately
@@ -53,7 +57,8 @@ The scripts are compile-checked and exercised by the offline harness
 (`tests/test_examples.py`), not run against the shared demo hosts. To run them
 live, relax the demo hosts' sudo confinement (permissive/unconfined, then
 `sudo postgresql-setup --initdb` and `sudo systemctl start postgresql`), or
-point `INVENTORY` at your own PostgreSQL machines whose `pg_hba.conf` admits
+point `INVENTORY_PATH` at your own file of PostgreSQL machines whose
+`pg_hba.conf` admits
 the login user (facts) and the `postgres` OS user (operations).
 
 ## Managing a database

@@ -54,8 +54,8 @@ unconfined domain (or set SELinux permissive), install + start
 `mysql-server`, and provision the demo schema the later examples assume —
 `mysql_database.py` creates `shop`, `mysql_table.py` its `orders` table,
 `mysql_user.py` the `shop_app`@`localhost` account (run those first, in
-that order) — or point each script's `INVENTORY` at your own MySQL
-machines.
+that order) — or point each script's `INVENTORY_PATH` at your own file of
+MySQL machines.
 
 ## Managing a database
 

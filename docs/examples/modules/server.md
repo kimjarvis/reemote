@@ -41,6 +41,12 @@ do not ship `lsb_release` in their base repos (EPEL provides it), so a short
 fact is gathered. The install is idempotent, and the read never hits the
 missing-command path.
 
+Like the dnf examples, every script reads the shared project-root
+`inventory.json` and guards on the `"centos"` group by default
+(`when=is_centos` on every request, a host-list filter before each
+`gather_fact` fan-out) — the one exception is the locale recipe below,
+which guards on `is_ubuntu` because it is Debian-family only.
+
 ## Ensuring system groups
 
 `server.group` in action: the deploy creates the `docker` group (pyinfra's
@@ -81,7 +87,7 @@ from the read-only `server_hostname.py` fact example.
 `server.kill` in action, and the determinism-safe way to "find the PID,
 then kill it" in ONE deploy. Like pyinfra, the operation takes an explicit
 `pid` (and an optional `signal`, default `TERM`), so the script first takes
-a `Processes` snapshot via `gather_fact` across the fleet, then builds the
+a `Processes` snapshot via `gather_fact` across the guarded hosts, then builds the
 deploy from a factory closing over that frozen mapping: the generator loops
 over the snapshot, never live state, so prepare and apply yield the
 identical `op(server.kill, pid=...)` sequence. No first deploy is needed —
@@ -101,24 +107,25 @@ deploy once nginx is gone.
 
 ## Loading and unloading kernel modules
 
-`server.modprobe` in action: the deploy loads the `floppy` module (pyinfra's
-documented example) and then ensures `loop` and `brd` are loaded, both under
-`sudo` because `modprobe` needs root. The operation is idempotent — it
-compares the names against the `KernelModules` fact and yields a
-`ModprobeCommand` only for the modules that differ from the request, so a
-host where `loop` is already loaded re-loads nothing and a second run plans
-no change. `module` accepts a single name or a tuple of names, `force=True`
-would render `modprobe -f` (without ever forcing a reload of an in-state
-module), and unloading is the mirror image: `present=False` yields
-`modprobe -r -a` only for the names that are loaded. On modern hardware the
-`floppy` module may not exist at all — `modprobe` then exits non-zero and
-the run fails with a typed `CommandError`, which the script reports as one
-line. On the CentOS demo hosts this is also a **host-policy limit**: SELinux
-`staff_t` confinement denies module loading, so `modprobe` reports even a
-present, indexed module (`loop`, `brd`) as "not found in directory" despite
-`kernel-modules` being installed and the `depmod` database listing them. The
-requests already carry `sudo=True`; run it with an unconfined `sudo` domain
-(e.g. `unconfined_t`) or SELinux permissive.
+`server.modprobe` in action: the deploy loads the `nbd` module and then
+ensures `loop` and `brd` are loaded, both under `sudo` because `modprobe`
+needs root. The operation is idempotent — it compares the names against the
+`KernelModules` fact and yields a `ModprobeCommand` only for the modules that
+differ from the request, so a host where `loop` is already loaded re-loads
+nothing and a second run plans no change. `module` accepts a single name or a
+tuple of names, `force=True` would render `modprobe -f` (without ever forcing
+a reload of an in-state module), and unloading is the mirror image:
+`present=False` yields `modprobe -r -a` only for the names that are loaded. A
+request needs the `modprobe` binary (the `kmod` package) and the `.ko` file of
+each named module under the *running* kernel, so the script first drives an
+idempotent `dnf.packages` install of `kmod` and `kernel-modules-core` — the
+package shipping `nbd`, `loop` and `brd` — before the load deploy reads its
+facts. The dependency on the running kernel's tree is why these modules are
+chosen over anything in `kernel-modules-extra`: installing that package only
+populates `/lib/modules` for the newest installed kernel, so on a host not yet
+rebooted into it `modprobe` would report the module as "not found in
+directory" — a real `CommandError`, which the script reports as one line (the
+same path an unknown module or a module still in use on removal takes).
 
 ::: server_modprobe
     options:
@@ -242,7 +249,7 @@ on Debian/Ubuntu (the `locales` package), so it targets the `ubuntu` host, not
 the CentOS `web1`/`web2` servers — RHEL-family hosts install locales through
 `glibc-langpack-*` and `localedef` and have no `/etc/locale.gen`.
 The script snapshots `FileContents("/etc/locale.gen")` and `Locales` from
-every host, applies pyinfra's change condition to the frozen snapshot
+every guarded host, applies pyinfra's change condition to the frozen snapshot
 (enable only when the locale is absent from `locale -a`, disable only when
 present), and computes the desired content with the pure `locale_edit`
 function — pyinfra's definition-line lookup (comment out or uncomment the
@@ -271,7 +278,7 @@ built on the generic `files.edit` primitive (the `Sysctl` fact it compares
 against relocated to that namespace as `sysctl.Sysctl`; the top-level
 `reemote5.Sysctl` binding still resolves).
 The script snapshots `Sysctl` for `fs.file-max` and
-`FileContents("/etc/sysctl.conf")` from every host, then applies pyinfra's
+`FileContents("/etc/sysctl.conf")` from every guarded host, then applies pyinfra's
 two independent decisions to the frozen snapshots: the runtime gate is
 pyinfra's fact comparison on the normalized value (lists join with spaces
 for the shell, digits become ints so `"2000"` and `2000` compare equal),
@@ -302,7 +309,7 @@ named `server_op_sysctl.py`; the read-only fact example relocated to
 like `server.etc_hosts` and `server.locale` it is a thin wrapper over
 pyinfra's `files.line`, and reemote5 ships one generic editor instead:
 this recipe, built on the `files.edit` primitive. The script snapshots
-`FileContents("/etc/security/limits.conf")` from every host and computes
+`FileContents("/etc/security/limits.conf")` from every guarded host and computes
 the desired content with the pure `security_limit_edit` function —
 pyinfra's `files.line` lookup (anchored
 `^{domain}\s+{limit_type}\s+{item}.*$`, the value *not* part of the

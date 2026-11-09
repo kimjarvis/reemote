@@ -218,8 +218,9 @@ rules with one set match.
 
 The read-only fact-gathering scripts under
 [`examples/modules/iptables/`](../examples/modules/iptables.md) gather one
-fact each over `gather_fact` on the inline web1/web2 inventory (the dnf
-convention — no `when` guard): `iptables_iptables_chains.py`,
+fact each over `gather_fact` on the shared `inventory.json`'s CentOS
+hosts (the dnf convention — the `is_centos` guard filters the host list
+before the fan-out): `iptables_iptables_chains.py`,
 `iptables_ip6tables_chains.py`, `iptables_iptables_rules.py`,
 `iptables_ip6tables_rules.py`, `iptables_iptables_rules_ordered.py`,
 `iptables_ip6tables_rules_ordered.py`, `iptables_iptables_tables.py`,

@@ -1,0 +1,29 @@
+Enforcing
+unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023
+=== SNAPD ===
+Last metadata expiration check: 3:04:17 ago on Mon Nov  9 08:19:31 2026.
+Available Packages
+snapd.x86_64                          2.77.1-0.el9                          epel
+=== WHATPROvides lxc ===
+Last metadata expiration check: 3:04:18 ago on Mon Nov  9 08:19:31 2026.
+=== LXC FILES ===
+/usr/bin/lxc-attach
+/usr/bin/lxc-cgroup
+/usr/bin/lxc-checkconfig
+/usr/bin/lxc-checkpoint
+/usr/bin/lxc-config
+/usr/bin/lxc-console
+/usr/bin/lxc-copy
+/usr/bin/lxc-create
+/usr/bin/lxc-destroy
+/usr/bin/lxc-device
+/usr/bin/lxc-execute
+/usr/bin/lxc-freeze
+/usr/bin/lxc-info
+/usr/bin/lxc-ls
+/usr/bin/lxc-monitor
+/usr/bin/lxc-snapshot
+/usr/bin/lxc-start
+/usr/bin/lxc-stop
+/usr/bin/lxc-top
+/usr/bin/lxc-unfreeze

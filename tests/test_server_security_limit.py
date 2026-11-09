@@ -85,12 +85,13 @@ LIMIT_LINE = "*\tsoft\tnofile\t1024\n"
 INVENTORY = [
     {
         "host": "web1",
+        "group": "centos",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
     },
 ]
 TWO_HOSTS = [
     *INVENTORY,
-    {"host": "web2", "connection": {"key_path": "~/.ssh/id_ed25519"}},
+    {"host": "web2", "group": "centos", "connection": {"key_path": "~/.ssh/id_ed25519"}},
 ]
 
 # Stable spool transforms for the end-to-end deploys, exactly as main()

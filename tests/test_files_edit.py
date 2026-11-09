@@ -48,7 +48,7 @@ INVENTORY = [
     },
 ]
 
-REMOTE_PATH = "/home/kjarvis/reemote5-edit.txt"
+REMOTE_PATH = "/tmp/reemote5-edit.txt"
 
 
 class CannedShellHost(Host):

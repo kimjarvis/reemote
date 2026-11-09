@@ -102,7 +102,7 @@ main repository, so `main` first drives a small idempotent `git` install
 deploy (`dnf.packages` under `sudo=True`), and the deploy opens with a
 `git.repo` request cloning the public
 `https://github.com/octocat/Hello-World.git` demo repository into
-`/home/kjarvis/app` before the worktree requests. The script yields the same
+`/tmp/reemote5-app` before the worktree requests. The script yields the same
 add request twice with `pull=False` — the second is a guaranteed no-op in the
 apply phase,
 because the first add is visible to it through the fresh per-step fact cache

@@ -46,9 +46,11 @@ remote paths, no bytes move over the connection. Like pyinfra's
 `gpg.dearmor` it is deliberately stateless: every run converts and
 reports a change. The deploy stages a **real** armored key (the Docker
 Release CE rpm signing key) with a `files.put` upload to a `/tmp` spool, so
-the dearmor always finds valid material; a `files.file` request with
-`present=False` clears any stale `dest` first (gpg refuses to overwrite an
-existing output). Both that cleanup and the dearmor's output write target
+the dearmor always finds valid material; the conversion runs
+`gpg --batch --yes --dearmor`, so an existing output is overwritten and
+repeated sweeps converge, while a `files.file` request with
+`present=False` still clears any stale `dest` first to demonstrate
+explicit removal. Both that cleanup and the dearmor's output write target
 `/etc/apt/keyrings/` (`etc_t`), which a CentOS host's SELinux
 `staff_t`-confined sudo can neither create nor unlink, so the apply is
 denied there until the host's sudo is unconfined (or SELinux is permissive)
@@ -149,7 +151,7 @@ The refresh operation: `gpg.refresh_keys` runs
 without them. Stateless and network-touching: both requests in the
 script stay changed even in the apply log. **Compile-checked by the test
 suite, not executed against the shared demo hosts**: it contacts public
-keyservers from every host and can be slow or fail when they are
+keyservers from every guarded host and can be slow or fail when they are
 unreachable. The requests are flagged `sudo=True` for root's keychain.
 
 ::: gpg_refresh_keys

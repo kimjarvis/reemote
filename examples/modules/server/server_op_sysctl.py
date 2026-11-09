@@ -25,8 +25,8 @@ ensures the line ``key = value`` in the persist file through ``files.line``
 append when absent). The recipe mirrors all of that:
 
 1. Two fact SNAPSHOTS: ``gather_fact`` reads ``Sysctl`` for the one key and
-   ``FileContents`` of ``/etc/sysctl.conf`` from every host (read-only
-   SSH). The pure ``sysctl_persist_edit`` function performs pyinfra's
+   ``FileContents`` of ``/etc/sysctl.conf`` from every guarded host
+   (read-only SSH). The pure ``sysctl_persist_edit`` function performs pyinfra's
    ``files.line`` lookup with a Python regex over the content -- reemote5
    ships no grep-style ``FindInFile`` fact, and ``FileContents`` plus local
    parsing is its content-read convention.
@@ -83,16 +83,28 @@ line both match: the snapshot gates skip every run. Reading the settings
 back without changing anything is the companion
 ``examples/modules/sysctl/sysctl_sysctl.py`` example's job.
 
+The hosts come from the shared ``inventory.json`` in the project root,
+read with ``load_inventory`` (parse + ``validate_inventory``) and resolved
+from ``__file__`` so the example works from any working directory. The
+snapshot gathers are guarded by ``is_centos`` (``host.group == "centos"``):
+``gather_fact`` takes no ``when`` parameter, so the predicate filters the
+host list before the fan-out and hosts outside the ``"centos"`` group are
+named on a ``== Skipped (when guard is_centos): ... ==`` line and never
+connected. Every deploy request also carries ``when=is_centos``, and only
+hosts with a snapshot entry can become pending.
+
 Run it with::
 
     uv run python examples/modules/server/server_op_sysctl.py
 """
 
 import asyncio
+import json
 import re
 import shlex
 import sys
 from collections.abc import AsyncGenerator, Callable, Generator
+from pathlib import Path
 from typing import Any
 
 from reemote5 import (
@@ -101,6 +113,7 @@ from reemote5 import (
     FileContents,
     Host,
     HostConnectionError,
+    InventoryError,
     OpContext,
     OperationRequest,
     PrivilegeError,
@@ -112,6 +125,7 @@ from reemote5 import (
     gather_fact,
     op,
     run,
+    validate_inventory,
 )
 
 # The setting to ensure: pyinfra's documented example (fs.file-max=100000),
@@ -131,27 +145,38 @@ SPOOL_PATH = "/tmp/sysctl.conf"
 # the transform by value; a fresh closure per phase raises DeterminismError).
 SPOOL_TRANSFORMS: dict[str, Callable[[str | None], str]] = {}
 
-# The inventory: real hosts and their SSH connection information. No
-# ``privilege`` entry: the elevated steps assume passwordless sudo for
-# the login user; a password would come from ``privilege`` here, never the op.
-INVENTORY = [
-    {
-        "host": "web1",
-        "connection": {
-            "address": "192.168.0.240",
-            "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
-        },
-    },
-    {
-        "host": "web2",
-        "connection": {
-            "address": "192.168.0.242",
-            "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
-        },
-    },
-]
+# examples/modules/server/server_op_sysctl.py -> the project root, so the
+# inventory is found whatever the current working directory is. No
+# ``privilege`` entry is needed: the elevated steps assume passwordless
+# sudo for the login user; a password would come from ``privilege`` in the
+# inventory, never the op.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
+
+
+def load_inventory(path: Path) -> list[dict[str, Any]]:
+    """Read an inventory from a JSON file and validate it.
+
+    The file must hold a JSON array of inventory entries -- dictionaries
+    each carrying at least ``host`` and ``connection``. Returns the parsed
+    list, ready to materialize into hosts; raises ``InventoryError`` (via
+    ``validate_inventory``) when the document is not an array or an entry
+    does not match the schema.
+    """
+    inventory = json.loads(path.read_text(encoding="utf-8"))
+    validate_inventory(inventory)
+    return inventory
+
+
+def is_centos(host: Host) -> bool:
+    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+
+    Reads only static inventory data (``host.group``, set by the ``"group"``
+    key of the inventory entry), never a mutable fact, and stays a stable
+    module-level function -- the two rules every ``when`` predicate follows
+    so both deploy phases reach the same eligibility decision.
+    """
+    return host.group == "centos"
 
 
 def _try_int(value: str | int) -> int | str:
@@ -279,6 +304,7 @@ def apply(host: Host) -> Generator[OperationRequest]:
         key=SYSCTL_KEY,
         string_value=STRING_VALUE,
         sudo=True,
+        when=is_centos,
     )
 
 
@@ -289,6 +315,7 @@ def spool(host: Host) -> Generator[OperationRequest]:
         name="Spool sysctl.conf",
         path=SPOOL_PATH,
         transform=SPOOL_TRANSFORMS[host.name],
+        when=is_centos,
     )
 
 
@@ -301,14 +328,26 @@ def install(host: Host) -> Generator[OperationRequest]:
         dest="/etc",
         overwrite=True,
         sudo=True,
+        when=is_centos,
     )
 
 
 async def main() -> None:
     try:
-        # The snapshots: read every host's live value for the key and its
-        # real /etc/sysctl.conf (read-only sysctl / cat).
-        hosts = [Host.from_inventory(entry) for entry in INVENTORY]
+        inventory = load_inventory(INVENTORY_PATH)
+        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        print(", ".join(entry["host"] for entry in inventory))
+
+        # The snapshots: read every guarded host's live value for the key
+        # and its real /etc/sysctl.conf (read-only sysctl / cat).
+        # gather_fact has no ``when`` parameter, so the is_centos predicate
+        # filters the host list before the fan-out -- a skipped host is
+        # never connected.
+        all_hosts = [Host.from_inventory(entry) for entry in inventory]
+        hosts = [host for host in all_hosts if is_centos(host)]
+        skipped = [host.name for host in all_hosts if host not in hosts]
+        if skipped:
+            print("\n== Skipped (when guard is_centos): " + ", ".join(skipped) + " ==")
         try:
             sysctls = await gather_fact(hosts, Sysctl, keys=[SYSCTL_KEY])
             contents = (
@@ -321,11 +360,14 @@ async def main() -> None:
         # Controller-side idempotence: pyinfra's two independent decisions
         # on the frozen snapshots. The persist gate holds even when the
         # live value already matches -- exactly like pyinfra, whose
-        # files.line half runs regardless of the runtime noop.
+        # files.line half runs regardless of the runtime noop. Only guarded
+        # hosts carry a snapshot entry; the rest stay skipped.
         pending_apply = []
         pending_persist = []
-        for entry in INVENTORY:
+        for entry in inventory:
             name = entry["host"]
+            if name not in sysctls:
+                continue
             if sysctl_needed(sysctls[name], SYSCTL_KEY, NORMALIZED_VALUE):
                 pending_apply.append(entry)
             else:
@@ -376,6 +418,18 @@ async def main() -> None:
         print("\n== Run 3 log: install sysctl.conf ==")
         assert report is not None
         print(format_log(report))
+    except (OSError, json.JSONDecodeError) as exc:
+        # The inventory file is missing, unreadable or not valid JSON. Python's
+        # own message already names the file and the reason, so print just that
+        # -- no host was contacted and there is no traceback worth showing.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except InventoryError as exc:
+        # The document parsed but did not match the inventory schema. The
+        # message names the offending entry by its list index, which is the
+        # whole report -- and it fails before any host is materialized.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # The library already reports every host-level failure as a typed error
         # whose message names the host and the failing command. Print that

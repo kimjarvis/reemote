@@ -21,11 +21,13 @@ reading `IptablesPersistence` and `iptables_ip6tables_persistence.py`
 reading `Ip6tablesPersistence`, all over `gather_fact`) are not rendered
 here — they read a single fact, and the facts themselves are documented on
 the [`iptables` module page](../../modules/iptables.md). Like the dnf
-examples they carry an inline `INVENTORY` of the two web1/web2 hosts with
-no `when` guard: the table-reading facts retry through passwordless
-`sudo -n` and read the empty value on an unprivileged login rather than
-failing, so every gather is safe on any Linux target — point `INVENTORY`
-at your own machines before executing.
+examples they read the shared project-root `inventory.json` and guard on
+the `"centos"` group: `is_centos` filters the host list before the
+`gather_fact` fan-out, and the operation scripts below carry
+`when=is_centos` on every request. The table-reading facts retry through
+passwordless `sudo -n` and read the empty value on an unprivileged login
+rather than failing, so every gather is safe on any Linux target — point
+`INVENTORY_PATH` at your own file of machines before executing.
 
 The eight operation scripts below open with an idempotent `dnf.packages`
 install of `iptables` and `ipset` (under `sudo=True`): the demo hosts ship
@@ -161,7 +163,7 @@ the resolution of the `bulk_rule(rules=[...])` proposal that `op()`'s
 hashability rule blocks. The path is HOST-side (reemote5 transfers are
 IO-only), so the script first uploads a module-level `io.BytesIO` snapshot
 with [`files.put`][reemote5.modules.files.files.put] (unprivileged scp into
-the login user's home), then restores it twice under `sudo=True`, idempotent
+`/tmp`), then restores it twice under `sudo=True`, idempotent
 on the same
 [`IptablesPersistence`][reemote5.modules.iptables.iptables.IptablesPersistence]
 fact. In prepare the file does not exist yet, so both restores plan as

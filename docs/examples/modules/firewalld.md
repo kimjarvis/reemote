@@ -15,12 +15,14 @@ reading `FirewalldStatus`, `firewalld_firewalld_default_zone.py` reading
 permanent scope, all over `gather_fact`) are not rendered here — they read
 a single fact, and the facts themselves are documented on the
 [`firewalld` module page](../../modules/firewalld.md). Like the dnf
-examples they carry an inline `INVENTORY` of the two web1/web2 hosts with
-no `when` guard: every firewalld read retries through passwordless
-`sudo -n` and reads the empty value on an unprivileged login (or a stopped
-daemon, or a host without firewalld) rather than failing, so every gather
-is safe on any Linux target — point `INVENTORY` at your own machines
-before executing.
+examples they read the shared project-root `inventory.json` and guard on
+the `"centos"` group: `is_centos` filters the host list before the
+`gather_fact` fan-out, and the operation scripts below carry
+`when=is_centos` on every request. Every firewalld read retries through
+passwordless `sudo -n` and reads the empty value on an unprivileged login
+(or a stopped daemon, or a host without firewalld) rather than failing, so
+every gather is safe on any Linux target — point `INVENTORY_PATH` at your
+own file of machines before executing.
 
 The demo hosts ship without firewalld, so every operation script below
 first drives a small idempotent *install deploy* (`dnf.packages` for

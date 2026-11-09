@@ -11,11 +11,13 @@ The read-only fact-gathering examples (`ufw_ufw_status.py` reading
 `gather_fact`) are not rendered here — they read a single fact, and the
 facts themselves are documented on the
 [`ufw` module page](../../modules/ufw.md). Like the dnf examples they
-carry an inline `INVENTORY` of the two web1/web2 hosts with no `when`
-guard: every ufw read retries through passwordless `sudo -n` and reads
+read the shared project-root `inventory.json` and guard on the `"centos"`
+group: `is_centos` filters the host list before the `gather_fact`
+fan-out, and the operation scripts below carry `when=is_centos` on every
+request. Every ufw read retries through passwordless `sudo -n` and reads
 the empty value on an unprivileged login (or a host without ufw) rather
 than failing, so every gather is safe on any Linux target — point
-`INVENTORY` at your own machines before executing.
+`INVENTORY_PATH` at your own file of machines before executing.
 
 ufw is a Debian-family frontend that RHEL-family ships only through EPEL,
 so every operation script below first installs `epel-release` and `ufw`

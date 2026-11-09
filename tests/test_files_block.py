@@ -64,7 +64,7 @@ INVENTORY = [
     },
 ]
 
-REMOTE_PATH = "/home/kjarvis/reemote5-block.txt"
+REMOTE_PATH = "/tmp/reemote5-block.txt"
 
 BEGIN = "# BEGIN PYINFRA BLOCK"
 END = "# END PYINFRA BLOCK"

@@ -150,8 +150,9 @@ baseline).
 
 The read-only fact-gathering scripts under
 [`examples/modules/ufw/`](../examples/modules/ufw.md) gather one fact
-each over `gather_fact` on the inline web1/web2 inventory (the dnf
-convention — no `when` guard): `ufw_ufw_status.py`, `ufw_ufw_rules.py`
+each over `gather_fact` on the shared `inventory.json`'s CentOS hosts
+(the dnf convention — the `is_centos` guard filters the host list before
+the fan-out): `ufw_ufw_status.py`, `ufw_ufw_rules.py`
 and `ufw_ufw_applications.py`.
 
 The operation scripts beside them demonstrate `ufw.state`

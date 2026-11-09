@@ -24,6 +24,10 @@ command descriptors it yields, ``modules/files/files.py`` holds
 ``protocol``, ``icmp_block``, ``forward_port``, ``masquerade``,
 ``service``, ``ipset``, ``default_zone``, ``lockdown``, ``panic`` and
 ``reload`` operations and the typed command descriptors they yield,
+``modules/flatpak/flatpak.py`` holds the ``FlatpakPackage`` fact (with its
+``FlatpakPackageInfo`` entry type) and the ``FlatpakPackages`` fact beside the
+``packages`` operation and the ``FlatpakInstallCommand``/``FlatpakRemoveCommand``
+descriptors it yields,
 ``modules/git/git.py`` holds the ``GitBranch``, ``GitConfig``,
 ``GitHeadDetached``, ``GitIsRepo``, ``GitLocalCommit``,
 ``GitRemoteBranchCommit``, ``GitRemoteUrl``, ``GitSshKeyConfigured``,
@@ -95,11 +99,15 @@ the typed command descriptors they yield,
 ``modules/ufw/ufw.py`` holds the ``UfwStatus``, ``UfwRules`` and
 ``UfwApplications`` facts beside the ``state``, ``default_policy``,
 ``rule``, ``logging`` and ``reset`` operations and the typed command
-descriptors they yield, and
+descriptors they yield,
+``modules/snap/snap.py`` holds the ``SnapPackage`` fact (with its
+``SnapPackageInfo`` entry type) beside the ``package`` operation and the
+``SnapInstallCommand``/``SnapRefreshCommand``/``SnapRemoveCommand``
+descriptors it yields, and
 ``modules/server/server.py`` holds the ``wait_service`` operation (which
 polls the relocated ``systemd.SystemdServiceState`` fact). The subpackages
 are re-exported here, so a deploy can keep writing
-``from reemote5.modules import apk, apt, dnf, files, firewalld, git, gpg, hardware, iptables, lxd, mysql, openrc, postgresql, selinux, sysctl, systemd, ufw, server``
+``from reemote5.modules import apk, apt, dnf, files, firewalld, flatpak, git, gpg, hardware, iptables, lxd, mysql, openrc, postgresql, selinux, snap, sysctl, systemd, ufw, server``
 and read ``apk.ApkInstalledPackages`` / ``apt.AptKeys`` / ``dnf.packages`` /
 ``files.link`` / ``firewalld.FirewalldZones`` / ``git.GitBranch`` / ``gpg.GpgKeys`` / ``hardware.BlockDevices`` /
 ``iptables.IptablesChains`` / ``lxd.LxdInstances`` / ``mysql.MysqlDatabases`` / ``openrc.OpenrcStatus`` / ``postgresql.PostgresqlRoles`` /
@@ -112,6 +120,7 @@ from . import (
     dnf,
     files,
     firewalld,
+    flatpak,
     git,
     gpg,
     hardware,
@@ -122,6 +131,7 @@ from . import (
     postgresql,
     selinux,
     server,
+    snap,
     sysctl,
     systemd,
     ufw,
@@ -133,6 +143,7 @@ __all__ = [
     "dnf",
     "files",
     "firewalld",
+    "flatpak",
     "git",
     "gpg",
     "hardware",
@@ -143,6 +154,7 @@ __all__ = [
     "postgresql",
     "selinux",
     "server",
+    "snap",
     "sysctl",
     "systemd",
     "ufw",

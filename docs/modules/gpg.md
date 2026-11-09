@@ -230,11 +230,12 @@ wrapper that resolves relative names under `/etc/apt/keyrings/`.
 [`gpg.dearmor`][reemote5.modules.gpg.gpg.dearmor] converts an ASCII-armored
 GPG key file to binary form, both paths on the *target* host: one elevated
 `sh -c` creates the destination directory, runs
-`gpg --batch --dearmor -o <dest> <src>` and chmods the output `0644`
-(pyinfra's `mode` parameter is deliberately dropped). Like pyinfra it is
-stateless/non-idempotent — it always converts and always reports a change,
-reading no fact. To convert a controller-side stream, install it with
-`gpg.key` instead, whose install dearmors on the target.
+`gpg --batch --yes --dearmor -o <dest> <src>` (`--yes` overwrites an
+existing output, which `--batch` alone refuses) and chmods the output
+`0644` (pyinfra's `mode` parameter is deliberately dropped). Like pyinfra
+it is stateless/non-idempotent — it always converts and always reports a
+change, reading no fact. To convert a controller-side stream, install it
+with `gpg.key` instead, whose install dearmors on the target.
 
 [`gpg.import_key`][reemote5.modules.gpg.gpg.import_key] is a reemote5
 original: it imports a key from a seekable IO-like *stream* on the

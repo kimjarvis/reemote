@@ -7,8 +7,7 @@ This is a *usage* example, not part of the library. Like
 ``examples/modules/apt/apt_apt_upgradable.py``, it reads a single **fact**
 directly over the *real SSH transport* (asyncssh) instead of driving the
 two-phase execution model -- the target hosts are not hard-coded: the
-inventory comes from a JSON file, the way
-``examples/demonstrations/inventory/json_inventory_ubuntu.py`` loads it:
+inventory comes from the shared ``inventory.json`` in the project root:
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
    -- an inventory is just a list of dictionaries, which is exactly what

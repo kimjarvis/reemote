@@ -421,8 +421,10 @@ it always reports a change and yields two descriptors, an
 `AptKeyUploadCommand` transfer that spools the stream to a fixed `/tmp`
 path over scp, then an `AptKeyInstallCommand` running one elevated
 `sh -c` that creates the destination directory, dearmors the key with
-`gpg --batch --dearmor` when the content is ASCII-armored (binary content
-is copied verbatim), chmods the keyring `0644` and removes the spool file.
+`gpg --batch --yes --dearmor` when the content is ASCII-armored (`--yes`
+overwrites a keyring a previous run left behind, which `--batch` alone
+refuses; binary content is copied verbatim), chmods the keyring `0644`
+and removes the spool file.
 Flag the request `sudo=True` (or `su=True`) for the install; the transfer
 stays unprivileged regardless, so the log shows a plain `scp` followed by
 `sudo sh -c`. The stream is compared by identity across the prepare and

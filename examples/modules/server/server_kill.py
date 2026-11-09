@@ -19,7 +19,7 @@ and ``run_apply`` raises ``DeterminismError``. The sanctioned move is the
 snapshot half of the ``two_deploy_split`` pattern:
 
 1. A fact SNAPSHOT taken BEFORE the run: ``gather_fact`` fans the
-   ``Processes`` read out across all hosts and returns a
+   ``Processes`` read out across the guarded hosts and returns a
    ``{host.name: {pid: info}}`` mapping of the real process table.
 2. ``build_kill(snapshot)`` -- a factory closing over that frozen mapping,
    returning the deploy. Its loop consults the snapshot, never live state,
@@ -58,19 +58,33 @@ uses the *default* factory (``Host.from_inventory``): each plain ``Host``
 lazily opens an asyncssh connection, reads the process table for real, and
 runs ``kill`` under sudo where needed.
 
+The hosts come from the shared ``inventory.json`` in the project root,
+read with ``load_inventory`` (parse + ``validate_inventory``) and resolved
+from ``__file__`` so the example works from any working directory. The
+snapshot gather is guarded by ``is_centos`` (``host.group == "centos"``):
+``gather_fact`` takes no ``when`` parameter, so the predicate filters the
+host list before the fan-out and hosts outside the ``"centos"`` group are
+named on a ``== Skipped (when guard is_centos): ... ==`` line and never
+connected. Every kill request also carries ``when=is_centos``, and a
+skipped host has no snapshot entry, so its deploy yields nothing.
+
 Run it with::
 
     uv run python examples/modules/server/server_kill.py
 """
 
 import asyncio
+import json
 import sys
 from collections.abc import Callable, Generator
+from pathlib import Path
+from typing import Any
 
 from reemote5 import (
     CommandError,
     Host,
     HostConnectionError,
+    InventoryError,
     OperationRequest,
     PrivilegeError,
     format_log,
@@ -79,6 +93,7 @@ from reemote5 import (
     op,
     run,
     server,
+    validate_inventory,
 )
 
 # The process to kill, matched against the ``command`` column of the
@@ -86,27 +101,35 @@ from reemote5 import (
 PROCESS_NAME = "nginx"
 SIGNAL = "TERM"
 
-# The inventory: real hosts and their SSH connection information, supplied
-# by the application to the library. The default host_factory materializes
-# each entry into a plain Host that connects over asyncssh.
-INVENTORY = [
-    {
-        "host": "web1",
-        "connection": {
-            "address": "192.168.0.240",
-            "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
-        },
-    },
-    {
-        "host": "web2",
-        "connection": {
-            "address": "192.168.0.242",
-            "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
-        },
-    },
-]
+# examples/modules/server/server_kill.py -> the project root, so the
+# inventory is found whatever the current working directory is.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
+
+
+def load_inventory(path: Path) -> list[dict[str, Any]]:
+    """Read an inventory from a JSON file and validate it.
+
+    The file must hold a JSON array of inventory entries -- dictionaries
+    each carrying at least ``host`` and ``connection``. Returns the parsed
+    list, ready to materialize into hosts; raises ``InventoryError`` (via
+    ``validate_inventory``) when the document is not an array or an entry
+    does not match the schema.
+    """
+    inventory = json.loads(path.read_text(encoding="utf-8"))
+    validate_inventory(inventory)
+    return inventory
+
+
+def is_centos(host: Host) -> bool:
+    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+
+    Reads only static inventory data (``host.group``, set by the ``"group"``
+    key of the inventory entry), never a mutable fact, and stays a stable
+    module-level function -- the two rules every ``when`` predicate follows
+    so both deploy phases reach the same eligibility decision.
+    """
+    return host.group == "centos"
 
 
 def build_kill(
@@ -114,17 +137,19 @@ def build_kill(
 ) -> Callable[[Host], Generator[OperationRequest]]:
     """Deploy factory: close over the frozen pre-run Processes snapshot.
 
-    The returned generator loops over ``snapshot[host.name]`` -- an
-    ordinary dict taken BEFORE this deploy's prepare phase -- so both
-    phases resolve the loop identically. Reading the live ``Processes``
-    fact here instead is impossible (the generator is synchronous) and
-    branching on live host state would re-introduce the phase-dependent
-    request sequence the determinism guard forbids. PIDs are visited in
-    sorted order so multi-match hosts plan a stable sequence.
+    The returned generator loops over ``snapshot.get(host.name, {})`` --
+    an ordinary dict taken BEFORE this deploy's prepare phase -- so both
+    phases resolve the loop identically, and a host the ``is_centos``
+    guard kept out of the snapshot simply yields nothing. Reading the
+    live ``Processes`` fact here instead is impossible (the generator is
+    synchronous) and branching on live host state would re-introduce the
+    phase-dependent request sequence the determinism guard forbids. PIDs
+    are visited in sorted order so multi-match hosts plan a stable
+    sequence.
     """
 
     def deploy(host: Host) -> Generator[OperationRequest]:
-        for pid, info in sorted(snapshot[host.name].items()):
+        for pid, info in sorted(snapshot.get(host.name, {}).items()):
             if info["command"] == PROCESS_NAME:
                 yield op(
                     server.kill,
@@ -132,6 +157,7 @@ def build_kill(
                     pid=pid,
                     signal=SIGNAL,
                     sudo=True,
+                    when=is_centos,
                 )
 
     return deploy
@@ -139,10 +165,21 @@ def build_kill(
 
 async def main() -> None:
     try:
-        # The snapshot: one concurrent Processes read across the fleet,
-        # keyed by host name, before any deploy runs. These hosts are ours
-        # to close; run() below builds fresh ones from the same inventory.
-        hosts = [Host.from_inventory(entry) for entry in INVENTORY]
+        inventory = load_inventory(INVENTORY_PATH)
+        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        print(", ".join(entry["host"] for entry in inventory))
+
+        # The snapshot: one concurrent Processes read across the guarded
+        # hosts, keyed by host name, before any deploy runs. gather_fact has
+        # no ``when`` parameter, so the is_centos predicate filters the host
+        # list before the fan-out -- a skipped host is never connected. These
+        # hosts are ours to close; run() below builds fresh ones from the
+        # same inventory.
+        all_hosts = [Host.from_inventory(entry) for entry in inventory]
+        hosts = [host for host in all_hosts if is_centos(host)]
+        skipped = [host.name for host in all_hosts if host not in hosts]
+        if skipped:
+            print("\n== Skipped (when guard is_centos): " + ", ".join(skipped) + " ==")
         try:
             snapshot = await gather_fact(hosts, server.Processes)
         finally:
@@ -164,16 +201,28 @@ async def main() -> None:
 
         # --dry: prepare phase only. The plan is honest because the loop
         # consults the pre-run snapshot, not some later state.
-        plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
+        plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("\n== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))
 
         # Real run: prepare, then apply in lockstep across hosts. Each
         # matched PID is killed under sudo; a host with no match idles.
-        plans, report, _hosts = await run(INVENTORY, deploy)
+        plans, report, _hosts = await run(inventory, deploy)
         print("\n== Run log (apply phase) ==")
         assert report is not None
         print(format_log(report))
+    except (OSError, json.JSONDecodeError) as exc:
+        # The inventory file is missing, unreadable or not valid JSON. Python's
+        # own message already names the file and the reason, so print just that
+        # -- no host was contacted and there is no traceback worth showing.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except InventoryError as exc:
+        # The document parsed but did not match the inventory schema. The
+        # message names the offending entry by its list index, which is the
+        # whole report -- and it fails before any host is materialized.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     except HostConnectionError as exc:
         # A host could not be reached over SSH at all. Report it plainly --
         # naming every unreachable host -- instead of dumping an asyncssh

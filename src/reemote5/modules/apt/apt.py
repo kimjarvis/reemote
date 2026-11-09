@@ -2047,10 +2047,12 @@ class AptKeyInstallCommand(Command):
     sequence creates the destination directory, then mirrors pyinfra's
     content sniff: an ASCII-armored key (``BEGIN PGP PUBLIC KEY BLOCK`` in the
     bytes, regardless of any file extension) is converted to the binary form
-    APT's ``signed-by=`` expects with ``gpg --batch --dearmor``, binary content
-    is copied verbatim; finally the keyring is chmod'ed ``0644`` (pyinfra's
-    fixed ``mode`` for apt keys) and the spool file removed. All paths are
-    shell-quoted.
+    APT's ``signed-by=`` expects with ``gpg --batch --yes --dearmor``
+    (``--yes`` overwrites an existing keyring -- ``--batch`` alone refuses,
+    which would break the always-install contract on a second run), binary
+    content is copied verbatim; finally the keyring is chmod'ed ``0644``
+    (pyinfra's fixed ``mode`` for apt keys) and the spool file removed.
+    All paths are shell-quoted.
     """
 
     spool: str  # where AptKeyUploadCommand wrote the key stream
@@ -2064,7 +2066,7 @@ class AptKeyInstallCommand(Command):
         inner = (
             f"mkdir -p {parent} && "
             f"if grep -q {marker} {spool}; then "
-            f"gpg --batch --dearmor -o {dest} {spool}; "
+            f"gpg --batch --yes --dearmor -o {dest} {spool}; "
             f"else cp {spool} {dest}; fi && "
             f"chmod 0644 {dest} && rm -f {spool}"
         )

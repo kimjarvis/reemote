@@ -30,7 +30,7 @@ a real asyncssh transport is missing:
   / ``firewalld_permanent_ipsets`` / ``firewalld_permanent_policies``
   / ``firewalld_permanent_zones`` / ``firewalld_policies``
   / ``firewalld_services`` / ``firewalld_status`` / ``firewalld_zones``
-  / ``git_branches``
+  / ``flatpak_package_info`` / ``git_branches``
   / ``git_configs`` / ``git_head_detached`` / ``git_local_commits``
   / ``git_remote_commits`` / ``git_remote_urls`` / ``git_repos``
   / ``git_ssh_authenticated`` / ``git_statuses`` / ``git_submodules``
@@ -72,7 +72,7 @@ a real asyncssh transport is missing:
   / ``selinux_fcontext_mappings`` / ``selinux_ports`` / ``selinux_mode``
   / ``selinux_logins`` / ``selinux_users`` / ``selinux_modules``
   / ``selinux_permissive_domains``
-  / ``smbios_info`` / ``sysctls`` / ``systemd_dependencies`` / ``systemd_failed_units``
+  / ``smbios_info`` / ``snap_package_info`` / ``sysctls`` / ``systemd_dependencies`` / ``systemd_failed_units``
   / ``systemd_system_state`` / ``systemd_timers`` / ``systemd_unit_files``
   / ``systemd_unit_properties`` / ``systemd_version`` / ``os_timezone`` / ``os_user`` / ``os_users``
   / ``ufw_applications`` / ``ufw_rules`` / ``ufw_status``
@@ -88,7 +88,8 @@ a real asyncssh transport is missing:
   ``FirewalldZones``, ``FirewalldServices``, ``FirewalldIpSets``,
   ``FirewalldPolicies`` (the firewalld-local ``_FirewalldLockdown`` and
   ``_FirewalldPanicMode`` probes read the ``firewalld_lockdown`` and
-  ``firewalld_panic_mode`` seams), ``GitBranch``, ``GitConfig``,
+  ``firewalld_panic_mode`` seams), ``FlatpakPackage``, ``FlatpakPackages``,
+  ``GitBranch``, ``GitConfig``,
   ``GitHeadDetached``, ``GitIsRepo``, ``GitLocalCommit``,
   ``GitRemoteBranchCommit``, ``GitRemoteUrl``, ``GitSshKeyConfigured``,
   ``GitStatus``, ``GitSubmodule``, ``GitTag``,
@@ -127,6 +128,7 @@ a real asyncssh transport is missing:
   ``PermissiveDomains`` (the selinux-local ``_Which`` and
   ``_AutorelabelPending`` probes read the shared ``command_paths`` and
   ``existing_files`` seams),
+  ``SnapPackage``, ``SnapPackages``,
   ``SmbiosInfo``, ``SimulateOperationWillChange``, ``Sysctl``, ``SysctlFile``,
   ``SysctlFiles`` (the two persistence reads project the shared
   ``remote_files`` seam onto the standard sysctl paths), ``Timezone``,
@@ -257,6 +259,11 @@ from reemote5.modules.firewalld.firewalld import (
     FirewalldZoneTargetCommand,
     FirewalldZoneTextCommand,
     _copy_record,
+)
+from reemote5.modules.flatpak.flatpak import (
+    FlatpakInstallCommand,
+    FlatpakPackageInfo,
+    FlatpakRemoveCommand,
 )
 from reemote5.modules.git.git import (
     GitCheckoutCommand,
@@ -453,6 +460,12 @@ from reemote5.modules.server.server import (
     _HomeMkdirCommand,
     _KeysChmodCommand,
     _KeysTouchCommand,
+)
+from reemote5.modules.snap.snap import (
+    SnapInstallCommand,
+    SnapPackageInfo,
+    SnapRefreshCommand,
+    SnapRemoveCommand,
 )
 from reemote5.modules.sysctl.sysctl import (
     Sysctl,
@@ -966,6 +979,18 @@ class SimulatedHost(Host):
     # Whether panic mode is on, backing the private ``_FirewalldPanicMode``
     # probe the ``firewalld.panic`` operation compares against.
     firewalld_panic_mode: bool = False
+    # Per-package flatpak identity (package name -> the ``FlatpakPackageInfo``
+    # dict ``FlatpakPackage`` returns -- id, ref and version), backing
+    # ``FlatpakPackage``. A name absent from the mapping reads as None, like an
+    # absent package printing no tracked ``flatpak info`` row. Named with the
+    # flatpak_ prefix and kept in its own store so the flatpak-side state never
+    # mixes with the apk/apt/dnf/snap package-detail seams. Defaults to {} -- a
+    # simulated machine with no flatpaks installed. ``FlatpakPackages`` projects
+    # this store's keys (the snap single-store precedent), so
+    # ``install_flatpak_packages``/``remove_flatpak_packages`` (the simulated
+    # ``flatpak install``/``uninstall``) maintain one store for both facts and
+    # they can never disagree.
+    flatpak_package_info: dict[str, FlatpakPackageInfo] = field(default_factory=dict)
     # The branch a repository is on (``git describe --all``, the
     # heads/tags prefix stripped), backing ``GitBranch``: repo path ->
     # branch name. An absent repo reads as "", like the short-circuited
@@ -1602,6 +1627,19 @@ class SimulatedHost(Host):
     # ``manage_selinux_permissive`` (the simulated ``semanage permissive
     # -a/-d``) edits it.
     selinux_permissive_domains: list[str] = field(default_factory=list)
+    # Per-package snap identity (package name -> the ``SnapPackageInfo`` dict
+    # ``SnapPackage`` returns -- name, publisher, snap_id, channel, version),
+    # backing ``SnapPackage`` and, through its key set, the ``SnapPackages``
+    # name list (``SnapPackages`` projects ``list(store)``, so the two snap
+    # facts can never disagree on a simulated host). A name absent from the
+    # mapping reads as None, like an absent package printing no tracked
+    # ``snap info`` row. Named with
+    # the snap_ prefix and kept in its own store so the snap-side state never
+    # mixes with the apk/apt/dnf package-detail seams. Defaults to {} -- a
+    # simulated machine with no snaps installed. ``install_snap_packages``,
+    # ``remove_snap_packages`` and ``refresh_snap_packages`` (the simulated
+    # ``snap.package``) maintain it; a test may also seed it directly.
+    snap_package_info: dict[str, SnapPackageInfo] = field(default_factory=dict)
     # Sysctl settings (key -> the parsed value ``Sysctl`` returns -- an int,
     # a string, or a list of ints/strings), backing the relocated
     # ``sysctl.Sysctl`` fact. A keys filter selects the named settings; an
@@ -2158,6 +2196,16 @@ class SimulatedHost(Host):
                 self.manage_lxd_storage_pool(cmd)
             case LxdStorageVolumeCommand():
                 self.manage_lxd_storage_volume(cmd)
+            case FlatpakInstallCommand(packages=packages):
+                self.install_flatpak_packages(packages)
+            case FlatpakRemoveCommand(packages=packages):
+                self.remove_flatpak_packages(packages)
+            case SnapInstallCommand(packages=packages, channel=channel):
+                self.install_snap_packages(packages, channel)
+            case SnapRefreshCommand(packages=packages, channel=channel):
+                self.refresh_snap_packages(packages, channel)
+            case SnapRemoveCommand(packages=packages):
+                self.remove_snap_packages(packages)
             case WaitForFactCommand():
                 self.check_wait(cmd)
             case _:
@@ -6306,6 +6354,89 @@ class SimulatedHost(Host):
         self.lxd_storage_volumes[cmd.pool] = [
             v for v in volumes if v.get("name") != cmd.volume
         ] + [entry]
+
+    def install_flatpak_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``flatpak install``: mark the applications installed.
+
+        ``flatpak.packages``' install mutation. Each name gains a
+        ``FlatpakPackageInfo`` entry in ``flatpak_package_info`` (the store
+        ``FlatpakPackage`` reads and whose keys ``FlatpakPackages`` projects) --
+        id set to the application ID, ref and version left as the empty strings
+        an offline simulation has no remote metadata to fill (snap's placeholder
+        precedent). The install remote is not modeled: the simulation records no
+        origin per app. An already-installed name keeps its recorded detail, as
+        ``flatpak install`` leaves a present application alone.
+        """
+        for package in packages:
+            if package in self.flatpak_package_info:
+                continue
+            self.flatpak_package_info[package] = {
+                "id": package,
+                "ref": "",
+                "version": "",
+            }
+
+    def remove_flatpak_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``flatpak uninstall``: drop the applications.
+
+        The ``present=False`` direction of ``flatpak.packages``. The name's
+        entry leaves ``flatpak_package_info``, so ``FlatpakPackage`` reports
+        ``None`` and ``FlatpakPackages`` no longer lists it afterwards. An
+        absent name is tolerated (the real command would exit non-zero, but the
+        operation's fact check never yields that removal).
+        """
+        for package in packages:
+            self.flatpak_package_info.pop(package, None)
+
+    def install_snap_packages(self, packages: tuple[str, ...], channel: str) -> None:
+        """Record a simulated ``snap install``: mark the snaps installed.
+
+        ``snap.package``'s install mutation. Each name gains a
+        ``SnapPackageInfo`` entry in ``snap_package_info`` (the store
+        ``SnapPackage`` reads) carrying the channel the command installed on --
+        the one field the operation compares -- with the publisher, store id and
+        version left as the empty strings an offline simulation has no store
+        metadata to fill (apk's ``[""]`` placeholder precedent). An
+        already-installed name keeps its recorded detail, as ``snap`` leaves a
+        present snap alone.
+        """
+        for package in packages:
+            if package in self.snap_package_info:
+                continue
+            self.snap_package_info[package] = {
+                "name": package,
+                "publisher": "",
+                "snap_id": "",
+                "channel": channel,
+                "version": "",
+            }
+
+    def remove_snap_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``snap remove``: drop the snaps.
+
+        The ``present=False`` direction of ``snap.package``. The name's entry
+        leaves ``snap_package_info``, so ``SnapPackage`` reports ``None`` for it
+        afterwards. An absent name is tolerated (the real command would exit
+        non-zero, but the operation's fact check never yields that removal).
+        """
+        for package in packages:
+            self.snap_package_info.pop(package, None)
+
+    def refresh_snap_packages(self, packages: tuple[str, ...], channel: str) -> None:
+        """Record a simulated ``snap refresh --channel=<channel>``: switch tracking.
+
+        ``snap.package``'s channel-change mutation. The entry is REPLACED with a
+        copy carrying the new ``channel`` -- never mutated in place, so a test's
+        seeded ``SnapPackageInfo`` object is never aliased into host state --
+        and keeps its recorded publisher, store id and version. An absent name
+        is skipped: refreshing an uninstalled snap fails on the real host, and
+        the operation only yields names the fact reported installed.
+        """
+        for package in packages:
+            info = self.snap_package_info.get(package)
+            if info is None:
+                continue
+            self.snap_package_info[package] = {**info, "channel": channel}
 
     def check_wait(self, cmd: WaitForFactCommand) -> None:
         """Evaluate a simulated wait once, without polling or sleeping.

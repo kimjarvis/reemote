@@ -12,8 +12,18 @@
   {
     "host": "web1",
     "connection": {
-      "address": "192.168.0.140",
-      "username": "kjarvis",
+      "address": "192.168.0.208",
+      "username": "admin",
+      "key_path": "/home/kim/.ssh/id_ed25519"
+    },
+    "group": "centos",
+    "tags": ["ubuntu_host", "web","apt_package_manager"]
+  },
+  {
+    "host": "web2",
+    "connection": {
+      "address": "192.168.0.222",
+      "username": "admin",
       "key_path": "/home/kim/.ssh/id_ed25519"
     },
     "group": "centos",

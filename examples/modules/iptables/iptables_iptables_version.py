@@ -1,19 +1,28 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: gather the ``iptables.IptablesVersion`` fact on two real hosts.
+"""Example: gather the ``iptables.IptablesVersion`` fact on real CentOS hosts.
 
 This is a *usage* example, not part of the library. It reads a single
 **fact** directly over the *real SSH transport* (asyncssh) instead of
 driving the two-phase execution model:
 
-1. Specify the target hosts as an *inventory*: a list of dictionaries with
-   each host's name plus its SSH ``connection`` information (address,
-   username and client key).
+1. Read ``inventory.json`` in the project root and parse it as JSON
+   -- an inventory is just a list of dictionaries, which is exactly what
+   JSON expresses -- then validate it up front with ``validate_inventory``
+   so a malformed file fails with an ``InventoryError`` naming the
+   offending entry, *before* any host is materialized or connected.
 2. Materialize each entry into a plain ``Host`` with the default
    ``Host.from_inventory`` factory. Each ``Host`` lazily opens an asyncssh
    connection from its ``connection`` data when a fact is gathered.
-3. Gather ``IptablesVersion`` on every host at once with the driver's
+3. Guard the gather with a ``when`` predicate: ``is_centos`` reads only
+   **static** inventory data -- ``host.group`` -- and the fact is gathered
+   on the hosts that pass it. ``gather_fact`` itself takes no ``when``
+   parameter, so the predicate filters the host list before the fan-out --
+   the direct equivalent of a driver-side skip. Hosts outside the
+   ``"centos"`` group are named on a
+   ``== Skipped (when guard is_centos): ... ==`` line and never connected.
+4. Gather ``IptablesVersion`` on the guarded hosts at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a
    host-name-keyed mapping -- then print each host's version info
@@ -32,14 +41,19 @@ exit-masked: a host without the binary raises ``CommandNotFoundError``
 
 The demo hosts ship without ``iptables``, and ``IptablesVersion`` is an
 unmasked read, so ``main`` first drives a tiny idempotent *install
-deploy* (``dnf.packages`` under ``sudo=True``) to put the binary on every
-host, then gathers the fact. This is the same two-run split
+deploy* (``dnf.packages`` under ``sudo=True``, guarded by
+``when=is_centos``) to put the binary on every CentOS host, then gathers
+the fact. This is the same two-run split
 ``two_deploy_split.py`` demonstrates: a fact that needs prerequisite
 software must be read after that software is installed.
 
 Every host's connection is closed with ``aclose`` once the facts are
 gathered. ``gather_fact`` and ``process`` are coroutines, so ``main`` is
 async and driven by ``asyncio.run``.
+
+The path is resolved from ``__file__``, so the example works from any
+working directory; point ``INVENTORY_PATH`` at your own file (or edit
+``inventory.json``) to target your machines.
 
 Run it with::
 
@@ -50,11 +64,14 @@ import asyncio
 import json
 import sys
 from collections.abc import Generator
+from pathlib import Path
+from typing import Any
 
 from reemote5 import (
     CommandError,
     Host,
     HostConnectionError,
+    InventoryError,
     IptablesVersion,
     OperationRequest,
     PrivilegeError,
@@ -62,29 +79,38 @@ from reemote5 import (
     gather_fact,
     op,
     run,
+    validate_inventory,
 )
 
-# The inventory: real hosts and their SSH connection information, supplied by
-# the application to the library. Host.from_inventory materializes each entry
-# into a plain Host that connects over asyncssh.
-INVENTORY = [
-    {
-        "host": "web1",
-        "connection": {
-            "address": "192.168.0.240",
-            "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
-        },
-    },
-    {
-        "host": "web2",
-        "connection": {
-            "address": "192.168.0.242",
-            "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
-        },
-    },
-]
+# examples/modules/iptables/iptables_iptables_version.py -> the project root,
+# so the inventory is found whatever the current working directory is.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
+
+
+def load_inventory(path: Path) -> list[dict[str, Any]]:
+    """Read an inventory from a JSON file and validate it.
+
+    The file must hold a JSON array of inventory entries -- dictionaries
+    each carrying at least ``host`` and ``connection``. Returns the parsed
+    list, ready to materialize into hosts; raises ``InventoryError`` (via
+    ``validate_inventory``) when the document is not an array or an entry
+    does not match the schema.
+    """
+    inventory = json.loads(path.read_text(encoding="utf-8"))
+    validate_inventory(inventory)
+    return inventory
+
+
+def is_centos(host: Host) -> bool:
+    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+
+    Reads only static inventory data (``host.group``, set by the ``"group"``
+    key of the inventory entry), never a mutable fact, and stays a stable
+    module-level function -- the two rules every ``when`` predicate follows
+    so both deploy phases reach the same eligibility decision.
+    """
+    return host.group == "centos"
 
 
 def install(host: Host) -> Generator[OperationRequest]:
@@ -93,24 +119,54 @@ def install(host: Host) -> Generator[OperationRequest]:
     Branch-free and idempotent: an already-installed package plans and
     applies as no change.
     """
-    yield op(dnf.packages, name="Install iptables", packages=("iptables",), sudo=True)
+    yield op(
+        dnf.packages,
+        name="Install iptables",
+        packages=("iptables",),
+        sudo=True,
+        when=is_centos,
+    )
 
 
 async def main() -> None:
-    # Materialize every inventory entry up front so the fact can be gathered on
-    # all hosts at once.
-    hosts = [Host.from_inventory(entry) for entry in INVENTORY]
+    hosts: list[Host] = []
     try:
+        inventory = load_inventory(INVENTORY_PATH)
+        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        print(", ".join(entry["host"] for entry in inventory))
+
         # Prerequisite run: IptablesVersion shells out to `iptables --version`,
         # an unmasked read that raises CommandNotFoundError on a host without
         # the binary. Install iptables first (idempotent, sudo=True) so the
         # fact read below succeeds on the demo hosts, which ship without it.
-        await run(INVENTORY, install)
-        # Gather the fact across the whole inventory concurrently: gather_fact
+        # The when guard keeps the install off the non-CentOS hosts.
+        await run(inventory, install)
+        # Materialize every inventory entry, then guard the gather below -- a
+        # skipped host never reaches the fan-out at all. gather_fact has no
+        # ``when`` parameter, so filtering the host list with the predicate is
+        # the equivalent of a driver-side skip.
+        all_hosts = [Host.from_inventory(entry) for entry in inventory]
+        hosts = [host for host in all_hosts if is_centos(host)]
+        skipped = [host.name for host in all_hosts if host not in hosts]
+        if skipped:
+            print("\n== Skipped (when guard is_centos): " + ", ".join(skipped) + " ==")
+        # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans IptablesVersion.process out with asyncio.gather and returns a
         # host-name-keyed mapping. The fact takes no arguments -- it always
         # reads the binary's --version banner.
         versions = await gather_fact(hosts, IptablesVersion)
+    except (OSError, json.JSONDecodeError) as exc:
+        # The inventory file is missing, unreadable or not valid JSON. Python's
+        # own message already names the file and the reason, so print just that
+        # -- no host was contacted and there is no traceback worth showing.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except InventoryError as exc:
+        # The document parsed but did not match the inventory schema. The
+        # message names the offending entry by its list index, which is the
+        # whole report -- and it fails before any host is materialized.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # The library reports an unreachable host or a failed fact command as a
         # typed error whose message already names the host. CommandError also

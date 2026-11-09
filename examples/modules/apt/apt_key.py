@@ -42,7 +42,8 @@ One request yields two commands at different privilege levels: an
 ``AptKeyUploadCommand`` transfer spools the stream to a fixed ``/tmp`` path
 over scp as the login user, then an ``AptKeyInstallCommand`` runs one
 elevated ``sh -c`` that creates the keyrings directory, dearmors the key
-with ``gpg --batch --dearmor`` when the content is ASCII-armored (binary
+with ``gpg --batch --yes --dearmor`` when the content is ASCII-armored
+(``--yes`` overwrites the keyring a previous run left behind; binary
 content is copied verbatim), chmods the keyring ``0644`` and removes the
 spool file. The request is flagged ``sudo=True`` for the install; the
 transfer stays unprivileged regardless, so the log shows a plain ``scp``

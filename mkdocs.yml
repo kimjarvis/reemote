@@ -43,6 +43,7 @@ plugins:
             - examples/modules/dnf
             - examples/modules/files
             - examples/modules/firewalld
+            - examples/modules/flatpak
             - examples/modules/git
             - examples/modules/gpg
             - examples/modules/hardware
@@ -53,13 +54,13 @@ plugins:
             - examples/modules/postgresql
             - examples/modules/selinux
             - examples/modules/server
+            - examples/modules/snap
             - examples/modules/sysctl
             - examples/modules/systemd
             - examples/modules/ufw
             - examples/actions
             - examples/demonstrations/composition
             - examples/demonstrations/connectors
-            - examples/demonstrations/inventory
             - examples/demonstrations/privilege
           options:
             docstring_style: google
@@ -73,6 +74,7 @@ plugins:
             show_signature_annotations: true
             signature_crossrefs: true
             show_bases: false
+            show_symbol_type_heading: true
             # TypedDict fields and command-descriptor fields are documented
             # once (in the class docstring's Attributes table / the class
             # signature); the extension drops their duplicate member entries
@@ -99,6 +101,7 @@ nav:
 #          - dnf: examples/modules/dnf.md
 #          - files: examples/modules/files.md
 #          - firewalld: examples/modules/firewalld.md
+#          - flatpak: examples/modules/flatpak.md
 #          - git: examples/modules/git.md
 #          - gpg: examples/modules/gpg.md
 #          - hardware: examples/modules/hardware.md
@@ -109,6 +112,7 @@ nav:
 #          - postgresql: examples/modules/postgresql.md
 #          - selinux: examples/modules/selinux.md
 #          - server: examples/modules/server.md
+#          - snap: examples/modules/snap.md
 #          - sysctl: examples/modules/sysctl.md
 #          - systemd: examples/modules/systemd.md
 #          - ufw: examples/modules/ufw.md
@@ -116,7 +120,6 @@ nav:
 #      - Demonstrations:
 #          - Composition: examples/demonstrations/composition.md
 #          - Connectors: examples/demonstrations/connectors.md
-#          - Inventory: examples/demonstrations/inventory.md
 #          - Privilege: examples/demonstrations/privilege.md
   - API Reference:
 #      - Drivers: drivers.md
@@ -129,6 +132,7 @@ nav:
           - dnf: modules/dnf.md
           - files: modules/files.md
           - firewalld: modules/firewalld.md
+          - flatpak: modules/flatpak.md
           - git: modules/git.md
           - gpg: modules/gpg.md
           - hardware: modules/hardware.md
@@ -139,6 +143,7 @@ nav:
           - postgresql: modules/postgresql.md
           - selinux: modules/selinux.md
           - server: modules/server.md
+          - snap: modules/snap.md
           - sysctl: modules/sysctl.md
           - systemd: modules/systemd.md
           - ufw: modules/ufw.md

@@ -1360,10 +1360,11 @@ def test_gpg_key_upload_command_renders_as_an_unprivileged_scp():
 
 def test_gpg_key_install_command_shell_and_elevation():
     """The install wraps mkdir, the dearmor-or-copy sniff (pyinfra's
-    local_file fixture command), chmod and the spool cleanup in one ``sh -c``
-    so every step runs under the elevated shell. The paths are safe tokens,
-    so shlex.quote leaves them unquoted; the armor marker carries spaces and
-    is quoted."""
+    local_file fixture command, plus ``--yes`` so an existing output is
+    overwritten instead of refused), chmod and the spool cleanup in one
+    ``sh -c`` so every step runs under the elevated shell. The paths are
+    safe tokens, so shlex.quote leaves them unquoted; the armor marker
+    carries spaces and is quoted."""
     cmd = GpgKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST)
     shell = cmd.shell()
     assert shell.startswith("sh -c ")
@@ -1371,7 +1372,7 @@ def test_gpg_key_install_command_shell_and_elevation():
     assert inner == (
         "mkdir -p /etc/apt/keyrings && "
         f"if grep -q 'BEGIN PGP PUBLIC KEY BLOCK' {_KEY_SPOOL_PATH}; then "
-        f"gpg --batch --dearmor -o {KEYRING_DEST} {_KEY_SPOOL_PATH}; "
+        f"gpg --batch --yes --dearmor -o {KEYRING_DEST} {_KEY_SPOOL_PATH}; "
         f"else cp {_KEY_SPOOL_PATH} {KEYRING_DEST}; fi && "
         f"chmod 0644 {KEYRING_DEST} && rm -f {_KEY_SPOOL_PATH}"
     )
@@ -1399,7 +1400,7 @@ def test_gpg_key_install_command_quotes_unsafe_paths():
     cmd = GpgKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=dest)
     inner = shlex.split(cmd.shell())[2]
     quoted = shlex.quote(dest)
-    assert f"gpg --batch --dearmor -o {quoted} {_KEY_SPOOL_PATH}" in inner
+    assert f"gpg --batch --yes --dearmor -o {quoted} {_KEY_SPOOL_PATH}" in inner
     assert f"cp {_KEY_SPOOL_PATH} {quoted}" in inner
     assert f"chmod 0644 {quoted}" in inner
     assert "mkdir -p /etc/apt/keyrings" in inner
@@ -2121,15 +2122,16 @@ DEARMOR_DEST = "/tmp/test.gpg"
 
 
 def test_gpg_dearmor_command_shell_and_elevation():
-    """The conversion wraps mkdir, gpg --batch --dearmor (pyinfra's basic
-    fixture command) and chmod in one ``sh -c`` so every step elevates
-    together."""
+    """The conversion wraps mkdir, gpg --batch --yes --dearmor (pyinfra's
+    basic fixture command, plus ``--yes`` so the stateless conversion
+    overwrites an existing output instead of failing on it) and chmod in
+    one ``sh -c`` so every step elevates together."""
     cmd = GpgDearmorCommand(src=DEARMOR_SRC, dest=DEARMOR_DEST)
     shell = cmd.shell()
     assert shell.startswith("sh -c ")
     inner = shlex.split(shell)[2]
     assert inner == (
-        f"mkdir -p /tmp && gpg --batch --dearmor -o {DEARMOR_DEST} {DEARMOR_SRC}"
+        f"mkdir -p /tmp && gpg --batch --yes --dearmor -o {DEARMOR_DEST} {DEARMOR_SRC}"
         f" && chmod 0644 {DEARMOR_DEST}"
     )
     assert command_shell(cmd, sudo=True).startswith("sudo sh -c ")

@@ -2690,9 +2690,11 @@ def test_apt_key_upload_command_renders_as_an_unprivileged_scp():
 def test_apt_key_install_command_shell_and_elevation():
     """The install wraps mkdir, the dearmor-or-copy sniff, chmod and the spool
     cleanup in one ``sh -c`` so every step runs under the elevated shell (a
-    bare ``sudo ... && rm`` would leave the cleanup unprivileged). The paths
-    are safe tokens, so shlex.quote leaves them unquoted; the armor marker
-    carries spaces and is quoted."""
+    bare ``sudo ... && rm`` would leave the cleanup unprivileged). The
+    dearmor carries ``--yes`` so an existing keyring is overwritten -- the
+    non-idempotent install must succeed on repeat runs, which ``--batch``
+    alone would refuse. The paths are safe tokens, so shlex.quote leaves
+    them unquoted; the armor marker carries spaces and is quoted."""
     cmd = AptKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST)
     shell = cmd.shell()
     assert shell.startswith("sh -c ")
@@ -2700,7 +2702,7 @@ def test_apt_key_install_command_shell_and_elevation():
     assert inner == (
         "mkdir -p /etc/apt/keyrings && "
         f"if grep -q 'BEGIN PGP PUBLIC KEY BLOCK' {_KEY_SPOOL_PATH}; then "
-        f"gpg --batch --dearmor -o {KEYRING_DEST} {_KEY_SPOOL_PATH}; "
+        f"gpg --batch --yes --dearmor -o {KEYRING_DEST} {_KEY_SPOOL_PATH}; "
         f"else cp {_KEY_SPOOL_PATH} {KEYRING_DEST}; fi && "
         f"chmod 0644 {KEYRING_DEST} && rm -f {_KEY_SPOOL_PATH}"
     )
@@ -2715,7 +2717,7 @@ def test_apt_key_install_command_quotes_unsafe_paths():
     cmd = AptKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=dest)
     inner = shlex.split(cmd.shell())[2]
     quoted = shlex.quote(dest)
-    assert f"gpg --batch --dearmor -o {quoted} {_KEY_SPOOL_PATH}" in inner
+    assert f"gpg --batch --yes --dearmor -o {quoted} {_KEY_SPOOL_PATH}" in inner
     assert f"cp {_KEY_SPOOL_PATH} {quoted}" in inner
     assert f"chmod 0644 {quoted}" in inner
     assert "mkdir -p /etc/apt/keyrings" in inner

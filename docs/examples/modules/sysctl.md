@@ -14,13 +14,14 @@ the [`sysctl` module page](../../modules/sysctl.md). The runtime fact's
 example relocated here from `examples/modules/server/server_sysctl.py` when
 the `Sysctl` fact moved to this namespace.
 
-Both operation examples carry a module-level `INVENTORY` of the web1/web2
-hosts and flag their requests `sudo=True` — writing root-owned `/etc`
+Both operation examples read the shared project-root `inventory.json`,
+guard every request with `when=is_centos` (the web1/web2 hosts) and flag
+their requests `sudo=True` — writing root-owned `/etc`
 configuration and applying kernel settings needs root, while the spool
 transfer itself stays unprivileged. They write kernel tuning and reload it,
 so they are compile-checked and exercised by the offline example harness
-rather than run against shared hosts; point `INVENTORY` at your own
-throwaway machines to execute them for real.
+rather than run against shared hosts; point `INVENTORY_PATH` at your own
+file of throwaway machines to execute them for real.
 
 **Host-policy prerequisite.** `sysctl` (from `procps-ng`) is already
 installed and the requests are correctly flagged `sudo=True`, but applying

@@ -18,10 +18,13 @@ reading `SELogin`, `selinux_se_user.py` reading `SEUser`,
 reading `PermissiveDomains`, all over `gather_fact`) are not rendered here
 — they read a single fact, and the facts themselves are documented on the
 [`selinux` module page](../../modules/selinux.md). Like the dnf examples
-they carry an inline `INVENTORY` of the two web1/web2 hosts with no `when`
-guard: every target is an SELinux (RHEL-family) host, so the
-`semanage`/`semodule`/`sestatus` shells are meant to run on all of them —
-point `INVENTORY` at your own machines before executing.
+they read the shared project-root `inventory.json` and guard on the
+`"centos"` group: `is_centos` filters the host list before the
+`gather_fact` fan-out, and the operation scripts below carry
+`when=is_centos` on every request. Every target is an SELinux
+(RHEL-family) host, so the `semanage`/`semodule`/`sestatus` shells are
+meant to run on all of them — point `INVENTORY_PATH` at your own file of
+machines before executing.
 
 **Host-policy prerequisite for the mutating operations.** The tools these
 scripts drive (`semanage`, `semodule`, `setsebool`, `chcon`, `restorecon`

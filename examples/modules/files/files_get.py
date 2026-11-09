@@ -43,6 +43,22 @@ uses the *default* factory (``Host.from_inventory``): each plain ``Host`` lazily
 opens an asyncssh connection, gathers the remote hash for real, and sends the
 file's content over scp into the sink when it differs.
 
+Every request carries ``when=is_centos``, the declarative eligibility
+guard: the predicate reads only **static** inventory data --
+``host.group``, set by the ``"group"`` key of the inventory entry -- and
+is a stable module-level function, so the prepare and apply phases reach
+the same skip decision. The driver skips a rejected request without
+materializing it, so on hosts outside the ``"centos"`` group neither the
+commands nor the facts behind them run, and plan and log render the step
+as ``[skipped: when guard is_centos]`` in its lockstep slot. The path is
+resolved from ``__file__``, so the example works from any working
+directory; point ``INVENTORY_PATH`` at your own file to target your
+machines.
+
+The path is resolved from ``__file__``, so the example works from any
+working directory; point ``INVENTORY_PATH`` at your own file (or edit
+``inventory.json``) to target your machines.
+
 Run it with::
 
     uv run python examples/modules/files/files_get.py
@@ -50,13 +66,17 @@ Run it with::
 
 import asyncio
 import io
+import json
 import sys
 from collections.abc import Generator
+from pathlib import Path
+from typing import Any
 
 from reemote5 import (
     CommandError,
     Host,
     HostConnectionError,
+    InventoryError,
     OperationRequest,
     PrivilegeError,
     files,
@@ -64,6 +84,7 @@ from reemote5 import (
     format_plan,
     op,
     run,
+    validate_inventory,
 )
 
 # The remote source: present and readable by the login user on every host.
@@ -76,27 +97,35 @@ REMOTE_SRC = "/etc/hostname"
 # into its destination, never lets two hosts clobber each other in lockstep).
 SINKS: dict[str, io.BytesIO] = {}
 
-# The inventory: real hosts and their SSH connection information, supplied
-# by the application to the library. The default host_factory materializes
-# each entry into a plain Host that connects over asyncssh.
-INVENTORY = [
-    {
-        "host": "web1",
-        "connection": {
-            "address": "192.168.0.240",
-            "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
-        },
-    },
-    {
-        "host": "web2",
-        "connection": {
-            "address": "192.168.0.242",
-            "username": "kjarvis",
-            "key_path": "/home/kim/.ssh/id_ed25519",
-        },
-    },
-]
+# examples/modules/files/files_get.py -> the project root, so the inventory
+# is found whatever the current working directory is.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
+
+
+def load_inventory(path: Path) -> list[dict[str, Any]]:
+    """Read an inventory from a JSON file and validate it.
+
+    The file must hold a JSON array of inventory entries -- dictionaries
+    each carrying at least ``host`` and ``connection``. Returns the parsed
+    list, ready to materialize into hosts; raises ``InventoryError`` (via
+    ``validate_inventory``) when the document is not an array or an entry
+    does not match the schema.
+    """
+    inventory = json.loads(path.read_text(encoding="utf-8"))
+    validate_inventory(inventory)
+    return inventory
+
+
+def is_centos(host: Host) -> bool:
+    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+
+    Reads only static inventory data (``host.group``, set by the ``"group"``
+    key of the inventory entry), never a mutable fact, and stays a stable
+    module-level function -- the two rules every ``when`` predicate follows
+    so both deploy phases reach the same eligibility decision.
+    """
+    return host.group == "centos"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
@@ -111,23 +140,39 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     sink = SINKS.get(host.name)
     if sink is None:
         sink = SINKS[host.name] = io.BytesIO()
-    yield op(files.get, name="Fetch hostname", src=REMOTE_SRC, dest=sink)
-    yield op(files.get, name="Re-fetch hostname", src=REMOTE_SRC, dest=sink)
+    yield op(
+        files.get,
+        name="Fetch hostname",
+        src=REMOTE_SRC,
+        dest=sink,
+        when=is_centos,
+    )
+    yield op(
+        files.get,
+        name="Re-fetch hostname",
+        src=REMOTE_SRC,
+        dest=sink,
+        when=is_centos,
+    )
 
 
 async def main() -> None:
     try:
+        inventory = load_inventory(INVENTORY_PATH)
+        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        print(", ".join(entry["host"] for entry in inventory))
+
         # --dry: prepare phase only. The remote sha1 is still gathered over SSH
         # (read-only) so the plan reflects each host's real pre-deployment state;
         # no content is transferred and the sinks stay empty.
-        plans, _, _hosts = await run(INVENTORY, deploy, dry=True)
+        plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))
 
         # Real run: prepare, then apply in lockstep across hosts. The first get
         # transfers over scp into each host's sink; the second sees the downloaded
         # content and reports no change.
-        plans, report, _hosts = await run(INVENTORY, deploy)
+        plans, report, _hosts = await run(inventory, deploy)
         print("\n== Run log (apply phase) ==")
         assert report is not None
         print(format_log(report))
@@ -137,6 +182,18 @@ async def main() -> None:
         print("\n== Downloaded content per host ==")
         for name, sink in SINKS.items():
             print(f"{name}: {sink.getvalue().decode().strip()!r}")
+    except (OSError, json.JSONDecodeError) as exc:
+        # The inventory file is missing, unreadable or not valid JSON. Python's
+        # own message already names the file and the reason, so print just that
+        # -- no host was contacted and there is no traceback worth showing.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except InventoryError as exc:
+        # The document parsed but did not match the inventory schema. The
+        # message names the offending entry by its list index, which is the
+        # whole report -- and it fails before any host is materialized.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # The library already reports every host-level failure as a typed error
         # whose message names the host and the failing command. Print that

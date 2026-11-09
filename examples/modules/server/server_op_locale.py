@@ -16,8 +16,8 @@ hosts such as the CentOS ``web1``/``web2`` demo servers have no
 ``/etc/locale.gen`` -- they install locales through ``glibc-langpack-*`` and
 ``localedef`` -- so the recipe targets the Debian-family ``ubuntu`` host,
 where ``/etc/locale.gen`` ships the commented ``fr_FR.UTF-8 UTF-8``
-definition line and ``locale-gen`` is on PATH. Point ``INVENTORY`` at your
-own Debian-family machines to run it elsewhere.
+definition line and ``locale-gen`` is on PATH. Point ``INVENTORY_PATH``
+at your own file of Debian-family machines to run it elsewhere.
 
 pyinfra's ``server.locale(locale, present=True)`` reads the ``Locales`` fact
 (``locale -a``), finds the locale's definition line in ``/etc/locale.gen``
@@ -27,8 +27,8 @@ and runs ``locale-gen`` after either edit. Zero or multiple matching lines
 raise an error. The recipe mirrors all of that:
 
 1. Two fact SNAPSHOTS: ``gather_fact`` reads ``FileContents`` of
-   ``/etc/locale.gen`` and the installed ``Locales`` from every host
-   (read-only SSH). The pure ``locale_edit`` function performs pyinfra's
+   ``/etc/locale.gen`` and the installed ``Locales`` from every guarded
+   host (read-only SSH). The pure ``locale_edit`` function performs pyinfra's
    line lookup with a Python regex over the content -- reemote5 ships no
    grep-style ``FindInFile`` fact, and ``FileContents`` plus local parsing
    is its content-read convention. Zero or multiple matches raise
@@ -77,15 +77,30 @@ requested state: the snapshot gate skips both runs. The ``locale-gen``
 step itself is stateless (pyinfra parity) -- it always plans a command
 when it runs at all.
 
+The hosts come from the shared ``inventory.json`` in the project root,
+read with ``load_inventory`` (parse + ``validate_inventory``) and resolved
+from ``__file__`` so the example works from any working directory. The
+snapshot gathers are guarded by ``is_ubuntu`` (``host.group == "ubuntu"``)
+-- the Debian-family analogue of the ``is_centos`` guard the other
+examples use, because this recipe only makes sense on Debian/Ubuntu:
+``gather_fact`` takes no ``when`` parameter, so the predicate filters the
+host list before the fan-out and hosts outside the ``"ubuntu"`` group are
+named on a ``== Skipped (when guard is_ubuntu): ... ==`` line and never
+connected. Every deploy request also carries ``when=is_ubuntu``, and only
+hosts with a snapshot entry can become pending.
+
 Run it with::
 
     uv run python examples/modules/server/server_op_locale.py
 """
 
 import asyncio
+import json
 import re
 import sys
 from collections.abc import AsyncGenerator, Callable, Generator
+from pathlib import Path
+from typing import Any
 
 from reemote5 import (
     Command,
@@ -93,6 +108,7 @@ from reemote5 import (
     FileContents,
     Host,
     HostConnectionError,
+    InventoryError,
     Locales,
     OpContext,
     OperationRequest,
@@ -104,6 +120,7 @@ from reemote5 import (
     gather_fact,
     op,
     run,
+    validate_inventory,
 )
 
 # The locale to ensure, and whether it should be enabled (pyinfra's
@@ -123,21 +140,42 @@ SPOOL_PATH = "/tmp/locale.gen"
 # the transform by value; a fresh closure per phase raises DeterminismError).
 SPOOL_TRANSFORMS: dict[str, Callable[[str | None], str]] = {}
 
-# The inventory: the Debian-family ``ubuntu`` host and its SSH connection
-# information. This recipe needs /etc/locale.gen + locale-gen (Debian/Ubuntu
-# only); the CentOS web1/web2 hosts have neither. No ``privilege`` entry: the
-# elevated install assumes passwordless sudo for the login user; a password
-# would come from ``privilege`` here, never the op.
-INVENTORY = [
-    {
-        "host": "ubuntu",
-        "connection": {
-            "address": "192.168.0.221",
-            "username": "kjarvis",
-            "key_path": "~/.ssh/id_ed25519",
-        },
-    },
-]
+# examples/modules/server/server_op_locale.py -> the project root, so the
+# inventory is found whatever the current working directory is. This recipe
+# needs /etc/locale.gen + locale-gen (Debian/Ubuntu only), so it guards on
+# the "ubuntu" group; the CentOS web1/web2 hosts have neither. No
+# ``privilege`` entry is needed: the elevated install assumes passwordless
+# sudo for the login user; a password would come from ``privilege`` in the
+# inventory, never the op.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
+
+
+def load_inventory(path: Path) -> list[dict[str, Any]]:
+    """Read an inventory from a JSON file and validate it.
+
+    The file must hold a JSON array of inventory entries -- dictionaries
+    each carrying at least ``host`` and ``connection``. Returns the parsed
+    list, ready to materialize into hosts; raises ``InventoryError`` (via
+    ``validate_inventory``) when the document is not an array or an entry
+    does not match the schema.
+    """
+    inventory = json.loads(path.read_text(encoding="utf-8"))
+    validate_inventory(inventory)
+    return inventory
+
+
+def is_ubuntu(host: Host) -> bool:
+    """``when`` guard: the host belongs to the inventory group ``"ubuntu"``.
+
+    Reads only static inventory data (``host.group``, set by the ``"group"``
+    key of the inventory entry), never a mutable fact, and stays a stable
+    module-level function -- the two rules every ``when`` predicate follows
+    so both deploy phases reach the same eligibility decision. The recipe
+    is Debian-family only, so the guard keeps it (and the facts it reads)
+    off the Alpine and CentOS hosts.
+    """
+    return host.group == "ubuntu"
 
 
 def locale_edit(content: str | None, locale: str, present: bool) -> str:
@@ -221,6 +259,7 @@ def spool(host: Host) -> Generator[OperationRequest]:
         name="Spool locale.gen",
         path=SPOOL_PATH,
         transform=SPOOL_TRANSFORMS[host.name],
+        when=is_ubuntu,
     )
 
 
@@ -237,19 +276,31 @@ def install(host: Host) -> Generator[OperationRequest]:
         dest="/etc",
         overwrite=True,
         sudo=True,
+        when=is_ubuntu,
     )
     yield op(
         locale_gen,
         name="Regenerate locales",
         sudo=True,
+        when=is_ubuntu,
     )
 
 
 async def main() -> None:
     try:
-        # The snapshots: read every host's real /etc/locale.gen and
-        # installed locales (read-only cat / locale -a).
-        hosts = [Host.from_inventory(entry) for entry in INVENTORY]
+        inventory = load_inventory(INVENTORY_PATH)
+        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        print(", ".join(entry["host"] for entry in inventory))
+
+        # The snapshots: read every guarded host's real /etc/locale.gen and
+        # installed locales (read-only cat / locale -a). gather_fact has no
+        # ``when`` parameter, so the is_ubuntu predicate filters the host
+        # list before the fan-out -- a skipped host is never connected.
+        all_hosts = [Host.from_inventory(entry) for entry in inventory]
+        hosts = [host for host in all_hosts if is_ubuntu(host)]
+        skipped = [host.name for host in all_hosts if host not in hosts]
+        if skipped:
+            print("\n== Skipped (when guard is_ubuntu): " + ", ".join(skipped) + " ==")
         try:
             contents = await gather_fact(hosts, FileContents, LOCALE_GEN_PATH)
             installed = await gather_fact(hosts, Locales)
@@ -258,10 +309,13 @@ async def main() -> None:
                 await host.aclose()
 
         # Controller-side idempotence: pyinfra's Locales change condition
-        # on the frozen snapshot; only pending hosts get a transform.
+        # on the frozen snapshot; only pending hosts get a transform. Only
+        # guarded hosts carry a snapshot entry; the rest stay skipped.
         pending = []
-        for entry in INVENTORY:
+        for entry in inventory:
             name = entry["host"]
+            if name not in installed:
+                continue
             if not locale_needed(installed[name], LOCALE, PRESENT):
                 continue
             desired = locale_edit(contents[name], LOCALE, PRESENT)
@@ -294,6 +348,18 @@ async def main() -> None:
         print("\n== Run 2 log: install locale.gen + locale-gen ==")
         assert report is not None
         print(format_log(report))
+    except (OSError, json.JSONDecodeError) as exc:
+        # The inventory file is missing, unreadable or not valid JSON. Python's
+        # own message already names the file and the reason, so print just that
+        # -- no host was contacted and there is no traceback worth showing.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except InventoryError as exc:
+        # The document parsed but did not match the inventory schema. The
+        # message names the offending entry by its list index, which is the
+        # whole report -- and it fails before any host is materialized.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # The library already reports every host-level failure as a typed error
         # whose message names the host and the failing command. Print that

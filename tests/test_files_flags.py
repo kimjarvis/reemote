@@ -419,16 +419,20 @@ def _load_converge_example():
 
 
 def converge_factory(entry: dict) -> SimulatedHost:
-    """A host modelling the example's login-user home so only chattr lands."""
+    """A host modelling the example's /tmp parent so only chattr lands."""
     host = SimulatedHost.from_inventory(entry)
-    host.directory_stats = {"/home/kjarvis": {"mode": 755}}
+    host.directory_stats = {"/tmp": {"mode": 1777}}
     return host
 
 
 async def test_converge_example_rerun_is_all_no_op():
     example = _load_converge_example()
     marker = example.MARKER
-    inventory = example.INVENTORY[:1]  # one host suffices for the fixpoint
+    # The example loads the shared inventory.json (it keeps no module-level
+    # INVENTORY), so the test supplies its own single entry -- in the "centos"
+    # group, or the deploy's is_centos guard would skip every request. One host
+    # suffices for the fixpoint.
+    inventory = [{**INVENTORY[0], "group": "centos"}]
 
     # Run 1: fresh host. Both steps converge a not-yet-existing marker.
     plans, report, hosts = await run(inventory, example.deploy, host_factory=converge_factory)

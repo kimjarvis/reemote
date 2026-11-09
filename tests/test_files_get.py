@@ -36,7 +36,7 @@ INVENTORY = [
     },
 ]
 
-REMOTE_SRC = "/home/kjarvis/reemote5-get.txt"
+REMOTE_SRC = "/tmp/reemote5-get.txt"
 
 CONTENT = b"hello from the remote host\n"
 CONTENT_SHA1 = hashlib.sha1(CONTENT).hexdigest()

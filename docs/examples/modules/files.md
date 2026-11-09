@@ -30,11 +30,11 @@ directory is created first unless `create_remote_dir=False`, and a path
 held by a regular file or directory raises unless `force=True` removes it
 first — pyinfra's timestamped `force_backup` is deliberately dropped (a
 `datetime.now()` in the command would differ between the phases). The
-example ensures the same link twice under the login user's home (no
-elevation needed) — the second request is a guaranteed no-op because the
-first request's `ln -s` is visible to it through the fresh per-step fact
-cache. The link checks only see links; removing a regular file needs
-`files.file` below.
+example ensures the same link twice in `/tmp` — writable by any login user,
+so no elevation is needed — and the second request is a guaranteed no-op
+because the first request's `ln -s` is visible to it through the fresh
+per-step fact cache. The link checks only see links; removing a regular file
+needs `files.file` below.
 
 ::: files_op_link
     options:
@@ -51,9 +51,14 @@ alone); an existing file re-runs only the `chmod`/`chown` whose values
 differ from the fact's metadata; and `present=False` removes it with
 `rm -f`. Unlike `files.link`, which manages links only, this also sees
 regular files, which makes it the removal primitive for them. The example
-ensures the same root-owned file twice — the second request is a guaranteed no-op
+first provisions the `www` group and system user with `server.group` /
+`server.user` (no-ops once the account exists) and keeps the `/srv/web` /
+`/srv/web/conf.d` chain `755` `www:www` with `files.directory` — the
+`File` fact reads unprivileged, so a non-traversable parent would hide
+the file — then ensures the same
+root-owned file twice — the second file request is a guaranteed no-op
 through the fresh per-step fact cache — so those requests carry
-`sudo=True`, then removes a marker in the login user's home unprivileged.
+`sudo=True`, then removes a `/tmp` marker unprivileged.
 pyinfra's timestamped `force_backup` is deliberately dropped (a
 `datetime.now()` in the command would differ between the phases), and the
 `touch` option is shown unused because it is deliberately non-idempotent.
@@ -72,8 +77,8 @@ module-level `io.BytesIO`, defined once so both phases pass the identical
 object (request equality compares it by identity). The script puts the same
 stream twice — the second put is a guaranteed no-op because the first put's
 upload is visible to it through the fresh per-step fact cache. The transfer
-rides the connection as the login user, so the destination is a path under
-that user's home (no `sudo`/`su` applies to transfers).
+rides the connection as the login user, so the destination is a path in
+`/tmp`, writable by any login user (no `sudo`/`su` applies to transfers).
 
 ::: files_put
     options:
@@ -109,7 +114,7 @@ it is a fixpoint and the second edit is a guaranteed no-op — visible through t
 fresh per-step fact cache. The transform must be a module-level function (a
 lambda built inside the deploy generator would diverge across phases and raise
 `DeterminismError`), and because the write is an unprivileged transfer the
-target is a path under the login user's home, not a root-owned file like
+target is a login-user-writable path in `/tmp`, not a root-owned file like
 `/etc/hosts` — for that, see the spool-and-install recipe below.
 
 ::: files_edit
@@ -133,7 +138,7 @@ overwrite) and the deprecated `try_prevent_shell_expansion` are deliberately
 dropped; removal from an absent file passes `None` through so no empty file
 is created. The script runs the full lifecycle — ensure twice, then remove
 twice — each run as a `--dry` plan followed by the real apply log, against a
-login-user-writable path (a root-owned target needs the spool-and-install
+login-user-writable `/tmp` path (a root-owned target needs the spool-and-install
 recipe below).
 
 ::: files_block
@@ -148,9 +153,11 @@ with `rm -rf` before the `mv`. The operation is stateless — a valid move
 always plans a command — and raises `ValueError` on an absent source or
 absent/non-directory destination in *both* phases, so a "create then move"
 flow cannot share one deploy: the example stages the payload with
-`files.put` into `/tmp` in run 1, then moves it into the login user's home
-in run 2, each run shown as a `--dry` plan followed by the real apply log.
-Nothing is elevated here; a root-owned destination would carry `sudo=True`.
+`files.put` into `/tmp` in run 1, then moves it into `/var/tmp` in run 2,
+each run shown as a `--dry` plan followed by the real apply log. Both
+directories exist on every host and are writable by any login user, so no
+home directory is assumed. Nothing is elevated here; a root-owned
+destination would carry `sudo=True`.
 
 ::: files_move
     options:
@@ -165,9 +172,11 @@ prelude); without it an existing target with equal sha1 content is a no-op
 and a different one raises `ValueError`. Absent source / absent or
 non-directory destination raise in *both* phases (the same phase-unaware
 strictness as `files.move`), so the example stages the payload with
-`files.put` into `/tmp` in run 1, then copies it into the login user's home
-in run 2, each run shown as a `--dry` plan followed by the real apply log.
-Nothing is elevated here; a root-owned destination would carry `sudo=True`.
+`files.put` into `/tmp` in run 1, then copies it into `/var/tmp` in run 2,
+each run shown as a `--dry` plan followed by the real apply log. Both
+directories exist on every host and are writable by any login user, so no
+home directory is assumed. Nothing is elevated here; a root-owned
+destination would carry `sudo=True`.
 
 ::: files_copy
     options:
@@ -184,7 +193,12 @@ held by a regular file raises unless `force=True` removes it first.
 pyinfra's timestamped `force_backup` is deliberately dropped — a
 `datetime.now()` in the command would differ between the phases. The
 web-root path (`/srv/web`) and the `www` ownership are root-owned, so the
-request carries `sudo=True`.
+request carries `sudo=True`. The `www` account is not assumed to exist:
+the deploy's first two requests ensure the group and system user with
+`server.group` / `server.user`, so the `chown` never fails on an unknown
+user. The mode is `755`, not `750`: facts read unprivileged, so the web
+root must stay traversable by the login user (the `files.file` sibling
+example's `File` fact reads a config file inside it).
 
 ::: files_op_directory
     options:
@@ -201,10 +215,10 @@ set, a clear (`present=False`) only those actually present, and anything
 else is a no-op. `flags` takes one letter or a tuple of letters (a tuple at
 `op()` call sites, since request arguments must stay hashable); a letter
 outside the ext2 vocabulary raises `ValueError` before anything reaches the
-host. `chattr` is root's tool and the example's protected `/etc` path is
-root-owned, so the requests carry `sudo=True`: the script makes a file
-immutable, then the second run's clear is planned against the freshly set
-state through the per-step fact cache.
+host. `chattr` is root's tool (`CAP_LINUX_IMMUTABLE`), so the requests carry
+`sudo=True` even though the marker itself is a login-user-writable `/tmp`
+path: the script makes a file immutable, then the second run's clear is
+planned against the freshly set state through the per-step fact cache.
 
 ::: files_flags
     options:
@@ -224,7 +238,7 @@ per-step fact cache in the apply phase. Unlike the self-reversing sibling, a
 real run leaves the marker present, mode `600` and immutable — that residue is
 the point — so unwind it by clearing the flag first (`chattr -i`) before any
 removal. The `chattr` carries `sudo=True` (`CAP_LINUX_IMMUTABLE`); the create
-and `chmod` are unprivileged in the login user's home.
+and `chmod` are unprivileged in `/tmp`.
 
 ::: files_flags_converge
     options:

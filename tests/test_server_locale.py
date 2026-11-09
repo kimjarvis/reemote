@@ -75,12 +75,13 @@ DESIRED_ADD = "# en_US.UTF-8 UTF-8\nfr_FR.UTF-8 UTF-8\nen_US.UTF-8 UTF-8\n"
 INVENTORY = [
     {
         "host": "web1",
+        "group": "ubuntu",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
     },
 ]
 TWO_HOSTS = [
     *INVENTORY,
-    {"host": "web2", "connection": {"key_path": "~/.ssh/id_ed25519"}},
+    {"host": "web2", "group": "ubuntu", "connection": {"key_path": "~/.ssh/id_ed25519"}},
 ]
 
 # Stable spool transforms for the end-to-end deploys, exactly as main() fills

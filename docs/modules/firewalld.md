@@ -190,7 +190,8 @@ the scopes.
 
 The read-only fact-gathering scripts under
 [`examples/modules/firewalld/`](../examples/modules/firewalld.md) gather
-one fact each over `gather_fact` on the inline web1/web2 inventory:
+one fact each over `gather_fact` on the shared `inventory.json`'s CentOS
+hosts (the `is_centos` guard filters the host list before the fan-out):
 `firewalld_firewalld_status.py`, `firewalld_firewalld_default_zone.py`,
 `firewalld_firewalld_zones.py` (both scopes side by side),
 `firewalld_firewalld_services.py`, `firewalld_firewalld_ipsets.py`

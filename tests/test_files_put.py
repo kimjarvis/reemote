@@ -38,7 +38,7 @@ INVENTORY = [
     },
 ]
 
-REMOTE_DEST = "/home/kjarvis/reemote5-put.txt"
+REMOTE_DEST = "/tmp/reemote5-put.txt"
 
 CONTENT = b"hello from reemote5\n"
 CONTENT_SHA1 = hashlib.sha1(CONTENT).hexdigest()

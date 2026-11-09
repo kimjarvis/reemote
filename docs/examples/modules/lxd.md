@@ -5,8 +5,11 @@ the [`lxd`](../../modules/lxd.md) module. See the
 [Examples overview](../../examples.md) for the shared "connects for real"
 warning and the error-reporting contract every script follows.
 
-Every script's inventory targets the two hosts web1/web2, which the
-scripts assume run an initialized LXD daemon. The operation requests ride
+Every script reads the shared project-root `inventory.json` and guards on
+the `"centos"` group (`is_centos` on every operation request, a host-list
+filter before each `gather_fact` fan-out), targeting the two hosts
+web1/web2, which the scripts assume run an initialized LXD daemon. The
+operation requests ride
 under `sudo=True`, so the `lxc` client talks to the daemon socket as root
 — no password travels through operation arguments, plans or logs. The
 fact-gathering scripts read as the login user, who needs access to the
@@ -53,8 +56,8 @@ are correct — `sudo=True` on every operation, the `lxc --format json` CLI
 throughout — so they are compile-checked and exercised by the offline
 example harness rather than run against the shared hosts. Relax the demo
 hosts' sudo to an unconfined domain (or set SELinux permissive) and
-install + initialize LXD, or point each script's `INVENTORY` at your own
-LXD-enabled machines, to execute them for real.
+install + initialize LXD, or point each script's `INVENTORY_PATH` at your
+own file of LXD-enabled machines, to execute them for real.
 
 ## Managing a container (pyinfra parity)
 

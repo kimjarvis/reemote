@@ -1147,7 +1147,9 @@ class GpgKeyInstallCommand(Command):
     destination directory, then mirrors pyinfra's content sniff when
     ``dearmor`` is set: an ASCII-armored key (``BEGIN PGP PUBLIC KEY BLOCK``
     in the bytes, regardless of any file extension) is converted to binary
-    form with ``gpg --batch --dearmor``, binary content is copied verbatim;
+    form with ``gpg --batch --yes --dearmor`` (``--yes`` overwrites an
+    existing output, which ``--batch`` alone refuses), binary content is
+    copied verbatim;
     ``dearmor=False`` copies unconditionally (pyinfra's ``no_dearmor``
     branch). Finally the keyring is chmod'ed ``0644`` (the fixed mode --
     pyinfra's ``mode`` parameter is deliberately dropped, the ``apt.key``
@@ -1166,7 +1168,7 @@ class GpgKeyInstallCommand(Command):
             marker = shlex.quote("BEGIN PGP PUBLIC KEY BLOCK")
             install = (
                 f"if grep -q {marker} {spool}; then "
-                f"gpg --batch --dearmor -o {dest} {spool}; "
+                f"gpg --batch --yes --dearmor -o {dest} {spool}; "
                 f"else cp {spool} {dest}; fi"
             )
         else:
@@ -1454,7 +1456,9 @@ class GpgDearmorCommand(Command):
     """Convert an armored key file on the target host to binary form.
 
     The whole of ``gpg.dearmor``: create the destination directory,
-    ``gpg --batch --dearmor -o <dest> <src>``, then chmod the output
+    ``gpg --batch --yes --dearmor -o <dest> <src>`` (``--yes`` overwrites
+    an existing output, which ``--batch`` alone refuses -- the stateless
+    operation converts on every run), then chmod the output
     ``0644`` (the fixed mode -- pyinfra's ``mode`` parameter is deliberately
     dropped). Both paths are files already on the target host (no
     transfer). Wrapped in ``sh -c`` so a ``sudo``-flagged request elevates
@@ -1469,7 +1473,10 @@ class GpgDearmorCommand(Command):
         src = shlex.quote(self.src)
         dest = shlex.quote(self.dest)
         parent = shlex.quote(str(PurePosixPath(self.dest).parent))
-        inner = f"mkdir -p {parent} && gpg --batch --dearmor -o {dest} {src} && chmod 0644 {dest}"
+        inner = (
+            f"mkdir -p {parent} && gpg --batch --yes --dearmor -o {dest} {src}"
+            f" && chmod 0644 {dest}"
+        )
         return f"sh -c {shlex.quote(inner)}"
 
 
