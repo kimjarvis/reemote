@@ -9,20 +9,32 @@
         - File
         - Directory
         - Link
+        - Socket
         - FileLink
         - FileExists
         - LocalSha1
         - RemoteFileSha1
+        - Sha256File
+        - Sha384File
+        - Md5File
         - SameFile
         - FileContents
         - FileFlags
+        - FindFiles
+        - FindDirectories
+        - FindLinks
+        - FindInFile
+        - FindFilesInfo
+        - DirectoryEntries
 
 ## file Returns
 
 ::: reemote5.modules.files.files
     options:
       show_root_heading: false
-      members: []
+      members:
+        - DirectoryEntry
+        - FoundFile
 
 ## file Operations
 
@@ -47,9 +59,11 @@
 
 `reemote5.modules.files.files` combines the file facts and the file operations
 in a single source, so the read side (`FileLink`, `FileExists`,
-`LocalSha1`, `RemoteFileSha1`, `SameFile`, `FileContents`, `File`,
-`Directory`, `Link`,
-`FileFlags`)
+`LocalSha1`, `RemoteFileSha1`, `Sha256File`, `Sha384File`, `Md5File`,
+`SameFile`, `FileContents`, `File`,
+`Directory`, `Link`, `Socket`,
+`FileFlags`, `FindFiles`, `FindDirectories`, `FindLinks`, `FindInFile`,
+`FindFilesInfo`, `DirectoryEntries`)
 sits beside the `files.link`, `files.file`, `files.put`, `files.get`,
 `files.edit`, `files.install`, `files.move`, `files.copy`, `files.directory`
 and `files.flags`
@@ -74,9 +88,9 @@ setuid/setgid/sticky bits included), `size`, and `atime`/`mtime`/`ctime` as
 *naive UTC* `datetime`s (pyinfra's convention; the `ls -ld` fallback provides
 only an mtime, so its atime/ctime read as `None`). A path that does not exist
 reads as `None`; one that exists but is not a regular file (a directory,
-symlink, socket, ...) reads as `False` — `Directory` and `Link` are the
-directory- and link-accepting siblings, and only `Link`'s dict carries the
-`link_target` key. Like
+symlink, socket, ...) reads as `False` — `Directory`, `Link` and `Socket`
+are the directory-, link- and socket-accepting siblings, and only `Link`'s
+dict carries the `link_target` key. Like
 pyinfra, a leading `~/` stays unquoted so the remote shell expands it. Where
 `FileExists` is the cheap `test -e` probe for existence-only checks, `File`
 is the richer stat-level read — the one `files.file` consumes to compare the
@@ -88,7 +102,83 @@ permissions or timestamps.
 but the path's type flag must be `d`, so a regular file, symlink, socket, ...
 reads as `False` instead. Use it to audit a directory's ownership, mode
 (setuid/setgid/sticky bits included — `/tmp`'s `1777`, a setgid share's
-`2775`) or timestamps before placing files inside it.
+`2775`) or timestamps before placing files inside it. It describes the
+directory *itself*, never the names inside it — for the listing see
+`DirectoryEntries` (shallow, with types) or `FindDirectories` (recursive
+paths).
+
+`Socket` mirrors pyinfra's `files.Socket` — the same `File` subclass with
+`type = "socket"`: the very same guard, stat/ls chain and metadata dict,
+but the path's type flag must be `s`, so a regular file, directory,
+symlink, ... reads as `False` instead. Use it to audit a daemon's
+listening socket — `/var/run/docker.sock`, a database or agent IPC
+socket — where owner and mode decide which users may talk to the daemon.
+
+`Sha256File`, `Sha384File` and `Md5File` mirror pyinfra's hash fact family:
+one guarded command tries the tool spellings in order (`sha256sum`,
+`shasum -a 256`, `sha256`, ...) reading the file through *stdin* (`< path`)
+so the checksum tool never sees the filename — GNU coreutils escapes
+backslash/newline-bearing names in its argv-form output, which the stdin
+form avoids. Both output spellings parse: the GNU/shasum `<hash>  -` line
+and the bare BSD digest. A missing file — or a host with none of the tools
+installed — exits zero through the `|| true` guard and reads as `None`.
+`Sha256File` is the digest Ansible's `stat` module defaults to and the one
+repository/keyring verification recipes compare; `Md5File` is for legacy
+checksum manifests, not a security boundary. `RemoteFileSha1` predates the
+family and deliberately keeps its simpler `sha1sum <path>` probe: it backs
+the `files.put`/`files.get` idempotence contract.
+
+`FindFiles`, `FindDirectories` and `FindLinks` mirror pyinfra's find-path
+family — the enumeration facts the stat-only `File`/`Directory` metadata
+facts cannot replace: they discover names the deploy author does not know
+("every `conf.d/*/conf.yaml`", "every legacy apt `.list` file"). One
+`find <path> -type f|d|l` plus the shared filters returns the matching
+paths verbatim in find's traversal order, always guarded with `|| true` so
+a missing start path reads as `[]`. The filters are pyinfra's set:
+`fname`/`iname` name globs, `maxdepth`, `size`/`min_size`/`max_size` (ints
+or human-readable spellings like `"1KB"`/`"2MiB"`, always rendered in
+bytes), `regex`, `path_match`, and the raw `args` escape hatch (which
+suppresses a typed filter spelling the same predicate); `quote_path=False`
+leaves the start path and name globs to the shell. The bare `list[str]`
+return is the agreed exception to the TypedDict guideline — a path string
+carries all the information. They are the read side of a gather-then-branch
+two-deploy cleanup: gather the hits in one deploy, compute the closure
+(e.g. found minus tracked), and remove the surplus with `files.file`/
+`files.directory` in the next — see the
+[conf.d cleanup example](../examples/demonstrations/composition.md).
+
+`FindInFile` mirrors pyinfra's `files.FindInFile`: `grep -e <pattern>`
+prints the matching lines, and when grep fails the fallback arm
+distinguishes *no match* from *no file* — an existing regular file echoes
+an exists sentinel that reads as `[]`, a missing one echoes nothing and
+reads as `None`. `extended_regex=True` selects `grep -E`;
+`interpolate_variables=True` double-quotes the pattern so the remote shell
+expands `$VAR` references, otherwise it is single-quoted literally. Use it
+to audit configuration content — "is this legacy source still enabled?",
+"does the agent config still name the old endpoint?" — without pulling the
+whole file through `FileContents`.
+
+`FindFilesInfo` is a reemote5 original (pyinfra ships no counterpart): the
+find family's filters plus GNU `find -printf` gather path, size, mode,
+user, group and mtime for every hit in *one* command — the metadata
+Ansible's `find` module returns per hit, which bare `FindFiles` would need
+one stat-level `File` read per hit to match. Entries are `FoundFile` dicts
+sorted by path for a deterministic listing; the mtime is the File
+convention's whole-second naive UTC datetime (`None` when unparseable).
+GNU-only: BSD find has no `-printf`, and the `|| true` guard masks that to
+`[]`. Use it to branch on per-hit metadata — "delete logs older than X",
+"report world-writable files under the share" — in a single read.
+
+`DirectoryEntries` is a reemote5 original: the shallow listing the
+stat-only `Directory` fact cannot give — one
+`find <path> -mindepth 1 -maxdepth 1 -printf '%f\t%y\n'` sweep reports each
+immediate entry's basename and type (`DirectoryEntry`: "file",
+"directory", "link", "socket", "fifo", "block", "character") without
+recursing, dotfiles included, the directory itself excluded, sorted by
+name. It is Ansible's `find` with `recurse: false` — the cheap "what is in
+this directory right now?" read behind legacy-file cleanup and
+drop-in-directory audits. GNU-only like `FindFilesInfo`; a missing start
+path reads as `[]`.
 
 `Link` mirrors pyinfra's `files.Link` — the same `File` subclass with
 `type = "link"`: the very same guard, stat/ls chain and metadata dict, but
@@ -188,7 +278,8 @@ config paths. It reads the destination's current text with `FileContents` and,
 only when it differs from the desired `content`, yields two descriptors from
 one request — an `InstallSpoolCommand` transfer spooling the text to a
 dest-derived `/tmp` path over unprivileged scp, then an `InstallCommand` shell
-running the elevated `mkdir -p`/`cp`/`chmod`/`rm -f` install wrapped in `sh -c`
+running the elevated `mkdir -p`/`cp`/optional `chown`/`chmod`/`rm -f` install
+wrapped in `sh -c`
 (so a `sudo=True` request elevates every step, not just the chain head). Because
 both descriptors ride one request, the whole write fits a single deploy —
 unlike the put-then-`files.move` recipe, which spans two runs. `content` is a
@@ -200,6 +291,17 @@ world-writable `/tmp` (collision avoidance, not a security boundary). `mode`
 accepts octal-digit text only (`"0644"`, `"600"`; a symbolic mode raises
 `ValueError`) and is applied on every write, but idempotence is content-only:
 a mode-only drift does not re-install (use `files.file` to converge metadata).
+The optional `user`/`group` parameters ride the same contract: they add a
+`chown` (a group alone renders `chgrp`) inside the elevated install chain,
+before the `chmod` — a chown clears setuid/setgid bits, so the mode is applied
+last — and the file lands with the requested owner instead of the root:root
+the elevated `cp` creates. The owner is applied on every write but never
+compared, so an owner-only drift is `files.file`'s job too, and the named
+account must already exist (provision it with `server.user`/`server.group`
+first). One read-back caveat: `FileContents` cats unprivileged, so a file
+installed with a mode the login user cannot read (a `0640` service-account
+config) reads back as empty content and re-installs on every deploy — content
+idempotence needs a login-readable file.
 There is no `present=False` branch — `files.file(present=False)` owns removal.
 Installing under `/etc` needs root, so flag the request `sudo=True`; the
 transfer stays unprivileged regardless.

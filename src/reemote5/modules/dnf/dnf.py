@@ -15,18 +15,22 @@
 # enabled, disabled and installed dnf modules (shared ``DnfModule``
 # name-and-stream entries), and
 # ``DnfGroups``/``DnfAvailableGroups``, the installed and available package
-# groups (shared ``DnfGroup`` entries), and ``RpmPackage``, the
+# groups (shared ``DnfGroup`` entries), ``RpmPackage``, the
 # name/version (``RpmPackageInfo``) of a ``.rpm`` file or an
-# installed package that ``dnf.rpm`` reads to decide idempotence. Like every
+# installed package that ``dnf.rpm`` reads to decide idempotence, and
+# ``RpmGpgKeys``, the GPG keys imported into the rpm keyring (``RpmGpgKey``
+# entries) that ``dnf.key``'s removal direction reads. Like every
 # fact they are phase-unaware: each ``process`` coroutine just gathers the raw
 # value.
 #
-# Operation side (design doc section 6): ``dnf.packages``, ``dnf.update``, ``dnf.repo``,
+# Operation side (design doc section 6): ``dnf.packages``, ``dnf.update``,
+# ``dnf.makecache``, ``dnf.clean``, ``dnf.repo``,
 # ``dnf.rpm``, ``dnf.key`` and ``dnf.module`` plus the typed command descriptors
 # they yield (``DnfInstallCommand``/``DnfRemoveCommand``/``DnfUpdateCommand``/
-# ``DnfCleanCommand``/``DnfRepoUploadCommand``/``DnfRepoInstallCommand``/
+# ``DnfCleanCommand``/``DnfMakecacheCommand``/``DnfRepoUploadCommand``/``DnfRepoInstallCommand``/
 # ``DnfRepoRemoveCommand``/``RpmInstallCommand``/
-# ``DnfKeyUploadCommand``/``DnfKeyImportCommand``/``DnfModuleEnableCommand``/
+# ``DnfKeyUploadCommand``/``DnfKeyImportCommand``/``DnfKeyRemoveCommand``/
+# ``DnfModuleEnableCommand``/
 # ``DnfModuleDisableCommand``). Operations are
 # async generators that receive an ``OpContext``, await facts, set
 # ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never touch
@@ -36,8 +40,16 @@
 # ``update``, ``clean``, ``nobest``, ``extra_install_args``,
 # ``extra_uninstall_args``) with the same names and semantics. ``dnf.repo``
 # mirrors pyinfra's ``dnf.repo`` for the manual-construction case (``present``,
-# ``baseurl``, ``description``, ``enabled``, ``gpgcheck``, ``gpgkey``);
-# pyinfra's URL source is dropped, since reemote5 has no download operation.
+# ``baseurl``, ``description``, ``enabled``, ``gpgcheck``, ``gpgkey``) and
+# extends it with the ansible-datadog role's ``yum_repository`` fields
+# (``includepkgs``, ``repo_gpgcheck``, ``proxy``, ``proxy_username``,
+# ``proxy_password``); pyinfra's URL source is dropped, since reemote5 has no
+# download operation. ``dnf.makecache`` and ``dnf.clean`` are reemote5
+# originals (pyinfra has neither): stateless metadata refresh/cache removal,
+# optionally scoped to named repos with ``--disablerepo='*' --enablerepo=<id>``
+# -- the role's scoped ``makecache``/``clean metadata`` steps, which
+# ``dnf.packages(update=True)`` (a full system upgrade) and ``clean=True``
+# (``dnf clean all``) cannot express.
 # ``dnf.rpm`` mirrors pyinfra's ``dnf.rpm`` (``src``, ``present``) for a ``.rpm``
 # file already on the target host; pyinfra's URL source -- which downloads the
 # file mid-deploy -- is dropped for the same reason, so a URL ``src`` raises
@@ -45,7 +57,11 @@
 # takes the GPG key content as an IO-like *stream* -- reemote5 has no
 # controller-side file locations -- spooling it to a ``/tmp`` path over scp and
 # running an elevated ``rpm --import`` on it, so a ``str`` ``src`` raises
-# ``ValueError``. ``dnf.update`` mirrors pyinfra's non-idempotent ``dnf.update``:
+# ``ValueError``. ``dnf.key``'s ``present=False`` direction is a reemote5
+# extension beyond pyinfra (whose ``dnf.key`` is import-only), mirroring
+# Ansible's ``rpm_key state=absent``: it reads ``RpmGpgKeys`` and erases the
+# named key's ``gpg-pubkey`` pseudo-package with an elevated ``rpm -e`` only
+# when the key is present. ``dnf.update`` mirrors pyinfra's non-idempotent ``dnf.update``:
 # it reads no fact and always runs ``dnf update -y`` over every package.
 # """
 
@@ -1008,6 +1024,110 @@ class RpmPackage:
         return cls.parse(stdout.splitlines())
 
 
+class RpmGpgKey(TypedDict):
+    """
+    Attributes:
+        keyid: The key's short id -- the last 8 hex digits of its GPG key
+            id, lowercased exactly as rpm stores it in the pseudo-package's
+            ``VERSION``.
+        release: The pseudo-package's ``RELEASE`` -- the hex-encoded key
+            creation timestamp rpm recorded when the key was imported.
+        summary: The pseudo-package's ``SUMMARY`` -- rpm's ``gpg(<uid>)``
+            description of the imported key.
+    """
+
+    # One imported key (``RpmGpgKeys``' entry). A TypedDict rather than a
+    # class instance, like ``RpmPackageInfo``: entries are ordinary dicts, so
+    # equality against a literal dict works and ``json.dumps`` serializes
+    # them directly. The bare singular slot is free (the fact is the plural
+    # ``RpmGpgKeys``), so no ``Info`` suffix is needed.
+
+    keyid: str
+    release: str
+    summary: str
+
+
+class RpmGpgKeys:
+    """The GPG keys imported into the rpm keyring, as ``RpmGpgKey`` dicts.
+
+    **Commands:**
+
+    ```bash
+    rpm -qa gpg-pubkey --queryformat '%{VERSION} %{RELEASE} %{SUMMARY}\\n'
+    ```
+
+    **Returns:**
+
+    ```python
+    list[RpmGpgKey]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/dnf/rpm_gpg_keys.py``.
+    """
+
+    # A reemote5-original fact (pyinfra has no rpm-keyring fact): it fills the
+    # observation gap ``dnf.key``'s ``present=False`` direction needs.
+    # ``rpm --import`` stores each key in the rpm database as a
+    # ``gpg-pubkey-<keyid>-<release>`` pseudo-package -- invisible to
+    # ``dnf list installed`` and to the ``gpg`` namespace's keyring facts --
+    # so the query selects that package name and prints its VERSION (the
+    # lowercased short key id), RELEASE (hex creation timestamp) and SUMMARY
+    # (``gpg(<uid>)``). Entries are de-duplicated and sorted by keyid then
+    # release so reads stay deterministic and JSON-printable for the
+    # ``gather_fact`` example scripts. Ansible's ``rpm_key state=absent``
+    # consults the same pseudo-packages.
+
+    #: Shell listing the imported keys' id, release and summary over SSH.
+    COMMAND = "rpm -qa gpg-pubkey --queryformat '%{VERSION} %{RELEASE} %{SUMMARY}\n'"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> list[RpmGpgKey]:
+        """Parse ``rpm -qa gpg-pubkey`` rows into sorted, unique entries.
+
+        Each non-blank line carries the key id, the release and the summary,
+        whitespace-separated; the summary may contain spaces, so the line
+        splits into at most three tokens. Key ids are lowercased, duplicate
+        rows collapse, and the entries sort by keyid then release. Pure and
+        testable.
+        """
+        summaries: dict[tuple[str, str], str] = {}
+        for line in output:
+            tokens = line.split(None, 2)
+            if len(tokens) < 2:
+                continue
+            keyid, release = tokens[0].lower(), tokens[1]
+            summary = tokens[2] if len(tokens) == 3 else ""
+            summaries.setdefault((keyid, release), summary)
+        return [
+            {"keyid": keyid, "release": release, "summary": summary}
+            for (keyid, release), summary in sorted(summaries.items())
+        ]
+
+    @classmethod
+    async def process(cls, host: Host) -> list[RpmGpgKey]:
+        rpm_gpg_keys = getattr(host, "rpm_gpg_keys", None)
+        if rpm_gpg_keys is not None:
+            # SimulatedHost seam: the entry list the mutators edit, sorted
+            # and copied so callers never mutate simulated state.
+            return [
+                dict(entry)
+                for entry in sorted(
+                    rpm_gpg_keys,
+                    key=lambda item: (item["keyid"], item["release"]),
+                )
+            ]
+        # Real transport: query the rpm database over asyncssh.
+        stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
 # --- Operations --------------------------------------------------------------
 
 
@@ -1065,12 +1185,33 @@ class DnfUpdateCommand(Command):
         return " ".join(parts)
 
 
+def _repo_scope_args(repos: tuple[str, ...]) -> str:
+    """Render the repo-scoping flags shared by the cache descriptors.
+
+    An empty tuple renders nothing (the command applies to every configured
+    repo); a non-empty one disables all repos and re-enables just the named
+    ids -- the ansible-datadog role's
+    ``--disablerepo="*" --enablerepo=datadog`` scoping. Each flag is
+    shell-quoted whole, so the remote shell never globs the ``*``.
+    """
+    if not repos:
+        return ""
+    parts = [shlex.quote("--disablerepo=*")]
+    parts.extend(shlex.quote(f"--enablerepo={repo}") for repo in repos)
+    return " " + " ".join(parts)
+
+
 @dataclass(frozen=True)
 class DnfCleanCommand(Command):
-    """``dnf clean all`` (the ``clean`` option)."""
+    """``dnf clean <what>``: ``all`` by default (the ``dnf.packages`` ``clean``
+    option), or one cache kind for ``dnf.clean`` -- optionally scoped to
+    ``repos`` with ``--disablerepo='*' --enablerepo=<id>`` flags."""
+
+    what: str = "all"
+    repos: tuple[str, ...] = ()
 
     def shell(self) -> str:
-        return "dnf clean all"
+        return f"dnf clean {self.what}{_repo_scope_args(self.repos)}"
 
 
 async def packages(
@@ -1286,7 +1427,7 @@ class DnfRepoUploadCommand(TransferCommand):
 
 @dataclass(frozen=True)
 class DnfRepoInstallCommand(Command):
-    """Install the spooled ``.repo`` file ``0644``, then remove the spool file.
+    """Install the spooled ``.repo`` file, then remove the spool file.
 
     The second half of ``dnf.repo``'s write direction and the elevated one:
     writing under ``/etc/yum.repos.d/`` needs root, so the request is
@@ -1296,13 +1437,16 @@ class DnfRepoInstallCommand(Command):
     ``sudo sh -c '...'`` runs every step as root, which can always remove
     the login-user spool file. The sequence creates the destination
     directory, copies the spooled content over the target file, chmods it
-    ``0644`` (pyinfra's ``dnf.repo`` routes through ``files.put`` with
-    ``mode="0644"``) and removes the spool file -- the
-    ``AptSourcesFileInstallCommand`` pattern. All paths are shell-quoted.
+    to ``mode`` (``0644`` by default -- pyinfra's ``dnf.repo`` routes
+    through ``files.put`` with ``mode="0644"``; ``dnf.repo`` tightens it to
+    ``0600`` when the content carries a ``proxy_password``) and removes the
+    spool file -- the ``AptSourcesFileInstallCommand`` pattern. All paths
+    are shell-quoted.
     """
 
     spool: str  # where DnfRepoUploadCommand wrote the content
     dest: str  # the /etc/yum.repos.d/<src>.repo path
+    mode: str = "0644"  # octal-digit text, as the chmod argument
 
     def shell(self) -> str:
         spool = shlex.quote(self.spool)
@@ -1311,7 +1455,7 @@ class DnfRepoInstallCommand(Command):
         inner = (
             f"mkdir -p {parent} && "
             f"cp {spool} {dest} && "
-            f"chmod 0644 {dest} && rm -f {spool}"
+            f"chmod {self.mode} {dest} && rm -f {spool}"
         )
         return f"sh -c {shlex.quote(inner)}"
 
@@ -1341,6 +1485,11 @@ async def repo(
     enabled: bool = True,
     gpgcheck: bool = True,
     gpgkey: str | None = None,
+    includepkgs: str | None = None,
+    repo_gpgcheck: bool | None = None,
+    proxy: str | None = None,
+    proxy_username: str | None = None,
+    proxy_password: str | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Add/remove/update a dnf repository ``.repo`` file.
@@ -1359,10 +1508,28 @@ async def repo(
         enabled (bool, optional): Whether the repo is ``enabled=1`` (else
             ``enabled=0``). Defaults to True.
         gpgcheck (bool, optional): Whether to set ``gpgcheck=1`` (else
-            ``gpgcheck=0``). Defaults to True.
+            ``gpgcheck=0``) -- signature checking of the repo's *packages*.
+            Defaults to True.
         gpgkey (str | None, optional): The ``gpgkey=`` value; each
             whitespace-separated token must be a URL or an absolute path.
             Defaults to None.
+        includepkgs (str | None, optional): The ``includepkgs=`` value -- a
+            space-separated list of package names/globs the repo may supply
+            (e.g. ``datadog-agent``), so it cannot provide system packages.
+            Defaults to None (the line is omitted).
+        repo_gpgcheck (bool | None, optional): The ``repo_gpgcheck=`` value --
+            signature checking of the repo's *metadata*, distinct from
+            ``gpgcheck``. Defaults to None (the line is omitted, leaving dnf's
+            own default of off).
+        proxy (str | None, optional): The ``proxy=`` value -- a proxy URL, or
+            ``_none_`` to disable a proxy inherited from ``dnf.conf``.
+            Defaults to None (the line is omitted).
+        proxy_username (str | None, optional): The ``proxy_username=`` value.
+            Defaults to None (the line is omitted).
+        proxy_password (str | None, optional): The ``proxy_password=`` value.
+            When set, the file is installed ``0600`` instead of ``0644`` so
+            the password is not world-readable. Defaults to None (the line
+            is omitted).
         **kwargs: Additional keyword arguments.
 
     Yields:
@@ -1386,8 +1553,9 @@ async def repo(
     # yields *two* descriptors from the one request -- a
     # ``DnfRepoUploadCommand`` transfer spooling the generated text to a
     # ``/tmp`` path over scp, then a ``DnfRepoInstallCommand`` running the
-    # elevated install: create the directory, copy the file, chmod it ``0644``
-    # (pyinfra's fixed mode) and remove the spool (the ``apt.sources_file``
+    # elevated install: create the directory, copy the file, chmod it
+    # (``0644``, pyinfra's fixed mode, or ``0600`` with a ``proxy_password``)
+    # and remove the spool (the ``apt.sources_file``
     # pattern, replacing pyinfra's ``files.put`` delegation -- reemote5's
     # transfers are unprivileged scp and namespaces never reuse each other's
     # operations). Writing needs root -- ``/etc/yum.repos.d`` is root-owned --
@@ -1397,10 +1565,22 @@ async def repo(
     # pyinfra's URL ``src`` -- downloading a remote ``.repo`` file -- is
     # deliberately dropped: reemote5 has no download operation, so a ``src``
     # with a URL scheme raises ``ValueError``. So does a ``present`` request
-    # with no ``baseurl`` (there is nothing to construct the file from) and a
-    # ``gpgkey`` token that is neither a URL nor an absolute path. ``**kwargs``
-    # absorbs pyinfra's global arguments (``op()`` already strips
+    # with no ``baseurl`` (there is nothing to construct the file from), a
+    # ``gpgkey`` token that is neither a URL nor an absolute path, and a
+    # ``proxy`` that is neither a URL nor dnf's ``_none_`` disable token.
+    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
+    #
+    # ``includepkgs``, ``repo_gpgcheck`` and the ``proxy*`` options are a
+    # reemote5 extension beyond pyinfra (whose ``dnf.repo`` has none of them),
+    # mirroring the ansible-datadog role's ``yum_repository`` fields. Each is
+    # omitted from the file when None, so a request that sets none of them
+    # constructs exactly the pyinfra-parity content and stays a no-op against
+    # a file an older release wrote. They append in a fixed order after
+    # ``gpgkey`` so the content -- and thus the idempotence compare -- stays
+    # deterministic. A ``proxy_password`` installs the file ``0600`` rather
+    # than ``0644``; like ``files.install``, idempotence is content-only, so a
+    # mode-only drift does not re-install.
     if urlparse(src).scheme:
         raise ValueError(
             "dnf.repo does not support a URL src (reemote5 has no download "
@@ -1432,6 +1612,9 @@ async def repo(
                     f"gpgkey must be a valid URL or an absolute path, got: {token}"
                 )
 
+    if proxy is not None and proxy != "_none_" and not urlparse(proxy).scheme:
+        raise ValueError(f"proxy must be a URL or '_none_', got: {proxy}")
+
     lines = [
         f"[{src}]",
         f"name={description or src}",
@@ -1441,8 +1624,19 @@ async def repo(
     ]
     if gpgkey:
         lines.append(f"gpgkey={gpgkey}")
+    if repo_gpgcheck is not None:
+        lines.append(f"repo_gpgcheck={1 if repo_gpgcheck else 0}")
+    if includepkgs:
+        lines.append(f"includepkgs={includepkgs}")
+    if proxy is not None:
+        lines.append(f"proxy={proxy}")
+    if proxy_username is not None:
+        lines.append(f"proxy_username={proxy_username}")
+    if proxy_password is not None:
+        lines.append(f"proxy_password={proxy_password}")
     lines.append("")  # trailing newline, matching pyinfra's constructed file
     content = "\n".join(lines)
+    mode = "0600" if proxy_password is not None else "0644"
 
     if current == content:
         ctx.reason = f"repo file already up to date ({path})"
@@ -1450,7 +1644,146 @@ async def repo(
         ctx.changed = True
         ctx.reason = f"repo file {path} missing or differs from the desired content"
         yield DnfRepoUploadCommand(content=content, dest=_REPO_SPOOL_PATH)
-        yield DnfRepoInstallCommand(spool=_REPO_SPOOL_PATH, dest=path)
+        yield DnfRepoInstallCommand(spool=_REPO_SPOOL_PATH, dest=path, mode=mode)
+
+
+# --- dnf.makecache / dnf.clean ------------------------------------------------
+
+#: The cache kinds ``dnf clean`` accepts (dnf's own subcommand arguments).
+_CLEAN_KINDS = ("all", "metadata", "packages", "dbcache", "expire-cache")
+
+
+def _normalize_repos(repos: str | list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    """Normalize a repos argument: a bare string becomes a one-tuple, None an
+    empty tuple (every repo), anything else a tuple -- the ``dnf.packages``
+    normalization shape."""
+    if repos is None:
+        return ()
+    if isinstance(repos, str):
+        return (repos,)
+    return tuple(repos)
+
+
+@dataclass(frozen=True)
+class DnfMakecacheCommand(Command):
+    """``dnf -y makecache``: download/refresh repository metadata, optionally
+    scoped to ``repos`` with ``--disablerepo='*' --enablerepo=<id>`` flags
+    (the ansible-datadog role's repo-scoped cache refresh). Never upgrades a
+    package -- unlike ``DnfUpdateCommand`` -- and never touches another
+    repo's cache when scoped."""
+
+    repos: tuple[str, ...] = ()
+
+    def shell(self) -> str:
+        return f"dnf -y makecache{_repo_scope_args(self.repos)}"
+
+
+async def makecache(
+    ctx: OpContext,
+    repos: str | list[str] | tuple[str, ...] | None = None,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Download/refresh dnf repository metadata, optionally scoped to repos.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        repos (str | list[str] | tuple[str, ...] | None, optional): Repository
+            ids to scope the refresh to (``--disablerepo='*'`` plus one
+            ``--enablerepo`` per id). Prefer tuples when building requests via
+            ``op()``, since ``OperationRequest`` kwargs must stay hashable.
+            Defaults to None (every enabled repo).
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The makecache command, always (the operation is stateless).
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/dnf/dnf_makecache.py``.
+    """
+
+    # A reemote5 original (pyinfra has no makecache operation), mirroring the
+    # ansible-datadog role's `dnf -y makecache --disablerepo="*"
+    # --enablerepo=datadog` step: after a repo file changes, its metadata must
+    # be fetched before an install can resolve packages from it (dnf's own
+    # expiry would otherwise serve a stale or absent cache).
+    #
+    # **Non-idempotent** like ``dnf.update``: it reads no fact, always reports
+    # a change and always runs -- dnf itself is cheap on a warm cache. The
+    # role gates the refresh on the repo task's `changed` flag; reemote5
+    # cannot gate on a same-deploy write without tripping the determinism
+    # guard (the fact flips between prepare and apply), so the refresh is
+    # unconditional and belongs right after the ``dnf.repo`` request in the
+    # same deploy. The role also marks the step ``failed_when: false``;
+    # reemote5 keeps its fail-fast convention instead -- a failing makecache
+    # raises ``CommandError`` at apply. Writing the shared metadata cache
+    # needs root, so flag the request ``sudo=True`` (or ``su=True``).
+    scoped = _normalize_repos(repos)
+    ctx.changed = True
+    ctx.reason = f"dnf makecache ({', '.join(scoped)})" if scoped else "dnf makecache"
+    yield DnfMakecacheCommand(repos=scoped)
+
+
+async def clean(
+    ctx: OpContext,
+    what: str = "all",
+    repos: str | list[str] | tuple[str, ...] | None = None,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Remove dnf cached data, optionally scoped to repos.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        what (str, optional): The cache kind to remove: ``all``, ``metadata``,
+            ``packages``, ``dbcache`` or ``expire-cache``. Defaults to "all".
+        repos (str | list[str] | tuple[str, ...] | None, optional): Repository
+            ids to scope the removal to (``--disablerepo='*'`` plus one
+            ``--enablerepo`` per id). Prefer tuples when building requests via
+            ``op()``, since ``OperationRequest`` kwargs must stay hashable.
+            Defaults to None (every repo).
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The clean command, always (the operation is stateless).
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/dnf/dnf_clean.py``.
+    """
+
+    # A reemote5 original (pyinfra has no clean operation), mirroring the
+    # ansible-datadog role's `dnf clean metadata --disablerepo="*"
+    # --enablerepo=datadog` step: a repo whose *content* moved (e.g. an agent
+    # major-version downgrade) keeps serving stale cached metadata until it
+    # is explicitly dropped -- expiry alone will not fix a downgrade.
+    # ``dnf.packages(clean=True)`` cannot express this: it is an unscoped
+    # ``dnf clean all`` over every repo's metadata *and* packages.
+    #
+    # **Non-idempotent** like ``dnf.update``/``dnf.makecache``: no fact is
+    # read, the command always runs (and is itself cheap when the cache is
+    # already empty). Unlike the role's ``failed_when: false`` the command is
+    # fail-fast -- reemote5's convention. Removing cached data needs root, so
+    # flag the request ``sudo=True`` (or ``su=True``).
+    if what not in _CLEAN_KINDS:
+        raise ValueError(
+            f"what must be one of {', '.join(_CLEAN_KINDS)}, got: {what}"
+        )
+    scoped = _normalize_repos(repos)
+    ctx.changed = True
+    ctx.reason = (
+        f"dnf clean {what} ({', '.join(scoped)})" if scoped else f"dnf clean {what}"
+    )
+    yield DnfCleanCommand(what=what, repos=scoped)
 
 
 # --- dnf.rpm -----------------------------------------------------------------
@@ -1618,64 +1951,145 @@ class DnfKeyImportCommand(Command):
         return f"sh -c {shlex.quote(inner)}"
 
 
-async def key(ctx: OpContext, src: IO[Any], **kwargs: Any) -> AsyncGenerator[Command]:
-    """Import a GPG key into the target host's rpm keyring.
+@dataclass(frozen=True)
+class DnfKeyRemoveCommand(Command):
+    """``rpm -e gpg-pubkey-<keyid>-<release>``: erase one imported key.
+
+    The ``present=False`` half of ``dnf.key``. An imported key lives in the
+    rpm database as a ``gpg-pubkey`` pseudo-package whose VERSION is the
+    lowercased short key id and whose RELEASE is the hex creation timestamp,
+    so removing it is a package erase, not keyring-file surgery. Erasing
+    needs root, so the request is flagged ``sudo=True`` (or ``su=True``);
+    this is a *single* command, so the driver's elevation prefix covers the
+    whole shell and no ``sh -c`` wrapper is needed (unlike the import's
+    ``&& rm`` chain). The pseudo-package name is shell-quoted as one
+    argument.
+    """
+
+    keyid: str
+    release: str
+
+    def shell(self) -> str:
+        return f"rpm -e {shlex.quote(f'gpg-pubkey-{self.keyid}-{self.release}')}"
+
+
+async def key(
+    ctx: OpContext,
+    src: IO[Any] | None = None,
+    keyid: str | None = None,
+    present: bool = True,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Import a GPG key into, or remove one from, the target's rpm keyring.
 
     Args:
         ctx (OpContext): Execution context for the operation.
-        src (IO[Any]): The key content as a seekable IO-like object on the
-            control machine (an ``io.BytesIO``/``io.StringIO``, a file opened
-            with ``open()``, ...), rewound to position 0 before it is read.
+        src (IO[Any] | None, optional): The key content as a seekable IO-like
+            object on the control machine (an ``io.BytesIO``/``io.StringIO``,
+            a file opened with ``open()``, ...), rewound to position 0 before
+            it is read. Required when ``present=True``; rejected when
+            ``present=False``. Defaults to None.
+        keyid (str | None, optional): The key to remove when ``present=False``:
+            8 hex digits (rpm's short key id) or 16 (the long form, matched by
+            its last 8 digits), case-insensitive. Required when
+            ``present=False``, ignored when ``present=True``. Defaults to None.
+        present (bool, optional): ``True`` imports ``src`` into the rpm
+            keyring; ``False`` removes the key ``keyid`` names from it.
+            Defaults to True.
         **kwargs: Additional keyword arguments.
 
     Yields:
-        Command: The key transfer and import commands, always (the operation
-            is stateless).
+        Command: The key transfer and import commands, always, when
+            ``present=True`` (that direction is stateless); the removal
+            command only when ``present=False`` and the key is in the rpm
+            keyring.
 
     **Raises:**
 
     ```python
-    ValueError
+    CommandNotFoundError, HostConnectionError, ValueError
     ```
 
     Examples:
         Examples can be found in ``examples/modules/dnf/dnf_key.py``.
     """
 
-    # pyinfra ``dnf.key`` parity.
+    # pyinfra ``dnf.key`` parity -- import direction.
     #
-    # Like pyinfra's ``dnf.key`` this is **non-idempotent**: it always imports,
-    # so it always reports a change and yields its commands on every run (rpm
-    # itself deduplicates an already-imported key). It yields *two* descriptors
-    # from the one request -- a ``DnfKeyUploadCommand`` transfer that spools the
-    # stream to a ``/tmp`` path over scp, then a ``DnfKeyImportCommand`` running
-    # the elevated ``rpm --import`` on that spool file and removing it. Because
+    # Like pyinfra's ``dnf.key`` the ``present=True`` direction is
+    # **non-idempotent**: it always imports, so it always reports a change and
+    # yields its commands on every run (rpm itself deduplicates an
+    # already-imported key). It yields *two* descriptors from the one request
+    # -- a ``DnfKeyUploadCommand`` transfer that spools the stream to a
+    # ``/tmp`` path over scp, then a ``DnfKeyImportCommand`` running the
+    # elevated ``rpm --import`` on that spool file and removing it. Because
     # the import needs root, flag the request ``sudo=True`` (or ``su=True``);
-    # the transfer stays unprivileged regardless (transfers ride the connection
-    # as the login user), so the two commands of one request run at different
-    # privilege levels -- the driver dispatches the transfer to scp and elevates
-    # only the shell import.
+    # the transfer stays unprivileged regardless (transfers ride the
+    # connection as the login user), so the two commands of one request run at
+    # different privilege levels -- the driver dispatches the transfer to scp
+    # and elevates only the shell import.
     #
-    # pyinfra's ``dnf.key`` takes a ``src`` that is a *filename or URL* the target
-    # host reads directly (``rpm --import <src>``). reemote5 does not support
-    # controller-side file locations, so ``src`` is an IO-like *stream* of the key
-    # content instead, and the bytes reach the host over the connection's scp
-    # channel rather than by naming a path rpm can open; a ``str`` ``src`` raises
-    # ``ValueError``. ``**kwargs`` absorbs pyinfra's global arguments (``op()``
-    # already strips ``name``/``sudo``/``su``).
-    if isinstance(src, str):
-        # ValueError (not TypeError) keeps dnf.key consistent with dnf.repo and
-        # dnf.rpm, which also reject an unusable string ``src`` with ValueError;
-        # TRY004 assumes any isinstance guard should raise TypeError instead.
-        raise ValueError(  # noqa: TRY004
-            "dnf.key does not support a filename/URL src (reemote5 takes IO "
-            "streams, not controller-side file locations); pass the key content "
-            f"as an IO-like object, got: {src!r}"
+    # pyinfra's ``dnf.key`` takes a ``src`` that is a *filename or URL* the
+    # target host reads directly (``rpm --import <src>``). reemote5 does not
+    # support controller-side file locations, so ``src`` is an IO-like
+    # *stream* of the key content instead, and the bytes reach the host over
+    # the connection's scp channel rather than by naming a path rpm can open;
+    # a ``str`` ``src`` raises ``ValueError``. ``**kwargs`` absorbs pyinfra's
+    # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    #
+    # Removal direction -- a reemote5 extension beyond pyinfra (whose
+    # ``dnf.key`` is import-only), mirroring Ansible's ``rpm_key
+    # state=absent``: an imported key lives in the rpm database as a
+    # ``gpg-pubkey-<keyid>-<release>`` pseudo-package, so removal is an
+    # elevated ``rpm -e`` of that package. It IS idempotent -- the
+    # same-namespace ``RpmGpgKeys`` fact reports which keys are imported, and
+    # the erase is yielded only for a key actually present (the ``gpg.key``
+    # precedent: an in-namespace fact lifts the apt.key-style
+    # non-idempotence). The ``gpg`` namespace's removal operations are *not*
+    # an alternative: they manage GPG keyring files, never the rpm database.
+    if present:
+        if src is None:
+            raise ValueError(
+                "dnf.key requires src (an IO stream of the key content) when "
+                "present=True"
+            )
+        if isinstance(src, str):
+            # ValueError (not TypeError) keeps dnf.key consistent with
+            # dnf.repo and dnf.rpm, which also reject an unusable string
+            # ``src`` with ValueError.
+            raise ValueError(
+                "dnf.key does not support a filename/URL src (reemote5 takes "
+                "IO streams, not controller-side file locations); pass the "
+                f"key content as an IO-like object, got: {src!r}"
+            )
+        ctx.changed = True
+        ctx.reason = f"import GPG key from {getattr(src, 'name', '<stream>')}"
+        yield DnfKeyUploadCommand(src=src, dest=_KEY_IMPORT_PATH)
+        yield DnfKeyImportCommand(path=_KEY_IMPORT_PATH)
+        return
+
+    if keyid is None or not keyid.strip():
+        raise ValueError("dnf.key requires keyid when present=False")
+    if src is not None:
+        raise ValueError(
+            "dnf.key does not use src when present=False; name the key to "
+            "remove with keyid instead"
         )
-    ctx.changed = True
-    ctx.reason = f"import GPG key from {getattr(src, 'name', '<stream>')}"
-    yield DnfKeyUploadCommand(src=src, dest=_KEY_IMPORT_PATH)
-    yield DnfKeyImportCommand(path=_KEY_IMPORT_PATH)
+    # rpm stores the key id lowercased as the pseudo-package's VERSION; a
+    # 16-digit long form matches by its last 8 digits (the short form rpm
+    # records). Anything else simply matches no entry and plans a no-op.
+    wanted = keyid.strip().lower()
+    if len(wanted) == 16:
+        wanted = wanted[-8:]
+    keys = await ctx.facts.get(RpmGpgKeys)
+    matches = [entry for entry in keys if entry["keyid"] == wanted]
+    if matches:
+        ctx.changed = True
+        ctx.reason = f"GPG key {wanted} present in the rpm keyring, will remove"
+        for entry in matches:
+            yield DnfKeyRemoveCommand(keyid=entry["keyid"], release=entry["release"])
+    else:
+        ctx.reason = f"GPG key {wanted} not in the rpm keyring"
 
 
 # --- dnf.module --------------------------------------------------------------
@@ -1807,7 +2221,9 @@ __all__ = [
     "DnfInstallCommand",
     "DnfInstalledModules",
     "DnfKeyImportCommand",
+    "DnfKeyRemoveCommand",
     "DnfKeyUploadCommand",
+    "DnfMakecacheCommand",
     "DnfModule",
     "DnfModuleDisableCommand",
     "DnfModuleEnableCommand",
@@ -1823,10 +2239,14 @@ __all__ = [
     "DnfRepositories",
     "DnfRepository",
     "DnfUpdateCommand",
+    "RpmGpgKey",
+    "RpmGpgKeys",
     "RpmInstallCommand",
     "RpmPackage",
     "RpmPackageInfo",
+    "clean",
     "key",
+    "makecache",
     "module",
     "packages",
     "repo",

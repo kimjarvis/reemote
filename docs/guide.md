@@ -457,6 +457,75 @@ Safe patterns:
   predicates must be stable function objects: an inline `lambda` is recreated
   on each phase invocation and compares unequal, raising `DeterminismError`.
 
+## Change notification (handlers)
+
+Ansible roles restart a service through `notify:` and handlers: a config
+task queues the restart only when it reports *changed*, and the handler
+fires once, at the end of the run. reemote5 has no first-class handler
+mechanism, and
+[`systemd.service`][reemote5.modules.systemd.systemd.service] with
+`restarted=True` cannot stand in for one — `restarted` is deliberately
+stateless, so it restarts a running unit on **every** deploy that reaches
+it. Three architectural rules block the obvious do-it-yourself shortcuts:
+
+- `when` predicates read static inventory data only, never run outcomes;
+- `ctx.changed` flows one way (operation → driver →
+  [`ApplyReport`][reemote5.drivers.ApplyReport]); a deploy body cannot
+  observe its own earlier operations' results;
+- branching on "did the config write change?" inside one deploy yields a
+  different request sequence per phase, raising
+  [`DeterminismError`][reemote5.drivers.DeterminismError].
+
+The sanctioned shape is the **two-deploy outcome split**, a sibling of the
+two-deploy fact split: read the outcomes *between* two complete
+prepare/apply cycles, freeze them, and build the restart deploy from a
+factory closing over the frozen data.
+
+```python
+NOTIFYING = frozenset({"Install nginx", "Install demo config"})
+
+# Run 1: the notifying tasks (named requests, branch-free deploy).
+plans, report, hosts = await run(inventory, configure)
+
+# The notification read: freeze which hosts changed a notifying task.
+changed = frozenset(
+    entry.host
+    for entry in report.log
+    if entry.changed and entry.name in NOTIFYING
+)
+
+
+# Run 2: the handler, built ONCE from the frozen set.
+def build_handler(changed):
+    def handler(host):
+        if host.name in changed:
+            yield op(systemd.service, service="nginx", restarted=True, sudo=True)
+
+    return handler
+
+
+plans, report, hosts = await run(inventory, build_handler(changed))
+```
+
+A `changed` entry is trustworthy: the driver is fail-fast (a non-zero exit
+raises `CommandError`), so it means the commands were sent and succeeded.
+The apply-phase join of run 1 is the barrier — every config write has
+landed before any restart is planned — and the handler properties fall out
+for free: at most one restart per host (deduplication), after all notifying
+operations (end-of-run flushing), and no restart at all on a converged
+re-run (the frozen set is empty, so the handler deploy yields nothing).
+Note that `restarted=True` only restarts a unit that is already running;
+the default `running=True` starts a stopped one, so a freshly installed
+service is started by its first handler pass.
+
+The trade-offs mirror Ansible's: the restart happens in a second full
+prepare/apply cycle, and a `dry=True` preview of run 1 cannot know whether
+the handler will fire (check mode skips handlers for the same reason) —
+the handler's own dry preview, computed against the frozen outcome, is
+honest. Demonstrated end to end by
+`examples/demonstrations/composition/handler_restart.py` on the
+[composition examples page](examples/demonstrations/composition.md).
+
 ## Facts
 
 A fact is a class with an `async` `process` classmethod returning the raw

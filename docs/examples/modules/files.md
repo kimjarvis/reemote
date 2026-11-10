@@ -10,11 +10,26 @@ The read-only fact-gathering examples (`files_file.py`, reading `File` for
 `/etc/hosts` over `gather_fact`, `files_directory.py`, reading `Directory`
 for `/etc` the same way, `files_link.py`, reading `Link` for
 `/etc/localtime` — the timezone symlink, whose `link_target` names the
-zoneinfo file — the same way, and `files_same_file.py`, reading `SameFile`
+zoneinfo file — the same way, `files_socket.py`, reading `Socket` for
+`/var/run/docker.sock` — the daemon-socket ownership/mode audit — the same
+way, and `files_same_file.py`, reading `SameFile`
 between `/etc/localtime` and that target (the resolved-inode comparison
 behind `files.link`'s hard-link idempotence) plus an unrelated pair) live
 alongside the operation examples
-in `examples/modules/files/`. They are not rendered here — each reads a
+in `examples/modules/files/`. The hash family is read the same way:
+`files_sha256.py`, `files_sha384.py` and `files_md5.py` each digest
+`/etc/hostname` with their fact (`Sha256File`, `Sha384File`, `Md5File`).
+The enumeration facts close the directory-listing gap: `files_find_files.py`
+reads `FindFiles` for the `conf.yaml` files under the agent's `conf.d`
+(the DataDog-role cleanup question), `files_find_directories.py` reads
+`FindDirectories` for its immediate check subdirectories, `files_find_links.py`
+reads `FindLinks` for the symlinks under `/etc`, `files_find_in_file.py`
+reads `FindInFile` for the lines of `/etc/yum.conf` matching `gpgcheck`,
+`files_find_files_info.py` reads the original `FindFilesInfo` for
+per-hit size/mode/owner/mtime metadata under `/var/log`, and
+`files_directory_entries.py` reads the original `DirectoryEntries` for the
+shallow name/type listing of `/etc/yum.repos.d` (the CentOS mirror of the
+legacy apt `.list` cleanup question). They are not rendered here — each reads a
 single fact, and the facts themselves are documented on the
 [`files` module page](../../modules/files.md).
 
@@ -255,13 +270,21 @@ need two runs for: it reads the
 destination's text with `FileContents` and, only when it differs from the
 desired `content`, yields an unprivileged `InstallSpoolCommand` scp transfer
 to a dest-derived `/tmp` spool path followed by an elevated `InstallCommand`
-(`mkdir -p`/`cp`/`chmod`/`rm -f` wrapped in `sh -c`) — both from one request,
-so prepare records them and apply runs them in order. `content` is a plain
-`str`, hashable and equal across phases, so no identity-stable stream is
-needed; the spool name is the destination's sha1 prefix, so two installs
-never clobber one spool file. The example installs a demo config under
-`/etc` with `sudo=True` (the transfer stays unprivileged regardless), then
-runs the same deploy again to show every request reporting no change.
+(`mkdir -p`/`cp`/optional `chown`/`chmod`/`rm -f` wrapped in `sh -c`) — both
+from one request, so prepare records them and apply runs them in order.
+`content` is a plain `str`, hashable and equal across phases, so no
+identity-stable stream is needed; the spool name is the destination's sha1
+prefix, so two installs never clobber one spool file. The optional
+`user`/`group` parameters add a `chown` step inside the elevated chain (before
+the `chmod`), so a service config lands with its service-account owner in the
+same request that writes its content — no companion `files.file` needed. The
+example first provisions the `www` group and system user (the account the
+sibling `files_op_file.py` uses), then installs a plain demo config and an
+owned `www:www` variant under `/etc` with `sudo=True` (the transfer stays
+unprivileged regardless), and runs the same deploy again to show every
+request reporting no change. The owned variant keeps the login-readable
+`0644` mode on purpose: `FileContents` cats unprivileged, so a `0640`
+service-account file would read back as empty and re-install on every deploy.
 
 ::: files_install
     options:

@@ -50,15 +50,29 @@ MUTABLE_CONSTRUCTORS = {"list", "dict", "set", "sorted"}
 MUTABLE_METHODS = {"split", "splitlines", "items", "keys", "values", "copy"}
 IMMUTABLE_WRAPPERS = {"tuple", "frozenset"}
 
-# Entrypoints that close over a *fact snapshot* rather than a host. The value
-# built here mirrors the shape the example reads between its runs, so the
-# deploy body can be exercised offline; keyed by script and function name,
-# because two scripts share the factory name but not the fact behind it.
+# Entrypoints that close over a *fact snapshot* (or a frozen apply-outcome
+# set) rather than a host. The value built here mirrors the shape the example
+# reads between its runs, so the deploy body can be exercised offline; keyed
+# by script and function name, because two scripts share the factory name but
+# not the fact behind it.
 SNAPSHOT_ARGS = {
     (
         "examples/demonstrations/composition/two_deploy_split.py",
         "build_configure_nginx",
     ): lambda name: {name: ["nginx"]},
+    (
+        "examples/demonstrations/composition/conf_d_cleanup.py",
+        "build_cleanup_conf_d",
+    ): lambda name: {
+        name: [
+            "/etc/datadog-agent/conf.d/cpu/conf.yaml",
+            "/etc/datadog-agent/conf.d/legacy_check/conf.yaml",
+        ]
+    },
+    (
+        "examples/demonstrations/composition/handler_restart.py",
+        "build_restart_nginx",
+    ): lambda name: frozenset({name}),
     (
         "examples/actions/deploy_action_deploy.py",
         "build_configure_nginx",

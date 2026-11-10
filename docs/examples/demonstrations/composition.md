@@ -6,8 +6,9 @@ module boundaries to demonstrate the composition helpers
 — one scenario each, in the order the [guide](../../guide.md#composing-deploys)
 introduces them — plus a role-selection scenario keyed on the inventory's
 `group`/`tags`, a `when`-guard scenario that keeps one shared schedule
-across hosts, and a two-deploy split that moves a mutable-fact read into
-the gap between two complete prepare/apply cycles. All read the shared
+across hosts, and three two-deploy scenarios that move a mutable read — a
+fact snapshot or the apply report — into the gap between two complete
+prepare/apply cycles. All read the shared
 project-root `inventory.json` (validated up front) and guard their `dnf` work
 to the `centos` group with a stable `is_centos` predicate, so the Alpine and
 Ubuntu hosts are skipped without their facts being read; every one follows the
@@ -82,5 +83,49 @@ trade-off — a frozen snapshot, no mid-run replanning — is spelled out in the
 script's own docstring below.
 
 ::: two_deploy_split
+    options:
+      members: []
+
+## Cleaning up untracked files: the conf.d recipe
+
+The directory-listing facts' reason to exist: the DataDog Ansible role's
+cleanup question — "delete every `conf.d/*/conf.yaml` that is NOT one of
+the tracked checks" — where the names to remove are unknown to the deploy
+author, so no static deploy can enumerate them. The same two-deploy split
+as above, with an enumeration fact instead of a package fact: deploy 1
+(`ensure_tracked_checks`) installs the tracked checks' configs with
+`files.install` (branch-free); a `gather_fact` snapshot of `files.FindFiles`
+(`fname="conf.yaml"`, `maxdepth=2`) taken after its apply-phase join lists
+what is really on each box; deploy 2 is built by a factory that subtracts
+the tracked paths from the frozen snapshot and yields one `files.file`
+`present=False` removal per stale path. The `dry=True` plan previews
+exactly what the cleanup would remove, and re-running the whole script
+converges to zero removals. The same shape answers the apt legacy-`.list`
+cleanup — swap the directory, the filter and the tracked set.
+
+::: conf_d_cleanup
+    options:
+      members: []
+
+## Restarting a service only when a notifying operation changed
+
+The Ansible `notify:`/handler pattern — "restart the agent only when a
+config write actually changed something" — built from the apply report
+instead of a fact snapshot. `systemd.service(restarted=True)` is
+stateless: it restarts a running unit on every deploy that reaches it,
+and neither `when` (static inventory data only) nor the deploy body (no
+access to earlier outcomes) can condition it on a change. Deploy 1
+(`configure_nginx`) installs nginx and writes a content-idempotent
+`conf.d` drop-in with `files.install`, both requests named after the
+script's `NOTIFYING` set; between the runs, `notifying_hosts` freezes the
+hosts whose named entries report `changed` in run 1's `ApplyReport`;
+deploy 2 is built by a factory closing over that frozen set and yields
+`systemd.service(restarted=True)` only for those hosts. Deduplication and
+end-of-run flushing come free — at most one restart per host, after every
+config write landed — and a converged re-run queues no restart at all.
+The guide's [Change notification](../../guide.md#change-notification-handlers)
+section spells out why this is the sanctioned shape.
+
+::: handler_restart
     options:
       members: []

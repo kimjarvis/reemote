@@ -24,18 +24,33 @@ deploy:
    a dest-derived ``/tmp`` spool path (``/tmp/reemote5-install-<sha1 of
    dest>``) -- unprivileged regardless of the request's ``sudo``, and named
    per destination so two installs never clobber one spool file.
-3. Install: an ``InstallCommand`` shell runs ``mkdir -p``/``cp``/``chmod``/
-   ``rm -f`` wrapped in ``sh -c``, so the request's ``sudo=True`` elevates
-   every step -- the file lands root-owned with the requested mode and the
-   spool is cleaned up.
+3. Install: an ``InstallCommand`` shell runs ``mkdir -p``/``cp``/optional
+   ``chown``/``chmod``/``rm -f`` wrapped in ``sh -c``, so the request's
+   ``sudo=True`` elevates every step -- the file lands with the requested
+   owner (root when none is named) and mode and the spool is cleaned up.
 
 ``content`` is a plain ``str`` (text is what ``FileContents`` compares), so
 unlike ``files.put``'s IO source no identity-stable module-level stream is
 needed -- the same string in both phases compares equal. Binary content
 stays ``files.put``'s job, into a login-user-writable path.
 
-The script installs a demo config, then runs the very same deploy a second
-time: the first run writes, the second reports no change on every host.
+Ownership: the optional ``user``/``group`` parameters add a ``chown`` (or
+``chgrp`` for a group alone) step inside the elevated install chain, before
+the ``chmod`` -- the shape a service config needs (eg a Datadog-style
+``dd-agent:dd-agent`` agent config). Like ``mode``, the owner is applied on
+every write but never compared: idempotence stays content-only, and an
+owner-only drift is ``files.file``'s job to converge. The named owner must
+already exist -- the deploy below provisions the ``www`` group and system
+user first (the same account the sibling ``files_op_file.py`` example
+uses), so the ``chown`` never fails on an unknown user. One caveat the
+owned demo deliberately sidesteps: ``FileContents`` cats *unprivileged*,
+so a file installed with a mode the login user cannot read (a ``0640``
+service-account config) reads back as empty content and re-installs on
+every deploy -- the owned demo therefore uses the login-readable ``0644``.
+
+The script installs a demo config and an owned demo config, then runs the
+very same deploy a second time: the first run writes, the second reports
+no change on every host.
 
 Every request carries ``when=is_centos``, the declarative eligibility
 guard: the predicate reads only **static** inventory data --
@@ -77,6 +92,7 @@ from reemote5 import (
     format_plan,
     op,
     run,
+    server,
     validate_inventory,
 )
 
@@ -85,6 +101,12 @@ from reemote5 import (
 # inline -- no identity constraint like files.put's IO source.
 DEST = "/etc/reemote5-install-demo.conf"
 CONTENT = "# Installed by reemote5 files.install\nmanaged = true\n"
+
+# The owned variant: installed www:www by the install chain's chown step.
+# The mode stays login-readable (0644) so the unprivileged FileContents
+# read-back still sees the content and the second run is a genuine no-op.
+OWNED_DEST = "/etc/reemote5-install-owned-demo.conf"
+OWNED_CONTENT = "# Installed by reemote5 files.install, owned by www\nmanaged = true\n"
 
 # examples/modules/files/files_install.py -> the project root, so the inventory
 # is found whatever the current working directory is.
@@ -118,17 +140,51 @@ def is_centos(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """One spool-and-install request: transfer + elevated install together.
+    """Provision the www account, then install the plain and owned configs.
 
     ``sudo=True`` elevates only the install half -- the scp spool transfer
     always rides as the login user. The mode defaults to "0644"; pass
-    ``mode="0600"`` for a secret-bearing config.
+    ``mode="0600"`` for a secret-bearing config. The first two requests
+    ensure the ``www`` group and system user the owned install chowns to
+    (no-ops once the account exists); the owned install then names
+    ``user``/``group`` so the file lands ``www:www`` in the same request
+    that writes its content -- no companion ``files.file`` needed.
     """
+    yield op(
+        server.group,
+        name="Ensure www group",
+        group="www",
+        system=True,
+        sudo=True,
+        when=is_centos,
+    )
+    yield op(
+        server.user,
+        name="Ensure www user",
+        user="www",
+        group="www",
+        system=True,
+        shell="/sbin/nologin",
+        ensure_home=False,
+        sudo=True,
+        when=is_centos,
+    )
     yield op(
         files.install,
         name="Install demo config",
         content=CONTENT,
         dest=DEST,
+        sudo=True,
+        when=is_centos,
+    )
+    yield op(
+        files.install,
+        name="Install owned demo config",
+        content=OWNED_CONTENT,
+        dest=OWNED_DEST,
+        mode="0644",
+        user="www",
+        group="www",
         sudo=True,
         when=is_centos,
     )

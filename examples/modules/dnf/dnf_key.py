@@ -1,11 +1,12 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Import a GPG key into the target host's rpm keyring, from a stream.
+"""Manage the rpm keyring: import a GPG key from a stream, remove a legacy key.
 
 This is a *usage* example, not part of the library. It shows reemote5's
-``dnf.key`` operation -- the one non-idempotent dnf operation -- driven end to
-end over a **real SSH transport** (asyncssh):
+``dnf.key`` operation -- a non-idempotent import direction plus an idempotent
+``present=False`` removal direction -- driven end to end over a **real SSH
+transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
    -- an inventory is just a list of dictionaries, which is exactly what
@@ -39,15 +40,29 @@ is read. And because ``OperationRequest`` equality compares a stream
 hence the module-level constant rather than a fresh ``BytesIO`` inside the
 generator (a new object per phase would trip the determinism guard).
 
-``dnf.key`` is **non-idempotent** -- like pyinfra's it reads no fact, always
-reports a change and always imports (rpm itself deduplicates an
-already-imported key), so the plan and the apply log agree. The one request
+The ``present=True`` direction is **non-idempotent** -- like pyinfra's
+``dnf.key`` it reads no fact, always reports a change and always imports (rpm
+itself deduplicates an already-imported key), so the plan and the apply log
+agree. The one request
 yields *two* commands at different privilege levels: a transfer that spools
 the stream to a ``/tmp`` path over scp as the login user (transfers are never
 elevated), then an elevated ``rpm --import`` of that spool file -- wrapped in
 ``sh -c`` so the import *and* its cleanup ``rm`` both run as root. That import
 writes to the root-owned rpm keyring, so the request is flagged ``sudo=True``
 and the driver elevates only the shell half, never the scp half.
+
+The second request shows the ``present=False`` direction -- a reemote5
+extension beyond pyinfra's import-only ``dnf.key``, mirroring Ansible's
+``rpm_key state=absent`` (the step the ansible-datadog role loops over
+``datadog_rpm_remove_keys`` to drop the legacy ``4172A230`` signing key).
+An imported key lives in the rpm database as a ``gpg-pubkey-<keyid>-<release>``
+pseudo-package, so removal names a ``keyid`` (8 hex digits, or the 16-digit
+long form matched by its last 8; case-insensitive), never a stream. It IS
+idempotent: the ``RpmGpgKeys`` fact lists the imported keys, and the elevated
+``rpm -e gpg-pubkey-...`` is yielded only when the key is actually present --
+a host without the legacy key plans a no-op. The erase is a *plain* ``sudo
+rpm -e`` (a single command, no ``sh -c`` wrapper), so unlike the import it
+applies cleanly even on the ``staff_t``-confined hosts below.
 
 The stream embeds the real Docker Release (CE rpm) signing key -- the armored
 body of ``https://download.docker.com/linux/centos/gpg`` -- so ``rpm --import``
@@ -60,7 +75,7 @@ read the login user's ``0600`` scp spool (no ``CAP_DAC_OVERRIDE``), so the
 import fails with ``import read failed`` until the host is relaxed (see the
 ``dnf`` examples page for the full caveat).
 
-The request also carries ``when=is_centos``, the declarative eligibility
+The requests also carry ``when=is_centos``, the declarative eligibility
 guard (see ``examples/demonstrations/composition/composed_when_guard.py``).
 The predicate reads only **static** inventory data -- ``host.group``, set by
 the ``"group"`` key of the inventory entry -- and is a stable module-level
@@ -175,19 +190,30 @@ def is_centos(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Import the GPG key stream into each host's rpm keyring.
+    """Import the GPG key stream, then remove the legacy Datadog key.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError),
     and identical on every host: eligibility is expressed with the
-    ``when=is_centos`` guard the request carries, not with an ``if``.
-    The single request is non-idempotent -- it always imports -- and yields
+    ``when=is_centos`` guard each request carries, not with an ``if``.
+    The import request is non-idempotent -- it always imports -- and yields
     two commands at different privilege levels: an unprivileged scp spool of
     ``GPG_KEY`` to a ``/tmp`` path, then the elevated ``rpm --import`` of that
-    path. Importing writes to the root-owned rpm keyring, so the request is
-    flagged ``sudo=True``; the scp transfer stays unprivileged regardless.
+    path. The removal request is idempotent: it reads ``RpmGpgKeys`` and
+    yields the elevated ``rpm -e`` only when the legacy ``4172A230`` key is
+    in the rpm keyring. Both write to the root-owned rpm database, so both
+    requests are flagged ``sudo=True``; the scp transfer stays unprivileged
+    regardless.
     """
     yield op(dnf.key, name="Import GPG key", src=GPG_KEY, sudo=True, when=is_centos)
+    yield op(
+        dnf.key,
+        name="Remove legacy GPG key",
+        keyid="4172A230",
+        present=False,
+        sudo=True,
+        when=is_centos,
+    )
 
 
 async def main() -> None:
@@ -196,8 +222,9 @@ async def main() -> None:
         print(f"== Inventory loaded from {INVENTORY_PATH} ==")
         print(", ".join(entry["host"] for entry in inventory))
 
-        # --dry: prepare phase only. Nothing is transferred or imported, so the
-        # plan shows the change (the operation is non-idempotent) without
+        # --dry: prepare phase only. Nothing is transferred, imported or
+        # erased, so the plan shows the import change (that direction is
+        # non-idempotent) and the removal's present/absent decision without
         # touching a host. A request the ``when`` guard rejects is planned as
         # [skipped: when guard is_centos] without materializing it.
         plans, _, _hosts = await run(inventory, deploy, dry=True)
@@ -205,8 +232,9 @@ async def main() -> None:
         print(format_plan(plans))
 
         # Real run: prepare, then apply in lockstep across hosts over SSH. Each
-        # eligible host spools the key over scp, then runs the elevated
-        # rpm --import and removes the spool file.
+        # eligible host spools the key over scp, runs the elevated
+        # rpm --import and removes the spool file, then erases the legacy
+        # key's pseudo-package if the RpmGpgKeys fact reports it present.
         plans, report, _hosts = await run(inventory, deploy)
         print("\n== Run log (apply phase) ==")
         assert report is not None

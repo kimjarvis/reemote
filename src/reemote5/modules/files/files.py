@@ -14,14 +14,20 @@
 # ``lsattr -d`` reports for a path, the read behind ``files.flags``), and
 # ``File`` (pyinfra's stat-level metadata for a regular
 # file -- owner, group, mode, timestamps, size -- False for a non-file path,
-# None when absent) with its ``Directory`` and ``Link`` siblings (the same
-# metadata for a directory or a symlink, False for a non-directory/non-link
-# path; ``Link``'s dict additionally carries the ``link_target``, and is the
-# fact ``files.link`` compares against) and ``SameFile`` (whether two paths
-# name one and the same inode, the hard-link half of ``files.link``'s
-# idempotence). Like every
-# fact they are phase-unaware: each ``process`` coroutine just gathers the raw
-# value.
+# None when absent) with its ``Directory``, ``Link`` and ``Socket`` siblings
+# (the same metadata for a directory, symlink or socket, False for a
+# wrong-typed path; ``Link``'s dict additionally carries the ``link_target``,
+# and is the fact ``files.link`` compares against) and ``SameFile`` (whether
+# two paths name one and the same inode, the hard-link half of ``files.link``'s
+# idempotence). The enumeration side is ``FindFiles``/``FindDirectories``/
+# ``FindLinks`` (pyinfra's find family -- the paths under a start path, the
+# read that discovers names the deploy author does not know), ``FindInFile``
+# (grep's matching lines, [] for no match vs None for absent), and the
+# originals ``FindFilesInfo`` (find -printf metadata per hit) and
+# ``DirectoryEntries`` (a shallow name/type listing). The digest side adds
+# ``Sha256File``/``Sha384File``/``Md5File`` beside ``RemoteFileSha1``. Like
+# every fact they are phase-unaware: each ``process`` coroutine just gathers
+# the raw value.
 #
 # Operation side (design doc section 6): ``files.link``, ``files.file``,
 # ``files.put``, ``files.get``, ``files.edit``, ``files.install``,
@@ -52,7 +58,7 @@ from collections.abc import AsyncGenerator, Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
-from typing import IO, Any, Literal
+from typing import IO, Any, Literal, TypedDict
 
 from ...commands import Command, TransferCommand
 from ...core import OpContext
@@ -226,6 +232,179 @@ class RemoteFileSha1:
         stdout = await host.run_shell(f"sha1sum {shlex.quote(path)}")
         fields = stdout.split()
         return fields[0] if fields else None
+
+
+class _HashFileBase:
+    """Shared command/parse/process for the pyinfra hash-fact family."""
+
+    # Mirrors pyinfra's ``HashFileFactBase``: the file is read through stdin
+    # (``< path``) so the checksum tool never sees the filename, avoiding
+    # GNU coreutils' backslash/newline escaping of names in its output (the
+    # upstream #1911 fix). The ``test -e`` guard plus the trailing
+    # ``|| true`` mean a missing file -- or a host with none of the tool
+    # spellings installed -- exits zero with no stdout, which parses to
+    # None; there is no missing-binary case to report as
+    # ``CommandNotFoundError``. Two output spellings are accepted: the GNU
+    # coreutils / shasum stdin form ``<hash>  -`` and the BSD digest form
+    # (a bare ``<hash>``). Unlike the ``File`` family there is no leading
+    # ``~/`` exception -- the whole path is quoted, pyinfra's behaviour.
+    # ``RemoteFileSha1`` predates this family and deliberately keeps its
+    # simpler ``sha1sum <path>`` probe: it backs ``files.put``/``files.get``
+    # idempotence, where the argv form and the 127-as-CommandNotFoundError
+    # surface are already locked in by the transfer operations.
+
+    #: Hex digits the digest must carry (40 for sha1, 64 for sha256, ...).
+    DIGITS: int
+    #: The tool spellings tried in order (GNU sum, shasum, BSD digest).
+    CMDS: tuple[str, ...]
+    #: The ``hashlib`` algorithm name the simulated seam derives with.
+    ALGO: str
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell printing the digest of ``path`` via stdin, if it exists."""
+        quoted = shlex.quote(path)
+        chain = " || ".join(f"{cmd} < {quoted} 2> /dev/null" for cmd in cls.CMDS)
+        return f"test -e {quoted} && ( {chain} ) || true"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> str | None:
+        """Parse the first line into the hex digest, or None if unmatched.
+
+        No output (absent file, no tool installed) reads as None, as does
+        a line carrying neither the ``<hash>  -`` nor the bare-hash form
+        with the exact expected digit count.
+        """
+        line = next(iter(output), None)
+        if line is None:
+            return None
+        for regex in (
+            rf"^([a-fA-F0-9]{{{cls.DIGITS}}})\s+-\s*$",
+            rf"^([a-fA-F0-9]{{{cls.DIGITS}}})$",
+        ):
+            match = re.match(regex, line)
+            if match:
+                return match.group(1)
+        return None
+
+    @classmethod
+    async def process(cls, host: Host, path: str) -> str | None:
+        remote_files = getattr(host, "remote_files", None)
+        if remote_files is not None:
+            # SimulatedHost seam: the command addresses a caller-supplied
+            # literal path, so the shared content store answers at zero
+            # wiring cost (the RemoteFileSha1 precedent) -- the digest is
+            # derived from the stored bytes exactly as the real tool would
+            # read them, None when the path is absent.
+            data = remote_files.get(path)
+            return hashlib.new(cls.ALGO, data).hexdigest() if data is not None else None
+        # Real transport: the guarded stdin hash chain over asyncssh.
+        stdout = await host.run_shell(cls.command(path))
+        return cls.parse(stdout.splitlines())
+
+
+class Sha256File(_HashFileBase):
+    """The sha256 hex digest of a file on the remote host, or None if absent.
+
+    **Commands:**
+
+    ```bash
+    test -e <path> && ( sha256sum < <path> 2> /dev/null || shasum -a 256 < <path> 2> /dev/null || sha256 < <path> 2> /dev/null ) || true
+    ```
+
+    **Returns:**
+
+    ```python
+    str | None
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_sha256.py``.
+    """
+
+    # Mirrors pyinfra's ``files.Sha256File`` -- the hash family's SHA-256
+    # member, the digest Ansible's ``stat`` module defaults to
+    # (``checksum_algorithm: sha256``) and the one repository/keyring
+    # verification recipes compare. Command/parse/process are the shared
+    # base's; only the digit count, tool spellings and seam algorithm differ.
+
+    DIGITS = 64
+    CMDS = ("sha256sum", "shasum -a 256", "sha256")
+    ALGO = "sha256"
+
+
+class Sha384File(_HashFileBase):
+    """The sha384 hex digest of a file on the remote host, or None if absent.
+
+    **Commands:**
+
+    ```bash
+    test -e <path> && ( sha384sum < <path> 2> /dev/null || shasum -a 384 < <path> 2> /dev/null || sha384 < <path> 2> /dev/null ) || true
+    ```
+
+    **Returns:**
+
+    ```python
+    str | None
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_sha384.py``.
+    """
+
+    # Mirrors pyinfra's ``files.Sha384File`` -- the hash family's SHA-384
+    # member; the shared base carries the mechanics.
+
+    DIGITS = 96
+    CMDS = ("sha384sum", "shasum -a 384", "sha384")
+    ALGO = "sha384"
+
+
+class Md5File(_HashFileBase):
+    """The md5 hex digest of a file on the remote host, or None if absent.
+
+    **Commands:**
+
+    ```bash
+    test -e <path> && ( md5sum < <path> 2> /dev/null || md5 < <path> 2> /dev/null ) || true
+    ```
+
+    **Returns:**
+
+    ```python
+    str | None
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_md5.py``.
+    """
+
+    # Mirrors pyinfra's ``files.Md5File`` -- the hash family's MD5 member
+    # (two tool spellings, no shasum variant); the shared base carries the
+    # mechanics. MD5 is for legacy checksum manifests (Repomd/Release
+    # files, vendor download pages), not a security boundary.
+
+    DIGITS = 32
+    CMDS = ("md5sum", "md5")
+    ALGO = "md5"
 
 
 class FileContents:
@@ -506,9 +685,9 @@ class File:
     # the octal-looking int pyinfra returns (644, 4755, ...), including the
     # setuid/setgid/sticky bits. A path that does not exist (no output) reads
     # as ``None``; one that exists but is not a regular file (a directory,
-    # symlink, socket, ...) reads as ``False`` -- ``Directory`` and ``Link``
-    # are the directory- and link-accepting siblings, and only ``Link``'s
-    # dict carries the ``link_target`` key. Like pyinfra,
+    # symlink, socket, ...) reads as ``False`` -- ``Directory``, ``Link`` and
+    # ``Socket`` are the directory-, link- and socket-accepting siblings,
+    # and only ``Link``'s dict carries the ``link_target`` key. Like pyinfra,
     # a leading ``~/`` stays unquoted so the remote shell expands it; the
     # rest of the path is quoted.
 
@@ -626,7 +805,10 @@ class Directory(File):
     # flag must be ``d``, so a regular file, symlink, socket, ... reads as
     # ``False`` instead. The dict shape, *naive UTC* timestamps and
     # octal-looking ``mode`` int are exactly ``File``'s, and a leading ``~/``
-    # likewise stays unquoted for the remote shell to expand.
+    # likewise stays unquoted for the remote shell to expand. This fact
+    # describes the directory *itself*, never the names inside it -- for
+    # the listing see ``DirectoryEntries`` (shallow, with types) or
+    # ``FindDirectories`` (recursive paths).
 
     #: pyinfra's ``type`` field: only a directory is accepted; every other
     #: path type (file, link, socket, ...) reads as False.
@@ -719,6 +901,72 @@ class Link(File):
         # Real transport: the inherited stat/ls chain over asyncssh, parsed
         # against TYPE = "link". A missing path produces empty stdout (the
         # guard short-circuits), which parses to None.
+        stdout = await host.run_shell(cls.command(path))
+        return cls.parse(stdout.splitlines())
+
+
+class Socket(File):
+    """Metadata for a socket, False for a non-socket path, None if absent.
+
+    **Commands:**
+
+    ```bash
+    ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' <path> || ls -ld <path> )
+    ```
+
+    **Returns:**
+
+    ```python
+    dict[str, Any] | Literal[False] | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_socket.py``.
+    """
+
+    # Mirrors pyinfra's ``files.Socket`` -- its ``File`` subclass with
+    # ``type = "socket"``: pure inheritance, the same ``test -e``/``test -L``
+    # guard and stat/ls chain (``command`` and ``parse`` are inherited
+    # unchanged -- the shared parse already maps the ``s`` type flag), so a
+    # regular file, directory, symlink, ... reads as ``False`` instead. The
+    # dict shape, *naive UTC* timestamps and octal-looking ``mode`` int are
+    # exactly ``File``'s, and a leading ``~/`` likewise stays unquoted for
+    # the remote shell to expand. The one override is ``process``, reading
+    # the dedicated ``socket_stats`` seam: ``file_stats`` stores
+    # undiscriminated metadata payloads and can never answer the
+    # socket-typed question for the same path (the Directory/Link
+    # precedent). Use it to audit a daemon's listening socket --
+    # ``/var/run/docker.sock``, a database or agent IPC socket -- owner and
+    # mode decide which users may talk to the daemon.
+
+    #: pyinfra's ``type`` field: only a socket is accepted; every other
+    #: path type (file, directory, link, ...) reads as False.
+    TYPE = "socket"
+
+    @classmethod
+    async def process(
+        cls, host: Host, path: str
+    ) -> dict[str, Any] | Literal[False] | None:
+        stats = getattr(host, "socket_stats", None)
+        if stats is not None:
+            # SimulatedHost seam: the file_stats shape in a separate store,
+            # because a metadata dict carries no type flag -- file_stats
+            # alone cannot say whether its path is a socket. Keys are the
+            # caller-supplied path strings verbatim (any ~/ prefix
+            # included); a dict is a socket's metadata, False an existing
+            # non-socket, an absent key None. Return a copy so callers
+            # never mutate simulated state.
+            value = stats.get(path)
+            return dict(value) if isinstance(value, dict) else value
+        # Real transport: the inherited stat/ls chain over asyncssh, parsed
+        # against TYPE = "socket". A missing path produces empty stdout
+        # (the guard short-circuits), which parses to None.
         stdout = await host.run_shell(cls.command(path))
         return cls.parse(stdout.splitlines())
 
@@ -880,6 +1128,697 @@ class FileFlags:
             return sorted(file_flags.get(path, set()))
         # Real transport: lsattr over asyncssh. A missing path short-circuits
         # the guard to empty stdout, which parses to [] like pyinfra's.
+        stdout = await host.run_shell(cls.command(path))
+        return cls.parse(stdout.splitlines())
+
+
+#: Byte multipliers for the find family's human-readable size filters
+#: (pyinfra's ``facts.util.units`` table: decimal KB/MB/GB/TB, binary
+#: KiB/MiB/GiB/TiB).
+_SIZE_UNITS = {
+    "B": 1,
+    "KB": 10**3,
+    "MB": 10**6,
+    "GB": 10**9,
+    "TB": 10**12,
+    "KIB": 2**10,
+    "MIB": 2**20,
+    "GIB": 2**30,
+    "TIB": 2**40,
+}
+
+
+def _parse_size(size: str | int) -> int:
+    """Bytes denoted by an int or a human-readable size string (pyinfra's
+    ``parse_size``): ``"1GB"`` is 1e9 bytes, ``"1GiB"`` is 2**30. An
+    unrecognised spelling raises ``ValueError`` before anything reaches the
+    host.
+    """
+    if isinstance(size, int):
+        return size
+    match = re.match(r"^\s*([0-9]*\.?[0-9]+)\s*([KMGT]?I?B)\s*$", size.upper())
+    if not match:
+        raise ValueError(f"invalid size {size!r}: expected bytes or a KB/MiB/... spelling")
+    return int(float(match.group(1)) * _SIZE_UNITS[match.group(2)])
+
+
+def _find_filter_args(
+    *,
+    size: str | int | None = None,
+    min_size: str | int | None = None,
+    max_size: str | int | None = None,
+    maxdepth: int | None = None,
+    fname: str | None = None,
+    iname: str | None = None,
+    regex: str | None = None,
+    path_match: str | None = None,
+    args: list[str] | None = None,
+    quote_path: bool = True,
+) -> list[str]:
+    """The filter arguments of pyinfra's ``FindFilesBase.command``, in its
+    order: size bounds, maxdepth, name/iname globs, regex, path glob, then
+    the raw ``args`` escape hatch. Each typed filter is skipped when ``args``
+    already spells the same find predicate (pyinfra's guards). Sizes always
+    render in bytes (the ``c`` suffix) -- any other unit has
+    implementation-specific 512-byte-block rounding.
+    """
+    extra = list(args) if args is not None else []
+
+    def maybe_quote(value: str) -> str:
+        return shlex.quote(value) if quote_path else value
+
+    parts: list[str] = []
+    if "-size" not in extra:
+        if min_size is not None:
+            parts += ["-size", f"+{_parse_size(min_size)}c"]
+        if max_size is not None:
+            parts += ["-size", f"-{_parse_size(max_size)}c"]
+        if size is not None:
+            # Upstream renders the exact size raw (``{size}c``); parsing it
+            # through _parse_size is the deliberate fix so a human-readable
+            # exact size works like its bounds do.
+            parts += ["-size", f"{_parse_size(size)}c"]
+    if maxdepth is not None and "-maxdepth" not in extra:
+        parts += ["-maxdepth", str(maxdepth)]
+    if fname is not None and "-fname" not in extra:
+        parts += ["-name", maybe_quote(fname)]
+    if iname is not None and "-iname" not in extra:
+        parts += ["-iname", maybe_quote(iname)]
+    if regex is not None and "-regex" not in extra:
+        parts += ["-regex", maybe_quote(regex)]
+    if path_match is not None and "-path" not in extra:
+        # Always quoted, even under quote_path=False: find itself does the
+        # globbing, the shell must pass the pattern literally (upstream).
+        parts += ["-path", shlex.quote(path_match)]
+    parts += extra
+    return parts
+
+
+class _FindPathsBase:
+    """Shared command/parse/process for pyinfra's find-path fact family."""
+
+    # Mirrors pyinfra's ``FindFilesBase``: ``find <path> -type <flag>`` plus
+    # the typed filters, always ending ``|| true`` so a missing start path
+    # (or an unreadable subtree) reads as the empty list rather than a
+    # failed read -- pyinfra's ``default = list`` behaviour, and the reason
+    # there is no missing-binary ``CommandNotFoundError`` case. The bare
+    # ``list[str]`` return is an agreed exception to the TypedDict-or-list-
+    # of-TypedDicts guideline: a path string carries all the information.
+    # The SimulatedHost seam is keyed by the *rendered command string*
+    # (build the key with ``<Fact>.command(...)``): the answer depends on
+    # every filter, so a path-only key could silently answer a different
+    # question than the one asked. An unseeded command reads [].
+
+    #: The ``-type`` flag selecting which paths the find reports.
+    TYPE_FLAG: str
+
+    @classmethod
+    def command(
+        cls,
+        path: str,
+        *,
+        size: str | int | None = None,
+        min_size: str | int | None = None,
+        max_size: str | int | None = None,
+        maxdepth: int | None = None,
+        fname: str | None = None,
+        iname: str | None = None,
+        regex: str | None = None,
+        path_match: str | None = None,
+        args: list[str] | None = None,
+        quote_path: bool = True,
+    ) -> str:
+        """Shell listing the matching paths, guarded with ``|| true``.
+
+        ``quote_path=False`` passes the start path and name patterns to the
+        shell unquoted (pyinfra's escape hatch for shell-expanded globs);
+        the default quotes everything.
+        """
+        quoted = shlex.quote(path) if quote_path else path
+        parts = ["find", quoted, "-type", cls.TYPE_FLAG]
+        parts += _find_filter_args(
+            size=size,
+            min_size=min_size,
+            max_size=max_size,
+            maxdepth=maxdepth,
+            fname=fname,
+            iname=iname,
+            regex=regex,
+            path_match=path_match,
+            args=args,
+            quote_path=quote_path,
+        )
+        return " ".join(parts) + " || true"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> list[str]:
+        """The find's stdout lines verbatim, in find's traversal order."""
+        return list(output)
+
+    @classmethod
+    async def process(
+        cls,
+        host: Host,
+        path: str,
+        *,
+        size: str | int | None = None,
+        min_size: str | int | None = None,
+        max_size: str | int | None = None,
+        maxdepth: int | None = None,
+        fname: str | None = None,
+        iname: str | None = None,
+        regex: str | None = None,
+        path_match: str | None = None,
+        args: list[str] | None = None,
+        quote_path: bool = True,
+    ) -> list[str]:
+        command = cls.command(
+            path,
+            size=size,
+            min_size=min_size,
+            max_size=max_size,
+            maxdepth=maxdepth,
+            fname=fname,
+            iname=iname,
+            regex=regex,
+            path_match=path_match,
+            args=args,
+            quote_path=quote_path,
+        )
+        results = getattr(host, "find_results", None)
+        if results is not None:
+            # SimulatedHost seam: the rendered command is the key, so every
+            # filter combination answers independently; copy the list so
+            # callers never mutate simulated state.
+            return list(results.get(command, []))
+        # Real transport: the guarded find over asyncssh.
+        stdout = await host.run_shell(command)
+        return cls.parse(stdout.splitlines())
+
+
+class FindFiles(_FindPathsBase):
+    """Paths of the regular files under a start path, recursively via find.
+
+    **Commands:**
+
+    ```bash
+    find <path> -type f [filters] || true
+    ```
+
+    **Returns:**
+
+    ```python
+    list[str]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_find_files.py``.
+    """
+
+    # Mirrors pyinfra's ``files.FindFiles`` -- the enumeration fact the
+    # stat-only ``File``/``Directory`` metadata facts cannot replace: it
+    # discovers names the deploy author does not know ("every
+    # conf.d/*/conf.yaml", "every legacy .list file"), the read side of a
+    # gather-then-branch two-deploy cleanup. Filters are the shared base's
+    # (fname/iname globs, maxdepth, size bounds, regex, path_match, raw
+    # args). For per-hit metadata (size/mode/owner/mtime) in the same read,
+    # see ``FindFilesInfo``; for a shallow one-level listing with types,
+    # see ``DirectoryEntries``.
+
+    TYPE_FLAG = "f"
+
+
+class FindDirectories(_FindPathsBase):
+    """Paths of the directories under a start path, recursively via find.
+
+    **Commands:**
+
+    ```bash
+    find <path> -type d [filters] || true
+    ```
+
+    **Returns:**
+
+    ```python
+    list[str]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_find_directories.py``.
+    """
+
+    # Mirrors pyinfra's ``files.FindDirectories`` -- the shared base with
+    # ``-type d``. The start path itself is always reported when it exists
+    # (find matches it too); ``maxdepth=1`` lists its immediate
+    # subdirectories, the enumeration behind "which check directories
+    # exist under conf.d".
+
+    TYPE_FLAG = "d"
+
+
+class FindLinks(_FindPathsBase):
+    """Paths of the symlinks under a start path, recursively via find.
+
+    **Commands:**
+
+    ```bash
+    find <path> -type l [filters] || true
+    ```
+
+    **Returns:**
+
+    ```python
+    list[str]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_find_links.py``.
+    """
+
+    # Mirrors pyinfra's ``files.FindLinks`` -- the shared base with
+    # ``-type l``. Dangling symlinks are reported too (find does not follow
+    # links); read each hit's target with ``FileLink`` or ``Link``.
+
+    TYPE_FLAG = "l"
+
+
+class FindInFile:
+    """Lines of a file matching a grep pattern; [] if none, None if absent.
+
+    **Commands:**
+
+    ```bash
+    grep -e <pattern> <path> 2> /dev/null || ( find <path> -type f > /dev/null && echo __pyinfra_exists_<path> || true )
+    ```
+
+    **Returns:**
+
+    ```python
+    list[str] | None
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_find_in_file.py``.
+    """
+
+    # Mirrors pyinfra's ``files.FindInFile``: grep prints the matching
+    # lines; when it fails (no match *or* no file), the fallback arm
+    # distinguishes the two -- an existing regular file echoes the
+    # ``__pyinfra_exists_<path>`` sentinel (kept verbatim, prefix included,
+    # for fixture parity), which parses to [], while a missing file echoes
+    # nothing and reads as None. ``extended_regex`` selects ``grep -E``;
+    # ``interpolate_variables`` wraps the pattern in double quotes (with
+    # embedded double quotes escaped) so the remote shell expands ``$VAR``
+    # references, otherwise the pattern is single-quoted literally. Every
+    # arm exits zero, so a missing grep/find binary is masked too. The
+    # SimulatedHost seam is the dedicated ``grep_lines`` store keyed by
+    # ``(path, pattern)``: grep's BRE semantics cannot be faithfully
+    # re-derived from the ``remote_files`` content bytes with Python's
+    # ``re``, so a test seeds the matching lines directly ([] = the file
+    # exists but nothing matches, an absent key = the file is missing).
+
+    #: Sentinel prefix the fallback arm echoes for an existing file with
+    #: no matches (pyinfra's spelling, kept for fixture parity).
+    EXISTS_PREFIX = "__pyinfra_exists_"
+
+    @classmethod
+    def command(
+        cls,
+        path: str,
+        pattern: str,
+        *,
+        interpolate_variables: bool = False,
+        extended_regex: bool = False,
+    ) -> str:
+        """Shell printing the matching lines, or the exists sentinel."""
+        if interpolate_variables:
+            pattern_arg = '"{}"'.format(pattern.replace('"', '\\"'))
+        else:
+            pattern_arg = shlex.quote(pattern)
+        quoted = shlex.quote(path)
+        flag = shlex.quote(cls.EXISTS_PREFIX + path)
+        grep = "grep -E" if extended_regex else "grep"
+        return (
+            f"{grep} -e {pattern_arg} {quoted} 2> /dev/null || "
+            f"( find {quoted} -type f > /dev/null && echo {flag} || true )"
+        )
+
+    @classmethod
+    def parse(cls, output: Iterable[str], path: str) -> list[str] | None:
+        """Parse grep's lines into matches, [] (sentinel) or None (absent).
+
+        The sentinel is recognised only as the *first* line, exactly the
+        fallback arm's shape; any other output is grep's matching lines.
+        """
+        lines = list(output)
+        if not lines:
+            return None
+        if lines[0] == cls.EXISTS_PREFIX + path:
+            return []
+        return lines
+
+    @classmethod
+    async def process(
+        cls,
+        host: Host,
+        path: str,
+        pattern: str,
+        *,
+        interpolate_variables: bool = False,
+        extended_regex: bool = False,
+    ) -> list[str] | None:
+        matches = getattr(host, "grep_lines", None)
+        if matches is not None:
+            # SimulatedHost seam: (path, pattern) -> the matching lines a
+            # test seeds; copy so callers never mutate simulated state.
+            value = matches.get((path, pattern))
+            return list(value) if value is not None else None
+        # Real transport: the grep-plus-sentinel shell over asyncssh.
+        stdout = await host.run_shell(
+            cls.command(
+                path,
+                pattern,
+                interpolate_variables=interpolate_variables,
+                extended_regex=extended_regex,
+            )
+        )
+        return cls.parse(stdout.splitlines(), path)
+
+
+class FoundFile(TypedDict):
+    """
+    Attributes:
+        path: The file's path exactly as find printed it (the start path's
+            spelling carried through, relative if the start was relative).
+        size: The file's size in bytes.
+        mode: The octal-looking permission int (644, 4755, ...), including
+            the setuid/setgid/sticky bits -- the same convention as File.
+        user: The owning user's name (find prints the numeric uid when the
+            name cannot be resolved).
+        group: The owning group's name (numeric gid when unresolvable).
+        mtime: The last-modification time as a *naive UTC* datetime at
+            whole-second precision (the File convention), or None when
+            find printed no parseable timestamp.
+    """
+
+    path: str
+    size: int
+    mode: int
+    user: str
+    group: str
+    mtime: datetime | None
+
+
+class FindFilesInfo:
+    """Regular files under a start path with per-hit metadata, via find -printf.
+
+    **Commands:**
+
+    ```bash
+    find <path> -type f [filters] -printf '%p\t%s\t%m\t%u\t%g\t%T@\n' || true
+    ```
+
+    **Returns:**
+
+    ```python
+    list[FoundFile]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_find_files_info.py``.
+    """
+
+    # A reemote5 ORIGINAL: pyinfra ships no counterpart -- its FindFiles
+    # returns bare paths, so filtering hits by size/mtime/owner (Ansible's
+    # ``find`` module returns that metadata per hit, and roles branch on
+    # it: "delete logs older than X") would need one stat-level File read
+    # per hit, N sequential shell round-trips. One GNU ``find -printf``
+    # gathers path, size, mode, user, group and mtime in a single command.
+    # The filters are the find family's shared set. Deliberate choices:
+    # GNU-only (``-printf`` does not exist on BSD find -- the ``|| true``
+    # guard masks that to [], the FileFlags Linux-adaptation precedent);
+    # entries are sorted by path for a deterministic listing (find's
+    # traversal order is filesystem-dependent); tab-separated fields mean
+    # a path containing a tab or newline breaks its row, which is skipped
+    # rather than misparsed. The ``|| true`` guard also masks a missing
+    # start path to []. The SimulatedHost seam is ``found_files``, keyed by
+    # the rendered command string like the find family's ``find_results``.
+    # ``FindFiles`` is the bare-path sibling; ``DirectoryEntries`` the
+    # shallow one-level listing.
+
+    #: The ``-printf`` format: path, size, mode, user, group, epoch mtime,
+    #: tab-separated (find interprets the \t and \n escapes itself).
+    PRINTF_FORMAT = "%p\\t%s\\t%m\\t%u\\t%g\\t%T@\\n"
+
+    @classmethod
+    def command(
+        cls,
+        path: str,
+        *,
+        size: str | int | None = None,
+        min_size: str | int | None = None,
+        max_size: str | int | None = None,
+        maxdepth: int | None = None,
+        fname: str | None = None,
+        iname: str | None = None,
+        regex: str | None = None,
+        path_match: str | None = None,
+        args: list[str] | None = None,
+        quote_path: bool = True,
+    ) -> str:
+        """Shell printing one metadata row per regular file, guarded."""
+        quoted = shlex.quote(path) if quote_path else path
+        parts = ["find", quoted, "-type", "f"]
+        parts += _find_filter_args(
+            size=size,
+            min_size=min_size,
+            max_size=max_size,
+            maxdepth=maxdepth,
+            fname=fname,
+            iname=iname,
+            regex=regex,
+            path_match=path_match,
+            args=args,
+            quote_path=quote_path,
+        )
+        parts += ["-printf", f"'{cls.PRINTF_FORMAT}'"]
+        return " ".join(parts) + " || true"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> list[FoundFile]:
+        """Parse the ``-printf`` rows into FoundFile entries sorted by path.
+
+        A row without exactly six tab-separated fields, or with a
+        non-integer size/mode, is skipped (a tab/newline-bearing path
+        breaks its own row); an unparseable ``%T@`` epoch reads as a None
+        mtime rather than dropping the hit. No output reads as [].
+        """
+        entries: list[FoundFile] = []
+        for line in output:
+            fields = line.split("\t")
+            if len(fields) != 6:
+                continue
+            try:
+                size = int(fields[1])
+                mode = int(fields[2])
+            except ValueError:
+                continue
+            try:
+                mtime: datetime | None = (
+                    datetime.fromtimestamp(int(float(fields[5])), UTC).replace(
+                        tzinfo=None
+                    )
+                )
+            except (ValueError, OverflowError, OSError):
+                mtime = None
+            entries.append(
+                FoundFile(
+                    path=fields[0],
+                    size=size,
+                    mode=mode,
+                    user=fields[3],
+                    group=fields[4],
+                    mtime=mtime,
+                )
+            )
+        return sorted(entries, key=lambda entry: entry["path"])
+
+    @classmethod
+    async def process(
+        cls,
+        host: Host,
+        path: str,
+        *,
+        size: str | int | None = None,
+        min_size: str | int | None = None,
+        max_size: str | int | None = None,
+        maxdepth: int | None = None,
+        fname: str | None = None,
+        iname: str | None = None,
+        regex: str | None = None,
+        path_match: str | None = None,
+        args: list[str] | None = None,
+        quote_path: bool = True,
+    ) -> list[FoundFile]:
+        command = cls.command(
+            path,
+            size=size,
+            min_size=min_size,
+            max_size=max_size,
+            maxdepth=maxdepth,
+            fname=fname,
+            iname=iname,
+            regex=regex,
+            path_match=path_match,
+            args=args,
+            quote_path=quote_path,
+        )
+        found = getattr(host, "found_files", None)
+        if found is not None:
+            # SimulatedHost seam: command-keyed like find_results; per-dict
+            # copies so callers never mutate simulated state (the entries
+            # are flat -- datetime values are immutable).
+            return [dict(entry) for entry in found.get(command, [])]
+        # Real transport: the guarded -printf find over asyncssh.
+        stdout = await host.run_shell(command)
+        return cls.parse(stdout.splitlines())
+
+
+class DirectoryEntry(TypedDict):
+    """
+    Attributes:
+        name: The entry's basename (no directory component); join it with
+            the listed path to address the entry.
+        type: The entry's path type as a word -- "file", "directory",
+            "link", "socket", "fifo", "block" or "character" -- the same
+            vocabulary the File family's type flags use.
+    """
+
+    name: str
+    type: str
+
+
+#: The ``%y`` type letters GNU find -printf prints, mapped to the File
+#: family's type words (find spells a regular file ``f``, not ``-``).
+_PRINTF_TYPE_TO_TYPE = {
+    "f": "file",
+    "d": "directory",
+    "l": "link",
+    "s": "socket",
+    "p": "fifo",
+    "b": "block",
+    "c": "character",
+}
+
+
+class DirectoryEntries:
+    """One directory's immediate entries with their types, never recursive.
+
+    **Commands:**
+
+    ```bash
+    find <path> -mindepth 1 -maxdepth 1 -printf '%f\t%y\n' || true
+    ```
+
+    **Returns:**
+
+    ```python
+    list[DirectoryEntry]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_directory_entries.py``.
+    """
+
+    # A reemote5 ORIGINAL: pyinfra ships no counterpart. This is the
+    # listing the stat-only ``Directory`` fact cannot give -- that fact
+    # describes the directory *itself* (owner, mode, timestamps), never
+    # the names inside it -- and the cheap shallow form of the find
+    # family: one ``-mindepth 1 -maxdepth 1`` sweep reports each immediate
+    # entry's basename and type without recursing (Ansible's ``find``
+    # with ``recurse: false``, the ``with_fileglob`` parent-dir pattern).
+    # Dotfiles are included (find does not skip them); the directory
+    # itself is not (mindepth 1). Entries are sorted by name for a
+    # deterministic listing. GNU-only like FindFilesInfo: BSD find has no
+    # ``-printf``, and the ``|| true`` guard masks that -- and a missing
+    # start path -- to []. A row whose type letter is unknown or whose
+    # name contains a tab/newline is skipped rather than misparsed. The
+    # SimulatedHost seam is ``directory_entries``, keyed by the
+    # caller-supplied path string verbatim (the command has no filters,
+    # so the path alone identifies the question); an absent key reads [].
+    # For recursive enumeration see FindFiles/FindDirectories/FindLinks;
+    # for per-file metadata see FindFilesInfo.
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell printing one name/type row per immediate entry, guarded."""
+        return (
+            f"find {shlex.quote(path)} -mindepth 1 -maxdepth 1 "
+            "-printf '%f\\t%y\\n' || true"
+        )
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> list[DirectoryEntry]:
+        """Parse the name/type rows into DirectoryEntry entries by name.
+
+        A row without exactly two tab-separated fields, or with an
+        unknown type letter, is skipped; no output reads as [].
+        """
+        entries: list[DirectoryEntry] = []
+        for line in output:
+            fields = line.split("\t")
+            if len(fields) != 2:
+                continue
+            entry_type = _PRINTF_TYPE_TO_TYPE.get(fields[1])
+            if entry_type is None:
+                continue
+            entries.append(DirectoryEntry(name=fields[0], type=entry_type))
+        return sorted(entries, key=lambda entry: entry["name"])
+
+    @classmethod
+    async def process(cls, host: Host, path: str) -> list[DirectoryEntry]:
+        listing = getattr(host, "directory_entries", None)
+        if listing is not None:
+            # SimulatedHost seam: path -> the entry rows a test seeds;
+            # per-dict copies so callers never mutate simulated state.
+            return [dict(entry) for entry in listing.get(path, [])]
+        # Real transport: the guarded shallow -printf find over asyncssh.
         stdout = await host.run_shell(cls.command(path))
         return cls.parse(stdout.splitlines())
 
@@ -1567,7 +2506,8 @@ class InstallSpoolCommand(TransferCommand):
 
 @dataclass(frozen=True)
 class InstallCommand(Command):
-    """Install the spooled file with ``mode``, then remove the spool file.
+    """Install the spooled file with ``mode`` (and optional owner), then
+    remove the spool file.
 
     The second half of ``files.install`` and the elevated one: writing a
     root-owned destination needs root, so the request is flagged
@@ -1577,26 +2517,41 @@ class InstallCommand(Command):
     ``sudo sh -c '...'`` runs every step as root, which can always remove
     the login-user spool file. The sequence creates the destination's
     parent directory (``mkdir -p``), copies the spooled content over the
-    target file, chmods it to the requested mode and removes the spool
-    file -- the ``SystemdFileInstallCommand`` pattern with a caller-chosen
-    mode. All paths are shell-quoted; the mode is the canonical octal-digit
-    int the operation normalised it to and renders unquoted, exactly as
+    target file, optionally chowns it to the requested ``user``/``group``,
+    chmods it to the requested mode and removes the spool file -- the
+    ``SystemdFileInstallCommand`` pattern with a caller-chosen mode and
+    owner. The chown precedes the chmod on purpose: a ``chown`` clears a
+    file's setuid/setgid bits, so the requested mode must be applied last
+    to stick. The owner step mirrors ``ChownCommand`` -- a user alone or a
+    ``user:group`` pair render ``chown``, a group alone switches to
+    ``chgrp``, and neither set skips the step entirely (the file stays
+    root-owned, the historical behaviour). All paths and the owner spec
+    are shell-quoted; the mode is the canonical octal-digit int the
+    operation normalised it to and renders unquoted, exactly as
     ``ChmodCommand`` does.
     """
 
     spool: str  # where InstallSpoolCommand wrote the content
     dest: str  # the root-owned target path
     mode: int  # canonical octal-digit mode (644 for "0644")
+    user: str | None = None  # owner to chown to (None leaves root)
+    group: str | None = None  # group to chown/chgrp to (None leaves root)
 
     def shell(self) -> str:
         spool = shlex.quote(self.spool)
         dest = shlex.quote(self.dest)
         parent = shlex.quote(str(PurePosixPath(self.dest).parent))
-        inner = (
-            f"mkdir -p {parent} && "
-            f"cp {spool} {dest} && "
-            f"chmod {self.mode} {dest} && rm -f {spool}"
-        )
+        steps = [f"mkdir -p {parent}", f"cp {spool} {dest}"]
+        if self.user and self.group:
+            spec = shlex.quote(f"{self.user}:{self.group}")
+            steps.append(f"chown {spec} {dest}")
+        elif self.user:
+            steps.append(f"chown {shlex.quote(self.user)} {dest}")
+        elif self.group:
+            steps.append(f"chgrp {shlex.quote(self.group)} {dest}")
+        steps.append(f"chmod {self.mode} {dest}")
+        steps.append(f"rm -f {spool}")
+        inner = " && ".join(steps)
         return f"sh -c {shlex.quote(inner)}"
 
 
@@ -1605,6 +2560,8 @@ async def install(
     content: str,
     dest: str,
     mode: str = "0644",
+    user: str | None = None,
+    group: str | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Install text content at a root-owned path via spool-and-install.
@@ -1615,6 +2572,10 @@ async def install(
         dest (str): The remote path to install the content at.
         mode (str, optional): The installed file's permissions as
             octal-digit text (``"0644"``, ``"600"``). Defaults to "0644".
+        user (str | None, optional): The user to own the installed file.
+            Defaults to None (root, the elevated install's owner).
+        group (str | None, optional): The group to own the installed file.
+            Defaults to None (root).
         **kwargs: Additional keyword arguments.
 
     Yields:
@@ -1666,10 +2627,21 @@ async def install(
     # a symbolic mode raises ``ValueError`` -- ``files.file``/``chmod``
     # own relative edits. The mode is applied on every write, but
     # idempotence is content-only: a mode-only drift does not re-install
-    # (use ``files.file`` to converge metadata). There is deliberately no
-    # ``present=False`` removal branch -- ``files.file(present=False)``
-    # already owns removal. ``**kwargs`` absorbs pyinfra-style global
-    # arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    # (use ``files.file`` to converge metadata). ``user``/``group`` ride
+    # the same contract: an optional ``chown``/``chgrp`` step inside the
+    # elevated install chain (before the ``chmod``, which a chown would
+    # otherwise strip of setuid/setgid bits), applied on every write but
+    # never compared -- an owner-only drift is ``files.file``'s job too.
+    # The named owner must already exist on the host (provision it with
+    # ``server.user``/``server.group`` first) or the chown fails at apply.
+    # One read-back caveat: ``FileContents`` cats unprivileged, so a file
+    # installed with a mode the login user cannot read (eg ``0640`` owned
+    # by a service account) reads back as empty content and re-installs on
+    # every deploy -- content idempotence needs a login-readable file.
+    # There is deliberately no ``present=False`` removal branch --
+    # ``files.file(present=False)`` already owns removal. ``**kwargs``
+    # absorbs pyinfra-style global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
     if not mode or any(c not in "01234567" for c in mode):
         raise ValueError(
             f"Invalid file mode: {mode!r} expected octal digits "
@@ -1690,7 +2662,9 @@ async def install(
     )
     spool = _install_spool_path(dest)
     yield InstallSpoolCommand(content=content, dest=spool)
-    yield InstallCommand(spool=spool, dest=dest, mode=mode_int)
+    yield InstallCommand(
+        spool=spool, dest=dest, mode=mode_int, user=user, group=group
+    )
 
 
 @dataclass(frozen=True)
@@ -2273,23 +3247,35 @@ __all__ = [
     "ChownCommand",
     "CopyCommand",
     "Directory",
+    "DirectoryEntries",
+    "DirectoryEntry",
     "File",
     "FileCommand",
     "FileContents",
     "FileExists",
     "FileFlags",
     "FileLink",
+    "FindDirectories",
+    "FindFiles",
+    "FindFilesInfo",
+    "FindInFile",
+    "FindLinks",
+    "FoundFile",
     "GetCommand",
     "InstallCommand",
     "InstallSpoolCommand",
     "Link",
     "LinkCommand",
+    "Md5File",
     "MkdirCommand",
     "MoveCommand",
     "PutCommand",
     "RemoteFileSha1",
     "RemoveTreeCommand",
     "SameFile",
+    "Sha256File",
+    "Sha384File",
+    "Socket",
     "copy",
     "directory",
     "edit",

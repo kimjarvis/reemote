@@ -18,11 +18,12 @@ a real asyncssh transport is missing:
   ``transfer`` for a ``TransferCommand``, ``wait`` for a ``WaitCommand``, and
   the rendered shell over asyncssh for anything else.
 - ``packages`` / ``links`` / ``existing_files`` / ``file_stats`` /
-  ``file_flags`` / ``directory_stats`` / ``link_stats`` / ``same_files`` /
-  ``remote_files`` /
+  ``file_flags`` / ``directory_stats`` / ``directory_entries`` /
+  ``link_stats`` / ``socket_stats`` / ``same_files`` /
+  ``find_results`` / ``found_files`` / ``grep_lines`` / ``remote_files`` /
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
-  / ``rpm_files`` / ``rpm_packages`` / ``services`` / ``enabled_services``
+  / ``rpm_files`` / ``rpm_packages`` / ``rpm_gpg_keys`` / ``services`` / ``enabled_services``
   / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``deb_files``
   / ``date`` / ``disk_stats`` / ``dmi_info`` / ``os_env``
   / ``firewalld_default_zone``
@@ -78,10 +79,13 @@ a real asyncssh transport is missing:
   / ``ufw_applications`` / ``ufw_rules`` / ``ufw_status``
   / ``uptime_seconds`` / ``command_paths``:
   the state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
-  ``File``, ``Directory``, ``Link``, ``SameFile``, ``FileFlags``, ``RemoteFileSha1``, ``FileContents``, ``DnfRepoFile``, ``DnfRepositories``,
+  ``File``, ``Directory``, ``Link``, ``Socket``, ``SameFile``, ``FileFlags``,
+  ``FindFiles``, ``FindDirectories``, ``FindLinks``, ``FindInFile``,
+  ``FindFilesInfo``, ``DirectoryEntries``, ``RemoteFileSha1``, ``Sha256File``,
+  ``Sha384File``, ``Md5File``, ``FileContents``, ``DnfRepoFile``, ``DnfRepositories``,
   ``DnfRepoList``,
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
-  ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``,
+  ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``, ``RpmGpgKeys``,
   ``SystemdServiceState``, ``SystemdServiceEnabled``, ``SystemdStatus``, ``SystemdEnabled``, ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState``, ``SystemdDependencies``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``ApkRepositoriesFile``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpgradable``, ``Arch``,
   ``AuthorizedKeys``, ``AuthorizedKeysFile``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``, ``DebPackage``,
   ``DiskStats``, ``DmiInfo``, ``Env``, ``EtcHosts`` (parses the shared
@@ -203,7 +207,9 @@ from reemote5.modules.dnf.dnf import (
     DnfCleanCommand,
     DnfInstallCommand,
     DnfKeyImportCommand,
+    DnfKeyRemoveCommand,
     DnfKeyUploadCommand,
+    DnfMakecacheCommand,
     DnfModuleDisableCommand,
     DnfModuleEnableCommand,
     DnfRemoveCommand,
@@ -213,6 +219,7 @@ from reemote5.modules.dnf.dnf import (
     DnfRepository,
     DnfRepoUploadCommand,
     DnfUpdateCommand,
+    RpmGpgKey,
     RpmInstallCommand,
     RpmPackageInfo,
 )
@@ -221,7 +228,9 @@ from reemote5.modules.files.files import (
     ChmodCommand,
     ChownCommand,
     CopyCommand,
+    DirectoryEntry,
     FileCommand,
+    FoundFile,
     GetCommand,
     InstallCommand,
     InstallSpoolCommand,
@@ -597,12 +606,25 @@ class SimulatedHost(Host):
     rpm_files: dict[str, RpmPackageInfo] = field(default_factory=dict)
     rpm_packages: dict[str, str] = field(default_factory=dict)
     # GPG key content imported via ``dnf.key`` (the raw bytes of each imported
-    # key). ``dnf.key`` is non-idempotent and reads no fact, so nothing in the
-    # library reads this back; it exists so a test can observe that the
-    # simulated ``rpm --import`` ran. ``import_key`` fills it and clears the
-    # ``/tmp`` spool entry the paired ``DnfKeyUploadCommand`` wrote into
-    # ``remote_files``.
+    # key). The import direction is non-idempotent and reads no fact, so
+    # nothing in the library reads this back; it exists so a test can observe
+    # that the simulated ``rpm --import`` ran. ``import_key`` fills it and
+    # clears the ``/tmp`` spool entry the paired ``DnfKeyUploadCommand`` wrote
+    # into ``remote_files``.
     imported_keys: set[bytes] = field(default_factory=set)
+    # GPG keys imported into the rpm keyring (the ``RpmGpgKey`` entries --
+    # keyid/release/summary of each ``gpg-pubkey`` pseudo-package --
+    # ``RpmGpgKeys`` returns), backing ``dnf.key``'s ``present=False``
+    # idempotence. Kept separate from ``imported_keys`` (raw key bytes, an
+    # observation-only store) because the fact reports rpmdb metadata, not
+    # key material. Defaults to [] -- a simulated machine with no imported
+    # keys. A test seeds it directly with realistic keyids;
+    # ``import_key`` also appends a stub entry derived from the content hash
+    # (the ``import_gpg_key`` precedent -- the simulation models no OpenPGP
+    # parsing, so the stub keyid is stable across phases but not the real
+    # key's id), and ``remove_rpm_gpg_key`` (the simulated ``rpm -e``)
+    # drops the named entry.
+    rpm_gpg_keys: list[RpmGpgKey] = field(default_factory=list)
     # Simulated systemd: full unit name (``httpd.service``) -> its ActiveState
     # string (``active``/``inactive``/...), backing ``SystemdServiceState``;
     # and the set of unit names enabled on boot, backing
@@ -908,6 +930,15 @@ class SimulatedHost(Host):
             "PATH": "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin"
         }
     )
+    # One directory's immediate entries (path -> the ``DirectoryEntry``
+    # rows ``DirectoryEntries`` returns -- name and type word), backing
+    # ``DirectoryEntries``. Keys are the caller-supplied path strings
+    # verbatim (the command has no filters, so the path alone identifies
+    # the question); an absent key reads as [], like a missing or empty
+    # directory the ``|| true`` guard masks. A read-only seam: a test
+    # seeds the rows directly (no execute_command arm -- the fact issues
+    # no write command); the read copies each entry dict.
+    directory_entries: dict[str, list[DirectoryEntry]] = field(default_factory=dict)
     # Directory metadata (path -> the stat dict ``Directory`` returns -- the
     # same shape as ``file_stats`` -- or False for a path that exists but is
     # not a directory), backing ``Directory``. A separate store from
@@ -952,6 +983,22 @@ class SimulatedHost(Host):
     # ``clear_file_flags`` (the simulated ``chattr +flags``/``-flags``) add/
     # drop letters so a repeat ``files.flags`` is a no-op.
     file_flags: dict[str, set[str]] = field(default_factory=dict)
+    # Find-path answers (rendered command string -> the path list the
+    # find printed), backing ``FindFiles``/``FindDirectories``/
+    # ``FindLinks``. The key is the *exact* command built by
+    # ``<Fact>.command(...)`` -- the answer depends on every filter, so a
+    # path-only key could answer a different question than the one asked.
+    # An unseeded command reads as [], like the ``|| true`` guard masking
+    # a missing start path. A read-only seam: a test seeds it directly;
+    # the read copies the list.
+    find_results: dict[str, list[str]] = field(default_factory=dict)
+    # Find-with-metadata answers (rendered command string -> the
+    # ``FoundFile`` entries ``FindFilesInfo`` returns), backing
+    # ``FindFilesInfo``. Command-keyed like ``find_results`` (the filters
+    # are part of the question); an unseeded command reads as []. A
+    # read-only seam: a test seeds it directly; the read copies each
+    # entry dict (the datetime values are immutable).
+    found_files: dict[str, list[FoundFile]] = field(default_factory=dict)
     # The firewalld daemon record ({running, version}), backing
     # ``FirewalldStatus``. The default projects a stopped daemon with no
     # version; a test seeds it directly (read-only -- no operation starts
@@ -1157,6 +1204,15 @@ class SimulatedHost(Host):
     # verification; the fact's ``file`` argument does not select between
     # entries. A read-only seam: a test seeds it directly.
     gpg_verify: dict[str, GpgVerification] = field(default_factory=dict)
+    # Grep matches ((path, pattern) -> the matching lines ``FindInFile``
+    # returns), backing ``FindInFile``. A dedicated store rather than a
+    # projection of ``remote_files``: grep's BRE semantics cannot be
+    # faithfully re-derived from content bytes with Python's ``re``, so a
+    # test seeds the matching lines directly. An empty list means the
+    # file exists but nothing matches (the sentinel answer); an absent
+    # key reads as None, like a missing file. A read-only seam; the read
+    # copies the list.
+    grep_lines: dict[tuple[str, str], list[str]] = field(default_factory=dict)
     # Group names present on the system (the first ``/etc/group`` field of
     # each row, in file order), backing ``Groups``. Named distinctly from
     # ``Host.group`` (the inventory classifier) so the two are never confused.
@@ -1663,6 +1719,16 @@ class SimulatedHost(Host):
     # ``remove_snap_packages`` and ``refresh_snap_packages`` (the simulated
     # ``snap.package``) maintain it; a test may also seed it directly.
     snap_package_info: dict[str, SnapPackageInfo] = field(default_factory=dict)
+    # Socket metadata (path -> the stat dict ``Socket`` returns -- the
+    # same shape as ``file_stats`` -- or False for a path that exists but
+    # is not a socket), backing ``Socket``. A separate store from
+    # ``file_stats``/``directory_stats``/``link_stats`` because a metadata
+    # dict carries no type flag, so one store cannot answer the
+    # socket-typed question for the same path. Keys are the caller-supplied
+    # path strings verbatim, ``~/...`` prefixes included; an absent key
+    # reads as None, like a missing path. A read-only seam: a test seeds
+    # it directly; the read copies the dict.
+    socket_stats: dict[str, dict[str, Any] | bool] = field(default_factory=dict)
     # Sysctl settings (key -> the parsed value ``Sysctl`` returns -- an int,
     # a string, or a list of ints/strings), backing the relocated
     # ``sysctl.Sysctl`` fact. A keys filter selects the named settings; an
@@ -1784,12 +1850,12 @@ class SimulatedHost(Host):
                 self.install_packages(packages)
             case DnfRemoveCommand(packages=packages):
                 self.remove_packages(packages)
-            case DnfUpdateCommand() | DnfCleanCommand():
+            case DnfUpdateCommand() | DnfCleanCommand() | DnfMakecacheCommand():
                 pass  # the simulation tracks no versions/metadata to update
             case DnfRepoUploadCommand(content=content, dest=dest):
                 self.put_file(io.BytesIO(content.encode()), dest)
-            case DnfRepoInstallCommand(spool=spool, dest=dest):
-                self.install_repo_file(spool, dest)
+            case DnfRepoInstallCommand(spool=spool, dest=dest, mode=mode):
+                self.install_repo_file(spool, dest, int(mode))
             case DnfRepoRemoveCommand(path=path):
                 self.remove_repo_file(path)
             case RpmInstallCommand(src=src):
@@ -1832,6 +1898,8 @@ class SimulatedHost(Host):
                 self.put_file(src, dest)
             case DnfKeyImportCommand(path=path):
                 self.import_key(path)
+            case DnfKeyRemoveCommand(keyid=keyid, release=release):
+                self.remove_rpm_gpg_key(keyid, release)
             case AptKeyUploadCommand(src=src, dest=dest):
                 self.put_file(src, dest)
             case AptKeyInstallCommand(spool=spool, dest=dest):
@@ -1882,8 +1950,10 @@ class SimulatedHost(Host):
                 self.get_file(src, dest)
             case InstallSpoolCommand(content=content, dest=dest):
                 self.put_file(io.BytesIO(content.encode()), dest)
-            case InstallCommand(spool=spool, dest=dest, mode=mode):
-                self.install_file(spool, dest, mode)
+            case InstallCommand(
+                spool=spool, dest=dest, mode=mode, user=user, group=group
+            ):
+                self.install_file(spool, dest, mode, user, group)
             case MoveCommand(src=src, dest=dest):
                 self.move_path(src, dest)
             case RemoveTreeCommand(src=src):
@@ -2985,11 +3055,48 @@ class SimulatedHost(Host):
         the import-and-remove: the spool bytes are popped out of
         ``remote_files`` and recorded in ``imported_keys``, so a test can assert
         both that the key was imported and that the spool file was cleaned up.
-        An absent spool path imports nothing.
+        A stub ``RpmGpgKey`` entry also lands in ``rpm_gpg_keys`` so
+        ``RpmGpgKeys`` reports the import and a ``present=False`` removal can
+        find it. The simulation models no OpenPGP parsing (the
+        ``import_gpg_key`` precedent): the stub's keyid and release are
+        derived from the content hash (stable across phases), not from the
+        real key material, and its summary is a placeholder -- a test wanting
+        a realistic keyid seeds ``rpm_gpg_keys`` directly. An already-present
+        keyid/release pair is left alone (rpm's re-import is a no-op); an
+        absent spool path imports nothing.
         """
         data = self.remote_files.pop(path, None)
         if data is not None:
             self.imported_keys.add(data)
+            digest = hashlib.sha256(data).hexdigest()
+            keyid, release = digest[-8:], digest[:8]
+            if not any(
+                entry["keyid"] == keyid and entry["release"] == release
+                for entry in self.rpm_gpg_keys
+            ):
+                self.rpm_gpg_keys.append(
+                    {
+                        "keyid": keyid,
+                        "release": release,
+                        "summary": "gpg(reemote5 simulated key)",
+                    }
+                )
+
+    def remove_rpm_gpg_key(self, keyid: str, release: str) -> None:
+        """Record a simulated ``rpm -e`` of one ``gpg-pubkey`` pseudo-package.
+
+        ``dnf.key``'s ``present=False`` mutation: the entry naming the keyid
+        and release leaves ``rpm_gpg_keys``, so ``RpmGpgKeys`` no longer
+        reports it and a repeat removal plans a no-op. The raw bytes stay in
+        ``imported_keys`` -- that store observes the import event, not the
+        rpmdb state. An absent entry is tolerated (the operation only yields
+        the erase for a key the fact reported present).
+        """
+        self.rpm_gpg_keys[:] = [
+            entry
+            for entry in self.rpm_gpg_keys
+            if not (entry["keyid"] == keyid and entry["release"] == release)
+        ]
 
     def install_apt_key(self, spool: str, dest: str) -> None:
         """Record a simulated ``apt.key`` install of the spooled key at ``spool``.
@@ -3731,7 +3838,7 @@ class SimulatedHost(Host):
         existing = list(info.get("options", []))
         info["options"] = existing + [opt for opt in options if opt not in existing]
 
-    def install_repo_file(self, spool: str, dest: str) -> None:
+    def install_repo_file(self, spool: str, dest: str, mode: int = 644) -> None:
         """Record a simulated ``dnf.repo`` install of the spooled ``.repo`` text.
 
         ``dnf.repo`` first uploads the generated content to a ``/tmp`` spool
@@ -3744,7 +3851,8 @@ class SimulatedHost(Host):
         identical arguments is a no-op, since the fresh per-step fact cache
         sees these bytes and the content matches. The path is added to
         ``existing_files`` plus a minimal ``file_stats`` row (root-owned,
-        mode 644 -- the real command's ``chmod 0644``). An absent spool path
+        ``mode`` -- the real command's ``chmod``, 644 by default or 600 when
+        the content carries a ``proxy_password``). An absent spool path
         installs nothing.
         """
         data = self.remote_files.pop(spool, None)
@@ -3755,7 +3863,7 @@ class SimulatedHost(Host):
         self.file_stats[dest] = {
             "user": "root",
             "group": "root",
-            "mode": 644,
+            "mode": mode,
             "size": len(data),
         }
 
@@ -3944,7 +4052,14 @@ class SimulatedHost(Host):
         if data is not None:
             write_dest_bytes(dest, data)
 
-    def install_file(self, spool: str, dest: str, mode: int) -> None:
+    def install_file(
+        self,
+        spool: str,
+        dest: str,
+        mode: int,
+        user: str | None = None,
+        group: str | None = None,
+    ) -> None:
         """Record a simulated ``files.install``: install the spooled content.
 
         The elevated second half of ``files.install``: the paired
@@ -3953,10 +4068,13 @@ class SimulatedHost(Host):
         the bytes at ``dest`` -- the same store ``FileContents`` reads back
         -- so a repeat with identical content is a no-op. Mirrors
         ``install_systemd_conf_file`` with the caller-chosen mode: the path
-        is added to ``existing_files`` plus a root-owned ``file_stats`` row
-        carrying the operation's canonical octal-digit mode (the real
-        command's ``chmod``), and the ``mkdir -p`` parent lands in
-        ``directory_stats``. An absent spool path installs nothing.
+        is added to ``existing_files`` plus a ``file_stats`` row carrying
+        the operation's canonical octal-digit mode (the real command's
+        ``chmod``) and the requested owner -- the ``chown``/``chgrp`` step
+        sets only the halves the request named, and neither named leaves
+        the root:root owner the elevated ``cp`` creates -- while the
+        ``mkdir -p`` parent lands in ``directory_stats``. An absent spool
+        path installs nothing.
         """
         data = self.remote_files.pop(spool, None)
         if data is None:
@@ -3967,8 +4085,8 @@ class SimulatedHost(Host):
         self.remote_files[dest] = data
         self.existing_files.add(dest)
         self.file_stats[dest] = {
-            "user": "root",
-            "group": "root",
+            "user": user or "root",
+            "group": group or "root",
             "mode": mode,
             "size": len(data),
         }

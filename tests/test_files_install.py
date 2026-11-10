@@ -9,16 +9,17 @@ recipe spans two runs. This operation reads the destination's text with the
 ``FileContents`` fact and, only when it differs from the desired ``content``,
 yields an unprivileged ``InstallSpoolCommand`` transfer to a dest-derived
 ``/tmp`` spool path followed by an elevated ``InstallCommand`` shell
-(``mkdir -p``/``cp``/``chmod``/``rm`` wrapped in ``sh -c``) -- both from ONE
-request, so the whole write fits a single deploy.
+(``mkdir -p``/``cp``/optional ``chown``/``chmod``/``rm`` wrapped in
+``sh -c``) -- both from ONE request, so the whole write fits a single deploy.
 
 Covers the descriptor renderings (including the ``sudo`` elevation of the
-install half and the never-elevated transfer half), the deterministic
-dest-derived spool naming, the content-equality idempotence (install,
-rewrite, no-op, empty-content boundary), mode validation, the fact read over
-the real transport, the ``SimulatedHost`` seam dispatch and state mutation,
-and end-to-end ``run``/plan/log behaviour including the second-install no-op
-and the spool cleanup.
+install half, the never-elevated transfer half and the optional
+``user``/``group`` ownership step), the deterministic dest-derived spool
+naming, the content-equality idempotence (install, rewrite, no-op,
+empty-content boundary), mode validation, the fact read over the real
+transport, the ``SimulatedHost`` seam dispatch and state mutation
+(including the installed owner), and end-to-end ``run``/plan/log behaviour
+including the second-install no-op and the spool cleanup.
 """
 
 import shlex
@@ -123,6 +124,47 @@ def test_install_command_quotes_paths_with_spaces():
     assert tokens[tokens.index("chmod") + 2] == dest
 
 
+def test_install_command_renders_the_user_group_chown():
+    """A user:group pair renders one chown step between cp and chmod --
+    chown first so the chmod's mode survives the setuid/setgid clear."""
+    cmd = InstallCommand(
+        spool=SPOOL, dest=DEST, mode=640, user="dd-agent", group="dd-agent"
+    )
+    expected = (
+        f"sh -c 'mkdir -p /etc && cp {SPOOL} {DEST} && "
+        f"chown dd-agent:dd-agent {DEST} && "
+        f"chmod 640 {DEST} && rm -f {SPOOL}'"
+    )
+    assert cmd.shell() == expected
+    tokens = shlex.split(shlex.split(cmd.shell())[2])
+    assert tokens.index("chown") < tokens.index("chmod")
+
+
+def test_install_command_renders_a_user_only_chown():
+    """A user alone renders chown <user>; the group half stays root."""
+    cmd = InstallCommand(spool=SPOOL, dest=DEST, mode=644, user="dd-agent")
+    inner = shlex.split(cmd.shell())[2]
+    assert f"chown dd-agent {DEST}" in inner
+    assert "chgrp" not in inner
+
+
+def test_install_command_renders_a_group_only_chgrp():
+    """A group alone switches to chgrp, exactly as ChownCommand does."""
+    cmd = InstallCommand(spool=SPOOL, dest=DEST, mode=644, group="dd-agent")
+    inner = shlex.split(cmd.shell())[2]
+    assert f"chgrp dd-agent {DEST}" in inner
+    assert "chown" not in inner
+
+
+def test_install_command_quotes_the_owner_spec():
+    """An owner carrying shell metacharacters stays one quoted argument."""
+    cmd = InstallCommand(
+        spool=SPOOL, dest=DEST, mode=644, user="odd user", group="odd;group"
+    )
+    tokens = shlex.split(shlex.split(cmd.shell())[2])
+    assert tokens[tokens.index("chown") + 1] == "odd user:odd;group"
+
+
 # --- The operation: content-equality idempotence ------------------------------
 
 
@@ -188,6 +230,36 @@ async def test_install_mode_reaches_the_install_command():
     _, install_cmd = commands
     assert install_cmd.mode == 600
     assert "chmod 600 " in install_cmd.shell()
+
+
+async def test_install_user_and_group_reach_the_install_command():
+    """The ownership params pass straight through to the elevated install
+    descriptor; idempotence stays content-only (the owner is never read)."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        cmd
+        async for cmd in files.install(
+            ctx, CONTENT, DEST, mode="0640", user="dd-agent", group="dd-agent"
+        )
+    ]
+    _, install_cmd = commands
+    assert install_cmd.user == "dd-agent"
+    assert install_cmd.group == "dd-agent"
+    assert f"chown dd-agent:dd-agent {DEST}" in install_cmd.shell()
+
+
+async def test_install_without_an_owner_defaults_to_none():
+    """No user/group keeps the historical root-owned install: the fields
+    default to None and no chown step is rendered."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [cmd async for cmd in files.install(ctx, CONTENT, DEST)]
+    _, install_cmd = commands
+    assert install_cmd.user is None
+    assert install_cmd.group is None
+    assert "chown" not in install_cmd.shell()
+    assert "chgrp" not in install_cmd.shell()
 
 
 @pytest.mark.parametrize("mode", ["u+x", "888", "", "0o644"])
@@ -260,6 +332,47 @@ async def test_install_with_an_absent_spool_installs_nothing():
     await send_command(host, InstallCommand(spool=SPOOL, dest=DEST, mode=644))
     assert host.remote_files == {}
     assert DEST not in host.existing_files
+
+
+async def test_send_command_records_the_requested_owner():
+    """The install arm's file_stats row carries the requested user:group
+    and mode, so a File-fact read after the install sees the new owner."""
+    host = SimulatedHost.from_inventory(INVENTORY[0])
+    await send_command(host, InstallSpoolCommand(content=CONTENT, dest=SPOOL))
+    await send_command(
+        host,
+        InstallCommand(
+            spool=SPOOL, dest=DEST, mode=640, user="dd-agent", group="dd-agent"
+        ),
+    )
+    assert host.file_stats[DEST] == {
+        "user": "dd-agent",
+        "group": "dd-agent",
+        "mode": 640,
+        "size": len(CONTENT.encode()),
+    }
+
+
+async def test_send_command_user_only_leaves_the_group_root():
+    """Only the named half changes: a user-only chown leaves group root,
+    a group-only chgrp leaves user root."""
+    host = SimulatedHost.from_inventory(INVENTORY[0])
+    await send_command(host, InstallSpoolCommand(content=CONTENT, dest=SPOOL))
+    await send_command(
+        host, InstallCommand(spool=SPOOL, dest=DEST, mode=644, user="dd-agent")
+    )
+    assert host.file_stats[DEST]["user"] == "dd-agent"
+    assert host.file_stats[DEST]["group"] == "root"
+
+    other = "/etc/reemote5-group-only.conf"
+    other_spool = _install_spool_path(other)
+    await send_command(host, InstallSpoolCommand(content=CONTENT, dest=other_spool))
+    await send_command(
+        host,
+        InstallCommand(spool=other_spool, dest=other, mode=644, group="dd-agent"),
+    )
+    assert host.file_stats[other]["user"] == "root"
+    assert host.file_stats[other]["group"] == "dd-agent"
 
 
 # --- End to end through the driver ---------------------------------------------
@@ -363,3 +476,49 @@ async def test_two_installs_to_different_dests_use_distinct_spools():
         DEST: CONTENT.encode(),
         other_dest: other_content.encode(),
     }
+
+
+async def test_install_with_owner_end_to_end():
+    """An owned install writes the content, records the requested owner and
+    mode, logs the elevated chown step, and a second identical install in
+    the same deploy reads the content back as a no-op (idempotence stays
+    content-only -- the owner is applied on the write, never compared)."""
+
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            files.install,
+            name="Install owned config",
+            content=CONTENT,
+            dest=DEST,
+            mode="0640",
+            user="dd-agent",
+            group="dd-agent",
+            sudo=True,
+        )
+        yield op(
+            files.install,
+            name="Re-install owned config",
+            content=CONTENT,
+            dest=DEST,
+            mode="0640",
+            user="dd-agent",
+            group="dd-agent",
+            sudo=True,
+        )
+
+    _plans, report, hosts = await run(
+        INVENTORY, deploy, host_factory=SimulatedHost.from_inventory
+    )
+    assert report is not None
+    entries = {entry.name: entry for entry in report.log}
+    assert entries["Install owned config"].changed
+    assert not entries["Re-install owned config"].changed
+
+    assert hosts[0].remote_files == {DEST: CONTENT.encode()}
+    assert hosts[0].file_stats[DEST]["user"] == "dd-agent"
+    assert hosts[0].file_stats[DEST]["group"] == "dd-agent"
+    assert hosts[0].file_stats[DEST]["mode"] == 640
+
+    log = format_log(report)
+    assert f"chown dd-agent:dd-agent {DEST}" in log
+    assert "chmod 640 " in log

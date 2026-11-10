@@ -4,7 +4,8 @@
 """The ``dnf`` module namespace.
 
 Re-exports everything from ``dnf.py`` so both the operations (``dnf.packages``,
-``dnf.update``, ``dnf.repo``, ``dnf.rpm``, ``dnf.key`` and ``dnf.module``) and
+``dnf.update``, ``dnf.makecache``, ``dnf.clean``, ``dnf.repo``, ``dnf.rpm``,
+``dnf.key`` and ``dnf.module``) and
 ``dnf.DnfPackages`` & friends (the facts) are reachable through the package
 name alone.
 """
@@ -20,7 +21,9 @@ from .dnf import (
     DnfInstallCommand,
     DnfInstalledModules,
     DnfKeyImportCommand,
+    DnfKeyRemoveCommand,
     DnfKeyUploadCommand,
+    DnfMakecacheCommand,
     DnfModule,
     DnfModuleDisableCommand,
     DnfModuleEnableCommand,
@@ -36,10 +39,14 @@ from .dnf import (
     DnfRepository,
     DnfRepoUploadCommand,
     DnfUpdateCommand,
+    RpmGpgKey,
+    RpmGpgKeys,
     RpmInstallCommand,
     RpmPackage,
     RpmPackageInfo,
+    clean,
     key,
+    makecache,
     module,
     packages,
     repo,
@@ -57,7 +64,9 @@ __all__ = [
     "DnfInstallCommand",
     "DnfInstalledModules",
     "DnfKeyImportCommand",
+    "DnfKeyRemoveCommand",
     "DnfKeyUploadCommand",
+    "DnfMakecacheCommand",
     "DnfModule",
     "DnfModuleDisableCommand",
     "DnfModuleEnableCommand",
@@ -73,11 +82,15 @@ __all__ = [
     "DnfRepositories",
     "DnfRepository",
     "DnfUpdateCommand",
+    "RpmGpgKey",
+    "RpmGpgKeys",
     "RpmInstallCommand",
     "RpmPackage",
     "RpmPackageInfo",
+    "clean",
     "dnf",
     "key",
+    "makecache",
     "module",
     "packages",
     "repo",

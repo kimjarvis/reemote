@@ -6,10 +6,10 @@ for the shared "connects for real" warning and the error-reporting contract
 every script follows.
 
 The read-only fact-gathering examples (`DnfRepositories`, `DnfRepoList`,
-`DnfEnabledModules`, `DnfDisabledModules`, `DnfInstalledModules`, `DnfGroups`
-and `DnfAvailableGroups` over `gather_fact`) live alongside the operation
-examples in `examples/modules/dnf/`. They are not rendered here — each reads a
-single fact, and the facts themselves are documented on the
+`DnfEnabledModules`, `DnfDisabledModules`, `DnfInstalledModules`, `DnfGroups`,
+`DnfAvailableGroups` and `RpmGpgKeys` over `gather_fact`) live alongside the
+operation examples in `examples/modules/dnf/`. They are not rendered here —
+each reads a single fact, and the facts themselves are documented on the
 [`dnf` module page](../../modules/dnf.md).
 
 Every script reads the shared project-root `inventory.json` (validated up
@@ -68,9 +68,56 @@ sent, both plan as changes). The write rides under `sudo` (`/etc/yum.repos.d`
 is root-owned) as a two-command pair: an unprivileged scp transfer spools the
 generated text to `/tmp`, then one elevated `sh -c` creates the directory,
 copies the file, chmods it `0644` and removes the spool — the `apt.sources_file`
-pattern.
+pattern. Beyond pyinfra's option set, `dnf.repo` also accepts the
+ansible-datadog role's `yum_repository` fields — `includepkgs`,
+`repo_gpgcheck`, `proxy`, `proxy_username` and `proxy_password` — each
+omitted from the constructed file when unset (so the plain requests here
+stay byte-compatible with the older parity content); a `proxy_password`
+installs the file `0600` instead of `0644` so the password is not
+world-readable.
 
 ::: dnf_repo
+    options:
+      members: []
+
+## Refreshing one repository's metadata
+
+The scoped cache refresh: `dnf.makecache` downloads repository metadata
+(`dnf -y makecache`) and, with `repos` set, scopes the fetch to just the
+named ids — `dnf -y makecache '--disablerepo=*' --enablerepo=DockerCE`,
+the ansible-datadog role's `makecache --disablerepo="*"
+--enablerepo=datadog` step. It never upgrades a package (unlike
+`dnf.packages(update=True)`, which is a full `dnf update -y`) and never
+touches another repo's cache. The operation is **non-idempotent** like
+`dnf.update`: it reads no fact and always runs — dnf itself is cheap on a
+warm cache. The role gates the refresh on the repo task's `changed` flag;
+reemote5 cannot gate on a same-deploy write determinism-safely, so the
+example places the unconditional refresh right after the `dnf.repo`
+request that ensures the Docker CE file (with the same arguments as the
+repo example above, so the shared hosts converge on one content). Both
+requests ride under `sudo` and carry the `is_centos` guard.
+
+::: dnf_makecache
+    options:
+      members: []
+
+## Dropping one repository's cached metadata
+
+The scoped cache clean: `dnf.clean(what="metadata", repos=("DockerCE",))`
+renders `dnf clean metadata '--disablerepo=*' --enablerepo=DockerCE` — the
+ansible-datadog role's `clean metadata` step, needed when a repo's
+*content* moved (the role's case is an agent major-version downgrade),
+where dnf's own metadata expiry keeps serving the stale cache.
+`dnf.packages(clean=True)` cannot express this: it is an unscoped
+`dnf clean all` over every repo's metadata *and* cached packages.
+`what` accepts dnf's own cache kinds (`all`, `metadata`, `packages`,
+`dbcache`, `expire-cache`; anything else raises `ValueError`). Like
+`dnf.makecache` the operation is stateless and unconditional, placed right
+after the `dnf.repo` request in the same deploy; dnf re-fetches the
+metadata on next use, or immediately via the `dnf.makecache` example
+above.
+
+::: dnf_clean
     options:
       members: []
 
@@ -97,11 +144,11 @@ sent, both plan as changes). A final `present=False` request then removes `sl`
 again, so the example is **self-restoring**: it leaves the shared CentOS hosts
 as it found them and every run starts from the same not-installed state.
 
-Unlike `dnf.key` below, this example applies cleanly even on the SELinux
-`staff_t`-confined CentOS hosts: `dnf.rpm`'s install is a *plain* `sudo rpm -i
-<src>` (no `sh -c` wrapper), and a direct `sudo rpm` exec transitions to the
-privileged rpm domain that may write the rpm database; the removal is `sudo dnf
-remove -y sl`, which works the same way.
+Unlike `dnf.key`'s import below, this example applies cleanly even on the
+SELinux `staff_t`-confined CentOS hosts: `dnf.rpm`'s install is a *plain*
+`sudo rpm -i <src>` (no `sh -c` wrapper), and a direct `sudo rpm` exec
+transitions to the privileged rpm domain that may write the rpm database;
+the removal is `sudo dnf remove -y sl`, which works the same way.
 
 ::: dnf_rpm
     options:
@@ -109,8 +156,9 @@ remove -y sl`, which works the same way.
 
 ## Importing a GPG key from a stream
 
-The non-idempotent key operation: `dnf.key` imports a GPG key into the target
-host's rpm keyring. Like pyinfra's `dnf.key` it reads no fact and always
+The key operation: `dnf.key` manages the target host's rpm keyring in both
+directions. The import direction (`present=True`, the default) is
+**non-idempotent**: like pyinfra's `dnf.key` it reads no fact and always
 reports a change (rpm itself deduplicates an already-imported key). Where
 pyinfra's `src` is a *filename or URL* the target host reads directly
 (`rpm --import <src>`), reemote5 has no controller-side file locations, so the
@@ -126,18 +174,33 @@ never elevated), then an elevated `rpm --import` of that spool file — wrapped
 in `sh -c` so the import *and* its cleanup `rm` both run as root — hence the
 request is flagged `sudo=True`.
 
-**Confinement caveat (CentOS hosts).** The dry-run plan and the pytest suite
-always pass, but the live apply is blocked on a CentOS host whose sudo is
-confined to SELinux `staff_t`. The scp spool lands as the login user's `0600`
-file, and the elevated `sh -c 'rpm --import …'` wrapper runs in `staff_t`
-without `CAP_DAC_OVERRIDE`, so it cannot even read that spool — rpm reports
-`import read failed`. (The `sh -c` wrapper is also why a *direct* `sudo rpm
---import`, which transitions to the privileged rpm domain, would succeed where
-the wrapped form cannot take the rpmdb transaction lock.) This is the same
-`staff_t` confinement the `selinux`, `sysctl` and `systemd` examples document;
-the script is correct as written and imports for real once the host's sudo is
-unconfined (or SELinux is permissive). Contrast `dnf.rpm` above, whose plain
-`sudo rpm -i` is not wrapped in `sh -c` and so applies cleanly even here.
+The script's second request shows the removal direction (`present=False`) —
+a reemote5 extension beyond pyinfra's import-only operation, mirroring
+Ansible's `rpm_key state=absent` (the step the ansible-datadog role uses to
+drop the legacy `4172A230` signing key). An imported key lives in the rpm
+database as a `gpg-pubkey-<keyid>-<release>` pseudo-package, so removal names
+a `keyid` (8 hex digits, or the 16-digit long form matched by its last 8;
+case-insensitive), never a stream — passing `src` with `present=False`
+raises `ValueError`. Removal **is idempotent**: it compares the requested id
+against the [`RpmGpgKeys`][reemote5.modules.dnf.dnf.RpmGpgKeys] fact and
+yields an elevated `rpm -e gpg-pubkey-…` only for keys actually present, so a
+host without the legacy key plans a no-op. The erase is a *plain* `sudo rpm
+-e` (a single command, no `sh -c` wrapper), so — like `dnf.rpm` above and
+unlike the wrapped import — it applies cleanly even on the confined hosts.
+
+**Confinement caveat (CentOS hosts, import direction).** The dry-run plan and
+the pytest suite always pass, but the live apply is blocked on a CentOS host
+whose sudo is confined to SELinux `staff_t`. The scp spool lands as the login
+user's `0600` file, and the elevated `sh -c 'rpm --import …'` wrapper runs in
+`staff_t` without `CAP_DAC_OVERRIDE`, so it cannot even read that spool — rpm
+reports `import read failed`. (The `sh -c` wrapper is also why a *direct*
+`sudo rpm --import`, which transitions to the privileged rpm domain, would
+succeed where the wrapped form cannot take the rpmdb transaction lock.) This
+is the same `staff_t` confinement the `selinux`, `sysctl` and `systemd`
+examples document; the import is correct as written and runs for real once
+the host's sudo is unconfined (or SELinux is permissive). Contrast `dnf.rpm`
+above and the removal request here, whose plain `sudo rpm` commands are not
+wrapped in `sh -c` and so apply cleanly even here.
 
 ::: dnf_key
     options:

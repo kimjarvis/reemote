@@ -6,9 +6,9 @@
 Covers the read-only state discovery in ``reemote5.modules.dnf.dnf``:
 ``DnfRepositories``, ``DnfRepoList``, ``DnfEnabledModules``,
 ``DnfDisabledModules``, ``DnfInstalledModules``, ``DnfGroups``,
-``DnfAvailableGroups`` and ``RpmPackage``. Each fact is exercised both over the
-real-transport path (parsing canned shell output) and through the
-``SimulatedHost`` seam.
+``DnfAvailableGroups``, ``RpmPackage`` and ``RpmGpgKeys``. Each fact is
+exercised both over the real-transport path (parsing canned shell output) and
+through the ``SimulatedHost`` seam.
 
 Also covers the properties from the design document: request descriptor
 semantics (4.1), fact caching (4.4), sequential "act, then read"
@@ -62,7 +62,9 @@ from reemote5.modules.dnf.dnf import (
     DnfInstallCommand,
     DnfInstalledModules,
     DnfKeyImportCommand,
+    DnfKeyRemoveCommand,
     DnfKeyUploadCommand,
+    DnfMakecacheCommand,
     DnfModuleDisableCommand,
     DnfModuleEnableCommand,
     DnfPackages,
@@ -74,6 +76,7 @@ from reemote5.modules.dnf.dnf import (
     DnfRepositories,
     DnfRepoUploadCommand,
     DnfUpdateCommand,
+    RpmGpgKeys,
     RpmInstallCommand,
     RpmPackage,
 )
@@ -2020,6 +2023,323 @@ async def test_dnf_repo_remove_after_write_in_one_deploy():
     assert host.remote_files == {}
 
 
+# --- dnf.repo ansible-datadog extensions ---------------------------------------
+
+
+async def test_dnf_repo_datadog_options_render_into_the_content():
+    """includepkgs/repo_gpgcheck/proxy/proxy_username append after gpgkey in a
+    fixed order (the ansible-datadog role's yum_repository fields); without a
+    proxy_password the install keeps pyinfra's 0644 mode."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.repo(
+            ctx,
+            src="datadog",
+            baseurl="https://yum.datadoghq.com/stable/7/x86_64/",
+            description="Datadog, Inc.",
+            gpgkey="https://keys.datadoghq.com/DATADOG_RPM_KEY_CURRENT.public",
+            includepkgs="datadog-agent",
+            repo_gpgcheck=True,
+            proxy="http://proxy.example.com:3128",
+            proxy_username="proxyuser",
+        )
+    ]
+    (upload, install) = commands
+    assert upload.content == (
+        "[datadog]\n"
+        "name=Datadog, Inc.\n"
+        "baseurl=https://yum.datadoghq.com/stable/7/x86_64/\n"
+        "enabled=1\n"
+        "gpgcheck=1\n"
+        "gpgkey=https://keys.datadoghq.com/DATADOG_RPM_KEY_CURRENT.public\n"
+        "repo_gpgcheck=1\n"
+        "includepkgs=datadog-agent\n"
+        "proxy=http://proxy.example.com:3128\n"
+        "proxy_username=proxyuser\n"
+    )
+    assert install.mode == "0644"
+
+
+async def test_dnf_repo_repo_gpgcheck_false_renders_zero_and_none_omits():
+    """repo_gpgcheck=False writes ``repo_gpgcheck=0``; leaving it None omits
+    the line entirely, so the constructed content stays the pyinfra-parity
+    file (a no-op against a file an older release wrote)."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.repo(
+            ctx, src="DockerCE", baseurl=DOCKER_BASEURL, repo_gpgcheck=False
+        )
+    ]
+    (upload, _install) = commands
+    assert upload.content == DOCKER_REPO_CONTENT + "repo_gpgcheck=0\n"
+
+    host2 = SimulatedHost(
+        name="h2", remote_files={DOCKER_REPO_PATH: DOCKER_REPO_CONTENT.encode()}
+    )
+    ctx2 = OpContext(host=host2, facts=FactCache(host2, phase="prepare"))
+    assert [c async for c in dnf.repo(ctx2, src="DockerCE", baseurl=DOCKER_BASEURL)] == []
+    assert not ctx2.changed
+
+
+async def test_dnf_repo_proxy_password_installs_0600():
+    """A proxy_password lands in the content and tightens the install mode to
+    0600 so the password is not world-readable; the simulated install records
+    the same mode in file_stats."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.repo(
+            ctx,
+            src="DockerCE",
+            baseurl=DOCKER_BASEURL,
+            proxy="http://proxy.example.com:3128",
+            proxy_password="s3cret",
+        )
+    ]
+    (upload, install) = commands
+    assert upload.content == (
+        DOCKER_REPO_CONTENT
+        + "proxy=http://proxy.example.com:3128\n"
+        + "proxy_password=s3cret\n"
+    )
+    assert install.mode == "0600"
+    for cmd in commands:
+        await send_command(host, cmd)
+    assert host.file_stats[DOCKER_REPO_PATH]["mode"] == 600
+
+
+async def test_dnf_repo_proxy_none_token_is_accepted():
+    """dnf's ``_none_`` disable token turns off a proxy inherited from
+    dnf.conf, so it passes the URL validation."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.repo(
+            ctx, src="DockerCE", baseurl=DOCKER_BASEURL, proxy="_none_"
+        )
+    ]
+    (upload, _install) = commands
+    assert upload.content == DOCKER_REPO_CONTENT + "proxy=_none_\n"
+
+
+async def test_dnf_repo_rejects_a_non_url_proxy():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="proxy must be a URL or '_none_'"):
+        _ = [
+            c
+            async for c in dnf.repo(
+                ctx, src="DockerCE", baseurl=DOCKER_BASEURL, proxy="proxy.example.com"
+            )
+        ]
+
+
+def test_dnf_repo_install_command_renders_the_requested_mode():
+    """The chmod step uses the descriptor's mode field, inside the elevated
+    sh -c chain."""
+    cmd = DnfRepoInstallCommand(
+        spool=_REPO_SPOOL_PATH, dest=DOCKER_REPO_PATH, mode="0600"
+    )
+    inner = shlex.split(cmd.shell())[2]
+    assert f"chmod 0600 {DOCKER_REPO_PATH}" in inner
+
+
+async def test_dnf_repo_datadog_options_end_to_end_write_then_noop():
+    """Through run(): the extended options are plain hashable kwargs, so the
+    determinism guard holds; the first apply writes the file and a second run
+    with identical arguments is a no-op."""
+
+    def repo_deploy(host):
+        yield op(
+            dnf.repo,
+            name="Add restricted repo",
+            src="DockerCE",
+            baseurl=DOCKER_BASEURL,
+            includepkgs="docker-ce docker-ce-cli containerd.io",
+            repo_gpgcheck=False,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+
+    def factory(entry):
+        return host
+
+    _plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}], repo_deploy, host_factory=factory
+    )
+    (entry,) = report.log
+    assert entry.changed
+    content = host.remote_files[DOCKER_REPO_PATH].decode()
+    assert "repo_gpgcheck=0\n" in content
+    assert content.endswith("includepkgs=docker-ce docker-ce-cli containerd.io\n")
+
+    _plans2, report2, _hosts2 = await run(
+        [{"host": "h", "connection": {}}], repo_deploy, host_factory=factory
+    )
+    (entry2,) = report2.log
+    assert not entry2.changed
+    assert entry2.reason == f"repo file already up to date ({DOCKER_REPO_PATH})"
+
+
+# --- dnf.makecache / dnf.clean operations (reemote5 originals) ------------------
+
+
+async def test_dnf_makecache_is_stateless_and_unscoped():
+    """No fact is read: the operation always reports a change and yields the
+    bare ``dnf -y makecache``; unknown kwargs are absorbed."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.makecache(ctx, future_flag=True)]
+    assert ctx.changed
+    assert ctx.reason == "dnf makecache"
+    assert commands == [DnfMakecacheCommand()]
+    assert commands[0].shell() == "dnf -y makecache"
+
+
+async def test_dnf_makecache_scopes_to_named_repos():
+    """Scoped repos render the role's --disablerepo='*' --enablerepo=<id>
+    flags; the disable flag is quoted whole so the shell never globs the *."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.makecache(ctx, repos=("datadog",))]
+    assert ctx.reason == "dnf makecache (datadog)"
+    assert commands == [DnfMakecacheCommand(repos=("datadog",))]
+    assert commands[0].shell() == (
+        "dnf -y makecache '--disablerepo=*' --enablerepo=datadog"
+    )
+
+
+async def test_dnf_makecache_normalizes_str_and_list_repos():
+    """A bare string becomes a one-tuple and a list a tuple (direct generator
+    calls; op() requests must pass tuples for hashability)."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    (from_str,) = [c async for c in dnf.makecache(ctx, repos="datadog")]
+    (from_list,) = [c async for c in dnf.makecache(ctx, repos=["a", "b"])]
+    assert from_str.repos == ("datadog",)
+    assert from_list.repos == ("a", "b")
+    assert from_list.shell() == (
+        "dnf -y makecache '--disablerepo=*' --enablerepo=a --enablerepo=b"
+    )
+
+
+def test_dnf_makecache_elevates_as_one_command():
+    """A plain shell command (no sh -c wrapper), so sudo elevates the whole
+    refresh."""
+    cmd = DnfMakecacheCommand(repos=("datadog",))
+    assert command_shell(cmd, sudo=True) == (
+        "sudo dnf -y makecache '--disablerepo=*' --enablerepo=datadog"
+    )
+
+
+async def test_dnf_clean_defaults_to_unscoped_clean_all():
+    """The default request is exactly what dnf.packages(clean=True) yields."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.clean(ctx)]
+    assert ctx.changed
+    assert ctx.reason == "dnf clean all"
+    assert commands == [DnfCleanCommand()]
+    assert commands[0].shell() == "dnf clean all"
+
+
+async def test_dnf_clean_scoped_metadata_matches_the_role():
+    """what=metadata plus a repo scope renders the ansible-datadog role's
+    ``dnf clean metadata --disablerepo="*" --enablerepo=datadog`` step."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.clean(ctx, what="metadata", repos=("datadog",))
+    ]
+    assert ctx.changed
+    assert ctx.reason == "dnf clean metadata (datadog)"
+    assert commands == [DnfCleanCommand(what="metadata", repos=("datadog",))]
+    assert commands[0].shell() == (
+        "dnf clean metadata '--disablerepo=*' --enablerepo=datadog"
+    )
+    assert command_shell(commands[0], sudo=True).startswith("sudo dnf clean metadata")
+
+
+async def test_dnf_clean_rejects_an_unknown_kind():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="what must be one of"):
+        _ = [c async for c in dnf.clean(ctx, what="everything")]
+
+
+def test_dnf_clean_quotes_odd_repo_ids():
+    """A repo id with shell metacharacters rides shlex.quote like every other
+    descriptor argument."""
+    repo = "odd repo"
+    cmd = DnfCleanCommand(what="metadata", repos=(repo,))
+    assert cmd.shell().endswith(shlex.quote(f"--enablerepo={repo}"))
+
+
+async def test_dnf_cache_ops_after_repo_write_in_one_deploy():
+    """The role's sequence in ONE deploy: write the repo file, then the scoped
+    clean-metadata and makecache refreshes. All three apply; on a second run
+    the repo write is a no-op while the stateless cache ops still report a
+    change (unconditional refresh -- no cross-phase fact gating)."""
+
+    def cache_deploy(host):
+        yield op(
+            dnf.repo,
+            name="Add DockerCE repo",
+            src="DockerCE",
+            baseurl=DOCKER_BASEURL,
+            sudo=True,
+        )
+        yield op(
+            dnf.clean,
+            name="Drop stale DockerCE metadata",
+            what="metadata",
+            repos=("DockerCE",),
+            sudo=True,
+        )
+        yield op(
+            dnf.makecache,
+            name="Refresh DockerCE metadata",
+            repos=("DockerCE",),
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+
+    def factory(entry):
+        return host
+
+    _plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}], cache_deploy, host_factory=factory
+    )
+    write, clean_entry, makecache_entry = report.log
+    assert write.changed
+    assert clean_entry.changed
+    assert clean_entry.commands == (
+        DnfCleanCommand(what="metadata", repos=("DockerCE",)),
+    )
+    assert makecache_entry.changed
+    assert makecache_entry.commands == (DnfMakecacheCommand(repos=("DockerCE",)),)
+    assert host.remote_files[DOCKER_REPO_PATH] == DOCKER_REPO_CONTENT.encode()
+    log = format_log(report)
+    assert "    $ sudo dnf clean metadata '--disablerepo=*' --enablerepo=DockerCE" in log
+    assert "    $ sudo dnf -y makecache '--disablerepo=*' --enablerepo=DockerCE" in log
+
+    _plans2, report2, _hosts2 = await run(
+        [{"host": "h", "connection": {}}], cache_deploy, host_factory=factory
+    )
+    write2, clean2, makecache2 = report2.log
+    assert not write2.changed
+    assert clean2.changed
+    assert makecache2.changed
+
+
 # --- dnf.rpm operation (pyinfra parity) --------------------------------------
 
 
@@ -2203,6 +2523,85 @@ async def test_dnf_rpm_remove_after_install_in_one_deploy():
     assert RPM_FILE_NAME not in host.packages
 
 
+# --- RpmGpgKeys fact (reemote5 original) --------------------------------------
+
+# Canned ``rpm -qa gpg-pubkey`` rows: the legacy Datadog key (the one the
+# ansible-datadog role removes, short id 4172A230) and the Docker CE rpm key.
+# rpm stores the key id lowercased as VERSION and the hex creation timestamp
+# as RELEASE; the SUMMARY is rpm's gpg(<uid>) description and carries spaces.
+RPM_GPG_KEY_ROWS = (
+    "4172a230 53a0b1c2 gpg(Datadog, Inc. (Datadog RPM key) <package@datadoghq.com>)\n"
+    "060a6254 572bde81 gpg(Docker Release (CE rpm) <docker@docker.com>)\n"
+)
+
+
+async def test_rpm_gpg_keys_parses_rows_sorted_unique_lowercased():
+    """Over the real-transport path, ``RpmGpgKeys`` parses the query rows into
+    sorted ``RpmGpgKey`` entries: key ids lowercased, blank lines dropped,
+    duplicate rows collapsed, summaries (spaces included) kept verbatim."""
+    host = CannedShellHost(
+        "060A6254 572bde81 gpg(Docker Release (CE rpm) <docker@docker.com>)\n"
+        "\n"
+        "4172a230 53a0b1c2 gpg(Datadog, Inc. (Datadog RPM key) <package@datadoghq.com>)\n"
+        "4172a230 53a0b1c2 gpg(Datadog, Inc. (Datadog RPM key) <package@datadoghq.com>)\n"
+        "  060a6254 572bde81 gpg(Docker Release (CE rpm) <docker@docker.com>)  \n"
+    )
+    assert await RpmGpgKeys.process(host) == [
+        {
+            "keyid": "060a6254",
+            "release": "572bde81",
+            "summary": "gpg(Docker Release (CE rpm) <docker@docker.com>)",
+        },
+        {
+            "keyid": "4172a230",
+            "release": "53a0b1c2",
+            "summary": "gpg(Datadog, Inc. (Datadog RPM key) <package@datadoghq.com>)",
+        },
+    ]
+
+
+def test_rpm_gpg_keys_parse_empty_output_is_an_empty_list():
+    """A host with no imported keys parses to an empty list, not None."""
+    assert RpmGpgKeys.parse([]) == []
+
+
+def test_rpm_gpg_keys_parse_skips_malformed_rows():
+    """A row with fewer than two tokens is skipped; a two-token row (no
+    summary) keeps an empty summary rather than being dropped."""
+    assert RpmGpgKeys.parse(["", "orphan", "4172a230 53a0b1c2"]) == [
+        {"keyid": "4172a230", "release": "53a0b1c2", "summary": ""}
+    ]
+
+
+def test_rpm_gpg_keys_command_queries_the_pseudo_packages():
+    """The query selects the gpg-pubkey pseudo-package name and prints
+    VERSION (key id), RELEASE and SUMMARY -- the rpmdb view of the keyring,
+    which ``dnf list installed`` never shows."""
+    assert RpmGpgKeys.COMMAND == (
+        "rpm -qa gpg-pubkey --queryformat '%{VERSION} %{RELEASE} %{SUMMARY}\n'"
+    )
+
+
+async def test_rpm_gpg_keys_seam_read_is_a_sorted_copy():
+    """The seam answer sorts by keyid then release and is copy-on-read:
+    mutating the returned entries never touches simulated state."""
+    host = SimulatedHost(
+        name="h",
+        rpm_gpg_keys=[
+            {"keyid": "4172a230", "release": "53a0b1c2", "summary": "gpg(datadog)"},
+            {"keyid": "060a6254", "release": "572bde81", "summary": "gpg(docker)"},
+        ],
+    )
+    result = await RpmGpgKeys.process(host)
+    assert [entry["keyid"] for entry in result] == ["060a6254", "4172a230"]
+    result[0]["summary"] = "mutated"
+    result.append({"keyid": "ffffffff", "release": "0", "summary": ""})
+    assert host.rpm_gpg_keys == [
+        {"keyid": "4172a230", "release": "53a0b1c2", "summary": "gpg(datadog)"},
+        {"keyid": "060a6254", "release": "572bde81", "summary": "gpg(docker)"},
+    ]
+
+
 # --- dnf.key operation (pyinfra parity) --------------------------------------
 
 # A stand-in ASCII-armored GPG public key. dnf.key imports the *content* of an
@@ -2358,6 +2757,234 @@ async def test_dnf_key_fresh_stream_per_phase_trips_determinism():
     runtimes, plans = await run_prepare([host], key_deploy)
     with pytest.raises(DeterminismError):
         await run_apply(runtimes, plans=plans)
+
+
+# --- dnf.key present=False (reemote5 extension, Ansible rpm_key parity) -------
+
+# The legacy Datadog signing key the ansible-datadog role removes by default
+# (datadog_rpm_remove_keys: [4172A230]), as rpm stores it: lowercased short id
+# plus the hex creation-timestamp release of the gpg-pubkey pseudo-package.
+LEGACY_KEY_ENTRY = {
+    "keyid": "4172a230",
+    "release": "53a0b1c2",
+    "summary": "gpg(Datadog, Inc. (Datadog RPM key) <package@datadoghq.com>)",
+}
+
+
+async def test_dnf_key_remove_present_yields_erase():
+    """present=False with the key in the rpm keyring reports a change and
+    yields the elevated erase of its gpg-pubkey pseudo-package; the uppercase
+    key id the Ansible role passes is normalized to rpm's lowercase form."""
+    host = SimulatedHost(name="h", rpm_gpg_keys=[dict(LEGACY_KEY_ENTRY)])
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.key(ctx, keyid="4172A230", present=False)]
+    assert ctx.changed
+    assert ctx.reason == "GPG key 4172a230 present in the rpm keyring, will remove"
+    assert commands == [DnfKeyRemoveCommand(keyid="4172a230", release="53a0b1c2")]
+
+
+async def test_dnf_key_remove_absent_is_noop():
+    """present=False with the key already gone is the idempotent no-op:
+    no change, no commands, and the reason says so (Ansible rpm_key
+    state=absent parity)."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.key(ctx, keyid="4172A230", present=False)]
+    assert not ctx.changed
+    assert ctx.reason == "GPG key 4172a230 not in the rpm keyring"
+    assert commands == []
+
+
+async def test_dnf_key_remove_accepts_a_long_keyid():
+    """A 16-digit long key id matches by its last 8 digits -- the short form
+    rpm records as the pseudo-package's VERSION."""
+    host = SimulatedHost(name="h", rpm_gpg_keys=[dict(LEGACY_KEY_ENTRY)])
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.key(ctx, keyid="A1B2C3D44172A230", present=False)
+    ]
+    assert ctx.changed
+    assert commands == [DnfKeyRemoveCommand(keyid="4172a230", release="53a0b1c2")]
+
+
+async def test_dnf_key_remove_erases_every_release_of_a_keyid():
+    """One short key id can name several imported pseudo-packages (distinct
+    releases); each is erased, in the fact's sorted order."""
+    second = {"keyid": "4172a230", "release": "60000000", "summary": "gpg(renewed)"}
+    host = SimulatedHost(
+        name="h", rpm_gpg_keys=[dict(second), dict(LEGACY_KEY_ENTRY)]
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.key(ctx, keyid="4172a230", present=False)]
+    assert ctx.changed
+    assert commands == [
+        DnfKeyRemoveCommand(keyid="4172a230", release="53a0b1c2"),
+        DnfKeyRemoveCommand(keyid="4172a230", release="60000000"),
+    ]
+
+
+async def test_dnf_key_remove_requires_keyid():
+    """present=False without a keyid (or a blank one) raises -- there is no
+    whole-keyring removal the way gpg.key has one."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="requires keyid when present=False"):
+        _ = [c async for c in dnf.key(ctx, present=False)]
+    with pytest.raises(ValueError, match="requires keyid when present=False"):
+        _ = [c async for c in dnf.key(ctx, keyid="   ", present=False)]
+
+
+async def test_dnf_key_remove_rejects_src():
+    """The removal direction names a keyid, not key content: passing a stream
+    alongside present=False raises rather than being silently ignored."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="does not use src when present=False"):
+        _ = [
+            c
+            async for c in dnf.key(
+                ctx, src=io.BytesIO(GPG_KEY_BYTES), keyid="4172a230", present=False
+            )
+        ]
+
+
+async def test_dnf_key_import_requires_src():
+    """src became optional so present=False can omit it, but the import
+    direction still requires the key content stream."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="requires src"):
+        _ = [c async for c in dnf.key(ctx)]
+
+
+async def test_dnf_key_remove_absorbs_unknown_kwargs():
+    """``**kwargs`` mirrors pyinfra's global-arguments slot on the removal
+    direction too; op() already strips the name/sudo meta-parameters."""
+    host = SimulatedHost(name="h", rpm_gpg_keys=[dict(LEGACY_KEY_ENTRY)])
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.key(
+            ctx, keyid="4172a230", present=False, future_flag=True
+        )
+    ]
+    assert commands == [DnfKeyRemoveCommand(keyid="4172a230", release="53a0b1c2")]
+
+
+def test_dnf_key_remove_command_shell_and_elevation():
+    """The erase renders ``rpm -e gpg-pubkey-<keyid>-<release>`` as a single
+    command, so the driver's sudo prefix elevates the whole shell (no sh -c
+    wrapper needed), and the pseudo-package name is shell-quoted."""
+    cmd = DnfKeyRemoveCommand(keyid="4172a230", release="53a0b1c2")
+    assert cmd.shell() == "rpm -e gpg-pubkey-4172a230-53a0b1c2"
+    assert command_shell(cmd, sudo=True) == "sudo rpm -e gpg-pubkey-4172a230-53a0b1c2"
+    assert DnfKeyRemoveCommand(keyid="a b", release="c d").shell() == (
+        "rpm -e 'gpg-pubkey-a b-c d'"
+    )
+
+
+async def test_dnf_key_remove_simulated_seam_mutates_state():
+    """send_command maps the erase onto rpm_gpg_keys: the named entry goes,
+    the others stay, and imported_keys (the import-event observation store)
+    is untouched."""
+    other = {"keyid": "060a6254", "release": "572bde81", "summary": "gpg(docker)"}
+    host = SimulatedHost(
+        name="h", rpm_gpg_keys=[dict(LEGACY_KEY_ENTRY), dict(other)]
+    )
+    host.imported_keys.add(GPG_KEY_BYTES)
+    await send_command(
+        host, DnfKeyRemoveCommand(keyid="4172a230", release="53a0b1c2")
+    )
+    assert host.rpm_gpg_keys == [other]
+    assert host.imported_keys == {GPG_KEY_BYTES}
+
+
+async def test_dnf_key_import_seam_registers_an_rpmdb_entry():
+    """The simulated import also records a stub RpmGpgKey entry (keyid and
+    release derived from the content hash -- no OpenPGP parsing is modeled),
+    so RpmGpgKeys reports the import and a re-import of the same bytes adds
+    no duplicate."""
+    host = SimulatedHost(name="h")
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    await send_command(host, DnfKeyUploadCommand(src=stream, dest=_KEY_IMPORT_PATH))
+    await send_command(host, DnfKeyImportCommand(path=_KEY_IMPORT_PATH))
+    assert len(host.rpm_gpg_keys) == 1
+    entry = host.rpm_gpg_keys[0]
+    assert entry["summary"] == "gpg(reemote5 simulated key)"
+    assert await RpmGpgKeys.process(host) == [entry]
+    stream.seek(0)
+    await send_command(host, DnfKeyUploadCommand(src=stream, dest=_KEY_IMPORT_PATH))
+    await send_command(host, DnfKeyImportCommand(path=_KEY_IMPORT_PATH))
+    assert len(host.rpm_gpg_keys) == 1
+
+
+async def test_dnf_key_remove_end_to_end_over_run():
+    """Through run(): the first removal request erases the seeded key (the
+    log shows the elevated rpm -e), and the identical second request is a
+    no-op in the apply phase because the fresh per-step fact cache sees the
+    erase -- the idempotence the import direction deliberately lacks."""
+
+    def key_deploy(host):
+        yield op(
+            dnf.key,
+            name="Remove legacy GPG key",
+            keyid="4172A230",
+            present=False,
+            sudo=True,
+        )
+        yield op(
+            dnf.key,
+            name="Remove legacy GPG key again",
+            keyid="4172A230",
+            present=False,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h", rpm_gpg_keys=[dict(LEGACY_KEY_ENTRY)])
+    plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}],
+        key_deploy,
+        host_factory=lambda entry: host,
+    )
+    first, second = report.log
+    assert first.changed
+    assert first.commands == (
+        DnfKeyRemoveCommand(keyid="4172a230", release="53a0b1c2"),
+    )
+    assert not second.changed
+    assert second.commands == ()
+    assert host.rpm_gpg_keys == []
+    # In the prepare phase nothing is sent, so both requests plan as changes.
+    assert all(planned.changed for planned in plans["h"])
+    log = format_log(report)
+    assert "    $ sudo rpm -e gpg-pubkey-4172a230-53a0b1c2" in log
+
+
+async def test_dnf_key_remove_dry_run_plans_without_removing():
+    """dry=True materializes the removal plan (changed, one command) but
+    sends nothing, so the seeded key stays in the simulated rpm keyring."""
+
+    def key_deploy(host):
+        yield op(
+            dnf.key,
+            name="Remove legacy GPG key",
+            keyid="4172A230",
+            present=False,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h", rpm_gpg_keys=[dict(LEGACY_KEY_ENTRY)])
+    plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}],
+        key_deploy,
+        host_factory=lambda entry: host,
+        dry=True,
+    )
+    assert report is None
+    (planned,) = plans["h"]
+    assert planned.changed
+    assert len(planned.commands) == 1
+    assert host.rpm_gpg_keys == [LEGACY_KEY_ENTRY]
 
 
 # --- dnf.module operation (pyinfra parity) -----------------------------------
