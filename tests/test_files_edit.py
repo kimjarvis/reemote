@@ -5,8 +5,9 @@
 
 ``files.edit`` reads a remote file's text with the ``FileContents`` fact,
 applies a caller-supplied pure ``transform``, and writes the result back with a
-``PutCommand`` only when it differs -- the reusable building block that stands
-in for a bespoke per-format operation like pyinfra's ``server.etc_hosts``.
+``PutCommand`` only when it differs -- the reusable building block for
+per-format edits without a dedicated operation (the ``/etc/hosts`` case now
+has one: ``server.etc_hosts``, ported as a spool-and-install operation).
 
 Covers the ``FileContents`` fact over both transport paths (the real-transport
 marker/``cat`` form and the ``SimulatedHost`` ``remote_files`` seam), the
@@ -83,9 +84,9 @@ def identity(current: str | None) -> str:
 def add_db_host(current: str | None) -> str:
     """An ``/etc/hosts``-style edit: key one line by IP, leaving others intact.
 
-    Mirrors what a bespoke ``server.etc_hosts`` would do, expressed purely as a
-    transform: drop any existing line for the IP, append the desired one, keep
-    every other line. Idempotent, so a second run is a no-op.
+    Mirrors what the ported ``server.etc_hosts`` operation does, expressed
+    purely as a transform: drop any existing line for the IP, append the
+    desired one, keep every other line. Idempotent, so a second run is a no-op.
     """
     text = current or ""
     kept = [line for line in text.splitlines() if not line.startswith("10.0.0.5 ")]

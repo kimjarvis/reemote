@@ -1,9 +1,9 @@
 # Module examples: openrc
 
 Scripts under `examples/modules/openrc/` — one per fact or operation of the
-[`openrc`](../../modules/openrc.md) module, plus two recipes that answer the
-proposed `openrc.config` and `openrc.ensure` operations without adding
-library surface. See the [Examples overview](../../examples.md) for the
+[`openrc`](../../modules/openrc.md) module, plus a recipe that answers the
+proposed `openrc.ensure` operation without adding library surface. See the
+[Examples overview](../../examples.md) for the
 shared "connects for real" warning and the error-reporting contract every
 script follows.
 
@@ -116,30 +116,35 @@ carry `when=is_alpine`, like the other openrc operation examples.
     options:
       members: []
 
-## Managing rc.conf (the openrc.config recipe)
+## Managing rc.conf
 
-No bespoke `openrc.config` operation exists: setting a variable in
-`/etc/rc.conf` (or a service's `/etc/conf.d/<service>`) is a file edit fully
-expressible with the generic
-[`files.edit`][reemote5.modules.files.files.edit] content-transform
-primitive plus the elevated
-[`files.move`][reemote5.modules.files.files.move] — the same
-spool-and-install recipe as the sysctl and hosts-file examples. The script
-ensures `rc_parallel="YES"`, OpenRC's parallel startup switch, read when a
-runlevel is entered (so the edit takes effect at the next boot — there is
-no runtime half). It filters the inventory to the `alpine` group *before*
-the `FileContents` snapshot, so `/etc/rc.conf` is never even read on a
-systemd host; a pure transform drops every existing `rc_parallel`
-assignment (commented ones included) and appends the wanted line; a
-controller-side gate compares the desired content against the frozen
-snapshot, so re-running the script after a successful install is a no-op.
-Run 1 spools the content to `/tmp/rc.conf` with `files.edit`
-(unprivileged — reemote5's transfers never elevate); run 2 installs it
-with `files.move` (`dest="/etc"`, `overwrite=True`, `doas=True`). The two
-runs cannot merge: `files.move` validates `src` in the prepare phase too,
-and prepare never sends, so the spool file must really exist first. Each
-pending host's transform is built once by a closure factory between the
-snapshot and run 1, keeping it stable across both phases.
+The config operation: `openrc.config` is a reemote5 original with no
+pyinfra counterpart (pyinfra's `openrc` ships only `service`), managing
+one shell-variable assignment in `/etc/rc.conf` — or a service's
+`/etc/conf.d/<service>` with the `service` option. It belongs to the
+spool-and-install write family: the
+[`OpenrcConfigFile`][reemote5.modules.openrc.openrc.OpenrcConfigFile]
+fact supplies the file's verbatim text, a pure transform drops every
+existing assignment of the key (commented ones included) and appends the
+double-quoted `key="value"` line, and when the result differs from the
+current text the request sends *two* commands — an unprivileged `scp`
+spooling the whole text to a deterministic `/tmp` path derived from the
+managed file (transfers never elevate, which is *why* the root-owned
+file cannot be written directly), then an elevated `sh -c` that copies
+it into place, chmods it `0644` and removes the spool. The request's
+`doas=True` covers the install half only. The script ensures
+`rc_parallel="YES"`, OpenRC's parallel startup switch — read when a
+runlevel is entered, so the edit takes effect at the next boot; there is
+no runtime half. It yields the same request twice: the plan shows both
+as changes when the value is not yet set (prepare sends nothing), while
+the apply log installs on the first and reports the second as a no-op
+through the fresh per-step fact cache, because the transform is a
+fixpoint. Values carrying shell-active characters (quotes, backslashes,
+`$`, backticks, newlines) are rejected with `ValueError` while
+materializing rather than escaped. Like the other operation examples,
+the script reads the shared `inventory.json` and carries
+`when=is_alpine` on every request, so `/etc/rc.conf` is never even read
+on the systemd hosts the inventory also holds.
 
 ::: openrc_config
     options:

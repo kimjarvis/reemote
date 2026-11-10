@@ -33,14 +33,22 @@ driven by ``asyncio.run``.
 ``apk.repository`` is a reemote5 original modeled on ``apt.repo`` --
 pyinfra's ``apk`` namespace ships no repository operation, so the
 ``ApkRepositories`` fact had no write counterpart. It ensures one line in
-``/etc/apk/repositories``: the ``ApkRepositories`` fact is read, ``src`` is
-parsed into the same ``url``/``tag`` entry shape, and the line is appended
-(``sh -c 'echo <line> >> /etc/apk/repositories'``) only when that entry is
-missing. ``present=False`` removes it with an escaped, literal-matching
-``sed -i`` delete instead. A tagged ``@testing URL`` line and the bare URL
-are *distinct* repositories to the presence check; an unparseable ``src``
-(a lone ``@tag``, several URLs on one line) raises ``ValueError`` in the
-prepare phase, before anything is sent.
+``/etc/apk/repositories``: the ``ApkRepositories`` fact is read first,
+``src`` is parsed into the same ``url``/``tag`` entry shape, and an entry
+that is already configured is a no-op. When an edit *is* due the managed
+file is rewritten rather than patched in place -- the spool-and-install
+pair ``apt.repo`` uses, not pyinfra's ``echo >>``/``sed -i``: the
+``ApkRepositoriesFile`` content fact reads the file's current text, one
+pure transform adds the line exactly once (``present=True``) or drops
+every line the escaped pattern matches (``present=False``), an
+unprivileged scp spools the result to a ``/tmp`` path named after the
+managed file, and one elevated ``sh -c`` installs it over the protected
+file with mode ``0644`` and removes the spool. Because the transform works
+on the real content, the file's other lines and comments survive verbatim.
+A tagged ``@testing URL`` line and the bare URL are *distinct* repositories
+to the presence check; an unparseable ``src`` (a lone ``@tag``, several
+URLs on one line) raises ``ValueError`` in the prepare phase, before
+anything is sent.
 
 The line ensured here is the ``community`` repository -- the source of
 most everyday Alpine packages beyond the minimal ``main`` set, and the
@@ -58,24 +66,30 @@ configured, both requests below are no-ops and nothing is written.
 The script yields the *same* request twice to show idempotence across the
 two phases: the prepare phase plans both as changes when the line is
 missing (nothing is sent in prepare, so both compare against the same
-pre-deployment state), while the apply phase appends on the first and
+pre-deployment state), while the apply phase installs on the first and
 reports the second as a no-op, because the fresh per-step fact cache now
-sees the line the first step added. The removal direction is left to the
-reader: ``present=False`` on the same ``src`` yields the sed delete --
-note it is a *contains* match, so removing a bare URL also drops a tagged
-line carrying it; gate removals on the exact line when both variants are
-configured. Refreshing the package index after a change is out of the
-operation's scope -- sequence an ``apk update`` (e.g. ``server.shell``)
-after it when needed.
+sees the line the first install added. The removal direction is left to the
+reader: ``present=False`` on the same ``src`` spools the file text without
+the matching line -- the match is a *contains* match, so removing a bare
+URL also drops a tagged line carrying it, and the same match gates the
+append, so adding a line the file already carries writes nothing; gate
+removals on the exact line when both variants are configured. Refreshing
+the package index after a change is out of the operation's scope --
+sequence an ``apk update`` (e.g. ``server.shell``) after it when needed.
 
 Writing ``/etc/apk/repositories`` needs root, so the requests are flagged
-``doas=True`` and the driver elevates their commands. ``doas`` rather than
-``sudo`` because the Alpine host has no ``sudo`` installed at all --
-``sudo sh -c ...`` would die with ``sh: sudo: not found`` (exit 127). The
-add descriptor wraps its ``>>`` redirect inside ``sh -c`` precisely so the
-redirect happens in the *elevated* shell: a bare ``doas echo ... >>
-/etc/apk/repositories`` would open the redirect as the login user and fail
-on the root-owned file. ``doas`` is passwordless here: reemote5 always runs
+``doas=True`` and the driver elevates the install command. ``doas`` rather
+than ``sudo`` because the Alpine host has no ``sudo`` installed at all --
+``sudo sh -c ...`` would die with ``sh: sudo: not found`` (exit 127).
+Elevation reaches only the install, though: each request yields *two*
+commands at different privilege levels -- the ``ApkRepoUploadCommand``
+transfer rides the connection's scp channel as the *login user* (a
+transfer never elevates, however the request is flagged), and the
+``ApkRepoInstallCommand`` wraps its ``mkdir -p``/``cp``/``chmod``/``rm``
+chain inside ``sh -c`` so every step, the spool cleanup included, runs
+elevated. That asymmetry is exactly why the new text detours through
+world-writable ``/tmp`` instead of being pushed straight into the
+root-owned ``/etc/apk``. ``doas`` is passwordless here: reemote5 always runs
 ``doas -n``, which fails rather than prompts, so the host must grant the
 login user a ``permit nopass`` rule in ``/etc/doas.conf`` (see
 ``examples/demonstrations/privilege/privilege_doas.py``); without one the
@@ -92,10 +106,10 @@ apply phases reach the same skip decision. ``when`` is a meta-parameter like
 skipped by the *driver*, so every host keeps the identical two-request
 schedule (no ``if`` in the deploy body) and each request still consumes its
 lockstep slot. On a host the guard rejects, the plan and the run log render
-the step as ``[skipped: when guard is_alpine]`` and none of its commands --
-nor the ``ApkRepositories`` fact behind it -- is materialized at all: the
-systemd hosts the shared inventory also holds have no apk repositories
-file to manage.
+the step as ``[skipped: when guard is_alpine]`` and none of its commands
+-- nor the ``ApkRepositories`` and ``ApkRepositoriesFile`` facts behind
+them -- is materialized at all: the systemd hosts the shared inventory also
+holds have no apk repositories file to manage.
 
 Run it with::
 
@@ -171,14 +185,15 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     apply phases (a branch on a mutable fact would raise DeterminismError),
     and identical on every host: eligibility is expressed with the
     ``when=is_alpine`` guard each request carries, not with an ``if``. The
-    first request appends the line if it is missing; the second carries
+    first request installs the line if it is missing; the second carries
     the same arguments and is a guaranteed no-op in the apply phase,
-    because the first append is already visible through the fresh per-step
+    because the first install is already visible through the fresh per-step
     fact cache.
 
     The repositories file is root-owned, so both requests are flagged
-    ``doas=True`` (the host has no ``sudo``) and the driver elevates their
-    commands over SSH with passwordless ``doas -n``.
+    ``doas=True`` (the host has no ``sudo``): the driver elevates each
+    request's install command over SSH with passwordless ``doas -n``, while
+    its scp spool stays unprivileged.
     """
     yield op(
         apk.repository,

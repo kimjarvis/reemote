@@ -1475,13 +1475,15 @@ async def edit(
     """
 
     # The generic content-editing primitive: instead of a bespoke operation
-    # per config-file format (pyinfra's ``server.etc_hosts``, ``files.line``,
-    # ``files.replace`` and friends each hard-code one shape of edit), this
-    # reads the file's current text with the ``FileContents`` fact, applies a
-    # caller-supplied *pure* ``transform``, and writes the result back with a
-    # ``PutCommand`` only when it differs. Any "edit a file in place" task --
-    # adding an ``/etc/hosts`` entry, setting a ``sysctl`` key, appending a
-    # managed block -- is then just a transform, with no new operation needed.
+    # per config-file format (pyinfra's ``files.line``, ``files.replace``
+    # and friends each hard-code one shape of edit), this reads the file's
+    # current text with the ``FileContents`` fact, applies a caller-supplied
+    # *pure* ``transform``, and writes the result back with a ``PutCommand``
+    # only when it differs. Any "edit a file in place" task -- setting a
+    # ``sysctl`` key, appending a managed block -- is then just a transform,
+    # with no new operation needed. A few high-traffic formats do get a
+    # dedicated spool-and-install operation (``server.etc_hosts`` ports
+    # pyinfra's ``/etc/hosts`` editor); this primitive covers the rest.
     #
     # The transform must be *idempotent* -- ``transform(transform(x)) ==
     # transform(x)`` -- so a second run is a no-op, and side-effect free,
@@ -1504,7 +1506,8 @@ async def edit(
     # login user. A root-owned target (``/etc/hosts``, a file under ``/etc``)
     # must instead be transformed into a writable path and moved into place
     # with ``files.move`` flagged ``sudo=True``, since a transfer cannot be
-    # escalated.
+    # escalated -- or written in one deploy by ``files.install`` or a
+    # dedicated spool-and-install operation such as ``server.etc_hosts``.
     current = await ctx.facts.get(FileContents, path)
     new = transform(current)
 

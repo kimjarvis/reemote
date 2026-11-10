@@ -35,9 +35,10 @@
 # ``**kwargs`` with no effect. pyinfra's remaining ``apk`` operations
 # (``apk.upgrade``, ``apk.update``) are not migrated; upstream ships no
 # ``apk.key`` or ``apk.repo`` at all, so ``apk.repository`` -- the
-# ``apt.repo`` counterpart managing ``/etc/apk/repositories`` lines through
-# its ``ApkRepoAddCommand``/``ApkRepoRemoveCommand`` descriptors, reading
-# ``ApkRepositories`` for idempotence -- is a reemote5 original.
+# ``apt.repo`` counterpart managing ``/etc/apk/repositories`` lines, reading
+# ``ApkRepositories`` for idempotence and ``ApkRepositoriesFile`` for the
+# file's text and rewriting it through its ``ApkRepoUploadCommand``/
+# ``ApkRepoInstallCommand`` spool-and-install pair -- is a reemote5 original.
 # ``apk.virtual`` -- a reemote5 original with no pyinfra counterpart --
 # manages a *virtual package* group (``apk add -t <tag>`` to create it,
 # ``apk del <tag>`` to remove it) through its present-flagged
@@ -57,13 +58,16 @@
 # descriptors; they never touch the host directly.
 
 
+import hashlib
+import io
 import re
 import shlex
 from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Any, ClassVar, TypedDict
 
-from ...commands import Command
+from ...commands import Command, TransferCommand
 from ...core import OpContext
 from ...hosts import Host
 
@@ -1025,6 +1029,86 @@ class ApkRepositories:
         return cls.parse(stdout.splitlines())
 
 
+class ApkRepositoriesFile:
+    """The current content of the apk repositories file, or None when it is absent.
+
+    **Commands:**
+
+    ```bash
+    test -e <path> && { printf '#reemote5-apkrepositories\\n'; cat -- <path>; }
+    ```
+
+    **Returns:**
+
+    ```python
+    str | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/apk/apk_repository.py``.
+    """
+
+    # The raw-content fact of this namespace (the ``AptSourcesFile``/
+    # ``DnfRepoFile`` pattern): ``apk.repository`` reads the managed file's
+    # *text* through it to compute the content it spools back, and the fact
+    # never interprets that text. Where ``ApkRepositories`` parses every
+    # configured repository into ``ApkRepository`` dicts -- losing the
+    # comments, blank lines, file order of the unparseable lines and anything
+    # its parser skips -- this reports the file verbatim, so the operation can
+    # rewrite it without dropping what it does not manage. Absence is reported
+    # as ``None`` -- never the empty string -- so a file that exists but is
+    # empty stays distinguishable from one that is missing, which is what lets
+    # the removal delete an empty leftover.
+    #
+    # The path is an argument, not a constant, like ``AptSourcesFile``: the
+    # operation passes ``ApkRepositories.PATH``. ``ApkRepositories``' own
+    # command tolerates a missing file with ``|| true`` because it reports the
+    # parsed list; this one needs no such fallback, because the ``test -e``
+    # guard already prints nothing at all for an absent file (and an empty
+    # stdout reads as ``None``, not an error -- ``run_shell`` only raises on
+    # exit 127).
+
+    #: Marker printed before the ``cat``'d content, only when ``test -e``
+    #: passes, so ``process`` can tell an existing (possibly empty) file from
+    #: a missing one (no marker on stdout).
+    MARKER = "#reemote5-apkrepositories"
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell printing ``MARKER`` then the file's content, only if it exists.
+
+        The ``test -e`` guard means a missing file produces no output at all
+        (not even the marker), while an existing one -- empty or not -- always
+        leads with the marker line (``AptSourcesFile.command``'s form).
+        """
+        quoted = shlex.quote(path)
+        return f"test -e {quoted} && {{ printf '{cls.MARKER}\\n'; cat -- {quoted}; }}"
+
+    @classmethod
+    async def process(cls, host: Host, path: str) -> str | None:
+        remote_files = getattr(host, "remote_files", None)
+        if remote_files is not None:
+            # SimulatedHost seam: decode the content the simulated remote
+            # filesystem holds at the path (None when absent). The same store
+            # backs files.put/files.get and the ``apk.repository`` install
+            # mutator, so a simulated write reads back through this fact.
+            data = remote_files.get(path)
+            return data.decode("utf-8") if data is not None else None
+        # Real transport: cat the file over asyncssh behind the marker, so a
+        # missing file (no marker) reads as None rather than empty content.
+        stdout = await host.run_shell(cls.command(path))
+        prefix = f"{cls.MARKER}\n"
+        if not stdout.startswith(prefix):
+            return None
+        return stdout[len(prefix) :]
+
+
 # --- Operations --------------------------------------------------------------
 
 
@@ -1623,54 +1707,136 @@ def _repo_line_pattern(line: str) -> str:
     matches literally, then the pattern is anchored with ``^.*`` / ``.*$``
     so a line carrying extra surrounding text still matches. Kept as a
     self-contained copy -- namespaces never import each other's helpers --
-    and shared by ``ApkRepoRemoveCommand``'s sed script and the
-    SimulatedHost seam so both delete exactly the same lines.
+    and shared by the two content transforms below, so the append never
+    duplicates a line the file already carries and the removal deletes exactly
+    the lines the append would have skipped.
     """
     escaped = re.sub(r"([\.\\\+\*\?\[\^\]\$\(\)\{\}\-])", r"\\\1", line)
     return f"^.*{escaped}.*$"
 
 
-@dataclass(frozen=True)
-class ApkRepoAddCommand(Command):
-    """``sh -c 'echo <line> >> <path>'``: append one apk repository line.
+def _repo_spool_path(dest: str) -> str:
+    """The deterministic ``/tmp`` spool path ``apk.repository`` uploads to.
 
-    The append mutation ``apk.repository`` yields, mirroring
-    ``AptRepoAddCommand``. The ``>>`` redirect is wrapped in ``sh -c`` so
-    it happens *inside* the shell the driver elevates: a bare
-    ``doas echo ... >> /etc/apk/repositories`` would open the redirect as
-    the login user and fail on the root-owned file. The line is
-    shell-quoted, so an ``@tag URL`` line reaches the file literally.
+    Derived from the managed file's sha1 (``apt.repo``'s ``_repo_spool_path``,
+    itself ``files.install``'s ``_install_spool_path`` pattern) rather than the
+    fixed spool constant some older spool-and-install operations use: the
+    derived name is exactly as deterministic across the two deploy phases, and
+    it keeps two requests that ever name different paths from clobbering each
+    other's spool. The name avoids *collisions*, not a hostile local user: it is
+    predictable, so on a multi-tenant host the ``/tmp`` spool is still a
+    symlink-race exposure (the trade-off every spool-and-install operation here
+    makes).
+    """
+    digest = hashlib.sha1(dest.encode()).hexdigest()[:16]
+    return f"/tmp/reemote5-apk-repo-{digest}"
+
+
+def _add_repo_line(content: str | None, line: str) -> str:
+    """The pure append transform: ``content`` carrying ``line`` exactly once.
+
+    ``apk.repository(present=True)``'s edit of the managed file's current text:
+    an absent file (``None``) becomes the single line, a file whose text already
+    holds a matching line is returned verbatim -- the same contains-match
+    semantics as ``apt.repo``, through the anchored pattern, so even a line the
+    ``ApkRepositories`` parser cannot read is never duplicated -- and otherwise
+    the line is appended, keeping the file's own newline endings. Idempotent
+    (``f(f(x)) == f(x)``) and side-effect free, so both deploy phases compute
+    the same content from the same fact value.
+    """
+    if not content:
+        return f"{line}\n"
+    regex = re.compile(_repo_line_pattern(line))
+    if any(regex.match(row) for row in content.splitlines()):
+        return content
+    separator = "" if content.endswith("\n") else "\n"
+    return f"{content}{separator}{line}\n"
+
+
+def _remove_repo_line(content: str | None, line: str) -> str:
+    """The pure remove transform: ``content`` without any line matching ``line``.
+
+    ``apk.repository(present=False)``'s edit: every line the anchored, escaped
+    pattern matches is dropped -- the same contains-match semantics the
+    superseded sed script had, so removing a bare URL also drops a tagged line
+    carrying it -- while the remaining lines keep their order and the file's
+    trailing newline. An absent file and a file with no match come back
+    unchanged (empty), which is what makes the transform a fixpoint.
+    """
+    if not content:
+        return content or ""
+    regex = re.compile(_repo_line_pattern(line))
+    kept = [row for row in content.splitlines() if regex.match(row) is None]
+    if not kept:
+        return ""
+    new = "\n".join(kept)
+    if content.endswith("\n"):
+        new += "\n"
+    return new
+
+
+@dataclass(frozen=True)
+class ApkRepoUploadCommand(TransferCommand):
+    """Spool the transformed repositories content to a ``/tmp`` path on the target.
+
+    The first half of ``apk.repository``'s write and a *non-shell* descriptor:
+    it copies the content over the connection's scp channel via
+    ``Host.upload_file`` rather than running shell text, so it has no
+    ``shell()`` and its loggable form is the ``__str__`` rendering
+    ``command_shell`` falls back to. Like ``AptRepoUploadCommand`` the content is
+    not a caller-supplied stream but the whole repositories text the operation
+    just derived from the file's current content, so the field is a plain
+    ``str`` -- hashable and identical across phases -- wrapped in a fresh
+    ``io.BytesIO`` only at transfer time. The copy rides as the login user
+    (transfers are unprivileged, so the request's ``sudo``/``doas`` does not
+    apply to it), which is why the spool path is world-writable ``/tmp`` rather
+    than the root-owned ``/etc/apk`` directory.
     """
 
-    path: str
-    line: str
+    content: str  # the whole transformed /etc/apk/repositories text
+    dest: str  # spool path on the target host
+
+    def __str__(self) -> str:
+        return f"scp <apk repositories> -> {self.dest}"
+
+    async def transfer(self, host: Host) -> None:
+        await host.upload_file(io.BytesIO(self.content.encode()), self.dest)
+
+
+@dataclass(frozen=True)
+class ApkRepoInstallCommand(Command):
+    """Install the spooled repositories file ``0644``, then remove the spool file.
+
+    The second half of ``apk.repository``'s write and the elevated one: writing
+    ``/etc/apk/repositories`` needs root, so the request is flagged
+    ``sudo=True``/``doas=True`` and the whole sequence is wrapped in ``sh -c``
+    -- a bare escalator prefix would elevate only the first command of the
+    ``&&`` chain and leave the cleanup running as the login user, whereas
+    ``sudo sh -c '...'`` runs every step as root, which can always remove the
+    login-user spool file. The sequence creates the destination directory (a
+    container may not have ``/etc/apk`` yet), copies the spooled content over
+    the target file, chmods it ``0644`` (the reset the overlay needs, because a
+    ``cp`` would otherwise leave the login-user spool's ownership and mode on the
+    root-owned file) and removes the spool -- the
+    ``AptRepoInstallCommand``/``AptSourcesFileInstallCommand`` pattern. Busybox
+    needs nothing special here: the whole edit is a ``cp``, so pyinfra's
+    ``sed -i`` backup dance (whose per-phase timestamp would break the
+    determinism guard) is gone with it. All paths are shell-quoted.
+    """
+
+    spool: str  # where ApkRepoUploadCommand wrote the content
+    dest: str  # the /etc/apk/repositories path
 
     def shell(self) -> str:
-        inner = f"echo {shlex.quote(self.line)} >> {shlex.quote(self.path)}"
+        spool = shlex.quote(self.spool)
+        dest = shlex.quote(self.dest)
+        parent = shlex.quote(str(PurePosixPath(self.dest).parent))
+        inner = (
+            f"mkdir -p {parent} && "
+            f"cp {spool} {dest} && "
+            f"chmod 0644 {dest} && rm -f {spool}"
+        )
         return f"sh -c {shlex.quote(inner)}"
-
-
-@dataclass(frozen=True)
-class ApkRepoRemoveCommand(Command):
-    """``sed -i '/<pattern>/d' <path>``: delete matching apk repository lines.
-
-    The removal mutation ``apk.repository`` yields, mirroring
-    ``AptRepoRemoveCommand``. ``line`` matches literally (regex
-    metacharacters escaped) inside the anchored whole-line pattern; ``/``
-    is then escaped for sed's script delimiter -- a repository URL is full
-    of them -- and the script is shell-quoted as one token. Busybox sed
-    (Alpine's sed) supports the bare ``-i`` in-place edit, no backup
-    suffix needed; like ``apt.repo`` there is deliberately no timestamped
-    backup dance (a per-phase timestamp would break the determinism
-    guard).
-    """
-
-    path: str
-    line: str
-
-    def shell(self) -> str:
-        pattern = _repo_line_pattern(self.line).replace("/", r"\/")
-        return f"sed -i {shlex.quote(f'/{pattern}/d')} {shlex.quote(self.path)}"
 
 
 async def repository(
@@ -1696,42 +1862,64 @@ async def repository(
     **Raises:**
 
     ```python
-    HostConnectionError, ValueError
+    CommandNotFoundError, HostConnectionError, ValueError
     ```
 
     Examples:
         Examples can be found in ``examples/modules/apk/apk_repository.py``.
     """
 
-    # A reemote5 original modeled on ``apt.repo``: pyinfra's ``apk``
-    # namespace ships no repository operation (only upgrade/update/
-    # packages), so the ``ApkRepositories`` fact had no write counterpart.
-    # Presence is decided by parsing ``src`` with ``ApkRepositories.parse``
-    # and comparing the resulting ``ApkRepository`` entry (url and tag)
-    # against the fact's entries -- so a tagged ``@testing URL`` line and
-    # the bare URL are distinct repositories. Absent and wanted yields one
-    # ``ApkRepoAddCommand`` appending the line; present and unwanted
-    # yields one ``ApkRepoRemoveCommand`` deleting it; otherwise the
-    # operation is a no-op, with ``apt.repo``'s reason wordings.
+    # A reemote5 original modeled on ``apt.repo`` -- and, like it since that
+    # operation's conversion, a member of the spool-and-install write family:
+    # pyinfra's ``apk`` namespace ships no repository operation at all (only
+    # upgrade/update/packages), so the ``ApkRepositories`` fact had no write
+    # counterpart.
     #
-    # Deliberate deviations from ``apt.repo``: an unparseable ``src`` (a
-    # lone ``@tag``, several URLs on one line) raises ``ValueError`` while
-    # materializing instead of being appended blindly -- apk's one-line
-    # format is simple enough to validate strictly, where ``apt.repo``
-    # inherits pyinfra's tolerance for lines its parser cannot read. The
-    # removal sed is a *contains* match like ``apt.repo``'s, so removing a
-    # bare URL also drops a tagged line carrying it; gate removals on the
-    # exact line when both variants are configured. No ``filename``
-    # option: apk reads exactly one repositories file, with no
-    # ``sources.list.d`` drop-in directory. Refreshing the package index
-    # after a change is out of scope -- sequence an ``apk update`` (e.g.
-    # ``server.shell``) after this operation when needed.
-    #
+    # Presence is decided by parsing ``src`` with ``ApkRepositories.parse`` and
+    # comparing the resulting ``ApkRepository`` entry (url and tag) against the
+    # fact's entries -- so a tagged ``@testing URL`` line and the bare URL are
+    # distinct repositories. Either direction then *rewrites the managed file*
+    # instead of patching it in place: the file's current text is read with the
+    # in-namespace ``ApkRepositoriesFile`` content fact (the ``AptSourcesFile``/
+    # ``DnfRepoFile`` pattern), one pure transform of that text computes the
+    # desired content -- ``_add_repo_line`` appends the line once,
+    # ``_remove_repo_line`` drops every line the anchored pattern matches -- and
+    # when the result differs from what is there the request yields *two*
+    # descriptors: an ``ApkRepoUploadCommand`` transfer spooling the new text to
+    # a ``/tmp`` path over scp, then an ``ApkRepoInstallCommand`` running the
+    # elevated install that overlays the protected file and removes the spool.
     # Writing the file needs root, so flag the request ``sudo=True``,
-    # ``doas=True`` or ``su=True`` -- stock Alpine ships no ``sudo``, so
-    # ``doas`` is usually the escalator on an apk host (see ``packages``
-    # for its passwordless ``doas -n`` prerequisites). ``**kwargs`` absorbs
-    # pyinfra's global arguments (``op()`` already strips ``name`` and the
+    # ``doas=True`` or ``su=True`` -- stock Alpine ships no ``sudo``, so ``doas``
+    # is usually the escalator on an apk host (see ``packages`` for its
+    # passwordless ``doas -n`` prerequisites) -- but the escalation applies to
+    # the install only: the transfer always rides the connection as the login
+    # user, which is exactly why the content detours through ``/tmp``. The spool
+    # name is derived from the managed path (``_repo_spool_path``), so it stays
+    # identical across the two deploy phases and two requests can never share it.
+    #
+    # Deliberate deviations from ``apt.repo``: an unparseable ``src`` (a lone
+    # ``@tag``, several URLs on one line) raises ``ValueError`` while
+    # materializing instead of being appended blindly -- apk's one-line format
+    # is simple enough to validate strictly, where ``apt.repo`` inherits
+    # pyinfra's tolerance for lines its parser cannot read. The removal
+    # transform, like ``apt.repo``'s line pattern, is a *contains* match, so
+    # removing a bare URL also drops a tagged line carrying it -- gate removals
+    # on the exact line when both variants are configured. No ``filename``
+    # option: apk reads exactly one repositories file, with no
+    # ``sources.list.d`` drop-in directory. Refreshing the package index after a
+    # change is out of scope -- sequence an ``apk update`` (e.g. ``server.shell``)
+    # after this operation when needed.
+    #
+    # What the conversion added beyond pyinfra's/in-place shape: two further
+    # content-level no-ops the ``echo >>``/``sed -i`` pair could never reach --
+    # an add whose line the file already carries (an entry the parser cannot read
+    # repeats cleanly instead of being duplicated) and a remove of a repository
+    # configured in some *other* way the fact flagged but the file does not hold
+    # verbatim -- and the file's comments, blank lines and untouched lines now
+    # survive byte-for-byte, because the transform is line-based over the real
+    # content. The in-place form's sed backup file is gone (its timestamp is
+    # non-deterministic across phases). ``**kwargs`` absorbs pyinfra's global
+    # arguments (``op()`` already strips ``name`` and the
     # ``sudo``/``su``/``doas`` escalation flags).
     parsed = ApkRepositories.parse([src])
     if not parsed:
@@ -1744,16 +1932,31 @@ async def repository(
     if present:
         if is_present:
             ctx.reason = f'apk repo "{src}" exists'
-        else:
-            ctx.changed = True
-            ctx.reason = f'apk repo "{src}" missing, will be added to {path}'
-            yield ApkRepoAddCommand(path=path, line=src)
-    elif is_present:
-        ctx.changed = True
-        ctx.reason = f'apk repo "{src}" present, will be removed from {path}'
-        yield ApkRepoRemoveCommand(path=path, line=src)
-    else:
+            return
+    elif not is_present:
         ctx.reason = f'apk repo "{src}" does not exist'
+        return
+
+    current = await ctx.facts.get(ApkRepositoriesFile, path)
+    new = _add_repo_line(current, src) if present else _remove_repo_line(current, src)
+    if new == (current or ""):
+        # The fact wanted an edit the file's own text says is unnecessary.
+        ctx.reason = (
+            f'apk repo "{src}" is already listed in {path}'
+            if present
+            else f'apk repo "{src}" is not configured in {path}'
+        )
+        return
+
+    ctx.changed = True
+    spool = _repo_spool_path(path)
+    ctx.reason = (
+        f'apk repo "{src}" missing, will be added to {path}'
+        if present
+        else f'apk repo "{src}" present, will be removed from {path}'
+    )
+    yield ApkRepoUploadCommand(content=new, dest=spool)
+    yield ApkRepoInstallCommand(spool=spool, dest=path)
 
 
 __all__ = [
@@ -1768,9 +1971,10 @@ __all__ = [
     "ApkPackageVersion",
     "ApkPurgeCommand",
     "ApkRemoveCommand",
-    "ApkRepoAddCommand",
-    "ApkRepoRemoveCommand",
+    "ApkRepoInstallCommand",
+    "ApkRepoUploadCommand",
     "ApkRepositories",
+    "ApkRepositoriesFile",
     "ApkRepository",
     "ApkUpgradeCommand",
     "ApkVirtualCommand",

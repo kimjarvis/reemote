@@ -1,93 +1,63 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: enable/disable a locale (pyinfra server.locale parity).
+"""Example: enable a locale on real Ubuntu hosts (Debian-family only).
 
-This is a *usage* example, not part of the library. It is reemote5's answer
-to pyinfra's ``server.locale`` operation: no bespoke operation is ported,
-because the edit is fully expressible with the generic ``files.edit``
-content-transform primitive plus the elevated ``files.move`` -- the same
-spool-and-install recipe as ``files_edit_etc_hosts.py``.
+This is a *usage* example, not part of the library. It shows reemote5's
+``server.locale`` operation, the pyinfra ``server.locale`` parity for
+``/etc/locale.gen``: the deploy ensures every host has ``fr_FR.UTF-8``
+enabled, under ``sudo`` because the definitions file is root-owned and
+``locale-gen`` writes the system locale archive.
 
-**Platform prerequisite.** This is a Debian-family recipe: pyinfra's
-``server.locale`` edits ``/etc/locale.gen`` and runs ``locale-gen``, both of
-which exist only on Debian/Ubuntu (the ``locales`` package). RHEL-family
-hosts such as the CentOS ``web1``/``web2`` demo servers have no
-``/etc/locale.gen`` -- they install locales through ``glibc-langpack-*`` and
-``localedef`` -- so the recipe targets the Debian-family ``ubuntu`` host,
-where ``/etc/locale.gen`` ships the commented ``fr_FR.UTF-8 UTF-8``
-definition line and ``locale-gen`` is on PATH. Point ``INVENTORY_PATH``
-at your own file of Debian-family machines to run it elsewhere.
+``server.locale`` is a **spool-and-install** operation, and it replaces the
+earlier two-run ``files.edit`` -> ``files.move`` example recipe that used to
+live in this file: the fact reads, the line edit, the install and the
+regeneration now happen inside one operation, so a single deploy suffices.
+In one request it reads the ``Locales`` fact (``locale -a``) and the raw
+``/etc/locale.gen`` text, uncomments the locale's definition line on the
+controller, scp's the transformed text to a deterministic ``/tmp`` spool
+(the transfer rides the login user -- transfers never elevate), installs it
+over ``/etc/locale.gen`` with an elevated ``sh -c`` (``chmod 0644``, spool
+removed), and finishes with one elevated ``locale-gen``. The log shows the
+family's two privilege levels: an unprivileged ``$ scp <locale.gen> -> ...``
+line followed by ``$ sudo sh -c '...'`` and ``$ sudo locale-gen``.
 
-pyinfra's ``server.locale(locale, present=True)`` reads the ``Locales`` fact
-(``locale -a``), finds the locale's definition line in ``/etc/locale.gen``
-with a ``FindInFile`` grep, comments it out (``present=False``) or
-uncomments it (``present=True``) through ``files.line``/``files.replace``,
-and runs ``locale-gen`` after either edit. Zero or multiple matching lines
-raise an error. The recipe mirrors all of that:
+The operation is idempotent: it plans a change only where the ``Locales``
+listing disagrees with the request, so a host with the locale already
+generated plans no change and a second run is a no-op everywhere. When the
+definition line is already uncommented but the archive has not been
+generated yet, the write is skipped and only the ``locale-gen`` step is
+planned. It is supported on **Debian-family systems only**: a host with no
+``/etc/locale.gen`` (RHEL-family systems install locales through
+``glibc-langpack-*``) or no matching definition line raises
+``OperationError`` during the prepare phase, before anything is sent --
+pyinfra's own behaviour.
 
-1. Two fact SNAPSHOTS: ``gather_fact`` reads ``FileContents`` of
-   ``/etc/locale.gen`` and the installed ``Locales`` from every guarded
-   host (read-only SSH). The pure ``locale_edit`` function performs pyinfra's
-   line lookup with a Python regex over the content -- reemote5 ships no
-   grep-style ``FindInFile`` fact, and ``FileContents`` plus local parsing
-   is its content-read convention. Zero or multiple matches raise
-   ``ValueError`` with pyinfra's ``OperationError`` messages, raised
-   controller-side before any run.
-2. The skip gate is pyinfra's own change condition, evaluated on the
-   frozen ``Locales`` snapshot (``locale_needed``): enable only when the
-   locale is absent from ``locale -a``, disable only when it is present.
-   Hosts that already match are skipped entirely -- the script-level
-   idempotence pyinfra gets from its fact comparison lives here, in the
-   gap between runs.
-3. Run 1 spools: ``files.edit`` writes the desired content to
-   ``/tmp/locale.gen`` (login-user-writable). Each host's transform is
-   built ONCE by the ``make_transform`` factory closing over the frozen
-   desired content -- a stable callable across both phases, the
-   determinism-safe split shown in
-   ``examples/demonstrations/composition/two_deploy_split.py``.
-4. Run 2 installs and regenerates: ``files.move`` moves the spool file
-   into ``/etc`` with ``overwrite=True``, then the demo-side ``locale_gen``
-   operation runs ``locale-gen`` -- both flagged ``sudo=True``. reemote5
-   ships no generic "run a shell command" operation, so this example
-   defines the stateless one-liner itself, yielding the public raw
-   ``StringCommand`` descriptor. The lockstep barrier runs every host's
-   move before any host regenerates.
+Every failure mode of the run -- an unreachable host, a rejected elevation,
+a missing or ambiguous definition line, or a ``locale-gen`` that exits
+non-zero -- reaches ``main`` as a typed error whose message already names
+the host, so ``main`` catches them and prints one line each instead of a
+traceback.
 
-Deliberate deviations from pyinfra, decided at migration time:
+Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
+via ``run``'s ``host_factory`` and never touches the network -- this example
+uses the *default* factory (``Host.from_inventory``): each plain ``Host``
+lazily opens an asyncssh connection, reads ``locale -a`` and
+``/etc/locale.gen`` for real, and enables the locale under sudo where
+needed.
 
-* The sed edits (``files.line``/``files.replace``) are replaced by the
-  ``files.edit`` transform: reemote5 ports no per-format file editors, and
-  its transfers are unprivileged, so root-owned ``/etc/locale.gen`` is
-  written through the spool-and-install vehicle instead of an elevated
-  sed. pyinfra's timestamped sed backup dance goes with it.
-* The definition-line regex escapes the locale literally (``re.escape``);
-  pyinfra interpolates it raw into a grep pattern, where ``.`` would match
-  any character. The POSIX ``[[:space:]]`` class is translated verbatim.
-* Uncommenting strips every ``"# "`` occurrence (pyinfra's ``str.replace``
-  verbatim), so a doubly commented line is fully enabled in one edit.
-  Commenting out prepends ``"# "`` and is NOT a fixpoint on its own -- a
-  second disable would double the comment -- but the ``Locales`` skip gate
-  never schedules it twice, exactly like pyinfra's fact comparison.
-* The desired content always ends in one trailing newline (the recipe's
-  ``"\\n".join(lines) + "\\n"`` house style).
+Every request carries ``when=is_ubuntu``, the declarative eligibility
+guard: the predicate reads only **static** inventory data --
+``host.group``, set by the ``"group"`` key of the inventory entry -- and
+is a stable module-level function, so the prepare and apply phases reach
+the same skip decision. The driver skips a rejected request without
+materializing it, so on hosts outside the ``"ubuntu"`` group neither the
+commands nor the facts behind them run, and plan and log render the step
+as ``[skipped: when guard is_ubuntu]`` in its lockstep slot.
 
-Re-running the whole script is a no-op once ``locale -a`` reports the
-requested state: the snapshot gate skips both runs. The ``locale-gen``
-step itself is stateless (pyinfra parity) -- it always plans a command
-when it runs at all.
-
-The hosts come from the shared ``inventory.json`` in the project root,
-read with ``load_inventory`` (parse + ``validate_inventory``) and resolved
-from ``__file__`` so the example works from any working directory. The
-snapshot gathers are guarded by ``is_ubuntu`` (``host.group == "ubuntu"``)
--- the Debian-family analogue of the ``is_centos`` guard the other
-examples use, because this recipe only makes sense on Debian/Ubuntu:
-``gather_fact`` takes no ``when`` parameter, so the predicate filters the
-host list before the fan-out and hosts outside the ``"ubuntu"`` group are
-named on a ``== Skipped (when guard is_ubuntu): ... ==`` line and never
-connected. Every deploy request also carries ``when=is_ubuntu``, and only
-hosts with a snapshot entry can become pending.
+The path is resolved from ``__file__``, so the example works from any
+working directory; point ``INVENTORY_PATH`` at your own file (or edit
+``inventory.json``) to target your machines.
 
 Run it with::
 
@@ -96,57 +66,29 @@ Run it with::
 
 import asyncio
 import json
-import re
 import sys
-from collections.abc import AsyncGenerator, Callable, Generator
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
 from reemote5 import (
-    Command,
     CommandError,
-    FileContents,
     Host,
     HostConnectionError,
     InventoryError,
-    Locales,
-    OpContext,
+    OperationError,
     OperationRequest,
     PrivilegeError,
-    StringCommand,
-    files,
     format_log,
     format_plan,
-    gather_fact,
     op,
     run,
+    server,
     validate_inventory,
 )
 
-# The locale to ensure, and whether it should be enabled (pyinfra's
-# documented example locale). present=False comments the definition line
-# out instead; the skip gate and locale-gen step are identical.
-LOCALE = "fr_FR.UTF-8"
-PRESENT = True
-
-# pyinfra's hard-coded definitions file, and the spool path: the basename
-# ("locale.gen") is what files.move appends to /etc, landing the target.
-LOCALE_GEN_PATH = "/etc/locale.gen"
-SPOOL_PATH = "/tmp/locale.gen"
-
-# Per-host spool transforms, filled ONCE in main between the snapshots and
-# run 1: each is a stable callable closing over frozen desired content, so
-# both phases of run 1 pass the identical object (OperationRequest compares
-# the transform by value; a fresh closure per phase raises DeterminismError).
-SPOOL_TRANSFORMS: dict[str, Callable[[str | None], str]] = {}
-
-# examples/modules/server/server_op_locale.py -> the project root, so the
-# inventory is found whatever the current working directory is. This recipe
-# needs /etc/locale.gen + locale-gen (Debian/Ubuntu only), so it guards on
-# the "ubuntu" group; the CentOS web1/web2 hosts have neither. No
-# ``privilege`` entry is needed: the elevated install assumes passwordless
-# sudo for the login user; a password would come from ``privilege`` in the
-# inventory, never the op.
+# examples/modules/server/server_op_locale.py -> the project root, so the inventory
+# is found whatever the current working directory is.
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
@@ -171,116 +113,23 @@ def is_ubuntu(host: Host) -> bool:
     Reads only static inventory data (``host.group``, set by the ``"group"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
-    so both deploy phases reach the same eligibility decision. The recipe
-    is Debian-family only, so the guard keeps it (and the facts it reads)
-    off the Alpine and CentOS hosts.
+    so both deploy phases reach the same eligibility decision.
     """
     return host.group == "ubuntu"
 
 
-def locale_edit(content: str | None, locale: str, present: bool) -> str:
-    """Pure locale.gen edit: comment out or uncomment the locale's line.
+def deploy(host: Host) -> Generator[OperationRequest]:
+    """Ensure every host has fr_FR.UTF-8 enabled, under sudo.
 
-    Mirrors pyinfra's ``server.locale`` body: the definition line is the
-    one matching ``<locale>`` followed by whitespace (pyinfra's grep
-    ``^.*{locale}[[:space:]]\\+.*$``, with the locale escaped literally
-    here), every other line is preserved, and zero or multiple matches
-    raise ``ValueError`` with pyinfra's ``OperationError`` messages --
-    including an absent file (``None`` content), which pyinfra's
-    ``FindInFile`` reports as no matches.
-
-    ``present=True`` strips every ``"# "`` occurrence from the line
-    (pyinfra's ``str.replace`` verbatim); ``present=False`` prepends
-    ``"# "``. The result always ends in one trailing newline.
-    """
-    pattern = re.compile(rf"{re.escape(locale)}[ \t\r\f\v]+")
-    lines = (content or "").splitlines()
-    matches = [i for i, line in enumerate(lines) if pattern.search(line)]
-    if not matches:
-        raise ValueError(f"Locale {locale} not found in {LOCALE_GEN_PATH}")
-    if len(matches) > 1:
-        raise ValueError(
-            f"Multiple locales matches for {locale} in {LOCALE_GEN_PATH}"
-        )
-    index = matches[0]
-    line = lines[index]
-    lines[index] = line.replace("# ", "") if present else f"# {line}"
-    return "\n".join(lines) + "\n"
-
-
-def locale_needed(installed: list[str], locale: str, present: bool) -> bool:
-    """pyinfra's change condition on the ``Locales`` fact snapshot.
-
-    Enable only when the locale is absent from ``locale -a``, disable only
-    when it is present -- the fact comparison that makes pyinfra's
-    operation idempotent, moved to the gap between runs. The ``Locales``
-    fact already normalizes ``utf8`` to ``UTF-8``, so the names compare
-    against ``/etc/locale.gen`` spellings directly.
-    """
-    return locale not in installed if present else locale in installed
-
-
-def make_transform(content: str) -> Callable[[str | None], str]:
-    """Build a spool transform returning the frozen desired ``content``.
-
-    Called once per host between the snapshots and run 1; the returned
-    callable ignores the spool file's current text (the desired content was
-    already computed from the real /etc/locale.gen) and is trivially a
-    fixpoint.
-    """
-
-    def transform(current: str | None) -> str:
-        return content
-
-    return transform
-
-
-async def locale_gen(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
-    """Regenerate the installed locales (demo-side ``locale-gen`` step).
-
-    pyinfra's ``server.locale`` yields ``locale-gen`` after either edit;
-    reemote5 ships no generic shell operation, so this example defines the
-    stateless one-liner itself over the public raw ``StringCommand``
-    descriptor. Like pyinfra's step it reads no fact and always reports a
-    change; the ``Locales`` skip gate upstream of it decides whether it
-    runs at all. The command needs root, so flag the request ``sudo=True``.
-    ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
-    strips ``name``/``sudo``/``su``).
-    """
-    ctx.changed = True
-    ctx.reason = "will regenerate the installed locales with locale-gen"
-    yield StringCommand("locale-gen")
-
-
-def spool(host: Host) -> Generator[OperationRequest]:
-    """Run 1: write the desired locale.gen content to the writable spool."""
-    yield op(
-        files.edit,
-        name="Spool locale.gen",
-        path=SPOOL_PATH,
-        transform=SPOOL_TRANSFORMS[host.name],
-        when=is_ubuntu,
-    )
-
-
-def install(host: Host) -> Generator[OperationRequest]:
-    """Run 2: install the spool file over /etc/locale.gen, then regenerate.
-
-    Both requests are elevated shell text; the lockstep barrier completes
-    every host's move before any host runs ``locale-gen``.
+    Branch-free, so the request sequence is identical in the prepare and
+    apply phases; whether the locale is already generated -- and whether
+    its definition line exists at all -- is decided inside the operation
+    against the freshly gathered facts, per phase.
     """
     yield op(
-        files.move,
-        name="Install locale.gen",
-        src=SPOOL_PATH,
-        dest="/etc",
-        overwrite=True,
-        sudo=True,
-        when=is_ubuntu,
-    )
-    yield op(
-        locale_gen,
-        name="Regenerate locales",
+        server.locale,
+        name="Enable French locale",
+        locale="fr_FR.UTF-8",
         sudo=True,
         when=is_ubuntu,
     )
@@ -292,60 +141,19 @@ async def main() -> None:
         print(f"== Inventory loaded from {INVENTORY_PATH} ==")
         print(", ".join(entry["host"] for entry in inventory))
 
-        # The snapshots: read every guarded host's real /etc/locale.gen and
-        # installed locales (read-only cat / locale -a). gather_fact has no
-        # ``when`` parameter, so the is_ubuntu predicate filters the host
-        # list before the fan-out -- a skipped host is never connected.
-        all_hosts = [Host.from_inventory(entry) for entry in inventory]
-        hosts = [host for host in all_hosts if is_ubuntu(host)]
-        skipped = [host.name for host in all_hosts if host not in hosts]
-        if skipped:
-            print("\n== Skipped (when guard is_ubuntu): " + ", ".join(skipped) + " ==")
-        try:
-            contents = await gather_fact(hosts, FileContents, LOCALE_GEN_PATH)
-            installed = await gather_fact(hosts, Locales)
-        finally:
-            for host in hosts:
-                await host.aclose()
-
-        # Controller-side idempotence: pyinfra's Locales change condition
-        # on the frozen snapshot; only pending hosts get a transform. Only
-        # guarded hosts carry a snapshot entry; the rest stay skipped.
-        pending = []
-        for entry in inventory:
-            name = entry["host"]
-            if name not in installed:
-                continue
-            if not locale_needed(installed[name], LOCALE, PRESENT):
-                continue
-            desired = locale_edit(contents[name], LOCALE, PRESENT)
-            SPOOL_TRANSFORMS[name] = make_transform(desired)
-            pending.append(entry)
-        if not pending:
-            state = "enabled" if PRESENT else "disabled"
-            print(f"All hosts already have {LOCALE} {state}.")
-            return
-
-        # Run 1: spool the transformed content to /tmp/locale.gen,
-        # unprivileged.
-        plans, _, _hosts = await run(pending, spool, dry=True)
-        print("== Run 1 plan: spool locale.gen (--dry) ==")
+        # --dry: prepare phase only. The Locales listing and the
+        # /etc/locale.gen text are still gathered over SSH (read-only) so
+        # the plan reflects each host's real pre-deployment state; nothing
+        # is uploaded or installed.
+        plans, _, _hosts = await run(inventory, deploy, dry=True)
+        print("== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))
 
-        plans, report, _hosts = await run(pending, spool)
-        print("\n== Run 1 log: spool locale.gen ==")
-        assert report is not None
-        print(format_log(report))
-
-        # Run 2: the spool file now really exists, so the move's validation
-        # passes in the prepare phase too. Elevated: /etc is root-owned,
-        # and locale-gen writes the system locale archive.
-        plans, _, _hosts = await run(pending, install, dry=True)
-        print("\n== Run 2 plan: install locale.gen + locale-gen (--dry) ==")
-        print(format_plan(plans))
-
-        plans, report, _hosts = await run(pending, install)
-        print("\n== Run 2 log: install locale.gen + locale-gen ==")
+        # Real run: prepare, then apply in lockstep across hosts. Each host
+        # gets its locale enabled where it differs; a second run plans no
+        # change.
+        plans, report, _hosts = await run(inventory, deploy)
+        print("\n== Run log (apply phase) ==")
         assert report is not None
         print(format_log(report))
     except (OSError, json.JSONDecodeError) as exc:
@@ -360,11 +168,30 @@ async def main() -> None:
         # whole report -- and it fails before any host is materialized.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    except (CommandError, HostConnectionError, PrivilegeError) as exc:
-        # The library already reports every host-level failure as a typed error
-        # whose message names the host and the failing command. Print that
-        # message -- no traceback -- and exit non-zero so the failure stays
-        # script-visible.
+    except HostConnectionError as exc:
+        # A host could not be reached over SSH at all. Report it plainly --
+        # naming every unreachable host -- instead of dumping an asyncssh
+        # traceback, and exit non-zero so the failure is script-visible.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except OperationError as exc:
+        # The locale's definition line is missing (a RHEL-family host with
+        # no /etc/locale.gen at all) or ambiguous. The prepare phase aborted
+        # before anything was sent; the message names the host and the
+        # lookup failure.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except PrivilegeError as exc:
+        # The host was reached but rejected the ``sudo=True`` elevation -- a
+        # wrong ``sudo_password``, or a run-as user the login user may not
+        # become. One line naming the host; the detail stays on ``__cause__``.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except CommandError as exc:
+        # An install step or ``locale-gen`` exited non-zero (a broken
+        # locale definition, for instance). The typed message already names
+        # the host, the credential-free command and its stderr, so print
+        # just that.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 

@@ -227,7 +227,15 @@ repository owner, so flag the request `sudo=True` when the login user cannot
 write there. The command it yields (`GitConfigCommand`) `shlex`-quotes the
 key, value and repo path — a deliberate deviation from pyinfra, which wraps
 the value in literal double quotes — so a value carrying shell metacharacters
-is read literally rather than double-quote-expanded.
+is read literally rather than double-quote-expanded. Like `apt.ppa`, this
+operation deliberately stays outside the spool-and-install family: its
+payload is a CLI invocation, not the file's text — `git config` owns the
+config file, resolving which file a scope names (`~/.gitconfig` or the XDG
+path for `--global`, a build-dependent path for `--system`, the gitdir's
+`config` for `--local`), parsing git's INI subsections and
+`include`/`includeIf` directives, merging multi-valued keys and writing
+through a lockfile, none of which a hand-rolled content transform can
+reproduce.
 
 
 `git.repo` clones a new repository or updates an existing one (pyinfra's

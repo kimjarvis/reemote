@@ -235,7 +235,15 @@ existing output, which `--batch` alone refuses) and chmods the output
 `0644` (pyinfra's `mode` parameter is deliberately dropped). Like pyinfra
 it is stateless/non-idempotent — it always converts and always reports a
 change, reading no fact. To convert a controller-side stream, install it
-with `gpg.key` instead, whose install dearmors on the target.
+with `gpg.key` instead, whose install dearmors on the target. It
+deliberately stays in-place rather than joining the spool-and-install
+family (`gpg.key`, `gpg.import_key`): the payload is gpg's own binary
+output produced on the target host, not controller-side file text, and
+`dest` is overwritten wholesale — there is no existing content a
+read-back fact could preserve. Spooling would mean reimplementing armor
+decoding (base64 + CRC24) controller-side just to produce binary content
+the family's `str` payload cannot carry, and the `sh -c` wrap already
+keeps a `sudo`-flagged request elevated across the whole chain.
 
 [`gpg.import_key`][reemote5.modules.gpg.gpg.import_key] is a reemote5
 original: it imports a key from a seekable IO-like *stream* on the
@@ -257,7 +265,14 @@ fails fast instead of hanging) into `dest` on the target host;
 `armor=True` adds `--armor` for ASCII output. It is stateless — it always
 exports and always reports a change. There is deliberately no passphrase
 parameter (secrets never ride in plans or logs), so exporting a
-passphrase-protected secret key fails at apply time.
+passphrase-protected secret key fails at apply time. It deliberately
+stays a shell redirect rather than joining the spool-and-install family
+(`gpg.key`, `gpg.import_key`): the payload is gpg's output produced on
+the target host, not controller-side content, and `dest` is overwritten
+wholesale, so there is no existing file text to preserve — spooling
+would pull the exported key (secret material with `secret=True`) back
+through the controller into plans and logs, and the `sh -c` wrap already
+keeps a `sudo`-flagged request elevated across the redirect.
 
 [`gpg.delete_key`][reemote5.modules.gpg.gpg.delete_key] is a reemote5
 original: it deletes a key from the executing user's keychain by id,

@@ -30,7 +30,8 @@ a module-level stream -- one stable identity across both phases) into
 host and are writable by any login user, so the example depends on no
 account's home directory existing and nothing here is elevated; for a
 root-owned destination directory such as ``/etc`` the move request would
-carry ``sudo=True`` (see ``files_edit_etc_hosts.py``).
+carry ``sudo=True``; for whole-content root-owned writes ``files.install``
+covers the same ground in one deploy (see ``files_install.py``).
 
 Every request carries ``when=is_centos``, the declarative eligibility
 guard: the predicate reads only **static** inventory data --

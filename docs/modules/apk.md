@@ -12,6 +12,7 @@
         - ApkInstalledPackages
         - ApkPackage
         - ApkRepositories
+        - ApkRepositoriesFile
 
 ## apk Returns
 
@@ -56,9 +57,11 @@ entries of name and constraint (kept as the `version`) parsed from the same
 `/etc/apk/world`,
 `ApkPackage`, one package's detailed metadata (version, description, size,
 dependencies, provides) parsed from the labelled field sections of
-`apk info -a`, and `ApkRepositories`, the configured repositories as
+`apk info -a`, `ApkRepositories`, the configured repositories as
 `ApkRepository` entries of URL and repository tag parsed line by line from
-`/etc/apk/repositories`. Beside the facts lives the
+`/etc/apk/repositories`, and `ApkRepositoriesFile`, the raw text of that same
+file (`None` when it is absent), which `apk.repository` rewrites. Beside the
+facts lives the
 `apk.autoremove` operation, which removes the orphaned packages
 `ApkAutoremovablePackages` names with `apk add --purge`, the
 `apk.packages` operation, which installs, upgrades or removes packages by
@@ -71,7 +74,9 @@ back from upgrades (`apk add <pkg>=<version>` to hold, `apk add <pkg>` to
 release the pin) with version-aware idempotence against `ApkHeldPackages`,
 and the `apk.repository` operation, a reemote5 original modeled on
 `apt.repo` that ensures one repository line in `/etc/apk/repositories`
-with entry-aware idempotence against `ApkRepositories`. pyinfra's `apk`
+with entry-aware idempotence against `ApkRepositories`, rewriting the file
+through the spool-and-install pair (`ApkRepositoriesFile` for its current
+text) rather than patching it in place. pyinfra's `apk`
 namespace ships only `upgrade`, `update` and `packages` — it has no
 repository or key operation at all — and its remaining `apk.upgrade` is
 not migrated.
@@ -242,6 +247,20 @@ type the entries are TypedDict-shaped plain dicts — `ApkRepository` named by
 the singular of the fact — so equality and `json.dumps` work without a dual
 access style and the shape is importable rather than anonymous.
 
+`ApkRepositoriesFile` takes a file path and reports its raw text, or `None`
+when it is absent — the `AptSourcesFile`/`DnfRepoFile` pattern in this
+namespace, generic over the path because the fact never interprets the text.
+The real-transport command cats the file only behind a `test -e` guard and
+leads with a `#reemote5-apkrepositories` marker line, so a missing file (no
+marker) reads as `None` while an existing but empty file reads as `""` — the
+distinction that lets a removal empty the file and then leave it alone. Where
+`ApkRepositories` parses *every* configured repository into `ApkRepository`
+dicts — losing the comments, blank lines, file order of the unparseable lines
+and anything its parser skips — `apk.repository` reads the file's own text here
+for the content it transforms and spools back, without importing another
+namespace's fact. Unlike `ApkRepositories`' command it needs no `|| true`: the
+`test -e` guard already prints nothing at all for an absent file.
+
 `ApkPackage` takes a package name and runs `apk info -a <package>`, which
 prints every field apk knows about the package as a
 `<name>-<version> Label:` header followed by its value lines. The tracked
@@ -409,24 +428,39 @@ write counterpart. `src` is one line — a bare URL or an `@tag URL` line —
 and `present` selects the direction. Presence is decided by parsing `src`
 with `ApkRepositories.parse` and comparing the resulting `ApkRepository`
 entry (url and tag) against the fact's entries, so a tagged `@testing URL`
-line and the bare URL are *distinct* repositories. Absent and wanted
-yields one `sh -c 'echo <line> >> /etc/apk/repositories'` append (the
-redirect wrapped inside the elevated shell — a bare `doas echo ... >>`
-would open the redirect as the login user and fail on the root-owned
-file); present and unwanted yields one `sed -i` delete whose pattern
-escapes every regex metacharacter so the line matches literally. An
-unparseable `src` (a lone `@tag`, several URLs on one line) raises
-`ValueError` while materializing, a deliberate hardening over `apt.repo`'s
-pyinfra-inherited tolerance. The removal sed is a *contains* match like
-`apt.repo`'s, so removing a bare URL also drops a tagged line carrying it;
-gate removals on the exact line when both variants are configured. There
-is no `filename` option — apk reads exactly one repositories file, with no
-`sources.list.d` drop-in directory — and refreshing the package index
-after a change is out of scope: sequence an `apk update` (e.g.
-`server.shell`) after the operation when needed. Writing the file needs
-root, so flag the request `sudo=True`, `doas=True` or `su=True` — stock
-Alpine ships no `sudo`, so `doas` is usually the escalator on an apk host
-(see its passwordless `doas -n` prerequisites above).
+line and the bare URL are *distinct* repositories. Either direction then
+*rewrites* the managed file rather than patching it in place:
+`ApkRepositoriesFile` reads the file's current text, one pure transform adds
+the line exactly once or deletes every line the anchored, escaped pattern
+matches, and when the result differs from what is there the request yields two
+commands at different privilege levels, the `apt.repo` pattern:
+`ApkRepoUploadCommand` spools the new text to a `/tmp` path named after the
+managed file over scp as the login user, then `ApkRepoInstallCommand` runs one
+elevated `sh -c` that creates `/etc/apk`, copies the file, chmods it `0644` and
+removes the spool — so flag the request `sudo=True`, `doas=True` or `su=True`;
+the transfer stays unprivileged regardless, and the log shows the plain `scp`
+line before the elevated one. The spool name is derived from the destination
+rather than a fixed constant, exactly as in the sibling conversions: it is no
+less deterministic across the two phases and keeps two requests that ever name
+different paths from clobbering each other's spool. Two content-level no-ops
+complete the fact-level ones — an add of a line the file already carries (even
+one its parser skipped, such as a comment naming the URL) and a remove of a
+repository the file holds in a shape the whole-line pattern cannot match — so a
+repeat converges instead of writing a second copy. An unparseable `src` (a lone
+`@tag`, several URLs on one line) raises `ValueError` while materializing, a
+deliberate hardening over `apt.repo`'s pyinfra-inherited tolerance. The removal
+transform is a *contains* match like `apt.repo`'s, so removing a bare URL also
+drops a tagged line carrying it; gate removals on the exact line when both
+variants are configured, and note the same match gates the append — which is
+why the comment case above writes nothing. There is no `filename` option — apk
+reads exactly one repositories file, with no `sources.list.d` drop-in directory
+— and refreshing the package index after a change is out of scope: sequence an
+`apk update` (e.g. `server.shell`) after the operation when needed. Like
+`apt.repo`, the write replaced pyinfra's in-place `echo >>`/`sed -i` idiom, so
+its timestamped sed backup is gone too (the timestamp would differ between the
+prepare and apply phases, breaking the determinism guard) and the file's other
+lines, comments and blank lines survive verbatim, because the transform is
+line-based over the real content.
 
 --->
 
@@ -456,8 +490,9 @@ apply phase. The `apk_autoremove.py` script demonstrates `apk.autoremove`
 the same way — it yields the purge request twice so the second is a
 guaranteed no-op once the first cleanup left nothing purgable. The
 `apk_repository.py` script demonstrates `apk.repository`: it ensures the
-community repository line, yielding the same request twice so the second
-is a guaranteed no-op once the first append landed. All are
+community repository line — unprivileged spool transfer plus elevated install
+in one request — yielding the same request twice so the second is a guaranteed
+no-op once the first install landed. All are
 rendered on the [apk examples page](../examples/modules/apk.md).
 
 --->

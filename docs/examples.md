@@ -63,7 +63,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
     [`apt` examples](examples/modules/apt.md) and the
     [`flatpak` examples](examples/modules/flatpak.md) on `is_ubuntu` (the
     single
-    `ubuntu` host), and the `server_op_locale.py` recipe on the
+    `ubuntu` host), and the `server_op_locale.py` example on the
     [server page](examples/modules/server.md) likewise on `is_ubuntu`
     because `/etc/locale.gen` + `locale-gen` are Debian-family only. The
     [`composition` demonstrations](examples/demonstrations/composition.md)

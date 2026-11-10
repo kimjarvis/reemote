@@ -15,9 +15,11 @@
 # ``ls -R /etc/runlevels`` (a runlevel is a directory of symlinks, and a
 # stacked runlevel appears as an entry in its target's directory); and
 # ``OpenrcVersion``, the installed OpenRC release parsed from
-# ``openrc --version`` (``None`` on a host without OpenRC). Like every fact
-# they are phase-unaware: their ``process`` coroutine just gathers the raw
-# value.
+# ``openrc --version`` (``None`` on a host without OpenRC); and
+# ``OpenrcConfigFile``, the raw text of one configuration file
+# (``/etc/rc.conf`` or ``/etc/conf.d/<service>``) the ``openrc.config``
+# operation rewrites. Like every fact they are phase-unaware: their
+# ``process`` coroutine just gathers the raw value.
 #
 # Operation side: ``openrc.service`` ports pyinfra's ``openrc.service``
 # (running/restarted/reloaded/enabled/runlevel) through the
@@ -34,29 +36,34 @@
 # (``rc-update -s add``) and unstacking before removal -- rc-update(8)
 # documents no verb that deletes a runlevel, so removal is the directory
 # delete plus fact-derived ``rc-update -s delete`` unstacking.
+# ``openrc.config`` is the third original: it sets or unsets one shell
+# variable in ``/etc/rc.conf`` (or a service's ``/etc/conf.d/<service>``)
+# through the spool-and-install write family -- the ``OpenrcConfigFile``
+# content fact feeds a pure transform whose result is spooled to ``/tmp``
+# over scp and installed over the root-owned file by an elevated ``sh -c``
+# (``OpenrcConfigUploadCommand``/``OpenrcConfigInstallCommand``).
 #
 # Deliberately absent: an ``openrc.mask`` operation -- OpenRC has no
 # masking mechanism (no systemd-style symlink-to-/dev/null), so masking
 # cannot be honestly emulated; disable the service in every runlevel
-# instead. Global/service configuration (``/etc/rc.conf``,
-# ``/etc/conf.d/<service>``) is managed with the generic ``files.edit``
-# primitive rather than a bespoke ``openrc.config`` operation -- see the
-# spool-and-install recipe in ``examples/modules/openrc/openrc_config.py``.
-# A combined install-and-enable ``openrc.ensure`` is likewise not an
-# operation: ``apk.packages`` followed by ``openrc.service`` composes in a
-# deploy (``examples/modules/openrc/openrc_ensure.py``).
+# instead. A combined install-and-enable ``openrc.ensure`` is likewise not
+# an operation: ``apk.packages`` followed by ``openrc.service`` composes in
+# a deploy (``examples/modules/openrc/openrc_ensure.py``).
 # Operations are async generators that receive an ``OpContext``, await
 # facts, set ``ctx.changed``/``ctx.reason``, and yield command descriptors;
 # they never touch the host directly.
 
 
+import hashlib
+import io
 import re
 import shlex
 from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Any
 
-from ...commands import Command
+from ...commands import Command, TransferCommand
 from ...core import OpContext
 from ...hosts import Host
 
@@ -80,6 +87,83 @@ _SERVICE_LINE_REGEX = re.compile(
 
 
 # --- Facts -------------------------------------------------------------------
+
+
+class OpenrcConfigFile:
+    """The current content of an OpenRC configuration file, or None when absent.
+
+    **Commands:**
+
+    ```bash
+    test -e <path> && { printf '#reemote5-openrcconfig\\n'; cat -- <path>; }
+    ```
+
+    **Returns:**
+
+    ```python
+    str | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/openrc/openrc_config.py``.
+    """
+
+    # The raw-content fact of this namespace (the ``ApkRepositoriesFile``/
+    # ``AptSourcesFile``/``DnfRepoFile`` pattern): ``openrc.config`` reads the
+    # managed file's *text* through it to compute the content it spools back,
+    # and the fact never interprets that text. rc.conf and conf.d files are
+    # shell-sourced and mostly comments -- rebuilding one from parsed
+    # key/value pairs would destroy the comments, blank lines and ordering
+    # the distro ships -- so the operation rewrites the verbatim text instead.
+    # Absence is reported as ``None`` -- never the empty string -- so a file
+    # that exists but is empty stays distinguishable from one that is missing,
+    # which is what lets an unset delete an empty leftover.
+    #
+    # The path is an argument, not a constant, like ``ApkRepositoriesFile``:
+    # the operation passes ``/etc/rc.conf`` or ``/etc/conf.d/<service>``. No
+    # ``|| true`` fallback is needed -- the ``test -e`` guard already prints
+    # nothing at all for an absent file (and an empty stdout reads as ``None``,
+    # not an error: ``run_shell`` only raises on exit 127).
+
+    #: Marker printed before the ``cat``'d content, only when ``test -e``
+    #: passes, so ``process`` can tell an existing (possibly empty) file from
+    #: a missing one (no marker on stdout).
+    MARKER = "#reemote5-openrcconfig"
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell printing ``MARKER`` then the file's content, only if it exists.
+
+        The ``test -e`` guard means a missing file produces no output at all
+        (not even the marker), while an existing one -- empty or not -- always
+        leads with the marker line (``ApkRepositoriesFile.command``'s form).
+        """
+        quoted = shlex.quote(path)
+        return f"test -e {quoted} && {{ printf '{cls.MARKER}\\n'; cat -- {quoted}; }}"
+
+    @classmethod
+    async def process(cls, host: Host, path: str) -> str | None:
+        remote_files = getattr(host, "remote_files", None)
+        if remote_files is not None:
+            # SimulatedHost seam: decode the content the simulated remote
+            # filesystem holds at the path (None when absent). The same store
+            # backs files.put/files.get and the ``openrc.config`` install
+            # mutator, so a simulated write reads back through this fact.
+            data = remote_files.get(path)
+            return data.decode("utf-8") if data is not None else None
+        # Real transport: cat the file over asyncssh behind the marker, so a
+        # missing file (no marker) reads as None rather than empty content.
+        stdout = await host.run_shell(cls.command(path))
+        prefix = f"{cls.MARKER}\n"
+        if not stdout.startswith(prefix):
+            return None
+        return stdout[len(prefix) :]
 
 
 class OpenrcEnabled:
@@ -884,7 +968,274 @@ async def custom_runlevel(
     ctx.reason = "; ".join(reasons)
 
 
+# --- openrc.config ---------------------------------------------------------------
+
+
+def _config_key_pattern(key: str) -> str:
+    """The anchored regex matching every assignment line of ``key``.
+
+    Matches an active assignment (``rc_parallel="YES"``) and a
+    commented-out one (``#rc_parallel=YES``), with optional surrounding
+    whitespace and spaces around the ``=`` -- the same pattern the
+    ``openrc_config.py`` recipe's ``rc_conf_edit`` used. Shared by both
+    content transforms below, so the set never leaves a stale assignment
+    the unset would have dropped, and vice versa. ``key`` is validated as
+    a shell identifier by the operation, so ``re.escape`` is belt-and-
+    braces for the regex, not a security boundary.
+    """
+    return rf"^[ \t]*#?[ \t]*{re.escape(key)}[ \t]*="
+
+
+def _config_spool_path(dest: str) -> str:
+    """The deterministic ``/tmp`` spool path ``openrc.config`` uploads to.
+
+    Derived from the managed file's sha1 (``apk.repository``'s
+    ``_repo_spool_path``, itself ``files.install``'s ``_install_spool_path``
+    pattern): the derived name is exactly as deterministic across the two
+    deploy phases as a fixed constant, and it keeps the ``/etc/rc.conf``
+    request and every ``/etc/conf.d/<service>`` request from clobbering each
+    other's spool -- one operation, many managed paths. The name avoids
+    *collisions*, not a hostile local user: it is predictable, so on a
+    multi-tenant host the ``/tmp`` spool is still a symlink-race exposure
+    (the trade-off every spool-and-install operation here makes).
+    """
+    digest = hashlib.sha1(dest.encode()).hexdigest()[:16]
+    return f"/tmp/reemote5-openrc-config-{digest}"
+
+
+def _set_config_value(content: str | None, key: str, value: str) -> str:
+    """The pure set transform: ``content`` carrying exactly one ``key="value"``.
+
+    ``openrc.config(present=True)``'s edit of the managed file's current
+    text: every line assigning ``key`` is dropped -- commented-out ones
+    included, the recipe's replacement semantics, because leaving
+    contradictory commented assignments around invites confusion -- then
+    ``key="value"`` is appended (the file is sourced by the shell, so the
+    value is double-quoted; the operation has already rejected values
+    carrying shell-active characters). An absent file (``None``) becomes
+    the single line. The result always ends in one trailing newline, and
+    the edit is a fixpoint: the appended line matches the drop pattern, so
+    a second pass reproduces the same content. Idempotent
+    (``f(f(x)) == f(x)``) and side-effect free, so both deploy phases
+    compute the same content from the same fact value.
+    """
+    pattern = re.compile(_config_key_pattern(key))
+    lines = [line for line in (content or "").splitlines() if not pattern.match(line)]
+    lines.append(f'{key}="{value}"')
+    return "\n".join(lines) + "\n"
+
+
+def _unset_config_value(content: str | None, key: str) -> str:
+    """The pure unset transform: ``content`` without any assignment of ``key``.
+
+    ``openrc.config(present=False)``'s edit: every line the shared key
+    pattern matches is dropped -- active and commented-out assignments
+    alike -- while the remaining lines keep their order, comments and the
+    file's own trailing newline. An absent file and a file with no
+    assignment come back unchanged (empty), which is what makes the
+    transform a fixpoint; a file holding nothing but assignments of the
+    key empties to ``""`` (a legitimate spool payload), never disappears.
+    """
+    if not content:
+        return content or ""
+    pattern = re.compile(_config_key_pattern(key))
+    kept = [row for row in content.splitlines() if not pattern.match(row)]
+    if not kept:
+        return ""
+    new = "\n".join(kept)
+    if content.endswith("\n"):
+        new += "\n"
+    return new
+
+
+@dataclass(frozen=True)
+class OpenrcConfigUploadCommand(TransferCommand):
+    """Spool the transformed OpenRC config content to a ``/tmp`` path on the target.
+
+    The first half of ``openrc.config``'s write and a *non-shell* descriptor:
+    it copies the content over the connection's scp channel via
+    ``Host.upload_file`` rather than running shell text, so it has no
+    ``shell()`` and its loggable form is the ``__str__`` rendering
+    ``command_shell`` falls back to. Like ``ApkRepoUploadCommand`` the
+    content is not a caller-supplied stream but the whole configuration
+    text the operation just derived from the file's current content, so
+    the field is a plain ``str`` -- hashable and identical across phases --
+    wrapped in a fresh ``io.BytesIO`` only at transfer time. The copy rides
+    as the login user (transfers are unprivileged, so the request's
+    ``sudo``/``doas`` does not apply to it), which is why the spool path is
+    world-writable ``/tmp`` rather than the root-owned ``/etc`` directory.
+    """
+
+    content: str  # the whole transformed rc.conf / conf.d text
+    dest: str  # spool path on the target host
+
+    def __str__(self) -> str:
+        return f"scp <openrc config> -> {self.dest}"
+
+    async def transfer(self, host: Host) -> None:
+        await host.upload_file(io.BytesIO(self.content.encode()), self.dest)
+
+
+@dataclass(frozen=True)
+class OpenrcConfigInstallCommand(Command):
+    """Install the spooled OpenRC config file ``0644``, then remove the spool file.
+
+    The second half of ``openrc.config``'s write and the elevated one:
+    writing ``/etc/rc.conf`` or ``/etc/conf.d/<service>`` needs root, so the
+    request is flagged ``sudo=True``/``doas=True`` and the whole sequence is
+    wrapped in ``sh -c`` -- a bare escalator prefix would elevate only the
+    first command of the ``&&`` chain and leave the cleanup running as the
+    login user, whereas ``doas sh -c '...'`` runs every step as root, which
+    can always remove the login-user spool file. The sequence creates the
+    destination directory (a service's ``/etc/conf.d`` entry may not exist
+    yet), copies the spooled content over the target file, chmods it
+    ``0644`` (the reset the overlay needs, because a ``cp`` would otherwise
+    leave the login-user spool's mode on the root-owned file) and removes
+    the spool -- the ``ApkRepoInstallCommand`` pattern. All paths are
+    shell-quoted.
+    """
+
+    spool: str  # where OpenrcConfigUploadCommand wrote the content
+    dest: str  # the /etc/rc.conf or /etc/conf.d/<service> path
+
+    def shell(self) -> str:
+        spool = shlex.quote(self.spool)
+        dest = shlex.quote(self.dest)
+        parent = shlex.quote(str(PurePosixPath(self.dest).parent))
+        inner = (
+            f"mkdir -p {parent} && "
+            f"cp {spool} {dest} && "
+            f"chmod 0644 {dest} && rm -f {spool}"
+        )
+        return f"sh -c {shlex.quote(inner)}"
+
+
+async def config(
+    ctx: OpContext,
+    key: str,
+    value: str,
+    service: str | None = None,
+    present: bool = True,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Set or unset a variable in /etc/rc.conf or a service's /etc/conf.d file.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        key (str): Name of the shell variable to manage -- a shell
+            identifier such as ``rc_parallel``.
+        value (str): The value to assign, rendered as ``key="value"`` (the
+            file is sourced by the shell). Must not contain ``"``, ``\\``,
+            ``$``, a backtick or a newline. Ignored when ``present=False``.
+        service (str | None, optional): The service whose
+            ``/etc/conf.d/<service>`` file to edit; ``None`` edits the
+            global ``/etc/rc.conf``. Defaults to None.
+        present (bool, optional): Whether the variable should be set
+            (``True``) or unset (``False`` -- every assignment of ``key``
+            is dropped, commented-out ones included). Defaults to True.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: Generated openrc config spool-and-install commands.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/openrc/openrc_config.py``.
+    """
+
+    # A reemote5 original with no pyinfra counterpart: pyinfra's ``openrc``
+    # namespace ships only ``service``. This operation supersedes the
+    # ``files.edit`` + ``files.move`` spool-and-install recipe the
+    # ``openrc_config.py`` example used to demonstrate, and is a member of
+    # the spool-and-install write family: the managed file's current text is
+    # read with the in-namespace ``OpenrcConfigFile`` content fact (the
+    # ``ApkRepositoriesFile``/``AptSourcesFile`` pattern -- never rebuilt
+    # from parsed key/value pairs, which would destroy the comments and
+    # ordering these shell-sourced files ship with), one pure transform
+    # computes the desired content, and when the result differs from what
+    # is there the request yields *two* descriptors: an
+    # ``OpenrcConfigUploadCommand`` transfer spooling the new text to a
+    # ``/tmp`` path over scp, then an ``OpenrcConfigInstallCommand`` running
+    # the elevated install that overlays the protected file and removes the
+    # spool. Writing the file needs root, so flag the request ``sudo=True``,
+    # ``doas=True`` or ``su=True`` -- stock Alpine ships no ``sudo``, so
+    # ``doas`` is usually the escalator on an OpenRC host -- but the
+    # escalation applies to the install only: the transfer always rides the
+    # connection as the login user, which is exactly why the content detours
+    # through ``/tmp``. The spool name is derived from the managed path
+    # (``_config_spool_path``), so it stays identical across the two deploy
+    # phases and the rc.conf request never shares a spool with a conf.d one.
+    #
+    # Idempotence is the transform's fixpoint: ``_set_config_value`` drops
+    # every assignment of ``key`` (commented-out ones included -- the
+    # recipe's replacement semantics, so no contradictory commented line
+    # survives) and appends ``key="value"``; ``_unset_config_value`` drops
+    # the same lines and keeps everything else. When the result equals the
+    # file's current text the operation is a no-op -- a set whose value is
+    # already the file's only assignment of the key, or an unset of a key
+    # the file does not assign. An absent file reads ``None``: a set spools
+    # the single line (the install's ``mkdir -p`` creates ``/etc/conf.d``
+    # when needed), an unset no-ops.
+    #
+    # Validation raises ``ValueError`` while materializing (in a deploy run
+    # that is the prepare phase, before anything is sent): a ``key`` that is
+    # not a shell identifier, a ``service`` name that is empty, ``.``/``..``
+    # or carries characters outside OpenRC's service-name charset (so the
+    # path can never escape ``/etc/conf.d``), and -- on the set direction
+    # only -- a ``value`` containing ``"``, ``\\``, ``$``, a backtick or a
+    # newline, which would break out of the double-quoted rendering when
+    # OpenRC sources the file. Variable references and other shell-active
+    # values stay a ``files.edit`` recipe concern. There is no runtime half:
+    # rc.conf is read when a runlevel is entered and conf.d when a service
+    # starts, so the edit takes effect at the next boot / service restart.
+    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
+    # strips ``name`` and the ``sudo``/``su``/``doas`` escalation flags).
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+        raise ValueError(f"not a shell variable name: {key!r}")
+    if service is not None and (
+        service in {".", ".."} or not re.fullmatch(r"[a-zA-Z0-9\-_.]+", service)
+    ):
+        raise ValueError(f"not an OpenRC service name: {service!r}")
+    if present and any(char in value for char in '"\\$`\n\r'):
+        raise ValueError(f"value carries shell-active characters: {value!r}")
+
+    path = "/etc/rc.conf" if service is None else f"/etc/conf.d/{service}"
+    current = await ctx.facts.get(OpenrcConfigFile, path)
+    new = (
+        _set_config_value(current, key, value)
+        if present
+        else _unset_config_value(current, key)
+    )
+    if new == (current or ""):
+        # The transform is a fixpoint: the file already holds exactly the
+        # desired state, so there is nothing to spool.
+        ctx.reason = (
+            f'{key}="{value}" is already set in {path}'
+            if present
+            else f"{key} is not set in {path}"
+        )
+        return
+
+    ctx.changed = True
+    spool = _config_spool_path(path)
+    ctx.reason = (
+        f'{key}="{value}" will be set in {path}'
+        if present
+        else f"{key} will be unset in {path}"
+    )
+    yield OpenrcConfigUploadCommand(content=new, dest=spool)
+    yield OpenrcConfigInstallCommand(spool=spool, dest=path)
+
+
 __all__ = [
+    "OpenrcConfigFile",
+    "OpenrcConfigInstallCommand",
+    "OpenrcConfigUploadCommand",
     "OpenrcEnabled",
     "OpenrcRunlevels",
     "OpenrcServices",
@@ -893,6 +1244,7 @@ __all__ = [
     "RcServiceCommand",
     "RcUpdateCommand",
     "RunlevelCommand",
+    "config",
     "custom_runlevel",
     "runlevel",
     "service",

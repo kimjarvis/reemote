@@ -3,7 +3,8 @@
 
 """Tests for the selinux module: ``SEBoolean``, ``Booleans``, ``FileContext``,
 ``FileContextMapping``, ``SEPorts``, ``SEPort``, ``Mode``, ``SELogin``,
-``SEUser``, ``Modules`` and ``PermissiveDomains``, plus all ten operations.
+``SEUser``, ``Modules``, ``PermissiveDomains`` and ``SelinuxConfigFile``,
+plus all eleven operations.
 
 Covers the read-only state discovery in ``reemote5.modules.selinux.selinux``:
 the five pyinfra fact ports are exercised over the real-transport path with
@@ -22,11 +23,13 @@ The four pyinfra operation ports (``boolean``, ``file_context``,
 ``file_context_mapping``, ``port``) are exercised over their descriptors and
 every branch of pyinfra's own operation fixtures (both ``sepolicy``-present
 and absent port dispatches, the quoting-injection fixtures, the ``ValueError``
-guards and the verbatim no-op reasons). The six originals (``mode``, ``login``,
-``module``, ``permissive_domain``, ``restorecon``, ``autorelabel``) are
-exercised over their fact-backed idempotence in both directions, the module
+guards and the verbatim no-op reasons). The seven originals (``mode``, ``login``,
+``module``, ``permissive_domain``, ``restorecon``, ``autorelabel``, ``config``)
+are exercised over their fact-backed idempotence in both directions, the module
 four-state machine, the disabled-subsystem guard, restorecon's deliberate
-statelessness, the ``SimulatedHost`` seam dispatch, and end-to-end through
+statelessness, the ``config`` spool-and-install pair (pure transforms, spool
+determinism, both content-level no-ops, the SimulatedHost install mutator),
+the ``SimulatedHost`` seam dispatch, and end-to-end through
 ``run_prepare`` + ``run_apply`` (change-then-noop, the mapping-then-restorecon
 composition and a dry run).
 
@@ -64,6 +67,9 @@ from reemote5.modules.selinux.selinux import (
     RestoreconCommand,
     SEBoolean,
     SeContext,
+    SelinuxConfigFile,
+    SelinuxConfigInstallCommand,
+    SelinuxConfigUploadCommand,
     SELogin,
     SeLogin,
     SemanageFcontextCommand,
@@ -80,6 +86,8 @@ from reemote5.modules.selinux.selinux import (
     SEUser,
     SeUser,
     _AutorelabelPending,
+    _config_spool_path,
+    _set_config_value,
     _Which,
 )
 from tests.simulated_host import SimulatedHost
@@ -1449,9 +1457,9 @@ async def test_mode_invalid_value():
     )
 
 
-async def test_mode_disabled_subsystem_raises_with_the_recipe():
-    """setenforce cannot enable a disabled SELinux: the guard points at the
-    config recipe and the autorelabel-then-reboot sequence."""
+async def test_mode_disabled_subsystem_raises_pointing_at_config():
+    """setenforce cannot enable a disabled SELinux: the guard points at
+    selinux.config and the autorelabel-then-reboot sequence."""
     host = SimulatedHost(
         name="h",
         selinux_mode=ModeInfo(mode="disabled", config_mode="", policy=""),
@@ -1461,8 +1469,7 @@ async def test_mode_disabled_subsystem_raises_with_the_recipe():
         [c async for c in selinux.mode(ctx, "enforcing")]
     assert str(excinfo.value) == (
         "SELinux is disabled; setenforce cannot enable it -- set "
-        "SELINUX=enforcing (or permissive) in /etc/selinux/config "
-        "(see examples/modules/selinux/selinux_config.py), request "
+        "SELINUX=enforcing (or permissive) with selinux.config, request "
         "selinux.autorelabel and reboot first"
     )
 
@@ -2314,3 +2321,546 @@ async def test_boolean_dry_run_plans_without_sending():
         ),
     )
     assert host.selinux_booleans == {}
+
+
+# --- SelinuxConfigFile: the raw-content fact ------------------------------------------
+
+# A stock-shaped /etc/selinux/config: the two active assignments plus the
+# comment headers the distro ships (which the key pattern also matches --
+# the recipe's replacement semantics clean them out with the assignments).
+SELINUX_CONFIG_TEXT = """\
+# This file controls the state of SELinux on the system.
+# SELINUX= can take one of these three values:
+SELINUX=enforcing
+# SELINUXTYPE= can take one of these three values:
+SELINUXTYPE=targeted
+"""
+
+CONFIG_PATH = "/etc/selinux/config"
+
+
+def test_selinux_config_file_command_guards_and_quotes():
+    """The ``test -e`` + marker + ``cat`` form, with the path shell-quoted
+    (the ``OpenrcConfigFile.command`` pattern)."""
+    assert SelinuxConfigFile.command(CONFIG_PATH) == (
+        "test -e /etc/selinux/config && { printf '#reemote5-selinuxconfig\\n'; "
+        "cat -- /etc/selinux/config; }"
+    )
+    assert SelinuxConfigFile.command("/etc/my config") == (
+        "test -e '/etc/my config' && { printf '#reemote5-selinuxconfig\\n'; "
+        "cat -- '/etc/my config'; }"
+    )
+
+
+async def test_selinux_config_file_seam_absent_reads_none():
+    """The simulated seam reports an absent file as None, never \"\"."""
+    host = SimulatedHost(name="h")
+    assert await SelinuxConfigFile.process(host, CONFIG_PATH) is None
+
+
+async def test_selinux_config_file_seam_empty_reads_empty_string():
+    """An existing but empty file reads \"\" -- the marker distinction that
+    keeps absence and emptiness apart."""
+    host = SimulatedHost(name="h", remote_files={CONFIG_PATH: b""})
+    assert await SelinuxConfigFile.process(host, CONFIG_PATH) == ""
+
+
+async def test_selinux_config_file_seam_decodes_content():
+    """The seam decodes the stored bytes verbatim -- comments, blank lines
+    and ordering survive, because the fact never parses the text."""
+    host = SimulatedHost(
+        name="h", remote_files={CONFIG_PATH: SELINUX_CONFIG_TEXT.encode()}
+    )
+    assert await SelinuxConfigFile.process(host, CONFIG_PATH) == SELINUX_CONFIG_TEXT
+
+
+async def test_selinux_config_file_canned_parses_marker_and_content():
+    """Over the real-transport path the marker line is stripped and the
+    rest returned verbatim (the seam short-circuit never exercises this)."""
+    host = CannedShellHost(f"#reemote5-selinuxconfig\n{SELINUX_CONFIG_TEXT}")
+    assert await SelinuxConfigFile.process(host, CONFIG_PATH) == SELINUX_CONFIG_TEXT
+    assert host.last_shell == SelinuxConfigFile.command(CONFIG_PATH)
+
+
+async def test_selinux_config_file_canned_absent_reads_none():
+    """No marker on stdout (the ``test -e`` guard failed) reads as None."""
+    assert await SelinuxConfigFile.process(CannedShellHost(""), CONFIG_PATH) is None
+
+
+async def test_selinux_config_file_canned_empty_reads_empty_string():
+    """The marker alone -- an existing empty file -- reads as \"\"."""
+    host = CannedShellHost("#reemote5-selinuxconfig\n")
+    assert await SelinuxConfigFile.process(host, CONFIG_PATH) == ""
+
+
+async def test_selinux_config_file_gather_fact_forwards_the_path():
+    """``gather_fact`` forwards the path argument to every host's read."""
+    host1 = SimulatedHost(
+        name="web1", remote_files={CONFIG_PATH: b"SELINUX=enforcing\n"}
+    )
+    host2 = SimulatedHost(name="web2")
+    contents = await gather_fact([host1, host2], SelinuxConfigFile, CONFIG_PATH)
+    assert contents == {"web1": "SELINUX=enforcing\n", "web2": None}
+
+
+# --- selinux.config: the pure transform ------------------------------------------------
+
+
+def test_set_config_value_absent_file_becomes_the_single_line():
+    """None content gains just the unquoted assignment and a trailing newline."""
+    assert _set_config_value(None, "SELINUX", "enforcing") == "SELINUX=enforcing\n"
+    assert _set_config_value("", "SELINUX", "enforcing") == "SELINUX=enforcing\n"
+
+
+def test_set_config_value_replaces_active_and_commented_assignments():
+    """Every line the key pattern matches is dropped -- the active
+    assignment and the commented ``# SELINUX=`` header alike, the recipe's
+    replacement semantics -- and the wanted line appended; unrelated lines
+    keep their order and text."""
+    assert _set_config_value(SELINUX_CONFIG_TEXT, "SELINUX", "permissive") == (
+        "# This file controls the state of SELinux on the system.\n"
+        "# SELINUXTYPE= can take one of these three values:\n"
+        "SELINUXTYPE=targeted\n"
+        "SELINUX=permissive\n"
+    )
+
+
+def test_set_config_value_matches_whitespace_variants():
+    """Leading whitespace, spaces around the ``=`` and a spaced comment
+    marker all match the drop pattern."""
+    content = "  SELINUX = enforcing\n#  SELINUX=disabled\nSELINUXTYPE=targeted\n"
+    assert _set_config_value(content, "SELINUX", "permissive") == (
+        "SELINUXTYPE=targeted\nSELINUX=permissive\n"
+    )
+
+
+def test_set_config_value_is_a_fixpoint():
+    """The appended line matches the drop pattern, so a second pass
+    reproduces the same content -- both phases derive the same bytes."""
+    once = _set_config_value(SELINUX_CONFIG_TEXT, "SELINUX", "permissive")
+    assert _set_config_value(once, "SELINUX", "permissive") == once
+
+
+def test_set_config_value_keeps_a_matching_sole_assignment_byte_for_byte():
+    """When the wanted line is the key's only assignment the content is
+    returned unchanged -- position and trailing-newline state preserved,
+    so a stock config whose value already matches is never rewritten."""
+    content = "SELINUX=enforcing\nSELINUXTYPE=mls"
+    assert _set_config_value(content, "SELINUX", "enforcing") == content
+    # A commented sibling still counts as a second assignment: cleanup wins.
+    content = "# SELINUX=disabled\nSELINUX=enforcing\n"
+    assert _set_config_value(content, "SELINUX", "enforcing") == "SELINUX=enforcing\n"
+
+
+def test_set_config_value_does_not_match_the_sibling_key():
+    """The pattern is key-anchored: ``SELINUX`` never drops a
+    ``SELINUXTYPE`` assignment or header."""
+    content = "SELINUXTYPE=targeted\n# SELINUXTYPE= can take values\n"
+    assert _set_config_value(content, "SELINUX", "enforcing") == (
+        "SELINUXTYPE=targeted\n# SELINUXTYPE= can take values\nSELINUX=enforcing\n"
+    )
+
+
+# --- selinux.config: spool derivation and descriptors ----------------------------------
+
+
+def test_config_spool_path_is_dest_derived_and_deterministic():
+    """The same dest maps to the same spool in both phases, different dests
+    never share one, and the name keeps the family prefix."""
+    spool = _config_spool_path(CONFIG_PATH)
+    assert spool == _config_spool_path(CONFIG_PATH)
+    assert spool != _config_spool_path("/etc/selinux/other")
+    assert spool.startswith("/tmp/reemote5-selinux-config-")
+    assert len(spool.rsplit("-", 1)[1]) == 16
+
+
+def test_selinux_config_upload_str_and_never_elevates():
+    """The transfer has no ``shell()``; its loggable form is the ``__str__``
+    rendering, and ``command_shell`` never prefixes it with an escalator."""
+    spool = _config_spool_path(CONFIG_PATH)
+    cmd = SelinuxConfigUploadCommand(content="SELINUX=enforcing\n", dest=spool)
+    assert not hasattr(cmd, "shell")
+    assert str(cmd) == f"scp <selinux config> -> {spool}"
+    assert command_shell(cmd, sudo=True) == str(cmd)
+    assert command_shell(cmd, su=True) == str(cmd)
+
+
+def test_selinux_config_install_shell_and_elevation():
+    """The install wraps the whole ``&&`` chain in ``sh -c`` so the
+    escalator elevates every step, cleanup included."""
+    spool = _config_spool_path(CONFIG_PATH)
+    cmd = SelinuxConfigInstallCommand(spool=spool, dest=CONFIG_PATH)
+    inner = (
+        f"mkdir -p /etc/selinux && cp {spool} {CONFIG_PATH} && "
+        f"chmod 0644 {CONFIG_PATH} && rm -f {spool}"
+    )
+    assert cmd.shell() == f"sh -c {shlex.quote(inner)}"
+    assert command_shell(cmd, sudo=True) == f"sudo sh -c {shlex.quote(inner)}"
+    assert command_shell(cmd, su=True) == f"su -c {shlex.quote(cmd.shell())}"
+
+
+def test_selinux_config_install_quotes_paths_with_spaces():
+    """A space-carrying directory proves the quoting (a space-free path is
+    left unquoted by shlex.quote); assert through shlex.split, never a raw
+    substring of the quoted wrapper."""
+    cmd = SelinuxConfigInstallCommand(
+        spool="/tmp/spool x", dest="/etc/seli nux/wei rd"
+    )
+    inner = shlex.split(cmd.shell())[2]
+    assert "mkdir -p '/etc/seli nux'" in inner
+    assert "cp '/tmp/spool x' '/etc/seli nux/wei rd'" in inner
+    assert "chmod 0644 '/etc/seli nux/wei rd'" in inner
+    assert "rm -f '/tmp/spool x'" in inner
+
+
+# --- selinux.config: the operation ------------------------------------------------------
+
+
+async def test_config_requires_at_least_one_setting():
+    """Neither SELINUX nor SELINUXTYPE given is a ValueError before any
+    fact read."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in selinux.config(ctx)]
+    assert str(excinfo.value) == (
+        "at least one of SELINUX and SELINUXTYPE must be given"
+    )
+
+
+async def test_config_rejects_an_invalid_boot_mode():
+    """SELINUX is an enum: a bogus mode would silently disable SELinux at
+    boot, so it fails in prepare."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in selinux.config(ctx, SELINUX="enabled")]
+    assert str(excinfo.value) == "not an SELinux boot mode: 'enabled'"
+
+
+@pytest.mark.parametrize(
+    "value", ["", "two words", "has#hash", 'quo"ted', "sin'gle", "back\\slash", "new\nline"]
+)
+async def test_config_rejects_a_corrupting_policy_name(value):
+    """SELINUXTYPE is free-form (custom policies exist) but never carries
+    characters that would corrupt the line libselinux parses."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in selinux.config(ctx, SELINUXTYPE=value)]
+    assert str(excinfo.value) == f"not a policy type name: {value!r}"
+
+
+async def test_config_accepts_a_custom_policy_name():
+    """A custom policy package name passes the charset check -- there is
+    no targeted/minimum/mls whitelist."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in selinux.config(ctx, SELINUXTYPE="custom-policy")]
+    assert ctx.changed
+    assert commands[0] == SelinuxConfigUploadCommand(
+        content="SELINUXTYPE=custom-policy\n", dest=_config_spool_path(CONFIG_PATH)
+    )
+
+
+async def test_config_sets_both_settings_on_an_absent_file():
+    """An absent file reads None and gains exactly the requested lines, in
+    fixed SELINUX-then-SELINUXTYPE order; the pair is upload then install."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in selinux.config(
+            ctx, SELINUX="enforcing", SELINUXTYPE="targeted"
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == (
+        "SELINUX=enforcing, SELINUXTYPE=targeted will be set in /etc/selinux/config"
+    )
+    spool = _config_spool_path(CONFIG_PATH)
+    assert commands == [
+        SelinuxConfigUploadCommand(
+            content="SELINUX=enforcing\nSELINUXTYPE=targeted\n", dest=spool
+        ),
+        SelinuxConfigInstallCommand(spool=spool, dest=CONFIG_PATH),
+    ]
+
+
+async def test_config_leaves_the_unrequested_setting_untouched():
+    """``SELINUX`` alone never rewrites the file's SELINUXTYPE assignment;
+    None means untouched, not unset."""
+    host = SimulatedHost(
+        name="h", remote_files={CONFIG_PATH: SELINUX_CONFIG_TEXT.encode()}
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in selinux.config(ctx, SELINUX="permissive")]
+    assert ctx.changed
+    assert ctx.reason == "SELINUX=permissive will be set in /etc/selinux/config"
+    assert commands[0].content == (
+        "# This file controls the state of SELinux on the system.\n"
+        "# SELINUXTYPE= can take one of these three values:\n"
+        "SELINUXTYPE=targeted\n"
+        "SELINUX=permissive\n"
+    )
+
+
+async def test_config_noop_when_the_transform_is_a_fixpoint():
+    """The content-level no-op: the file already holds exactly the wanted
+    assignments, so nothing is spooled even though both keys are given."""
+    host = SimulatedHost(
+        name="h",
+        remote_files={
+            CONFIG_PATH: b"SELINUX=enforcing\nSELINUXTYPE=targeted\n"
+        },
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in selinux.config(
+            ctx, SELINUX="enforcing", SELINUXTYPE="targeted"
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == (
+        "/etc/selinux/config already sets SELINUX=enforcing, SELINUXTYPE=targeted"
+    )
+    assert commands == []
+
+
+async def test_config_partial_noop_compares_only_the_requested_keys():
+    """A SELINUX-only request no-ops on a file whose SELINUX already
+    matches, whatever SELINUXTYPE holds."""
+    host = SimulatedHost(
+        name="h",
+        remote_files={CONFIG_PATH: b"SELINUX=enforcing\nSELINUXTYPE=mls\n"},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in selinux.config(ctx, SELINUX="enforcing")]
+    assert not ctx.changed
+    assert ctx.reason == "/etc/selinux/config already sets SELINUX=enforcing"
+    assert commands == []
+
+
+async def test_config_cleans_out_commented_assignments():
+    """A file holding only a commented-out assignment is a change: the
+    replacement semantics drop it and append the active line."""
+    host = SimulatedHost(
+        name="h", remote_files={CONFIG_PATH: b"#SELINUX=permissive\n"}
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in selinux.config(ctx, SELINUX="enforcing")]
+    assert ctx.changed
+    assert commands[0].content == "SELINUX=enforcing\n"
+
+
+async def test_config_absorbs_global_kwargs():
+    """The escalation flags op() normally strips are absorbed by
+    ``**kwargs`` when the generator is driven directly."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in selinux.config(
+            ctx, SELINUX="disabled", sudo=True, su=False, name="ignored"
+        )
+    ]
+    assert ctx.changed
+    assert commands[0].content == "SELINUX=disabled\n"
+
+
+# --- selinux.config: the SimulatedHost seam ---------------------------------------------
+
+
+async def test_config_upload_seam_writes_only_the_spool():
+    """The upload arm stores the content at the spool path only -- the
+    protected file is untouched until the install runs."""
+    host = SimulatedHost(name="h")
+    spool = _config_spool_path(CONFIG_PATH)
+    await send_command(
+        host,
+        SelinuxConfigUploadCommand(content="SELINUX=permissive\n", dest=spool),
+    )
+    assert host.remote_files == {spool: b"SELINUX=permissive\n"}
+    assert CONFIG_PATH not in host.existing_files
+
+
+async def test_config_install_seam_moves_the_spool_and_refreshes_mode():
+    """The install arm pops the spool, stores the bytes at the dest with
+    existence/stats, and refreshes ``Mode``'s config_mode from the installed
+    SELINUX assignment -- runtime mode and loaded policy survive."""
+    host = SimulatedHost(name="h")
+    spool = _config_spool_path(CONFIG_PATH)
+    content = b"SELINUXTYPE=targeted\nSELINUX=permissive\n"
+    host.remote_files[spool] = content
+    await send_command(
+        host, SelinuxConfigInstallCommand(spool=spool, dest=CONFIG_PATH)
+    )
+    assert spool not in host.remote_files
+    assert host.remote_files[CONFIG_PATH] == content
+    assert CONFIG_PATH in host.existing_files
+    assert host.file_stats[CONFIG_PATH] == {
+        "user": "root",
+        "group": "root",
+        "mode": 644,
+        "size": len(content),
+    }
+    assert host.selinux_mode == ModeInfo(
+        mode="enforcing", config_mode="permissive", policy="targeted"
+    )
+
+
+async def test_config_install_seam_tolerates_an_absent_spool():
+    """An install without its upload changes nothing (the
+    ``install_openrc_config_file`` tolerance)."""
+    host = SimulatedHost(name="h")
+    await send_command(
+        host,
+        SelinuxConfigInstallCommand(
+            spool=_config_spool_path(CONFIG_PATH), dest=CONFIG_PATH
+        ),
+    )
+    assert host.remote_files == {}
+    assert host.existing_files == set()
+    assert host.selinux_mode["config_mode"] == "enforcing"
+
+
+async def test_config_install_seam_repeat_does_not_duplicate():
+    """The refresh is content-based: installing the same spooled text again
+    replaces the file verbatim, never appends a second assignment."""
+    host = SimulatedHost(name="h")
+    spool = _config_spool_path(CONFIG_PATH)
+    content = b"SELINUX=permissive\n"
+    for _ in range(2):
+        host.remote_files[spool] = content
+        await send_command(
+            host, SelinuxConfigInstallCommand(spool=spool, dest=CONFIG_PATH)
+        )
+    assert host.remote_files[CONFIG_PATH] == content
+
+
+async def test_config_install_seam_disabled_host_keeps_empty_config_mode():
+    """A disabled subsystem's sestatus reports no config mode, so the
+    install leaves the empty config_mode alone."""
+    host = SimulatedHost(
+        name="h",
+        selinux_mode=ModeInfo(mode="disabled", config_mode="", policy=""),
+    )
+    spool = _config_spool_path(CONFIG_PATH)
+    host.remote_files[spool] = b"SELINUX=enforcing\n"
+    await send_command(
+        host, SelinuxConfigInstallCommand(spool=spool, dest=CONFIG_PATH)
+    )
+    assert host.selinux_mode == ModeInfo(mode="disabled", config_mode="", policy="")
+
+
+async def test_config_install_seam_without_selinux_line_keeps_config_mode():
+    """A SELINUXTYPE-only install carries no SELINUX assignment, so the
+    reported config mode survives (the loaded policy changes only at boot)."""
+    host = SimulatedHost(name="h")
+    spool = _config_spool_path(CONFIG_PATH)
+    host.remote_files[spool] = b"SELINUXTYPE=mls\n"
+    await send_command(
+        host, SelinuxConfigInstallCommand(spool=spool, dest=CONFIG_PATH)
+    )
+    assert host.selinux_mode == ModeInfo(
+        mode="enforcing", config_mode="enforcing", policy="targeted"
+    )
+
+
+# --- selinux.config: end to end ----------------------------------------------------------
+
+
+async def test_config_end_to_end_change_then_noop():
+    """Through the driver: the unprivileged scp spools the text, the
+    elevated sh -c installs it, and a second prepare sees the fixpoint."""
+
+    def config_deploy(host):
+        yield op(
+            selinux.config,
+            name="Enforce targeted at boot",
+            SELINUX="permissive",
+            SELINUXTYPE="targeted",
+            sudo=True,
+        )
+
+    host = SimulatedHost(
+        name="h", remote_files={CONFIG_PATH: SELINUX_CONFIG_TEXT.encode()}
+    )
+    runtimes, plans = await run_prepare([host], config_deploy)
+    assert plans["h"][0].changed
+    report = await run_apply(runtimes, plans=plans)
+    (entry,) = report.log
+    assert entry.changed
+    spool = _config_spool_path(CONFIG_PATH)
+    assert entry.commands == (
+        SelinuxConfigUploadCommand(
+            content=(
+                "# This file controls the state of SELinux on the system.\n"
+                "SELINUX=permissive\n"
+                "SELINUXTYPE=targeted\n"
+            ),
+            dest=spool,
+        ),
+        SelinuxConfigInstallCommand(spool=spool, dest=CONFIG_PATH),
+    )
+    log = format_log(report)
+    assert f"$ scp <selinux config> -> {spool}" in log
+    assert "$ sudo sh -c" in log
+    assert host.remote_files[CONFIG_PATH] == entry.commands[0].content.encode()
+    assert host.selinux_mode["config_mode"] == "permissive"
+    _runtimes, plans2 = await run_prepare([host], config_deploy)
+    assert not plans2["h"][0].changed
+    assert plans2["h"][0].reason == (
+        "/etc/selinux/config already sets SELINUX=permissive, SELINUXTYPE=targeted"
+    )
+
+
+async def test_config_dry_run_plans_without_sending():
+    """``dry=True`` stops after prepare: the pair is planned but nothing
+    runs, so the file and the spool stay untouched."""
+
+    def config_deploy(host):
+        yield op(
+            selinux.config,
+            name="Enforce at boot",
+            SELINUX="enforcing",
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+    plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}],
+        config_deploy,
+        host_factory=lambda entry: host,
+        dry=True,
+    )
+    assert report is None
+    (planned,) = plans["h"]
+    assert planned.changed
+    assert len(planned.commands) == 2
+    assert host.remote_files == {}
+    assert host.existing_files == set()
+
+
+async def test_config_duplicate_requests_second_is_apply_phase_noop():
+    """Two identical requests in one deploy: prepare plans both as changes
+    (nothing is sent yet), apply's fresh per-step fact cache sees the first
+    install and no-ops the second."""
+
+    def config_deploy(host):
+        yield op(selinux.config, name="First", SELINUX="permissive", sudo=True)
+        yield op(selinux.config, name="Second", SELINUX="permissive", sudo=True)
+
+    host = SimulatedHost(
+        name="h", remote_files={CONFIG_PATH: b"SELINUX=enforcing\n"}
+    )
+    runtimes, plans = await run_prepare([host], config_deploy)
+    assert plans["h"][0].changed
+    assert plans["h"][1].changed
+    report = await run_apply(runtimes, plans=plans)
+    first, second = report.log
+    assert first.changed
+    assert not second.changed
+    assert second.reason == "/etc/selinux/config already sets SELINUX=permissive"
+    assert host.remote_files[CONFIG_PATH] == b"SELINUX=permissive\n"

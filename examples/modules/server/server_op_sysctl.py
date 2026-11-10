@@ -7,8 +7,9 @@ This is a *usage* example, not part of the library. It is reemote5's
 strict-parity demonstration of pyinfra's ``server.sysctl`` operation,
 built from generic primitives: the persist half is a file edit fully
 expressible with the ``files.edit`` content-transform primitive plus the
-elevated ``files.move`` -- the same spool-and-install recipe as
-``server_op_locale.py`` -- and the runtime half is a single
+elevated ``files.move`` -- the two-run recipe shape ``server_op_locale.py``
+used before ``server.locale`` was ported as a native spool-and-install
+operation -- and the runtime half is a single
 ``sysctl key=value`` shell line this example defines itself over the
 public raw ``StringCommand`` descriptor. The native ``sysctl`` module
 (``sysctl.setting`` / ``sysctl.conf``) now supersedes this recipe for
@@ -57,10 +58,11 @@ append when absent). The recipe mirrors all of that:
 Deliberate deviations from pyinfra, decided at migration time:
 
 * The persist edit (``files.line``'s sed/echo) is replaced by the
-  ``files.edit`` transform: reemote5 ports no per-format file editors, and
-  its transfers are unprivileged, so root-owned ``/etc/sysctl.conf`` is
-  written through the spool-and-install vehicle instead of an elevated
-  sed/echo. pyinfra's timestamped sed backup dance goes with it.
+  ``files.edit`` transform: the generic primitive expresses the edit
+  without a bespoke operation, and reemote5's transfers are unprivileged,
+  so root-owned ``/etc/sysctl.conf`` is written through the
+  spool-and-install vehicle instead of an elevated sed/echo. pyinfra's
+  timestamped sed backup dance goes with it.
 * The line regex escapes the key and the value literally (``re.escape``);
   pyinfra interpolates them raw into a grep pattern, where the ``.`` in
   ``fs.file-max`` would match any character. The POSIX ``[[:space:]]*``

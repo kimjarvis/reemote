@@ -1594,6 +1594,17 @@ async def config(
     # value carrying shell metacharacters is read literally. ``**kwargs``
     # absorbs pyinfra's global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
+    #
+    # Deliberately NOT spool-and-install: the payload is a CLI invocation, not
+    # the file's text -- ``git config`` owns the config file and also resolves
+    # which file a scope names (``~/.gitconfig`` or the XDG path for
+    # ``--global``, a build-dependent path for ``--system``, the gitdir's
+    # ``config`` for ``--local``), parses git's INI subsections and
+    # ``include``/``includeIf`` directives, merges multi-valued keys and
+    # writes through a lockfile, none of which a hand-rolled content
+    # transform can reproduce. The spool family is for whole-content edits
+    # of a protected file (``apt.repo`` is that shape); a tool-owned
+    # mutation stays in place, like ``apt.ppa``.
     existing_items: list[GitConfigItem] = []
     if not repo:
         existing_items = await ctx.facts.get(GitConfig, system=system)

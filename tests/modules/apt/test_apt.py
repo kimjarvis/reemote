@@ -58,9 +58,11 @@ hold/unhold descriptor rendering, fact-gated idempotence in both
 directions against ``AptHeldPackages``, the SimulatedHost hold/unhold
 mutations and end-to-end / dry-run / hold-then-unhold runs. ``apt.repo`` is covered
 against pyinfra's ``apt.repo`` operation fixtures (add, add with a
-``sources.list.d`` filename, add-existing noop, remove), with its two
-documented deviations -- the ``sh -c``-wrapped append and the bare
-``sed -i`` removal -- plus the SimulatedHost line mutations and
+``sources.list.d`` filename, add-existing noop, remove), with its
+documented deviation -- the spool-and-install write pair replacing
+pyinfra's ``files.line`` delegation, gated both on ``AptSources`` and on
+the managed file's own text through the ``AptSourcesFile`` content fact --
+plus the SimulatedHost spool/install mutations and
 end-to-end / dry-run / repeat-noop runs. ``apt.sources_file`` is covered
 against pyinfra's ``apt.sources_file`` operation fixtures (create,
 create-idempotent, minimal, string args, update, the two missing-field
@@ -115,8 +117,8 @@ from reemote5.modules.apt.apt import (
     AptPolicy,
     AptPpaCommand,
     AptRemoveCommand,
-    AptRepoAddCommand,
-    AptRepoRemoveCommand,
+    AptRepoInstallCommand,
+    AptRepoUploadCommand,
     AptSources,
     AptSourcesFile,
     AptSourcesFileInstallCommand,
@@ -129,6 +131,9 @@ from reemote5.modules.apt.apt import (
     DebPackage,
     DebPackageInfo,
     SimulateOperationWillChange,
+    _add_repo_line,
+    _remove_repo_line,
+    _repo_spool_path,
 )
 from tests.simulated_host import SimulatedHost
 
@@ -4106,7 +4111,7 @@ async def test_apt_ppa_add_then_remove_in_one_deploy():
     assert host.apt_sources == []
 
 
-# --- apt.repo operation (pyinfra parity) ---------------------------------------
+# --- apt.repo operation (pyinfra parity, spool-and-install write) --------------
 
 # pyinfra's apt.repo fixtures all use the Canonical partner repo line; the
 # AptSource below is their ``apt.AptSources`` fact entry in reemote5's shape
@@ -4119,50 +4124,141 @@ REPO_SOURCE = {
     "components": ["partner"],
     "options": {},
 }
+# A second repository, so the transforms' keep-the-other-lines semantics and
+# the content refresh of the ``apt_sources`` seam stay visible.
+OTHER_SRC = "deb http://archive.ubuntu.com/ubuntu noble main"
+OTHER_SOURCE = {
+    "type": "deb",
+    "url": "http://archive.ubuntu.com/ubuntu",
+    "distribution": "noble",
+    "components": ["main"],
+    "options": {},
+}
 SOURCES_LIST = "/etc/apt/sources.list"
-# The add.json fixture's command -- the inner script of the sh -c wrapper.
-REPO_ADD_INNER = f"echo '{REPO_SRC}' >> {SOURCES_LIST}"
-# The remove.json fixture's sed script, verbatim (escaped dots and slashes).
-REPO_REMOVE_SCRIPT = r"/^.*deb http:\/\/archive\.canonical\.com\/ubuntu hardy partner.*$/d"
+LISTS_PATH = "/etc/apt/sources.list.d/somefile.list"
+# The spool path apt.repo uploads to, derived from the managed file -- the
+# tests spell the same call the operation makes.
+REPO_SPOOL = _repo_spool_path(SOURCES_LIST)
+LISTS_SPOOL = _repo_spool_path(LISTS_PATH)
+# The install's inner script: create the parent directory, overlay the
+# protected file with the spooled text, reset apt's mode, drop the spool.
+REPO_INSTALL_INNER = (
+    f"mkdir -p /etc/apt && cp {REPO_SPOOL} {SOURCES_LIST} && "
+    f"chmod 0644 {SOURCES_LIST} && rm -f {REPO_SPOOL}"
+)
 
 
-def test_apt_repo_command_shells_match_pyinfra():
-    """The append's inner script and the removal's sed script are pyinfra's
-    fixture commands; the deviations are the sh -c wrapper (elevation) and
-    the bare -i (no timestamped backup dance)."""
-    add = AptRepoAddCommand(path=SOURCES_LIST, line=REPO_SRC)
-    # The outer shlex quoting escapes inner quotes, so assert on the
-    # recovered inner script, never a raw substring.
-    assert shlex.split(add.shell())[2] == REPO_ADD_INNER
-    assert add.shell() == f"sh -c {shlex.quote(REPO_ADD_INNER)}"
-    remove = AptRepoRemoveCommand(path=SOURCES_LIST, line=REPO_SRC)
-    assert remove.shell() == f"sed -i '{REPO_REMOVE_SCRIPT}' {SOURCES_LIST}"
-    # Elevation applies to the whole descriptor.
-    assert command_shell(add, sudo=True) == f"sudo {add.shell()}"
-    assert command_shell(remove, sudo=True) == f"sudo {remove.shell()}"
-    assert command_shell(add, su=True) == f"su -c {shlex.quote(add.shell())}"
+def test_apt_repo_descriptors_render_the_spool_and_install_pair():
+    """The write is the family ``apt.key`` shows: an unprivileged scp of the
+    transformed text to the ``/tmp`` spool, then the elevated ``sh -c``
+    install overlaying the protected file. pyinfra's ``echo >>``/``sed -i``
+    in-place mutation is gone with the ``files.line`` delegation."""
+    upload = AptRepoUploadCommand(content=f"{REPO_SRC}\n", dest=REPO_SPOOL)
+    assert str(upload) == f"scp <apt sources> -> {REPO_SPOOL}"
+    # Transfers never elevate, so sudo leaves the scp line alone.
+    assert command_shell(upload) == f"scp <apt sources> -> {REPO_SPOOL}"
+    assert command_shell(upload, sudo=True) == f"scp <apt sources> -> {REPO_SPOOL}"
+    install = AptRepoInstallCommand(spool=REPO_SPOOL, dest=SOURCES_LIST)
+    # The outer shlex quoting escapes the inner script, so assert on the
+    # recovered script, never a raw substring.
+    assert install.shell() == f"sh -c {shlex.quote(REPO_INSTALL_INNER)}"
+    assert shlex.split(install.shell())[2] == REPO_INSTALL_INNER
+    # Elevation covers the whole wrapper, and so every step of the ``&&``
+    # chain inside it (a bare ``sudo`` prefix would root only the first).
+    assert command_shell(install, sudo=True) == f"sudo {install.shell()}"
+    assert command_shell(install, su=True) == f"su -c {shlex.quote(install.shell())}"
+
+
+def test_apt_repo_spool_path_is_deterministic_per_dest():
+    """The spool name is derived from the managed file's sha1: the same dest
+    always maps to the same name (both deploy phases agree), two files never
+    share one spool, and every path the install touches is quoted."""
+    path = "/etc/apt/sources list.d/we ird.list"
+    spool = _repo_spool_path(path)
+    assert spool == _repo_spool_path(path)
+    assert spool.startswith("/tmp/reemote5-apt-repo-")
+    assert spool != REPO_SPOOL
+    inner = shlex.split(AptRepoInstallCommand(spool=spool, dest=path).shell())[2]
+    assert inner.startswith("mkdir -p '/etc/apt/sources list.d' && ")
+    assert f"cp {shlex.quote(spool)} {shlex.quote(path)} && " in inner
+    assert f"chmod 0644 {shlex.quote(path)} && rm -f {shlex.quote(spool)}" in inner
+
+
+def test_apt_repo_add_transform_is_pure_and_idempotent():
+    """``_add_repo_line`` appends exactly once: an absent file becomes the
+    single line, a file already carrying the line (surrounding text included,
+    pyinfra's contains match) comes back verbatim, and re-applying the
+    transform to its own result changes nothing."""
+    assert _add_repo_line(None, REPO_SRC) == f"{REPO_SRC}\n"
+    assert _add_repo_line("", REPO_SRC) == f"{REPO_SRC}\n"
+    new = _add_repo_line(f"{OTHER_SRC}\n", REPO_SRC)
+    assert new == f"{OTHER_SRC}\n{REPO_SRC}\n"
+    assert _add_repo_line(new, REPO_SRC) == new
+    assert _add_repo_line(f"{OTHER_SRC}\n{REPO_SRC} # partner\n", REPO_SRC) == (
+        f"{OTHER_SRC}\n{REPO_SRC} # partner\n"
+    )
+    # Content with no trailing newline gains its separator before the line.
+    assert _add_repo_line("# note", REPO_SRC) == f"# note\n{REPO_SRC}\n"
+
+
+def test_apt_repo_remove_transform_keeps_other_lines():
+    """``_remove_repo_line`` deletes exactly the lines the append would have
+    skipped (the same anchored, escaped pattern), keeps the rest of the file
+    and its newline style, and is a fixpoint on an absent or unmatched file."""
+    assert _remove_repo_line(
+        f"{OTHER_SRC}\n{REPO_SRC} # partner\n", REPO_SRC
+    ) == f"{OTHER_SRC}\n"
+    # Deleting the only line leaves an empty file, not a lone newline.
+    assert _remove_repo_line(f"{REPO_SRC}\n", REPO_SRC) == ""
+    assert _remove_repo_line(None, REPO_SRC) == ""
+    assert _remove_repo_line(f"{OTHER_SRC}\n", REPO_SRC) == f"{OTHER_SRC}\n"
+    # A file with no trailing newline stays without one.
+    assert _remove_repo_line(f"{OTHER_SRC}\n{REPO_SRC}", REPO_SRC) == OTHER_SRC
 
 
 async def test_apt_repo_add_when_absent():
-    """pyinfra's add.json: an unconfigured repo yields one append to
-    /etc/apt/sources.list."""
+    """pyinfra's add.json: an unconfigured repo is planned as the spool
+    transfer of the new file text plus the elevated install."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.repo(ctx, src=REPO_SRC)]
     assert ctx.changed
     assert ctx.reason == f'apt repo "{REPO_SRC}" missing, will be added to {SOURCES_LIST}'
-    assert commands == [AptRepoAddCommand(path=SOURCES_LIST, line=REPO_SRC)]
+    assert commands == [
+        AptRepoUploadCommand(content=f"{REPO_SRC}\n", dest=REPO_SPOOL),
+        AptRepoInstallCommand(spool=REPO_SPOOL, dest=SOURCES_LIST),
+    ]
+
+
+async def test_apt_repo_add_preserves_the_rest_of_the_file():
+    """The spooled content is the managed file's own text with the line
+    appended -- comments and the other repositories survive verbatim, which
+    is what the spool-and-install family buys over a rebuilt file."""
+    current = f"# Ubuntu archives\n{OTHER_SRC}\n"
+    host = SimulatedHost(
+        name="h",
+        apt_sources=[dict(OTHER_SOURCE)],
+        remote_files={SOURCES_LIST: current.encode()},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.repo(ctx, src=REPO_SRC)]
+    assert ctx.changed
+    assert commands == [
+        AptRepoUploadCommand(content=f"{current}{REPO_SRC}\n", dest=REPO_SPOOL),
+        AptRepoInstallCommand(spool=REPO_SPOOL, dest=SOURCES_LIST),
+    ]
 
 
 async def test_apt_repo_add_with_filename():
     """pyinfra's add_filename.json: filename targets
-    /etc/apt/sources.list.d/<filename>.list."""
+    /etc/apt/sources.list.d/<filename>.list -- and its own spool path."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.repo(ctx, src=REPO_SRC, filename="somefile")]
     assert ctx.changed
     assert commands == [
-        AptRepoAddCommand(path="/etc/apt/sources.list.d/somefile.list", line=REPO_SRC)
+        AptRepoUploadCommand(content=f"{REPO_SRC}\n", dest=LISTS_SPOOL),
+        AptRepoInstallCommand(spool=LISTS_SPOOL, dest=LISTS_PATH),
     ]
 
 
@@ -4178,14 +4274,21 @@ async def test_apt_repo_add_noop_when_present():
 
 
 async def test_apt_repo_remove_when_present():
-    """pyinfra's remove.json: a configured repo with present=False yields
-    one sed deletion."""
-    host = SimulatedHost(name="h", apt_sources=[dict(REPO_SOURCE)])
+    """pyinfra's remove.json: a configured repo with present=False spools the
+    file text without the matching line, then installs it over the file."""
+    host = SimulatedHost(
+        name="h",
+        apt_sources=[dict(REPO_SOURCE)],
+        remote_files={SOURCES_LIST: f"{OTHER_SRC}\n{REPO_SRC}\n".encode()},
+    )
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.repo(ctx, src=REPO_SRC, present=False)]
     assert ctx.changed
     assert ctx.reason == f'apt repo "{REPO_SRC}" present, will be removed from {SOURCES_LIST}'
-    assert commands == [AptRepoRemoveCommand(path=SOURCES_LIST, line=REPO_SRC)]
+    assert commands == [
+        AptRepoUploadCommand(content=f"{OTHER_SRC}\n", dest=REPO_SPOOL),
+        AptRepoInstallCommand(spool=REPO_SPOOL, dest=SOURCES_LIST),
+    ]
 
 
 async def test_apt_repo_remove_noop_when_absent():
@@ -4201,7 +4304,7 @@ async def test_apt_repo_remove_noop_when_absent():
 
 async def test_apt_repo_options_match_with_list_valued_shape():
     """A src with bracketed options matches the fact's list-valued options
-    (the AptSource shape deviation): equal -> noop, different -> add."""
+    (the AptSource shape deviation): equal -> noop, different -> spool."""
     src = "deb [arch=amd64 signed-by=/etc/apt/keyrings/vendor.gpg] https://example.com/apt noble main"
     entry = {
         "type": "deb",
@@ -4215,26 +4318,68 @@ async def test_apt_repo_options_match_with_list_valued_shape():
     commands = [c async for c in apt.repo(ctx, src=src)]
     assert not ctx.changed
     assert commands == []
-    # A different arch is a different repository -> the line is appended.
+    # A different arch is a different repository -> the line is spooled in.
     other = src.replace("arch=amd64", "arch=arm64")
     ctx2 = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands2 = [c async for c in apt.repo(ctx2, src=other)]
     assert ctx2.changed
-    assert commands2 == [AptRepoAddCommand(path=SOURCES_LIST, line=other)]
+    # The seam holds no sources file, so the spooled text is the single line.
+    assert commands2 == [
+        AptRepoUploadCommand(content=f"{other}\n", dest=REPO_SPOOL),
+        AptRepoInstallCommand(spool=REPO_SPOOL, dest=SOURCES_LIST),
+    ]
 
 
 async def test_apt_repo_unparseable_src_is_tolerated():
     """pyinfra's tolerance: a src its regex cannot parse counts as absent,
-    so present=True still appends it and present=False is a no-op."""
+    so present=True still spools it in and present=False is a no-op."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.repo(ctx, src="not-a-repo-line")]
     assert ctx.changed
-    assert commands == [AptRepoAddCommand(path=SOURCES_LIST, line="not-a-repo-line")]
+    assert commands == [
+        AptRepoUploadCommand(content="not-a-repo-line\n", dest=REPO_SPOOL),
+        AptRepoInstallCommand(spool=REPO_SPOOL, dest=SOURCES_LIST),
+    ]
     ctx2 = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands2 = [c async for c in apt.repo(ctx2, src="not-a-repo-line", present=False)]
     assert not ctx2.changed
     assert commands2 == []
+
+
+async def test_apt_repo_add_of_a_line_the_file_lists_is_a_content_noop():
+    """The content-level fixpoint pyinfra's ``echo >>`` never reached: an
+    unparseable src the fact cannot see is still not appended twice, because
+    the transform of the file's own text comes back unchanged."""
+    host = SimulatedHost(
+        name="h", remote_files={SOURCES_LIST: b"# note\nnot-a-repo-line\n"}
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.repo(ctx, src="not-a-repo-line")]
+    assert not ctx.changed
+    assert ctx.reason == f'apt repo "not-a-repo-line" is already listed in {SOURCES_LIST}'
+    assert commands == []
+
+
+async def test_apt_repo_removal_from_a_file_that_never_listed_it_is_a_noop():
+    """The other content-level no-op: the repository is configured -- so the
+    fact says a change is due -- but in some *other* file, so this file's
+    text has nothing to delete and pyinfra's no-op sed is skipped."""
+    host = SimulatedHost(
+        name="h",
+        apt_sources=[dict(REPO_SOURCE)],
+        remote_files={LISTS_PATH: f"{OTHER_SRC}\n".encode()},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.repo(
+            ctx, src=REPO_SRC, filename="somefile", present=False
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == f'apt repo "{REPO_SRC}" is not configured in {LISTS_PATH}'
+    assert commands == []
 
 
 async def test_apt_repo_absorbs_unknown_kwargs():
@@ -4243,49 +4388,75 @@ async def test_apt_repo_absorbs_unknown_kwargs():
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.repo(ctx, src=REPO_SRC, future_flag=True)]
-    assert commands == [AptRepoAddCommand(path=SOURCES_LIST, line=REPO_SRC)]
+    assert commands == [
+        AptRepoUploadCommand(content=f"{REPO_SRC}\n", dest=REPO_SPOOL),
+        AptRepoInstallCommand(spool=REPO_SPOOL, dest=SOURCES_LIST),
+    ]
 
 
-async def test_apt_repo_simulated_seam_add():
-    """``send_command`` appends the line to remote_files (plus existence
-    and stats) and the parsed entry to apt_sources; a repeat append adds
-    a second file line (echo always appends) but no duplicate entry."""
+async def test_apt_repo_simulated_seam_spool_then_install():
+    """``send_command`` writes the spool bytes with the transfer (nothing at
+    the managed path yet, no sources entry), then the install moves them
+    onto the file, drops the spool and refreshes existence, stats and the
+    parsed ``apt_sources`` seam."""
     host = SimulatedHost(name="h")
-    await send_command(host, AptRepoAddCommand(path=SOURCES_LIST, line=REPO_SRC))
+    await send_command(
+        host, AptRepoUploadCommand(content=f"{REPO_SRC}\n", dest=REPO_SPOOL)
+    )
+    assert host.remote_files[REPO_SPOOL] == f"{REPO_SRC}\n".encode()
+    assert SOURCES_LIST not in host.remote_files
+    assert host.apt_sources == []
+    await send_command(
+        host, AptRepoInstallCommand(spool=REPO_SPOOL, dest=SOURCES_LIST)
+    )
+    assert REPO_SPOOL not in host.remote_files
     assert host.remote_files[SOURCES_LIST] == f"{REPO_SRC}\n".encode()
     assert SOURCES_LIST in host.existing_files
-    assert host.file_stats[SOURCES_LIST]["size"] == len(f"{REPO_SRC}\n")
-    assert host.apt_sources == [REPO_SOURCE]
-    await send_command(host, AptRepoAddCommand(path=SOURCES_LIST, line=REPO_SRC))
-    assert host.remote_files[SOURCES_LIST] == f"{REPO_SRC}\n{REPO_SRC}\n".encode()
+    assert host.file_stats[SOURCES_LIST] == {
+        "user": "root",
+        "group": "root",
+        "mode": 644,
+        "size": len(f"{REPO_SRC}\n"),
+    }
     assert host.apt_sources == [REPO_SOURCE]
 
 
-async def test_apt_repo_simulated_seam_remove():
-    """The removal deletes the matching line (surrounding text included,
-    the anchored ^.*line.*$ pattern), keeps other lines, drops the
-    apt_sources entry and tolerates an absent path."""
-    other = "deb http://archive.ubuntu.com/ubuntu noble main"
+async def test_apt_repo_simulated_seam_install_replaces_previous_entries():
+    """The seam refresh is content-based, not append-only: the entries the
+    previous file text parsed into go, the new text's entries are kept once,
+    so a repeat install never duplicates a sources entry."""
     host = SimulatedHost(
         name="h",
         apt_sources=[dict(REPO_SOURCE)],
-        remote_files={SOURCES_LIST: f"{other}\n{REPO_SRC} # partner\n".encode()},
+        remote_files={SOURCES_LIST: f"{OTHER_SRC}\n{REPO_SRC}\n".encode()},
     )
-    await send_command(host, AptRepoRemoveCommand(path=SOURCES_LIST, line=REPO_SRC))
-    assert host.remote_files[SOURCES_LIST] == f"{other}\n".encode()
-    assert host.apt_sources == []
-    # A second removal changes nothing (sed exits 0 deleting nothing).
-    await send_command(host, AptRepoRemoveCommand(path=SOURCES_LIST, line=REPO_SRC))
-    assert host.remote_files[SOURCES_LIST] == f"{other}\n".encode()
-    # An absent path is tolerated too.
+    for _ in range(2):
+        await send_command(
+            host, AptRepoUploadCommand(content=f"{OTHER_SRC}\n", dest=REPO_SPOOL)
+        )
+        await send_command(
+            host, AptRepoInstallCommand(spool=REPO_SPOOL, dest=SOURCES_LIST)
+        )
+        assert host.remote_files[SOURCES_LIST] == f"{OTHER_SRC}\n".encode()
+        assert host.apt_sources == [OTHER_SOURCE]
+
+
+async def test_apt_repo_simulated_seam_install_without_its_spool():
+    """The install of an absent spool (a skipped or failed transfer) leaves
+    every seam as it was -- the paired ``apt.key``/``apt.sources_file``
+    mutators' tolerance."""
+    host = SimulatedHost(name="h")
     await send_command(
-        host, AptRepoRemoveCommand(path="/etc/apt/sources.list.d/gone.list", line=REPO_SRC)
+        host, AptRepoInstallCommand(spool=REPO_SPOOL, dest=SOURCES_LIST)
     )
+    assert SOURCES_LIST not in host.remote_files
+    assert SOURCES_LIST not in host.existing_files
+    assert host.apt_sources == []
 
 
 async def test_apt_repo_end_to_end_add_then_noop():
-    """Through run(): the append elevates under sudo in the log and
-    mutates the simulated sources; a second run is a no-op."""
+    """Through run(): the apply spools the new text by scp and installs it
+    under sudo; a second run reads the fresh sources back as configured."""
 
     def repo_deploy(host):
         yield op(apt.repo, name="Add the partner repo", src=REPO_SRC, sudo=True)
@@ -4301,12 +4472,17 @@ async def test_apt_repo_end_to_end_add_then_noop():
     assert plans["h"][0].changed
     (entry,) = report.log
     assert entry.changed
-    add = AptRepoAddCommand(path=SOURCES_LIST, line=REPO_SRC)
-    assert entry.commands == (add,)
+    upload = AptRepoUploadCommand(content=f"{REPO_SRC}\n", dest=REPO_SPOOL)
+    install = AptRepoInstallCommand(spool=REPO_SPOOL, dest=SOURCES_LIST)
+    assert entry.commands == (upload, install)
+    assert host.remote_files[SOURCES_LIST] == f"{REPO_SRC}\n".encode()
     assert host.apt_sources == [REPO_SOURCE]
-    assert f"$ sudo {add.shell()}" in format_log(report)
+    log = format_log(report)
+    # The transfer rides unprivileged scp; only the install elevates.
+    assert f"    $ scp <apt sources> -> {REPO_SPOOL}" in log
+    assert f"    $ sudo {install.shell()}" in log
 
-    # Idempotent: the fresh fact read sees the appended entry -> no change.
+    # Idempotent: the fresh fact read sees the installed entry -> no change.
     plans2, report2, _hosts2 = await run(
         [{"host": "h", "connection": {}}], repo_deploy, host_factory=factory
     )
@@ -4317,9 +4493,8 @@ async def test_apt_repo_end_to_end_add_then_noop():
 
 
 async def test_apt_repo_end_to_end_filename_then_remove():
-    """A filename-scoped add writes the .list file; a later present=False
-    run empties it and drops the sources entry."""
-    path = "/etc/apt/sources.list.d/somefile.list"
+    """A filename-scoped add installs the .list file (its own spool, cleaned
+    up); a later present=False run empties it and drops the sources entry."""
 
     def add_deploy(host):
         yield op(apt.repo, name="add", src=REPO_SRC, filename="somefile", sudo=True)
@@ -4343,23 +4518,28 @@ async def test_apt_repo_end_to_end_filename_then_remove():
         [{"host": "h", "connection": {}}], add_deploy, host_factory=factory
     )
     assert report.log[0].changed
-    assert host.remote_files[path] == f"{REPO_SRC}\n".encode()
+    assert host.remote_files[LISTS_PATH] == f"{REPO_SRC}\n".encode()
+    assert LISTS_SPOOL not in host.remote_files
 
     _plans2, report2, _hosts2 = await run(
         [{"host": "h", "connection": {}}], remove_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert entry2.changed
-    remove = AptRepoRemoveCommand(path=path, line=REPO_SRC)
-    assert entry2.commands == (remove,)
-    assert f"$ sudo {remove.shell()}" in format_log(report2)
-    assert host.remote_files[path] == b""
+    # Deleting the only line empties the file -- the transform's own answer.
+    assert entry2.commands == (
+        AptRepoUploadCommand(content="", dest=LISTS_SPOOL),
+        AptRepoInstallCommand(spool=LISTS_SPOOL, dest=LISTS_PATH),
+    )
+    install = entry2.commands[1]
+    assert f"$ sudo {install.shell()}" in format_log(report2)
+    assert host.remote_files[LISTS_PATH] == b""
     assert host.apt_sources == []
 
 
 async def test_apt_repo_dry_run_sends_nothing():
-    """dry=True materializes the plan (changed, one command) but mutates no
-    simulated state."""
+    """dry=True materializes the plan (changed, the spool/install pair) but
+    mutates no simulated state -- no spool and no sources file."""
 
     def repo_deploy(host):
         yield op(apt.repo, name="Add the partner repo", src=REPO_SRC, sudo=True)
@@ -4373,7 +4553,10 @@ async def test_apt_repo_dry_run_sends_nothing():
     )
     assert report is None
     assert plans["h"][0].changed
-    assert plans["h"][0].commands == (AptRepoAddCommand(path=SOURCES_LIST, line=REPO_SRC),)
+    assert plans["h"][0].commands == (
+        AptRepoUploadCommand(content=f"{REPO_SRC}\n", dest=REPO_SPOOL),
+        AptRepoInstallCommand(spool=REPO_SPOOL, dest=SOURCES_LIST),
+    )
     assert host.apt_sources == []
     assert host.remote_files == {}
 
@@ -4381,7 +4564,7 @@ async def test_apt_repo_dry_run_sends_nothing():
 async def test_apt_repo_repeat_add_in_one_deploy_apply_noop():
     """Two identical adds: the prepare plan shows both changed (its fact
     cache persists), but the apply log shows the second as a no-op -- the
-    per-step fresh cache sees the first append."""
+    per-step fresh cache sees the file the first pair installed."""
 
     def repo_deploy(host):
         yield op(apt.repo, name="add once", src=REPO_SRC, sudo=True)
@@ -4396,7 +4579,7 @@ async def test_apt_repo_repeat_add_in_one_deploy_apply_noop():
     assert first.changed
     assert not second.changed
     assert second.reason == f'apt repo "{REPO_SRC}" exists'
-    # Only the first append ran, so the file holds exactly one line.
+    # Only the first pair ran, so the file holds exactly one line.
     assert host.remote_files[SOURCES_LIST] == f"{REPO_SRC}\n".encode()
     assert host.apt_sources == [REPO_SOURCE]
 

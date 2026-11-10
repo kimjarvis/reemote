@@ -8,12 +8,13 @@ Re-exports everything from ``apk.py`` so the facts (``apk.ApkAutoremovablePackag
 ``apk.ApkInstalledPackages``, all returning lists of the shared
 ``apk.ApkPackageVersion`` entry type,
 ``apk.ApkPackage`` with its ``apk.ApkPackageInfo`` entry type,
-``apk.ApkRepositories`` with its ``apk.ApkRepository`` entry type), the
-``apk.autoremove``, ``apk.packages``, ``apk.repository``,
+``apk.ApkRepositories`` with its ``apk.ApkRepository`` entry type and the
+raw-content ``apk.ApkRepositoriesFile``),
+the ``apk.autoremove``, ``apk.packages``, ``apk.repository``,
 ``apk.virtual`` and ``apk.hold`` operations and their typed command
 descriptors (``apk.ApkInstallCommand``, ``apk.ApkPurgeCommand``,
-``apk.ApkRemoveCommand``, ``apk.ApkRepoAddCommand``,
-``apk.ApkRepoRemoveCommand``, ``apk.ApkUpgradeCommand``,
+``apk.ApkRemoveCommand``, ``apk.ApkRepoInstallCommand``,
+``apk.ApkRepoUploadCommand``, ``apk.ApkUpgradeCommand``,
 ``apk.ApkVirtualCommand``, ``apk.ApkHoldCommand``) are reachable through the
 package name alone.
 """
@@ -31,10 +32,11 @@ from .apk import (
     ApkPackageVersion,
     ApkPurgeCommand,
     ApkRemoveCommand,
-    ApkRepoAddCommand,
-    ApkRepoRemoveCommand,
+    ApkRepoInstallCommand,
     ApkRepositories,
+    ApkRepositoriesFile,
     ApkRepository,
+    ApkRepoUploadCommand,
     ApkUpgradeCommand,
     ApkVirtualCommand,
     autoremove,
@@ -56,9 +58,10 @@ __all__ = [
     "ApkPackageVersion",
     "ApkPurgeCommand",
     "ApkRemoveCommand",
-    "ApkRepoAddCommand",
-    "ApkRepoRemoveCommand",
+    "ApkRepoInstallCommand",
+    "ApkRepoUploadCommand",
     "ApkRepositories",
+    "ApkRepositoriesFile",
     "ApkRepository",
     "ApkUpgradeCommand",
     "ApkVirtualCommand",

@@ -82,9 +82,10 @@ a real asyncssh transport is missing:
   ``DnfRepoList``,
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``,
-  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``SystemdStatus``, ``SystemdEnabled``, ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState``, ``SystemdDependencies``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpgradable``, ``Arch``,
-  ``AuthorizedKeys``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``, ``DebPackage``,
-  ``DiskStats``, ``DmiInfo``, ``Env``, ``FirewalldStatus``, ``FirewalldDefaultZone``,
+  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``SystemdStatus``, ``SystemdEnabled``, ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState``, ``SystemdDependencies``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``ApkRepositoriesFile``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpgradable``, ``Arch``,
+  ``AuthorizedKeys``, ``AuthorizedKeysFile``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``, ``DebPackage``,
+  ``DiskStats``, ``DmiInfo``, ``Env``, ``EtcHosts`` (parses the shared
+  ``remote_files`` seam at the hosts-file path), ``FirewalldStatus``, ``FirewalldDefaultZone``,
   ``FirewalldZones``, ``FirewalldServices``, ``FirewalldIpSets``,
   ``FirewalldPolicies`` (the firewalld-local ``_FirewalldLockdown`` and
   ``_FirewalldPanicMode`` probes read the ``firewalld_lockdown`` and
@@ -114,7 +115,7 @@ a real asyncssh transport is missing:
   ``MysqlConnections``, ``MysqlDatabases``, ``MysqlEngines``, ``MysqlIndexes``,
   ``MysqlPlugins``, ``MysqlReplication``, ``MysqlStatus``, ``MysqlTables``,
   ``MysqlUserGrants``, ``MysqlUsers``, ``MysqlVariables``, ``NetworkDevices``,
-  ``OpenrcEnabled``,
+  ``OpenrcConfigFile``, ``OpenrcEnabled``,
   ``OpenrcRunlevels``, ``OpenrcServices``, ``OpenrcStatus``, ``OpenrcVersion``,
   ``Port``, ``Processes``,
   ``PostgresqlConnections``, ``PostgresqlDatabases``,
@@ -125,8 +126,8 @@ a real asyncssh transport is missing:
   ``PostgresqlTablespaces``,
   ``SEBoolean``, ``Booleans``, ``FileContext``, ``FileContextMapping``,
   ``SEPorts``, ``SEPort``, ``Mode``, ``SELogin``, ``SEUser``, ``Modules``,
-  ``PermissiveDomains`` (the selinux-local ``_Which`` and
-  ``_AutorelabelPending`` probes read the shared ``command_paths`` and
+  ``PermissiveDomains``, ``SelinuxConfigFile`` (the selinux-local ``_Which``
+  and ``_AutorelabelPending`` probes read the shared ``command_paths`` and
   ``existing_files`` seams),
   ``SnapPackage``, ``SnapPackages``,
   ``SmbiosInfo``, ``SimulateOperationWillChange``, ``Sysctl``, ``SysctlFile``,
@@ -162,16 +163,13 @@ from reemote5.modules.apk.apk import (
     ApkPackageVersion,
     ApkPurgeCommand,
     ApkRemoveCommand,
-    ApkRepoAddCommand,
-    ApkRepoRemoveCommand,
+    ApkRepoInstallCommand,
     ApkRepositories,
     ApkRepository,
+    ApkRepoUploadCommand,
     ApkUpgradeCommand,
     ApkVirtualCommand,
     _split_constraint,
-)
-from reemote5.modules.apk.apk import (
-    _repo_line_pattern as _apk_repo_line_pattern,
 )
 from reemote5.modules.apt.apt import (
     AptAutoRemoveCommand,
@@ -188,8 +186,8 @@ from reemote5.modules.apt.apt import (
     AptPackageUpgrade,
     AptPpaCommand,
     AptRemoveCommand,
-    AptRepoAddCommand,
-    AptRepoRemoveCommand,
+    AptRepoInstallCommand,
+    AptRepoUploadCommand,
     AptSimulationDict,
     AptSource,
     AptSources,
@@ -200,7 +198,6 @@ from reemote5.modules.apt.apt import (
     AptUpgradeCommand,
     DebInstallCommand,
     DebPackageInfo,
-    _repo_line_pattern,
 )
 from reemote5.modules.dnf.dnf import (
     DnfCleanCommand,
@@ -385,6 +382,8 @@ from reemote5.modules.mysql.mysql import (
     MysqlVariableCommand,
 )
 from reemote5.modules.openrc.openrc import (
+    OpenrcConfigInstallCommand,
+    OpenrcConfigUploadCommand,
     RcServiceCommand,
     RcUpdateCommand,
     RunlevelCommand,
@@ -429,6 +428,8 @@ from reemote5.modules.selinux.selinux import (
     Module,
     RestoreconCommand,
     SeContext,
+    SelinuxConfigInstallCommand,
+    SelinuxConfigUploadCommand,
     SeLogin,
     SemanageFcontextCommand,
     SemanageLoginCommand,
@@ -442,14 +443,23 @@ from reemote5.modules.selinux.selinux import (
     SeUser,
 )
 from reemote5.modules.server.server import (
-    AuthorizedKeysAppendCommand,
+    AuthorizedKeys,
+    AuthorizedKeysInstallCommand,
+    AuthorizedKeysUploadCommand,
+    EtcHostsInstallCommand,
+    EtcHostsUploadCommand,
     GroupAddCommand,
     GroupDelCommand,
     KillCommand,
+    LocaleGenCommand,
+    LocaleInstallCommand,
+    LocaleUploadCommand,
     ModprobeCommand,
     MountCommand,
     Port,
     PortInfo,
+    SecurityLimitInstallCommand,
+    SecurityLimitUploadCommand,
     SetHostnameCommand,
     SetTimezoneCommand,
     UserAddCommand,
@@ -534,12 +544,18 @@ class SimulatedHost(Host):
     # a simulated ``files.put`` writes the source
     # stream's bytes into it, and a simulated ``files.get`` reads them back out
     # into the destination stream. The ``dnf.key``/``dnf.repo``/``apt.key``/
-    # ``apt.sources_file``/``gpg.key``/``gpg.import_key``/``files.install``
+    # ``apt.sources_file``/``gpg.key``/``gpg.import_key``/``files.install``/
+    # ``server.user_authorized_keys``/``server.etc_hosts``/``server.locale``/
+    # ``server.security_limit``/
+    # ``openrc.config``/``selinux.config``
     # spool uploads land
     # here too:
     # ``import_key``/``install_repo_file``/``install_apt_key``/
     # ``install_apt_sources_file``/``install_gpg_key``/``import_gpg_key``/
-    # ``install_file`` pop
+    # ``install_file``/``install_authorized_keys_file``/``install_etc_hosts_file``/
+    # ``install_locale_gen_file``/``install_security_limits_file``/
+    # ``install_openrc_config_file``/
+    # ``install_selinux_config_file`` pop
     # the spool entry, and
     # the install mutators store the content bytes back at their dest path
     # (``dearmor_gpg_key`` copies between two remote paths in the same store,
@@ -699,10 +715,10 @@ class SimulatedHost(Host):
     # never mix. Defaults to [] -- a
     # simulated machine with no ``/etc/apk/repositories`` entries, like the
     # fact's answer for a missing or empty file. A test seeds it directly;
-    # ``add_apk_repo_line``/``remove_apk_repo_line`` (the simulated
-    # ``apk.repository``) append/drop the parsed entries as the
-    # corresponding echo/sed commands would, keeping the ``remote_files``
-    # content at the path in sync.
+    # ``install_apk_repo_file`` (the simulated ``apk.repository`` install)
+    # refreshes it from the installed file's content -- dropping the entries the
+    # previous text parsed into and appending the new text's -- so a repeat is a
+    # no-op, keeping the ``remote_files`` content at the path in sync.
     apk_repositories: list[ApkRepository] = field(default_factory=list)
     # Per-package detailed metadata (package name -> the ``ApkPackageInfo``
     # dict ``ApkPackage`` returns -- name, version, description, url, license,
@@ -800,8 +816,8 @@ class SimulatedHost(Host):
     # simulated machine with no sources files, like pyinfra's
     # ``default = list``. A test seeds it directly; ``add_ppa``/``remove_ppa``
     # (the simulated ``apt.ppa``) append/drop the PPA's Launchpad source and
-    # ``add_apt_repo_line``/``remove_apt_repo_line`` (the simulated
-    # ``apt.repo``) append/drop the parsed source line, so ``AptSources``
+    # ``install_apt_repo_file`` (the simulated ``apt.repo``) refreshes the
+    # entries the installed file content parses into, so ``AptSources``
     # stays consistent across a simulated add/remove. The
     # ``apt.sources_file`` mutators (``install_apt_sources_file``/
     # ``remove_apt_sources_file``) replace/drop the entries their deb822
@@ -835,8 +851,10 @@ class SimulatedHost(Host):
     # when the fact is given one; each value is the list of full key strings
     # the file lists (already stripped, no comments -- the parsed form).
     # ``server.user_authorized_keys`` always reads the fact with an explicit
-    # path, so its ``append_authorized_key`` mutator writes only the
-    # path-keyed entries; a test seeding the username-keyed form exercises
+    # path, so its ``install_authorized_keys_file`` mutator writes only the
+    # path-keyed entries, recomputed from the installed text (so a repeat
+    # install never duplicates a key and a ``delete_keys`` rewrite drops the
+    # unrequested ones); a test seeding the username-keyed form exercises
     # the fact directly, not that operation.
     authorized_keys: dict[str, list[str]] = field(default_factory=dict)
     # Mounted block devices (device -> the ``BlockDevice`` entry the fact
@@ -1324,7 +1342,10 @@ class SimulatedHost(Host):
     # already normalized to ``UTF-8``), backing ``Locales``: the list of names
     # the fact returns, in command order. Defaults to [] -- a simulated
     # machine with no locales listed, like pyinfra's ``default = list`` for an
-    # empty or failed ``locale -a`` read.
+    # empty or failed ``locale -a`` read. ``server.locale`` mutates it:
+    # ``generate_locales`` (the simulated ``locale-gen``) adds or drops the
+    # request's one name, so the next step's fresh fact cache sees the
+    # locale as enabled/disabled.
     locales: list[str] = field(default_factory=list)
     # Release information (the parsed ``lsb_release -ca`` rows), backing
     # ``LsbRelease``: the lower-cased key -> stripped value dict the fact
@@ -1605,7 +1626,9 @@ class SimulatedHost(Host):
     # The SELinux status record, backing ``Mode``. Defaults to an
     # enforcing/targeted host; ``set_selinux_mode`` (the simulated
     # ``setenforce``) edits the runtime ``mode`` key only, mirroring
-    # setenforce's runtime-only effect.
+    # setenforce's runtime-only effect, while ``install_selinux_config_file``
+    # (the ``selinux.config`` install) refreshes ``config_mode`` from the
+    # installed file's SELINUX assignment -- sestatus reads the file live.
     selinux_mode: ModeInfo = field(
         default_factory=lambda: ModeInfo(
             mode="enforcing", config_mode="enforcing", policy="targeted"
@@ -1747,10 +1770,10 @@ class SimulatedHost(Host):
                 self.autoremove_apk_packages()
             case ApkRemoveCommand(packages=packages):
                 self.remove_apk_packages(packages)
-            case ApkRepoAddCommand(path=path, line=line):
-                self.add_apk_repo_line(path, line)
-            case ApkRepoRemoveCommand(path=path, line=line):
-                self.remove_apk_repo_line(path, line)
+            case ApkRepoInstallCommand(spool=spool, dest=dest):
+                self.install_apk_repo_file(spool, dest)
+            case ApkRepoUploadCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
             case ApkUpgradeCommand():
                 pass  # the simulation tracks no newer versions to upgrade to
             case ApkVirtualCommand(tag=tag, packages=packages, present=False):
@@ -1795,10 +1818,10 @@ class SimulatedHost(Host):
                 self.remove_ppa(src)
             case AptPpaCommand(src=src):
                 self.add_ppa(src)
-            case AptRepoAddCommand(path=path, line=line):
-                self.add_apt_repo_line(path, line)
-            case AptRepoRemoveCommand(path=path, line=line):
-                self.remove_apt_repo_line(path, line)
+            case AptRepoUploadCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
+            case AptRepoInstallCommand(spool=spool, dest=dest):
+                self.install_apt_repo_file(spool, dest)
             case AptSourcesFileUploadCommand(content=content, dest=dest):
                 self.put_file(io.BytesIO(content.encode()), dest)
             case AptSourcesFileInstallCommand(spool=spool, dest=dest):
@@ -1896,12 +1919,42 @@ class SimulatedHost(Host):
                 # server.user's inlined home-ownership change rides the same
                 # mutation as files.directory's chown descriptor.
                 self.chown_path(path, user, group)
-            case AuthorizedKeysAppendCommand(path=path, key=key):
-                # server.user_authorized_keys's key-append mutation updates
-                # the key-file content, its existence/metadata seams and the
+            case AuthorizedKeysUploadCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
+            case AuthorizedKeysInstallCommand(spool=spool, dest=dest):
+                # server.user_authorized_keys's install mutation updates the
+                # key-file content, its existence/metadata seams and the
                 # AuthorizedKeys fact seam in one place, so a repeat run
-                # reads the key as already listed.
-                self.append_authorized_key(path, key)
+                # reads the keys as already written.
+                self.install_authorized_keys_file(spool, dest)
+            case EtcHostsUploadCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
+            case EtcHostsInstallCommand(spool=spool, dest=dest):
+                # server.etc_hosts's install mutation stores the hosts-file
+                # content plus its existence/metadata seams; the EtcHosts
+                # fact parses remote_files directly, so no second store
+                # needs refreshing and a repeat run reads the entry as
+                # already written.
+                self.install_etc_hosts_file(spool, dest)
+            case LocaleUploadCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
+            case LocaleInstallCommand(spool=spool, dest=dest):
+                # server.locale's install mutation stores the locale.gen
+                # content plus its existence/metadata seams; the paired
+                # LocaleGenCommand then flips the Locales seam, so a repeat
+                # run reads the locale as already enabled/disabled.
+                self.install_locale_gen_file(spool, dest)
+            case LocaleGenCommand(locale=locale, present=present):
+                self.generate_locales(locale, present)
+            case SecurityLimitUploadCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
+            case SecurityLimitInstallCommand(spool=spool, dest=dest):
+                # server.security_limit's install mutation stores the
+                # limits.conf content plus its existence/metadata seams;
+                # AuthorizedKeysFile reads remote_files directly, so no
+                # second store needs refreshing and a repeat run reads the
+                # limit line as already set.
+                self.install_security_limits_file(spool, dest)
             case GitConfigCommand(
                 key=key,
                 value=value,
@@ -2022,6 +2075,10 @@ class SimulatedHost(Host):
                 self.remove_openrc_runlevel(level)
             case RunlevelCommand(runlevel=level):
                 self.create_openrc_runlevel(level)
+            case OpenrcConfigUploadCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
+            case OpenrcConfigInstallCommand(spool=spool, dest=dest):
+                self.install_openrc_config_file(spool, dest)
             case MysqlDatabaseCommand():
                 self.manage_mysql_database(cmd)
             case MysqlDumpCommand():
@@ -2102,6 +2159,10 @@ class SimulatedHost(Host):
                 self.relabel_path(cmd)
             case AutorelabelCommand():
                 self.create_file(AUTORELABEL_PATH)
+            case SelinuxConfigUploadCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
+            case SelinuxConfigInstallCommand(spool=spool, dest=dest):
+                self.install_selinux_config_file(spool, dest)
             case IptablesChainCommand():
                 self.manage_iptables_chain(cmd)
             case IptablesPolicyCommand():
@@ -2355,74 +2416,47 @@ class SimulatedHost(Host):
             self.apk_packages.pop(entry["name"], None)
         self.apk_autoremovable.clear()
 
-    def add_apk_repo_line(self, path: str, line: str) -> None:
-        """Record a simulated ``echo <line> >> <path>``: append a repo line.
+    def install_apk_repo_file(self, spool: str, dest: str) -> None:
+        """Record a simulated ``apk.repository`` install of the spooled text.
 
-        ``apk.repository``'s ``present=True`` mutation, the
-        ``add_apt_repo_line`` mirror. The line (plus its newline) is
-        appended to the ``remote_files`` content at ``path``, creating the
-        file when absent, and the path is recorded in ``existing_files``
-        with a ``file_stats`` size refresh, so the content-read, existence
-        and metadata facts all see the appended file consistently. The
-        parsed ``ApkRepository`` entry (``ApkRepositories.parse``) also
-        lands in ``apk_repositories`` unless an equal entry is already
-        there, so a repeat ``apk.repository`` is a no-op once the fresh
-        per-step fact cache sees the change. The operation validates
-        ``src`` before yielding, so an unparseable line never reaches the
-        mutator.
+        ``apk.repository`` first uploads the transformed repositories text to a
+        ``/tmp`` spool path (the paired ``ApkRepoUploadCommand`` runs through
+        ``put_file``, storing the bytes in ``remote_files``), then installs it as
+        the ``dest`` file and removes the spool. This mirrors the
+        install-and-remove: the spool bytes are popped out of ``remote_files``
+        and stored at ``dest``, and the path is added to ``existing_files`` plus
+        a minimal ``file_stats`` row (root-owned, mode 644 -- the real command's
+        ``chmod 0644``), so the content-read (``ApkRepositoriesFile``), existence
+        and metadata facts all see the installed file consistently. The
+        ``apk_repositories`` seam is refreshed too: entries the *previous*
+        content at ``dest`` parsed into are dropped and the new content's lines
+        appended (both through ``ApkRepositories.parse``), so an add or a removal
+        replaces rather than accumulates and a repeat ``apk.repository`` is a
+        no-op once the fresh per-step fact cache sees them -- the refresh is
+        content-based, never append-only, exactly like the real ``cp`` overlay.
+        An absent spool path installs nothing (the paired ``apt.key`` and
+        ``apt.sources_file`` mutators tolerate it the same way).
         """
-        data = self.remote_files.get(path, b"") + f"{line}\n".encode()
-        self.remote_files[path] = data
-        self.existing_files.add(path)
-        stats = self.file_stats.get(path)
-        if isinstance(stats, dict):
-            stats["size"] = len(data)
-        else:
-            self.file_stats[path] = {
-                "user": "root",
-                "group": "root",
-                "mode": 644,
-                "size": len(data),
-            }
-        parsed = ApkRepositories.parse([line])
-        if parsed and parsed[0] not in self.apk_repositories:
-            self.apk_repositories.append(parsed[0])
-
-    def remove_apk_repo_line(self, path: str, line: str) -> None:
-        """Record a simulated ``sed -i '/<pattern>/d'``: drop repo lines.
-
-        ``apk.repository``'s ``present=False`` mutation. Deletes every line
-        matching the same anchored, escaped whole-line pattern the sed
-        descriptor renders (apk's own ``_repo_line_pattern``) from the
-        ``remote_files`` content at ``path`` and refreshes the
-        ``file_stats`` size; entries whose reconstructed file line the
-        pattern matches are also dropped from ``apk_repositories`` -- the
-        sed is a *contains* match, so removing a bare URL drops a tagged
-        line carrying it too, exactly as the real command would. An absent
-        path or a line matching nothing is tolerated -- sed exits 0 when
-        it deletes nothing.
-        """
-        regex = re.compile(_apk_repo_line_pattern(line))
-        self.apk_repositories[:] = [
-            entry
-            for entry in self.apk_repositories
-            if regex.match(
-                f"@{entry['tag']} {entry['url']}" if entry["tag"] else entry["url"]
-            )
-            is None
-        ]
-        data = self.remote_files.get(path)
+        data = self.remote_files.pop(spool, None)
         if data is None:
             return
-        text = data.decode("utf-8")
-        kept = [row for row in text.splitlines() if regex.match(row) is None]
-        new = "\n".join(kept)
-        if kept and text.endswith("\n"):
-            new += "\n"
-        self.remote_files[path] = new.encode()
-        stats = self.file_stats.get(path)
-        if isinstance(stats, dict):
-            stats["size"] = len(self.remote_files[path])
+        previous = self.remote_files.get(dest)
+        if previous is not None:
+            stale = ApkRepositories.parse(previous.decode("utf-8").splitlines())
+            self.apk_repositories[:] = [
+                entry for entry in self.apk_repositories if entry not in stale
+            ]
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        self.file_stats[dest] = {
+            "user": "root",
+            "group": "root",
+            "mode": 644,
+            "size": len(data),
+        }
+        for entry in ApkRepositories.parse(data.decode("utf-8").splitlines()):
+            if entry not in self.apk_repositories:
+                self.apk_repositories.append(entry)
 
     def set_openrc_service_state(self, service: str, action: str) -> None:
         """Record a simulated ``rc-service <service> <action>``.
@@ -2528,6 +2562,37 @@ class SimulatedHost(Host):
         for names in self.openrc_runlevels.values():
             if runlevel in names:
                 names.remove(runlevel)
+
+    def install_openrc_config_file(self, spool: str, dest: str) -> None:
+        """Record a simulated ``openrc.config`` install of the spooled text.
+
+        ``openrc.config`` first uploads the transformed rc.conf / conf.d text
+        to a ``/tmp`` spool path (the paired ``OpenrcConfigUploadCommand`` runs
+        through ``put_file``, storing the bytes in ``remote_files``), then
+        installs it as the ``dest`` file and removes the spool. This mirrors
+        the install-and-remove: the spool bytes are popped out of
+        ``remote_files`` and stored at ``dest``, and the path is added to
+        ``existing_files`` plus a minimal ``file_stats`` row (root-owned,
+        mode 644 -- the real command's ``chmod 0644``), so the content-read
+        (``OpenrcConfigFile``), existence and metadata facts all see the
+        installed file consistently. There is no parsed store to refresh:
+        ``OpenrcConfigFile`` reads ``remote_files`` directly, so the next
+        step's fresh fact cache sees the new text and a repeat
+        ``openrc.config`` is a no-op once the transform is a fixpoint. An
+        absent spool path installs nothing (the ``install_apk_repo_file``
+        tolerance).
+        """
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        self.file_stats[dest] = {
+            "user": "root",
+            "group": "root",
+            "mode": 644,
+            "size": len(data),
+        }
 
     def install_packages(self, packages: tuple[str, ...]) -> None:
         for package in packages:
@@ -2793,68 +2858,64 @@ class SimulatedHost(Host):
         url = self._ppa_url(src)
         self.apt_sources[:] = [s for s in self.apt_sources if s["url"] != url]
 
-    def add_apt_repo_line(self, path: str, line: str) -> None:
-        """Record a simulated ``echo <line> >> <path>``: append a source line.
+    @staticmethod
+    def _legacy_sources_entries(data: bytes) -> list[AptSource]:
+        """Parse the ``AptSource`` entries one legacy sources file lists.
 
-        ``apt.repo``'s ``present=True`` mutation. The line (plus its
-        newline) is appended to the ``remote_files`` content at ``path``,
-        creating the file when absent, and the path is recorded in
-        ``existing_files`` with a ``file_stats`` size refresh, so the
-        content-read, existence and metadata facts all see the appended
-        file consistently. The parsed ``AptSource`` (``AptSources``' legacy
-        line parser) also lands in ``apt_sources`` unless an equal entry is
-        already there, so a repeat ``apt.repo`` is a no-op once the fresh
-        per-step fact cache sees the change. An unparseable line still
-        appends to the file but contributes no sources entry -- the fact's
-        parser skips it too.
+        Blank and ``#`` comment lines are skipped and lines the fact's regex
+        cannot parse contribute nothing -- exactly how ``AptSources`` reads a
+        ``.list`` group -- so the ``apt_sources`` seam stays consistent with
+        what the fact would report for the same bytes.
         """
-        data = self.remote_files.get(path, b"") + f"{line}\n".encode()
-        self.remote_files[path] = data
-        self.existing_files.add(path)
-        stats = self.file_stats.get(path)
-        if isinstance(stats, dict):
-            stats["size"] = len(data)
-        else:
-            self.file_stats[path] = {
-                "user": "root",
-                "group": "root",
-                "mode": 644,
-                "size": len(data),
-            }
-        parsed = AptSources._parse_list_line(line)
-        if parsed is not None and parsed not in self.apt_sources:
-            self.apt_sources.append(parsed)
+        entries: list[AptSource] = []
+        for raw in data.decode("utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            parsed = AptSources._parse_list_line(line)
+            if parsed is not None:
+                entries.append(parsed)
+        return entries
 
-    def remove_apt_repo_line(self, path: str, line: str) -> None:
-        """Record a simulated ``sed -i '/<pattern>/d'``: drop source lines.
+    def install_apt_repo_file(self, spool: str, dest: str) -> None:
+        """Record a simulated ``apt.repo`` install of the spooled sources text.
 
-        ``apt.repo``'s ``present=False`` mutation. Deletes every line
-        matching the same anchored, escaped whole-line pattern the sed
-        descriptor renders (``_repo_line_pattern``) from the
-        ``remote_files`` content at ``path`` and refreshes the
-        ``file_stats`` size; the parsed entry is also dropped from
-        ``apt_sources`` so ``AptSources`` no longer reports the repo (the
-        simulation does not track which file an entry came from, so an
-        equal entry goes regardless of its file). An absent path or a
-        line matching nothing is tolerated -- sed exits 0 when it deletes
-        nothing.
+        ``apt.repo`` first uploads the transformed file text to a ``/tmp``
+        spool path (the paired ``AptRepoUploadCommand`` runs through
+        ``put_file``, storing the bytes in ``remote_files``), then installs
+        it as the ``dest`` sources file and removes the spool. This mirrors
+        the install-and-remove: the spool bytes are popped out of
+        ``remote_files`` and stored at ``dest``, and the path is added to
+        ``existing_files`` plus a minimal ``file_stats`` row (root-owned,
+        mode 644 -- the real command's ``chmod 0644``), so the content-read
+        (``AptSourcesFile``), existence and metadata facts all see the
+        installed file consistently. The ``apt_sources`` seam is refreshed
+        too: entries the *previous* content at ``dest`` parsed into are
+        dropped and the new content's legacy lines appended, so an add or a
+        removal replaces rather than accumulates and a repeat ``apt.repo``
+        is a no-op once the fresh per-step fact cache sees them. Like the
+        deb822 mutator below, the simulation tracks no per-entry
+        provenance, so an equal entry goes regardless of which file listed
+        it. An absent spool path installs nothing.
         """
-        parsed = AptSources._parse_list_line(line)
-        if parsed is not None:
-            self.apt_sources[:] = [s for s in self.apt_sources if s != parsed]
-        data = self.remote_files.get(path)
+        data = self.remote_files.pop(spool, None)
         if data is None:
             return
-        regex = re.compile(_repo_line_pattern(line))
-        text = data.decode("utf-8")
-        kept = [row for row in text.splitlines() if regex.match(row) is None]
-        new = "\n".join(kept)
-        if kept and text.endswith("\n"):
-            new += "\n"
-        self.remote_files[path] = new.encode()
-        stats = self.file_stats.get(path)
-        if isinstance(stats, dict):
-            stats["size"] = len(self.remote_files[path])
+        previous = self.remote_files.get(dest)
+        if previous is not None:
+            stale = self._legacy_sources_entries(previous)
+            self.apt_sources[:] = [s for s in self.apt_sources if s not in stale]
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        self.file_stats[dest] = {
+            "user": "root",
+            "group": "root",
+            "mode": 644,
+            "size": len(data),
+        }
+        for entry in self._legacy_sources_entries(data):
+            if entry not in self.apt_sources:
+                self.apt_sources.append(entry)
 
     def install_apt_sources_file(self, spool: str, dest: str) -> None:
         """Record a simulated ``apt.sources_file`` install of the spooled deb822.
@@ -2874,7 +2935,7 @@ class SimulatedHost(Host):
         accumulates and a repeat write is a no-op once the fresh per-step
         fact cache sees them. The simulation does not track which file an
         entry came from, so an equal entry goes regardless of its file
-        (``remove_apt_repo_line``'s tolerance). An absent spool path
+        (mirrored by ``install_apt_repo_file``). An absent spool path
         installs nothing.
         """
         data = self.remote_files.pop(spool, None)
@@ -3411,43 +3472,176 @@ class SimulatedHost(Host):
         """
         self.os_users.pop(name, None)
 
-    def append_authorized_key(self, path: str, key: str) -> None:
-        """Record a simulated ``user_authorized_keys`` append at ``path``.
+    def install_authorized_keys_file(self, spool: str, dest: str) -> None:
+        """Record a simulated ``user_authorized_keys`` install of the spooled text.
 
-        ``server.user_authorized_keys``' key-append mutation. The newline-
-        guard idiom the descriptor renders is mirrored here: a leading
-        ``\n`` is inserted when the file's existing content ends without
-        one, so the appended key never gets glued onto a newline-less last
-        line, and the key is then written with its own trailing newline.
-        Every seam a later ``user_authorized_keys`` read consults goes in
-        together: the bytes land in ``remote_files`` (the same store
-        ``FileContents`` decodes), the path joins ``existing_files`` with a
-        ``file_stats`` size refresh (or, when the paired
-        ``_KeysTouchCommand`` never ran -- a descriptor-only test -- a
-        minimal root-owned mode-600 row), and the key is appended to
-        ``authorized_keys`` under the caller-supplied ``path`` key, so
-        ``AuthorizedKeys(user, path=...)`` -- the shape this operation
-        always reads -- sees the appended key and a repeat run takes the
-        no-op branch. An already-listed key is not stored twice.
+        ``server.user_authorized_keys`` first uploads the transformed
+        key-file content to a ``/tmp`` spool path (the paired
+        ``AuthorizedKeysUploadCommand`` runs through ``put_file``, storing
+        the bytes in ``remote_files``), then installs it over the key file
+        and removes the spool. This mirrors the install-and-remove: the
+        spool bytes are popped out of ``remote_files`` and stored at
+        ``dest`` -- the same store ``AuthorizedKeysFile`` reads back -- so a
+        repeat request with identical arguments is a no-op, since the fresh
+        per-step fact cache sees these bytes and the content matches.
+        ``cp`` over an existing file preserves its owner, so an existing
+        ``file_stats`` row keeps its user/group while the mode resets to
+        600 (the real command's ``chmod 600``) and the size refreshes; a
+        descriptor-only test with no prior row (the paired
+        ``_KeysTouchCommand`` never ran) gets a minimal root-owned mode-600
+        one, and the path joins ``existing_files``. The parsed
+        ``authorized_keys`` seam is recomputed from the installed text
+        through ``AuthorizedKeys.parse`` under the caller-supplied ``path``
+        key, so ``AuthorizedKeys(user, path=...)`` -- the shape this
+        operation always reads -- sees exactly the written keys: content-
+        based, so a repeat install never duplicates an entry and a
+        ``delete_keys`` rewrite drops the unrequested ones. An absent spool
+        path installs nothing.
         """
-        existing = self.remote_files.get(path, b"")
-        prefix = b"\n" if existing and not existing.endswith(b"\n") else b""
-        data = existing + prefix + f"{key}\n".encode()
-        self.remote_files[path] = data
-        self.existing_files.add(path)
-        stats = self.file_stats.get(path)
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        stats = self.file_stats.get(dest)
         if isinstance(stats, dict):
+            stats["mode"] = 600
             stats["size"] = len(data)
         else:
-            self.file_stats[path] = {
+            self.file_stats[dest] = {
                 "user": "root",
                 "group": "root",
                 "mode": 600,
                 "size": len(data),
             }
-        keys = self.authorized_keys.setdefault(path, [])
-        if key not in keys:
-            keys.append(key)
+        self.authorized_keys[dest] = AuthorizedKeys.parse(
+            data.decode("utf-8").splitlines()
+        )
+
+    def install_etc_hosts_file(self, spool: str, dest: str) -> None:
+        """Record a simulated ``etc_hosts`` install of the spooled hosts text.
+
+        ``server.etc_hosts`` first uploads the transformed hosts-file
+        content to a ``/tmp`` spool path (the paired
+        ``EtcHostsUploadCommand`` runs through ``put_file``, storing the
+        bytes in ``remote_files``), then installs it over the hosts file and
+        removes the spool. This mirrors the install-and-remove: the spool
+        bytes are popped out of ``remote_files`` and stored at ``dest`` --
+        the same store ``AuthorizedKeysFile`` reads back and ``EtcHosts``
+        parses directly, so no separate parsed seam exists to refresh and a
+        repeat request with identical arguments is a no-op, since the fresh
+        per-step fact cache sees these bytes and the entry matches.
+        ``cp`` over an existing file preserves its owner, so an existing
+        ``file_stats`` row keeps its user/group while the mode resets to
+        644 (the real command's ``chmod 0644``) and the size refreshes; a
+        descriptor-only test with no prior row gets a minimal root-owned
+        mode-644 one, and the path joins ``existing_files``. An empty
+        payload is legitimate (a removal that empties the hosts file) and
+        installs as empty bytes. An absent spool path installs nothing.
+        """
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        stats = self.file_stats.get(dest)
+        if isinstance(stats, dict):
+            stats["mode"] = 644
+            stats["size"] = len(data)
+        else:
+            self.file_stats[dest] = {
+                "user": "root",
+                "group": "root",
+                "mode": 644,
+                "size": len(data),
+            }
+
+    def install_locale_gen_file(self, spool: str, dest: str) -> None:
+        """Record a simulated ``locale`` install of the spooled locale.gen text.
+
+        ``server.locale`` first uploads the transformed locale.gen content
+        to a ``/tmp`` spool path (the paired ``LocaleUploadCommand`` runs
+        through ``put_file``, storing the bytes in ``remote_files``), then
+        installs it over the file and removes the spool. This mirrors the
+        install-and-remove: the spool bytes are popped out of
+        ``remote_files`` and stored at ``dest`` -- the same store
+        ``AuthorizedKeysFile`` reads back -- so a repeat request with
+        identical arguments is a no-op, since the fresh per-step fact cache
+        sees these bytes and the definition line matches. ``cp`` over an
+        existing file preserves its owner, so an existing ``file_stats``
+        row keeps its user/group while the mode resets to 644 (the real
+        command's ``chmod 0644``) and the size refreshes; a descriptor-only
+        test with no prior row gets a minimal root-owned mode-644 one, and
+        the path joins ``existing_files``. An absent spool path installs
+        nothing.
+        """
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        stats = self.file_stats.get(dest)
+        if isinstance(stats, dict):
+            stats["mode"] = 644
+            stats["size"] = len(data)
+        else:
+            self.file_stats[dest] = {
+                "user": "root",
+                "group": "root",
+                "mode": 644,
+                "size": len(data),
+            }
+
+    def generate_locales(self, locale: str, present: bool) -> None:
+        """Record a simulated ``locale-gen``: flip the name in ``locales``.
+
+        The real ``locale-gen`` regenerates every uncommented definition in
+        ``/etc/locale.gen``; the seam models only the request's delta --
+        enabling appends the name to the ``Locales`` listing if absent,
+        disabling drops it -- so the next step's fresh fact cache sees the
+        locale in the requested state and a repeat request is a no-op.
+        """
+        if present:
+            if locale not in self.locales:
+                self.locales.append(locale)
+        elif locale in self.locales:
+            self.locales.remove(locale)
+
+    def install_security_limits_file(self, spool: str, dest: str) -> None:
+        """Record a simulated ``security_limit`` install of the spooled limits text.
+
+        ``server.security_limit`` first uploads the transformed limits.conf
+        content to a ``/tmp`` spool path (the paired
+        ``SecurityLimitUploadCommand`` runs through ``put_file``, storing the
+        bytes in ``remote_files``), then installs it over the file and
+        removes the spool. This mirrors the install-and-remove: the spool
+        bytes are popped out of ``remote_files`` and stored at ``dest`` --
+        the same store ``AuthorizedKeysFile`` reads back -- so a repeat
+        request with identical arguments is a no-op, since the fresh
+        per-step fact cache sees these bytes and the limit line matches.
+        ``cp`` over an existing file preserves its owner, so an existing
+        ``file_stats`` row keeps its user/group while the mode resets to 644
+        (the real command's ``chmod 0644``) and the size refreshes; a
+        descriptor-only test with no prior row gets a minimal root-owned
+        mode-644 one, and the path joins ``existing_files``. An absent spool
+        path installs nothing.
+        """
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        stats = self.file_stats.get(dest)
+        if isinstance(stats, dict):
+            stats["mode"] = 644
+            stats["size"] = len(data)
+        else:
+            self.file_stats[dest] = {
+                "user": "root",
+                "group": "root",
+                "mode": 644,
+                "size": len(data),
+            }
 
     def set_hostname(self, name: str) -> None:
         """Record a simulated ``hostnamectl set-hostname``/``hostname``.
@@ -4958,6 +5152,43 @@ class SimulatedHost(Host):
         config-file mode and policy survive untouched.
         """
         self.selinux_mode["mode"] = mode
+
+    def install_selinux_config_file(self, spool: str, dest: str) -> None:
+        """Record a simulated ``selinux.config`` install of the spooled text.
+
+        ``selinux.config`` first uploads the transformed /etc/selinux/config
+        text to a ``/tmp`` spool path (the paired
+        ``SelinuxConfigUploadCommand`` runs through ``put_file``, storing the
+        bytes in ``remote_files``), then installs it as the ``dest`` file and
+        removes the spool. This mirrors the install-and-remove: the spool
+        bytes are popped out of ``remote_files`` and stored at ``dest``, and
+        the path is added to ``existing_files`` plus a minimal ``file_stats``
+        row (root-owned, mode 644 -- the real command's ``chmod 0644``), so
+        the content-read (``SelinuxConfigFile``), existence and metadata
+        facts all see the installed file consistently. ``Mode``'s
+        ``config_mode`` is refreshed from the installed text's last active
+        ``SELINUX=`` assignment, because sestatus reads the config file live
+        -- except on a disabled subsystem, where sestatus reports no config
+        mode at all. The runtime ``mode`` and loaded ``policy`` survive
+        untouched: both change only at the next reboot. An absent spool path
+        installs nothing (the ``install_openrc_config_file`` tolerance).
+        """
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        self.file_stats[dest] = {
+            "user": "root",
+            "group": "root",
+            "mode": 644,
+            "size": len(data),
+        }
+        if self.selinux_mode["mode"] != "disabled":
+            for line in data.decode("utf-8").splitlines():
+                match = re.match(r"^[ \t]*SELINUX[ \t]*=[ \t]*(\S+)", line)
+                if match:
+                    self.selinux_mode["config_mode"] = match.group(1).lower()
 
     def manage_selinux_login(self, cmd: SemanageLoginCommand) -> None:
         """Record a simulated ``semanage login -a/-m/-d``.

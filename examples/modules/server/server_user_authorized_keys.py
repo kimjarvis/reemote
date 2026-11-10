@@ -11,22 +11,26 @@ user's ``~/.ssh`` directory (mode ``700``) and ``authorized_keys`` file
 that are not already listed -- pyinfra's documented flow, minus its
 controller-side key-file paths (every entry here is a literal key string).
 
-The operation is idempotent and reads three facts. The ``Home`` fact resolves
+The operation is idempotent and reads four facts. The ``Home`` fact resolves
 the directory when no ``authorized_key_directory`` is passed, a private
 ``_KeysPathStat`` probe compares the directory and the file against the
-shared ``files.Directory``/``files.File`` state, and the ``AuthorizedKeys``
-fact (read with the explicit key-file path) lists the keys already present --
-only the missing ones ride an append. Two details are worth seeing in the
+shared ``files.Directory``/``files.File`` state, the ``AuthorizedKeys``
+fact (read with the explicit key-file path) lists the keys already present,
+and the ``AuthorizedKeysFile`` raw-content fact reads the file's current
+text so the missing keys can be appended controller-side -- only the
+missing ones ride a write. Two details are worth seeing in the
 plan:
 
 * creating a key file from nothing yields the whole setup -- ``mkdir -p`` +
   ``chmod 700`` + ``chown`` for ``~/.ssh``, then ``touch`` + ``chmod 600`` +
-  ``chown`` for ``authorized_keys`` -- before the keys are appended, while a
+  ``chown`` for ``authorized_keys`` -- before the write, while a
   run where everything already matches yields nothing at all;
-* the append command wraps its ``>>`` redirect in ``sh -c`` so the open
-  happens *inside* the shell the driver elevates; a bare
-  ``sudo echo ... >> <path>`` would open the redirect as the login user and
-  fail on another user's ``600`` file.
+* the write is a spool-and-install pair: the transformed text rides an
+  unprivileged scp to a ``/tmp`` spool named after the key file, then an
+  ``sh -c 'mkdir -p ... && cp ... && chmod 600 ... && rm -f ...'`` install
+  overlays the key file and removes the spool. The scp half stays
+  unprivileged even under ``sudo=True`` -- transfers never elevate -- so a
+  request for another user's keys shows two privilege levels in one log.
 
 ``public_keys`` is a tuple: every ``op()`` argument must stay hashable for
 ``compose(dedupe=True)``, so a list would be rejected with
@@ -34,18 +38,17 @@ plan:
 themselves, so no elevation is needed -- writing into ``~/.ssh`` under your
 own home is unprivileged. Managing keys for *another* user is the mirror
 case: flag the request ``sudo=True``, since the directory and file sit in
-that user's home. pyinfra's ``delete_keys`` option is deliberately dropped --
-that branch rewrites the whole file through an elevated ``files.put``, which
-reemote5 cannot elevate -- so this operation only ever *adds* keys; inspect
-what is there with the ``AuthorizedKeys`` fact and prune it with a file
-recipe of your own.
+that user's home. pyinfra's ``delete_keys`` option is supported as well --
+a whole-file rewrite to exactly the requested keys, riding the same
+spool-and-install pair -- though this example only appends.
 
 Unlike the pytest suite -- which injects the test framework's
 ``SimulatedHost`` via ``run``'s ``host_factory`` and never touches the
 network -- this example uses the *default* factory (``Host.from_inventory``):
 each plain ``Host`` lazily opens an asyncssh connection, reads the home
-directory, the ``.ssh``/``authorized_keys`` stat and the existing keys for
-real, and runs the setup and append commands where they differ.
+directory, the ``.ssh``/``authorized_keys`` stat, the existing keys and the
+key file's text for real, and runs the setup and spool-and-install commands
+where they differ.
 
 Every failure mode of the run -- an unreachable host, a rejected elevation,
 an ``OperationError`` for a path that exists as the wrong type (an
@@ -224,7 +227,7 @@ async def main() -> None:
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     except CommandError as exc:
-        # A setup or append command exited non-zero. The typed message already
+        # A setup or install command exited non-zero. The typed message already
         # names the host, the credential-free command and its stderr, so print
         # just that.
         print(f"\nERROR: {exc}", file=sys.stderr)

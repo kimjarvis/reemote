@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Add an apt repository line, with fact-based idempotence.
+"""Add an apt repository line by spool-and-install, with fact-based idempotence.
 
 This is a *usage* example, not part of the library. It shows how an
 application drives reemote5's two-phase execution model end to end over a
@@ -35,42 +35,49 @@ mirroring pyinfra's ``apt.repo``. ``src`` is the full source string -- here
 the Canonical partner repository for Ubuntu noble -- and ``filename``
 scopes it to ``/etc/apt/sources.list.d/canonical-partner.list`` instead of
 the main ``/etc/apt/sources.list``. Unlike pyinfra -- whose ``apt.repo``
-delegates the edit to ``files.line`` -- reemote5 has no line operation, so
-the append rides a self-contained apt descriptor: ``sh -c 'echo <src> >>
-<file>'``, the wrapper keeping the ``>>`` redirect inside the shell the
-driver elevates. The removal direction uses a bare ``sed -i`` delete
-without pyinfra's timestamped backup dance (a timestamp would differ
-between the prepare and apply phases).
+delegates the edit to ``files.line``, patching the file in place with an
+``echo >>`` or a ``sed -i`` -- reemote5 *rewrites* the managed file through
+the spool-and-install pair ``apt.key`` uses: the file's current text is
+read with the ``AptSourcesFile`` content fact, a pure transform adds or
+deletes the line, the result is scp'd to a ``/tmp`` spool named after the
+managed file, and an elevated ``sh -c`` install overlays the protected file
+and removes the spool. Because the transform works on the real content, the
+file's other lines, comments and blank lines come back exactly as they were
+and pyinfra's timestamped sed backup -- non-deterministic between the two
+phases -- is gone.
 
 ``apt.repo`` parses ``src`` and compares it against the ``AptSources``
-fact, so a repository already configured in any sources file is a no-op.
-The script yields the *same* add request twice to show that idempotence
-across the two phases: the prepare phase plans both as changes (nothing is
-written yet, so both compare against the same pre-deployment sources), while
-the apply phase appends on the first and reports the second as a no-op, because
-the fresh per-step fact cache now sees the line the first step wrote. A third
-request then removes the line again (``present=False``), so the example is
-*self-restoring*: it leaves the host's apt sources as it found them. That
-matters because ``run_examples.py`` sweeps every example over the same shared
-hosts -- the Canonical partner archive is unreachable from the demo Ubuntu
-host, so leaving it configured makes every later ``apt-get update`` (the
-``apt_update.py`` example) stall on connection timeouts and emit a warning.
-The add-then-remove cycle keeps the sweep clean and fast.
+fact, so a repository already configured in any sources file is a no-op,
+and compares the transformed text against the file it manages, so a line
+the file already lists is never written twice. The script yields the *same*
+add request twice to show that idempotence across the two phases: the
+prepare phase plans both as changes (nothing is written yet, so both
+compare against the same pre-deployment sources), while the apply phase
+installs the line on the first and reports the second as a no-op, because
+the fresh per-step fact cache now sees the file the first step wrote. A
+third request then removes the line again (``present=False``), so the
+example is *self-restoring*: it leaves the host's apt sources as it found
+them. That matters because ``run_examples.py`` sweeps every example over the
+same shared hosts -- the Canonical partner archive is unreachable from the
+demo Ubuntu host, so leaving it configured makes every later ``apt-get
+update`` (the ``apt_update.py`` example) stall on connection timeouts and
+emit a warning. The add-then-remove cycle keeps the sweep clean and fast.
 
 Writing the apt sources needs root -- the files are root-owned -- so the
-requests are flagged ``sudo=True`` and the driver elevates their command
-over SSH.
+requests are flagged ``sudo=True`` and the driver elevates the install
+command over SSH; the spool copy always rides scp as the login user,
+because transfers never elevate.
 
 Like the other apt examples, every request carries ``when=is_ubuntu``: the
 predicate reads only static inventory data (``host.group``) and is a stable
 module-level function, so both phases reach the same skip decision. The
 driver skips a rejected request without materializing it -- neither the
-append command nor the ``AptSources`` fact behind it runs on a non-Ubuntu
-host, whose package manager would never read the apt sources -- and plan
-and log render ``[skipped: when guard is_ubuntu]``. The shared
-``inventory.json`` holds one host in the ``"ubuntu"`` group alongside hosts
-in other groups, so each run appends on the Ubuntu host and skips every
-other one.
+spool-and-install pair nor the ``AptSources`` and ``AptSourcesFile`` facts
+behind it runs on a non-Ubuntu host, whose package manager would never read
+the apt sources -- and plan and log render
+``[skipped: when guard is_ubuntu]``. The shared ``inventory.json`` holds one
+host in the ``"ubuntu"`` group alongside hosts in other groups, so each run
+rewrites the sources on the Ubuntu host and skips every other one.
 
 Run it with::
 
@@ -148,16 +155,17 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
-    The first request appends the line; the second carries the same
+    The first request installs the line; the second carries the same
     arguments and is a guaranteed no-op in the apply phase, because the
-    first append is already visible through the fresh per-step fact cache.
+    first install is already visible through the fresh per-step fact cache.
     The third removes the line again (``present=False``), leaving the host's
     sources as found so the shared-host example sweep is not polluted -- the
     partner archive is unreachable from the demo host, so a lingering entry
     would stall the later ``apt_update.py`` step on connection timeouts.
 
     Writing the root-owned apt sources needs root, so all three requests are
-    flagged ``sudo=True`` and the driver elevates their command over SSH.
+    flagged ``sudo=True`` and the driver elevates their install command over
+    SSH.
     """
     yield op(
         apt.repo,

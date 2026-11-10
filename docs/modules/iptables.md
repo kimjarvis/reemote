@@ -196,7 +196,15 @@ Persistence facts stay synced across it.
 
 `iptables.save` (original) snapshots the live rules to a host-side file
 (`sh -c 'iptables-save > path'`, so the elevation covers the redirect),
-idempotent on `IptablesPersistence`. `iptables.restore` (original) is the
+idempotent on `IptablesPersistence`. It deliberately stays **in-place**,
+outside the spool-and-install write family (`files.install`, `apt.repo`,
+`apk.repository`): its payload is the redirected output of
+`iptables-save`, generated on the host from live kernel state, not
+controller-computed file text — there is nothing to transform or upload,
+and the save header's fresh-per-run timestamp would break the
+determinism guard if the snapshot were captured and spooled back (the
+same reason `mysql.dump` and `postgresql.dump` stay in place).
+`iptables.restore` (original) is the
 atomic bulk-apply surface: `iptables-restore` applies the whole file or
 fails without partial state, idempotent on the same fact (`noflush=True`
 merges instead of replacing). Both take a HOST-side path — reemote5

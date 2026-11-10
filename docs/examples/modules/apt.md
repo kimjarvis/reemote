@@ -46,7 +46,7 @@ tolerant `dpkg -i`, an `apt-get install -f` to resolve dependencies, then a fina
 can also *download* a remote `.deb` mid-deploy, reemote5 has no download
 operation, so a URL `src` raises `ValueError`. The example therefore stages the
 file itself first: a demo-side `curl` one-liner (a raw `StringCommand`, the same
-pattern as `server_op_locale.py`'s `locale_gen`) downloads the small,
+pattern as `server_op_sysctl.py`'s `sysctl_set`) downloads the small,
 self-contained `bat` `.deb` (~2.4 MB, no library dependencies — chosen to fit the
 shared Ubuntu host's modest disk) to `/tmp`, unprivileged, before the install
 reads it. The install rides under `sudo` (installing a package needs root), and
@@ -261,13 +261,21 @@ and `filename` scopes it to its own
 `/etc/apt/sources.list`. It parses `src` and compares against the
 [`AptSources`][reemote5.modules.apt.apt.AptSources] fact, so a repository
 already configured in any sources file is a no-op. Where pyinfra delegates
-the edit to `files.line`, reemote5 has no line operation, so the append
-rides a self-contained apt descriptor — `sh -c 'echo <src> >> <file>'`,
-the wrapper keeping the `>>` redirect inside the shell the driver elevates
-— and the removal uses a bare `sed -i` delete without pyinfra's timestamped
-backup dance. The append rides under `sudo` (writing the apt sources needs
-root), and the script yields the same request twice — the second is a
-guaranteed no-op in the apply phase, because the first append is visible to
+the edit to `files.line` and so patches the file in place with `echo >>`
+and `sed -i`, reemote5 *rewrites* the managed file through the
+spool-and-install family `apt.key` belongs to: the file's current text is
+read with the
+[`AptSourcesFile`][reemote5.modules.apt.apt.AptSourcesFile] content fact, a
+pure transform adds or deletes the line, the result is spooled to a `/tmp`
+path named after the managed file by an unprivileged scp upload (a transfer
+never elevates), and an elevated `sh -c` installs it over the protected
+file with mode `0644` and removes the spool. Because the transform works on
+the real content, the file's other lines and comments survive verbatim and
+a line the file already carries is never written twice — and pyinfra's
+timestamped sed backup, non-deterministic between the two phases, goes with
+the in-place edit. The request rides under `sudo` (writing the apt sources
+needs root), and the script yields the same request twice — the second is a
+guaranteed no-op in the apply phase, because the first install is visible to
 it through the fresh per-step fact cache (in the prepare phase, where
 nothing is sent, both plan as changes). A third request then removes the line
 again (`present=False`), so the example is *self-restoring*: the Canonical

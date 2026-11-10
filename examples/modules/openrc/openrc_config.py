@@ -1,75 +1,100 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: manage /etc/rc.conf with the files.edit spool-and-install recipe.
+"""Set a variable in /etc/rc.conf with ``openrc.config``.
 
-This is a *usage* example, not part of the library. It is reemote5's answer
-to the proposed ``openrc.config`` operation: no bespoke operation exists,
-because setting a variable in ``/etc/rc.conf`` (or a service's
-``/etc/conf.d/<service>``) is a file edit fully expressible with the
-generic ``files.edit`` content-transform primitive plus the elevated
-``files.move`` -- the same spool-and-install recipe as
-``examples/modules/server/server_op_sysctl.py`` and
-``examples/modules/files/files_edit_etc_hosts.py``.
+This is a *usage* example, not part of the library. It shows how an
+application drives reemote5's two-phase execution model end to end over a
+**real SSH transport** (asyncssh):
 
-The variable ensured here is ``rc_parallel="YES"``, OpenRC's parallel
-startup switch: it is read when a runlevel is entered, so the change takes
-effect at the next boot (or ``openrc default`` re-entry) -- unlike a
-sysctl there is no runtime half to apply, the file edit is the whole job.
-Point ``RC_FILE`` at ``/etc/conf.d/<service>`` and ``RC_KEY``/``RC_VALUE``
-at a service option to manage per-service configuration the same way.
-
-The flow, over the *real SSH transport* (asyncssh):
-
-1. Read ``inventory.json`` in the project root and validate it up front
-   with ``validate_inventory``, so a malformed file fails with an
+1. Read the target hosts from ``inventory.json`` in the project root -- an
+   inventory is just a list of dictionaries, each holding a host's name plus
+   its SSH ``connection`` information (address, username and client key),
+   which is exactly what JSON expresses -- and validate it up front with
+   ``validate_inventory``, so a malformed file fails with an
    ``InventoryError`` naming the offending entry before any host is
-   materialized or connected. Materialize the entries into plain ``Host``
-   objects and keep only the ``"alpine"`` group -- the ``is_alpine``
-   predicate reads static inventory data (``host.group``), the same rule
-   every ``when`` guard follows. Here the filter runs *before* the
-   snapshot: ``/etc/rc.conf`` is OpenRC's file, so it must not even be
-   read on the systemd hosts the shared inventory also holds. This
-   controller-side filter is the recipe's equivalent of the deploy-side
-   ``when=is_alpine`` guard the ``openrc_service.py`` example uses.
-2. Snapshot: ``gather_fact`` reads ``FileContents`` of ``/etc/rc.conf``
-   from every guarded host (read-only SSH; an absent file reads ``None``).
-   The pure ``rc_conf_edit`` function computes the desired content --
-   drop every existing ``rc_parallel`` assignment (commented ones
-   included) and append ``rc_parallel="YES"`` -- and the controller-side
-   gate compares it against the file's current text: a host whose content
-   already matches is skipped entirely, so re-running the whole script is
-   a no-op. ``FileContents`` plus local parsing is reemote5's content-read
-   convention; there is no grep-style fact.
-3. Run 1 spools: ``files.edit`` writes the desired content to
-   ``/tmp/rc.conf`` (login-user-writable). Each pending host's transform
-   is built ONCE by the ``make_transform`` factory closing over the frozen
-   desired content -- a stable callable across both phases, the
-   determinism-safe split shown in
-   ``examples/demonstrations/composition/two_deploy_split.py``
-   (``OperationRequest`` compares the transform by value; a fresh
-   closure per phase raises ``DeterminismError``). The transfer is
-   unprivileged: reemote5's transfers never elevate, which is *why* the
-   root-owned ``/etc/rc.conf`` cannot be written directly.
-4. Run 2 installs: ``files.move`` moves the spool file into ``/etc`` with
-   ``overwrite=True``, flagged ``doas=True`` -- ``files.move`` appends the
-   source basename to a directory destination, landing ``/etc/rc.conf``.
-   The edit and the move cannot share one deploy: ``files.move`` validates
-   ``src`` in the prepare phase too, and prepare never sends, so the spool
-   file must really exist first (the two-run split
-   ``examples/modules/files/files_move.py`` explains).
+   materialized or connected.
+2. Build the deploy script as a generator yielding ``OperationRequest``
+   objects, each guarded by a ``when`` predicate.
+3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``doas`` rather than ``sudo`` because the Alpine host has no ``sudo``
-installed at all -- ``sudo mv`` would die with ``sh: sudo: not found``
-(exit 127). ``doas`` is passwordless here: reemote5 always runs ``doas -n``,
-which fails rather than prompts, so the host must grant the login user a
-``permit nopass`` rule in ``/etc/doas.conf`` (see
+Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
+via ``run``'s ``host_factory`` and never touches the network -- this example
+uses the *default* factory (``Host.from_inventory``). Each plain ``Host``
+lazily opens an asyncssh connection from its ``connection`` data, gathers
+facts and runs commands for real, and ``run`` closes those connections when
+it finishes. The path is resolved from ``__file__``, so the example works from
+any working directory; point ``INVENTORY_PATH`` at your own file to target
+your machines.
+
+``run`` is a coroutine (both phases are async), so ``main`` is async and
+driven by ``asyncio.run``.
+
+``openrc.config`` is a reemote5 original with no pyinfra counterpart
+(pyinfra's ``openrc`` namespace ships only ``service``). It sets or unsets
+one shell variable in ``/etc/rc.conf`` -- or, with ``service="<name>"``, in
+that service's ``/etc/conf.d/<name>`` file -- and belongs to the
+spool-and-install write family. The file's current text is read with the
+``OpenrcConfigFile`` content fact, a pure transform drops every existing
+assignment of the key (commented-out ones included, so no contradictory
+commented line survives) and appends ``key="value"``, and when the result
+differs from what is there the request yields *two* commands at two
+privilege levels:
+
+* an unprivileged scp transfer spooling the whole transformed text to a
+  ``/tmp`` path derived from the managed file's sha1 -- reemote5's
+  transfers never elevate, which is *why* the root-owned ``/etc/rc.conf``
+  cannot be written directly and the content detours through ``/tmp``;
+* an elevated ``sh -c 'mkdir -p ... && cp ... && chmod 0644 ... &&
+  rm -f <spool>'`` installing the spooled text over the protected file and
+  removing the spool, every step of the chain running as root.
+
+The operation is idempotent on the transform's fixpoint: a file whose only
+assignment of the key already carries the wanted value plans no change, so
+re-running this script after a successful install is a no-op. The variable
+ensured here is ``rc_parallel="YES"``, OpenRC's parallel startup switch: it
+is read when a runlevel is entered, so the change takes effect at the next
+boot (or ``openrc default`` re-entry) -- unlike a sysctl there is no runtime
+half to apply, the file edit is the whole job. Point ``service`` at a
+service name to manage its ``/etc/conf.d`` options the same way, and flip
+``present`` to False to unset a key (every assignment of it is dropped).
+Validation raises ``ValueError`` in the prepare phase before anything is
+sent: the key must be a shell identifier, and the value must not contain
+``"``, ``\\``, ``$``, a backtick or a newline, which would break out of the
+double-quoted rendering when OpenRC sources the file.
+
+The *same* request is yielded twice to show idempotence across the two
+phases: the prepare phase plans both as changes when the value is not yet
+set (nothing is sent in prepare, so both compare against the same
+pre-deployment state), while the apply phase installs on the first and
+reports the second as a no-op, because the fresh per-step fact cache now
+reads the content the first step installed.
+
+The install writes root-owned ``/etc``, so the requests are flagged
+``doas=True`` and the driver elevates that command -- the scp half stays
+unprivileged regardless. ``doas`` rather than ``sudo`` because the Alpine
+host has no ``sudo`` installed at all -- ``sudo sh -c`` would die with
+``sh: sudo: not found`` (exit 127). ``doas`` is passwordless here: reemote5
+always runs ``doas -n``, which fails rather than prompts, so the host must
+grant the login user a ``permit nopass`` rule in ``/etc/doas.conf`` (see
 ``examples/demonstrations/privilege/privilege_doas.py``); without one the
 driver raises ``PrivilegeError``.
 
-The path is resolved from ``__file__``, so the example works from any
-working directory. Point ``INVENTORY_PATH`` at your own file (or edit
-``inventory.json``) to target your machines.
+Every request also carries ``when=is_alpine``, the declarative eligibility
+guard (see
+``examples/demonstrations/composition/composed_when_guard.py``). Two rules
+make it deterministic: the predicate reads only **static** inventory data --
+``host.group``, set by the ``"group"`` key of the inventory entry -- never a
+mutable fact, and it is a stable module-level function, so the prepare and
+apply phases reach the same skip decision. ``when`` is a meta-parameter like
+``doas``: captured on the request, never forwarded to the operation, and
+skipped by the *driver*, so every host keeps the identical two-request
+schedule (no ``if`` in the deploy body) and each request still consumes its
+lockstep slot. On a host the guard rejects, the plan and the run log render
+the step as ``[skipped: when guard is_alpine]`` and none of its commands --
+nor the ``OpenrcConfigFile`` fact behind them -- is materialized at all, so
+``/etc/rc.conf`` is never even read on the systemd hosts the shared
+inventory also holds.
 
 Run it with::
 
@@ -78,25 +103,22 @@ Run it with::
 
 import asyncio
 import json
-import re
 import sys
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
 from reemote5 import (
     CommandError,
-    FileContents,
     Host,
     HostConnectionError,
     InventoryError,
     OperationRequest,
     PrivilegeError,
-    files,
     format_log,
     format_plan,
-    gather_fact,
     op,
+    openrc,
     run,
     validate_inventory,
 )
@@ -111,25 +133,14 @@ INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 RC_KEY = "rc_parallel"
 RC_VALUE = "YES"
 
-# OpenRC's global configuration file, and the spool path: the basename
-# ("rc.conf") is what files.move appends to /etc, landing the target.
-RC_FILE = "/etc/rc.conf"
-SPOOL_PATH = "/tmp/rc.conf"
-
-# Per-host spool transforms, filled ONCE in main between the snapshot and
-# run 1: each is a stable callable closing over frozen desired content, so
-# both phases of run 1 pass the identical object (OperationRequest compares
-# the transform by value; a fresh closure per phase would raise
-# DeterminismError).
-SPOOL_TRANSFORMS: dict[str, Callable[[str | None], str]] = {}
-
 
 def load_inventory(path: Path) -> list[dict[str, Any]]:
     """Read an inventory from a JSON file and validate it.
 
     The file must hold a JSON array of inventory entries -- dictionaries
     each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to materialize into hosts; raises ``InventoryError`` (via
+    list, ready to hand to ``run``, which materializes it with the default
+    ``Host.from_inventory`` factory; raises ``InventoryError`` (via
     ``validate_inventory``) when the document is not an array or an entry
     does not match the schema.
     """
@@ -139,73 +150,50 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_alpine(host: Host) -> bool:
-    """Guard: the host belongs to the inventory group ``"alpine"``.
+    """``when`` guard: the host belongs to the inventory group ``"alpine"``.
 
     Reads only static inventory data (``host.group``, set by the ``"group"``
-    key of the inventory entry), never a mutable fact. The recipe filters
-    with it *before* the snapshot -- /etc/rc.conf is OpenRC's file and must
-    not be read, let alone rewritten, on the systemd hosts the shared
-    inventory also holds.
+    key of the inventory entry), never a mutable fact, and stays a stable
+    module-level function -- the two rules every ``when`` predicate follows
+    so both deploy phases reach the same eligibility decision and the
+    determinism guard holds. OpenRC itself is the reason for the guard:
+    ``/etc/rc.conf`` is OpenRC's file and must not be read, let alone
+    rewritten, on the systemd hosts the shared inventory also holds.
     """
     return host.group == "alpine"
 
 
-def rc_conf_edit(content: str | None, key: str, value: str) -> str:
-    """Pure rc.conf edit: ensure exactly one ``key="value"`` assignment.
+def deploy(host: Host) -> Generator[OperationRequest]:
+    """Set rc_parallel="YES" in /etc/rc.conf -- twice, to show idempotence.
 
-    Drops every line assigning ``key`` -- commented (``#rc_parallel=...``)
-    or not, with optional surrounding whitespace -- then appends
-    ``key="value"`` (rc.conf is sourced by the shell, so the value is
-    quoted). An absent file (``None`` content) reads as empty and gains
-    just the one line. Unlike the sysctl recipe's unanchored search (which
-    keeps pyinfra ``files.line`` semantics, stale values surviving), this
-    transform is last-write-wins by *replacement*: OpenRC also sources
-    rc.conf top to bottom, but leaving contradictory commented-out lines
-    around invites confusion, so they are cleaned out. The result always
-    ends in one trailing newline and the edit is a fixpoint: the appended
-    line matches the drop pattern, so a second pass reproduces the same
-    content.
+    Branch-free, so the request sequence is identical in the prepare and
+    apply phases (a branch on a mutable fact would raise DeterminismError),
+    and identical on every host: eligibility is expressed with the
+    ``when=is_alpine`` guard each request carries, not with an ``if``. The
+    first request spools and installs the transformed rc.conf if the value
+    is not yet set; the second carries the same arguments and is a
+    guaranteed no-op in the apply phase, because the installed content is
+    already visible through the fresh per-step fact cache.
+
+    The install writes root-owned /etc, so both requests are flagged
+    ``doas=True`` (the host has no ``sudo``); the scp spool half stays
+    unprivileged regardless -- transfers never elevate.
     """
-    pattern = re.compile(rf"^[ \t]*#?[ \t]*{re.escape(key)}[ \t]*=")
-    lines = [line for line in (content or "").splitlines() if not pattern.match(line)]
-    lines.append(f'{key}="{value}"')
-    return "\n".join(lines) + "\n"
-
-
-def make_transform(content: str) -> Callable[[str | None], str]:
-    """Build a spool transform returning the frozen desired ``content``.
-
-    Called once per host between the snapshot and run 1; the returned
-    callable ignores the spool file's current text (the desired content was
-    already computed from the real /etc/rc.conf) and is trivially a
-    fixpoint.
-    """
-
-    def transform(current: str | None) -> str:
-        return content
-
-    return transform
-
-
-def spool(host: Host) -> Generator[OperationRequest]:
-    """Run 1: write the desired rc.conf content to the writable spool."""
     yield op(
-        files.edit,
-        name="Spool rc.conf",
-        path=SPOOL_PATH,
-        transform=SPOOL_TRANSFORMS[host.name],
-    )
-
-
-def install(host: Host) -> Generator[OperationRequest]:
-    """Run 2: install the spool file over /etc/rc.conf, elevated."""
-    yield op(
-        files.move,
-        name="Install rc.conf",
-        src=SPOOL_PATH,
-        dest="/etc",
-        overwrite=True,
+        openrc.config,
+        name="Enable parallel startup",
+        key=RC_KEY,
+        value=RC_VALUE,
         doas=True,
+        when=is_alpine,
+    )
+    yield op(
+        openrc.config,
+        name="Re-set rc_parallel (no-op)",
+        key=RC_KEY,
+        value=RC_VALUE,
+        doas=True,
+        when=is_alpine,
     )
 
 
@@ -215,69 +203,18 @@ async def main() -> None:
         print(f"== Inventory loaded from {INVENTORY_PATH} ==")
         print(", ".join(entry["host"] for entry in inventory))
 
-        # Guard before anything is read: only "alpine"-group entries reach
-        # the snapshot, so /etc/rc.conf is never even catted on a systemd
-        # host. The skipped names are printed the way the fact examples
-        # print their when-guard skips.
-        alpine_entries = []
-        skipped = []
-        for entry in inventory:
-            host = Host.from_inventory(entry)
-            if is_alpine(host):
-                alpine_entries.append(entry)
-            else:
-                skipped.append(host.name)
-        if skipped:
-            print("\n== Skipped (when guard is_alpine): " + ", ".join(skipped) + " ==")
-        if not alpine_entries:
-            print("No alpine-group hosts in the inventory; nothing to do.")
-            return
-
-        # The snapshot: read every guarded host's real /etc/rc.conf
-        # (read-only cat; an absent file reads None).
-        hosts = [Host.from_inventory(entry) for entry in alpine_entries]
-        try:
-            contents = await gather_fact(hosts, FileContents, RC_FILE)
-        finally:
-            for host in hosts:
-                await host.aclose()
-
-        # Controller-side idempotence: compute the desired content from the
-        # frozen snapshot and keep only the hosts whose file differs. A
-        # matching host is skipped entirely -- re-running the script after
-        # a successful install is a no-op.
-        pending = []
-        for entry in alpine_entries:
-            name = entry["host"]
-            desired = rc_conf_edit(contents[name], RC_KEY, RC_VALUE)
-            if desired != (contents[name] or ""):
-                SPOOL_TRANSFORMS[name] = make_transform(desired)
-                pending.append(entry)
-            else:
-                print(f'{name}: {RC_FILE} already sets {RC_KEY}="{RC_VALUE}"')
-        if not pending:
-            print(f'All hosts already set {RC_KEY}="{RC_VALUE}".')
-            return
-
-        # Run 1: spool the transformed content to /tmp/rc.conf,
-        # unprivileged -- reemote5's transfers never elevate.
-        plans, _, _hosts = await run(pending, spool, dry=True)
-        print("\n== Run 1 plan: spool rc.conf (--dry) ==")
+        # --dry: prepare phase only. Facts are still gathered over SSH (read-only)
+        # so the plan reflects each host's real pre-deployment state; no command
+        # that mutates a host is sent. A request the ``when`` guard rejects is
+        # planned as [skipped: when guard is_alpine] without materializing it,
+        # so its fact is not read on that host either.
+        plans, _, _hosts = await run(inventory, deploy, dry=True)
+        print("\n== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))
 
-        plans, report, _hosts = await run(pending, spool)
-        print("\n== Run 1 log: spool rc.conf ==")
-        assert report is not None
-        print(format_log(report))
-
-        # Run 2: the spool file now really exists, so the move's validation
-        # passes in the prepare phase too. Elevated: /etc is root-owned.
-        plans, _, _hosts = await run(pending, install, dry=True)
-        print("\n== Run 2 plan: install rc.conf (--dry) ==")
-        print(format_plan(plans))
-
-        plans, report, _hosts = await run(pending, install)
-        print("\n== Run 2 log: install rc.conf ==")
+        # Real run: prepare, then apply in lockstep across hosts over SSH.
+        plans, report, _hosts = await run(inventory, deploy)
+        print("\n== Run log (apply phase) ==")
         assert report is not None
         print(format_log(report))
     except (OSError, json.JSONDecodeError) as exc:

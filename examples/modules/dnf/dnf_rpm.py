@@ -37,7 +37,7 @@ there by any other means). Unlike pyinfra -- whose ``dnf.rpm`` can also
 *download* a remote ``.rpm`` mid-deploy -- reemote5 has no download operation,
 so a ``src`` with a URL scheme raises ``ValueError``. This example stages the
 file with a demo-side ``curl`` one-liner (a raw ``StringCommand``, the same
-pattern as ``server_op_locale.py``'s ``locale_gen`` and ``apt_deb.py``'s
+pattern as ``server_op_sysctl.py``'s ``sysctl_set`` and ``apt_deb.py``'s
 ``download_deb``) yielded before the install, so the ``.rpm`` really exists on
 the host when ``dnf.rpm`` reads it. ``sl`` is deliberately small (~16 KB, and
 its only library dependency ``ncurses-libs`` is part of the CentOS base) so
@@ -161,8 +161,8 @@ async def download_rpm(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
     reemote5 ships no download operation and ``dnf.rpm`` takes a *remote*
     path, so the file must already exist on the target host. This example
     stages it with a stateless one-liner over the public raw ``StringCommand``
-    descriptor -- the same demo-side pattern as ``server_op_locale.py``'s
-    ``locale_gen`` and ``apt_deb.py``'s ``download_deb``. The ``test -f ... ||
+    descriptor -- the same demo-side pattern as ``server_op_sysctl.py``'s
+    ``sysctl_set`` and ``apt_deb.py``'s ``download_deb``. The ``test -f ... ||
     curl`` guard downloads only when the file is absent, so a re-run is cheap;
     like pyinfra's download step it reads no fact and always reports a change.
     Writing to ``/tmp`` and running ``curl`` need no root, so the request is

@@ -56,9 +56,10 @@ the deploy generator would create a fresh closure per phase, diverge in the
 The write rides the connection as the login user (a transfer, so ``sudo``/``su``
 do not apply), so the target must be **writable by that user** -- here a path in
 ``/tmp``, which any login user can write, so the example depends on no account's
-home directory existing. A root-owned file such as ``/etc/hosts`` needs the
-spool-and-install recipe instead: ``files.edit`` into a writable path, then an
-elevated ``files.move`` (see ``files_edit_etc_hosts.py``).
+home directory existing. A root-owned file such as ``/etc/hosts`` needs a
+spool-and-install write instead: ``files.install`` in one deploy (see
+``files_install.py``), or a dedicated operation such as ``server.etc_hosts``
+for the hosts-file case (see ``examples/modules/server/server_etc_hosts.py``).
 
 The script runs a full lifecycle: run 1 ensures the block (twice -- the second
 edit is a guaranteed no-op through the fresh per-step fact cache), run 2

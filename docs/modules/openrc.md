@@ -6,6 +6,7 @@
     options:
       show_root_heading: false
       members:
+        - OpenrcConfigFile
         - OpenrcEnabled
         - OpenrcRunlevels
         - OpenrcServices
@@ -18,6 +19,7 @@
     options:
       show_root_heading: false
       members:
+        - config
         - custom_runlevel
         - runlevel
         - service
@@ -34,28 +36,28 @@ holding one symlink per assigned service, managed with `rc-update`. The
 facts are `OpenrcStatus` and `OpenrcEnabled`, ports of pyinfra's two OpenRC
 facts — the per-runlevel name → running bool parsed from
 `rc-status <runlevel>` rows, and the name → enabled-in-runlevel bool parsed
-from `rc-update show -v`'s `name | runlevels` columns — plus three reemote5
+from `rc-update show -v`'s `name | runlevels` columns — plus four reemote5
 originals widening the visibility pyinfra's pair leaves missing:
 `OpenrcServices`, the same `rc-status` rows kept as their *raw* state words
 (`started`, `stopped`, `crashed`, ...) so a crashed service is
 distinguishable from a cleanly stopped one, `OpenrcRunlevels`, the
 runlevel → assigned-names mapping parsed from `ls -R /etc/runlevels`, and
 `OpenrcVersion`, the installed OpenRC release parsed from
-`openrc --version` (`None` on a host without OpenRC). Beside the facts live
-the `openrc.service` operation (pyinfra parity: running/restarted/reloaded/
-enabled/runlevel), and the `openrc.runlevel` and `openrc.custom_runlevel`
-originals — standalone runlevel-membership and runlevel-directory
-management, including stacking.
+`openrc --version` (`None` on a host without OpenRC), and
+`OpenrcConfigFile`, the verbatim text of `/etc/rc.conf` or a service's
+`/etc/conf.d/<service>` — the raw-content fact behind `openrc.config`.
+Beside the facts live the `openrc.service` operation (pyinfra parity:
+running/restarted/reloaded/enabled/runlevel), and the `openrc.runlevel`,
+`openrc.custom_runlevel` and `openrc.config` originals — standalone
+runlevel-membership and runlevel-directory management (including
+stacking), and spool-and-install management of the OpenRC configuration
+files.
 
 Deliberately absent: an `openrc.mask` operation — OpenRC has no masking
 mechanism (no systemd-style symlink-to-/dev/null), so masking cannot be
-honestly emulated; disable the service in every runlevel instead. Global
-and per-service configuration (`/etc/rc.conf`, `/etc/conf.d/<service>`) is
-managed with the generic `files.edit` primitive rather than a bespoke
-`openrc.config` operation — see the spool-and-install recipe in
-`examples/modules/openrc/openrc_config.py`. A combined install-and-enable
-`openrc.ensure` is likewise not an operation: `apk.packages` followed by
-`openrc.service` composes in a deploy
+honestly emulated; disable the service in every runlevel instead. A
+combined install-and-enable `openrc.ensure` is likewise not an operation:
+`apk.packages` followed by `openrc.service` composes in a deploy
 (`examples/modules/openrc/openrc_ensure.py`).
 
 ## Facts
@@ -117,6 +119,19 @@ prints nothing and reads `None`, the None-on-absent convention
 `ApkPackage` and `server.Which` follow. The guarded command makes it a
 safe capability probe — only `HostConnectionError` can escape it.
 
+`OpenrcConfigFile` takes a path and returns its verbatim text as
+`str | None`: `test -e <path> && { printf '<marker>\n'; cat -- <path>; }`
+reads the file only when it exists, and the printed marker line separates
+*absent* (`None`, no output) from *present but empty* (`""`) — the
+distinction the unset direction needs so it can no-op on a missing file
+yet still act on an empty leftover. It is the dedicated raw-content fact
+of the spool-and-install family (`AptSourcesFile`, `ApkRepositoriesFile`,
+`DnfRepoFile` follow the same shape): the transform edits the file's own
+text, comments and ordering intact, never a parsed reconstruction. The
+bare `&&` needs no `|| true` — a missing file exits non-zero with empty
+stdout, which reads as `None`; only `CommandNotFoundError` (a shell
+without `cat`) and `HostConnectionError` can escape the gather.
+
 ## Operations
 
 Operations live in namespace modules so a deploy reads `openrc.service`,
@@ -129,7 +144,7 @@ async def operation(ctx: OpContext, *args, **kwargs) -> AsyncGenerator[Command, 
 
 It awaits facts via `ctx.facts`, sets `ctx.changed` and `ctx.reason` where
 it decides a change is needed, and yields one descriptor per command that
-would mutate the host. All three operations write root-owned state, so
+would mutate the host. All four operations write root-owned state, so
 flag the request `sudo=True`, `doas=True` or `su=True` — stock Alpine
 ships no `sudo`, so `doas` is usually the escalator on an OpenRC host:
 reemote5 runs it passwordless as `doas -n`, which needs a `permit nopass`
@@ -183,6 +198,33 @@ name an existing runlevel or `rc-update` fails at apply time. The standard
 runlevels are not special-cased — removing `boot` or `default` is legal
 OpenRC-wise and the operation does not guard against it.
 
+`openrc.config` is the third original — a reemote5 operation with no
+pyinfra counterpart (pyinfra's `openrc` ships only `service`) and a member
+of the spool-and-install write family (`files.install`, `apt.repo`,
+`apk.repository`, ...). It manages one shell-variable assignment in
+`/etc/rc.conf` (`service=None`, the default) or `/etc/conf.d/<service>`:
+`present=True` sets `key="value"`, `present=False` drops every assignment
+of the key — commented-out ones included, so a stale `#rc_parallel=NO`
+cannot shadow the intent. The `OpenrcConfigFile` fact supplies the file's
+current text; a pure transform drops all matching assignment lines and
+(set only) appends the double-quoted line, preserving every other line,
+comment and ordering, so the result is a fixpoint — when the transformed
+text equals the current text the operation is a no-op with a reason
+naming the managed path. The write itself is two descriptors: an
+unprivileged scp of the whole transformed text to a `/tmp` spool named
+after the managed path (`/tmp/reemote5-openrc-config-<sha1(path)[:16]>`,
+so two requests targeting different files can never share a spool), then
+an elevated `sh -c 'mkdir -p ... && cp ... && chmod 0644 ... && rm -f
+...'` install — transfers never elevate, so the request's `doas`/`sudo`
+applies to the install half only, by design. Values are always rendered
+double-quoted and validation raises `ValueError` while materializing for
+a key that is not a shell variable name, a service name carrying path
+characters, or a value containing shell-active characters (`"`, `\`,
+`$`, backtick, newline) — no escaping scheme, the unsafe value is
+rejected outright. Unset ignores `value` entirely. Like the runlevel
+verbs there is no runtime half: `rc.conf` is read when a runlevel is
+entered, so a change takes effect at the next boot.
+
 --->
 
 
@@ -208,10 +250,11 @@ The operation scripts beside them demonstrate `openrc.service`
 (`openrc_service.py`, start-and-enable twice plus a reload),
 `openrc.runlevel` (`openrc_runlevel.py`, assign twice) and
 `openrc.custom_runlevel` (`openrc_custom_runlevel.py`, a full
-create-stack → no-op → remove cycle). `openrc_config.py` is the
-`files.edit` spool-and-install recipe answering the proposed
-`openrc.config`, and `openrc_ensure.py` composes `apk.packages` +
-`openrc.service` in one deploy, answering the proposed `openrc.ensure`.
+create-stack → no-op → remove cycle) and `openrc.config`
+(`openrc_config.py`, set `rc_parallel="YES"` twice — spool-and-install on
+the first, no-op on the second). `openrc_ensure.py` composes
+`apk.packages` + `openrc.service` in one deploy, answering the proposed
+`openrc.ensure`.
 All are rendered on the [openrc examples page](../examples/modules/openrc.md).
 
 --->

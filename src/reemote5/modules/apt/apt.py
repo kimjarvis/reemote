@@ -41,7 +41,7 @@
 # (``AptMarkHoldCommand``/``AptMarkUnholdCommand``), ``apt.packages``
 # (``AptUpdateCommand``/``AptUpgradeCommand``/``AptInstallCommand`` plus the
 # shared ``AptRemoveCommand``), ``apt.ppa`` (``AptPpaCommand``),
-# ``apt.repo`` (``AptRepoAddCommand``/``AptRepoRemoveCommand``) and
+# ``apt.repo`` (``AptRepoUploadCommand``/``AptRepoInstallCommand``) and
 # ``apt.sources_file``
 # (``AptSourcesFileUploadCommand``/``AptSourcesFileInstallCommand``/``AptSourcesFileRemoveCommand``).
 # ``apt.deb`` mirrors pyinfra's ``apt.deb`` (``src``, ``present``,
@@ -73,8 +73,9 @@
 # it always yields one command and reads no fact, exactly as pyinfra marks
 # it. ``apt.repo`` mirrors pyinfra's ``apt.repo`` (add/remove one source
 # line in ``/etc/apt/sources.list`` or a ``sources.list.d`` file), idempotent
-# on ``AptSources``; pyinfra's delegation to ``files.line`` is replaced by
-# self-contained apt descriptors -- reemote5 has no line operation and
+# on ``AptSources`` and on the managed file's own text; pyinfra's delegation
+# to ``files.line`` is replaced by a pure content transform installed through
+# the spool-and-install pair -- reemote5 has no line operation and
 # namespaces never reuse each other's operations.
 # ``apt.sources_file`` mirrors pyinfra's ``apt.sources_file`` (manage a
 # deb822 ``.sources`` file under ``sources.list.d``), idempotent on
@@ -89,6 +90,7 @@
 # touch the host directly.
 # """
 
+import hashlib
 import io
 import re
 import shlex
@@ -1218,7 +1220,7 @@ class AptSources:
 
 
 class AptSourcesFile:
-    """The current content of one ``.sources`` file, or None when it is absent.
+    """The current content of one apt sources file, or None when it is absent.
 
     **Commands:**
 
@@ -1242,8 +1244,11 @@ class AptSourcesFile:
         Examples can be found in ``examples/modules/apt/apt_sources_file.py``.
     """
 
-    # The fact ``apt.sources_file(present=False)`` reads to make its removal
-    # idempotent -- the ``DnfRepoFile`` pattern in this namespace: where
+    # The path-generic raw-content fact of this namespace (the
+    # ``DnfRepoFile`` pattern): ``apt.sources_file(present=False)`` reads it
+    # to make its removal idempotent and ``apt.repo`` reads it to compute the
+    # content it spools back, for a ``.sources`` or a ``.list`` file alike --
+    # the fact never interprets the text. Where
     # ``AptSources`` parses *every* configured repository into ``AptSource``
     # dicts, this reports the raw text of a *single* file so the operation
     # can tell an existing file from a missing one. Absence is reported as
@@ -2726,6 +2731,14 @@ async def ppa(
     # dropped, so a missing binary exits 127 -- reported as
     # ``CommandNotFoundError``. ``**kwargs`` absorbs pyinfra's global arguments
     # (``op()`` already strips ``name``/``sudo``/``su``).
+    #
+    # Deliberately NOT spool-and-install: the payload is a CLI invocation, not
+    # the file's text -- ``apt-add-repository`` owns the sources file and also
+    # fetches the PPA's Launchpad signing key, adds the deb-src entry and
+    # resolves the distro codename, none of which a hand-rolled content
+    # transform can reproduce. The spool family is for whole-content edits of
+    # a protected file (``apt.repo`` is that shape here); a tool-owned
+    # mutation stays in place, like ``git.config``.
     ctx.changed = True
     if present:
         ctx.reason = f"ppa {src} will be added"
@@ -2744,59 +2757,137 @@ def _repo_line_pattern(line: str) -> str:
     as ``apt.repo`` uses it: every regex metacharacter in ``line`` is
     escaped so the source string matches literally, then the pattern is
     anchored with ``^.*`` / ``.*$`` so a line carrying extra surrounding
-    text still matches. Shared by ``AptRepoRemoveCommand``'s sed script
-    and the SimulatedHost seam so both delete exactly the same lines.
+    text still matches. Both content transforms below share it, so the
+    append never duplicates a line the file already carries and the
+    removal deletes exactly the lines the append would have skipped.
     """
     escaped = re.sub(r"([\.\\\+\*\?\[\^\]\$\(\)\{\}\-])", r"\\\1", line)
     return f"^.*{escaped}.*$"
 
 
-@dataclass(frozen=True)
-class AptRepoAddCommand(Command):
-    """``sh -c 'echo <line> >> <path>'``: append one apt source line.
+def _repo_spool_path(dest: str) -> str:
+    """The deterministic ``/tmp`` spool path ``apt.repo`` uploads to.
 
-    The append mutation ``apt.repo`` yields -- pyinfra's ``files.line``
-    add branch renders ``echo '<src>' >> <file>``. The ``>>`` redirect is
-    wrapped in ``sh -c`` so it happens *inside* the shell the driver
-    elevates: a bare ``sudo echo ... >> /etc/apt/...`` would open the
-    redirect as the login user and fail on the root-owned sources file
-    (the same wrapper as ``DnfRepoInstallCommand``). The line is shell-quoted,
-    so bracketed options reach the file literally.
+    Derived from the managed sources file's sha1 (``files.install``'s
+    ``_install_spool_path`` pattern) rather than the fixed spool constant
+    this namespace's other spool-and-install operations use, because
+    ``apt.repo`` edits *several* distinct files -- the shared
+    ``/etc/apt/sources.list`` and any number of
+    ``/etc/apt/sources.list.d/<filename>.list`` -- and two repository edits
+    naming different files in one deploy must not clobber each other's
+    spool. The same ``dest`` always yields the same name in both phases, so
+    the descriptors stay deterministic. The name avoids *collisions*, not a
+    hostile local user: it is predictable, so on a multi-tenant host the
+    ``/tmp`` spool is still a symlink-race exposure (the trade-off every
+    spool-and-install operation here makes).
+    """
+    digest = hashlib.sha1(dest.encode()).hexdigest()[:16]
+    return f"/tmp/reemote5-apt-repo-{digest}"
+
+
+def _add_repo_line(content: str | None, line: str) -> str:
+    """The pure append transform: ``content`` carrying ``line`` exactly once.
+
+    ``apt.repo(present=True)``'s edit of the managed file's current text:
+    an absent file (``None``) becomes the single line, a file whose text
+    already holds a matching line is returned verbatim -- pyinfra's
+    ``files.line`` match semantics through the anchored pattern, so even a
+    line the ``AptSources`` parser cannot read is never duplicated -- and
+    otherwise the line is appended, keeping the file's own newline endings.
+    Idempotent (``f(f(x)) == f(x)``) and side-effect free, so both deploy
+    phases compute the same content from the same fact value.
+    """
+    if not content:
+        return f"{line}\n"
+    regex = re.compile(_repo_line_pattern(line))
+    if any(regex.match(row) for row in content.splitlines()):
+        return content
+    separator = "" if content.endswith("\n") else "\n"
+    return f"{content}{separator}{line}\n"
+
+
+def _remove_repo_line(content: str | None, line: str) -> str:
+    """The pure remove transform: ``content`` without any line matching ``line``.
+
+    ``apt.repo(present=False)``'s edit: every line the anchored, escaped
+    pattern matches is dropped -- pyinfra's ``files.line`` deletion
+    semantics, so a line carrying extra surrounding text goes too -- while
+    the remaining lines keep their order and the file's trailing newline.
+    An absent file and a file with no match come back unchanged (empty),
+    which is what makes the transform a fixpoint.
+    """
+    if not content:
+        return content or ""
+    regex = re.compile(_repo_line_pattern(line))
+    kept = [row for row in content.splitlines() if regex.match(row) is None]
+    if not kept:
+        return ""
+    new = "\n".join(kept)
+    if content.endswith("\n"):
+        new += "\n"
+    return new
+
+
+@dataclass(frozen=True)
+class AptRepoUploadCommand(TransferCommand):
+    """Spool the transformed sources content to a ``/tmp`` path on the target.
+
+    The first half of ``apt.repo``'s write and a *non-shell* descriptor: it
+    copies the content over the connection's scp channel via
+    ``Host.upload_file`` rather than running shell text, so it has no
+    ``shell()`` and its loggable form is the ``__str__`` rendering
+    ``command_shell`` falls back to. Like ``AptSourcesFileUploadCommand`` the
+    content is not a caller-supplied stream but the whole sources text the
+    operation just derived from the file's current content, so the field is
+    a plain ``str`` -- hashable and identical across phases -- wrapped in a
+    fresh ``io.BytesIO`` only at transfer time. The copy rides as the login
+    user (transfers are unprivileged, so the request's ``sudo`` does not
+    apply to it), which is why the spool path is world-writable ``/tmp``
+    rather than the root-owned apt directory.
     """
 
-    path: str
-    line: str
+    content: str  # the whole transformed sources text
+    dest: str  # spool path on the target host
+
+    def __str__(self) -> str:
+        return f"scp <apt sources> -> {self.dest}"
+
+    async def transfer(self, host: Host) -> None:
+        await host.upload_file(io.BytesIO(self.content.encode()), self.dest)
+
+
+@dataclass(frozen=True)
+class AptRepoInstallCommand(Command):
+    """Install the spooled sources file ``0644``, then remove the spool file.
+
+    The second half of ``apt.repo``'s write and the elevated one: writing
+    under ``/etc/apt`` needs root, so the request is flagged ``sudo=True``
+    and the whole sequence is wrapped in ``sh -c`` -- a bare ``sudo`` prefix
+    would elevate only the first command of the ``&&`` chain and leave the
+    cleanup running as the login user, whereas ``sudo sh -c '...'`` runs
+    every step as root, which can always remove the login-user spool file.
+    The sequence creates the destination directory (``sources.list.d`` may
+    not exist yet), copies the spooled content over the target file, chmods
+    it ``0644`` (pyinfra's fixed mode for apt sources, and the reset the
+    overlay needs because a ``cp`` would otherwise leave the login-user
+    spool's ownership and mode on a stock system file) and removes the
+    spool -- the ``AptSourcesFileInstallCommand`` pattern. All paths are
+    shell-quoted.
+    """
+
+    spool: str  # where AptRepoUploadCommand wrote the content
+    dest: str  # the /etc/apt/sources.list or sources.list.d/<name>.list path
 
     def shell(self) -> str:
-        inner = f"echo {shlex.quote(self.line)} >> {shlex.quote(self.path)}"
+        spool = shlex.quote(self.spool)
+        dest = shlex.quote(self.dest)
+        parent = shlex.quote(str(PurePosixPath(self.dest).parent))
+        inner = (
+            f"mkdir -p {parent} && "
+            f"cp {spool} {dest} && "
+            f"chmod 0644 {dest} && rm -f {spool}"
+        )
         return f"sh -c {shlex.quote(inner)}"
-
-
-@dataclass(frozen=True)
-class AptRepoRemoveCommand(Command):
-    """``sed -i '/<pattern>/d' <path>``: delete matching apt source lines.
-
-    The removal mutation ``apt.repo`` yields. ``line`` matches literally
-    (regex metacharacters escaped, pyinfra's
-    ``escape_regex_characters=True``) inside the anchored whole-line
-    pattern; ``/`` is then escaped for sed's script delimiter and the
-    script is shell-quoted as one token.
-
-    Unlike pyinfra's ``files.line`` removal -- ``sed -i.<timestamp> ...
-    && rm -f <file>.<timestamp>`` -- the timestamped backup dance is
-    deliberately dropped: the timestamp differs between the prepare and
-    apply phases (a non-deterministic command breaks the determinism
-    guard), and an ``&& rm`` chain would leave its second command
-    unprivileged under a ``sudo`` prefix. GNU sed's bare ``-i`` (apt
-    hosts are Debian/Ubuntu) edits in place without any backup.
-    """
-
-    path: str
-    line: str
-
-    def shell(self) -> str:
-        pattern = _repo_line_pattern(self.line).replace("/", r"\/")
-        return f"sed -i {shlex.quote(f'/{pattern}/d')} {shlex.quote(self.path)}"
 
 
 async def repo(
@@ -2824,33 +2915,46 @@ async def repo(
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
         Examples can be found in ``examples/modules/apt/apt_repo.py``.
     """
 
-    # pyinfra ``apt.repo`` parity.
+    # pyinfra ``apt.repo`` parity, spool-and-install write family.
     #
     # Presence is decided by parsing ``src`` with ``AptSources``' legacy
     # line parser and comparing against the fact's entries -- pyinfra's
     # ``parse_apt_repo(src) in AptSources`` check -- so a repository already
-    # configured in *any* sources file (legacy or deb822) counts as present,
-    # and an unparseable ``src`` counts as absent but is still appended
-    # when ``present=True`` (pyinfra's tolerance). Absent and wanted yields
-    # one ``AptRepoAddCommand`` appending the line; present and unwanted
-    # yields one ``AptRepoRemoveCommand`` deleting it; otherwise the
-    # operation is a no-op. Writing the apt sources needs root, so flag
-    # the request ``sudo=True`` (or ``su=True``).
+    # configured in *any* sources file (legacy or deb822) is a no-op, and an
+    # unparseable ``src`` counts as absent but is still appended when
+    # ``present=True`` (pyinfra's tolerance). Either direction then *rewrites
+    # the managed file* instead of patching it in place: the file's current
+    # text is read with the in-namespace ``AptSourcesFile`` content fact (the
+    # ``DnfRepoFile`` pattern, path-generic), one pure transform of that text
+    # computes the desired content -- ``_add_repo_line`` appends the line once,
+    # ``_remove_repo_line`` drops every line the anchored pattern matches --
+    # and when the result differs from what is there the request yields *two*
+    # descriptors: an ``AptRepoUploadCommand`` transfer spooling the new text
+    # to a ``/tmp`` path over scp, then an ``AptRepoInstallCommand`` running
+    # the elevated install that overlays the protected file and removes the
+    # spool (the ``apt.key``/``apt.sources_file``/``dnf.repo`` pattern).
+    # Writing the apt sources needs root, so flag the request ``sudo=True``
+    # (or ``su=True``); the transfer stays unprivileged regardless.
     #
     # Deliberate deviations from pyinfra: the mutation rides self-contained
     # apt descriptors instead of delegating to ``files.line`` (reemote5 has
-    # no line operation -- ``files.edit`` is its generic editing primitive
-    # -- and namespaces never reuse each other's operations), the append
-    # wraps ``sh -c`` so ``sudo`` elevates the redirect, and the removal
-    # uses a bare ``sed -i`` without pyinfra's timestamped backup dance
-    # (the timestamp is non-deterministic across phases).
+    # no line operation -- ``files.edit`` is its generic editing primitive --
+    # and namespaces never reuse each other's operations), so it belongs to
+    # the spool-and-install family rather than the in-place one of pyinfra's
+    # ``echo >>``/``sed -i``. That also drops pyinfra's timestamped sed backup
+    # dance (its timestamp is non-deterministic across phases) and keeps the
+    # file's other lines, comments and blank lines exactly as they were,
+    # because the transform is line-based over the real content. Two further
+    # content-level no-ops round out pyinfra's fact-level ones: an add whose
+    # line the file already carries (an unparseable ``src`` repeats cleanly)
+    # and a remove of a repository configured in some *other* sources file.
     # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
     # strips ``name``/``sudo``/``su``).
     path = f"/etc/apt/sources.list.d/{filename}.list" if filename else "/etc/apt/sources.list"
@@ -2861,16 +2965,31 @@ async def repo(
     if present:
         if is_present:
             ctx.reason = f'apt repo "{src}" exists'
-        else:
-            ctx.changed = True
-            ctx.reason = f'apt repo "{src}" missing, will be added to {path}'
-            yield AptRepoAddCommand(path=path, line=src)
-    elif is_present:
-        ctx.changed = True
-        ctx.reason = f'apt repo "{src}" present, will be removed from {path}'
-        yield AptRepoRemoveCommand(path=path, line=src)
-    else:
+            return
+    elif not is_present:
         ctx.reason = f'apt repo "{src}" does not exist'
+        return
+
+    current = await ctx.facts.get(AptSourcesFile, path)
+    new = _add_repo_line(current, src) if present else _remove_repo_line(current, src)
+    if new == (current or ""):
+        # The fact wanted an edit the file's own text says is unnecessary.
+        ctx.reason = (
+            f'apt repo "{src}" is already listed in {path}'
+            if present
+            else f'apt repo "{src}" is not configured in {path}'
+        )
+        return
+
+    ctx.changed = True
+    spool = _repo_spool_path(path)
+    ctx.reason = (
+        f'apt repo "{src}" missing, will be added to {path}'
+        if present
+        else f'apt repo "{src}" present, will be removed from {path}'
+    )
+    yield AptRepoUploadCommand(content=new, dest=spool)
+    yield AptRepoInstallCommand(spool=spool, dest=path)
 
 
 # --- apt.sources_file ----------------------------------------------------------
@@ -3147,8 +3266,8 @@ __all__ = [
     "AptPolicyVersion",
     "AptPpaCommand",
     "AptRemoveCommand",
-    "AptRepoAddCommand",
-    "AptRepoRemoveCommand",
+    "AptRepoInstallCommand",
+    "AptRepoUploadCommand",
     "AptSimulationDict",
     "AptSource",
     "AptSources",

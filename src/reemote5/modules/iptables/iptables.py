@@ -2126,6 +2126,14 @@ async def save(
     # sh -c so the elevation covers the write). Reloading the snapshot
     # at boot is the distro's iptables-persistent/netfilter-persistent
     # service, not this operation's job.
+    # Deliberately IN-PLACE, not spool-and-install: the payload is the
+    # redirected output of iptables-save, generated on the host from
+    # live kernel state -- not controller-computed file text, so there
+    # is nothing to transform or upload (the mysql.dump /
+    # postgresql.dump / gpg.export_key redirect-dump family). Capturing
+    # the snapshot into a fact and spooling it back would also trip the
+    # determinism guard: the save header's timestamp changes every run,
+    # so the payload would differ between the two deploy phases.
     _binary(version)
     fact = IptablesPersistence if version == 4 else Ip6tablesPersistence
     path = fact.DEFAULT_PATH if path is None else path

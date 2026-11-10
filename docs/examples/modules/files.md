@@ -104,18 +104,21 @@ get's download is visible to it through the fresh per-step fact cache.
 
 ## Editing a file in place with a pure transform
 
-The generic content-editing primitive, and the reason reemote5 ships no bespoke
-`server.etc_hosts`: `files.edit` reads a file's current text with the
+The generic content-editing primitive: `files.edit` reads a file's current
+text with the
 `FileContents` fact, applies a caller-supplied *pure* transform, and writes the
 result back over the asyncssh connection's scp channel only when it differs. Any
-"edit a file in place" task is then just a transform. The example's
+"edit a file in place" task is then just a transform — though a few common
+formats now have dedicated operations built on the same idea
+(`server.etc_hosts` for the hosts file, `sysctl.setting` for sysctl keys). The example's
 `ensure_marker` appends a managed line only when it is not already present, so
 it is a fixpoint and the second edit is a guaranteed no-op — visible through the
 fresh per-step fact cache. The transform must be a module-level function (a
 lambda built inside the deploy generator would diverge across phases and raise
 `DeterminismError`), and because the write is an unprivileged transfer the
 target is a login-user-writable path in `/tmp`, not a root-owned file like
-`/etc/hosts` — for that, see the spool-and-install recipe below.
+`/etc/hosts` — for that, see `files.install` below (or the dedicated
+[`server.etc_hosts`](server.md#managing-etchosts-entries) operation).
 
 ::: files_edit
     options:
@@ -138,8 +141,8 @@ overwrite) and the deprecated `try_prevent_shell_expansion` are deliberately
 dropped; removal from an absent file passes `None` through so no empty file
 is created. The script runs the full lifecycle — ensure twice, then remove
 twice — each run as a `--dry` plan followed by the real apply log, against a
-login-user-writable `/tmp` path (a root-owned target needs the spool-and-install
-recipe below).
+login-user-writable `/tmp` path (a root-owned target needs `files.install`
+below).
 
 ::: files_block
     options:
@@ -244,31 +247,11 @@ and `chmod` are unprivileged in `/tmp`.
     options:
       members: []
 
-## Managing /etc/hosts with files.edit + files.move
-
-reemote5's answer to pyinfra's bespoke `server.etc_hosts`: no per-format
-editor, just the generic primitives composed. A `gather_fact` snapshot reads
-each host's real `/etc/hosts`; the pure `ensure_db_host` transform computes
-the desired content on the control machine (the line-keyed-by-IP edit
-pyinfra performs), and hosts already in the desired state are skipped — the
-script-level idempotence pyinfra gets from its `EtcHosts` fact. Run 1 spools
-the content to `/tmp/hosts` with `files.edit` (a per-host transform built
-once by a closure factory over the frozen snapshot, determinism-safe across
-phases); run 2 installs it with `files.move` flagged `sudo=True` —
-`sudo rm -rf /etc/hosts` then `sudo mv /tmp/hosts /etc`. Two runs because
-`files.edit`'s write is an unprivileged transfer that cannot touch
-root-owned `/etc/hosts`, and `files.move` validates its source in the
-prepare phase, which a single deploy's not-yet-created spool file would
-fail.
-
-::: files_edit_etc_hosts
-    options:
-      members: []
-
 ## Installing content at a root-owned path
 
-`files.install` (a reemote5 original) is the one-deploy answer to the
-root-owned write the recipe above needs two runs for: it reads the
+`files.install` (a reemote5 original) is the one-deploy answer to a
+root-owned content write that a `files.edit` + `files.move` recipe would
+need two runs for: it reads the
 destination's text with `FileContents` and, only when it differs from the
 desired `content`, yields an unprivileged `InstallSpoolCommand` scp transfer
 to a dest-derived `/tmp` spool path followed by an elevated `InstallCommand`

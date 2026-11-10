@@ -10,10 +10,12 @@ overwrite's ``rm -rf`` + ``mv`` pair, and the three error branches), the
 deliberate phase-unaware deviation (absent src / absent dest directory raise
 ``ValueError`` in *both* phases, where pyinfra logs softly while planning),
 the ``SimulatedHost`` seam dispatch, end-to-end plan/log behaviour with
-``sudo=True``, and the motivating ``/etc/hosts`` recipe: ``files.edit``
+``sudo=True``, and the ``/etc/hosts`` recipe: ``files.edit``
 spools the transformed content into a writable path in one run, then
 ``files.move`` installs it into ``/etc`` elevated in a second run -- the
-two-run split the always-raise deviation makes necessary.
+two-run split the always-raise deviation makes necessary. The hosts case
+itself now has a dedicated one-deploy operation (``server.etc_hosts``);
+the recipe tests stay as generic edit+move coverage.
 """
 
 from collections.abc import Generator

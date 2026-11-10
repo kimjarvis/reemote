@@ -10,51 +10,56 @@
 # one target expression (``semanage fcontext -n -l`` grepped), the
 # protocol -> port -> type label map (``semanage port -ln``, ranges
 # expanded) and the type of one protocol/port pair (``sepolicy network``).
-# Six reemote5 originals widen the visibility pyinfra's set leaves missing:
+# Seven reemote5 originals widen the visibility pyinfra's set leaves missing:
 # ``Booleans`` (every boolean at once, ``getsebool -a``), ``Mode`` (the
 # runtime mode plus the config-file mode and loaded policy, ``sestatus``),
 # ``SELogin`` (Linux user -> SELinux user mappings, ``semanage login -ln``),
 # ``SEUser`` (SELinux user definitions, ``semanage user -ln``), ``Modules``
 # (the installed policy modules with priority, format and enabled state,
-# ``semodule -lfull``) and ``PermissiveDomains`` (the domains exempted from
-# enforcement, ``semanage permissive -l``). Like every fact they are
-# phase-unaware: their ``process`` coroutine just gathers the raw value.
+# ``semodule -lfull``), ``PermissiveDomains`` (the domains exempted from
+# enforcement, ``semanage permissive -l``) and ``SelinuxConfigFile`` (the
+# verbatim text of ``/etc/selinux/config``, the raw-content fact
+# ``selinux.config`` computes its spooled content from). Like every fact
+# they are phase-unaware: their ``process`` coroutine just gathers the raw
+# value.
 #
 # Operation side: ``selinux.boolean``, ``selinux.file_context``,
 # ``selinux.file_context_mapping`` and ``selinux.port`` port pyinfra's four
 # SELinux operations through typed command descriptors, reading the facts
 # above for idempotence; ``file_context`` gains optional full-context
 # components (user, role, level beside the type) and ``port`` keeps
-# pyinfra's ``-m`` modify branch. Six reemote5 originals complete the
+# pyinfra's ``-m`` modify branch. Seven reemote5 originals complete the
 # toolchain: ``selinux.mode`` (runtime ``setenforce``, idempotent on
 # ``Mode``), ``selinux.login`` (``semanage login -a/-m/-d``), ``selinux.module``
 # (``semodule -i/-r/-e/-d`` with present/absent/enabled/disabled states),
 # ``selinux.permissive_domain`` (``semanage permissive -a/-d``),
-# ``selinux.restorecon`` (stateless relabel of a path tree) and
+# ``selinux.restorecon`` (stateless relabel of a path tree),
 # ``selinux.autorelabel`` (the ``/.autorelabel`` boot flag, idempotent on
 # the selinux-local ``_AutorelabelPending`` existence probe -- the
 # zero-cross-module-import invariant forbids reaching into ``files`` for
-# its ``FileExists`` fact, the ``git._DirectoryExists`` pattern).
+# its ``FileExists`` fact, the ``git._DirectoryExists`` pattern) and
+# ``selinux.config`` (the persistent ``SELINUX``/``SELINUXTYPE`` boot
+# settings, a spool-and-install rewrite of ``/etc/selinux/config``).
 #
-# Deliberately absent: persistent ``/etc/selinux/config`` editing is managed
-# with the generic ``files.edit`` primitive rather than a bespoke
-# ``selinux.config`` operation -- see the spool-and-install recipe in
-# ``examples/modules/selinux/selinux_config.py``. An ``audit2allow``
-# operation is likewise not provided: generating policy from the audit log
-# is a stateless, non-idempotent workflow whose output cannot be compared
-# against a fact, so it stays a ``Shell`` action escape hatch.
+# Deliberately absent: an ``audit2allow`` operation -- generating policy
+# from the audit log is a stateless, non-idempotent workflow whose output
+# cannot be compared against a fact, so it stays a ``Shell`` action escape
+# hatch.
 # Operations are async generators that receive an ``OpContext``, await
 # facts, set ``ctx.changed``/``ctx.reason``, and yield command descriptors;
 # they never touch the host directly.
 
 
+import hashlib
+import io
 import re
 import shlex
 from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Any, TypedDict
 
-from ...commands import Command
+from ...commands import Command, TransferCommand
 from ...core import OpContext
 from ...hosts import Host
 
@@ -679,7 +684,7 @@ class Mode:
     # the fact needs no second read of /etc/selinux/config. A disabled
     # subsystem prints only ``SELinux status: disabled``: the mode reads
     # "disabled" and the config/policy fields stay empty (sestatus reports
-    # neither in that state; read the config file with ``files.FileContents``
+    # neither in that state; read the config file with ``SelinuxConfigFile``
     # when the boot setting matters on a disabled host). Empty output reads
     # as an empty mode rather than guessing. pyinfra-style
     # ``requires_command`` gating has no counterpart: a host without
@@ -689,7 +694,9 @@ class Mode:
     # SimulatedHost seam note: the ``selinux_mode`` field stores this exact
     # ModeInfo shape (defaulting to an enforcing/targeted host) and is
     # copied on read; the setenforce mutator edits the runtime ``mode``
-    # key only, mirroring setenforce's runtime-only effect.
+    # key only, mirroring setenforce's runtime-only effect, while the
+    # ``selinux.config`` install mutator edits ``config_mode`` from the
+    # installed file's SELINUX assignment (sestatus reads the file live).
 
     #: Shell reporting the SELinux status summary over SSH.
     COMMAND = "sestatus"
@@ -732,6 +739,85 @@ class Mode:
         # Real transport: query sestatus over asyncssh.
         stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
+
+
+class SelinuxConfigFile:
+    """The current content of the SELinux config file, or None when absent.
+
+    **Commands:**
+
+    ```bash
+    test -e <path> && { printf '#reemote5-selinuxconfig\\n'; cat -- <path>; }
+    ```
+
+    **Returns:**
+
+    ```python
+    str | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/selinux/selinux_config.py``.
+    """
+
+    # The raw-content fact of this namespace (the ``OpenrcConfigFile``/
+    # ``ApkRepositoriesFile``/``AptSourcesFile`` pattern): ``selinux.config``
+    # reads the managed file's *text* through it to compute the content it
+    # spools back, and the fact never interprets that text. The stock
+    # /etc/selinux/config is mostly comments -- rebuilding it from a parsed
+    # setting (``Mode``'s config_mode reports only the SELINUX value, and
+    # nothing at all on a disabled host) would destroy the comments, blank
+    # lines and ordering the distro ships -- so the operation rewrites the
+    # verbatim text instead. Absence is reported as ``None`` -- never the
+    # empty string -- so a file that exists but is empty stays
+    # distinguishable from one that is missing.
+    #
+    # The path is an argument, not a constant, like ``OpenrcConfigFile``:
+    # the operation passes the fixed ``/etc/selinux/config``. No ``|| true``
+    # fallback is needed -- the ``test -e`` guard already prints nothing at
+    # all for an absent file (and an empty stdout reads as ``None``, not an
+    # error: ``run_shell`` only raises on exit 127).
+
+    #: Marker printed before the ``cat``'d content, only when ``test -e``
+    #: passes, so ``process`` can tell an existing (possibly empty) file from
+    #: a missing one (no marker on stdout).
+    MARKER = "#reemote5-selinuxconfig"
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell printing ``MARKER`` then the file's content, only if it exists.
+
+        The ``test -e`` guard means a missing file produces no output at all
+        (not even the marker), while an existing one -- empty or not -- always
+        leads with the marker line (``OpenrcConfigFile.command``'s form).
+        """
+        quoted = shlex.quote(path)
+        return f"test -e {quoted} && {{ printf '{cls.MARKER}\\n'; cat -- {quoted}; }}"
+
+    @classmethod
+    async def process(cls, host: Host, path: str) -> str | None:
+        remote_files = getattr(host, "remote_files", None)
+        if remote_files is not None:
+            # SimulatedHost seam: decode the content the simulated remote
+            # filesystem holds at the path (None when absent). The same
+            # store backs files.put/files.get and the ``selinux.config``
+            # install mutator, so a simulated write reads back through
+            # this fact.
+            data = remote_files.get(path)
+            return data.decode("utf-8") if data is not None else None
+        # Real transport: cat the file over asyncssh behind the marker, so a
+        # missing file (no marker) reads as None rather than empty content.
+        stdout = await host.run_shell(cls.command(path))
+        prefix = f"{cls.MARKER}\n"
+        if not stdout.startswith(prefix):
+            return None
+        return stdout[len(prefix) :]
 
 
 class SeLogin(TypedDict):
@@ -1666,9 +1752,9 @@ async def mode(
     # running kernel state. A disabled subsystem raises ``ValueError``:
     # setenforce cannot enable SELinux (the kernel carries no policy), so
     # the switch needs the persistent config edit plus a relabel first --
-    # the ``files.edit`` recipe in ``examples/modules/selinux/selinux_config.py``
-    # followed by ``selinux.autorelabel``. Making the runtime mode survive
-    # reboot is that same config recipe's job, not this operation's.
+    # ``selinux.config`` followed by ``selinux.autorelabel``. Making the
+    # runtime mode survive reboot is that same operation's job, not this
+    # operation's.
     #
     # The command needs root: flag the request ``sudo=True``. ``**kwargs``
     # absorbs pyinfra's global arguments (``op()`` already strips
@@ -1682,8 +1768,7 @@ async def mode(
     if current["mode"] == "disabled":
         raise ValueError(
             "SELinux is disabled; setenforce cannot enable it -- set "
-            "SELINUX=enforcing (or permissive) in /etc/selinux/config "
-            "(see examples/modules/selinux/selinux_config.py), request "
+            "SELINUX=enforcing (or permissive) with selinux.config, request "
             "selinux.autorelabel and reboot first"
         )
     if current["mode"] != mode:
@@ -2195,6 +2280,248 @@ async def autorelabel(ctx: OpContext, **kwargs: Any) -> AsyncGenerator[Command]:
         yield AutorelabelCommand()
 
 
+# --- selinux.config ------------------------------------------------------------------
+
+
+def _config_key_pattern(key: str) -> str:
+    """The anchored regex matching every assignment line of ``key``.
+
+    Matches an active assignment (``SELINUX=enforcing``) and a
+    commented-out one (``# SELINUX=permissive``), with optional surrounding
+    whitespace and spaces around the ``=`` -- the pattern the former
+    ``selinux_config.py`` recipe's ``config_edit`` used. ``key`` is only
+    ever one of the two fixed setting names, so ``re.escape`` is
+    belt-and-braces for the regex, not a security boundary.
+    """
+    return rf"^[ \t]*#?[ \t]*{re.escape(key)}[ \t]*="
+
+
+def _config_spool_path(dest: str) -> str:
+    """The deterministic ``/tmp`` spool path ``selinux.config`` uploads to.
+
+    Derived from the managed file's sha1 (``openrc.config``'s
+    ``_config_spool_path``, itself ``files.install``'s ``_install_spool_path``
+    pattern): the derived name is exactly as deterministic across the two
+    deploy phases as a fixed constant, and it keeps the house rule that
+    every spool-and-install operation names its spool after the managed
+    path even when it manages exactly one file (the ``apk.repository``
+    precedent). The name avoids *collisions*, not a hostile local user: it
+    is predictable, so on a multi-tenant host the ``/tmp`` spool is still a
+    symlink-race exposure (the trade-off every spool-and-install operation
+    here makes).
+    """
+    digest = hashlib.sha1(dest.encode()).hexdigest()[:16]
+    return f"/tmp/reemote5-selinux-config-{digest}"
+
+
+def _set_config_value(content: str | None, key: str, value: str) -> str:
+    """The pure set transform: ``content`` carrying exactly one ``key=value``.
+
+    ``selinux.config``'s edit of the file's current text, one setting at a
+    time: every line assigning ``key`` is dropped -- commented-out ones
+    included, the recipe's replacement semantics, because leaving
+    contradictory commented assignments around invites confusion -- then
+    ``key=value`` is appended (unquoted, the stock /etc/selinux/config
+    convention: libselinux parses the file, no shell sources it). An
+    absent file (``None``) becomes the single line. When the wanted line
+    is already the file's *only* assignment of the key the content comes
+    back byte-for-byte unchanged -- dropping and re-appending it would
+    move the line to the end of the file and report a spurious change on
+    a stock config whose values already match. A rewritten result always
+    ends in one trailing newline, and the edit is a fixpoint: the appended
+    line matches the drop pattern, so a second pass reproduces the same
+    content. Idempotent (``f(f(x)) == f(x)``) and side-effect free, so both
+    deploy phases compute the same content from the same fact value.
+    """
+    pattern = re.compile(_config_key_pattern(key))
+    matched = [line for line in (content or "").splitlines() if pattern.match(line)]
+    wanted = f"{key}={value}"
+    if matched == [wanted]:
+        return content or ""
+    lines = [line for line in (content or "").splitlines() if not pattern.match(line)]
+    lines.append(wanted)
+    return "\n".join(lines) + "\n"
+
+
+@dataclass(frozen=True)
+class SelinuxConfigUploadCommand(TransferCommand):
+    """Spool the transformed SELinux config content to a ``/tmp`` path on the target.
+
+    The first half of ``selinux.config``'s write and a *non-shell*
+    descriptor: it copies the content over the connection's scp channel
+    via ``Host.upload_file`` rather than running shell text, so it has no
+    ``shell()`` and its loggable form is the ``__str__`` rendering
+    ``command_shell`` falls back to. Like ``OpenrcConfigUploadCommand`` the
+    content is not a caller-supplied stream but the whole configuration
+    text the operation just derived from the file's current content, so
+    the field is a plain ``str`` -- hashable and identical across phases --
+    wrapped in a fresh ``io.BytesIO`` only at transfer time. The copy rides
+    as the login user (transfers are unprivileged, so the request's
+    ``sudo`` does not apply to it), which is why the spool path is
+    world-writable ``/tmp`` rather than the root-owned ``/etc/selinux``
+    directory.
+    """
+
+    content: str  # the whole transformed /etc/selinux/config text
+    dest: str  # spool path on the target host
+
+    def __str__(self) -> str:
+        return f"scp <selinux config> -> {self.dest}"
+
+    async def transfer(self, host: Host) -> None:
+        await host.upload_file(io.BytesIO(self.content.encode()), self.dest)
+
+
+@dataclass(frozen=True)
+class SelinuxConfigInstallCommand(Command):
+    """Install the spooled SELinux config file ``0644``, then remove the spool file.
+
+    The second half of ``selinux.config``'s write and the elevated one:
+    writing ``/etc/selinux/config`` needs root, so the request is flagged
+    ``sudo=True`` and the whole sequence is wrapped in ``sh -c`` -- a bare
+    ``sudo`` prefix would elevate only the first command of the ``&&``
+    chain and leave the cleanup running as the login user. The sequence
+    creates the destination directory, copies the spooled content over
+    the target file, chmods it ``0644`` and removes the spool -- the
+    ``OpenrcConfigInstallCommand`` pattern. ``cp`` (never ``mv``) is the
+    overlay verb deliberately: it preserves an existing file's root
+    ownership, and a file it creates belongs to the elevated step's root
+    -- a bare ``mv`` would carry the login-user spool's owner and mode
+    onto the config, which breaks sestatus/semanage host-wide. All paths
+    are shell-quoted.
+    """
+
+    spool: str  # where SelinuxConfigUploadCommand wrote the content
+    dest: str  # the /etc/selinux/config path
+
+    def shell(self) -> str:
+        spool = shlex.quote(self.spool)
+        dest = shlex.quote(self.dest)
+        parent = shlex.quote(str(PurePosixPath(self.dest).parent))
+        inner = (
+            f"mkdir -p {parent} && "
+            f"cp {spool} {dest} && "
+            f"chmod 0644 {dest} && rm -f {spool}"
+        )
+        return f"sh -c {shlex.quote(inner)}"
+
+
+async def config(
+    ctx: OpContext,
+    SELINUX: str | None = None,
+    SELINUXTYPE: str | None = None,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Set the boot-time mode and policy type in /etc/selinux/config.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        SELINUX (str | None, optional): The boot-time mode to ensure --
+            ``enforcing``, ``permissive`` or ``disabled``; ``None`` leaves
+            the file's ``SELINUX`` setting untouched. Defaults to None.
+        SELINUXTYPE (str | None, optional): The policy type to ensure
+            (e.g. ``targeted``, ``minimum``, ``mls`` -- any installed
+            policy's name); ``None`` leaves the file's ``SELINUXTYPE``
+            setting untouched. Defaults to None.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: Generated selinux config spool-and-install commands.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/selinux/selinux_config.py``.
+    """
+
+    # A reemote5 original with no pyinfra counterpart: pyinfra's ``selinux``
+    # namespace ships boolean/file_context/port/mode/login/module/
+    # restorecon/autorelabel but no config operation. This operation
+    # supersedes the ``files.edit`` + ``files.move`` spool-and-install
+    # recipe the ``selinux_config.py`` example used to demonstrate, and is
+    # a member of the spool-and-install write family: the file's current
+    # text is read with the in-namespace ``SelinuxConfigFile`` content fact
+    # (never rebuilt from ``Mode``'s parsed config_mode, which would
+    # destroy the comments and ordering the stock file ships with), one
+    # pure transform per requested setting computes the desired content,
+    # and when the result differs from what is there the request yields
+    # *two* descriptors: a ``SelinuxConfigUploadCommand`` transfer spooling
+    # the new text to a ``/tmp`` path over scp, then a
+    # ``SelinuxConfigInstallCommand`` running the elevated install that
+    # overlays the protected file and removes the spool. Writing the file
+    # needs root, so flag the request ``sudo=True`` -- but the escalation
+    # applies to the install only: the transfer always rides the connection
+    # as the login user, which is exactly why the content detours through
+    # ``/tmp``. The spool name is derived from the managed path
+    # (``_config_spool_path``), so it stays identical across the two deploy
+    # phases.
+    #
+    # Idempotence is the transform's fixpoint: ``_set_config_value`` drops
+    # every assignment of the key (commented-out ones included -- the
+    # recipe's replacement semantics, so no contradictory commented line
+    # survives) and appends ``KEY=value`` unquoted, the stock convention;
+    # a key whose only assignment already is the wanted line keeps the
+    # file byte-for-byte (no reorder, no spurious change on a stock
+    # config). The settings apply in fixed order (SELINUX then
+    # SELINUXTYPE), so both phases derive the same bytes. When the result
+    # equals the file's current text the operation is a no-op; an absent
+    # file reads ``None`` and gains just the requested lines (the
+    # install's ``mkdir -p`` creates /etc/selinux when needed).
+    #
+    # Validation raises ``ValueError`` while materializing (in a deploy run
+    # that is the prepare phase, before anything is sent): neither setting
+    # given, a ``SELINUX`` outside enforcing/permissive/disabled (a bogus
+    # mode would silently disable SELinux at boot), and a ``SELINUXTYPE``
+    # that is empty or carries whitespace, ``#``, quotes or a backslash,
+    # which would corrupt the line libselinux parses. The policy name is
+    # otherwise free-form: custom policy packages exist, so no whitelist.
+    #
+    # There is no runtime half: the file is read when the system boots, so
+    # the edit takes effect at the *next reboot* -- ``selinux.mode`` owns
+    # the runtime ``setenforce`` switch, and ``Mode``'s ``config_mode``
+    # field is how a deploy reads the persistent setting back.
+    # **Warning**: switching a *disabled* subsystem to enforcing
+    # additionally requires a full relabel (``selinux.autorelabel`` before
+    # the reboot), and changing ``SELINUXTYPE`` requires the matching
+    # policy package to be installed. ``**kwargs`` absorbs pyinfra's
+    # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    if SELINUX is None and SELINUXTYPE is None:
+        raise ValueError("at least one of SELINUX and SELINUXTYPE must be given")
+    if SELINUX is not None and SELINUX not in ("enforcing", "permissive", "disabled"):
+        raise ValueError(f"not an SELinux boot mode: {SELINUX!r}")
+    if SELINUXTYPE is not None and (
+        not SELINUXTYPE or re.search(r"[\s#\"'\\]", SELINUXTYPE)
+    ):
+        raise ValueError(f"not a policy type name: {SELINUXTYPE!r}")
+
+    path = "/etc/selinux/config"
+    settings = [
+        (key, value)
+        for key, value in (("SELINUX", SELINUX), ("SELINUXTYPE", SELINUXTYPE))
+        if value is not None
+    ]
+    current = await ctx.facts.get(SelinuxConfigFile, path)
+    new = current or ""
+    for key, value in settings:
+        new = _set_config_value(new, key, value)
+    wanted = ", ".join(f"{key}={value}" for key, value in settings)
+    if new == (current or ""):
+        # The transform is a fixpoint: the file already holds exactly the
+        # desired settings, so there is nothing to spool.
+        ctx.reason = f"{path} already sets {wanted}"
+        return
+
+    ctx.changed = True
+    spool = _config_spool_path(path)
+    ctx.reason = f"{wanted} will be set in {path}"
+    yield SelinuxConfigUploadCommand(content=new, dest=spool)
+    yield SelinuxConfigInstallCommand(spool=spool, dest=path)
+
+
 __all__ = [
     "AutorelabelCommand",
     "Booleans",
@@ -2215,6 +2542,9 @@ __all__ = [
     "SeContext",
     "SeLogin",
     "SeUser",
+    "SelinuxConfigFile",
+    "SelinuxConfigInstallCommand",
+    "SelinuxConfigUploadCommand",
     "SemanageFcontextCommand",
     "SemanageLoginCommand",
     "SemanagePermissiveCommand",
@@ -2226,6 +2556,7 @@ __all__ = [
     "SetseboolCommand",
     "autorelabel",
     "boolean",
+    "config",
     "file_context",
     "file_context_mapping",
     "login",

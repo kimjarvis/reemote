@@ -57,6 +57,9 @@ from reemote5.drivers import (
 from reemote5.hosts import Host
 from reemote5.modules import openrc
 from reemote5.modules.openrc.openrc import (
+    OpenrcConfigFile,
+    OpenrcConfigInstallCommand,
+    OpenrcConfigUploadCommand,
     OpenrcEnabled,
     OpenrcRunlevels,
     OpenrcServices,
@@ -65,6 +68,9 @@ from reemote5.modules.openrc.openrc import (
     RcServiceCommand,
     RcUpdateCommand,
     RunlevelCommand,
+    _config_spool_path,
+    _set_config_value,
+    _unset_config_value,
 )
 from tests.simulated_host import SimulatedHost
 
@@ -1429,3 +1435,582 @@ async def test_openrc_custom_runlevel_dry_run_plans_without_sending():
     assert planned.changed
     assert planned.commands == (RunlevelCommand(runlevel="async", present=True),)
     assert host.openrc_runlevels == {"default": []}
+
+
+# --- OpenrcConfigFile: the raw-content fact -------------------------------------
+
+# A stock-style rc.conf: a header comment, a commented-out assignment, the
+# active assignment the operation will replace, and an unrelated setting.
+RC_CONF_TEXT = '# /etc/rc.conf\n#rc_parallel=NO\nrc_parallel="NO"\nrc_logger="YES"\n'
+
+
+def test_openrc_config_file_command_guards_and_quotes():
+    """The ``test -e`` + marker + ``cat`` form, with the path shell-quoted
+    (the ``ApkRepositoriesFile.command`` pattern)."""
+    assert OpenrcConfigFile.command("/etc/rc.conf") == (
+        "test -e /etc/rc.conf && { printf '#reemote5-openrcconfig\\n'; "
+        "cat -- /etc/rc.conf; }"
+    )
+    assert OpenrcConfigFile.command("/etc/my rc.conf") == (
+        "test -e '/etc/my rc.conf' && { printf '#reemote5-openrcconfig\\n'; "
+        "cat -- '/etc/my rc.conf'; }"
+    )
+
+
+async def test_openrc_config_file_seam_absent_reads_none():
+    """The simulated seam reports an absent file as None, never \"\"."""
+    host = SimulatedHost(name="h")
+    assert await OpenrcConfigFile.process(host, "/etc/rc.conf") is None
+
+
+async def test_openrc_config_file_seam_empty_reads_empty_string():
+    """An existing but empty file reads \"\" -- the marker distinction the
+    unset direction needs to delete an empty leftover."""
+    host = SimulatedHost(name="h", remote_files={"/etc/rc.conf": b""})
+    assert await OpenrcConfigFile.process(host, "/etc/rc.conf") == ""
+
+
+async def test_openrc_config_file_seam_decodes_content():
+    """The seam decodes the stored bytes verbatim -- comments, blank lines
+    and ordering survive, because the fact never parses the text."""
+    host = SimulatedHost(name="h", remote_files={"/etc/rc.conf": RC_CONF_TEXT.encode()})
+    assert await OpenrcConfigFile.process(host, "/etc/rc.conf") == RC_CONF_TEXT
+
+
+async def test_openrc_config_file_canned_parses_marker_and_content():
+    """Over the real-transport path the marker line is stripped and the
+    rest returned verbatim (the seam short-circuit never exercises this)."""
+    host = CannedShellHost(f"#reemote5-openrcconfig\n{RC_CONF_TEXT}")
+    assert await OpenrcConfigFile.process(host, "/etc/rc.conf") == RC_CONF_TEXT
+    assert host.last_shell == OpenrcConfigFile.command("/etc/rc.conf")
+
+
+async def test_openrc_config_file_canned_absent_reads_none():
+    """No marker on stdout (the ``test -e`` guard failed) reads as None."""
+    assert await OpenrcConfigFile.process(CannedShellHost(""), "/etc/rc.conf") is None
+
+
+async def test_openrc_config_file_canned_empty_reads_empty_string():
+    """The marker alone -- an existing empty file -- reads as \"\"."""
+    host = CannedShellHost("#reemote5-openrcconfig\n")
+    assert await OpenrcConfigFile.process(host, "/etc/rc.conf") == ""
+
+
+async def test_openrc_config_file_gather_fact_forwards_the_path():
+    """``gather_fact`` forwards the path argument to every host's read."""
+    host1 = SimulatedHost(name="web1", remote_files={"/etc/rc.conf": b"a=1\n"})
+    host2 = SimulatedHost(name="web2")
+    contents = await gather_fact([host1, host2], OpenrcConfigFile, "/etc/rc.conf")
+    assert contents == {"web1": "a=1\n", "web2": None}
+
+
+# --- openrc.config: the pure transforms -----------------------------------------
+
+
+def test_set_config_value_absent_file_becomes_the_single_line():
+    """None content gains just the quoted assignment and a trailing newline."""
+    assert _set_config_value(None, "rc_parallel", "YES") == 'rc_parallel="YES"\n'
+    assert _set_config_value("", "rc_parallel", "YES") == 'rc_parallel="YES"\n'
+
+
+def test_set_config_value_replaces_active_and_commented_assignments():
+    """Every assignment of the key is dropped -- commented ones included,
+    the recipe's replacement semantics -- and the wanted line appended;
+    unrelated lines keep their order and text."""
+    assert _set_config_value(RC_CONF_TEXT, "rc_parallel", "YES") == (
+        '# /etc/rc.conf\nrc_logger="YES"\nrc_parallel="YES"\n'
+    )
+
+
+def test_set_config_value_matches_whitespace_variants():
+    """Leading whitespace, spaces around the ``=`` and a spaced comment
+    marker all match the drop pattern."""
+    content = '  rc_parallel = "NO"\n#  rc_parallel=NO\nother="KEEP"\n'
+    assert _set_config_value(content, "rc_parallel", "YES") == (
+        'other="KEEP"\nrc_parallel="YES"\n'
+    )
+
+
+def test_set_config_value_is_a_fixpoint():
+    """The appended line matches the drop pattern, so a second pass
+    reproduces the same content -- both phases derive the same bytes."""
+    once = _set_config_value(RC_CONF_TEXT, "rc_parallel", "YES")
+    assert _set_config_value(once, "rc_parallel", "YES") == once
+
+
+def test_set_config_value_does_not_match_other_keys():
+    """The pattern is key-anchored: ``rc_parallel`` never drops
+    ``rc_parallel_extra`` or a line merely mentioning the key."""
+    content = 'rc_parallel_extra="KEEP"\n# see rc_parallel docs\n'
+    assert _set_config_value(content, "rc_parallel", "YES") == (
+        'rc_parallel_extra="KEEP"\n# see rc_parallel docs\nrc_parallel="YES"\n'
+    )
+
+
+def test_unset_config_value_drops_assignments_and_keeps_the_rest():
+    """Active and commented assignments alike are dropped; the remaining
+    lines keep their order and the file's trailing newline."""
+    assert _unset_config_value(RC_CONF_TEXT, "rc_parallel") == (
+        '# /etc/rc.conf\nrc_logger="YES"\n'
+    )
+
+
+def test_unset_config_value_absent_and_no_match_are_fixpoints():
+    """None reads as empty; a file without the key comes back verbatim."""
+    assert _unset_config_value(None, "rc_parallel") == ""
+    assert _unset_config_value("", "rc_parallel") == ""
+    content = 'rc_logger="YES"\n'
+    assert _unset_config_value(content, "rc_parallel") == content
+
+
+def test_unset_config_value_empties_to_empty_string():
+    """A file holding nothing but assignments of the key empties to \"\"
+    (a legitimate spool payload), never disappears."""
+    assert _unset_config_value('#rc_parallel=NO\nrc_parallel="YES"\n', "rc_parallel") == ""
+
+
+def test_unset_config_value_keeps_a_missing_trailing_newline():
+    """Unlike the set transform (which always ends in one newline), the
+    unset preserves the file's own ending -- here, none."""
+    assert _unset_config_value('a="1"\nrc_parallel="YES"', "rc_parallel") == 'a="1"'
+
+
+def test_unset_config_value_is_a_fixpoint():
+    once = _unset_config_value(RC_CONF_TEXT, "rc_parallel")
+    assert _unset_config_value(once, "rc_parallel") == once
+
+
+# --- openrc.config: spool derivation and descriptors ----------------------------
+
+
+def test_config_spool_path_is_dest_derived_and_deterministic():
+    """The same dest maps to the same spool in both phases, different dests
+    never share one, and the name keeps the family prefix."""
+    spool = _config_spool_path("/etc/rc.conf")
+    assert spool == _config_spool_path("/etc/rc.conf")
+    assert spool != _config_spool_path("/etc/conf.d/sshd")
+    assert spool.startswith("/tmp/reemote5-openrc-config-")
+    assert len(spool.rsplit("-", 1)[1]) == 16
+
+
+def test_openrc_config_upload_str_and_never_elevates():
+    """The transfer has no ``shell()``; its loggable form is the ``__str__``
+    rendering, and ``command_shell`` never prefixes it with an escalator."""
+    spool = _config_spool_path("/etc/rc.conf")
+    cmd = OpenrcConfigUploadCommand(content='rc_parallel="YES"\n', dest=spool)
+    assert not hasattr(cmd, "shell")
+    assert str(cmd) == f"scp <openrc config> -> {spool}"
+    assert command_shell(cmd, sudo=True) == str(cmd)
+    assert command_shell(cmd, doas=True) == str(cmd)
+
+
+def test_openrc_config_install_shell_and_elevation():
+    """The install wraps the whole ``&&`` chain in ``sh -c`` so the
+    escalator elevates every step, cleanup included."""
+    spool = _config_spool_path("/etc/rc.conf")
+    cmd = OpenrcConfigInstallCommand(spool=spool, dest="/etc/rc.conf")
+    inner = (
+        f"mkdir -p /etc && cp {spool} /etc/rc.conf && "
+        f"chmod 0644 /etc/rc.conf && rm -f {spool}"
+    )
+    assert cmd.shell() == f"sh -c {shlex.quote(inner)}"
+    assert command_shell(cmd, sudo=True) == f"sudo sh -c {shlex.quote(inner)}"
+    assert command_shell(cmd, doas=True) == f"doas -n sh -c {shlex.quote(inner)}"
+    assert command_shell(cmd, su=True) == f"su -c {shlex.quote(cmd.shell())}"
+
+
+def test_openrc_config_install_quotes_paths_with_spaces():
+    """A space-carrying directory proves the quoting (a space-free path is
+    left unquoted by shlex.quote); assert through shlex.split, never a raw
+    substring of the quoted wrapper."""
+    cmd = OpenrcConfigInstallCommand(
+        spool="/tmp/spool x", dest="/etc/openrc conf.d/wei rd"
+    )
+    inner = shlex.split(cmd.shell())[2]
+    assert "mkdir -p '/etc/openrc conf.d'" in inner
+    assert "cp '/tmp/spool x' '/etc/openrc conf.d/wei rd'" in inner
+    assert "chmod 0644 '/etc/openrc conf.d/wei rd'" in inner
+    assert "rm -f '/tmp/spool x'" in inner
+
+
+# --- openrc.config: the operation -----------------------------------------------
+
+
+async def test_config_set_on_an_absent_file_yields_the_pair():
+    """No rc.conf yet: the transform's single line is spooled and installed
+    (the install's mkdir -p creates the parent)."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in openrc.config(ctx, key="rc_parallel", value="YES")]
+    assert ctx.changed
+    assert ctx.reason == 'rc_parallel="YES" will be set in /etc/rc.conf'
+    spool = _config_spool_path("/etc/rc.conf")
+    assert commands == [
+        OpenrcConfigUploadCommand(content='rc_parallel="YES"\n', dest=spool),
+        OpenrcConfigInstallCommand(spool=spool, dest="/etc/rc.conf"),
+    ]
+
+
+async def test_config_set_replaces_the_existing_value():
+    """The spooled content is the whole transformed file: the stale active
+    and commented assignments are gone, the unrelated lines survive."""
+    host = SimulatedHost(name="h", remote_files={"/etc/rc.conf": RC_CONF_TEXT.encode()})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in openrc.config(ctx, key="rc_parallel", value="YES")]
+    assert ctx.changed
+    assert commands[0].content == (
+        '# /etc/rc.conf\nrc_logger="YES"\nrc_parallel="YES"\n'
+    )
+
+
+async def test_config_set_noop_when_the_transform_is_a_fixpoint():
+    """The file's only assignment of the key already carries the wanted
+    value: nothing to spool, the content-level no-op reason names the path."""
+    host = SimulatedHost(
+        name="h", remote_files={"/etc/rc.conf": b'rc_parallel="YES"\n'}
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in openrc.config(ctx, key="rc_parallel", value="YES")]
+    assert not ctx.changed
+    assert ctx.reason == 'rc_parallel="YES" is already set in /etc/rc.conf'
+    assert commands == []
+
+
+async def test_config_set_cleans_a_commented_assignment_even_when_set():
+    """The replacement semantics reach what a value-only comparison never
+    would: a correct active value plus a commented-out variant still plans
+    a change, because the transform drops the commented line."""
+    host = SimulatedHost(
+        name="h",
+        remote_files={"/etc/rc.conf": b'#rc_parallel=NO\nrc_parallel="YES"\n'},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in openrc.config(ctx, key="rc_parallel", value="YES")]
+    assert ctx.changed
+    assert commands[0].content == 'rc_parallel="YES"\n'
+
+
+async def test_config_service_targets_the_conf_d_file():
+    """``service`` selects /etc/conf.d/<service>, and the spool is derived
+    from that path -- never the rc.conf spool."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in openrc.config(
+            ctx, key="sshd_opts", value="-4", service="sshd"
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == 'sshd_opts="-4" will be set in /etc/conf.d/sshd'
+    spool = _config_spool_path("/etc/conf.d/sshd")
+    assert commands == [
+        OpenrcConfigUploadCommand(content='sshd_opts="-4"\n', dest=spool),
+        OpenrcConfigInstallCommand(spool=spool, dest="/etc/conf.d/sshd"),
+    ]
+
+
+async def test_config_unset_drops_every_assignment():
+    """``present=False`` spools the file without the key's assignments;
+    the value argument is ignored on this direction."""
+    host = SimulatedHost(name="h", remote_files={"/etc/rc.conf": RC_CONF_TEXT.encode()})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in openrc.config(
+            ctx, key="rc_parallel", value="ignored", present=False
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == "rc_parallel will be unset in /etc/rc.conf"
+    assert commands[0].content == '# /etc/rc.conf\nrc_logger="YES"\n'
+
+
+async def test_config_unset_noop_when_the_key_is_absent():
+    """A file that never assigns the key is already in state."""
+    host = SimulatedHost(
+        name="h", remote_files={"/etc/rc.conf": b'rc_logger="YES"\n'}
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in openrc.config(ctx, key="rc_parallel", value="", present=False)
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "rc_parallel is not set in /etc/rc.conf"
+    assert commands == []
+
+
+async def test_config_unset_on_an_absent_file_noops():
+    """None content transforms to \"\", which equals the absent file's
+    normalised text -- no spool, no install."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in openrc.config(ctx, key="rc_parallel", value="", present=False)
+    ]
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_config_unset_empties_the_file_to_a_blank_payload():
+    """A file holding only the key's assignments spools content=\"\" -- a
+    legitimate payload the descriptor never special-cases."""
+    host = SimulatedHost(
+        name="h", remote_files={"/etc/rc.conf": b'rc_parallel="YES"\n'}
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in openrc.config(ctx, key="rc_parallel", value="", present=False)
+    ]
+    assert ctx.changed
+    assert commands[0].content == ""
+
+
+@pytest.mark.parametrize("key", ["", "1key", "rc-parallel", "key; reboot", "a b"])
+async def test_config_rejects_a_non_identifier_key(key):
+    """Validation raises while materializing, before any fact is read."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="not a shell variable name"):
+        [c async for c in openrc.config(ctx, key=key, value="YES")]
+
+
+@pytest.mark.parametrize("service", ["", ".", "..", "a/b", "sshd; reboot"])
+async def test_config_rejects_an_invalid_service_name(service):
+    """The service charset (plus the dot special cases) keeps the path
+    inside /etc/conf.d."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="not an OpenRC service name"):
+        [c async for c in openrc.config(ctx, key="k", value="v", service=service)]
+
+
+@pytest.mark.parametrize("value", ['a"b', "a\\b", "a$b", "a`b", "a\nb", "a\rb"])
+async def test_config_rejects_shell_active_values(value):
+    """A value that would break out of the double-quoted rendering raises
+    instead of being written into a shell-sourced file."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="shell-active characters"):
+        [c async for c in openrc.config(ctx, key="k", value=value)]
+
+
+async def test_config_unset_ignores_an_unsafe_value():
+    """The value validation gates the set direction only: an unset never
+    renders the value, so even a shell-active one is accepted."""
+    host = SimulatedHost(name="h", remote_files={"/etc/rc.conf": b'k="v"\n'})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in openrc.config(ctx, key="k", value='a"b', present=False)
+    ]
+    assert ctx.changed
+    assert commands[0].content == ""
+
+
+async def test_config_accepts_an_empty_value_and_absorbs_kwargs():
+    """``key=\"\"`` is a legitimate assignment; an unknown keyword (a
+    pyinfra global) is absorbed by ``**kwargs`` with no effect."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in openrc.config(
+            ctx, key="rc_parallel", value="", extra="ignored"
+        )
+    ]
+    assert ctx.changed
+    assert commands[0].content == 'rc_parallel=""\n'
+
+
+# --- openrc.config: the SimulatedHost seam --------------------------------------
+
+
+async def test_config_upload_seam_writes_only_the_spool():
+    """The transfer arm stores the bytes at the spool path alone; the
+    managed file is untouched until the install runs."""
+    host = SimulatedHost(name="h")
+    spool = _config_spool_path("/etc/rc.conf")
+    await send_command(
+        host, OpenrcConfigUploadCommand(content='rc_parallel="YES"\n', dest=spool)
+    )
+    assert host.remote_files == {spool: b'rc_parallel="YES"\n'}
+    assert "/etc/rc.conf" not in host.existing_files
+
+
+async def test_config_install_seam_moves_the_spool_and_stats_the_dest():
+    """The install arm pops the spool, stores it at dest and refreshes the
+    existence and metadata seams together (root/root, mode 644, size)."""
+    host = SimulatedHost(name="h")
+    spool = _config_spool_path("/etc/rc.conf")
+    host.remote_files[spool] = b'rc_parallel="YES"\n'
+    await send_command(host, OpenrcConfigInstallCommand(spool=spool, dest="/etc/rc.conf"))
+    assert host.remote_files == {"/etc/rc.conf": b'rc_parallel="YES"\n'}
+    assert "/etc/rc.conf" in host.existing_files
+    assert host.file_stats["/etc/rc.conf"] == {
+        "user": "root",
+        "group": "root",
+        "mode": 644,
+        "size": 18,
+    }
+    # The content fact reads the installed text back through the same store.
+    assert await OpenrcConfigFile.process(host, "/etc/rc.conf") == 'rc_parallel="YES"\n'
+
+
+async def test_config_install_seam_without_a_spool_changes_nothing():
+    """An absent spool installs nothing (the paired install mutators'
+    tolerance)."""
+    host = SimulatedHost(name="h")
+    spool = _config_spool_path("/etc/rc.conf")
+    await send_command(host, OpenrcConfigInstallCommand(spool=spool, dest="/etc/rc.conf"))
+    assert host.remote_files == {}
+    assert host.existing_files == set()
+
+
+async def test_config_install_seam_repeat_overwrites_never_appends():
+    """A second install with fresh spool content replaces the file -- the
+    overlay is content-based, so a repeat never accumulates lines."""
+    host = SimulatedHost(name="h")
+    spool = _config_spool_path("/etc/rc.conf")
+    host.remote_files[spool] = b'rc_parallel="YES"\n'
+    await send_command(host, OpenrcConfigInstallCommand(spool=spool, dest="/etc/rc.conf"))
+    host.remote_files[spool] = b'rc_parallel="NO"\n'
+    await send_command(host, OpenrcConfigInstallCommand(spool=spool, dest="/etc/rc.conf"))
+    assert host.remote_files == {"/etc/rc.conf": b'rc_parallel="NO"\n'}
+
+
+# --- openrc.config: end to end ---------------------------------------------------
+
+
+async def test_config_end_to_end_set_then_noop_under_doas():
+    """Through run_prepare/run_apply: the unprivileged scp spools the text,
+    the elevated sh -c installs it, and a second prepare sees the fixpoint
+    (the fresh per-step fact cache observes the installed content)."""
+
+    def set_deploy(host):
+        yield op(
+            openrc.config,
+            name="Enable parallel startup",
+            key="rc_parallel",
+            value="YES",
+            doas=True,
+        )
+
+    host = SimulatedHost(name="h", remote_files={"/etc/rc.conf": RC_CONF_TEXT.encode()})
+    runtimes, plans = await run_prepare([host], set_deploy)
+    assert plans["h"][0].changed
+    report = await run_apply(runtimes, plans=plans)
+    (entry,) = report.log
+    assert entry.changed
+    spool = _config_spool_path("/etc/rc.conf")
+    assert entry.commands == (
+        OpenrcConfigUploadCommand(
+            content='# /etc/rc.conf\nrc_logger="YES"\nrc_parallel="YES"\n', dest=spool
+        ),
+        OpenrcConfigInstallCommand(spool=spool, dest="/etc/rc.conf"),
+    )
+    log = format_log(report)
+    # Two privilege levels in one request: the transfer never elevates.
+    assert f"$ scp <openrc config> -> {spool}" in log
+    assert "$ doas -n sh -c 'mkdir -p /etc && cp " in log
+    assert host.remote_files["/etc/rc.conf"] == (
+        b'# /etc/rc.conf\nrc_logger="YES"\nrc_parallel="YES"\n'
+    )
+    _runtimes, plans2 = await run_prepare([host], set_deploy)
+    assert not plans2["h"][0].changed
+    assert plans2["h"][0].reason == 'rc_parallel="YES" is already set in /etc/rc.conf'
+
+
+async def test_config_end_to_end_two_identical_requests_in_one_deploy():
+    """Both plan as changes (prepare never sends), but the apply log shows
+    the second as a no-op: the first install is visible to its fact read."""
+
+    def twice_deploy(host):
+        yield op(openrc.config, name="Set rc_parallel", key="rc_parallel", value="YES", doas=True)
+        yield op(openrc.config, name="Set rc_parallel again", key="rc_parallel", value="YES", doas=True)
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], twice_deploy)
+    assert plans["h"][0].changed
+    assert plans["h"][1].changed
+    report = await run_apply(runtimes, plans=plans)
+    assert report.log[0].changed
+    assert not report.log[1].changed
+    assert report.log[1].commands == ()
+
+
+async def test_config_end_to_end_set_then_unset_in_one_deploy():
+    """The unset step sees the content the set step installed: the key is
+    dropped again and the file empties to the blank payload."""
+
+    def cycle_deploy(host):
+        yield op(openrc.config, name="Set", key="rc_parallel", value="YES", doas=True)
+        yield op(
+            openrc.config,
+            name="Unset",
+            key="rc_parallel",
+            value="",
+            present=False,
+            doas=True,
+        )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], cycle_deploy)
+    # Prepare compares both steps against the same absent file: the set
+    # plans a change, the unset plans none.
+    assert plans["h"][0].changed
+    assert not plans["h"][1].changed
+    report = await run_apply(runtimes, plans=plans)
+    assert report.log[0].changed
+    assert report.log[1].changed
+    assert report.log[1].commands[0].content == ""
+    assert host.remote_files["/etc/rc.conf"] == b""
+
+
+async def test_config_end_to_end_conf_d_service_scope():
+    """A service-scoped request installs under /etc/conf.d, creating the
+    directory through the install's mkdir -p."""
+
+    def sshd_deploy(host):
+        yield op(
+            openrc.config,
+            name="Restrict sshd to IPv4",
+            key="sshd_opts",
+            value="-4",
+            service="sshd",
+            doas=True,
+        )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], sshd_deploy)
+    assert plans["h"][0].changed
+    report = await run_apply(runtimes, plans=plans)
+    log = format_log(report)
+    assert "$ doas -n sh -c 'mkdir -p /etc/conf.d && cp " in log
+    assert host.remote_files["/etc/conf.d/sshd"] == b'sshd_opts="-4"\n'
+    assert "/etc/conf.d/sshd" in host.existing_files
+
+
+async def test_config_dry_run_plans_without_sending():
+    """``dry=True`` stops after prepare: the pair is planned but neither
+    the spool nor the managed file appears on the host."""
+
+    def set_deploy(host):
+        yield op(openrc.config, name="Set rc_parallel", key="rc_parallel", value="YES", doas=True)
+
+    host = SimulatedHost(name="h")
+    plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}],
+        set_deploy,
+        host_factory=lambda entry: host,
+        dry=True,
+    )
+    assert report is None
+    (planned,) = plans["h"]
+    assert planned.changed
+    assert len(planned.commands) == 2
+    assert host.remote_files == {}
+    assert host.existing_files == set()

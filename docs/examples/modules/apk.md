@@ -199,10 +199,18 @@ write counterpart. `src` is one line (a bare URL or an `@tag URL` line)
 and presence is entry-aware: the line is parsed into the same `url`/`tag`
 entry the fact reports, so a tagged line and the bare URL are *distinct*
 repositories, and an unparseable `src` raises `ValueError` in the prepare
-phase before anything is sent. The add wraps its `>>` redirect inside
-`sh -c` so it happens in the *elevated* shell — a bare
-`doas echo ... >> /etc/apk/repositories` would open the redirect as the
-login user and fail on the root-owned file. The script ensures the
+phase before anything is sent. Where pyinfra — and reemote5's own earlier
+form — patched the file in place with `echo >>` and `sed -i`, the
+operation now *rewrites* it through the spool-and-install family
+[`apt.repo`](../../modules/apt.md) belongs to: the
+[`ApkRepositoriesFile`][reemote5.modules.apk.apk.ApkRepositoriesFile]
+content fact reads the file's current text, a pure transform adds or
+deletes the line, the result is spooled to a `/tmp` path named after the
+managed file by an unprivileged scp upload (a transfer never elevates),
+and an elevated `sh -c` — the half `doas` applies to — installs it with
+mode `0644` and removes the spool. Because the transform works on the real
+content, the file's other lines and comments survive verbatim and a line
+the file already carries is never written twice. The script ensures the
 `community` repository — the source of most everyday Alpine packages
 beyond `main`, and the proposal's motivating case — using the CDN's
 `latest-stable` alias so no release is hard-coded; its docstring says to
@@ -211,20 +219,21 @@ fact example first and pin the URL to the hosts' release when they track a
 fixed one, because the presence check compares whole entries and mixing
 releases in one file invites dependency trouble. The same request is
 yielded twice — the second is a guaranteed no-op in the apply phase once
-the first append landed (both plan as changes when the line is missing).
-The removal direction (`present=False`, an escaped literal-matching
-`sed -i` delete) is left to the reader: it is a *contains* match, so
-removing a bare URL also drops a tagged line carrying it. Refreshing the
-package index after a change is out of the operation's scope — sequence
-an `apk update` after it when needed.
+the first install landed (both plan as changes when the line is missing).
+The removal direction (`present=False`) is left to the reader: it spools
+the file text without any line the escaped pattern matches, and because
+that same match gates the append, removing a bare URL also drops a tagged
+line carrying it while adding a line the file already carries writes
+nothing. Refreshing the package index after a change is out of the
+operation's scope — sequence an `apk update` after it when needed.
 
 Like the other apk examples, this script reads the shared project-root
 `inventory.json` (validated up front with `validate_inventory`) and every
 request carries `when=is_alpine` and `doas=True` (the Alpine host ships no
 `sudo`, and passwordless `doas -n` needs a `permit nopass` rule in
-`/etc/doas.conf`), so on a non-Alpine host neither the append nor the
-`ApkRepositories` fact behind it runs — the driver skips each request
-without materializing it and plan and log render
+`/etc/doas.conf`), so on a non-Alpine host neither half of the write nor
+the two facts behind them run — the driver skips each request without
+materializing it and plan and log render
 `[skipped: when guard is_alpine]`.
 
 ::: apk_repository

@@ -158,13 +158,16 @@ destination's current `LocalSha1` and downloads only on a mismatch. pyinfra's
 `files.get` options `add_deploy_dir`, `create_local_dir` and `force` are
 dropped — there is no local path to place, create or force.
 
-`files.edit` is the generic content-editing primitive, and the reason reemote5
-ships no bespoke `server.etc_hosts`: it reads a file's current text with
+`files.edit` is the generic content-editing primitive: it reads a file's
+current text with
 `FileContents`, applies a caller-supplied *pure* `transform`
 (`str | None -> str`), and yields `files.put`'s `PutCommand` only when the
-result differs from the current content. Any "edit a file in place" task — an
-`/etc/hosts` entry, a `sysctl` key, a managed block — is then just a transform,
-with no new operation. pyinfra's `files.block` is covered exactly that way: the
+result differs from the current content. Any "edit a file in place" task — a
+`sysctl` key, a resource limit, a managed block — is then just a transform,
+with no new operation; a few common formats have since grown dedicated
+operations built on the same read-transform-write idea
+(`server.etc_hosts` for the hosts file, `sysctl.setting` for sysctl keys),
+while the generic primitive stays the answer for everything else. pyinfra's `files.block` is covered exactly that way: the
 `block_transform` factory in the
 [block example](../examples/modules/files.md#managing-a-marked-block-pyinfra-filesblock-parity)
 builds a marked-block transform from pyinfra's option set (content, markers,
@@ -214,11 +217,13 @@ error only while executing) is deliberately dropped — reemote5 operations
 are phase-unaware, so they raise in *both* phases. A consequence: a
 "create a file then move it" flow cannot share one deploy (prepare would
 raise on the not-yet-created source) and spans two runs instead. Both
-commands are shell text, so `sudo=True` elevates the whole move — the
-vehicle for the `/etc/hosts` recipe: `files.edit` spools the transformed
-content into a login-user-writable path in one run, then `files.move`
-installs it into `/etc` elevated in a second run (see the
-[example](../examples/modules/files.md)).
+commands are shell text, so `sudo=True` elevates the whole move — a
+vehicle for the two-run spool-and-install shape: `files.edit` spools the
+transformed content into a login-user-writable path in one run, then
+`files.move` installs it into a root-owned directory elevated in a second
+run. For whole-content writes prefer `files.install` above (one deploy),
+and for the hosts file specifically the dedicated `server.etc_hosts`
+operation now covers the old `/etc/hosts` recipe natively.
 
 `files.directory` mirrors pyinfra's `files.directory`: it reads the
 `Directory` fact once and — for an absent path — yields `mkdir -p` plus,

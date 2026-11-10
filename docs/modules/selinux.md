@@ -17,6 +17,7 @@
         - SEPort
         - SEPorts
         - SEUser
+        - SelinuxConfigFile
 
 ## selinux Returns
 
@@ -38,6 +39,7 @@
       members:
         - autorelabel
         - boolean
+        - config
         - file_context
         - file_context_mapping
         - login
@@ -57,19 +59,17 @@ operations in a single source, covering the core toolchain of
 `semodule` and `restorecon` for complete control over and visibility of
 SELinux on RHEL-family hosts. Five facts port pyinfra's baseline
 (`SEBoolean`, `FileContext`, `FileContextMapping`, `SEPorts`, `SEPort`) and
-six are reemote5 originals filling the gaps pyinfra leaves (`Mode`,
-`Booleans`, `SELogin`, `SEUser`, `Modules`, `PermissiveDomains`); four
+seven are reemote5 originals filling the gaps pyinfra leaves (`Mode`,
+`Booleans`, `SELogin`, `SEUser`, `Modules`, `PermissiveDomains`,
+`SelinuxConfigFile`); four
 operations port pyinfra's baseline (`boolean`, `file_context`,
-`file_context_mapping`, `port` — the latter three enhanced) and six are
+`file_context_mapping`, `port` — the latter three enhanced) and seven are
 originals (`mode`, `login`, `module`, `permissive_domain`, `restorecon`,
-`autorelabel`).
+`autorelabel`, `config`).
 
 Deliberately absent: an `audit2allow` operation — auto-generating policy
 from audit denials is a troubleshooting workflow, not a declarative state,
-and belongs in the `Shell` action; a `selinux.config` operation — the
-persistent `/etc/selinux/config` is a file edit fully expressible with the
-generic `files.edit` primitive plus the elevated `files.move`, see the
-spool-and-install recipe in `examples/modules/selinux/selinux_config.py`;
+and belongs in the `Shell` action —
 and SELinux *user definition* management (`semanage user -a/-m/-d`) — the
 `SEUser` fact is read-only visibility, the rare definition edit is left to
 the `Shell` action.
@@ -120,6 +120,14 @@ permissive or disabled), `config_mode` (the boot setting from
 targeted). Keeping runtime beside config tells "enforcing now but
 permissive after reboot" apart from a fully enforcing host; a disabled
 subsystem reads `mode="disabled"` with empty config/policy fields.
+
+`SelinuxConfigFile` is the raw-content fact behind `selinux.config`: it
+reads `/etc/selinux/config`'s whole text (`test -e` + marker + `cat`),
+returning the file as a `str` — `None` when absent, `""` when present but
+empty, the marker keeping the two apart. It exists because a config edit
+must preserve the comments, blank lines and ordering the stock file ships
+with: rebuilding the text from `Mode`'s parsed `config_mode` would destroy
+them (the `OpenrcConfigFile` pattern).
 
 `SELogin` runs `semanage login -ln` and keys the rows by Linux login name,
 keeping `seuser`, `mls_range` and the `service` column newer releases add
@@ -183,10 +191,27 @@ otherwise the `SEPorts` table.
 
 `selinux.mode` (original) sets the runtime enforcing state with
 `setenforce`, idempotent on `Mode`; it never touches
-`/etc/selinux/config` (the boot setting is the `files.edit` recipe's job)
+`/etc/selinux/config` (the boot setting is `selinux.config`'s job)
 and raises `ValueError` on a disabled subsystem — `setenforce` cannot
 enable SELinux, the transition needs the config edit, `autorelabel` and a
-reboot. `selinux.login` (original) manages the Linux-user → SELinux-user
+reboot. `selinux.config` (original) ensures the boot-time settings in
+`/etc/selinux/config`: `SELINUX` (enforcing/permissive/disabled) and
+`SELINUXTYPE` (any installed policy's name), each optional — `None` leaves
+that key untouched, both `None` raises `ValueError`. A member of the
+spool-and-install write family, it supersedes the `files.edit` +
+`files.move` recipe the example used to demonstrate: the file's text is
+read with `SelinuxConfigFile`, every existing assignment of each requested
+key is dropped (commented ones included — replacement semantics, so no
+contradictory commented line survives) and `KEY=value` is appended
+unquoted, the stock convention; the new text is scp'd to a `/tmp` spool
+named after the managed path's sha1 (deterministic across phases) and
+installed by an elevated `sh -c` that copies it over the file, chmods it
+`0644` and removes the spool — the transfer never elevates, the install
+always does. A key whose only assignment already is the wanted line keeps
+the file byte-for-byte, so a matching config is a no-op; the edit takes
+effect at the *next reboot*, and switching a disabled subsystem to
+enforcing additionally needs `selinux.autorelabel` before that reboot.
+`selinux.login` (original) manages the Linux-user → SELinux-user
 mapping (`semanage login -a/-m/-d`), idempotent on `SELogin` comparing
 both user and range (the service column is never managed).
 `selinux.module` (original) manages policy modules through a four-state
@@ -229,10 +254,11 @@ request), `selinux.file_context_mapping`
 `selinux.login` (`selinux_login.py`), `selinux.module`
 (`selinux_module.py`), `selinux.permissive_domain`
 (`selinux_permissive_domain.py`, a full add → no-op → remove cycle),
-`selinux.restorecon` (`selinux_restorecon.py`, the stateless contract) and
-`selinux.autorelabel` (`selinux_autorelabel.py`). `selinux_config.py` is
-the `files.edit` spool-and-install recipe answering the proposed
-`selinux.config`. All are rendered on the
+`selinux.restorecon` (`selinux_restorecon.py`, the stateless contract),
+`selinux.autorelabel` (`selinux_autorelabel.py`) and `selinux.config`
+(`selinux_config.py`, the boot-time settings in one request — it used to
+be the `files.edit` spool-and-install recipe the operation superseded).
+All are rendered on the
 [selinux examples page](../examples/modules/selinux.md).
 
 --->

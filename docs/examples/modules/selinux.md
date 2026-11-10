@@ -1,8 +1,7 @@
 # Module examples: selinux
 
 Scripts under `examples/modules/selinux/` — one per fact or operation of the
-[`selinux`](../../modules/selinux.md) module, plus a recipe that answers the
-proposed `selinux.config` operation without adding library surface. See the
+[`selinux`](../../modules/selinux.md) module. See the
 [Examples overview](../../examples.md) for the shared "connects for real"
 warning and the error-reporting contract every script follows.
 
@@ -129,7 +128,7 @@ no mode operation — setting the *runtime* enforcing state with
 `enforcing` twice (both no-ops on an already-enforcing host; on a
 permissive host the first switches and the second is the apply-phase
 no-op). Two boundaries are deliberate: the boot-time mode in
-`/etc/selinux/config` is the config recipe's job below, and a *disabled*
+`/etc/selinux/config` is the config operation's job below, and a *disabled*
 subsystem raises `ValueError` — `setenforce` cannot enable SELinux, the
 transition needs the config edit, `autorelabel` and a reboot. The
 requests are flagged `sudo=True`.
@@ -234,27 +233,29 @@ root, so the requests are flagged `sudo=True`.
     options:
       members: []
 
-## Managing /etc/selinux/config (the selinux.config recipe)
+## Managing /etc/selinux/config at boot
 
-No bespoke `selinux.config` operation exists: setting
-`SELINUX`/`SELINUXTYPE` in `/etc/selinux/config` is a file edit fully
-expressible with the generic
-[`files.edit`][reemote5.modules.files.files.edit] content-transform
-primitive plus the elevated
-[`files.move`][reemote5.modules.files.files.move] — the same
-spool-and-install recipe as the openrc rc.conf and hosts-file examples.
-The script ensures `SELINUX=enforcing` and `SELINUXTYPE=targeted`, the
-boot-time mode and policy type (the runtime half is `selinux.mode`'s
-job): a `FileContents` snapshot feeds the pure `config_edit` transform
-(drop every existing assignment, commented ones included, append the
-wanted line), a controller-side gate skips hosts whose content already
-matches, run 1 spools to `/tmp/config` with `files.edit` (unprivileged —
-transfers never elevate), and run 2 installs with `files.move`
-(`dest="/etc/selinux"`, `overwrite=True`, `sudo=True` — the spool basename
-`config` is what lands the target). The two runs cannot merge:
-`files.move` validates `src` in prepare too, and prepare never sends.
-Switching a *disabled* subsystem to enforcing additionally needs
-`selinux.autorelabel` before the reboot.
+The config operation: `selinux.config` is a reemote5 original — pyinfra
+ships no config operation — ensuring the boot-time settings in
+`/etc/selinux/config`, and it supersedes the `files.edit` + `files.move`
+two-run recipe this example used to demonstrate: the whole
+spool-and-install dance is now inside
+[`config`][reemote5.modules.selinux.selinux.config], so one request in one
+deploy replaces the snapshot gather, the controller-side gate and both
+runs. The script ensures `SELINUX=enforcing` and `SELINUXTYPE=targeted`
+(the runtime half is `selinux.mode`'s job); each setting is optional —
+`None` leaves that key untouched. Internally the operation reads the
+file's text with the
+[`SelinuxConfigFile`][reemote5.modules.selinux.selinux.SelinuxConfigFile]
+content fact, drops every existing assignment of each requested key
+(commented ones included) and appends `KEY=value` unquoted; a file that
+already holds exactly the wanted assignments is a no-op. When the content
+differs, the request sends an unprivileged `scp` spooling the new text to
+a deterministic `/tmp` path (transfers never elevate), then an elevated
+`sh -c` that copies it over the file, chmods it `0644` and removes the
+spool — the request's `sudo=True` covers the install only. The settings
+take effect at the *next reboot*; switching a *disabled* subsystem to
+enforcing additionally needs `selinux.autorelabel` before that reboot.
 
 ::: selinux_config
     options:

@@ -44,7 +44,7 @@ missing-command path.
 Like the dnf examples, every script reads the shared project-root
 `inventory.json` and guards on the `"centos"` group by default
 (`when=is_centos` on every request, a host-list filter before each
-`gather_fact` fan-out) — the one exception is the locale recipe below,
+`gather_fact` fan-out) — the one exception is the locale example below,
 which guards on `is_ubuntu` because it is Debian-family only.
 
 ## Ensuring system groups
@@ -201,8 +201,9 @@ makes the per-phase fact cache visible: in the plan both user requests read
 the same pre-deployment state and both show a change, while in the apply each
 step re-reads the facts, so the fourth step sees the groups the third wrote
 and sends only `usermod -a -G staff deploy`. pyinfra's
-`public_keys`/`delete_keys` options are deliberately dropped (reemote5 has no
-`files.line` operation and only unprivileged transfers), as are its plan-time
+`public_keys`/`delete_keys` options are deliberately dropped (key files are
+managed through the separate `server.user_authorized_keys` operation), as
+are its plan-time
 `Which` guards, so a missing `useradd` surfaces at apply as
 `CommandNotFoundError`. The script mutates the shared demo inventory for
 real: the account, its home directory and the two groups stay on the hosts.
@@ -217,7 +218,7 @@ read-only `server_user.py` fact example.
 
 `server.user_authorized_keys` in action: the deploy ensures the login user's
 `~/.ssh` directory (mode `700`) and `authorized_keys` file (mode `600`) exist
-and are owned correctly, then appends the public keys not already listed —
+and are owned correctly, then writes the public keys not already listed —
 pyinfra's documented flow with its controller-side key-file paths dropped
 (every `public_keys` entry here is a literal key string, and it is a tuple
 because `op()` arguments must stay hashable). The operation is idempotent —
@@ -227,12 +228,18 @@ probe for the directory/file owner and mode, and the `AuthorizedKeys` fact
 command only where they differ, so a second run plans no change. Creating a
 key file from nothing shows the whole setup (`mkdir -p` + `chmod 700` +
 `chown` for `~/.ssh`, then `touch` + `chmod 600` + `chown` for the file)
-before the appends; the append command wraps its `>>` redirect in `sh -c` so
-the open happens inside the elevated shell. Here the keys are managed for the
-login user themselves, so no `sudo` is needed; managing another user's keys
-would flag `sudo=True`. pyinfra's `delete_keys` option is deliberately dropped
-(it rewrites the whole file through an elevated `files.put`, which reemote5
-cannot elevate), so this operation only ever adds keys. The script is named
+before the write. The write itself is a **spool-and-install** pair: the
+operation reads the file's current text through the `AuthorizedKeysFile`
+raw-content fact, appends the missing keys controller-side (comments and
+ordering preserved), scps the result to a `/tmp` spool named after the key
+file, then installs it with `sh -c 'mkdir -p … && cp … && chmod 600 … &&
+rm -f …'`. The scp half stays unprivileged even under `sudo=True` — transfers
+never elevate — so the log shows two privilege levels in one request. Here
+the keys are managed for the login user themselves, so no `sudo` is needed;
+managing another user's keys would flag `sudo=True`. pyinfra's `delete_keys`
+option is supported too (a whole-file rewrite to exactly the requested keys,
+riding the same spool-and-install pair), though this example only appends.
+The script is named
 `server_user_authorized_keys.py` to keep it distinct from the read-only
 `server_authorized_keys.py` fact example.
 
@@ -240,29 +247,60 @@ cannot elevate), so this operation only ever adds keys. The script is named
     options:
       members: []
 
+## Managing /etc/hosts entries
+
+`server.etc_hosts` in action: the deploy ensures the line keyed by
+`10.0.0.5` holds exactly `db.internal db`, under `sudo` because
+`/etc/hosts` is root-owned. It replaces the earlier two-run
+`files.edit` → `files.move` recipe that used to live in the files
+examples — the fact read, the pure hosts-file transform and the install
+now live in one operation, so a single deploy suffices. The operation is
+idempotent: it compares the parsed `EtcHosts` fact first (pyinfra's
+no-op reasons verbatim, order-sensitive on the hostnames), and only a
+differing entry triggers the write — the `AuthorizedKeysFile`
+raw-content fact reads the file's current text, the transform rewrites
+just the IP's line (every other line, comment and blank line preserved),
+and the result rides a **spool-and-install** pair: an unprivileged scp to
+a `/tmp` spool named after the managed path, then an elevated
+`sh -c 'mkdir -p … && cp … && chmod 0644 … && rm -f …'` install. The scp
+half stays unprivileged even under `sudo=True` — transfers never elevate
+— so the log shows two privilege levels in one request. `hostnames` is a
+tuple because `op()` arguments must stay hashable; `present=False` with
+names drops only those, without names removes every line for the IP. The
+deploy yields the same request twice, so the apply log makes the
+per-phase fact cache visible: the second step sees the entry the first
+wrote and reports no change.
+
+::: server_etc_hosts
+    options:
+      members: []
+
 ## Managing locales (pyinfra server.locale parity)
 
-`server.locale` is deliberately not ported as a library operation — this
-recipe is reemote5's answer, built on the generic `files.edit` primitive.
-It is a **Debian-family recipe**: `/etc/locale.gen` and `locale-gen` exist only
+`server.locale` in action: the deploy ensures `fr_FR.UTF-8` is enabled
+under `sudo`, the pyinfra parity for `/etc/locale.gen`. It is a
+**Debian-family operation**: `/etc/locale.gen` and `locale-gen` exist only
 on Debian/Ubuntu (the `locales` package), so it targets the `ubuntu` host, not
 the CentOS `web1`/`web2` servers — RHEL-family hosts install locales through
-`glibc-langpack-*` and `localedef` and have no `/etc/locale.gen`.
-The script snapshots `FileContents("/etc/locale.gen")` and `Locales` from
-every guarded host, applies pyinfra's change condition to the frozen snapshot
-(enable only when the locale is absent from `locale -a`, disable only when
-present), and computes the desired content with the pure `locale_edit`
-function — pyinfra's definition-line lookup (comment out or uncomment the
-one matching line; `ValueError` with pyinfra's messages on zero or multiple
-matches) done with a Python regex instead of a `FindInFile` grep. Run 1
-spools the content to `/tmp/locale.gen` through `files.edit` with a
-closure-factory transform frozen between the snapshot and the run; run 2
-installs it into `/etc` with `files.move` flagged `sudo=True` and
-`overwrite=True`, then runs `locale-gen` — a demo-side stateless operation
-yielding the public raw `StringCommand`, since the library ships no generic
-shell operation. The lockstep barrier completes every host's move before
-any host regenerates. Re-running the script is a no-op once `locale -a`
-reports the requested state. The script is named `server_op_locale.py` to
+`glibc-langpack-*` and `localedef` and have no `/etc/locale.gen`, and a
+request there raises `OperationError` in the prepare phase.
+The operation is **spool-and-install**: in one request it reads the
+`Locales` fact (`locale -a`) and the raw `/etc/locale.gen` text, applies
+pyinfra's change condition (enable only when the locale is absent from
+`locale -a`, disable only when present) and definition-line lookup — a
+Python regex instead of a `FindInFile` grep, `OperationError` with
+pyinfra's messages on zero or multiple matches — then scp's the
+transformed text to a deterministic `/tmp` spool as the login user,
+installs it over `/etc/locale.gen` with an elevated `sh -c` (`chmod 0644`,
+spool removed) and finishes with one elevated `locale-gen`. The log shows
+the family's two privilege levels in one request: an unprivileged
+`$ scp <locale.gen> -> ...` line followed by `$ sudo sh -c '...'` and
+`$ sudo locale-gen`. Re-running the script is a no-op once `locale -a`
+reports the requested state, and a definition line already in the desired
+state skips only the write, never the regeneration. The script replaces
+the earlier two-run `files.edit` -> `files.move` recipe: the fact reads,
+edit, install and regeneration now live inside the operation, so a single
+deploy suffices. It is named `server_op_locale.py` to
 keep it distinct from the read-only `server_locales.py` fact example.
 
 ::: server_op_locale
@@ -305,30 +343,29 @@ named `server_op_sysctl.py`; the read-only fact example relocated to
 
 ## Ensuring a resource limit (pyinfra server.security_limit parity)
 
-`server.security_limit` is deliberately not ported as a library operation —
-like `server.etc_hosts` and `server.locale` it is a thin wrapper over
-pyinfra's `files.line`, and reemote5 ships one generic editor instead:
-this recipe, built on the `files.edit` primitive. The script snapshots
-`FileContents("/etc/security/limits.conf")` from every guarded host and computes
-the desired content with the pure `security_limit_edit` function —
-pyinfra's `files.line` lookup (anchored
-`^{domain}\s+{limit_type}\s+{item}.*$`, the value *not* part of the
-pattern, so a stale `* soft nofile 65535` line is corrected in place and
-every match becomes the tab-formatted replacement; with no match the line
-appends) done with a Python regex instead of a `FindInFile` grep, the
+`server.security_limit` in action: the deploy ensures `* soft nofile 1024`
+is set under `sudo`, the pyinfra parity for `/etc/security/limits.conf`. It
+is a **spool-and-install** operation, and it replaces the earlier
+`files.edit` + demo-side install recipe that used to live in this file: the
+fact read, the line edit and the install now live inside one operation, so a
+single deploy suffices. In one request it reads the raw
+`/etc/security/limits.conf` text through the `AuthorizedKeysFile` content
+fact and applies pyinfra's anchored `files.line` lookup — a Python regex
+instead of a `FindInFile` grep, the value *not* part of the pattern, so a
+stale `* soft nofile 65535` line is corrected in place and every match
+becomes the tab-formatted replacement; with no match the line appends — the
 fields escaped literally where pyinfra interpolates them raw into a BRE.
-Hosts whose content already matches are skipped in `main` — the script-level
-idempotence pyinfra gets from its fact short-circuit. One deploy then
-spools the content to `/tmp/limits.conf` through `files.edit` with a
-closure-factory transform frozen between the snapshot and the run, and
-installs it with a demo-side stateless operation: an elevated
-`sh -c 'mv ... && chown root:root ... && chmod 0644 ...'` raw
-`StringCommand`. `files.move` is deliberately *not* the install vehicle
-here — `mv` preserves the spool's owner and mode, and a stock
-`pam_limits`-read system file must land `root:root 0644` — and because
-that step reads no facts and validates nothing in the prepare phase, the
-spool and the install share one deploy instead of the two-run
-`files.move` shape of the `etc_hosts` recipe.
+It then scp's the transformed text to a deterministic `/tmp` spool as the
+login user and installs it over `/etc/security/limits.conf` with an elevated
+`sh -c` (`chmod 0644`, spool removed). The log shows the family's two
+privilege levels in one request: an unprivileged `$ scp <limits.conf> -> ...`
+line followed by `$ sudo sh -c '...'`. The `chmod 0644` reset matters —
+`pam_limits` reads the file as every user, so a login-user mode would
+silently stop the limits applying. Re-running the script is a no-op once the
+file carries the line (the content-level fixpoint), and `value` accepts both
+an `int` and a symbolic string such as `"unlimited"`. Every request carries
+`when=is_centos`, the static-inventory guard, so hosts outside the `"centos"`
+group are skipped without connecting.
 
 ::: server_security_limit
     options:

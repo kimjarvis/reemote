@@ -38,11 +38,11 @@ through the fresh per-step fact cache; on an already-enforcing host both
 are no-ops in both phases.
 
 Two boundaries are deliberate. The runtime switch does **not** touch
-``/etc/selinux/config`` -- the boot-time mode is a file edit, managed by the
-``files.edit`` spool-and-install recipe in
+``/etc/selinux/config`` -- the boot-time mode is a file edit, managed by
+the ``selinux.config`` spool-and-install operation in
 ``examples/modules/selinux/selinux_config.py``. And a *disabled* subsystem
 cannot be enabled at runtime at all: ``setenforce`` refuses, so the
-operation raises a ``ValueError`` pointing at that recipe and at
+operation raises a ``ValueError`` pointing at that operation and at
 ``selinux.autorelabel`` (a disabled-to-enforcing transition needs a full
 relabel and a reboot). The ``Mode`` fact's ``config_mode`` field is how a
 deploy tells "enforcing now but permissive after reboot" apart from a fully

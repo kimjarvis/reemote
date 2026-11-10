@@ -43,8 +43,10 @@ back as an error `Result` (exit 127), never an exception. See the
       members:
         - Arch
         - AuthorizedKeys
+        - AuthorizedKeysFile
         - Date
         - Env
+        - EtcHosts
         - Groups
         - HasGui
         - Home
@@ -81,11 +83,14 @@ back as an error `Result` (exit 127), never an exception. See the
     options:
       show_root_heading: false
       members:
+        - etc_hosts
         - group
         - hostname
         - kill
+        - locale
         - modprobe
         - mount
+        - security_limit
         - timezone
         - user
         - user_authorized_keys
@@ -97,12 +102,14 @@ back as an error `Result` (exit 127), never an exception. See the
 
 `reemote5.modules.server.server` combines the server facts and the server
 operations in a single source, so the read side (`Arch`, `AuthorizedKeys`,
-`Date`, `Env`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
+`AuthorizedKeysFile`,
+`Date`, `Env`, `EtcHosts`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
 `KernelVersion`, `Last`, `LinuxDistribution`, `LinuxGui`, `LinuxName`,
 `Locales`, `LsbRelease`, `Mounts`, `Port`, `Processes`,
 `Timezone`, `Uptime`, `User`, `Users`, `Which`)
-sits beside the `server.group`, `server.hostname`, `server.kill`,
-`server.modprobe`, `server.mount`, `server.timezone`, `server.user`,
+sits beside the `server.etc_hosts`, `server.group`, `server.hostname`, `server.kill`,
+`server.locale`,
+`server.modprobe`, `server.mount`, `server.security_limit`, `server.timezone`, `server.user`,
 `server.user_authorized_keys`,
 `server.wait` and
 `server.wait_service`
@@ -126,7 +133,20 @@ machine's architecture string (e.g. `x86_64`), mirroring pyinfra's
 lines and `#` comments; a missing file reads as `[]`. The default path
 resolves the home through shell tilde expansion (`~user`), which cannot be
 quoted, so an unsafe username raises `ValueError` instead of reaching the
-shell — mirroring pyinfra's `server.AuthorizedKeys`. `Date` takes no
+shell — mirroring pyinfra's `server.AuthorizedKeys`. `AuthorizedKeysFile`
+takes an explicit key-file `path` and returns that file's raw text as a
+`str`, or `None` when it is absent — the namespace's raw-content fact (the
+`AptSourcesFile`/`DnfRepoFile` pattern) behind the spool-and-install writes
+of `server.user_authorized_keys`, `server.etc_hosts`, `server.locale` and
+`server.security_limit`. A `test -e` guard
+plus a marker line keeps absent (`None`) distinguishable from
+present-but-empty (`""`), and comments, blank lines and ordering survive
+verbatim — the fact never interprets the text. Unlike `AuthorizedKeys`
+there is no tilde branch: `user_authorized_keys` resolves `Home` first and
+always passes the explicit key-file path, `etc_hosts` passes its
+`path` option (default `/etc/hosts`) directly, `locale` passes the
+fixed `/etc/locale.gen` and `security_limit` passes the fixed
+`/etc/security/limits.conf`. `Date` takes no
 arguments: it runs `date +'%Y-%m-%dT%H:%M:%S%z'` and parses the ISO 8601
 timestamp into a timezone-aware `datetime`, mirroring pyinfra's
 `server.Date`; empty output (the command failed) reads as `None` — pyinfra's
@@ -140,7 +160,17 @@ so callers can `split(":")` themselves). The name is validated rather than
 quoted — `$<name>` must stay a bare word for the shell to expand it — so
 an unsafe name raises `ValueError` instead of reaching the shell. The
 first non-blank line is the answer and empty output — the variable is
-unset or empty — reads as `""`, just like `Arch`. `Groups` takes no arguments: it cats `/etc/group` and
+unset or empty — reads as `""`, just like `Arch`. `EtcHosts` takes an
+optional `path` (default `/etc/hosts`): it cats the hosts file and parses
+it into a mapping of IP address to the hostnames declared on the matching
+lines (e.g. `{"127.0.0.1": ["localhost"], "::1": ["localhost"]}`),
+mirroring pyinfra's `server.EtcHosts`. Comments and blank lines are
+ignored, lines with fewer than two tokens are skipped, and repeated IPs
+merge their hostnames in file order without duplicates; a missing file
+(the `cat` error swallowed by `|| true`) reads as `{}`, pyinfra's
+`default = dict`. It gates `server.etc_hosts`' presence comparison; the
+file's *text* for the rewrite comes from `AuthorizedKeysFile`, never from
+rebuilding these parsed entries. `Groups` takes no arguments: it cats `/etc/group` and
 returns the first `:`-separated field of every colon-bearing line — the
 group names in file order, with no dedup or sorting — mirroring pyinfra's
 `server.Groups`; lines without a colon are skipped and empty output reads
@@ -335,9 +365,10 @@ for its BusyBox probe.
 
 ## Operations
 
-Operations live in namespace modules so a deploy reads `server.group`,
-`server.hostname`, `server.kill`, `server.modprobe`, `server.mount`,
-`server.service`, `server.timezone`, `server.user`,
+Operations live in namespace modules so a deploy reads `server.etc_hosts`,
+`server.group`,
+`server.hostname`, `server.kill`, `server.locale`, `server.modprobe`, `server.mount`,
+`server.security_limit`, `server.service`, `server.timezone`, `server.user`,
 `server.user_authorized_keys`,
 `server.wait` and
 `server.wait_service`,
@@ -346,6 +377,46 @@ operation is an async
 generator taking an [`OpContext`][reemote5.core.OpContext], awaiting facts via
 `ctx.facts`, setting `ctx.changed`/`ctx.reason` where a change is needed, and
 yielding one [`Command`][reemote5.commands.Command] descriptor per mutation.
+
+`server.etc_hosts` mirrors pyinfra's `server.etc_hosts` for `ip`,
+`hostnames`, `present` and `path` (default `/etc/hosts`): it ensures the
+line keyed by the IP holds exactly the requested hostnames, and its write
+belongs to the **spool-and-install** family (like `apt.repo` and
+`server.user_authorized_keys`) rather than pyinfra's elevated `files.put`.
+Idempotent, it compares the parsed `EtcHosts` fact first — pyinfra's three
+no-op reasons survive verbatim ("already present in", "already absent
+from", "does not reference any of:"), and the present comparison is
+order-sensitive, so a mere reorder of the hostnames rewrites the line.
+When a change is due, the `AuthorizedKeysFile` raw-content fact supplies
+the file's current text and a pure controller-side transform computes the
+new whole content: every untouched line, comment and blank line survives
+in order, while comments on the *edited* line are dropped (pyinfra parity).
+A content-level fixpoint guard adds a no-op the parsed comparison cannot
+reach — when the transform's output already equals the file's text, the
+reason names the managed path (`<ip> entry already written in <path>`).
+`hostnames` accepts a single string (split on whitespace) or a list/tuple
+of names (prefer tuples in `op()` requests, which must stay hashable); it
+is required when `present=True` — pyinfra's `OperationError` becomes
+`ValueError` with the same message, the house validation style — and with
+`present=False` only the named hostnames are dropped, or every line for
+the IP when omitted.
+
+The transformed text rides an unprivileged scp upload to a `/tmp` spool
+named after the managed path
+(`/tmp/reemote5-server-etc-hosts-<sha1(dest)[:16]>`, so two requests
+targeting different hosts files never share one), then an
+`EtcHostsInstallCommand` — `sh -c 'mkdir -p … && cp … && chmod 0644 … &&
+rm -f …'` — installs it over the hosts file and removes the spool. The
+`sh -c` wrapper matters: a bare `sudo` prefix would elevate only the first
+command of the chain. A removal that empties the file uploads an empty
+payload, never a delete. `/etc/hosts` is root-owned, so flag the request
+`sudo=True`; the log then shows two privilege levels in one request, the
+unprivileged `$ scp …` line followed by `$ sudo sh -c '…'` — transfers
+never elevate. This operation replaces the earlier two-run
+`files.edit` → `files.move` example recipe (developer decision): the fact
+read, transform and install now live in one operation, so a single deploy
+suffices (see the
+[etc_hosts example](../examples/modules/server.md#managing-etchosts-entries)).
 
 `server.group` mirrors pyinfra's `server.group` for `group`, `present`,
 `system` and `gid`: it compares the name against the `Groups` fact and yields
@@ -497,65 +568,111 @@ probes are awaited in the generator body, so the request sequence stays
 identical in both phases. Every command here needs root, so flag the request
 `sudo=True`.
 
-pyinfra's `public_keys`/`delete_keys` options are deliberately dropped: that
-branch delegates to `server.user_authorized_keys`, which mixes an elevated
-`files.directory` mode change, `files.line` appends and a `files.put`
-rewrite of `~/.ssh/authorized_keys`, and reemote5 has no `files.line`
-operation and only unprivileged transfers. Manage key files from the caller,
-with the `AuthorizedKeys` fact and the `files` operations. pyinfra's
+pyinfra's `public_keys`/`delete_keys` options are deliberately dropped
+(developer decision): that branch delegates to
+`server.user_authorized_keys`, which reemote5 keeps as its own explicit
+operation rather than an option on `user` — manage key files with that
+operation directly (its spool-and-install write covers both the append
+and the `delete_keys` rewrite). pyinfra's
 plan-time `Which` guards ("`useradd` is not installed", with its Alpine
 shadow-package note) are dropped as well: a missing binary surfaces at apply
 as `CommandNotFoundError` from the exit status, the convention every other
 reemote5 operation follows.
 
 `server.user_authorized_keys` mirrors pyinfra's `server.user_authorized_keys`
-for `user`, `public_keys`, `group`, `authorized_key_directory` and
-`authorized_key_filename`: it is the append half of the key-file branch
-`server.user` above deliberately drops, extracted into its own operation.
-Idempotent, it ensures the `.ssh` directory first (mode `700`, owned by
-`user`/`group`, the `group` option defaulting to the user's own name exactly
-as pyinfra's `group or user` does) and the `authorized_keys` file second
-(mode `600`), each compared against the private `_KeysPathStat` in-namespace
-probe of the shared `directory_stats`/`file_stats` seams — the
-`files.Directory`/`files.File` facts it stands in for cannot be imported
-across namespaces. A missing directory is `mkdir -p`'d, chmod'd and chown'd
-(reusing `_HomeMkdirCommand`/`_HomeChownCommand` plus the private
+for `user`, `public_keys`, `group`, `delete_keys`, `authorized_key_directory`
+and `authorized_key_filename`: it is the key-file branch `server.user`
+above deliberately drops, extracted into its own operation, and its write
+belongs to the **spool-and-install** family (like `apt.repo` and
+`files.install`) rather than pyinfra's in-place `files.line` appends and
+elevated `files.put` rewrite. Idempotent, it ensures the `.ssh` directory
+first (mode `700`, owned by `user`/`group`, the `group` option defaulting to
+the user's own name exactly as pyinfra's `group or user` does) and the
+`authorized_keys` file second (mode `600`), each compared against the
+private `_KeysPathStat` in-namespace probe of the shared
+`directory_stats`/`file_stats` seams — the `files.Directory`/`files.File`
+facts it stands in for cannot be imported across namespaces. A missing
+directory is `mkdir -p`'d, chmod'd and chown'd (reusing
+`_HomeMkdirCommand`/`_HomeChownCommand` plus the private
 `_KeysChmodCommand`/`_KeysTouchCommand` stand-ins for the chmod/touch verbs
 that pair has no twin for); a wrong mode or owner re-runs just that half; a
 path that exists as the wrong type raises
 [`OperationError`][reemote5.core.OperationError] during the prepare phase.
+These state verbs stay in-place shell commands — only the key file's *text*
+is spooled.
+
 Key idempotence then rides the `AuthorizedKeys` fact read with an explicit
-`path` (never tilde-resolved): every requested key not already listed is
-appended with one `AuthorizedKeysAppendCommand` in the caller's own order,
-while keys already present are skipped. That descriptor renders pyinfra's
-`files.line` add idiom — a newline guard so a key never glues onto a
-newline-less last line — wrapped in `sh -c` so the `>>` redirect happens
-*inside* the elevated shell; a bare `sudo echo ... >> <path>` would open the
-redirect as the login user and fail on another user's `600` file. Writing
-into another user's `~/.ssh` needs root, so flag the request `sudo=True`.
+`path` (never tilde-resolved). With `delete_keys=False` (the default) every
+requested key not already listed is missing, and the file's current text —
+read through the `AuthorizedKeysFile` raw-content fact — gains just those
+keys, appended in the caller's own order with comments, blank lines and
+ordering preserved. With `delete_keys=True` the parsed list must equal the
+request *in order* (pyinfra's list comparison, so a pure reorder is a
+change) or the file is rewritten to exactly the requested keys; an empty
+request writes a lone newline, pyinfra's own quirk. The transformed text
+rides an unprivileged scp upload to a `/tmp` spool named after the managed
+path (`/tmp/reemote5-server-user-authorized-keys-<sha1(dest)[:16]>`, so two
+requests targeting different key files never share one), then an
+`AuthorizedKeysInstallCommand` — `sh -c 'mkdir -p … && cp … && chmod 600 …
+&& rm -f …'` — installs it over the key file and removes the spool. The
+`sh -c` wrapper matters: a bare `sudo` prefix would elevate only the first
+command of the chain. No chown rides the install — the state block above
+already set the owner and `cp` over an existing file preserves it. Writing
+into another user's `~/.ssh` needs root, so flag the request `sudo=True`;
+the log then shows two privilege levels in one request, the unprivileged
+`$ scp …` line followed by `$ sudo sh -c '…'`, by design — transfers never
+elevate. The predictable spool name avoids *collisions*, not a hostile
+local user: on a multi-tenant host it remains a symlink-race exposure, the
+trade-off every spool-and-install operation here makes.
 
-Two pyinfra behaviors are deliberately dropped (developer decisions). The
-`delete_keys` option is not ported: that branch rewrites the whole file
-through an *elevated* `files.put`, and reemote5 transfers are always
-unprivileged, so only the append direction is this operation's deliverable —
-it never removes a key already present (inspect with `AuthorizedKeys` and
-prune with a file-rewriting recipe of your own). And a `public_keys` entry is
-always a *literal* key string, never a controller-side file path: pyinfra's
-`read_any_pub_key_file` `os.path.exists` branch clashes with the same
-IO-only/no-controller-path rule `files.put`/`files.get`/`apt.key`/`dnf.key`
-follow, and reading a controller file in both phases would risk a
+The content stage adds a no-op level the in-place form could never reach:
+when the transform is a fixpoint — the raw text already holds every missing
+key, or already equals the rewrite — nothing is planned and the reason
+names the managed path (`keys already written in <path>`) even though the
+parsed fact said a change was due. Presence in the append direction is the
+parser's stripped whole-line comparison, so a commented-out `# <key>` line
+does *not* suppress appending the live key — a deliberate difference from
+`apt.repo`'s substring line pattern.
+
+One pyinfra behavior is deliberately dropped (developer decision): a
+`public_keys` entry is always a *literal* key string, never a
+controller-side file path. pyinfra's `read_any_pub_key_file`
+`os.path.exists` branch clashes with the same IO-only/no-controller-path
+rule `files.put`/`files.get`/`apt.key`/`dnf.key` follow, and reading a
+controller file in both phases would risk a
 [`DeterminismError`][reemote5.drivers.DeterminismError] if it changed in
-between.
+between. The `delete_keys` option, originally dropped because pyinfra
+implements it through an *elevated* `files.put` that reemote5's
+unprivileged transfers cannot match, is revived by the spool-and-install
+shape: the rewrite now rides the same unprivileged-spool/elevated-install
+pair as the append.
 
-pyinfra's `server.locale` is deliberately not ported: the `/etc/locale.gen`
-edit is fully expressible with the generic `files.edit` transform primitive,
-and its `locale-gen` step is a raw shell command. The
-[locale recipe](../examples/modules/server.md#managing-locales-pyinfra-serverlocale-parity)
-snapshots `Locales` and `FileContents`, applies pyinfra's change condition
-and definition-line lookup controller-side (a Python regex over the content
-instead of a `FindInFile` grep), spools the desired content to a writable
-path, then installs it with an elevated `files.move` and regenerates — no
-bespoke operation and no new descriptor.
+pyinfra's `server.locale` is ported as a **spool-and-install** operation
+for `locale` and `present` (default True): it manages one definition line
+in `/etc/locale.gen` on Debian-family hosts. Idempotent, it compares the
+`Locales` fact (`locale -a`) first — enable only when the locale is absent,
+disable only when it is present, pyinfra's change condition — but the
+definition-line lookup runs *before* that gate, exactly like pyinfra's
+`FindInFile` read: a Python regex over the `AuthorizedKeysFile` raw-content
+fact (the locale escaped literally where pyinfra interpolates it raw into
+its grep), with zero or multiple matches raising `OperationError` with
+pyinfra's messages even for an already-in-state request — including a
+RHEL-family host with no `/etc/locale.gen` at all. When a change is due,
+the transformed text (the line uncommented, or commented with a
+fixpoint-guarded `"# "` prepend pyinfra's unconditional one lacks) rides an
+unprivileged scp upload to a `/tmp` spool named after the managed path
+(`/tmp/reemote5-server-locale-<sha1(dest)[:16]>`), then a
+`LocaleInstallCommand` — `sh -c 'mkdir -p … && cp … && chmod 0644 … &&
+rm -f …'` — installs it over `/etc/locale.gen` and removes the spool, and
+one `LocaleGenCommand` (`locale-gen`) regenerates the archive — pyinfra's
+"locale-gen is always executed" step. The content stage adds a no-op level
+the in-place sed could never reach: a definition line already in the
+desired state skips only the spool pair, never the regeneration. pyinfra's
+timestamped sed backup is gone with the sed (its timestamp is
+non-deterministic across phases). The operation replaces the earlier
+two-run `files.edit` -> `files.move`
+[locale recipe](../examples/modules/server.md#managing-locales-pyinfra-serverlocale-parity),
+which is now a thin single-deploy example of it.
 
 pyinfra's `server.sysctl` is superseded by the native [`sysctl`](sysctl.md)
 namespace: `sysctl.setting` manages one parameter (runtime apply plus a
@@ -569,16 +686,34 @@ value with an elevated raw command, spools the desired config to a
 writable path and installs it with an elevated `files.move` in a second
 deploy — no bespoke operation and no new descriptor.
 
-pyinfra's `server.security_limit` is deliberately not ported: like
-`server.etc_hosts` it is a thin wrapper over `files.line`, and the
-`/etc/security/limits.conf` edit is fully expressible with the generic
-`files.edit` transform primitive. The
-[security-limit recipe](../examples/modules/server.md#ensuring-a-resource-limit-pyinfra-serversecurity_limit-parity)
-snapshots `FileContents`, applies pyinfra's anchored line lookup
-controller-side (a Python regex over the content, fields escaped
-literally), spools the desired content to a writable path and installs
-it with an elevated `sh -c` `mv` plus `chown root:root`/`chmod 0644` —
-no bespoke operation and no new descriptor.
+pyinfra's `server.security_limit` is ported as a **spool-and-install**
+operation for `domain`, `limit_type`, `item` and `value`: it ensures one
+resource-limit line in `/etc/security/limits.conf`, the file `pam_limits`
+reads as every user. Like pyinfra it is a thin wrapper over `files.line`
+semantics — a Python regex over the `AuthorizedKeysFile` raw-content fact
+searches the anchored `^{domain}[[:space:]]+{limit_type}[[:space:]]+{item}.*$`
+(the value is NOT part of the pattern, so a stale value is normalized in
+place and an item prefix like `nofilex` matches while a commented line does
+not), with the fields escaped literally (`re.escape`) where pyinfra
+interpolates them raw into a BRE. With no match the tab-formatted line is
+appended; an absent file reads as empty. Idempotence is the content-level
+fixpoint — pyinfra's `files.line` no-op when a matching line already reads
+exactly the replacement — with no parsed semantic fact behind limits.conf.
+When a change is due, the transformed text rides an unprivileged scp upload
+to a `/tmp` spool named after the managed path
+(`/tmp/reemote5-server-security-limit-<sha1(dest)[:16]>`), then a
+`SecurityLimitInstallCommand` — `sh -c 'mkdir -p … && cp … && chmod 0644 … &&
+rm -f …'` — installs it over `/etc/security/limits.conf` and removes the
+spool. The `chmod 0644` reset matters: a login-user mode would silently stop
+the limits applying. pyinfra's timestamped sed backup is gone with the sed
+(its timestamp is non-deterministic across phases). One deviation: the
+desired content always ends in one trailing newline, so a file missing its
+final newline is rewritten once even when the line itself is correct; and
+`value` accepts both an `int` and a symbolic string such as `"unlimited"`
+(pyinfra types it `int` but its own fixture passes `"unlimited"`). The
+operation replaces the earlier `files.edit` + demo-side install
+[security-limit recipe](../examples/modules/server.md#ensuring-a-resource-limit-pyinfra-serversecurity_limit-parity),
+which is now a thin single-deploy example of it.
 
 
 ## Waiting for a condition

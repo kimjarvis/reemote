@@ -1511,8 +1511,17 @@ async def dearmor(
     # reports a change, reading no fact (the output is overwritten on every
     # run). Both paths are remote -- to convert a controller-side stream,
     # install it with ``gpg.key`` instead, whose install dearmors on the
-    # target. pyinfra's ``mode`` parameter is deliberately dropped (0644 is
-    # fixed, the ``apt.key`` precedent). Flag the request ``sudo=True`` when
+    # target. It deliberately stays in-place rather than joining the
+    # spool-and-install family (``gpg.key``, ``apt.repo``): the payload is
+    # gpg's own binary output produced on the target host, not
+    # controller-side file text, and ``dest`` is overwritten wholesale --
+    # there is no existing content a read-back fact could preserve.
+    # Spooling would mean reimplementing armor decoding (base64 + CRC24)
+    # controller-side just to produce binary content the family's ``str``
+    # payload cannot carry, and the ``sh -c`` wrap already keeps a
+    # ``sudo``-flagged request elevated across the whole chain. pyinfra's
+    # ``mode`` parameter is deliberately dropped (0644 is fixed, the
+    # ``apt.key`` precedent). Flag the request ``sudo=True`` when
     # ``dest`` lives in a system directory. ``**kwargs`` absorbs pyinfra's
     # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
     if not src:
@@ -1738,6 +1747,17 @@ async def export_key(
     # ``--pinentry-mode loopback`` rather than prompting; only unprotected
     # secret keys can be exported. ``**kwargs`` absorbs pyinfra's global
     # arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    #
+    # Deliberately NOT a spool-and-install operation (unlike ``gpg.key``
+    # and ``gpg.import_key``): the payload is ``gpg --export`` output
+    # produced on the *target host*, not controller-side content, and the
+    # redirect overwrites ``dest`` wholesale -- there is no existing file
+    # text to preserve. Spooling would mean pulling the exported key
+    # (secret material with ``secret=True``) back to the controller and
+    # into plans/logs, which the no-secrets rule above forbids. The
+    # ``sh -c`` wrap already keeps a ``sudo``-flagged request elevated
+    # across the redirect, so the transfers-never-elevate problem the
+    # spool family exists to solve does not arise here.
     if not keyid:
         raise ValueError("gpg.export_key requires a non-empty keyid")
     if not dest:

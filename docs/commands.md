@@ -10,9 +10,9 @@ frozen value objects: an operation never executes anything, it only describes
 what would have to run. The raw `StringCommand` carries shell text verbatim —
 its `shell()` returns the command unchanged, so it runs (and takes the
 `doas`/`sudo`/`su` prefixes) exactly like a typed shell descriptor; it is the vehicle
-for a demo-side operation running a one-off command such as the `locale-gen`
+for a demo-side operation running a one-off command such as the `sysctl`
 step of the
-[locale recipe](examples/modules/server.md#managing-locales-pyinfra-serverlocale-parity)
+[sysctl recipe](examples/modules/server.md#ensuring-a-sysctl-setting-pyinfra-serversysctl-parity)
 without a library operation. The typed descriptors exist so the test framework's
 `SimulatedHost` (in `tests/simulated_host.py`) can dispatch on them in its
 `execute_command` and apply the equivalent mutation; the library's

@@ -6,10 +6,15 @@
 Covers ``reemote5.modules.server.server``: the ``Arch`` fact, the
 ``AuthorizedKeys`` fact (pyinfra's own fixtures over the real-transport
 path, tilde-username validation, and the ``SimulatedHost`` seam), the
-``Date`` fact (pyinfra's own fixture over the real-transport path, offset
+``AuthorizedKeysFile`` raw-content fact (command quoting, the
+``remote_files`` seam and the marker parse over the real-transport path),
+the ``Date`` fact (pyinfra's own fixture over the real-transport path, offset
 parsing, and the ``SimulatedHost`` seam), the ``Env`` fact (canned
 ``echo $<name>`` output over the real-transport path, variable-name
 validation, parsing edge cases, and the ``SimulatedHost`` seam), the
+``EtcHosts`` fact (pyinfra's own fixture over the real-transport path,
+comment/duplicate-IP parsing edge cases, and the shared ``remote_files``
+``SimulatedHost`` seam), the
 ``Groups`` fact (pyinfra's own
 fixture over the real-transport path, ``/etc/group`` parsing edge cases, and
 the ``SimulatedHost`` seam), the ``HasGui`` fact (pyinfra's own fixtures over
@@ -68,7 +73,16 @@ own operation fixtures replayed over the ``SimulatedHost`` seams minus the
 dropped ``public_keys``/``delete_keys`` and ``Which`` guard cases, per-field
 update idempotence, the Linux/FreeBSD/OpenBSD dispatch, the
 ``directory_stats``/``link_stats`` home branch, the argument-hashability
-boundary and the end-to-end lockstep run), the ``hostname``
+boundary and the end-to-end lockstep run), the ``user_authorized_keys``
+operation and its ``AuthorizedKeysUploadCommand``/
+``AuthorizedKeysInstallCommand`` spool-and-install pair (pyinfra's own
+operation fixtures, the in-place state verbs, the ``delete_keys``
+whole-file rewrite, both no-op levels and the end-to-end lockstep run),
+the ``etc_hosts`` operation and its ``EtcHostsUploadCommand``/
+``EtcHostsInstallCommand`` spool-and-install pair (pyinfra's own nine
+operation fixtures, the pure hosts-file rewrite, both no-op levels and
+the end-to-end lockstep run),
+the ``hostname``
 operation and its ``SetHostnameCommand`` descriptor (pyinfra's own six
 operation fixtures replayed over the ``SimulatedHost`` seams with the
 dropped ``hostname_file`` upload step, the ``Which`` dispatch between
@@ -104,6 +118,7 @@ is active (or the port is listening) and aborts the run with
 ``WaitTimeoutError`` when it is not.
 """
 
+import hashlib
 import shlex
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
@@ -137,9 +152,14 @@ from reemote5.modules import server
 from reemote5.modules.server.server import (
     Arch,
     AuthorizedKeys,
-    AuthorizedKeysAppendCommand,
+    AuthorizedKeysFile,
+    AuthorizedKeysInstallCommand,
+    AuthorizedKeysUploadCommand,
     Date,
     Env,
+    EtcHosts,
+    EtcHostsInstallCommand,
+    EtcHostsUploadCommand,
     GroupAddCommand,
     GroupDelCommand,
     Groups,
@@ -154,7 +174,10 @@ from reemote5.modules.server.server import (
     LinuxDistribution,
     LinuxGui,
     LinuxName,
+    LocaleGenCommand,
+    LocaleInstallCommand,
     Locales,
+    LocaleUploadCommand,
     LsbRelease,
     ModprobeCommand,
     MountCommand,
@@ -162,6 +185,8 @@ from reemote5.modules.server.server import (
     Port,
     PortInfo,
     Processes,
+    SecurityLimitInstallCommand,
+    SecurityLimitUploadCommand,
     SetHostnameCommand,
     SetTimezoneCommand,
     SystemdServiceEnabled,
@@ -175,12 +200,21 @@ from reemote5.modules.server.server import (
     Users,
     WaitForFactCommand,
     Which,
+    _add_keys,
     _HomeChownCommand,
     _HomeDirectory,
     _HomeIsLink,
     _HomeMkdirCommand,
+    _hosts_content,
+    _hosts_spool_path,
+    _keys_spool_path,
     _KeysChmodCommand,
     _KeysTouchCommand,
+    _locale_edit,
+    _locale_spool_path,
+    _rewrite_keys,
+    _security_limit_edit,
+    _security_limit_spool_path,
     is_active,
     is_listening,
 )
@@ -6237,10 +6271,12 @@ UA_USER = "someuser"
 UA_HOME = "/home/someuser"
 UA_SSH_DIR = "/home/someuser/.ssh"
 UA_KEYS_FILE = "/home/someuser/.ssh/authorized_keys"
-# The newline-guard inner script pyinfra's ``files.line`` renders -- the
-# text inside the ``sh -c '...'`` wrapper the descriptor emits.
-UA_APPEND_INNER_TEMPLATE = (
-    "( [ $(tail -c1 {path} | wc -l) -eq 0 ] && echo ; echo '{key}' ) >> {path}"
+# The dest-derived spool and the install inner script -- the text inside the
+# ``sh -c '...'`` wrapper the install descriptor emits.
+UA_SPOOL = _keys_spool_path(UA_KEYS_FILE)
+UA_INSTALL_INNER = (
+    f"mkdir -p {UA_SSH_DIR} && cp {UA_SPOOL} {UA_KEYS_FILE} && "
+    f"chmod 600 {UA_KEYS_FILE} && rm -f {UA_SPOOL}"
 )
 
 
@@ -6262,25 +6298,129 @@ def test_keys_chmod_touch_shell_rendering():
     )
 
 
-def test_authorized_keys_append_command_shell_rendering():
-    cmd = AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_B)
-    # The outer shlex quoting escapes the inner single quotes, so a raw
-    # substring never matches: recover the inner script with shlex.split
-    # and assert against pyinfra's own fixture text (deviation: reemote5
-    # quotes the path defensively, where pyinfra leaves it bare).
-    inner = shlex.split(cmd.shell())[2]
-    assert inner == UA_APPEND_INNER_TEMPLATE.format(path=UA_KEYS_FILE, key=UA_KEY_B)
-    # An unsafe key/path payload stays a single-quoted token inside the
-    # inner script -- the whole inner then rides the outer sh -c wrapper.
-    evil = AuthorizedKeysAppendCommand(
-        path="/home/evil; rm -rf /", key="ssh-rsa AAAA evil; whoami"
+def test_authorized_keys_upload_command_rendering():
+    upload = AuthorizedKeysUploadCommand(content=f"{UA_KEY_A}\n", dest=UA_SPOOL)
+    # The transfer is a non-shell descriptor: its loggable form is __str__,
+    # and command_shell never prefixes it with sudo/su -- transfers ride the
+    # login user's scp channel regardless of the request's elevation.
+    assert str(upload) == f"scp <authorized keys> -> {UA_SPOOL}"
+    assert command_shell(upload, sudo=True) == f"scp <authorized keys> -> {UA_SPOOL}"
+    assert command_shell(upload, su=True) == f"scp <authorized keys> -> {UA_SPOOL}"
+    # The content field is a plain str: hashable and value-equal across the
+    # prepare/apply phases (the determinism guard compares descriptors).
+    assert hash(upload) == hash(
+        AuthorizedKeysUploadCommand(content=f"{UA_KEY_A}\n", dest=UA_SPOOL)
     )
-    evil_inner = shlex.split(evil.shell())[2]
-    assert "'ssh-rsa AAAA evil; whoami'" in evil_inner
-    assert "'/home/evil; rm -rf /'" in evil_inner
-    # Sudo elevates the whole sh -c, so the >> redirect opens the 600-mode
-    # key file as the elevated shell rather than the login user.
-    assert command_shell(cmd, sudo=True) == f"sudo {cmd.shell()}"
+
+
+def test_authorized_keys_install_command_shell_rendering():
+    install = AuthorizedKeysInstallCommand(spool=UA_SPOOL, dest=UA_KEYS_FILE)
+    assert install.shell() == f"sh -c {shlex.quote(UA_INSTALL_INNER)}"
+    # Sudo elevates the whole sh -c, so every step of the && chain -- cp,
+    # chmod and the spool cleanup -- runs as the elevated shell.
+    assert command_shell(install, sudo=True) == f"sudo {install.shell()}"
+    assert command_shell(install, su=True) == f"su -c {shlex.quote(install.shell())}"
+    # Quoting proof: a space in the DIRECTORY (shlex.quote leaves space-free
+    # paths bare). Recover the inner script with shlex.split, never a raw
+    # substring of the quoted text.
+    path = "/home/some user/.s sh/authorized_keys"
+    spool = _keys_spool_path(path)
+    inner = shlex.split(
+        AuthorizedKeysInstallCommand(spool=spool, dest=path).shell()
+    )[2]
+    assert inner.startswith("mkdir -p '/home/some user/.s sh' && ")
+    assert inner.endswith(f"&& rm -f {spool}")
+
+
+def test_keys_spool_path_is_dest_derived_and_deterministic():
+    # Same dest -> same spool in both phases; different dest -> different
+    # spool, so two requests never clobber one another's upload.
+    assert _keys_spool_path(UA_KEYS_FILE) == UA_SPOOL
+    assert _keys_spool_path(UA_KEYS_FILE) == _keys_spool_path(UA_KEYS_FILE)
+    assert _keys_spool_path("/etc/ssh/keys/alice") != UA_SPOOL
+    digest = hashlib.sha1(UA_KEYS_FILE.encode()).hexdigest()[:16]
+    assert UA_SPOOL == f"/tmp/reemote5-server-user-authorized-keys-{digest}"
+
+
+def test_authorized_keys_file_command_quotes_the_path():
+    assert AuthorizedKeysFile.command(UA_KEYS_FILE) == (
+        f"test -e {UA_KEYS_FILE} && "
+        f"{{ printf '#reemote5-authorizedkeysfile\\n'; cat -- {UA_KEYS_FILE}; }}"
+    )
+    quoted = shlex.quote("/home/some user/.ssh/authorized keys")
+    assert AuthorizedKeysFile.command("/home/some user/.ssh/authorized keys") == (
+        f"test -e {quoted} && "
+        f"{{ printf '#reemote5-authorizedkeysfile\\n'; cat -- {quoted}; }}"
+    )
+
+
+async def test_authorized_keys_file_reads_the_simulated_seam():
+    host = SimulatedHost(
+        name="h",
+        remote_files={
+            UA_KEYS_FILE: f"# comment\n{UA_KEY_A}\n".encode(),
+            "/etc/ssh/keys/empty": b"",
+        },
+    )
+    # Raw text, comments intact -- never the parsed key list.
+    assert (
+        await AuthorizedKeysFile.process(host, UA_KEYS_FILE)
+        == f"# comment\n{UA_KEY_A}\n"
+    )
+    # Absent path -> None; present but empty -> "" (never collapsed).
+    assert await AuthorizedKeysFile.process(host, "/etc/ssh/keys/empty") == ""
+    assert await AuthorizedKeysFile.process(host, "/no/such/file") is None
+
+
+async def test_authorized_keys_file_parses_the_marker_over_real_transport():
+    host = CannedShellHost(f"#reemote5-authorizedkeysfile\n{UA_KEY_A}\n")
+    assert await AuthorizedKeysFile.process(host, UA_KEYS_FILE) == f"{UA_KEY_A}\n"
+    assert host.shells == [AuthorizedKeysFile.command(UA_KEYS_FILE)]
+    # Marker only: an existing empty file reads "", not None.
+    assert (
+        await AuthorizedKeysFile.process(
+            CannedShellHost("#reemote5-authorizedkeysfile\n"), UA_KEYS_FILE
+        )
+        == ""
+    )
+    # No marker (the test -e guard failed): a missing file reads None.
+    assert (
+        await AuthorizedKeysFile.process(CannedShellHost(""), UA_KEYS_FILE) is None
+    )
+
+
+def test_add_keys_transform_purity_and_fixpoint():
+    # Absent file becomes just the keys; a repeat application is a fixpoint.
+    once = _add_keys(None, (UA_KEY_A, UA_KEY_B))
+    assert once == f"{UA_KEY_A}\n{UA_KEY_B}\n"
+    assert _add_keys(once, (UA_KEY_A, UA_KEY_B)) == once
+    # Comments, blank lines, ordering and the trailing newline survive.
+    content = f"# managed\n\n{UA_KEY_A}\n"
+    assert _add_keys(content, (UA_KEY_B,)) == f"{content}{UA_KEY_B}\n"
+    # A newline-less last line gets its separator functionally (the old
+    # tail -c1 shell guard, now controller-side).
+    assert _add_keys("trailing", (UA_KEY_A,)) == f"trailing\n{UA_KEY_A}\n"
+    # Presence is the parser's stripped whole-line comparison: surrounding
+    # whitespace counts as present, a commented-out key does NOT.
+    assert _add_keys(f"  {UA_KEY_A}  \n", (UA_KEY_A,)) == f"  {UA_KEY_A}  \n"
+    assert _add_keys(f"# {UA_KEY_A}\n", (UA_KEY_A,)) == (
+        f"# {UA_KEY_A}\n{UA_KEY_A}\n"
+    )
+    # Repeated requested keys land once, in the caller's own order.
+    assert _add_keys("", (UA_KEY_B, UA_KEY_A, UA_KEY_B)) == (
+        f"{UA_KEY_B}\n{UA_KEY_A}\n"
+    )
+    # No keys to add: the content comes back verbatim ("" for None).
+    assert _add_keys(content, ()) == content
+    assert _add_keys(None, ()) == ""
+
+
+def test_rewrite_keys_transform_is_pyinfra_whole_file_semantics():
+    # Exactly the requested keys, caller order, trailing newline -- current
+    # text is not an input, everything else is discarded.
+    assert _rewrite_keys((UA_KEY_B, UA_KEY_A)) == f"{UA_KEY_B}\n{UA_KEY_A}\n"
+    # pyinfra's "{}\n".format quirk: an empty key list writes a lone newline.
+    assert _rewrite_keys(()) == "\n"
 
 
 @pytest.mark.parametrize(
@@ -6293,35 +6433,45 @@ def test_authorized_keys_append_command_shell_rendering():
                 "directory_stats": {UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
                 "file_stats": {UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
                 "authorized_keys": {UA_KEYS_FILE: [UA_KEY_A, UA_KEY_B]},
+                "remote_files": {UA_KEYS_FILE: f"{UA_KEY_A}\n{UA_KEY_B}\n".encode()},
             },
             {"public_keys": (UA_KEY_A, UA_KEY_B)},
             [],
         ),
         # pyinfra's append_missing_only.json: one key already listed, the
-        # other absent -> one append of only the missing one.
+        # other absent -> one spool-and-install pair carrying the whole new
+        # text (the append is now a whole-content write).
         (
             {
                 "directory_stats": {UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
                 "file_stats": {UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
                 "authorized_keys": {UA_KEYS_FILE: [UA_KEY_A]},
+                "remote_files": {UA_KEYS_FILE: f"{UA_KEY_A}\n".encode()},
             },
             {"public_keys": (UA_KEY_A, UA_KEY_B)},
-            [AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_B)],
+            [
+                AuthorizedKeysUploadCommand(
+                    content=f"{UA_KEY_A}\n{UA_KEY_B}\n", dest=UA_SPOOL
+                ),
+                AuthorizedKeysInstallCommand(spool=UA_SPOOL, dest=UA_KEYS_FILE),
+            ],
         ),
         # pyinfra's long_inline_key_not_a_file.yaml: an inline key longer
-        # than PATH_MAX still appends because reemote5 never treats
+        # than PATH_MAX still lands because reemote5 never treats
         # public_keys entries as controller-side paths (dropped branch).
         (
             {
                 "directory_stats": {UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
                 "file_stats": {UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
                 "authorized_keys": {UA_KEYS_FILE: []},
+                "remote_files": {UA_KEYS_FILE: b""},
             },
             {"public_keys": ("ssh-rsa " + "A" * 2000 + " bob",)},
             [
-                AuthorizedKeysAppendCommand(
-                    path=UA_KEYS_FILE, key="ssh-rsa " + "A" * 2000 + " bob"
-                )
+                AuthorizedKeysUploadCommand(
+                    content="ssh-rsa " + "A" * 2000 + " bob\n", dest=UA_SPOOL
+                ),
+                AuthorizedKeysInstallCommand(spool=UA_SPOOL, dest=UA_KEYS_FILE),
             ],
         ),
     ],
@@ -6342,7 +6492,8 @@ async def test_user_authorized_keys_matches_pyinfra_operation_fixtures(
 async def test_user_authorized_keys_creates_missing_dir_and_file_and_appends():
     # Fresh host with the user's home known: mkdir -p + chmod 700 + chown
     # for the .ssh directory, then touch + chmod 600 + chown for the key
-    # file, then one append per requested key in caller order.
+    # file, then one spool-and-install pair carrying both keys in caller
+    # order.
     host = SimulatedHost(name="h", home_directories={UA_USER: UA_HOME})
     ctx, commands = await materialize(
         host,
@@ -6364,8 +6515,10 @@ async def test_user_authorized_keys_creates_missing_dir_and_file_and_appends():
         _KeysTouchCommand(path=UA_KEYS_FILE),
         _KeysChmodCommand(path=UA_KEYS_FILE, mode=600),
         _HomeChownCommand(path=UA_KEYS_FILE, user=UA_USER, group=UA_USER),
-        AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_A),
-        AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_B),
+        AuthorizedKeysUploadCommand(
+            content=f"{UA_KEY_A}\n{UA_KEY_B}\n", dest=UA_SPOOL
+        ),
+        AuthorizedKeysInstallCommand(spool=UA_SPOOL, dest=UA_KEYS_FILE),
     ]
 
 
@@ -6436,6 +6589,7 @@ async def test_user_authorized_keys_fixes_file_mode_and_appends():
         directory_stats={UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
         file_stats={UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 644}},
         authorized_keys={UA_KEYS_FILE: []},
+        remote_files={UA_KEYS_FILE: b""},
     )
     ctx, commands = await materialize(
         host, op(server.user_authorized_keys, user=UA_USER, public_keys=(UA_KEY_A,))
@@ -6443,7 +6597,8 @@ async def test_user_authorized_keys_fixes_file_mode_and_appends():
     assert ctx.changed
     assert commands == [
         _KeysChmodCommand(path=UA_KEYS_FILE, mode=600),
-        AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_A),
+        AuthorizedKeysUploadCommand(content=f"{UA_KEY_A}\n", dest=UA_SPOOL),
+        AuthorizedKeysInstallCommand(spool=UA_SPOOL, dest=UA_KEYS_FILE),
     ]
 
 
@@ -6496,7 +6651,12 @@ async def test_user_authorized_keys_honours_custom_directory_and_filename():
         _KeysTouchCommand(path="/etc/ssh/keys/alice"),
         _KeysChmodCommand(path="/etc/ssh/keys/alice", mode=600),
         _HomeChownCommand(path="/etc/ssh/keys/alice", user=UA_USER, group=UA_USER),
-        AuthorizedKeysAppendCommand(path="/etc/ssh/keys/alice", key=UA_KEY_A),
+        AuthorizedKeysUploadCommand(
+            content=f"{UA_KEY_A}\n", dest=_keys_spool_path("/etc/ssh/keys/alice")
+        ),
+        AuthorizedKeysInstallCommand(
+            spool=_keys_spool_path("/etc/ssh/keys/alice"), dest="/etc/ssh/keys/alice"
+        ),
     ]
 
 
@@ -6523,32 +6683,259 @@ async def test_user_authorized_keys_absorbs_unknown_kwargs():
     assert not ctx.changed
 
 
-async def test_append_authorized_key_seam_updates_every_store():
-    # send_command must keep remote_files, existing_files, file_stats and
-    # the authorized_keys path-keyed seam in lockstep so the next step's
-    # fact cache sees the appended key and the operation becomes a no-op.
+async def test_user_authorized_keys_delete_keys_rewrites_to_exactly_the_request():
+    # delete_keys=True is pyinfra's whole-file rewrite: comments and every
+    # unrequested key are discarded, only the requested keys survive, in
+    # the caller's order.
+    host = SimulatedHost(
+        name="h",
+        home_directories={UA_USER: UA_HOME},
+        directory_stats={UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
+        file_stats={UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
+        authorized_keys={UA_KEYS_FILE: [UA_KEY_A, UA_KEY_B]},
+        remote_files={UA_KEYS_FILE: f"# managed\n{UA_KEY_A}\n{UA_KEY_B}\n".encode()},
+    )
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.user_authorized_keys,
+            user=UA_USER,
+            public_keys=(UA_KEY_B,),
+            delete_keys=True,
+        ),
+    )
+    assert ctx.changed
+    assert ctx.reason == (
+        f"directory {UA_SSH_DIR} already exists; "
+        f"keys differ, will rewrite {UA_KEYS_FILE}"
+    )
+    assert commands == [
+        AuthorizedKeysUploadCommand(content=f"{UA_KEY_B}\n", dest=UA_SPOOL),
+        AuthorizedKeysInstallCommand(spool=UA_SPOOL, dest=UA_KEYS_FILE),
+    ]
+
+
+async def test_user_authorized_keys_delete_keys_noop_when_lists_equal():
+    host = SimulatedHost(
+        name="h",
+        home_directories={UA_USER: UA_HOME},
+        directory_stats={UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
+        file_stats={UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
+        authorized_keys={UA_KEYS_FILE: [UA_KEY_A, UA_KEY_B]},
+        remote_files={UA_KEYS_FILE: f"{UA_KEY_A}\n{UA_KEY_B}\n".encode()},
+    )
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.user_authorized_keys,
+            user=UA_USER,
+            public_keys=(UA_KEY_A, UA_KEY_B),
+            delete_keys=True,
+        ),
+    )
+    assert not ctx.changed
+    assert ctx.reason == (
+        f"directory {UA_SSH_DIR} already exists; file {UA_KEYS_FILE} already exists"
+    )
+    assert commands == []
+
+
+async def test_user_authorized_keys_delete_keys_is_order_sensitive():
+    # pyinfra compares LISTS, not sets: a pure reorder is a rewrite.
+    host = SimulatedHost(
+        name="h",
+        home_directories={UA_USER: UA_HOME},
+        directory_stats={UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
+        file_stats={UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
+        authorized_keys={UA_KEYS_FILE: [UA_KEY_A, UA_KEY_B]},
+        remote_files={UA_KEYS_FILE: f"{UA_KEY_A}\n{UA_KEY_B}\n".encode()},
+    )
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.user_authorized_keys,
+            user=UA_USER,
+            public_keys=(UA_KEY_B, UA_KEY_A),
+            delete_keys=True,
+        ),
+    )
+    assert ctx.changed
+    assert commands == [
+        AuthorizedKeysUploadCommand(
+            content=f"{UA_KEY_B}\n{UA_KEY_A}\n", dest=UA_SPOOL
+        ),
+        AuthorizedKeysInstallCommand(spool=UA_SPOOL, dest=UA_KEYS_FILE),
+    ]
+
+
+async def test_user_authorized_keys_delete_keys_empty_request_writes_lone_newline():
+    # pyinfra's "{}\n".format quirk: an empty key list empties the file to
+    # a lone newline, not zero bytes.
+    host = SimulatedHost(
+        name="h",
+        home_directories={UA_USER: UA_HOME},
+        directory_stats={UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
+        file_stats={UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
+        authorized_keys={UA_KEYS_FILE: [UA_KEY_A]},
+        remote_files={UA_KEYS_FILE: f"{UA_KEY_A}\n".encode()},
+    )
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.user_authorized_keys,
+            user=UA_USER,
+            public_keys=(),
+            delete_keys=True,
+        ),
+    )
+    assert ctx.changed
+    assert commands == [
+        AuthorizedKeysUploadCommand(content="\n", dest=UA_SPOOL),
+        AuthorizedKeysInstallCommand(spool=UA_SPOOL, dest=UA_KEYS_FILE),
+    ]
+
+
+async def test_user_authorized_keys_delete_keys_creates_from_scratch():
+    host = SimulatedHost(name="h", home_directories={UA_USER: UA_HOME})
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.user_authorized_keys,
+            user=UA_USER,
+            public_keys=(UA_KEY_A,),
+            delete_keys=True,
+        ),
+    )
+    assert ctx.changed
+    assert ctx.reason == (
+        f"{UA_SSH_DIR} missing, will create; {UA_KEYS_FILE} missing, "
+        f"will create; keys differ, will rewrite {UA_KEYS_FILE}"
+    )
+    assert commands[-2:] == [
+        AuthorizedKeysUploadCommand(content=f"{UA_KEY_A}\n", dest=UA_SPOOL),
+        AuthorizedKeysInstallCommand(spool=UA_SPOOL, dest=UA_KEYS_FILE),
+    ]
+
+
+async def test_user_authorized_keys_content_noop_when_text_already_holds_keys():
+    # Deliberate seam divergence: the parsed store reports no keys but the
+    # raw text already holds the requested one -- the content stage sees
+    # the transform is a fixpoint and plans nothing (the old in-place form
+    # would have appended a duplicate).
+    host = SimulatedHost(
+        name="h",
+        home_directories={UA_USER: UA_HOME},
+        directory_stats={UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
+        file_stats={UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
+        authorized_keys={UA_KEYS_FILE: []},
+        remote_files={UA_KEYS_FILE: f"{UA_KEY_A}\n".encode()},
+    )
+    ctx, commands = await materialize(
+        host, op(server.user_authorized_keys, user=UA_USER, public_keys=(UA_KEY_A,))
+    )
+    assert not ctx.changed
+    assert ctx.reason == (
+        f"directory {UA_SSH_DIR} already exists; "
+        f"keys already written in {UA_KEYS_FILE}"
+    )
+    assert commands == []
+
+
+async def test_user_authorized_keys_delete_keys_content_noop_on_matching_text():
+    # The same fixpoint guard in the rewrite direction: the parsed list
+    # says a change is due but the raw text already equals the rewrite.
+    host = SimulatedHost(
+        name="h",
+        home_directories={UA_USER: UA_HOME},
+        directory_stats={UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
+        file_stats={UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
+        authorized_keys={UA_KEYS_FILE: [UA_KEY_B]},
+        remote_files={UA_KEYS_FILE: f"{UA_KEY_A}\n".encode()},
+    )
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.user_authorized_keys,
+            user=UA_USER,
+            public_keys=(UA_KEY_A,),
+            delete_keys=True,
+        ),
+    )
+    assert not ctx.changed
+    assert ctx.reason == (
+        f"directory {UA_SSH_DIR} already exists; "
+        f"keys already written in {UA_KEYS_FILE}"
+    )
+    assert commands == []
+
+
+async def test_keys_upload_seam_writes_only_the_spool():
+    # The transfer half stores bytes at the spool and touches nothing else.
     host = SimulatedHost(name="h")
     await send_command(
-        host, AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_A)
+        host, AuthorizedKeysUploadCommand(content=f"{UA_KEY_A}\n", dest=UA_SPOOL)
     )
-    assert host.remote_files[UA_KEYS_FILE] == f"{UA_KEY_A}\n".encode()
+    assert host.remote_files == {UA_SPOOL: f"{UA_KEY_A}\n".encode()}
+    assert UA_KEYS_FILE not in host.existing_files
+    assert host.file_stats == {}
+    assert host.authorized_keys == {}
+
+
+async def test_keys_install_seam_updates_every_store():
+    # send_command must keep remote_files, existing_files, file_stats and
+    # the authorized_keys path-keyed seam in lockstep so the next step's
+    # fact cache sees the installed text and the operation becomes a no-op.
+    host = SimulatedHost(
+        name="h",
+        file_stats={UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 644}},
+        remote_files={UA_KEYS_FILE: f"# old\n{UA_KEY_B}\n".encode()},
+        authorized_keys={UA_KEYS_FILE: [UA_KEY_B]},
+    )
+    await send_command(
+        host, AuthorizedKeysUploadCommand(content=f"{UA_KEY_A}\n", dest=UA_SPOOL)
+    )
+    await send_command(
+        host, AuthorizedKeysInstallCommand(spool=UA_SPOOL, dest=UA_KEYS_FILE)
+    )
+    # The spool is consumed; the dest holds the new bytes.
+    assert host.remote_files == {UA_KEYS_FILE: f"{UA_KEY_A}\n".encode()}
     assert UA_KEYS_FILE in host.existing_files
-    assert host.file_stats[UA_KEYS_FILE]["size"] == len(f"{UA_KEY_A}\n")
+    # cp over an existing file preserves its owner; chmod 600 + size refresh.
+    assert host.file_stats[UA_KEYS_FILE] == {
+        "user": UA_USER,
+        "group": UA_USER,
+        "mode": 600,
+        "size": len(f"{UA_KEY_A}\n"),
+    }
+    # The parsed store is recomputed from the installed content, so a
+    # delete_keys rewrite drops the unrequested key.
     assert host.authorized_keys[UA_KEYS_FILE] == [UA_KEY_A]
-    # A second append on the newline-terminated file inserts no leading
-    # blank line and lands the key once.
+    # Install without its spool changes nothing (the tolerance arm).
     await send_command(
-        host, AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_B)
+        host, AuthorizedKeysInstallCommand(spool=UA_SPOOL, dest=UA_KEYS_FILE)
     )
-    assert host.remote_files[UA_KEYS_FILE] == f"{UA_KEY_A}\n{UA_KEY_B}\n".encode()
-    assert host.authorized_keys[UA_KEYS_FILE] == [UA_KEY_A, UA_KEY_B]
-    # The newline guard: content not ending in \n gets a leading newline
-    # before the appended key so a partial last line is never glued.
-    host2 = SimulatedHost(name="h", remote_files={UA_KEYS_FILE: b"trailing"})
+    assert host.remote_files == {UA_KEYS_FILE: f"{UA_KEY_A}\n".encode()}
+    assert host.authorized_keys[UA_KEYS_FILE] == [UA_KEY_A]
+
+
+async def test_keys_install_seam_without_prior_stats_seeds_root_row():
+    # Descriptor-only install (the paired _KeysTouchCommand never ran): a
+    # minimal root-owned mode-600 row, content-based so a repeat install
+    # never duplicates an entry.
+    host = SimulatedHost(name="h")
     await send_command(
-        host2, AuthorizedKeysAppendCommand(path=UA_KEYS_FILE, key=UA_KEY_A)
+        host, AuthorizedKeysUploadCommand(content=f"{UA_KEY_A}\n", dest=UA_SPOOL)
     )
-    assert host2.remote_files[UA_KEYS_FILE] == f"trailing\n{UA_KEY_A}\n".encode()
+    await send_command(
+        host, AuthorizedKeysInstallCommand(spool=UA_SPOOL, dest=UA_KEYS_FILE)
+    )
+    assert host.file_stats[UA_KEYS_FILE] == {
+        "user": "root",
+        "group": "root",
+        "mode": 600,
+        "size": len(f"{UA_KEY_A}\n"),
+    }
+    assert host.authorized_keys[UA_KEYS_FILE] == [UA_KEY_A]
 
 
 async def test_keys_chmod_and_touch_seam_rides_files_mutators():
@@ -6590,7 +6977,8 @@ async def test_user_authorized_keys_end_to_end_creates_then_noops():
     plans, report, hosts = await run(
         INVENTORY, keys_deploy, host_factory=ua_seed_factory
     )
-    # Both hosts planned every mkdir/chmod/chown/touch/append under sudo.
+    # Both hosts planned the whole state block plus the spool-and-install
+    # pair.
     assert [p.changed for p in plans["web1"]] == [True]
     (entry,) = report.log[0:1]
     assert entry.changed
@@ -6600,8 +6988,13 @@ async def test_user_authorized_keys_end_to_end_creates_then_noops():
     assert f"sudo chown {UA_USER}:{UA_USER} /home/someuser/.ssh" in log
     assert "$ sudo touch /home/someuser/.ssh/authorized_keys" in log
     assert "$ sudo chmod 600 /home/someuser/.ssh/authorized_keys" in log
-    assert "sh -c" in log
-    assert UA_KEY_A in log
+    # Two privilege levels in one request: the scp half stays unprivileged
+    # even under sudo=True, only the install shell elevates. The key text
+    # rides the scp payload, so it never appears in the shell log.
+    assert f"    $ scp <authorized keys> -> {UA_SPOOL}" in log
+    install = AuthorizedKeysInstallCommand(spool=UA_SPOOL, dest=UA_KEYS_FILE)
+    assert f"    $ sudo {install.shell()}" in log
+    assert UA_KEY_A not in log
     for host in hosts:
         assert host.authorized_keys[UA_KEYS_FILE] == [UA_KEY_A]
     # The apply mutated the seams; a second run is a no-op.
@@ -6610,6 +7003,25 @@ async def test_user_authorized_keys_end_to_end_creates_then_noops():
     )
     # Fresh host_factory -> fresh seams, so this second run creates again.
     assert [p.changed for p in plans2["web1"]] == [True]
+
+
+async def test_user_authorized_keys_second_run_on_same_hosts_is_noop():
+    # Reusing the mutated hosts (not a fresh factory) proves the install
+    # left every seam coherent: the second run plans nothing.
+    hosts_by_name: dict[str, Host] = {}
+
+    def factory(entry: dict) -> Host:
+        host = ua_seed_factory(entry)
+        hosts_by_name[entry["host"]] = host
+        return host
+
+    await run(INVENTORY, keys_deploy, host_factory=factory)
+    plans2, _report2, _hosts2 = await run(
+        INVENTORY,
+        keys_deploy,
+        host_factory=lambda entry: hosts_by_name[entry["host"]],
+    )
+    assert [p.changed for p in plans2["web1"]] == [False]
 
 
 async def test_user_authorized_keys_repeat_request_is_noop_in_apply():
@@ -6640,6 +7052,39 @@ async def test_user_authorized_keys_repeat_request_is_noop_in_apply():
     assert host.authorized_keys[UA_KEYS_FILE] == [UA_KEY_A]
 
 
+async def test_user_authorized_keys_delete_keys_end_to_end():
+    # Append both keys, then rewrite to just one in the same deploy: the
+    # apply-phase per-step cache sees the first install, so the rewrite
+    # drops the unrequested key and the spool is consumed.
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.user_authorized_keys,
+            name="Authorise both keys",
+            user=UA_USER,
+            public_keys=(UA_KEY_A, UA_KEY_B),
+            sudo=True,
+        )
+        yield op(
+            server.user_authorized_keys,
+            name="Keep only the first key",
+            user=UA_USER,
+            public_keys=(UA_KEY_A,),
+            delete_keys=True,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h", home_directories={UA_USER: UA_HOME})
+    runtimes, plans = await run_prepare([host], deploy)
+    # Prepare shares one cache, so both requests plan a change...
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # ...and apply really rewrites: only the requested key survives.
+    assert [e.changed for e in report.log] == [True, True]
+    assert host.authorized_keys[UA_KEYS_FILE] == [UA_KEY_A]
+    assert host.remote_files[UA_KEYS_FILE] == f"{UA_KEY_A}\n".encode()
+    assert UA_SPOOL not in host.remote_files
+
+
 async def test_user_authorized_keys_dry_run_sends_nothing():
     _plans, report, hosts = await run(
         INVENTORY, keys_deploy, host_factory=ua_seed_factory, dry=True
@@ -6647,6 +7092,1396 @@ async def test_user_authorized_keys_dry_run_sends_nothing():
     assert report is None
     for host in hosts:
         assert host.authorized_keys == {}
+        assert host.remote_files == {}
         assert UA_SSH_DIR not in host.directory_stats
         assert UA_KEYS_FILE not in host.file_stats
+
+
+# --- server.etc_hosts --------------------------------------------------------
+
+# pyinfra's own operation fixtures (tests/operations/server.etc_hosts/) key
+# their entries by this IP; reused verbatim here for parity.
+EH_IP = "192.168.1.10"
+EH_NAMES = ("db.internal", "db")
+EH_PATH = "/etc/hosts"
+# The dest-derived spool and the install inner script -- the text inside the
+# ``sh -c '...'`` wrapper the install descriptor emits.
+EH_SPOOL = _hosts_spool_path(EH_PATH)
+EH_INSTALL_INNER = (
+    f"mkdir -p /etc && cp {EH_SPOOL} {EH_PATH} && "
+    f"chmod 0644 {EH_PATH} && rm -f {EH_SPOOL}"
+)
+# pyinfra's own fact fixture (tests/facts/server.EtcHosts/etc_hosts.json):
+# comments, tabs, a duplicate IP and a one-token line, reused verbatim.
+EH_FIXTURE_OUTPUT = (
+    "# This is /etc/hosts\n"
+    "\n"
+    "127.0.0.1\tlocalhost localhost.localdomain\n"
+    "::1\t\tlocalhost # IPv6 loopback\n"
+    "192.168.1.10  db.internal\n"
+    "192.168.1.10  db   # duplicate IP, extra alias\n"
+    "nohostname\n"
+    "   \n"
+)
+EH_FIXTURE_FACT = {
+    "127.0.0.1": ["localhost", "localhost.localdomain"],
+    "::1": ["localhost"],
+    "192.168.1.10": ["db.internal", "db"],
+}
+
+
+def test_etc_hosts_command_quotes_the_path():
+    assert EtcHosts.command() == "cat /etc/hosts 2>/dev/null || true"
+    assert EtcHosts.command("/etc dir/my hosts") == (
+        "cat '/etc dir/my hosts' 2>/dev/null || true"
+    )
+
+
+async def test_etc_hosts_parses_the_pyinfra_fact_fixture():
+    # Comments and blank lines dropped, the duplicate IP's hostnames merged
+    # in file order without duplicates, the one-token "nohostname" skipped.
+    host = CannedShellHost(EH_FIXTURE_OUTPUT)
+    assert await EtcHosts.process(host) == EH_FIXTURE_FACT
+    assert host.shells == ["cat /etc/hosts 2>/dev/null || true"]
+    # A missing file: the || true guard turns the cat error into empty
+    # output, which reads as {} (pyinfra's default = dict).
+    assert await EtcHosts.process(CannedShellHost("")) == {}
+
+
+async def test_etc_hosts_reads_the_simulated_seam():
+    # The seam parses the shared remote_files store directly (the
+    # sysctl.SysctlConf pattern), so a simulated install reads back through
+    # this fact with no second parsed store to keep in sync.
+    host = SimulatedHost(
+        name="h",
+        remote_files={EH_PATH: EH_FIXTURE_OUTPUT.encode(), "/etc/empty-hosts": b""},
+    )
+    assert await EtcHosts.process(host) == EH_FIXTURE_FACT
+    assert await EtcHosts.process(host, "/etc/empty-hosts") == {}
+    assert await EtcHosts.process(host, "/no/such/hosts") == {}
+
+
+async def test_etc_hosts_gather_fact_forwards_the_path():
+    hosts = [
+        SimulatedHost(name="web1", remote_files={"/custom/hosts": b"10.0.0.5 db\n"}),
+        SimulatedHost(name="web2"),
+    ]
+    assert await gather_fact(hosts, EtcHosts, "/custom/hosts") == {
+        "web1": {"10.0.0.5": ["db"]},
+        "web2": {},
+    }
+
+
+def test_hosts_content_transform_purity_and_fixpoint():
+    # Absent file becomes just the entry; a repeat application is a fixpoint.
+    once = _hosts_content(None, EH_IP, EH_NAMES, True)
+    assert once == "192.168.1.10 db.internal db\n"
+    assert _hosts_content(once, EH_IP, EH_NAMES, True) == once
+    # Untouched lines, comments, blank lines and their order survive; the
+    # edited line keeps its position mid-file (pyinfra's update_entry).
+    current = "127.0.0.1 localhost\n192.168.1.10 old.name\n::1 localhost\n"
+    updated = _hosts_content(current, EH_IP, EH_NAMES, True)
+    assert updated == "127.0.0.1 localhost\n192.168.1.10 db.internal db\n::1 localhost\n"
+    assert _hosts_content(updated, EH_IP, EH_NAMES, True) == updated
+    content = "# managed\n\n127.0.0.1 localhost\n"
+    assert _hosts_content(content, EH_IP, EH_NAMES, True) == (
+        f"{content}192.168.1.10 db.internal db\n"
+    )
+    # A comment on the edited line is dropped (pyinfra parity); a comment
+    # on any other line survives verbatim.
+    assert _hosts_content(f"{EH_IP} old # note\n", EH_IP, EH_NAMES, True) == (
+        "192.168.1.10 db.internal db\n"
+    )
+    # CRLF is normalised and a missing trailing newline is restored.
+    assert _hosts_content("127.0.0.1 localhost", EH_IP, EH_NAMES, True) == (
+        "127.0.0.1 localhost\n192.168.1.10 db.internal db\n"
+    )
+    assert _hosts_content("127.0.0.1 localhost\r\n", EH_IP, EH_NAMES, True) == (
+        "127.0.0.1 localhost\n192.168.1.10 db.internal db\n"
+    )
+
+
+def test_hosts_content_removal_directions():
+    current = "127.0.0.1 localhost\n192.168.1.10 db.internal db\n::1 localhost\n"
+    # No hostnames: every line for the IP goes, the others stay in order.
+    removed = _hosts_content(current, EH_IP, (), False)
+    assert removed == "127.0.0.1 localhost\n::1 localhost\n"
+    assert _hosts_content(removed, EH_IP, (), False) == removed
+    # Named hostnames: only those names drop; the line survives with the rest.
+    assert _hosts_content(current, EH_IP, ("db",), False) == (
+        "127.0.0.1 localhost\n192.168.1.10 db.internal\n::1 localhost\n"
+    )
+    # Removing every name on the line removes the line entirely...
+    assert _hosts_content(current, EH_IP, EH_NAMES, False) == removed
+    # ...and a removal that empties the file yields "" (a legitimate payload).
+    assert _hosts_content("192.168.1.10 db.internal db\n", EH_IP, (), False) == ""
+    assert _hosts_content(None, EH_IP, (), False) == ""
+
+
+def test_etc_hosts_upload_command_rendering():
+    upload = EtcHostsUploadCommand(content="192.168.1.10 db.internal db\n", dest=EH_SPOOL)
+    # The transfer is a non-shell descriptor: its loggable form is __str__,
+    # and command_shell never prefixes it with sudo/su -- transfers ride the
+    # login user's scp channel regardless of the request's elevation.
+    assert str(upload) == f"scp <hosts file> -> {EH_SPOOL}"
+    assert command_shell(upload, sudo=True) == f"scp <hosts file> -> {EH_SPOOL}"
+    assert command_shell(upload, su=True) == f"scp <hosts file> -> {EH_SPOOL}"
+    # The content field is a plain str: hashable and value-equal across the
+    # prepare/apply phases (the determinism guard compares descriptors). An
+    # empty payload (a removal that empties the file) is legitimate too.
+    assert hash(upload) == hash(
+        EtcHostsUploadCommand(content="192.168.1.10 db.internal db\n", dest=EH_SPOOL)
+    )
+    assert str(EtcHostsUploadCommand(content="", dest=EH_SPOOL)) == (
+        f"scp <hosts file> -> {EH_SPOOL}"
+    )
+
+
+def test_etc_hosts_install_command_shell_rendering():
+    install = EtcHostsInstallCommand(spool=EH_SPOOL, dest=EH_PATH)
+    assert install.shell() == f"sh -c {shlex.quote(EH_INSTALL_INNER)}"
+    # Sudo elevates the whole sh -c, so every step of the && chain -- cp,
+    # chmod and the spool cleanup -- runs as the elevated shell.
+    assert command_shell(install, sudo=True) == f"sudo {install.shell()}"
+    assert command_shell(install, su=True) == f"su -c {shlex.quote(install.shell())}"
+    # Quoting proof: a space in the DIRECTORY (shlex.quote leaves space-free
+    # paths bare). Recover the inner script with shlex.split, never a raw
+    # substring of the quoted text.
+    path = "/etc dir/hosts file"
+    spool = _hosts_spool_path(path)
+    inner = shlex.split(EtcHostsInstallCommand(spool=spool, dest=path).shell())[2]
+    assert inner.startswith("mkdir -p '/etc dir' && ")
+    assert inner.endswith(f"&& rm -f {spool}")
+
+
+def test_hosts_spool_path_is_dest_derived_and_deterministic():
+    # Same dest -> same spool in both phases; different dest -> different
+    # spool, so two path-scoped requests never clobber one another's upload.
+    assert _hosts_spool_path(EH_PATH) == EH_SPOOL
+    assert _hosts_spool_path(EH_PATH) == _hosts_spool_path(EH_PATH)
+    assert _hosts_spool_path("/etc/hosts.custom") != EH_SPOOL
+    digest = hashlib.sha1(EH_PATH.encode()).hexdigest()[:16]
+    assert EH_SPOOL == f"/tmp/reemote5-server-etc-hosts-{digest}"
+
+
+@pytest.mark.parametrize(
+    ("seed", "ip", "kwargs", "content", "reason"),
+    [
+        # pyinfra's add_new_entry.json: the IP is unknown -> the entry is
+        # appended and the whole new text rides one spool-and-install pair.
+        (
+            b"127.0.0.1 localhost\n",
+            EH_IP,
+            {"hostnames": EH_NAMES},
+            "127.0.0.1 localhost\n192.168.1.10 db.internal db\n",
+            "192.168.1.10 -> db.internal db will be written to /etc/hosts",
+        ),
+        # create_file.json: no hosts file at all -> it is created holding
+        # just the entry (a string hostnames splits on whitespace).
+        (
+            None,
+            "127.0.0.1",
+            {"hostnames": "localhost"},
+            "127.0.0.1 localhost\n",
+            "127.0.0.1 -> localhost will be written to /etc/hosts",
+        ),
+        # missing_file_absent_noop.json: removal against a missing file.
+        (
+            None,
+            EH_IP,
+            {"present": False},
+            None,
+            "192.168.1.10 already absent from /etc/hosts",
+        ),
+        # noop_absent.json: other entries exist, the IP does not.
+        (
+            b"127.0.0.1 localhost\n192.168.1.10 db.internal\n",
+            "192.168.1.99",
+            {"present": False},
+            None,
+            "192.168.1.99 already absent from /etc/hosts",
+        ),
+        # noop_hostname_absent.json: the IP exists but references none of
+        # the named hostnames.
+        (
+            b"192.168.1.10 db.internal db\n",
+            EH_IP,
+            {"hostnames": "not-here", "present": False},
+            None,
+            "192.168.1.10 in /etc/hosts does not reference any of: not-here",
+        ),
+        # noop_present.json: the exact names in the exact order.
+        (
+            b"127.0.0.1 localhost\n192.168.1.10 db.internal db\n",
+            EH_IP,
+            {"hostnames": EH_NAMES},
+            None,
+            "192.168.1.10 -> db.internal db already present in /etc/hosts",
+        ),
+        # remove_entry.json: no hostnames -> the whole line goes, the rest
+        # of the file survives.
+        (
+            b"127.0.0.1 localhost\n192.168.1.10 db.internal db\n::1 localhost\n",
+            EH_IP,
+            {"present": False},
+            "127.0.0.1 localhost\n::1 localhost\n",
+            "192.168.1.10 will be removed from /etc/hosts",
+        ),
+        # remove_specific_hostname.json: only "db" drops, "db.internal" stays.
+        (
+            b"127.0.0.1 localhost\n192.168.1.10 db.internal db\n",
+            EH_IP,
+            {"hostnames": "db", "present": False},
+            "127.0.0.1 localhost\n192.168.1.10 db.internal\n",
+            "192.168.1.10 will be removed from /etc/hosts",
+        ),
+        # update_entry.json: the IP's names differ -> its line is rewritten
+        # in place, mid-file.
+        (
+            b"127.0.0.1 localhost\n192.168.1.10 old.name\n::1 localhost\n",
+            EH_IP,
+            {"hostnames": EH_NAMES},
+            "127.0.0.1 localhost\n192.168.1.10 db.internal db\n::1 localhost\n",
+            "192.168.1.10 -> db.internal db will be written to /etc/hosts",
+        ),
+    ],
+)
+async def test_etc_hosts_matches_pyinfra_operation_fixtures(
+    seed: bytes | None, ip: str, kwargs: dict, content: str | None, reason: str
+):
+    # Every removal fixture seeds remote_files too: EtcHosts parses that
+    # store directly, so a parsed-only seed would no-op at the fact stage
+    # and silently stop exercising the install.
+    host = SimulatedHost(
+        name="h", remote_files={EH_PATH: seed} if seed is not None else {}
+    )
+    ctx, commands = await materialize(host, op(server.etc_hosts, ip=ip, **kwargs))
+    expected = (
+        []
+        if content is None
+        else [
+            EtcHostsUploadCommand(content=content, dest=EH_SPOOL),
+            EtcHostsInstallCommand(spool=EH_SPOOL, dest=EH_PATH),
+        ]
+    )
+    assert commands == expected
+    assert ctx.changed == bool(expected)
+    assert ctx.reason == reason
+
+
+async def test_etc_hosts_requires_hostnames_when_present():
+    # pyinfra's OperationError message, raised as the house ValueError.
+    host = SimulatedHost(name="h")
+    with pytest.raises(ValueError, match="hostnames must be provided when present=True"):
+        await materialize(host, op(server.etc_hosts, ip=EH_IP))
+
+
+async def test_etc_hosts_content_noop_when_transform_is_a_fixpoint():
+    # The parsed fact dedups repeated names, so a request repeating one
+    # ("db", "db") never equals the fact's ["db"] and always wants an edit;
+    # the file's own text already holds the rewritten line, so the content
+    # guard no-ops instead of spooling an identical file.
+    host = SimulatedHost(name="h", remote_files={EH_PATH: b"192.168.1.10 db db\n"})
+    ctx, commands = await materialize(
+        host, op(server.etc_hosts, ip=EH_IP, hostnames=("db", "db"))
+    )
+    assert not ctx.changed
+    assert ctx.reason == "192.168.1.10 entry already written in /etc/hosts"
+    assert commands == []
+
+
+async def test_etc_hosts_reorders_hostnames_with_a_rewrite():
+    # The present comparison is order-sensitive (pyinfra parity): a mere
+    # reordering of the names rewrites the line.
+    host = SimulatedHost(
+        name="h", remote_files={EH_PATH: b"192.168.1.10 db db.internal\n"}
+    )
+    ctx, commands = await materialize(
+        host, op(server.etc_hosts, ip=EH_IP, hostnames=EH_NAMES)
+    )
+    assert ctx.changed
+    assert commands == [
+        EtcHostsUploadCommand(content="192.168.1.10 db.internal db\n", dest=EH_SPOOL),
+        EtcHostsInstallCommand(spool=EH_SPOOL, dest=EH_PATH),
+    ]
+
+
+async def test_etc_hosts_honours_custom_path():
+    path = "/etc/hosts.custom"
+    host = SimulatedHost(name="h", remote_files={path: b"127.0.0.1 localhost\n"})
+    ctx, commands = await materialize(
+        host, op(server.etc_hosts, ip=EH_IP, hostnames=EH_NAMES, path=path)
+    )
+    assert ctx.changed
+    assert commands == [
+        EtcHostsUploadCommand(
+            content="127.0.0.1 localhost\n192.168.1.10 db.internal db\n",
+            dest=_hosts_spool_path(path),
+        ),
+        EtcHostsInstallCommand(spool=_hosts_spool_path(path), dest=path),
+    ]
+
+
+async def test_etc_hosts_absorbs_unknown_kwargs():
+    # ``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    # strips name/sudo/su, the rest is ignored.
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host, op(server.etc_hosts, ip=EH_IP, hostnames=EH_NAMES, future_flag=True)
+    )
+    assert ctx.changed
+    assert commands[0] == EtcHostsUploadCommand(
+        content="192.168.1.10 db.internal db\n", dest=EH_SPOOL
+    )
+
+
+async def test_etc_hosts_removal_can_empty_the_file():
+    # The only entry goes -> the spool carries "" (a legitimate payload the
+    # descriptors never special-case) and the installed file is empty.
+    host = SimulatedHost(
+        name="h", remote_files={EH_PATH: b"192.168.1.10 db.internal db\n"}
+    )
+    ctx, commands = await materialize(
+        host, op(server.etc_hosts, ip=EH_IP, present=False)
+    )
+    assert ctx.changed
+    assert commands == [
+        EtcHostsUploadCommand(content="", dest=EH_SPOOL),
+        EtcHostsInstallCommand(spool=EH_SPOOL, dest=EH_PATH),
+    ]
+    for cmd in commands:
+        await send_command(host, cmd)
+    assert host.remote_files == {EH_PATH: b""}
+
+
+async def test_hosts_upload_seam_writes_only_the_spool():
+    # The transfer half stores bytes at the spool and touches nothing else.
+    host = SimulatedHost(name="h")
+    await send_command(
+        host,
+        EtcHostsUploadCommand(content="192.168.1.10 db.internal db\n", dest=EH_SPOOL),
+    )
+    assert host.remote_files == {EH_SPOOL: b"192.168.1.10 db.internal db\n"}
+    assert EH_PATH not in host.existing_files
+    assert host.file_stats == {}
+
+
+async def test_hosts_install_seam_updates_every_store():
+    # send_command must keep remote_files, existing_files and file_stats in
+    # lockstep; EtcHosts parses remote_files directly, so no separate parsed
+    # store exists to refresh.
+    host = SimulatedHost(
+        name="h",
+        file_stats={EH_PATH: {"user": "root", "group": "root", "mode": 600}},
+        remote_files={EH_PATH: b"192.168.1.10 old.name\n"},
+    )
+    await send_command(
+        host,
+        EtcHostsUploadCommand(content="192.168.1.10 db.internal db\n", dest=EH_SPOOL),
+    )
+    await send_command(host, EtcHostsInstallCommand(spool=EH_SPOOL, dest=EH_PATH))
+    # The spool is consumed; the dest holds the new bytes.
+    assert host.remote_files == {EH_PATH: b"192.168.1.10 db.internal db\n"}
+    assert EH_PATH in host.existing_files
+    # cp over an existing file preserves its owner; chmod 0644 + size refresh.
+    assert host.file_stats[EH_PATH] == {
+        "user": "root",
+        "group": "root",
+        "mode": 644,
+        "size": len("192.168.1.10 db.internal db\n"),
+    }
+    # The parsed fact reads the installed bytes back -- content-based, so a
+    # repeat upload+install never duplicates the entry.
+    assert await EtcHosts.process(host) == {EH_IP: ["db.internal", "db"]}
+    await send_command(
+        host,
+        EtcHostsUploadCommand(content="192.168.1.10 db.internal db\n", dest=EH_SPOOL),
+    )
+    await send_command(host, EtcHostsInstallCommand(spool=EH_SPOOL, dest=EH_PATH))
+    assert host.remote_files == {EH_PATH: b"192.168.1.10 db.internal db\n"}
+    # Install without its spool changes nothing (the tolerance arm).
+    await send_command(host, EtcHostsInstallCommand(spool=EH_SPOOL, dest=EH_PATH))
+    assert host.remote_files == {EH_PATH: b"192.168.1.10 db.internal db\n"}
+
+
+async def test_hosts_install_seam_without_prior_stats_seeds_root_row():
+    # Descriptor-only install against a fresh host: a minimal root-owned
+    # mode-644 row (the file the elevated cp created).
+    host = SimulatedHost(name="h")
+    await send_command(
+        host,
+        EtcHostsUploadCommand(content="192.168.1.10 db.internal db\n", dest=EH_SPOOL),
+    )
+    await send_command(host, EtcHostsInstallCommand(spool=EH_SPOOL, dest=EH_PATH))
+    assert host.file_stats[EH_PATH] == {
+        "user": "root",
+        "group": "root",
+        "mode": 644,
+        "size": len("192.168.1.10 db.internal db\n"),
+    }
+    assert EH_PATH in host.existing_files
+
+
+def hosts_deploy(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: add the database entry to /etc/hosts (elevated)."""
+    yield op(
+        server.etc_hosts,
+        name="Add the database host entry",
+        ip=EH_IP,
+        hostnames=EH_NAMES,
+        sudo=True,
+    )
+
+
+async def test_etc_hosts_end_to_end_creates_then_noops():
+    hosts_by_name: dict[str, Host] = {}
+
+    def factory(entry: dict) -> Host:
+        host = SimulatedHost.from_inventory(entry)
+        hosts_by_name[entry["host"]] = host
+        return host
+
+    plans, report, hosts = await run(INVENTORY, hosts_deploy, host_factory=factory)
+    assert [p.changed for p in plans["web1"]] == [True]
+    (entry,) = report.log[0:1]
+    assert entry.changed
+    log = format_log(report)
+    # Two privilege levels in one request: the scp half stays unprivileged
+    # even under sudo=True, only the install shell elevates. The hosts text
+    # rides the scp payload, so it never appears as a shell command.
+    assert f"    $ scp <hosts file> -> {EH_SPOOL}" in log
+    install = EtcHostsInstallCommand(spool=EH_SPOOL, dest=EH_PATH)
+    assert f"    $ sudo {install.shell()}" in log
+    for host in hosts:
+        assert host.remote_files[EH_PATH] == b"192.168.1.10 db.internal db\n"
+        assert EH_SPOOL not in host.remote_files
+    # Reusing the mutated hosts (not a fresh factory) proves the install
+    # left every seam coherent: the second run plans nothing.
+    plans2, _report2, _hosts2 = await run(
+        INVENTORY,
+        hosts_deploy,
+        host_factory=lambda entry: hosts_by_name[entry["host"]],
+    )
+    assert [p.changed for p in plans2["web1"]] == [False]
+
+
+async def test_etc_hosts_repeat_request_is_noop_in_apply():
+    def twice(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.etc_hosts,
+            name="Add entry first",
+            ip=EH_IP,
+            hostnames=EH_NAMES,
+            sudo=True,
+        )
+        yield op(
+            server.etc_hosts,
+            name="Add entry again",
+            ip=EH_IP,
+            hostnames=EH_NAMES,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], twice)
+    # Prepare shares one cache across the two requests and never sends, so
+    # both identical requests plan a change...
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # ...while the per-step cache recreation makes the second a no-op.
+    assert [e.changed for e in report.log] == [True, False]
+    assert host.remote_files[EH_PATH] == b"192.168.1.10 db.internal db\n"
+
+
+async def test_etc_hosts_add_then_remove_in_one_deploy():
+    # Rewrite the entry, then remove it in the same deploy: the apply-phase
+    # per-step cache sees the first install, so the removal empties the
+    # file (the "" spool payload) and the spool is consumed.
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.etc_hosts, name="Add entry", ip=EH_IP, hostnames=EH_NAMES, sudo=True
+        )
+        yield op(
+            server.etc_hosts, name="Remove entry", ip=EH_IP, present=False, sudo=True
+        )
+
+    host = SimulatedHost(name="h", remote_files={EH_PATH: b"192.168.1.10 old.name\n"})
+    runtimes, plans = await run_prepare([host], deploy)
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    assert [e.changed for e in report.log] == [True, True]
+    assert host.remote_files == {EH_PATH: b""}
+    assert EH_PATH in host.existing_files
+
+
+async def test_etc_hosts_dry_run_sends_nothing():
+    _plans, report, hosts = await run(
+        INVENTORY, hosts_deploy, host_factory=SimulatedHost.from_inventory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert host.remote_files == {}
+        assert host.file_stats == {}
+
+
+# --- server.locale -----------------------------------------------------------
+
+LG_PATH = "/etc/locale.gen"
+LG_LOCALE = "fr_FR.UTF-8"
+LG_SPOOL = _locale_spool_path(LG_PATH)
+LG_INSTALL_INNER = (
+    f"mkdir -p /etc && cp {LG_SPOOL} {LG_PATH} && "
+    f"chmod 0644 {LG_PATH} && rm -f {LG_SPOOL}"
+)
+# A miniature locale.gen: header comment, an unrelated commented definition,
+# an uncommented one, the commented target and a near-miss @euro variant the
+# whitespace-anchored pattern must not match.
+LG_FILE = (
+    "# This file lists locales that you wish to have built.\n"
+    "# en_US.UTF-8 UTF-8\n"
+    "de_DE.UTF-8 UTF-8\n"
+    "# fr_FR.UTF-8 UTF-8\n"
+    "# fr_FR.UTF-8@euro UTF-8\n"
+)
+LG_ENABLED_FILE = LG_FILE.replace("# fr_FR.UTF-8 UTF-8", "fr_FR.UTF-8 UTF-8")
+
+
+def test_locale_edit_enable_purity_and_fixpoint():
+    new = _locale_edit(LG_FILE, LG_LOCALE, True)
+    assert new == LG_ENABLED_FILE
+    # Idempotent, and every other line (header, other definitions, the
+    # @euro near-miss) survives in order with the trailing newline.
+    assert _locale_edit(new, LG_LOCALE, True) == new
+
+
+def test_locale_edit_enable_strips_every_comment_marker():
+    # pyinfra's str.replace verbatim: a doubly commented line is fully
+    # enabled in one edit, not just unpeeled one layer.
+    assert _locale_edit("# # fr_FR.UTF-8 UTF-8\n", LG_LOCALE, True) == (
+        "fr_FR.UTF-8 UTF-8\n"
+    )
+
+
+def test_locale_edit_disable_and_fixpoint_guard():
+    off = _locale_edit(LG_ENABLED_FILE, LG_LOCALE, False)
+    assert off == LG_FILE
+    # The guard pyinfra's unconditional prepend lacks: an already commented
+    # line is never double-commented, so the transform is a fixpoint.
+    assert _locale_edit(off, LG_LOCALE, False) == off
+
+
+def test_locale_edit_preserves_trailing_newline_state():
+    assert _locale_edit("# fr_FR.UTF-8 UTF-8", LG_LOCALE, True) == "fr_FR.UTF-8 UTF-8"
+    assert _locale_edit("# fr_FR.UTF-8 UTF-8\n", LG_LOCALE, True) == (
+        "fr_FR.UTF-8 UTF-8\n"
+    )
+
+
+def test_locale_edit_raises_on_zero_and_multiple_matches():
+    # pyinfra's verbatim messages, including the absent file (None content
+    # -- a RHEL-family host with no /etc/locale.gen at all).
+    with pytest.raises(OperationError, match="not found in /etc/locale.gen"):
+        _locale_edit("# en_US.UTF-8 UTF-8\n", LG_LOCALE, True)
+    with pytest.raises(OperationError, match="not found in /etc/locale.gen"):
+        _locale_edit(None, LG_LOCALE, True)
+    with pytest.raises(OperationError, match="Multiple locales matches"):
+        _locale_edit("# fr_FR.UTF-8 UTF-8\nfr_FR.UTF-8 UTF-8\n", LG_LOCALE, True)
+
+
+def test_locale_edit_escapes_the_locale_literally():
+    # pyinfra interpolates the locale raw into its grep pattern, so the dot
+    # in fr_FR.UTF-8 would match any character; re.escape hardens that.
+    with pytest.raises(OperationError, match="not found"):
+        _locale_edit("# fr_FRXUTF-8 UTF-8\n", LG_LOCALE, True)
+
+
+def test_locale_upload_command_rendering():
+    upload = LocaleUploadCommand(content=LG_ENABLED_FILE, dest=LG_SPOOL)
+    # A transfer has no shell(): command_shell falls back to __str__ and
+    # never prefixes it with sudo -- the scp rides the login user even
+    # under sudo=True (the family's two privilege levels).
+    assert str(upload) == f"scp <locale.gen> -> {LG_SPOOL}"
+    assert command_shell(upload, sudo=True) == f"scp <locale.gen> -> {LG_SPOOL}"
+    assert command_shell(upload, su=True) == f"scp <locale.gen> -> {LG_SPOOL}"
+    # The content field is a plain str: hashable and value-equal across the
+    # prepare/apply phases (the determinism guard compares descriptors).
+    assert hash(upload) == hash(
+        LocaleUploadCommand(content=LG_ENABLED_FILE, dest=LG_SPOOL)
+    )
+
+
+def test_locale_install_command_shell_rendering():
+    install = LocaleInstallCommand(spool=LG_SPOOL, dest=LG_PATH)
+    assert install.shell() == f"sh -c {shlex.quote(LG_INSTALL_INNER)}"
+    # Sudo elevates the whole sh -c, so every step of the && chain -- cp,
+    # chmod and the spool cleanup -- runs as the elevated shell.
+    assert command_shell(install, sudo=True) == f"sudo {install.shell()}"
+    assert command_shell(install, su=True) == f"su -c {shlex.quote(install.shell())}"
+    # Quoting proof: a space in the DIRECTORY (shlex.quote leaves space-free
+    # paths bare). Recover the inner script with shlex.split, never a raw
+    # substring of the quoted text.
+    path = "/etc dir/locale gen"
+    spool = _locale_spool_path(path)
+    inner = shlex.split(LocaleInstallCommand(spool=spool, dest=path).shell())[2]
+    assert inner.startswith("mkdir -p '/etc dir' && ")
+    assert inner.endswith(f"&& rm -f {spool}")
+
+
+def test_locale_gen_command_rendering():
+    gen = LocaleGenCommand(locale=LG_LOCALE, present=True)
+    # The constant rendering: locale-gen rebuilds the archive from every
+    # uncommented definition, so the fields never reach the shell.
+    assert gen.shell() == "locale-gen"
+    assert command_shell(gen, sudo=True) == "sudo locale-gen"
+    assert command_shell(gen, su=True) == f"su -c {shlex.quote('locale-gen')}"
+    assert hash(gen) == hash(LocaleGenCommand(locale=LG_LOCALE, present=True))
+
+
+def test_locale_spool_path_is_dest_derived_and_deterministic():
+    # Same dest -> same spool in both phases; different dest -> different
+    # spool, and the name keeps the family prefix.
+    assert _locale_spool_path(LG_PATH) == LG_SPOOL
+    assert _locale_spool_path(LG_PATH) == _locale_spool_path(LG_PATH)
+    assert _locale_spool_path("/etc/locale.gen.custom") != LG_SPOOL
+    digest = hashlib.sha1(LG_PATH.encode()).hexdigest()[:16]
+    assert LG_SPOOL == f"/tmp/reemote5-server-locale-{digest}"
+
+
+async def test_locale_enable_plans_spool_install_and_gen():
+    host = SimulatedHost(
+        name="h",
+        locales=["C.UTF-8"],
+        remote_files={LG_PATH: LG_FILE.encode()},
+    )
+    ctx, commands = await materialize(
+        host, op(server.locale, name="Enable French", locale=LG_LOCALE, sudo=True)
+    )
+    assert ctx.changed
+    assert commands == [
+        LocaleUploadCommand(content=LG_ENABLED_FILE, dest=LG_SPOOL),
+        LocaleInstallCommand(spool=LG_SPOOL, dest=LG_PATH),
+        LocaleGenCommand(locale=LG_LOCALE, present=True),
+    ]
+    assert ctx.reason == (
+        f"will enable {LG_LOCALE} in {LG_PATH}; "
+        "will regenerate the installed locales with locale-gen"
+    )
+
+
+async def test_locale_disable_plans_comment_out():
+    host = SimulatedHost(
+        name="h",
+        locales=["C.UTF-8", LG_LOCALE],
+        remote_files={LG_PATH: LG_ENABLED_FILE.encode()},
+    )
+    ctx, commands = await materialize(
+        host,
+        op(server.locale, name="Disable French", locale=LG_LOCALE, present=False, sudo=True),
+    )
+    assert ctx.changed
+    assert commands == [
+        LocaleUploadCommand(content=LG_FILE, dest=LG_SPOOL),
+        LocaleInstallCommand(spool=LG_SPOOL, dest=LG_PATH),
+        LocaleGenCommand(locale=LG_LOCALE, present=False),
+    ]
+    assert ctx.reason == (
+        f"will disable {LG_LOCALE} in {LG_PATH}; "
+        "will regenerate the installed locales with locale-gen"
+    )
+
+
+async def test_locale_noop_when_already_enabled_or_disabled():
+    # The fact-level no-op: the Locales listing already agrees with the
+    # request, so nothing is planned even though the definition line's own
+    # state differs (pyinfra gates on locale -a, not on the file).
+    host = SimulatedHost(
+        name="h", locales=[LG_LOCALE], remote_files={LG_PATH: LG_FILE.encode()}
+    )
+    ctx, commands = await materialize(host, op(server.locale, locale=LG_LOCALE))
+    assert not ctx.changed
+    assert commands == []
+    assert ctx.reason == f"locale {LG_LOCALE} already enabled"
+    host2 = SimulatedHost(
+        name="h", locales=[], remote_files={LG_PATH: LG_ENABLED_FILE.encode()}
+    )
+    ctx2, commands2 = await materialize(
+        host2, op(server.locale, locale=LG_LOCALE, present=False)
+    )
+    assert not ctx2.changed
+    assert commands2 == []
+    assert ctx2.reason == f"locale {LG_LOCALE} already disabled"
+
+
+async def test_locale_missing_definition_raises_even_when_in_state():
+    # pyinfra's FindInFile read runs BEFORE the presence gate, so a missing
+    # definition raises even for an already-enabled request -- and an
+    # absent /etc/locale.gen (the RHEL-family case) reads as no matches.
+    host = SimulatedHost(name="h", locales=[LG_LOCALE], remote_files={})
+    with pytest.raises(OperationError, match="not found in /etc/locale.gen"):
+        await materialize(host, op(server.locale, locale=LG_LOCALE))
+    host2 = SimulatedHost(
+        name="h",
+        locales=[],
+        remote_files={LG_PATH: b"# fr_FR.UTF-8 UTF-8\nfr_FR.UTF-8 UTF-8\n"},
+    )
+    with pytest.raises(OperationError, match="Multiple locales matches"):
+        await materialize(host2, op(server.locale, locale=LG_LOCALE))
+
+
+async def test_locale_content_fixpoint_still_regenerates():
+    # The content-level no-op the in-place form could never reach: the
+    # definition line is already in the desired state, so only the
+    # regeneration is planned ("locale-gen is always executed").
+    host = SimulatedHost(
+        name="h", locales=[], remote_files={LG_PATH: LG_ENABLED_FILE.encode()}
+    )
+    ctx, commands = await materialize(host, op(server.locale, locale=LG_LOCALE))
+    assert ctx.changed
+    assert commands == [LocaleGenCommand(locale=LG_LOCALE, present=True)]
+    assert ctx.reason == (
+        f"{LG_LOCALE} definition line already uncommented in {LG_PATH}; "
+        "will regenerate the installed locales with locale-gen"
+    )
+    # Disable direction: commented line while the archive still lists it.
+    host2 = SimulatedHost(
+        name="h", locales=[LG_LOCALE], remote_files={LG_PATH: LG_FILE.encode()}
+    )
+    ctx2, commands2 = await materialize(
+        host2, op(server.locale, locale=LG_LOCALE, present=False)
+    )
+    assert ctx2.changed
+    assert commands2 == [LocaleGenCommand(locale=LG_LOCALE, present=False)]
+    assert ctx2.reason == (
+        f"{LG_LOCALE} definition line already commented in {LG_PATH}; "
+        "will regenerate the installed locales with locale-gen"
+    )
+
+
+async def test_locale_upload_seam_writes_only_the_spool():
+    host = SimulatedHost(name="h")
+    await send_command(host, LocaleUploadCommand(content=LG_ENABLED_FILE, dest=LG_SPOOL))
+    assert host.remote_files == {LG_SPOOL: LG_ENABLED_FILE.encode()}
+    assert LG_PATH not in host.existing_files
+    assert LG_PATH not in host.file_stats
+
+
+async def test_locale_install_seam_moves_spool_and_refreshes_stats():
+    host = SimulatedHost(
+        name="h",
+        file_stats={LG_PATH: {"user": "root", "group": "root", "mode": 600}},
+    )
+    await send_command(host, LocaleUploadCommand(content=LG_FILE, dest=LG_SPOOL))
+    await send_command(host, LocaleInstallCommand(spool=LG_SPOOL, dest=LG_PATH))
+    # The spool is consumed; the dest holds the new bytes.
+    assert host.remote_files == {LG_PATH: LG_FILE.encode()}
+    assert LG_PATH in host.existing_files
+    # cp over an existing file preserves its owner; chmod 0644 + size refresh.
+    assert host.file_stats[LG_PATH] == {
+        "user": "root",
+        "group": "root",
+        "mode": 644,
+        "size": len(LG_FILE.encode()),
+    }
+    # Install without its spool changes nothing (the tolerance arm).
+    await send_command(host, LocaleInstallCommand(spool=LG_SPOOL, dest=LG_PATH))
+    assert host.remote_files == {LG_PATH: LG_FILE.encode()}
+
+
+async def test_locale_gen_seam_flips_the_locales_listing():
+    host = SimulatedHost(name="h", locales=["C.UTF-8"])
+    await send_command(host, LocaleGenCommand(locale=LG_LOCALE, present=True))
+    assert host.locales == ["C.UTF-8", LG_LOCALE]
+    # Content-based: a repeat regeneration never duplicates the name.
+    await send_command(host, LocaleGenCommand(locale=LG_LOCALE, present=True))
+    assert host.locales == ["C.UTF-8", LG_LOCALE]
+    await send_command(host, LocaleGenCommand(locale=LG_LOCALE, present=False))
+    assert host.locales == ["C.UTF-8"]
+
+
+def locale_deploy(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: enable one locale (elevated)."""
+    yield op(server.locale, name="Enable French", locale=LG_LOCALE, sudo=True)
+
+
+def locale_seed_factory(entry: dict) -> Host:
+    """A SimulatedHost with a Debian-style locale.gen and no French yet."""
+    host = SimulatedHost.from_inventory(entry)
+    host.locales = ["C.UTF-8"]
+    host.remote_files = {LG_PATH: LG_FILE.encode()}
+    return host
+
+
+async def test_locale_runs_across_hosts_in_lockstep():
+    hosts_by_name: dict[str, Host] = {}
+
+    def factory(entry: dict) -> Host:
+        host = locale_seed_factory(entry)
+        hosts_by_name[entry["host"]] = host
+        return host
+
+    plans, report, hosts = await run(INVENTORY, locale_deploy, host_factory=factory)
+    assert [p.changed for p in plans["web1"]] == [True]
+    assert [p.changed for p in plans["web2"]] == [True]
+    assert report is not None
+    assert [e.name for e in report.log] == ["Enable French", "Enable French"]
+    log = format_log(report)
+    # Two privilege levels in one request, one of each per host: the scp
+    # half stays unprivileged even under sudo=True, only the install shell
+    # and the regeneration elevate. The file text rides the scp payload,
+    # so it never appears in the shell log.
+    assert log.count(f"    $ scp <locale.gen> -> {LG_SPOOL}") == 2
+    install = LocaleInstallCommand(spool=LG_SPOOL, dest=LG_PATH)
+    assert log.count(f"    $ sudo {install.shell()}") == 2
+    assert log.count("$ sudo locale-gen") == 2
+    for host in hosts:
+        assert host.locales == ["C.UTF-8", LG_LOCALE]
+        assert host.remote_files[LG_PATH] == LG_ENABLED_FILE.encode()
+        assert LG_SPOOL not in host.remote_files
+    # Reusing the mutated hosts (not a fresh factory) proves the install
+    # left every seam coherent: the second run plans nothing.
+    plans2, _report2, _hosts2 = await run(
+        INVENTORY,
+        locale_deploy,
+        host_factory=lambda entry: hosts_by_name[entry["host"]],
+    )
+    assert [p.changed for p in plans2["web1"]] == [False]
+    assert [p.changed for p in plans2["web2"]] == [False]
+
+
+async def test_locale_repeat_request_is_noop_in_apply():
+    def twice(host: Host) -> Generator[OperationRequest]:
+        yield op(server.locale, name="Enable first", locale=LG_LOCALE, sudo=True)
+        yield op(server.locale, name="Enable again", locale=LG_LOCALE, sudo=True)
+
+    host = locale_seed_factory({"host": "h", "connection": {}})
+    runtimes, plans = await run_prepare([host], twice)
+    # Prepare shares one cache across the two requests and never sends, so
+    # both identical requests plan a change...
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # ...while the per-step cache recreation makes the second a no-op.
+    assert [e.changed for e in report.log] == [True, False]
+    assert host.locales == ["C.UTF-8", LG_LOCALE]
+
+
+async def test_locale_enable_then_disable_in_one_deploy():
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        yield op(server.locale, name="Enable", locale=LG_LOCALE, sudo=True)
+        yield op(
+            server.locale, name="Disable", locale=LG_LOCALE, present=False, sudo=True
+        )
+
+    host = locale_seed_factory({"host": "h", "connection": {}})
+    runtimes, plans = await run_prepare([host], deploy)
+    # Prepare shares one cache and never sends, so the disable still sees
+    # the pre-enable Locales listing and plans "already disabled"...
+    assert [p.changed for p in plans["h"]] == [True, False]
+    report = await run_apply(runtimes, plans=plans)
+    # ...while apply's per-step cache sees the enable's mutation and really
+    # round-trips: the disable comments the line the enable just
+    # uncommented, restoring the original text byte for byte.
+    assert [e.changed for e in report.log] == [True, True]
+    assert host.locales == ["C.UTF-8"]
+    assert host.remote_files[LG_PATH] == LG_FILE.encode()
+    assert LG_SPOOL not in host.remote_files
+
+
+async def test_locale_dry_run_sends_nothing():
+    _plans, report, hosts = await run(
+        INVENTORY, locale_deploy, host_factory=locale_seed_factory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert host.locales == ["C.UTF-8"]
+        assert host.remote_files == {LG_PATH: LG_FILE.encode()}
+        assert LG_PATH not in host.file_stats
+
+
+# --- server.security_limit ---------------------------------------------------
+
+# pyinfra's documented example ("Set nofile limit for all users") supplies
+# these fields; its own operation fixture appends root/hard/memlock/unlimited.
+SL_DOMAIN = "*"
+SL_TYPE = "soft"
+SL_ITEM = "nofile"
+SL_VALUE = 1024
+SL_PATH = "/etc/security/limits.conf"
+# The dest-derived spool and the install inner script -- the text inside the
+# ``sh -c '...'`` wrapper the install descriptor emits.
+SL_SPOOL = _security_limit_spool_path(SL_PATH)
+SL_INSTALL_INNER = (
+    f"mkdir -p /etc/security && cp {SL_SPOOL} {SL_PATH} && "
+    f"chmod 0644 {SL_PATH} && rm -f {SL_SPOOL}"
+)
+# A stock limits.conf: header comment plus a hard limit that never matches
+# the anchored soft/nofile/* pattern, so the desired line appends.
+SL_FILE = "# /etc/security/limits.conf\nroot hard nofile 65535\n"
+SL_LINE = "*\tsoft\tnofile\t1024\n"
+SL_DESIRED = SL_FILE + SL_LINE
+
+
+def test_security_limit_edit_matches_the_pyinfra_memlock_fixture():
+    # pyinfra's own operation fixture: domain root, type hard, item memlock,
+    # value "unlimited" (a string, as in the fixture), no matching line ->
+    # the tab-formatted append. An absent file (None) reads as empty too.
+    assert _security_limit_edit("", "root", "hard", "memlock", "unlimited") == (
+        "root\thard\tmemlock\tunlimited\n"
+    )
+    assert _security_limit_edit(None, SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE) == SL_LINE
+
+
+def test_security_limit_edit_appends_when_nothing_matches():
+    assert _security_limit_edit(SL_FILE, SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE) == (
+        SL_DESIRED
+    )
+    # Untouched lines, comments and their order survive; a repeat
+    # application is a fixpoint.
+    assert _security_limit_edit(SL_DESIRED, SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE) == (
+        SL_DESIRED
+    )
+
+
+def test_security_limit_edit_normalizes_stale_and_valueless_lines():
+    # The value is NOT part of the pattern (pyinfra parity): a stale value
+    # line MATCHES and is replaced wholesale, not kept beside an append...
+    assert _security_limit_edit(
+        "* soft nofile 65535\n", SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE
+    ) == SL_LINE
+    # ...and the ``.*$`` tail means a line without a value still matches.
+    assert _security_limit_edit(
+        "*   soft\tnofile\n", SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE
+    ) == SL_LINE
+    # pyinfra's sed replaces ALL matching lines, not just the first.
+    current = "* soft nofile 65535\n*\tsoft\tnofile\t999\n"
+    assert _security_limit_edit(current, SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE) == (
+        "*\tsoft\tnofile\t1024\n*\tsoft\tnofile\t1024\n"
+    )
+
+
+def test_security_limit_edit_anchor_and_escape_boundaries():
+    # The anchored pattern does not match a commented-out line; pyinfra
+    # appends beside it.
+    assert _security_limit_edit(
+        "# * soft nofile 1024\n", SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE
+    ) == ("# * soft nofile 1024\n" + SL_LINE)
+    # The domain is part of the pattern: another domain's line survives.
+    assert _security_limit_edit(
+        "root\tsoft\tnofile\t1024\n", SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE
+    ) == ("root\tsoft\tnofile\t1024\n" + SL_LINE)
+    # pyinfra's ``.*$`` tail: an item prefix (nofilex) matches too.
+    assert _security_limit_edit(
+        "* soft nofilex 5\n", SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE
+    ) == SL_LINE
+    # The documented hardening: re.escape keeps the ``*`` domain literal,
+    # where pyinfra's raw BRE interpolation makes it a quantifier -- the
+    # near-miss line survives and the exact line appends.
+    assert _security_limit_edit(
+        ". soft nofile 5\n", SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE
+    ) == (". soft nofile 5\n" + SL_LINE)
+
+
+def test_security_limit_edit_fixpoint_and_trailing_newline():
+    # The result always ends in one trailing newline, so a file missing its
+    # final newline is rewritten once even when the line itself is correct.
+    once = _security_limit_edit(
+        SL_DESIRED.rstrip("\n"), SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE
+    )
+    assert once == SL_DESIRED
+    assert _security_limit_edit(once, SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE) == once
+
+
+def test_security_limit_upload_command_rendering():
+    upload = SecurityLimitUploadCommand(content=SL_DESIRED, dest=SL_SPOOL)
+    # The transfer is a non-shell descriptor: its loggable form is __str__,
+    # and command_shell never prefixes it with sudo/su -- transfers ride the
+    # login user's scp channel regardless of the request's elevation.
+    assert str(upload) == f"scp <limits.conf> -> {SL_SPOOL}"
+    assert command_shell(upload, sudo=True) == f"scp <limits.conf> -> {SL_SPOOL}"
+    assert command_shell(upload, su=True) == f"scp <limits.conf> -> {SL_SPOOL}"
+    # The content field is a plain str: hashable and value-equal across the
+    # prepare/apply phases (the determinism guard compares descriptors).
+    assert hash(upload) == hash(SecurityLimitUploadCommand(content=SL_DESIRED, dest=SL_SPOOL))
+
+
+def test_security_limit_install_command_shell_rendering():
+    install = SecurityLimitInstallCommand(spool=SL_SPOOL, dest=SL_PATH)
+    assert install.shell() == f"sh -c {shlex.quote(SL_INSTALL_INNER)}"
+    # Sudo elevates the whole sh -c, so every step of the && chain -- cp,
+    # chmod and the spool cleanup -- runs as the elevated shell.
+    assert command_shell(install, sudo=True) == f"sudo {install.shell()}"
+    assert command_shell(install, su=True) == f"su -c {shlex.quote(install.shell())}"
+    # Quoting proof: a space in the DIRECTORY (shlex.quote leaves space-free
+    # paths bare). Recover the inner script with shlex.split, never a raw
+    # substring of the quoted text.
+    path = "/etc dir/limits conf"
+    spool = _security_limit_spool_path(path)
+    inner = shlex.split(SecurityLimitInstallCommand(spool=spool, dest=path).shell())[2]
+    assert inner.startswith("mkdir -p '/etc dir' && ")
+    assert inner.endswith(f"&& rm -f {spool}")
+
+
+def test_security_limit_spool_path_is_dest_derived_and_deterministic():
+    # Same dest -> same spool in both phases; different dest -> different
+    # spool, and the name keeps the family prefix.
+    assert _security_limit_spool_path(SL_PATH) == SL_SPOOL
+    assert _security_limit_spool_path(SL_PATH) == _security_limit_spool_path(SL_PATH)
+    assert _security_limit_spool_path("/etc/security/limits.conf.custom") != SL_SPOOL
+    digest = hashlib.sha1(SL_PATH.encode()).hexdigest()[:16]
+    assert SL_SPOOL == f"/tmp/reemote5-server-security-limit-{digest}"
+
+
+async def test_security_limit_appends_and_plans_the_pair():
+    host = SimulatedHost(name="h", remote_files={SL_PATH: SL_FILE.encode()})
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.security_limit,
+            name="Set nofile limit for all users",
+            domain=SL_DOMAIN,
+            limit_type=SL_TYPE,
+            item=SL_ITEM,
+            value=SL_VALUE,
+            sudo=True,
+        ),
+    )
+    assert ctx.changed
+    assert commands == [
+        SecurityLimitUploadCommand(content=SL_DESIRED, dest=SL_SPOOL),
+        SecurityLimitInstallCommand(spool=SL_SPOOL, dest=SL_PATH),
+    ]
+    assert ctx.reason == (
+        f"security limit {SL_DOMAIN} {SL_TYPE} {SL_ITEM} "
+        f"will be set to {SL_VALUE} in {SL_PATH}"
+    )
+
+
+async def test_security_limit_creates_an_absent_file():
+    # pyinfra's echo append creates the file; None content reads as empty.
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.security_limit,
+            domain=SL_DOMAIN,
+            limit_type=SL_TYPE,
+            item=SL_ITEM,
+            value=SL_VALUE,
+        ),
+    )
+    assert ctx.changed
+    assert commands == [
+        SecurityLimitUploadCommand(content=SL_LINE, dest=SL_SPOOL),
+        SecurityLimitInstallCommand(spool=SL_SPOOL, dest=SL_PATH),
+    ]
+
+
+async def test_security_limit_noop_when_the_line_is_already_set():
+    # The content-level fixpoint -- pyinfra's files.line no-op when a
+    # matching line already reads exactly the replacement.
+    host = SimulatedHost(name="h", remote_files={SL_PATH: SL_DESIRED.encode()})
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.security_limit,
+            domain=SL_DOMAIN,
+            limit_type=SL_TYPE,
+            item=SL_ITEM,
+            value=SL_VALUE,
+        ),
+    )
+    assert not ctx.changed
+    assert commands == []
+    assert ctx.reason == (
+        f"security limit {SL_DOMAIN} {SL_TYPE} {SL_ITEM} "
+        f"already set to {SL_VALUE} in {SL_PATH}"
+    )
+
+
+async def test_security_limit_normalizes_a_stale_value():
+    # The value is not in the pattern: a stale matching line is rewritten
+    # in place through the same spool pair, not appended beside.
+    host = SimulatedHost(name="h", remote_files={SL_PATH: b"* soft nofile 65535\n"})
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.security_limit,
+            domain=SL_DOMAIN,
+            limit_type=SL_TYPE,
+            item=SL_ITEM,
+            value=SL_VALUE,
+        ),
+    )
+    assert ctx.changed
+    assert commands == [
+        SecurityLimitUploadCommand(content=SL_LINE, dest=SL_SPOOL),
+        SecurityLimitInstallCommand(spool=SL_SPOOL, dest=SL_PATH),
+    ]
+
+
+async def test_security_limit_rewrites_once_for_the_missing_newline():
+    # The documented deviation: the desired content always ends in one
+    # trailing newline, so a correct line in a newline-less file is still
+    # rewritten once -- and the second pass is the fixpoint no-op.
+    host = SimulatedHost(
+        name="h", remote_files={SL_PATH: SL_DESIRED.rstrip("\n").encode()}
+    )
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.security_limit,
+            domain=SL_DOMAIN,
+            limit_type=SL_TYPE,
+            item=SL_ITEM,
+            value=SL_VALUE,
+        ),
+    )
+    assert ctx.changed
+    assert commands[0] == SecurityLimitUploadCommand(content=SL_DESIRED, dest=SL_SPOOL)
+
+
+async def test_security_limit_absorbs_unknown_kwargs():
+    # ``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    # strips name/sudo/su, the rest is ignored.
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.security_limit,
+            domain=SL_DOMAIN,
+            limit_type=SL_TYPE,
+            item=SL_ITEM,
+            value=SL_VALUE,
+            future_flag=True,
+        ),
+    )
+    assert ctx.changed
+    assert commands[0] == SecurityLimitUploadCommand(content=SL_LINE, dest=SL_SPOOL)
+
+
+async def test_security_limit_reads_the_fact_over_the_real_transport():
+    # The seam short-circuit means the rest of the suite never executes the
+    # marker parse: feed the real test -e/marker/cat stdout through a canned
+    # host and assert the operation reads exactly AuthorizedKeysFile's
+    # command for the fixed limits path.
+    host = CannedShellHost(f"{AuthorizedKeysFile.MARKER}\n{SL_FILE}")
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.security_limit,
+            domain=SL_DOMAIN,
+            limit_type=SL_TYPE,
+            item=SL_ITEM,
+            value=SL_VALUE,
+        ),
+    )
+    assert ctx.changed
+    assert commands[0] == SecurityLimitUploadCommand(content=SL_DESIRED, dest=SL_SPOOL)
+    assert host.shells == [AuthorizedKeysFile.command(SL_PATH)]
+    # No marker on stdout: the file is absent (None), so the line is created.
+    absent = CannedShellHost("")
+    ctx2, commands2 = await materialize(
+        absent,
+        op(
+            server.security_limit,
+            domain=SL_DOMAIN,
+            limit_type=SL_TYPE,
+            item=SL_ITEM,
+            value=SL_VALUE,
+        ),
+    )
+    assert ctx2.changed
+    assert commands2[0] == SecurityLimitUploadCommand(content=SL_LINE, dest=SL_SPOOL)
+
+
+async def test_security_limit_upload_seam_writes_only_the_spool():
+    host = SimulatedHost(name="h")
+    await send_command(
+        host, SecurityLimitUploadCommand(content=SL_DESIRED, dest=SL_SPOOL)
+    )
+    assert host.remote_files == {SL_SPOOL: SL_DESIRED.encode()}
+    assert SL_PATH not in host.existing_files
+    assert SL_PATH not in host.file_stats
+
+
+async def test_security_limit_install_seam_moves_spool_and_refreshes_stats():
+    host = SimulatedHost(
+        name="h",
+        file_stats={SL_PATH: {"user": "root", "group": "root", "mode": 600}},
+        remote_files={SL_PATH: SL_FILE.encode()},
+    )
+    await send_command(
+        host, SecurityLimitUploadCommand(content=SL_DESIRED, dest=SL_SPOOL)
+    )
+    await send_command(host, SecurityLimitInstallCommand(spool=SL_SPOOL, dest=SL_PATH))
+    # The spool is consumed; the dest holds the new bytes.
+    assert host.remote_files == {SL_PATH: SL_DESIRED.encode()}
+    assert SL_PATH in host.existing_files
+    # cp over an existing file preserves its owner; chmod 0644 + size refresh.
+    assert host.file_stats[SL_PATH] == {
+        "user": "root",
+        "group": "root",
+        "mode": 644,
+        "size": len(SL_DESIRED.encode()),
+    }
+    # Content-based: a repeat upload+install never duplicates the line.
+    await send_command(
+        host, SecurityLimitUploadCommand(content=SL_DESIRED, dest=SL_SPOOL)
+    )
+    await send_command(host, SecurityLimitInstallCommand(spool=SL_SPOOL, dest=SL_PATH))
+    assert host.remote_files == {SL_PATH: SL_DESIRED.encode()}
+    # Install without its spool changes nothing (the tolerance arm).
+    await send_command(host, SecurityLimitInstallCommand(spool=SL_SPOOL, dest=SL_PATH))
+    assert host.remote_files == {SL_PATH: SL_DESIRED.encode()}
+
+
+async def test_security_limit_install_seam_without_prior_stats_seeds_root_row():
+    # Descriptor-only install against a fresh host: a minimal root-owned
+    # mode-644 row (the file the elevated cp created).
+    host = SimulatedHost(name="h")
+    await send_command(host, SecurityLimitUploadCommand(content=SL_LINE, dest=SL_SPOOL))
+    await send_command(host, SecurityLimitInstallCommand(spool=SL_SPOOL, dest=SL_PATH))
+    assert host.file_stats[SL_PATH] == {
+        "user": "root",
+        "group": "root",
+        "mode": 644,
+        "size": len(SL_LINE.encode()),
+    }
+    assert SL_PATH in host.existing_files
+
+
+def security_limit_deploy(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: set the nofile limit for all users (elevated)."""
+    yield op(
+        server.security_limit,
+        name="Set nofile limit for all users",
+        domain=SL_DOMAIN,
+        limit_type=SL_TYPE,
+        item=SL_ITEM,
+        value=SL_VALUE,
+        sudo=True,
+    )
+
+
+def security_limit_seed_factory(entry: dict) -> Host:
+    """A SimulatedHost with a stock limits.conf and no wildcard limit yet."""
+    host = SimulatedHost.from_inventory(entry)
+    host.remote_files = {SL_PATH: SL_FILE.encode()}
+    return host
+
+
+async def test_security_limit_runs_across_hosts_in_lockstep():
+    hosts_by_name: dict[str, Host] = {}
+
+    def factory(entry: dict) -> Host:
+        host = security_limit_seed_factory(entry)
+        hosts_by_name[entry["host"]] = host
+        return host
+
+    plans, report, hosts = await run(
+        INVENTORY, security_limit_deploy, host_factory=factory
+    )
+    assert [p.changed for p in plans["web1"]] == [True]
+    assert [p.changed for p in plans["web2"]] == [True]
+    assert report is not None
+    assert [e.name for e in report.log] == [
+        "Set nofile limit for all users",
+        "Set nofile limit for all users",
+    ]
+    log = format_log(report)
+    # Two privilege levels in one request, one of each per host: the scp
+    # half stays unprivileged even under sudo=True, only the install shell
+    # elevates. The file text rides the scp payload, so it never appears in
+    # the shell log.
+    assert log.count(f"    $ scp <limits.conf> -> {SL_SPOOL}") == 2
+    install = SecurityLimitInstallCommand(spool=SL_SPOOL, dest=SL_PATH)
+    assert log.count(f"    $ sudo {install.shell()}") == 2
+    for host in hosts:
+        assert host.remote_files[SL_PATH] == SL_DESIRED.encode()
+        assert SL_SPOOL not in host.remote_files
+    # Reusing the mutated hosts (not a fresh factory) proves the install
+    # left every seam coherent: the second run plans nothing.
+    plans2, _report2, _hosts2 = await run(
+        INVENTORY,
+        security_limit_deploy,
+        host_factory=lambda entry: hosts_by_name[entry["host"]],
+    )
+    assert [p.changed for p in plans2["web1"]] == [False]
+    assert [p.changed for p in plans2["web2"]] == [False]
+
+
+async def test_security_limit_repeat_request_is_noop_in_apply():
+    def twice(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.security_limit,
+            name="Set first",
+            domain=SL_DOMAIN,
+            limit_type=SL_TYPE,
+            item=SL_ITEM,
+            value=SL_VALUE,
+            sudo=True,
+        )
+        yield op(
+            server.security_limit,
+            name="Set again",
+            domain=SL_DOMAIN,
+            limit_type=SL_TYPE,
+            item=SL_ITEM,
+            value=SL_VALUE,
+            sudo=True,
+        )
+
+    host = security_limit_seed_factory({"host": "h", "connection": {}})
+    runtimes, plans = await run_prepare([host], twice)
+    # Prepare shares one cache across the two requests and never sends, so
+    # both identical requests plan a change...
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # ...while the per-step cache recreation makes the second a no-op.
+    assert [e.changed for e in report.log] == [True, False]
+    assert host.remote_files[SL_PATH] == SL_DESIRED.encode()
+
+
+async def test_security_limit_set_then_change_value_in_one_deploy():
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.security_limit,
+            name="Set 1024",
+            domain=SL_DOMAIN,
+            limit_type=SL_TYPE,
+            item=SL_ITEM,
+            value=SL_VALUE,
+            sudo=True,
+        )
+        yield op(
+            server.security_limit,
+            name="Raise to 2048",
+            domain=SL_DOMAIN,
+            limit_type=SL_TYPE,
+            item=SL_ITEM,
+            value=2048,
+            sudo=True,
+        )
+
+    host = security_limit_seed_factory({"host": "h", "connection": {}})
+    runtimes, plans = await run_prepare([host], deploy)
+    # Prepare shares one cache and never sends, so both requests see the
+    # stock file and plan a change...
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # ...while apply's per-step cache sees the first install and really
+    # normalizes the just-written line to the new value (the value is not
+    # part of the match pattern).
+    assert [e.changed for e in report.log] == [True, True]
+    assert host.remote_files[SL_PATH] == (SL_FILE + "*\tsoft\tnofile\t2048\n").encode()
+    assert SL_SPOOL not in host.remote_files
+
+
+async def test_security_limit_dry_run_sends_nothing():
+    _plans, report, hosts = await run(
+        INVENTORY, security_limit_deploy, host_factory=security_limit_seed_factory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert host.remote_files == {SL_PATH: SL_FILE.encode()}
+        assert SL_PATH not in host.file_stats
 

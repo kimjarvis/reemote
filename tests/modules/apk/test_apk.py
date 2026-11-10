@@ -69,16 +69,19 @@ the holds untouched), and end-to-end through ``run_prepare`` + ``run_apply``
 (purge-then-noop, and a dry run).
 
 The ``apk.repository`` operation -- a reemote5 original modeled on
-``apt.repo`` (pyinfra's apk namespace ships no repository operation) -- is
-exercised over its ``ApkRepoAddCommand`` / ``ApkRepoRemoveCommand``
-descriptors' echo-append and sed-delete rendering and elevation, its
-entry-level idempotence against ``ApkRepositories`` in both directions
-(a tagged ``@testing URL`` line and the bare URL are distinct repositories),
-the strict ``ValueError`` on an unparseable line, the ``**kwargs``
-absorption, the ``SimulatedHost`` seam dispatch (including the sed's
-contains-match dropping a tagged variant of a removed bare URL), and
-end-to-end through ``run_prepare`` + ``run_apply`` (add-then-noop under
-``doas``, an add-then-remove cycle, and a dry run).
+``apt.repo`` (pyinfra's apk namespace ships no repository operation), a member
+of the spool-and-install write family -- is exercised over the
+``ApkRepoUploadCommand``/``ApkRepoInstallCommand`` pair (the unprivileged scp of
+the transformed text to the ``/tmp`` spool and the elevated ``sh -c`` install,
+the spool name derived from the managed path), the ``ApkRepositoriesFile``
+raw-content fact on both transports, the two pure content transforms,
+entry-level idempotence against ``ApkRepositories`` in both directions (a tagged
+``@testing URL`` line and the bare URL are distinct repositories) plus the two
+content-level no-ops, the strict ``ValueError`` on an unparseable line, the
+``**kwargs`` absorption, the ``SimulatedHost`` seam dispatch (spool then
+install), and end-to-end through ``run_prepare`` + ``run_apply``
+(add-then-noop under ``doas``, a repeat add, an add-then-remove cycle, and a dry
+run).
 
 ``asyncio_mode = "auto"`` lets the async tests below run without decorators.
 """
@@ -112,12 +115,16 @@ from reemote5.modules.apk.apk import (
     ApkPackageVersion,
     ApkPurgeCommand,
     ApkRemoveCommand,
-    ApkRepoAddCommand,
-    ApkRepoRemoveCommand,
+    ApkRepoInstallCommand,
     ApkRepositories,
+    ApkRepositoriesFile,
     ApkRepository,
+    ApkRepoUploadCommand,
     ApkUpgradeCommand,
     ApkVirtualCommand,
+    _add_repo_line,
+    _remove_repo_line,
+    _repo_spool_path,
 )
 from tests.simulated_host import SimulatedHost
 
@@ -2403,59 +2410,163 @@ COMMUNITY_URL = "https://dl-cdn.alpinelinux.org/alpine/v3.19/community"
 TESTING_URL = "https://dl-cdn.alpinelinux.org/alpine/edge/testing"
 TESTING_LINE = f"@testing {TESTING_URL}"
 REPOS_PATH = ApkRepositories.PATH
+# The spool path apk.repository uploads to, derived from the managed file --
+# the tests spell the same call the operation makes, so both name it alike.
+REPO_SPOOL = _repo_spool_path(REPOS_PATH)
+# The install's inner script: create /etc/apk, overlay the protected file with
+# the spooled text, reset apk's mode to 644, drop the spool.
+REPO_INSTALL_INNER = (
+    f"mkdir -p /etc/apk && cp {REPO_SPOOL} {REPOS_PATH} && "
+    f"chmod 0644 {REPOS_PATH} && rm -f {REPO_SPOOL}"
+)
 
 
-def test_apk_repo_add_command_renders_the_echo_append():
-    """The append is wrapped in ``sh -c`` so the ``>>`` redirect happens
-    inside the elevated shell, not as the login user."""
-    cmd = ApkRepoAddCommand(path=REPOS_PATH, line=COMMUNITY_URL)
-    assert cmd.shell() == (
-        f"sh -c 'echo {COMMUNITY_URL} >> {REPOS_PATH}'"
+def test_apk_repo_descriptors_render_the_spool_and_install_pair():
+    """The write is the family ``apt.repo`` shows: an unprivileged scp of the
+    transformed text to the ``/tmp`` spool, then the elevated ``sh -c`` install
+    overlaying the protected file. The ``echo >>`` append and the ``sed -i``
+    delete the in-place form rendered are gone with the conversion."""
+    upload = ApkRepoUploadCommand(content=f"{COMMUNITY_URL}\n", dest=REPO_SPOOL)
+    assert str(upload) == f"scp <apk repositories> -> {REPO_SPOOL}"
+    # Transfers ride the connection's scp channel as the login user, so no
+    # escalator ever prefixes the scp line.
+    assert command_shell(upload) == f"scp <apk repositories> -> {REPO_SPOOL}"
+    assert command_shell(upload, sudo=True) == f"scp <apk repositories> -> {REPO_SPOOL}"
+    assert command_shell(upload, doas=True) == f"scp <apk repositories> -> {REPO_SPOOL}"
+    install = ApkRepoInstallCommand(spool=REPO_SPOOL, dest=REPOS_PATH)
+    # The outer shlex quoting escapes the inner script, so assert on the
+    # recovered script, never a raw substring.
+    assert install.shell() == f"sh -c {shlex.quote(REPO_INSTALL_INNER)}"
+    assert shlex.split(install.shell())[2] == REPO_INSTALL_INNER
+    # Elevation covers the whole wrapper, and so every step of the ``&&`` chain
+    # inside it (a bare prefix would root only the ``mkdir`` and leave the
+    # cleanup unprivileged). Stock Alpine ships no sudo, hence ``doas``.
+    assert command_shell(install, doas=True) == f"doas -n {install.shell()}"
+    assert command_shell(install, sudo=True) == f"sudo {install.shell()}"
+    assert command_shell(install, su=True) == f"su -c {shlex.quote(install.shell())}"
+
+
+def test_apk_repo_spool_path_is_deterministic_per_dest():
+    """The spool name is derived from the managed file's sha1: the same dest
+    always maps to the same name (both deploy phases agree), a different dest
+    never shares another's spool, and every path the install touches is
+    quoted."""
+    path = "/etc/apk repos/wei rd"
+    spool = _repo_spool_path(path)
+    assert spool == _repo_spool_path(path)
+    assert spool.startswith("/tmp/reemote5-apk-repo-")
+    assert spool != REPO_SPOOL
+    inner = shlex.split(ApkRepoInstallCommand(spool=spool, dest=path).shell())[2]
+    assert inner.startswith("mkdir -p '/etc/apk repos' && ")
+    assert f"cp {shlex.quote(spool)} {shlex.quote(path)} && " in inner
+    assert f"chmod 0644 {shlex.quote(path)} && rm -f {shlex.quote(spool)}" in inner
+
+
+# --- apk.repository: the raw-content fact --------------------------------------
+
+# One repositories file holding each shape the fact must report verbatim: a
+# comment, a bare URL and a tagged line.
+REPOS_CONTENT = f"# Alpine repositories\n{MAIN_URL}\n{TESTING_LINE}\n"
+
+
+async def test_apk_repositories_file_fact_reads_the_simulated_seam():
+    """A SimulatedHost holds the file's bytes in ``remote_files``; the fact
+    decodes them back verbatim -- comment, blank lines and tagged line
+    included, none of which ``ApkRepositories`` reports -- and an absent path
+    reads as None."""
+    host = SimulatedHost(
+        name="h", remote_files={REPOS_PATH: REPOS_CONTENT.encode()}
     )
+    assert await ApkRepositoriesFile.process(host, REPOS_PATH) == REPOS_CONTENT
+    assert await ApkRepositoriesFile.process(host, "/etc/apk/absent") is None
 
 
-def test_apk_repo_add_command_quotes_a_tagged_line_as_one_token():
-    """An ``@tag URL`` line carries a space, so it is quoted into one echo
-    argument -- the file receives the line literally."""
-    cmd = ApkRepoAddCommand(path=REPOS_PATH, line=TESTING_LINE)
-    tokens = shlex.split(cmd.shell())
-    assert tokens[:2] == ["sh", "-c"]
-    assert shlex.split(tokens[2]) == ["echo", TESTING_LINE, ">>", REPOS_PATH]
+async def test_apk_repositories_file_fact_strips_the_real_transport_marker():
+    """Over the real transport the fact strips the marker line and returns the
+    file content verbatim, having run only its own guarded command."""
+    host = CannedShellHost(f"{ApkRepositoriesFile.MARKER}\n{REPOS_CONTENT}")
+    assert await ApkRepositoriesFile.process(host, REPOS_PATH) == REPOS_CONTENT
+    assert host.last_shell == ApkRepositoriesFile.command(REPOS_PATH)
 
 
-def test_apk_repo_add_command_is_elevated_by_doas():
-    """Writing the root-owned repositories file needs root; ``doas=True``
-    (stock Alpine ships no sudo) prefixes the whole ``sh -c`` wrapper, so
-    the redirect runs elevated too."""
-    cmd = ApkRepoAddCommand(path=REPOS_PATH, line=COMMUNITY_URL)
-    assert command_shell(cmd, doas=True) == f"doas -n {cmd.shell()}"
-    assert command_shell(cmd, sudo=True) == f"sudo {cmd.shell()}"
+async def test_apk_repositories_file_fact_absent_without_the_marker():
+    """A missing file prints nothing at all (not even the marker), so the fact
+    reports None rather than empty content -- the distinction the operation's
+    add direction relies on to avoid spooling a needless rewrite."""
+    host = CannedShellHost("")
+    assert await ApkRepositoriesFile.process(host, REPOS_PATH) is None
 
 
-def test_apk_repo_remove_command_renders_the_escaped_sed_delete():
-    """The sed script is the anchored whole-line pattern with every regex
-    metacharacter escaped and ``/`` escaped for the script delimiter."""
-    cmd = ApkRepoRemoveCommand(path=REPOS_PATH, line=MAIN_URL)
-    tokens = shlex.split(cmd.shell())
-    assert tokens[:2] == ["sed", "-i"]
-    assert tokens[3] == REPOS_PATH
-    assert tokens[2] == (
-        r"/^.*https:\/\/dl\-cdn\.alpinelinux\.org\/alpine\/v3\.19\/main.*$/d"
+async def test_apk_repositories_file_fact_present_but_empty_returns_empty_string():
+    """An existing empty file leads with the marker and no content, so the fact
+    returns ``""`` (not None), distinguishing it from an absent file -- what
+    lets a removal see an empty leftover as needing no write."""
+    host = CannedShellHost(f"{ApkRepositoriesFile.MARKER}\n")
+    assert await ApkRepositoriesFile.process(host, REPOS_PATH) == ""
+
+
+def test_apk_repositories_file_fact_command_guards_on_existence():
+    """The real-transport command cats the file only behind a ``test -e`` guard
+    and leads with the marker, so absence is distinguishable from empty
+    (``AptSourcesFile.command``'s form). Unlike ``ApkRepositories.COMMAND`` it
+    needs no ``|| true``, and every path is shell-quoted."""
+    command = ApkRepositoriesFile.command(REPOS_PATH)
+    assert command.startswith(f"test -e {REPOS_PATH}")
+    assert ApkRepositoriesFile.MARKER in command
+    assert f"cat -- {REPOS_PATH}" in command
+    assert "|| true" not in command
+    quoted = ApkRepositoriesFile.command("/etc/apk/repo si")
+    assert "test -e '/etc/apk/repo si'" in quoted
+    assert "cat -- '/etc/apk/repo si'" in quoted
+
+
+# --- apk.repository: the pure content transforms -------------------------------
+
+
+def test_apk_repo_add_transform_is_pure_and_idempotent():
+    """``_add_repo_line`` appends exactly once: an absent file becomes the
+    single line, a file whose text already carries a matching line comes back
+    verbatim (the shared contains-match semantics -- a comment naming the URL
+    counts), and re-applying the transform to its own result changes nothing."""
+    assert _add_repo_line(None, COMMUNITY_URL) == f"{COMMUNITY_URL}\n"
+    assert _add_repo_line("", COMMUNITY_URL) == f"{COMMUNITY_URL}\n"
+    new = _add_repo_line(f"{MAIN_URL}\n", COMMUNITY_URL)
+    assert new == f"{MAIN_URL}\n{COMMUNITY_URL}\n"
+    assert _add_repo_line(new, COMMUNITY_URL) == new
+    assert _add_repo_line(f"{MAIN_URL}\n{COMMUNITY_URL} # partner\n", COMMUNITY_URL) == (
+        f"{MAIN_URL}\n{COMMUNITY_URL} # partner\n"
     )
+    # Content with no trailing newline gains its separator before the line.
+    assert _add_repo_line("# note", COMMUNITY_URL) == f"# note\n{COMMUNITY_URL}\n"
 
 
-def test_apk_repo_remove_command_is_elevated_by_doas():
-    cmd = ApkRepoRemoveCommand(path=REPOS_PATH, line=COMMUNITY_URL)
-    assert command_shell(cmd, doas=True) == f"doas -n {cmd.shell()}"
-    assert command_shell(cmd, su=True) == f"su -c {shlex.quote(cmd.shell())}"
+def test_apk_repo_remove_transform_keeps_other_lines():
+    """``_remove_repo_line`` deletes exactly the lines the append would have
+    skipped (the same anchored, escaped pattern), keeps the rest of the file
+    and its newline style, and is a fixpoint on an absent or unmatched file.
+    The contains match is the sed caveat carried over: removing a bare URL
+    also drops a tagged line carrying it."""
+    assert _remove_repo_line(
+        f"{MAIN_URL}\n{COMMUNITY_URL} # partner\n", COMMUNITY_URL
+    ) == f"{MAIN_URL}\n"
+    # Deleting the only line leaves an empty file, not a lone newline.
+    assert _remove_repo_line(f"{COMMUNITY_URL}\n", COMMUNITY_URL) == ""
+    assert _remove_repo_line(None, COMMUNITY_URL) == ""
+    assert _remove_repo_line("", COMMUNITY_URL) == ""
+    assert _remove_repo_line(f"{MAIN_URL}\n", COMMUNITY_URL) == f"{MAIN_URL}\n"
+    # A file with no trailing newline stays without one.
+    assert _remove_repo_line(f"{MAIN_URL}\n{COMMUNITY_URL}", COMMUNITY_URL) == MAIN_URL
+    # ... and the tagged variant of a removed bare URL goes with it.
+    assert _remove_repo_line(f"{TESTING_LINE}\n", TESTING_URL) == ""
 
 
 # --- apk.repository: idempotence (entry-level presence) ------------------------
 
 
 async def test_apk_repository_adds_an_absent_line():
-    """Absent and wanted yields one append, with ``apt.repo``'s reason
-    wording naming the file."""
+    """Absent and wanted yields the spool/install pair, with ``apt.repo``'s
+    reason wording naming the file, and the spooled text is the line alone
+    (the host has no repositories file yet)."""
     host = SimulatedHost(name="h", apk_repositories=[_repository(MAIN_URL)])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apk.repository(ctx, src=COMMUNITY_URL)]
@@ -2463,7 +2574,30 @@ async def test_apk_repository_adds_an_absent_line():
     assert ctx.reason == (
         f'apk repo "{COMMUNITY_URL}" missing, will be added to {REPOS_PATH}'
     )
-    assert commands == [ApkRepoAddCommand(path=REPOS_PATH, line=COMMUNITY_URL)]
+    assert commands == [
+        ApkRepoUploadCommand(content=f"{COMMUNITY_URL}\n", dest=REPO_SPOOL),
+        ApkRepoInstallCommand(spool=REPO_SPOOL, dest=REPOS_PATH),
+    ]
+
+
+async def test_apk_repository_add_preserves_the_rest_of_the_file():
+    """The spooled content is the managed file's own text with the line
+    appended -- the comment and the tagged line survive verbatim, which is
+    what the spool-and-install family buys over a rebuilt file and what
+    ``ApkRepositories`` alone could never hand back."""
+    current = f"# Alpine repositories\n{MAIN_URL}\n{TESTING_LINE}\n"
+    host = SimulatedHost(
+        name="h",
+        apk_repositories=[_repository(MAIN_URL), _repository(TESTING_URL, "testing")],
+        remote_files={REPOS_PATH: current.encode()},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apk.repository(ctx, src=COMMUNITY_URL)]
+    assert ctx.changed
+    assert commands == [
+        ApkRepoUploadCommand(content=f"{current}{COMMUNITY_URL}\n", dest=REPO_SPOOL),
+        ApkRepoInstallCommand(spool=REPO_SPOOL, dest=REPOS_PATH),
+    ]
 
 
 async def test_apk_repository_add_noop_when_present():
@@ -2478,14 +2612,24 @@ async def test_apk_repository_add_noop_when_present():
 
 
 async def test_apk_repository_removes_a_present_line():
-    host = SimulatedHost(name="h", apk_repositories=[_repository(COMMUNITY_URL)])
+    """A configured repository with present=False spools the file's text minus
+    the matching line -- the other repository's line survives -- then installs
+    it over the protected file."""
+    host = SimulatedHost(
+        name="h",
+        apk_repositories=[_repository(MAIN_URL), _repository(COMMUNITY_URL)],
+        remote_files={REPOS_PATH: f"{MAIN_URL}\n{COMMUNITY_URL}\n".encode()},
+    )
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apk.repository(ctx, src=COMMUNITY_URL, present=False)]
     assert ctx.changed
     assert ctx.reason == (
         f'apk repo "{COMMUNITY_URL}" present, will be removed from {REPOS_PATH}'
     )
-    assert commands == [ApkRepoRemoveCommand(path=REPOS_PATH, line=COMMUNITY_URL)]
+    assert commands == [
+        ApkRepoUploadCommand(content=f"{MAIN_URL}\n", dest=REPO_SPOOL),
+        ApkRepoInstallCommand(spool=REPO_SPOOL, dest=REPOS_PATH),
+    ]
 
 
 async def test_apk_repository_remove_noop_when_absent():
@@ -2505,7 +2649,10 @@ async def test_apk_repository_tagged_and_bare_lines_are_distinct():
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apk.repository(ctx, src=TESTING_LINE)]
     assert ctx.changed
-    assert commands == [ApkRepoAddCommand(path=REPOS_PATH, line=TESTING_LINE)]
+    assert commands == [
+        ApkRepoUploadCommand(content=f"{TESTING_LINE}\n", dest=REPO_SPOOL),
+        ApkRepoInstallCommand(spool=REPO_SPOOL, dest=REPOS_PATH),
+    ]
     # The tagged entry itself is present under its own line.
     host2 = SimulatedHost(
         name="h", apk_repositories=[_repository(TESTING_URL, "testing")]
@@ -2514,11 +2661,52 @@ async def test_apk_repository_tagged_and_bare_lines_are_distinct():
     commands2 = [c async for c in apk.repository(ctx2, src=TESTING_LINE)]
     assert not ctx2.changed
     assert commands2 == []
-    # ... while the bare URL of the same source is still absent.
+    # ... while the bare URL of the same source is still absent, and with no
+    # repositories file on the host yet spools as that one line.
     ctx3 = OpContext(host=host2, facts=FactCache(host2, phase="prepare"))
     commands3 = [c async for c in apk.repository(ctx3, src=TESTING_URL)]
     assert ctx3.changed
-    assert commands3 == [ApkRepoAddCommand(path=REPOS_PATH, line=TESTING_URL)]
+    assert commands3 == [
+        ApkRepoUploadCommand(content=f"{TESTING_URL}\n", dest=REPO_SPOOL),
+        ApkRepoInstallCommand(spool=REPO_SPOOL, dest=REPOS_PATH),
+    ]
+
+
+async def test_apk_repository_add_of_a_line_the_file_lists_is_a_content_noop():
+    """The first content-level no-op the ``echo >>`` never reached: the parsed
+    fact cannot see the repository -- its URL appears only inside a comment
+    line -- yet the file's own text already carries a line the anchored
+    pattern matches, so nothing is appended and no spool is written."""
+    host = SimulatedHost(
+        name="h", remote_files={REPOS_PATH: f"# see {COMMUNITY_URL}\n".encode()}
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apk.repository(ctx, src=COMMUNITY_URL)]
+    assert not ctx.changed
+    assert ctx.reason == (
+        f'apk repo "{COMMUNITY_URL}" is already listed in {REPOS_PATH}'
+    )
+    assert commands == []
+
+
+async def test_apk_repository_removal_the_file_text_cannot_match_is_a_content_noop():
+    """The other content-level no-op: the repository *is* configured, so the
+    fact says a change is due, but no line of the file matches the whole-line
+    pattern -- here the tag and its URL are separated by two spaces, which
+    ``ApkRepositories.parse`` normalises away while the pattern cannot -- so
+    the empty ``sed -i`` run the in-place form would have made is skipped."""
+    host = SimulatedHost(
+        name="h",
+        apk_repositories=[_repository(TESTING_URL, "testing")],
+        remote_files={REPOS_PATH: f"@testing  {TESTING_URL}\n".encode()},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apk.repository(ctx, src=TESTING_LINE, present=False)]
+    assert not ctx.changed
+    assert ctx.reason == (
+        f'apk repo "{TESTING_LINE}" is not configured in {REPOS_PATH}'
+    )
+    assert commands == []
 
 
 async def test_apk_repository_rejects_an_unparseable_line():
@@ -2540,74 +2728,93 @@ async def test_apk_repository_absorbs_unknown_kwargs():
     commands = [
         c async for c in apk.repository(ctx, src=COMMUNITY_URL, future_flag=True)
     ]
-    assert commands == [ApkRepoAddCommand(path=REPOS_PATH, line=COMMUNITY_URL)]
+    assert commands == [
+        ApkRepoUploadCommand(content=f"{COMMUNITY_URL}\n", dest=REPO_SPOOL),
+        ApkRepoInstallCommand(spool=REPO_SPOOL, dest=REPOS_PATH),
+    ]
 
 
 # --- apk.repository: SimulatedHost seam dispatch --------------------------------
 
 
-async def test_apk_repo_add_seam_mutates_file_and_fact_state():
-    """``send_command`` maps the append onto every seam the real command
-    touches: the file content, its existence and size, and the parsed
-    repository entry the fact reports."""
+async def test_apk_repo_seam_spool_then_install():
+    """``send_command`` writes the spool bytes with the transfer -- nothing at
+    the managed path yet, no repository entry yet -- then the install moves
+    them onto the file, drops the spool and refreshes existence, stats and the
+    parsed ``apk_repositories`` seam."""
     host = SimulatedHost(name="h")
-    await send_command(host, ApkRepoAddCommand(path=REPOS_PATH, line=COMMUNITY_URL))
-    assert host.remote_files[REPOS_PATH] == f"{COMMUNITY_URL}\n".encode()
-    assert REPOS_PATH in host.existing_files
-    assert host.file_stats[REPOS_PATH]["size"] == len(f"{COMMUNITY_URL}\n")
-    assert host.apk_repositories == [_repository(COMMUNITY_URL)]
-
-
-async def test_apk_repo_add_seam_parses_a_tagged_line():
-    """The tagged line lands as its parsed entry (tag without the ``@``),
-    so a repeat ``apk.repository`` of the same line is a no-op."""
-    host = SimulatedHost(name="h")
-    await send_command(host, ApkRepoAddCommand(path=REPOS_PATH, line=TESTING_LINE))
-    assert host.apk_repositories == [_repository(TESTING_URL, "testing")]
-    assert host.remote_files[REPOS_PATH] == f"{TESTING_LINE}\n".encode()
-
-
-async def test_apk_repo_remove_seam_drops_the_matching_line():
-    """The sed mutator filters the file content and the fact entries with
-    the same anchored pattern the descriptor renders, refreshing the size."""
-    host = SimulatedHost(name="h")
-    await send_command(host, ApkRepoAddCommand(path=REPOS_PATH, line=MAIN_URL))
-    await send_command(host, ApkRepoAddCommand(path=REPOS_PATH, line=COMMUNITY_URL))
-    await send_command(host, ApkRepoRemoveCommand(path=REPOS_PATH, line=COMMUNITY_URL))
-    assert host.apk_repositories == [_repository(MAIN_URL)]
-    assert host.remote_files[REPOS_PATH] == f"{MAIN_URL}\n".encode()
-    assert host.file_stats[REPOS_PATH]["size"] == len(f"{MAIN_URL}\n")
-
-
-async def test_apk_repo_remove_seam_contains_match_drops_tagged_variants():
-    """The documented sed caveat, simulated faithfully: removing a bare
-    URL also drops a tagged line carrying it -- the pattern is a contains
-    match, exactly as the real command would delete both lines."""
-    host = SimulatedHost(name="h")
-    await send_command(host, ApkRepoAddCommand(path=REPOS_PATH, line=TESTING_LINE))
-    await send_command(host, ApkRepoRemoveCommand(path=REPOS_PATH, line=TESTING_URL))
-    assert host.apk_repositories == []
-    assert host.remote_files[REPOS_PATH] == b""
-
-
-async def test_apk_repo_remove_seam_tolerates_an_absent_file():
-    """sed exits 0 when it deletes nothing: an absent path is tolerated,
-    and the fact entries are still filtered."""
-    host = SimulatedHost(
-        name="h", apk_repositories=[_repository(COMMUNITY_URL)]
+    await send_command(
+        host, ApkRepoUploadCommand(content=f"{TESTING_LINE}\n", dest=REPO_SPOOL)
     )
-    await send_command(host, ApkRepoRemoveCommand(path=REPOS_PATH, line=COMMUNITY_URL))
-    assert host.apk_repositories == []
+    assert host.remote_files[REPO_SPOOL] == f"{TESTING_LINE}\n".encode()
     assert REPOS_PATH not in host.remote_files
+    assert host.apk_repositories == []
+    await send_command(
+        host, ApkRepoInstallCommand(spool=REPO_SPOOL, dest=REPOS_PATH)
+    )
+    assert REPO_SPOOL not in host.remote_files
+    assert host.remote_files[REPOS_PATH] == f"{TESTING_LINE}\n".encode()
+    assert REPOS_PATH in host.existing_files
+    assert host.file_stats[REPOS_PATH] == {
+        "user": "root",
+        "group": "root",
+        "mode": 644,
+        "size": len(f"{TESTING_LINE}\n"),
+    }
+    # The tagged line lands as its parsed entry (tag without the ``@``), so a
+    # repeat ``apk.repository`` of the same line is a no-op.
+    assert host.apk_repositories == [_repository(TESTING_URL, "testing")]
+
+
+async def test_apk_repo_seam_install_replaces_previous_entries():
+    """The seam refresh is content-based, not append-only: the entries the
+    previous file text parsed into go and the new text's are kept once, so a
+    repeat install never duplicates a repository -- the ``cp`` overlay's
+    semantics, and what a removal that empties the file reports."""
+    host = SimulatedHost(
+        name="h",
+        apk_repositories=[_repository(MAIN_URL), _repository(COMMUNITY_URL)],
+        remote_files={REPOS_PATH: f"{MAIN_URL}\n{COMMUNITY_URL}\n".encode()},
+    )
+    for _ in range(2):
+        await send_command(
+            host, ApkRepoUploadCommand(content=f"{MAIN_URL}\n", dest=REPO_SPOOL)
+        )
+        await send_command(
+            host, ApkRepoInstallCommand(spool=REPO_SPOOL, dest=REPOS_PATH)
+        )
+        assert host.remote_files[REPOS_PATH] == f"{MAIN_URL}\n".encode()
+        assert host.apk_repositories == [_repository(MAIN_URL)]
+    # An install that empties the managed file leaves it empty, not absent.
+    await send_command(host, ApkRepoUploadCommand(content="", dest=REPO_SPOOL))
+    await send_command(
+        host, ApkRepoInstallCommand(spool=REPO_SPOOL, dest=REPOS_PATH)
+    )
+    assert host.remote_files[REPOS_PATH] == b""
+    assert host.apk_repositories == []
+
+
+async def test_apk_repo_seam_install_without_its_spool():
+    """The install of an absent spool (a skipped or failed transfer) leaves
+    every seam as it was -- the paired ``apt.key``/``apt.sources_file``
+    mutators' tolerance."""
+    host = SimulatedHost(name="h", apk_repositories=[_repository(COMMUNITY_URL)])
+    await send_command(
+        host, ApkRepoInstallCommand(spool=REPO_SPOOL, dest=REPOS_PATH)
+    )
+    assert REPOS_PATH not in host.remote_files
+    assert REPOS_PATH not in host.existing_files
+    assert host.apk_repositories == [_repository(COMMUNITY_URL)]
 
 
 # --- apk.repository: end to end -------------------------------------------------
 
 
 async def test_apk_repository_end_to_end_add_then_noop_under_doas():
-    """Through run_prepare/run_apply: the append executes under doas and
-    renders in the log; a second prepare sees the entry in the fact and
-    plans no change (the fresh per-step fact cache observes the mutation)."""
+    """Through run_prepare/run_apply: the transformed text is spooled by scp
+    and installed under doas -- two privilege levels in one request, both
+    rendered in the log -- and a second prepare sees the entry in the fact and
+    plans no change (the fresh per-step fact cache observes the install)."""
 
     def add_deploy(host):
         yield op(
@@ -2623,10 +2830,15 @@ async def test_apk_repository_end_to_end_add_then_noop_under_doas():
     report = await run_apply(runtimes, plans=plans)
     (entry,) = report.log
     assert entry.changed
-    assert entry.commands == (ApkRepoAddCommand(path=REPOS_PATH, line=COMMUNITY_URL),)
-    assert (
-        f"$ doas -n sh -c 'echo {COMMUNITY_URL} >> {REPOS_PATH}'" in format_log(report)
-    )
+    upload = ApkRepoUploadCommand(content=f"{COMMUNITY_URL}\n", dest=REPO_SPOOL)
+    install = ApkRepoInstallCommand(spool=REPO_SPOOL, dest=REPOS_PATH)
+    assert entry.commands == (upload, install)
+    log = format_log(report)
+    # The transfer rides unprivileged scp; only the install elevates.
+    assert f"    $ scp <apk repositories> -> {REPO_SPOOL}" in log
+    assert f"    $ doas -n {install.shell()}" in log
+    assert REPO_SPOOL not in host.remote_files  # the install cleaned it up
+    assert host.remote_files[REPOS_PATH] == f"{COMMUNITY_URL}\n".encode()
     assert host.apk_repositories == [_repository(MAIN_URL), _repository(COMMUNITY_URL)]
     # A second prepare sees the repository configured: no change.
     _runtimes, plans2 = await run_prepare([host], add_deploy)
@@ -2634,11 +2846,36 @@ async def test_apk_repository_end_to_end_add_then_noop_under_doas():
     assert plans2["h"][0].reason == f'apk repo "{COMMUNITY_URL}" exists'
 
 
+async def test_apk_repository_repeat_add_in_one_deploy_apply_noop():
+    """Two identical adds: the prepare plan shows both changed (its fact cache
+    persists across steps), but the apply log shows the second as a no-op --
+    the per-step fresh cache sees the entry the first pair installed, so the
+    repositories file never grows a duplicate line."""
+
+    def add_deploy(host):
+        yield op(apk.repository, name="add once", src=COMMUNITY_URL, doas=True)
+        yield op(apk.repository, name="add twice", src=COMMUNITY_URL, doas=True)
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], add_deploy)
+    assert plans["h"][0].changed
+    assert plans["h"][1].changed
+    report = await run_apply(runtimes, plans=plans)
+    first, second = report.log
+    assert first.changed
+    assert not second.changed
+    assert second.reason == f'apk repo "{COMMUNITY_URL}" exists'
+    assert host.remote_files[REPOS_PATH] == f"{COMMUNITY_URL}\n".encode()
+    assert host.apk_repositories == [_repository(COMMUNITY_URL)]
+
+
 async def test_apk_repository_end_to_end_add_then_remove_cycle():
     """An add step then a remove step in one deploy: prepare plans the add
     as a change and the remove unchanged (nothing applied yet, the entry
     absent), while apply adds on the first step and the fresh per-step
-    cache lets the second see the entry present and remove it."""
+    cache lets the second see the entry present and remove it -- emptying the
+    file through a ``content=""`` spool, the legitimate payload the in-place
+    sed left behind."""
 
     def cycle_deploy(host):
         yield op(
@@ -2661,15 +2898,17 @@ async def test_apk_repository_end_to_end_add_then_remove_cycle():
     assert add_entry.changed
     assert remove_entry.changed
     assert remove_entry.commands == (
-        ApkRepoRemoveCommand(path=REPOS_PATH, line=COMMUNITY_URL),
+        ApkRepoUploadCommand(content="", dest=REPO_SPOOL),
+        ApkRepoInstallCommand(spool=REPO_SPOOL, dest=REPOS_PATH),
     )
     assert host.apk_repositories == []
     assert host.remote_files[REPOS_PATH] == b""
 
 
 async def test_apk_repository_dry_run_plans_without_sending():
-    """``dry=True`` stops after prepare: the append is planned as a change
-    but nothing runs, so the repositories file never appears."""
+    """``dry=True`` stops after prepare: the spool/install pair is planned as
+    a change but nothing runs, so neither the spool nor the repositories file
+    ever appears."""
 
     def add_deploy(host):
         yield op(
@@ -2686,7 +2925,10 @@ async def test_apk_repository_dry_run_plans_without_sending():
     assert report is None
     (planned,) = plans["h"]
     assert planned.changed
-    assert planned.commands == (ApkRepoAddCommand(path=REPOS_PATH, line=COMMUNITY_URL),)
+    assert planned.commands == (
+        ApkRepoUploadCommand(content=f"{COMMUNITY_URL}\n", dest=REPO_SPOOL),
+        ApkRepoInstallCommand(spool=REPO_SPOOL, dest=REPOS_PATH),
+    )
     # Nothing ran: the dry run sent no command.
     assert host.apk_repositories == []
-    assert REPOS_PATH not in host.remote_files
+    assert host.remote_files == {}

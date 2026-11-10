@@ -49,7 +49,7 @@ reports the second as a no-op ("a full relabel is already pending").
 Creating a file at ``/`` needs root, so both requests are flagged
 ``sudo=True`` and the driver elevates their commands over SSH. The
 disabled-to-enabling flow this operation belongs to is completed by the
-``files.edit`` recipe in
+``selinux.config`` operation in
 ``examples/modules/selinux/selinux_config.py`` (set ``SELINUX=enforcing``
 for the next boot) followed by a reboot.
 

@@ -11,7 +11,9 @@ edit), ``files.edit`` reads a file's current text with the ``FileContents``
 fact, applies a **caller-supplied pure transform**, and writes the result back
 over the asyncssh connection with ``files.put``'s scp transfer -- but only when
 the transformed content actually differs. Any "edit a file in place" task is
-then just a transform.
+then just a transform -- a few common formats have dedicated operations built
+on the same idea (``server.etc_hosts`` for the hosts file, ``sysctl.setting``
+for sysctl keys), while the generic primitive covers the rest.
 
 The transform is a plain module-level function taking the current content
 (``str``, or ``None`` when the file is absent) and returning the desired

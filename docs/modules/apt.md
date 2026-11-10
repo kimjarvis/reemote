@@ -76,7 +76,7 @@ origins of one package, parsed from `apt-cache policy` into a plain
 `AptPackagePolicy` TypedDict-shaped dict, `AptSources`, the configured
 repositories, parsed from the legacy `.list` files and the modern deb822
 `.sources` files into plain `AptSource` TypedDict-shaped dicts,
-`AptSourcesFile`, the raw content of one `.sources` file (None when it is
+`AptSourcesFile`, the raw content of one apt sources file (None when it is
 absent), read behind a `test -e`-guarded marker, and
 `AptUpgradable`, the packages `apt upgrade` would move with both ends of
 each version jump, parsed from `apt list --upgradable` into plain
@@ -104,9 +104,11 @@ its optional `upgrade`; `apt.ppa`, which adds or removes an Ubuntu
 PPA with `apt-add-repository`, deliberately non-idempotent like pyinfra's;
 `apt.repo`, which adds or removes one apt source line in
 `/etc/apt/sources.list` or a `sources.list.d` file, idempotent on
-`AptSources`; and `apt.sources_file`, which manages a modern deb822
-`.sources` file under `sources.list.d`, idempotent on `AptSources` for
-the write direction and on `AptSourcesFile` for the removal;
+`AptSources` and on the managed file's own text, and rewrites that file
+through the spool-and-install pair; and `apt.sources_file`, which manages a
+modern deb822 `.sources` file under `sources.list.d`, idempotent on
+`AptSources` for the write direction and on `AptSourcesFile` for the
+removal;
 `apt.update`, the stateless package-list refresh,
 deliberately non-idempotent like pyinfra's; and `apt.upgrade`, which
 upgrades every upgradable package when `SimulateOperationWillChange`
@@ -272,15 +274,17 @@ and `cat` and never runs `apt`, so a host without apt simply reports its
 files (usually `[]`).
 
 `AptSourcesFile` takes a file path and reports the raw text of that one
-`.sources` file, or `None` when it is absent — the `DnfRepoFile` pattern
-in this namespace. The real-transport command cats the file only behind
-a `test -e` guard and leads with a `#reemote5-sourcesfile` marker line,
-so a missing file (no marker) reads as `None` while an existing but empty
-file reads as `""` — the distinction that lets the removal delete an
-empty leftover. Where `AptSources` parses *every* configured repository
-into `AptSource` dicts, this fact answers the single-file existence and
-content question `apt.sources_file(present=False)` reads to make its
-removal idempotent without importing another namespace's facts.
+apt sources file, or `None` when it is absent — the `DnfRepoFile` pattern
+in this namespace, generic over a `.list` or a `.sources` file because the
+fact never interprets the text. The real-transport command cats the file
+only behind a `test -e` guard and leads with a `#reemote5-sourcesfile`
+marker line, so a missing file (no marker) reads as `None` while an
+existing but empty file reads as `""` — the distinction that lets a removal
+delete an empty leftover. Where `AptSources` parses *every* configured
+repository into `AptSource` dicts, this fact answers the single-file content
+question twice over: `apt.sources_file(present=False)` reads it to make its
+removal idempotent, and `apt.repo` reads it for the text it transforms and
+spools back — both without importing another namespace's facts.
 
 `AptUpgradable` takes no arguments and runs
 `apt list --upgradable 2>/dev/null` (the redirect suppresses the
@@ -496,7 +500,14 @@ sources, so flag the request `sudo=True` (or `su=True`). It requires
 `apt-add-repository` (from `software-properties-common`) on the target host;
 pyinfra's `requires_command` gating is deliberately dropped, so a missing
 binary exits 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
+[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError]. Unlike
+`apt.repo` and `apt.sources_file`, this operation deliberately stays outside
+the spool-and-install family: its payload is a CLI invocation, not the
+file's text — `apt-add-repository` owns the sources file and also fetches
+the PPA's Launchpad signing key, adds the deb-src entry and resolves the
+distro codename, none of which a hand-rolled content transform can
+reproduce. To manage the PPA's source *line* through the spool family
+instead, `apt.repo` (plus `apt.key` for the signing key) is that shape.
 
 `apt.repo` adds or removes one apt repository line (pyinfra's `apt.repo`
 parity). `src` is the full source string (`deb http://X hardy main`),
@@ -506,20 +517,34 @@ parity). `src` is the full source string (`deb http://X hardy main`),
 `AptSources`' legacy line parser and comparing against the fact's entries
 — pyinfra's `parse_apt_repo(src) in AptSources` check — so a repository
 already configured in *any* sources file (legacy or deb822) is a no-op,
-and an unparseable `src` counts as absent but is still appended when
-`present=True` (pyinfra's tolerance). An absent, wanted line is appended
-with `echo`; a present, unwanted one is deleted with `sed`. Writing the
-root-owned apt sources needs root, so flag the request `sudo=True` (or
-`su=True`). Deliberate deviations from pyinfra, which delegates the edit
-to `files.line`: the mutation rides self-contained apt descriptors
-(reemote5 has no line operation — `files.edit` is its generic editing
-primitive — and namespaces never reuse each other's operations), the
-append wraps `sh -c` so `sudo` elevates the `>>` redirect rather than
-opening it as the login user, and the removal uses a bare `sed -i`
-without pyinfra's timestamped backup dance (the timestamp would differ
-between the prepare and apply phases, breaking the determinism guard,
-and an `&& rm` chain would leave its second command unprivileged under a
-`sudo` prefix).
+and an unparseable `src` counts as absent but is still added when
+`present=True` (pyinfra's tolerance). Either direction then *rewrites* the
+managed file rather than patching it in place: `AptSourcesFile` reads the
+file's current text, one pure transform adds the line exactly once or
+deletes every line the anchored, escaped pattern matches, and when the
+result differs from what is there the request yields two commands at
+different privilege levels, the `apt.key` pattern:
+`AptRepoUploadCommand` spools the new text to a `/tmp` path named after the
+managed file over scp as the login user, then `AptRepoInstallCommand` runs
+one elevated `sh -c` that creates the directory, copies the file, chmods it
+`0644` (pyinfra's fixed mode) and removes the spool — so flag the request
+`sudo=True` (or `su=True`); the transfer stays unprivileged regardless.
+The spool name is derived from the destination rather than a fixed
+constant, because `apt.repo` edits several distinct files and two
+repository edits in one deploy must not clobber each other's spool. Two
+content-level no-ops round out pyinfra's fact-level ones: an add whose line
+the file already carries, and a remove of a repository configured in some
+*other* file — the transforms are fixpoints, so a repeat converges instead
+of writing a second copy. Deliberate deviations from pyinfra, which
+delegates the edit to `files.line` and so mutates the protected file in
+place with `echo >>` and `sed -i`: reemote5 has no line operation
+(`files.edit` is its generic editing primitive) and namespaces never reuse
+each other's operations, so the write rides self-contained apt descriptors
+of the spool-and-install family. That also drops pyinfra's timestamped sed
+backup (its timestamp would differ between the prepare and apply phases,
+breaking the determinism guard) and keeps the file's other lines, comments
+and blank lines exactly as they were, because the transform is line-based
+over the real content.
 
 `apt.sources_file` manages a deb822 `.sources` file under
 `/etc/apt/sources.list.d/` (pyinfra's `apt.sources_file` parity).
@@ -613,9 +638,11 @@ no-op in the apply phase. The `apt_ppa.py` script demonstrates `apt.ppa`:
 it adds the Bitcoin PPA with `apt-add-repository` under `sudo` — a single
 request, since the operation is non-idempotent and has no state for a second
 request to converge on. The `apt_repo.py` script demonstrates `apt.repo`:
-it appends the Canonical partner repository line to its own
-`sources.list.d` file, yielding the same request twice so the second is a
-guaranteed no-op in the apply phase. The `apt_sources_file.py` script
+it rewrites the Canonical partner repository line into its own
+`sources.list.d` file — unprivileged spool transfer plus elevated install
+in one request — yielding the same request twice so the second is a
+guaranteed no-op in the apply phase, then removing it again so the example
+leaves the host's sources as it found them. The `apt_sources_file.py` script
 demonstrates `apt.sources_file`: it writes the Docker repository as a
 modern deb822 `docker.sources` file — unprivileged spool transfer plus
 elevated install in one request — yielding the same request twice so the

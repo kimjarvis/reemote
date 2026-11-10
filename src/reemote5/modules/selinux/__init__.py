@@ -7,13 +7,15 @@ Re-exports everything from ``selinux.py`` so the facts
 (``selinux.SEBoolean``, ``selinux.Booleans``, ``selinux.FileContext``,
 ``selinux.FileContextMapping``, ``selinux.SEPorts``, ``selinux.SEPort``,
 ``selinux.Mode``, ``selinux.SELogin``, ``selinux.SEUser``,
-``selinux.Modules``, ``selinux.PermissiveDomains``), their entry types
+``selinux.Modules``, ``selinux.PermissiveDomains``,
+``selinux.SelinuxConfigFile``), their entry types
 (``selinux.SeContext``, ``selinux.ModeInfo``, ``selinux.SeLogin``,
 ``selinux.SeUser``, ``selinux.Module``), the ``selinux.boolean``,
 ``selinux.file_context``, ``selinux.file_context_mapping``, ``selinux.port``,
 ``selinux.mode``, ``selinux.login``, ``selinux.module``,
-``selinux.permissive_domain``, ``selinux.restorecon`` and
-``selinux.autorelabel`` operations and their typed command descriptors are
+``selinux.permissive_domain``, ``selinux.restorecon``,
+``selinux.autorelabel`` and ``selinux.config`` operations and their typed
+command descriptors are
 reachable through the package name alone.
 """
 
@@ -32,6 +34,9 @@ from .selinux import (
     RestoreconCommand,
     SEBoolean,
     SeContext,
+    SelinuxConfigFile,
+    SelinuxConfigInstallCommand,
+    SelinuxConfigUploadCommand,
     SELogin,
     SeLogin,
     SemanageFcontextCommand,
@@ -49,6 +54,7 @@ from .selinux import (
     SeUser,
     autorelabel,
     boolean,
+    config,
     file_context,
     file_context_mapping,
     login,
@@ -79,6 +85,9 @@ __all__ = [
     "SeContext",
     "SeLogin",
     "SeUser",
+    "SelinuxConfigFile",
+    "SelinuxConfigInstallCommand",
+    "SelinuxConfigUploadCommand",
     "SemanageFcontextCommand",
     "SemanageLoginCommand",
     "SemanagePermissiveCommand",
@@ -90,6 +99,7 @@ __all__ = [
     "SetseboolCommand",
     "autorelabel",
     "boolean",
+    "config",
     "file_context",
     "file_context_mapping",
     "login",

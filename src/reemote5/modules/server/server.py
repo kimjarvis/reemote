@@ -5,9 +5,11 @@
 #
 # Fact side (design doc section 5): ``Arch`` (the machine architecture from
 # ``uname -m``), ``AuthorizedKeys`` (the SSH public keys listed in a user's
-# ``~/.ssh/authorized_keys`` file), ``Date`` (the current datetime on the
+# ``~/.ssh/authorized_keys`` file), ``AuthorizedKeysFile`` (the raw text of
+# one remote file, or None when it is absent), ``Date`` (the current datetime on the
 # server, parsed from an ISO 8601 ``date`` timestamp), ``Env`` (the value
-# of a given environment variable from ``echo $<name>``), ``Groups`` (the
+# of a given environment variable from ``echo $<name>``), ``EtcHosts`` (the
+# hosts file parsed as a mapping of IP address to hostnames), ``Groups`` (the
 # group names listed in ``/etc/group``), ``HasGui`` (whether a known
 # desktop-session binary is installed), ``Home`` (a user's home directory, resolved by shell
 # tilde expansion), ``Hostname`` (the server's hostname from ``uname -n``),
@@ -37,15 +39,22 @@
 # Operation side (design doc section 6): ``server.group`` plus the
 # ``GroupAddCommand``/``GroupDelCommand`` descriptors it yields,
 # ``server.hostname`` plus the ``SetHostnameCommand`` descriptor it yields,
+# ``server.etc_hosts`` plus the ``EtcHostsUploadCommand``/
+# ``EtcHostsInstallCommand`` spool-and-install pair it yields,
 # ``server.kill`` plus the ``KillCommand`` descriptor it yields,
+# ``server.locale`` plus the ``LocaleUploadCommand``/``LocaleInstallCommand``/
+# ``LocaleGenCommand`` spool-and-install trio it yields,
 # ``server.modprobe`` plus the ``ModprobeCommand`` descriptor it yields,
 # ``server.mount`` plus the ``MountCommand`` descriptor it yields,
+# ``server.security_limit`` plus the ``SecurityLimitUploadCommand``/
+# ``SecurityLimitInstallCommand`` spool-and-install pair it yields,
 # ``server.timezone`` plus the ``SetTimezoneCommand`` descriptor it yields,
 # ``server.user`` plus the ``UserAddCommand``/``UserModCommand``/
 # ``UserDelCommand`` descriptors it yields (with the private
 # ``_HomeMkdirCommand``/``_HomeChownCommand`` home-directory pair),
-# ``server.user_authorized_keys`` plus the ``AuthorizedKeysAppendCommand``
-# descriptor it yields (with the private ``_KeysPathStat`` probe and the
+# ``server.user_authorized_keys`` plus the ``AuthorizedKeysUploadCommand``/
+# ``AuthorizedKeysInstallCommand`` spool-and-install pair it yields (with
+# the private ``_KeysPathStat`` probe and the
 # ``_KeysChmodCommand``/``_KeysTouchCommand`` stand-ins beside the reused
 # home-directory pair), and
 # ``server.wait`` plus the ``WaitForFactCommand`` descriptor it yields, and
@@ -58,9 +67,20 @@
 # itself: the ``Which`` fact picks ``hostnamectl set-hostname`` when
 # ``hostnamectl`` is available and the bare ``hostname`` command otherwise;
 # pyinfra's ``hostname_file`` upload branch is deliberately dropped.
+# ``server.etc_hosts`` mirrors pyinfra's ``server.etc_hosts`` for ``ip``,
+# ``hostnames``, ``present`` and ``path``: the ``EtcHosts`` fact gates the
+# no-op and the ``AuthorizedKeysFile`` raw-content fact feeds a pure rewrite
+# that is spooled and installed over the hosts file (see the operation's
+# comment block for the family details).
 # ``server.kill`` mirrors pyinfra's ``server.kill`` for ``pid`` and
 # ``signal``: stateless and non-idempotent, it reads no fact and always
 # yields one ``kill -<signal> <pid>`` command.
+# ``server.locale`` mirrors pyinfra's ``server.locale`` for ``locale`` and
+# ``present``: the ``Locales`` fact gates the no-op and the
+# ``AuthorizedKeysFile`` raw-content fact feeds a pure definition-line edit
+# that is spooled and installed over ``/etc/locale.gen``, followed by one
+# ``locale-gen`` regeneration (see the operation's comment block for the
+# family details).
 # ``server.modprobe`` mirrors pyinfra's ``server.modprobe`` for ``module``,
 # ``present`` and ``force``: it compares the names against the
 # ``KernelModules`` fact and yields one ``modprobe [-f] [-r] -a <modules>``
@@ -70,6 +90,11 @@
 # the ``Mounts`` fact (with a lookup-by-device fallback) and yields one
 # ``MountCommand`` -- a fresh ``mount``, an ``umount`` or an options remount
 # (the ``Kernel`` fact picks the BSD remount form).
+# ``server.security_limit`` mirrors pyinfra's ``server.security_limit`` for
+# ``domain``, ``limit_type``, ``item`` and ``value``: the
+# ``AuthorizedKeysFile`` raw-content fact feeds a pure limits.conf line edit
+# that is spooled and installed over ``/etc/security/limits.conf`` (see the
+# operation's comment block for the family details).
 # ``server.service``, the ``SystemctlCommand`` descriptor and the
 # ``SystemdServiceState``/``SystemdServiceEnabled`` facts were relocated to
 # the ``systemd`` namespace and are re-exported here for backward
@@ -87,11 +112,11 @@
 # ``ensure_home`` branch reads a private ``_HomeDirectory`` stand-in for
 # ``files.Directory`` and yields the ``mkdir -p``/``chown`` pair. pyinfra's
 # ``public_keys``/``delete_keys`` branch and its ``Which``
-# useradd/usermod/userdel existence checks are deliberately dropped -- the
-# append half of that branch now lives in its own operation,
-# ``server.user_authorized_keys`` below, but ``server.user`` itself still
-# does not wire either option through it (see that operation's notes on
-# pyinfra's dropped removal half).
+# useradd/usermod/userdel existence checks are deliberately dropped -- both
+# halves of that branch now live in their own operation,
+# ``server.user_authorized_keys`` below (append and ``delete_keys`` rewrite
+# alike, through its spool-and-install pair), but ``server.user`` itself
+# still does not wire either option through it.
 # ``server.timezone`` mirrors pyinfra's ``server.timezone`` for ``timezone``
 # on systemd systems only: it compares against the ``Timezone`` fact and
 # yields ``timedatectl set-timezone`` when they differ; pyinfra's non-systemd
@@ -112,6 +137,8 @@
 # """
 
 import asyncio
+import hashlib
+import io
 import json
 import pathlib
 import re
@@ -126,7 +153,7 @@ from typing import Any, ClassVar, Literal, TypedDict
 
 import distro
 
-from ...commands import Command, WaitCommand, WaitTimeoutError
+from ...commands import Command, TransferCommand, WaitCommand, WaitTimeoutError
 from ...core import OpContext, OperationError
 from ...hosts import Host
 from ..systemd.systemd import (
@@ -297,6 +324,91 @@ class AuthorizedKeys:
         return cls.parse(stdout.splitlines())
 
 
+class AuthorizedKeysFile:
+    """The current content of one remote file, or None when absent.
+
+    The namespace's path-generic raw-content fact: read by
+    ``server.user_authorized_keys`` for the key file, by
+    ``server.etc_hosts`` for the hosts file it rewrites, by
+    ``server.locale`` for ``/etc/locale.gen`` and by
+    ``server.security_limit`` for ``/etc/security/limits.conf``.
+
+    **Commands:**
+
+    ```bash
+    test -e <path> && { printf '#reemote5-authorizedkeysfile\\n'; cat -- <path>; }
+    ```
+
+    **Returns:**
+
+    ```python
+    str | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in
+        ``examples/modules/server/server_user_authorized_keys.py``.
+    """
+
+    # The path-generic raw-content fact of this namespace (the
+    # ``AptSourcesFile``/``DnfRepoFile`` pattern): ``server.user_authorized_keys``
+    # reads it to compute the content it spools back, in the append and the
+    # ``delete_keys`` rewrite direction alike, and ``server.etc_hosts``,
+    # ``server.locale`` and ``server.security_limit`` are its further readers (the
+    # ``AptSourcesFile``-backs-``apt.repo`` reuse) -- the fact never
+    # interprets the text. Where ``AuthorizedKeys`` parses
+    # the key lines into a list (stripping whitespace, skipping blanks and
+    # ``#`` comments), this
+    # reports the raw text of a *single* file so the operation can preserve
+    # every comment, blank line and ordering the parser drops, and can tell
+    # an existing file from a missing one. Absence is reported as ``None``
+    # -- never the empty string -- so a file that exists but is empty stays
+    # distinguishable from one that is missing. Unlike ``AuthorizedKeys``
+    # there is no tilde branch: the operation resolves ``Home`` first and
+    # always passes the explicit key-file path, which is also what lets the
+    # simulated read ride the literal-path ``remote_files`` seam.
+
+    #: Marker printed before the ``cat``'d content, only when ``test -e``
+    #: passes, so ``process`` can tell an existing (possibly empty) file from
+    #: a missing one (no marker on stdout).
+    MARKER = "#reemote5-authorizedkeysfile"
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell printing ``MARKER`` then the file's content, only if it exists.
+
+        The ``test -e`` guard means a missing file produces no output at all
+        (not even the marker), while an existing one -- empty or not -- always
+        leads with the marker line (``AptSourcesFile.command``'s form).
+        """
+        quoted = shlex.quote(path)
+        return f"test -e {quoted} && {{ printf '{cls.MARKER}\\n'; cat -- {quoted}; }}"
+
+    @classmethod
+    async def process(cls, host: Host, path: str) -> str | None:
+        remote_files = getattr(host, "remote_files", None)
+        if remote_files is not None:
+            # SimulatedHost seam: decode the content the simulated remote
+            # filesystem holds at the path (None when absent). The same store
+            # the spool-and-install mutator writes the installed bytes back
+            # into, so a simulated write reads back through this fact.
+            data = remote_files.get(path)
+            return data.decode("utf-8") if data is not None else None
+        # Real transport: cat the file over asyncssh behind the marker, so a
+        # missing file (no marker) reads as None rather than empty content.
+        stdout = await host.run_shell(cls.command(path))
+        prefix = f"{cls.MARKER}\n"
+        if not stdout.startswith(prefix):
+            return None
+        return stdout[len(prefix) :]
+
+
 #: ``date`` format string producing an ISO 8601 timestamp with a numeric
 #: UTC offset (pyinfra's ``ISO_DATE_FORMAT``); used both to build the shell
 #: and to parse its output back into a ``datetime``.
@@ -455,6 +567,99 @@ class Env:
             return env.get(name, "")
         # Real transport: `echo $<name>` over asyncssh.
         stdout = await host.run_shell(shell)
+        return cls.parse(stdout.splitlines())
+
+
+class EtcHosts:
+    """``/etc/hosts`` parsed as a mapping of IP address to hostnames.
+
+    **Commands:**
+
+    ```bash
+    cat <path> 2>/dev/null || true
+    ```
+
+    **Returns:**
+
+    ```python
+    dict[str, list[str]]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_etc_hosts.py``.
+    """
+
+    # Mirrors pyinfra's ``server.EtcHosts``: the hosts file at ``path``
+    # (``/etc/hosts`` by default) is parsed into a mapping of IP address to
+    # the hostnames declared on the matching lines, for example::
+    #
+    #     {
+    #         "127.0.0.1": ["localhost", "localhost.localdomain"],
+    #         "::1": ["localhost"],
+    #         "192.168.1.10": ["db.internal"],
+    #     }
+    #
+    # Comments (everything from ``#`` on) and blank lines are ignored, lines
+    # without at least two tokens are skipped, and when the same IP is listed
+    # more than once its hostnames are merged in file order without
+    # duplicates. A missing file (the ``cat`` error swallowed by ``|| true``)
+    # reads as ``{}``, pyinfra's ``default = dict``. The simulated seam rides
+    # the literal-path ``remote_files`` store (the ``sysctl.SysctlConf``
+    # pattern) rather than a dedicated parsed field: the same store the
+    # ``install_etc_hosts_file`` mutator writes the installed bytes back
+    # into, so a simulated write always reads back consistently through this
+    # fact with no second store to keep in sync.
+
+    @classmethod
+    def command(cls, path: str = "/etc/hosts") -> str:
+        """Shell cats the hosts file, a missing one printing nothing.
+
+        The path is ``shlex``-quoted (pyinfra's ``QuoteString``); the
+        ``|| true`` guard makes a missing file an empty read, never an error.
+        """
+        return f"cat {shlex.quote(path)} 2>/dev/null || true"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> dict[str, list[str]]:
+        """Parse hosts-file rows into the IP -> hostnames mapping.
+
+        Comments and blank lines are dropped, lines with fewer than two
+        tokens are skipped, and repeated IPs merge their hostnames in file
+        order without duplicates (pyinfra's parse verbatim).
+        """
+        entries: dict[str, list[str]] = {}
+        for raw in output:
+            line = raw.split("#", 1)[0].strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            ip, hostnames = parts[0], parts[1:]
+            existing = entries.setdefault(ip, [])
+            for name in hostnames:
+                if name not in existing:
+                    existing.append(name)
+        return entries
+
+    @classmethod
+    async def process(cls, host: Host, path: str = "/etc/hosts") -> dict[str, list[str]]:
+        remote_files = getattr(host, "remote_files", None)
+        if remote_files is not None:
+            # SimulatedHost seam: parse the content the simulated remote
+            # filesystem holds at the path; an absent file reads as {}.
+            data = remote_files.get(path)
+            if data is None:
+                return {}
+            return cls.parse(data.decode("utf-8").splitlines())
+        # Real transport: cat the hosts file over asyncssh.
+        stdout = await host.run_shell(cls.command(path))
         return cls.parse(stdout.splitlines())
 
 
@@ -3212,11 +3417,10 @@ async def user(
     #
     # pyinfra's ``public_keys``/``delete_keys`` options are deliberately
     # dropped (developer decision): that branch delegates to
-    # ``server.user_authorized_keys``, which rides ``files.directory`` mode
-    # enforcement, ``files.line`` appends and an *elevated* ``files.put``
-    # rewrite -- reemote5 has no ``files.line`` operation and its transfers
-    # are always unprivileged, so no faithful equivalent exists; manage key
-    # files through the ``AuthorizedKeys`` fact and file operations instead.
+    # ``server.user_authorized_keys``, which reemote5 keeps as its own
+    # explicit operation -- a spool-and-install write covering both the
+    # append and the ``delete_keys`` rewrite -- rather than an option on
+    # ``user``; manage key files with that operation directly.
     # pyinfra's plan-time ``Which`` guards ("useradd is not installed", with
     # the Alpine shadow-package note) are deliberately dropped too: a missing
     # binary surfaces at apply as ``CommandNotFoundError`` (exit 127), the
@@ -3494,33 +3698,125 @@ class _KeysTouchCommand(Command):
         return f"touch {shlex.quote(self.path)}"
 
 
-@dataclass(frozen=True)
-class AuthorizedKeysAppendCommand(Command):
-    """``sh -c '<newline guard>; echo <key> >> <path>'``: append one SSH key.
+def _keys_spool_path(dest: str) -> str:
+    """The deterministic ``/tmp`` spool path ``user_authorized_keys`` uploads to.
 
-    The append mutation ``server.user_authorized_keys`` yields. pyinfra's
-    own ``files.line`` add branch renders this exact idiom verbatim: an
-    empty ``echo`` first whenever the file's last byte is not a newline (the
-    ``tail -c1 ... | wc -l`` test), so the appended key never gets glued
-    onto the end of a newline-less last line. The ``>>`` redirect is wrapped
-    in ``sh -c`` so it happens *inside* the shell the driver elevates: a
-    bare ``sudo echo ... >> <path>`` would open the redirect as the login
-    user and fail on another user's ``600``-mode key file (the same wrapper
-    as ``AptRepoAddCommand``). Both the key and the path are shell-quoted --
-    pyinfra leaves the path unquoted in its own rendering since it comes
-    from the resolved ``Home`` fact, but reemote5 quotes every user-derived
-    path defensively, so the command string differs from pyinfra's fixture
-    text in that one respect while behaving identically.
+    Derived from the managed key file's sha1 (``files.install``'s
+    ``_install_spool_path`` / ``apt.repo``'s ``_repo_spool_path`` pattern),
+    even though each request edits exactly one file: the
+    ``authorized_key_directory``/``authorized_key_filename`` options mean two
+    requests in one deploy can target different key files, and they must not
+    clobber each other's spool. The same ``dest`` always yields the same name
+    in both phases, so the descriptors stay deterministic. The name avoids
+    *collisions*, not a hostile local user: it is predictable, so on a
+    multi-tenant host the ``/tmp`` spool is still a symlink-race exposure
+    (the trade-off every spool-and-install operation here makes).
+    """
+    digest = hashlib.sha1(dest.encode()).hexdigest()[:16]
+    return f"/tmp/reemote5-server-user-authorized-keys-{digest}"
+
+
+def _add_keys(content: str | None, keys: tuple[str, ...]) -> str:
+    """The pure append transform: ``content`` plus each of ``keys`` it lacks.
+
+    ``user_authorized_keys(delete_keys=False)``'s edit of the key file's
+    current text: an absent file (``None``) becomes just the keys, a key the
+    text already carries as a whole line is never duplicated -- presence is
+    the ``AuthorizedKeys`` parser's own stripped whole-line comparison, so a
+    commented-out ``# <key>`` line does *not* suppress the append of the live
+    key (the deliberate difference from ``apt.repo``'s substring line
+    pattern) -- and repeated entries in ``keys`` land once, in the caller's
+    own order. Untouched lines, comments, blank lines and the file's own
+    trailing-newline state are preserved; a newline-less last line gets its
+    separator here, functionally, replacing the old descriptor's
+    ``tail -c1`` shell guard. Idempotent (``f(f(x)) == f(x)``) and
+    side-effect free, so both deploy phases compute the same content from
+    the same fact value.
+    """
+    rows = content.splitlines() if content else []
+    present = {row.strip() for row in rows}
+    appended = [key for key in dict.fromkeys(keys) if key not in present]
+    if not appended:
+        return content or ""
+    base = content or ""
+    separator = "" if not base or base.endswith("\n") else "\n"
+    return base + separator + "".join(f"{key}\n" for key in appended)
+
+
+def _rewrite_keys(keys: tuple[str, ...]) -> str:
+    """The pure whole-file rewrite transform ``delete_keys=True`` spools.
+
+    pyinfra's ``"{}\\n".format("\\n".join(public_keys))`` verbatim: the file
+    becomes exactly the requested keys in the caller's order, one per line,
+    with a trailing newline -- every other key, comment and blank line is
+    discarded (that is what ``delete_keys`` means upstream). An empty key
+    tuple therefore yields a lone ``"\\n"``, pyinfra's own quirk, kept for
+    parity. The current text is deliberately not an input: the rewrite is a
+    function of the request alone, so it is trivially deterministic across
+    phases.
+    """
+    return "\n".join(keys) + "\n"
+
+
+@dataclass(frozen=True)
+class AuthorizedKeysUploadCommand(TransferCommand):
+    """Spool the transformed key-file content to a ``/tmp`` path on the target.
+
+    The first half of ``user_authorized_keys``' write and a *non-shell*
+    descriptor: it copies the content over the connection's scp channel via
+    ``Host.upload_file`` rather than running shell text, so it has no
+    ``shell()`` and its loggable form is the ``__str__`` rendering
+    ``command_shell`` falls back to. Like ``AptRepoUploadCommand`` the
+    content is not a caller-supplied stream but the whole key-file text the
+    operation just derived from the file's current content, so the field is
+    a plain ``str`` -- hashable and identical across phases -- wrapped in a
+    fresh ``io.BytesIO`` only at transfer time. The copy rides as the login
+    user (transfers are unprivileged, so the request's ``sudo`` does not
+    apply to it), which is why the spool path is world-writable ``/tmp``
+    rather than the other user's ``700``-mode ``.ssh`` directory.
     """
 
-    path: str
-    key: str
+    content: str  # the whole transformed authorized_keys text
+    dest: str  # spool path on the target host
+
+    def __str__(self) -> str:
+        return f"scp <authorized keys> -> {self.dest}"
+
+    async def transfer(self, host: Host) -> None:
+        await host.upload_file(io.BytesIO(self.content.encode()), self.dest)
+
+
+@dataclass(frozen=True)
+class AuthorizedKeysInstallCommand(Command):
+    """Install the spooled key file ``600``, then remove the spool file.
+
+    The second half of ``user_authorized_keys``' write and the elevated one
+    when the keys belong to another user: the whole sequence is wrapped in
+    ``sh -c`` -- a bare ``sudo`` prefix would elevate only the first command
+    of the ``&&`` chain and leave the cleanup running as the login user,
+    whereas ``sudo sh -c '...'`` runs every step elevated, which can always
+    remove the login-user spool file. The sequence ensures the destination
+    directory, copies the spooled content over the key file, chmods it
+    ``600`` (this operation's fixed mode, the ``AptRepoInstallCommand``
+    pattern with apt's ``0644`` replaced) and removes the spool. No chown is
+    needed: the operation's state block has already touched/chowned the key
+    file earlier in the same request, and ``cp`` over an existing file
+    preserves its owner -- the ``user``/``group`` ownership stays with the
+    ``_HomeChownCommand`` that set it. For the login user's own keys the
+    whole chain also runs unprivileged. All paths are shell-quoted.
+    """
+
+    spool: str  # where AuthorizedKeysUploadCommand wrote the content
+    dest: str  # the authorized_keys path being managed
 
     def shell(self) -> str:
-        quoted_path = shlex.quote(self.path)
+        spool = shlex.quote(self.spool)
+        dest = shlex.quote(self.dest)
+        parent = shlex.quote(str(PurePosixPath(self.dest).parent))
         inner = (
-            f"( [ $(tail -c1 {quoted_path} | wc -l) -eq 0 ] && echo ; "
-            f"echo {shlex.quote(self.key)} ) >> {quoted_path}"
+            f"mkdir -p {parent} && "
+            f"cp {spool} {dest} && "
+            f"chmod {_AUTHORIZED_KEYS_MODE} {dest} && rm -f {spool}"
         )
         return f"sh -c {shlex.quote(inner)}"
 
@@ -3530,6 +3826,7 @@ async def user_authorized_keys(
     user: str,
     public_keys: str | list[str] | tuple[str, ...],
     group: str | None = None,
+    delete_keys: bool = False,
     authorized_key_directory: str | None = None,
     authorized_key_filename: str | None = None,
     **kwargs: Any,
@@ -3546,6 +3843,11 @@ async def user_authorized_keys(
         group (str | None, optional): The group to own the ``.ssh``
             directory and key file; defaults to the user's own name.
             Defaults to None.
+        delete_keys (bool, optional): Whether to remove any keys not
+            specified in ``public_keys``: the file is rewritten to exactly
+            the requested keys (comments and blank lines included in the
+            discard), instead of only appending the missing ones.
+            Defaults to False.
         authorized_key_directory (str | None, optional): The directory to
             write into; defaults to the user's ``Home`` fact resolved to
             ``<home>/.ssh``. Defaults to None.
@@ -3555,8 +3857,8 @@ async def user_authorized_keys(
         **kwargs: Additional keyword arguments.
 
     Yields:
-        Command: Generated ``.ssh`` directory/key-file and key-append
-            commands.
+        Command: Generated ``.ssh`` directory/key-file setup commands and
+            the spool-and-install pair carrying the new key-file content.
 
     **Raises:**
 
@@ -3570,8 +3872,9 @@ async def user_authorized_keys(
     """
 
     # Mirrors pyinfra's ``server.user_authorized_keys`` for ``user``,
-    # ``public_keys``, ``group``, ``authorized_key_directory`` and
-    # ``authorized_key_filename``. Idempotent. The ``.ssh`` directory is
+    # ``public_keys``, ``group``, ``delete_keys``,
+    # ``authorized_key_directory`` and ``authorized_key_filename``.
+    # Idempotent. The ``.ssh`` directory is
     # ensured first (mode ``700``, owner ``user``/``group``, the ``group``
     # option defaulting to the user's own name exactly as pyinfra's
     # ``group or user`` does) and the ``authorized_keys`` file second (mode
@@ -3584,30 +3887,46 @@ async def user_authorized_keys(
     # exactly the mkdir/chown verbs needed, so it is reused rather than
     # duplicated; only the chmod and touch verbs, which that pair has no
     # twin for, get the new ``_KeysChmodCommand``/``_KeysTouchCommand``
-    # stand-ins. Key idempotence then rides the ``AuthorizedKeys`` fact
-    # (read with an explicit ``path``, never tilde-resolved): every
-    # requested key not already listed is appended with one
-    # ``AuthorizedKeysAppendCommand``, in the caller's own order; keys
-    # already present are skipped. Writing into another user's ``~/.ssh``
-    # needs root: flag the request ``sudo=True``.
+    # stand-ins. Those state verbs stay in-place (a touch/mkdir/chmod/chown
+    # payload is not file text); only the key-content write below moved to
+    # the spool-and-install family.
     #
-    # pyinfra's ``delete_keys`` option is deliberately dropped (developer
-    # decision): that branch rewrites the whole file through an *elevated*
-    # ``files.put`` -- reemote5's transfers are always unprivileged, so no
-    # faithful equivalent exists, and only the append direction was chosen
-    # as this operation's whole deliverable. It therefore never removes a
-    # key already present; use the ``AuthorizedKeys`` fact to inspect what
-    # is there and a file-rewriting recipe of your own to prune it.
-    # pyinfra's ``public_keys`` entries double as controller-side file paths
-    # (its ``read_any_pub_key_file`` checks ``os.path.exists`` and reads the
-    # file's lines); that is deliberately dropped too (developer decision,
-    # matching reemote5's IO-only/no-controller-path rule everywhere else --
-    # ``files.put``/``files.get``/``apt.key``/``dnf.key`` all reject a path
-    # string for the same reason): every entry here is always a literal key
-    # string, and reading a controller file twice across the prepare and
-    # apply phases would risk a ``DeterminismError`` anyway if it changed in
-    # between. ``**kwargs`` absorbs pyinfra's global arguments (``op()``
-    # already strips ``name``/``sudo``/``su``).
+    # Key idempotence rides the ``AuthorizedKeys`` fact (read with an
+    # explicit ``path``, never tilde-resolved): with ``delete_keys=False``
+    # every requested key not already listed is missing (pyinfra's set
+    # membership); with ``delete_keys=True`` the parsed list must equal the
+    # requested keys exactly -- pyinfra's order-sensitive list comparison,
+    # so a mere reordering rewrites the file. When a change is due, the
+    # ``AuthorizedKeysFile`` raw-content fact supplies the file's current
+    # text and a pure transform computes the new whole content
+    # (``_add_keys`` appends only the missing keys, preserving comments,
+    # blank lines and order; ``_rewrite_keys`` replaces everything with
+    # exactly the requested keys). One ``AuthorizedKeysUploadCommand`` scp's
+    # that text to a ``/tmp`` spool whose name is derived from the managed
+    # path (so two requests targeting different key files never share one
+    # spool), then one ``AuthorizedKeysInstallCommand`` overlays the key
+    # file with it under ``sh -c``. The transfer stays unprivileged
+    # regardless of ``sudo`` -- only the install elevates -- which is the
+    # two-privilege-level signature of the family. The old in-place
+    # ``echo <key> >>`` append descriptor (pyinfra's ``files.line`` idiom
+    # with its ``tail -c1`` newline guard) is gone: the transform handles
+    # newline endings functionally on the controller. Writing into another
+    # user's ``~/.ssh`` needs root: flag the request ``sudo=True``.
+    #
+    # ``delete_keys`` was originally dropped because pyinfra implements it
+    # through an *elevated* ``files.put`` and reemote5 transfers never
+    # elevate; the spool-and-install conversion removed that obstacle, so
+    # the option is implemented now (developer decision). Its rewrite
+    # discards comments and blank lines along with the unrequested keys --
+    # pyinfra's own whole-file semantics, deliberately not softened. The
+    # controller-side ``public_keys`` file paths stay dropped (developer
+    # decision, matching reemote5's IO-only/no-controller-path rule
+    # everywhere else -- ``files.put``/``files.get``/``apt.key``/``dnf.key``
+    # all reject a path string for the same reason): every entry here is
+    # always a literal key string, and reading a controller file twice
+    # across the prepare and apply phases would risk a ``DeterminismError``
+    # anyway if it changed in between. ``**kwargs`` absorbs pyinfra's
+    # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
     if isinstance(public_keys, str):
         requested = (public_keys,)
     else:
@@ -3674,15 +3993,37 @@ async def user_authorized_keys(
             yield _HomeChownCommand(path=key_file, user=user, group=key_group)
 
     current_keys = await ctx.facts.get(AuthorizedKeys, user, path=key_file)
-    current_key_set = set(current_keys)
-    missing = tuple(key for key in requested if key not in current_key_set)
-    if missing:
-        ctx.changed = True
-        reasons.append(f"{len(missing)} key(s) missing, will append")
-        for key in missing:
-            yield AuthorizedKeysAppendCommand(path=key_file, key=key)
-    elif not ctx.changed and file_info is not None:
-        reasons.append(f"file {key_file} already exists")
+    missing: tuple[str, ...] = ()
+    if delete_keys:
+        keys_differ = current_keys != list(requested)
+    else:
+        current_key_set = set(current_keys)
+        missing = tuple(key for key in requested if key not in current_key_set)
+        keys_differ = bool(missing)
+
+    if not keys_differ:
+        if not ctx.changed and file_info is not None:
+            reasons.append(f"file {key_file} already exists")
+        ctx.reason = "; ".join(reasons)
+        return
+
+    current = await ctx.facts.get(AuthorizedKeysFile, key_file)
+    new = _rewrite_keys(requested) if delete_keys else _add_keys(current, missing)
+    if new == (current or ""):
+        # The fact wanted an edit the file's own text says is unnecessary.
+        reasons.append(f"keys already written in {key_file}")
+        ctx.reason = "; ".join(reasons)
+        return
+
+    ctx.changed = True
+    spool = _keys_spool_path(key_file)
+    reasons.append(
+        f"keys differ, will rewrite {key_file}"
+        if delete_keys
+        else f"{len(missing)} key(s) missing, will append"
+    )
+    yield AuthorizedKeysUploadCommand(content=new, dest=spool)
+    yield AuthorizedKeysInstallCommand(spool=spool, dest=key_file)
 
     ctx.reason = "; ".join(reasons)
 
@@ -3760,6 +4101,249 @@ async def hostname(
         yield SetHostnameCommand(hostname=hostname, hostnamectl=has_hostnamectl)
 
 
+def _hosts_spool_path(dest: str) -> str:
+    """The deterministic ``/tmp`` spool path ``etc_hosts`` uploads to.
+
+    Derived from the managed hosts file's sha1 (``files.install``'s
+    ``_install_spool_path`` / ``_keys_spool_path`` pattern), even though most
+    requests edit the one ``/etc/hosts``: the ``path`` option means two
+    requests in one deploy can target different hosts files, and they must
+    not clobber each other's spool. The same ``dest`` always yields the same
+    name in both phases, so the descriptors stay deterministic. The name
+    avoids *collisions*, not a hostile local user: it is predictable, so on
+    a multi-tenant host the ``/tmp`` spool is still a symlink-race exposure
+    (the trade-off every spool-and-install operation here makes).
+    """
+    digest = hashlib.sha1(dest.encode()).hexdigest()[:16]
+    return f"/tmp/reemote5-server-etc-hosts-{digest}"
+
+
+def _hosts_content(
+    current: str | None, ip: str, hostnames: tuple[str, ...], present: bool
+) -> str:
+    """The pure hosts-file rewrite: ensure or drop the line keyed by ``ip``.
+
+    pyinfra's ``server.etc_hosts`` line loop verbatim, functional on the
+    controller: with ``present=True`` every line whose first token is ``ip``
+    becomes exactly ``<ip> <hostnames...>`` (appended when the file has no
+    such line); with ``present=False`` and ``hostnames`` given only those
+    names are dropped from the IP's lines (a line with no remaining names is
+    removed entirely), and with no ``hostnames`` every line for ``ip`` goes.
+    Comments on an *edited* line are not preserved (pyinfra parity); every
+    other line, comment and blank line survives in order. Line endings are
+    normalised to ``\\n`` and the result carries one trailing newline unless
+    it is empty -- pyinfra's own ``"\\n".join`` + conditional suffix, so a
+    removal that empties the file yields ``""``. Idempotent
+    (``f(f(x)) == f(x)``) and side-effect free, so both deploy phases compute
+    the same content from the same fact value.
+    """
+    new_lines: list[str] = []
+    found = False
+    for line in current.splitlines() if current else []:
+        stripped = line.split("#", 1)[0].strip()
+        if not stripped:
+            new_lines.append(line)
+            continue
+        tokens = stripped.split()
+        if tokens[0] != ip:
+            new_lines.append(line)
+            continue
+        found = True
+        line_names = tokens[1:]
+        if present:
+            new_lines.append(f"{ip} {' '.join(hostnames)}")
+        elif hostnames:
+            remaining = [name for name in line_names if name not in hostnames]
+            if remaining:
+                new_lines.append(f"{ip} {' '.join(remaining)}")
+            # else: no names remain, drop the line entirely
+        # else: full removal, drop the line
+    if present and not found:
+        new_lines.append(f"{ip} {' '.join(hostnames)}")
+    new_content = "\n".join(new_lines)
+    if new_content:
+        new_content += "\n"
+    return new_content
+
+
+@dataclass(frozen=True)
+class EtcHostsUploadCommand(TransferCommand):
+    """Spool the transformed hosts-file content to a ``/tmp`` path on the target.
+
+    The first half of ``etc_hosts``' write and a *non-shell* descriptor: it
+    copies the content over the connection's scp channel via
+    ``Host.upload_file`` rather than running shell text, so it has no
+    ``shell()`` and its loggable form is the ``__str__`` rendering
+    ``command_shell`` falls back to. Like ``AuthorizedKeysUploadCommand`` the
+    content is not a caller-supplied stream but the whole hosts-file text
+    the operation just derived from the file's current content, so the
+    field is a plain ``str`` -- hashable and identical across phases --
+    wrapped in a fresh ``io.BytesIO`` only at transfer time. The copy rides
+    as the login user (transfers are unprivileged, so the request's ``sudo``
+    does not apply to it), which is why the spool path is world-writable
+    ``/tmp`` rather than root-owned ``/etc``.
+    """
+
+    content: str  # the whole transformed hosts-file text
+    dest: str  # spool path on the target host
+
+    def __str__(self) -> str:
+        return f"scp <hosts file> -> {self.dest}"
+
+    async def transfer(self, host: Host) -> None:
+        await host.upload_file(io.BytesIO(self.content.encode()), self.dest)
+
+
+@dataclass(frozen=True)
+class EtcHostsInstallCommand(Command):
+    """Install the spooled hosts file ``0644``, then remove the spool file.
+
+    The second half of ``etc_hosts``' write and the elevated one: the whole
+    sequence is wrapped in ``sh -c`` -- a bare ``sudo`` prefix would elevate
+    only the first command of the ``&&`` chain and leave the cleanup running
+    as the login user, whereas ``sudo sh -c '...'`` runs every step elevated,
+    which can always remove the login-user spool file. The sequence ensures
+    the destination directory, copies the spooled content over the hosts
+    file, chmods it ``0644`` (the ``AptRepoInstallCommand`` pattern) and
+    removes the spool. No chown is needed: ``/etc/hosts`` is root-owned and
+    ``cp`` over an existing file preserves its owner; a freshly created file
+    is root-owned already because the whole chain runs under ``sudo``. An
+    empty ``content`` upstream is a legitimate payload (a removal that
+    empties the file), so nothing here special-cases it. All paths are
+    shell-quoted.
+    """
+
+    spool: str  # where EtcHostsUploadCommand wrote the content
+    dest: str  # the hosts-file path being managed
+
+    def shell(self) -> str:
+        spool = shlex.quote(self.spool)
+        dest = shlex.quote(self.dest)
+        parent = shlex.quote(str(PurePosixPath(self.dest).parent))
+        inner = (
+            f"mkdir -p {parent} && "
+            f"cp {spool} {dest} && "
+            f"chmod 0644 {dest} && rm -f {spool}"
+        )
+        return f"sh -c {shlex.quote(inner)}"
+
+
+async def etc_hosts(
+    ctx: OpContext,
+    ip: str,
+    hostnames: str | list[str] | tuple[str, ...] | None = None,
+    present: bool = True,
+    path: str = "/etc/hosts",
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Add, update or remove an entry in ``/etc/hosts`` keyed by IP address.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        ip (str): The IP address the entry is keyed by.
+        hostnames (str | list[str] | tuple[str, ...] | None, optional): The
+            hostname(s) to associate with ``ip``; a single string (split on
+            whitespace) or a list/tuple of names. Prefer tuples when
+            building requests via ``op()``, since ``OperationRequest``
+            kwargs must stay hashable. Required when ``present=True``;
+            with ``present=False`` only the named hostnames are dropped,
+            and omitting it removes every line for ``ip``. Defaults to None.
+        present (bool, optional): Whether the entry should be present or
+            absent. Defaults to True.
+        path (str, optional): Path to the hosts file. Defaults to
+            ``/etc/hosts``.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The spool-and-install pair carrying the new hosts-file
+            content, when the entry differs from the request.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_etc_hosts.py``.
+    """
+
+    # Mirrors pyinfra's ``server.etc_hosts`` for ``ip``, ``hostnames``,
+    # ``present`` and ``path``. Idempotent: the parsed ``EtcHosts`` fact is
+    # compared first and pyinfra's three no-op reasons survive verbatim
+    # ("already present in", "already absent from", "does not reference any
+    # of:"); the present comparison is order-sensitive, so a mere reordering
+    # of the hostnames rewrites the line. When a change is due, the
+    # namespace's raw-content fact ``AuthorizedKeysFile`` supplies the file's
+    # current text (reused, never a cross-namespace ``files.FileContents``
+    # import) and the pure ``_hosts_content`` transform computes the new
+    # whole content, preserving every untouched line, comment and blank
+    # line; comments on the edited line are dropped, pyinfra parity. A
+    # content-level fixpoint guard no-ops when the transform's output equals
+    # the current text even though the fact stage wanted an edit.
+    #
+    # The write is spool-and-install, not pyinfra's elevated ``files.put``:
+    # reemote5 transfers never elevate, so one ``EtcHostsUploadCommand``
+    # scp's the text to a ``/tmp`` spool whose name is derived from the
+    # managed path (two requests targeting different hosts files never share
+    # one spool), then one ``EtcHostsInstallCommand`` overlays the hosts file
+    # with it under ``sh -c`` with a ``chmod 0644`` reset. The transfer stays
+    # unprivileged regardless of ``sudo`` -- only the install elevates --
+    # which is the two-privilege-level signature of the family. ``/etc/hosts``
+    # is root-owned: flag the request ``sudo=True``. This operation replaces
+    # the earlier two-run ``files.edit`` -> ``files.move`` example recipe
+    # (developer decision): the fact read, transform and install now live in
+    # one operation, so a single deploy suffices.
+    #
+    # pyinfra's ``OperationError`` for a missing ``hostnames`` becomes
+    # ``ValueError`` with the same message (the house parameter-validation
+    # style). ``**kwargs`` absorbs pyinfra's global arguments (``op()``
+    # already strips ``name``/``sudo``/``su``).
+    if isinstance(hostnames, str):
+        hostnames_list = hostnames.split()
+    elif hostnames is None:
+        hostnames_list = []
+    else:
+        hostnames_list = list(hostnames)
+
+    if present and not hostnames_list:
+        raise ValueError("hostnames must be provided when present=True")
+
+    current_entries = await ctx.facts.get(EtcHosts, path)
+    current_names = current_entries.get(ip)
+
+    if present:
+        if current_names == hostnames_list:
+            ctx.reason = f"{ip} -> {' '.join(hostnames_list)} already present in {path}"
+            return
+    else:
+        if current_names is None:
+            ctx.reason = f"{ip} already absent from {path}"
+            return
+        if hostnames_list and not any(name in current_names for name in hostnames_list):
+            ctx.reason = (
+                f"{ip} in {path} does not reference any of: {' '.join(hostnames_list)}"
+            )
+            return
+
+    current = await ctx.facts.get(AuthorizedKeysFile, path)
+    new = _hosts_content(current, ip, tuple(hostnames_list), present)
+    if new == (current or ""):
+        # The fact wanted an edit the file's own text says is unnecessary.
+        ctx.reason = f"{ip} entry already written in {path}"
+        return
+
+    ctx.changed = True
+    spool = _hosts_spool_path(path)
+    ctx.reason = (
+        f"{ip} -> {' '.join(hostnames_list)} will be written to {path}"
+        if present
+        else f"{ip} will be removed from {path}"
+    )
+    yield EtcHostsUploadCommand(content=new, dest=spool)
+    yield EtcHostsInstallCommand(spool=spool, dest=path)
+
+
 @dataclass(frozen=True)
 class KillCommand(Command):
     """One ``kill -<signal> <pid>`` invocation.
@@ -3819,6 +4403,469 @@ async def kill(
     ctx.changed = True
     ctx.reason = f"kill process {pid} with signal {signal}"
     yield KillCommand(pid=pid, signal=signal)
+
+
+#: pyinfra's hard-coded locale definitions file: the ``locales`` package's
+#: ``/etc/locale.gen``, which exists only on Debian-family hosts. RHEL-family
+#: systems install locales through ``glibc-langpack-*``/``localedef`` and have
+#: no such file, so a request there raises ``OperationError`` (pyinfra's own
+#: behaviour -- its ``FindInFile`` grep finds no matching line either).
+_LOCALE_GEN_PATH = "/etc/locale.gen"
+
+
+def _locale_spool_path(dest: str) -> str:
+    """The deterministic ``/tmp`` spool path ``locale`` uploads to.
+
+    Derived from the managed definitions file's sha1 (``files.install``'s
+    ``_install_spool_path`` / ``_keys_spool_path`` pattern), even though the
+    operation always edits the one ``/etc/locale.gen``: the derived name is
+    deterministic either way and matches every sibling conversion. The same
+    ``dest`` always yields the same name in both phases, so the descriptors
+    stay deterministic. The name avoids *collisions*, not a hostile local
+    user: it is predictable, so on a multi-tenant host the ``/tmp`` spool is
+    still a symlink-race exposure (the trade-off every spool-and-install
+    operation here makes).
+    """
+    digest = hashlib.sha1(dest.encode()).hexdigest()[:16]
+    return f"/tmp/reemote5-server-locale-{digest}"
+
+
+def _locale_edit(content: str | None, locale: str, present: bool) -> str:
+    """The pure locale.gen edit: comment out or uncomment the locale's line.
+
+    Mirrors pyinfra's ``server.locale`` body: the definition line is the one
+    matching ``<locale>`` followed by whitespace (pyinfra's grep
+    ``^.*{locale}[[:space:]]\\+.*$``, with the locale escaped literally here
+    -- ``re.escape`` -- where pyinfra interpolates it raw and a ``.`` would
+    match any character; the POSIX ``[[:space:]]`` class is translated
+    verbatim), every other line is preserved in order, and zero or multiple
+    matches raise ``OperationError`` with pyinfra's messages -- including an
+    absent file (``None`` content), which pyinfra's ``FindInFile`` reports as
+    no matches.
+
+    ``present=True`` strips every ``"# "`` occurrence from the line
+    (pyinfra's ``str.replace`` verbatim, so a doubly commented line is fully
+    enabled in one edit); ``present=False`` prepends ``"# "`` unless the line
+    is already commented -- the fixpoint guard pyinfra's unconditional
+    prepend lacks, so a stale locale archive can never double the comment.
+    The file's own trailing-newline state is preserved. Idempotent
+    (``f(f(x)) == f(x)``) and side-effect free, so both deploy phases compute
+    the same content from the same fact value.
+    """
+    pattern = re.compile(rf"{re.escape(locale)}[ \t\r\f\v]+")
+    lines = (content or "").splitlines()
+    matches = [i for i, line in enumerate(lines) if pattern.search(line)]
+    if not matches:
+        raise OperationError(f"Locale {locale} not found in {_LOCALE_GEN_PATH}")
+    if len(matches) > 1:
+        raise OperationError(
+            f"Multiple locales matches for {locale} in {_LOCALE_GEN_PATH}"
+        )
+    index = matches[0]
+    line = lines[index]
+    if present:
+        lines[index] = line.replace("# ", "")
+    elif not line.lstrip().startswith("#"):
+        lines[index] = f"# {line}"
+    text = "\n".join(lines)
+    if content and content.endswith("\n"):
+        text += "\n"
+    return text
+
+
+@dataclass(frozen=True)
+class LocaleUploadCommand(TransferCommand):
+    """Spool the transformed locale.gen content to a ``/tmp`` path on the target.
+
+    The first half of ``locale``'s write and a *non-shell* descriptor: it
+    copies the content over the connection's scp channel via
+    ``Host.upload_file`` rather than running shell text, so it has no
+    ``shell()`` and its loggable form is the ``__str__`` rendering
+    ``command_shell`` falls back to. Like ``EtcHostsUploadCommand`` the
+    content is not a caller-supplied stream but the whole definitions-file
+    text the operation just derived from the file's current content, so the
+    field is a plain ``str`` -- hashable and identical across phases --
+    wrapped in a fresh ``io.BytesIO`` only at transfer time. The copy rides
+    as the login user (transfers are unprivileged, so the request's ``sudo``
+    does not apply to it), which is why the spool path is world-writable
+    ``/tmp`` rather than root-owned ``/etc``.
+    """
+
+    content: str  # the whole transformed locale.gen text
+    dest: str  # spool path on the target host
+
+    def __str__(self) -> str:
+        return f"scp <locale.gen> -> {self.dest}"
+
+    async def transfer(self, host: Host) -> None:
+        await host.upload_file(io.BytesIO(self.content.encode()), self.dest)
+
+
+@dataclass(frozen=True)
+class LocaleInstallCommand(Command):
+    """Install the spooled locale.gen ``0644``, then remove the spool file.
+
+    The second half of ``locale``'s write and the elevated one: the whole
+    sequence is wrapped in ``sh -c`` -- a bare ``sudo`` prefix would elevate
+    only the first command of the ``&&`` chain and leave the cleanup running
+    as the login user, whereas ``sudo sh -c '...'`` runs every step elevated,
+    which can always remove the login-user spool file. The sequence ensures
+    the destination directory, copies the spooled content over the
+    definitions file, chmods it ``0644`` (the ``EtcHostsInstallCommand``
+    pattern) and removes the spool. No chown is needed: ``/etc/locale.gen``
+    is root-owned and ``cp`` over an existing file preserves its owner; a
+    freshly created file is root-owned already because the whole chain runs
+    under ``sudo``. All paths are shell-quoted.
+    """
+
+    spool: str  # where LocaleUploadCommand wrote the content
+    dest: str  # the locale.gen path being managed
+
+    def shell(self) -> str:
+        spool = shlex.quote(self.spool)
+        dest = shlex.quote(self.dest)
+        parent = shlex.quote(str(PurePosixPath(self.dest).parent))
+        inner = (
+            f"mkdir -p {parent} && "
+            f"cp {spool} {dest} && "
+            f"chmod 0644 {dest} && rm -f {spool}"
+        )
+        return f"sh -c {shlex.quote(inner)}"
+
+
+@dataclass(frozen=True)
+class LocaleGenCommand(Command):
+    """One ``locale-gen`` regeneration of the installed locales.
+
+    The third descriptor ``locale`` yields, pyinfra's bare ``locale-gen``
+    step after either edit: the tool rebuilds the system locale archive from
+    every uncommented definition line, so it takes no argument and the
+    rendering is the constant ``locale-gen``. The ``locale``/``present``
+    fields carry the request's own delta for the simulated seam (which
+    models only that locale's addition/removal, not a full archive rebuild)
+    and for plan readability; they never reach the shell. The command needs
+    root, so it rides the request's ``sudo`` like the install does.
+    """
+
+    locale: str  # the locale whose definition line was just edited
+    present: bool  # whether it was enabled (True) or disabled (False)
+
+    def shell(self) -> str:
+        return "locale-gen"
+
+
+async def locale(
+    ctx: OpContext,
+    locale: str,
+    present: bool = True,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Enable or disable a locale in ``/etc/locale.gen`` (Debian-family).
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        locale (str): Name of the locale to enable/disable (e.g.
+            ``fr_FR.UTF-8``), as spelled in ``/etc/locale.gen``.
+        present (bool, optional): Whether the locale should be enabled.
+            Defaults to True.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The spool-and-install pair carrying the new locale.gen
+            content (when the definition line changes), followed by one
+            ``locale-gen`` regeneration.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, OperationError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_op_locale.py``.
+    """
+
+    # Mirrors pyinfra's ``server.locale`` for ``locale`` and ``present``.
+    # Idempotent: the ``Locales`` fact (``locale -a``, normalized to ``UTF-8``
+    # spellings) is pyinfra's change condition -- enable only when the locale
+    # is absent, disable only when it is present. The definition-line lookup
+    # runs BEFORE that gate, exactly like pyinfra's ``FindInFile`` read, so a
+    # missing or ambiguous line raises ``OperationError`` with pyinfra's
+    # messages even for an already-in-state request (and on a RHEL-family
+    # host with no ``/etc/locale.gen`` at all). The lookup is a Python regex
+    # over the ``AuthorizedKeysFile`` raw-content fact -- the namespace's
+    # path-generic reader, reused never a cross-namespace ``files.FileContents``
+    # import -- with the locale escaped literally where pyinfra interpolates
+    # it raw into a grep pattern.
+    #
+    # The write is spool-and-install, not pyinfra's elevated sed
+    # (``files.line``/``files.replace``): reemote5 transfers never elevate,
+    # so one ``LocaleUploadCommand`` scp's the transformed text to a ``/tmp``
+    # spool whose name is derived from the managed path, then one
+    # ``LocaleInstallCommand`` overlays ``/etc/locale.gen`` with it under
+    # ``sh -c`` with a ``chmod 0644`` reset. The transfer stays unprivileged
+    # regardless of ``sudo`` -- only the install and the regeneration elevate
+    # -- which is the two-privilege-level signature of the family. pyinfra's
+    # timestamped sed backup is gone with the sed (its timestamp is
+    # non-deterministic across phases). This operation replaces the earlier
+    # two-run ``files.edit`` -> ``files.move`` example recipe (developer
+    # decision): the fact reads, transform, install and regeneration now live
+    # in one operation, so a single deploy suffices.
+    #
+    # ``LocaleGenCommand`` always follows when the gate wants a change --
+    # pyinfra's "locale-gen is always executed" semantics. The content-level
+    # fixpoint guard only skips the spool pair: a definition line already in
+    # the desired state (uncommented but not yet generated, or commented
+    # while the archive still lists the locale) needs no write, but the
+    # regeneration is still planned. The disable direction's ``"# "`` prepend
+    # is guarded against double-commenting (the fixpoint pyinfra's
+    # unconditional prepend lacks); the enable direction's ``str.replace``
+    # of every ``"# "`` is pyinfra verbatim. ``/etc/locale.gen`` is root-owned
+    # and ``locale-gen`` writes the system archive: flag the request
+    # ``sudo=True``. ``**kwargs`` absorbs pyinfra's global arguments (``op()``
+    # already strips ``name``/``sudo``/``su``).
+    installed = await ctx.facts.get(Locales)
+    current = await ctx.facts.get(AuthorizedKeysFile, _LOCALE_GEN_PATH)
+    new = _locale_edit(current, locale, present)
+
+    if (locale in installed) == present:
+        ctx.reason = f"locale {locale} already {'enabled' if present else 'disabled'}"
+        return
+
+    ctx.changed = True
+    reasons: list[str] = []
+    if new != (current or ""):
+        spool = _locale_spool_path(_LOCALE_GEN_PATH)
+        yield LocaleUploadCommand(content=new, dest=spool)
+        yield LocaleInstallCommand(spool=spool, dest=_LOCALE_GEN_PATH)
+        reasons.append(
+            f"will {'enable' if present else 'disable'} {locale} in {_LOCALE_GEN_PATH}"
+        )
+    else:
+        # The fact wanted a change the file's own text says is unnecessary:
+        # the definition line is already in the desired state, so only the
+        # regeneration below is due.
+        reasons.append(
+            f"{locale} definition line already "
+            f"{'uncommented' if present else 'commented'} in {_LOCALE_GEN_PATH}"
+        )
+    yield LocaleGenCommand(locale=locale, present=present)
+    reasons.append("will regenerate the installed locales with locale-gen")
+    ctx.reason = "; ".join(reasons)
+
+
+#: pyinfra's hard-coded limits file: ``pam_limits`` reads
+#: ``/etc/security/limits.conf`` as every user, so it must stay root-owned
+#: ``0644`` -- the reason the install resets the mode rather than moving the
+#: login-user spool over it.
+_SECURITY_LIMITS_PATH = "/etc/security/limits.conf"
+
+
+def _security_limit_spool_path(dest: str) -> str:
+    """The deterministic ``/tmp`` spool path ``security_limit`` uploads to.
+
+    Derived from the managed limits file's sha1 (``files.install``'s
+    ``_install_spool_path`` / ``_keys_spool_path`` pattern), even though the
+    operation always edits the one ``/etc/security/limits.conf``: the derived
+    name is deterministic either way and matches every sibling conversion.
+    The same ``dest`` always yields the same name in both phases, so the
+    descriptors stay deterministic. The name avoids *collisions*, not a
+    hostile local user: it is predictable, so on a multi-tenant host the
+    ``/tmp`` spool is still a symlink-race exposure (the trade-off every
+    spool-and-install operation here makes).
+    """
+    digest = hashlib.sha1(dest.encode()).hexdigest()[:16]
+    return f"/tmp/reemote5-server-security-limit-{digest}"
+
+
+def _security_limit_edit(
+    content: str | None,
+    domain: str,
+    limit_type: str,
+    item: str,
+    value: int | str,
+) -> str:
+    """Pure limits.conf edit: ensure the ``domain type item value`` line.
+
+    Mirrors the ``files.line`` call pyinfra's ``server.security_limit``
+    makes: search ``^{domain}[[:space:]]+{limit_type}[[:space:]]+{item}.*$``
+    (anchored, value NOT included), replacement the tab-formatted
+    ``domain\\tlimit_type\\titem\\tvalue``. Every matching line is
+    normalized in place -- a stale value line MATCHES and is corrected,
+    and an item prefix like ``nofilex`` matches too (pyinfra's ``.*$``); a
+    commented-out line does not (the anchor). With no match the line is
+    appended (an absent file, ``None`` content, reads as empty, pyinfra's
+    echo creating it). The fields are escaped literally (``re.escape``),
+    the documented hardening over pyinfra's raw BRE interpolation; the
+    POSIX ``[[:space:]]`` class is translated verbatim minus the newline
+    (matching is per line). The result always ends in one trailing
+    newline and the edit is a fixpoint (``f(f(x)) == f(x)``), side-effect
+    free, so both deploy phases compute the same content from the same
+    fact value.
+    """
+    pattern = re.compile(
+        rf"^{re.escape(domain)}[ \t\r\f\v]+{re.escape(limit_type)}"
+        rf"[ \t\r\f\v]+{re.escape(item)}.*$"
+    )
+    replace = f"{domain}\t{limit_type}\t{item}\t{value}"
+    lines = (content or "").splitlines()
+    matches = [i for i, line in enumerate(lines) if pattern.search(line)]
+    if not matches:
+        lines.append(replace)
+    else:
+        for i in matches:
+            lines[i] = replace
+    return "\n".join(lines) + "\n"
+
+
+@dataclass(frozen=True)
+class SecurityLimitUploadCommand(TransferCommand):
+    """Spool the transformed limits.conf content to a ``/tmp`` path on the target.
+
+    The first half of ``security_limit``'s write and a *non-shell* descriptor:
+    it copies the content over the connection's scp channel via
+    ``Host.upload_file`` rather than running shell text, so it has no
+    ``shell()`` and its loggable form is the ``__str__`` rendering
+    ``command_shell`` falls back to. Like ``LocaleUploadCommand`` the content
+    is not a caller-supplied stream but the whole limits-file text the
+    operation just derived from the file's current content, so the field is
+    a plain ``str`` -- hashable and identical across phases -- wrapped in a
+    fresh ``io.BytesIO`` only at transfer time. The copy rides as the login
+    user (transfers are unprivileged, so the request's ``sudo`` does not
+    apply to it), which is why the spool path is world-writable ``/tmp``
+    rather than root-owned ``/etc/security``.
+    """
+
+    content: str  # the whole transformed limits.conf text
+    dest: str  # spool path on the target host
+
+    def __str__(self) -> str:
+        return f"scp <limits.conf> -> {self.dest}"
+
+    async def transfer(self, host: Host) -> None:
+        await host.upload_file(io.BytesIO(self.content.encode()), self.dest)
+
+
+@dataclass(frozen=True)
+class SecurityLimitInstallCommand(Command):
+    """Install the spooled limits.conf ``0644``, then remove the spool file.
+
+    The second half of ``security_limit``'s write and the elevated one: the
+    whole sequence is wrapped in ``sh -c`` -- a bare ``sudo`` prefix would
+    elevate only the first command of the ``&&`` chain and leave the cleanup
+    running as the login user, whereas ``sudo sh -c '...'`` runs every step
+    elevated, which can always remove the login-user spool file. The
+    sequence ensures the destination directory, copies the spooled content
+    over the limits file, chmods it ``0644`` (the ``LocaleInstallCommand``
+    pattern) and removes the spool. No chown is needed:
+    ``/etc/security/limits.conf`` is root-owned and ``cp`` over an existing
+    file preserves its owner; a freshly created file is root-owned already
+    because the whole chain runs under ``sudo``. The mode reset matters:
+    ``pam_limits`` reads the file as every user, so a login-user mode would
+    silently stop the limits applying. All paths are shell-quoted.
+    """
+
+    spool: str  # where SecurityLimitUploadCommand wrote the content
+    dest: str  # the limits.conf path being managed
+
+    def shell(self) -> str:
+        spool = shlex.quote(self.spool)
+        dest = shlex.quote(self.dest)
+        parent = shlex.quote(str(PurePosixPath(self.dest).parent))
+        inner = (
+            f"mkdir -p {parent} && "
+            f"cp {spool} {dest} && "
+            f"chmod 0644 {dest} && rm -f {spool}"
+        )
+        return f"sh -c {shlex.quote(inner)}"
+
+
+async def security_limit(
+    ctx: OpContext,
+    domain: str,
+    limit_type: str,
+    item: str,
+    value: int | str,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Ensure a resource limit line in ``/etc/security/limits.conf``.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        domain (str): The user, group (``@group``) or wildcard ``*`` the
+            limit applies to.
+        limit_type (str): ``soft`` or ``hard``.
+        item (str): The resource being limited (e.g. ``nofile``, ``memlock``).
+        value (int | str): The limit's value; a number or a symbolic string
+            such as ``unlimited`` (pyinfra types it ``int`` but its own
+            fixture passes ``"unlimited"``).
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The spool-and-install pair carrying the new limits.conf
+            content, or nothing when the file already reads as desired.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_security_limit.py``.
+    """
+
+    # Mirrors pyinfra's ``server.security_limit`` for ``domain``,
+    # ``limit_type``, ``item`` and ``value``: a thin wrapper over
+    # ``files.line`` on ``/etc/security/limits.conf`` whose pattern
+    # ``^{domain}[[:space:]]+{limit_type}[[:space:]]+{item}.*$`` excludes
+    # the value, so a stale value is normalized in place and an item prefix
+    # (``nofilex``) matches while a commented line does not. The lookup is
+    # a Python regex over the ``AuthorizedKeysFile`` raw-content fact -- the
+    # namespace's path-generic reader, reused never a cross-namespace
+    # ``files.FileContents`` import -- with the fields escaped literally
+    # (``re.escape``) where pyinfra interpolates them raw into a BRE.
+    #
+    # The write is spool-and-install, not pyinfra's elevated sed/echo
+    # (``files.line``): reemote5 transfers never elevate, so one
+    # ``SecurityLimitUploadCommand`` scp's the transformed text to a
+    # ``/tmp`` spool whose name is derived from the managed path, then one
+    # ``SecurityLimitInstallCommand`` overlays ``/etc/security/limits.conf``
+    # with it under ``sh -c`` with a ``chmod 0644`` reset. The transfer
+    # stays unprivileged regardless of ``sudo`` -- only the install
+    # elevates -- which is the two-privilege-level signature of the family.
+    # pyinfra's timestamped sed backup is gone with the sed (its timestamp
+    # is non-deterministic across phases). This operation replaces the
+    # earlier ``files.edit`` + demo-side install example recipe (developer
+    # decision): the fact read, transform and install now live in one
+    # operation, so a single deploy suffices.
+    #
+    # Idempotence is the content-level fixpoint -- pyinfra's ``files.line``
+    # no-op when a matching line already reads exactly the replacement:
+    # the transform's result compared against the file's current text,
+    # with no parsed semantic fact behind limits.conf. One deviation from
+    # the file's own bytes: the result always ends in one trailing newline,
+    # so a file missing its final newline is rewritten once even when the
+    # line itself is correct. ``/etc/security/limits.conf`` is root-owned:
+    # flag the request ``sudo=True``. ``**kwargs`` absorbs pyinfra's global
+    # arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    current = await ctx.facts.get(AuthorizedKeysFile, _SECURITY_LIMITS_PATH)
+    new = _security_limit_edit(current, domain, limit_type, item, value)
+    if new == (current or ""):
+        ctx.reason = (
+            f"security limit {domain} {limit_type} {item} "
+            f"already set to {value} in {_SECURITY_LIMITS_PATH}"
+        )
+        return
+
+    ctx.changed = True
+    spool = _security_limit_spool_path(_SECURITY_LIMITS_PATH)
+    ctx.reason = (
+        f"security limit {domain} {limit_type} {item} "
+        f"will be set to {value} in {_SECURITY_LIMITS_PATH}"
+    )
+    yield SecurityLimitUploadCommand(content=new, dest=spool)
+    yield SecurityLimitInstallCommand(spool=spool, dest=_SECURITY_LIMITS_PATH)
 
 
 def _module_label(modules: tuple[str, ...]) -> str:
@@ -4358,9 +5405,14 @@ async def wait_service(
 __all__ = [
     "Arch",
     "AuthorizedKeys",
-    "AuthorizedKeysAppendCommand",
+    "AuthorizedKeysFile",
+    "AuthorizedKeysInstallCommand",
+    "AuthorizedKeysUploadCommand",
     "Date",
     "Env",
+    "EtcHosts",
+    "EtcHostsInstallCommand",
+    "EtcHostsUploadCommand",
     "GroupAddCommand",
     "GroupDelCommand",
     "Groups",
@@ -4375,6 +5427,9 @@ __all__ = [
     "LinuxDistribution",
     "LinuxGui",
     "LinuxName",
+    "LocaleGenCommand",
+    "LocaleInstallCommand",
+    "LocaleUploadCommand",
     "Locales",
     "LsbRelease",
     "ModprobeCommand",
@@ -4383,6 +5438,8 @@ __all__ = [
     "Port",
     "PortInfo",
     "Processes",
+    "SecurityLimitInstallCommand",
+    "SecurityLimitUploadCommand",
     "SetHostnameCommand",
     "SetTimezoneCommand",
     "SystemctlCommand",
@@ -4397,13 +5454,16 @@ __all__ = [
     "Users",
     "WaitForFactCommand",
     "Which",
+    "etc_hosts",
     "group",
     "hostname",
     "is_active",
     "is_listening",
     "kill",
+    "locale",
     "modprobe",
     "mount",
+    "security_limit",
     "service",
     "timezone",
     "unit_name",
