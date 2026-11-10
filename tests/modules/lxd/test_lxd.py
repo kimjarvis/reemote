@@ -8,8 +8,8 @@
 ``operation`` operations.
 
 Covers ``reemote5.modules.lxd.lxd``. ``LxdContainers`` and ``container``
-mirror pyinfra's ``lxd.LxdContainers`` / ``lxd.container``, so their
-real-transport parity reuses pyinfra's own fixtures verbatim (the canned
+mirror the baseline's ``lxd.LxdContainers`` / ``lxd.container``, so their
+real-transport parity reuses the baseline's own fixtures verbatim (the canned
 ``lxc list --format json --fast`` output, the launch/stop/delete shells
 including the injection-quoting case, and the noop reasons). The fifteen
 reemote5-original facts have no upstream fixture, so they are exercised
@@ -391,9 +391,9 @@ def test_lxd_all_lists_are_sorted_and_complete():
     assert sorted(lxd.__all__) == sorted([*module_all, "lxd"])
 
 
-# --- LxdContainers (pyinfra parity) ------------------------------------------
+# --- LxdContainers (baseline parity) ------------------------------------------
 
-# pyinfra's tests/facts/lxd.LxdContainers fixture, verbatim.
+# The baseline's tests/facts/lxd.LxdContainers fixture, verbatim.
 CONTAINERS_OUTPUT = '[{"name": "container1", "status": "Running"},{"name": "container2"}]'
 CONTAINERS_FACT: list[LxdContainer] = [
     {"name": "container1", "status": "Running"},
@@ -401,11 +401,11 @@ CONTAINERS_FACT: list[LxdContainer] = [
 ]
 
 
-def test_containers_command_is_pyinfras_unscoped_fast_listing():
+def test_containers_command_is_baseline_unscoped_fast_listing():
     assert LxdContainers.COMMAND == "lxc list --format json --fast"
 
 
-async def test_containers_real_transport_matches_pyinfras_fixture():
+async def test_containers_real_transport_matches_baseline_fixture():
     host = CannedShellHost(CONTAINERS_OUTPUT)
     assert await LxdContainers.process(host) == CONTAINERS_FACT
     assert host.shells == ["lxc list --format json --fast"]
@@ -413,7 +413,7 @@ async def test_containers_real_transport_matches_pyinfras_fixture():
 
 def test_containers_parse_passes_extra_keys_through_and_empty_is_a_list():
     # The hardened deviation: empty stdout parses to [] instead of
-    # pyinfra's assert-on-one-line crash. Extra fast columns survive.
+    # The baseline's assert-on-one-line crash. Extra fast columns survive.
     assert LxdContainers.parse([]) == []
     assert LxdContainers.parse([""]) == []
     lines = ['[{"name": "c1", "ipv4": "10.0.0.2", "snapshots": 2}]']
@@ -885,8 +885,8 @@ async def test_storage_volumes_reads_the_simulated_seam():
 # --- descriptor shells --------------------------------------------------------
 
 
-def test_launch_command_renders_pyinfras_parity_shells():
-    # pyinfra's tests/operations/lxd.container fixtures, verbatim.
+def test_launch_command_renders_baseline_parity_shells():
+    # The baseline's tests/operations/lxd.container fixtures, verbatim.
     assert LxdLaunchCommand(image="ubuntu:16.04", instance="container1").shell() == (
         "lxc launch ubuntu:16.04 container1 < /dev/null"
     )
@@ -1133,10 +1133,10 @@ async def test_operation_wait_times_out_while_the_id_is_registered():
         await cmd.wait(host)
 
 
-# --- container operation (pyinfra parity) --------------------------------------
+# --- container operation (baseline parity) --------------------------------------
 
 
-async def test_container_op_creates_with_pyinfras_launch():
+async def test_container_op_creates_with_baseline_launch():
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
         host, lxd.container, id="container1", image="ubuntu:16.04"
@@ -1169,7 +1169,7 @@ async def test_container_op_stops_a_running_container_before_deleting():
     host = SimulatedHost(name="h", lxd_containers=CONTAINERS_FACT)
     ctx, commands = await materialize(host, lxd.container, id="container1", present=False)
     assert ctx.changed
-    # pyinfra's stop-then-delete sequence, in order.
+    # The baseline's stop-then-delete sequence, in order.
     assert commands == [
         LxdStateCommand(instance="container1", action="stop"),
         LxdDeleteCommand(instance="container1"),
@@ -1178,7 +1178,7 @@ async def test_container_op_stops_a_running_container_before_deleting():
 
 async def test_container_op_delete_absent_is_a_noop_and_absorbs_kwargs():
     host = SimulatedHost(name="h")
-    # **kwargs absorbs pyinfra's global arguments op() does not strip.
+    # **kwargs absorbs the baseline's global arguments op() does not strip.
     ctx, commands = await materialize(
         host, lxd.container, id="container1", present=False, _global_arg=True
     )

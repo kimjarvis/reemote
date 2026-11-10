@@ -31,10 +31,10 @@ target your machines.
 driven by ``asyncio.run``.
 
 ``apt.repo`` adds (or with ``present=False`` removes) one apt source line,
-mirroring pyinfra's ``apt.repo``. ``src`` is the full source string -- here
+mirroring the baseline's ``apt.repo``. ``src`` is the full source string -- here
 the Canonical partner repository for Ubuntu noble -- and ``filename``
 scopes it to ``/etc/apt/sources.list.d/canonical-partner.list`` instead of
-the main ``/etc/apt/sources.list``. Unlike pyinfra -- whose ``apt.repo``
+the main ``/etc/apt/sources.list``. Unlike the baseline -- whose ``apt.repo``
 delegates the edit to ``files.line``, patching the file in place with an
 ``echo >>`` or a ``sed -i`` -- reemote5 *rewrites* the managed file through
 the spool-and-install pair ``apt.key`` uses: the file's current text is
@@ -43,7 +43,7 @@ deletes the line, the result is scp'd to a ``/tmp`` spool named after the
 managed file, and an elevated ``sh -c`` install overlays the protected file
 and removes the spool. Because the transform works on the real content, the
 file's other lines, comments and blank lines come back exactly as they were
-and pyinfra's timestamped sed backup -- non-deterministic between the two
+and the baseline's timestamped sed backup -- non-deterministic between the two
 phases -- is gone.
 
 ``apt.repo`` parses ``src`` and compares it against the ``AptSources``

@@ -131,7 +131,7 @@ async def main() -> None:
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
         # running one host at a time. process runs the psql select over
         # pg_catalog.pg_roles and parses the rows into a dict keyed by role
-        # name -- the pyinfra postgres.PostgresRoles shape.
+        # name -- the baseline postgres.PostgresRoles shape.
         roles = await gather_fact(hosts, PostgresqlRoles)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's

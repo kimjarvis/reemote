@@ -29,7 +29,7 @@ driving the two-phase execution model:
    path argument verbatim, and returns a host-name-keyed mapping -- then
    print each host's branch name.
 
-``GitBranch`` mirrors pyinfra's ``git.GitBranch``: it runs
+``GitBranch`` mirrors the baseline's ``git.GitBranch``: it runs
 ``! test -d <repo> || (cd <repo> && git describe --all)`` and strips the
 ``heads/``/``tags/`` prefix from the answer. A missing repository directory
 short-circuits the guard, so a host without ``REPO`` simply reports the

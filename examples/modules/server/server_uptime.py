@@ -29,7 +29,7 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's uptime in seconds with
    ``json.dumps(..., indent=2)``.
 
-``Uptime`` mirrors pyinfra's ``server.Uptime``: it first reads the
+``Uptime`` mirrors the baseline's ``server.Uptime``: it first reads the
 ``Kernel`` fact (``uname -s``) to pick its shell -- on Linux that is
 ``cut -d. -f1 /proc/uptime``, whose integer answer is the number of seconds
 since boot (e.g. ``86400`` -- one day); on Darwin/FreeBSD it subtracts the

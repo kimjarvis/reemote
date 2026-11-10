@@ -31,7 +31,7 @@ target is removed (``rm -f``) and recreated (never ``ln -sf``),
 itself, never its target), and ``present=False`` removes it with
 ``rm -f``. A missing parent directory is ``mkdir -p``'d first unless
 ``create_remote_dir=False``, and a path held by a regular file or
-directory raises unless ``force=True`` removes it first (pyinfra's
+directory raises unless ``force=True`` removes it first (the baseline's
 timestamped ``force_backup`` is deliberately dropped -- the
 ``datetime.now()`` in the ``mv`` would differ between the phases).
 The deploy ensures the same link twice to prove it: the second request

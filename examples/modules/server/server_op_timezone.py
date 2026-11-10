@@ -4,9 +4,9 @@
 """Example: set the system timezone on real CentOS hosts (systemd only).
 
 This is a *usage* example, not part of the library. It shows reemote5's
-``server.timezone`` operation, the pyinfra ``server.timezone`` parity for
+``server.timezone`` operation, baseline ``server.timezone`` parity for
 the system timezone: the deploy ensures every host keeps ``Europe/Amsterdam``
-(pyinfra's documented example), under ``sudo`` because ``timedatectl``
+(the baseline's documented example), under ``sudo`` because ``timedatectl``
 needs root.
 
 The operation is idempotent: it reads the ``Timezone`` fact
@@ -17,10 +17,10 @@ plans no change and a second run is a no-op everywhere. It is supported on
 ``timedatectl``, and the command it yields -- ``timedatectl set-timezone``
 -- also persists the zone across reboots. A host without ``timedatectl``
 raises ``OperationError`` during the prepare phase, before anything is
-sent; pyinfra's non-systemd fallback (symlinking ``/etc/localtime`` and
+sent; the baseline's non-systemd fallback (symlinking ``/etc/localtime`` and
 writing ``/etc/timezone``) is deliberately dropped, so there is no silent
 edit behind systemd's back. An already-set zone stays a no-op on any host,
-like pyinfra, which also compares the fact before probing for the tool.
+like the baseline, which also compares the fact before probing for the tool.
 
 Every failure mode of the run -- an unreachable host, a rejected elevation,
 a ``timedatectl`` that exits non-zero (an unknown zone, for instance), or a

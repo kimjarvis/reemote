@@ -3,8 +3,7 @@
 
 """The docker connector: run deploys inside local Docker/Podman containers.
 
-Ported from pyinfra's ``@docker`` connector (``connectors/docker.py``), as a
-``DockerHost`` subclass overriding exactly the transport seams a plain
+A ``DockerHost`` subclass overriding exactly the transport seams a plain
 ``Host`` uses for asyncssh -- ``connect``, ``_run_shell``, ``upload_file``,
 ``download_file`` and ``aclose`` -- so the drivers, every fact, every
 operation and the privilege machinery work unchanged.
@@ -15,25 +14,23 @@ An inventory entry selects it with ``connection.connector``::
       "connection": {"connector": "docker", "identifier": "alpine:3.20",
                      "docker_cmd": "docker"}}]
 
-``identifier`` is either an *image name* or an *existing container ID*
-(pyinfra's ``docker_identifier``):
+``identifier`` is either an *image name* or an *existing container ID*:
 
 + Image -- ``docker run -d <image> tail -f /dev/null`` starts a throwaway
   container, the deploy executes against it, and ``aclose`` commits it into
   a new image (its short ID lands on ``DockerHost.image_id``) and removes
   the container. This is the image-build workflow.
 + Existing container -- inspected, started if stopped, and left running on
-  close: an existing container is NEVER committed or removed. (pyinfra
-  removes a stopped container it started itself; reemote5 deliberately does
-  not touch containers it did not create.)
+  close: an existing container is NEVER committed or removed. (reemote5
+  deliberately does not touch containers it did not create.)
 
 Every call shells out to the CLI on the *control machine* via
 ``asyncio.create_subprocess_exec`` -- there is no docker SDK dependency, but
 the ``docker`` binary (and a reachable daemon, usually the local socket or
 whatever ``DOCKER_HOST`` names) must be installed locally. The ``docker_cmd``
 connection key names the binary and is REQUIRED -- there is no default and
-no auto-detection -- so ``"podman"`` works through the same class, mirroring
-pyinfra's ``PodmanConnector`` (rootless podman needs no daemon at all).
+no auto-detection -- so ``"podman"`` works through the same class (rootless
+podman needs no daemon at all).
 Commands run inside the container through ``docker exec -i
 <container> sh -c <shell>``, so container-side exit codes -- including the
 shell's 127 for a missing command -- propagate verbatim and the inherited
@@ -72,9 +69,9 @@ def validate_docker_connection(conn: dict[str, Any]) -> None:
     ``platform`` (the ``docker run --platform`` selector) are optional.
     Every value must be a non-empty string, and any key outside
     ``_DOCKER_CONNECTION_KEYS`` is rejected -- there is no passthrough, so
-    an SSH option on a docker entry is an error, not a no-op. pyinfra's
-    ``docker_architecture`` is deliberately dropped: ``--arch`` is not a
-    ``docker run`` flag and ``platform`` covers it.
+    an SSH option on a docker entry is an error, not a no-op. A
+    ``docker_architecture`` key is deliberately not supported: ``--arch`` is
+    not a ``docker run`` flag and ``platform`` covers it.
     """
     unknown = sorted(set(conn) - _DOCKER_CONNECTION_KEYS)
     if unknown:

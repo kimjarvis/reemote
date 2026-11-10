@@ -29,7 +29,7 @@ driving the two-phase execution model:
    with ``json.dumps(..., indent=2)``.
 
 The fact parses the ``:NAME POLICY [pkts:bytes]`` lines of
-``iptables-save -t filter`` (the pyinfra ``iptables.IptablesChains``
+``iptables-save -t filter`` (the baseline ``iptables.IptablesChains``
 shape); pass another table name to ``gather_fact`` for nat/mangle/raw.
 Reading the tables needs CAP_NET_ADMIN, so the command retries through
 passwordless ``sudo -n``: a root login or a NOPASSWD sudoers rule reads

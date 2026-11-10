@@ -16,14 +16,14 @@ two-phase execution model end to end over a **real SSH transport**
    objects. Every request is flagged ``sudo=True``, so the ``mysql``
    client rides under root and connects through unix-socket
    authentication -- no password travels through operation arguments,
-   plans or logs (pyinfra's ``mysql_password`` option is deliberately
+   plans or logs (the baseline's ``mysql_password`` option is deliberately
    dropped namespace-wide).
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
 ``mysql.optimize`` is a reemote5-original operation running
 OPTIMIZE TABLE -- or ANALYZE/CHECK/REPAIR through ``action`` -- over a
 list of tables in one database, in a single statement. It is STATELESS
-like pyinfra's dump/load: maintenance is a periodic action, not a
+like the baseline's dump/load: maintenance is a periodic action, not a
 desired state, so there is nothing to compare a fact against and every
 request runs. InnoDB maps OPTIMIZE to a recreate+analyze and does not
 support REPAIR (the server reports a note, not an error). The script

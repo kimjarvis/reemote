@@ -1,10 +1,10 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: ensure a resource limit (pyinfra server.security_limit parity).
+"""Example: ensure a resource limit (baseline server.security_limit parity).
 
 This is a *usage* example, not part of the library. It shows reemote5's
-``server.security_limit`` operation, the pyinfra ``server.security_limit``
+``server.security_limit`` operation, baseline ``server.security_limit``
 parity for ``/etc/security/limits.conf``: the deploy ensures every guarded
 host carries ``* soft nofile 1024``, under ``sudo`` because the limits file
 is root-owned and ``pam_limits`` reads it as every user.
@@ -14,7 +14,7 @@ replaces the earlier ``files.edit`` + demo-side ``limits_install`` example
 recipe that used to live in this file: the fact read, the line edit and the
 install now happen inside one operation, so a single deploy suffices. In one
 request it reads the raw ``/etc/security/limits.conf`` text through the
-``AuthorizedKeysFile`` content fact, applies pyinfra's anchored ``files.line``
+``AuthorizedKeysFile`` content fact, applies the baseline's anchored ``files.line``
 lookup on the controller (the value is NOT part of the pattern, so a stale
 value is normalized in place), scp's the transformed text to a deterministic
 ``/tmp`` spool (the transfer rides the login user -- transfers never elevate),
@@ -23,16 +23,16 @@ and installs it over ``/etc/security/limits.conf`` with an elevated ``sh -c``
 levels: an unprivileged ``$ scp <limits.conf> -> ...`` line followed by
 ``$ sudo sh -c '...'``.
 
-The operation is idempotent at the content level -- pyinfra's ``files.line``
+The operation is idempotent at the content level -- the baseline's ``files.line``
 no-op when a matching line already reads exactly the replacement: a host whose
 limits.conf already carries the line plans no change, and a second run is a
 no-op everywhere. One documented deviation: the desired content always ends in
 one trailing newline, so a file missing its final newline is rewritten once
 even when the line itself is correct. The match regex escapes domain, type and
-item literally (``re.escape``), the hardening over pyinfra's raw BRE
-interpolation; an item prefix like ``nofilex`` matches (pyinfra's ``.*$``) while
+item literally (``re.escape``), the hardening over the baseline's raw BRE
+interpolation; an item prefix like ``nofilex`` matches (the baseline's ``.*$``) while
 a commented-out line does not (the anchor). The ``value`` accepts both an
-``int`` and a symbolic string such as ``"unlimited"`` (pyinfra types it ``int``
+``int`` and a symbolic string such as ``"unlimited"`` (the baseline types it ``int``
 but its own fixture passes ``"unlimited"``).
 
 Every failure mode of the run -- an unreachable host, a rejected elevation, or
@@ -86,7 +86,7 @@ from reemote5 import (
     validate_inventory,
 )
 
-# The limit to ensure: pyinfra's documented example ("Set nofile limit for
+# The limit to ensure: the baseline's documented example ("Set nofile limit for
 # all users"). The value is an int here; the operation also accepts a symbolic
 # string such as "unlimited".
 DOMAIN = "*"

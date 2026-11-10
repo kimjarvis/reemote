@@ -4,8 +4,8 @@
 """Example: set and clear an ext2 attribute flag with files.flags.
 
 This is a *usage* example, not part of the library. It shows ``files.flags``
-(pyinfra ``files.flags`` parity, in the developer-chosen Linux adaptation):
-pyinfra's BSD verb pair -- ``chflags`` reading ``stat -f %Sf`` flag *names*
+(baseline ``files.flags`` parity, in the developer-chosen Linux adaptation):
+the baseline's BSD verb pair -- ``chflags`` reading ``stat -f %Sf`` flag *names*
 like ``hidden`` -- does not exist on Linux, so the same set/clear capability
 is expressed over ``lsattr -d`` attribute *letters* (read back through the
 ``FileFlags`` fact) and ``chattr +flag``/``-flag``. Here the ``i`` letter is
@@ -14,7 +14,7 @@ removed even by its owner, until the flag is cleared again.
 
 Two properties shape the script:
 
-* The idempotence is verbatim pyinfra's. A set yields only the requested
+* The idempotence is verbatim the baseline's. A set yields only the requested
   letters *missing* from the current set and a clear only those *present*, so
   a request whose flags already match the file reports "already has 'i'
   set"/"clear" and sends nothing. ``flags`` is a tuple of one-letter strings

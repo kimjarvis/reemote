@@ -17,7 +17,7 @@ two-phase execution model end to end over a **real SSH transport**
    need CAP_NET_ADMIN, so the commands ride under root.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``iptables.policy`` is the standalone policy surface (pyinfra couples
+``iptables.policy`` is the standalone policy surface (the baseline couples
 policy setting to ``iptables.chain``): it validates the policy word
 against ACCEPT/DROP/QUEUE/RETURN, reads the ``IptablesChains`` fact and
 yields ``-P`` only when the chain's current policy differs. The target

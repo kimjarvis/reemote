@@ -29,7 +29,7 @@ driving the two-phase execution model:
    host-name-keyed mapping -- then print each host's counter map with
    ``json.dumps(..., indent=2)``.
 
-``DiskStats`` is a reemote5 original (pyinfra has no counterpart): it runs
+``DiskStats`` is a reemote5 original (the baseline has no counterpart): it runs
 ``cat /proc/diskstats`` and maps each block device -- mounted or not -- to
 the kernel's IO counters as a ``DiskStat`` entry of ints
 (``reads_completed``, ``sectors_read``,

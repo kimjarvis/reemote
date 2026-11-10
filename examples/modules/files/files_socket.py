@@ -29,7 +29,7 @@ two-phase execution model:
    and returns a host-name-keyed mapping -- then print each host's answer
    with ``json.dumps(..., indent=2)``.
 
-``Socket`` mirrors pyinfra's ``files.Socket`` -- the ``File`` subclass
+``Socket`` mirrors the baseline's ``files.Socket`` -- the ``File`` subclass
 with ``type = "socket"``: the same ``test -e``/``test -L`` guard and GNU
 ``stat -c`` / BSD ``stat -f`` / ``ls -ld`` chain, but the path's type flag
 must be ``s``. The result is the same metadata dict ``File`` returns --

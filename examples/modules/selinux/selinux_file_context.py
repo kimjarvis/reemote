@@ -30,12 +30,12 @@ SSH transport* (asyncssh):
    mapping -- then print each host's raw context (or ``null``) with
    ``json.dumps(..., indent=2)``.
 
-``FileContext`` ports pyinfra's fact of the same name: ``stat -c %C``
+``FileContext`` ports the baseline's fact of the same name: ``stat -c %C``
 prints the path's *runtime* label as ``user:role:type:level`` and the fact
 splits it into the four-component ``SeContext`` dictionary, here for
 ``/var/www/html`` (the stock httpd document root). A path on a filesystem
 without SELinux labels prints ``?`` and a missing path prints nothing --
-both read as ``None``, pyinfra's documented None-on-absent, so the fact
+both read as ``None``, the baseline's documented None-on-absent, so the fact
 never raises for an unreadable label. This is the context the file carries
 *now*; the persistent database rule that would survive a relabel is the
 ``FileContextMapping`` fact's answer

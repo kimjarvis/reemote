@@ -28,7 +28,7 @@ two-phase execution model:
    inventory with ``asyncio.gather`` and returns a host-name-keyed mapping
    -- then print each host's user list with ``json.dumps(..., indent=2)``.
 
-``Users`` mirrors pyinfra's ``server.Users``: a shell loop joins each
+``Users`` mirrors the baseline's ``server.Users``: a shell loop joins each
 ``/etc/passwd`` entry with ``id``'s primary and secondary groups, the
 ``lastlog`` (``lastlogin`` on BSD) row and the shadow password hash, so a
 deploy can audit who exists on a machine -- home, shell, groups, last

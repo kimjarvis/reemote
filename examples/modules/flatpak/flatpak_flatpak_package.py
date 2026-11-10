@@ -41,12 +41,12 @@ tracked indented label rows of its output into the application's reverse-domain
 indented label rows are read, so the unindented title line, the blank
 separators and every other label (``Arch``, ``Branch``, ``License``,
 ``Origin``, ``Installation``, ``Installed`` and the commit block) are ignored --
-exactly as pyinfra's three capture groups do. An absent package (or a host
+exactly as the baseline's three capture groups do. An absent package (or a host
 without ``flatpak``) prints no tracked row -- the command's
 ``2>/dev/null || true`` swallows the non-zero exit and the ``error: ... not
 installed`` line goes to the suppressed stderr -- so it reports ``None``
-outright, the ``apt.DebPackage`` tolerance rather than pyinfra's empty ``{}``.
-pyinfra's ``requires_command`` gating on ``flatpak`` is deliberately dropped for
+outright, the ``apt.DebPackage`` tolerance rather than the baseline's empty ``{}``.
+the baseline's ``requires_command`` gating on ``flatpak`` is deliberately dropped for
 the same reason. A present package that simply prints no ``Version:`` row (a
 runtime) keeps the key with its empty-string default, so the entry always
 carries all three fields.

@@ -10,8 +10,8 @@ re-gathering the ``Port`` fact over each host's asyncssh connection every
 ``interval`` seconds until the ``is_listening`` predicate holds or ``timeout``
 expires (raising ``WaitTimeoutError`` and aborting the run).
 
-``server.wait`` mirrors pyinfra's ``server.wait(port=...)``, the only option
-upstream has. pyinfra polls remotely: a ``while true`` shell loop over
+``server.wait`` mirrors the baseline's ``server.wait(port=...)``, the only option
+upstream has. The baseline polls remotely: a ``while true`` shell loop over
 ``netstat`` with a fixed one second sleep and *no* timeout at all, so a port
 that never opens hangs the run forever. Here the wait is described, not
 scripted: the driver polls the fact and ``timeout`` bounds it, and ``interval``
@@ -19,7 +19,7 @@ is adjustable. The default interval is 1s rather than ``wait_service``'s 5s --
 a port on its way up usually appears within a second, where a unit's start
 takes longer.
 
-The deploy is the two-step shape from pyinfra's ``systemd.service`` +
+The deploy is the two-step shape from the baseline's ``systemd.service`` +
 ``server.wait`` idiom, and it pairs with
 ``examples/modules/server/wait_for_httpd.py``: same start, two different
 readiness questions. ``server.wait_service`` there asks systemd whether the
@@ -155,7 +155,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         sudo=True,
         when=is_centos,
     )
-    # The wait takes the port positionally (pyinfra's only option) plus the
+    # The wait takes the port positionally (the baseline's only option) plus the
     # two bounds it does not have: "udp" would be the other protocol family,
     # and an already-open port is satisfied by the very first poll -- a zero
     # timeout still polls once.

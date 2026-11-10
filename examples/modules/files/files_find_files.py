@@ -30,7 +30,7 @@ two-phase execution model:
    host's ``process`` -- then print each host's path list with
    ``json.dumps(..., indent=2)``.
 
-``FindFiles`` mirrors pyinfra's ``files.FindFiles`` -- the enumeration
+``FindFiles`` mirrors the baseline's ``files.FindFiles`` -- the enumeration
 fact the stat-only ``File``/``Directory`` metadata facts cannot replace:
 it discovers names the deploy author does not know. This is exactly the
 DataDog Ansible role's cleanup question, "which ``conf.d/*/conf.yaml``
@@ -39,7 +39,7 @@ legacy check configs to remove. One ``find <path> -type f`` plus the
 filters returns the matching paths verbatim in find's traversal order,
 always guarded with ``|| true`` so a missing start path (a host without
 the agent) reads as ``[]`` rather than a failed read. The filters are
-pyinfra's set: ``fname``/``iname`` name globs, ``maxdepth``, size bounds
+the baseline's set: ``fname``/``iname`` name globs, ``maxdepth``, size bounds
 (``size``/``min_size``/``max_size``, ints or spellings like ``"1KB"``),
 ``regex``, ``path_match`` and the raw ``args`` escape hatch. The bare
 ``list[str]`` return is the agreed exception to the TypedDict guideline

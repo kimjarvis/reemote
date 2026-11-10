@@ -3,10 +3,10 @@
 
 # The ``ufw`` module: facts and operations in one source.
 #
-# pyinfra ships no ufw module, so everything here is a reemote5 original
-# (the comprehensive-ufw proposal, answered with the developer's locked
-# decisions). Fact side: ``UfwStatus`` (active flag, logging level and the
-# three default policies from ``ufw status verbose`` -- the standalone
+# Everything here is a reemote5 original (the comprehensive-ufw
+# proposal, answered with the developer's locked decisions). Fact side:
+# ``UfwStatus`` (active flag, logging level and the three default policies
+# from ``ufw status verbose`` -- the standalone
 # ``DefaultPolicy``/``defaults`` fact proposals are folded into this one
 # record, the iptables module's IptablesDefaultPolicies precedent),
 # ``UfwRules`` (the numbered ruleset from ``ufw status numbered``, parsed

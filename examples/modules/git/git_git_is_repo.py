@@ -29,7 +29,7 @@ driving the two-phase execution model:
    path argument verbatim, and returns a host-name-keyed mapping -- then
    print each host's is-a-repository answer.
 
-``GitIsRepo`` is a reemote5-original fact -- pyinfra has no equivalent. It
+``GitIsRepo`` is a reemote5-original fact -- the baseline has no equivalent. It
 runs ``! test -d <repo> || (cd <repo> && git rev-parse --is-inside-work-tree
 2>/dev/null)`` and answers ``True`` only when git prints ``true``, so it
 validates a work tree precisely instead of trusting the existence of a

@@ -22,7 +22,7 @@ two-phase execution model end to end over a **real SSH transport**
 connection (to install a key from the control machine in one request, use
 ``gpg.key``, which dearmors armored streams itself). One request yields
 one ``sh -c`` that creates the destination's parent directory, dearmors
-``src`` into ``dest`` and chmods the result ``0644``. Like pyinfra's
+``src`` into ``dest`` and chmods the result ``0644``. Like the baseline's
 ``gpg.dearmor`` the operation is deliberately **stateless**: it always
 converts and always reports a change, on every run, even when ``dest``
 already exists.

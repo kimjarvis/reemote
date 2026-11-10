@@ -34,7 +34,7 @@ inventory comes from the shared ``inventory.json`` in the project root:
    mapping -- then print each host's runlevel -> assigned-names mapping with
    ``json.dumps(..., indent=2)``.
 
-``OpenrcRunlevels`` is a reemote5 original: pyinfra's ``openrc`` namespace
+``OpenrcRunlevels`` is a reemote5 original: the baseline's ``openrc`` namespace
 ships no fact for the runlevel inventory itself. A runlevel *is* a
 directory under ``/etc/runlevels`` holding one symlink per assigned
 service -- that is what ``rc-update add``/``del`` write -- so the fact

@@ -29,7 +29,7 @@ driving the two-phase execution model:
    path argument verbatim, and returns a host-name-keyed mapping -- then
    print each host's tag list with ``json.dumps(..., indent=2)``.
 
-``GitTag`` mirrors pyinfra's ``git.GitTag``: it runs
+``GitTag`` mirrors the baseline's ``git.GitTag``: it runs
 ``! test -d <repo> || (cd <repo> && git tag)`` and returns one
 ``GitTagInfo`` entry (a ``name``) per line, in listing order. A missing
 repository directory short-circuits

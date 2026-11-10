@@ -8,7 +8,7 @@ This is a *usage* example, not part of the library. It shows the mirror of
 file's content down over each host's asyncssh connection using the scp
 protocol, into an **IO-like object** on the control machine.
 
-The destination is a stream, never a local filename -- pyinfra's ``files.get``
+The destination is a stream, never a local filename -- the baseline's ``files.get``
 writes to a local path (with ``add_deploy_dir``/``create_local_dir``/``force``
 options reemote5 deliberately drops), but here the bytes land in a module-level
 ``io.BytesIO`` the script reads back afterwards. Two rules follow, mirroring

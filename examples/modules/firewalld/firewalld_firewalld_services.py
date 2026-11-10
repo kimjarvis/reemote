@@ -30,7 +30,7 @@ SSH transport* (asyncssh):
    host-name-keyed mapping -- then print each host's raw records with
    ``json.dumps(..., indent=2)``.
 
-``FirewalldServices`` is a reemote5 original (pyinfra ships no firewalld
+``FirewalldServices`` is a reemote5 original (the baseline ships no firewalld
 module): one shell round-trip enumerates ``firewall-cmd --get-services``
 and runs ``--info-service`` for every name behind echo markers, keeping
 each definition's display text, ports, source ports, protocols, helper

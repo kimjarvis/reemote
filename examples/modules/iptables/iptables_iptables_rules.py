@@ -29,7 +29,7 @@ driving the two-phase execution model:
    with ``json.dumps(..., indent=2)``.
 
 The fact parses every ``-A`` line of ``iptables-save -t filter`` into a
-definition dict (the pyinfra ``iptables.IptablesRules`` shape): named
+definition dict (the baseline ``iptables.IptablesRules`` shape): named
 matches like ``chain``/``jump``/``protocol``/``source``, their ``not_``
 negations, the NAT target arguments, and every unmapped flag as sorted
 ``extras`` pairs. Pass another table name to ``gather_fact`` for

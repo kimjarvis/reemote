@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.lockdown`` is a reemote5 original (pyinfra ships no firewalld
+``firewalld.lockdown`` is a reemote5 original (the baseline ships no firewalld
 module): lockdown restricts which local applications may change the
 firewall through D-Bus (only those whitelisted in the lockdown policy or
 signed into it) -- turning it on without a whitelist can lock out

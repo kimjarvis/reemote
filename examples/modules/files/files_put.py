@@ -8,7 +8,7 @@ first **non-shell** operation: ``files.put`` does not run a command string,
 it copies content from the control machine over each host's asyncssh
 connection using the scp protocol.
 
-The source is an **IO-like object only** -- pyinfra's ``files.put`` accepts
+The source is an **IO-like object only** -- the baseline's ``files.put`` accepts
 ``str | IO[Any]``, but reemote5 deliberately supports just the stream form:
 here a module-level ``io.BytesIO``. Two rules follow from that. The stream
 must be *seekable*: it is rewound to position 0 before every read, so the
@@ -20,7 +20,7 @@ both phases -- hence the module-level constant rather than a fresh
 ``BytesIO`` inside the generator (a new object per phase would trip the
 determinism guard).
 
-The idempotence check is content-based, mirroring pyinfra's ``files.put``:
+The idempotence check is content-based, mirroring the baseline's ``files.put``:
 the source's sha1 (``LocalSha1``, read here on the control machine) is
 compared against the remote file's (``RemoteFileSha1``, gathered with
 ``sha1sum`` over SSH), and the transfer only happens when the two differ.

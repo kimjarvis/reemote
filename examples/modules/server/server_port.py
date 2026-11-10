@@ -28,7 +28,7 @@ two-phase execution model:
    inventory with ``asyncio.gather`` and returns a host-name-keyed mapping
    -- then print each host's record with ``json.dumps(..., indent=2)``.
 
-``Port`` mirrors pyinfra's ``server.Port``: it reads the ``Kernel`` fact to
+``Port`` mirrors the baseline's ``server.Port``: it reads the ``Kernel`` fact to
 pick the tool (FreeBSD lists ``sockstat -l -p <port> -P <protocol>``, every
 other kernel prefers Linux ``ss`` and falls back to ``netstat`` when the
 ``Which`` fact reports no ``ss``), filters the listing down to one port and
@@ -37,7 +37,7 @@ returns a ``PortInfo`` record -- ``listening``, ``process`` and ``pid``.
 the owner pair is best-effort: an unprivileged read sees the socket but not
 the process behind it, so ``process``/``pid`` come back ``None`` even though
 the port is plainly up. That distinction is the reason reemote5 answers with
-a record rather than with pyinfra's ``(process, pid)`` tuple, and the reason
+a record rather than with the baseline's ``(process, pid)`` tuple, and the reason
 ``server.wait`` polls ``listening`` alone.
 
 The port and protocol are passed to ``gather_fact`` as fact arguments,

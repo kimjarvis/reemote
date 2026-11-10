@@ -3,7 +3,7 @@
 
 """Tests for the files module's ``FindInFile`` fact.
 
-Covers ``reemote5.modules.files.files.FindInFile``: pyinfra's own six
+Covers ``reemote5.modules.files.files.FindInFile``: the baseline's own six
 ``files.FindInFile`` fixtures over the real-transport path (matching
 lines, ``$USER`` interpolation on/off, a double-quote-bearing pattern,
 the missing-file None answer and the exists-sentinel [] answer), the
@@ -31,9 +31,9 @@ class CannedShellHost(Host):
         return self._stdout
 
 
-# pyinfra's fixture path and the fallback arm's sentinel for it.
-PATH = "/home/pyinfra/mylink"
-SENTINEL = f"__pyinfra_exists_{PATH}"
+# The baseline's fixture path and the fallback arm's sentinel for it.
+PATH = "/home/reemote5/mylink"
+SENTINEL = f"__reemote5_exists_{PATH}"
 LINES_COMMAND = (
     f"grep -e test {PATH} 2> /dev/null || "
     f"( find {PATH} -type f > /dev/null && echo {SENTINEL} || true )"
@@ -41,18 +41,18 @@ LINES_COMMAND = (
 MATCHES = ["thing test thing", "another test"]
 
 
-# --- Real-transport parity: pyinfra's own files.FindInFile fixtures ---------------
+# --- Real-transport parity: the baseline's own files.FindInFile fixtures ---------------
 
 
-async def test_find_in_file_parses_pyintras_lines_fixture():
-    # pyinfra's lines.json fixture, verbatim: grep prints the matches.
+async def test_find_in_file_parses_baseline_lines_fixture():
+    # The baseline's lines.json fixture, verbatim: grep prints the matches.
     host = CannedShellHost("\n".join(MATCHES) + "\n")
     assert await FindInFile.process(host, PATH, "test") == MATCHES
     assert host.shells == [LINES_COMMAND]
 
 
-async def test_find_in_file_parses_pyintras_lines_interpolate_fixture():
-    # pyinfra's lines_interpolate.json fixture, verbatim: the pattern is
+async def test_find_in_file_parses_baseline_lines_interpolate_fixture():
+    # The baseline's lines_interpolate.json fixture, verbatim: the pattern is
     # double-quoted so the remote shell expands $USER.
     host = CannedShellHost("\n".join(MATCHES) + "\n")
     assert await FindInFile.process(host, PATH, "$USER", interpolate_variables=True) == (
@@ -61,16 +61,16 @@ async def test_find_in_file_parses_pyintras_lines_interpolate_fixture():
     assert host.shells == [LINES_COMMAND.replace("-e test", '-e "$USER"')]
 
 
-async def test_find_in_file_parses_pyintras_lines_no_interpolate_fixture():
-    # pyinfra's lines_no_interpolate.json fixture, verbatim: without the
+async def test_find_in_file_parses_baseline_lines_no_interpolate_fixture():
+    # The baseline's lines_no_interpolate.json fixture, verbatim: without the
     # switch the $USER pattern is single-quoted literally.
     host = CannedShellHost("\n".join(MATCHES) + "\n")
     assert await FindInFile.process(host, PATH, "$USER") == MATCHES
     assert host.shells == [LINES_COMMAND.replace("-e test", "-e '$USER'")]
 
 
-async def test_find_in_file_parses_pyintras_lines_quote_fixture():
-    # pyinfra's lines_quote.json fixture, verbatim: embedded double quotes
+async def test_find_in_file_parses_baseline_lines_quote_fixture():
+    # The baseline's lines_quote.json fixture, verbatim: embedded double quotes
     # survive inside the single-quoted pattern.
     host = CannedShellHost("\n".join(MATCHES) + "\n")
     pattern = 'test with some " other shit "'
@@ -80,16 +80,16 @@ async def test_find_in_file_parses_pyintras_lines_quote_fixture():
     ]
 
 
-async def test_find_in_file_parses_pyintras_no_file_fixture():
-    # pyinfra's no_file.json fixture, verbatim: the fallback arm echoes
+async def test_find_in_file_parses_baseline_no_file_fixture():
+    # The baseline's no_file.json fixture, verbatim: the fallback arm echoes
     # nothing for a missing file -> None (not []).
     host = CannedShellHost("")
     assert await FindInFile.process(host, PATH, "test") is None
     assert host.shells == [LINES_COMMAND]
 
 
-async def test_find_in_file_parses_pyintras_no_matches_fixture():
-    # pyinfra's no_matches.json fixture, verbatim: the exists sentinel
+async def test_find_in_file_parses_baseline_no_matches_fixture():
+    # The baseline's no_matches.json fixture, verbatim: the exists sentinel
     # distinguishes "file exists, nothing matched" -> [].
     host = CannedShellHost(SENTINEL + "\n")
     assert await FindInFile.process(host, PATH, "test") == []
@@ -102,29 +102,29 @@ async def test_find_in_file_parses_pyintras_no_matches_fixture():
 def test_find_in_file_extended_regex_switches_to_grep_e():
     assert FindInFile.command("/f", "a|b", extended_regex=True) == (
         "grep -E -e 'a|b' /f 2> /dev/null || "
-        "( find /f -type f > /dev/null && echo __pyinfra_exists_/f || true )"
+        "( find /f -type f > /dev/null && echo __reemote5_exists_/f || true )"
     )
 
 
 def test_find_in_file_interpolation_escapes_embedded_double_quotes():
     assert FindInFile.command("/f", 'say "hi"', interpolate_variables=True) == (
         'grep -e "say \\"hi\\"" /f 2> /dev/null || '
-        "( find /f -type f > /dev/null && echo __pyinfra_exists_/f || true )"
+        "( find /f -type f > /dev/null && echo __reemote5_exists_/f || true )"
     )
 
 
 def test_find_in_file_parse_recognises_the_sentinel_only_as_first_line():
     # The sentinel is the fallback arm's whole output: as the first line
-    # it reads [] (pyinfra's rule), while a grep line that merely starts
+    # it reads [] (the baseline's rule), while a grep line that merely starts
     # with the prefix -- or names another path -- is just a matching line.
     assert FindInFile.parse([SENTINEL], PATH) == []
     assert FindInFile.parse(["x", SENTINEL], PATH) == ["x", SENTINEL]
-    assert FindInFile.parse([f"__pyinfra_exists_{PATH}/other"], PATH) == [
-        f"__pyinfra_exists_{PATH}/other"
+    assert FindInFile.parse([f"__reemote5_exists_{PATH}/other"], PATH) == [
+        f"__reemote5_exists_{PATH}/other"
     ]
     # A sentinel for a different path is not this file's exists marker.
-    assert FindInFile.parse(["__pyinfra_exists_/elsewhere"], PATH) == [
-        "__pyinfra_exists_/elsewhere"
+    assert FindInFile.parse(["__reemote5_exists_/elsewhere"], PATH) == [
+        "__reemote5_exists_/elsewhere"
     ]
 
 

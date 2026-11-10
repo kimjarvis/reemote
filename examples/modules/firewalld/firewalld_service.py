@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.service`` is a reemote5 original (pyinfra ships no firewalld
+``firewalld.service`` is a reemote5 original (the baseline ships no firewalld
 module): it manages the service *definition* -- a named port/protocol
 bundle, here ``webapp`` with 8080/tcp and 8443/tcp -- so zones can open
 the app by name (``firewalld.zone_service``) instead of scattering raw

@@ -3,12 +3,12 @@
 
 """Tests for ``files.flags``: set or clear ext2-family attribute flags.
 
-Covers the ``FileFlags`` fact (the Linux stand-in for pyinfra's BSD
+Covers the ``FileFlags`` fact (the Linux stand-in for the baseline's BSD
 ``Flags``: ``lsattr -d`` command shape, tilde/path quoting, the flags-field
 parse with its padding dashes dropped, and the ``SimulatedHost``
 ``file_flags`` seam answering ``[]`` for an unseeded path), the
 ``ChattrCommand`` descriptor (the ``+``/``-`` comma-joined spec, path
-quoting, elevated ``command_shell`` renderings), the operation's pyinfra
+quoting, elevated ``command_shell`` renderings), the operation's the baseline
 ``files.flags`` parity (set/clear no-ops, scalar and tuple flags, the empty
 noop branch, the validation raises, ``**kwargs`` absorption), the
 ``SimulatedHost`` seam dispatch (merge on set, intersect-only removal on
@@ -51,7 +51,7 @@ PATH = "/etc/logrotate.d/httpd"
 
 
 def test_fileflags_command_guards_existence():
-    # The pyinfra-shaped existence guard (``! test -e ... ||``) short-circuits
+    # The baseline-shaped existence guard (``! test -e ... ||``) short-circuits
     # a missing path to empty output; stderr noise goes to /dev/null so an
     # unsupported filesystem answers [] instead of failing the read.
     assert FileFlags.command(PATH) == (
@@ -100,7 +100,7 @@ async def test_fileflags_processes_over_the_transport():
 
 async def test_fileflags_reads_the_simulated_seam():
     host = SimulatedHost(name="h")
-    # An unseeded path answers [] -- pyinfra's Flags answer for absence.
+    # An unseeded path answers [] -- the baseline's Flags answer for absence.
     assert await FileFlags.process(host, PATH) == []
     host.file_flags[PATH] = {"i", "a"}
     result = await FileFlags.process(host, PATH)
@@ -142,7 +142,7 @@ def test_command_shell_elevates_the_chattr():
     )
 
 
-# --- Operation parity with pyinfra's files.flags ---------------------------------
+# --- Operation parity with the baseline's files.flags ---------------------------------
 
 
 def make_host(*, flags: set[str] | None = None) -> SimulatedHost:
@@ -171,7 +171,7 @@ async def test_flags_set_missing_flag_yields_chattr():
 
 
 async def test_flags_set_already_set_is_a_noop():
-    # pyinfra's noop text over the Linux letter spelling.
+    # The baseline's noop text over the Linux letter spelling.
     host = make_host(flags={"i", "a"})
     ctx, commands = await materialize(host, path=PATH, flags=("i",))
 
@@ -203,7 +203,7 @@ async def test_flags_clear_present_flag_yields_chattr():
 
 async def test_flags_clear_absent_flag_is_a_noop():
     # The clear intersects current with requested: an unset requested flag
-    # changes nothing, and pyinfra's noop verb mirrors the direction.
+    # changes nothing, and the baseline's noop verb mirrors the direction.
     host = make_host(flags={"a"})
     ctx, commands = await materialize(
         host, path=PATH, flags=("i",), present=False
@@ -228,7 +228,7 @@ async def test_flags_clear_computes_the_intersection_only():
 
 
 async def test_flags_scalar_string_normalizes_to_one_flag():
-    # pyinfra accepts a scalar flags string; here it is one ext2 letter.
+    # The baseline accepts a scalar flags string; here it is one ext2 letter.
     host = make_host()
     ctx, commands = await materialize(host, path=PATH, flags="i")
 
@@ -256,7 +256,7 @@ async def test_flags_empty_requests_no_change():
 
 
 async def test_flags_rejects_a_bsd_flag_name():
-    # The developer-chosen Linux vocabulary: pyinfra's BSD chflags names
+    # The developer-chosen Linux vocabulary: the baseline's BSD chflags names
     # ("hidden") are not valid ext2 letters and never reach the host.
     host = make_host()
     with pytest.raises(ValueError, match="invalid ext2 attribute flag 'hidden'"):
@@ -277,10 +277,10 @@ async def test_flags_rejects_a_non_string_container():
         await materialize(host, path=PATH, flags=42)
 
 
-async def test_flags_kwargs_absorb_pyinfra_globals():
+async def test_flags_kwargs_absorb_extra_globals():
     host = make_host()
     ctx, commands = await materialize(
-        host, path=PATH, flags=("i",), some_pyinfra_global="ignored"
+        host, path=PATH, flags=("i",), some_extra_global="ignored"
     )
     assert ctx.changed
     assert commands == [ChattrCommand(path=PATH, flags=("i",))]

@@ -7,21 +7,21 @@
 plus all eleven operations.
 
 Covers the read-only state discovery in ``reemote5.modules.selinux.selinux``:
-the five pyinfra fact ports are exercised over the real-transport path with
-pyinfra's own fact fixtures verbatim (the ``getsebool`` row, the ``stat -c %C``
+the five the baseline fact ports are exercised over the real-transport path with
+the baseline's own fact fixtures verbatim (the ``getsebool`` row, the ``stat -c %C``
 contexts including the ``?`` unlabelled case, the grepped fcontext rows
 including the no-match deviation to None, all six ``semanage port -ln``
 outputs and the three ``sepolicy network`` outputs), plus the ``SimulatedHost``
 seam projections and their copy semantics. The six reemote5 originals -- with
-no pyinfra fixtures -- are fed realistic canned ``getsebool -a``, ``sestatus``,
+no baseline fixtures -- are fed realistic canned ``getsebool -a``, ``sestatus``,
 ``semanage login -ln``, ``semanage user -ln``, ``semodule -lfull`` and
 ``semanage permissive -l`` output respectively, plus the ``SEPorts`` filter
 arguments, the ``gather_fact`` fan-outs and the private ``_Which`` /
 ``_AutorelabelPending`` probes.
 
-The four pyinfra operation ports (``boolean``, ``file_context``,
+The four baseline operation ports (``boolean``, ``file_context``,
 ``file_context_mapping``, ``port``) are exercised over their descriptors and
-every branch of pyinfra's own operation fixtures (both ``sepolicy``-present
+every branch of the baseline's own operation fixtures (both ``sepolicy``-present
 and absent port dispatches, the quoting-injection fixtures, the ``ValueError``
 guards and the verbatim no-op reasons). The seven originals (``mode``, ``login``,
 ``module``, ``permissive_domain``, ``restorecon``, ``autorelabel``, ``config``)
@@ -106,11 +106,11 @@ class CannedShellHost(Host):
         return self._stdout
 
 
-# --- SEBoolean: pyinfra's fixture ------------------------------------------------
+# --- SEBoolean: the baseline's fixture ------------------------------------------------
 
 
-def test_se_boolean_command_matches_pyinfra():
-    """The shell is pyinfra's fixture command verbatim (the quoted name is
+def test_se_boolean_command_matches_baseline():
+    """The shell is the baseline's fixture command verbatim (the quoted name is
     a no-op for a plain identifier)."""
     assert SEBoolean.command("some_boolean") == "getsebool some_boolean"
 
@@ -133,7 +133,7 @@ async def test_se_boolean_quotes_the_name():
 
 async def test_se_boolean_empty_output_reads_as_empty_string():
     """An unknown boolean makes getsebool fail with empty stdout, which
-    reads as "" -- the parser stays total where pyinfra's split would
+    reads as "" -- the parser stays total where the baseline's split would
     raise."""
     assert await SEBoolean.process(CannedShellHost(""), "some_boolean") == ""
     assert await SEBoolean.process(CannedShellHost("garbage\n"), "some_boolean") == ""
@@ -188,17 +188,17 @@ async def test_booleans_seam_is_copied_on_read():
     assert host.selinux_booleans == {"a_bool": True}
 
 
-# --- FileContext: pyinfra's fixtures ----------------------------------------------
+# --- FileContext: the baseline's fixtures ----------------------------------------------
 
-# The ``fact`` field shared by pyinfra's FileContext fixtures: the
+# The ``fact`` field shared by the baseline's FileContext fixtures: the
 # four-component split of ``stat -c %C`` output.
 NET_CONF_CONTEXT = SeContext(
     user="system_u", role="object_r", type="net_conf_t", level="s0"
 )
 
 
-def test_file_context_command_matches_pyinfra():
-    """The shell is pyinfra's fixture command verbatim for its path."""
+def test_file_context_command_matches_baseline():
+    """The shell is the baseline's fixture command verbatim for its path."""
     assert FileContext.command("/etc/hosts") == "stat -c %C /etc/hosts || exit 0"
 
 
@@ -225,7 +225,7 @@ async def test_file_context_missing_path_reads_as_none():
 
 async def test_file_context_quotes_the_path():
     """A path carrying shell metacharacters is stat'ed literally -- the
-    deliberate hardening over pyinfra's bare interpolation."""
+    deliberate hardening over the baseline's bare interpolation."""
     host = CannedShellHost("")
     assert await FileContext.process(host, "/my file; reboot") is None
     assert host.last_shell == "stat -c %C '/my file; reboot' || exit 0"
@@ -244,7 +244,7 @@ async def test_file_context_seam_is_copied_on_read():
     assert await FileContext.process(host, "/nope") is None
 
 
-# --- FileContextMapping: pyinfra's fixtures ---------------------------------------
+# --- FileContextMapping: the baseline's fixtures ---------------------------------------
 
 ZEBRA_MAPPING_LINE = (
     "/etc/zebra(/.*)?                                   all files          "
@@ -256,8 +256,8 @@ ZEBRA_CONTEXT = SeContext(
 )
 
 
-def test_file_context_mapping_command_matches_pyinfra():
-    """The shell is pyinfra's fixture command verbatim: pipefail, the
+def test_file_context_mapping_command_matches_baseline():
+    """The shell is the baseline's fixture command verbatim: pipefail, the
     local-only listing and the quoted ``^target`` grep."""
     assert FileContextMapping.command("/etc/zebra(/.*)?") == (
         "set -o pipefail && semanage fcontext -n -l | "
@@ -275,13 +275,13 @@ async def test_file_context_mapping_parses_the_zebra_fixture():
 
 async def test_file_context_mapping_no_match_reads_as_none():
     """The ``/etc/etc/etc/etc/etc/etc`` fixture: no row matches. The house
-    deviation from pyinfra's ``{}`` -- None keeps an absent mapping
+    deviation from the baseline's ``{}`` -- None keeps an absent mapping
     distinguishable from a context with empty components."""
     assert await FileContextMapping.process(CannedShellHost(""), "/nope") is None
 
 
 async def test_file_context_mapping_several_rows_read_as_none():
-    """A prefix shared by longer targets greps several rows -- pyinfra's
+    """A prefix shared by longer targets greps several rows -- the baseline's
     ``len(output) != 1`` gate reads None rather than guessing."""
     stdout = ZEBRA_MAPPING_LINE + "\n" + ZEBRA_MAPPING_LINE.replace(
         "/etc/zebra(", "/etc/zebra/conf(", 1
@@ -309,7 +309,7 @@ async def test_file_context_mapping_seam_is_copied_on_read():
     assert await FileContextMapping.process(host, "/nope") is None
 
 
-# --- SEPorts: pyinfra's fixtures ---------------------------------------------------
+# --- SEPorts: the baseline's fixtures ---------------------------------------------------
 
 
 async def test_se_ports_noise_row_reads_as_empty_dict():
@@ -336,7 +336,7 @@ async def test_se_ports_parses_the_sctp_fixture():
 
 async def test_se_ports_expands_ranges_and_skips_unreserved():
     """The range fixture: ``50-52`` expands to its three ports and every
-    ``unreserved_port_t`` row is skipped -- pyinfra's verbatim fact."""
+    ``unreserved_port_t`` row is skipped -- the baseline's verbatim fact."""
     stdout = """\
 example_port_t                    tcp      50-52
 unreserved_port_t              sctp     1024-65535
@@ -401,7 +401,7 @@ async def test_se_ports_seam_is_deep_copied_on_read():
     assert host.selinux_ports == {"tcp": {80: "http_port_t"}}
 
 
-# --- SEPort: pyinfra's fixtures ----------------------------------------------------
+# --- SEPort: the baseline's fixtures ----------------------------------------------------
 
 
 async def test_se_port_parses_the_ssh_fixture():
@@ -425,7 +425,7 @@ async def test_se_port_no_rows_read_as_empty_string():
 
 async def test_se_port_generic_range_alone_reads_as_empty_string():
     """The ``tcp 9997`` fixture: a port covered only by the generic
-    ``unreserved_port_t`` range reads as "" -- pyinfra's ``len > 1`` gate."""
+    ``unreserved_port_t`` range reads as "" -- the baseline's ``len > 1`` gate."""
     host = CannedShellHost("9997: tcp unreserved_port_t 1024-32767\n")
     assert await SEPort.process(host, "tcp", 9997) == ""
 
@@ -786,7 +786,7 @@ async def test_autorelabel_pending_over_the_real_transport():
 
 
 def test_setsebool_command_renders_both_persistences():
-    """pyinfra's ``setsebool -P`` and runtime-only forms."""
+    """The baseline's ``setsebool -P`` and runtime-only forms."""
     assert SetseboolCommand(boolean="some_boolean", value="on", persistent=True).shell() == (
         "setsebool -P some_boolean on"
     )
@@ -796,7 +796,7 @@ def test_setsebool_command_renders_both_persistences():
 
 
 def test_setsebool_command_shell_quotes_the_name():
-    """pyinfra's ``change_bool_name_with_metachars`` fixture: the backticked
+    """The baseline's ``change_bool_name_with_metachars`` fixture: the backticked
     name reaches setsebool literally, never the remote shell."""
     cmd = SetseboolCommand(boolean="httpd`id`", value="on", persistent=True)
     assert cmd.shell() == "setsebool -P 'httpd`id`' on"
@@ -813,7 +813,7 @@ def test_setsebool_command_is_elevated_by_sudo():
 
 
 def test_chcon_command_renders_type_only():
-    """pyinfra's ``change.json``: a type-only request is the exact
+    """The baseline's ``change.json``: a type-only request is the exact
     ``chcon -t var_t /etc``."""
     assert ChconCommand(path="/etc", se_type="var_t").shell() == "chcon -t var_t /etc"
 
@@ -839,7 +839,7 @@ def test_chcon_command_shell_quotes_components_and_path():
 
 def test_semanage_fcontext_command_renders_all_three_verbs():
     """One present-flagged descriptor covers add, modify and delete (the
-    ``RcUpdateCommand`` precedent), matching pyinfra's fixture commands."""
+    ``RcUpdateCommand`` precedent), matching the baseline's fixture commands."""
     assert SemanageFcontextCommand(
         target="/web(/.*)?", se_type="httpd_sys_content_t"
     ).shell() == "semanage fcontext -a -t httpd_sys_content_t '/web(/.*)?'"
@@ -852,7 +852,7 @@ def test_semanage_fcontext_command_renders_all_three_verbs():
 
 
 def test_semanage_port_command_renders_all_three_verbs():
-    """The port descriptor matches pyinfra's fixture commands verbatim,
+    """The port descriptor matches the baseline's fixture commands verbatim,
     including the ``-m`` modify branch."""
     assert SemanagePortCommand(protocol="tcp", port=22, se_type="ssh_port_t").shell() == (
         "semanage port -a -t ssh_port_t -p tcp 22"
@@ -866,7 +866,7 @@ def test_semanage_port_command_renders_all_three_verbs():
 
 
 def test_semanage_port_command_shell_quotes_the_injection_fixture():
-    """pyinfra's ``security_injection`` fixture: both the type and the
+    """The baseline's ``security_injection`` fixture: both the type and the
     protocol carry metacharacters and reach semanage literally."""
     cmd = SemanagePortCommand(
         protocol="tcp; rm -rf /", port=80, se_type="http_port_t; whoami"
@@ -946,11 +946,11 @@ def test_autorelabel_command_touches_the_fixed_flag():
     assert command_shell(cmd, sudo=True) == "sudo touch /.autorelabel"
 
 
-# --- selinux.boolean: pyinfra's operation fixtures ----------------------------------
+# --- selinux.boolean: the baseline's operation fixtures ----------------------------------
 
 
 async def test_boolean_change_persistent():
-    """pyinfra's ``change_persistent.json``: an off boolean turned on with
+    """The baseline's ``change_persistent.json``: an off boolean turned on with
     ``persistent=True`` yields the ``-P`` form."""
     host = SimulatedHost(name="h", selinux_booleans={"some_boolean": False})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -966,7 +966,7 @@ async def test_boolean_change_persistent():
 
 
 async def test_boolean_change_not_persistent():
-    """pyinfra's ``change_not_persistent.json``: without ``persistent`` the
+    """The baseline's ``change_not_persistent.json``: without ``persistent`` the
     change is runtime-only."""
     host = SimulatedHost(name="h", selinux_booleans={"some_boolean": True})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -977,9 +977,9 @@ async def test_boolean_change_not_persistent():
 
 
 async def test_boolean_no_change():
-    """pyinfra's ``no_change.json``: an unchanged boolean is left alone --
+    """The baseline's ``no_change.json``: an unchanged boolean is left alone --
     the check-before-execute that spares the expensive ``-P`` rewrite --
-    with pyinfra's verbatim no-op reason."""
+    with the baseline's verbatim no-op reason."""
     host = SimulatedHost(name="h", selinux_booleans={"some_boolean": True})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
@@ -991,8 +991,8 @@ async def test_boolean_no_change():
 
 
 async def test_boolean_bad_value():
-    """pyinfra's ``bad_value.json``: anything but on/off raises, with
-    pyinfra's message verbatim."""
+    """The baseline's ``bad_value.json``: anything but on/off raises, with
+    the baseline's message verbatim."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     with pytest.raises(ValueError) as excinfo:
@@ -1005,7 +1005,7 @@ async def test_boolean_bad_value():
 
 
 async def test_boolean_change_with_metachars():
-    """pyinfra's ``change_bool_name_with_metachars`` fixture: the backticked
+    """The baseline's ``change_bool_name_with_metachars`` fixture: the backticked
     name is looked up and set literally."""
     host = SimulatedHost(name="h", selinux_booleans={"httpd`id`": False})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1016,11 +1016,11 @@ async def test_boolean_change_with_metachars():
     assert commands[0].shell() == "setsebool -P 'httpd`id`' on"
 
 
-# --- selinux.file_context: pyinfra's fixtures + the full-context extension ----------
+# --- selinux.file_context: the baseline's fixtures + the full-context extension ----------
 
 
 async def test_file_context_change():
-    """pyinfra's ``change.json``: a type mismatch yields ``chcon -t``."""
+    """The baseline's ``change.json``: a type mismatch yields ``chcon -t``."""
     host = SimulatedHost(
         name="h",
         selinux_file_contexts={
@@ -1038,8 +1038,8 @@ async def test_file_context_change():
 
 
 async def test_file_context_no_change():
-    """pyinfra's ``no_change.json``: a matching type is left alone with
-    pyinfra's verbatim no-op reason."""
+    """The baseline's ``no_change.json``: a matching type is left alone with
+    the baseline's verbatim no-op reason."""
     host = SimulatedHost(
         name="h",
         selinux_file_contexts={
@@ -1094,7 +1094,7 @@ async def test_file_context_yields_only_differing_components():
 
 
 async def test_file_context_unreadable_context_differs_everything():
-    """A None context (pyinfra's ``or {}``) makes every requested component
+    """A None context (the baseline's ``or {}``) makes every requested component
     differ; the reason lists them sorted."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1128,7 +1128,7 @@ async def test_file_context_multi_component_noop():
     assert commands == []
 
 
-# --- selinux.file_context_mapping: pyinfra's operation fixtures ---------------------
+# --- selinux.file_context_mapping: the baseline's operation fixtures ---------------------
 
 WEB_TARGET = "/web(/.*)?"
 
@@ -1138,8 +1138,8 @@ def _mapping_context(se_type: str) -> SeContext:
 
 
 async def test_file_context_mapping_add_none_existing():
-    """pyinfra's ``add_none_existeing.json``: no mapping yields ``-a`` (the
-    fact's None-on-absent replaces pyinfra's {})."""
+    """The baseline's ``add_none_existeing.json``: no mapping yields ``-a`` (the
+    fact's None-on-absent replaces the baseline's {})."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
@@ -1158,7 +1158,7 @@ async def test_file_context_mapping_add_none_existing():
 
 
 async def test_file_context_mapping_add_different():
-    """pyinfra's ``add_different.json``: a mapping with another type yields
+    """The baseline's ``add_different.json``: a mapping with another type yields
     ``-m``."""
     host = SimulatedHost(
         name="h",
@@ -1185,8 +1185,8 @@ async def test_file_context_mapping_add_different():
 
 
 async def test_file_context_mapping_add_no_change():
-    """pyinfra's ``add_no_change.json``: the same type is a no-op with
-    pyinfra's verbatim reason."""
+    """The baseline's ``add_no_change.json``: the same type is a no-op with
+    the baseline's verbatim reason."""
     host = SimulatedHost(
         name="h",
         selinux_fcontext_mappings={
@@ -1207,8 +1207,8 @@ async def test_file_context_mapping_add_no_change():
 
 
 async def test_file_context_mapping_add_none_type():
-    """pyinfra's ``add_None.json``: present without a type is a ValueError
-    with pyinfra's message verbatim."""
+    """The baseline's ``add_None.json``: present without a type is a ValueError
+    with the baseline's message verbatim."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     with pytest.raises(ValueError) as excinfo:
@@ -1217,7 +1217,7 @@ async def test_file_context_mapping_add_none_type():
 
 
 async def test_file_context_mapping_delete_existing():
-    """pyinfra's ``delete_existing.json``: an existing mapping yields ``-d``
+    """The baseline's ``delete_existing.json``: an existing mapping yields ``-d``
     (no type needed)."""
     host = SimulatedHost(
         name="h",
@@ -1236,8 +1236,8 @@ async def test_file_context_mapping_delete_existing():
 
 
 async def test_file_context_mapping_delete_none_existing():
-    """pyinfra's ``delete_none_existing.json``: removing an absent mapping
-    is a no-op with pyinfra's verbatim reason."""
+    """The baseline's ``delete_none_existing.json``: removing an absent mapping
+    is a no-op with the baseline's verbatim reason."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
@@ -1248,11 +1248,11 @@ async def test_file_context_mapping_delete_none_existing():
     assert commands == []
 
 
-# --- selinux.port: pyinfra's operation fixtures (both fact dispatches) ---------------
+# --- selinux.port: the baseline's operation fixtures (both fact dispatches) ---------------
 
 
 async def test_port_add_different_direct():
-    """pyinfra's ``add_different_direct.json``: with sepolicy installed the
+    """The baseline's ``add_different_direct.json``: with sepolicy installed the
     ``SEPort`` fact answers directly and a differing label yields ``-m``."""
     host = SimulatedHost(
         name="h",
@@ -1270,7 +1270,7 @@ async def test_port_add_different_direct():
 
 
 async def test_port_add_not_existing_direct():
-    """pyinfra's ``add_not_existing_direct.json``: an unlabelled port
+    """The baseline's ``add_not_existing_direct.json``: an unlabelled port
     yields ``-a``."""
     host = SimulatedHost(
         name="h", command_paths={"sepolicy": "/usr/bin/sepolicy"}
@@ -1285,8 +1285,8 @@ async def test_port_add_not_existing_direct():
 
 
 async def test_port_add_same_direct_noop():
-    """pyinfra's ``add_same_direct.json``: the same label is a no-op with
-    pyinfra's verbatim reason."""
+    """The baseline's ``add_same_direct.json``: the same label is a no-op with
+    the baseline's verbatim reason."""
     host = SimulatedHost(
         name="h",
         command_paths={"sepolicy": "/usr/bin/sepolicy"},
@@ -1300,7 +1300,7 @@ async def test_port_add_same_direct_noop():
 
 
 async def test_port_remove_existing_direct():
-    """pyinfra's ``remove_existing_direct.json``: a labelled port with
+    """The baseline's ``remove_existing_direct.json``: a labelled port with
     ``present=False`` yields ``-d``."""
     host = SimulatedHost(
         name="h",
@@ -1316,8 +1316,8 @@ async def test_port_remove_existing_direct():
 
 
 async def test_port_remove_not_existing_direct_noop():
-    """pyinfra's ``remove_not_existing_direct.json``: removing an
-    unlabelled port is a no-op with pyinfra's verbatim reason."""
+    """The baseline's ``remove_not_existing_direct.json``: removing an
+    unlabelled port is a no-op with the baseline's verbatim reason."""
     host = SimulatedHost(
         name="h", command_paths={"sepolicy": "/usr/bin/sepolicy"}
     )
@@ -1329,8 +1329,8 @@ async def test_port_remove_not_existing_direct_noop():
 
 
 async def test_port_add_none_type():
-    """pyinfra's ``add_None.json``: present without a type is a ValueError
-    with pyinfra's message verbatim."""
+    """The baseline's ``add_None.json``: present without a type is a ValueError
+    with the baseline's message verbatim."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     with pytest.raises(ValueError) as excinfo:
@@ -1339,7 +1339,7 @@ async def test_port_add_none_type():
 
 
 async def test_port_add_different_indirect():
-    """pyinfra's ``add_different.yaml``: without sepolicy the ``SEPorts``
+    """The baseline's ``add_different.yaml``: without sepolicy the ``SEPorts``
     map is projected and a differing label yields ``-m``."""
     host = SimulatedHost(name="h", selinux_ports={"tcp": {22: "xray_port_t"}})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1350,7 +1350,7 @@ async def test_port_add_different_indirect():
 
 
 async def test_port_add_not_existing_protocol_indirect():
-    """pyinfra's ``add_not_existing_protocol.yaml``: a protocol the map
+    """The baseline's ``add_not_existing_protocol.yaml``: a protocol the map
     does not list reads as unlabelled and yields ``-a``."""
     host = SimulatedHost(name="h", selinux_ports={"udp": {53: "dns_port_t"}})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1361,7 +1361,7 @@ async def test_port_add_not_existing_protocol_indirect():
 
 
 async def test_port_add_same_indirect_noop():
-    """pyinfra's ``add_same.yaml``: the projected label already matches."""
+    """The baseline's ``add_same.yaml``: the projected label already matches."""
     host = SimulatedHost(name="h", selinux_ports={"tcp": {22: "ssh_port_t"}})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in selinux.port(ctx, "tcp", 22, "ssh_port_t")]
@@ -1371,7 +1371,7 @@ async def test_port_add_same_indirect_noop():
 
 
 async def test_port_remove_indirect_both_directions():
-    """pyinfra's ``remove_existing.yaml`` / ``remove_not_existing.yaml``:
+    """The baseline's ``remove_existing.yaml`` / ``remove_not_existing.yaml``:
     removal yields ``-d`` when labelled, no-ops when not."""
     host = SimulatedHost(name="h", selinux_ports={"tcp": {22: "ssh_port_t"}})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1387,7 +1387,7 @@ async def test_port_remove_indirect_both_directions():
 
 
 async def test_port_security_injection_indirect():
-    """pyinfra's ``security_injection.yaml``: the metacharacter-laden
+    """The baseline's ``security_injection.yaml``: the metacharacter-laden
     protocol and type reach semanage quoted, never the shell."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))

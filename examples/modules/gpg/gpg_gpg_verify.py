@@ -29,7 +29,7 @@ two-phase execution model:
    forwarding both paths, and returns a host-name-keyed mapping -- then
    print each host's verification dict as JSON.
 
-``GpgVerify`` is a reemote5 original with no pyinfra counterpart:
+``GpgVerify`` is a reemote5 original with no baseline counterpart:
 verification is modeled as a read-only fact (``gpg --verify`` changes no
 state), running ``gpg --batch --status-fd 1 --verify <signature> <file>``
 and parsing the machine-readable ``[GNUPG:]`` status lines into one

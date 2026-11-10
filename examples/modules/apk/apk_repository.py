@@ -31,13 +31,13 @@ your machines.
 driven by ``asyncio.run``.
 
 ``apk.repository`` is a reemote5 original modeled on ``apt.repo`` --
-pyinfra's ``apk`` namespace ships no repository operation, so the
+the baseline's ``apk`` namespace ships no repository operation, so the
 ``ApkRepositories`` fact had no write counterpart. It ensures one line in
 ``/etc/apk/repositories``: the ``ApkRepositories`` fact is read first,
 ``src`` is parsed into the same ``url``/``tag`` entry shape, and an entry
 that is already configured is a no-op. When an edit *is* due the managed
 file is rewritten rather than patched in place -- the spool-and-install
-pair ``apt.repo`` uses, not pyinfra's ``echo >>``/``sed -i``: the
+pair ``apt.repo`` uses, not the baseline's ``echo >>``/``sed -i``: the
 ``ApkRepositoriesFile`` content fact reads the file's current text, one
 pure transform adds the line exactly once (``present=True``) or drops
 every line the escaped pattern matches (``present=False``), an

@@ -3,7 +3,7 @@
 
 """reemote5: a generator-based two-phase execution model.
 
-An alternative to pyinfra's prepare/execute design in which deploy scripts
+A prepare/execute design in which deploy scripts
 are generators yielding ``OperationRequest`` descriptors, and the driver
 re-invokes the generator per phase, advancing all hosts in lockstep with a
 fresh ``FactCache`` per step. The command-execution path (``send_command``

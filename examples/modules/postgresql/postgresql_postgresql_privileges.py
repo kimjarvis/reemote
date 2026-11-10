@@ -30,7 +30,7 @@ driving the two-phase execution model:
    ``grantee``, ``privilege``, ``grantable``) with
    ``json.dumps(..., indent=2)``.
 
-The fact is a reemote5-original visibility fact (pyinfra has no privilege
+The fact is a reemote5-original visibility fact (the baseline has no privilege
 fact): it expands the ``aclitem[]`` columns of databases, schemas, tables,
 sequences and functions into one row per grant -- a NULL ACL expands to no
 rows -- so ``postgresql.privilege`` can grant only what is missing and

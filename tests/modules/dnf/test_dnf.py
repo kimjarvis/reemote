@@ -98,7 +98,7 @@ class CannedShellHost(Host):
 def _module_entries(modules: dict[str, str]) -> list[dict[str, str]]:
     """Adapt a documented name->stream mapping to sorted ``DnfModule`` entries.
 
-    Keeps pyinfra's documented dict fixtures verbatim while the facts return
+    Keeps the baseline's documented dict fixtures verbatim while the facts return
     the shared TypedDict entry list.
     """
     return [
@@ -157,10 +157,10 @@ async def test_dnf_packages_seam_read_is_a_sorted_copy():
     assert host.packages == {"vim": ["9.0"], "nginx": ["1.24.0", "1.20.0"]}
 
 
-# --- DnfRepositories fact (pyinfra parity) -----------------------------------
+# --- DnfRepositories fact (baseline parity) -----------------------------------
 
-# The example result from the pyinfra ``dnf.DnfRepositories`` documentation: a
-# single AlmaLinux BaseOS repository parsed out of its ``.repo`` file. pyinfra
+# The example result from the baseline ``dnf.DnfRepositories`` documentation: a
+# single AlmaLinux BaseOS repository parsed out of its ``.repo`` file. The baseline
 # flattens every option into the entry; reemote5 keeps the identifying fields
 # fixed and moves the open-ended options into the ``options`` sub-dict.
 ALMALINUX_BASEOS_REPO = {
@@ -181,7 +181,7 @@ ALMALINUX_BASEOS_REPO = {
 
 async def test_dnf_repositories_parses_the_documented_example():
     """Over the real-transport path, ``DnfRepositories`` parses a cat'd
-    ``.repo`` file into pyinfra's documented example result."""
+    ``.repo`` file into the baseline's documented example result."""
     marker = DnfRepositories.FILENAME_MARKER
     stdout = "\n".join(
         [
@@ -263,11 +263,11 @@ def test_dnf_repofile_command_guards_on_existence():
     assert f"cat -- {DOCKER_REPO_PATH}" in command
 
 
-# --- DnfEnabledModules fact (pyinfra parity) -----------------------------------
+# --- DnfEnabledModules fact (baseline parity) -----------------------------------
 
-# The example result from the pyinfra ``dnf.DnfEnabledModules`` documentation,
+# The example result from the baseline ``dnf.DnfEnabledModules`` documentation,
 # produced by parsing the ``dnf module list --enabled`` table below (the
-# ``multiple_modules`` case from pyinfra's own fact tests).
+# ``multiple_modules`` case from the baseline's own fact tests).
 DOCUMENTED_ENABLED_MODULES = {"postgresql": "16", "nodejs": "20"}
 
 DNF_MODULE_LIST_ENABLED_OUTPUT = """\
@@ -280,7 +280,7 @@ Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled"""
 
 async def test_dnf_enabled_modules_parses_the_documented_example():
     """Over the real-transport path, ``DnfEnabledModules`` parses a
-    ``dnf module list --enabled`` table into pyinfra's documented example
+    ``dnf module list --enabled`` table into the baseline's documented example
     result (as sorted ``DnfModule`` entries), skipping the header, blank
     lines and the trailing hint line."""
     host = CannedShellHost(DNF_MODULE_LIST_ENABLED_OUTPUT)
@@ -298,9 +298,9 @@ async def test_dnf_enabled_modules_reads_the_simulated_seam():
     )
 
 
-# --- DnfDisabledModules fact (pyinfra parity) ---------------------------------
+# --- DnfDisabledModules fact (baseline parity) ---------------------------------
 
-# The example result from the pyinfra ``dnf.DnfDisabledModules`` documentation
+# The example result from the baseline ``dnf.DnfDisabledModules`` documentation
 # lists ``["ruby", "php"]``; the fact returns ``DnfModule`` entries *sorted* by
 # name, each keeping the stream its ``[x]`` row carries.
 DOCUMENTED_DISABLED_MODULES = ["php", "ruby"]
@@ -315,7 +315,7 @@ Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled"""
 
 async def test_dnf_disabled_modules_parses_the_documented_example():
     """Over the real-transport path, ``DnfDisabledModules`` parses a
-    ``dnf module list --disabled`` table into pyinfra's documented example
+    ``dnf module list --disabled`` table into the baseline's documented example
     modules (sorted entries keeping each row's stream), skipping the header,
     blank lines and the trailing hint line."""
     host = CannedShellHost(DNF_MODULE_LIST_DISABLED_OUTPUT)
@@ -328,7 +328,7 @@ async def test_dnf_disabled_modules_parses_the_documented_example():
 async def test_dnf_disabled_modules_keeps_each_flagged_stream():
     """A module disabled on several streams contributes one entry per flagged
     row, sorted by name then stream (the ``multi_stream_dedup`` case from
-    pyinfra's fact tests, which collapsed the streams into one name)."""
+    the baseline's fact tests, which collapsed the streams into one name)."""
     stdout = """\
 Name         Stream        Profiles              Summary
 postgresql   16 [x]        client, server [d]    PostgreSQL server and client module
@@ -559,7 +559,7 @@ async def test_dnf_repolist_seam_read_copies_each_entry():
     assert host.repo_list == DOCUMENTED_REPO_LIST
 
 
-# --- RpmPackage fact (pyinfra parity) ----------------------------------------
+# --- RpmPackage fact (baseline parity) ----------------------------------------
 
 # A ``.rpm`` file on the target host and the package it provides, reused across
 # the RpmPackage fact and dnf.rpm operation tests below. ``RPM_FILE_VERSION`` is
@@ -572,7 +572,7 @@ RPM_FILE_INFO = {"name": RPM_FILE_NAME, "version": RPM_FILE_VERSION}
 
 async def test_rpm_package_parses_the_queryformat_line():
     """Over the real-transport path, ``RpmPackage`` parses rpm's
-    ``NAME VERSION-RELEASE`` line into pyinfra's documented dict."""
+    ``NAME VERSION-RELEASE`` line into the baseline's documented dict."""
     host = CannedShellHost(f"{RPM_FILE_NAME} {RPM_FILE_VERSION}\n")
     assert await RpmPackage.process(host, RPM_FILE_NAME) == RPM_FILE_INFO
 
@@ -586,7 +586,7 @@ async def test_rpm_package_absent_name_parses_to_none():
 
 def test_rpm_package_command_queries_installed_then_file():
     """The real-transport command queries the installed package first, then --
-    behind a ``test -e`` guard -- the ``.rpm`` file, mirroring pyinfra's
+    behind a ``test -e`` guard -- the ``.rpm`` file, mirroring the baseline's
     ``rpm -q ... || rpm -qp ...`` chain."""
     command = RpmPackage.command(RPM_FILE_PATH)
     assert "--queryformat" in command
@@ -1560,11 +1560,11 @@ async def test_dnf_packages_no_change_reason_recorded():
     assert commands == []
 
 
-# --- dnf.packages options (pyinfra parity) ------------------------------------
+# --- dnf.packages options (baseline parity) ------------------------------------
 
 
 async def test_dnf_packages_accepts_a_bare_string():
-    """pyinfra accepts ``packages="nginx"`` as shorthand for a one-item list."""
+    """The baseline accepts ``packages="nginx"`` as shorthand for a one-item list."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in dnf.packages(ctx, packages="nginx")]
@@ -1598,7 +1598,7 @@ async def test_dnf_packages_clean_and_update_yield_before_install():
 
 
 async def test_dnf_packages_update_only_without_packages():
-    """``update=True`` alone mirrors pyinfra's stateless ``dnf.update``."""
+    """``update=True`` alone mirrors the baseline's stateless ``dnf.update``."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in dnf.packages(ctx, update=True)]
@@ -1681,7 +1681,7 @@ async def test_dnf_packages_version_pin_installs_when_name_absent():
 
 
 async def test_dnf_packages_version_pin_splits_on_the_last_equals():
-    """The pin splits on the *last* ``=`` (pyinfra's ``rsplit`` join, apt's
+    """The pin splits on the *last* ``=`` (the baseline's ``rsplit`` join, apt's
     ``rpartition``), so an ``=`` inside the version never cuts the name short:
     the installed name ``foo=1.0`` matches the pin ``foo=1.0=2``."""
     host = SimulatedHost(name="h", packages={"foo=1.0": [""]})
@@ -1706,7 +1706,7 @@ def test_dnf_package_commands_shell_quote_the_names():
 
 
 async def test_dnf_packages_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     strips the ``name``/``sudo`` meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1767,7 +1767,7 @@ async def test_dnf_version_pin_install_simulates_by_name():
     assert plans2["h"][0].reason == "all packages present"
 
 
-# --- dnf.repo operation (pyinfra parity) --------------------------------------
+# --- dnf.repo operation (baseline parity) --------------------------------------
 
 
 async def test_dnf_repo_writes_the_constructed_file():
@@ -1846,7 +1846,7 @@ async def test_dnf_repo_removal_noop_when_absent():
 
 
 async def test_dnf_repo_rejects_a_url_src():
-    """pyinfra downloads a URL ``.repo`` file; reemote5 has no download
+    """The baseline downloads a URL ``.repo`` file; reemote5 has no download
     operation, so a URL src raises instead of silently doing nothing."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1879,7 +1879,7 @@ async def test_dnf_repo_rejects_a_relative_gpgkey():
 
 
 async def test_dnf_repo_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot, like every other
+    """``**kwargs`` mirrors the baseline's global-arguments slot, like every other
     dnf operation; op() already strips the meta-parameters."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2029,7 +2029,7 @@ async def test_dnf_repo_remove_after_write_in_one_deploy():
 async def test_dnf_repo_datadog_options_render_into_the_content():
     """includepkgs/repo_gpgcheck/proxy/proxy_username append after gpgkey in a
     fixed order (the ansible-datadog role's yum_repository fields); without a
-    proxy_password the install keeps pyinfra's 0644 mode."""
+    proxy_password the install keeps the baseline's 0644 mode."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
@@ -2064,7 +2064,7 @@ async def test_dnf_repo_datadog_options_render_into_the_content():
 
 async def test_dnf_repo_repo_gpgcheck_false_renders_zero_and_none_omits():
     """repo_gpgcheck=False writes ``repo_gpgcheck=0``; leaving it None omits
-    the line entirely, so the constructed content stays the pyinfra-parity
+    the line entirely, so the constructed content stays the baseline-parity
     file (a no-op against a file an older release wrote)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2340,7 +2340,7 @@ async def test_dnf_cache_ops_after_repo_write_in_one_deploy():
     assert makecache2.changed
 
 
-# --- dnf.rpm operation (pyinfra parity) --------------------------------------
+# --- dnf.rpm operation (baseline parity) --------------------------------------
 
 
 async def test_dnf_rpm_installs_an_absent_package():
@@ -2370,7 +2370,7 @@ async def test_dnf_rpm_no_change_when_installed_version_matches():
 
 async def test_dnf_rpm_reinstalls_when_installed_version_differs():
     """A different installed version does not match the file, so present=True
-    installs again -- the version-comparison idempotence pyinfra's ``ensure_rpm``
+    installs again -- the version-comparison idempotence the baseline's ``ensure_rpm``
     performs."""
     host = SimulatedHost(
         name="h",
@@ -2422,7 +2422,7 @@ async def test_dnf_rpm_removal_noop_when_file_absent():
 
 
 async def test_dnf_rpm_rejects_a_url_src():
-    """pyinfra downloads a URL ``.rpm``; reemote5 has no download operation, so a
+    """The baseline downloads a URL ``.rpm``; reemote5 has no download operation, so a
     URL src raises instead of silently doing nothing (mirroring dnf.repo)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2436,7 +2436,7 @@ async def test_dnf_rpm_rejects_a_url_src():
 
 
 async def test_dnf_rpm_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already strips
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already strips
     the ``name``/``sudo`` meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h", rpm_files={RPM_FILE_PATH: RPM_FILE_INFO})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2446,7 +2446,7 @@ async def test_dnf_rpm_absorbs_unknown_kwargs():
 
 def test_rpm_install_command_shell_and_elevation():
     """The descriptor renders ``rpm -i <quoted src>`` and elevates as a whole
-    under sudo -- a plain command, not pyinfra's ``|| ...`` runtime-check chain,
+    under sudo -- a plain command, not the baseline's ``|| ...`` runtime-check chain,
     whose fallback arm a ``sudo`` prefix would leave unprivileged."""
     cmd = RpmInstallCommand(src=RPM_FILE_PATH)
     assert cmd.shell() == f"rpm -i {RPM_FILE_PATH}"
@@ -2602,7 +2602,7 @@ async def test_rpm_gpg_keys_seam_read_is_a_sorted_copy():
     ]
 
 
-# --- dnf.key operation (pyinfra parity) --------------------------------------
+# --- dnf.key operation (baseline parity) --------------------------------------
 
 # A stand-in ASCII-armored GPG public key. dnf.key imports the *content* of an
 # IO stream (never a path), so the tests only need opaque, stable bytes; the
@@ -2630,7 +2630,7 @@ async def test_dnf_key_yields_upload_then_import():
 
 
 async def test_dnf_key_rejects_a_str_src():
-    """pyinfra's dnf.key takes a filename/URL the target host reads; reemote5
+    """The baseline's dnf.key takes a filename/URL the target host reads; reemote5
     takes an IO stream, so a str src raises rather than being treated as a
     controller-side path."""
     host = SimulatedHost(name="h")
@@ -2640,7 +2640,7 @@ async def test_dnf_key_rejects_a_str_src():
 
 
 async def test_dnf_key_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already strips
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already strips
     the name/sudo meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     stream = io.BytesIO(GPG_KEY_BYTES)
@@ -2858,7 +2858,7 @@ async def test_dnf_key_import_requires_src():
 
 
 async def test_dnf_key_remove_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot on the removal
+    """``**kwargs`` mirrors the baseline's global-arguments slot on the removal
     direction too; op() already strips the name/sudo meta-parameters."""
     host = SimulatedHost(name="h", rpm_gpg_keys=[dict(LEGACY_KEY_ENTRY)])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2987,9 +2987,9 @@ async def test_dnf_key_remove_dry_run_plans_without_removing():
     assert host.rpm_gpg_keys == [LEGACY_KEY_ENTRY]
 
 
-# --- dnf.module operation (pyinfra parity) -----------------------------------
+# --- dnf.module operation (baseline parity) -----------------------------------
 
-# The module/stream pyinfra's own dnf.module operation tests use: enabling
+# The module/stream the baseline's own dnf.module operation tests use: enabling
 # postgresql:16 and disabling ruby. Reused for command/reason parity below.
 MODULE_NAME = "postgresql"
 MODULE_STREAM = "16"
@@ -2998,7 +2998,7 @@ DISABLE_MODULE_NAME = "ruby"
 
 async def test_dnf_module_enable_new_yields_command():
     """enabled=True with a module not yet enabled on the stream yields the
-    ``dnf module enable`` command (pyinfra's ``enable_new`` case)."""
+    ``dnf module enable`` command (the baseline's ``enable_new`` case)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
@@ -3013,7 +3013,7 @@ async def test_dnf_module_enable_new_yields_command():
 
 async def test_dnf_module_enable_already_enabled_noop():
     """A module already enabled on exactly the requested stream is a no-op
-    (pyinfra's ``enable_already_enabled`` case, reason matches its noop)."""
+    (the baseline's ``enable_already_enabled`` case, reason matches its noop)."""
     host = SimulatedHost(name="h", enabled_modules={MODULE_NAME: MODULE_STREAM})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
@@ -3026,7 +3026,7 @@ async def test_dnf_module_enable_already_enabled_noop():
 
 async def test_dnf_module_enable_switches_stream():
     """A module enabled on a *different* stream re-enables onto the requested
-    one (pyinfra's ``enable_different_stream`` case); the reason names the
+    one (the baseline's ``enable_different_stream`` case); the reason names the
     switch."""
     host = SimulatedHost(name="h", enabled_modules={MODULE_NAME: "15"})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3044,7 +3044,7 @@ async def test_dnf_module_enable_switches_stream():
 
 
 async def test_dnf_module_enable_requires_stream():
-    """enabled=True with no stream raises -- pyinfra's ``OperationValueError``
+    """enabled=True with no stream raises -- the baseline's ``OperationValueError``
     (a ValueError subclass) maps to reemote5's plain ValueError."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3054,7 +3054,7 @@ async def test_dnf_module_enable_requires_stream():
 
 async def test_dnf_module_disable_new_yields_command():
     """enabled=False with a module not yet disabled yields the ``dnf module
-    disable`` command (pyinfra's ``disable_new`` case)."""
+    disable`` command (the baseline's ``disable_new`` case)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
@@ -3066,7 +3066,7 @@ async def test_dnf_module_disable_new_yields_command():
 
 
 async def test_dnf_module_disable_already_disabled_noop():
-    """A module already disabled is a no-op (pyinfra's ``disable_already_disabled``
+    """A module already disabled is a no-op (the baseline's ``disable_already_disabled``
     case, reason matches its noop)."""
     host = SimulatedHost(name="h", disabled_modules=[DISABLE_MODULE_NAME])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3079,7 +3079,7 @@ async def test_dnf_module_disable_already_disabled_noop():
 
 
 async def test_dnf_module_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already strips
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already strips
     the name/sudo meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3205,12 +3205,12 @@ async def test_dnf_module_enable_then_noop_in_one_deploy():
     assert host.enabled_modules == {MODULE_NAME: MODULE_STREAM}
 
 
-# --- dnf.update operation (pyinfra parity) -----------------------------------
+# --- dnf.update operation (baseline parity) -----------------------------------
 
 
 async def test_dnf_update_always_yields_and_changes():
     """``dnf.update`` is non-idempotent: it reads no fact, always reports a
-    change and yields one bare ``DnfUpdateCommand`` (pyinfra's ``dnf update -y``)."""
+    change and yields one bare ``DnfUpdateCommand`` (the baseline's ``dnf update -y``)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in dnf.update(ctx)]
@@ -3223,7 +3223,7 @@ async def test_dnf_update_always_yields_and_changes():
 async def test_dnf_update_is_non_idempotent_with_packages_installed():
     """A host that already has packages still plans an update: there is no fact
     to compare against, so the operation never becomes a no-op -- matching
-    pyinfra's ``is_idempotent=False``."""
+    the baseline's ``is_idempotent=False``."""
     host = SimulatedHost(name="h", packages={"nginx": [""], "vim": [""]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in dnf.update(ctx)]
@@ -3232,7 +3232,7 @@ async def test_dnf_update_is_non_idempotent_with_packages_installed():
 
 
 async def test_dnf_update_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already strips
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already strips
     the name/sudo meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))

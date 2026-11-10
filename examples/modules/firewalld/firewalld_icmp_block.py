@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.icmp_block`` is a reemote5 original (pyinfra ships no
+``firewalld.icmp_block`` is a reemote5 original (the baseline ships no
 firewalld module): it blocks an ICMP type by name in a zone -- here
 ``echo-request`` in ``public``, which makes the hosts stop answering
 ping (``firewall-cmd --get-icmptypes`` lists every name the daemon

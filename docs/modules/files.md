@@ -1,57 +1,41 @@
 # files module
 
-## file Facts
-
 ::: reemote5.modules.files.files
     options:
       show_root_heading: false
       members:
-        - File
         - Directory
-        - Link
-        - Socket
-        - FileLink
+        - DirectoryEntries
+        - DirectoryEntry
+        - File
+        - FileContents
         - FileExists
+        - FileFlags
+        - FileLink
+        - FindDirectories
+        - FindFiles
+        - FindFilesInfo
+        - FindInFile
+        - FindLinks
+        - FoundFile
+        - Link
         - LocalSha1
+        - Md5File
         - RemoteFileSha1
+        - SameFile
         - Sha256File
         - Sha384File
-        - Md5File
-        - SameFile
-        - FileContents
-        - FileFlags
-        - FindFiles
-        - FindDirectories
-        - FindLinks
-        - FindInFile
-        - FindFilesInfo
-        - DirectoryEntries
-
-## file Returns
-
-::: reemote5.modules.files.files
-    options:
-      show_root_heading: false
-      members:
-        - DirectoryEntry
-        - FoundFile
-
-## file Operations
-
-::: reemote5.modules.files.files
-    options:
-      show_root_heading: false
-      members:
-        - link
-        - file
-        - put
-        - get
-        - edit
-        - install
-        - move
+        - Socket
         - copy
         - directory
+        - edit
+        - file
         - flags
+        - get
+        - install
+        - link
+        - move
+        - put
 
 
 
@@ -80,24 +64,24 @@ one fact whose input is not the host: it hashes an IO-like stream on the
 *control* machine — the source `files.put` uploads or the destination
 `files.get` downloads into — which both compare against the remote file's hash.
 
-`File` mirrors pyinfra's `files.File`: it guards the path with
+`File` mirrors the baseline's `files.File`: it guards the path with
 `test -e`/`test -L`, then describes it with GNU `stat -c`, falling back to BSD
 `stat -f` and finally `ls -ld`, and returns the metadata dict — `user`,
-`group`, `mode` (the octal-looking int pyinfra returns, e.g. `644` or `4755`,
+`group`, `mode` (the octal-looking int the baseline returns, e.g. `644` or `4755`,
 setuid/setgid/sticky bits included), `size`, and `atime`/`mtime`/`ctime` as
-*naive UTC* `datetime`s (pyinfra's convention; the `ls -ld` fallback provides
+*naive UTC* `datetime`s (the baseline's convention; the `ls -ld` fallback provides
 only an mtime, so its atime/ctime read as `None`). A path that does not exist
 reads as `None`; one that exists but is not a regular file (a directory,
 symlink, socket, ...) reads as `False` — `Directory`, `Link` and `Socket`
 are the directory-, link- and socket-accepting siblings, and only `Link`'s
 dict carries the `link_target` key. Like
-pyinfra, a leading `~/` stays unquoted so the remote shell expands it. Where
+the baseline, a leading `~/` stays unquoted so the remote shell expands it. Where
 `FileExists` is the cheap `test -e` probe for existence-only checks, `File`
 is the richer stat-level read — the one `files.file` consumes to compare the
 mode and owner it is asked for, and the right fact for auditing ownership,
 permissions or timestamps.
 
-`Directory` mirrors pyinfra's `files.Directory` — its `File` subclass with
+`Directory` mirrors the baseline's `files.Directory` — its `File` subclass with
 `type = "directory"`: the very same guard, stat/ls chain and metadata dict,
 but the path's type flag must be `d`, so a regular file, symlink, socket, ...
 reads as `False` instead. Use it to audit a directory's ownership, mode
@@ -107,14 +91,14 @@ directory *itself*, never the names inside it — for the listing see
 `DirectoryEntries` (shallow, with types) or `FindDirectories` (recursive
 paths).
 
-`Socket` mirrors pyinfra's `files.Socket` — the same `File` subclass with
+`Socket` mirrors the baseline's `files.Socket` — the same `File` subclass with
 `type = "socket"`: the very same guard, stat/ls chain and metadata dict,
 but the path's type flag must be `s`, so a regular file, directory,
 symlink, ... reads as `False` instead. Use it to audit a daemon's
 listening socket — `/var/run/docker.sock`, a database or agent IPC
 socket — where owner and mode decide which users may talk to the daemon.
 
-`Sha256File`, `Sha384File` and `Md5File` mirror pyinfra's hash fact family:
+`Sha256File`, `Sha384File` and `Md5File` mirror the baseline's hash fact family:
 one guarded command tries the tool spellings in order (`sha256sum`,
 `shasum -a 256`, `sha256`, ...) reading the file through *stdin* (`< path`)
 so the checksum tool never sees the filename — GNU coreutils escapes
@@ -128,13 +112,13 @@ checksum manifests, not a security boundary. `RemoteFileSha1` predates the
 family and deliberately keeps its simpler `sha1sum <path>` probe: it backs
 the `files.put`/`files.get` idempotence contract.
 
-`FindFiles`, `FindDirectories` and `FindLinks` mirror pyinfra's find-path
+`FindFiles`, `FindDirectories` and `FindLinks` mirror the baseline's find-path
 family — the enumeration facts the stat-only `File`/`Directory` metadata
 facts cannot replace: they discover names the deploy author does not know
 ("every `conf.d/*/conf.yaml`", "every legacy apt `.list` file"). One
 `find <path> -type f|d|l` plus the shared filters returns the matching
 paths verbatim in find's traversal order, always guarded with `|| true` so
-a missing start path reads as `[]`. The filters are pyinfra's set:
+a missing start path reads as `[]`. The filters are the baseline's set:
 `fname`/`iname` name globs, `maxdepth`, `size`/`min_size`/`max_size` (ints
 or human-readable spellings like `"1KB"`/`"2MiB"`, always rendered in
 bytes), `regex`, `path_match`, and the raw `args` escape hatch (which
@@ -147,7 +131,7 @@ two-deploy cleanup: gather the hits in one deploy, compute the closure
 `files.directory` in the next — see the
 [conf.d cleanup example](../examples/demonstrations/composition.md).
 
-`FindInFile` mirrors pyinfra's `files.FindInFile`: `grep -e <pattern>`
+`FindInFile` mirrors the baseline's `files.FindInFile`: `grep -e <pattern>`
 prints the matching lines, and when grep fails the fallback arm
 distinguishes *no match* from *no file* — an existing regular file echoes
 an exists sentinel that reads as `[]`, a missing one echoes nothing and
@@ -158,7 +142,7 @@ to audit configuration content — "is this legacy source still enabled?",
 "does the agent config still name the old endpoint?" — without pulling the
 whole file through `FileContents`.
 
-`FindFilesInfo` is a reemote5 original (pyinfra ships no counterpart): the
+`FindFilesInfo` is a reemote5 original (the baseline ships no counterpart): the
 find family's filters plus GNU `find -printf` gather path, size, mode,
 user, group and mtime for every hit in *one* command — the metadata
 Ansible's `find` module returns per hit, which bare `FindFiles` would need
@@ -180,7 +164,7 @@ this directory right now?" read behind legacy-file cleanup and
 drop-in-directory audits. GNU-only like `FindFilesInfo`; a missing start
 path reads as `[]`.
 
-`Link` mirrors pyinfra's `files.Link` — the same `File` subclass with
+`Link` mirrors the baseline's `files.Link` — the same `File` subclass with
 `type = "link"`: the very same guard, stat/ls chain and metadata dict, but
 the path's type flag must be `l`, and the dict additionally carries
 `link_target` — the target path with the stat/ls quoting stripped (GNU
@@ -192,7 +176,7 @@ link is still reported with its target. Where `FileLink` is the cheap
 read for auditing the link itself — ownership, mode, timestamps —
 alongside where it points.
 
-`SameFile` mirrors pyinfra's `files.SameFile`: one `test <path> -ef <target>`
+`SameFile` mirrors the baseline's `files.SameFile`: one `test <path> -ef <target>`
 probe whose `&& echo true || echo false` guard always exits zero, returning
 the plain bool — two paths name the same device *and* inode, or they do not.
 A nonexistent or unrelated path is the plain `False` answer, never a failed
@@ -204,12 +188,12 @@ destination truly shares an inode with its source. Unlike the `File` family
 there is no leading `~/` exception — both paths are quoted verbatim, so a
 tilde path simply reads as an absent file.
 
-`FileFlags` is the Linux reading of pyinfra's BSD `files.Flags` (the
+`FileFlags` is the Linux reading of the baseline's BSD `files.Flags` (the
 developer-chosen adaptation): it guards the path with `test -e`, then runs
 `lsattr -d` with stderr masked, and returns the attribute letters of the
 row's fixed-width flags field, padding dashes dropped and sorted — `i` for
 immutable, `a` for append-only, ... An absent path answers `[]`, exactly as
-pyinfra's `Flags` process answers for no output, and a filesystem without
+the baseline's `Flags` process answers for no output, and a filesystem without
 ext2-family attributes masks to the same `[]`. Use it to audit the
 attributes behind `files.flags` before a `+i` plan strands a removal, or to
 document what an append-only log file really carries. Like `File`, a
@@ -222,7 +206,7 @@ Operations live in namespace modules so a deploy reads `files.link`,
 `files.file`, `files.put`, `files.get`, `files.edit`, `files.install`,
 `files.move`,
 `files.copy`, `files.directory` and `files.flags`,
-mirroring pyinfra's
+mirroring the baseline's
 API. Every
 operation is an async generator taking an [`OpContext`][reemote5.core.OpContext],
 awaiting facts via `ctx.facts`, setting `ctx.changed`/`ctx.reason` where a
@@ -236,7 +220,7 @@ descriptor per mutation.
 asyncssh connection with scp instead of running shell text, so the `sudo`/`su`
 flags do not apply and the remote path must be writable (put) or readable (get)
 by the login user. Each takes an **IO-like object only** on the control-machine
-side (`src: IO[Any]` for put, `dest: IO[Any]` for get — where pyinfra accepts a
+side (`src: IO[Any]` for put, `dest: IO[Any]` for get — where the baseline accepts a
 local filename too, a path string is deliberately not supported): put rewinds
 its source before every read, get rewinds and truncates its destination before
 writing and rewinds it again after, and the same object must be passed in both
@@ -244,7 +228,7 @@ phases (request equality compares it by identity). Idempotence is content-based
 in both directions: `files.put` compares the source's `LocalSha1` against the
 remote file's `RemoteFileSha1` and uploads only on a mismatch, while
 `files.get` compares the remote file's `RemoteFileSha1` against the
-destination's current `LocalSha1` and downloads only on a mismatch. pyinfra's
+destination's current `LocalSha1` and downloads only on a mismatch. The baseline's
 `files.get` options `add_deploy_dir`, `create_local_dir` and `force` are
 dropped — there is no local path to place, create or force.
 
@@ -257,10 +241,10 @@ result differs from the current content. Any "edit a file in place" task — a
 with no new operation; a few common formats have since grown dedicated
 operations built on the same read-transform-write idea
 (`server.etc_hosts` for the hosts file, `sysctl.setting` for sysctl keys),
-while the generic primitive stays the answer for everything else. pyinfra's `files.block` is covered exactly that way: the
+while the generic primitive stays the answer for everything else. The baseline's `files.block` is covered exactly that way: the
 `block_transform` factory in the
-[block example](../examples/modules/files.md#managing-a-marked-block-pyinfra-filesblock-parity)
-builds a marked-block transform from pyinfra's option set (content, markers,
+[block example](../examples/modules/files.md#managing-a-marked-block-baseline-filesblock-parity)
+builds a marked-block transform from the baseline's option set (content, markers,
 regex positioning, removal), so no bespoke block editor is ported. The
 transform must be idempotent (so a second edit is a
 fixpoint) and a stable, hashable module-level callable (it is compared by value
@@ -306,14 +290,14 @@ There is no `present=False` branch — `files.file(present=False)` owns removal.
 Installing under `/etc` needs root, so flag the request `sudo=True`; the
 transfer stays unprivileged regardless.
 
-`files.move` mirrors pyinfra's `files.move`: `src` is a remote path, `dest`
+`files.move` mirrors the baseline's `files.move`: `src` is a remote path, `dest`
 is the remote *directory* to move it into (the moved path becomes
 `dest/basename(src)`), and `overwrite=True` removes an existing target first
-(`rm -rf`) instead of raising. It is **stateless** like pyinfra — a valid
+(`rm -rf`) instead of raising. It is **stateless** like the baseline — a valid
 move always yields a command, there is no idempotent no-op branch — and it
 reads `File(src)`, `Directory(dest)` and `File(dest/basename(src))` to
 validate. An absent source, an absent or non-directory destination, and an
-existing target without `overwrite` raise `ValueError`. pyinfra's
+existing target without `overwrite` raise `ValueError`. The baseline's
 phase-aware softness for the two absence cases (a log while planning, an
 error only while executing) is deliberately dropped — reemote5 operations
 are phase-unaware, so they raise in *both* phases. A consequence: a
@@ -327,7 +311,7 @@ run. For whole-content writes prefer `files.install` above (one deploy),
 and for the hosts file specifically the dedicated `server.etc_hosts`
 operation now covers the old `/etc/hosts` recipe natively.
 
-`files.directory` mirrors pyinfra's `files.directory`: it reads the
+`files.directory` mirrors the baseline's `files.directory`: it reads the
 `Directory` fact once and — for an absent path — yields `mkdir -p` plus,
 when requested, `chmod`/`chown` to create the tree with the desired
 `user`/`group`/`mode`; for an existing directory, only the `chmod`/`chown`
@@ -335,16 +319,16 @@ whose requested values differ from the fact's metadata (`recursive=True`
 spells them `chmod -R`/`chown -R`); and for `present=False`, `rm -rf` when
 the path is a directory. A path held by a regular file or symlink raises
 `ValueError` unless `force=True`, which removes it first (`rm -rf`) and
-recreates. pyinfra's `force_backup`/`force_backup_dir` are deliberately
+recreates. The baseline's `force_backup`/`force_backup_dir` are deliberately
 dropped — their `mv` embeds a `datetime.now()` timestamp that would differ
 between the prepare and apply phases and break the determinism guard, so
-`force` always removes. The mode accepts every pyinfra spelling — `750`,
+`force` always removes. The mode accepts every baseline spelling — `750`,
 `"750"`, `"0750"`, `"0o750"` normalise to the octal-looking int the fact
 carries, while a symbolic mode (`"u+x"`) never equals it, so the chmod
 always re-runs. The shells touch only root-owned paths in practice, so
 flag the request `sudo=True`.
 
-`files.file` mirrors pyinfra's `files.file` in the `files.directory` shape:
+`files.file` mirrors the baseline's `files.file` in the `files.directory` shape:
 it reads the `File` fact once and — for an absent path — yields `touch`
 plus, when requested, `chmod`/`chown` to create the file with the desired
 `user`/`group`/`mode`; for an existing file, only the `chmod`/`chown`
@@ -357,17 +341,17 @@ parent when an owner was requested — but never edits an existing one, so
 manage a directory's own mode/owner with `files.directory`. The `touch`
 option is deliberately **non-idempotent** exactly as upstream's is: it
 re-runs the `touch` on an existing file on every pass, timestamps only.
-pyinfra's `force_backup`/`force_backup_dir` are dropped for the same
+the baseline's `force_backup`/`force_backup_dir` are dropped for the same
 determinism reason as `files.directory`, and the mode accepts the same
 spellings. `touch`/`rm -f`/`chmod`/`chown` address arbitrary paths, so for
 root-owned locations flag the request `sudo=True`.
 
-`files.link` mirrors pyinfra's `files.link` in the `files.file`/
+`files.link` mirrors the baseline's `files.link` in the `files.file`/
 `files.directory` shape: it reads the `Link` fact once and — for an absent
 path — yields `ln -s` (plain `ln` when `symbolic=False`) plus, when
 requested, `chown -h` to create the link with the desired `user`/`group`;
 for an existing link whose target differs, `rm -f` followed by a fresh `ln`
-(pyinfra's *remove and recreate* rule — the command never carries `ln -f`)
+(the baseline's *remove and recreate* rule — the command never carries `ln -f`)
 and the `chown -h` whose requested owner differs from the row's; and for
 `present=False`, `rm -f` when the path is a link. `chown -h` owns the link
 itself, never its target. A hard link (`symbolic=False`) is not a symlink —
@@ -381,28 +365,28 @@ a *missing* parent before the `ln` — and chowns that new parent when an
 owner was requested (the `files.directory` create branch, so no mode is
 copied) — but never edits an existing one, so manage a directory's own
 mode/owner with `files.directory`. The `target` is required whenever
-`present=True`, and `path` accepts a string or `os.PathLike` (pyinfra's
+`present=True`, and `path` accepts a string or `os.PathLike` (the baseline's
 `src` spelling is renamed to match `files.file`/`files.directory`).
-pyinfra's `force_backup`/`force_backup_dir` are dropped for the same
+the baseline's `force_backup`/`force_backup_dir` are dropped for the same
 determinism reason as `files.directory`/`files.file`, so `force` always
 removes, and its tolerance of a symlink parent is dropped with the
 internal `_no_fail_on_link` knob. `ln`/`rm -f`/`chown -h` address arbitrary
 paths, so for root-owned locations flag the request `sudo=True`.
 
-`files.flags` mirrors pyinfra's `files.flags` in the developer-chosen Linux
-adaptation: pyinfra's verb pair (`chflags` over BSD `stat -f %Sf` flag names
+`files.flags` mirrors the baseline's `files.flags` in the developer-chosen Linux
+adaptation: the baseline's verb pair (`chflags` over BSD `stat -f %Sf` flag names
 like `hidden`) does not exist on Linux, so the same set/clear capability is
 expressed over `lsattr -d` letters (read through the `FileFlags` fact) and
 `chattr +flag`/`-flag`. The idempotence logic is kept verbatim: setting
 yields only the requested letters missing from the current set
 (`chattr +a,i`), clearing only the requested letters actually present
-(`chattr -i`), and anything else is a no-op whose reason mirrors pyinfra's
+(`chattr -i`), and anything else is a no-op whose reason mirrors the baseline's
 noop text. `flags` accepts one letter as a string or a tuple of letters (a
 tuple at `op()` call sites, because request arguments must stay hashable);
 any letter outside the ext2 vocabulary — a BSD flag name, a signed `"+i"` —
 raises `ValueError` before anything reaches the host, and empty or absent
-flags are pyinfra's empty-list noop branch. An absent path reads no flags,
-so the request plans a `chattr` that fails at apply — pyinfra's `Flags`
+flags are the baseline's empty-list noop branch. An absent path reads no flags,
+so the request plans a `chattr` that fails at apply — the baseline's `Flags`
 answers `[]` for absence identically. `chattr` is root's tool in practice,
 so for the common protected paths flag the request `sudo=True`.
 

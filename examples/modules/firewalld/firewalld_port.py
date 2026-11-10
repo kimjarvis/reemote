@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.port`` is a reemote5 original (pyinfra ships no firewalld
+``firewalld.port`` is a reemote5 original (the baseline ships no firewalld
 module): it opens a single ``port/protocol`` (or a range like
 ``5000-5100/udp``) in a zone -- here ``8080/tcp`` in ``public``, the
 one-off opening for an app that has no service bundle. (Prefer

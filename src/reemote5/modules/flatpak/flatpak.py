@@ -3,17 +3,16 @@
 
 # The ``flatpak`` module: facts and operations in one source.
 #
-# Fact side: ``FlatpakPackage`` is a port of pyinfra's ``FlatpakPackage`` --
-# one installed flatpak package's identity (application id, ref and version)
-# parsed from the indented label rows of ``flatpak info <package>`` -- and
-# ``FlatpakPackages`` ports its sibling ``flatpak.FlatpakPackages``, the bare
+# Fact side: ``FlatpakPackage`` reports one installed flatpak package's
+# identity (application id, ref and version) parsed from the indented label
+# rows of ``flatpak info <package>``, and ``FlatpakPackages`` lists the bare
 # ``flatpak list --columns=application`` IDs of every installed flatpak. Like
 # every fact they are phase-unaware: their ``process`` coroutine just gathers
 # the raw value.
 #
-# Operation side: ``flatpak.packages`` mirrors pyinfra's ``flatpak.packages``
-# (install or remove flatpak applications, optionally from a named remote)
-# through its ``FlatpakInstallCommand``/``FlatpakRemoveCommand`` descriptors.
+# Operation side: ``flatpak.packages`` installs or removes flatpak
+# applications, optionally from a named remote, through its
+# ``FlatpakInstallCommand``/``FlatpakRemoveCommand`` descriptors.
 # Operations are async generators that receive an ``OpContext``, await facts,
 # set ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never
 # touch the host directly.
@@ -51,7 +50,7 @@ class FlatpakPackageInfo(TypedDict):
     #
     # A TypedDict rather than a class instance: the answer is an ordinary
     # dict, so equality against a literal dict works and ``json.dumps``
-    # serializes it directly. The three fields are pyinfra's verbatim
+    # serializes it directly. The three fields are the
     # ``id``/``ref``/``version`` keys, already valid identifiers.
 
     id: str
@@ -84,27 +83,27 @@ class FlatpakPackage:
         Examples can be found in ``examples/modules/flatpak/flatpak_flatpak_package.py``.
     """
 
-    # Mirrors pyinfra's ``flatpak.FlatpakPackage``: ``flatpak info <package>``
+    # ``flatpak info <package>``
     # prints a block of label rows; the three tracked ones (``ID:``, ``Ref:``
     # and ``Version:``) become one ``FlatpakPackageInfo`` (for example
     # ``{"id": "org.videolan.VLC", "ref": "app/org.videolan.VLC/x86_64/stable",
-    # "version": "3.0.21"}``). The regexes are pyinfra's verbatim, applied to
+    # "version": "3.0.21"}``). The regexes are applied to
     # the raw line (``re.match``), and each anchors on the row's leading
     # indentation, so only the indented label rows are read: the unindented
     # title line, the blank separators and every other label (``Arch``,
     # ``Branch``, ``License``, ``Origin``, ``Collection``, ``Installation``,
     # ``Installed``, ``Runtime``, ``Sdk`` and the commit block) never match. The
-    # ``version`` group is pyinfra's narrowed ``[\\w\\d.-]+`` token, so the
+    # ``version`` group is the narrowed ``[\\w\\d.-]+`` token, so the
     # whole non-numeric suffix of ``21.0-Omega`` is kept.
     #
-    # Two deliberate deviations from pyinfra, shared with the sibling
-    # ``snap.SnapPackage``. pyinfra's ``requires_command`` gating on ``flatpak``
-    # is dropped and the command is wrapped in ``2>/dev/null || true``: an
+    # Two deliberate design choices, shared with the sibling
+    # ``snap.SnapPackage``. Rather than gating on ``flatpak`` existing, the
+    # command is wrapped in ``2>/dev/null || true``: an
     # absent package -- or a host without ``flatpak`` -- prints nothing to
     # stdout (the ``error: ... not installed`` line goes to stderr, suppressed)
     # and exits non-zero, so the guard reads as empty output rather than raising
-    # ``CommandNotFoundError``. pyinfra's fact then returns its ``default =
-    # dict`` (an empty ``{}``); reemote5 reports ``None`` instead, the
+    # ``CommandNotFoundError``. Instead of an empty-dict default (``{}``),
+    # reemote5 reports ``None``, the
     # ``ApkPackage``/``DebPackage``/``RpmPackage`` None-on-absent convention, so
     # a caller tests ``info is not None``. A present package whose optional
     # ``Version:`` row is simply absent (a runtime) reads that field as its
@@ -113,7 +112,7 @@ class FlatpakPackage:
     # out of the argument.
 
     #: The three tracked ``flatpak info`` rows, each result key mapped to the
-    #: pyinfra regex that reads its value from the raw indented line.
+    #: regex that reads its value from the raw indented line.
     FIELD_REGEXES: ClassVar[dict[str, re.Pattern[str]]] = {
         "id": re.compile(r"^[ ]+ID:[ ]+(.*)$"),
         "ref": re.compile(r"^[ ]+Ref:[ ]+(.*)$"),
@@ -128,8 +127,8 @@ class FlatpakPackage:
         ``package`` argument is ``shlex``-quoted, and the ``2>/dev/null ||
         true`` tail swallows the non-zero exit an absent package (or a host
         without ``flatpak``) produces, so nothing reaches stdout and ``process``
-        reports ``None`` -- the ``DebPackage`` tolerance rather than pyinfra's
-        ``requires_command`` gating and empty-dict answer.
+        reports ``None`` -- the ``DebPackage`` tolerance rather than a
+        command-existence gate and empty-dict answer.
         """
         return f"flatpak info {shlex.quote(package)} 2>/dev/null || true"
 
@@ -194,30 +193,29 @@ class FlatpakPackages:
         Examples can be found in ``examples/modules/flatpak/flatpak_packages.py``.
     """
 
-    # Mirrors pyinfra's ``flatpak.FlatpakPackages``: ``flatpak list
+    # ``flatpak list
     # --columns=application`` prints a single-column table whose first line is
     # the ``Application ID`` header, so the header is discarded and every
     # remaining row is one application ID (the dotted reverse-domain name, e.g.
-    # ``org.videolan.VLC``). pyinfra returns a bare list of IDs and reemote5
-    # keeps that ``list[str]`` scalar-list shape (the same exception
+    # ``org.videolan.VLC``). The answer is a bare list of IDs, kept as that
+    # ``list[str]`` scalar-list shape (the same exception
     # ``hardware.Ipv4Addrs`` and the sibling ``snap.SnapPackages`` make: the
     # answer is a list of scalars, not record dicts, so there is no field to
     # wrap in an entry TypedDict). IDs come back in flatpak's own listing
     # order, deduplicated at their first occurrence, and a blank body line is
     # skipped rather than crash ``parse``.
     #
-    # One deliberate deviation, shared with ``snap.SnapPackages``. pyinfra's
-    # ``requires_command`` gating on ``flatpak`` is dropped and the command is
+    # One deliberate choice, shared with ``snap.SnapPackages``. Rather than
+    # gating on ``flatpak`` existing, the command is
     # wrapped in ``2>/dev/null || true``: a host without ``flatpak`` exits
     # non-zero, so the guard reads as empty output rather than raising
-    # ``CommandNotFoundError``. pyinfra's fact then returns its ``default =
-    # list`` (an empty ``[]``) for a host with nothing installed; reemote5 keeps
+    # ``CommandNotFoundError``. Instead of an empty-list default (``[]``) for
+    # a host with nothing installed, reemote5 keeps
     # the empty list for both the nothing-installed and the no-``flatpak``-
     # binary cases, so a caller tests ``if packages:`` and never sees the tool's
-    # absence as an error. pyinfra's header filter (``if i > 1 or flatpak !=
-    # "Application ID"``) is an off-by-one that keeps a second header-looking
-    # row; reemote5 drops any line equal to the ``Application ID`` header,
-    # which is what the upstream regex was reaching for.
+    # absence as an error. The header filter drops any line equal to the
+    # ``Application ID`` header rather than only the first row, so a repeated
+    # header-looking line never leaks into the result.
 
     #: Shell listing the installed flatpak application IDs over SSH. The
     #: ``2>/dev/null || true`` tail swallows the non-zero exit a host without
@@ -266,11 +264,11 @@ class FlatpakInstallCommand(Command):
     """``flatpak install --noninteractive [remote] <packages>``: install flatpaks.
 
     The ``present=True`` direction of ``flatpak.packages``, rendered in
-    pyinfra's exact token order -- the ``--noninteractive`` flag right after
+    the exact token order flatpak expects -- ``--noninteractive`` right after
     the verb, then the optional remote, then the application IDs. The remote is
     the source flatpak resolves each ID against; when it is ``None`` the token
     is omitted entirely and flatpak falls back to its configured remotes (the
-    same ``if remote: append`` branch pyinfra makes after stripping the value).
+    same ``if remote: append`` branch made after stripping the value).
     The remote and every application ID are shell-quoted, so a metacharacter can
     never reach the remote shell unescaped -- a normal ID like
     ``org.videolan.VLC`` quotes to itself and renders verbatim.
@@ -291,7 +289,7 @@ class FlatpakInstallCommand(Command):
 class FlatpakRemoveCommand(Command):
     """``flatpak uninstall --noninteractive <packages>``: remove flatpaks.
 
-    The ``present=False`` direction of ``flatpak.packages`` (pyinfra's bare
+    The ``present=False`` direction of ``flatpak.packages`` (the bare
     ``flatpak uninstall --noninteractive`` command). flatpak takes no remote
     when removing -- the application is already resolved -- so this descriptor
     carries the IDs alone, shell-quoted.
@@ -339,27 +337,27 @@ async def packages(
         Examples can be found in ``examples/modules/flatpak/flatpak_packages.py``.
     """
 
-    # pyinfra ``flatpak.packages`` parity.
+    # Install or remove flatpak application packages, idempotently.
     #
     # Idempotence comes from the ``FlatpakPackages`` fact, awaited once: an
     # application ID absent from the installed list under ``present=True`` is
     # queued for install, and one present under ``present=False`` is queued for
-    # removal. An absent ID under ``present=False`` is the no-op pyinfra reports
+    # removal. An absent ID under ``present=False`` is the no-op reported
     # as ``flatpak package X is not installed``, folded into the shared
     # ``"no packages to remove"`` reason the apt/dnf/apk package operations use.
     # Presence is a bare name-only membership test (flatpak application IDs carry
     # no version to compare, unlike apk's pins) -- the same rule ``dnf.packages``
     # applies.
     #
-    # Commands run in pyinfra's yield order: install, then remove. Installing
+    # Commands run in a fixed yield order: install, then remove. Installing
     # and removing a system flatpak write system state, so flag the request
     # ``sudo=True`` (Ubuntu carries passwordless ``sudo`` by default). The
-    # ``remote`` is applied to the install direction only, as in pyinfra, and
-    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already strips
+    # ``remote`` is applied to the install direction only, and
+    # ``**kwargs`` absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``/``doas``).
     reasons: list[str] = []
 
-    # Normalize: pyinfra accepts a bare string, a list, or None.
+    # Normalize: accept a bare string, a list, or None.
     if packages is None:
         requested: tuple[str, ...] = ()
     elif isinstance(packages, str):
@@ -371,7 +369,7 @@ async def packages(
         ctx.reason = "no packages requested"
         return
 
-    # pyinfra strips and treats an empty remote as absent (``if remote:``).
+    # Strip and treat an empty remote as absent (``if remote:``).
     if remote is not None:
         remote = remote.strip() or None
 

@@ -28,7 +28,7 @@ the two-phase execution model:
    inventory with ``asyncio.gather`` and returns a host-name-keyed mapping --
    then print each host's interface addresses with ``json.dumps(..., indent=2)``.
 
-``Ipv6Addrs`` mirrors pyinfra's ``hardware.Ipv6Addrs``: it runs
+``Ipv6Addrs`` mirrors the baseline's ``hardware.Ipv6Addrs``: it runs
 ``ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a``
 and maps each interface carrying IPv6 addresses to the list of those
 addresses (the primary address first, then any aliases in listing order).

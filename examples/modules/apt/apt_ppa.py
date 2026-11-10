@@ -31,12 +31,12 @@ target your machines.
 driven by ``asyncio.run``.
 
 ``apt.ppa`` adds (or with ``present=False`` removes) an Ubuntu PPA repository,
-mirroring pyinfra's ``apt.ppa``. ``src`` is the full ``ppa:user/repo`` name --
-here the Bitcoin PPA, pyinfra's documented example. The operation runs
+mirroring the baseline's ``apt.ppa``. ``src`` is the full ``ppa:user/repo`` name --
+here the Bitcoin PPA, the baseline's documented example. The operation runs
 ``apt-add-repository -y <src>`` (``--remove`` for ``present=False``), which
 requires ``software-properties-common`` on the target host.
 
-The operation is **non-idempotent**, exactly as pyinfra marks it: it reads no
+The operation is **non-idempotent**, exactly as the baseline marks it: it reads no
 fact and always reports a change, yielding one command whether or not the PPA
 is already configured (``apt-add-repository`` itself is idempotent on the host,
 so re-adding an existing PPA is harmless). The script therefore yields an add
@@ -93,7 +93,7 @@ from reemote5 import (
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
-# The PPA to add, in full ``ppa:user/repo`` format (pyinfra's documented
+# The PPA to add, in full ``ppa:user/repo`` format (the baseline's documented
 # example). Assumes software-properties-common is installed on the host.
 BITCOIN_PPA = "ppa:bitcoin/bitcoin"
 

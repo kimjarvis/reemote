@@ -30,7 +30,7 @@ transport* (asyncssh):
    host-name-keyed mapping -- then print each host's raw records with
    ``json.dumps(..., indent=2)``.
 
-``FirewalldZones`` is a reemote5 original (pyinfra ships no firewalld
+``FirewalldZones`` is a reemote5 original (the baseline ships no firewalld
 module): it parses ``firewall-cmd --list-all-zones`` into a mapping of
 zone name to the zone's *complete* configuration -- target, display text,
 interfaces, sources, services, ports, protocols, masquerade, forward

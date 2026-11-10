@@ -27,7 +27,7 @@ it finishes. The path is resolved from ``__file__``, so the example works
 from any working directory; point ``INVENTORY_PATH`` at your own file to
 target your machines.
 
-``apt.update`` mirrors pyinfra's ``apt.update``: it refreshes the package
+``apt.update`` mirrors the baseline's ``apt.update``: it refreshes the package
 lists with the bare ``apt-get update`` -- no non-interactive wrapper, since
 ``update`` asks no questions. It is **non-idempotent**: it reads no fact and
 always reports a change, exactly like the stateless ``update=True`` prefix
@@ -37,7 +37,7 @@ plan and the apply log show it as a change. ``wait_for_lock=True`` (or an
 int) makes apt wait for its lock instead of failing instantly, useful when
 unattended-upgrades may hold it right after boot.
 
-Where pyinfra's ``apt.update`` also takes a ``cache_time`` parameter (skip
+Where the baseline's ``apt.update`` also takes a ``cache_time`` parameter (skip
 the update while the ``/var/lib/apt/periodic/update-success-stamp`` file is
 fresh, and ``touch`` it afterwards), reemote5 deliberately drops the option
 -- the same decision ``apt.packages`` made -- so the update is always

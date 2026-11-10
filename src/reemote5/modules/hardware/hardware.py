@@ -18,7 +18,7 @@
 # details), the last three parsed from ``ip addr show`` or ``ifconfig -a``,
 # and ``SmbiosInfo`` (the full SMBIOS/DMI tables decoded by ``dmidecode``).
 # ``DiskStats``, ``DmiInfo``, ``LsBlk`` and ``SmbiosInfo`` are reemote5
-# originals with no pyinfra counterpart: ``DiskStats`` and ``LsBlk``
+# originals: ``DiskStats`` and ``LsBlk``
 # complement ``BlockDevices``, whose ``df`` listing only shows mounted
 # filesystems, while ``DmiInfo`` and ``SmbiosInfo`` report the machine's
 # firmware identity -- manufacturer, product name, serial number, BIOS
@@ -43,19 +43,19 @@ from typing import Any, NotRequired, TypedDict, cast
 
 from ...hosts import Host
 
-# pyinfra's row regex, verbatim: device, blocks, used, available, a 1-3 digit
+# The row regex: device, blocks, used, available, a 1-3 digit
 # percentage and the mount point. Rows whose device or mount point carries a
 # character outside these classes (e.g. an NFS ``host:/export`` source) do
-# not match and are skipped, exactly like pyinfra.
+# not match and are skipped.
 _BLOCK_DEVICE_ROW_RE = re.compile(
     r"([a-zA-Z0-9\/\-_]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]{1,3})%\s+([a-zA-Z\/0-9\-_]+)"
 )
 
-# pyinfra's NetworkDevices regexes, verbatim, shared by NetworkDevices and
+# The NetworkDevices regexes, shared by NetworkDevices and
 # the Ipv4Addrs/Ipv6Addrs projections: the per-device section splitter,
 # the device-name matcher, and the two inet/inet6 row shapes per family
 # (the `ip addr show` one is tried first; the `ifconfig -a` one requires
-# the netmask/prefixlen token, exactly like pyinfra, so a token-less
+# the netmask/prefixlen token, so a token-less
 # ifconfig row never matches).
 _DEVICE_SECTION_RE = re.compile(r"\n(?=\d+: [^\s/:]|[^\s/:]+:.*mtu )")
 _DEVICE_NAME_RE = re.compile(r"^(?:\d+: )?([^\s/:]+):")
@@ -75,7 +75,7 @@ _IPV6_ROW_RES = (
     # ifconfig -a
     re.compile(r"inet6\s+(?P<address>[0-9a-fA-F:]+)\s+prefixlen\s+(?P<mask>\d+)"),
 )
-# pyinfra's NetworkDevices ether/mtu matchers, verbatim: a 17-character
+# The NetworkDevices ether/mtu matchers: a 17-character
 # MAC after the ``ether`` token and the first ``mtu`` count in a section.
 _ETHER_RE = re.compile(r"ether ([0-9A-Fa-f:]{17})")
 _MTU_RE = re.compile(r"mtu (\d+)")
@@ -117,7 +117,7 @@ def _addrs_from_json(lines: list[str], family: str) -> dict[str, list[str]]:
 
     ``family`` is the ``ip -j`` address family to keep (``inet`` for
     ``Ipv4Addrs``, ``inet6`` for ``Ipv6Addrs``). Malformed JSON reads as {}
-    (pyinfra logs an error and returns its empty device map); devices
+    (a failed decode returns the empty device map); devices
     without an ``ifname`` and addr entries without a ``local``/``family``
     are skipped, and only ``family`` entries are kept.
     """
@@ -125,7 +125,7 @@ def _addrs_from_json(lines: list[str], family: str) -> dict[str, list[str]]:
         decoded = json.loads("\n".join(lines))
     except (json.JSONDecodeError, TypeError, UnicodeDecodeError, RecursionError):
         return {}
-    # Non-dict entries would crash pyinfra's walker; reemote5 hardens the
+    # Non-dict entries would crash a naive walker; reemote5 hardens the
     # parser by skipping them instead.
     if not isinstance(decoded, list):
         return {}
@@ -140,7 +140,7 @@ def _addrs_from_json(lines: list[str], family: str) -> dict[str, list[str]]:
             and addr_info.get("family") == family
             and "local" in addr_info
         ]
-        # pyinfra's projection drops an interface whose primary address is
+        # The projection drops an interface whose primary address is
         # empty, but keeps any aliases, in listing order.
         if ips and ips[0]:
             addrs[info["ifname"]] = ips
@@ -153,7 +153,7 @@ def _addrs_from_text(
     """Project ``ip addr show``/``ifconfig -a`` text to the address lists.
 
     ``row_res`` are the family's two row shapes, the `ip addr show` one
-    first, exactly like pyinfra's per-family regex tuples.
+    first, matching the per-family regex tuples.
     """
     text = "\n".join(line.strip() for line in lines)
     addrs: dict[str, list[str]] = {}
@@ -168,7 +168,7 @@ def _addrs_from_text(
             if matches:
                 ips = [match.group("address") for match in matches]
                 break
-        # A later section for the same name wins, like pyinfra's device
+        # A later section for the same name wins, like the device
         # map -- including dropping the interface when the last section
         # carries no address of the projected family.
         if ips:
@@ -179,7 +179,7 @@ def _addrs_from_text(
 
 
 def _mask(value: str) -> tuple[int, str]:
-    """Convert a mask token to (mask_bits, netmask). pyinfra's ``mask``, verbatim.
+    """Convert a mask token to (mask_bits, netmask).
 
     Accepts a prefix length (``24``), a hex netmask (``0xffffff00``) or a
     dotted-quad netmask (``255.255.255.0``); the bit count of a hex/dotted
@@ -200,9 +200,9 @@ def _mask(value: str) -> tuple[int, str]:
 def _devices_from_json(lines: list[str]) -> "dict[str, NetworkDevice]":
     """Parse ``ip -j addr show`` JSON into the device -> details dict.
 
-    Malformed JSON reads as {} (pyinfra logs an error and returns its
+    Malformed JSON reads as {} (a failed decode returns the
     empty device map); devices without an ``ifname`` and addr entries
-    without a ``local``/``family`` are skipped (pyinfra logs and keeps
+    without a ``local``/``family`` are skipped (the walker keeps
     going). The first addr entry of each family becomes the primary
     ``ipv4``/``ipv6`` block, later ones collect under ``additional_ips``.
     """
@@ -210,7 +210,7 @@ def _devices_from_json(lines: list[str]) -> "dict[str, NetworkDevice]":
         decoded = json.loads("\n".join(lines))
     except (json.JSONDecodeError, TypeError, UnicodeDecodeError, RecursionError):
         return {}
-    # Non-dict entries would crash pyinfra's walker; reemote5 hardens the
+    # Non-dict entries would crash a naive walker; reemote5 hardens the
     # parser by skipping them instead.
     if not isinstance(decoded, list):
         return {}
@@ -253,7 +253,7 @@ def _devices_from_text(lines: list[str]) -> "dict[str, NetworkDevice]":
     token anywhere in the section, else ``UNKNOWN``), the optional
     ether/mtu, and the first matching row shape per family -- the primary
     address plus any ``additional_ips`` aliases. A later section for the
-    same name wins outright, like pyinfra's device map.
+    same name wins outright, like the device map.
     """
     text = "\n".join(line.strip() for line in lines)
     devices: dict[str, NetworkDevice] = {}
@@ -370,8 +370,8 @@ class BlockDevice(TypedDict):
     # A TypedDict rather than a class instance, like ``AptKey``: entries
     # are ordinary dicts, so equality against a literal dict works and
     # ``json.dumps`` serializes them directly. Every value stays a raw
-    # string -- pyinfra does not convert the block counts or the
-    # percentage to ints.
+    # string -- the block counts and the
+    # percentage are not converted to ints.
 
     blocks: str
     used: str
@@ -405,7 +405,7 @@ class BlockDevices:
         Examples can be found in ``examples/modules/hardware/hardware_block_devices.py``.
     """
 
-    # Mirrors pyinfra's ``hardware.BlockDevices``: ``df`` lists the mounted
+    # ``df`` lists the mounted
     # filesystems and each matching row maps the device to its
     # ``BlockDevice`` entry -- {blocks, used, available, used_percent,
     # mount} -- for example::
@@ -420,11 +420,11 @@ class BlockDevices:
     #         },
     #     }
     #
-    # Every value stays a raw string (pyinfra does not convert the block
-    # counts or the percentage to ints). The header row and any line that
+    # Every value stays a raw string (the block counts and the percentage
+    # are not converted to ints). The header row and any line that
     # does not match the ``df`` row shape are skipped, as is the ``none``
     # pseudo-filesystem; a repeated device keeps the last row. Empty output
-    # (a failed read) maps to ``{}``, pyinfra's ``default = dict``.
+    # (a failed read) maps to ``{}``, an empty-dict default.
     #
     # Because ``df`` only lists mounted filesystems, unmounted disks, LVM
     # volumes and raw devices never appear here; the reemote5-original
@@ -498,7 +498,7 @@ class CpuInfo:
         Examples can be found in ``examples/modules/hardware/hardware_cpu_info.py``.
     """
 
-    # Mirrors pyinfra's ``hardware.CpuInfo``: ``LANG=C lscpu`` prints
+    # ``LANG=C lscpu`` prints
     # ``Key: value`` rows, and each row maps its stripped key to its stripped
     # value, for example::
     #
@@ -512,13 +512,12 @@ class CpuInfo:
     #
     # A key containing ``flag`` (case-insensitively, e.g. ``Flags``) has its
     # value split on whitespace into a list of tokens; every other value stays
-    # a raw string. As in pyinfra the value is the segment after the *first*
+    # a raw string. The value is the segment after the *first*
     # colon (``line.split(":")[1]``), so a second colon in a value truncates it
-    # -- no ``lscpu`` row in pyinfra's fixtures carries one. Lines without a
-    # colon are skipped (pyinfra would raise ``IndexError`` on them; reemote5
-    # hardens the parser). Empty output (a failed read) reads as ``None``,
-    # exactly like pyinfra's ``invalid`` fixture. pyinfra's ``requires_command``
-    # gating is deliberately dropped: a *missing* ``lscpu`` exits 127, which
+    # -- no ``lscpu`` row carries one. Lines without a
+    # colon are skipped (a naive split would raise ``IndexError`` on them; reemote5
+    # hardens the parser). Empty output (a failed read) reads as ``None``.
+    # There is no command-existence gate: a *missing* ``lscpu`` exits 127, which
     # ``run_shell`` reports as ``CommandNotFoundError`` rather than ``None``.
     #
     # The dict stays plain (no entry TypedDict): its keys are ``lscpu``'s
@@ -535,7 +534,7 @@ class CpuInfo:
         """Parse ``lscpu`` rows into the CPU info dict, or None. Pure/testable.
 
         Each colon-bearing row maps its stripped key to its stripped value
-        (the segment after the first colon, pyinfra's ``split(":")[1]``); a
+        (the segment after the first colon, ``split(":")[1]``); a
         key containing ``flag`` has its value split into a list of tokens.
         Colon-less lines are skipped; an empty result reads as ``None``.
         """
@@ -592,17 +591,17 @@ class Cpus:
         Examples can be found in ``examples/modules/hardware/hardware_cpus.py``.
     """
 
-    # Mirrors pyinfra's ``hardware.Cpus``: ``getconf NPROCESSORS_ONLN`` (with
+    # ``getconf NPROCESSORS_ONLN`` (with
     # a fallback to the underscore-prefixed ``_NPROCESSORS_ONLN`` name for
     # platforms without the plain one) prints the count of online processors,
     # and the first output line is converted with ``int()``, for example::
     #
     #     1
     #
-    # Anything after the first line is ignored (pyinfra's ``list(output)[0]``).
-    # A first line that is not an integer reads as ``None`` -- pyinfra's
-    # ``invalid`` fixture ("nope") -- as does empty output (a failed read),
-    # which pyinfra answers with its ``default()`` fallback of ``None``.
+    # Anything after the first line is ignored (``list(output)[0]``).
+    # A first line that is not an integer reads as ``None`` -- a
+    # non-numeric value ("nope") -- as does empty output (a failed read),
+    # which falls back to ``None``.
 
     #: Shell used to gather the online CPU count over SSH.
     COMMAND = "getconf NPROCESSORS_ONLN 2> /dev/null || getconf _NPROCESSORS_ONLN"
@@ -717,7 +716,7 @@ class DiskStats:
         Examples can be found in ``examples/modules/hardware/hardware_disk_stats.py``.
     """
 
-    # A reemote5 original (pyinfra has no counterpart): ``cat
+    # A reemote5 original: ``cat
     # /proc/diskstats`` lists one row per block device -- mounted or not --
     # and each maps its device name to the kernel's IO counters as a
     # ``DiskStat`` entry of ints, for example::
@@ -826,7 +825,7 @@ class DmiInfo:
         Examples can be found in ``examples/modules/hardware/hardware_dmi_info.py``.
     """
 
-    # A reemote5 original (pyinfra has no counterpart): ``grep -H ''
+    # A reemote5 original: ``grep -H ''
     # /sys/class/dmi/id/*`` dumps the kernel-exposed DMI identity files as
     # ``path:value`` rows, and each maps its file name to its stripped
     # value, for example::
@@ -927,7 +926,7 @@ class Ipv4Addrs:
         Examples can be found in ``examples/modules/hardware/hardware_ipv4_addrs.py``.
     """
 
-    # Mirrors pyinfra's ``hardware.Ipv4Addrs``: ``ip -j addr show`` (JSON)
+    # ``ip -j addr show`` (JSON)
     # or, failing that, ``ip addr show`` / ``ifconfig -a`` (text) lists the
     # interfaces, and each interface carrying IPv4 addresses maps to the
     # list of those addresses -- the primary address first, then any
@@ -939,10 +938,10 @@ class Ipv4Addrs:
     #
     # Interfaces without an IPv4 address are not part of the dict. The
     # addresses are the raw strings the command printed (no octet
-    # validation, as pyinfra's own fixture shows). Empty or undecodable
-    # output reads as ``{}``, pyinfra's ``default = dict``.
+    # validation, as the documented example shows). Empty or undecodable
+    # output reads as ``{}``, an empty-dict default.
     #
-    # pyinfra implements this as a ``ShortFactBase`` projection over
+    # This is a projection over
     # ``hardware.NetworkDevices``; reemote5 collapses that indirection into
     # this single class (like ``HasGui``), keeping only the IPv4 address
     # lists (the IPv6 addresses are the sibling ``Ipv6Addrs`` fact's
@@ -958,14 +957,14 @@ class Ipv4Addrs:
     # ``NetworkDevices`` sibling instead.
 
     #: Shell used to gather the interface addresses over SSH: JSON first,
-    #: then the plain-text `ip` and `ifconfig` fallbacks (pyinfra verbatim).
+    #: then the plain-text `ip` and `ifconfig` fallbacks.
     COMMAND = "ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a"
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> dict[str, list[str]]:
         """Parse ``ip``/``ifconfig`` output into the IPv4 lists. Pure/testable.
 
-        pyinfra's JSON sniff decides the branch: when the first two
+        A JSON sniff decides the branch: when the first two
         stripped lines start with ``[{`` the output is ``ip -j`` JSON,
         otherwise it is parsed as device sections of text.
         """
@@ -1012,7 +1011,7 @@ class Ipv6Addrs:
         Examples can be found in ``examples/modules/hardware/hardware_ipv6_addrs.py``.
     """
 
-    # Mirrors pyinfra's ``hardware.Ipv6Addrs``: ``ip -j addr show`` (JSON)
+    # ``ip -j addr show`` (JSON)
     # or, failing that, ``ip addr show`` / ``ifconfig -a`` (text) lists the
     # interfaces, and each interface carrying IPv6 addresses maps to the
     # list of those addresses -- the primary address first, then any
@@ -1024,12 +1023,12 @@ class Ipv6Addrs:
     #
     # Interfaces without an IPv6 address are not part of the dict. The
     # addresses are the raw strings the command printed (no address
-    # validation -- pyinfra's documented example above even carries a
+    # validation -- the documented example above even carries a
     # doubled ``::``). Empty or undecodable output reads as ``{}``,
-    # pyinfra's ``default = dict``.
+    # an empty-dict default.
     #
-    # pyinfra implements this as a ``ShortFactBase`` projection over
-    # ``hardware.NetworkDevices`` (a subclass of its ``Ipv4Addrs`` swapping
+    # This is a projection over
+    # ``hardware.NetworkDevices`` (a sibling of ``Ipv4Addrs`` swapping
     # the projected family); reemote5 collapses that indirection into this
     # single sibling class sharing ``Ipv4Addrs``' command and projection
     # helpers, keeping only the IPv6 address lists; the richer device dict
@@ -1045,15 +1044,15 @@ class Ipv6Addrs:
     # blocks live on the ``NetworkDevices`` sibling instead.
 
     #: Shell used to gather the interface addresses over SSH: JSON first,
-    #: then the plain-text `ip` and `ifconfig` fallbacks (pyinfra verbatim,
-    #: the same command `Ipv4Addrs` runs).
+    #: then the plain-text `ip` and `ifconfig` fallbacks (the same
+    #: command `Ipv4Addrs` runs).
     COMMAND = "ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a"
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> dict[str, list[str]]:
         """Parse ``ip``/``ifconfig`` output into the IPv6 lists. Pure/testable.
 
-        pyinfra's JSON sniff decides the branch: when the first two
+        A JSON sniff decides the branch: when the first two
         stripped lines start with ``[{`` the output is ``ip -j`` JSON,
         otherwise it is parsed as device sections of text.
         """
@@ -1131,7 +1130,7 @@ class LsBlk:
         Examples can be found in ``examples/modules/hardware/hardware_lsblk.py``.
     """
 
-    # A reemote5 original (pyinfra has no counterpart): ``lsblk -J -b -o
+    # A reemote5 original: ``lsblk -J -b -o
     # NAME,TYPE,SIZE,MOUNTPOINT`` prints the whole block device tree as
     # JSON -- including unmounted disks, partitions, LVM volumes and raw
     # devices that the ``df``-based ``BlockDevices`` sibling never sees --
@@ -1306,7 +1305,7 @@ class NetworkDevices:
         Examples can be found in ``examples/modules/hardware/hardware_network_devices.py``.
     """
 
-    # Mirrors pyinfra's ``hardware.NetworkDevices``: ``ip -j addr show``
+    # ``ip -j addr show``
     # (JSON) or, failing that, ``ip addr show`` / ``ifconfig -a`` (text)
     # lists the interfaces, and each maps to its ``NetworkDevice`` entry
     # -- the ``state`` (``UP``/``DOWN``/``UNKNOWN``), the optional ``ether``
@@ -1342,7 +1341,7 @@ class NetworkDevices:
     #     }
     #
     # The ``Ipv4Addrs``/``Ipv6Addrs`` siblings are the address-only
-    # projections of this dict. Mask tokens are normalized by pyinfra's
+    # projections of this dict. Mask tokens are normalized by the
     # ``mask`` helper: a prefix length expands to its dotted-quad netmask,
     # a hex (``0xffffff00``) or dotted-quad netmask counts its bits. In the
     # text branch the state is a token heuristic (``UP`` or ``DOWN``
@@ -1350,24 +1349,24 @@ class NetworkDevices:
     # any ``@parent`` suffix, and a later section for the same name wins
     # outright; the JSON branch reads ``operstate`` and keeps an ``ether``
     # even for loopback. Addresses stay raw strings, without validation.
-    # Empty or undecodable output reads as ``{}``, pyinfra's
-    # ``default = dict``.
+    # Empty or undecodable output reads as ``{}``, an
+    # empty-dict default.
     #
-    # Deviations from pyinfra: parse errors on unreadable entries are
-    # skipped silently (pyinfra logs them through its logger), and non-dict
+    # Deliberate design choices: parse errors on unreadable entries are
+    # skipped silently (not logged), and non-dict
     # JSON devices or address entries are skipped rather than raising;
     # reemote5 hardens the parser.
 
     #: Shell used to gather the network device details over SSH: JSON
-    #: first, then the plain-text `ip` and `ifconfig` fallbacks (pyinfra
-    #: verbatim, the same command the Ipv4Addrs/Ipv6Addrs siblings run).
+    #: first, then the plain-text `ip` and `ifconfig` fallbacks (the
+    #: same command the Ipv4Addrs/Ipv6Addrs siblings run).
     COMMAND = "ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a"
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> dict[str, NetworkDevice]:
         """Parse ``ip``/``ifconfig`` output into the device dict. Pure/testable.
 
-        pyinfra's JSON sniff decides the branch: when the first two
+        A JSON sniff decides the branch: when the first two
         stripped lines start with ``[{`` the output is ``ip -j`` JSON,
         otherwise it is parsed as device sections of text.
         """
@@ -1414,7 +1413,7 @@ class SmbiosInfo:
         Examples can be found in ``examples/modules/hardware/hardware_smbios_info.py``.
     """
 
-    # A reemote5 original (pyinfra has no counterpart): ``dmidecode -q``
+    # A reemote5 original: ``dmidecode -q``
     # prints the firmware's SMBIOS structures as titled sections of
     # tab-indented ``Key: value`` rows, and each section maps its verbatim
     # title to its field dict, for example::

@@ -66,9 +66,9 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 # asyncssh.connect options forwarded verbatim from an inventory ``connection``
 # mapping when present. The names match asyncssh's own kwargs exactly -- the
 # library keeps asyncssh key names rather than inventing reemote5 aliases --
-# and cover the direct equivalents of pyinfra's ``ssh_*`` data plus the
-# high-value knobs real deployments touch (jump hosts, algorithm pinning,
-# keepalives and login timeouts). The rarely-used asyncssh machinery (GSSAPI,
+# and cover the high-value knobs real deployments touch (jump hosts, algorithm
+# pinning, keepalives and login timeouts). The rarely-used asyncssh machinery
+# (GSSAPI,
 # X.509, socket plumbing, rekeying, ...) is deliberately not first-class here;
 # pass it through the ``asyncssh_connect_kwargs`` mapping instead. Options
 # reemote5 refuses to support at all live in ``_FORBIDDEN_OPTIONS`` below.
@@ -150,7 +150,7 @@ def _reject_forbidden_options(conn: dict[str, Any]) -> None:
                 )
 
 
-# sudo askpass plumbing (mirrors pyinfra's connectors/util.py). ``sudo -A``
+# sudo askpass plumbing. ``sudo -A``
 # reads the password from the program named by ``SUDO_ASKPASS`` instead of a
 # TTY, which asyncssh's non-interactive channels do not provide. The helper is
 # a tiny static script that echoes ``$REEMOTE5_SUDO_PASSWORD`` -- supplied
@@ -215,7 +215,7 @@ def _build_sudo_command(
 
 # su askpass plumbing. Unlike sudo, su has no ``SUDO_ASKPASS``/``-A``
 # mechanism, so the password is fed to su's stdin through a pipe from a
-# generated helper (mirroring pyinfra's connectors/util.py). The helper prints
+# generated helper. The helper prints
 # ``$REEMOTE5_SU_PASSWORD`` -- supplied through the environment at run time --
 # so the password itself is never written to the file. The helper is created
 # once per host and removed by ``Host.aclose``. Only *default* su is supported
@@ -314,8 +314,7 @@ def _build_doas_command(shell: str, *, doas_user: str | None = None) -> str:
 # up -- so one wrong ``sudo_password`` costs three identical attempts and a
 # wall of noise. Recognising these lines lets ``Host.run_shell_sudo`` report a
 # single actionable ``PrivilegeError`` instead. The set covers both Todd
-# Miller's sudo and sudo-rs (Trifecta Tech, the default on Ubuntu 25.10+),
-# mirroring the signatures pyinfra matches in its connectors/util.py.
+# Miller's sudo and sudo-rs (Trifecta Tech, the default on Ubuntu 25.10+).
 _SUDO_AUTH_FAILURE_MARKERS: tuple[str, ...] = (
     "incorrect password attempts",
     "incorrect authentication attempt",
@@ -1075,8 +1074,8 @@ class Host:
         (no privilege escalation applies to it).
 
         ``src`` is a seekable IO-like object, never a path -- reemote5
-        deliberately supports only the stream form pyinfra also accepts. The
-        stream is rewound and read once (a text stream's payload is encoded
+        deliberately supports only the stream form. The stream is rewound
+        and read once (a text stream's payload is encoded
         as UTF-8), and because asyncssh's ``scp`` copies between *paths* --
         its source may be a local path or an ``(conn, path)`` tuple, not a
         file-like object -- the bytes are materialized into a temporary local

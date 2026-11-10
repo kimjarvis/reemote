@@ -1,36 +1,20 @@
 # firewalld module
 
-## firewalld Facts
-
 ::: reemote5.modules.firewalld.firewalld
     options:
       show_root_heading: false
       members:
         - FirewalldDefaultZone
+        - FirewalldIpSet
         - FirewalldIpSets
         - FirewalldPolicies
-        - FirewalldServices
-        - FirewalldStatus
-        - FirewalldZones
-
-## firewalld Returns
-
-::: reemote5.modules.firewalld.firewalld
-    options:
-      show_root_heading: false
-      members:
-        - FirewalldIpSet
         - FirewalldPolicy
         - FirewalldService
+        - FirewalldServices
+        - FirewalldStatus
         - FirewalldStatusInfo
         - FirewalldZone
-
-## firewalld Operations
-
-::: reemote5.modules.firewalld.firewalld
-    options:
-      show_root_heading: false
-      members:
+        - FirewalldZones
         - default_zone
         - forward_port
         - icmp_block
@@ -54,7 +38,7 @@
 
 `reemote5.modules.firewalld.firewalld` gives complete control over and
 visibility of the firewalld daemon — the default firewall on RHEL, CentOS,
-Fedora, openSUSE and friends — through the `firewall-cmd` CLI. pyinfra
+Fedora, openSUSE and friends — through the `firewall-cmd` CLI. The baseline
 ships **no firewalld module at all**, so every fact and operation here is a
 reemote5 original: six facts (`FirewalldStatus`, `FirewalldDefaultZone`,
 `FirewalldZones`, `FirewalldServices`, `FirewalldIpSets`,
@@ -160,7 +144,7 @@ survives.
 ## Operations
 
 Operations live in the namespace module so a deploy reads `firewalld.port`,
-mirroring pyinfra's API shape. Every operation is an async generator with
+mirroring the baseline's API shape. Every operation is an async generator with
 the same fixed signature:
 
 ```python

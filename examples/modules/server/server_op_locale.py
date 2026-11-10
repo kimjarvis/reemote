@@ -4,7 +4,7 @@
 """Example: enable a locale on real Ubuntu hosts (Debian-family only).
 
 This is a *usage* example, not part of the library. It shows reemote5's
-``server.locale`` operation, the pyinfra ``server.locale`` parity for
+``server.locale`` operation, baseline ``server.locale`` parity for
 ``/etc/locale.gen``: the deploy ensures every host has ``fr_FR.UTF-8``
 enabled, under ``sudo`` because the definitions file is root-owned and
 ``locale-gen`` writes the system locale archive.
@@ -31,7 +31,7 @@ planned. It is supported on **Debian-family systems only**: a host with no
 ``/etc/locale.gen`` (RHEL-family systems install locales through
 ``glibc-langpack-*``) or no matching definition line raises
 ``OperationError`` during the prepare phase, before anything is sent --
-pyinfra's own behaviour.
+the baseline's own behaviour.
 
 Every failure mode of the run -- an unreachable host, a rejected elevation,
 a missing or ambiguous definition line, or a ``locale-gen`` that exits

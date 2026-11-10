@@ -29,7 +29,7 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's module dict with
    ``json.dumps(..., indent=2)``.
 
-``KernelModules`` mirrors pyinfra's ``server.KernelModules``: it first
+``KernelModules`` mirrors the baseline's ``server.KernelModules``: it first
 reads the ``Kernel`` fact to pick its shell -- FreeBSD lists
 ``kldstat | tail +2``, every other kernel cats ``/proc/modules`` -- and
 returns a dict of module name -> info dict. On Linux each info dict holds

@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.reload`` is a reemote5 original (pyinfra ships no firewalld
+``firewalld.reload`` is a reemote5 original (the baseline ships no firewalld
 module): it is the bridge between firewalld's two configurations, with
 three modes -- ``reload`` (the default: apply permanent to runtime,
 keeping connection state; this is what makes permanent-only creations

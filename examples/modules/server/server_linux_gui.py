@@ -29,7 +29,7 @@ two-phase execution model:
    -- then print each host's list of GUI names with
    ``json.dumps(..., indent=2)``.
 
-``LinuxGui`` mirrors pyinfra's ``server.LinuxGui``: it runs
+``LinuxGui`` mirrors the baseline's ``server.LinuxGui``: it runs
 ``ls /usr/bin/*session || true`` and maps each recognised session binary to
 its GUI name (GNOME, MATE, LXDE, KDE Plasma, XFCE 4), so a deploy can see
 *which* desktops are installed -- ``["GNOME"]`` on a workstation, ``[]`` on

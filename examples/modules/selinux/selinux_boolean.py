@@ -26,7 +26,7 @@ it finishes.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``selinux.boolean`` ports pyinfra's operation of the same name: it sets one
+``selinux.boolean`` ports the baseline's operation of the same name: it sets one
 kernel security boolean -- here ``httpd_can_network_connect``, the switch
 that lets httpd open outbound network connections (needed by every reverse
 proxy and web app that talks to a backend) -- to ``on`` or ``off``.

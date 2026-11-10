@@ -26,7 +26,7 @@ it finishes.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``selinux.file_context_mapping`` ports pyinfra's operation of the same
+``selinux.file_context_mapping`` ports the baseline's operation of the same
 name: it manages one *persistent* rule in the local fcontext database --
 here ``/web(/.*)?`` labelled ``httpd_sys_content_t``, so a custom web root
 and everything under it keeps the httpd type across relabels. With

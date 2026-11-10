@@ -30,8 +30,8 @@ your machines.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``openrc.runlevel`` is a reemote5 original with no pyinfra counterpart:
-pyinfra folds the boot assignment into ``openrc.service``'s ``enabled``
+``openrc.runlevel`` is a reemote5 original with no baseline counterpart:
+the baseline folds the boot assignment into ``openrc.service``'s ``enabled``
 option, so managing an assignment *without* touching the runtime state
 needs the whole service operation with ``running=None``. This standalone
 operation is the dedicated runlevel-membership verb: ``enabled=True``
@@ -55,7 +55,7 @@ default``) is deliberately not exercised here: dropping crond from the only
 runlevel that starts it would leave the shared host without cron after the
 example finishes. Flip ``enabled`` to False on a scratch host to see it.
 
-There is no existence validation: pyinfra's enabled branch does not check
+There is no existence validation: the baseline's enabled branch does not check
 the init script either, so a service without an ``/etc/init.d`` script --
 or a runlevel that does not exist -- fails in ``rc-update`` itself at apply
 time as a ``CommandError``.

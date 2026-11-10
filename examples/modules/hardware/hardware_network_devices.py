@@ -29,7 +29,7 @@ the two-phase execution model:
    mapping -- then print each host's device details with
    ``json.dumps(..., indent=2)``.
 
-``NetworkDevices`` mirrors pyinfra's ``hardware.NetworkDevices``: it runs
+``NetworkDevices`` mirrors the baseline's ``hardware.NetworkDevices``: it runs
 ``ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a``
 and maps each interface to its ``NetworkDevice`` entry -- the state, the
 optional ether MAC and mtu, and an ``Ipv4Address``/``Ipv6Address`` block

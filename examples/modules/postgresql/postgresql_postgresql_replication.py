@@ -30,7 +30,7 @@ driving the two-phase execution model:
    ``client_addr``, ``state``, ``sync_state``, ``replay_lag``) with
    ``json.dumps(..., indent=2)``.
 
-The fact is a reemote5-original visibility fact (pyinfra has no
+The fact is a reemote5-original visibility fact (the baseline has no
 replication fact): it selects ``pg_stat_replication``, one entry per
 connected standby, so a deployment can verify a replica is streaming and
 in sync before promoting it or cutting traffic over. A primary with no

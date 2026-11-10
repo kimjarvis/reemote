@@ -45,7 +45,7 @@ domain (or permissive SELinux) to apply, while the version facts only read
 
 ## Creating a custom chain
 
-The chain operation: `iptables.chain` mirrors pyinfra's operation, creating
+The chain operation: `iptables.chain` mirrors the baseline's operation, creating
 a missing user chain with `-N` (or deleting an unwanted one with `-X`),
 idempotent on the
 [`IptablesChains`][reemote5.modules.iptables.iptables.IptablesChains] fact.
@@ -64,7 +64,7 @@ flagged `sudo=True` (CAP_NET_ADMIN).
 ## Setting a built-in chain's policy
 
 The policy operation: `iptables.policy` is the standalone policy surface
-(pyinfra couples policy setting to `chain`), validating the word against
+(the baseline couples policy setting to `chain`), validating the word against
 ACCEPT/DROP/QUEUE/RETURN and yielding `-P` only when the
 [`IptablesChains`][reemote5.modules.iptables.iptables.IptablesChains] fact
 shows a different policy. The script targets FORWARD — the routed-traffic
@@ -81,7 +81,7 @@ firewall's default policy is an operator decision. The requests are flagged
 
 ## Ensuring a rule with typed match extensions
 
-The rule operation: `iptables.rule` mirrors pyinfra's definition comparison
+The rule operation: `iptables.rule` mirrors the baseline's definition comparison
 (named matches plus the sorted `extras` pair list against
 [`IptablesRules`][reemote5.modules.iptables.iptables.IptablesRules]) and
 extends it with first-class matchers — `ctstate` (conntrack),

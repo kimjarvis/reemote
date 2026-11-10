@@ -30,14 +30,14 @@ through ``run``), this one reads a single **fact** directly over the same
    mapping -- then print each host's raw context (or ``null``) with
    ``json.dumps(..., indent=2)``.
 
-``FileContextMapping`` ports pyinfra's fact of the same name: the
+``FileContextMapping`` ports the baseline's fact of the same name: the
 *local-only* fcontext database (``semanage fcontext -n -l``) is grepped for
 rows starting with the target expression -- here ``/web(/.*)?``, a custom
 web-root rule -- and the trailing ``user:role:type:level`` of the single
 matching row is split into the same ``SeContext`` shape ``FileContext``
 returns. This is the *persistent* rule a relabel would apply, not the
-context any file carries right now. Deliberate deviation from pyinfra: no
-mapping reads as ``None`` rather than pyinfra's ``{}`` -- the house
+context any file carries right now. Deliberate deviation from the baseline: no
+mapping reads as ``None`` rather than the baseline's ``{}`` -- the house
 None-on-absent convention -- so an absent rule stays distinguishable from
 a context with empty components. A host without semanage exits 127 and
 surfaces as ``CommandNotFoundError`` (a ``CommandError`` subclass).

@@ -1,7 +1,5 @@
 # iptables module
 
-## iptables Facts
-
 ::: reemote5.modules.iptables.iptables
     options:
       show_root_heading: false
@@ -12,32 +10,18 @@
         - Ip6tablesRulesOrdered
         - Ip6tablesTables
         - Ip6tablesVersion
+        - IpSet
         - IpSets
         - IptablesChains
         - IptablesModules
+        - IptablesOrderedRule
         - IptablesPersistence
+        - IptablesRule
         - IptablesRules
         - IptablesRulesOrdered
         - IptablesTables
         - IptablesVersion
-
-## iptables Returns
-
-::: reemote5.modules.iptables.iptables
-    options:
-      show_root_heading: false
-      members:
-        - IpSet
-        - IptablesOrderedRule
-        - IptablesRule
         - IptablesVersionInfo
-
-## iptables Operations
-
-::: reemote5.modules.iptables.iptables
-    options:
-      show_root_heading: false
-      members:
         - chain
         - flush
         - ipset
@@ -56,13 +40,13 @@ firewall operations in a single source, covering the `iptables`/`ip6tables`
 toolchain — `iptables-save` rule parsing, numbered/countered listings,
 `-N/-X/-P/-A/-I/-D/-F/-Z` mutations, `iptables-save`/`iptables-restore`
 atomic snapshots and the `ipset` companion — for complete control over and
-visibility of Linux packet filtering. Four facts port pyinfra's baseline
+visibility of Linux packet filtering. Four facts port the baseline's baseline
 (`IptablesChains`, `IptablesRules` and their `Ip6tables*` siblings) and ten
-are reemote5 originals filling the gaps pyinfra leaves
+are reemote5 originals filling the gaps the baseline leaves
 (`IptablesRulesOrdered`/`Ip6tablesRulesOrdered`,
 `IptablesTables`/`Ip6tablesTables`, `IptablesVersion`/`Ip6tablesVersion`,
 `IptablesModules`, `IpSets`, `IptablesPersistence`/`Ip6tablesPersistence`);
-two operations port pyinfra's baseline (`chain`, `rule` — the latter
+two operations port the baseline's baseline (`chain`, `rule` — the latter
 enhanced with typed match extensions) and six are originals (`policy`,
 `flush`, `zero`, `save`, `restore`, `ipset`). Every operation takes
 `version=4|6` (except `ipset`, which is family-agnostic at the container
@@ -110,14 +94,14 @@ generator — implemented as a `process` coroutine returning the raw value
 coroutine, so results are awaited and cached within a phase step.
 
 `IptablesChains` parses the `:NAME POLICY [pkts:bytes]` lines of
-`iptables-save -t <table>` into a chain → policy mapping (pyinfra parity);
+`iptables-save -t <table>` into a chain → policy mapping (baseline parity);
 `IptablesRules` parses the `-A` lines into `IptablesRule` definition dicts —
 named matches (`chain`, `jump`, `protocol`, `source`, `destination`, the
 interfaces), their `not_` negations, the NAT target arguments and every
 unmapped flag as sorted `extras` pairs. The `Ip6tables*` siblings flip only
 the binary and the SimulatedHost seam field; both families take a `table`
 argument (default `filter`), so nat/mangle/raw/security are one argument
-away — pyinfra's "filter-only emphasis" was never a parsing limitation.
+away — the baseline's "filter-only emphasis" was never a parsing limitation.
 
 `IptablesRulesOrdered` answers the rule-order *and* rule-counters proposals
 with one fact: `iptables -t <table> -L [chain] -n -v -x --line-numbers`
@@ -150,7 +134,7 @@ reads False. `save` and `restore` both read it for idempotence.
 ## Operations
 
 Operations live in namespace modules so a deploy reads `iptables.rule`,
-mirroring pyinfra's API. Every operation is an async generator with the
+mirroring the baseline's API. Every operation is an async generator with the
 same fixed signature:
 
 ```python
@@ -162,9 +146,9 @@ it decides a change is needed, and yields one descriptor per command that
 would mutate the host. Every operation here writes kernel firewall state
 (or a root-owned snapshot file), so flag the request `sudo=True`.
 
-`iptables.chain` (pyinfra parity) creates (`-N`) or deletes (`-X`) a chain,
+`iptables.chain` (baseline parity) creates (`-N`) or deletes (`-X`) a chain,
 idempotent on `IptablesChains`, and optionally sets a built-in chain's
-policy in the same request (pyinfra's coupled form; the kernel rejects
+policy in the same request (the baseline's coupled form; the kernel rejects
 `-P` on user chains). `iptables.policy` (original) is the standalone
 policy surface: it validates the word against ACCEPT/DROP/QUEUE/RETURN
 (`ValueError` otherwise) and yields `-P` only when the current policy
@@ -172,18 +156,18 @@ differs — a missing chain still plans, failing at apply with
 `CommandError`, because an unprivileged fact read must not mask a wanted
 change.
 
-`iptables.rule` (pyinfra parity, enhanced) compares the rule definition —
+`iptables.rule` (baseline parity, enhanced) compares the rule definition —
 named matches plus the sorted `extras` pair list — against `IptablesRules`
 and yields `-A` (append), `-I` (insert, `append=False` or an explicit
 1-based `position`) or `-D` (remove). The typed-matcher extension makes
 `ctstate`, `destination_ports`/`source_ports` (multiport), `limit`/
 `limit_burst`, `match_set` and `log_level` first-class parameters folded
-into the same comparison pyinfra's port/comment shortcuts use, so
+into the same comparison the baseline's port/comment shortcuts use, so
 idempotence works unchanged — `iptables-save` prints the extensions as
 ordinary flags and the pair list compares order-independently. `comment`
 is the reliable idempotency/auditing marker; `extras` remains the escape
 hatch for anything untyped. NAT target arguments are validated against
-`table="nat"` and the jump, pyinfra's guards preserved verbatim.
+`table="nat"` and the jump, the baseline's guards preserved verbatim.
 
 `iptables.flush` (original) flushes one chain or a whole table, idempotent
 on `IptablesRules` — an empty scope is a no-op, so a flush never shows
@@ -212,7 +196,7 @@ transfers are IO-only, so a controller-side snapshot rides `files.put`
 first. Reloading at boot is the distro's netfilter-persistent service, not
 an operation's job.
 
-`iptables.ipset` (original — pyinfra has no ipset support) manages a set
+`iptables.ipset` (original — the baseline has no ipset support) manages a set
 and its members, idempotent on `IpSets`: `present=True` creates a missing
 set (`-exist` tolerates a stale read) and adds the missing entries in
 sorted order; an existing set of a different type raises `ValueError`

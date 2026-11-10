@@ -13,10 +13,10 @@ non-idempotent half of systemd control over a **real SSH transport**
    guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``systemd.daemon_reload`` ports pyinfra's operation of the same name. It reads
+``systemd.daemon_reload`` ports the baseline's operation of the same name. It reads
 no fact and always yields a single ``systemctl daemon-reload`` -- the command
 that makes systemd re-read unit files after they change on disk. Because it
-compares against nothing, it is planned as a change on every run (pyinfra
+compares against nothing, it is planned as a change on every run (the baseline
 marks it ``is_idempotent=False``); that is exactly why a config-writing
 operation such as ``systemd.dropin`` chains a daemon-reload only when it
 actually changed a file, rather than calling this unconditionally.

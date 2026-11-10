@@ -16,11 +16,11 @@ two-phase execution model end to end over a **real SSH transport**
    objects. Every request is flagged ``sudo=True``, so the ``mysql``
    client rides under root and connects through unix-socket
    authentication -- no password travels through operation arguments,
-   plans or logs (pyinfra's ``mysql_password`` option is deliberately
+   plans or logs (the baseline's ``mysql_password`` option is deliberately
    dropped namespace-wide).
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``mysql.sql`` mirrors pyinfra's operation: it executes the statement
+``mysql.sql`` mirrors the baseline's operation: it executes the statement
 through ``mysql -Be`` and is STATELESS -- the statement always runs, in
 the plan's apply phase and every subsequent run -- so it is the escape
 hatch for anything the typed operations do not cover (schema migrations,

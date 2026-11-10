@@ -6,7 +6,7 @@
 # This namespace is the canonical home for everything sysctl. The ``Sysctl``
 # runtime fact was relocated here from ``server`` (which no longer exports
 # it -- the top-level ``reemote5.Sysctl`` binding now points at this class),
-# keeping its pyinfra ``server.Sysctl`` parse verbatim. Two originals widen
+# keeping its ``server.Sysctl`` parse verbatim. Two originals widen
 # the visibility onto the *persistent* configuration: ``SysctlFile`` (the raw
 # text of one sysctl config file, or None when absent) and ``SysctlFiles``
 # (every ``/etc/sysctl.conf`` + ``/etc/sysctl.d/*.conf`` file parsed into
@@ -21,10 +21,9 @@
 # (``systemd.dropin`` / ``dnf.repo``): an unprivileged scp spools the content
 # to a fixed ``/tmp`` path, then an elevated ``sh -c`` installs it ``0644``
 # and removes the spool. A scoped ``sysctl -p <file>`` reload follows a
-# changed write when ``reload`` is set. pyinfra ships no sysctl module --
-# these operations are reemote5 originals superseding the example-only
-# ``server_op_sysctl.py`` recipe (which stays as the pyinfra
-# ``server.sysctl`` parity demonstration).
+# changed write when ``reload`` is set. These operations are reemote5
+# originals superseding the example-only ``server_op_sysctl.py`` recipe
+# (which stays as the ``server.sysctl`` demonstration).
 #
 # Like every namespace this one imports nothing from its siblings: the
 # content facts read the same ``remote_files`` SimulatedHost seam
@@ -45,7 +44,7 @@ from ...hosts import Host
 
 
 def _try_int(value: str | int) -> int | str:
-    """``int()`` that returns its input unchanged on failure (pyinfra's ``try_int``)."""
+    """``int()`` that returns its input unchanged on failure."""
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -53,7 +52,7 @@ def _try_int(value: str | int) -> int | str:
 
 
 def _normalize_value(value: str | int | list[str | int]) -> tuple[str, Any]:
-    """pyinfra's ``server.sysctl`` value normalization, verbatim.
+    """The ``server.sysctl`` value normalization.
 
     Returns ``(string_value, normalized)``: ``string_value`` is the shell
     spelling (a list joins its items with single spaces), ``normalized`` is
@@ -103,11 +102,11 @@ def _edit_conf(content: str | None, key: str, string_value: str | None) -> str |
     same key are dropped (duplicates collapse), and the line is appended
     when no active assignment exists. ``string_value`` None: every active
     ``key = ...`` line is removed. Commented lines are never touched --
-    unlike pyinfra's ``files.line`` parity (the ``server_op_sysctl.py``
-    recipe), this is Ansible-style keyed editing, which is what makes
-    ``present=False`` expressible. The result always ends in one trailing
-    newline (a file missing it is rewritten once) and the edit is a
-    fixpoint. An absent file (None) with nothing to remove stays None; an
+    unlike the append-only ``files.line`` approach in the
+    ``server_op_sysctl.py`` recipe, this is Ansible-style keyed editing,
+    which is what makes ``present=False`` expressible. The result always
+    ends in one trailing newline (a file missing it is rewritten once)
+    and the edit is a fixpoint. An absent file (None) with nothing to remove stays None; an
     edit that empties the file returns "" (the file remains, empty).
     """
     if content is None and string_value is None:
@@ -156,7 +155,7 @@ class Sysctl:
         Examples can be found in ``examples/modules/sysctl/sysctl_sysctl.py``.
     """
 
-    # Mirrors pyinfra's ``server.Sysctl``: ``sysctl -a`` dumps every setting
+    # ``sysctl -a`` dumps every setting
     # (or ``sysctl <key> ...`` when ``keys`` is given), with stderr discarded
     # and the exit swallowed (``2>/dev/null || true``) so an unknown key or a
     # missing binary never fails the read. Each row is ``key = value``
@@ -172,8 +171,8 @@ class Sysctl:
     #     }
     #
     # A value that is only whitespace keeps ``""`` (it is truthy before the
-    # strip, pyinfra's check); a row with nothing at all after the separator
-    # is skipped. Empty output reads as ``{}`` (pyinfra's ``default = dict``).
+    # strip); a row with nothing at all after the separator is skipped.
+    # Empty output reads as ``{}`` (the empty-dict default).
     #
     # Relocated verbatim from ``server`` (the canonical-home decision): the
     # ``sysctls`` SimulatedHost seam is unchanged, and the ``setting``
@@ -182,16 +181,16 @@ class Sysctl:
     #: Shell used to dump every sysctl setting over SSH.
     COMMAND = "sysctl -a 2>/dev/null || true"
 
-    #: Values matching this pattern are whitespace-split and int-converted
-    #: (pyinfra's regex); anything else stays a raw string.
+    #: Values matching this pattern are whitespace-split and int-converted;
+    #: anything else stays a raw string.
     _SIMPLE_VALUE_RE = re.compile(r"^[a-zA-Z0-9_\-\.\s]+$")
 
     @classmethod
     def command(cls, keys: list[str] | None = None) -> str:
         """Shell reads the named keys, or dumps every setting when None.
 
-        Each key is quoted normally (pyinfra's ``QuoteString``), so a key
-        carrying shell metacharacters is a literal lookup, never executed.
+        Each key is ``shlex``-quoted, so a key carrying shell
+        metacharacters is a literal lookup, never executed.
         """
         if keys is None:
             return cls.COMMAND
@@ -214,7 +213,7 @@ class Sysctl:
                 key, value = line.split(":", 1)
             else:
                 continue
-            # pyinfra tests truthiness BEFORE stripping: "key = " (a
+            # Truthiness is tested BEFORE stripping: "key = " (a
             # whitespace-only value) keeps "", "key =" is skipped.
             if not (key and value):
                 continue
@@ -586,18 +585,18 @@ async def setting(
         Examples can be found in ``examples/modules/sysctl/sysctl_setting.py``.
     """
 
-    # A reemote5 original (pyinfra ships only ``server.sysctl``, whose
-    # runtime + files.line halves this supersedes -- see the
-    # ``server_op_sysctl.py`` recipe for the strict-parity demonstration).
+    # A reemote5 original. It supersedes the runtime + ``files.line``
+    # halves of the example-only ``server.sysctl`` approach -- see the
+    # ``server_op_sysctl.py`` recipe for that demonstration.
     # Two independent idempotent halves, each gated by its own fact:
-    # the runtime half normalizes the desired value exactly like pyinfra
-    # (join -> split-if-multi-word -> try_int) and compares the one
+    # the runtime half normalizes the desired value (join ->
+    # split-if-multi-word -> try_int) and compares the one
     # parameter's entry in the ``Sysctl`` fact (the full dump is read with no
     # ``keys`` kwarg -- a list argument would be unhashable in the FactCache
     # key); the persist half performs
-    # a keyed line replacement (``_edit_conf`` -- Ansible-style, the
-    # developer-chosen deviation from pyinfra's append-only files.line
-    # parity, because ``present=False`` must remove the key) and compares
+    # a keyed line replacement (``_edit_conf`` -- Ansible-style, a
+    # developer-chosen deviation from append-only ``files.line`` editing,
+    # because ``present=False`` must remove the key) and compares
     # the whole desired content against ``SysctlFile``. The proposal's
     # ``state="present"/"absent"`` string is the house ``present`` bool;
     # ``name`` is an ``op()`` meta-parameter, never an operation parameter.
@@ -695,7 +694,7 @@ async def conf(
     # The default target is a ``/etc/sysctl.d`` drop-in so the legacy
     # ``/etc/sysctl.conf`` stays untouched. Values render through ``str``
     # verbatim (a multi-word string is written as-is; use ``setting`` for
-    # pyinfra's list normalization). An empty ``settings`` tuple writes an
+    # the list normalization). An empty ``settings`` tuple writes an
     # empty file. ``present=False`` yields ``SysctlFileRemoveCommand`` only
     # when the file exists. Writing/removing/applying need root: flag the
     # request ``sudo=True`` (the transfer stays unprivileged regardless).

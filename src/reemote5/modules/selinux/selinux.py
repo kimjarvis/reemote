@@ -4,13 +4,13 @@
 # The ``selinux`` module: facts and operations in one source.
 #
 # Fact side: ``SEBoolean``, ``FileContext``, ``FileContextMapping``,
-# ``SEPorts`` and ``SEPort`` are ports of pyinfra's five SELinux facts --
+# ``SEPorts`` and ``SEPort`` are ports of five established SELinux facts --
 # the on/off string of one boolean (``getsebool``), the four-component
 # context of one path (``stat -c %C``), the persistent fcontext mapping of
 # one target expression (``semanage fcontext -n -l`` grepped), the
 # protocol -> port -> type label map (``semanage port -ln``, ranges
 # expanded) and the type of one protocol/port pair (``sepolicy network``).
-# Seven reemote5 originals widen the visibility pyinfra's set leaves missing:
+# Seven reemote5 originals widen the visibility that set leaves missing:
 # ``Booleans`` (every boolean at once, ``getsebool -a``), ``Mode`` (the
 # runtime mode plus the config-file mode and loaded policy, ``sestatus``),
 # ``SELogin`` (Linux user -> SELinux user mappings, ``semanage login -ln``),
@@ -24,11 +24,11 @@
 # value.
 #
 # Operation side: ``selinux.boolean``, ``selinux.file_context``,
-# ``selinux.file_context_mapping`` and ``selinux.port`` port pyinfra's four
+# ``selinux.file_context_mapping`` and ``selinux.port`` port four
 # SELinux operations through typed command descriptors, reading the facts
 # above for idempotence; ``file_context`` gains optional full-context
 # components (user, role, level beside the type) and ``port`` keeps
-# pyinfra's ``-m`` modify branch. Seven reemote5 originals complete the
+# the ``-m`` modify branch. Seven reemote5 originals complete the
 # toolchain: ``selinux.mode`` (runtime ``setenforce``, idempotent on
 # ``Mode``), ``selinux.login`` (``semanage login -a/-m/-d``), ``selinux.module``
 # (``semodule -i/-r/-e/-d`` with present/absent/enabled/disabled states),
@@ -65,17 +65,17 @@ from ...hosts import Host
 
 # --- Shared helpers ----------------------------------------------------------
 
-# pyinfra's ``selinux.FIELDS`` verbatim: the four context components in
+# The context fields: the four context components in
 # their canonical order. Shared by ``FileContext`` and ``FileContextMapping``
 # so both facts build the same ``SeContext`` shape.
 _CONTEXT_FIELDS = ("user", "role", "type", "level")
 
-# pyinfra's ``SEPorts._regex`` verbatim: a type name, a protocol word and
+# The ``SEPorts`` row regex: a type name, a protocol word and
 # the comma/space separated port list (single ports and ``start-stop``
 # ranges) of one ``semanage port -ln`` row.
 _PORT_LINE_REGEX = re.compile(r"^([\w_]+)\s+(\w+)\s+([\w\-,\s]+)$")
 
-# pyinfra's ``FileContextMapping`` context regex verbatim: the trailing
+# The ``FileContextMapping`` context regex: the trailing
 # ``user:role:type:level`` of a mapping row (the leading path expression and
 # file-type columns are consumed by ``.*\s+``).
 _MAPPING_CONTEXT_REGEX = re.compile(r"^.*\s+(\w+):(\w+):(\w+):(\w+)")
@@ -135,14 +135,14 @@ class SEBoolean:
         Examples can be found in ``examples/modules/selinux/selinux_se_boolean.py``.
     """
 
-    # Mirrors pyinfra's ``selinux.SEBoolean``: ``getsebool <boolean>``
+    # ``selinux.SEBoolean``: ``getsebool <boolean>``
     # prints one ``name --> on|off`` row and the fact keeps the value word.
     # An unknown boolean makes getsebool exit non-zero with empty stdout,
-    # which reads as the empty string (pyinfra's ``default = str``); the
-    # parser stays total where pyinfra's ``output[0]`` split would raise.
-    # The boolean name is ``shlex``-quoted (pyinfra's ``QuoteString`` in the
+    # which reads as the empty string (an empty-string default); the
+    # parser stays total where a naive ``output[0]`` split would raise.
+    # The boolean name is ``shlex``-quoted (shell quoting in the
     # sibling operation), so a name carrying shell metacharacters is looked
-    # up literally. pyinfra's ``requires_command`` gating is dropped: a host
+    # up literally. There is no command-existence gate: a host
     # without getsebool exits 127 and surfaces as ``CommandNotFoundError``.
     #
     # SimulatedHost seam note: the ``selinux_booleans`` field stores every
@@ -207,9 +207,9 @@ class Booleans:
         Examples can be found in ``examples/modules/selinux/selinux_booleans.py``.
     """
 
-    # A reemote5 original: pyinfra's ``selinux`` namespace ships only the
-    # single-boolean ``SEBoolean``, so auditing the whole boolean surface
-    # needs one fact per name. ``getsebool -a`` prints every boolean as a
+    # A reemote5 original: the single-boolean ``SEBoolean`` alone leaves
+    # the whole boolean surface unaudited, which would otherwise need one
+    # fact per name. ``getsebool -a`` prints every boolean as a
     # ``name --> on|off`` row; the fact keeps them all as name -> bool
     # entries (True for "on"), the lossless view a boolean audit reads.
     # A host with SELinux disabled prints its error to stderr and exits
@@ -269,7 +269,7 @@ class SeContext(TypedDict):
 
 
 # The shared entry type of ``FileContext`` and ``FileContextMapping``:
-# pyinfra returns the same four-key dict from both facts, so one TypedDict
+# Both facts return the same four-key dict, so one TypedDict
 # backs the pair (the ``ApkPackageVersion`` shared-entry precedent). The
 # ``type`` key shadows the builtin only as a dict key, never as a name.
 
@@ -299,15 +299,15 @@ class FileContext:
         Examples can be found in ``examples/modules/selinux/selinux_file_context.py``.
     """
 
-    # Mirrors pyinfra's ``selinux.FileContext``: ``stat -c %C`` prints the
+    # ``selinux.FileContext``: ``stat -c %C`` prints the
     # path's context as ``user:role:type:level`` and the fact splits it
     # into the four components. A path on a filesystem without SELinux
     # labels prints ``?`` (fewer than four components) and a missing path
     # prints nothing (the ``|| exit 0`` guard swallows stat's error), both
-    # reading as None -- pyinfra's documented None-on-absent. The guard
+    # reading as None -- the documented None-on-absent convention. The guard
     # masks every non-zero exit including 127, so only
     # ``HostConnectionError`` can escape the gather. The path is
-    # ``shlex``-quoted (a deliberate hardening over pyinfra's bare
+    # ``shlex``-quoted (a deliberate hardening over bare
     # interpolation; the fixture paths are unaffected).
     #
     # SimulatedHost seam note: the ``selinux_file_contexts`` field stores
@@ -379,7 +379,7 @@ class FileContextMapping:
         ``examples/modules/selinux/selinux_file_context_mapping.py``.
     """
 
-    # Mirrors pyinfra's ``selinux.FileContextMapping``: the local-only
+    # ``selinux.FileContextMapping``: the local-only
     # fcontext database (``semanage fcontext -n -l``) is grepped for rows
     # starting with the target expression and the trailing
     # ``user:role:type:level`` of the single matching row is split into the
@@ -390,11 +390,11 @@ class FileContextMapping:
     # host without semanage exits 127 and surfaces as
     # ``CommandNotFoundError``; the pipefail option needs a bash/zsh login
     # shell, the stock shell on every SELinux distribution. The grep
-    # pattern is ``shlex``-quoted (pyinfra wraps it in bare single quotes;
+    # pattern is ``shlex``-quoted (rather than wrapped in bare single quotes;
     # the fixture targets render identically).
     #
-    # Deliberate deviation from pyinfra: no mapping reads as ``None``
-    # rather than pyinfra's ``{}`` -- the house None-on-absent convention
+    # Deliberate design choice: no mapping reads as ``None``
+    # rather than ``{}`` -- the house None-on-absent convention
     # (``ApkPackage``, ``FileContext``), so an absent mapping stays
     # distinguishable from a context with empty components.
     #
@@ -416,7 +416,7 @@ class FileContextMapping:
 
         Exactly one output line carrying a trailing four-component context
         is a mapping; zero lines (no match) or several (a prefix shared by
-        longer targets) read as None, pyinfra's ``len(output) != 1`` gate.
+        longer targets) read as None, the ``len(output) != 1`` gate.
         Pure and testable.
         """
         lines = list(output)
@@ -470,14 +470,14 @@ class SEPorts:
         Examples can be found in ``examples/modules/selinux/selinux_se_ports.py``.
     """
 
-    # Mirrors pyinfra's ``selinux.SEPorts``: ``semanage port -ln`` prints
+    # ``selinux.SEPorts``: ``semanage port -ln`` prints
     # one ``type protocol ports`` row per label, the port list mixing
     # single ports and ``start-stop`` ranges; every range is expanded into
     # its individual port numbers under the protocol key. Rows of the
     # ``unreserved_port_t`` type are skipped (they cover the whole
     # unreserved space and would drown the specific labels), and lines
     # matching nothing (headers, noise) are ignored -- the parser stays
-    # total. pyinfra's ``requires_command`` gating is dropped: a host
+    # total. There is no command-existence gate: a host
     # without semanage exits 127 and surfaces as ``CommandNotFoundError``.
     #
     # reemote5 extension: the optional ``protocol`` and ``se_type``
@@ -572,17 +572,17 @@ class SEPort:
         Examples can be found in ``examples/modules/selinux/selinux_se_port.py``.
     """
 
-    # Mirrors pyinfra's ``selinux.SEPort``: ``sepolicy network -p <port>``
+    # ``selinux.SEPort``: ``sepolicy network -p <port>``
     # prints the specific label row first and the generic range row second
     # (``22: tcp ssh_port_t 22`` then ``22: tcp reserved_port_t 1-511``);
     # the fact keeps the type of the first row only when BOTH rows are
     # present -- a port covered by a generic range alone reads as the
-    # empty string, pyinfra's ``len(output) > 1`` gate. The ``|| true``
+    # empty string, the ``len(output) > 1`` gate. The ``|| true``
     # inside the subshell swallows sepolicy's failure (including its
     # absence: policycoreutils-dev is not stock), and the outer pipeline
     # reports grep's exit, so only ``HostConnectionError`` can escape the
     # gather. The protocol is ``shlex``-quoted and the port rendered
-    # through ``str`` (pyinfra accepts a name like "portname" in its own
+    # through ``str`` (a name like "portname" is accepted in the
     # fixtures, which reads as "").
     #
     # SimulatedHost seam note: the ``selinux_ports`` field stores the
@@ -617,7 +617,7 @@ class SEPort:
         ports = getattr(host, "selinux_ports", None)
         if ports is not None:
             # SimulatedHost seam: project the one port from the label map.
-            # A non-numeric port (pyinfra's "portname" fixture) reads as "".
+            # A non-numeric port (the "portname" fixture) reads as "".
             try:
                 number = int(port)
             except ValueError:
@@ -676,7 +676,7 @@ class Mode:
         Examples can be found in ``examples/modules/selinux/selinux_mode.py``.
     """
 
-    # A reemote5 original: pyinfra's ``selinux`` namespace ships no mode
+    # A reemote5 original: the ``selinux`` namespace ships no mode
     # fact, so every SELinux decision starts with a manual getenforce.
     # ``sestatus`` answers the whole question in one command -- the
     # ``Current mode`` line is the runtime state, ``Mode from config file``
@@ -686,8 +686,8 @@ class Mode:
     # "disabled" and the config/policy fields stay empty (sestatus reports
     # neither in that state; read the config file with ``SelinuxConfigFile``
     # when the boot setting matters on a disabled host). Empty output reads
-    # as an empty mode rather than guessing. pyinfra-style
-    # ``requires_command`` gating has no counterpart: a host without
+    # as an empty mode rather than guessing. There is no
+    # command-existence gate: a host without
     # sestatus (policycoreutils absent, or a non-SELinux distribution)
     # exits 127 and surfaces as ``CommandNotFoundError``.
     #
@@ -866,7 +866,7 @@ class SELogin:
         Examples can be found in ``examples/modules/selinux/selinux_se_login.py``.
     """
 
-    # A reemote5 original: pyinfra's ``selinux`` namespace ships no login
+    # A reemote5 original: the ``selinux`` namespace ships no login
     # fact, so confined-user management has no visibility. ``semanage
     # login -ln`` prints one ``login seuser range [service]`` row per
     # mapping (the ``-n`` drops the header); the fact keys them by the
@@ -1074,7 +1074,7 @@ class Modules:
         Examples can be found in ``examples/modules/selinux/selinux_modules.py``.
     """
 
-    # A reemote5 original: pyinfra's ``selinux`` namespace ships no module
+    # A reemote5 original: the ``selinux`` namespace ships no module
     # fact, so custom-policy management has no visibility. ``semodule
     # -lfull`` lists *every* module instance in the store as a
     # ``priority name format [disabled]`` row -- unlike ``semodule -l``,
@@ -1159,7 +1159,7 @@ class PermissiveDomains:
         ``examples/modules/selinux/selinux_permissive_domains.py``.
     """
 
-    # A reemote5 original: pyinfra's ``selinux`` namespace ships no
+    # A reemote5 original: the ``selinux`` namespace ships no
     # permissive-domain fact, so troubleshooting a single denied service
     # has no visibility short of switching the whole host to permissive.
     # ``semanage permissive -l`` lists the built-in permissive types and
@@ -1219,7 +1219,7 @@ class _Which:
     """The path of a command per ``command -v``, or None (selinux-local ``server.Which``).
 
     A private, in-namespace stand-in for ``server.Which``: ``selinux.port``
-    must learn whether ``sepolicy`` is installed to pick its fact (pyinfra's
+    must learn whether ``sepolicy`` is installed to pick its fact (a
     ``Which`` dispatch), but the zero-cross-module-import invariant forbids
     reaching into the ``server`` namespace -- the ``git._DirectoryExists``
     pattern. It reads the *same* ``command_paths`` seam ``server.Which``
@@ -1280,9 +1280,9 @@ class SetseboolCommand(Command):
     """``setsebool [-P] <boolean> on|off``: one boolean change.
 
     The descriptor ``selinux.boolean`` yields. ``persistent`` inserts ``-P``
-    (pyinfra's ``setsebool -P``), which writes the value into the policy so
+    (the ``setsebool -P`` form), which writes the value into the policy so
     it survives reboot; without it the change is runtime-only. The boolean
-    name is ``shlex``-quoted (pyinfra's ``QuoteString``); the value word is
+    name is ``shlex``-quoted; the value word is
     the validated ``on``/``off`` literal, never user text.
     """
 
@@ -1327,19 +1327,19 @@ async def boolean(
         Examples can be found in ``examples/modules/selinux/selinux_boolean.py``.
     """
 
-    # Mirrors pyinfra's ``selinux.boolean``. Idempotent on ``SEBoolean``:
+    # ``selinux.boolean``. Idempotent on ``SEBoolean``:
     # the requested value word is compared against the fact and a
     # ``setsebool`` is yielded only when they differ -- the "check before
     # executing" the boolean enhancement asked for falls out of the
     # fact-driven model, sparing the expensive ``-P`` policy rewrite on an
-    # unchanged boolean. The no-op reason is pyinfra's verbatim wording.
+    # unchanged boolean. The no-op reason is the established wording.
     #
-    # Deliberate deviation from pyinfra: its ``Boolean`` enum is dropped --
-    # ``value`` is the plain ``on``/``off`` string pyinfra already accepts
-    # for compatibility, and anything else raises ``ValueError`` (pyinfra's
-    # ``OperationValueError`` message verbatim). The command needs root:
+    # Deliberate design choice: a ``Boolean`` enum is dropped --
+    # ``value`` is the plain ``on``/``off`` string already accepted
+    # for compatibility, and anything else raises ``ValueError`` (the
+    # established validation message). The command needs root:
     # flag the request ``sudo=True`` (or ``su=True``/``doas=True``).
-    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
+    # ``**kwargs`` absorbs any further global arguments (``op()`` already
     # strips ``name`` and the escalation flags).
     if value not in ("on", "off"):
         raise ValueError(f"Invalid value '{value}' for boolean operation")
@@ -1361,9 +1361,9 @@ class ChconCommand(Command):
 
     The descriptor ``selinux.file_context`` yields. Only the requested
     components render their flags, in chcon(1)'s ``-u -r -t -l`` order; a
-    type-only request renders pyinfra's exact ``chcon -t <type> <path>``.
-    Every component and the path are ``shlex``-quoted (pyinfra's
-    ``QuoteString``), so a value carrying shell metacharacters reaches
+    type-only request renders the exact ``chcon -t <type> <path>``.
+    Every component and the path are ``shlex``-quoted, so a value
+    carrying shell metacharacters reaches
     chcon literally.
     """
 
@@ -1425,13 +1425,13 @@ async def file_context(
         ``examples/modules/selinux/selinux_op_file_context.py``.
     """
 
-    # Mirrors pyinfra's ``selinux.file_context`` (``chcon -t`` on a type
+    # ``selinux.file_context`` (``chcon -t`` on a type
     # mismatch) and extends it to the full context: each of the four
     # components is optional, at least one must be given, and only the
     # components that differ from the ``FileContext`` fact are yielded --
-    # an unreadable context (None, pyinfra's ``or {}``) makes every
-    # requested component differ. The type-only no-op reason is pyinfra's
-    # verbatim wording; a multi-component request reports the requested
+    # an unreadable context (None, the ``or {}`` fallback) makes every
+    # requested component differ. The type-only no-op reason is the
+    # established wording; a multi-component request reports the requested
     # context as already present.
     #
     # ``chcon`` changes the *runtime* label of existing files only; the
@@ -1439,7 +1439,7 @@ async def file_context(
     # ``selinux.file_context_mapping``'s job, and ``selinux.restorecon``
     # reapplies the database to a tree. The command needs no root for files
     # the login user owns, but relabelling system paths does: flag the
-    # request ``sudo=True`` when in doubt. ``**kwargs`` absorbs pyinfra's
+    # request ``sudo=True`` when in doubt. ``**kwargs`` absorbs any
     # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
     wanted = {
         field: value
@@ -1494,7 +1494,7 @@ class SemanageFcontextCommand(Command):
     the rule, no type); ``present=True`` renders ``-a`` (add) or, with
     ``modify=True``, ``-m`` (change the type of an existing rule), both
     carrying ``-t <type>``. The type and target expression are
-    ``shlex``-quoted (pyinfra's ``QuoteString``).
+    ``shlex``-quoted.
     """
 
     target: str
@@ -1546,19 +1546,19 @@ async def file_context_mapping(
         ``examples/modules/selinux/selinux_op_file_context_mapping.py``.
     """
 
-    # Mirrors pyinfra's ``selinux.file_context_mapping``: the
+    # ``selinux.file_context_mapping``: the
     # ``FileContextMapping`` fact decides between add (no mapping), modify
     # (a mapping with a different type) and no-op (the same type); removal
     # deletes an existing mapping and no-ops on an absent one. The no-op
-    # reasons are pyinfra's verbatim wordings, and its ``ValueError`` guard
+    # reasons are the established wordings, and the ``ValueError`` guard
     # (se_type required when present) is kept. The fact's None-on-absent
-    # (the house deviation from pyinfra's {}) replaces the ``len(current)``
+    # (the house deviation from {}) replaces the ``len(current)``
     # gates.
     #
-    # Like pyinfra's note: this writes the persistent database only --
+    # As documented: this writes the persistent database only --
     # existing files keep their labels until ``selinux.restorecon`` (or a
     # relabel at creation) applies the rule. The command needs root: flag
-    # the request ``sudo=True``. ``**kwargs`` absorbs pyinfra's global
+    # the request ``sudo=True``. ``**kwargs`` absorbs any further global
     # arguments (``op()`` already strips ``name``/``sudo``/``su``).
     if present and se_type is None:
         raise ValueError("se_type must have a valid value if present is set")
@@ -1595,9 +1595,9 @@ class SemanagePortCommand(Command):
     following the ``RcUpdateCommand`` precedent. ``present=False`` renders
     ``-d`` (delete the label, no type); ``present=True`` renders ``-a``
     (add) or, with ``modify=True``, ``-m`` (retype an existing label --
-    the update capability the port enhancement asked for, already
-    pyinfra's branch). The type, protocol and port are ``shlex``-quoted
-    (pyinfra's ``QuoteString``).
+    the update capability the port enhancement asked for, an
+    established branch). The type, protocol and port are
+    ``shlex``-quoted.
     """
 
     protocol: str
@@ -1653,22 +1653,22 @@ async def port(
         Examples can be found in ``examples/modules/selinux/selinux_port.py``.
     """
 
-    # Mirrors pyinfra's ``selinux.port`` including its fact dispatch: when
+    # ``selinux.port`` including its fact dispatch: when
     # ``sepolicy`` is installed (the selinux-local ``_Which`` probe, since
     # the zero-cross-module-import invariant forbids ``server.Which``) the
     # ``SEPort`` fact answers the one port directly, otherwise the
     # ``SEPorts`` map is projected. Add when unlabelled, modify when the
     # label differs, delete when labelled and present=False; the no-op
-    # reasons are pyinfra's verbatim wordings and its ``ValueError`` guard
+    # reasons are the established wordings and the ``ValueError`` guard
     # is kept.
     #
-    # Deliberate deviations from pyinfra: its ``Protocol`` enum is dropped
+    # Deliberate design choices: a ``Protocol`` enum is dropped
     # (a plain protocol string, which the enum's ``.value`` unwrapped to
     # anyway), and its trailing fact-cache mutation is dropped -- the
     # per-step FactCache recreation already makes the next read see the
     # applied state, so writing through the cache would only paper over a
     # failed command. The command needs root: flag the request
-    # ``sudo=True``. ``**kwargs`` absorbs pyinfra's global arguments
+    # ``sudo=True``. ``**kwargs`` absorbs any further global arguments
     # (``op()`` already strips ``name``/``sudo``/``su``).
     if present and se_type is None:
         raise ValueError("se_type must have a valid value if present is set")
@@ -1746,7 +1746,7 @@ async def mode(
         Examples can be found in ``examples/modules/selinux/selinux_op_mode.py``.
     """
 
-    # A reemote5 original: pyinfra ships no mode operation. Idempotent on
+    # A reemote5 original: there is no other mode operation. Idempotent on
     # the ``Mode`` fact's runtime ``mode`` field -- the config-file mode is
     # deliberately not compared, because setenforce changes only the
     # running kernel state. A disabled subsystem raises ``ValueError``:
@@ -1757,7 +1757,7 @@ async def mode(
     # operation's.
     #
     # The command needs root: flag the request ``sudo=True``. ``**kwargs``
-    # absorbs pyinfra's global arguments (``op()`` already strips
+    # absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     if mode not in ("enforcing", "permissive"):
         raise ValueError(
@@ -1846,7 +1846,7 @@ async def login(
         Examples can be found in ``examples/modules/selinux/selinux_login.py``.
     """
 
-    # A reemote5 original: pyinfra ships no login operation, so confined
+    # A reemote5 original: there is no other login operation, so confined
     # user management (the least-privilege core of SELinux) has no control
     # surface. Idempotent on the ``SELogin`` fact: an absent mapping is
     # added, an existing one is modified only when its SELinux user or
@@ -1857,7 +1857,7 @@ async def login(
     # service-scoped mapping reads as its universal row.
     #
     # The command needs root: flag the request ``sudo=True``. ``**kwargs``
-    # absorbs pyinfra's global arguments (``op()`` already strips
+    # absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     if present and seuser is None:
         raise ValueError("seuser must have a valid value if present is set")
@@ -1963,7 +1963,7 @@ async def module(
         module_name (str): The policy module name (e.g.
             ``my_custom_policy``). Named ``module_name`` rather than
             ``name`` because ``op()`` reserves ``name`` for the request
-            label (pyinfra's ``bool_name`` precedent).
+            label (the ``bool_name`` precedent).
         state (str, optional): The wanted state -- ``present`` (installed
             and enabled), ``absent`` (every instance removed), ``enabled``
             or ``disabled`` (installed, rules applying or not). Defaults
@@ -1989,7 +1989,7 @@ async def module(
         Examples can be found in ``examples/modules/selinux/selinux_module.py``.
     """
 
-    # A reemote5 original: pyinfra ships no module operation, so custom
+    # A reemote5 original: there is no other module operation, so custom
     # policies and third-party modules have no lifecycle management.
     # Idempotent on the ``Modules`` fact (``semodule -lfull`` lists the
     # disabled instances too, which plain ``-l`` hides): the name's
@@ -2008,7 +2008,7 @@ async def module(
     # install.
     #
     # The commands need root: flag the request ``sudo=True``. ``**kwargs``
-    # absorbs pyinfra's global arguments (``op()`` already strips
+    # absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     if state not in ("present", "absent", "enabled", "disabled"):
         raise ValueError(
@@ -2110,7 +2110,7 @@ async def permissive_domain(
         ``examples/modules/selinux/selinux_permissive_domain.py``.
     """
 
-    # A reemote5 original: pyinfra ships no permissive-domain operation.
+    # A reemote5 original: there is no other permissive-domain operation.
     # Exempting one denied domain is the surgical alternative to switching
     # the whole host permissive (``selinux.mode``) while troubleshooting.
     # Idempotent on the ``PermissiveDomains`` fact, which lists built-in
@@ -2119,7 +2119,7 @@ async def permissive_domain(
     # records as a customization.
     #
     # The command needs root: flag the request ``sudo=True``. ``**kwargs``
-    # absorbs pyinfra's global arguments (``op()`` already strips
+    # absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     domains = await ctx.facts.get(PermissiveDomains)
     is_permissive = domain in domains
@@ -2195,8 +2195,8 @@ async def restorecon(
         ``examples/modules/selinux/selinux_restorecon.py``.
     """
 
-    # A reemote5 original: pyinfra ships no restorecon operation, though
-    # its ``file_context_mapping`` docs note existing files keep their
+    # A reemote5 original: there is no other restorecon operation, though
+    # the ``file_context_mapping`` docs note existing files keep their
     # labels -- this is the remedy. Deliberately **stateless** (the chosen
     # design): restorecon is cheap, silent on an already-correct tree and
     # the natural follow-up to a mapping change, so it always reports a
@@ -2208,7 +2208,7 @@ async def restorecon(
     # argument is validated; a missing restorecon binary surfaces as a
     # command failure in the apply phase. The command needs root for
     # system paths: flag the request ``sudo=True``. ``**kwargs`` absorbs
-    # pyinfra's global arguments (``op()`` already strips
+    # any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     ctx.changed = True
     ctx.reason = f"restorecon will relabel '{path}'"
@@ -2253,7 +2253,7 @@ async def autorelabel(ctx: OpContext, **kwargs: Any) -> AsyncGenerator[Command]:
         ``examples/modules/selinux/selinux_autorelabel.py``.
     """
 
-    # A reemote5 original: pyinfra ships no autorelabel operation.
+    # A reemote5 original: there is no other autorelabel operation.
     # **Warning**: the flag makes the *next boot* relabel every mounted
     # filesystem before enforcing begins -- on a large disk this can take
     # many minutes and delays the boot. It is the required step when
@@ -2269,7 +2269,7 @@ async def autorelabel(ctx: OpContext, **kwargs: Any) -> AsyncGenerator[Command]:
     # legitimately requests a new one.
     #
     # The command needs root (``/`` is root-owned): flag the request
-    # ``sudo=True``. ``**kwargs`` absorbs pyinfra's global arguments
+    # ``sudo=True``. ``**kwargs`` absorbs any further global arguments
     # (``op()`` already strips ``name``/``sudo``/``su``).
     pending = await ctx.facts.get(_AutorelabelPending)
     if pending:
@@ -2438,8 +2438,8 @@ async def config(
         Examples can be found in ``examples/modules/selinux/selinux_config.py``.
     """
 
-    # A reemote5 original with no pyinfra counterpart: pyinfra's ``selinux``
-    # namespace ships boolean/file_context/port/mode/login/module/
+    # A reemote5 original: the ``selinux`` namespace ships boolean/
+    # file_context/port/mode/login/module/
     # restorecon/autorelabel but no config operation. This operation
     # supersedes the ``files.edit`` + ``files.move`` spool-and-install
     # recipe the ``selinux_config.py`` example used to demonstrate, and is
@@ -2487,7 +2487,7 @@ async def config(
     # **Warning**: switching a *disabled* subsystem to enforcing
     # additionally requires a full relabel (``selinux.autorelabel`` before
     # the reboot), and changing ``SELINUXTYPE`` requires the matching
-    # policy package to be installed. ``**kwargs`` absorbs pyinfra's
+    # policy package to be installed. ``**kwargs`` absorbs any
     # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
     if SELINUX is None and SELINUXTYPE is None:
         raise ValueError("at least one of SELINUX and SELINUXTYPE must be given")

@@ -40,9 +40,9 @@ exists on the *target host*. It reads the
 fact for the installed versions of that name, and counts the package as present
 only when the installed version matches the file's — so `present=True` installs
 only when it does not and is otherwise a no-op, while `present=False` removes it
-with `apt-get remove <name>`. The install runs pyinfra's three-pass sequence (a
+with `apt-get remove <name>`. The install runs the baseline's three-pass sequence (a
 tolerant `dpkg -i`, an `apt-get install -f` to resolve dependencies, then a final
-`dpkg -i` that fails fast if they are still missing). Where pyinfra's `apt.deb`
+`dpkg -i` that fails fast if they are still missing). Where the baseline's `apt.deb`
 can also *download* a remote `.deb` mid-deploy, reemote5 has no download
 operation, so a URL `src` raises `ValueError`. The example therefore stages the
 file itself first: a demo-side `curl` one-liner (a raw `StringCommand`, the same
@@ -61,18 +61,18 @@ as changes).
 
 ## Installing packages by name
 
-The package operation: `apt.packages` mirrors pyinfra's `apt.packages`,
+The package operation: `apt.packages` mirrors the baseline's `apt.packages`,
 installing, upgrading or removing packages by name. It reads the
 [`AptPackages`][reemote5.modules.apt.apt.AptPackages] fact for the installed
 versions, so a `<pkg>=<version>` pin counts as present only when that exact
-version is installed (pyinfra's `ensure_packages` version match) —
+version is installed (the baseline's `ensure_packages` version match) —
 `present=True` installs only what is missing, `latest=True` additionally
-upgrades installed unpinned names (pyinfra's legacy blind upgrade), and
+upgrades installed unpinned names (the baseline's legacy blind upgrade), and
 `present=False` removes only what is installed, `purge=True` switching
 `remove` to `purge`. `update=True` runs a stateless `apt-get update` first;
 `upgrade=True` runs `apt-get upgrade`, gated by the
 `SimulateOperationWillChange`
-fact exactly like `apt.dist_upgrade`. Where pyinfra's `cache_time` skips the
+fact exactly like `apt.dist_upgrade`. Where the baseline's `cache_time` skips the
 update while its stamp file is fresh, reemote5 deliberately drops the option
 (update is always stateless); `force` (`--force-yes`) is dropped as
 deprecated, the same decision as `apt.deb`. The install rides under `sudo`
@@ -88,10 +88,10 @@ the prepare phase, where nothing is sent, both plan as changes).
 ## Refreshing the package lists
 
 The standalone form of `apt.packages`' stateless `update=True` prefix:
-`apt.update` mirrors pyinfra's `apt.update`, refreshing the package lists
+`apt.update` mirrors the baseline's `apt.update`, refreshing the package lists
 with the bare `apt-get update` — no non-interactive wrapper, since
 `update` asks no questions. It is **non-idempotent**: it reads no fact and
-always reports a change. Where pyinfra's `cache_time` skips the update
+always reports a change. Where the baseline's `cache_time` skips the update
 while its stamp file is fresh (and `touch`es it afterwards), reemote5
 deliberately drops the option — the same decision `apt.packages` made —
 so the update is always stateless. The refresh rides under `sudo`
@@ -107,14 +107,14 @@ change.
 ## Upgrading all packages
 
 The standalone form of `apt.packages`' `upgrade=True` prefix:
-`apt.upgrade` mirrors pyinfra's `apt.upgrade`, gated by the
+`apt.upgrade` mirrors the baseline's `apt.upgrade`, gated by the
 `SimulateOperationWillChange`
 fact — an `upgrade --dry-run` whose `N upgraded, N newly installed, N to
 remove and N not upgraded.` summary line decides whether the real upgrade
 would do anything. All-zero counts are a no-op; a failed simulation (no
-summary line, `None`) runs the real command anyway, pyinfra's fallback.
+summary line, `None`) runs the real command anyway, the baseline's fallback.
 Unlike `dist-upgrade`, a plain `upgrade` never installs new dependencies
-or removes conflicting packages. Where pyinfra's operation also takes an
+or removes conflicting packages. Where the baseline's operation also takes an
 `auto_remove` parameter, reemote5 drops it in favour of the standalone
 `apt.auto_remove` below — the same split `apt.dist_upgrade` made — so this
 operation never passes `--autoremove`. The upgrade rides under `sudo`
@@ -131,16 +131,16 @@ nothing is sent, both plan as changes). Yielding `apt.update` then
 
 ## Upgrading all packages with dist-upgrade
 
-The whole-machine upgrade: `apt.dist_upgrade` mirrors pyinfra's
+The whole-machine upgrade: `apt.dist_upgrade` mirrors the baseline's
 `apt.dist_upgrade`, gated by the
 `SimulateOperationWillChange`
 fact — a `dist-upgrade --dry-run` whose `N upgraded, N newly installed,
 N to remove and N not upgraded.` summary line decides whether the real
 upgrade would do anything. All-zero counts are a no-op; a failed simulation
-(no summary line, `None`) runs the real command anyway, pyinfra's fallback.
+(no summary line, `None`) runs the real command anyway, the baseline's fallback.
 Unlike a plain `upgrade`, the `dist-upgrade` may also install new
 dependencies and remove conflicting packages — the simulation counts those
-too. Where pyinfra's operation also takes an `auto_remove` parameter,
+too. Where the baseline's operation also takes an `auto_remove` parameter,
 reemote5 splits that into the standalone `apt.auto_remove` below, so this
 operation never passes `--autoremove`. The upgrade rides under `sudo`
 (upgrading needs root; the dry-run itself does not), and the script yields
@@ -156,7 +156,7 @@ nothing is sent, both plan as changes).
 ## Removing orphaned dependencies standalone
 
 The cleanup half of the split: `apt.auto_remove` is a reemote5 original —
-pyinfra only offers autoremove as the `auto_remove` parameter of
+the baseline only offers autoremove as the `auto_remove` parameter of
 `apt.dist_upgrade`/`apt.upgrade`, never as a standalone operation, so
 orphaned dependencies cannot be cleaned up without also performing an
 upgrade. It reads the
@@ -167,7 +167,7 @@ no-longer-needed packages: a non-empty list runs the real
 `sudo`, and the script yields the same request twice — the second is a
 no-op in the apply phase once the first cleanup left nothing autoremovable.
 Composing `apt.dist_upgrade` then `apt.auto_remove` in one deploy gives the
-upgrade-then-cleanup flow pyinfra expresses with a single `auto_remove=True`
+upgrade-then-cleanup flow the baseline expresses with a single `auto_remove=True`
 flag, each half an explicit, separately plannable step.
 
 ::: apt_auto_remove
@@ -188,7 +188,7 @@ the stream to a fixed `/tmp` path over scp as the login user, then an
 keyrings directory, dearmors ASCII-armored content with `gpg --dearmor`
 (binary content is copied verbatim), chmods the keyring `0644` and removes
 the spool file — so the log shows a plain `scp` line followed by
-`sudo sh -c`. Unlike pyinfra's existence-checked `apt.key`, this one is
+`sudo sh -c`. Unlike the baseline's existence-checked `apt.key`, this one is
 deliberately non-idempotent (like `dnf.key`): it always installs and always
 reports a change. The stream is compared by identity across the prepare
 and apply phases, so the script defines it once at module level — building
@@ -204,7 +204,7 @@ own vendor key's armor to trust a different repository.
 
 ## Holding packages back from upgrades
 
-The hold-state operation: `apt.mark` is a reemote5 original — pyinfra ships
+The hold-state operation: `apt.mark` is a reemote5 original — the baseline ships
 no operation managing package hold states, so pinning a critical package at
 its current version (without uninstalling anything) had no first-class
 form. A held package is skipped by `apt upgrade`/`apt.dist_upgrade` until
@@ -230,13 +230,13 @@ everything except the held packages upgrades.
 
 ## Adding an Ubuntu PPA repository
 
-The repository operation: `apt.ppa` mirrors pyinfra's `apt.ppa`, adding (or
+The repository operation: `apt.ppa` mirrors the baseline's `apt.ppa`, adding (or
 with `present=False` removing) an Ubuntu PPA via `apt-add-repository`. `src`
-is the full `ppa:user/repo` name — here the Bitcoin PPA, pyinfra's documented
+is the full `ppa:user/repo` name — here the Bitcoin PPA, the baseline's documented
 example — and the operation runs `apt-add-repository -y <src>` (`--remove`
 for `present=False`), which requires `software-properties-common` on the
 target host. Unlike the idempotent operations above, this one is
-deliberately **non-idempotent**, exactly as pyinfra marks it: it reads no
+deliberately **non-idempotent**, exactly as the baseline marks it: it reads no
 fact and always reports a change, yielding one command whether or not the
 PPA is already configured (`apt-add-repository` is itself idempotent on the
 host, so a repeat add is harmless). The add rides under `sudo` (writing the
@@ -253,14 +253,14 @@ changes, since neither direction reads a fact.
 
 ## Adding an apt repository line
 
-The source-line operation: `apt.repo` mirrors pyinfra's `apt.repo`, adding
+The source-line operation: `apt.repo` mirrors the baseline's `apt.repo`, adding
 (or with `present=False` removing) one apt source line. `src` is the full
 source string — here the Canonical partner repository for Ubuntu noble —
 and `filename` scopes it to its own
 `/etc/apt/sources.list.d/canonical-partner.list` instead of the main
 `/etc/apt/sources.list`. It parses `src` and compares against the
 [`AptSources`][reemote5.modules.apt.apt.AptSources] fact, so a repository
-already configured in any sources file is a no-op. Where pyinfra delegates
+already configured in any sources file is a no-op. Where the baseline delegates
 the edit to `files.line` and so patches the file in place with `echo >>`
 and `sed -i`, reemote5 *rewrites* the managed file through the
 spool-and-install family `apt.key` belongs to: the file's current text is
@@ -271,7 +271,7 @@ path named after the managed file by an unprivileged scp upload (a transfer
 never elevates), and an elevated `sh -c` installs it over the protected
 file with mode `0644` and removes the spool. Because the transform works on
 the real content, the file's other lines and comments survive verbatim and
-a line the file already carries is never written twice — and pyinfra's
+a line the file already carries is never written twice — and the baseline's
 timestamped sed backup, non-deterministic between the two phases, goes with
 the in-place edit. The request rides under `sudo` (writing the apt sources
 needs root), and the script yields the same request twice — the second is a
@@ -290,7 +290,7 @@ the add-then-remove cycle keeps the shared-host sweep clean and fast.
 ## Managing a deb822 sources file
 
 The modern-format sibling of `apt.repo`: `apt.sources_file` mirrors
-pyinfra's `apt.sources_file`, writing (or with `present=False` removing) a
+the baseline's `apt.sources_file`, writing (or with `present=False` removing) a
 complete deb822 `.sources` file under `/etc/apt/sources.list.d/` — here the
 Docker repository for Ubuntu noble (the target host's suite) as `docker.sources`.
 The repository is described structurally (`types`, `uris`, `suites`,
@@ -298,7 +298,7 @@ The repository is described structurally (`types`, `uris`, `suites`,
 `signed_by`) rather than as a source line, and each list option expands into
 one entry per combination. The write direction compares every desired entry
 against the [`AptSources`][reemote5.modules.apt.apt.AptSources] fact, so a
-file whose repositories are all already configured is a no-op. Where pyinfra
+file whose repositories are all already configured is a no-op. Where the baseline
 delegates the write to `files.put`, reemote5 keeps the namespaces separate:
 the generated deb822 text is spooled to `/tmp` by an unprivileged scp upload
 (a transfer never elevates), then an elevated `sh -c` installs it into

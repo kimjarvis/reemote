@@ -17,7 +17,7 @@ two-phase execution model:
    ``gather_fact`` helper, then print each host's unit map with
    ``json.dumps(..., indent=2)``.
 
-``SystemdEnabled`` ports pyinfra's ``systemd.SystemdEnabled``: a subclass of
+``SystemdEnabled`` ports the baseline's ``systemd.SystemdEnabled``: a subclass of
 ``SystemdStatus`` that flips the probed property to ``UnitFileState`` and the
 accepted values to ``enabled``/``static``. It runs
 ``systemctl show --all --property Id --property UnitFileState '*'`` and maps

@@ -55,11 +55,11 @@ are ensured ``755`` ``www:www`` by ``files.directory`` requests: the
 by the login user -- a ``750`` web root would hide the file from the fact
 and every run would plan a re-create. The marker lives in ``/tmp``,
 writable by any login user, so its removal needs no elevation.
-pyinfra also offers ``force``/``force_backup`` here; reemote5 keeps ``force`` (a
+the baseline also offers ``force``/``force_backup`` here; reemote5 keeps ``force`` (a
 non-file is removed with ``rm -rf`` and recreated; without it such a path
 raises ``ValueError``) but deliberately drops the timestamped backup ``mv``,
 whose ``datetime.now()`` would differ between the phases. The ``touch``
-option is *not* used below: like pyinfra's, it is deliberately
+option is *not* used below: like the baseline's, it is deliberately
 non-idempotent and would re-run the ``touch`` on every pass.
 
 Unlike the pytest suite -- which injects the test framework's

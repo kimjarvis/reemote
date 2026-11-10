@@ -36,7 +36,7 @@ inventory comes from the shared ``inventory.json`` in the project root:
    ``json.dumps(..., indent=2)``.
 
 ``ApkInstalledPackages`` runs ``apk list --installed`` and matches each
-``name-version arch {origin} (license) [installed]`` row with pyinfra's
+``name-version arch {origin} (license) [installed]`` row with the baseline's
 apk regex: multi-dash names like ``alpine-baselayout-data`` split from
 their ``3.6.5-r0``-style versions at the last ``-r<release>`` boundary,
 names carrying punctuation (``libstdc++``, ``p11-kit``) stay intact, and

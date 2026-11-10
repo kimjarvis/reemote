@@ -16,12 +16,12 @@ two-phase execution model end to end over a **real SSH transport**
    objects, each guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``postgresql.role`` mirrors pyinfra's operation and extends it beyond
+``postgresql.role`` mirrors the baseline's operation and extends it beyond
 creation: it reads the ``PostgresqlRoles`` fact, renders every flag
 explicitly as X/NOX pairs on CREATE (so the created role matches the
 declared state rather than relying on server defaults), and reconciles an
 existing role's flags and connection limit through ALTER ROLE only where
-they differ -- pyinfra's alter branch compared option names against fact
+they differ -- the baseline's alter branch compared option names against fact
 keys that never exist and never actually altered anything.
 
 The deploy yields the same request twice: in the prepare phase (where
@@ -56,7 +56,7 @@ The shared ``inventory.json`` carries no ``privilege`` section, so ``main``
 attaches ``{"sudo_user": "postgres"}`` to the loaded ``centos`` entries:
 the ``sudo=True`` requests ride under the ``postgres`` OS user, so the
 ``psql`` client connects through peer authentication -- no password
-travels through operation arguments, plans or logs (pyinfra's
+travels through operation arguments, plans or logs (the baseline's
 ``psql_password`` option is deliberately dropped namespace-wide).
 
 Run it with::

@@ -22,7 +22,7 @@ lazily opens an asyncssh connection, gathers facts and runs commands for real,
 and ``run`` closes those connections when it finishes. The path is resolved
 from ``__file__``, so the example works from any working directory.
 
-``systemd.mask`` is a reemote5 original (pyinfra has no ``systemd.mask``). It
+``systemd.mask`` is a reemote5 original (the baseline has no ``systemd.mask``). It
 is bidirectional and idempotent through one present-flagged path: it reads the
 unit's ``UnitFileState`` from the ``SystemdUnitProperties`` fact and yields
 ``systemctl mask`` only when the unit is not already masked. Masking symlinks

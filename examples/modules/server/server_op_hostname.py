@@ -4,7 +4,7 @@
 """Example: set the system hostname on real CentOS hosts.
 
 This is a *usage* example, not part of the library. It shows reemote5's
-``server.hostname`` operation, the pyinfra ``server.hostname`` parity for
+``server.hostname`` operation, baseline ``server.hostname`` parity for
 naming a machine: the deploy gives each host a fully-qualified name derived
 from its inventory label (``web1`` becomes ``web1.example.com``), under
 ``sudo`` because setting the hostname needs root.
@@ -15,9 +15,9 @@ so a host already named correctly plans no change and a second run is a
 no-op everywhere. The ``Which`` fact picks the command form: a host with
 ``hostnamectl`` (systemd) gets ``hostnamectl set-hostname``, which also
 persists the name across reboots; an older system without it gets the bare
-``hostname`` command. pyinfra's ``hostname_file`` upload branch is
+``hostname`` command. The baseline's ``hostname_file`` upload branch is
 deliberately dropped -- reemote5's transfers cannot be elevated, so the
-root-owned ``/etc/hostname`` write pyinfra does through ``files.put`` has
+root-owned ``/etc/hostname`` write the baseline does through ``files.put`` has
 no faithful equivalent; on a systemd host ``hostnamectl`` already persists
 the name, so nothing is lost there.
 

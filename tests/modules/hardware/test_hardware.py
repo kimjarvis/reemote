@@ -5,7 +5,7 @@
 ``DiskStats``, ``DmiInfo``, ``Ipv4Addrs``, ``Ipv6Addrs``, ``LsBlk``,
 ``NetworkDevices`` and ``SmbiosInfo``.
 
-Covers ``reemote5.modules.hardware.hardware``: pyinfra's own fixtures over
+Covers ``reemote5.modules.hardware.hardware``: the baseline's own fixtures over
 the real-transport path, the documented example results, ``df`` parsing
 edge cases (header and ``none`` rows, unmatched rows, repeated devices),
 ``lscpu`` parsing edge cases (flag lists, colon-less lines, the
@@ -67,8 +67,8 @@ class CannedShellHost(Host):
 # --- BlockDevices --------------------------------------------------------------
 
 
-async def test_block_devices_parses_pyintras_fixture():
-    # pyinfra's own fact fixture (tests/facts/hardware.BlockDevices/devices.json):
+async def test_block_devices_parses_baseline_fixture():
+    # The baseline's own fact fixture (tests/facts/hardware.BlockDevices/devices.json):
     # the header row and the "none" pseudo-filesystem row are both skipped.
     host = CannedShellHost(
         """Filesystem                     1K-blocks      Used Available Use% Mounted on
@@ -88,8 +88,8 @@ none                   500 100 400  36% /
     assert host.shells == ["df"]
 
 
-def test_block_devices_parses_pyintras_documented_example():
-    # pyinfra's docstring example result: /dev/sda1 mounted on /, all five
+def test_block_devices_parses_baseline_documented_example():
+    # The baseline's docstring example result: /dev/sda1 mounted on /, all five
     # values kept as the raw strings df prints.
     assert BlockDevices.parse(["/dev/sda1 40325900 836392 39489508 3% /"]) == {
         "/dev/sda1": {
@@ -105,7 +105,7 @@ def test_block_devices_parses_pyintras_documented_example():
 def test_block_devices_parse_skips_headers_and_unmatched_rows():
     # The header, blank lines and rows whose device or mount point carries
     # a character outside the regex's classes (an NFS host:/export source,
-    # a dotted device name) never match, exactly like pyinfra.
+    # a dotted device name) never match, exactly like the baseline.
     assert (
         BlockDevices.parse(
             [
@@ -164,7 +164,7 @@ def test_block_devices_parse_keeps_the_last_duplicate_row():
 
 
 async def test_block_devices_is_empty_on_empty_output():
-    # A failed read maps to {} (pyinfra's ``default = dict``); a header-only
+    # A failed read maps to {} (the baseline's ``default = dict``); a header-only
     # listing has no matching rows either.
     assert await BlockDevices.process(CannedShellHost("")) == {}
     assert (
@@ -269,8 +269,8 @@ def test_block_devices_is_exported_through_the_namespace():
 # --- CpuInfo -------------------------------------------------------------------
 
 
-async def test_cpu_info_parses_pyintras_fixture():
-    # pyinfra's own fact fixture (tests/facts/hardware.CpuInfo/1cpu.json):
+async def test_cpu_info_parses_baseline_fixture():
+    # The baseline's own fact fixture (tests/facts/hardware.CpuInfo/1cpu.json):
     # every "Key: value" row becomes a dict entry, and the Flags row splits
     # into a list of tokens. The Itlb multihit row carries trailing padding
     # in the fixture, which parse strips (so it is omitted here).
@@ -357,7 +357,7 @@ Vulnerability Tsx async abort:   Not affected
     assert host.shells == ["LANG=C lscpu"]
 
 
-def test_cpu_info_parses_pyintras_documented_example():
+def test_cpu_info_parses_baseline_documented_example():
     # The class docstring's representative example: string values stay raw
     # strings (inner spacing preserved), the Flags row becomes a token list.
     assert CpuInfo.parse(
@@ -394,7 +394,7 @@ def test_cpu_info_parse_splits_flag_keys_into_lists():
 
 
 def test_cpu_info_parse_skips_colonless_lines():
-    # Blank lines and stray output without a colon are skipped (pyinfra
+    # Blank lines and stray output without a colon are skipped (the baseline
     # would raise IndexError on them; reemote5 hardens the parser).
     assert CpuInfo.parse(
         ["", "no colon here", "   ", "Architecture: x86_64"]
@@ -402,13 +402,13 @@ def test_cpu_info_parse_skips_colonless_lines():
 
 
 def test_cpu_info_parse_truncates_at_the_second_colon():
-    # Mirrors pyinfra's split(":")[1]: only the segment after the FIRST
+    # Mirrors the baseline's split(":")[1]: only the segment after the FIRST
     # colon is kept, so a second colon in a value truncates it.
     assert CpuInfo.parse(["Key: first: second"]) == {"Key": "first"}
 
 
 async def test_cpu_info_is_none_on_empty_output():
-    # pyinfra's invalid fixture (output null -> fact null): a failed/empty
+    # The baseline's invalid fixture (output null -> fact null): a failed/empty
     # read parses to None, as does output with no colon-bearing rows.
     assert await CpuInfo.process(CannedShellHost("")) is None
     assert CpuInfo.parse([]) is None
@@ -459,8 +459,8 @@ def test_cpu_info_is_exported_through_the_namespace():
 # --- Cpus ----------------------------------------------------------------------
 
 
-async def test_cpus_parses_pyintras_valid_fixture():
-    # pyinfra's own fact fixture (tests/facts/hardware.Cpus/valid.json):
+async def test_cpus_parses_baseline_valid_fixture():
+    # The baseline's own fact fixture (tests/facts/hardware.Cpus/valid.json):
     # getconf prints "1", which parses to the int 1.
     host = CannedShellHost("1\n")
     assert await Cpus.process(host) == 1
@@ -469,33 +469,33 @@ async def test_cpus_parses_pyintras_valid_fixture():
     ]
 
 
-async def test_cpus_parses_pyintras_invalid_fixture():
-    # pyinfra's own fact fixture (tests/facts/hardware.Cpus/invalid.json):
+async def test_cpus_parses_baseline_invalid_fixture():
+    # The baseline's own fact fixture (tests/facts/hardware.Cpus/invalid.json):
     # a non-integer answer ("nope") parses to None, not an error.
     assert await Cpus.process(CannedShellHost("nope\n")) is None
 
 
 def test_cpus_parse_ignores_lines_after_the_first():
-    # Mirrors pyinfra's int(list(output)[0]): only the first line is
+    # Mirrors the baseline's int(list(output)[0]): only the first line is
     # converted; anything after it is ignored.
     assert Cpus.parse(["4", "8", "16"]) == 4
 
 
 def test_cpus_parse_tolerates_surrounding_whitespace():
     # int() itself strips surrounding whitespace, so a padded count still
-    # converts (pyinfra passes the raw line to int too).
+    # converts (the baseline passes the raw line to int too).
     assert Cpus.parse([" 4 "]) == 4
 
 
 def test_cpus_parse_is_none_when_the_first_line_is_not_an_integer():
     # The ValueError catch fires on the FIRST line (here blank), exactly
-    # like pyinfra -- a later integer line is never reached.
+    # like the baseline -- a later integer line is never reached.
     assert Cpus.parse(["", "4"]) is None
     assert Cpus.parse(["1.5"]) is None
 
 
 async def test_cpus_is_none_on_empty_output():
-    # Empty output (a failed read) reads as None -- pyinfra answers with
+    # Empty output (a failed read) reads as None -- the baseline answers with
     # its default() fallback of None when the command prints nothing.
     assert await Cpus.process(CannedShellHost("")) is None
     assert Cpus.parse([]) is None
@@ -504,7 +504,7 @@ async def test_cpus_is_none_on_empty_output():
 async def test_cpus_reads_the_simulated_seam():
     host = SimulatedHost(name="h", cpus=8)
     assert await Cpus.process(host) == 8
-    # The seam defaults to pyinfra's fixture value (1): a single-CPU
+    # The seam defaults to the baseline's fixture value (1): a single-CPU
     # simulated machine, never falling through to the shell.
     assert await Cpus.process(SimulatedHost(name="h")) == 1
 
@@ -808,11 +808,11 @@ def test_dmi_info_is_exported_through_the_namespace():
 # --- Ipv4Addrs -----------------------------------------------------------------
 
 
-async def test_ipv4_addrs_parses_pyintras_fixture():
-    # pyinfra's own fact fixture
+async def test_ipv4_addrs_parses_baseline_fixture():
+    # The baseline's own fact fixture
     # (tests/facts/hardware.Ipv4Addrs/linux_ip_multiple.json): text
     # `ip addr show` output. eth0 carries a primary and an alias, kept in
-    # listing order with no octet validation (166.22.203.666 is pyinfra's
+    # listing order with no octet validation (166.22.203.666 is the baseline's
     # own value); eth1 has only IPv6 and is omitted. The fixture's
     # trailing padding on the inet6 rows is stripped by parse.
     host = CannedShellHost(
@@ -832,8 +832,8 @@ inet6 fe80::c4c5:60ff:fecd:73f1/64 scope link
     ]
 
 
-def test_ipv4_addrs_parses_pyintras_documented_example():
-    # pyinfra's docstring example result: eth0 -> ["127.0.0.1"].
+def test_ipv4_addrs_parses_baseline_documented_example():
+    # The baseline's docstring example result: eth0 -> ["127.0.0.1"].
     assert Ipv4Addrs.parse(
         [
             "1: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000",
@@ -842,8 +842,8 @@ def test_ipv4_addrs_parses_pyintras_documented_example():
     ) == {"eth0": ["127.0.0.1"]}
 
 
-async def test_ipv4_addrs_parses_pyintras_json_fixture():
-    # pyinfra's NetworkDevices fixture
+async def test_ipv4_addrs_parses_baseline_json_fixture():
+    # The baseline's NetworkDevices fixture
     # (tests/facts/hardware.NetworkDevices/linux_ip_json.json), verbatim:
     # `ip -j addr show` JSON with one inet and one inet6 entry -- only the
     # inet address survives the IPv4 projection.
@@ -901,9 +901,9 @@ async def test_ipv4_addrs_parses_pyintras_json_fixture():
 
 
 def test_ipv4_addrs_json_keeps_aliases_in_listing_order():
-    # Condensed from pyinfra's NetworkDevices fixture
+    # Condensed from the baseline's NetworkDevices fixture
     # (tests/facts/hardware.NetworkDevices/linux_ip_json_multiple_addrs.json):
-    # two inet entries -- the primary first, then the alias pyinfra files
+    # two inet entries -- the primary first, then the alias the baseline files
     # under additional_ips, in listing order.
     assert Ipv4Addrs.parse(
         [
@@ -921,8 +921,8 @@ def test_ipv4_addrs_json_keeps_aliases_in_listing_order():
     ) == {"eth0": ["166.22.203.66", "10.18.0.10"]}
 
 
-async def test_ipv4_addrs_parses_pyintras_ifconfig_fixture():
-    # pyinfra's NetworkDevices fixture
+async def test_ipv4_addrs_parses_baseline_ifconfig_fixture():
+    # The baseline's NetworkDevices fixture
     # (tests/facts/hardware.NetworkDevices/linux_ifconfig.json), verbatim:
     # the ifconfig fallback shape (netmask token, no CIDR slash). lo's row
     # carries no broadcast and still matches.
@@ -962,8 +962,8 @@ lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
     }
 
 
-def test_ipv4_addrs_parses_pyintras_macos_ifconfig_fixture():
-    # pyinfra's NetworkDevices fixture
+def test_ipv4_addrs_parses_baseline_macos_ifconfig_fixture():
+    # The baseline's NetworkDevices fixture
     # (tests/facts/hardware.NetworkDevices/macos_ifconfig.json), verbatim:
     # the macOS ifconfig shape with a hex netmask (0xffffff00).
     assert Ipv4Addrs.parse(
@@ -979,7 +979,7 @@ def test_ipv4_addrs_parses_pyintras_macos_ifconfig_fixture():
 
 
 async def test_ipv4_addrs_is_empty_on_empty_or_malformed_output():
-    # pyinfra's NetworkDevices empty/noise fixtures: empty output, an
+    # The baseline's NetworkDevices empty/noise fixtures: empty output, an
     # empty JSON list, a JSON list holding one empty dict (no ifname), and
     # line noise that fails the JSON sniff and matches no device section.
     assert await Ipv4Addrs.process(CannedShellHost("")) == {}
@@ -990,7 +990,7 @@ async def test_ipv4_addrs_is_empty_on_empty_or_malformed_output():
 
 
 def test_ipv4_addrs_json_skips_unusable_entries():
-    # A device without an ifname is dropped (pyinfra's missing_ifname
+    # A device without an ifname is dropped (the baseline's missing_ifname
     # fixture); addr entries without a local or a family are skipped, and
     # inet6 entries never enter the IPv4 projection.
     assert Ipv4Addrs.parse(
@@ -1002,7 +1002,7 @@ def test_ipv4_addrs_json_skips_unusable_entries():
         ]
     ) == {"eth0": ["10.0.0.1"]}
     # Non-dict devices or addr entries are skipped rather than raising
-    # (pyinfra's walker would crash; reemote5 hardens the parser). The
+    # (the baseline's walker would crash; reemote5 hardens the parser). The
     # first element stays a dict so the JSON sniff still fires.
     assert Ipv4Addrs.parse(
         ['[{"ifname": "eth0", "addr_info": [5, {"family": "inet", "local": "10.0.0.1"}]}, 7]']
@@ -1010,7 +1010,7 @@ def test_ipv4_addrs_json_skips_unusable_entries():
 
 
 def test_ipv4_addrs_json_drops_an_empty_primary_address():
-    # pyinfra's projection skips an interface whose primary address is
+    # The baseline's projection skips an interface whose primary address is
     # empty -- even when a usable alias follows it.
     assert Ipv4Addrs.parse(
         '[{"ifname": "eth0", "addr_info": ['
@@ -1020,7 +1020,7 @@ def test_ipv4_addrs_json_drops_an_empty_primary_address():
 
 
 def test_ipv4_addrs_text_keeps_the_last_duplicate_section():
-    # A later section for the same interface wins, like pyinfra's device
+    # A later section for the same interface wins, like the baseline's device
     # map -- including dropping the interface when the last section
     # carries no IPv4 address.
     assert Ipv4Addrs.parse(
@@ -1043,7 +1043,7 @@ def test_ipv4_addrs_text_keeps_the_last_duplicate_section():
 
 def test_ipv4_addrs_ifconfig_rows_without_a_netmask_never_match():
     # The ifconfig regex requires the netmask token, exactly like
-    # pyinfra, so a netmask-less inet row is not an address.
+    # The baseline, so a netmask-less inet row is not an address.
     assert Ipv4Addrs.parse(
         [
             "en0: flags=8863<UP,BROADCAST,RUNNING> mtu 1500",
@@ -1089,8 +1089,8 @@ def test_ipv4_addrs_is_exported_through_the_namespace():
 # --- Ipv6Addrs -----------------------------------------------------------------
 
 
-async def test_ipv6_addrs_parses_pyintras_fixture():
-    # pyinfra's own fact fixture
+async def test_ipv6_addrs_parses_baseline_fixture():
+    # The baseline's own fact fixture
     # (tests/facts/hardware.Ipv6Addrs/linux_ip_multiple.json): text
     # `ip addr show` output. eth0 carries IPv4 aliases and one IPv6
     # address, eth1 a primary and an alias in listing order, and eth2 is
@@ -1121,9 +1121,9 @@ inet 10.18.0.10/16 brd 10.18.255.255 scope global eth0
     ]
 
 
-def test_ipv6_addrs_parses_pyintras_documented_example():
-    # pyinfra's docstring example result: eth0 -> ["fe80::a00:27ff::2"].
-    # The doubled "::" is pyinfra's own value -- the row regex keeps the
+def test_ipv6_addrs_parses_baseline_documented_example():
+    # The baseline's docstring example result: eth0 -> ["fe80::a00:27ff::2"].
+    # The doubled "::" is the baseline's own value -- the row regex keeps the
     # raw string with no address validation.
     assert Ipv6Addrs.parse(
         [
@@ -1133,8 +1133,8 @@ def test_ipv6_addrs_parses_pyintras_documented_example():
     ) == {"eth0": ["fe80::a00:27ff::2"]}
 
 
-async def test_ipv6_addrs_parses_pyintras_json_fixture():
-    # pyinfra's NetworkDevices fixture
+async def test_ipv6_addrs_parses_baseline_json_fixture():
+    # The baseline's NetworkDevices fixture
     # (tests/facts/hardware.NetworkDevices/linux_ip_json.json), verbatim:
     # `ip -j addr show` JSON with one inet and one inet6 entry -- only the
     # inet6 address survives the IPv6 projection.
@@ -1192,9 +1192,9 @@ async def test_ipv6_addrs_parses_pyintras_json_fixture():
 
 
 def test_ipv6_addrs_json_keeps_aliases_in_listing_order():
-    # Condensed from pyinfra's NetworkDevices fixture
+    # Condensed from the baseline's NetworkDevices fixture
     # (tests/facts/hardware.NetworkDevices/linux_ip_json_multiple_addrs.json):
-    # two inet6 entries -- the primary first, then the alias pyinfra files
+    # two inet6 entries -- the primary first, then the alias the baseline files
     # under additional_ips, in listing order; the inet entry is skipped.
     assert Ipv6Addrs.parse(
         [
@@ -1212,8 +1212,8 @@ def test_ipv6_addrs_json_keeps_aliases_in_listing_order():
     ) == {"eth0": ["fe80::c4c5:60ff:fecd:73f1", "fe80::c4c5:60ff:fecd:abc"]}
 
 
-async def test_ipv6_addrs_parses_pyintras_ifconfig_fixture():
-    # pyinfra's NetworkDevices fixture
+async def test_ipv6_addrs_parses_baseline_ifconfig_fixture():
+    # The baseline's NetworkDevices fixture
     # (tests/facts/hardware.NetworkDevices/linux_ifconfig.json), verbatim:
     # the ifconfig fallback shape (prefixlen token, no CIDR slash). lo's
     # ::1 row carries no scope suffix and still matches.
@@ -1256,8 +1256,8 @@ lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
     }
 
 
-def test_ipv6_addrs_parses_pyintras_macos_ifconfig_fixture():
-    # pyinfra's NetworkDevices fixture
+def test_ipv6_addrs_parses_baseline_macos_ifconfig_fixture():
+    # The baseline's NetworkDevices fixture
     # (tests/facts/hardware.NetworkDevices/macos_ifconfig.json), verbatim:
     # the macOS ifconfig shape -- the inet6 row has a prefixlen token and
     # no CIDR slash, so only the second row regex matches.
@@ -1274,7 +1274,7 @@ def test_ipv6_addrs_parses_pyintras_macos_ifconfig_fixture():
 
 
 async def test_ipv6_addrs_is_empty_on_empty_or_malformed_output():
-    # pyinfra's NetworkDevices empty/noise fixtures: empty output, an
+    # The baseline's NetworkDevices empty/noise fixtures: empty output, an
     # empty JSON list, a JSON list holding one empty dict (no ifname), and
     # line noise that fails the JSON sniff and matches no device section.
     assert await Ipv6Addrs.process(CannedShellHost("")) == {}
@@ -1285,7 +1285,7 @@ async def test_ipv6_addrs_is_empty_on_empty_or_malformed_output():
 
 
 def test_ipv6_addrs_json_skips_unusable_entries():
-    # A device without an ifname is dropped (pyinfra's missing_ifname
+    # A device without an ifname is dropped (the baseline's missing_ifname
     # fixture); addr entries without a local or a family are skipped, and
     # inet entries never enter the IPv6 projection.
     assert Ipv6Addrs.parse(
@@ -1297,7 +1297,7 @@ def test_ipv6_addrs_json_skips_unusable_entries():
         ]
     ) == {"eth0": ["fe80::1"]}
     # Non-dict devices or addr entries are skipped rather than raising
-    # (pyinfra's walker would crash; reemote5 hardens the parser). The
+    # (the baseline's walker would crash; reemote5 hardens the parser). The
     # first element stays a dict so the JSON sniff still fires.
     assert Ipv6Addrs.parse(
         ['[{"ifname": "eth0", "addr_info": [5, {"family": "inet6", "local": "fe80::1"}]}, 7]']
@@ -1305,7 +1305,7 @@ def test_ipv6_addrs_json_skips_unusable_entries():
 
 
 def test_ipv6_addrs_json_drops_an_empty_primary_address():
-    # pyinfra's projection skips an interface whose primary address is
+    # The baseline's projection skips an interface whose primary address is
     # empty -- even when a usable alias follows it.
     assert Ipv6Addrs.parse(
         '[{"ifname": "eth0", "addr_info": ['
@@ -1315,7 +1315,7 @@ def test_ipv6_addrs_json_drops_an_empty_primary_address():
 
 
 def test_ipv6_addrs_text_keeps_the_last_duplicate_section():
-    # A later section for the same interface wins, like pyinfra's device
+    # A later section for the same interface wins, like the baseline's device
     # map -- including dropping the interface when the last section
     # carries no IPv6 address.
     assert Ipv6Addrs.parse(
@@ -1338,7 +1338,7 @@ def test_ipv6_addrs_text_keeps_the_last_duplicate_section():
 
 def test_ipv6_addrs_ifconfig_rows_without_a_prefixlen_never_match():
     # The ip-a regex requires the CIDR slash and the ifconfig regex the
-    # prefixlen token, exactly like pyinfra, so an inet6 row carrying
+    # prefixlen token, exactly like the baseline, so an inet6 row carrying
     # neither is not an address.
     assert Ipv6Addrs.parse(
         [
@@ -1577,8 +1577,8 @@ def test_lsblk_is_exported_through_the_namespace():
 # --- NetworkDevices ------------------------------------------------------------
 
 
-async def test_network_devices_parses_pyintras_ip_fixture():
-    # pyinfra's own fact fixture
+async def test_network_devices_parses_baseline_ip_fixture():
+    # The baseline's own fact fixture
     # (tests/facts/hardware.NetworkDevices/linux_ip.json), verbatim: the
     # plain-text `ip addr show` fallback with one device, both families
     # and the ether/mtu/state details.
@@ -1610,8 +1610,8 @@ valid_lft forever preferred_lft forever
     ]
 
 
-async def test_network_devices_parses_pyintras_json_fixture():
-    # pyinfra's own fact fixture
+async def test_network_devices_parses_baseline_json_fixture():
+    # The baseline's own fact fixture
     # (tests/facts/hardware.NetworkDevices/linux_ip_json.json), verbatim:
     # the `ip -j addr show` JSON branch -- prefixlen becomes mask_bits and
     # the IPv4 netmask is expanded from it.
@@ -1681,8 +1681,8 @@ async def test_network_devices_parses_pyintras_json_fixture():
     }
 
 
-async def test_network_devices_parses_pyintras_ifconfig_fixture():
-    # pyinfra's own fact fixture
+async def test_network_devices_parses_baseline_ifconfig_fixture():
+    # The baseline's own fact fixture
     # (tests/facts/hardware.NetworkDevices/linux_ifconfig.json), verbatim:
     # the ifconfig fallback -- dotted-quad netmasks count their bits, the
     # second inet6 row per device lands under additional_ips, lo's missing
@@ -1767,8 +1767,8 @@ lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
     }
 
 
-def test_network_devices_parses_pyintras_macos_ifconfig_fixture():
-    # pyinfra's own fact fixture
+def test_network_devices_parses_baseline_macos_ifconfig_fixture():
+    # The baseline's own fact fixture
     # (tests/facts/hardware.NetworkDevices/macos_ifconfig.json), verbatim:
     # the macOS shape -- the hex netmask 0xffffff00 counts 24 bits and
     # stays normalized to its dotted quad, and en0 lists no ether row.
@@ -1797,7 +1797,7 @@ def test_network_devices_parses_pyintras_macos_ifconfig_fixture():
 
 
 def test_network_devices_json_keeps_additional_ips():
-    # Condensed from pyinfra's fixture
+    # Condensed from the baseline's fixture
     # (tests/facts/hardware.NetworkDevices/linux_ip_json_multiple_addrs.json):
     # the first inet entry is the primary ipv4 block, the second collects
     # under additional_ips with its own mask/broadcast details.
@@ -1842,7 +1842,7 @@ def test_network_devices_json_keeps_additional_ips():
 
 
 def test_network_devices_json_without_prefixlen_omits_mask_keys():
-    # Condensed from pyinfra's fixture
+    # Condensed from the baseline's fixture
     # (tests/facts/hardware.NetworkDevices/linux_ip_json_no_prefixlen_ok.json):
     # without a prefixlen neither mask_bits nor netmask appears, but the
     # IPv4 block still carries its (possibly None) broadcast.
@@ -1869,7 +1869,7 @@ def test_network_devices_json_without_prefixlen_omits_mask_keys():
 
 
 def test_network_devices_text_ipv4_aliases_stay_raw():
-    # pyinfra's own fact fixture
+    # The baseline's own fact fixture
     # (tests/facts/hardware.NetworkDevices/linux_ip_multiple_addrs.json),
     # verbatim: the invalid octet 166.22.203.666 stays a raw string (no
     # validation), and the second inet row becomes an additional_ips alias.
@@ -1909,7 +1909,7 @@ def test_network_devices_text_ipv4_aliases_stay_raw():
 
 
 def test_network_devices_text_state_heuristic_and_at_names():
-    # Condensed from pyinfra's fixture
+    # Condensed from the baseline's fixture
     # (tests/facts/hardware.NetworkDevices/linux_ip_multiple_ifaces.json):
     # the state is a token heuristic over the whole section (DOWN without
     # UP reads DOWN, neither reads UNKNOWN), and a vlan's device name keeps
@@ -1942,7 +1942,7 @@ def test_network_devices_text_state_heuristic_and_at_names():
 
 
 async def test_network_devices_is_empty_on_empty_or_malformed_output():
-    # pyinfra's empty/noise fixtures: empty output, an empty JSON list, a
+    # The baseline's empty/noise fixtures: empty output, an empty JSON list, a
     # JSON list holding one empty dict (no ifname), and line noise that
     # fails the JSON sniff and matches no device section.
     assert await NetworkDevices.process(CannedShellHost("")) == {}
@@ -1953,7 +1953,7 @@ async def test_network_devices_is_empty_on_empty_or_malformed_output():
 
 
 def test_network_devices_json_skips_unusable_entries():
-    # A device without an ifname is dropped (pyinfra's missing_ifname
+    # A device without an ifname is dropped (the baseline's missing_ifname
     # fixture); addr entries without a local or a family are skipped but
     # the device keeps its state; a missing operstate reads UNKNOWN.
     assert NetworkDevices.parse(
@@ -1965,7 +1965,7 @@ def test_network_devices_json_skips_unusable_entries():
         ]
     ) == {"eth0": {"state": "UNKNOWN", "ipv6": {"address": "fe80::1"}}}
     # Non-dict devices or addr entries are skipped rather than raising
-    # (pyinfra's walker would crash; reemote5 hardens the parser). The
+    # (the baseline's walker would crash; reemote5 hardens the parser). The
     # first element stays a dict so the JSON sniff still fires.
     assert NetworkDevices.parse(
         ['[{"ifname": "eth0", "addr_info": [5, {"family": "inet6", "local": "fe80::1"}]}, 7]']
@@ -1973,7 +1973,7 @@ def test_network_devices_json_skips_unusable_entries():
 
 
 def test_network_devices_text_keeps_the_last_duplicate_section():
-    # A later section for the same interface wins outright, like pyinfra's
+    # A later section for the same interface wins outright, like the baseline's
     # device map -- including losing the earlier section's addresses.
     assert NetworkDevices.parse(
         [
@@ -1989,7 +1989,7 @@ def test_network_devices_text_keeps_the_last_duplicate_section():
 
 def test_network_devices_ifconfig_rows_without_a_netmask_never_match():
     # The ip-a regex requires the CIDR slash and the ifconfig regex the
-    # netmask/prefixlen token, exactly like pyinfra, so token-less rows
+    # netmask/prefixlen token, exactly like the baseline, so token-less rows
     # contribute no address block -- the device still lists.
     assert NetworkDevices.parse(
         [
@@ -2001,7 +2001,7 @@ def test_network_devices_ifconfig_rows_without_a_netmask_never_match():
 
 
 async def test_network_devices_reads_the_simulated_seam():
-    # pyinfra's documented example result (the enp1s0/wlo1 entries): the
+    # The baseline's documented example result (the enp1s0/wlo1 entries): the
     # seam holds the parsed device dict verbatim, additional_ips included.
     devices = {
         "enp1s0": {

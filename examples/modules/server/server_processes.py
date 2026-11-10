@@ -29,7 +29,7 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's process dict with
    ``json.dumps(..., indent=2)``.
 
-``Processes`` mirrors pyinfra's ``server.Processes``: it first reads the
+``Processes`` mirrors the baseline's ``server.Processes``: it first reads the
 ``Kernel`` fact and probes for BusyBox to pick its shell -- Linux lists
 ``ps -eo pid,user,stat,%cpu,%mem,comm,args --no-headers``, FreeBSD the
 same ``ps -eo`` without ``--no-headers``, BusyBox (Alpine) the limited

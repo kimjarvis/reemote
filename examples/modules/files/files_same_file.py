@@ -29,7 +29,7 @@ execution model:
    unrelated pair ``/etc/hosts`` and ``/etc/hostname``, and print both
    verdicts with ``json.dumps(..., indent=2)``.
 
-``SameFile`` mirrors pyinfra's ``files.SameFile``: one
+``SameFile`` mirrors the baseline's ``files.SameFile``: one
 ``test <path> -ef <target> && echo true || echo false`` probe, always
 exiting zero and returning the plain bool -- the two paths name one and
 the same device *and* inode, or they do not. The ``-ef`` operator compares

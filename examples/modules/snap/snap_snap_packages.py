@@ -36,11 +36,11 @@ inventory comes from the shared ``inventory.json`` in the project root:
    ``json.dumps(..., indent=2)``.
 
 ``SnapPackages`` runs ``snap list``, drops the header row and keeps the
-leading ``Name`` token of every row, in listing order -- pyinfra's bare
+leading ``Name`` token of every row, in listing order -- the baseline's bare
 installed-name list. A host without ``snap``, or with nothing installed,
 prints no rows -- the command's ``2>/dev/null || true`` swallows the
 non-zero exit -- so it reads as the empty list ``[]`` outright, matching
-pyinfra's ``default = list`` tolerance; pyinfra's ``requires_command``
+the baseline's ``default = list`` tolerance; the baseline's ``requires_command``
 gating on ``snap`` is deliberately dropped for the same reason. Where
 ``SnapPackage`` answers *one* package's identity per call, this fact is the
 cheap whole-fleet listing -- what to run ``snap.package`` against next.

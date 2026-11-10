@@ -18,7 +18,7 @@ two-phase execution model end to end over a **real SSH transport**
    operation arguments, plans or logs.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``lxd.instance`` is the reemote5-original successor to pyinfra's
+``lxd.instance`` is the reemote5-original successor to the baseline's
 ``lxd.container``. It reads the ``LxdInstances`` fact: an absent instance
 yields one ``lxc launch`` carrying the type (``instance_type="vm"`` for
 a virtual machine), ``profiles``, ``config`` (``"key=value"`` strings),

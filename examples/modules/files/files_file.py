@@ -29,10 +29,10 @@ two-phase execution model:
    a host-name-keyed mapping -- then print each host's metadata with
    ``json.dumps(..., indent=2)``.
 
-``File`` mirrors pyinfra's ``files.File``: it guards the path with
+``File`` mirrors the baseline's ``files.File``: it guards the path with
 ``test -e``/``test -L``, then describes it with GNU ``stat -c``, falling
 back to BSD ``stat -f`` and finally ``ls -ld``. The result is a metadata
-dict -- ``user``, ``group``, ``mode`` (the octal-looking int pyinfra
+dict -- ``user``, ``group``, ``mode`` (the octal-looking int the baseline
 returns, e.g. ``644``, setuid/setgid/sticky bits included), ``size``, and
 ``atime``/``mtime``/``ctime`` as *naive UTC* ``datetime``s (the ``ls -ld``
 fallback provides only an mtime, so its atime/ctime read as ``None``) --

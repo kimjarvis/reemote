@@ -26,14 +26,14 @@ it finishes.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``selinux.module`` is a reemote5 original (pyinfra ships no module
+``selinux.module`` is a reemote5 original (the baseline ships no module
 operation): it manages compiled policy modules in the semodule store via a
 four-state machine -- ``present`` installs (``semodule -X <priority> -i
 <source>``) or re-enables a disabled instance, ``absent`` removes
 (``-r``), ``enabled``/``disabled`` flip an installed instance (``-e``/
 ``-d``). Here a custom ``myhttpd`` package is installed at the default
 priority 400. The parameter is named ``module_name`` rather than ``name``
-because ``op()`` reserves ``name`` for the request label (pyinfra's
+because ``op()`` reserves ``name`` for the request label (the baseline's
 ``bool_name`` precedent).
 
 Prerequisite: the compiled ``.pp`` package must already exist *on the

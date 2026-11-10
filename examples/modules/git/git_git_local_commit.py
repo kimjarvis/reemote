@@ -29,7 +29,7 @@ driving the two-phase execution model:
    path argument verbatim, and returns a host-name-keyed mapping -- then
    print each host's commit SHA.
 
-``GitLocalCommit`` mirrors pyinfra's ``git.GitLocalCommit``: it runs
+``GitLocalCommit`` mirrors the baseline's ``git.GitLocalCommit``: it runs
 ``! test -d <repo> || (cd <repo> && git rev-parse <ref> 2>/dev/null) ||
 true`` with ``ref`` defaulting to ``HEAD``, and keeps the answer only when
 it is a full 40-character (SHA-1) or 64-character (SHA-256) hex digest. A

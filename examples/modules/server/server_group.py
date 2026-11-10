@@ -4,9 +4,9 @@
 """Example: ensure the docker and lusers system groups exist on real CentOS hosts.
 
 This is a *usage* example, not part of the library. It shows reemote5's
-``server.group`` operation, the pyinfra ``server.group`` parity for adding
+``server.group`` operation, baseline ``server.group`` parity for adding
 and removing system groups: the deploy creates the ``docker`` group
-(pyinfra's documented example) and a ``lusers`` system group with a fixed
+(the baseline's documented example) and a ``lusers`` system group with a fixed
 gid, both under ``sudo`` because ``groupadd`` needs root.
 
 The operation is idempotent: it reads the ``Groups`` fact (the group names

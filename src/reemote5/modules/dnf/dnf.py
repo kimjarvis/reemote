@@ -36,32 +36,32 @@
 # ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never touch
 # the host directly.
 #
-# ``dnf.packages`` mirrors pyinfra's option set (``present``, ``latest``,
+# ``dnf.packages`` covers the usual option set (``present``, ``latest``,
 # ``update``, ``clean``, ``nobest``, ``extra_install_args``,
 # ``extra_uninstall_args``) with the same names and semantics. ``dnf.repo``
-# mirrors pyinfra's ``dnf.repo`` for the manual-construction case (``present``,
+# constructs a repo file for the manual-construction case (``present``,
 # ``baseurl``, ``description``, ``enabled``, ``gpgcheck``, ``gpgkey``) and
 # extends it with the ansible-datadog role's ``yum_repository`` fields
 # (``includepkgs``, ``repo_gpgcheck``, ``proxy``, ``proxy_username``,
-# ``proxy_password``); pyinfra's URL source is dropped, since reemote5 has no
+# ``proxy_password``); a URL source is dropped, since reemote5 has no
 # download operation. ``dnf.makecache`` and ``dnf.clean`` are reemote5
-# originals (pyinfra has neither): stateless metadata refresh/cache removal,
+# originals: stateless metadata refresh/cache removal,
 # optionally scoped to named repos with ``--disablerepo='*' --enablerepo=<id>``
 # -- the role's scoped ``makecache``/``clean metadata`` steps, which
 # ``dnf.packages(update=True)`` (a full system upgrade) and ``clean=True``
 # (``dnf clean all``) cannot express.
-# ``dnf.rpm`` mirrors pyinfra's ``dnf.rpm`` (``src``, ``present``) for a ``.rpm``
-# file already on the target host; pyinfra's URL source -- which downloads the
+# ``dnf.rpm`` (``src``, ``present``) installs a ``.rpm``
+# file already on the target host; a URL source -- which downloads the
 # file mid-deploy -- is dropped for the same reason, so a URL ``src`` raises
-# ``ValueError``. ``dnf.key`` mirrors pyinfra's non-idempotent ``dnf.key`` but
+# ``ValueError``. ``dnf.key`` is non-idempotent and
 # takes the GPG key content as an IO-like *stream* -- reemote5 has no
 # controller-side file locations -- spooling it to a ``/tmp`` path over scp and
 # running an elevated ``rpm --import`` on it, so a ``str`` ``src`` raises
 # ``ValueError``. ``dnf.key``'s ``present=False`` direction is a reemote5
-# extension beyond pyinfra (whose ``dnf.key`` is import-only), mirroring
+# extension (import alone would not cover removal), mirroring
 # Ansible's ``rpm_key state=absent``: it reads ``RpmGpgKeys`` and erases the
 # named key's ``gpg-pubkey`` pseudo-package with an elevated ``rpm -e`` only
-# when the key is present. ``dnf.update`` mirrors pyinfra's non-idempotent ``dnf.update``:
+# when the key is present. ``dnf.update`` is non-idempotent:
 # it reads no fact and always runs ``dnf update -y`` over every package.
 # """
 
@@ -130,14 +130,14 @@ class DnfPackages:
         Examples can be found in ``examples/modules/dnf/dnf_packages.py``.
     """
 
-    # Mirrors pyinfra's ``dnf.DnfPackages`` with one deliberate extension:
-    # pyinfra's query prints names only, while the query format here also
+    # The installed-package listing, with one deliberate extension:
+    # a names-only query drops versions, while the query format here also
     # prints each package's ``VERSION-RELEASE`` (the same version string
     # ``RpmPackage`` reports), so every installed version is kept in the
     # entry's ``versions`` list rather than dropped. Names are
     # de-duplicated and sorted, versions grouped per name -- the apt-side
     # convention (``AptPackages``' sorted version lists) rather than
-    # pyinfra's runtime set -- so reads stay deterministic and
+    # a runtime set -- so reads stay deterministic and
     # JSON-printable for the ``gather_fact`` example scripts.
 
     #: Shell used to list installed package names and versions over SSH.
@@ -234,14 +234,14 @@ class DnfRepositories:
         Examples can be found in ``examples/modules/dnf/dnf_repositories.py``.
     """
 
-    # Mirrors pyinfra's ``dnf.DnfRepositories``: every ``[section]`` of the dnf
+    # Every ``[section]`` of the dnf
     # config and ``.repo`` files becomes one ``DnfRepository`` entry with
     # ``repoid``/``name`` (both defaulting to the section id), the source
     # ``filename``, and each remaining ``key=value`` option in ``options``.
 
     #: Marker prefixing each cat'd file in ``COMMAND``'s output, naming the
     #: source file so ``parse`` can attribute a repository to its ``.repo``
-    #: file (pyinfra's ``REPO_FILENAME_MARKER``).
+    #: file.
     FILENAME_MARKER = "#reemote5-filename:"
 
     #: Cat the dnf config and every ``.repo`` file, each prefixed by a marker
@@ -441,7 +441,7 @@ class DnfEnabledModules:
         Examples can be found in ``examples/modules/dnf/dnf_enabled_modules.py``.
     """
 
-    # Mirrors pyinfra's ``dnf.DnfEnabledModules``: every row of the
+    # Every row of the
     # ``dnf module list --enabled`` table carrying an ``[e]`` flag becomes a
     # ``DnfModule`` entry naming the module and its enabled stream; headers,
     # blank lines and the trailing hint line are ignored.
@@ -450,8 +450,7 @@ class DnfEnabledModules:
     COMMAND = "dnf module list --enabled"
 
     #: Matches the ``[e]`` enabled flag on a stream but not the ``[e]nabled``
-    #: word in the table's trailing ``Hint:`` line (pyinfra's
-    #: ``_ENABLED_FLAG``).
+    #: word in the table's trailing ``Hint:`` line.
     ENABLED_FLAG = re.compile(r"\[e\](?!\w)")
 
     @classmethod
@@ -514,7 +513,7 @@ class DnfDisabledModules:
         Examples can be found in ``examples/modules/dnf/dnf_disabled_modules.py``.
     """
 
-    # Mirrors pyinfra's ``dnf.DnfDisabledModules``: every row of the
+    # Every row of the
     # ``dnf module list --disabled`` table carrying an ``[x]`` flag becomes a
     # ``DnfModule`` entry naming the module and the flagged stream; a module
     # disabled across several streams contributes one entry per row, and the
@@ -525,8 +524,7 @@ class DnfDisabledModules:
     COMMAND = "dnf module list --disabled"
 
     #: Matches the ``[x]`` disabled flag on a stream but not the ``[x]disabled``
-    #: word in the table's trailing ``Hint:`` line (pyinfra's
-    #: ``_DISABLED_FLAG``).
+    #: word in the table's trailing ``Hint:`` line.
     DISABLED_FLAG = re.compile(r"\[x\](?!\w)")
 
     @classmethod
@@ -673,7 +671,7 @@ def _parse_group_list(output: Iterable[str], *, section: str) -> list[DnfGroup]:
     and regular-group names are gathered together while names from the unwanted
     sections are not. Names are de-duplicated and returned as ``DnfGroup``
     entries sorted by name (the apt-side determinism/JSON convention, not
-    pyinfra's runtime set).
+    a runtime set).
     """
     names: set[str] = set()
     in_section = False
@@ -716,7 +714,7 @@ class DnfGroups:
         Examples can be found in ``examples/modules/dnf/dnf_groups.py``.
     """
 
-    # Fills a gap pyinfra leaves open: there is no way to ask which package
+    # Fills a gap: there is no other way to ask which package
     # *groups* are already installed, so a ``dnf group install`` cannot be made
     # idempotent. This fact parses ``dnf group list --installed`` and returns the
     # installed group names -- both environment groups (``Installed Environment
@@ -960,7 +958,7 @@ class RpmPackage:
         Examples can be found in ``examples/modules/dnf/dnf_rpm.py``.
     """
 
-    # Mirrors pyinfra's ``rpm.RpmPackage``: given a package *name* or a ``.rpm``
+    # Given a package *name* or a ``.rpm``
     # file *path*, returns a ``RpmPackageInfo`` entry (``version`` is
     # rpm's ``VERSION-RELEASE``), or None when the name is not installed and the
     # path is not an existing file. ``dnf.rpm`` reads it twice -- once for the
@@ -968,12 +966,10 @@ class RpmPackage:
     # compares the two versions to decide whether the file's package is already
     # installed at that version.
 
-    #: rpm query format printing ``NAME VERSION-RELEASE`` on one line
-    #: (pyinfra's ``rpm_query_format``).
+    #: rpm query format printing ``NAME VERSION-RELEASE`` on one line.
     QUERY_FORMAT = "%{NAME} %{VERSION}-%{RELEASE}\\n"
 
-    #: Matches the ``NAME VERSION-RELEASE`` line ``QUERY_FORMAT`` prints
-    #: (pyinfra's ``rpm_regex``).
+    #: Matches the ``NAME VERSION-RELEASE`` line ``QUERY_FORMAT`` prints.
     RPM_REGEX = re.compile(r"^(\S+)\s+(\S+)$")
 
     @classmethod
@@ -1072,7 +1068,7 @@ class RpmGpgKeys:
         Examples can be found in ``examples/modules/dnf/rpm_gpg_keys.py``.
     """
 
-    # A reemote5-original fact (pyinfra has no rpm-keyring fact): it fills the
+    # A reemote5-original fact (there is no other rpm-keyring fact): it fills the
     # observation gap ``dnf.key``'s ``present=False`` direction needs.
     # ``rpm --import`` stores each key in the rpm database as a
     # ``gpg-pubkey-<keyid>-<release>`` pseudo-package -- invisible to
@@ -1134,9 +1130,8 @@ class RpmGpgKeys:
 def _split_version(package: str) -> tuple[str, str | None]:
     """Split ``pkg=version`` into ``(name, version)``; version is None if absent.
 
-    pyinfra's ``PkgInfo.from_possible_pair`` splits on the *last* ``=``
-    (``rsplit``), so a version string carrying ``=`` stays intact -- the
-    same split ``apt.packages`` uses.
+    Splitting on the *last* ``=`` (``rsplit``) keeps a version string
+    carrying ``=`` intact -- the same split ``apt.packages`` uses.
     """
     name, sep, version = package.rpartition("=")
     return (name, version) if sep else (package, None)
@@ -1263,16 +1258,16 @@ async def packages(
         Examples can be found in ``examples/modules/dnf/dnf_packages.py``.
     """
 
-    # pyinfra ``dnf.packages`` parity.
+    # ``dnf.packages``: install, remove and update packages.
     #
-    # ``clean`` and ``update`` are stateless (always yield, like pyinfra's
+    # ``clean`` and ``update`` are stateless (always yield, like the other
     # non-idempotent operations). The ``DnfPackages`` fact reports each
     # name's installed versions, but the comparison stays name-only
-    # (pyinfra parity): a pinned ``<pkg>=<version>`` is considered present
+    # (name-only parity): a pinned ``<pkg>=<version>`` is considered present
     # when *any* version of ``pkg`` is installed, and ``latest`` follows
-    # pyinfra's name-only behavior: every installed, unpinned package is
+    # the same name-only behavior: every installed, unpinned package is
     # upgraded without checking whether an upgrade actually exists.
-    # ``kwargs`` absorbs any further keyword arguments (pyinfra's global
+    # ``kwargs`` absorbs any further keyword arguments (any further global
     # arguments are meta-parameters handled by ``op()`` here).
     reasons: list[str] = []
 
@@ -1286,7 +1281,7 @@ async def packages(
         reasons.append("dnf update")
         yield DnfUpdateCommand()
 
-    # Normalize: pyinfra accepts a bare string, a list, or None.
+    # Normalize: accept a bare string, a list, or None.
     if packages is None:
         requested: tuple[str, ...] = ()
     elif isinstance(packages, str):
@@ -1367,15 +1362,15 @@ async def update(ctx: OpContext, **kwargs: Any) -> AsyncGenerator[Command]:
         Examples can be found in ``examples/modules/dnf/dnf_update.py``.
     """
 
-    # pyinfra ``dnf.update`` parity.
+    # ``dnf.update``: upgrade every package.
     #
-    # Like pyinfra's ``dnf.update`` this is **non-idempotent**: it reads no
+    # This is **non-idempotent**: it reads no
     # fact, so it always reports a change and yields one bare
     # ``DnfUpdateCommand`` (rendering ``dnf update -y``) on every run. There is
     # no cheap way to tell whether any package actually has a pending upgrade,
     # so dnf is simply invoked and is itself a no-op when the system is already
     # up to date. Updating the whole system needs root, so flag the request
-    # ``sudo=True`` (or ``su=True``). ``**kwargs`` absorbs pyinfra's global
+    # ``sudo=True`` (or ``su=True``). ``**kwargs`` absorbs any further global
     # arguments (``op()`` already strips ``name``/``sudo``/``su``).
     ctx.changed = True
     ctx.reason = "dnf update"
@@ -1384,8 +1379,8 @@ async def update(ctx: OpContext, **kwargs: Any) -> AsyncGenerator[Command]:
 
 # --- dnf.repo ----------------------------------------------------------------
 
-#: Directory dnf/yum reads ``.repo`` files from -- pyinfra's ``ensure_yum_repo``
-#: default ``repo_directory``.
+#: Directory dnf/yum reads ``.repo`` files from (the usual
+#: ``repo_directory`` default).
 _REPO_DIRECTORY = "/etc/yum.repos.d/"
 
 #: Where ``dnf.repo``'s transfer spools the generated ``.repo`` content before
@@ -1437,8 +1432,8 @@ class DnfRepoInstallCommand(Command):
     ``sudo sh -c '...'`` runs every step as root, which can always remove
     the login-user spool file. The sequence creates the destination
     directory, copies the spooled content over the target file, chmods it
-    to ``mode`` (``0644`` by default -- pyinfra's ``dnf.repo`` routes
-    through ``files.put`` with ``mode="0644"``; ``dnf.repo`` tightens it to
+    to ``mode`` (``0644`` by default -- the mode a ``files.put``-style
+    route would use; ``dnf.repo`` tightens it to
     ``0600`` when the content carries a ``proxy_password``) and removes the
     spool file -- the ``AptSourcesFileInstallCommand`` pattern. All paths
     are shell-quoted.
@@ -1545,7 +1540,7 @@ async def repo(
         Examples can be found in ``examples/modules/dnf/dnf_repo.py``.
     """
 
-    # pyinfra ``dnf.repo`` parity.
+    # ``dnf.repo``: add, remove or update a repository file.
     #
     # The ``present`` case constructs the file content and writes it only when
     # it differs from what is already there (``DnfRepoFile``), so re-running is
@@ -1554,28 +1549,28 @@ async def repo(
     # ``DnfRepoUploadCommand`` transfer spooling the generated text to a
     # ``/tmp`` path over scp, then a ``DnfRepoInstallCommand`` running the
     # elevated install: create the directory, copy the file, chmod it
-    # (``0644``, pyinfra's fixed mode, or ``0600`` with a ``proxy_password``)
+    # (``0644``, the fixed default mode, or ``0600`` with a ``proxy_password``)
     # and remove the spool (the ``apt.sources_file``
-    # pattern, replacing pyinfra's ``files.put`` delegation -- reemote5's
+    # pattern, replacing a ``files.put`` delegation -- reemote5's
     # transfers are unprivileged scp and namespaces never reuse each other's
     # operations). Writing needs root -- ``/etc/yum.repos.d`` is root-owned --
     # so flag the request ``sudo=True`` (or ``su=True``); the transfer stays
     # unprivileged regardless.
     #
-    # pyinfra's URL ``src`` -- downloading a remote ``.repo`` file -- is
+    # A URL ``src`` -- downloading a remote ``.repo`` file -- is
     # deliberately dropped: reemote5 has no download operation, so a ``src``
     # with a URL scheme raises ``ValueError``. So does a ``present`` request
     # with no ``baseurl`` (there is nothing to construct the file from), a
     # ``gpgkey`` token that is neither a URL nor an absolute path, and a
     # ``proxy`` that is neither a URL nor dnf's ``_none_`` disable token.
-    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already strips
+    # ``**kwargs`` absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     #
     # ``includepkgs``, ``repo_gpgcheck`` and the ``proxy*`` options are a
-    # reemote5 extension beyond pyinfra (whose ``dnf.repo`` has none of them),
+    # reemote5 extension (a baseline ``dnf.repo`` has none of them),
     # mirroring the ansible-datadog role's ``yum_repository`` fields. Each is
     # omitted from the file when None, so a request that sets none of them
-    # constructs exactly the pyinfra-parity content and stays a no-op against
+    # constructs exactly the baseline content and stays a no-op against
     # a file an older release wrote. They append in a fixed order after
     # ``gpgkey`` so the content -- and thus the idempotence compare -- stays
     # deterministic. A ``proxy_password`` installs the file ``0600`` rather
@@ -1634,7 +1629,7 @@ async def repo(
         lines.append(f"proxy_username={proxy_username}")
     if proxy_password is not None:
         lines.append(f"proxy_password={proxy_password}")
-    lines.append("")  # trailing newline, matching pyinfra's constructed file
+    lines.append("")  # trailing newline, matching the constructed file
     content = "\n".join(lines)
     mode = "0600" if proxy_password is not None else "0644"
 
@@ -1707,7 +1702,7 @@ async def makecache(
         Examples can be found in ``examples/modules/dnf/dnf_makecache.py``.
     """
 
-    # A reemote5 original (pyinfra has no makecache operation), mirroring the
+    # A reemote5 original (there is no other makecache operation), mirroring the
     # ansible-datadog role's `dnf -y makecache --disablerepo="*"
     # --enablerepo=datadog` step: after a repo file changes, its metadata must
     # be fetched before an install can resolve packages from it (dnf's own
@@ -1761,7 +1756,7 @@ async def clean(
         Examples can be found in ``examples/modules/dnf/dnf_clean.py``.
     """
 
-    # A reemote5 original (pyinfra has no clean operation), mirroring the
+    # A reemote5 original (there is no other clean operation), mirroring the
     # ansible-datadog role's `dnf clean metadata --disablerepo="*"
     # --enablerepo=datadog` step: a repo whose *content* moved (e.g. an agent
     # major-version downgrade) keeps serving stale cached metadata until it
@@ -1793,7 +1788,7 @@ async def clean(
 class RpmInstallCommand(Command):
     """``rpm -i <src>``: install a ``.rpm`` file already on the target host.
 
-    ``src`` is shell-quoted. Unlike pyinfra's ``ensure_rpm`` -- which, for a
+    ``src`` is shell-quoted. Unlike a defensive ``ensure_rpm`` -- which, for a
     file it could not read at plan time (a URL downloaded mid-deploy), emitted
     a defensive ``rpm -q \\`rpm -qp <src>\\` ... || rpm -i <src>`` runtime check
     -- reemote5 always installs with a plain ``rpm -i``: it re-materializes the
@@ -1839,7 +1834,7 @@ async def rpm(
         Examples can be found in ``examples/modules/dnf/dnf_rpm.py``.
     """
 
-    # pyinfra ``dnf.rpm`` parity.
+    # ``dnf.rpm``: install or remove a ``.rpm`` file package.
     #
     # ``src`` names a ``.rpm`` that already exists on the target host (upload
     # one from the controller with ``files.put`` first). The ``RpmPackage``
@@ -1851,13 +1846,13 @@ async def rpm(
     # exact version is installed. Installing needs root, so flag the request
     # ``sudo=True`` (or ``su=True``).
     #
-    # pyinfra's URL ``src`` -- downloading a remote ``.rpm`` mid-deploy via
+    # A URL ``src`` -- downloading a remote ``.rpm`` mid-deploy via
     # ``files.download`` -- is deliberately dropped: reemote5 has no download
     # operation, so a ``src`` with a URL scheme raises ``ValueError`` (mirroring
     # ``dnf.repo``). Because removal reads the package name from the file, a
     # ``present=False`` request whose ``.rpm`` is absent from the host cannot
-    # resolve a name and is a no-op -- the same limitation pyinfra documents for
-    # an un-downloaded URL source. ``**kwargs`` absorbs pyinfra's global
+    # resolve a name and is a no-op -- the same limitation documented for
+    # an un-downloaded URL source. ``**kwargs`` absorbs any further global
     # arguments (``op()`` already strips ``name``/``sudo``/``su``).
     if urlparse(src).scheme:
         raise ValueError(
@@ -1867,7 +1862,7 @@ async def rpm(
 
     info = await ctx.facts.get(RpmPackage, src)
     # ``installed_name`` is set only when the file's package is installed at the
-    # file's exact version, so it doubles as pyinfra's ``exists`` flag and
+    # file's exact version, so it doubles as the ``exists`` flag and
     # carries the name the removal needs.
     installed_name: str | None = None
     if info is not None:
@@ -2014,9 +2009,9 @@ async def key(
         Examples can be found in ``examples/modules/dnf/dnf_key.py``.
     """
 
-    # pyinfra ``dnf.key`` parity -- import direction.
+    # ``dnf.key`` -- import direction.
     #
-    # Like pyinfra's ``dnf.key`` the ``present=True`` direction is
+    # The ``present=True`` direction is
     # **non-idempotent**: it always imports, so it always reports a change and
     # yields its commands on every run (rpm itself deduplicates an
     # already-imported key). It yields *two* descriptors from the one request
@@ -2029,16 +2024,16 @@ async def key(
     # different privilege levels -- the driver dispatches the transfer to scp
     # and elevates only the shell import.
     #
-    # pyinfra's ``dnf.key`` takes a ``src`` that is a *filename or URL* the
+    # A baseline ``dnf.key`` takes a ``src`` that is a *filename or URL* the
     # target host reads directly (``rpm --import <src>``). reemote5 does not
     # support controller-side file locations, so ``src`` is an IO-like
     # *stream* of the key content instead, and the bytes reach the host over
     # the connection's scp channel rather than by naming a path rpm can open;
-    # a ``str`` ``src`` raises ``ValueError``. ``**kwargs`` absorbs pyinfra's
+    # a ``str`` ``src`` raises ``ValueError``. ``**kwargs`` absorbs any
     # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
     #
-    # Removal direction -- a reemote5 extension beyond pyinfra (whose
-    # ``dnf.key`` is import-only), mirroring Ansible's ``rpm_key
+    # Removal direction -- a reemote5 extension (import alone would not
+    # cover removal), mirroring Ansible's ``rpm_key
     # state=absent``: an imported key lives in the rpm database as a
     # ``gpg-pubkey-<keyid>-<release>`` pseudo-package, so removal is an
     # elevated ``rpm -e`` of that package. It IS idempotent -- the
@@ -2158,7 +2153,7 @@ async def module(
         Examples can be found in ``examples/modules/dnf/dnf_module.py``.
     """
 
-    # pyinfra ``dnf.module`` parity.
+    # ``dnf.module``: enable or disable a module stream.
     #
     # ``enabled=True`` compares against ``DnfEnabledModules`` (a list of
     # ``DnfModule`` entries): when ``module`` is already enabled on exactly
@@ -2171,15 +2166,15 @@ async def module(
     # or disabling writes dnf's module state, so flag the request ``sudo=True``
     # (or ``su=True``).
     #
-    # Like pyinfra, ``stream`` is required when ``enabled=True`` and a missing
-    # one raises ``ValueError`` -- pyinfra raises its ``OperationValueError``,
+    # ``stream`` is required when ``enabled=True`` and a missing
+    # one raises ``ValueError`` -- a house ``OperationValueError`` is
     # itself a ``ValueError`` subclass, so reemote5 uses the plain ``ValueError``
     # its sibling operations (``dnf.repo``/``dnf.rpm``/``dnf.key``) already raise.
-    # pyinfra's stream-switching caveat is inherited unchanged: ``dnf module
+    # The stream-switching caveat is inherited unchanged: ``dnf module
     # enable`` refuses to switch streams while packages from the active stream
     # are installed, so those must be removed (or the module ``dnf module
     # reset``) first -- this operation does not do that for you. ``**kwargs``
-    # absorbs pyinfra's global arguments (``op()`` already strips
+    # absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     if enabled:
         if stream is None:

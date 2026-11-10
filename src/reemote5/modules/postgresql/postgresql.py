@@ -19,10 +19,9 @@
 # (logical-replication subscriptions, without the credential-bearing
 # conninfo), ``PostgresqlTables`` (user table metadata and row estimates)
 # and ``PostgresqlTablespaces`` (tablespaces and their locations).
-# ``PostgresqlRoles`` and ``PostgresqlDatabases`` mirror pyinfra's
-# ``postgres.PostgresRoles``/``PostgresDatabases`` (whose ``postgresql``
-# aliases are deprecated upstream); every other fact is reemote5-original
-# and closes a visibility gap pyinfra leaves open.
+# ``PostgresqlRoles`` and ``PostgresqlDatabases`` cover the role and
+# database catalogs; every other fact is reemote5-original and closes a
+# further visibility gap.
 #
 # Operation side: ``postgresql.database`` and ``postgresql.role`` manage
 # databases and roles (both create/drop AND idempotently alter existing
@@ -38,7 +37,7 @@
 # manage logical replication. All operations talk to the server through the
 # ``psql`` CLI on the target host.
 #
-# Credentials decision (developer-approved): pyinfra's ``psql_password``
+# Credentials decision (developer-approved): the ``psql_password``
 # connection parameter and ``role``'s ``password`` option are deliberately
 # dropped. reemote5 renders raw shell strings into the plan/apply log and
 # takes credentials only from the inventory ``privilege`` section, so no
@@ -48,7 +47,7 @@
 # likewise reference a passfile/service rather than embed a password.
 #
 # Every fact and operation accepts the connection keyword arguments
-# ``psql_user``/``psql_host``/``psql_port``/``psql_database`` (pyinfra's
+# ``psql_user``/``psql_host``/``psql_port``/``psql_database`` (the
 # ``psql_*`` module arguments minus the password). For database-scoped
 # facts/operations ``psql_database`` selects the database to inspect or
 # change; cluster-wide ones default to psql's own default database.
@@ -72,12 +71,12 @@ def _psql_base(
     psql_database: str | None = None,
     executable: str = "psql",
 ) -> str:
-    """Render the psql invocation prefix (pyinfra's ``make_psql_command``).
+    """Render the psql invocation prefix.
 
-    Mirrors pyinfra's flag order -- ``-d`` database, ``-U`` user, ``-h``
+    The flag order is ``-d`` database, ``-U`` user, ``-h``
     host, ``-p`` port -- with the ``PGPASSWORD`` prefix deliberately
     dropped (the credentials decision above). Every user-supplied operand
-    is ``shlex``-quoted, a deliberate deviation from pyinfra's raw
+    is ``shlex``-quoted, a deliberate deviation from raw
     interpolation; plain values quote to themselves, so command parity
     holds for ordinary names.
     """
@@ -101,7 +100,7 @@ def _psql_sql(
     psql_port: int | None = None,
     psql_database: str | None = None,
 ) -> str:
-    """Render ``psql ... -Ac '<sql>'`` (pyinfra's ``make_execute_psql_command``).
+    """Render ``psql ... -Ac '<sql>'``.
 
     ``-A`` is unaligned output and ``-c`` runs one command and exits, so
     the answer is a ``|``-separated header row, one row per record and a
@@ -119,7 +118,7 @@ def _psql_sql(
 def _quote_ident(name: str) -> str:
     """Quote a SQL identifier, doubling any embedded double quote.
 
-    pyinfra interpolates ``f'"{name}"'`` raw, which breaks on a name
+    A raw ``f'"{name}"'`` interpolation breaks on a name
     containing a double quote; reemote5 escapes it the way PostgreSQL's
     own ``quote_ident`` does.
     """
@@ -141,7 +140,7 @@ def _quote_literal(value: str) -> str:
 
 
 def _try_int(value: str | None) -> int | str | None:
-    """pyinfra's ``try_int``: an integer when the text is numeric, else raw."""
+    """Return an integer when the text is numeric, else the raw value."""
     if value is None:
         return None
     try:
@@ -155,12 +154,12 @@ def _parse_rows(
 ) -> list[dict[str, str | None]]:
     """Parse ``psql -Ac`` output into header-keyed row dicts.
 
-    Mirrors pyinfra's ``parse_columns_and_rows`` over ``|``-separated
+    Reads ``|``-separated
     output: the first line names the columns (an optional ``rol``/``dat``
-    prefix is stripped, as pyinfra does for pg_roles/pg_database), each
+    prefix is stripped, as for pg_roles/pg_database), each
     following line is one row, and an empty field reads as None. The
     trailing ``(N rows)`` count line is dropped by pattern rather than
-    pyinfra's unconditional last-line chop, so empty output parses to
+    an unconditional last-line chop, so empty output parses to
     ``[]`` instead of raising -- a deliberate hardening deviation.
     """
     lines = list(output)
@@ -306,7 +305,7 @@ class PostgresqlConnections(_PostgresqlFact):
         ``examples/modules/postgresql/postgresql_postgresql_connections.py``.
     """
 
-    # reemote5-original: pyinfra has no connection-visibility fact. Reads
+    # reemote5-original: there is no other connection-visibility fact. Reads
     # pg_stat_activity but deliberately omits the ``query`` column -- the
     # SQL text can carry literal credentials and personal data, so the
     # fact reports only who is connected, from where, and in what state.
@@ -419,8 +418,7 @@ class PostgresqlDatabases(_PostgresqlFact):
         ``examples/modules/postgresql/postgresql_postgresql_databases.py``.
     """
 
-    # Mirrors pyinfra's ``postgres.PostgresDatabases`` (the ``postgresql``
-    # alias is deprecated upstream): ``SELECT *`` over pg_database with
+    # ``SELECT *`` over pg_database with
     # the encoding resolved to its name and the owner OID resolved to a
     # role name, the ``dat`` column prefix stripped, OID/limit columns
     # coerced with try_int and istemplate/allowconn coerced from t/f.
@@ -430,7 +428,7 @@ class PostgresqlDatabases(_PostgresqlFact):
     # ``datlastsysoid`` disappeared in PostgreSQL 12 (when ``oid`` became
     # a regular column) -- and the
     # header-driven parse simply carries whatever columns the server
-    # reports. pyinfra's ``requires_command`` gating is dropped: a
+    # reports. There is no command-existence gate: a
     # missing psql exits 127, reported as CommandNotFoundError.
 
     PSQL = (
@@ -521,7 +519,7 @@ class PostgresqlExtensions(_PostgresqlFact):
         ``examples/modules/postgresql/postgresql_postgresql_extensions.py``.
     """
 
-    # reemote5-original: pyinfra has no extension fact. Database-scoped
+    # reemote5-original: there is no other extension fact. Database-scoped
     # (extensions are per-database objects): ``psql_database`` selects the
     # database, defaulting to psql's own default. The always-present
     # ``plpgsql`` extension is included, as pg_extension lists it.
@@ -619,7 +617,7 @@ class PostgresqlIndexes(_PostgresqlFact):
         ``examples/modules/postgresql/postgresql_postgresql_indexes.py``.
     """
 
-    # reemote5-original: pyinfra has no index fact. Database-scoped;
+    # reemote5-original: there is no other index fact. Database-scoped;
     # system schemas are filtered out. The indexed *columns* are
     # deliberately not reported (pg_index.indkey needs per-column
     # expansion); the ``postgresql.index`` operation therefore keys
@@ -729,8 +727,8 @@ class PostgresqlPrivileges(_PostgresqlFact):
         ``examples/modules/postgresql/postgresql_postgresql_privileges.py``.
     """
 
-    # reemote5-original: pyinfra can create roles but cannot see who is
-    # granted what -- the core permission blind spot this fact closes.
+    # reemote5-original: nothing else reports who is granted what --
+    # the core permission blind spot this fact closes.
     # One aclexplode sweep over a UNION of pg_database.datacl,
     # pg_namespace.nspacl, pg_class.relacl (tables, views, materialized
     # views, foreign tables, sequences, partitioned tables) and
@@ -961,7 +959,7 @@ class PostgresqlReplication(_PostgresqlFact):
         ``examples/modules/postgresql/postgresql_postgresql_replication.py``.
     """
 
-    # reemote5-original: pyinfra has no replication visibility. Reads
+    # reemote5-original: there is no other replication visibility. Reads
     # pg_stat_replication on the PRIMARY (an empty list on a server with
     # no connected standbys -- a standalone or a replica). LSN columns
     # are deliberately not reported; ``replay_lag`` (a PostgreSQL 10+
@@ -1163,8 +1161,7 @@ class PostgresqlRoles(_PostgresqlFact):
         ``examples/modules/postgresql/postgresql_postgresql_roles.py``.
     """
 
-    # Mirrors pyinfra's ``postgres.PostgresRoles`` (the ``postgresql``
-    # alias is deprecated upstream): ``SELECT *`` over pg_roles, the
+    # ``SELECT *`` over pg_roles, the
     # ``rol`` column prefix stripped, oid/connlimit coerced with try_int
     # and the t/f attribute columns coerced to bool. The name-keyed outer
     # dict is kept (the device-keyed-mapping exception) with a
@@ -1172,8 +1169,8 @@ class PostgresqlRoles(_PostgresqlFact):
     # names (``super``, ``canlogin``, ``connlimit``) -- the
     # ``postgresql.role`` operation maps its option names onto them.
     # ``password`` is only ever the server's ``********`` hash marker,
-    # never a usable credential. pyinfra's ``requires_command`` gating
-    # is dropped: a missing psql exits 127 (CommandNotFoundError).
+    # never a usable credential. There is no command-existence gate: a
+    # missing psql exits 127 (CommandNotFoundError).
 
     PSQL = "SELECT * FROM pg_catalog.pg_roles"
 
@@ -1358,8 +1355,8 @@ class PostgresqlSettings(_PostgresqlFact):
         ``examples/modules/postgresql/postgresql_postgresql_settings.py``.
     """
 
-    # reemote5-original: the configuration-drift visibility pyinfra
-    # lacks; backs ``postgresql.setting``. Cluster-wide (GUCs are
+    # reemote5-original: the configuration-drift visibility nothing else
+    # reports; backs ``postgresql.setting``. Cluster-wide (GUCs are
     # server-scoped). ``setting`` is the raw pg_settings text in the
     # parameter's own unit -- the fact does NOT normalize units, and
     # neither does the operation (a deliberate simplification over
@@ -1558,7 +1555,7 @@ class PostgresqlTables(_PostgresqlFact):
         ``examples/modules/postgresql/postgresql_postgresql_tables.py``.
     """
 
-    # reemote5-original: table-level visibility pyinfra lacks.
+    # reemote5-original: table-level visibility nothing else reports.
     # Database-scoped; ordinary and partitioned tables (relkind r/p),
     # system schemas filtered out. ``rows`` is the planner ESTIMATE
     # (reltuples cast to bigint so a fractional estimate never carries a
@@ -1661,7 +1658,7 @@ class PostgresqlTablespaces(_PostgresqlFact):
 
     # reemote5-original: backs ``postgresql.tablespace`` and lets
     # ``postgresql.database`` resolve a tablespace NAME to the OID its
-    # fact reports (pyinfra's database operation compares the OID column
+    # fact reports (a naive database operation compares the OID column
     # against a name string, which never matches -- a bug this OID
     # column exists to avoid). Cluster-wide.
     # pg_tablespace_location answers '' for pg_default/pg_global, which
@@ -1750,11 +1747,11 @@ class PostgresqlDatabaseCommand(_PsqlCommand):
     DATABASE, ``alter=True`` renders one ALTER DATABASE statement per
     non-None field (OWNER TO / SET TABLESPACE / CONNECTION LIMIT / WITH
     ALLOW_CONNECTIONS), and the create form renders CREATE DATABASE with
-    the pyinfra clause order (OWNER, TEMPLATE, ENCODING, LC_COLLATE,
+    the canonical clause order (OWNER, TEMPLATE, ENCODING, LC_COLLATE,
     LC_CTYPE, TABLESPACE, CONNECTION LIMIT) plus ALLOW_CONNECTIONS.
     Identifiers are double-quote-escaped and literals single-quote-
-    escaped (pyinfra interpolates raw); ENCODING is rendered as a quoted
-    literal, which PostgreSQL accepts identically to pyinfra's bare word.
+    escaped (rather than interpolated raw); ENCODING is rendered as a quoted
+    literal, which PostgreSQL accepts identically to a bare word.
     """
 
     database: str
@@ -1883,7 +1880,7 @@ async def database(
         Examples can be found in ``examples/modules/postgresql/postgresql_database.py``.
     """
 
-    # pyinfra ``postgresql.database`` parity, extended: pyinfra already
+    # ``postgresql.database``: manage a database, extended. A baseline
     # alters an existing database's OWNER/TABLESPACE/CONNECTION LIMIT,
     # but compares the tablespace NAME against the fact's tablespace OID
     # column (which never matches); reemote5 resolves the name through
@@ -1893,12 +1890,12 @@ async def database(
     # is a reemote5 addition (the requested database-enhancement).
     # TEMPLATE/ENCODING/LC_COLLATE/LC_CTYPE are creation-only: on an
     # existing database a requested value that differs is reported as
-    # skipped in the reason, never altered (pyinfra's noop behaviour).
-    # pyinfra's ``psql_password`` is deliberately dropped (credentials
+    # skipped in the reason, never altered (the noop behaviour).
+    # The ``psql_password`` is deliberately dropped (credentials
     # come from inventory privilege / peer auth / .pgpass, never the
     # operation). Needs a superuser or the database owner: flag the
     # request ``sudo=True`` with ``privilege.sudo_user = "postgres"``.
-    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
+    # ``**kwargs`` absorbs any further global arguments (``op()`` already
     # strips ``name``/``sudo``/``su``).
     conn = {
         "psql_user": psql_user,
@@ -2014,7 +2011,7 @@ class PostgresqlDumpCommand(_PsqlCommand):
 
     The stateless mutation ``postgresql.dump`` yields. ``dest`` is a path
     on the TARGET host (a shell redirect, not a transfer -- reemote5's
-    IO-only transfer rule concerns controller-side paths, which pyinfra's
+    IO-only transfer rule concerns controller-side paths, which a
     dump never takes either). Under ``sudo=True`` the driver's
     ``run_shell_privileged`` keeps the redirect inside the elevated
     shell, so the dump file is written as the run-as user.
@@ -2063,10 +2060,10 @@ async def dump(
         Examples can be found in ``examples/modules/postgresql/postgresql_dump.py``.
     """
 
-    # pyinfra ``postgresql.dump`` parity: non-idempotent, always yields
-    # (pyinfra marks it is_idempotent=False). Requires ``pg_dump`` on the
+    # ``postgresql.dump``: non-idempotent by design, always yields.
+    # Requires ``pg_dump`` on the
     # target host. ``psql_password`` is deliberately dropped (the
-    # namespace credentials decision). ``**kwargs`` absorbs pyinfra's
+    # namespace credentials decision). ``**kwargs`` absorbs any
     # global arguments.
     ctx.changed = True
     ctx.reason = f"postgresql database will be dumped to {dest}"
@@ -2170,7 +2167,7 @@ async def extension(
         Examples can be found in ``examples/modules/postgresql/postgresql_extension.py``.
     """
 
-    # reemote5-original (pyinfra has no extension operation): idempotent
+    # reemote5-original (there is no other extension operation): idempotent
     # against PostgresqlExtensions -- absent -> CREATE EXTENSION (the
     # server enforces availability of the control file), present with a
     # differing schema -> ALTER EXTENSION SET SCHEMA, differing version
@@ -2180,7 +2177,7 @@ async def extension(
     # older than the installed one still renders UPDATE TO and the
     # server decides. Needs superuser for most extensions: flag the
     # request ``sudo=True`` with ``privilege.sudo_user = "postgres"``.
-    # ``**kwargs`` absorbs pyinfra's global arguments.
+    # ``**kwargs`` absorbs any further global arguments.
     conn = {
         "psql_user": psql_user,
         "psql_host": psql_host,
@@ -2345,7 +2342,7 @@ async def index(
         Examples can be found in ``examples/modules/postgresql/postgresql_index.py``.
     """
 
-    # reemote5-original (pyinfra has no index operation), the Ansible
+    # reemote5-original (there is no other index operation), the Ansible
     # postgresql_idx shape. Idempotent against PostgresqlIndexes keyed on
     # the index name (looked up by its unqualified part in the named or
     # public schema). An existing index whose table/unique/method/
@@ -2361,7 +2358,7 @@ async def index(
     # work; they are SQL, not shell, and never reach the shell unquoted
     # (the whole statement is one shlex-quoted psql argument). ``method``
     # is whitelist-validated against _INDEX_METHODS so it too never
-    # reaches the SQL unquoted. ``**kwargs`` absorbs pyinfra's global
+    # reaches the SQL unquoted. ``**kwargs`` absorbs any further global
     # arguments.
     if present and (not table or not columns):
         raise ValueError(
@@ -2489,10 +2486,10 @@ async def load(
         Examples can be found in ``examples/modules/postgresql/postgresql_load.py``.
     """
 
-    # pyinfra ``postgresql.load`` parity: non-idempotent, always yields
-    # (pyinfra marks it is_idempotent=False). ``psql_password`` is
+    # ``postgresql.load``: non-idempotent by design, always yields.
+    # ``psql_password`` is
     # deliberately dropped (the namespace credentials decision).
-    # ``**kwargs`` absorbs pyinfra's global arguments.
+    # ``**kwargs`` absorbs any further global arguments.
     ctx.changed = True
     ctx.reason = f"{src} will be loaded into the postgresql database"
     yield PostgresqlLoadCommand(
@@ -2582,7 +2579,7 @@ async def membership(
         Examples can be found in ``examples/modules/postgresql/postgresql_membership.py``.
     """
 
-    # reemote5-original (pyinfra has no membership operation), the
+    # reemote5-original (there is no other membership operation), the
     # Ansible postgresql_membership shape with a single group per call.
     # Idempotent against PostgresqlRoleMemberships: absent membership ->
     # GRANT target_role TO role; admin-option drift -> GRANT WITH ADMIN
@@ -2591,7 +2588,7 @@ async def membership(
     # INHERIT/SET options are not managed (the fact reports only
     # admin_option). Needs CREATEROLE/admin on the group: flag the
     # request ``sudo=True`` with ``privilege.sudo_user = "postgres"``.
-    # ``**kwargs`` absorbs pyinfra's global arguments.
+    # ``**kwargs`` absorbs any further global arguments.
     conn = {
         "psql_user": psql_user,
         "psql_host": psql_host,
@@ -2795,8 +2792,8 @@ async def privilege(
         Examples can be found in ``examples/modules/postgresql/postgresql_privilege.py``.
     """
 
-    # reemote5-original (pyinfra has no privilege operation -- the most
-    # urgent gap in its PostgreSQL support), the Ansible postgresql_privs
+    # reemote5-original (there is no other privilege operation -- a
+    # significant gap in PostgreSQL support), the Ansible postgresql_privs
     # parameter shape. Idempotent against PostgresqlPrivileges: only
     # privileges the grantee lacks are granted, only ones it holds are
     # revoked, and a grant_option upgrade re-grants the full requested
@@ -2808,7 +2805,7 @@ async def privilege(
     # other schemas. ALL-in-schema with no matching objects is a no-op.
     # Needs the object owner or a superuser: flag the request
     # ``sudo=True`` with ``privilege.sudo_user = "postgres"``.
-    # ``**kwargs`` absorbs pyinfra's global arguments.
+    # ``**kwargs`` absorbs any further global arguments.
     if object_type not in _PRIVILEGES_BY_TYPE:
         raise ValueError(
             f"unknown postgresql object_type {object_type!r}; expected one "
@@ -3036,7 +3033,7 @@ async def publication(
         Examples can be found in ``examples/modules/postgresql/postgresql_publication.py``.
     """
 
-    # reemote5-original (pyinfra has no publication operation).
+    # reemote5-original (there is no other publication operation).
     # Idempotent against PostgresqlPublications: absent -> CREATE
     # PUBLICATION (plus an OWNER TO alter when an owner is named, since
     # CREATE PUBLICATION has no OWNER clause); table-set drift -> ALTER
@@ -3047,7 +3044,7 @@ async def publication(
     # Requires wal_level=logical (see postgresql.setting) and
     # superuser/CREATE: flag the request ``sudo=True`` with
     # ``privilege.sudo_user = "postgres"``. ``**kwargs`` absorbs
-    # pyinfra's global arguments.
+    # any further global arguments.
     if present and not all_tables and not tables:
         raise ValueError(
             "postgresql.publication requires tables or all_tables when "
@@ -3238,7 +3235,7 @@ async def role(
         Examples can be found in ``examples/modules/postgresql/postgresql_role.py``.
     """
 
-    # pyinfra ``postgresql.role`` parity, reworked: upstream's alter
+    # ``postgresql.role``, reworked: a baseline alter
     # branch compares option names ("login", "superuser",
     # "connection_limit") against fact keys that never exist (the fact
     # reports "canlogin", "super", "connlimit"), so it never actually
@@ -3247,16 +3244,16 @@ async def role(
     # role-enhancement). Two further deliberate deviations: every flag
     # is rendered explicitly on CREATE (X/NOX pairs, so the created role
     # matches the declared state rather than relying on server defaults
-    # -- pyinfra omits false flags), and ``inherit`` defaults to True,
-    # PostgreSQL's own default, instead of pyinfra's False.
-    # pyinfra's ``password`` option is deliberately dropped (the
+    # -- a baseline omits false flags), and ``inherit`` defaults to True,
+    # PostgreSQL's own default, instead of False.
+    # The ``password`` option is deliberately dropped (the
     # namespace credentials decision): the server cannot reveal a
     # stored password, so a password option could never be idempotent
     # anyway; provision credentials via peer auth/.pgpass or a
     # out-of-band ALTER ROLE ... PASSWORD through postgresql.sql.
     # Needs CREATEROLE or superuser: flag the request ``sudo=True`` with
     # ``privilege.sudo_user = "postgres"``. ``**kwargs`` absorbs
-    # pyinfra's global arguments.
+    # any further global arguments.
     conn = {
         "psql_user": psql_user,
         "psql_host": psql_host,
@@ -3289,7 +3286,7 @@ async def role(
         yield PostgresqlRoleCommand(role=role, **desired, **conn)
         return
 
-    # The fact's catalog keys for each option (pyinfra's alter branch
+    # The fact's catalog keys for each option (a baseline alter branch
     # compared the option names themselves -- the bug reworked here).
     fact_keys = {
         "login": "canlogin",
@@ -3398,13 +3395,13 @@ async def schema(
         Examples can be found in ``examples/modules/postgresql/postgresql_schema.py``.
     """
 
-    # reemote5-original (pyinfra has no schema operation), the Ansible
+    # reemote5-original (there is no other schema operation), the Ansible
     # postgresql_schema shape. Idempotent against PostgresqlSchemas:
     # absent -> CREATE SCHEMA (AUTHORIZATION when an owner is named),
     # owner drift -> ALTER SCHEMA OWNER TO, unwanted -> DROP SCHEMA.
     # Needs CREATE on the database: flag the request ``sudo=True`` with
     # ``privilege.sudo_user = "postgres"``. ``**kwargs`` absorbs
-    # pyinfra's global arguments.
+    # any further global arguments.
     conn = {
         "psql_user": psql_user,
         "psql_host": psql_host,
@@ -3526,7 +3523,7 @@ async def setting(
         Examples can be found in ``examples/modules/postgresql/postgresql_setting.py``.
     """
 
-    # reemote5-original (pyinfra has no configuration operation), the
+    # reemote5-original (there is no other configuration operation), the
     # Ansible postgresql_set capability via ALTER SYSTEM only -- the
     # config-file-rewrite apply_method is deliberately dropped (ALTER
     # SYSTEM writes postgresql.auto.conf, which overrides the main
@@ -3545,7 +3542,7 @@ async def setting(
     # no-op when the parameter's source is already "default". Needs
     # superuser: flag the request ``sudo=True`` with
     # ``privilege.sudo_user = "postgres"``. ``**kwargs`` absorbs
-    # pyinfra's global arguments.
+    # any further global arguments.
     if present and value is None:
         raise ValueError("postgresql.setting requires value when present=True")
     conn = {
@@ -3614,12 +3611,12 @@ async def sql(
         Examples can be found in ``examples/modules/postgresql/postgresql_sql.py``.
     """
 
-    # pyinfra ``postgresql.sql`` parity: non-idempotent, always yields
-    # (pyinfra marks it is_idempotent=False) -- the escape hatch for
+    # ``postgresql.sql``: non-idempotent by design, always yields -- the
+    # escape hatch for
     # anything the typed operations do not cover. The SQL text appears
     # verbatim in the plan/apply log, so never embed credentials in it
     # (``psql_password`` is deliberately dropped namespace-wide).
-    # ``**kwargs`` absorbs pyinfra's global arguments.
+    # ``**kwargs`` absorbs any further global arguments.
     ctx.changed = True
     ctx.reason = "postgresql SQL will be executed"
     yield PostgresqlSqlCommand(
@@ -3729,7 +3726,7 @@ async def subscription(
         Examples can be found in ``examples/modules/postgresql/postgresql_subscription.py``.
     """
 
-    # reemote5-original (pyinfra has no subscription operation).
+    # reemote5-original (there is no other subscription operation).
     # Idempotent against PostgresqlSubscriptions: absent -> CREATE
     # SUBSCRIPTION; publication-set drift -> ALTER SUBSCRIPTION SET
     # PUBLICATION; enabled drift -> ENABLE/DISABLE; unwanted -> DROP
@@ -3741,7 +3738,7 @@ async def subscription(
     # contain commas or braces (the fact parses the text[] rendering).
     # Needs superuser: flag the request ``sudo=True`` with
     # ``privilege.sudo_user = "postgres"``. ``**kwargs`` absorbs
-    # pyinfra's global arguments.
+    # any further global arguments.
     if present and (not connection or not publications):
         raise ValueError(
             "postgresql.subscription requires connection and publications "
@@ -3899,7 +3896,7 @@ async def tablespace(
         Examples can be found in ``examples/modules/postgresql/postgresql_tablespace.py``.
     """
 
-    # reemote5-original (pyinfra has no tablespace operation), the
+    # reemote5-original (there is no other tablespace operation), the
     # Ansible postgresql_tablespace shape. Idempotent against
     # PostgresqlTablespaces: absent -> CREATE TABLESPACE ... LOCATION;
     # owner drift -> ALTER TABLESPACE OWNER TO; unwanted -> DROP
@@ -3909,7 +3906,7 @@ async def tablespace(
     # OperationError (fail-fast in prepare) rather than pretending to
     # reconcile it. Needs superuser: flag the request ``sudo=True``
     # with ``privilege.sudo_user = "postgres"``. ``**kwargs`` absorbs
-    # pyinfra's global arguments.
+    # any further global arguments.
     conn = {
         "psql_user": psql_user,
         "psql_host": psql_host,

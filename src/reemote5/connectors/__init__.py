@@ -11,8 +11,8 @@ script and its operations are written once and run against either kind of
 target unchanged.
 
 The ``docker`` connector targets local Docker/Podman containers: it shells
-out to the ``docker`` (or ``podman``) CLI on the control machine, mirroring
-pyinfra's ``@docker`` connector. Further connectors (e.g. containers on a
+out to the ``docker`` (or ``podman``) CLI on the control machine. Further
+connectors (e.g. containers on a
 remote SSH host) can live beside it.
 """
 

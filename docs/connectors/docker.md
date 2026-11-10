@@ -1,7 +1,7 @@
 # The docker connector
 
 The docker connector runs a deploy inside a **local Docker or Podman
-container** instead of over SSH, mirroring pyinfra's `@docker` connector. It
+container** instead of over SSH, mirroring the baseline's `@docker` connector. It
 is selected per inventory entry with `connection.connector`:
 
 ```python
@@ -38,14 +38,14 @@ dependency):
   reachable daemon — usually the local socket, or whatever `DOCKER_HOST`
   names);
 - or set `"docker_cmd": "podman"` and use Podman instead — rootless podman
-  needs no daemon at all. One class covers both, mirroring pyinfra's
+  needs no daemon at all. One class covers both, mirroring the baseline's
   `PodmanConnector` (which only swaps the binary).
 
 A missing binary or an unreachable daemon surfaces as
 [`HostConnectionError`][reemote5.hosts.HostConnectionError] labelled
 `docker`, aggregated across the inventory by
 [`run_prepare`][reemote5.drivers.run_prepare] exactly like unreachable SSH
-hosts. Containers on a *remote* SSH host (pyinfra's `@dockerssh`) are not
+hosts. Containers on a *remote* SSH host (the baseline's `@dockerssh`) are not
 covered by this connector.
 
 --->
@@ -60,14 +60,14 @@ forbidden SSH options.
 | Option | Purpose |
 |---|---|
 | `connector` | Must be `"docker"` to select this connector |
-| `identifier` | Required: an image name or an existing container ID (pyinfra's `docker_identifier`) |
-| `user` | The `docker exec --user` identity for every command, facts included (pyinfra's `docker_user`) |
-| `platform` | `docker run --platform`, e.g. `linux/amd64` (pyinfra's `docker_platform`) |
+| `identifier` | Required: an image name or an existing container ID (the baseline's `docker_identifier`) |
+| `user` | The `docker exec --user` identity for every command, facts included (the baseline's `docker_user`) |
+| `platform` | `docker run --platform`, e.g. `linux/amd64` (the baseline's `docker_platform`) |
 | `docker_cmd` | Required: the CLI binary to invoke, `docker` or `podman` — no default |
 
 <!---
 
-pyinfra's `docker_architecture` is deliberately dropped: `--arch` is not a
+the baseline's `docker_architecture` is deliberately dropped: `--arch` is not a
 `docker run` flag, and `platform` covers the same need.
 
 ## Lifecycle
@@ -83,7 +83,7 @@ pyinfra's `docker_architecture` is deliberately dropped: `--arch` is not a
   in-flight run error); a failed commit leaves `image_id` as `None` and the
   container is still removed.
 - **Existing container ID** — inspected, started if stopped, and **left
-  running** on close: never committed, never removed. (pyinfra removes a
+  running** on close: never committed, never removed. (the baseline removes a
   stopped container it started itself; reemote5 deliberately does not touch
   containers it did not create.)
 

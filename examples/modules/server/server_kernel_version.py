@@ -29,7 +29,7 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's kernel release string
    with ``json.dumps(..., indent=2)``.
 
-``KernelVersion`` mirrors pyinfra's ``server.KernelVersion`` (the renamed
+``KernelVersion`` mirrors the baseline's ``server.KernelVersion`` (the renamed
 ``server.OsVersion`` fact, whose deprecated alias is deliberately dropped):
 it runs ``uname -r`` and returns the first line (e.g. ``6.1.0-26-amd64``),
 the kernel release the machine reports -- useful for auditing which hosts

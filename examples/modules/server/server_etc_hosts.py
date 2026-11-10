@@ -4,7 +4,7 @@
 """Example: manage an /etc/hosts entry with server.etc_hosts.
 
 This is a *usage* example, not part of the library. It shows reemote5's
-``server.etc_hosts`` operation, the pyinfra ``server.etc_hosts`` parity:
+``server.etc_hosts`` operation, baseline ``server.etc_hosts`` parity:
 the deploy ensures the line keyed by an IP address holds exactly the
 requested hostnames, rewriting it in place when the names differ and
 appending it when the IP is unknown. It replaces the earlier two-run
@@ -15,13 +15,13 @@ between "spool exists" and "move validates it".
 
 The operation is idempotent and reads two facts. The parsed ``EtcHosts``
 fact maps each IP to its hostnames; when the entry already matches, the
-request is a no-op with pyinfra's own reason ("already present in",
+request is a no-op with the baseline's own reason ("already present in",
 "already absent from", "does not reference any of:"). When a change is
 due, the ``AuthorizedKeysFile`` raw-content fact -- the server namespace's
 path-generic content reader -- supplies the file's current text and a
 pure controller-side transform computes the new whole content, preserving
 every untouched line, comment and blank line (comments on the edited line
-are dropped, pyinfra parity).
+are dropped, baseline parity).
 
 The write is a spool-and-install pair: the transformed text rides an
 unprivileged scp to a ``/tmp`` spool whose name is derived from the managed
@@ -103,7 +103,7 @@ from reemote5 import (
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
-# The entry to ensure, keyed by IP exactly like pyinfra's server.etc_hosts.
+# The entry to ensure, keyed by IP exactly like the baseline's server.etc_hosts.
 # A tuple, because ``op()`` arguments must stay hashable.
 DB_IP = "10.0.0.5"
 DB_HOSTNAMES = ("db.internal", "db")

@@ -4,7 +4,7 @@
 """Example: move a remote file into a remote directory with files.move.
 
 This is a *usage* example, not part of the library. It shows ``files.move``
-(pyinfra ``files.move`` parity): ``src`` is a remote path, ``dest`` is the
+(baseline ``files.move`` parity): ``src`` is a remote path, ``dest`` is the
 remote *directory* to move it into, and the moved path becomes
 ``dest/basename(src)``. With ``overwrite=True`` an existing target is removed
 first (``rm -rf``) before the ``mv``; without it an existing target raises
@@ -12,13 +12,13 @@ first (``rm -rf``) before the ``mv``; without it an existing target raises
 
 Two properties shape the script:
 
-* ``files.move`` is **stateless** like pyinfra: a valid move always yields a
+* ``files.move`` is **stateless** like the baseline: a valid move always yields a
   command, there is no idempotent no-op branch. Re-running a move whose
   source is gone fails fail-fast (here ``overwrite=True`` keeps the *target*
   side re-runnable; the source is re-staged by run 1 each time).
 * An absent source or an absent/non-directory destination raises
   ``ValueError`` in **both** phases -- reemote5 operations are phase-unaware,
-  so pyinfra's soft plan-time logging of those cases is deliberately dropped.
+  so the baseline's soft plan-time logging of those cases is deliberately dropped.
   A "create the file then move it" flow therefore cannot share one deploy:
   the prepare phase would raise on the not-yet-created source. That is why
   this script spans two complete runs, the sanctioned split also shown in

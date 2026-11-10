@@ -30,7 +30,7 @@ driving the two-phase execution model:
    ``tablespace``, ``unique``, ``method``) with
    ``json.dumps(..., indent=2)``.
 
-The fact is a reemote5-original visibility fact (pyinfra has no index
+The fact is a reemote5-original visibility fact (the baseline has no index
 fact): it selects ``pg_indexes`` joined to ``pg_class`` for uniqueness
 and the access method, so ``postgresql.index`` can detect an existing
 index and refuse to silently rebuild one whose definition differs. The

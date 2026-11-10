@@ -27,7 +27,7 @@ it finishes. The path is resolved from ``__file__``, so the example works
 from any working directory; point ``INVENTORY_PATH`` at your own file to
 target your machines.
 
-``flatpak.packages`` is reemote5's port of pyinfra's ``flatpak.packages``:
+``flatpak.packages`` is reemote5's port of the baseline's ``flatpak.packages``:
 it installs (or with ``present=False`` removes) flatpak applications by
 their reverse-domain IDs, optionally from a named ``remote``. The operation
 is idempotent on the ``FlatpakPackages`` fact (``flatpak list
@@ -45,9 +45,9 @@ it (as long as the application was not installed beforehand), which matters
 because ``run_examples.py`` sweeps every example over the same shared hosts.
 
 Installing from a ``remote`` names the source flatpak resolves the
-application ID against -- ``flathub`` here, the repository behind pyinfra's
+application ID against -- ``flathub`` here, the repository behind the baseline's
 own documented example -- and the remote is applied to the install direction
-only, as in pyinfra: an uninstall needs no source because the application is
+only, as in the baseline: an uninstall needs no source because the application is
 already resolved. The remote and every application ID are shell-quoted in
 the rendered commands (``flatpak install --noninteractive flathub
 org.videolan.VLC``, then ``flatpak uninstall --noninteractive
@@ -96,12 +96,12 @@ from reemote5 import (
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
-# The application to install and remove again -- pyinfra's own documented
+# The application to install and remove again -- the baseline's own documented
 # example application. A module-level tuple, so the request kwargs stay
 # hashable and identical in the prepare and apply phases.
 APPLICATIONS = ("org.videolan.VLC",)
 
-# The remote to install from: flathub, the application repository pyinfra's
+# The remote to install from: flathub, the application repository the baseline's
 # flatpak documentation uses. Ignored by the removal direction.
 REMOTE = "flathub"
 

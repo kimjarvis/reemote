@@ -13,7 +13,7 @@ themselves are documented on the [`snap` module page](../../modules/snap.md).
 
 ## Installing snap packages
 
-The package operation: `snap.package` mirrors pyinfra's `snap.package`,
+The package operation: `snap.package` mirrors the baseline's `snap.package`,
 installing, removing or re-channeling snaps by name. It reads the
 [`SnapPackage`][reemote5.modules.snap.snap.SnapPackage] fact once per
 requested name, so `None` reads as not installed (`present=True` installs it,
@@ -22,7 +22,7 @@ on a different `channel` yields a `snap refresh --channel=` switch — snap has
 no separate `switch` verb. An installed snap already on the requested channel
 is a no-op, so re-running converges. `channel` defaults to `latest/stable` and
 `classic=True` adds snap's `--classic` confinement flag to installs only.
-pyinfra's `requires_command` gating on `snap` is deliberately dropped, matching
+the baseline's `requires_command` gating on `snap` is deliberately dropped, matching
 the fact. Because installing a snap writes system state, the requests ride
 under `sudo`, and the script yields the same install request twice — the second
 is a guaranteed no-op in the apply phase, because the first install is visible

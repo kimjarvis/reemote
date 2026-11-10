@@ -7,7 +7,7 @@
 ``GitStatus``, ``GitSubmodule``, ``GitTag`` and ``GitTrackingBranch``,
 plus the ``config``, ``repo`` and ``worktree`` operations.
 
-Covers ``reemote5.modules.git.git``: pyinfra's own fixtures over the
+Covers ``reemote5.modules.git.git``: the baseline's own fixtures over the
 real-transport path (verbatim canned outputs and rendered command
 strings), parsing edge cases (the ``heads/``/``tags/`` prefix strip,
 ``key=value`` rows with and without ``=``, multi-valued keys, the SHA
@@ -18,16 +18,16 @@ status detail), empty output, the repo-path ``shlex`` quoting, the
 ``gather_fact`` fan-out across hosts. The six reemote5-original facts
 (``GitHeadDetached``, ``GitIsRepo``, ``GitRemoteUrl``,
 ``GitSshKeyConfigured``, ``GitStatus`` and ``GitSubmodule``) have no
-pyinfra fixture, so they are exercised with realistic canned output plus
+baseline fixture, so they are exercised with realistic canned output plus
 their tri-state, state-map, summary and describe-splitting edge cases.
 
-The ``git.config`` operation tests reuse pyinfra's own operation fixtures
+The ``git.config`` operation tests reuse the baseline's own operation fixtures
 (``tests/operations/git.config``): the global/system/repo scopes, the
 single- and multi-value idempotence, the ``repo/.git`` directory gate,
 the key/value/repo quoting, the simulated ``git_configs`` mutation, and
 the end-to-end plan/apply through ``run``.
 
-The ``git.worktree`` operation tests mirror pyinfra's create/remove/pull
+The ``git.worktree`` operation tests mirror the baseline's create/remove/pull
 directions: the ``add``/``remove``/``pull`` command renders and their
 ``shlex`` quoting, the existence- and tracking-branch-driven idempotence (the
 ``skip_pull`` short-circuit, the "not linked to a tracking branch" and "pull
@@ -35,7 +35,7 @@ is disabled" no-ops), the ``repo``/repository/``from_remote_branch`` error
 paths, the simulated ``directory_stats``/``git_*`` seam mutations, and the
 end-to-end add-then-noop, dry-run and ``sudo`` flows through ``run``.
 
-The ``git.repo`` operation tests mirror pyinfra's own
+The ``git.repo`` operation tests mirror the baseline's own
 ``tests/operations/git.repo`` fixtures: the clone/create branch (bare, with
 ``--depth``/``--branch`` and with the src/branch quoting fixtures), the
 existing-repository reconciliation (``remote.origin.url`` differ ->
@@ -49,7 +49,7 @@ dest/src/branch operands, the simulated clone/set-url/checkout/pull seam
 mutations across ``directory_stats``/``git_configs``/``git_branches``/
 ``git_local_commits``/``git_remote_commits``/``git_repos``, and the
 end-to-end clone-then-pull-then-noop, dry-run and ``sudo`` flows through
-``run``. pyinfra's ``user``/``group``/``ssh_keyscan`` options are
+``run``. The baseline's ``user``/``group``/``ssh_keyscan`` options are
 intentionally dropped (see the operation's docstring), so no test asserts
 them.
 """
@@ -96,7 +96,7 @@ from reemote5.modules.git.git import (
 )
 from tests.simulated_host import SimulatedHost
 
-# pyinfra's own fixture SHA (tests/facts/git.GitLocalCommit,
+# The baseline's own fixture SHA (tests/facts/git.GitLocalCommit,
 # git.GitRemoteBranchCommit) and a 64-character SHA-256 digest.
 SHA40 = "1a2b3c4d5e6f7890abcdef1234567890abcdef12"
 SHA64 = "ab" * 32
@@ -118,8 +118,8 @@ class CannedShellHost(Host):
 # --- GitBranch ---------------------------------------------------------------
 
 
-async def test_git_branch_parses_pyinfras_fixture():
-    # pyinfra's own fact fixture (tests/facts/git.GitBranch): the heads/
+async def test_git_branch_parses_baseline_fixture():
+    # The baseline's own fact fixture (tests/facts/git.GitBranch): the heads/
     # prefix is stripped from the `git describe --all` answer, and the
     # rendered command matches the fixture's verbatim (shlex.quote leaves
     # the plain "myrepo" untouched).
@@ -130,7 +130,7 @@ async def test_git_branch_parses_pyinfras_fixture():
 
 def test_git_branch_parse_strips_both_prefixes():
     # A tagged commit answers tags/<name>; the prefix is stripped from the
-    # joined output exactly like pyinfra's re.sub.
+    # joined output exactly like the baseline's re.sub.
     assert GitBranch.parse(["heads/main"]) == "main"
     assert GitBranch.parse(["tags/v1.0.0"]) == "v1.0.0"
     # Empty output (the short-circuited directory guard) reads as "".
@@ -169,10 +169,10 @@ async def test_git_branch_gathers_across_hosts():
 # --- GitConfig ---------------------------------------------------------------
 
 
-async def test_git_config_parses_pyinfras_global_fixture():
-    # pyinfra's own fact fixture (tests/facts/git.GitConfig, global scope):
+async def test_git_config_parses_baseline_global_fixture():
+    # The baseline's own fact fixture (tests/facts/git.GitConfig, global scope):
     # the rendered command matches verbatim and the key -> value-list dict
-    # pyinfra returns is projected onto GitConfigItem entries.
+    # The baseline returns is projected onto GitConfigItem entries.
     host = CannedShellHost("user.email=nick@gmail.com\n")
     assert await GitConfig.process(host) == [
         {"key": "user.email", "values": ["nick@gmail.com"]}
@@ -186,8 +186,8 @@ async def test_git_config_system_scope_renders_the_system_flag():
     assert host.shells == ["git config --system -l || true"]
 
 
-async def test_git_config_parses_pyinfras_multi_value_fixture():
-    # pyinfra's multi-valued fixture: a repeated key (safe.directory)
+async def test_git_config_parses_baseline_multi_value_fixture():
+    # The baseline's multi-valued fixture: a repeated key (safe.directory)
     # keeps every value in listing order.
     host = CannedShellHost(
         """safe.directory=/a/safe/repo
@@ -199,8 +199,8 @@ safe.directory=/another/safe/repo
     ]
 
 
-async def test_git_config_parses_pyinfras_repo_fixture():
-    # pyinfra's repo-scoped fixture: the --local read behind the directory
+async def test_git_config_parses_baseline_repo_fixture():
+    # The baseline's repo-scoped fixture: the --local read behind the directory
     # guard, rendered verbatim.
     host = CannedShellHost("user.email=nick@gmail.com\n")
     assert await GitConfig.process(host, "myrepo") == [
@@ -212,7 +212,7 @@ async def test_git_config_parses_pyinfras_repo_fixture():
 
 
 def test_git_config_parse_splits_on_the_first_equals_only():
-    # A value may itself carry "="; rows without one are skipped (pyinfra
+    # A value may itself carry "="; rows without one are skipped (the baseline
     # would raise ValueError on them -- reemote5 hardens the parser).
     assert GitConfig.parse(
         [
@@ -225,7 +225,7 @@ def test_git_config_parse_splits_on_the_first_equals_only():
         {"key": "user.name", "values": ["nick"]},
     ]
     # Empty output (missing config, swallowed by `|| true`) reads as [],
-    # pyinfra's ``default = dict`` projected onto entries.
+    # The baseline's ``default = dict`` projected onto entries.
     assert GitConfig.parse([]) == []
 
 
@@ -370,8 +370,8 @@ async def test_git_is_repo_reads_the_simulated_seam():
 # --- GitLocalCommit ----------------------------------------------------------
 
 
-async def test_git_local_commit_parses_pyinfras_ref_fixture():
-    # pyinfra's own fact fixture (tests/facts/git.GitLocalCommit, explicit
+async def test_git_local_commit_parses_baseline_ref_fixture():
+    # The baseline's own fact fixture (tests/facts/git.GitLocalCommit, explicit
     # ref): the rendered command and the SHA answer match verbatim.
     host = CannedShellHost(f"{SHA40}\n")
     assert await GitLocalCommit.process(host, "myrepo", "mybranch") == SHA40
@@ -380,8 +380,8 @@ async def test_git_local_commit_parses_pyinfras_ref_fixture():
     ]
 
 
-async def test_git_local_commit_parses_pyinfras_default_head_fixture():
-    # pyinfra's default-ref fixture: ref defaults to HEAD.
+async def test_git_local_commit_parses_baseline_default_head_fixture():
+    # The baseline's default-ref fixture: ref defaults to HEAD.
     host = CannedShellHost(f"{SHA40}\n")
     assert await GitLocalCommit.process(host, "myrepo") == SHA40
     assert host.shells == [
@@ -390,7 +390,7 @@ async def test_git_local_commit_parses_pyinfras_default_head_fixture():
 
 
 async def test_git_local_commit_is_none_on_empty_output():
-    # pyinfra's two empty-output fixtures: a missing repo or an unknown
+    # The baseline's two empty-output fixtures: a missing repo or an unknown
     # ref both read as None.
     assert await GitLocalCommit.process(CannedShellHost(""), "myrepo") is None
     assert (
@@ -406,7 +406,7 @@ def test_git_local_commit_parse_gates_on_the_sha_shape():
     assert GitLocalCommit.parse([SHA40]) == SHA40
     assert GitLocalCommit.parse(["fatal: ambiguous argument"]) is None
     assert GitLocalCommit.parse([SHA40[:39]]) is None
-    # Only the first line is considered, exactly like pyinfra.
+    # Only the first line is considered, exactly like the baseline.
     assert GitLocalCommit.parse([f"{SHA40}", "extra"]) == SHA40
     assert GitLocalCommit.parse([]) is None
 
@@ -431,8 +431,8 @@ async def test_git_local_commit_reads_the_simulated_seam():
 # --- GitRemoteBranchCommit ---------------------------------------------------
 
 
-async def test_git_remote_branch_commit_parses_pyinfras_fixture():
-    # pyinfra's own fact fixture (tests/facts/git.GitRemoteBranchCommit):
+async def test_git_remote_branch_commit_parses_baseline_fixture():
+    # The baseline's own fact fixture (tests/facts/git.GitRemoteBranchCommit):
     # the tab-separated ls-remote row keeps only the SHA column, and the
     # rendered command matches verbatim.
     host = CannedShellHost(f"{SHA40}\trefs/heads/main\n")
@@ -448,7 +448,7 @@ async def test_git_remote_branch_commit_parses_pyinfras_fixture():
 
 
 async def test_git_remote_branch_commit_defaults_to_the_remote_head():
-    # A falsy branch asks for the remote's HEAD (pyinfra's truthiness
+    # A falsy branch asks for the remote's HEAD (the baseline's truthiness
     # check), on the real transport and on the seam alike.
     host = CannedShellHost(f"{SHA40}\tHEAD\n")
     assert await GitRemoteBranchCommit.process(host, "myrepo") == SHA40
@@ -461,7 +461,7 @@ async def test_git_remote_branch_commit_defaults_to_the_remote_head():
 
 
 async def test_git_remote_branch_commit_is_none_on_empty_output():
-    # pyinfra's empty-output fixture: an unreachable remote or an unknown
+    # The baseline's empty-output fixture: an unreachable remote or an unknown
     # branch reads as None.
     assert (
         await GitRemoteBranchCommit.process(
@@ -917,8 +917,8 @@ async def test_git_submodule_seam_returns_a_copy():
 # --- GitTag ------------------------------------------------------------------
 
 
-async def test_git_tag_parses_pyinfras_fixture():
-    # pyinfra's own fact fixture (tests/facts/git.GitTag): each tag line
+async def test_git_tag_parses_baseline_fixture():
+    # The baseline's own fact fixture (tests/facts/git.GitTag): each tag line
     # becomes one GitTagInfo entry, in listing order.
     host = CannedShellHost(
         """v1.0.0
@@ -969,8 +969,8 @@ async def test_git_tag_seam_returns_a_copy():
 # --- GitTrackingBranch -------------------------------------------------------
 
 
-async def test_git_tracking_branch_parses_pyinfras_status_detail_fixture():
-    # pyinfra's own fact fixture (tests/facts/git.GitTrackingBranch): the
+async def test_git_tracking_branch_parses_baseline_status_detail_fixture():
+    # The baseline's own fact fixture (tests/facts/git.GitTrackingBranch): the
     # upstream token is read even with the trailing [behind 692] detail.
     host = CannedShellHost("## branch1...origin/master [behind 692]\n")
     assert await GitTrackingBranch.process(host, "myrepo") == "origin/master"
@@ -979,14 +979,14 @@ async def test_git_tracking_branch_parses_pyinfras_status_detail_fixture():
     ]
 
 
-async def test_git_tracking_branch_parses_pyinfras_plain_fixture():
-    # pyinfra's fixture without the status detail.
+async def test_git_tracking_branch_parses_baseline_plain_fixture():
+    # The baseline's fixture without the status detail.
     host = CannedShellHost("## branch1...origin/master\n")
     assert await GitTrackingBranch.process(host, "myrepo") == "origin/master"
 
 
-async def test_git_tracking_branch_parses_pyinfras_no_upstream_fixture():
-    # pyinfra's fixture for a branch without an upstream: no "..." token,
+async def test_git_tracking_branch_parses_baseline_no_upstream_fixture():
+    # The baseline's fixture for a branch without an upstream: no "..." token,
     # so None. Changed-file rows after the header are never searched.
     host = CannedShellHost("## branch1\n")
     assert await GitTrackingBranch.process(host, "myrepo") is None
@@ -1073,9 +1073,9 @@ def test_git_namespace_exports_the_worktree_operation_and_descriptors():
 
 # --- config operation --------------------------------------------------------
 
-# pyinfra's git.config fixtures render the scope selector first, then --add
+# The baseline's git.config fixtures render the scope selector first, then --add
 # for a multi-valued key, then the key and value. reemote5 shlex-quotes the
-# value (pyinfra wraps it in literal double quotes), so a plain value renders
+# value (the baseline wraps it in literal double quotes), so a plain value renders
 # bare -- command parity holds for ordinary keys and values.
 GIT_CONFIG_GLOBAL_SHELL = "git config --global key value"
 GIT_CONFIG_SYSTEM_SHELL = "git config --system key value"
@@ -1107,7 +1107,7 @@ def test_git_config_command_renders_the_scopes():
 
 
 def test_git_config_command_quotes_key_value_and_repo():
-    # pyinfra's set_key_needs_quotes / set_repo_needs_quotes /
+    # The baseline's set_key_needs_quotes / set_repo_needs_quotes /
     # set_multivalue_needs_quotes fixtures: a key or repo carrying shell
     # metacharacters is shlex-quoted, so it is read literally rather than
     # executed.
@@ -1145,7 +1145,7 @@ def test_git_config_command_elevates_as_a_whole_under_sudo():
 
 
 async def test_git_config_sets_an_absent_global_value():
-    # pyinfra's set_global.json: an empty global config, key absent -> the
+    # The baseline's set_global.json: an empty global config, key absent -> the
     # write runs and the change is recorded.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize_config(host, key="key", value="value")
@@ -1175,7 +1175,7 @@ async def test_git_config_edits_a_differing_global_value():
 
 async def test_git_config_noop_when_the_global_value_matches():
     # set_existing_global.json: the key already equals [value] -> no-op with
-    # pyinfra's verbatim noop_description.
+    # The baseline's verbatim noop_description.
     host = SimulatedHost(name="h", git_configs={"global": {"key": ["value"]}})
     ctx, commands = await materialize_config(host, key="key", value="value")
     assert not ctx.changed
@@ -1245,7 +1245,7 @@ async def test_git_config_sets_a_repo_local_value():
 
 
 async def test_git_config_repo_gate_skips_the_fact_read_when_git_dir_absent():
-    # pyinfra reads the repo config only behind the files.Directory(repo/.git)
+    # The baseline reads the repo config only behind the files.Directory(repo/.git)
     # gate. With no .git directory the existing config reads as {} even though
     # a matching value is seeded, so the write still runs: the gate skips the
     # fact read, it does not suppress the command.
@@ -1258,7 +1258,7 @@ async def test_git_config_repo_gate_skips_the_fact_read_when_git_dir_absent():
 
 
 async def test_git_config_absorbs_unknown_kwargs():
-    # **kwargs mirrors pyinfra's global-arguments slot; op() already strips
+    # **kwargs mirrors the baseline's global-arguments slot; op() already strips
     # the name/sudo/su meta-parameters, the rest is ignored.
     host = SimulatedHost(name="h")
     _ctx, commands = await materialize_config(
@@ -1363,10 +1363,10 @@ async def test_git_config_privilege_sudo_flows_into_the_log():
 
 # --- worktree operation ------------------------------------------------------
 
-# pyinfra's git.worktree renders ``cd <repo> && git worktree add ...`` to
+# The baseline's git.worktree renders ``cd <repo> && git worktree add ...`` to
 # create, ``cd <worktree> && git worktree remove .`` to remove and
 # ``cd <worktree> && git pull[...]`` to update. reemote5 shlex-quotes every
-# operand (pyinfra uses raw QuoteString interpolation), so plain paths quote
+# operand (the baseline uses raw QuoteString interpolation), so plain paths quote
 # to themselves and command parity holds for ordinary values.
 GIT_WORKTREE_ADD_SHELL = "cd /srv/app && git worktree add /srv/wt"
 GIT_WORKTREE_REMOVE_SHELL = "cd /srv/wt && git worktree remove ."
@@ -1381,7 +1381,7 @@ async def materialize_worktree(host: Host, **kwargs):
 
 
 def test_git_worktree_add_command_renders_flags():
-    # pyinfra's argument order: -b <new_branch> (or --detach when no new
+    # The baseline's argument order: -b <new_branch> (or --detach when no new
     # branch), then --force, then the worktree path, then the commitish.
     assert GitWorktreeAddCommand(repo="/srv/app", worktree="/srv/wt").shell() == (
         GIT_WORKTREE_ADD_SHELL
@@ -1421,7 +1421,7 @@ def test_git_worktree_remove_and_pull_commands_render():
         "cd /srv/wt && git pull --rebase"
     )
     # A tracking-driven pull renders bare ``git pull`` (no operands); only an
-    # explicit from_remote_branch names the remote and branch, as pyinfra does.
+    # explicit from_remote_branch names the remote and branch, as the baseline does.
     assert GitPullCommand(
         worktree="/srv/wt", from_remote_branch=("origin", "main")
     ).shell() == "cd /srv/wt && git pull origin main"
@@ -1451,7 +1451,7 @@ def test_git_worktree_command_elevates_as_a_whole_under_sudo():
 
 async def test_git_worktree_adds_a_missing_tree():
     # Create: the repository's .git directory is present and the worktree path
-    # is absent -> one add command, with pyinfra's change recorded.
+    # is absent -> one add command, with the baseline's change recorded.
     host = SimulatedHost(name="h", directory_stats={"/srv/app/.git": {"mode": 755}})
     ctx, commands = await materialize_worktree(
         host, worktree="/srv/wt", repo="/srv/app"
@@ -1484,7 +1484,7 @@ async def test_git_worktree_create_carries_branch_and_force_options():
 
 async def test_git_worktree_assume_repo_exists_skips_the_git_dir_probe():
     # No .git directory is seeded, yet assume_repo_exists=True suppresses the
-    # repo/.git validity check (pyinfra's files.Directory gate) and the tree is
+    # repo/.git validity check (the baseline's files.Directory gate) and the tree is
     # still added.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize_worktree(
@@ -1537,7 +1537,7 @@ async def test_git_worktree_noop_when_pull_is_disabled():
 
 async def test_git_worktree_noop_when_not_linked_to_a_tracking_branch():
     # Exists, wanted, pull on, but neither a tracking branch nor a
-    # from_remote_branch -> pyinfra's "not linked to a tracking branch" no-op.
+    # from_remote_branch -> the baseline's "not linked to a tracking branch" no-op.
     host = SimulatedHost(name="h", directory_stats={"/srv/wt": {"mode": 755}})
     ctx, commands = await materialize_worktree(
         host, worktree="/srv/wt", repo="/srv/app"
@@ -1549,7 +1549,7 @@ async def test_git_worktree_noop_when_not_linked_to_a_tracking_branch():
 
 async def test_git_worktree_pulls_a_stale_tree():
     # Exists + a tracking branch, and the local HEAD differs from the remote
-    # tip -> pyinfra's pull (skip_pull not taken).
+    # tip -> the baseline's pull (skip_pull not taken).
     host = SimulatedHost(
         name="h",
         directory_stats={"/srv/wt": {"mode": 755}},
@@ -1592,7 +1592,7 @@ async def test_git_worktree_pulls_with_rebase_and_from_remote_branch():
 
 
 async def test_git_worktree_skips_pull_when_already_up_to_date():
-    # local HEAD == remote tip -> pyinfra's skip_pull short-circuit, a no-op.
+    # local HEAD == remote tip -> the baseline's skip_pull short-circuit, a no-op.
     host = SimulatedHost(
         name="h",
         directory_stats={"/srv/wt": {"mode": 755}},
@@ -1609,7 +1609,7 @@ async def test_git_worktree_skips_pull_when_already_up_to_date():
 
 
 async def test_git_worktree_absorbs_unknown_kwargs():
-    # **kwargs mirrors pyinfra's global-arguments slot; op() already strips
+    # **kwargs mirrors the baseline's global-arguments slot; op() already strips
     # name/sudo/su, the rest is ignored.
     host = SimulatedHost(name="h", directory_stats={"/srv/app/.git": {"mode": 755}})
     _ctx, commands = await materialize_worktree(
@@ -1628,7 +1628,7 @@ async def test_git_worktree_requires_repo_when_creating():
 
 async def test_git_worktree_rejects_an_invalid_repository():
     # Create with a repo whose .git directory is absent -> OperationError
-    # carrying pyinfra's message.
+    # carrying the baseline's message.
     host = SimulatedHost(name="h")
     with pytest.raises(OperationError, match="not a valid GIT repository"):
         await materialize_worktree(host, worktree="/srv/wt", repo="/srv/app")
@@ -1756,14 +1756,14 @@ async def test_git_worktree_privilege_sudo_flows_into_the_log():
 
 # --- repo operation ----------------------------------------------------------
 
-# pyinfra's git.repo renders ``cd <dest> && git clone <src> ... .`` because it
+# The baseline's git.repo renders ``cd <dest> && git clone <src> ... .`` because it
 # first mkdir -p's ``dest`` and clones into ``.``. reemote5 deliberately drops
 # the ensure-directory step (there is no files.directory to delegate to), so
 # the clone descriptor names ``dest`` itself and needs no ``cd`` prefix. Every
-# other verb keeps pyinfra's ``cd <dest> &&`` shape, and pyinfra's final
+# other verb keeps the baseline's ``cd <dest> &&`` shape, and the baseline's final
 # ``chown -R <user>`` mutation and its ``ssh_keyscan`` preflight are dropped
 # too (see the operation's docstring), so the parity assertions below compare
-# only the git-side commands pyinfra still emits.
+# only the git-side commands the baseline still emits.
 GIT_CLONE_SHELL = "git clone myrepo /home/myrepo"
 GIT_REMOTE_SET_URL_SHELL = "cd /home/myrepo && git remote set-url origin mynewremote"
 GIT_FETCH_SHELL = "cd /home/myrepo && git fetch"
@@ -1780,9 +1780,9 @@ async def materialize_repo(host: Host, **kwargs):
 
 
 def test_git_clone_command_renders_flags():
-    # pyinfra's clone.json / clone_depth.json / branch_pull.json fixtures
+    # The baseline's clone.json / clone_depth.json / branch_pull.json fixtures
     # order the flags ``--depth N --branch B <dest>`` after the src, exactly
-    # as reemote5 does -- but without pyinfra's leading ``cd <dest> &&``
+    # as reemote5 does -- but without the baseline's leading ``cd <dest> &&``
     # because the ensure-directory step is dropped.
     assert GitCloneCommand(src="myrepo", dest="/home/myrepo").shell() == (
         GIT_CLONE_SHELL
@@ -1796,7 +1796,7 @@ def test_git_clone_command_renders_flags():
 
 
 def test_git_repo_reconcile_fetch_checkout_pull_commands_render():
-    # Each verb's flag order matches pyinfra's own rendered fixtures: --depth
+    # Each verb's flag order matches the baseline's own rendered fixtures: --depth
     # first, then --tags (fetch only), then --rebase (pull only), then
     # --force.
     assert GitRemoteSetUrlCommand(
@@ -1838,7 +1838,7 @@ def test_git_submodule_update_command_renders_recursion():
 
 
 def test_git_repo_commands_quote_operands_needing_it():
-    # pyinfra's clone_src_needs_quotes / clone_branch_needs_quotes /
+    # The baseline's clone_src_needs_quotes / clone_branch_needs_quotes /
     # checkout_branch_needs_quotes fixtures: an operand carrying a shell
     # metacharacter is read literally, never executed. Plain URLs and paths
     # quote to themselves so command parity holds for ordinary values.
@@ -1884,7 +1884,7 @@ async def test_git_repo_clones_a_missing_repository():
 
 async def test_git_repo_clone_carries_depth_and_branch():
     # clone_depth.json -- reemote5 drops the trailing chown -R <user> that
-    # pyinfra emits after the clone, so only the clone is yielded.
+    # The baseline emits after the clone, so only the clone is yielded.
     host = SimulatedHost(name="h")
     _ctx, commands = await materialize_repo(
         host,
@@ -1957,7 +1957,7 @@ async def test_git_repo_branch_switch_skips_pull_when_local_matches_remote():
 
 async def test_git_repo_change_src_resets_the_remote_and_pulls():
     # change_src.json: an existing repo whose origin URL differs from the
-    # requested src -> reset the remote, then pull. pyinfra always pulls in
+    # requested src -> reset the remote, then pull. The baseline always pulls in
     # that case (skip_pull is short-circuited by remote_changed), even though
     # the seeded local/remote SHAs match, because the cached remote tip was
     # resolved against the old origin.
@@ -1985,7 +1985,7 @@ async def test_git_repo_change_src_resets_the_remote_and_pulls():
 
 async def test_git_repo_noop_when_already_up_to_date():
     # up_to_date.json: origin matches src, no branch switch, local == remote
-    # -> no commands, no ctx.changed, and pyinfra's verbatim noop_description.
+    # -> no commands, no ctx.changed, and the baseline's verbatim noop_description.
     host = SimulatedHost(
         name="h",
         directory_stats={"/home/myrepo/.git": {"mode": 755}},
@@ -2106,7 +2106,7 @@ async def test_git_repo_update_submodules_appends_after_pull():
 
 async def test_git_repo_submodules_run_even_when_nothing_else_changed():
     # The submodule step is independent: an up-to-date repo still yields the
-    # update --init, mirroring pyinfra's unconditional append.
+    # update --init, mirroring the baseline's unconditional append.
     host = SimulatedHost(
         name="h",
         directory_stats={"/home/myrepo/.git": {"mode": 755}},
@@ -2147,7 +2147,7 @@ async def test_git_repo_tag_branch_detaches_and_skips_pull():
 
 
 async def test_git_repo_absorbs_unknown_kwargs():
-    # **kwargs mirrors pyinfra's global-arguments slot; op() already strips
+    # **kwargs mirrors the baseline's global-arguments slot; op() already strips
     # name/sudo/su, the rest is ignored.
     host = SimulatedHost(name="h")
     _ctx, commands = await materialize_repo(

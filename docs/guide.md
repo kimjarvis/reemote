@@ -1,811 +1,664 @@
 # Guide
 
-This guide follows the dependency order of the model itself: the two-phase
-execution cycle first, then the hosts and inventory it runs against, then how to
-write and compose deploy scripts and how to run them, then the rules that keep
-the two phases in agreement, then the three extension points (facts, operations,
-command descriptors) and the invariants they must respect, and finally the
-orthogonal [actions](#actions) escape hatch — which is defined *against* all of
-the above, and so comes last.
+reemote5 configures and deploys servers through a **pure Python API**. A deployment is ordinary Python code that describes the state you want — installed packages, configuration files, running services — and reemote5 reads each target, reports the work it proposes, and applies the changes that are still needed. You supply the inventory and a program that runs it; reemote5 supplies the facts, operations and the engine that connects them.
 
-## The two phases
+Allow about **one hour** to read this guide with its examples. It starts from a small, usable script and builds that script up into the patterns a larger deployment needs. You need basic Python — functions, imports, loops, dictionaries. Generators and asyncio are introduced where you first meet them; you never have to implement the execution engine yourself.
 
-Every deploy runs in two phases because a run has to answer two questions in a
-fixed order: *what would this change* — so the answer can be reviewed, reported,
-or simply stopped there as a dry run — and *then actually change it*, across many
-hosts at once without any host racing ahead of another. Prepare computes the
-first answer, apply produces the second.
+Why express server configuration in Python at all? Because a deployment then shares everything else you already write in Python: your types, your validation, your test harness, your data sources. A configuration file in a dedicated language forces a second set of tools, a second way to test, and a boundary wherever your deployment needs data from your application. reemote5 removes that boundary. **Ansible** is a mature alternative when you want playbooks, its module ecosystem and its surrounding tooling; reemote5 is the choice when server configuration should be a library call inside a Python program. Python does not make package names portable across distributions or remove the need for SSH credentials — it makes the *glue* around those facts ordinary code.
 
-**Prepare** — [`run_prepare`][reemote5.drivers.run_prepare] exhausts each
-host's generator, materializes every operation to learn its
-`(changed, reason, commands)`, and returns the plan. No host is mutated and no
-command is sent. It also builds a *fresh* generator per host for the apply phase,
-since a generator cannot be replayed once exhausted.
+!!! note "Reading order"
 
-**Apply** — [`run_apply`][reemote5.drivers.run_apply] advances all hosts in
-lockstep: every host executes its Nth request before any host pulls request
-N+1. For each step it recreates the fact cache, materializes the request, and
-if `ctx.changed` is true, awaits
-[`send_command`][reemote5.drivers.send_command] for each command. Every step is
-recorded as a [`LogEntry`][reemote5.drivers.LogEntry], including the commands
-that were actually sent.
+    Everything below is ordered so understanding builds up. Skim
+    [Core vocabulary](#core-vocabulary) and [Your first deployment](#your-first-deployment)
+    to get something running, then return to the model sections
+    ([The execution model](#the-execution-model)) when you need the detail. If
+    you only want to find the fact or operation for a task, jump straight to
+    [Finding facts, operations and examples](#finding-facts-operations-and-examples).
 
-**Determinism guard** — apply re-checks each pulled request against the plan.
-If a deploy body branches on mutable state and the two phases disagree, the
-driver raises [`DeterminismError`][reemote5.drivers.DeterminismError] instead of
-silently applying a different plan. The rules this imposes on a deploy body are
-in [Determinism](#determinism).
+## How the documentation is organised
 
-Recreating the cache at every apply step is what makes sequential *"act, then
-read"* logic correct: an operation's fact reads observe everything the earlier
-operations changed. Neither facts nor operations know which phase they run in —
-phase awareness lives in the drivers alone, as [Design
-invariants](#design-invariants) spells out — so one generator body yields both a
-correct plan and a correct run.
+The documentation is small and deliberately layered:
 
-## Hosts and the inventory
+| Section | Purpose |
+| --- | --- |
+| **Home** ([index](index.md)) | A ten-minute introduction: install, one inventory, one script, preview and apply. |
+| **Guide** (this page) | The one-hour progression from a first script to the execution model and extension points. |
+| **API Reference → Modules** | One page per subject area — [files](modules/files.md), [apt](modules/apt.md), [dnf](modules/dnf.md), [systemd](modules/systemd.md), [server](modules/server.md) and more. Each page lists the facts and operations of that namespace with their signatures, arguments, return types and the exceptions they raise. |
+| **API Reference → Actions** ([actions](actions/actions.md)) | The immediate-execution escape hatch: bespoke commands, staged scripts, connection waits. |
+| **API Reference → Connectors** ([ssh](connectors/ssh.md), [docker](connectors/docker.md)) | How a host connects — SSH by default, or a local Docker/Podman container. |
 
-Hosts and their SSH connection information are specified as a simple
-*inventory*: a list of dictionaries, each describing one host. This is the
-parameter the library functions accept. `host` and `connection` are required;
-`privilege`, `group` and `tags` are optional:
+The reference pages are generated from the library's own docstrings, so they always match the code you have installed. The narrative pages (Home, Guide) explain the model; the reference pages explain the individual facts and operations.
 
-```python
-inventory = [
-    {
-        "host": "web1",
-        "connection": {"key_path": "~/.ssh/id_ed25519"},
-        "group": "centos",            # static classifier
-        "tags": ["web", "canary"],    # static classifier
-    },
-    {
-        "host": "web2",
-        "connection": {"key_path": "~/.ssh/id_ed25519"},
-        "group": "centos",
-        "tags": ["web"],
-        "privilege": {"sudo_user": "deploy"},  # optional elevation settings
-    },
-]
-```
+## Finding facts, operations and examples
 
-[`Host.from_inventory`][reemote5.hosts.Host.from_inventory] materializes each
-entry into a [`Host`][reemote5.hosts.Host] carrying `connection`, `privilege`,
-the `group`/`tags` classifiers, and any unrecognised keys (preserved in `extra`,
-so the format is extensible). That data reaches both operations
-([`send_command`][reemote5.drivers.send_command]) and facts (each `process`) —
-and it is exactly what the real asyncssh transport uses to connect and to
-elevate. `group` and `tags` are the *static* values a `when` guard or a deploy
-body reads to branch per host (see [Deploy scripts](#deploy-scripts)).
+A **fact** reads state; an **operation** requests a change. They live together in *namespaces* grouped by subject, and both appear on the matching **API Reference → Modules** page:
 
-Every entry must carry at least `host` and `connection`. The inventory is
-validated with pydantic (against
-[`InventoryEntry`][reemote5.hosts.InventoryEntry]) before any host is
-materialized: [`run`][reemote5.drivers.run] checks the whole inventory up front
-via [`validate_inventory`][reemote5.hosts.validate_inventory], so a malformed
-one — not a list, an entry that is not a dictionary, or a missing required key
-— raises [`InventoryError`][reemote5.hosts.InventoryError] instead of failing
-later over SSH.
+- To install or remove packages on a Debian/Ubuntu host, open [apt](modules/apt.md) and look for the `apt.packages` operation. On a Fedora/RHEL host, open [dnf](modules/dnf.md) for `dnf.packages`.
+- To manage a file, a directory or a link, open [files](modules/files.md): `files.install`, `files.file`, `files.directory`, `files.link`, `files.put`, `files.get`, `files.edit`.
+- To start, stop or enable a systemd unit, open [systemd](modules/systemd.md) for `systemd.service`.
+- To read the hostname, users, mounts or timezone, open [server](modules/server.md).
 
-The `connection` mapping may also carry a `connector` key selecting the
-transport: the default `"ssh"` builds the asyncssh-backed `Host` shown here,
-while `"docker"` builds a
-`DockerHost` that runs the very same
-deploy inside a local Docker/Podman container (see
-[the docker connector](connectors/docker.md)).
+On each page, the **names tell you which is which**:
 
-`SimulatedHost` is part of the *test framework*, not of the inventory or the
-library API: it lives in `tests/simulated_host.py`. It subclasses `Host` and
-adds the in-memory state the facts read — `execute_command` plus some 180 state
-fields, one family per module: `packages` (the dnf name → installed-versions
-store), `links`, `existing_files`, `remote_files`, `apt_packages`,
-`systemd_unit_properties`, `lxd_instances` and the rest:
+- A **capitalised class** is a fact or a returned-data type — `FileContents`, `AptPackages`, `SystemdServiceState`, `Hostname`. You rarely name these directly; operations read them for you.
+- A **lowercase function** is an operation — `install`, `packages`, `service`, `file`. These are what you `yield` in a deploy.
+- A `SomeCommand` **class** is the command descriptor an operation produces. You almost never construct one yourself.
 
-```python
-SimulatedHost(
-    name="web1",
-    connection={"key_path": "~/.ssh/id_ed25519"},
-    packages={"nginx": ["1.24.0-1.el9"]},
-    links={},
-    installs_links={
-        "nginx": {
-            "/etc/nginx/sites-enabled/default": "/etc/nginx/sites-available/default"
-        }
-    },
-)
-```
+Each entry documents its arguments, what it returns, the exceptions it raises, and a pointer to a runnable script under `examples/`. When you want to see a fact or operation used end to end, follow that `examples/...` path — every example is a complete, runnable program that loads an inventory, builds requests and prints the plan and the run log.
 
-It is injected from outside via `run`'s `host_factory` keyword — the pytest
-suites pass a factory building `SimulatedHost`s (e.g.
-`tests/modules/dnf/test_dnf.py`), so the tests run without SSH while the library
-itself never constructs one. The `examples/` scripts use the default factory and
-connect for real; only their request *building* is covered offline, by
-`tests/test_examples.py`:
+!!! tip "Start from an operation, not a fact"
 
-```python
-plans, report, hosts = await run(inventory, deploy, host_factory=my_simulated_factory)
-```
+    Most tasks map to one operation. Search the module page for the verb you
+    want (`packages`, `install`, `service`), read its arguments, and `yield` it.
+    You only touch facts directly when you want to *branch on* what a host
+    reports between two deploys — covered in [Facts](#facts).
 
-Two scripts are the deliberate exceptions to "connect for real":
-`examples/demonstrations/composition/composed_group_tag_roles.py` injects a
-simulated factory and runs entirely in memory, and
-`examples/actions/action_in_deploy_guard.py` never opens a transport because its
-guard aborts during prepare — see [Examples](examples.md).
+## Core vocabulary
 
-`installs_links` is what lets an in-memory run reproduce the interesting case:
-on a fresh host, installing nginx *creates* the default-site link, so the next
-operation sees state that did not exist during prepare. Over SSH the same effect
-comes from the package itself — which is why the real-host examples need no such
-state to demonstrate the sequencing.
+Four words carry almost the whole model. Learn them once and the rest of the guide is detail.
 
-Nothing in a deploy body or an operation touches host state directly. In the
-test framework the only mutation path is the
-[`send_command`][reemote5.drivers.send_command] → `execute_command` seam; on a
-real host the commands themselves change the machine over SSH, and the next
-step's fact reads observe that.
+- **Inventory** — a list of dictionaries naming the servers and how to reach them. This is what you hand to the runner. A minimal entry needs a `host` label and a `connection` mapping; groups, tags and privilege settings are optional and covered later in [Hosts and the inventory](#hosts-and-the-inventory).
+- **Fact** — a read of some server state: a hostname, the set of installed packages, a file's current text. Facts are gathered over the connection and are cached during a run. You usually do not call them yourself; operations read the facts they need.
+- **Operation** — a request to converge the server toward a described state: "ensure these packages are installed", "make this file contain this text", "ensure this service is running". An operation reads facts, decides whether anything must change, and produces the commands to make the change. Operations are **idempotent** wherever that is meaningful: running one twice leaves the same state and reports *no change* the second time.
+- **Action** — something that runs *immediately*, outside a deployment, and hands back its result. Actions are the escape hatch for one-off commands reemote5 has no operation for, and for connectivity itself. They come last in this guide because they are defined by contrast with the deploy model — see [Actions](#actions).
 
-## Deploy scripts
-
-A deploy script is a generator that takes a host and yields
-[`OperationRequest`][reemote5.core.OperationRequest] objects. The signature is
-fixed:
+A **deploy** ties these together. It is a Python generator function that takes one host and *yields* operation requests in order:
 
 ```python
 def deploy(host: Host) -> Generator[OperationRequest, None, None]:
+    yield op(...)   # first step
+    yield op(...)   # second step
 ```
 
-Requests are built with the [`op`][reemote5.core.op] helper, which takes the
-operation function, an optional human-readable `name` for plan output, optional
-`doas`, `sudo` and `su` elevation flags, an optional `when` eligibility guard,
-and the operation's parameters **as keyword arguments only**:
+The runner calls your deploy once per host, collects the requests, and drives them. You describe *what state you want*; the runner works out *what to do about it*.
 
-```python
-from reemote5 import dnf, files, op
+## Your first deployment
 
-yield op(dnf.packages, name="Install nginx", packages=("nginx",), present=True, sudo=True)
-yield op(
-    files.link,
-    name="Enable site",
-    src="/etc/nginx/sites-enabled/site",
-    target="/etc/nginx/sites-available/site",
-)
+This is the smallest useful program: one inventory, one deploy, one file written to a safe temporary path. It needs no administrator rights and touches nothing but the file it names.
+
+Create `inventory.json`:
+
+```json
+[
+  {
+    "host": "demo",
+    "connection": {
+      "address": "192.0.2.10",
+      "username": "deploy",
+      "key_path": "~/.ssh/id_ed25519"
+    }
+  }
+]
 ```
 
-`name`, `doas`, `sudo`, `su` and `when` are *meta-parameters*: they tell the
-driver how to run (and label, or skip) the operation rather than being forwarded
-to it, so `sudo=True` does not require the operation function to accept a `sudo`
-argument. When set, the driver elevates every command the operation yields -- the
-real asyncssh
-transport wraps its shell with `doas`, `sudo` and/or `su`, and
-[`format_log`][reemote5.drivers.format_log] renders the elevated command. The
-test framework's `SimulatedHost` seam ignores them, since privilege has no
-in-memory effect. Elevation is per operation, so a privileged package install
-and an unprivileged link change can sit side by side in one deploy.
+Replace the address, username and key path with your own test server's. (`192.0.2.10` is a documentation placeholder from the reserved TEST-NET range — it is not a real host.)
 
-`doas=True`/`sudo=True`/`su=True` only *ask* to elevate -- they never say as
-whom, or with what credential. The run-as users and passwords come from the
-host's inventory `privilege` section (see
-[Hosts and the inventory](#hosts-and-the-inventory)), so a deploy script cannot
-choose its own privilege parameters; when a `sudo_user` other than `root` is
-configured the driver emits `sudo -u <user>` instead of a bare `sudo`, a
-`su_user` becomes `su <user> -c`, and a `doas_user` becomes `doas -n -u <user>`
-(`root`, the default target of all three, collapses to a bare `sudo` / `su -c` /
-`doas -n`). A sudo or su password is supplied through an askpass helper without
-ever appearing in the log; `doas` is *passwordless* -- reemote5 always runs
-`doas -n` (non-interactive), so the host must grant the login user a
-`permit nopass` rule in `/etc/doas.conf`. When an operation carries several
-flags, the escalations combine in a fixed order -- `doas` then `sudo` then
-`su` -- so `doas` is the outermost escalation and `su` the innermost payload. Only
-*default* su is supported (no login shell). A credential the host rejects -- or a
-doas rule it denies -- is reported as a
-[`PrivilegeError`][reemote5.hosts.PrivilegeError] naming the host, not as a
-failed command — see
-[Privilege: sudo, su and doas](hosts.md#privilege-sudo-su-and-doas).
-
-`doas`, `sudo` and `su` are a *tri-state* ([`Privilege`][reemote5.core.Privilege]),
-not a plain bool, so a request can say three distinct things: `ON` (`sudo=True`)
-elevates, `OFF` (`sudo=False`) deliberately runs unprivileged, and `UNSET` (the
-default, when the flag is omitted) means “no opinion”. Only `ON` elevates — the
-driver collapses the tri-state to a concrete bool before a command is sent. The
-distinction matters when composing: because `UNSET` and `OFF` are different, a
-[`sub_deploy`][reemote5.core.sub_deploy] policy can *force* elevation across a
-role while still honouring a request that explicitly opted out with
-`sudo=False` — something a plain bool cannot express, since it cannot tell “run
-this one unprivileged” from “never flagged”. (`op` and `sub_deploy` still accept
-a plain bool for convenience: `True` → `ON`, `False` → `OFF`.)
-
-`when` is the *eligibility* meta-parameter: a predicate over static host data
-that decides **whether** a request runs on a host, orthogonally to
-`doas`/`sudo`/`su` deciding **how** it runs. A request whose guard fails on a host is skipped there
-— never materialized, no facts read, nothing sent — but keeps its slot in the
-sequence, so every host shares one schedule and the plan and run log show
-`[skipped: when guard is_canary]` side by side with the hosts that run it (the
-reason names the failing *predicate*, not the request):
+Create `hello.py` beside it:
 
 ```python
-def is_canary(host: Host) -> bool:
-    return "canary" in host.tags
+import asyncio
+import json
+from collections.abc import Generator
+from pathlib import Path
 
-yield op(dnf.packages, name="Install canary tooling",
-         packages=("strace", "tcpdump"), sudo=True, when=is_canary)
-```
+from reemote5 import Host, OperationRequest, files, format_log, format_plan, op, run
 
-This is the declarative alternative to `if host.name == ...` branching in the
-deploy body (which changes the request *sequence* per host). Two rules keep it
-deterministic: the predicate reads only **static** inventory data (`host.name`,
-`host.group`, `host.tags`, ...), never mutable facts, so both phases reach the
-same skip decision; and it is a **stable function object** defined at module or
-composition level — an inline `lambda` in the deploy body is a fresh object on
-each phase invocation, which the determinism guard correctly reports as
-divergence. A skipped request is a third outcome beside *changed* and
-*no change*: ineligible regardless of state, versus nothing to do.
 
-Three rules follow from the model:
-
-1. **Use immutable containers for collection parameters.** `packages=("nginx",)`
-   not `packages=["nginx"]`. Lockstep pairing — and the determinism guard —
-   compare requests by *value*, so a list is not detected there; what the model
-   cannot carry is an *unhashable* value, since `compose(dedupe=True)` hashes
-   every argument value to collapse duplicates. `OperationRequest` therefore
-   rejects an unhashable `args`/`kwargs` value as soon as the request is built,
-   raising
-   [`UnhashableArgumentError`][reemote5.core.UnhashableArgumentError] at the
-   deploy line instead of a bare `TypeError` from inside a set insertion.
-2. **Yield requests; do not call operations.** `op(...)` only *builds* a
-   request — the driver sees one when the body *yields* it. Calling
-   `dnf.packages(...)` directly cannot work anyway, because an operation takes
-   the [`OpContext`][reemote5.core.OpContext] only the driver holds, so the call
-   fails on argument binding; and building a request then dropping it would lose
-   the operation in silence, since the shortened sequence is equally short in
-   both phases and so never trips the determinism guard. The driver therefore
-   enforces the shape at both points where it invokes a deploy body, raising
-   [`DeployRequestError`][reemote5.core.DeployRequestError] when the body returns
-   no request stream at all, when it hands over something that is not an
-   [`OperationRequest`][reemote5.core.OperationRequest], or when it builds more
-   requests than it yields (a
-   [`compose`][reemote5.core.compose]`(..., dedupe=True)` collapse is accounted
-   for, so a deliberate duplicate is not a failure). In a normal run that means
-   failing during prepare, before a single command is sent.
-3. **Do not branch on mutable state** in the deploy body. See
-   [Determinism](#determinism) below.
-
-The deploy body receives only the host — it does not get an
-[`OpContext`][reemote5.core.OpContext], and facts are read by *operations*, not
-by the deploy script. Keeping the request sequence unconditional and letting
-operations decide *changed vs. no change* is what makes a deploy work in both
-phases:
-
-```python
-def deploy(host):
-    # Same two requests in prepare and apply. Whether the link exists at the
-    # moment the second operation runs is the operation's business.
-    yield op(dnf.packages, name="Install nginx", packages=("nginx",))
+def deploy(host: Host) -> Generator[OperationRequest, None, None]:
     yield op(
-        files.link,
-        name="Remove default site",
-        src="/etc/nginx/sites-enabled/default",
-        present=False,
+        files.install,
+        name="Write a greeting",
+        content="Hello from reemote5!\n",
+        dest="/tmp/reemote5-hello.txt",
+        mode="0644",
     )
+
+
+async def main() -> None:
+    path = Path(__file__).with_name("inventory.json")
+    inventory = json.loads(path.read_text(encoding="utf-8"))
+
+    # 1. Preview: connect, read state, report proposed work, change nothing.
+    plans, report, _ = await run(inventory, deploy, dry=True)
+    print("== Plan ==")
+    print(format_plan(plans))
+    assert report is None  # a dry run never produces a report
+
+    # 2. Apply: run the same deploy for real.
+    plans, report, _ = await run(inventory, deploy)
+    print("== Applied ==")
+    print(format_log(report))
+
+
+asyncio.run(main())
 ```
 
-## Composing deploys
+Run it:
 
-Deploys are plain iterables of frozen requests, so they nest and combine
-without driver involvement. A sub-deploy is just another
-`(host) -> Generator[OperationRequest]` callable, and the simplest composition
-is delegation inside the deploy body:
+```bash
+python hello.py
+```
+
+The first call passes `dry=True`. It still connects and reads the current state of the destination — a preview must know what is there to say what would change — but it sends no mutating command, so `report` comes back `None`. The second call omits `dry`, so it plans *and* applies. Against a host where the file is absent, you will see:
+
+```text
+== Plan ==
+demo: Write a greeting         [changed: content /tmp/reemote5-hello.txt is absent, will install]
+== Applied ==
+demo: Write a greeting         [changed: content /tmp/reemote5-hello.txt is absent, will install]
+    $ scp <files install> -> /tmp/reemote5-install-d74126a381f8e984
+    $ sh -c 'mkdir -p /tmp && cp /tmp/reemote5-install-d74126a381f8e984 /tmp/reemote5-hello.txt && chmod 644 /tmp/reemote5-hello.txt && rm -f /tmp/reemote5-install-d74126a381f8e984'
+```
+
+Run the script a second time and the state is already correct:
+
+```text
+== Plan ==
+demo: Write a greeting         [no change: content already up to date (/tmp/reemote5-hello.txt)]
+== Applied ==
+demo: Write a greeting         [no change: content already up to date (/tmp/reemote5-hello.txt)]
+```
+
+That is **idempotence** in action: the same request, run again, correctly reports *no change* and sends nothing. The two `$` lines are the commands apply actually sent — an unprivileged `scp` of the text to a temporary spool path, then a `sh -c` chain that copies it into place, sets the mode and removes the spool. This example passes no `sudo=True`, so the chain runs as the login user, which is fine for a `/tmp` path that user can write. For a root-owned destination such as `/etc/...`, add `sudo=True` and the chain renders with a `sudo` prefix — the `scp` stays unprivileged either way, because a transfer is never elevated. [Files and transfers](#files-and-transfers) explains the spool-and-install pattern.
+
+Notice what the script does *not* do. There is no `reemote5` command, no inventory file format it owns, no plugin to register. `run` is an ordinary coroutine you call from ordinary code; `inventory` is a plain Python list you can build however you like. That is the whole shape of using reemote5: **build an inventory, write a deploy, call `run`.**
+
+## What makes the API work
+
+Four design decisions are worth naming up front, because the rest of the guide is their consequences. You do not need to internalise the machinery to use the library — but knowing *why* a deploy is written as a pure generator, and why you await it, prevents the common mistakes.
+
+### Pure, functional deploys
+
+A deploy is a **pure function of its host**: given the same host, it yields the same sequence of operation requests. It reads no mutable state of its own and performs no side effects. The operations *inside* the requests are what read the server and decide what to change — never the deploy body.
+
+This is what lets the runner execute your deploy **twice** and get consistent results: once to build a plan, once to apply it. Because the request sequence is a pure function, both passes produce the same steps. The runner enforces this with a [determinism guard](#determinism): if a deploy body branches on state that differs between the two passes, the runner raises rather than silently applying a different plan than it showed you.
 
 ```python
+# Pure: the same two requests every time, on every host.
 def deploy(host):
-    yield from role_baseline(host)
-    yield from role_httpd(host)
+    yield op(dnf.packages, name="Install nginx", packages=("nginx",), sudo=True)
+    yield op(files.file, name="Remove default page", path="/usr/share/nginx/html/index.html",
+             present=False, sudo=True)
 ```
 
-Two helpers in [`reemote5.core`][reemote5.core] cover what delegation cannot.
-[`sub_deploy`][reemote5.core.sub_deploy] wraps a sub-deploy with default
-meta-parameters: `name_prefix` labels every request it produces for readable
-plans, and `doas=True`/`sudo=True`/`su=True` set an escalation *policy* that elevates every
-request that did not deliberately opt out — the inner request wins whenever it
-has an opinion (`sudo=True`/`sudo=False`), and the policy only fills the
-unflagged (`UNSET`) ones, so a forced-elevation policy still respects an
-explicit `sudo=False` (see the [`Privilege`][reemote5.core.Privilege] tri-state
-above). `when=...` sets a role-level *eligibility guard* — the analogue of
-Ansible's block-level `when` — which, unlike the escalation policy, composes by
-conjunction: the wrapper's predicates and each request's own `when` must all
-pass, so a wrapper can only restrict eligibility, never widen it.
-[`compose`][reemote5.core.compose] concatenates sub-deploys into one
-deploy-shaped callable in argument order — an explicit cross-role ordering
-statement — and with `dedupe=True` collapses requests sharing the same
-*effective identity* (`func`, args, kwargs, `when` and the *resolved*
-`doas`/`sudo`/`su` decision — everything that decides whether and how a request
-executes, but not the plan `name`) to their first occurrence, so
-independently written roles can each declare the same prerequisite under
-their own label:
+### Two phases: plan, then apply
+
+Every run answers two questions in order — *what would this change?* and then *change it*. The first pass (**prepare**) builds the plan without mutating anything; the second (**apply**) executes the work. `dry=True` stops after the first, which is how you preview a deployment safely. Both passes read real facts over the connection, so a preview is honest about the current state. Detail in [The execution model](#the-execution-model).
+
+### Asyncio end to end
+
+The execution path is asynchronous: `run`, the prepare and apply drivers, every fact read and every command send are coroutines, so you call them with `await` and drive them from `asyncio.run(...)`. This is not ceremony — it is what lets reemote5 work on **many hosts concurrently**, overlapping the network waits instead of contacting one server at a time. Within apply, hosts advance through their steps in lockstep; the concurrency is across hosts, and the commands for a single host still run in order. Your deploy stays a plain synchronous generator; only the runner is async.
 
 ```python
-from reemote5 import compose, dnf, files, op, sub_deploy
+plans, report, hosts = await run(inventory, deploy)   # a coroutine — you must await it
+```
 
-def role_baseline(host):
-    yield op(dnf.packages, name="Install baseline tools",
-             packages=("curl",), sudo=True)
+### No awareness of the controller filesystem
 
-def role_httpd(host):
-    # Re-declares its prerequisite: dedupe collapses the duplicate.
-    yield op(dnf.packages, name="Install baseline tools",
-             packages=("curl",), sudo=True)
-    yield op(dnf.packages, name="Install httpd", packages=("httpd",), sudo=True)
-    yield op(files.file, name="Remove welcome configuration",
-             path="/etc/httpd/conf.d/welcome.conf", present=False, sudo=True)
+reemote5 does not scan your local machine for files to upload, and it has no notion of a "deploy directory" or a role tree on the controller. Content crosses to the host as **data you hand it**, not as a path the library resolves:
 
-def role_httpd_tools(host):
-    # Written for a root login: no sudo flags anywhere.
-    yield op(dnf.packages, name="Install httpd tools", packages=("httpd-tools",))
+- `files.install` takes `content` as a plain string and writes it.
+- `files.put` and `files.get` take an **IO-like object** (an open file, an `io.StringIO`, an `io.BytesIO`) — never a local path string.
 
-deploy = compose(
-    role_baseline,
-    role_httpd,                                  # shares the baseline request
-    sub_deploy(role_httpd_tools, name_prefix="httpd", sudo=True),
-    dedupe=True,
+Every remote path in an operation refers to a path **on the target host**, not on the controller. This keeps a deploy portable: the same code runs unchanged whether your controller is a laptop, a CI runner or a container, because the library never depends on a local file layout. If you want to ship a controller-side file, your code opens it and hands reemote5 the stream:
+
+```python
+# Your code opens the controller file once; reemote5 only ever sees the stream.
+def make_deploy(stream):
+    def deploy(host: Host) -> Generator[OperationRequest, None, None]:
+        yield op(files.put, name="Upload nginx.conf", src=stream, dest="/tmp/nginx.conf")
+    return deploy
+
+with open("nginx.conf", "rb") as stream:
+    await run(inventory, make_deploy(stream))
+```
+
+An IO argument is compared by *identity*, so the stream is opened once and captured by the deploy — both phases then see the same object, and a fresh handle per phase would trip the determinism guard. Plain text needs no such care: `files.install` takes a `content` string, which compares by value. [Files and transfers](#files-and-transfers) covers both.
+
+## Configure a small web server
+
+Here is a realistic deploy that combines packages, a file and a service, with the privileges each needs. It targets Debian/Ubuntu hosts and is guarded by a `when` predicate so it is skipped on hosts that are not in the `debian` group.
+
+```python
+import asyncio
+import json
+from collections.abc import Generator
+from pathlib import Path
+
+from reemote5 import Host, OperationRequest, apt, files, format_log, format_plan, op, run, systemd
+
+
+def is_debian(host: Host) -> bool:
+    # A `when` guard reads only static inventory data (here host.group), never
+    # a mutable fact, so the prepare and apply passes reach the same decision.
+    return host.group == "debian"
+
+
+PAGE = """<!doctype html>
+<html><head><title>Example</title></head>
+<body><h1>It works</h1></body></html>
+"""
+
+
+def deploy(host: Host) -> Generator[OperationRequest, None, None]:
+    yield op(
+        apt.packages,
+        name="Install nginx",
+        packages=("nginx",),
+        sudo=True,
+        when=is_debian,
+    )
+    yield op(
+        files.install,
+        name="Write the landing page",
+        content=PAGE,
+        dest="/var/www/html/index.html",
+        mode="0644",
+        sudo=True,
+        when=is_debian,
+    )
+    yield op(
+        systemd.service,
+        name="Run nginx",
+        service="nginx",
+        running=True,
+        enabled=True,
+        sudo=True,
+        when=is_debian,
+    )
+
+
+async def main() -> None:
+    inventory = json.loads(
+        Path(__file__).with_name("inventory.json").read_text(encoding="utf-8")
+    )
+    plans, report, _ = await run(inventory, deploy, dry=True)
+    print(format_plan(plans))
+    plans, report, _ = await run(inventory, deploy)
+    print(format_log(report))
+
+
+asyncio.run(main())
+```
+
+The corresponding inventory entry adds the `group` the guard reads and the privilege data the `sudo=True` requests need:
+
+```json
+[
+  {
+    "host": "web1",
+    "connection": {"address": "192.0.2.20", "username": "deploy", "key_path": "~/.ssh/id_ed25519"},
+    "group": "debian",
+    "privilege": {"sudo_user": "root"}
+  }
+]
+```
+
+!!! warning "This example changes a real server"
+
+    Applying it installs a package, writes a root-owned file under `/var/www`
+    and starts a service. Point it only at a host you are allowed to modify,
+    and preview with `dry=True` first. A passwordless-sudo login needs no
+    `sudo_password`; if the account prompts for one, add `"sudo_password": "..."`
+    to the `privilege` mapping (it rides an askpass helper and never appears in
+    the log — see [Hosts and the inventory](#hosts-and-the-inventory)).
+
+Three steps run in order on every `debian` host: install nginx (only if a package is missing), write the landing page (only if its content differs), and ensure the service is running and enabled (only if it is not already). On a host where everything is already in place, all three report *no change* and nothing is sent. On a host outside the `debian` group, all three are *skipped* — the guard keeps its slot in the sequence but reads no facts and sends no commands. That skip/run distinction, and why the guard must read only static data, is the subject of [Determinism](#determinism).
+
+The rest of the guide takes each piece of this example apart: what an inventory can hold, how a deploy is written and composed, how the two phases stay in agreement, and how facts, operations and actions actually work.
+
+
+## The execution model
+
+This section is the detail behind the four design decisions. Read it once and the rules for writing deploys stop feeling arbitrary.
+
+### The two phases
+
+A run moves through two phases in lockstep.
+
+**Prepare** builds the plan without changing anything. For each host it calls your deploy generator and collects the operation requests. It *does* connect and read facts — a plan has to know the current state to say what would change — but it never sends a mutating command.
+
+**Apply** executes the work. It calls your deploy generator *again*, from the top, and this time materialises each operation into commands and sends them.
+
+The two phases advance together, step by step. At each position *n*, every host materialises its *n*th request, runs that step's commands, and only when all hosts have finished step *n* does the runner move to step *n+1*. Commands for one host within a step run in order; the concurrency is across hosts. `asyncio.gather` is the barrier between steps.
+
+```text
+step 0:  host-a op0 ─┐
+         host-b op0 ─┤── barrier (all hosts finish step 0)
+         host-c op0 ─┘
+step 1:  host-a op1 ─┐
+         host-b op1 ─┤── barrier
+         host-c op1 ─┘
+```
+
+`dry=True` stops after prepare: it returns the plan and a `None` report, having read facts but sent no mutation.
+
+!!! warning "A plan is a snapshot of the current state, not a simulation"
+
+    Prepare reads the state as it is *now*. It does not model the effect of
+    earlier operations on later ones. If operation 1 creates a file that
+    operation 2 would read, the plan shows operation 2 against the *pre-run*
+    state; only apply sees the file operation 1 just made. Plans are accurate
+    for "what is currently out of sync", not for "what the world will look like
+    mid-run".
+
+There is no transaction and no rollback. Apply runs each step to completion; if a host errors, `run_apply` uses `gather(return_exceptions=True)`, so the other hosts in the current step still finish before the error propagates and the run stops.
+
+### Hosts and the inventory
+
+The inventory is a list of dictionaries. Each entry must carry a `host` (its logical label) and a `connection` (how to reach it); `group`, `tags` and `privilege` are optional, and any extra keys are preserved on the materialised `Host`. reemote5 validates the whole inventory with pydantic before it builds a single host, so a malformed entry raises `InventoryError` immediately rather than failing later over the network.
+
+```json
+[
+  {
+    "host": "web1",
+    "connection": {"address": "192.0.2.20", "username": "deploy", "key_path": "~/.ssh/id_ed25519"},
+    "group": "webservers",
+    "tags": ["ubuntu", "edge"],
+    "privilege": {"sudo_user": "root", "sudo_password": "s3cr3t"}
+  }
+]
+```
+
+- **`host`** is the label used in plans and logs. It is *not* the address — a host may be reached through a jump host or a container identifier. Labels should be unique; the plan and report are keyed by them.
+- **`connection`** holds the SSH options. `address` (or `host`/`hostname`) is required for SSH; `username`/`user`, `key_path`, `port`, `known_hosts`, `proxy_command`, `tunnel` and the rest are forwarded to asyncssh. `key_path` is a shorthand for `client_keys`, and path-valued options have `~` expanded. A `"connector": "docker"` key switches the transport to a local Docker/Podman container.
+- **`group`** is a single string; **`tags`** is a list. Both are *static* classifiers a deploy reads off the host to branch, and both are the only data a `when` guard may consult.
+- **`privilege`** holds elevation data: `sudo_user`/`sudo_password`, `su_user`/`su_password`, `doas_user`. These come from the inventory, never from a deploy — an operation asks to elevate with `sudo=True`, but it cannot choose the run-as user or supply a password.
+
+A `sudo_password` is delivered through an askpass helper and never appears in the log or the plan. There is deliberately no `doas_password`: `doas` has no askpass mechanism, so reemote5 always runs `doas -n` and the host must grant a `permit nopass` rule.
+
+`Host.from_inventory` is the default factory that turns each entry into a `Host`. The connection is opened lazily and cached; `run` closes every connection when it finishes. If a host cannot be reached, `Host.connect` wraps the transport failure in a `HostConnectionError` naming that host, and because prepare connects the whole inventory concurrently, the per-host failures are merged into one aggregate naming every unreachable host.
+
+### Deploy scripts
+
+A deploy is a generator function that takes a `Host` and yields `OperationRequest` objects. You build a request with `op`:
+
+```python
+def op(
+    func,                       # the operation function, e.g. files.install
+    *,
+    name: str = "",             # a label for plans and logs
+    sudo: Privilege | bool = Privilege.UNSET,
+    su:   Privilege | bool = Privilege.UNSET,
+    doas: Privilege | bool = Privilege.UNSET,
+    when: WhenPredicate | tuple[WhenPredicate, ...] | None = None,
+    **kwargs,                   # the operation's own parameters
+) -> OperationRequest
+```
+
+`name`, the three privilege flags and `when` are **metadata** the runner consumes; everything else in `**kwargs` is forwarded to the operation. `name` is never passed to the operation — it is purely a label.
+
+```python
+def deploy(host: Host) -> Generator[OperationRequest, None, None]:
+    yield op(files.install, name="Write config", content=CONF, dest="/etc/app.conf", sudo=True)
+    yield op(systemd.service, name="Restart app", service="app", restarted=True, sudo=True)
+```
+
+A few rules keep requests well-behaved:
+
+- **Every request argument must be hashable.** `op` checks each value with `hash()` and raises `UnhashableArgumentError`, naming the argument, if one is not. Use tuples, not lists, for collections of packages, names or paths: `packages=("nginx", "curl")`.
+- **Do not define an operation inline as a lambda or closure** if you can avoid it. Requests are compared by value across the two phases; a fresh lambda in each pass is a *different* callable and the determinism guard will reject it. Define the operation function at module level.
+- **Yield the requests you build.** A request built with `op` but never yielded is a programming error; the runner detects it and raises `DeployRequestError`.
+
+The privilege flags are **tri-state**: `True`/`ON` means elevate, `False`/`OFF` means explicitly *unprivileged*, and `Privilege.UNSET` (the default) means "no preference". Sub-deploys use this to fill in defaults without overriding an operation's explicit choice — see [Composing deploys](#composing-deploys).
+
+A `when` guard is a predicate `host -> bool` (or a tuple of them, combined with AND). When a guard is false, the request keeps its slot in the sequence but is *skipped*: no facts are read, no commands are sent. Guards may only read static inventory data (`host.name`, `host.group`, `host.tags`, `host.extra`) — reading a fact inside a guard would break determinism.
+
+### Composing deploys
+
+Deploys compose three ways, all operating on request sequences.
+
+**`yield from`** delegates to another deploy generator:
+
+```python
+def web(host):
+    yield op(apt.packages, name="Install nginx", packages=("nginx",), sudo=True)
+
+def deploy(host):
+    yield from base(host)
+    yield from web(host)
+```
+
+**`compose(*subs, dedupe=False)`** concatenates role deploys in order:
+
+```python
+deploy = compose(base, web, monitoring)
+```
+
+**`sub_deploy()`** wraps a deploy to add a name prefix, a default privilege policy and an eligibility guard:
+
+```python
+from reemote5 import sub_deploy
+
+edge_web = sub_deploy(
+    web,
+    name_prefix="edge",
+    sudo=True,                 # fills UNSET privilege on inner ops; explicit values win
+    when=lambda host: host.group == "edge",
 )
 ```
 
-Rules that keep composition deterministic:
+A sub-deploy's privilege policy fills any operation left `UNSET`, but honours an operation that already set `sudo`/`su`/`doas` explicitly. Guards combine by conjunction: the sub-deploy's guard AND each inner request's guard.
 
-- Wrappers must be **pure stream transforms** — no state shared between
-  invocations, no reads of mutable host state. Both helpers create any
-  internal state (the dedupe set) per call, so the prepare and apply phases
-  flatten identically and the determinism guard holds.
-- Dedupe collapses by *effective identity*: `name` only labels a request in
-  plans and logs and is excluded from the dedupe key, while `doas`/`sudo`/`su`
-  contribute their **resolved** elevate-or-not decision (they change what
-  executes, and because only `ON` elevates, a deliberate `OFF` and an unflagged
-  `UNSET` are the same request here), and `when` participates as given (it
-  changes whether a request executes). The first occurrence wins and
-  keeps its name, so identically-parameterized requests collapse even under
-  different labels or `name_prefix`es — at the cost of silently dropping the
-  later label. `OperationRequest` equality itself stays maximal (name
-  included), because the determinism guard pairs full values.
-- Sub-deploys stay **sync generators** and inherit every deploy-body rule
-  above — in particular, do not branch on mutable facts inside them.
-- Branch on **static** data instead: assemble the deploy from roles at call
-  time (per environment, or per host from inventory data such as `host.name`),
-  so the same composed callable is used in both phases.
+With `dedupe=True`, `compose` drops requests that repeat an earlier one. Dedupe compares the *resolved* elevation decision, the function, args, kwargs and guards — but **not** the display name. Full request equality (used by the determinism guard) additionally includes the name and the tri-state privilege values.
 
-Runnable demonstrations of each pattern — deduplication, environment layering,
-privilege policies, role ordering, per-host branching, eligibility guards and
-patch windows — live
-in [Examples](examples/demonstrations/composition.md).
+### Running a deploy
 
-## Running a deploy
-
-[`run`][reemote5.drivers.run] is the one-call entry point. It takes the
-*inventory* — the list of host dictionaries described under
-[Hosts and the inventory](#hosts-and-the-inventory) — and is a coroutine, so
-it must be awaited:
+`run` is the single entry point:
 
 ```python
-plans, report, hosts = await run(inventory, deploy)  # prepare + apply
-plans, report, hosts = await run(inventory, deploy, dry=True)  # prepare only, report is None
+async def run(
+    inventory: list[dict],
+    deploy_func: Callable,
+    *,
+    host_factory: Callable[[dict], Host] = Host.from_inventory,
+    dry: bool = False,
+) -> tuple[dict[str, list[PlannedOperation]], ApplyReport | None, list[Host]]
 ```
 
-It returns the plan keyed by host name, the
-[`ApplyReport`][reemote5.drivers.ApplyReport] and the materialized hosts (so
-callers can inspect their final state). Render either with
-[`format_plan`][reemote5.drivers.format_plan] /
-[`format_log`][reemote5.drivers.format_log], or inspect the structures
-directly:
+It validates the inventory, materialises the hosts, runs prepare, and — unless `dry` — runs apply, then closes every connection in a `finally`. It returns a three-tuple:
+
+- **`plans`** — `{host_label: [PlannedOperation, ...]}`, the proposed work. `format_plan(plans)` renders it.
+- **`report`** — an `ApplyReport` with a `LogEntry` per applied operation, or `None` when `dry=True`. `format_log(report)` renders it. **`format_log` requires a report, not `None`** — guard the call.
+- **`hosts`** — the materialised `Host` objects. These are the targets, *not* snapshots of remote state; do not expect them to carry the facts you read.
 
 ```python
-if report is not None and report.changed:
-    for entry in report.log:
-        print(entry.host, entry.name, entry.changed, entry.reason)
-```
-
-To drive the phases yourself — for example to review a plan before committing
-to it — use [`run_prepare`][reemote5.drivers.run_prepare] and
-[`run_apply`][reemote5.drivers.run_apply], which take materialized
-[`Host`][reemote5.hosts.Host] objects:
-
-```python
-hosts = [Host.from_inventory(entry) for entry in inventory]
-runtimes, plans = await run_prepare(hosts, deploy)
+plans, report, hosts = await run(inventory, deploy)
 print(format_plan(plans))
-report = await run_apply(runtimes, plans=plans)  # plans= enables the determinism guard
+if report is not None:
+    print(format_log(report))
 ```
 
-## Determinism
+A `PlannedOperation` records `request`, `changed`, `reason`, `commands` and `skipped`. A `LogEntry` records the same plus the privilege fields and the command renderings actually sent. `ApplyReport.changed` is true if any entry changed.
 
-Lockstep apply pairs requests by position, so the prepare and apply phases must
-produce the same request sequence for a given host. The driver enforces this:
-when `run_apply` receives the plans, every pulled request is compared against
-the accumulated plan, and divergence raises
-[`DeterminismError`][reemote5.drivers.DeterminismError].
+For lower-level control there are `run_prepare` and `run_apply`, and `gather_fact` for reading facts across hosts. These do **not** own connection cleanup the way `run` does — if you call them directly, close your hosts in a `finally` yourself.
+
+### Determinism
+
+The runner executes your deploy twice — once to plan, once to apply — and requires both passes to yield the *same* request sequence. This is the **determinism** property, and it is why a deploy must be a pure function of its host.
+
+The guard compares each pulled request against the one prepare recorded, by value, and also checks for extra requests. If a deploy body branches on something that differs between the passes — a fact, a random number, the current time, a mutable global, a freshly-created lambda — the two sequences disagree and the runner raises `DeterminismError` rather than applying a different plan than it showed you.
+
+The practical rules that follow:
+
+- Read state through **operations and facts**, not through the deploy body. The deploy describes *intent*; the operation reads *current state* and decides the change.
+- Keep every request argument **stable and hashable** across passes: module-level constants, tuples, and the *same* IO object identity for a stream.
+- A `when` guard may consult only **static inventory data**, never a fact.
+
+!!! note "What the guard does and does not catch"
+
+    The guard detects a request that differs by value and detects extra
+    requests appended after the prepared sequence. It compares what it pulls;
+    it is not a general proof of determinism. The reliable way to stay
+    deterministic is to keep the deploy body pure, not to rely on the guard to
+    catch every possible divergence.
+
+Determinism does **not** mean the two phases produce identical *commands* or identical *changed* flags. Prepare reads the state before any change; apply re-reads it as it goes, and state genuinely changes between steps. What must stay identical is the **request sequence** — the steps themselves. The decisions and generated commands may legitimately differ because the world moved.
+
+### Change notification (handlers)
+
+reemote5 has **no first-class handler mechanism**. There is no `notify`/`handler` keyword and no event bus. A conditional restart — "restart the service only if the config changed" — is something you build from the *results of a previous run*, in ordinary Python, outside the deploy body.
+
+The clean pattern is to capture which operations reported `changed` on the last apply, freeze them into a set, and pass that set into the next deploy as a stable input:
 
 ```python
-SITE = "/etc/nginx/sites-enabled/default"
+async def main() -> None:
+    # Pass 1: converge config files.
+    _, config_report, _ = await run(inventory, config_deploy)
+    changed = frozenset(
+        (entry.host, entry.name)
+        for entry in config_report.log
+        if entry.changed
+    )
 
+    # Pass 2: restart only the services whose config actually changed.
+    def service_deploy(host):
+        if (host.name, "Write app config") in changed:
+            yield op(systemd.service, name="Restart app", service="app", restarted=True, sudo=True)
 
-# ✗ Breaks determinism.
-def deploy(host):
-    yield op(dnf.packages, name="Install nginx", packages=("nginx",))
-    if host.links.get(SITE) is None:  # reads mutable host state directly
-        return
-    yield op(files.link, name="Remove default site", src=SITE, present=False)
+    await run(inventory, service_deploy)
 ```
 
-Here `host.links` is the test framework's in-memory seam; the same mistake on a
-real host is a fact read written into the deploy body. Either way, during
-prepare nothing has run, so the store is empty and the plan holds one request.
-During apply, installing nginx created the link (via the host's `installs_links`
-side effects), so the generator yields a second request — and `run_apply` raises
-`DeterminismError`.
-
-Safe patterns:
-
-- keep the request sequence unconditional, and let operations decide
-  *changed vs. no change* internally (this is what
-  [`dnf.packages`][reemote5.modules.dnf.dnf.packages] and
-  [`files.link`][reemote5.modules.files.files.link] do; a deliberately
-  *non-idempotent* operation such as
-  [`dnf.update`][reemote5.modules.dnf.dnf.update] simply reports a change
-  unconditionally, which is equally phase-stable);
-- branch only on **immutable** inputs — host name, inventory data, deploy
-  arguments — which read identically in both phases;
-- guard per-host eligibility with a `when` predicate over static data instead
-  of an `if` in the deploy body — the request sequence stays identical on every
-  host and the driver skips ineligible ones (see
-  [Deploy scripts](#deploy-scripts)). Like the operation functions themselves,
-  predicates must be stable function objects: an inline `lambda` is recreated
-  on each phase invocation and compares unequal, raising `DeterminismError`.
-
-## Change notification (handlers)
-
-Ansible roles restart a service through `notify:` and handlers: a config
-task queues the restart only when it reports *changed*, and the handler
-fires once, at the end of the run. reemote5 has no first-class handler
-mechanism, and
-[`systemd.service`][reemote5.modules.systemd.systemd.service] with
-`restarted=True` cannot stand in for one — `restarted` is deliberately
-stateless, so it restarts a running unit on **every** deploy that reaches
-it. Three architectural rules block the obvious do-it-yourself shortcuts:
-
-- `when` predicates read static inventory data only, never run outcomes;
-- `ctx.changed` flows one way (operation → driver →
-  [`ApplyReport`][reemote5.drivers.ApplyReport]); a deploy body cannot
-  observe its own earlier operations' results;
-- branching on "did the config write change?" inside one deploy yields a
-  different request sequence per phase, raising
-  [`DeterminismError`][reemote5.drivers.DeterminismError].
-
-The sanctioned shape is the **two-deploy outcome split**, a sibling of the
-two-deploy fact split: read the outcomes *between* two complete
-prepare/apply cycles, freeze them, and build the restart deploy from a
-factory closing over the frozen data.
-
-```python
-NOTIFYING = frozenset({"Install nginx", "Install demo config"})
-
-# Run 1: the notifying tasks (named requests, branch-free deploy).
-plans, report, hosts = await run(inventory, configure)
-
-# The notification read: freeze which hosts changed a notifying task.
-changed = frozenset(
-    entry.host
-    for entry in report.log
-    if entry.changed and entry.name in NOTIFYING
-)
-
-
-# Run 2: the handler, built ONCE from the frozen set.
-def build_handler(changed):
-    def handler(host):
-        if host.name in changed:
-            yield op(systemd.service, service="nginx", restarted=True, sudo=True)
-
-    return handler
-
-
-plans, report, hosts = await run(inventory, build_handler(changed))
-```
-
-A `changed` entry is trustworthy: the driver is fail-fast (a non-zero exit
-raises `CommandError`), so it means the commands were sent and succeeded.
-The apply-phase join of run 1 is the barrier — every config write has
-landed before any restart is planned — and the handler properties fall out
-for free: at most one restart per host (deduplication), after all notifying
-operations (end-of-run flushing), and no restart at all on a converged
-re-run (the frozen set is empty, so the handler deploy yields nothing).
-Note that `restarted=True` only restarts a unit that is already running;
-the default `running=True` starts a stopped one, so a freshly installed
-service is started by its first handler pass.
-
-The trade-offs mirror Ansible's: the restart happens in a second full
-prepare/apply cycle, and a `dry=True` preview of run 1 cannot know whether
-the handler will fire (check mode skips handlers for the same reason) —
-the handler's own dry preview, computed against the frozen outcome, is
-honest. Demonstrated end to end by
-`examples/demonstrations/composition/handler_restart.py` on the
-[composition examples page](examples/demonstrations/composition.md).
+`changed` is computed *before* `service_deploy` is defined and is then a fixed value, so the deploy stays pure and deterministic. `systemd.service` with `restarted=True` restarts unconditionally when the unit is active; the conditional logic lives in your code, not in a handler.
 
 ## Facts
 
-A fact is a class with an `async` `process` classmethod returning the raw
-value. Facts are asynchronous, phase-unaware, and never yielded by a
-generator. `process` takes the fact's own arguments after the host, and reads
-state the same way whether or not a transport is present: through a
-`SimulatedHost` seam when the host provides one, over asyncssh when it does not.
+A **fact** reads state from a host. It is any class with an async `process` classmethod — there is no base class to subclass:
 
 ```python
-from reemote5 import Host
-
-
-class EnabledSites:
-    """The set of nginx sites currently enabled on the host."""
+class Hostname:                       # the real server.Hostname, simplified
+    COMMAND = "uname -n"
 
     @classmethod
-    async def process(cls, host: Host) -> set[str]:
-        links = getattr(host, "links", None)
-        if links is not None:
-            # SimulatedHost seam: read the in-memory state directly.
-            prefix = "/etc/nginx/sites-enabled/"
-            return {src for src in links if src.startswith(prefix)}
-        # Real transport: list the site directory over asyncssh. The `|| true`
-        # guard keeps a missing directory an empty answer rather than a failed
-        # command, exactly as the seam's empty mapping reads.
-        stdout = await host.run_shell(
-            "ls -1 /etc/nginx/sites-enabled 2>/dev/null || true"
-        )
-        return {f"/etc/nginx/sites-enabled/{name}" for name in stdout.split()}
+    async def process(cls, host: Host) -> str:
+        stdout = await host.run_shell(cls.COMMAND)   # run_shell returns text
+        for line in stdout.splitlines():
+            if line.strip():
+                return line.strip()
+        return ""
 ```
 
-That is the shape of every library fact: a `process` that runs one (or a few)
-shell commands and parses the output. Facts live in the namespace modules beside
-the operations that consume them —
-[`FileLink`][reemote5.modules.files.files.FileLink] in
-`reemote5.modules.files.files`, `DnfPackages` in `reemote5.modules.dnf.dnf` —
-and their docstrings record the commands they run and the shape they return. An
-enumerating fact returns a `TypedDict` or a list of shared entry `TypedDict`s, so
-reads stay deterministic and JSON-printable.
-
-Always read facts inside a deploy through the cache, never by calling `process`
-directly — the cache is the boundary whose lifetime the driver controls, and its
-`get` is a coroutine, so it must be awaited:
+You rarely call a fact directly. Operations read the facts they need through a `FactCache`, which awaits each fact once per host and caches the result, so a fact used by several operations in one step runs once:
 
 ```python
-enabled = await ctx.facts.get(EnabledSites)
+class FactCache:
+    async def get(self, fact_cls, *args, **kwargs):
+        key = (fact_cls, args, tuple(sorted(kwargs.items())))
+        if key not in self._data:
+            self._data[key] = await fact_cls.process(self.host, *args, **kwargs)
+        return self._data[key]
 ```
 
-Cache keys include the fact class and its arguments, so repeated reads within
-one step are free.
+Apply **recreates the cache before each request**, which is what lets a later operation see the effect of an earlier one: install a package in step 1, and step 2's `AptPackages` fact reads the newly-installed set rather than a stale cache.
 
-Outside a deploy, [`gather_fact`][reemote5.drivers.gather_fact] fans one fact
-out across the hosts concurrently and returns a `{host.name: value}` mapping:
+When you *do* want a fact's value directly — to branch between two deploys, or to report it — read it across hosts with `gather_fact`:
 
 ```python
-values = await gather_fact(hosts, EnabledSites)
+from reemote5 import gather_fact, server
+
+hostnames = await gather_fact(hosts, server.Hostname)
+# {"web1": "web1.example.com", "web2": "web2.example.com"}
 ```
 
-A deploy cannot use that value directly — a fact read inside the body would see
-different state in prepare and apply — but a *snapshot* of it can: run
-`gather_fact`, build the deploy from a factory closing over the returned
-mapping, then run that deploy. The factory is a pure function of static input,
-so both phases resolve identically and the [determinism](#determinism) guard
-holds. This is the **two-deploy fact split**, demonstrated end to end by
-`examples/demonstrations/composition/two_deploy_split.py` and collected on the
-[composition examples page](examples/demonstrations/composition.md).
+`gather_fact` returns a `{host_label: value}` mapping and does **not** close the hosts. It aggregates `CommandNotFoundError` across hosts; other exceptions propagate. Filter the host list yourself to select a subset — `gather_fact` passes its extra keyword arguments to the fact, not to a group/tag selector.
+
+!!! warning "Not every fact failure raises"
+
+    `run_shell` defaults to `check=False`, so a non-zero exit does not
+    automatically raise. Exit status 127 (command not found) always raises
+    `CommandNotFoundError` unless the remote shell masks it. Built-in facts
+    sometimes deliberately mask errors or interpret empty output — for example
+    `FileContents` distinguishes "absent" from "empty" with a marker rather than
+    raising. Do not assume every fact failure surfaces as an exception.
 
 ## Operations
 
-An operation is an async generator receiving the
-[`OpContext`][reemote5.core.OpContext] as its first argument:
+An **operation** is an async generator that takes an `OpContext` and yields command descriptors. It reads facts to decide whether anything must change, and yields commands only when it does — that is what makes it idempotent.
 
 ```python
-async def operation(ctx: OpContext, *args, **kwargs) -> AsyncGenerator[Command]:
+async def install(ctx: OpContext, content: str, dest: str, mode: str = "0644", ...) -> AsyncGenerator[Command]:
+    current = await ctx.facts.get(FileContents, dest)
+    if current == content:
+        return                      # nothing to do — reports "no change"
+    yield InstallSpoolCommand(...)  # upload to a /tmp spool
+    yield InstallCommand(...)       # elevated: cp spool dest && chmod && rm spool
 ```
 
-Its contract:
+You never call an operation yourself. You reference it in `op`, which records the call; the runner materialises it during prepare (to see what it *would* yield) and again during apply (to actually send). An operation's parameters are the `**kwargs` you pass to `op`.
 
-- await facts via `await ctx.facts.get(...)`;
-- set `ctx.changed = True` and a short `ctx.reason` at the point where it
-  decides a change is needed (leave `changed` false and still set `reason`
-  for the "no change" explanation shown in plans);
-- yield one command descriptor per command that would mutate the host;
-- never execute anything and never touch the host directly.
+The `OpContext` an operation receives carries the host, its `FactCache`, and the resolved privilege decision for this request. Operations are **phase-unaware**: the same code runs in prepare and apply; the context is what differs.
 
-Two deliberate relaxations of that contract exist, and neither breaks phase
-agreement because both stay independent of host state:
+Operations return a *declared result*. A `changed` flag means the operation did the work it set out to do; for the built-in operations that converge a described state, that is a genuine convergence. Avoid assuming an arbitrary custom operation's `changed` flag proves every postcondition you care about — it proves what the operation checked.
 
-- a **non-idempotent** operation reads no fact and always reports a change,
-  yielding its command on every materialization —
-  [`dnf.update`][reemote5.modules.dnf.dnf.update] (and `apt.key`, which imports a
-  key stream) are the library's examples;
-- an operation whose **prerequisite is missing on the host** raises
-  [`OperationError`][reemote5.core.OperationError] while materializing —
-  `server.timezone` needs `timedatectl` and is systemd-only — which in a deploy
-  run aborts during prepare, before anything is sent.
+### Files and transfers
 
-The built-in [`files.link`][reemote5.modules.files.files.link] in full:
+The files namespace shows the design boundaries most clearly.
 
-```python
-async def link(
-    ctx: OpContext, src: str, target: str | None = None, present: bool = True
-) -> AsyncGenerator[Command]:
-    current = await ctx.facts.get(FileLink, src)
+- **`files.install(content, dest, mode=..., ...)`** writes *text* to a remote path. `content` is a plain string; `dest` is a path on the target. It compares content only — if the text already matches, it yields nothing. Metadata drift (mode, owner) is **not** reconciled by `install`; use `files.file` for that. A root-owned destination needs `sudo=True`.
+- **`files.file(path, present=True, mode=..., user=..., group=..., touch=False, ...)`** manages a file's existence and metadata. `present=False` removes it. `touch=True` deliberately runs every time. `force=True` can recursively remove a conflicting type — use it knowingly.
+- **`files.put(src, dest)`** and **`files.get(src, dest)`** move bytes between an **IO-like object** and a remote path. `put` takes an IO source and a remote destination; `get` takes a remote source and an IO destination. Neither takes a local path string. The transfer is **unprivileged** — `sudo` does not elevate an SCP. Both compare a SHA-1 digest to skip a needless transfer, and both rewind the stream.
+- **`files.edit(path, transform)`** applies a pure function `str | None -> str` to a remote file's current text and uploads the result only if it differs. The transform must be idempotent and stable — it runs in both phases.
 
-    if present:
-        if current == target:
-            ctx.reason = f"link already correct ({src} -> {target})"
-        else:
-            ctx.changed = True
-            ctx.reason = f"link {src} -> {target} missing or incorrect"
-            yield LinkCommand(src=src, target=target)
-    else:
-        if current is None:
-            ctx.reason = "link already absent"
-        else:
-            ctx.changed = True
-            ctx.reason = "link present, will remove"
-            yield LinkCommand(src=src, target=None)
-```
+**Protected text files** (root-owned `/etc/...` paths) use a *spool-and-install* pattern rather than an in-place edit: `files.install` uploads the text to a deterministic `/tmp` spool path derived from the destination, then runs an elevated `sh -c` chain that copies the spool into place, sets ownership and mode, and removes the spool. The upload itself is unprivileged; only the install chain is elevated. The `/tmp` spool path is predictable and is **not** a security boundary — it is a staging location, not a secret.
 
-Note that `reason` is set on both branches: it is the explanation printed in
-plans and run logs even when nothing changes.
-
-Operations live in namespace modules under `reemote5.modules` so deploy
-scripts read `dnf.packages` rather than `dnf_packages`. The driver calls
-`request.func(ctx, *request.args, **request.kwargs)`, and materializes the
-whole command generator to learn `changed` — even during prepare.
+Because the transfer is unprivileged, an existing file whose content the login user cannot read may appear empty to a generic read-back, which can undermine idempotence for restrictive permissions. Prefer `files.install` for a single-cycle protected text write; it does not have the "create then move" two-run problem that `files.move` has (a `move` validates its source during materialisation, so a source created in the same run is not yet present at plan time).
 
 ## Command descriptors
 
-Commands are frozen dataclasses subclassing
-[`Command`][reemote5.commands.Command]; typed descriptors live beside the
-operations that yield them (`reemote5.modules.dnf.dnf`,
-`reemote5.modules.files.files`). There are three kinds.
-[`send_command`][reemote5.drivers.send_command] checks for a
-`SimulatedHost` seam first, so a test host applies its in-memory effect and
-nothing else is considered; on a real host it then dispatches on the
-descriptor kind, `TransferCommand` and `WaitCommand` before the shell case:
+A command descriptor is the unit an operation yields. It is a small object describing *what to send* — a shell string, a transfer, a wait. You almost never construct one directly; operations build them. The common kinds:
 
-1. **Shell descriptors** — the ordinary kind, and the fallback case: anything
-   that is neither a transfer nor a wait runs its command line. A `shell()`
-   method returning that line is what makes a descriptor useful twice over: it
-   is the text the real transport *runs* (`host.run_shell` /
-   `host.run_shell_privileged`) *and* the text
-   [`format_log`][reemote5.drivers.format_log] prints, prefixed with the
-   resolved `doas`/`sudo`/`su`. A descriptor without `shell()` falls back to its
-   dataclass `repr`, so every shell descriptor must define it.
-2. **`TransferCommand`** ([`reemote5.commands.TransferCommand`][reemote5.commands.TransferCommand]) —
-   a descriptor that copies bytes instead of running shell text: `files.put`'s
-   and `files.get`'s transfers, and the `/tmp` spools `dnf.repo`, `dnf.key` and
-   their apt counterparts write before installing them. It has no `shell()`; the
-   driver awaits its `transfer`, which rides the connection's own scp channel as
-   the *login* user, so the `doas`/`sudo`/`su` flags do not apply to it — and the
-   log says so rather than printing a misleading `sudo scp ...`.
-3. **`WaitCommand`** ([`reemote5.commands.WaitCommand`][reemote5.commands.WaitCommand]) —
-   a descriptor that polls the host until a condition holds, used by
-   `server.wait` and `server.wait_service`. Likewise unprivileged; on timeout
-   it raises `WaitTimeoutError`. The wait lives in a descriptor rather than in
-   the operation body because prepare never sends: an operation that polled
-   inside its own generator would spin against the prepare cache forever.
+- **`StringCommand`** — a shell command line, rendered and sent through `host.run_shell`.
+- **`PutCommand`** / **`GetCommand`** — an SCP transfer between an IO object and a remote path.
+- **`InstallCommand`** — the elevated install chain for protected text files.
 
-```python
-@dataclass(frozen=True)
-class ServiceRestartCommand(Command):
-    name: str
-
-    def shell(self) -> str:
-        return f"systemctl restart {self.name}"
-```
-
-How an unknown or unmodelled descriptor behaves depends on the host, not on the
-descriptor: a `SimulatedHost` whose `execute_command` has no `match` arm for it
-raises `TypeError(f"unknown command descriptor: ...")`, while a plain
-[`Host`][reemote5.hosts.Host] simply runs its `shell()` over SSH. A plain
-[`StringCommand`][reemote5.commands.StringCommand] is accepted — its `shell()`
-returns the raw text verbatim, so it runs and elevates exactly like a typed
-shell descriptor — but it has **no simulated effect**, which makes it the
-vehicle for a one-off command a demonstration needs and the library does not
-model.
+Descriptors are what the plan shows and what apply sends. `format_log` renders the descriptors that were actually sent, which is why the applied log shows the concrete `scp` and `sh -c` lines rather than the abstract operation.
 
 ## Design invariants
 
-These are the properties the implementation preserves; they matter when
-extending the model:
+A handful of invariants hold across the whole library. They are the reason the model is predictable:
 
-1. **Phase awareness lives only in the drivers.** Facts and operations must not
-   inspect a phase flag; the driver expresses the difference through cache
-   lifetime and whether it forwards commands.
-2. **The cache is recreated before each `next(generator)` in apply**, and the
-   same cache is used to materialize that step's request — so an operation's
-   fact reads observe the effects of all previously executed operations.
-3. **Generators cannot be replayed.** `run_prepare` returns a fresh
-   `deploy(host)` generator inside each [`HostRuntime`][reemote5.core.HostRuntime].
-4. **Requests must be comparable by value, and hashable where they are
-   deduplicated.** Value equality is what pairs hosts in lockstep and what the
-   determinism guard checks; hashing happens only in `compose(dedupe=True)`,
-   hence the explicit `__hash__` on `OperationRequest`, the immutable-container
-   rule, and the `UnhashableArgumentError` raised in `__post_init__`.
-5. **Operations yield typed descriptors**, not strings, so the simulated host's
-   `execute_command` can apply their effects and the real driver can dispatch on
-   the descriptor *kind* (shell, transfer, wait).
+1. **Deploys are pure.** A deploy is a pure function of its host yielding the same requests in both phases. The determinism guard enforces the request sequence.
+2. **Facts and operations are phase-unaware.** The same fact and operation code runs in prepare and apply; only the `OpContext` differs. Nothing in a fact or operation asks "which phase am I in?".
+3. **Phase awareness lives in the driver.** Only the drivers know about prepare vs apply. They set a context flag that makes the in-deploy guard work; facts, operations and actions stay oblivious.
+4. **Actions cannot run inside a deploy.** `gather_action` raises `ActionInDeployError` the moment it is *called* during a deploy — the check is synchronous, so even an un-awaited call in a sync generator fails immediately.
+5. **Privilege data comes from the inventory.** An operation requests elevation with a bool; it never chooses a run-as user or supplies a password.
+6. **No controller-filesystem awareness.** Content crosses as data (strings, IO streams), never as a local path the library resolves. Every remote path refers to the target.
+7. **Requests are compared by value.** Every argument is hashable; streams must keep object identity across phases.
+
+These invariants are what let the runner execute a deploy twice, concurrently across hosts, and still show you a plan it will honour.
 
 ## Actions
 
-Not everything on a server is a fact reemote5 can read or an operation it can
-manage. For the pragmatic cases — bespoke software with no fact and no
-operation, or connectivity itself — an **action** acts *now* and hands back
-what happened. [`Shell`][reemote5.actions.Shell] runs a shell command,
-[`Script`][reemote5.actions.Script] (also reachable as `server.script`) runs a
-script file already staged on the host,
-[`WaitForConnection`][reemote5.actions.WaitForConnection] waits for hosts to
-become reachable again (e.g. after a reboot), and
-`gather_action` fans any of them out across the
-hosts exactly as [`gather_fact`][reemote5.drivers.gather_fact] does a fact,
-returning a `{host.name: value}` mapping (a `Result` per host for `Shell` and
-`Script`, `None` per host for `WaitForConnection`, where the key's presence is
-the success signal):
+An **action** runs *immediately*, outside the deploy model, and returns what happened. Actions exist for the cases the library deliberately does not model: software reemote5 knows nothing about, a script already staged on the host, and connectivity itself.
+
+You call an action with `await gather_action(...)`:
 
 ```python
-from reemote5 import Host, Shell, gather_action
+from reemote5 import Shell, gather_action
 
-hosts = [Host.from_inventory(entry) for entry in inventory]
-results = await gather_action(hosts, Shell, command="/opt/acme/bin/status", sudo=True)
-for name, result in results.items():
-    print(name, result["exit_status"], result["stdout"])
+results = await gather_action(hosts, Shell, command="df -h /")
+# {"web1": Result(exit_status=0, stdout="...", stderr=""), ...}
 ```
 
-Actions are **orthogonal** to the prepare/apply model, and the split is
-enforced, not conventional:
+`gather_action` is a *synchronous* function that returns a coroutine, so the in-deploy guard fires at the call site even before you await it. It selects hosts by `group`/`tags` (combined with AND), runs concurrently, and closes the selected hosts when it finishes.
 
-- **Call them before, between or after deploys — never inside one.** The
-  awaited `gather_action` is a barrier: every host's command has completed
-  before the next deploy or fact read. Calling it inside a deploy generator
-  raises `ActionInDeployError` at the
-  call site (a deploy runs once per phase, so an immediate action would run
-  twice and mutate the host during prepare).
-- **The outcome is data, not an exception.** A non-zero exit — including 127,
-  command-not-found — travels back in the
-  [`Result`][reemote5.actions.Result] `TypedDict` (`exit_status`, `stdout`,
-  `stderr`); the caller decides what a bespoke command's failure means.
-  Library-level
-  failures still raise: [`HostConnectionError`][reemote5.hosts.HostConnectionError]
-  for an unreachable host and [`PrivilegeError`][reemote5.hosts.PrivilegeError]
-  for a rejected credential, each aggregated across hosts.
-- **Privilege is honoured, but asked for only.** `doas=True`/`sudo=True`/`su=True`
-  are plain bools (the execution-layer spelling, not the plan layer's
-  [`Privilege`][reemote5.core.Privilege] tri-state); the run-as users and
-  passwords still come from the inventory `privilege` section, never the call.
-- **Each call re-connects.** Outside a deploy the fan-out closes every host's
-  connection when it finishes, so the next call opens a fresh one — an action
-  can follow a [`run`][reemote5.drivers.run] transparently.
-- **Hosts can be selected.** The fan-out's `group`/`tags` keywords filter the
-  inventory's static classifiers before anything runs (`group` matches
-  `host.group`, `tags` requires every listed tag), so an action can target a
-  subset of the inventory.
+Three actions ship with the library:
 
-[`WaitForConnection`][reemote5.actions.WaitForConnection] is the reboot
-companion: after a deploy configures hosts and a `Shell` action reboots them,
-`await gather_action(hosts, WaitForConnection, timeout=300, retry=5)` polls
-each selected host's SSH connect — retrying every `retry` seconds — until all
-have come back, so the next deploy starts only against reachable hosts. A host
-still down when its `timeout` expires raises the fatal
-`ConnectionTimeoutError`, aggregated
-across hosts.
+- **`Shell(command=...)`** runs a bespoke command and returns a `Result` (`exit_status`, `stdout`, `stderr`). The command's own exit status — even 127 — travels back as *data*; the caller decides what a failure means. Library-level failures still raise: `HostConnectionError` for an unreachable host, `PrivilegeError` for an elevation rejection.
+- **`Script(path=...)`** runs a script file *already present on the remote host*, with an explicit `interpreter=` or the file's shebang. It does not upload the script; stage it first (with `files.put` or `files.install`) if it is not there.
+- **`WaitForConnection(timeout=..., retry=...)`** discards any cached connection and polls `connect` until the host answers, returning `None` per successful host. It is the barrier between one deploy and the next — typically after a reboot. If a host never comes back it raises `ConnectionTimeoutError`, aggregated across hosts.
 
-[`Script`][reemote5.actions.Script] is the `server.script` companion for
-staged scripts: a deploy transfers the file (`files.put`), then
-`await gather_action(hosts, server.script, path="/tmp/setup.sh")` runs it --
-the action never transfers anything itself. An executable file runs directly
-(the kernel honours its shebang); a non-executable file runs through `sh`;
-`interpreter="python3 -u"` overrides both branches. A missing file is an
-error `Result` (exit 127 with a `server.script: no such file` message on
-stderr), never an exception.
+!!! warning "A connection is not readiness"
 
-To let a deploy depend on a bespoke command's outcome, use the **deploy →
-action → deploy** split: run the action *between* two complete prepare/apply
-cycles, freeze its `Result` dict, and build the second deploy from a factory
-closing over that snapshot — a pure function of static input, so both phases
-resolve identically and the [determinism](#determinism) guard holds. This is the
-action analogue of the [two-deploy fact split](#facts). See the
-[Actions reference](actions/actions.md) for the full contract and the
-[worked examples](examples/actions.md).
+    `WaitForConnection` proves the SSH port answers. It does not prove your
+    application is up, that a reboot actually completed, or that a service is
+    healthy. For readiness, poll the thing you care about — a `Shell` action
+    checking a health endpoint, or a fact — in a loop of your own.
+
+Actions are the pragmatic edge of the model. Everything inside a deploy is pure, planned and idempotent; an action is none of those things, which is exactly why it lives outside the deploy and why the runner refuses to let one slip into a generator.
+
+## Where to go next
+
+- Browse the **API Reference → Modules** pages for the operations your tasks need; each lists arguments, return types, exceptions and a runnable example.
+- Read the connector pages ([ssh](connectors/ssh.md), [docker](connectors/docker.md)) for the connection options your inventory can carry.
+- Study the runnable programs under `examples/` — every one loads an inventory, builds requests and prints the plan and log, and they cover composition, privilege and each module's operations.

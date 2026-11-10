@@ -4,17 +4,17 @@
 """Tests for the files module's find-path fact family: ``FindFiles``,
 ``FindDirectories`` and ``FindLinks``.
 
-Covers ``reemote5.modules.files.files.FindFiles``: pyinfra's own four
+Covers ``reemote5.modules.files.files.FindFiles``: the baseline's own four
 ``files.FindFiles`` fixtures over the real-transport path (the bare find,
 the raw ``args`` escape hatch, a name glob and a wildcard name glob), the
 shared filter command construction (size bounds in bytes, maxdepth,
-iname/regex/path_match quoting, the pyinfra ``args`` guards, the
+iname/regex/path_match quoting, the baseline ``args`` guards, the
 ``quote_path=False`` escape hatch), ``_parse_size`` unit spellings, and
 the command-keyed ``find_results`` ``SimulatedHost`` seam (per-filter
 keying, default [], copy-on-read, ``gather_fact`` kwargs forwarding).
 
 Covers ``reemote5.modules.files.files.FindDirectories`` and
-``reemote5.modules.files.files.FindLinks`` the same way: pyinfra's
+``reemote5.modules.files.files.FindLinks`` the same way: the baseline's
 ``directories.json`` and ``links.json`` fixtures verbatim and the shared
 base's ``-type d`` / ``-type l`` flag.
 """
@@ -45,18 +45,18 @@ class CannedShellHost(Host):
         return self._stdout
 
 
-# --- Real-transport parity: pyinfra's own find-family fixtures ------------------
+# --- Real-transport parity: the baseline's own find-family fixtures ------------------
 
 
-async def test_find_files_parses_pyintras_files_fixture():
-    # pyinfra's files.json fixture, verbatim: a bare find under "mydir".
+async def test_find_files_parses_baseline_files_fixture():
+    # The baseline's files.json fixture, verbatim: a bare find under "mydir".
     host = CannedShellHost("myfile\n")
     assert await FindFiles.process(host, "mydir") == ["myfile"]
     assert host.shells == ["find mydir -type f || true"]
 
 
-async def test_find_files_parses_pyintras_files_with_args_fixture():
-    # pyinfra's files_with_args.json fixture, verbatim: maxdepth plus the
+async def test_find_files_parses_baseline_files_with_args_fixture():
+    # The baseline's files_with_args.json fixture, verbatim: maxdepth plus the
     # raw args escape hatch appended after the typed filters.
     host = CannedShellHost("myfile\n")
     assert await FindFiles.process(host, "/", maxdepth=1, args=["-perm", "644"]) == [
@@ -65,31 +65,31 @@ async def test_find_files_parses_pyintras_files_with_args_fixture():
     assert host.shells == ["find / -type f -maxdepth 1 -perm 644 || true"]
 
 
-async def test_find_files_parses_pyintras_files_with_name_fixture():
-    # pyinfra's files_with_name.json fixture, verbatim: a safe name glob
+async def test_find_files_parses_baseline_files_with_name_fixture():
+    # The baseline's files_with_name.json fixture, verbatim: a safe name glob
     # stays unquoted.
     host = CannedShellHost("myfile\n")
     assert await FindFiles.process(host, "mydir", fname="myfile") == ["myfile"]
     assert host.shells == ["find mydir -type f -name myfile || true"]
 
 
-async def test_find_files_parses_pyintras_files_with_name_wildcard_fixture():
-    # pyinfra's files_with_name_wildcard.json fixture, verbatim: the shell
+async def test_find_files_parses_baseline_files_with_name_wildcard_fixture():
+    # The baseline's files_with_name_wildcard.json fixture, verbatim: the shell
     # must pass the glob literally, so find (not the shell) expands it.
     host = CannedShellHost("myfile\n")
     assert await FindFiles.process(host, "mydir", fname="myfile*") == ["myfile"]
     assert host.shells == ["find mydir -type f -name 'myfile*' || true"]
 
 
-async def test_find_directories_parses_pyintras_directories_fixture():
-    # pyinfra's directories.json fixture, verbatim: -type d.
+async def test_find_directories_parses_baseline_directories_fixture():
+    # The baseline's directories.json fixture, verbatim: -type d.
     host = CannedShellHost("anotherdir\n")
     assert await FindDirectories.process(host, "mydir") == ["anotherdir"]
     assert host.shells == ["find mydir -type d || true"]
 
 
-async def test_find_links_parses_pyintras_links_fixture():
-    # pyinfra's links.json fixture, verbatim: -type l.
+async def test_find_links_parses_baseline_links_fixture():
+    # The baseline's links.json fixture, verbatim: -type l.
     host = CannedShellHost("mylink\n")
     assert await FindLinks.process(host, "mydir") == ["mylink"]
     assert host.shells == ["find mydir -type l || true"]
@@ -118,7 +118,7 @@ def test_find_exact_size_parses_human_readable_spellings():
 
 
 def test_find_filter_order_and_quoting():
-    # pyinfra's order: sizes, maxdepth, fname, iname, regex, path_match,
+    # The baseline's order: sizes, maxdepth, fname, iname, regex, path_match,
     # then the raw args. Globs and metacharacters are shell-quoted.
     assert FindFiles.command(
         "/etc",
@@ -135,7 +135,7 @@ def test_find_filter_order_and_quoting():
 
 
 def test_find_args_guards_skip_duplicate_predicates():
-    # pyinfra's guards, quirks included: the fname guard checks "-fname"
+    # The baseline's guards, quirks included: the fname guard checks "-fname"
     # (a predicate find never spells), the others check the real flags.
     assert FindFiles.command("d", min_size=1, size=2, args=["-size", "5c"]) == (
         "find d -type f -size 5c || true"
@@ -199,7 +199,7 @@ def test_find_parse_is_verbatim_line_list():
 
 async def test_find_is_empty_on_empty_output():
     # A missing start path fails find but the || true guard exits zero
-    # with no stdout -> [] (pyinfra's default = list behaviour).
+    # with no stdout -> [] (the baseline's default = list behaviour).
     assert await FindFiles.process(CannedShellHost(""), "/no/such/dir") == []
 
 

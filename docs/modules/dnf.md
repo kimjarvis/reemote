@@ -1,51 +1,35 @@
 # dnf module
 
-## dnf Facts
-
 ::: reemote5.modules.dnf.dnf
     options:
       show_root_heading: false
       members:
+        - DnfAvailableGroups
+        - DnfDisabledModules
+        - DnfEnabledModules
+        - DnfGroup
+        - DnfGroups
+        - DnfInstalledModules
+        - DnfModule
+        - DnfPackageInfo
         - DnfPackages
-        - DnfRepositories
         - DnfRepoFile
         - DnfRepoList
-        - DnfEnabledModules
-        - DnfDisabledModules
-        - DnfInstalledModules
-        - DnfGroups
-        - DnfAvailableGroups
-        - RpmPackage
-        - RpmGpgKeys
-
-## dnf Returns
-
-::: reemote5.modules.dnf.dnf
-    options:
-      show_root_heading: false
-      members:
-        - DnfPackageInfo
-        - DnfRepository
         - DnfRepoListEntry
-        - DnfModule
-        - DnfGroup
-        - RpmPackageInfo
+        - DnfRepositories
+        - DnfRepository
         - RpmGpgKey
-
-## dnf Operations
-
-::: reemote5.modules.dnf.dnf
-    options:
-      show_root_heading: false
-      members:
-        - packages
-        - update
-        - makecache
+        - RpmGpgKeys
+        - RpmPackage
+        - RpmPackageInfo
         - clean
+        - key
+        - makecache
+        - module
+        - packages
         - repo
         - rpm
-        - key
-        - module
+        - update
 
 
 <!---
@@ -55,12 +39,12 @@ single source, so the read side (`DnfPackages` and friends) sits beside the
 `dnf.packages`, `dnf.repo`, `dnf.rpm` and `dnf.module` operations that consume
 it, plus the non-idempotent `dnf.update`, which reads no fact and runs
 `dnf update -y` over every package. `dnf.makecache` and `dnf.clean` are
-reemote5 originals (pyinfra has neither): equally stateless metadata
+reemote5 originals (the baseline has neither): equally stateless metadata
 refresh and cache removal, optionally scoped to named repos with
 `--disablerepo='*' --enablerepo=<id>` — the ansible-datadog role's scoped
 `makecache`/`clean metadata` steps, which `dnf.packages(update=True)` (a
 full system upgrade) and `clean=True` (`dnf clean all`) cannot express.
-`dnf.repo` extends pyinfra's option set with the same role's
+`dnf.repo` extends the baseline's option set with the same role's
 `yum_repository` fields (`includepkgs`, `repo_gpgcheck`, `proxy`,
 `proxy_username`, `proxy_password`); each is omitted from the constructed
 file when unset, and a `proxy_password` installs the file `0600` instead
@@ -81,7 +65,7 @@ TypedDict or a list of TypedDicts: the enumerating facts return sorted,
 de-duplicated entry lists (`DnfPackages` → `DnfPackageInfo`, the three module
 facts → the shared `DnfModule`, the two group facts → the shared `DnfGroup`,
 `DnfRepositories` → `DnfRepository`, `DnfRepoList` → `DnfRepoListEntry`) — the
-apt-side convention rather than pyinfra's runtime sets — so reads stay
+apt-side convention rather than the baseline's runtime sets — so reads stay
 deterministic and JSON-printable, while the target-specified `RpmPackage`
 returns a single `RpmPackageInfo` (or None when the file is absent).
 `DnfRepoListEntry` omits `status` when the listing has no status column.
@@ -92,7 +76,7 @@ invisible to `DnfPackages` and to the `gpg` namespace's keyring facts.
 ## Operations
 
 Operations live in namespace modules so a deploy reads `dnf.packages`,
-mirroring pyinfra's API. Every operation is an async generator with the same
+mirroring the baseline's API. Every operation is an async generator with the same
 fixed signature:
 
 ```python

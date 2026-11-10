@@ -8,17 +8,17 @@ flatpak package's identity parsed from the indented ``flatpak info`` label
 rows -- and ``reemote5.modules.flatpak.flatpak.FlatpakPackages``, the bare
 ``flatpak list --columns=application`` IDs of every installed flatpak. Each
 check runs both over the real-transport path (a ``CannedShellHost`` returning
-pyinfra's own ``flatpak.FlatpakPackage`` / ``flatpak.FlatpakPackages`` fixture
+the baseline's own ``flatpak.FlatpakPackage`` / ``flatpak.FlatpakPackages`` fixture
 output verbatim) and through the ``SimulatedHost`` seam, plus the
 ``gather_fact`` fan-out (which forwards the package argument to every host
 only for ``FlatpakPackage``).
 
-The ``flatpak.packages`` operation -- a pyinfra port reading
+The ``flatpak.packages`` operation -- a baseline port reading
 ``FlatpakPackages`` once -- is exercised over its two command descriptors
 (``FlatpakInstallCommand`` / ``FlatpakRemoveCommand``), their rendering
-(pyinfra's own ``flatpak.packages`` fixture commands verbatim), elevation and
+(the baseline's own ``flatpak.packages`` fixture commands verbatim), elevation and
 shell quoting, its idempotence in both directions, the install remote, the
-string/None normalization, the dropped pyinfra globals absorbed by
+string/None normalization, the dropped the baseline globals absorbed by
 ``**kwargs``, the ``SimulatedHost`` seam dispatch, and end-to-end through
 ``run`` / ``run_prepare`` + ``run_apply`` (including the ``sudo`` elevation
 and a dry run).
@@ -69,7 +69,7 @@ class CannedShellHost(Host):
 
 def test_flatpak_package_command_guards_and_quotes():
     """The real-transport command is ``flatpak info`` of the shell-quoted
-    package behind a ``2>/dev/null || true`` guard: pyinfra's
+    package behind a ``2>/dev/null || true`` guard: the baseline's
     ``requires_command`` gating and empty-dict-on-absent answer are
     deliberately dropped so an absent package (or a host without ``flatpak``)
     reads as ``None``."""
@@ -86,9 +86,9 @@ def test_flatpak_package_command_shell_quotes_the_name():
     assert command != f"flatpak info {package} 2>/dev/null || true"
 
 
-# --- Real-transport parity (pyinfra's flatpak.FlatpakPackage fixtures) --------
+# --- Real-transport parity (the baseline's flatpak.FlatpakPackage fixtures) --------
 
-# The ``output`` field of pyinfra's ``flatpak.FlatpakPackage/vlc.json`` fixture,
+# The ``output`` field of the baseline's ``flatpak.FlatpakPackage/vlc.json`` fixture,
 # verbatim. Only the three indented ``ID:``/``Ref:``/``Version:`` rows are
 # tracked; the unindented title line, the blank lines around it and every other
 # label (``Arch``, ``Branch``, ``License``, ``Origin``, ``Collection``,
@@ -116,16 +116,16 @@ Installation: system
      Subject: Update VLC to 3.0.21 and some deps (c6a6bb62)
         Date: 2024-06-09 13:21:31 +0000"""
 
-# pyinfra's documented ``fact`` for the vlc fixture, in reemote5's entry shape.
+# The baseline's documented ``fact`` for the vlc fixture, in reemote5's entry shape.
 VLC_FACT: FlatpakPackageInfo = {
     "id": "org.videolan.VLC",
     "ref": "app/org.videolan.VLC/x86_64/stable",
     "version": "3.0.21",
 }
 
-# The ``output`` of pyinfra's ``flatpak.FlatpakPackage/kodi.json`` and its
+# The ``output`` of the baseline's ``flatpak.FlatpakPackage/kodi.json`` and its
 # ``fact``: the version carries a non-numeric suffix (``21.0-Omega``), which
-# pyinfra's ``[\\w\\d.-]+`` capture keeps whole.
+# The baseline's ``[\\w\\d.-]+`` capture keeps whole.
 KODI_OUTPUT = """\
 
 Kodi - Ultimate entertainment center
@@ -157,7 +157,7 @@ KODI_FACT: FlatpakPackageInfo = {
 
 async def test_flatpak_package_parses_the_vlc_fixture():
     """Over the real-transport path, ``FlatpakPackage`` parses the vlc
-    fixture's ``flatpak info`` rows into pyinfra's documented fact, ignoring
+    fixture's ``flatpak info`` rows into the baseline's documented fact, ignoring
     the untracked labels and the commit block."""
     host = CannedShellHost(VLC_OUTPUT)
     assert await FlatpakPackage.process(host, "org.videolan.VLC") == VLC_FACT
@@ -166,7 +166,7 @@ async def test_flatpak_package_parses_the_vlc_fixture():
 
 async def test_flatpak_package_parses_the_kodi_fixture():
     """A version carrying a non-numeric suffix (``21.0-Omega``) is captured
-    whole, exactly as pyinfra's capture group does."""
+    whole, exactly as the baseline's capture group does."""
     host = CannedShellHost(KODI_OUTPUT)
     assert await FlatpakPackage.process(host, "tv.kodi.Kodi") == KODI_FACT
 
@@ -175,7 +175,7 @@ async def test_flatpak_package_keeps_the_indented_rows_only():
     """The regexes anchor on each row's leading indentation, so the unindented
     title line contributes nothing; a runtime, which flatpak prints without a
     ``Version:`` row, keeps that field at its empty-string default rather than
-    reporting pyinfra's partial dict."""
+    reporting the baseline's partial dict."""
     runtime = """\
 
 Runtime org.freedesktop.Platform
@@ -199,8 +199,8 @@ Installation: system"""
 async def test_flatpak_package_absent_reads_as_none():
     """An absent package prints no tracked row (in the real guarded command the
     ``error:`` line goes to stderr and stdout is empty), so the fact reports
-    ``None`` rather than pyinfra's empty ``{}``. Both the empty-stdout case and
-    pyinfra's not-found error line parse to ``None``."""
+    ``None`` rather than the baseline's empty ``{}``. Both the empty-stdout case and
+    the baseline's not-found error line parse to ``None``."""
     assert await FlatpakPackage.process(CannedShellHost(""), "foo") is None
     error = "error: not_found.test.test/*unspecified*/*unspecified* not installed"
     assert await FlatpakPackage.process(CannedShellHost(error), "not_found.test.test") is None
@@ -257,7 +257,7 @@ async def test_gather_fact_flatpak_package_over_canned_shells():
 # FlatpakPackages -- the bare ``flatpak list`` application IDs
 # =============================================================================
 
-# The ``output`` of pyinfra's ``flatpak.FlatpakPackages/packages.json``
+# The ``output`` of the baseline's ``flatpak.FlatpakPackages/packages.json``
 # fixture verbatim: the ``Application ID`` header followed by four installed
 # applications.
 PACKAGES_OUTPUT = """\
@@ -281,8 +281,8 @@ PACKAGES_IDS = [
 
 
 def test_flatpak_packages_command_guards_the_listing():
-    """The real-transport command is pyinfra's ``flatpak list
-    --columns=application`` behind a ``2>/dev/null || true`` guard: pyinfra's
+    """The real-transport command is the baseline's ``flatpak list
+    --columns=application`` behind a ``2>/dev/null || true`` guard: the baseline's
     ``requires_command`` gating on ``flatpak`` is deliberately dropped so a
     host without the tool reads as an empty ID list rather than raising
     ``CommandNotFoundError``."""
@@ -291,27 +291,27 @@ def test_flatpak_packages_command_guards_the_listing():
     )
 
 
-# --- Real-transport parity (pyinfra's flatpak.FlatpakPackages fixtures) -------
+# --- Real-transport parity (the baseline's flatpak.FlatpakPackages fixtures) -------
 
 
 async def test_flatpak_packages_parses_the_packages_fixture():
     """Over the real-transport path, ``FlatpakPackages`` drops the
     ``Application ID`` header and returns every remaining row whole --
-    pyinfra's documented fact."""
+    the baseline's documented fact."""
     host = CannedShellHost(PACKAGES_OUTPUT)
     assert await FlatpakPackages.process(host) == PACKAGES_IDS
     assert host.last_shell == FlatpakPackages.COMMAND
 
 
 async def test_flatpak_packages_parses_the_no_header_fixture():
-    """pyinfra's second fixture prints no header line; every row
+    """The baseline's second fixture prints no header line; every row
     contributes its ID, so the fact never mistakes a row for a header."""
     no_header = "\n".join(PACKAGES_IDS)
     assert await FlatpakPackages.process(CannedShellHost(no_header)) == PACKAGES_IDS
 
 
 async def test_flatpak_packages_skips_blanks_and_dedups():
-    """A blank body line -- which pyinfra's bare row handling would keep --
+    """A blank body line -- which the baseline's bare row handling would keep --
     is skipped, a repeated ID is kept once at its first position, and a row's
     surrounding whitespace never leaks into the token."""
     output = "Application ID\norg.videolan.VLC\n\norg.videolan.VLC\n   tv.kodi.Kodi  "
@@ -324,7 +324,7 @@ async def test_flatpak_packages_skips_blanks_and_dedups():
 async def test_flatpak_packages_empty_reads_as_empty_list():
     """Nothing installed -- the header-only listing, or the guarded command
     on a host without ``flatpak`` (empty stdout) -- reads as ``[]``, the same
-    empty answer pyinfra's ``default = list`` gives."""
+    empty answer the baseline's ``default = list`` gives."""
     assert await FlatpakPackages.process(CannedShellHost("")) == []
     assert await FlatpakPackages.process(CannedShellHost("Application ID")) == []
 
@@ -384,12 +384,12 @@ async def test_gather_fact_flatpak_packages_over_canned_shells():
 # =============================================================================
 
 
-# --- Command descriptors: rendering (pyinfra's flatpak.packages fixtures) -----
+# --- Command descriptors: rendering (the baseline's flatpak.packages fixtures) -----
 
 
 def test_flatpak_install_command_renders_bare_install():
     """No flag sits between the verb and the names and no remote token
-    appears when none was given -- pyinfra's ``install_package`` fixture
+    appears when none was given -- the baseline's ``install_package`` fixture
     command ``flatpak install --noninteractive org.videolan.VLC``."""
     cmd = FlatpakInstallCommand(packages=("org.videolan.VLC",))
     assert cmd.shell() == "flatpak install --noninteractive org.videolan.VLC"
@@ -397,20 +397,20 @@ def test_flatpak_install_command_renders_bare_install():
 
 def test_flatpak_install_command_places_the_remote_before_the_names():
     """The remote rides right after ``--noninteractive``, then the IDs --
-    pyinfra's token order for an install from e.g. flathub."""
+    the baseline's token order for an install from e.g. flathub."""
     cmd = FlatpakInstallCommand(packages=("org.videolan.VLC",), remote="flathub")
     assert cmd.shell() == "flatpak install --noninteractive flathub org.videolan.VLC"
 
 
 def test_flatpak_install_command_joins_multiple_names():
     """Several missing applications share one install command, in request
-    order (pyinfra's ``install_packages`` doc example)."""
+    order (the baseline's ``install_packages`` doc example)."""
     cmd = FlatpakInstallCommand(packages=("org.videolan.VLC", "tv.kodi.Kodi"))
     assert cmd.shell() == "flatpak install --noninteractive org.videolan.VLC tv.kodi.Kodi"
 
 
 def test_flatpak_remove_command_renders_bare_uninstall():
-    """Removing takes no remote -- pyinfra's ``remove_packages`` fixture
+    """Removing takes no remote -- the baseline's ``remove_packages`` fixture
     command ``flatpak uninstall --noninteractive org.videolan.VLC``."""
     cmd = FlatpakRemoveCommand(packages=("org.videolan.VLC",))
     assert cmd.shell() == "flatpak uninstall --noninteractive org.videolan.VLC"
@@ -434,7 +434,7 @@ def test_flatpak_commands_are_elevated_by_sudo():
 
 
 def test_flatpak_install_command_shell_quotes_the_names():
-    """pyinfra's ``install_quotes_injection`` fixture verbatim: the metacharacter
+    """The baseline's ``install_quotes_injection`` fixture verbatim: the metacharacter
     name is quoted, a plain remote renders unescaped."""
     cmd = FlatpakInstallCommand(packages=("x; reboot",), remote="flathub")
     assert cmd.shell() == "flatpak install --noninteractive flathub 'x; reboot'"
@@ -445,11 +445,11 @@ def test_flatpak_install_command_shell_quotes_the_names():
     )
 
 
-# --- Idempotence (pyinfra parity) ---------------------------------------------
+# --- Idempotence (baseline parity) ---------------------------------------------
 
 
 async def test_flatpak_packages_installs_missing_package():
-    """pyinfra's ``install_package`` fixture: nothing installed, one ID
+    """The baseline's ``install_package`` fixture: nothing installed, one ID
     requested -- the bare install command."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -460,7 +460,7 @@ async def test_flatpak_packages_installs_missing_package():
 
 
 async def test_flatpak_packages_excludes_installed_from_install():
-    """pyinfra's ``install_packages`` fixture: a name the fact already lists
+    """The baseline's ``install_packages`` fixture: a name the fact already lists
     drops out; only the missing one is installed."""
     host = SimulatedHost(name="h", flatpak_package_info={"org.videolan.VLC": VLC_FACT})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -487,7 +487,7 @@ async def test_flatpak_packages_no_change_when_present():
 
 
 async def test_flatpak_packages_accepts_a_bare_string():
-    """pyinfra accepts ``packages="org.videolan.VLC"`` as shorthand for a
+    """The baseline accepts ``packages="org.videolan.VLC"`` as shorthand for a
     one-item list."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -507,7 +507,7 @@ async def test_flatpak_packages_none_is_a_noop():
 
 
 async def test_flatpak_packages_strips_an_empty_remote():
-    """pyinfra strips the remote and treats an empty one as absent
+    """The baseline strips the remote and treats an empty one as absent
     (``if remote:``): the install command carries no remote token."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -522,8 +522,8 @@ async def test_flatpak_packages_strips_an_empty_remote():
 
 
 async def test_flatpak_packages_removes_installed_packages():
-    """pyinfra's ``remove_packages`` fixture: of the two requested names only
-    the installed one is uninstalled -- the absent one is pyinfra's
+    """The baseline's ``remove_packages`` fixture: of the two requested names only
+    the installed one is uninstalled -- the absent one is the baseline's
     ``flatpak package X is not installed`` noop, folded into the shared
     reason."""
     host = SimulatedHost(name="h", flatpak_package_info={"org.videolan.VLC": VLC_FACT})
@@ -552,7 +552,7 @@ async def test_flatpak_packages_remove_noop_when_absent():
 
 
 async def test_flatpak_packages_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     strips the ``name``/``sudo``/``su``/``doas`` meta-parameters, the rest is
     ignored."""
     host = SimulatedHost(name="h")

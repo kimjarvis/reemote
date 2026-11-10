@@ -29,7 +29,7 @@ driving the two-phase execution model:
    host-name-keyed mapping -- then print each host's distribution name
    with ``json.dumps(..., indent=2)``.
 
-``LinuxName`` mirrors pyinfra's ``server.LinuxName``: a shortcut for the
+``LinuxName`` mirrors the baseline's ``server.LinuxName``: a shortcut for the
 ``name`` key of the ``LinuxDistribution`` fact. It delegates to that fact,
 so the same ``/etc/*-release`` dump is parsed with the ``distro`` library
 and only the pretty distribution name (e.g. ``CentOS``, ``Fedora``) is

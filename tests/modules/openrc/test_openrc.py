@@ -5,22 +5,22 @@
 ``OpenrcServices``, ``OpenrcStatus`` and ``OpenrcVersion``.
 
 Covers the read-only state discovery in ``reemote5.modules.openrc.openrc``:
-``OpenrcStatus`` and ``OpenrcEnabled`` are pyinfra ports, exercised over the
-real-transport path with pyinfra's own fact fixtures verbatim (the
+``OpenrcStatus`` and ``OpenrcEnabled`` are the baseline ports, exercised over the
+real-transport path with the baseline's own fact fixtures verbatim (the
 ``services.json`` and ``services_runlevel.json`` outputs and facts of both
 ``openrc.OpenrcStatus`` and ``openrc.OpenrcEnabled``, including the crashed
 state, the dotted/hyphenated names and both uptime-suffix forms), plus the
 ``SimulatedHost`` seam projections and their copy semantics.
 ``OpenrcServices``, ``OpenrcRunlevels`` and ``OpenrcVersion`` -- reemote5
-originals with no pyinfra fixtures -- are fed realistic canned ``rc-status``,
+originals with no baseline fixtures -- are fed realistic canned ``rc-status``,
 ``ls -R /etc/runlevels`` and ``openrc --version`` output respectively, plus
 the raw-state preservation, the empty/stacked/deep-header runlevel edges, the
 None-on-absent version, the seam copy semantics and the ``gather_fact``
 fan-outs.
 
-The ``openrc.service`` operation -- a pyinfra port reading ``OpenrcStatus``
+The ``openrc.service`` operation -- a baseline port reading ``OpenrcStatus``
 and ``OpenrcEnabled`` -- is exercised over its ``RcServiceCommand`` /
-``RcUpdateCommand`` descriptors, all twelve branches of pyinfra's own
+``RcUpdateCommand`` descriptors, all twelve branches of the baseline's own
 operation fixtures (start/stop, the running/stopped no-ops, enable/disable
 and their no-ops, the boot-runlevel variants and both shell-quoting
 injection fixtures), the ``restarted``/``reloaded`` running-only gates, the
@@ -30,7 +30,7 @@ option, the ``SimulatedHost`` seam dispatch, and end-to-end through ``run`` /
 needs and a dry run).
 
 The ``openrc.runlevel`` and ``openrc.custom_runlevel`` operations -- reemote5
-originals with no pyinfra counterpart -- are exercised over their descriptor
+originals with no baseline counterpart -- are exercised over their descriptor
 rendering and elevation, their fact-backed idempotence in both directions,
 the stacking and unstack-before-removal paths, the sorted-target removal
 order, the ``ValueError`` validations, the ``SimulatedHost`` seam dispatch,
@@ -88,9 +88,9 @@ class CannedShellHost(Host):
         return self._stdout
 
 
-# --- OpenrcStatus / OpenrcServices: pyinfra's services.json fixture -------------
+# --- OpenrcStatus / OpenrcServices: the baseline's services.json fixture -------------
 
-# The ``output`` field of pyinfra's ``openrc.OpenrcStatus/services.json``
+# The ``output`` field of the baseline's ``openrc.OpenrcStatus/services.json``
 # fixture verbatim: the runlevel header, five plain state rows (one crashed)
 # and two started rows carrying the uptime suffix forms (with and without
 # the day count).
@@ -106,7 +106,7 @@ Runlevel: default
 """
 
 # The fixture's ``fact`` field -- only ``started`` reads True, so the crashed
-# service reads False exactly as pyinfra's ``group(2) == "started"`` does.
+# service reads False exactly as the baseline's ``group(2) == "started"`` does.
 STATUS_FACT = {
     "net-online": True,
     "sshd": True,
@@ -135,8 +135,8 @@ RC_STATUS_BOOT_OUTPUT = RC_STATUS_OUTPUT.replace(
 )
 
 
-def test_openrc_status_command_matches_pyinfra():
-    """The shell is pyinfra's fixture command verbatim for both fixture
+def test_openrc_status_command_matches_baseline():
+    """The shell is the baseline's fixture command verbatim for both fixture
     runlevels (the runlevel is shlex-quoted, a no-op for these names)."""
     assert OpenrcStatus.command() == "rc-status default"
     assert OpenrcStatus.command("boot") == "rc-status boot"
@@ -162,7 +162,7 @@ async def test_openrc_status_parses_the_boot_runlevel_fixture():
 
 async def test_openrc_status_quotes_the_runlevel():
     """A runlevel carrying shell metacharacters is passed literally -- the
-    deliberate deviation from pyinfra's bare interpolation."""
+    deliberate deviation from the baseline's bare interpolation."""
     host = CannedShellHost("")
     assert await OpenrcStatus.process(host, "my level; reboot") == {}
     assert host.last_shell == "rc-status 'my level; reboot'"
@@ -192,7 +192,7 @@ async def test_openrc_services_keeps_the_raw_state_words():
 
 async def test_openrc_services_preserves_stopped_and_other_states():
     """Every state word is kept as printed, not just started/crashed: the
-    fact is the lossless view pyinfra's bool projection cannot offer."""
+    fact is the lossless view the baseline's bool projection cannot offer."""
     stdout = """\
 Runlevel: default
   local                                    [  stopped  ]
@@ -206,9 +206,9 @@ Runlevel: default
     }
 
 
-# --- OpenrcEnabled: pyinfra's services.json fixture ---------------------------
+# --- OpenrcEnabled: the baseline's services.json fixture ---------------------------
 
-# The ``output`` field of pyinfra's ``openrc.OpenrcEnabled/services.json``
+# The ``output`` field of the baseline's ``openrc.OpenrcEnabled/services.json``
 # fixture verbatim: six ``name | runlevels`` rows including the unassigned
 # ``cgroups |`` row whose right-hand side is empty.
 RC_UPDATE_OUTPUT = """\
@@ -242,8 +242,8 @@ ENABLED_BOOT_FACT = {
 }
 
 
-def test_openrc_enabled_command_matches_pyinfra():
-    """The command is pyinfra's fixture command verbatim -- one shell serves
+def test_openrc_enabled_command_matches_baseline():
+    """The command is the baseline's fixture command verbatim -- one shell serves
     every runlevel, the argument selects only the membership test."""
     assert OpenrcEnabled.COMMAND == "rc-update show -v"
 
@@ -266,7 +266,7 @@ async def test_openrc_enabled_parses_the_boot_runlevel_fixture():
 
 
 def test_openrc_enabled_skips_lines_without_a_pipe():
-    """The deliberate deviation from pyinfra: a stray header or blank line
+    """The deliberate deviation from the baseline: a stray header or blank line
     (no ``|``) is skipped instead of crashing the split, while well-formed
     neighbors still parse."""
     output = ["Runlevels:", "", "  crond | default", "noise without a pipe"]
@@ -523,7 +523,7 @@ async def test_gather_fact_openrc_version_reads_simulated_seams():
 
 
 def test_rc_service_command_renders_the_action():
-    """The runtime descriptor is pyinfra's ``rc-service {0} {1}`` formatter:
+    """The runtime descriptor is the baseline's ``rc-service {0} {1}`` formatter:
     the quoted service name then the verb."""
     assert RcServiceCommand(service="nginx", action="start").shell() == (
         "rc-service nginx start"
@@ -534,7 +534,7 @@ def test_rc_service_command_renders_the_action():
 
 
 def test_rc_service_command_shell_quotes_the_name():
-    """pyinfra's ``start_needs_quotes`` fixture: a name carrying spaces and
+    """The baseline's ``start_needs_quotes`` fixture: a name carrying spaces and
     a semicolon reaches rc-service literally, never the remote shell."""
     cmd = RcServiceCommand(service="my service; whoami", action="start")
     assert cmd.shell() == "rc-service 'my service; whoami' start"
@@ -575,7 +575,7 @@ def test_rc_update_command_renders_the_stack_flag():
 
 
 def test_rc_update_command_shell_quotes_both_names():
-    """pyinfra's ``enable_quotes_injection`` fixture: both arguments are
+    """The baseline's ``enable_quotes_injection`` fixture: both arguments are
     shlex-quoted, so a metacharacter in either never executes."""
     cmd = RcUpdateCommand(service="x; reboot")
     assert cmd.shell() == "rc-update add 'x; reboot' default"
@@ -610,11 +610,11 @@ def test_runlevel_command_is_elevated_by_doas():
     )
 
 
-# --- openrc.service: pyinfra's operation fixtures -------------------------------
+# --- openrc.service: the baseline's operation fixtures -------------------------------
 
 
 async def test_openrc_service_starts_a_stopped_service():
-    """pyinfra's ``start.json``: the service reads not-running, so one
+    """The baseline's ``start.json``: the service reads not-running, so one
     ``rc-service nginx start`` is yielded."""
     host = SimulatedHost(
         name="h", openrc_service_states={"default": {"nginx": "stopped"}}
@@ -628,7 +628,7 @@ async def test_openrc_service_starts_a_stopped_service():
 
 
 async def test_openrc_service_stops_a_running_service():
-    """pyinfra's ``stop.json``: ``running=False`` against a started service
+    """The baseline's ``stop.json``: ``running=False`` against a started service
     yields ``rc-service nginx stop``."""
     host = SimulatedHost(
         name="h", openrc_service_states={"default": {"nginx": "started"}}
@@ -642,8 +642,8 @@ async def test_openrc_service_stops_a_running_service():
 
 
 async def test_openrc_service_running_noop():
-    """pyinfra's ``running_noop.json``: an already-running service is left
-    alone, with pyinfra's verbatim no-op reason."""
+    """The baseline's ``running_noop.json``: an already-running service is left
+    alone, with the baseline's verbatim no-op reason."""
     host = SimulatedHost(
         name="h", openrc_service_states={"default": {"nginx": "started"}}
     )
@@ -655,7 +655,7 @@ async def test_openrc_service_running_noop():
 
 
 async def test_openrc_service_stopped_noop():
-    """pyinfra's ``stopped_noop.json``: ``running=False`` against a stopped
+    """The baseline's ``stopped_noop.json``: ``running=False`` against a stopped
     service is a no-op."""
     host = SimulatedHost(
         name="h", openrc_service_states={"default": {"nginx": "stopped"}}
@@ -668,7 +668,7 @@ async def test_openrc_service_stopped_noop():
 
 
 async def test_openrc_service_enables_an_unassigned_service():
-    """pyinfra's ``enable.json``: ``enabled=True`` against a service the
+    """The baseline's ``enable.json``: ``enabled=True`` against a service the
     runlevel does not list yields ``rc-update add nginx default`` (the
     runtime direction is left alone with ``running=None``)."""
     host = SimulatedHost(name="h", openrc_runlevels={"default": []})
@@ -684,7 +684,7 @@ async def test_openrc_service_enables_an_unassigned_service():
 
 
 async def test_openrc_service_disables_an_assigned_service():
-    """pyinfra's ``disable.json``: ``enabled=False`` against an assigned
+    """The baseline's ``disable.json``: ``enabled=False`` against an assigned
     service yields ``rc-update del nginx default``."""
     host = SimulatedHost(name="h", openrc_runlevels={"default": ["nginx"]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -699,7 +699,7 @@ async def test_openrc_service_disables_an_assigned_service():
 
 
 async def test_openrc_service_enable_noop():
-    """pyinfra's ``enable_noop.json``: an already-enabled service reads the
+    """The baseline's ``enable_noop.json``: an already-enabled service reads the
     verbatim no-op reason."""
     host = SimulatedHost(name="h", openrc_runlevels={"default": ["nginx"]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -713,7 +713,7 @@ async def test_openrc_service_enable_noop():
 
 
 async def test_openrc_service_disable_noop():
-    """pyinfra's ``disable_noop.json``: an unassigned service with
+    """The baseline's ``disable_noop.json``: an unassigned service with
     ``enabled=False`` is already in state."""
     host = SimulatedHost(name="h", openrc_runlevels={"default": []})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -727,7 +727,7 @@ async def test_openrc_service_disable_noop():
 
 
 async def test_openrc_service_enable_in_the_boot_runlevel():
-    """pyinfra's ``enable_runlevel.json``: the boot assignment renders
+    """The baseline's ``enable_runlevel.json``: the boot assignment renders
     ``rc-update add nftables boot``."""
     host = SimulatedHost(name="h", openrc_runlevels={"boot": []})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -743,7 +743,7 @@ async def test_openrc_service_enable_in_the_boot_runlevel():
 
 
 async def test_openrc_service_disable_in_the_boot_runlevel():
-    """pyinfra's ``disable_runlevel.json``: the boot unassignment renders
+    """The baseline's ``disable_runlevel.json``: the boot unassignment renders
     ``rc-update del nftables boot``."""
     host = SimulatedHost(name="h", openrc_runlevels={"boot": ["nftables"]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -761,7 +761,7 @@ async def test_openrc_service_disable_in_the_boot_runlevel():
 
 
 async def test_openrc_service_enable_quotes_injection():
-    """pyinfra's ``enable_quotes_injection.json``: the service name reaches
+    """The baseline's ``enable_quotes_injection.json``: the service name reaches
     rc-update quoted, never executed."""
     host = SimulatedHost(name="h", openrc_runlevels={"default": []})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -775,7 +775,7 @@ async def test_openrc_service_enable_quotes_injection():
 
 
 async def test_openrc_service_start_needs_quotes():
-    """pyinfra's ``start_needs_quotes.json``: a name with spaces and a
+    """The baseline's ``start_needs_quotes.json``: a name with spaces and a
     semicolon reaches rc-service as one literal argument."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -800,7 +800,7 @@ async def test_openrc_service_restarts_a_running_service():
 
 
 async def test_openrc_service_reloads_a_running_service():
-    """``reloaded=True`` -- the option kept from pyinfra -- yields the
+    """``reloaded=True`` -- the option kept from the baseline -- yields the
     reload verb only for a running service."""
     host = SimulatedHost(
         name="h", openrc_service_states={"default": {"nginx": "started"}}
@@ -813,7 +813,7 @@ async def test_openrc_service_reloads_a_running_service():
 
 
 async def test_openrc_service_restart_skips_a_stopped_service():
-    """pyinfra's ``restarted and is_running`` gate: a stopped service is
+    """The baseline's ``restarted and is_running`` gate: a stopped service is
     never restarted -- with ``running=None`` nothing at all is yielded."""
     host = SimulatedHost(
         name="h", openrc_service_states={"default": {"nginx": "stopped"}}
@@ -832,7 +832,7 @@ async def test_openrc_service_restart_skips_a_stopped_service():
 
 async def test_openrc_service_starts_a_crashed_service():
     """Only ``started`` counts as running, so a crashed service is started
-    -- the ``OpenrcStatus`` projection pyinfra's own fact performs."""
+    -- the ``OpenrcStatus`` projection the baseline's own fact performs."""
     host = SimulatedHost(
         name="h", openrc_service_states={"default": {"nginx": "crashed"}}
     )
@@ -871,8 +871,8 @@ async def test_openrc_service_combines_start_and_enable():
 
 
 async def test_openrc_service_absorbs_the_dropped_command_option():
-    """pyinfra's arbitrary ``command`` option is deliberately dropped;
-    ``**kwargs`` absorbs it (and pyinfra's global arguments) without
+    """The baseline's arbitrary ``command`` option is deliberately dropped;
+    ``**kwargs`` absorbs it (and the baseline's global arguments) without
     effect."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1813,7 +1813,7 @@ async def test_config_unset_ignores_an_unsafe_value():
 
 async def test_config_accepts_an_empty_value_and_absorbs_kwargs():
     """``key=\"\"`` is a legitimate assignment; an unknown keyword (a
-    pyinfra global) is absorbed by ``**kwargs`` with no effect."""
+    the baseline global) is absorbed by ``**kwargs`` with no effect."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [

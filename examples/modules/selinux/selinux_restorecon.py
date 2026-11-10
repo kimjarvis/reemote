@@ -26,7 +26,7 @@ it finishes.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``selinux.restorecon`` is a reemote5 original (pyinfra ships no restorecon
+``selinux.restorecon`` is a reemote5 original (the baseline ships no restorecon
 operation): it reapplies the persistent fcontext database to existing
 files -- the documented remedy for ``selinux.file_context``'s limitation
 that ``chcon`` labels are runtime-only and a relabel reverts them, and for

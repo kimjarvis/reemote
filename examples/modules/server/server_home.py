@@ -29,7 +29,7 @@ two-phase execution model:
    -- then print each host's home directory with ``json.dumps(...,
    indent=2)``.
 
-``Home`` mirrors pyinfra's ``server.Home``: it runs ``echo ~user`` and lets
+``Home`` mirrors the baseline's ``server.Home``: it runs ``echo ~user`` and lets
 the shell's tilde expansion resolve the home directory. Called with no user
 it reports the login user's own home; this example gathers it a second time
 with ``"root"`` (the username is passed to ``gather_fact`` as a fact

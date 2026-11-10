@@ -39,7 +39,7 @@ cache (in the prepare phase, where nothing is sent, both plan as changes)
 service's configuration without touching its boot assignment. The reload
 is gated on the service actually running: reloading a stopped service is
 meaningless, so the flag yields nothing when the fact reads False at
-materialization time. pyinfra's arbitrary `command` option is deliberately
+materialization time. The baseline's arbitrary `command` option is deliberately
 dropped (`server.shell` covers the rare custom rc-service verb).
 `rc-service`/`rc-update` write root-owned state, so the requests are
 flagged `doas=True` and the driver elevates the commands — `doas` rather
@@ -66,7 +66,7 @@ the run manages crond on the Alpine host and skips every other one.
 ## Assigning a service to a runlevel
 
 The runlevel operation: `openrc.runlevel` is a reemote5 original with no
-pyinfra counterpart — pyinfra folds the boot assignment into
+the baseline counterpart — the baseline folds the boot assignment into
 `openrc.service`'s `enabled` option, so managing an assignment *without*
 touching the runtime state needs the whole service operation with
 `running=None`. This standalone operation is the dedicated
@@ -119,7 +119,7 @@ carry `when=is_alpine`, like the other openrc operation examples.
 ## Managing rc.conf
 
 The config operation: `openrc.config` is a reemote5 original with no
-pyinfra counterpart (pyinfra's `openrc` ships only `service`), managing
+the baseline counterpart (the baseline's `openrc` ships only `service`), managing
 one shell-variable assignment in `/etc/rc.conf` — or a service's
 `/etc/conf.d/<service>` with the `service` option. It belongs to the
 spool-and-install write family: the

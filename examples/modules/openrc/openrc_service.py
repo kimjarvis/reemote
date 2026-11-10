@@ -30,7 +30,7 @@ your machines.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``openrc.service`` ports pyinfra's operation of the same name: it manages
+``openrc.service`` ports the baseline's operation of the same name: it manages
 one service -- here ``crond``, the cron daemon every stock Alpine install
 ships -- along two independent axes. ``running=True`` compares the
 ``OpenrcStatus`` fact and starts the service with ``rc-service <name>
@@ -40,7 +40,7 @@ the ``OpenrcEnabled`` fact and assigns the service to the runlevel with
 ``rc-update add`` only when it is not assigned (``enabled=False`` removes
 it, ``enabled=None`` -- the default -- leaves the boot state alone). The
 first request sets both, so it converges runtime *and* boot state in one
-operation. pyinfra's arbitrary ``command`` option is deliberately dropped
+operation. The baseline's arbitrary ``command`` option is deliberately dropped
 (an escape hatch for any rc-service verb defeats the typed-descriptor
 model -- ``server.shell`` covers the rare custom verb), so that keyword is
 absorbed with no effect.

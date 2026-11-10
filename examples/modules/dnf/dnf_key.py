@@ -29,7 +29,7 @@ own file to target your machines.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-The source is an **IO-like object only** -- pyinfra's ``dnf.key`` takes a
+The source is an **IO-like object only** -- the baseline's ``dnf.key`` takes a
 ``src`` that is a *filename or URL* the target host reads directly
 (``rpm --import <src>``), but reemote5 deliberately has no controller-side
 file locations, so a ``str`` ``src`` raises ``ValueError`` and the key content
@@ -40,7 +40,7 @@ is read. And because ``OperationRequest`` equality compares a stream
 hence the module-level constant rather than a fresh ``BytesIO`` inside the
 generator (a new object per phase would trip the determinism guard).
 
-The ``present=True`` direction is **non-idempotent** -- like pyinfra's
+The ``present=True`` direction is **non-idempotent** -- like the baseline's
 ``dnf.key`` it reads no fact, always reports a change and always imports (rpm
 itself deduplicates an already-imported key), so the plan and the apply log
 agree. The one request
@@ -52,7 +52,7 @@ writes to the root-owned rpm keyring, so the request is flagged ``sudo=True``
 and the driver elevates only the shell half, never the scp half.
 
 The second request shows the ``present=False`` direction -- a reemote5
-extension beyond pyinfra's import-only ``dnf.key``, mirroring Ansible's
+extension beyond the baseline's import-only ``dnf.key``, mirroring Ansible's
 ``rpm_key state=absent`` (the step the ansible-datadog role loops over
 ``datadog_rpm_remove_keys`` to drop the legacy ``4172A230`` signing key).
 An imported key lives in the rpm database as a ``gpg-pubkey-<keyid>-<release>``

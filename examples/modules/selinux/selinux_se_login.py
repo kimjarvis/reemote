@@ -30,7 +30,7 @@ transport* (asyncssh):
    mapping -- then print each host's raw dictionary with
    ``json.dumps(..., indent=2)``.
 
-``SELogin`` is a reemote5 original: pyinfra's selinux namespace ships no
+``SELogin`` is a reemote5 original: the baseline's selinux namespace ships no
 login fact, so confined-user management has no visibility. ``semanage
 login -ln`` prints one ``login seuser range [service]`` row per mapping
 and the fact keys them by the Linux login name, keeping the SELinux user

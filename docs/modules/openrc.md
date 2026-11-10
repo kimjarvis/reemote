@@ -1,7 +1,5 @@
 [//]: # (## openrc module)
 
-## openrc Facts
-
 ::: reemote5.modules.openrc.openrc
     options:
       show_root_heading: false
@@ -12,13 +10,6 @@
         - OpenrcServices
         - OpenrcStatus
         - OpenrcVersion
-
-## openrc Operations
-
-::: reemote5.modules.openrc.openrc
-    options:
-      show_root_heading: false
-      members:
         - config
         - custom_runlevel
         - runlevel
@@ -33,11 +24,11 @@ operations in a single source. OpenRC is the init system of Alpine Linux
 (and Gentoo): services are `/etc/init.d` scripts managed at runtime with
 `rc-service`, and *runlevels* are directories under `/etc/runlevels`
 holding one symlink per assigned service, managed with `rc-update`. The
-facts are `OpenrcStatus` and `OpenrcEnabled`, ports of pyinfra's two OpenRC
+facts are `OpenrcStatus` and `OpenrcEnabled`, ports of the baseline's two OpenRC
 facts — the per-runlevel name → running bool parsed from
 `rc-status <runlevel>` rows, and the name → enabled-in-runlevel bool parsed
 from `rc-update show -v`'s `name | runlevels` columns — plus four reemote5
-originals widening the visibility pyinfra's pair leaves missing:
+originals widening the visibility the baseline's pair leaves missing:
 `OpenrcServices`, the same `rc-status` rows kept as their *raw* state words
 (`started`, `stopped`, `crashed`, ...) so a crashed service is
 distinguishable from a cleanly stopped one, `OpenrcRunlevels`, the
@@ -46,7 +37,7 @@ runlevel → assigned-names mapping parsed from `ls -R /etc/runlevels`, and
 `openrc --version` (`None` on a host without OpenRC), and
 `OpenrcConfigFile`, the verbatim text of `/etc/rc.conf` or a service's
 `/etc/conf.d/<service>` — the raw-content fact behind `openrc.config`.
-Beside the facts live the `openrc.service` operation (pyinfra parity:
+Beside the facts live the `openrc.service` operation (baseline parity:
 running/restarted/reloaded/enabled/runlevel), and the `openrc.runlevel`,
 `openrc.custom_runlevel` and `openrc.config` originals — standalone
 runlevel-membership and runlevel-directory management (including
@@ -69,13 +60,13 @@ generator — implemented as a `process` coroutine returning the raw value
 coroutine, so results are awaited and cached within a phase step.
 
 `OpenrcStatus` takes an optional runlevel (default `"default"`) and runs
-`rc-status <runlevel>`, mirroring pyinfra's fact with the same row regex:
+`rc-status <runlevel>`, mirroring the baseline's fact with the same row regex:
 each `name [ state ]` row becomes a name → running-bool entry, where only
 `started` reads True — `stopped`, `crashed` and every other state read
 False. The optional uptime suffix a started service may carry
 (`started 00:34:14 (10)`, `started 15 day(s) 00:34:14 (10)`) is matched and
 ignored; the `Runlevel:` header and blank lines match no row. Deliberate
-deviations from pyinfra: the runlevel is `shlex`-quoted in the shell, and
+deviations from the baseline: the runlevel is `shlex`-quoted in the shell, and
 `requires_command` gating is dropped — a host without `rc-status` exits
 127, reported as
 [`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
@@ -87,14 +78,14 @@ side), and the argument selects only the membership test — `crond |
 default` reads True for `"default"`, False for `"boot"`. This is the
 boot-persistence view, complementary to `OpenrcStatus`'s runtime view: a
 service can be enabled but stopped, or running but not enabled. A line
-carrying no `|` is skipped instead of crashing the split (pyinfra's
+carrying no `|` is skipped instead of crashing the split (the baseline's
 parser raises on a stray header; this one stays total). The unguarded
 command surfaces a missing `rc-update` as `CommandNotFoundError`.
 
 `OpenrcServices` is the lossless sibling of `OpenrcStatus`: the same
 `rc-status <runlevel>` shell and the same row regex, but the bracketed
 state word is kept verbatim instead of projected to a bool, so the states
-pyinfra's fact collapses remain distinguishable — an audit can tell a
+the baseline's fact collapses remain distinguishable — an audit can tell a
 service that died (`crashed`) from one that was never started
 (`stopped`). The uptime suffix is dropped exactly as `OpenrcStatus` drops
 it, and a runlevel with no services reads as `{}`.
@@ -135,7 +126,7 @@ without `cat`) and `HostConnectionError` can escape the gather.
 ## Operations
 
 Operations live in namespace modules so a deploy reads `openrc.service`,
-mirroring pyinfra's API. Every operation is an async generator with the
+mirroring the baseline's API. Every operation is an async generator with the
 same fixed signature:
 
 ```python
@@ -151,7 +142,7 @@ reemote5 runs it passwordless as `doas -n`, which needs a `permit nopass`
 rule for the login user in `/etc/doas.conf` and raises `PrivilegeError`
 without one.
 
-`openrc.service` manages one service along two independent axes (pyinfra's
+`openrc.service` manages one service along two independent axes (the baseline's
 `openrc.service` parity). `running=True` compares the `OpenrcStatus` fact
 and yields `rc-service <name> start` only when the service is not running;
 `running=False` stops it, `running=None` leaves the runtime state alone.
@@ -161,20 +152,20 @@ service is meaningless, so both yield nothing when the fact reads False.
 `enabled=True`/`False` compares the `OpenrcEnabled` fact for `runlevel`
 (default `"default"`) and yields `rc-update add`/`del` only on a
 difference; `enabled=None` (the default) leaves the boot state alone.
-pyinfra's arbitrary `command` option is deliberately dropped — an escape
+the baseline's arbitrary `command` option is deliberately dropped — an escape
 hatch for any rc-service verb defeats the typed-descriptor model;
 `server.shell` covers the rare custom verb, and the keyword is absorbed by
 `**kwargs` with no effect.
 
-`openrc.runlevel` is a reemote5 original with no pyinfra counterpart:
-pyinfra folds the boot assignment into `openrc.service`'s `enabled`
+`openrc.runlevel` is a reemote5 original with no baseline counterpart:
+the baseline folds the boot assignment into `openrc.service`'s `enabled`
 option, so managing an assignment *without* touching the runtime state
 needs the whole service operation with `running=None`. This standalone
 operation is the dedicated runlevel-membership verb: idempotent on
 `OpenrcEnabled`, `enabled=True` yields `rc-update add <service>
 <runlevel>` only when the service is not assigned, `enabled=False` yields
 `rc-update del` only when it is. There is no existence validation —
-pyinfra's enabled branch does not check the init script either; a service
+the baseline's enabled branch does not check the init script either; a service
 without an `/etc/init.d` script, or an unknown runlevel, fails in
 `rc-update` itself at apply time (`CommandError`).
 
@@ -199,7 +190,7 @@ runlevels are not special-cased — removing `boot` or `default` is legal
 OpenRC-wise and the operation does not guard against it.
 
 `openrc.config` is the third original — a reemote5 operation with no
-pyinfra counterpart (pyinfra's `openrc` ships only `service`) and a member
+the baseline counterpart (the baseline's `openrc` ships only `service`) and a member
 of the spool-and-install write family (`files.install`, `apt.repo`,
 `apk.repository`, ...). It manages one shell-variable assignment in
 `/etc/rc.conf` (`service=None`, the default) or `/etc/conf.d/<service>`:

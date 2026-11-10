@@ -29,7 +29,7 @@ driving the two-phase execution model:
    mapping -- then print each host's device tree with
    ``json.dumps(..., indent=2)``.
 
-``LsBlk`` is a reemote5 original (pyinfra has no counterpart): it runs
+``LsBlk`` is a reemote5 original (the baseline has no counterpart): it runs
 ``lsblk -J -b -o NAME,TYPE,SIZE,MOUNTPOINT`` and returns the complete block
 device tree -- including unmounted disks, partitions, LVM volumes and raw
 devices that the ``df``-based ``BlockDevices`` fact never sees. Each

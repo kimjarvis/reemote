@@ -29,7 +29,7 @@ driving the two-phase execution model:
    character-set/collation pairs with ``json.dumps(..., indent=2)``.
 
 The fact runs ``mysql -Be 'SELECT * FROM information_schema.SCHEMATA'``
-as the login user -- the pyinfra ``mysql.MysqlDatabases`` query -- so that
+as the login user -- the baseline ``mysql.MysqlDatabases`` query -- so that
 user must be able to authenticate: keep the credentials in a host-side
 ``~/.my.cnf``, or pass ``mysql_user`` / ``mysql_host`` /
 ``mysql_defaults_file`` to ``gather_fact`` for a TCP login backed by an
@@ -128,7 +128,7 @@ async def main() -> None:
         # fans MysqlDatabases.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
         # running one host at a time. process runs the SCHEMATA select and
-        # parses the rows into a dict keyed by database name -- the pyinfra
+        # parses the rows into a dict keyed by database name -- the baseline
         # mysql.MysqlDatabases shape.
         databases = await gather_fact(hosts, MysqlDatabases)
     except (OSError, json.JSONDecodeError) as exc:

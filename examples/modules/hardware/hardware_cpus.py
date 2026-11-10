@@ -28,7 +28,7 @@ the two-phase execution model:
    inventory with ``asyncio.gather`` and returns a host-name-keyed mapping --
    then print each host's CPU count with ``json.dumps(..., indent=2)``.
 
-``Cpus`` mirrors pyinfra's ``hardware.Cpus``: it runs
+``Cpus`` mirrors the baseline's ``hardware.Cpus``: it runs
 ``getconf NPROCESSORS_ONLN 2> /dev/null || getconf _NPROCESSORS_ONLN`` (the
 fallback covers platforms without the unprefixed name) and converts the
 first output line with ``int()``. A non-integer or empty answer reports

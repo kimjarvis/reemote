@@ -40,7 +40,7 @@ into an ``ApkRepository`` dict of the repository ``url`` and its apk ``tag``
 (the empty string for an untagged line; ``@testing``-style tags lose the
 leading ``@``).
 Comments, blank lines and malformed lines are skipped and entries keep file
-order. This is the auditing view pyinfra's apk namespace has no fact for --
+order. This is the auditing view the baseline's apk namespace has no fact for --
 read it before conditionally rewriting repository sources. The fact takes
 no arguments, so the default gather needs none.
 

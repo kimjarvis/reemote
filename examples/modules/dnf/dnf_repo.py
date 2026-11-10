@@ -30,7 +30,7 @@ driven by ``asyncio.run``.
 
 The deploy adds the Docker CE repository by constructing its
 ``/etc/yum.repos.d/DockerCE.repo`` file from ``dnf.repo``'s arguments
-(``baseurl``, ``description``, ``gpgkey``). Unlike pyinfra -- whose
+(``baseurl``, ``description``, ``gpgkey``). Unlike the baseline -- whose
 ``dnf.repo`` can also download a remote ``.repo`` file -- reemote5 has no
 download operation, so ``dnf.repo`` takes a repository *name* and builds the
 file itself; a URL ``src`` raises ``ValueError``. The ``$releasever`` and

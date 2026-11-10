@@ -61,7 +61,7 @@ is no longer exported here.
 model. It runs a script file already on the host (stage it with
 ``files.put``); a missing file comes back as an error ``Result``, never an
 exception. The implementation stays in ``reemote5.actions`` with the other
-actions -- only the pyinfra-familiar name is offered here.
+actions -- only the familiar ``server.script`` name is offered here.
 """
 
 from ...actions import Script as script

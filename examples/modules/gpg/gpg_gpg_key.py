@@ -29,11 +29,11 @@ two-phase execution model:
    path argument verbatim, and returns a host-name-keyed mapping -- then
    print each host's key entries as JSON.
 
-``GpgKey`` mirrors pyinfra's ``gpg.GpgKey``: it runs
+``GpgKey`` mirrors the baseline's ``gpg.GpgKey``: it runs
 ``gpg --with-colons <src>`` against a key file already on the target host
 (ASCII-armored or binary) and parses the colon records into ``GpgKeyInfo``
 entries -- id, validity, length, plus any fingerprint, user id and
-subkeys the records attach -- without importing the key. pyinfra's URL
+subkeys the records attach -- without importing the key. The baseline's URL
 download branch is deliberately dropped: ``src`` must be a path on the
 target host, and a host without ``SRC`` simply answers ``[]`` (gpg exits
 2 with empty stdout) instead of failing the read.

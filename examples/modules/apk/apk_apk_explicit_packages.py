@@ -44,7 +44,7 @@ as the ``version`` (``""`` for a bare name). Entries come back sorted and
 de-duplicated by name and version, with the ``@tag`` dropped and a ``!``
 conflict
 constraint (a package that must NOT be installed) never contributing an
-entry. This is the audit view pyinfra's apk
+entry. This is the audit view the baseline's apk
 namespace has no fact for: read beside ``ApkInstalledPackages`` -- whose
 ``apk list --installed`` rows cannot tell an explicitly requested package
 from a dependency -- the installed names missing from this list are exactly

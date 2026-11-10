@@ -3,11 +3,11 @@
 
 # The ``openrc`` module: facts and operations in one source.
 #
-# Fact side: ``OpenrcStatus`` and ``OpenrcEnabled`` are ports of pyinfra's
-# two OpenRC facts -- the per-runlevel name -> running bool parsed from
+# Fact side: ``OpenrcStatus`` and ``OpenrcEnabled`` are the two
+# OpenRC facts -- the per-runlevel name -> running bool parsed from
 # ``rc-status <runlevel>`` rows, and the name -> enabled-in-runlevel bool
 # parsed from ``rc-update show -v``'s ``name | runlevels`` columns. Three
-# reemote5 originals widen the visibility pyinfra's pair leaves missing:
+# reemote5 originals widen the visibility that pair leaves missing:
 # ``OpenrcServices``, the same ``rc-status`` rows kept as their *raw* state
 # words (``started``, ``stopped``, ``crashed``, ...) instead of the running
 # bool, so a crashed service is distinguishable from a cleanly stopped one;
@@ -21,15 +21,15 @@
 # operation rewrites. Like every fact they are phase-unaware: their
 # ``process`` coroutine just gathers the raw value.
 #
-# Operation side: ``openrc.service`` ports pyinfra's ``openrc.service``
+# Operation side: ``openrc.service`` manages a service
 # (running/restarted/reloaded/enabled/runlevel) through the
 # ``RcServiceCommand``/``RcUpdateCommand`` descriptors, reading
-# ``OpenrcStatus``/``OpenrcEnabled`` for idempotence; pyinfra's arbitrary
+# ``OpenrcStatus``/``OpenrcEnabled`` for idempotence; an arbitrary
 # ``command`` option is deliberately dropped (an escape hatch for any
 # rc-service verb defeats the typed-descriptor model -- ``server.shell``
 # covers the rare custom verb). ``openrc.runlevel`` and
-# ``openrc.custom_runlevel`` are reemote5 originals with no pyinfra
-# counterpart: the first manages one service's membership in one runlevel
+# ``openrc.custom_runlevel`` are reemote5 originals: the first manages one
+# service's membership in one runlevel
 # (``rc-update add``/``del``) as a standalone operation, the second manages
 # the runlevel directories themselves (``mkdir -p``/``rm -rf`` under
 # ``/etc/runlevels``) including stacking one runlevel onto another
@@ -69,7 +69,7 @@ from ...hosts import Host
 
 # --- Shared helpers ----------------------------------------------------------
 
-# pyinfra's ``OpenrcStatus.regex`` verbatim: leading whitespace, the service
+# The service-line regex: leading whitespace, the service
 # name (letters, digits, dash, underscore, dot -- ``nftables.default`` and
 # ``podman-long-running`` both match), then a bracketed state word with an
 # optional uptime suffix (``started 00:34:14 (10)`` or
@@ -191,7 +191,7 @@ class OpenrcEnabled:
         Examples can be found in ``examples/modules/openrc/openrc_openrc_enabled.py``.
     """
 
-    # Mirrors pyinfra's ``openrc.OpenrcEnabled``: ``rc-update show -v``
+    # ``rc-update show -v``
     # prints every service as a ``name | runlevel ...`` row (the ``-v``
     # includes services assigned to no runlevel at all, whose right-hand
     # side is empty), and the fact answers membership in the requested
@@ -199,18 +199,18 @@ class OpenrcEnabled:
     # "boot". The ``runlevel`` argument selects the membership test, never
     # the shell: one command serves every runlevel.
     #
-    # Deliberate deviations from pyinfra: a line carrying no ``|`` is
-    # skipped instead of crashing the split (pyinfra's ``line.split("|", 1)``
+    # Deliberate design choices: a line carrying no ``|`` is
+    # skipped instead of crashing the split (a bare ``line.split("|", 1)``
     # raises on a stray header or blank line; the parser stays total).
-    # pyinfra's ``requires_command`` gating is dropped: a host without
+    # No command-existence gate: a host without
     # rc-update exits 127 and surfaces as ``CommandNotFoundError``.
     #
     # SimulatedHost seam note: the ``openrc_runlevels`` field stores the
     # runlevel -> names mapping (``OpenrcRunlevels``' shape), and this fact
     # projects membership from it. Only services assigned to *some*
-    # runlevel appear in the projection -- an unassigned service (pyinfra's
+    # runlevel appear in the projection -- an unassigned service (the
     # ``cgroups |`` row, False everywhere) is absent rather than False, so
-    # consumers read ``.get(service, False)`` exactly as pyinfra's own
+    # consumers read ``.get(service, False)`` exactly as the
     # ``openrc.service`` does.
 
     #: Shell listing every service and its runlevels over SSH.
@@ -277,9 +277,9 @@ class OpenrcRunlevels:
         Examples can be found in ``examples/modules/openrc/openrc_openrc_runlevels.py``.
     """
 
-    # A reemote5 original: pyinfra's ``openrc`` namespace ships only
-    # ``OpenrcStatus``/``OpenrcEnabled``, neither of which reports the
-    # runlevel inventory itself. A runlevel *is* a directory under
+    # A reemote5 original: neither ``OpenrcStatus`` nor ``OpenrcEnabled``
+    # reports the runlevel inventory itself. A runlevel *is* a directory
+    # under
     # ``/etc/runlevels`` holding one symlink per assigned service (that is
     # what ``rc-update add``/``del`` write), so ``ls -R`` of the tree is the
     # whole mapping -- no OpenRC tooling needed, busybox-compatible, and
@@ -387,7 +387,7 @@ class OpenrcServices:
     # A reemote5 original and the lossless sibling of ``OpenrcStatus``:
     # the same ``rc-status <runlevel>`` rows, but the bracketed state word
     # is kept verbatim instead of projected to a running bool, so the
-    # states pyinfra's fact collapses remain distinguishable --
+    # states ``OpenrcStatus`` collapses remain distinguishable --
     # ``started``, ``stopped``, ``crashed``, ``starting``, ``stopping``,
     # ``inactive`` -- for example::
     #
@@ -403,8 +403,8 @@ class OpenrcServices:
     # command order; the ``Runlevel:`` header and any non-service line
     # match no row. A runlevel with no services reads as ``{}``.
     #
-    # Deliberate deviation from pyinfra (which has no raw-state fact):
-    # ``requires_command`` gating is dropped -- a host without rc-status
+    # Deliberate design choice: there is no command-existence gate -- a
+    # host without rc-status
     # exits 127 and surfaces as ``CommandNotFoundError``.
 
     @classmethod
@@ -413,7 +413,7 @@ class OpenrcServices:
         # The runlevel is ``shlex``-quoted so a name carrying shell
         # metacharacters is passed literally. No ``|| true`` guard: a
         # missing rc-status must surface as ``CommandNotFoundError``, the
-        # ``OpenrcStatus`` parity (pyinfra gates on ``requires_command``).
+        # ``OpenrcStatus`` behaviour.
         return f"rc-status {shlex.quote(runlevel)}"
 
     @classmethod
@@ -469,19 +469,19 @@ class OpenrcStatus:
         Examples can be found in ``examples/modules/openrc/openrc_openrc_status.py``.
     """
 
-    # Mirrors pyinfra's ``openrc.OpenrcStatus``: ``rc-status <runlevel>``
+    # ``rc-status <runlevel>``
     # prints one ``name [ state ]`` row per service assigned to the
     # runlevel, and the fact projects the state word to a running bool --
     # only ``started`` reads True, so ``stopped``, ``crashed`` and every
-    # other state read False (pyinfra's ``group(2) == "started"``). The
+    # other state read False (``group(2) == "started"``). The
     # optional uptime suffix (``started 00:34:14 (10)``, ``started 15
     # day(s) 00:34:14 (10)``) is matched and ignored; the ``Runlevel:``
-    # header and blank lines match no row. The regex is pyinfra's verbatim
-    # (shared with ``OpenrcServices``, which keeps the state word raw).
+    # header and blank lines match no row. The regex is shared
+    # with ``OpenrcServices``, which keeps the state word raw.
     #
-    # Deliberate deviations from pyinfra: the runlevel is ``shlex``-quoted
-    # in the shell (pyinfra interpolates it bare); ``requires_command``
-    # gating is dropped -- a host without rc-status exits 127 and surfaces
+    # Deliberate design choices: the runlevel is ``shlex``-quoted
+    # in the shell rather than interpolated bare; there is no
+    # command-existence gate -- a host without rc-status exits 127 and surfaces
     # as ``CommandNotFoundError``.
     #
     # SimulatedHost seam note: the ``openrc_service_states`` field stores
@@ -492,9 +492,9 @@ class OpenrcStatus:
     @classmethod
     def command(cls, runlevel: str = "default") -> str:
         """Shell reporting the runlevel's service states over SSH."""
-        # pyinfra's ``rc-status {runlevel}`` with the runlevel quoted; for
-        # the fixture runlevels ("default", "boot") the shell is identical
-        # to pyinfra's verbatim.
+        # ``rc-status {runlevel}`` with the runlevel quoted; for
+        # the fixture runlevels ("default", "boot") the shell is the plain
+        # ``rc-status <runlevel>`` form.
         return f"rc-status {shlex.quote(runlevel)}"
 
     @classmethod
@@ -553,8 +553,8 @@ class OpenrcVersion:
         Examples can be found in ``examples/modules/openrc/openrc_openrc_version.py``.
     """
 
-    # A reemote5 original: pyinfra's ``openrc`` namespace ships no version
-    # fact, so an operation cannot adapt to the OpenRC release present.
+    # A reemote5 original: without a version fact an operation cannot adapt
+    # to the OpenRC release present.
     # The ``openrc`` binary itself answers ``--version`` with one line --
     # ``openrc (OpenRC) 0.54.1`` -- whose last token is the release; the
     # fact returns that token (``"0.54.1"``), not the banner. A host
@@ -605,9 +605,9 @@ class RcServiceCommand(Command):
     """``rc-service <service> <action>``: one runtime-state invocation.
 
     The descriptor ``openrc.service`` yields for the runtime direction:
-    ``action`` is ``start``, ``stop``, ``restart`` or ``reload`` (pyinfra's
-    ``rc-service {0} {1}`` formatter). The service name is ``shlex``-quoted
-    (pyinfra's ``QuoteString``), so a name carrying shell metacharacters
+    ``action`` is ``start``, ``stop``, ``restart`` or ``reload`` (the
+    ``rc-service {0} {1}`` formatter). The service name is ``shlex``-quoted,
+    so a name carrying shell metacharacters
     reaches rc-service literally rather than being executed.
     """
 
@@ -626,8 +626,8 @@ class RcUpdateCommand(Command):
     following the ``ApkHoldCommand``/``server.ModprobeCommand`` precedent --
     both directions are the same tool, so one type covers them.
     ``present=True`` renders ``add``, ``present=False`` renders ``del``
-    (pyinfra's ``rc-update add``/``rc-update del`` with ``QuoteString`` on
-    both arguments). ``stack=True`` inserts ``-s``: the name is then
+    (``rc-update add``/``rc-update del``, both arguments ``shlex``-quoted).
+    ``stack=True`` inserts ``-s``: the name is then
     another *runlevel* being stacked onto (or unstacked from) the target
     runlevel, rc-update(8)'s inheritance mechanism. Both names are
     ``shlex``-quoted.
@@ -690,23 +690,23 @@ async def service(
         Examples can be found in ``examples/modules/openrc/openrc_service.py``.
     """
 
-    # pyinfra ``openrc.service`` parity (its ``handle_service_control``
-    # with the ``rc-service {0} {1}`` formatter, plus the ``enabled``
-    # branch). ``running`` compares the ``OpenrcStatus`` fact (only
+    # Manage an OpenRC service's runtime and boot state (the
+    # ``rc-service {0} {1}`` runtime direction plus the ``enabled``
+    # boot branch). ``running`` compares the ``OpenrcStatus`` fact (only
     # ``started`` counts as running, so a crashed service is started);
     # ``restarted``/``reloaded`` act only on an already-running service --
     # a stopped one was just started above, or is meant to stay stopped;
     # ``enabled`` compares the ``OpenrcEnabled`` fact and yields
     # ``rc-update add``/``del`` for the runlevel. The no-op reasons are
-    # pyinfra's verbatim wordings ("service X is running/stopped/enabled/
+    # the fixed wordings ("service X is running/stopped/enabled/
     # disabled"). ``running=None`` leaves the runtime state alone
-    # (pyinfra's ``handle_service_control`` accepts it even though the
+    # (accepted even though the
     # operation's annotation says bool).
     #
-    # Deliberate deviation from pyinfra: the arbitrary ``command`` option
+    # Deliberate design choice: the arbitrary ``command`` option
     # (any rc-service verb, always executed) is dropped -- an untyped
     # escape hatch defeats the typed-descriptor model; ``server.shell``
-    # covers the rare custom verb. ``**kwargs`` absorbs it and pyinfra's
+    # covers the rare custom verb. ``**kwargs`` absorbs it and any
     # global arguments (``op()`` already strips ``name`` and the
     # ``sudo``/``su``/``doas`` escalation flags).
     #
@@ -733,7 +733,7 @@ async def service(
         else:
             reasons.append(f"service {service} is running")
 
-    # Only restart/reload a service that is already running (pyinfra's
+    # Only restart/reload a service that is already running (the
     # ``restarted and is_running`` / ``reloaded and is_running`` gates).
     if restarted and is_running:
         ctx.changed = True
@@ -823,14 +823,14 @@ async def runlevel(
         Examples can be found in ``examples/modules/openrc/openrc_runlevel.py``.
     """
 
-    # A reemote5 original with no pyinfra counterpart: pyinfra folds the
-    # boot assignment into ``openrc.service``'s ``enabled`` option, so
+    # A reemote5 original: ``openrc.service`` folds the
+    # boot assignment into its ``enabled`` option, so
     # managing an assignment *without* touching the runtime state needs
     # the whole service operation with ``running=None``. This standalone
     # operation is the proposal's dedicated runlevel-membership verb.
     # Idempotent on ``OpenrcEnabled``: membership in the requested
     # runlevel is compared and one ``RcUpdateCommand`` is yielded only on
-    # a difference. No existence validation -- pyinfra's enabled branch
+    # a difference. No existence validation -- the enabled branch
     # does not check the init script either; a service without an
     # ``/etc/init.d`` script fails in ``rc-update`` itself at apply time
     # (``CommandError``), and an unknown runlevel likewise.
@@ -838,7 +838,7 @@ async def runlevel(
     # The command needs root: flag the request ``sudo=True``, ``doas=True``
     # or ``su=True`` -- stock Alpine ships no ``sudo``, so ``doas`` is
     # usually the escalator on an OpenRC host. ``**kwargs`` absorbs
-    # pyinfra's global arguments (``op()`` already strips ``name`` and the
+    # any further global arguments (``op()`` already strips ``name`` and the
     # ``sudo``/``su``/``doas`` escalation flags).
     openrc_enabled = await ctx.facts.get(OpenrcEnabled, runlevel)
     is_enabled = openrc_enabled.get(service, False)
@@ -894,7 +894,7 @@ async def custom_runlevel(
         Examples can be found in ``examples/modules/openrc/openrc_custom_runlevel.py``.
     """
 
-    # A reemote5 original with no pyinfra counterpart: the proposal's
+    # A reemote5 original: the proposal's
     # runlevel-management verb. Idempotent on ``OpenrcRunlevels`` (the
     # ``ls -R /etc/runlevels`` mapping): creation yields one
     # ``RunlevelCommand`` (``mkdir -p``) only when the directory is
@@ -920,7 +920,7 @@ async def custom_runlevel(
     # The commands need root: flag the request ``sudo=True``, ``doas=True``
     # or ``su=True`` -- stock Alpine ships no ``sudo``, so ``doas`` is
     # usually the escalator on an OpenRC host. ``**kwargs`` absorbs
-    # pyinfra's global arguments (``op()`` already strips ``name`` and the
+    # any further global arguments (``op()`` already strips ``name`` and the
     # ``sudo``/``su``/``doas`` escalation flags).
     if not runlevel:
         raise ValueError("runlevel name must not be empty")
@@ -1148,8 +1148,8 @@ async def config(
         Examples can be found in ``examples/modules/openrc/openrc_config.py``.
     """
 
-    # A reemote5 original with no pyinfra counterpart: pyinfra's ``openrc``
-    # namespace ships only ``service``. This operation supersedes the
+    # A reemote5 original: the ``openrc`` namespace otherwise ships only
+    # ``service``. This operation supersedes the
     # ``files.edit`` + ``files.move`` spool-and-install recipe the
     # ``openrc_config.py`` example used to demonstrate, and is a member of
     # the spool-and-install write family: the managed file's current text is
@@ -1193,7 +1193,7 @@ async def config(
     # values stay a ``files.edit`` recipe concern. There is no runtime half:
     # rc.conf is read when a runlevel is entered and conf.d when a service
     # starts, so the edit takes effect at the next boot / service restart.
-    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
+    # ``**kwargs`` absorbs any further global arguments (``op()`` already
     # strips ``name`` and the ``sudo``/``su``/``doas`` escalation flags).
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
         raise ValueError(f"not a shell variable name: {key!r}")

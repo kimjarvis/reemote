@@ -29,12 +29,12 @@ driving the two-phase execution model:
    ``PostgresqlTablespace`` entries (``oid``, ``name``, ``owner``,
    ``location``) with ``json.dumps(..., indent=2)``.
 
-The fact is a reemote5-original visibility fact (pyinfra has no tablespace
+The fact is a reemote5-original visibility fact (the baseline has no tablespace
 fact): it selects ``pg_tablespace`` with ``pg_tablespace_location(oid)``
 for the filesystem path (the built-in ``pg_default``/``pg_global`` report
 an empty location as None). Both ``postgresql.tablespace`` and
 ``postgresql.database`` read it -- the database operation resolves a
-tablespace NAME to its OID through this fact, fixing pyinfra's comparison
+tablespace NAME to its OID through this fact, fixing the baseline's comparison
 of the name against the OID column. It runs ``psql -Ac '<select>'`` as the
 login user, so the host's ``pg_hba.conf`` must let that OS user connect (a
 matching database role, or a trust entry); pass ``psql_user`` /

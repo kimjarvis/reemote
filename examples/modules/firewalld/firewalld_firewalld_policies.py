@@ -30,7 +30,7 @@ execution model instead:
    host-name-keyed mapping -- then print each host's raw records with
    ``json.dumps(..., indent=2)``.
 
-``FirewalldPolicies`` is a reemote5 original (pyinfra ships no firewalld
+``FirewalldPolicies`` is a reemote5 original (the baseline ships no firewalld
 module): one shell round-trip enumerates ``firewall-cmd --get-policies``
 and runs ``--info-policy`` for every name behind echo markers, keeping
 each policy's target, ingress and egress zones, services, ports,

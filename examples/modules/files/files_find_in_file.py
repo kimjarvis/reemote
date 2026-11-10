@@ -30,7 +30,7 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's matching lines with
    ``json.dumps(..., indent=2)``.
 
-``FindInFile`` mirrors pyinfra's ``files.FindInFile`` -- the targeted
+``FindInFile`` mirrors the baseline's ``files.FindInFile`` -- the targeted
 grep read the whole-file ``FileContents`` fact would force you to
 transfer and scan locally: one ``grep -e <pattern> <path>`` returns just
 the matching lines, and a fallback arm distinguishes the two failure

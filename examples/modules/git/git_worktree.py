@@ -23,7 +23,7 @@ lazily opens an asyncssh connection from its ``connection`` data, gathers
 facts and runs commands for real, and ``run`` closes those connections when
 it finishes.
 
-``git.worktree`` mirrors pyinfra's ``git.worktree``: it manages a linked
+``git.worktree`` mirrors the baseline's ``git.worktree``: it manages a linked
 working tree -- creating it from a main repository, pulling it, or removing it
 (``present=False``). This script ensures a ``hotfix`` worktree checked out on
 a new ``hotfix`` branch from the ``/tmp/reemote5-app`` repository
@@ -53,7 +53,7 @@ only when the local commit already equals the remote tip.)
 Creating a worktree writes metadata under the repository's ``.git/worktrees``;
 when the login user cannot write there, flag the request ``sudo=True`` so the
 driver elevates the command -- the run-as user and its password come from the
-inventory ``privilege``, never the operation. pyinfra's ``user``/``group``
+inventory ``privilege``, never the operation. The baseline's ``user``/``group``
 options and the ``chown`` commands they emit are deliberately dropped for the
 same reason.
 

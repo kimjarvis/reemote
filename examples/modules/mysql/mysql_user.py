@@ -16,11 +16,11 @@ two-phase execution model end to end over a **real SSH transport**
    objects. Every request is flagged ``sudo=True``, so the ``mysql``
    client rides under root and connects through unix-socket
    authentication -- no password travels through operation arguments,
-   plans or logs (pyinfra's ``mysql_password`` option is deliberately
+   plans or logs (the baseline's ``mysql_password`` option is deliberately
    dropped namespace-wide).
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``mysql.user`` mirrors pyinfra's operation, minus the credential: the
+``mysql.user`` mirrors the baseline's operation, minus the credential: the
 creation-only ``password`` (IDENTIFIED BY, whose hash cannot be compared)
 is deliberately dropped and replaced by ``auth_plugin`` (IDENTIFIED
 WITH). Here the account authenticates through ``auth_socket`` -- the OS

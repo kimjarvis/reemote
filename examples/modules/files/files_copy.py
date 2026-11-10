@@ -4,7 +4,7 @@
 """Example: copy a remote file into a remote directory with files.copy.
 
 This is a *usage* example, not part of the library. It shows ``files.copy``
-(pyinfra ``files.copy`` parity): ``src`` is a remote path, ``dest`` is the
+(baseline ``files.copy`` parity): ``src`` is a remote path, ``dest`` is the
 remote *directory* to copy it into, and the copied path becomes
 ``dest/basename(src)`` -- with the source left in place, the difference from
 ``files.move``. With ``overwrite=True`` the copy is forced (``cp -r -f``);
@@ -20,7 +20,7 @@ Two properties shape the script:
   overwritten; drop the flag and the second script run becomes a no-op.
 * An absent source or an absent/non-directory destination raises
   ``ValueError`` in **both** phases -- reemote5 operations are phase-unaware,
-  so pyinfra's soft plan-time logging of those cases is deliberately dropped
+  so the baseline's soft plan-time logging of those cases is deliberately dropped
   (the same strictness as ``files.move``). A "create the file then copy it"
   flow therefore cannot share one deploy: the prepare phase would raise on
   the not-yet-created source. That is why this script spans two complete

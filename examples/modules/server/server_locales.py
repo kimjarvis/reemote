@@ -28,7 +28,7 @@ two-phase execution model:
    inventory with ``asyncio.gather`` and returns a host-name-keyed mapping
    -- then print each host's locale list with ``json.dumps(..., indent=2)``.
 
-``Locales`` mirrors pyinfra's ``server.Locales``: it runs ``locale -a`` and
+``Locales`` mirrors the baseline's ``server.Locales``: it runs ``locale -a`` and
 returns the installed locale names with lowercase ``utf8`` replaced by
 ``UTF-8`` (e.g. ``["C.UTF-8", "en_US.UTF-8"]``), so a deploy can check for a
 locale's presence before configuring it as the system default.

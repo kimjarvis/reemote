@@ -17,7 +17,7 @@ two-phase execution model end to end over a **real SSH transport**
    need CAP_NET_ADMIN, so the commands ride under root.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``iptables.chain`` mirrors pyinfra's operation: it reads the
+``iptables.chain`` mirrors the baseline's operation: it reads the
 ``IptablesChains`` fact and creates a missing user chain with ``-N`` (or
 deletes an unwanted one with ``-X``). Here it creates ``LOG_DROP``, the
 classic custom chain a later ``iptables.rule`` fills with a rate-limited

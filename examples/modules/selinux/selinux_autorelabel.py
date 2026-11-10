@@ -26,7 +26,7 @@ it finishes.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``selinux.autorelabel`` is a reemote5 original (pyinfra ships no
+``selinux.autorelabel`` is a reemote5 original (the baseline ships no
 autorelabel operation): it creates the ``/.autorelabel`` marker file
 (``touch /.autorelabel``) that tells the next boot to relabel *every* file
 on the system from the fcontext database. **Warning -- this is a heavy,

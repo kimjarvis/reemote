@@ -7,11 +7,11 @@ Covers the ``FileCommand`` shell descriptor rendering (``touch``/``rm -f``,
 the quoted path, the elevated ``command_shell`` forms) alongside the
 ``ChmodCommand``/``ChownCommand``/``MkdirCommand``/``RemoveTreeCommand``
 descriptors the operation reuses from ``files.directory``, the operation's
-pyinfra ``files.file`` fixture parity (create with mode/owner, edit against
+baseline ``files.file`` fixture parity (create with mode/owner, edit against
 the ``File`` fact's metadata, the always-rerunning ``touch`` option, the
 ``create_remote_dir`` parent flow, delete, the ``force`` ``rm -rf`` +
 ``touch`` pair, and the error branches), the deliberate deviations
-(pyinfra's timestamped ``force_backup``/``force_backup_dir`` mv and the
+(the baseline's timestamped ``force_backup``/``force_backup_dir`` mv and the
 internal ``_no_fail_on_link`` knob are dropped), the accepted mode
 spellings, the ``SimulatedHost`` seam dispatch (both the ``File`` and
 ``FileExists`` stores stay coherent), and end-to-end plan/log behaviour with
@@ -49,7 +49,7 @@ INVENTORY = [
     },
 ]
 
-# pyinfra's own files.file fixtures address "testfile" (add_with_spaces and
+# The baseline's own files.file fixtures address "testfile" (add_with_spaces and
 # delete_with_spaces use "test file", add_special_chars the awkward nested
 # path below); the expectations reuse those command strings verbatim.
 PATH = "testfile"
@@ -69,7 +69,7 @@ MODE_ONLY_ROW = {"mode": 600}
 def make_host(stats: dict | bool | None = None) -> SimulatedHost:
     """A SimulatedHost seeded with the stat row ``file``'s fact reads.
 
-    Mirrors pyinfra's fixture shape: ``File(path)`` is the idempotence
+    Mirrors the baseline's fixture shape: ``File(path)`` is the idempotence
     fact (``Directory(parent)`` is read only on the create branch, so those
     tests seed it directly). An unset row reads as None (absent), ``False``
     names an existing path of the wrong type.
@@ -126,11 +126,11 @@ def test_command_shell_elevates_the_file_commands():
     assert command_shell(RemoveTreeCommand(src=PATH), sudo=True) == "sudo rm -rf testfile"
 
 
-# --- Operation parity with pyinfra's files.file fixtures -----------------------
+# --- Operation parity with the baseline's files.file fixtures -----------------------
 
 
 async def test_file_add_fixture():
-    # pyinfra's add.json: an absent path with user/group/mode creates the
+    # The baseline's add.json: an absent path with user/group/mode creates the
     # file, then chmods and chowns it -- no parent probe (a bare "testfile"
     # has no dirname to check).
     host = make_host()
@@ -153,7 +153,7 @@ async def test_file_add_fixture():
 
 
 async def test_file_add_with_spaces_fixture():
-    # pyinfra's add_with_spaces.json: only the path is quoted, never the
+    # The baseline's add_with_spaces.json: only the path is quoted, never the
     # mode or the owner spec (unless the spec itself needs it).
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
@@ -169,7 +169,7 @@ async def test_file_add_with_spaces_fixture():
 
 
 async def test_file_add_special_chars_fixture():
-    # pyinfra's add_special_chars.json: the parent directory exists
+    # The baseline's add_special_chars.json: the parent directory exists
     # (Directory answers a row), so no mkdir runs and only the awkward path
     # -- quoted -- reaches the three commands.
     host = SimulatedHost(name="h")
@@ -187,7 +187,7 @@ async def test_file_add_special_chars_fixture():
 
 
 async def test_file_add_user_group_with_metachars_fixture():
-    # pyinfra's add_user_group_with_metachars.json: the owner spec is
+    # The baseline's add_user_group_with_metachars.json: the owner spec is
     # injection-shaped and must arrive shell-quoted as one argument.
     host = make_host()
     ctx, commands = await materialize(
@@ -203,7 +203,7 @@ async def test_file_add_user_group_with_metachars_fixture():
 
 
 async def test_file_edit_fixture():
-    # pyinfra's edit.json: a symbolic mode never equals the fact's octal
+    # The baseline's edit.json: a symbolic mode never equals the fact's octal
     # int, so the chmod always reruns, and both owner halves differ.
     host = make_host(WRONG_ROW)
     ctx, commands = await materialize(
@@ -226,7 +226,7 @@ async def test_file_edit_fixture():
 
 
 async def test_file_edit_nothing_fixture():
-    # pyinfra's edit_nothing.json: every requested value already matches.
+    # The baseline's edit_nothing.json: every requested value already matches.
     host = make_host({"mode": 777, "user": "testuser", "group": "testgroup"})
     ctx, commands = await materialize(
         host, path=PATH, user="testuser", group="testgroup", mode=777
@@ -238,7 +238,7 @@ async def test_file_edit_nothing_fixture():
 
 
 async def test_file_touch_fixture():
-    # pyinfra's touch.json (idempotent: false): the touch option always
+    # The baseline's touch.json (idempotent: false): the touch option always
     # reruns the touch, and the row carries no owner keys -- the owner
     # check short-circuits because neither user nor group was requested.
     host = make_host(MODE_ONLY_ROW)
@@ -251,7 +251,7 @@ async def test_file_touch_fixture():
 
 
 async def test_file_touch_runs_before_the_metadata_edits():
-    # pyinfra's order kept: the touch first, then chmod/chown, so the
+    # The baseline's order kept: the touch first, then chmod/chown, so the
     # timestamp update cannot be mistaken for a metadata change.
     host = make_host(WRONG_ROW)
     ctx, commands = await materialize(
@@ -272,7 +272,7 @@ async def test_file_touch_runs_before_the_metadata_edits():
 
 
 async def test_file_delete_fixture():
-    # pyinfra's delete.json: present=False on an existing file removes it.
+    # The baseline's delete.json: present=False on an existing file removes it.
     host = make_host(PRESENT_ROW)
     ctx, commands = await materialize(host, path=PATH, present=False)
 
@@ -283,7 +283,7 @@ async def test_file_delete_fixture():
 
 
 async def test_file_delete_with_spaces_fixture():
-    # pyinfra's delete_with_spaces.json.
+    # The baseline's delete_with_spaces.json.
     host = SimulatedHost(name="h")
     host.file_stats[SPACED] = PRESENT_ROW
     ctx, commands = await materialize(host, path=SPACED, present=False)
@@ -303,7 +303,7 @@ async def test_file_remove_absent_is_a_no_op():
 
 
 async def test_file_create_directory_fixture():
-    # pyinfra's create_directory.json: the parent is absent, so mkdir -p
+    # The baseline's create_directory.json: the parent is absent, so mkdir -p
     # runs before the touch.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
@@ -322,7 +322,7 @@ async def test_file_create_directory_fixture():
 
 
 async def test_file_create_remote_dir_choowns_a_fresh_parent():
-    # pyinfra's delegated files.directory runs its create branch when the
+    # The baseline's delegated files.directory runs its create branch when the
     # parent is missing, which chowns -- but never chmods -- the new
     # directory when an owner was requested.
     host = SimulatedHost(name="h")
@@ -345,7 +345,7 @@ async def test_file_create_remote_dir_choowns_a_fresh_parent():
 
 
 async def test_file_create_remote_dir_false_skips_the_probe():
-    # pyinfra's create_remote_dir=False: no parent read, no mkdir -- the
+    # The baseline's create_remote_dir=False: no parent read, no mkdir -- the
     # touch simply fails on a missing parent.
     host = make_host()
     ctx, commands = await materialize(
@@ -358,7 +358,7 @@ async def test_file_create_remote_dir_false_skips_the_probe():
 
 
 async def test_file_existing_parent_is_left_alone():
-    # pyinfra delegates with _no_check_owner_mode: an existing parent is
+    # The baseline delegates with _no_check_owner_mode: an existing parent is
     # not mkdir'd, not chmod'd and not chown'd -- only the file is. Call
     # files.directory separately to manage the parent.
     host = SimulatedHost(name="h")
@@ -377,7 +377,7 @@ async def test_file_existing_parent_is_left_alone():
 
 
 async def test_file_parent_that_is_not_a_directory_raises():
-    # pyinfra's internal _no_fail_on_link knob is deliberately dropped, so
+    # The baseline's internal _no_fail_on_link knob is deliberately dropped, so
     # a non-directory parent raises rather than being tolerated.
     host = SimulatedHost(name="h")
     host.directory_stats["/home"] = False
@@ -386,8 +386,8 @@ async def test_file_parent_that_is_not_a_directory_raises():
 
 
 async def test_file_add_force_no_backup_fixture():
-    # pyinfra's add_force_no_backup.json -- and, deliberately, exactly what
-    # reemote5's plain ``force=True`` does: pyinfra's default backup form
+    # The baseline's add_force_no_backup.json -- and, deliberately, exactly what
+    # reemote5's plain ``force=True`` does: the baseline's default backup form
     # ``mv``s to a datetime.now()-stamped name, which would differ between
     # the prepare and apply phases and break the determinism guard, so the
     # timestamped force_backup/force_backup_dir are dropped and force
@@ -418,7 +418,7 @@ async def test_file_force_absorbs_the_dropped_backup_knobs():
 
 
 async def test_file_remove_after_force_still_removes():
-    # pyinfra's interaction kept verbatim: force on a non-file with
+    # The baseline's interaction kept verbatim: force on a non-file with
     # present=False yields the rm -rf and then reports nothing left to do.
     host = make_host(False)
     ctx, commands = await materialize(host, path=PATH, present=False, force=True)
@@ -431,7 +431,7 @@ async def test_file_remove_after_force_still_removes():
 
 
 async def test_file_invalid_fixture_raises():
-    # pyinfra's invalid.json: a non-file without force raises (pyinfra's
+    # The baseline's invalid.json: a non-file without force raises (the baseline's
     # OperationError spells as ValueError here).
     host = make_host(False)
     with pytest.raises(ValueError, match=r"testfile exists and is not a file"):
@@ -439,7 +439,7 @@ async def test_file_invalid_fixture_raises():
 
 
 async def test_file_invalid_type_fixture():
-    # pyinfra's invalid_type.json: a non-string, non-PathLike path.
+    # The baseline's invalid_type.json: a non-string, non-PathLike path.
     host = make_host()
     with pytest.raises(
         TypeError, match=r"`path` must be a string or `os.PathLike` object"
@@ -448,7 +448,7 @@ async def test_file_invalid_type_fixture():
 
 
 async def test_file_accepts_all_mode_spellings():
-    # pyinfra's ensure_mode_int contract: 640, "640", "0640" and "0o640"
+    # The baseline's ensure_mode_int contract: 640, "640", "0640" and "0o640"
     # all read as the octal-digit int the fact's metadata carries.
     for spelling in (640, "640", "0640", "0o640"):
         host = make_host({"mode": 640, "user": "www", "group": "www"})
@@ -466,7 +466,7 @@ async def test_file_rejects_non_octal_mode():
 
 
 async def test_file_symbolic_mode_always_chmods():
-    # A symbolic mode never equals the fact's octal int, so pyinfra always
+    # A symbolic mode never equals the fact's octal int, so the baseline always
     # re-runs the chmod -- and the same spelling is deterministic across
     # the phases.
     host = make_host({"mode": 640, "user": "www", "group": "www"})
@@ -476,12 +476,12 @@ async def test_file_symbolic_mode_always_chmods():
     assert commands == [ChmodCommand(path=PATH, mode="u+rwX")]
 
 
-async def test_file_kwargs_absorb_pyinfra_globals():
-    # **kwargs swallows pyinfra's global arguments and the dropped backup
+async def test_file_kwargs_absorb_extra_globals():
+    # **kwargs swallows the baseline's global arguments and the dropped backup
     # knobs alike.
     host = make_host()
     ctx, commands = await materialize(
-        host, path=PATH, some_pyinfra_global="ignored", force_backup=True
+        host, path=PATH, some_extra_global="ignored", force_backup=True
     )
 
     assert ctx.changed

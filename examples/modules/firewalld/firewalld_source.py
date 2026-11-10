@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.source`` is a reemote5 original (pyinfra ships no firewalld
+``firewalld.source`` is a reemote5 original (the baseline ships no firewalld
 module): it binds a source -- an IP, a CIDR, a MAC or an ``ipset:name``
 reference -- to a zone, so traffic *from* that source is filtered by the
 zone's rules regardless of which interface it arrives on. Here the

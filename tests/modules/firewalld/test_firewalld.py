@@ -5,7 +5,7 @@
 ``FirewalldZones``, ``FirewalldServices``, ``FirewalldIpSets`` and
 ``FirewalldPolicies``, plus all sixteen operations.
 
-pyinfra ships no firewalld module, so every fact and operation here is a
+the baseline ships no firewalld module, so every fact and operation here is a
 reemote5 original with no upstream fixtures to replay. The facts are fed
 realistic canned ``firewall-cmd`` output instead (the marked state/version
 echo, ``--list-all-zones`` blocks including the tab-indented rich-rule
@@ -736,7 +736,7 @@ async def test_zone_invalid_target_raises():
 
 async def test_zone_absorbs_unknown_kwargs():
     ctx, _commands = await materialize_op(
-        seeded_host(), firewalld.zone, zone="public", pyinfra_global=True
+        seeded_host(), firewalld.zone, zone="public", extra_global=True
     )
     assert not ctx.changed
 

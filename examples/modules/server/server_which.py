@@ -28,7 +28,7 @@ two-phase execution model:
    inventory with ``asyncio.gather`` and returns a host-name-keyed mapping
    -- then print each host's answers with ``json.dumps(..., indent=2)``.
 
-``Which`` mirrors pyinfra's ``server.Which``: it runs
+``Which`` mirrors the baseline's ``server.Which``: it runs
 ``command -v <command> || true`` and returns the path the shell would run
 for the name, or ``None`` when the command is unavailable (the ``|| true``
 swallows the non-zero exit, so a missing binary is an answer, not an

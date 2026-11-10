@@ -10,12 +10,12 @@ a command string, it yields a ``WaitForFactCommand`` that the driver *polls*
 connection every ``interval`` seconds until the ``is_active`` predicate holds
 or ``timeout`` expires (raising ``WaitTimeoutError`` and aborting the run).
 
-The deploy is the two-step shape from pyinfra's ``systemd.service`` +
+The deploy is the two-step shape from the baseline's ``systemd.service`` +
 ``server.wait`` idiom. ``server.service`` is the idempotent half: it reads the
 unit's ``ActiveState`` and ``UnitFileState`` and yields ``systemctl start`` /
 ``systemctl enable`` only when the unit differs from the request (so the
 second run plans no change). It needs root, hence ``sudo=True``.
-``server.wait_service`` is the non-idempotent half: like pyinfra's
+``server.wait_service`` is the non-idempotent half: like the baseline's
 ``server.wait`` it reads no facts and is always planned as a change --
 whether the unit is *already* active is discovered at apply time by the
 driver's poll loop, never at plan time. Deciding at plan time would read

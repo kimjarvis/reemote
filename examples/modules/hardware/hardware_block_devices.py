@@ -29,7 +29,7 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's device map with
    ``json.dumps(..., indent=2)``.
 
-``BlockDevices`` mirrors pyinfra's ``hardware.BlockDevices``: it runs
+``BlockDevices`` mirrors the baseline's ``hardware.BlockDevices``: it runs
 ``df`` and maps each mounted device to its ``BlockDevice`` entry
 (``{blocks, used, available, used_percent, mount}``), with every value
 kept as the raw string ``df`` prints. The header row, the ``none``

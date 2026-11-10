@@ -9,7 +9,7 @@
 
 Covers the read-only state discovery in ``reemote5.modules.gpg.gpg``:
 every fact is exercised both over the real-transport path (parsing canned
-``gpg --with-colons`` output, reusing pyinfra's own fact fixtures
+``gpg --with-colons`` output, reusing the baseline's own fact fixtures
 verbatim, with the id-keyed fixture dicts normalized to reemote5's typed
 entry lists) and through the ``SimulatedHost`` seam, plus the
 ``gather_fact`` fan-out with argument forwarding. ``GpgKey`` additionally
@@ -17,18 +17,18 @@ covers its stream-only validation deviation (empty and URL ``src``
 rejected identically on both transports), ``GpgKeys``/``GpgSecretKeys``
 cover the shared colon-record parser's edge cases (records before the
 first primary key ignored, only the last subkey kept, ``pub`` records
-invisible to the secret parser) and ``GpgKeyrings`` covers pyinfra's five
+invisible to the secret parser) and ``GpgKeyrings`` covers the baseline's five
 keyring fixtures (formats, subkey fingerprints, marker-only unreadable
 files) plus its empty-directories validation. The three originals
 (``GpgTrust``, ``GpgKeyDetails``, ``GpgVerify``) parse canned output
-captured from real local gpg 2.4.7 runs instead of pyinfra fixtures:
+captured from real local gpg 2.4.7 runs instead of baseline fixtures:
 ownertrust exports, a targeted colon listing and ``[GNUPG:]`` status
 streams for good, bad and unverifiable signatures.
 
-The operation side covers ``gpg.key`` (pyinfra's ``gpg.key`` with
+The operation side covers ``gpg.key`` (the baseline's ``gpg.key`` with
 stream-only sources: descriptor shell rendering and elevation, install
 idempotence both with and without ``keyid``, the whole-file and selective
-removal branches against pyinfra's own operation fixtures, the armored
+removal branches against the baseline's own operation fixtures, the armored
 partial-removal rejection, validation and kwargs absorption, the
 SimulatedHost mutators and end-to-end ``run``/dry-run/determinism) and
 ``gpg.dearmor`` (stateless conversion between remote paths). The six
@@ -106,9 +106,9 @@ class CannedShellHost(Host):
 
 
 def _key_entries(fact: dict) -> list[dict]:
-    """Normalize a pyinfra id-keyed key-fact dict to reemote5 entry lists.
+    """Normalize a baseline id-keyed key-fact dict to reemote5 entry lists.
 
-    pyinfra keys keys (and their subkeys) by id; reemote5 returns a list of
+    The baseline keys keys (and their subkeys) by id; reemote5 returns a list of
     entries each carrying its ``id``, with subkeys as a list of their own
     entries (the ``apt.AptKeys`` retyping precedent).
     """
@@ -124,7 +124,7 @@ def _key_entries(fact: dict) -> list[dict]:
 
 
 def _keyring_entries(fact: dict) -> list[dict]:
-    """Normalize a pyinfra path-keyed GpgKeyrings fact dict to entry lists."""
+    """Normalize a baseline path-keyed GpgKeyrings fact dict to entry lists."""
     return [
         {"path": path, "format": details["format"], "keys": _key_entries(details["keys"])}
         for path, details in fact.items()
@@ -132,7 +132,7 @@ def _keyring_entries(fact: dict) -> list[dict]:
 
 
 def _keyrings_command(search_locations: str) -> str:
-    # The ``command`` field of pyinfra's gpg.GpgKeyrings fixtures verbatim;
+    # The ``command`` field of the baseline's gpg.GpgKeyrings fixtures verbatim;
     # every fixture differs only in its quoted directory list.
     return (
         f"find {search_locations}"
@@ -145,9 +145,9 @@ def _keyrings_command(search_locations: str) -> str:
     )
 
 
-# --- GpgKey (pyinfra's gpg.GpgKey/key_from_file.json fixture) ------------------
+# --- GpgKey (the baseline's gpg.GpgKey/key_from_file.json fixture) ------------------
 
-# The ``output`` field of pyinfra's ``gpg.GpgKey/key_from_file.json`` fixture
+# The ``output`` field of the baseline's ``gpg.GpgKey/key_from_file.json`` fixture
 # (``key_from_url.json`` carries the same records behind the dropped URL
 # branch): the Docker release key with one subkey and no fingerprints.
 KEY_FILE_OUTPUT = [
@@ -157,8 +157,8 @@ KEY_FILE_OUTPUT = [
 ]
 
 
-def test_gpg_key_command_matches_pyinfra():
-    """The command is pyinfra's key_from_file fixture command verbatim."""
+def test_gpg_key_command_matches_baseline():
+    """The command is the baseline's key_from_file fixture command verbatim."""
     assert GpgKey.command("/some/key/file") == "gpg --with-colons /some/key/file"
 
 
@@ -182,7 +182,7 @@ def test_gpg_key_command_rejects_empty_src():
     ],
 )
 def test_gpg_key_command_rejects_urls(src):
-    """pyinfra's wget/curl URL branch is dropped: URL srcs raise ValueError."""
+    """The baseline's wget/curl URL branch is dropped: URL srcs raise ValueError."""
     with pytest.raises(ValueError, match="not a URL"):
         GpgKey.command(src)
 
@@ -201,8 +201,8 @@ async def test_gpg_key_rejects_url_on_simulated_host():
         await GpgKey.process(host, "https://download.docker.com/linux/debian/gpg")
 
 
-async def test_gpg_key_parses_pyinfra_fixture():
-    """The Docker key parses to pyinfra's fixture fact, retyped to a list."""
+async def test_gpg_key_parses_baseline_fixture():
+    """The Docker key parses to the baseline's fixture fact, retyped to a list."""
     host = CannedShellHost("\n".join(KEY_FILE_OUTPUT))
     keys = await GpgKey.process(host, "/some/key/file")
     expected = _key_entries(
@@ -267,9 +267,9 @@ async def test_gpg_key_gather_fact_forwards_src():
     assert keys == {"web1": entries, "web2": []}
 
 
-# --- GpgKeys (pyinfra's gpg.GpgKeys fixtures) ----------------------------------
+# --- GpgKeys (the baseline's gpg.GpgKeys fixtures) ----------------------------------
 
-# The ``output`` field of pyinfra's ``gpg.GpgKeys/keys.json`` fixture: four
+# The ``output`` field of the baseline's ``gpg.GpgKeys/keys.json`` fixture: four
 # public keys with tru noise and a blank line between records.
 KEYS_OUTPUT = [
     "tru:t:1:1601454628:0:3:1:5",
@@ -307,7 +307,7 @@ KEYS_KEYRING_OUTPUT = [
     "uid:-::::1537196506::BE438F08F546424C0EA810FD722053597EB5127B::Ubuntu Archive Automatic Signing Key (2018) <ftpmaster@ubuntu.com>::::::::::0:",
 ]
 
-# The ``fact`` fields of pyinfra's ``gpg.GpgKeys/keys.json`` (the secret-key
+# The ``fact`` fields of the baseline's ``gpg.GpgKeys/keys.json`` (the secret-key
 # fixtures carry the identical fact dicts) and ``keys_keyring.json``.
 KEYS_FACT = {
     "3B4FE6ACC0B21F32": {
@@ -348,14 +348,14 @@ KEYS_KEYRING_FACT = {
 }
 
 
-def test_gpg_keys_command_matches_pyinfra():
-    """The default command is pyinfra's keys.json fixture command verbatim."""
+def test_gpg_keys_command_matches_baseline():
+    """The default command is the baseline's keys.json fixture command verbatim."""
     assert GpgKeys.command() == "gpg --list-keys --with-colons"
     assert GpgKeys.command(None) == "gpg --list-keys --with-colons"
 
 
-def test_gpg_keys_command_keyring_matches_pyinfra():
-    """A keyring path is pyinfra's keys_keyring.json command verbatim."""
+def test_gpg_keys_command_keyring_matches_baseline():
+    """A keyring path is the baseline's keys_keyring.json command verbatim."""
     assert GpgKeys.command("/some/keyring") == (
         "gpg --list-keys --with-colons --keyring /some/keyring --no-default-keyring"
     )
@@ -370,16 +370,16 @@ def test_gpg_keys_command_quotes_keyring():
     )
 
 
-async def test_gpg_keys_parses_pyinfra_fixture():
-    """The four public keys parse to pyinfra's keys.json fact, retyped."""
+async def test_gpg_keys_parses_baseline_fixture():
+    """The four public keys parse to the baseline's keys.json fact, retyped."""
     host = CannedShellHost("\n".join(KEYS_OUTPUT))
     keys = await GpgKeys.process(host)
     assert keys == _key_entries(KEYS_FACT)
     assert host.last_shell == "gpg --list-keys --with-colons"
 
 
-async def test_gpg_keys_parses_keyring_pyinfra_fixture():
-    """The keyring listing parses to pyinfra's keys_keyring.json fact."""
+async def test_gpg_keys_parses_keyring_baseline_fixture():
+    """The keyring listing parses to the baseline's keys_keyring.json fact."""
     host = CannedShellHost("\n".join(KEYS_KEYRING_OUTPUT))
     keys = await GpgKeys.process(host, "/some/keyring")
     assert keys == _key_entries(KEYS_KEYRING_FACT)
@@ -403,7 +403,7 @@ def test_gpg_keys_parse_ignores_records_before_first_pub():
 
 
 def test_gpg_keys_parse_keeps_only_last_subkey():
-    """pyinfra keeps only the last sub record before the next primary key."""
+    """The baseline keeps only the last sub record before the next primary key."""
     output = [
         "pub:-:4096:1:AAAAAAAAAAAAAAAA:1487788586:::-:",
         "sub:-:4096:1:1111111111111111:1487788586::::",
@@ -448,9 +448,9 @@ async def test_gpg_keys_gather_fact_fan_out():
     assert keys == {"web1": entries, "web2": []}
 
 
-# --- GpgSecretKeys (pyinfra's gpg.GpgSecretKeys fixtures) ----------------------
+# --- GpgSecretKeys (the baseline's gpg.GpgSecretKeys fixtures) ----------------------
 
-# The ``output`` field of pyinfra's ``gpg.GpgSecretKeys/keys.json`` fixture:
+# The ``output`` field of the baseline's ``gpg.GpgSecretKeys/keys.json`` fixture:
 # the same keychain as keys.json with sec/ssb records instead of pub/sub.
 SECRET_KEYS_OUTPUT = [
     "tru:t:1:1601454628:0:3:1:5",
@@ -488,14 +488,14 @@ SECRET_KEYS_KEYRING_OUTPUT = [
 ]
 
 
-def test_gpg_secret_keys_command_matches_pyinfra():
-    """The default command is pyinfra's secret keys.json command verbatim."""
+def test_gpg_secret_keys_command_matches_baseline():
+    """The default command is the baseline's secret keys.json command verbatim."""
     assert GpgSecretKeys.command() == "gpg --list-secret-keys --with-colons"
     assert GpgSecretKeys.command(None) == "gpg --list-secret-keys --with-colons"
 
 
-def test_gpg_secret_keys_command_keyring_matches_pyinfra():
-    """A keyring path is pyinfra's secret keys_keyring.json command verbatim."""
+def test_gpg_secret_keys_command_keyring_matches_baseline():
+    """A keyring path is the baseline's secret keys_keyring.json command verbatim."""
     assert GpgSecretKeys.command("/some/keyring") == (
         "gpg --list-secret-keys --with-colons --keyring /some/keyring --no-default-keyring"
     )
@@ -510,16 +510,16 @@ def test_gpg_secret_keys_command_quotes_keyring():
     )
 
 
-async def test_gpg_secret_keys_parses_pyinfra_fixture():
-    """The sec/ssb records parse to pyinfra's keys.json fact, retyped."""
+async def test_gpg_secret_keys_parses_baseline_fixture():
+    """The sec/ssb records parse to the baseline's keys.json fact, retyped."""
     host = CannedShellHost("\n".join(SECRET_KEYS_OUTPUT))
     keys = await GpgSecretKeys.process(host)
     assert keys == _key_entries(KEYS_FACT)
     assert host.last_shell == "gpg --list-secret-keys --with-colons"
 
 
-async def test_gpg_secret_keys_parses_keyring_pyinfra_fixture():
-    """The keyring listing parses to pyinfra's secret keys_keyring.json fact."""
+async def test_gpg_secret_keys_parses_keyring_baseline_fixture():
+    """The keyring listing parses to the baseline's secret keys_keyring.json fact."""
     host = CannedShellHost("\n".join(SECRET_KEYS_KEYRING_OUTPUT))
     keys = await GpgSecretKeys.process(host, "/some/keyring")
     assert keys == _key_entries(KEYS_KEYRING_FACT)
@@ -559,9 +559,9 @@ async def test_gpg_secret_keys_gather_fact_fan_out():
     assert keys == {"web1": entries, "web2": []}
 
 
-# --- GpgKeyrings (pyinfra's gpg.GpgKeyrings fixtures) --------------------------
+# --- GpgKeyrings (the baseline's gpg.GpgKeyrings fixtures) --------------------------
 
-# The ``output`` field of pyinfra's ``gpg.GpgKeyrings/default.json`` fixture:
+# The ``output`` field of the baseline's ``gpg.GpgKeyrings/default.json`` fixture:
 # one binary docker.gpg and one armored ubuntu-keyring.asc.
 KEYRINGS_DEFAULT_OUTPUT = [
     "KEYRING:/etc/apt/keyrings/docker.gpg",
@@ -749,8 +749,8 @@ KEYRINGS_CUSTOM_FACT = {
 APT_DIRECTORIES = ["/etc/apt/trusted.gpg.d", "/etc/apt/keyrings", "/usr/share/keyrings"]
 
 
-def test_gpg_keyrings_command_matches_pyinfra():
-    """The multi-directory command is pyinfra's default.json command verbatim."""
+def test_gpg_keyrings_command_matches_baseline():
+    """The multi-directory command is the baseline's default.json command verbatim."""
     assert GpgKeyrings.command(APT_DIRECTORIES) == _keyrings_command(
         '"/etc/apt/trusted.gpg.d" "/etc/apt/keyrings" "/usr/share/keyrings"'
     )
@@ -789,8 +789,8 @@ async def test_gpg_keyrings_rejects_empty_directories_on_simulated_host(director
         await GpgKeyrings.process(host, directories)
 
 
-async def test_gpg_keyrings_parses_default_pyinfra_fixture():
-    """The two keyrings parse to pyinfra's default.json fact, retyped."""
+async def test_gpg_keyrings_parses_default_baseline_fixture():
+    """The two keyrings parse to the baseline's default.json fact, retyped."""
     host = CannedShellHost("\n".join(KEYRINGS_DEFAULT_OUTPUT))
     keyrings = await GpgKeyrings.process(host, APT_DIRECTORIES)
     assert keyrings == _keyring_entries(KEYRINGS_DEFAULT_FACT)
@@ -799,14 +799,14 @@ async def test_gpg_keyrings_parses_default_pyinfra_fixture():
     )
 
 
-async def test_gpg_keyrings_parses_asc_only_pyinfra_fixture():
+async def test_gpg_keyrings_parses_asc_only_baseline_fixture():
     """Armored keyrings keep their subkey fingerprints (asc_only.json)."""
     host = CannedShellHost("\n".join(KEYRINGS_ASC_ONLY_OUTPUT))
     keyrings = await GpgKeyrings.process(host, "/etc/apt/trusted.gpg.d")
     assert keyrings == _keyring_entries(KEYRINGS_ASC_ONLY_FACT)
 
 
-async def test_gpg_keyrings_parses_mixed_formats_pyinfra_fixture():
+async def test_gpg_keyrings_parses_mixed_formats_baseline_fixture():
     """gpg, asc and kbx extensions become the format labels (mixed_formats.json)."""
     host = CannedShellHost("\n".join(KEYRINGS_MIXED_OUTPUT))
     keyrings = await GpgKeyrings.process(host, "/etc/apt/trusted.gpg.d")
@@ -814,15 +814,15 @@ async def test_gpg_keyrings_parses_mixed_formats_pyinfra_fixture():
     assert [keyring["format"] for keyring in keyrings] == ["gpg", "asc", "kbx"]
 
 
-async def test_gpg_keyrings_parses_custom_directory_pyinfra_fixture():
-    """A custom directory sweep parses to pyinfra's custom_directory.json fact."""
+async def test_gpg_keyrings_parses_custom_directory_baseline_fixture():
+    """A custom directory sweep parses to the baseline's custom_directory.json fact."""
     host = CannedShellHost("\n".join(KEYRINGS_CUSTOM_OUTPUT))
     keyrings = await GpgKeyrings.process(host, "/custom/keyring/path")
     assert keyrings == _keyring_entries(KEYRINGS_CUSTOM_FACT)
     assert host.last_shell == _keyrings_command('"/custom/keyring/path"')
 
 
-async def test_gpg_keyrings_empty_directory_pyinfra_fixture():
+async def test_gpg_keyrings_empty_directory_baseline_fixture():
     """A directory with no keyrings prints nothing and reads as []."""
     host = CannedShellHost("")
     assert await GpgKeyrings.process(host, "/empty/directory") == []
@@ -1314,7 +1314,7 @@ async def test_gpg_verify_gather_fact_forwards_signature_and_file():
     assert results == {"web1": VERIFY_GOODSIG_FACT, "web2": VERIFY_ERROR_FACT}
 
 
-# --- gpg.key operation (pyinfra gpg.key, stream-only sources) ------------------
+# --- gpg.key operation (the baseline gpg.key, stream-only sources) ------------------
 
 # A stand-in ASCII-armored GPG public key. gpg.key installs the *content* of an
 # IO stream (never a path), so the tests only need opaque, stable bytes; the
@@ -1326,11 +1326,11 @@ GPG_KEY_BYTES = (
     b"-----END PGP PUBLIC KEY BLOCK-----\n"
 )
 
-# The keyring paths of pyinfra's gpg.key operation fixtures.
+# The keyring paths of the baseline's gpg.key operation fixtures.
 KEYRING_DEST = "/etc/apt/keyrings/test.gpg"
 VENDOR_DEST = "/etc/apt/keyrings/vendor.gpg"
 
-# The vendor key of pyinfra's remove_by_id fixture: key id ABCDEF1234567890,
+# The vendor key of the baseline's remove_by_id fixture: key id ABCDEF1234567890,
 # full fingerprint ABCDEF1234567890FEDCBA0987654321ABCDEF12, matched by the
 # short id "0xABCDEF12" (a prefix of the existing id).
 VENDOR_KEY = {
@@ -1359,7 +1359,7 @@ def test_gpg_key_upload_command_renders_as_an_unprivileged_scp():
 
 
 def test_gpg_key_install_command_shell_and_elevation():
-    """The install wraps mkdir, the dearmor-or-copy sniff (pyinfra's
+    """The install wraps mkdir, the dearmor-or-copy sniff (the baseline's
     local_file fixture command, plus ``--yes`` so an existing output is
     overwritten instead of refused), chmod and the spool cleanup in one
     ``sh -c`` so every step runs under the elevated shell. The paths are
@@ -1381,7 +1381,7 @@ def test_gpg_key_install_command_shell_and_elevation():
 
 
 def test_gpg_key_install_command_no_dearmor_copies_verbatim():
-    """dearmor=False drops the armor sniff entirely (pyinfra's no_dearmor
+    """dearmor=False drops the armor sniff entirely (the baseline's no_dearmor
     fixture: a plain cp), keeping the mkdir/chmod/cleanup chain."""
     cmd = GpgKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST, dearmor=False)
     inner = shlex.split(cmd.shell())[2]
@@ -1407,7 +1407,7 @@ def test_gpg_key_install_command_quotes_unsafe_paths():
 
 
 def test_gpg_key_remove_command_shell_and_elevation():
-    """The whole-file removal is pyinfra's remove_file fixture command (rm -f
+    """The whole-file removal is the baseline's remove_file fixture command (rm -f
     with the path); a single command elevates as a whole under sudo/su."""
     cmd = GpgKeyRemoveCommand(path=KEYRING_DEST)
     assert cmd.shell() == f"rm -f {KEYRING_DEST}"
@@ -1418,7 +1418,7 @@ def test_gpg_key_remove_command_shell_and_elevation():
 
 
 def test_gpg_key_delete_keys_command_shell_and_elevation():
-    """The selective delete is pyinfra's remove_by_id fixture command: gpg
+    """The selective delete is the baseline's remove_by_id fixture command: gpg
     scoped to the one keyring with --batch --yes, deleting by full
     fingerprint. Safe tokens stay unquoted (shlex.quote is the identity on
     them, so the rendering is shell-equivalent to upstream's double-quoted
@@ -1449,7 +1449,7 @@ def test_gpg_key_delete_keys_command_joins_and_quotes():
 
 
 def test_gpg_key_empty_cleanup_command_shell_and_elevation():
-    """The pruning step is pyinfra's list-or-remove pipeline wrapped in
+    """The pruning step is the baseline's list-or-remove pipeline wrapped in
     ``sh -c`` so the ``|| rm -f`` runs at the same privilege as the listing
     (a bare sudo prefix would elevate only the gpg at the head of the
     pipe)."""
@@ -1480,12 +1480,12 @@ def test_gpg_key_empty_cleanup_command_shell_and_elevation():
     ],
 )
 def test_matches_keyid_forms(existing, clean, expected):
-    """pyinfra's _matches_keyid: exact, suffix, prefix and fingerprint forms."""
+    """The baseline's _matches_keyid: exact, suffix, prefix and fingerprint forms."""
     assert _matches_keyid(existing, clean) is expected
 
 
 def test_clean_keyid_strips_prefix_and_uppercases():
-    """pyinfra's cleaning: 0x/0X prefixes dropped, the rest uppercased."""
+    """The baseline's cleaning: 0x/0X prefixes dropped, the rest uppercased."""
     assert _clean_keyid("0xabcdef12") == "ABCDEF12"
     assert _clean_keyid("0Xabcdef12") == "ABCDEF12"
     assert _clean_keyid("abcdef12") == "ABCDEF12"
@@ -1537,7 +1537,7 @@ async def test_gpg_key_op_dearmor_false_forwarded():
 
 
 async def test_gpg_key_op_rejects_a_str_src():
-    """pyinfra's gpg.key takes a filename/URL the target host reads; reemote5
+    """The baseline's gpg.key takes a filename/URL the target host reads; reemote5
     takes an IO stream, so a str src raises rather than being treated as a
     controller-side path."""
     host = SimulatedHost(name="h")
@@ -1552,7 +1552,7 @@ async def test_gpg_key_op_rejects_a_str_src():
 
 
 async def test_gpg_key_op_requires_src_for_install():
-    """No src (and no keyserver -- the fetch is dropped) raises pyinfra's
+    """No src (and no keyserver -- the fetch is dropped) raises the baseline's
     installation validation, retyped to ValueError."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1562,7 +1562,7 @@ async def test_gpg_key_op_requires_src_for_install():
 
 @pytest.mark.parametrize("dest", [None, ""])
 async def test_gpg_key_op_requires_dest_for_install(dest):
-    """pyinfra's no_dest fixture: `dest` must be provided for installation."""
+    """The baseline's no_dest fixture: `dest` must be provided for installation."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     with pytest.raises(ValueError, match="`dest` must be provided for installation"):
@@ -1570,7 +1570,7 @@ async def test_gpg_key_op_requires_dest_for_install(dest):
 
 
 async def test_gpg_key_op_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already strips
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already strips
     the name/sudo meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     stream = io.BytesIO(GPG_KEY_BYTES)
@@ -1598,7 +1598,7 @@ async def test_gpg_key_op_existing_dest_is_unchanged():
 
 
 async def test_gpg_key_op_keyid_idempotent_fingerprint_vs_long_id():
-    """pyinfra's local_file_idempotent_full_fingerprint_vs_long_id fixture: a
+    """The baseline's local_file_idempotent_full_fingerprint_vs_long_id fixture: a
     requested full fingerprint matches the keyring's long id (the fingerprint
     ends with it), so the install is a no-op with upstream's noop wording."""
     keyring = {
@@ -1663,7 +1663,7 @@ async def test_gpg_key_op_keyid_absent_keyring_installs():
 
 
 async def test_gpg_key_op_removal_requires_dest_or_keyid_and_dirs():
-    """pyinfra's remove_no_dest_no_keyid fixture: for removal, either dest or
+    """The baseline's remove_no_dest_no_keyid fixture: for removal, either dest or
     both keyid and working_dirs must be provided."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1674,7 +1674,7 @@ async def test_gpg_key_op_removal_requires_dest_or_keyid_and_dirs():
 
 
 async def test_gpg_key_op_removes_whole_file():
-    """pyinfra's remove_file fixture: dest without keyid removes the whole
+    """The baseline's remove_file fixture: dest without keyid removes the whole
     keyring file, idempotent on the existence probe."""
     host = SimulatedHost(name="h", existing_files={KEYRING_DEST})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1696,7 +1696,7 @@ async def test_gpg_key_op_remove_absent_file_is_unchanged():
 
 
 async def test_gpg_key_op_remove_by_id():
-    """pyinfra's remove_by_id fixture: the short id 0xABCDEF12 resolves to the
+    """The baseline's remove_by_id fixture: the short id 0xABCDEF12 resolves to the
     key's full fingerprint, deleted from the one keyring then pruned if
     empty."""
     host = SimulatedHost(name="h", gpg_keyrings=[VENDOR_KEYRING])
@@ -1716,7 +1716,7 @@ async def test_gpg_key_op_remove_by_id():
 
 
 async def test_gpg_key_op_remove_by_full_fingerprint():
-    """pyinfra's remove_by_full_fingerprint fixture: a full-fingerprint keyid
+    """The baseline's remove_by_full_fingerprint fixture: a full-fingerprint keyid
     matches the key whose id is its last 16 hex digits."""
     keyring = {
         "path": VENDOR_DEST,
@@ -1755,7 +1755,7 @@ async def test_gpg_key_op_remove_by_full_fingerprint():
 
 
 async def test_gpg_key_op_asc_partial_removal_raises():
-    """pyinfra's remove_by_id_asc_partial fixture: an armored keyring holding
+    """The baseline's remove_by_id_asc_partial fixture: an armored keyring holding
     other keys cannot be edited in-place -- ValueError (upstream's
     OperationError) with upstream's message."""
     keyring = {
@@ -1825,7 +1825,7 @@ async def test_gpg_key_op_remove_no_match_is_unchanged():
 
 
 async def test_gpg_key_op_remove_from_all_keyrings():
-    """pyinfra's remove_from_all_keyrings fixture: keyid + working_dirs scans
+    """The baseline's remove_from_all_keyrings fixture: keyid + working_dirs scans
     every keyring under the directories and acts only on matching ones."""
     compromised = {
         "id": "COMPROMISED123567890",
@@ -2115,14 +2115,14 @@ async def test_gpg_key_fresh_stream_per_phase_trips_determinism():
         await run_apply(runtimes, plans=plans)
 
 
-# --- gpg.dearmor operation (pyinfra gpg.dearmor) -------------------------------
+# --- gpg.dearmor operation (the baseline gpg.dearmor) -------------------------------
 
 DEARMOR_SRC = "/tmp/test.asc"
 DEARMOR_DEST = "/tmp/test.gpg"
 
 
 def test_gpg_dearmor_command_shell_and_elevation():
-    """The conversion wraps mkdir, gpg --batch --yes --dearmor (pyinfra's
+    """The conversion wraps mkdir, gpg --batch --yes --dearmor (the baseline's
     basic fixture command, plus ``--yes`` so the stateless conversion
     overwrites an existing output instead of failing on it) and chmod in
     one ``sh -c`` so every step elevates together."""
@@ -2149,7 +2149,7 @@ def test_gpg_dearmor_command_quotes_unsafe_paths():
 
 async def test_gpg_dearmor_op_is_stateless():
     """dearmor always reports a change and yields its one command, reading no
-    fact (pyinfra marks it non-idempotent)."""
+    fact (the baseline marks it non-idempotent)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in gpg.dearmor(ctx, src=DEARMOR_SRC, dest=DEARMOR_DEST)]
@@ -2174,7 +2174,7 @@ async def test_gpg_dearmor_op_validates_paths(src, dest, message):
 
 
 async def test_gpg_dearmor_op_absorbs_unknown_kwargs():
-    """``**kwargs`` absorbs pyinfra's global arguments (op() strips the
+    """``**kwargs`` absorbs the baseline's global arguments (op() strips the
     name/sudo meta-parameters)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2351,7 +2351,7 @@ async def test_gpg_import_key_op_rejects_a_str_src():
 
 
 async def test_gpg_import_key_op_absorbs_unknown_kwargs():
-    """``**kwargs`` absorbs pyinfra's global arguments."""
+    """``**kwargs`` absorbs the baseline's global arguments."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
@@ -2513,7 +2513,7 @@ async def test_gpg_export_key_op_validates(keyid, dest, message):
 
 
 async def test_gpg_export_key_op_absorbs_unknown_kwargs():
-    """``**kwargs`` absorbs pyinfra's global arguments; armor/secret ride into
+    """``**kwargs`` absorbs the baseline's global arguments; armor/secret ride into
     the descriptor."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2658,7 +2658,7 @@ async def test_gpg_delete_key_op_rejects_empty_keyid():
 
 
 async def test_gpg_delete_key_op_absorbs_unknown_kwargs():
-    """``**kwargs`` absorbs pyinfra's global arguments."""
+    """``**kwargs`` absorbs the baseline's global arguments."""
     host = SimulatedHost(name="h", gpg_keys=[VENDOR_KEY])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in gpg.delete_key(ctx, keyid="ABCDEF12", future_flag=True)]
@@ -2828,7 +2828,7 @@ async def test_gpg_gen_key_op_validates(real_name, email, message):
 
 
 async def test_gpg_gen_key_op_absorbs_unknown_kwargs():
-    """``**kwargs`` absorbs pyinfra's global arguments; algo/length/expire ride
+    """``**kwargs`` absorbs the baseline's global arguments; algo/length/expire ride
     into the descriptor."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3017,7 +3017,7 @@ async def test_gpg_trust_op_rejects_empty_fingerprint():
 
 
 async def test_gpg_trust_op_absorbs_unknown_kwargs():
-    """``**kwargs`` absorbs pyinfra's global arguments."""
+    """``**kwargs`` absorbs the baseline's global arguments."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
@@ -3126,7 +3126,7 @@ async def test_gpg_refresh_keys_op_normalizes_keyids(keyids, expected):
 
 async def test_gpg_refresh_keys_op_is_stateless_and_absorbs_kwargs():
     """The refresh always runs (keyserver updates are unknowable without
-    contacting them); ``**kwargs`` absorbs pyinfra's global arguments."""
+    contacting them); ``**kwargs`` absorbs the baseline's global arguments."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     first = [c async for c in gpg.refresh_keys(ctx, future_flag=True)]

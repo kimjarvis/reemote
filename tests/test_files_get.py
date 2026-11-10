@@ -173,7 +173,7 @@ async def test_get_redownloads_when_dest_content_differs(dest_stream):
 
 
 async def test_get_plans_a_download_when_remote_is_absent(dest_stream):
-    """Like pyinfra, an absent remote source still plans a download (there is
+    """Like the baseline, an absent remote source still plans a download (there is
     no local copy to match); against a real host the scp then fails if the file
     truly is not there. The simulated get leaves the empty dest untouched."""
 

@@ -29,11 +29,11 @@ two-phase execution model:
    a host-name-keyed mapping -- then print each host's metadata with
    ``json.dumps(..., indent=2)``.
 
-``Directory`` mirrors pyinfra's ``files.Directory`` -- its ``File``
+``Directory`` mirrors the baseline's ``files.Directory`` -- its ``File``
 subclass with ``type = "directory"``: the same ``test -e``/``test -L``
 guard and GNU ``stat -c`` / BSD ``stat -f`` / ``ls -ld`` chain, but the
 path's type flag must be ``d``. The result is a metadata dict -- ``user``,
-``group``, ``mode`` (the octal-looking int pyinfra returns, e.g. ``755``,
+``group``, ``mode`` (the octal-looking int the baseline returns, e.g. ``755``,
 setuid/setgid/sticky bits included), ``size``, and ``atime``/``mtime``/
 ``ctime`` as *naive UTC* ``datetime``s (the ``ls -ld`` fallback provides
 only an mtime, so its atime/ctime read as ``None``) -- so a deploy can

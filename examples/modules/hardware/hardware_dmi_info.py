@@ -29,7 +29,7 @@ driving the two-phase execution model:
    host-name-keyed mapping -- then print each host's identity map with
    ``json.dumps(..., indent=2)``.
 
-``DmiInfo`` is a reemote5 original (pyinfra has no counterpart): it dumps
+``DmiInfo`` is a reemote5 original (the baseline has no counterpart): it dumps
 the kernel-exposed DMI identity files under ``/sys/class/dmi/id/`` and
 maps each file name to its raw value (``sys_vendor``, ``product_name``,
 ``product_serial``, ``bios_vendor``, ``bios_version``, ``bios_date``,

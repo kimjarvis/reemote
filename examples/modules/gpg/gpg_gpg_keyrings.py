@@ -29,7 +29,7 @@ two-phase execution model:
    directories argument verbatim, and returns a host-name-keyed mapping --
    then print each host's keyring entries as JSON.
 
-``GpgKeyrings`` mirrors pyinfra's ``gpg.GpgKeyrings``: two ``find`` sweeps
+``GpgKeyrings`` mirrors the baseline's ``gpg.GpgKeyrings``: two ``find`` sweeps
 list every ``.gpg``/``.kbx`` binary keyring and every ``.asc`` armored
 keyring under ``DIRECTORIES``, read each with ``gpg --with-colons`` behind
 a ``KEYRING:`` marker line, and return one ``GpgKeyring`` entry per

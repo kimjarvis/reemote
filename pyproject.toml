@@ -3,19 +3,49 @@
 
 [project]
 name = "reemote5"
-version = "0.1.0"
-description = "Generator-based two-phase execution model (an alternative to pyinfra's prepare/execute design)"
+version = "0.1.4"
+description = "A Python library for configuring and deploying servers"
 readme = "README.md"
+license = "EPL-2.0"
+license-files = ["LICENSE"]
+keywords = [
+    "ssh",
+    "configuration-management",
+    "deployment",
+    "asyncssh",
+    "devops",
+    "infrastructure",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Systems Administration",
+    "Typing :: Typed",
+]
 authors = [
     { name = "kimjarvis", email = "kim.jarvis@tpfsystems.com" }
 ]
+maintainers = [
+    { name = "Kim Jarvis", email = "kim.jarvis@tpfsystems.com" }
+]
 requires-python = ">=3.13"
 dependencies = [
+    "asyncssh>=2.24.1",
     "distro>=1.6,<2",
     "pydantic>=2.14.1",
-    "pytest>=9.1.1",
-    "pytest-asyncio>=1.4.0",
 ]
+
+[project.urls]
+Homepage = "https://reemote.org/index.html"
+Documentation = "https://reemote.org/index.html"
+"Source Code" = "https://github.com/kimjarvis/reemote5"
+"Bug Tracker" = "https://github.com/kimjarvis/reemote5/issues"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -27,6 +57,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
     "ruff>=0.17.2",
 ]
 docs = [

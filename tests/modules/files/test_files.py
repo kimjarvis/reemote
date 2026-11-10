@@ -4,7 +4,7 @@
 """Tests for the files module: the ``File``, ``Directory``, ``Link`` and
 ``SameFile`` facts.
 
-Covers ``reemote5.modules.files.files.File``: pyinfra's own thirteen
+Covers ``reemote5.modules.files.files.File``: the baseline's own thirteen
 ``files.File`` fixtures over the real-transport path (GNU stat rows, the
 ``ls -ld`` fallback with its SELinux marker and HH:MM current-year stamps,
 setuid/setgid/sticky modes, directory/link False answers, tilde expansion
@@ -12,20 +12,20 @@ and path quoting), stat/ls parsing edge cases, and the ``SimulatedHost``
 ``file_stats`` seam (dict/False/None answers, copy-on-read, and
 ``gather_fact`` argument forwarding).
 
-Covers ``reemote5.modules.files.files.Directory`` the same way: pyinfra's
+Covers ``reemote5.modules.files.files.Directory`` the same way: the baseline's
 six ``files.Directory`` fixtures (stat and ls rows for directories,
 file/link False answers, ACL/extended-attr markers, DD-MMM date order),
 the shared command/parse chain, sticky/setgid directory modes, and the
 separate ``directory_stats`` seam.
 
-Covers ``reemote5.modules.files.files.Link`` the same way: pyinfra's six
+Covers ``reemote5.modules.files.files.Link`` the same way: the baseline's six
 ``files.Link`` fixtures (GNU stat rows with single-quote, backtick and
 double-quote ``%N`` quoting, the ls fallback naming the target, file/
 directory False answers), ``link_target`` extraction edge cases (dangling
 links, arrow-bearing targets, rows without an arrow), and the separate
 ``link_stats`` seam.
 
-Covers ``reemote5.modules.files.files.SameFile``: pyinfra's two
+Covers ``reemote5.modules.files.files.SameFile``: the baseline's two
 ``files.SameFile`` fixtures verbatim (the ``test -ef`` probe answering true
 and false), the shell quoting of both arguments, and the ``same_files``
 ``SimulatedHost`` seam (symmetric pair lookup, copy-on-read semantics for a
@@ -39,7 +39,7 @@ from reemote5.hosts import Host
 from reemote5.modules.files.files import Directory, File, Link, SameFile
 from tests.simulated_host import SimulatedHost
 
-# pyinfra's ls fallback assumes the *current* year for an "MMM DD HH:MM"
+# The baseline's ls fallback assumes the *current* year for an "MMM DD HH:MM"
 # stamp (its own fixtures hard-code the year the test was written in), so
 # the expected mtime for those two fixtures is computed, not literal.
 CURRENT_YEAR = datetime.now(UTC).year
@@ -60,18 +60,18 @@ class CannedShellHost(Host):
         return self._stdout
 
 
-# --- Real-transport parity: pyinfra's own files.File fixtures ------------------
+# --- Real-transport parity: the baseline's own files.File fixtures ------------------
 
 
-async def test_file_parses_pyintras_valid_fixture():
-    # pyinfra's valid.json fixture: a GNU stat row with a space-bearing
+async def test_file_parses_baseline_valid_fixture():
+    # The baseline's valid.json fixture: a GNU stat row with a space-bearing
     # group name -> the metadata dict (naive UTC datetimes, octal int mode).
     host = CannedShellHost(
-        "user=pyinfra group=domain users mode=-rwxrwx--- atime=1594804767 "
-        "mtime=1594804767 ctime=0 size=8 '/home/pyinfra/fil-@_e.txt'\n"
+        "user=reemote5 group=domain users mode=-rwxrwx--- atime=1594804767 "
+        "mtime=1594804767 ctime=0 size=8 '/home/reemote5/fil-@_e.txt'\n"
     )
-    assert await File.process(host, "/home/pyinfra/fil-@_e.txt") == {
-        "user": "pyinfra",
+    assert await File.process(host, "/home/reemote5/fil-@_e.txt") == {
+        "user": "reemote5",
         "group": "domain users",
         "mode": 770,
         "atime": datetime(2020, 7, 15, 9, 19, 27),
@@ -79,11 +79,11 @@ async def test_file_parses_pyintras_valid_fixture():
         "ctime": EPOCH,
         "size": 8,
     }
-    assert host.shells == [File.command("/home/pyinfra/fil-@_e.txt")]
+    assert host.shells == [File.command("/home/reemote5/fil-@_e.txt")]
 
 
 def test_file_command_guards_then_stat_then_ls():
-    # The full pyinfra command shape: existence guard (test -e || test -L),
+    # The full the baseline command shape: existence guard (test -e || test -L),
     # GNU stat, BSD stat fallback, then the ls -ld fallback.
     assert File.command("/etc/hosts") == (
         "! (test -e /etc/hosts || test -L /etc/hosts ) || "
@@ -94,15 +94,15 @@ def test_file_command_guards_then_stat_then_ls():
     )
 
 
-async def test_file_quotes_pyintras_injection_fixture():
-    # pyinfra's valid_needs_quotes.json fixture: shell metacharacters in the
+async def test_file_quotes_baseline_injection_fixture():
+    # The baseline's valid_needs_quotes.json fixture: shell metacharacters in the
     # path are quoted, and the stat row still parses.
     host = CannedShellHost(
-        "user=pyinfra group=domain users mode=-rwxrwx--- atime=1594804767 "
+        "user=reemote5 group=domain users mode=-rwxrwx--- atime=1594804767 "
         "mtime=1594804767 ctime=0 size=8 'fil () &&-@_e.txt'\n"
     )
     assert await File.process(host, "fil () &&-@_e.txt") == {
-        "user": "pyinfra",
+        "user": "reemote5",
         "group": "domain users",
         "mode": 770,
         "atime": datetime(2020, 7, 15, 9, 19, 27),
@@ -114,35 +114,35 @@ async def test_file_quotes_pyintras_injection_fixture():
     assert "ls -ld 'fil () &&-@_e.txt'" in host.shells[0]
 
 
-async def test_file_parses_pyintras_valid_with_space_fixture():
-    # pyinfra's valid_with_space.json fixture: a space-bearing path is
+async def test_file_parses_baseline_valid_with_space_fixture():
+    # The baseline's valid_with_space.json fixture: a space-bearing path is
     # quoted and a zero size stays the int 0.
     host = CannedShellHost(
-        "user=pyinfra group=pyinfra mode=-rw-r--r-- atime=1594804348 "
-        "mtime=1594804348 ctime=0 size=0 '/home/pyinfra dir/fil-@_e.txt'\n"
+        "user=reemote5 group=reemote5 mode=-rw-r--r-- atime=1594804348 "
+        "mtime=1594804348 ctime=0 size=0 '/home/reemote5 dir/fil-@_e.txt'\n"
     )
-    assert await File.process(host, "/home/pyinfra dir/fil-@_e.txt") == {
-        "user": "pyinfra",
-        "group": "pyinfra",
+    assert await File.process(host, "/home/reemote5 dir/fil-@_e.txt") == {
+        "user": "reemote5",
+        "group": "reemote5",
         "mode": 644,
         "atime": datetime(2020, 7, 15, 9, 12, 28),
         "mtime": datetime(2020, 7, 15, 9, 12, 28),
         "ctime": EPOCH,
         "size": 0,
     }
-    assert "test -e '/home/pyinfra dir/fil-@_e.txt'" in host.shells[0]
+    assert "test -e '/home/reemote5 dir/fil-@_e.txt'" in host.shells[0]
 
 
 async def test_file_keeps_a_leading_tilde_unquoted():
-    # pyinfra's tilde.json fixture: ~/ must reach the shell unquoted so it
+    # The baseline's tilde.json fixture: ~/ must reach the shell unquoted so it
     # expands; the row's timestamps parse into naive UTC datetimes.
     host = CannedShellHost(
-        "user=pyinfra group=pyinfra mode=-rw-r--r-- atime=1723483091 "
-        "mtime=1722760187 ctime=1722760187 size=4310 '/home/pyinfra/.bashrc'\n"
+        "user=reemote5 group=reemote5 mode=-rw-r--r-- atime=1723483091 "
+        "mtime=1722760187 ctime=1722760187 size=4310 '/home/reemote5/.bashrc'\n"
     )
     assert await File.process(host, "~/.bashrc") == {
-        "user": "pyinfra",
-        "group": "pyinfra",
+        "user": "reemote5",
+        "group": "reemote5",
         "mode": 644,
         "atime": datetime(2024, 8, 12, 17, 18, 11),
         "mtime": datetime(2024, 8, 4, 8, 29, 47),
@@ -154,16 +154,16 @@ async def test_file_keeps_a_leading_tilde_unquoted():
 
 
 async def test_file_quotes_the_rest_of_a_tilde_path():
-    # pyinfra's tilde_with_space.json fixture: only the leading ~/ stays
+    # The baseline's tilde_with_space.json fixture: only the leading ~/ stays
     # bare; the space-bearing remainder is quoted.
     host = CannedShellHost(
-        "user=pyinfra group=pyinfra mode=-rw-r--r-- atime=1723484281 "
+        "user=reemote5 group=reemote5 mode=-rw-r--r-- atime=1723484281 "
         "mtime=1723484281 ctime=1723484281 size=0 "
-        "'/home/pyinfra/My Documents/file'\n"
+        "'/home/reemote5/My Documents/file'\n"
     )
     assert await File.process(host, "~/My Documents/file") == {
-        "user": "pyinfra",
-        "group": "pyinfra",
+        "user": "reemote5",
+        "group": "reemote5",
         "mode": 644,
         "atime": datetime(2024, 8, 12, 17, 38, 1),
         "mtime": datetime(2024, 8, 12, 17, 38, 1),
@@ -174,30 +174,30 @@ async def test_file_quotes_the_rest_of_a_tilde_path():
 
 
 async def test_file_is_false_for_a_directory():
-    # pyinfra's directory.json fixture: the path exists but its type flag
+    # The baseline's directory.json fixture: the path exists but its type flag
     # is 'd', so the fact reads False, not a dict.
     host = CannedShellHost(
         "user=root group=root mode=drw-r--r-- atime=1594804583 "
-        "mtime=1594804583 ctime=0 size=0 '/home/pyinfra'\n"
+        "mtime=1594804583 ctime=0 size=0 '/home/reemote5'\n"
     )
-    assert await File.process(host, "/home/pyinfra") is False
+    assert await File.process(host, "/home/reemote5") is False
 
 
 async def test_file_is_false_for_a_link():
-    # pyinfra's link.json fixture: a symlink row ('l' type flag) is not a
+    # The baseline's link.json fixture: a symlink row ('l' type flag) is not a
     # regular file -> False (Link is the link-accepting sibling).
     host = CannedShellHost(
         "user=root group=root mode=lrwxrwxrwx atime=1594804774 "
-        "mtime=1594804770 ctime=0 size=6 '/home/pyinfra/mylink' -> 'file.txt'\n"
+        "mtime=1594804770 ctime=0 size=6 '/home/reemote5/mylink' -> 'file.txt'\n"
     )
-    assert await File.process(host, "/home/pyinfra/mylink") is False
+    assert await File.process(host, "/home/reemote5/mylink") is False
 
 
 async def test_file_is_none_on_unmatched_output():
-    # pyinfra's invalid_output.json fixture: a row matching neither the
+    # The baseline's invalid_output.json fixture: a row matching neither the
     # stat nor the ls format reads as None.
     host = CannedShellHost("not-gonna-match\n")
-    assert await File.process(host, "/home/pyinfra/fil-@_e.txt") is None
+    assert await File.process(host, "/home/reemote5/fil-@_e.txt") is None
 
 
 async def test_file_is_none_on_empty_output():
@@ -207,15 +207,15 @@ async def test_file_is_none_on_empty_output():
 
 
 async def test_file_parses_setuid_setgid_modes():
-    # pyinfra's mode_setgid_setuid.json fixture: -rwsr-Sr-- -> 6744 (setuid
+    # The baseline's mode_setgid_setuid.json fixture: -rwsr-Sr-- -> 6744 (setuid
     # + setgid, the group's S meaning setgid without execute).
     host = CannedShellHost(
-        "user=pyinfra group=pyinfra mode=-rwsr-Sr-- atime=0 mtime=0 ctime=0 "
+        "user=reemote5 group=reemote5 mode=-rwsr-Sr-- atime=0 mtime=0 ctime=0 "
         "size=8 'file.txt'\n"
     )
     assert await File.process(host, "file.txt") == {
-        "user": "pyinfra",
-        "group": "pyinfra",
+        "user": "reemote5",
+        "group": "reemote5",
         "mode": 6744,
         "atime": EPOCH,
         "mtime": EPOCH,
@@ -225,15 +225,15 @@ async def test_file_parses_setuid_setgid_modes():
 
 
 async def test_file_parses_the_sticky_mode():
-    # pyinfra's mode_sticky.json fixture: -rw-r--r-T -> 1644 (sticky bit
+    # The baseline's mode_sticky.json fixture: -rw-r--r-T -> 1644 (sticky bit
     # without execute).
     host = CannedShellHost(
-        "user=pyinfra group=pyinfra mode=-rw-r--r-T atime=0 mtime=0 ctime=0 "
+        "user=reemote5 group=reemote5 mode=-rw-r--r-T atime=0 mtime=0 ctime=0 "
         "size=8 'file.txt'\n"
     )
     assert await File.process(host, "file.txt") == {
-        "user": "pyinfra",
-        "group": "pyinfra",
+        "user": "reemote5",
+        "group": "reemote5",
         "mode": 1644,
         "atime": EPOCH,
         "mtime": EPOCH,
@@ -243,7 +243,7 @@ async def test_file_parses_the_sticky_mode():
 
 
 async def test_file_parses_the_ls_fallback_fixture():
-    # pyinfra's ls_fallback.json fixture: an ls -ld row with a year stamp;
+    # The baseline's ls_fallback.json fixture: an ls -ld row with a year stamp;
     # ls provides no atime/ctime, so those read as None.
     host = CannedShellHost(
         "-rw-r--r--    1 root     root           127 Jan  1  1970 /etc/hosts\n"
@@ -260,7 +260,7 @@ async def test_file_parses_the_ls_fallback_fixture():
 
 
 async def test_file_parses_the_ls_selinux_marker_fixture():
-    # pyinfra's ls_fallback_selinux.json fixture: the trailing '.' (SELinux)
+    # The baseline's ls_fallback_selinux.json fixture: the trailing '.' (SELinux)
     # marker is stripped from the mode, and an "MMM DD HH:MM" stamp assumes
     # the current year.
     host = CannedShellHost("-rw-r--r--. 1 src src 1024 Nov  7 19:21 src\n")
@@ -276,8 +276,8 @@ async def test_file_parses_the_ls_selinux_marker_fixture():
 
 
 async def test_file_parses_the_ls_recent_time_fixture():
-    # pyinfra's ls_fallback_time.json fixture: a recent file's HH:MM stamp
-    # resolves against the current year, like pyinfra's own parser.
+    # The baseline's ls_fallback_time.json fixture: a recent file's HH:MM stamp
+    # resolves against the current year, like the baseline's own parser.
     host = CannedShellHost(
         "-rw-r--r--    1 user     user           1024 Jun 26 14:30 /tmp/recent_file\n"
     )
@@ -398,60 +398,60 @@ async def test_file_gather_fact_forwards_the_path():
     }
 
 
-# --- Real-transport parity: pyinfra's own files.Directory fixtures --------------
+# --- Real-transport parity: the baseline's own files.Directory fixtures --------------
 
 
-async def test_directory_parses_pyintras_valid_fixture():
-    # pyinfra's valid.json fixture: a GNU stat row whose type flag is 'd'
+async def test_directory_parses_baseline_valid_fixture():
+    # The baseline's valid.json fixture: a GNU stat row whose type flag is 'd'
     # -> the metadata dict (the same shape File returns for a regular file).
     host = CannedShellHost(
-        "user=pyinfra group=pyinfra mode=drw-r--r-- atime=1594804583 "
-        "mtime=1594804583 ctime=0 size=0 '/home/pyinfra/myd@-_ir'\n"
+        "user=reemote5 group=reemote5 mode=drw-r--r-- atime=1594804583 "
+        "mtime=1594804583 ctime=0 size=0 '/home/reemote5/myd@-_ir'\n"
     )
-    assert await Directory.process(host, "/home/pyinfra/myd@-_ir") == {
-        "user": "pyinfra",
-        "group": "pyinfra",
+    assert await Directory.process(host, "/home/reemote5/myd@-_ir") == {
+        "user": "reemote5",
+        "group": "reemote5",
         "mode": 644,
         "atime": datetime(2020, 7, 15, 9, 16, 23),
         "mtime": datetime(2020, 7, 15, 9, 16, 23),
         "ctime": EPOCH,
         "size": 0,
     }
-    # The command is File's, verbatim -- pyinfra's Directory only flips the
+    # The command is File's, verbatim -- the baseline's Directory only flips the
     # accepted type, so the fixture's command string is shared.
     assert host.shells == [
         (
-            "! (test -e /home/pyinfra/myd@-_ir || test -L /home/pyinfra/myd@-_ir ) || "
+            "! (test -e /home/reemote5/myd@-_ir || test -L /home/reemote5/myd@-_ir ) || "
             "( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' "
-            "/home/pyinfra/myd@-_ir 2> /dev/null || "
+            "/home/reemote5/myd@-_ir 2> /dev/null || "
             "stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' "
-            "/home/pyinfra/myd@-_ir || ls -ld /home/pyinfra/myd@-_ir )"
+            "/home/reemote5/myd@-_ir || ls -ld /home/reemote5/myd@-_ir )"
         )
     ]
 
 
 async def test_directory_is_false_for_a_regular_file():
-    # pyinfra's file.json fixture: the path exists but its type flag is
+    # The baseline's file.json fixture: the path exists but its type flag is
     # '-', so the fact reads False, not a dict.
     host = CannedShellHost(
-        "user=pyinfra group=pyinfra mode=-rwxrwxrwx atime=1594804767 "
+        "user=reemote5 group=reemote5 mode=-rwxrwxrwx atime=1594804767 "
         "mtime=1594804767 ctime=0 size=8 '/path/to/a/file'\n"
     )
     assert await Directory.process(host, "/path/to/a/file") is False
 
 
 async def test_directory_is_false_for_a_link():
-    # pyinfra's link.json fixture: a symlink row ('l' type flag) is not a
+    # The baseline's link.json fixture: a symlink row ('l' type flag) is not a
     # directory -> False (Link is the link-accepting sibling).
     host = CannedShellHost(
         "user=root group=root mode=lrwxrwxrwx atime=1594804774 "
-        "mtime=1594804770 ctime=0 size=6 '/home/pyinfra/mylink' -> 'file.txt'\n"
+        "mtime=1594804770 ctime=0 size=6 '/home/reemote5/mylink' -> 'file.txt'\n"
     )
-    assert await Directory.process(host, "/home/pyinfra/mylink") is False
+    assert await Directory.process(host, "/home/reemote5/mylink") is False
 
 
 async def test_directory_parses_the_ls_fallback_fixture():
-    # pyinfra's ls_fallback.json fixture: an ls -ld row for / with a year
+    # The baseline's ls_fallback.json fixture: an ls -ld row for / with a year
     # stamp; ls provides no atime/ctime, so those read as None.
     host = CannedShellHost(
         "drwxr-xr-x    1 root     root           416 Jan  1  1970 /\n"
@@ -468,7 +468,7 @@ async def test_directory_parses_the_ls_fallback_fixture():
 
 
 async def test_directory_parses_the_freebsd_acl_marker_fixture():
-    # pyinfra's ls_fallback_freebsd.json fixture: the trailing '+' (ACL)
+    # The baseline's ls_fallback_freebsd.json fixture: the trailing '+' (ACL)
     # marker is stripped from the mode, and an "MMM DD HH:MM" stamp assumes
     # the current year.
     host = CannedShellHost(
@@ -486,7 +486,7 @@ async def test_directory_parses_the_freebsd_acl_marker_fixture():
 
 
 async def test_directory_parses_the_macos_attr_marker_fixture():
-    # pyinfra's ls_fallback_macos.json fixture: the trailing '@' (extended
+    # The baseline's ls_fallback_macos.json fixture: the trailing '@' (extended
     # attrs) marker is stripped, and the "DD MMM HH:MM" date order parses
     # against the current year.
     host = CannedShellHost("drwxr-xr-x@ 12 xonic staff 408 22 Jun 19:00 .\n")
@@ -505,7 +505,7 @@ async def test_directory_parses_the_macos_attr_marker_fixture():
 
 
 def test_directory_command_is_files_command():
-    # pyinfra's Directory subclasses File without touching the command;
+    # The baseline's Directory subclasses File without touching the command;
     # the same guard/stat/ls chain (tilde branch included) is inherited.
     assert Directory.command("/etc") == File.command("/etc")
     assert Directory.command("~/My Documents") == File.command("~/My Documents")
@@ -607,20 +607,20 @@ async def test_directory_gather_fact_forwards_the_path():
     }
 
 
-# --- Real-transport parity: pyinfra's own files.Link fixtures ------------------
+# --- Real-transport parity: the baseline's own files.Link fixtures ------------------
 
 
-async def test_link_parses_pyintras_valid_fixture():
-    # pyinfra's valid.json fixture: a GNU stat row whose %N names the link
+async def test_link_parses_baseline_valid_fixture():
+    # The baseline's valid.json fixture: a GNU stat row whose %N names the link
     # and its single-quoted target -> the metadata dict plus link_target.
     host = CannedShellHost(
-        "user=pyinfra group=pyinfra mode=lrwxrwxrwx atime=1594804774 "
+        "user=reemote5 group=reemote5 mode=lrwxrwxrwx atime=1594804774 "
         "mtime=1594804770 ctime=0 size=6 "
-        "'/home/pyinfra/my@-_link' -> 'my_f@-ile.txt'\n"
+        "'/home/reemote5/my@-_link' -> 'my_f@-ile.txt'\n"
     )
-    assert await Link.process(host, "/home/pyinfra/my@-_link") == {
-        "user": "pyinfra",
-        "group": "pyinfra",
+    assert await Link.process(host, "/home/reemote5/my@-_link") == {
+        "user": "reemote5",
+        "group": "reemote5",
         "mode": 777,
         "atime": datetime(2020, 7, 15, 9, 19, 34),
         "mtime": datetime(2020, 7, 15, 9, 19, 30),
@@ -628,21 +628,21 @@ async def test_link_parses_pyintras_valid_fixture():
         "size": 6,
         "link_target": "my_f@-ile.txt",
     }
-    # The command is File's, verbatim -- pyinfra's Link only flips the
+    # The command is File's, verbatim -- the baseline's Link only flips the
     # accepted type, so the fixture's command string is shared.
     assert host.shells == [
         (
-            "! (test -e /home/pyinfra/my@-_link || test -L /home/pyinfra/my@-_link ) || "
+            "! (test -e /home/reemote5/my@-_link || test -L /home/reemote5/my@-_link ) || "
             "( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' "
-            "/home/pyinfra/my@-_link 2> /dev/null || "
+            "/home/reemote5/my@-_link 2> /dev/null || "
             "stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' "
-            "/home/pyinfra/my@-_link || ls -ld /home/pyinfra/my@-_link )"
+            "/home/reemote5/my@-_link || ls -ld /home/reemote5/my@-_link )"
         )
     ]
 
 
-async def test_link_parses_pyintras_centos6_backtick_fixture():
-    # pyinfra's valid_centos6.json fixture: older GNU/RHEL 6 stat quotes %N
+async def test_link_parses_baseline_centos6_backtick_fixture():
+    # The baseline's valid_centos6.json fixture: older GNU/RHEL 6 stat quotes %N
     # as `name' -> the backtick quoting is stripped from the target too.
     host = CannedShellHost(
         "user=root group=root mode=lrw-r--r-- atime=1594804774 "
@@ -660,17 +660,17 @@ async def test_link_parses_pyintras_centos6_backtick_fixture():
     }
 
 
-async def test_link_parses_pyintras_uutils_double_quote_fixture():
-    # pyinfra's valid_uutils.json fixture: uutils-coreutils stat quotes %N
+async def test_link_parses_baseline_uutils_double_quote_fixture():
+    # The baseline's valid_uutils.json fixture: uutils-coreutils stat quotes %N
     # in double quotes -> that quoting is stripped as well.
     host = CannedShellHost(
-        "user=pyinfra group=pyinfra mode=lrwxrwxrwx atime=1594804774 "
+        "user=reemote5 group=reemote5 mode=lrwxrwxrwx atime=1594804774 "
         "mtime=1594804770 ctime=0 size=8 "
-        '"/home/pyinfra/mylink" -> "file.txt"\n'
+        '"/home/reemote5/mylink" -> "file.txt"\n'
     )
-    assert await Link.process(host, "/home/pyinfra/mylink") == {
-        "user": "pyinfra",
-        "group": "pyinfra",
+    assert await Link.process(host, "/home/reemote5/mylink") == {
+        "user": "reemote5",
+        "group": "reemote5",
         "mode": 777,
         "atime": datetime(2020, 7, 15, 9, 19, 34),
         "mtime": datetime(2020, 7, 15, 9, 19, 30),
@@ -681,7 +681,7 @@ async def test_link_parses_pyintras_uutils_double_quote_fixture():
 
 
 async def test_link_parses_the_ls_fallback_fixture():
-    # pyinfra's ls_fallback.json fixture: an ls -ld row naming the link's
+    # The baseline's ls_fallback.json fixture: an ls -ld row naming the link's
     # unquoted target after " -> "; ls provides no atime/ctime (None), and
     # the year stamp is literal (2025), not the current year.
     host = CannedShellHost(
@@ -701,30 +701,30 @@ async def test_link_parses_the_ls_fallback_fixture():
 
 
 async def test_link_is_false_for_a_directory():
-    # pyinfra's directory.json fixture: the path exists but its type flag
+    # The baseline's directory.json fixture: the path exists but its type flag
     # is 'd', so the fact reads False, not a dict.
     host = CannedShellHost(
         "user=root group=root mode=drw-r--r-- atime=1594804583 "
-        "mtime=1594804583 ctime=0 size=0 '/home/pyinfra/myd@-_ir'\n"
+        "mtime=1594804583 ctime=0 size=0 '/home/reemote5/myd@-_ir'\n"
     )
-    assert await Link.process(host, "/home/pyinfra/myd@-_ir") is False
+    assert await Link.process(host, "/home/reemote5/myd@-_ir") is False
 
 
 async def test_link_is_false_for_a_regular_file():
-    # pyinfra's file.json fixture: the path exists but its type flag is
+    # The baseline's file.json fixture: the path exists but its type flag is
     # '-', so the fact reads False, not a dict.
     host = CannedShellHost(
-        "user=pyinfra group=pyinfra mode=-rwxrwxrwx atime=1594804767 "
-        "mtime=1594804767 ctime=0 size=8 '/home/pyinfra/fil-@_e.txt'\n"
+        "user=reemote5 group=reemote5 mode=-rwxrwxrwx atime=1594804767 "
+        "mtime=1594804767 ctime=0 size=8 '/home/reemote5/fil-@_e.txt'\n"
     )
-    assert await Link.process(host, "/home/pyinfra/fil-@_e.txt") is False
+    assert await Link.process(host, "/home/reemote5/fil-@_e.txt") is False
 
 
 # --- Link parser edge cases ----------------------------------------------------
 
 
 def test_link_command_is_files_command():
-    # pyinfra's Link subclasses File without touching the command; the
+    # The baseline's Link subclasses File without touching the command; the
     # same guard/stat/ls chain (tilde branch included) is inherited.
     assert Link.command("/usr/bin/vi") == File.command("/usr/bin/vi")
     assert Link.command("~/My Documents") == File.command("~/My Documents")
@@ -751,7 +751,7 @@ def test_link_parse_keeps_an_arrow_inside_the_target():
 
 def test_link_parse_ls_row_without_arrow_has_no_link_target():
     # An ls row that names no target still parses as a link, just without
-    # the link_target key (pyinfra only adds it when " -> " is present).
+    # the link_target key (the baseline only adds it when " -> " is present).
     parsed = Link.parse(["lrwxrwxrwx 1 root root 8 Jan  1  1970 /link"])
     assert parsed["mode"] == 777
     assert "link_target" not in parsed
@@ -843,11 +843,11 @@ async def test_link_gather_fact_forwards_the_path():
     }
 
 
-# --- Real-transport parity: pyinfra's own files.SameFile fixtures ---------------
+# --- Real-transport parity: the baseline's own files.SameFile fixtures ---------------
 
 
-async def test_same_file_parses_pyintras_same_file_fixture():
-    # pyinfra's same_file.json fixture, verbatim: /foo/hardlink and
+async def test_same_file_parses_baseline_same_file_fixture():
+    # The baseline's same_file.json fixture, verbatim: /foo/hardlink and
     # /foo/file name one inode, so the ``test -ef`` probe prints true.
     host = CannedShellHost("true\n")
     assert await SameFile.process(host, "/foo/hardlink", "/foo/file") is True
@@ -856,8 +856,8 @@ async def test_same_file_parses_pyintras_same_file_fixture():
     ]
 
 
-async def test_same_file_parses_pyintras_different_file_fixture():
-    # pyinfra's different_file.json fixture, verbatim: two distinct inodes
+async def test_same_file_parses_baseline_different_file_fixture():
+    # The baseline's different_file.json fixture, verbatim: two distinct inodes
     # print false -- the || branch exits zero, so a difference is never a
     # failed command (the reason the fact raises only HostConnectionError).
     host = CannedShellHost("false\n")
@@ -871,7 +871,7 @@ def test_same_file_command_quotes_both_arguments():
     # shlex quoting on both paths: safe paths stay bare (the fixtures
     # above) and a space-bearing path is quoted. Unlike the ``File``
     # family there is no ``~/`` exception -- the fact quotes verbatim
-    # (pyinfra's QuoteString shape), so a tilde path reaches the shell as
+    # (the baseline's QuoteString shape), so a tilde path reaches the shell as
     # one quoted word and simply reads as an absent file.
     assert SameFile.command("/foo a", "/foo b") == (
         "test '/foo a' -ef '/foo b' && echo true || echo false"
@@ -883,7 +883,7 @@ def test_same_file_command_quotes_both_arguments():
 
 def test_same_file_parse_is_line_list_equality():
     # Only the exact single "true" line is True; empty, noisy and near-miss
-    # output all read False (pyinfra's ``output == ["true"]`` rule).
+    # output all read False (the baseline's ``output == ["true"]`` rule).
     assert SameFile.parse(["true"]) is True
     assert SameFile.parse(["false"]) is False
     assert SameFile.parse([]) is False

@@ -7,17 +7,17 @@
 
 Covers the read-only state discovery in ``reemote5.modules.apt.apt``:
 ``AptKeys`` is exercised both over the real-transport path (parsing canned
-``find`` + ``gpg --with-colons`` output, reusing pyinfra's own fact fixtures
+``find`` + ``gpg --with-colons`` output, reusing the baseline's own fact fixtures
 verbatim) and through the ``SimulatedHost`` seam, plus the ``gather_fact``
 fan-out with its ``directories`` argument forwarding. ``AptPackages`` is
-exercised the same way against pyinfra's ``apt.AptPackages`` fixtures
+exercised the same way against the baseline's ``apt.AptPackages`` fixtures
 (``apt list --installed`` output), plus its de-dup/sort and noise-filtering
 edge cases, its ``apt_packages`` seam and the ``gather_fact`` fan-out.
-``AptSources`` is exercised against all eleven pyinfra ``apt.AptSources``
+``AptSources`` is exercised against all eleven baseline ``apt.AptSources``
 fixtures (legacy ``.list`` and deb822 ``.sources`` output), with the two
 documented usability deviations applied -- reemote5's own file marker and
 list-valued options -- plus its ``apt_sources`` seam and ``gather_fact``
-fan-out. ``AptHeldPackages`` is a reemote5 original (pyinfra ships no
+fan-out. ``AptHeldPackages`` is a reemote5 original (the baseline ships no
 counterpart), so it is exercised against canned realistic ``apt-mark
 showhold`` output instead of fixture parity, plus its strip/dedup/sort
 edge cases, its ``apt_held_packages`` seam and the ``gather_fact`` fan-out.
@@ -30,41 +30,41 @@ well, exercised against canned realistic ``apt list --upgradable`` and
 ``apt-get --just-print autoremove`` simulation output (version jumps,
 epoch prefixes, ``Remv``-only parsing), plus their ``apt_upgradable`` /
 ``apt_autoremovable`` seams and the ``gather_fact`` fan-out.
-``SimulateOperationWillChange`` is exercised against pyinfra's own
+``SimulateOperationWillChange`` is exercised against the baseline's own
 ``apt.SimulateOperationWillChange`` fact fixtures (``upgrade`` dry-run
 output), plus its None-on-missing-summary deviation, its
 ``apt_simulations`` seam and the ``gather_fact`` argument forwarding.
 The operation tests cover ``apt.deb`` plus the ``apt.dist_upgrade`` /
-``apt.auto_remove`` pair pyinfra's single ``apt.dist_upgrade`` is split
+``apt.auto_remove`` pair the baseline's single ``apt.dist_upgrade`` is split
 into: simulation-gated idempotence, the standalone autoremove, descriptor
-rendering parity with pyinfra's operation fixtures, the SimulatedHost
+rendering parity with the baseline's operation fixtures, the SimulatedHost
 mutations and end-to-end lockstep runs. ``apt.packages`` is covered against
-pyinfra's ``apt.packages`` operation fixtures (install/remove/purge,
+the baseline's ``apt.packages`` operation fixtures (install/remove/purge,
 version pins, ``latest``, ``no_recommends``/``allow_downgrades``, extra
 args, ``wait_for_lock``, the ``update``/``upgrade`` prefixes), plus its
 dropped ``cache_time``/``force`` options, the SimulatedHost mutations and
 end-to-end / dry-run runs. ``apt.update`` and ``apt.upgrade`` are covered
 as the standalone forms of those prefixes: the stateless update (dropped
 ``cache_time``) and the simulation-gated upgrade (dropped ``auto_remove``,
-the ``apt.auto_remove`` split), against pyinfra's ``apt.update`` /
+the ``apt.auto_remove`` split), against the baseline's ``apt.update`` /
 ``apt.upgrade`` operation fixtures, plus the shared SimulatedHost
 mutations and end-to-end / dry-run runs. ``apt.key`` is covered as the
 non-idempotent stream install it is: yield order, dest resolution, str-src
 and empty-dest rejection, the unprivileged spool transfer versus the
 elevated ``sh -c`` install, the SimulatedHost spool-then-install effect and
 end-to-end / dry-run / determinism-guard runs. ``apt.mark`` is covered as
-the reemote5 original it is (pyinfra ships no hold-state operation):
+the reemote5 original it is (the baseline ships no hold-state operation):
 hold/unhold descriptor rendering, fact-gated idempotence in both
 directions against ``AptHeldPackages``, the SimulatedHost hold/unhold
 mutations and end-to-end / dry-run / hold-then-unhold runs. ``apt.repo`` is covered
-against pyinfra's ``apt.repo`` operation fixtures (add, add with a
+against the baseline's ``apt.repo`` operation fixtures (add, add with a
 ``sources.list.d`` filename, add-existing noop, remove), with its
 documented deviation -- the spool-and-install write pair replacing
-pyinfra's ``files.line`` delegation, gated both on ``AptSources`` and on
+the baseline's ``files.line`` delegation, gated both on ``AptSources`` and on
 the managed file's own text through the ``AptSourcesFile`` content fact --
 plus the SimulatedHost spool/install mutations and
 end-to-end / dry-run / repeat-noop runs. ``apt.sources_file`` is covered
-against pyinfra's ``apt.sources_file`` operation fixtures (create,
+against the baseline's ``apt.sources_file`` operation fixtures (create,
 create-idempotent, minimal, string args, update, the two missing-field
 errors, remove), with its documented deviation -- the spool-and-install
 write pair replacing the ``files.put`` delegation -- plus the fact-gated
@@ -151,9 +151,9 @@ class CannedShellHost(Host):
         return self._stdout
 
 
-# --- Command parity (pyinfra's apt.AptKeys / gpg.GpgKeyrings fixtures) --------
+# --- Command parity (the baseline's apt.AptKeys / gpg.GpgKeyrings fixtures) --------
 
-# The ``command`` field of pyinfra's ``apt.AptKeys/keys.json`` fixture: the
+# The ``command`` field of the baseline's ``apt.AptKeys/keys.json`` fixture: the
 # two find sweeps over APT's three modern keyring directories.
 DEFAULT_COMMAND = (
     "find \"/etc/apt/trusted.gpg.d\" \"/etc/apt/keyrings\" \"/usr/share/keyrings\""
@@ -165,7 +165,7 @@ DEFAULT_COMMAND = (
     " -exec sh -c 'echo \"KEYRING:$1\"; gpg --with-colons \"$1\" 2>/dev/null || true' _ {} \\;"
 )
 
-# The ``command`` field of pyinfra's ``gpg.GpgKeyrings/custom_directory.json``
+# The ``command`` field of the baseline's ``gpg.GpgKeyrings/custom_directory.json``
 # fixture, whose ``arg`` is the single directory ``/custom/keyring/path``.
 CUSTOM_COMMAND = (
     "find \"/custom/keyring/path\""
@@ -178,8 +178,8 @@ CUSTOM_COMMAND = (
 )
 
 
-def test_apt_keys_command_matches_pyinfra():
-    """The default command is pyinfra's fixture command verbatim: both find
+def test_apt_keys_command_matches_baseline():
+    """The default command is the baseline's fixture command verbatim: both find
     sweeps search APT's three modern keyring directories."""
     assert AptKeys.command() == DEFAULT_COMMAND
     assert AptKeys.command(None) == DEFAULT_COMMAND
@@ -187,14 +187,14 @@ def test_apt_keys_command_matches_pyinfra():
 
 def test_apt_keys_command_accepts_custom_directories():
     """A directories list replaces the defaults in both sweeps; a single
-    string is treated as one directory (pyinfra's GpgKeyrings behavior)."""
+    string is treated as one directory (the baseline's GpgKeyrings behavior)."""
     assert AptKeys.command(["/custom/keyring/path"]) == CUSTOM_COMMAND
     assert AptKeys.command("/custom/keyring/path") == CUSTOM_COMMAND
 
 
-# --- Real-transport parity (pyinfra's apt.AptKeys/keys.json fixture) ----------
+# --- Real-transport parity (the baseline's apt.AptKeys/keys.json fixture) ----------
 
-# The ``output`` field of pyinfra's ``apt.AptKeys/keys.json`` fixture: three
+# The ``output`` field of the baseline's ``apt.AptKeys/keys.json`` fixture: three
 # Ubuntu signing keys, each in its own binary keyring file.
 KEYS_OUTPUT = [
     "KEYRING:/etc/apt/trusted.gpg.d/ubuntu-keyring.gpg",
@@ -215,7 +215,7 @@ KEYS_OUTPUT = [
 ]
 
 # The fixture's ``fact`` field -- the flattened keys. Its first entry is also
-# the documented example result in pyinfra's ``apt.AptKeys`` docstring.
+# the documented example result in the baseline's ``apt.AptKeys`` docstring.
 UBUNTU_APT_KEYS = {
     "3B4FE6ACC0B21F32": {
         "validity": "-",
@@ -245,9 +245,9 @@ UBUNTU_APT_KEYS = {
 
 
 def _key_entries(fixture: dict[str, dict]) -> list[AptKey]:
-    """A pyinfra key fixture as reemote5's typed entry list.
+    """A the baseline key fixture as reemote5's typed entry list.
 
-    pyinfra keys its answer by key id and re-keys subkeys by their ids;
+    The baseline keys its answer by key id and re-keys subkeys by their ids;
     reemote5's documented shape keeps each entry's ``id`` and its subkeys
     as a list (the ``_list_valued`` AptSources precedent), so fixture
     parity compares against this normalization.
@@ -264,16 +264,16 @@ def _key_entries(fixture: dict[str, dict]) -> list[AptKey]:
 
 async def test_apt_keys_parses_the_documented_example():
     """Over the real-transport path, ``AptKeys`` flattens the three keyring
-    groups into pyinfra's documented example keys (the keys.json fact) as
+    groups into the baseline's documented example keys (the keys.json fact) as
     typed entries."""
     host = CannedShellHost("\n".join(KEYS_OUTPUT))
     assert await AptKeys.process(host) == _key_entries(UBUNTU_APT_KEYS)
     assert host.last_shell == DEFAULT_COMMAND
 
 
-# --- Parser edge cases (pyinfra's gpg.GpgKeyrings fixtures) -------------------
+# --- Parser edge cases (the baseline's gpg.GpgKeyrings fixtures) -------------------
 
-# The ``output`` field of pyinfra's ``gpg.GpgKeyrings/asc_only.json`` fixture:
+# The ``output`` field of the baseline's ``gpg.GpgKeyrings/asc_only.json`` fixture:
 # two armored keyrings whose keys each carry a subkey with its own
 # fingerprint (and no uid of its own).
 ASC_ONLY_OUTPUT = [
@@ -331,7 +331,7 @@ async def test_apt_keys_parses_subkeys_from_armored_keyrings():
     assert await AptKeys.process(host) == _key_entries(ASC_ONLY_KEYS)
 
 
-# The ``output`` field of pyinfra's ``gpg.GpgKeyrings/mixed_formats.json``
+# The ``output`` field of the baseline's ``gpg.GpgKeyrings/mixed_formats.json``
 # fixture: one ``.gpg``, one ``.asc`` and one ``.kbx`` keyring; the latter two
 # have an empty ``uid_hash`` field.
 MIXED_FORMATS_OUTPUT = [
@@ -387,7 +387,7 @@ async def test_apt_keys_mixes_gpg_asc_and_kbx_formats():
 
 
 async def test_apt_keys_empty_output_reads_as_empty_list():
-    """No keyring files found (pyinfra's empty_directory fixture) -- the find
+    """No keyring files found (the baseline's empty_directory fixture) -- the find
     sweeps print nothing, so the fact reports []."""
     host = CannedShellHost("")
     assert await AptKeys.process(host) == []
@@ -395,7 +395,7 @@ async def test_apt_keys_empty_output_reads_as_empty_list():
 
 async def test_apt_keys_duplicate_key_id_last_keyring_wins():
     """The same key id in two keyring files flattens to the last one's
-    details -- pyinfra's documented last-one-wins merge order."""
+    details -- the baseline's documented last-one-wins merge order."""
     stdout = """\
 KEYRING:/etc/apt/keyrings/old.gpg
 pub:-:4096:1:3B4FE6ACC0B21F32:1336770936:::-:::scSC::::::23::0:
@@ -414,7 +414,7 @@ uid:-::::1336770936::NEWHASH::New Copy <new@example.com>::::::::::0:
 
 async def test_apt_keys_ignores_records_before_the_first_marker():
     """Colon records outside any keyring group (before the first KEYRING:
-    line) are ignored, exactly like pyinfra's grouping parser."""
+    line) are ignored, exactly like the baseline's grouping parser."""
     stdout = "\n".join(
         [
             "pub:-:4096:1:0000000000000000:1:::-:::scSC::::::23::0:",
@@ -493,18 +493,18 @@ async def test_gather_fact_apt_keys_reads_simulated_seams():
     assert keys == {"web1": _key_entries(UBUNTU_APT_KEYS), "web2": []}
 
 
-# --- AptPackages: command parity (pyinfra's apt.AptPackages fixtures) ---------
+# --- AptPackages: command parity (the baseline's apt.AptPackages fixtures) ---------
 
 
-def test_apt_packages_command_matches_pyinfra():
-    """The command is pyinfra's fixture command verbatim: apt list with the
+def test_apt_packages_command_matches_baseline():
+    """The command is the baseline's fixture command verbatim: apt list with the
     stderr progress notice suppressed."""
     assert AptPackages.COMMAND == "apt list --installed 2>/dev/null"
 
 
-# --- Real-transport parity (pyinfra's apt.AptPackages/packages.yaml fixture) --
+# --- Real-transport parity (the baseline's apt.AptPackages/packages.yaml fixture) --
 
-# The ``output`` field of pyinfra's ``apt.AptPackages/packages.yaml`` fixture:
+# The ``output`` field of the baseline's ``apt.AptPackages/packages.yaml`` fixture:
 # the Listing... header plus five installed packages, one with an
 # architecture suffix (libc6:i386) and two with epoch-prefixed versions.
 PACKAGES_OUTPUT = [
@@ -527,9 +527,9 @@ UBUNTU_APT_PACKAGES = {
 
 
 def _package_entries(fixture: dict[str, list[str]]) -> list[AptPackageInfo]:
-    """A pyinfra package fixture as reemote5's sorted typed entry list.
+    """A the baseline package fixture as reemote5's sorted typed entry list.
 
-    pyinfra keys its answer by name; reemote5's documented shape returns
+    The baseline keys its answer by name; reemote5's documented shape returns
     ``AptPackageInfo`` entries sorted by name (the ``ApkInstalledPackages``
     divergence), so fixture parity compares against this normalization.
     """
@@ -541,7 +541,7 @@ def _package_entries(fixture: dict[str, list[str]]) -> list[AptPackageInfo]:
 
 async def test_apt_packages_parses_the_fixture():
     """Over the real-transport path, ``AptPackages`` parses the fixture's
-    rows into pyinfra's fixture fact as typed entries, keeping the :i386
+    rows into the baseline's fixture fact as typed entries, keeping the :i386
     suffix and the epoch-prefixed versions intact."""
     host = CannedShellHost("\n".join(PACKAGES_OUTPUT))
     assert await AptPackages.process(host) == _package_entries(UBUNTU_APT_PACKAGES)
@@ -549,7 +549,7 @@ async def test_apt_packages_parses_the_fixture():
 
 
 async def test_apt_packages_listing_only_reads_as_empty_list():
-    """Only the Listing... header (pyinfra's empty.yaml fixture) -- no
+    """Only the Listing... header (the baseline's empty.yaml fixture) -- no
     package rows match, so the fact reports []."""
     host = CannedShellHost("Listing...\n")
     assert await AptPackages.process(host) == []
@@ -578,7 +578,7 @@ async def test_apt_packages_ignores_noise_and_non_installed_rows():
 
 async def test_apt_packages_dedups_and_sorts_versions():
     """The same name listed twice contributes one sorted, de-duplicated
-    version list -- pyinfra's parse_packages set semantics, returned as
+    version list -- the baseline's parse_packages set semantics, returned as
     the documented sorted list."""
     stdout = """\
 Listing...
@@ -640,10 +640,10 @@ async def test_gather_fact_apt_packages_over_canned_shells():
     assert host2.last_shell == AptPackages.COMMAND
 
 
-# --- AptSources: command parity (pyinfra's apt.AptSources fixtures) -----------
+# --- AptSources: command parity (the baseline's apt.AptSources fixtures) -----------
 
-# pyinfra's fixture command cats the same three globs behind its
-# ``##PYINFRA_FILE`` marker inside an ``sh -c`` wrapper; reemote5 renames
+# The baseline's fixture command cats the same three globs behind its
+# ``##UPSTREAM_FILE`` marker inside an ``sh -c`` wrapper; reemote5 renames
 # the marker to its own ``#reemote5-aptsource`` (like DnfRepositories'
 # filename marker) and drops the wrapper -- run_shell already provides a
 # shell.
@@ -662,23 +662,23 @@ def test_apt_sources_command_cats_the_sources_files():
 
 
 def _sources_stdout(output: list[str]) -> str:
-    """Join a pyinfra fixture's output lines, renaming its file marker.
+    """Join a baseline fixture's output lines, renaming its file marker.
 
-    The fixture lines are otherwise verbatim; only the ``##PYINFRA_FILE``
+    The fixture lines are otherwise verbatim; only the ``##UPSTREAM_FILE``
     prefix becomes reemote5's own FILE_MARKER (the documented rename).
     """
     return "\n".join(
-        line.replace("##PYINFRA_FILE ", f"{AptSources.FILE_MARKER} ", 1)
-        if line.startswith("##PYINFRA_FILE ")
+        line.replace("##UPSTREAM_FILE ", f"{AptSources.FILE_MARKER} ", 1)
+        if line.startswith("##UPSTREAM_FILE ")
         else line
         for line in output
     )
 
 
 def _list_valued(fact: list[dict]) -> list[dict]:
-    """A pyinfra fixture fact with every option value wrapped into a list.
+    """A baseline fixture fact with every option value wrapped into a list.
 
-    pyinfra collapses single-valued options to a bare string; reemote5's
+    The baseline collapses single-valued options to a bare string; reemote5's
     documented usability deviation keeps every value a list, so fixture
     parity compares against this normalization.
     """
@@ -694,21 +694,21 @@ def _list_valued(fact: list[dict]) -> list[dict]:
     ]
 
 
-# --- Real-transport parity (pyinfra's apt.AptSources/sources.json fixture) ----
+# --- Real-transport parity (the baseline's apt.AptSources/sources.json fixture) ----
 
-# The ``output`` field of pyinfra's ``apt.AptSources/sources.json`` fixture:
+# The ``output`` field of the baseline's ``apt.AptSources/sources.json`` fixture:
 # two legacy files, comma-split arch options, a signed-by keyring and a
 # stray "nope" line the regex must ignore.
 SOURCES_OUTPUT = [
-    "##PYINFRA_FILE /etc/apt/sources.list",
+    "##UPSTREAM_FILE /etc/apt/sources.list",
     "deb http://archive.ubuntu.com/ubuntu trusty restricted",
-    "##PYINFRA_FILE /etc/apt/sources.list.d/mongodb.list",
+    "##UPSTREAM_FILE /etc/apt/sources.list.d/mongodb.list",
     "deb-src [arch=amd64,i386] http://archive.ubuntu.com/ubuntu trusty main",
     "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse",
     "nope",
 ]
 
-# The fixture's ``fact`` field -- pyinfra's AptRepo entries as plain dicts.
+# The fixture's ``fact`` field -- the baseline's AptRepo entries as plain dicts.
 SOURCES_FACT = [
     {
         "url": "http://archive.ubuntu.com/ubuntu",
@@ -746,13 +746,13 @@ async def test_apt_sources_parses_the_legacy_fixture():
     assert host.last_shell == SOURCES_COMMAND
 
 
-# --- deb822 parity (pyinfra's apt.AptSources/deb822_sources.json fixture) -----
+# --- deb822 parity (the baseline's apt.AptSources/deb822_sources.json fixture) -----
 
-# The ``output`` field of pyinfra's ``deb822_sources.json`` fixture: one
+# The ``output`` field of the baseline's ``deb822_sources.json`` fixture: one
 # file, two stanzas -- a deb+deb-src Debian stanza with Architectures and
 # Signed-By, and a plain VS Code stanza.
 DEB822_OUTPUT = [
-    "##PYINFRA_FILE /etc/apt/sources.list.d/test.sources",
+    "##UPSTREAM_FILE /etc/apt/sources.list.d/test.sources",
     "Types: deb deb-src",
     "URIs: http://deb.debian.org/debian",
     "Suites: bookworm",
@@ -807,10 +807,10 @@ async def test_apt_sources_parses_deb822_stanzas():
 
 
 async def test_apt_sources_expands_multi_uris_and_suites():
-    """pyinfra's ``deb822_multi_uris_suites.json`` fixture: two URIs and two
+    """The baseline's ``deb822_multi_uris_suites.json`` fixture: two URIs and two
     Suites expand into the four type-then-uri-then-suite combinations."""
     output = [
-        "##PYINFRA_FILE /etc/apt/sources.list.d/multi.sources",
+        "##UPSTREAM_FILE /etc/apt/sources.list.d/multi.sources",
         "Types: deb",
         "URIs: http://deb.debian.org/debian https://mirror.example.com/debian",
         "Suites: bookworm bookworm-updates",
@@ -828,11 +828,11 @@ async def test_apt_sources_expands_multi_uris_and_suites():
 
 
 async def test_apt_sources_keeps_inline_gpg_key_whole():
-    """pyinfra's ``deb822_inline_gpg_key.json`` fixture: an inline armored
+    """The baseline's ``deb822_inline_gpg_key.json`` fixture: an inline armored
     Signed-By block folds its continuation lines into one signed-by entry
     holding the whole key text."""
     output = [
-        "##PYINFRA_FILE /etc/apt/sources.list.d/inline-key.sources",
+        "##UPSTREAM_FILE /etc/apt/sources.list.d/inline-key.sources",
         "Types: deb",
         "URIs: http://deb.debian.org/debian",
         "Suites: trixie",
@@ -859,7 +859,7 @@ async def test_apt_sources_keeps_inline_gpg_key_whole():
     ]
 
 
-# --- Parser edge cases (the remaining pyinfra apt.AptSources fixtures) --------
+# --- Parser edge cases (the remaining the baseline apt.AptSources fixtures) --------
 
 
 @pytest.mark.parametrize(
@@ -867,7 +867,7 @@ async def test_apt_sources_keeps_inline_gpg_key_whole():
     [
         pytest.param(
             [
-                "##PYINFRA_FILE /etc/apt/sources.list",
+                "##UPSTREAM_FILE /etc/apt/sources.list",
                 "deb http://archive.ubuntu.com/ubuntu trusty restricted pi4",
                 "",
             ],
@@ -884,7 +884,7 @@ async def test_apt_sources_keeps_inline_gpg_key_whole():
         ),
         pytest.param(
             [
-                "##PYINFRA_FILE /etc/apt/sources.list.d/nvidia-container-toolkit.list",
+                "##UPSTREAM_FILE /etc/apt/sources.list.d/nvidia-container-toolkit.list",
                 "deb [signed-by=/etc/apt/keyrings/nvidia-container-toolkit-keyring.gpg] https://nvidia.github.io/libnvidia-container/stable/ubuntu18.04/amd64 /",
                 "#deb [signed-by=/etc/apt/keyrings/nvidia-container-toolkit-keyring.gpg] https://nvidia.github.io/libnvidia-container/experimental/ubuntu18.04/amd64 /",
             ],
@@ -903,7 +903,7 @@ async def test_apt_sources_keeps_inline_gpg_key_whole():
         ),
         pytest.param(
             [
-                "##PYINFRA_FILE /etc/apt/sources.list.d/with-comment.sources",
+                "##UPSTREAM_FILE /etc/apt/sources.list.d/with-comment.sources",
                 "Types: deb",
                 "# This is an inline comment, should be ignored",
                 "URIs: http://deb.debian.org/debian",
@@ -924,7 +924,7 @@ async def test_apt_sources_keeps_inline_gpg_key_whole():
         ),
         pytest.param(
             [
-                "##PYINFRA_FILE /etc/apt/sources.list.d/disabled.sources",
+                "##UPSTREAM_FILE /etc/apt/sources.list.d/disabled.sources",
                 "Types: deb",
                 "URIs: http://deb.debian.org/debian",
                 "Suites: bookworm",
@@ -937,7 +937,7 @@ async def test_apt_sources_keeps_inline_gpg_key_whole():
         ),
         pytest.param(
             [
-                "##PYINFRA_FILE /etc/apt/sources.list.d/bad.sources",
+                "##UPSTREAM_FILE /etc/apt/sources.list.d/bad.sources",
                 "Types: deb",
                 "URIs: http://deb.debian.org/debian",
                 "",
@@ -947,7 +947,7 @@ async def test_apt_sources_keeps_inline_gpg_key_whole():
         ),
         pytest.param(
             [
-                "##PYINFRA_FILE /etc/apt/sources.list.d/multipath.sources",
+                "##UPSTREAM_FILE /etc/apt/sources.list.d/multipath.sources",
                 "Types: deb",
                 "URIs: http://deb.debian.org/debian",
                 "Suites: bookworm",
@@ -974,7 +974,7 @@ async def test_apt_sources_keeps_inline_gpg_key_whole():
         ),
         pytest.param(
             [
-                "##PYINFRA_FILE /etc/apt/sources.list.d/trusted.sources",
+                "##UPSTREAM_FILE /etc/apt/sources.list.d/trusted.sources",
                 "Types: deb",
                 "URIs: http://internal.example.com/debian",
                 "Suites: stable",
@@ -996,7 +996,7 @@ async def test_apt_sources_keeps_inline_gpg_key_whole():
     ],
 )
 async def test_apt_sources_fixture_edge_cases(output: list[str], fact: list[dict]):
-    """Each remaining pyinfra fixture parses to its fact (options wrapped
+    """Each remaining baseline fixture parses to its fact (options wrapped
     into lists): digit-bearing components, flat /-suite repos, inline
     comments, disabled and malformed stanzas, multi-path Signed-By
     continuation lines and Trusted: yes."""
@@ -1030,7 +1030,7 @@ async def test_apt_sources_entries_are_plain_json_printable_dicts():
 
 
 async def test_apt_sources_empty_output_reads_as_empty_list():
-    """No sources files at all reads as [] (pyinfra's default = list); a
+    """No sources files at all reads as [] (the baseline's default = list); a
     marker with no content (an empty file) contributes nothing."""
     assert await AptSources.process(CannedShellHost("")) == []
     marker_only = f"{AptSources.FILE_MARKER} /etc/apt/sources.list"
@@ -1039,7 +1039,7 @@ async def test_apt_sources_empty_output_reads_as_empty_list():
 
 async def test_apt_sources_ignores_lines_before_the_first_marker():
     """Lines outside any file group (before the first marker) are ignored,
-    exactly like pyinfra's grouping parser."""
+    exactly like the baseline's grouping parser."""
     stdout = _sources_stdout(
         ["deb http://stray.example.com/ubuntu noble main", *SOURCES_OUTPUT]
     )
@@ -1097,7 +1097,7 @@ async def test_gather_fact_apt_sources_reads_simulated_seams():
     assert await gather_fact([host1, host2], AptSources) == {"web1": sources, "web2": []}
 
 
-# --- AptHeldPackages: command (a reemote5 original, no pyinfra fixture) -------
+# --- AptHeldPackages: command (a reemote5 original, no baseline fixture) -------
 
 
 def test_apt_held_packages_command_runs_apt_mark_showhold():
@@ -1109,7 +1109,7 @@ def test_apt_held_packages_command_runs_apt_mark_showhold():
 # --- Real transport (canned realistic apt-mark showhold output) ---------------
 
 # Realistic ``apt-mark showhold`` output: four held packages in arbitrary
-# dpkg order, one with an architecture suffix. pyinfra ships no fixture
+# dpkg order, one with an architecture suffix. The baseline ships no fixture
 # for this fact -- it is a reemote5 original.
 HELD_OUTPUT = [
     "linux-image-generic",
@@ -1210,7 +1210,7 @@ async def test_gather_fact_apt_held_packages_over_canned_shells():
     assert host2.last_shell == AptHeldPackages.COMMAND
 
 
-# --- AptPolicy: command (a reemote5 original, no pyinfra fixture) --------------
+# --- AptPolicy: command (a reemote5 original, no baseline fixture) --------------
 
 
 def test_apt_policy_command_quotes_the_package():
@@ -1229,7 +1229,7 @@ def test_apt_policy_command_quotes_the_package():
 # Realistic ``apt-cache policy nginx`` output on Ubuntu noble: an upgrade is
 # available from noble-updates, the installed version came from
 # noble-security (the *** row, also in the local dpkg status), and the base
-# noble version is still offered. pyinfra ships no fixture for this fact --
+# noble version is still offered. The baseline ships no fixture for this fact --
 # it is a reemote5 original.
 NGINX_POLICY_OUTPUT = """\
 nginx:
@@ -1432,7 +1432,7 @@ async def test_gather_fact_apt_policy_reads_simulated_seams():
     }
 
 
-# --- AptUpgradable: command (a reemote5 original, no pyinfra fixture) ----------
+# --- AptUpgradable: command (a reemote5 original, no baseline fixture) ----------
 
 
 def test_apt_upgradable_command_lists_upgradable():
@@ -1446,7 +1446,7 @@ def test_apt_upgradable_command_lists_upgradable():
 # Realistic ``apt list --upgradable`` output on Ubuntu noble: the
 # ``Listing... Done`` header, a comma-separated multi-suite source-info,
 # an epoch-prefixed version jump and an architecture-suffixed name.
-# pyinfra ships no fixture for this fact -- it is a reemote5 original.
+# The baseline ships no fixture for this fact -- it is a reemote5 original.
 UPGRADABLE_OUTPUT = """\
 Listing... Done
 libssl3t64/noble-updates 3.0.13-0ubuntu3.5 amd64 [upgradable from: 3.0.13-0ubuntu3.4]
@@ -1587,7 +1587,7 @@ async def test_gather_fact_apt_upgradable_over_canned_shells():
     assert host2.last_shell == AptUpgradable.COMMAND
 
 
-# --- AptAutoremovable: command (a reemote5 original, no pyinfra fixture) -------
+# --- AptAutoremovable: command (a reemote5 original, no baseline fixture) -------
 
 
 def test_apt_autoremovable_command_simulates_the_autoremove():
@@ -1600,7 +1600,7 @@ def test_apt_autoremovable_command_simulates_the_autoremove():
 
 # Realistic ``apt-get --just-print autoremove`` output on Ubuntu noble:
 # progress lines, the indented removal summary, the count line, then one
-# machine-readable Remv row per removable package. pyinfra ships no
+# machine-readable Remv row per removable package. The baseline ships no
 # fixture for this fact -- it is a reemote5 original.
 AUTOREMOVE_OUTPUT = """\
 Reading package lists... Done
@@ -1722,7 +1722,7 @@ async def test_gather_fact_apt_autoremovable_over_canned_shells():
     assert host2.last_shell == AptAutoremovable.COMMAND
 
 
-# --- DebPackage fact (pyinfra parity) ----------------------------------------
+# --- DebPackage fact (baseline parity) ----------------------------------------
 
 # A standalone ``.deb`` already on the target host (the kind ``files.put``
 # uploads before ``apt.deb`` installs it), reused across the fact and operation
@@ -1733,8 +1733,8 @@ DEB_FILE_VERSION = "131.0.6778.85-1"
 DEB_FILE_INFO: DebPackageInfo = {"name": DEB_FILE_NAME, "version": DEB_FILE_VERSION}
 
 
-def test_deb_package_command_matches_pyinfra():
-    """The command is pyinfra's ``deb.DebPackage/package.json`` fixture command
+def test_deb_package_command_matches_baseline():
+    """The command is the baseline's ``deb.DebPackage/package.json`` fixture command
     verbatim: inspect a ``.deb`` file, else query the installed package."""
     assert DebPackage.command("package-name") == (
         "test -f package-name && case package-name in "
@@ -1746,7 +1746,7 @@ def test_deb_package_command_matches_pyinfra():
 
 def test_deb_package_command_quotes_the_path():
     """A path with spaces and shell metacharacters is shell-quoted in every
-    position (pyinfra's ``package_needs_quotes.json`` fixture)."""
+    position (the baseline's ``package_needs_quotes.json`` fixture)."""
     quoted = "'/tmp/my package; whoami.deb'"
     assert DebPackage.command("/tmp/my package; whoami.deb") == (
         f"test -f {quoted} && case {quoted} in "
@@ -1758,13 +1758,13 @@ def test_deb_package_command_quotes_the_path():
 
 async def test_deb_package_parses_control_fields():
     """Over the real-transport path, ``DebPackage`` parses the ``Package:`` and
-    ``Version:`` control fields (pyinfra's ``package.json`` fact)."""
+    ``Version:`` control fields (the baseline's ``package.json`` fact)."""
     host = CannedShellHost("Package: package-name\nVersion: 1")
     expected = {"name": "package-name", "version": "1"}
     assert await DebPackage.process(host, "package-name") == expected
 
 
-# The ``output`` field of pyinfra's ``deb.DebPackage/whitespace.json`` fixture:
+# The ``output`` field of the baseline's ``deb.DebPackage/whitespace.json`` fixture:
 # ``dpkg -I`` archive metadata whose control fields are tab-indented.
 DPKG_I_OUTPUT = """\
  new Debian package, version 2.0.
@@ -1791,7 +1791,7 @@ DPKG_I_OUTPUT = """\
 
 async def test_deb_package_parses_tab_indented_dpkg_i_output():
     """``dpkg -I``'s tab-indented ``Package:``/``Version:`` fields parse after
-    stripping (pyinfra's ``whitespace.json`` fact); the archive-listing noise
+    stripping (the baseline's ``whitespace.json`` fact); the archive-listing noise
     and the ``Pre-Depends`` continuation line are ignored."""
     host = CannedShellHost(DPKG_I_OUTPUT)
     expected = {"name": "tivsm-api64", "version": "8.1.21-0"}
@@ -1800,7 +1800,7 @@ async def test_deb_package_parses_tab_indented_dpkg_i_output():
 
 async def test_deb_package_absent_parses_to_none():
     """No ``Package:``/``Version:`` line reads as None -- reemote5's
-    None-on-absent convention (pyinfra returns an empty dict)."""
+    None-on-absent convention (the baseline returns an empty dict)."""
     host = CannedShellHost("")
     assert await DebPackage.process(host, "random-file.txt") is None
 
@@ -1827,9 +1827,9 @@ async def test_deb_package_seam_returns_copies():
     assert await DebPackage.process(host, DEB_FILE_PATH) == DEB_FILE_INFO
 
 
-# --- apt.deb operation (pyinfra parity) --------------------------------------
+# --- apt.deb operation (baseline parity) --------------------------------------
 
-# The three-pass install sequence pyinfra's ``apt.deb`` yields (its ``add.json``
+# The three-pass install sequence the baseline's ``apt.deb`` yields (its ``add.json``
 # fixture commands), rendered for ``DEB_FILE_PATH``.
 DPKG_INSTALL_SHELL = f"dpkg --force-confdef --force-confold -i {DEB_FILE_PATH}"
 DPKG_INSTALL_TOLERANT_SHELL = f"{DPKG_INSTALL_SHELL} 2> /dev/null || true"
@@ -1877,7 +1877,7 @@ async def test_apt_deb_no_change_when_installed_version_matches():
 
 async def test_apt_deb_reinstalls_when_installed_version_differs():
     """A different installed version does not match the file, so present=True
-    installs again -- the version-comparison idempotence pyinfra performs."""
+    installs again -- the version-comparison idempotence the baseline performs."""
     host = SimulatedHost(
         name="h",
         deb_files={DEB_FILE_PATH: DEB_FILE_INFO},
@@ -1891,7 +1891,7 @@ async def test_apt_deb_reinstalls_when_installed_version_differs():
 
 async def test_apt_deb_removes_an_installed_package():
     """present=False removes the file's package by name when that exact version
-    is installed (pyinfra's ``remove_existing.json`` fixture)."""
+    is installed (the baseline's ``remove_existing.json`` fixture)."""
     host = SimulatedHost(
         name="h",
         deb_files={DEB_FILE_PATH: DEB_FILE_INFO},
@@ -1906,7 +1906,7 @@ async def test_apt_deb_removes_an_installed_package():
 
 async def test_apt_deb_removal_noop_when_not_installed():
     """present=False with the file present but its package not installed is a
-    no-op (pyinfra's ``remove_no_exist.json`` fixture)."""
+    no-op (the baseline's ``remove_no_exist.json`` fixture)."""
     host = SimulatedHost(name="h", deb_files={DEB_FILE_PATH: DEB_FILE_INFO})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.deb(ctx, src=DEB_FILE_PATH, present=False)]
@@ -1928,7 +1928,7 @@ async def test_apt_deb_removal_noop_when_file_absent():
 
 
 async def test_apt_deb_rejects_a_url_src():
-    """pyinfra downloads a URL ``.deb``; reemote5 has no download operation, so a
+    """The baseline downloads a URL ``.deb``; reemote5 has no download operation, so a
     URL src raises instead of silently doing nothing (mirroring dnf.rpm)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1942,7 +1942,7 @@ async def test_apt_deb_rejects_a_url_src():
 
 
 async def test_apt_deb_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already strips
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already strips
     the ``name``/``sudo`` meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h", deb_files={DEB_FILE_PATH: DEB_FILE_INFO})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1952,7 +1952,7 @@ async def test_apt_deb_absorbs_unknown_kwargs():
 
 async def test_apt_deb_wait_for_lock_true():
     """wait_for_lock=True threads the 60-second lock timeout into the apt-get
-    passes (pyinfra's ``add_wait_for_lock.yaml`` fixture)."""
+    passes (the baseline's ``add_wait_for_lock.yaml`` fixture)."""
     host = SimulatedHost(name="h", deb_files={DEB_FILE_PATH: DEB_FILE_INFO})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.deb(ctx, src=DEB_FILE_PATH, wait_for_lock=True)]
@@ -1994,8 +1994,8 @@ def test_deb_install_command_shell_and_elevation():
     )
 
 
-def test_apt_install_fix_command_shell_matches_pyinfra():
-    """The dependency-fix pass renders pyinfra's ``install -f`` command, with the
+def test_apt_install_fix_command_shell_matches_baseline():
+    """The dependency-fix pass renders the baseline's ``install -f`` command, with the
     lock timeout inserted before the dpkg options when requested."""
     assert AptInstallFixCommand().shell() == APT_INSTALL_FIX_SHELL
     assert AptInstallFixCommand(wait_for_lock=True).shell() == (
@@ -2008,8 +2008,8 @@ def test_apt_install_fix_command_shell_matches_pyinfra():
     )
 
 
-def test_apt_remove_command_shell_matches_pyinfra():
-    """The removal pass renders pyinfra's ``remove_existing.json`` command and
+def test_apt_remove_command_shell_matches_baseline():
+    """The removal pass renders the baseline's ``remove_existing.json`` command and
     shell-quotes each package name."""
     assert AptRemoveCommand(packages=("test",)).shell() == APT_REMOVE_SHELL
     assert AptRemoveCommand(packages=("my pkg",)).shell().endswith("remove 'my pkg'")
@@ -2098,9 +2098,9 @@ async def test_apt_deb_remove_after_install_in_one_deploy():
     assert host.apt_packages == {}
 
 
-# --- SimulateOperationWillChange fact (pyinfra parity) ------------------------
+# --- SimulateOperationWillChange fact (baseline parity) ------------------------
 
-# The ``command`` field of pyinfra's ``apt.SimulateOperationWillChange``
+# The ``command`` field of the baseline's ``apt.SimulateOperationWillChange``
 # fixtures: the non-interactive prefix plus ``LC_ALL=C`` and ``--dry-run``.
 SIMULATE_COMMAND = (
     "LC_ALL=C DEBIAN_FRONTEND=noninteractive apt-get -y "
@@ -2108,7 +2108,7 @@ SIMULATE_COMMAND = (
     "upgrade --dry-run"
 )
 
-# The ``output`` field of pyinfra's ``apt.SimulateOperationWillChange/
+# The ``output`` field of the baseline's ``apt.SimulateOperationWillChange/
 # upgrade.json`` fixture, verbatim: the simulation banner, progress lines,
 # the indented upgrade summary, the count line, then Inst/Conf detail rows.
 SIM_UPGRADE_OUTPUT = [
@@ -2166,7 +2166,7 @@ SIM_UPGRADE_FACT = {
     "not_upgraded": 0,
 }
 
-# The ``output`` field of pyinfra's ``upgrade-nochanges.json`` fixture.
+# The ``output`` field of the baseline's ``upgrade-nochanges.json`` fixture.
 SIM_NOCHANGES_OUTPUT = [
     "NOTE: This is only a simulation!",
     "apt-get needs root privileges for real execution.",
@@ -2181,7 +2181,7 @@ SIM_NOCHANGES_OUTPUT = [
 
 SIM_ZERO_FACT = {"upgraded": 0, "newly_installed": 0, "removed": 0, "not_upgraded": 0}
 
-# The proposed counts of pyinfra's ``apt.dist_upgrade/dist_upgrade_autoremove
+# The proposed counts of the baseline's ``apt.dist_upgrade/dist_upgrade_autoremove
 # .json`` operation fixture -- nonzero in every field.
 DIST_UPGRADE_CHANGES = {
     "upgraded": 10,
@@ -2191,14 +2191,14 @@ DIST_UPGRADE_CHANGES = {
 }
 
 
-def test_simulate_command_matches_pyinfra():
-    """The command is pyinfra's fixture command verbatim: LC_ALL=C, the
+def test_simulate_command_matches_baseline():
+    """The command is the baseline's fixture command verbatim: LC_ALL=C, the
     non-interactive prefix, then the subcommand with --dry-run."""
     assert SimulateOperationWillChange.command("upgrade") == SIMULATE_COMMAND
 
 
 async def test_simulate_parses_the_upgrade_fixture():
-    """Over the real-transport path, the count line parses into pyinfra's
+    """Over the real-transport path, the count line parses into the baseline's
     upgrade.json fact; the Inst/Conf rows are never mistaken for it."""
     host = CannedShellHost("\n".join(SIM_UPGRADE_OUTPUT))
     assert await SimulateOperationWillChange.process(host, "upgrade") == SIM_UPGRADE_FACT
@@ -2206,13 +2206,13 @@ async def test_simulate_parses_the_upgrade_fixture():
 
 
 async def test_simulate_parses_the_nochanges_fixture():
-    """pyinfra's upgrade-nochanges.json fixture: every count zero."""
+    """The baseline's upgrade-nochanges.json fixture: every count zero."""
     host = CannedShellHost("\n".join(SIM_NOCHANGES_OUTPUT))
     assert await SimulateOperationWillChange.process(host, "upgrade") == SIM_ZERO_FACT
 
 
 def test_simulate_parse_edge_cases():
-    """No summary line reads as None (the deviation from pyinfra's
+    """No summary line reads as None (the deviation from the baseline's
     exception); a summary with all four counts parses; the first summary
     line wins."""
     assert SimulateOperationWillChange.parse([]) is None
@@ -2264,9 +2264,9 @@ async def test_gather_fact_simulate_over_canned_shells():
     assert host2.last_shell == SIMULATE_COMMAND
 
 
-# --- apt.dist_upgrade operation (pyinfra parity) ------------------------------
+# --- apt.dist_upgrade operation (baseline parity) ------------------------------
 
-# The ``commands`` field of pyinfra's ``apt.dist_upgrade/dist_upgrade.json``
+# The ``commands`` field of the baseline's ``apt.dist_upgrade/dist_upgrade.json``
 # fixture -- the bare dist-upgrade, never ``--autoremove`` (the split).
 DIST_UPGRADE_SHELL = (
     "DEBIAN_FRONTEND=noninteractive apt-get -y "
@@ -2274,7 +2274,7 @@ DIST_UPGRADE_SHELL = (
     "dist-upgrade"
 )
 
-# The ``commands`` field of pyinfra's ``dist_upgrade_wait_for_lock.yaml``
+# The ``commands`` field of the baseline's ``dist_upgrade_wait_for_lock.yaml``
 # fixture: the lock timeout inserted before the dpkg options.
 DIST_UPGRADE_LOCK_SHELL = (
     "DEBIAN_FRONTEND=noninteractive apt-get -y -o DPkg::Lock::Timeout=60 "
@@ -2300,7 +2300,7 @@ async def test_apt_dist_upgrade_runs_when_changes_proposed():
 
 
 async def test_apt_dist_upgrade_noop_when_no_changes_proposed():
-    """All-zero counts are pyinfra's noop: nothing yields and the reason
+    """All-zero counts are the baseline's noop: nothing yields and the reason
     mirrors its noop_description verbatim."""
     host = SimulatedHost(name="h", apt_simulations={"dist-upgrade": SIM_ZERO_FACT})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2312,7 +2312,7 @@ async def test_apt_dist_upgrade_noop_when_no_changes_proposed():
 
 async def test_apt_dist_upgrade_runs_anyway_on_failed_simulation():
     """A failed simulation (None -- no seam entry, no summary line) runs
-    the real command anyway, pyinfra's ``not changes`` fallback."""
+    the real command anyway, the baseline's ``not changes`` fallback."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.dist_upgrade(ctx)]
@@ -2323,7 +2323,7 @@ async def test_apt_dist_upgrade_runs_anyway_on_failed_simulation():
 
 async def test_apt_dist_upgrade_counts_not_upgraded_too():
     """Only ``not_upgraded`` nonzero still counts as a proposed change --
-    pyinfra's condition checks all four counts."""
+    the baseline's condition checks all four counts."""
     simulation = {**SIM_ZERO_FACT, "not_upgraded": 3}
     host = SimulatedHost(name="h", apt_simulations={"dist-upgrade": simulation})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2333,7 +2333,7 @@ async def test_apt_dist_upgrade_counts_not_upgraded_too():
 
 
 async def test_apt_dist_upgrade_wait_for_lock():
-    """wait_for_lock=True threads the 60-second timeout (pyinfra's
+    """wait_for_lock=True threads the 60-second timeout (the baseline's
     ``dist_upgrade_wait_for_lock.yaml``); an int sets that many seconds."""
     host = SimulatedHost(name="h", apt_simulations={"dist-upgrade": DIST_UPGRADE_CHANGES})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2346,7 +2346,7 @@ async def test_apt_dist_upgrade_wait_for_lock():
 
 
 async def test_apt_dist_upgrade_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     strips the ``name``/``sudo`` meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h", apt_simulations={"dist-upgrade": DIST_UPGRADE_CHANGES})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2354,8 +2354,8 @@ async def test_apt_dist_upgrade_absorbs_unknown_kwargs():
     assert commands == [AptDistUpgradeCommand()]
 
 
-def test_apt_dist_upgrade_command_shell_matches_pyinfra():
-    """The descriptor renders pyinfra's dist_upgrade.json command verbatim
+def test_apt_dist_upgrade_command_shell_matches_baseline():
+    """The descriptor renders the baseline's dist_upgrade.json command verbatim
     -- never ``--autoremove`` (split into apt.auto_remove) -- and elevates
     as a whole under sudo/su."""
     assert AptDistUpgradeCommand().shell() == DIST_UPGRADE_SHELL
@@ -2440,7 +2440,7 @@ async def test_apt_dist_upgrade_dry_run_sends_nothing():
 
 # --- apt.auto_remove operation (a reemote5 original standalone) ---------------
 
-# The autoremove rendering: the same non-interactive prefix as pyinfra's
+# The autoremove rendering: the same non-interactive prefix as the baseline's
 # dist-upgrade fixtures, with the standalone ``autoremove`` subcommand.
 AUTOREMOVE_SHELL = (
     "DEBIAN_FRONTEND=noninteractive apt-get -y "
@@ -2487,7 +2487,7 @@ async def test_apt_auto_remove_wait_for_lock():
 
 
 async def test_apt_auto_remove_absorbs_unknown_kwargs():
-    """``**kwargs`` absorbs pyinfra's global arguments."""
+    """``**kwargs`` absorbs the baseline's global arguments."""
     host = SimulatedHost(name="h", apt_autoremovable=AUTOREMOVABLE_PACKAGES)
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.auto_remove(ctx, future_flag=True)]
@@ -2590,7 +2590,7 @@ async def test_apt_dist_upgrade_then_auto_remove_in_one_deploy():
     assert log.index(f"sudo {DIST_UPGRADE_SHELL}") < log.index(f"sudo {AUTOREMOVE_SHELL}")
 
 
-# --- apt.key operation (pyinfra apt.key, install half) ------------------------
+# --- apt.key operation (the baseline apt.key, install half) ------------------------
 
 # A stand-in ASCII-armored GPG public key. apt.key installs the *content* of an
 # IO stream (never a path), so the tests only need opaque, stable bytes; the
@@ -2602,7 +2602,7 @@ GPG_KEY_BYTES = (
     b"-----END PGP PUBLIC KEY BLOCK-----\n"
 )
 
-# The keyring path a relative dest="docker.gpg" resolves to, pyinfra's
+# The keyring path a relative dest="docker.gpg" resolves to, the baseline's
 # /etc/apt/keyrings/ convention for signed-by= references.
 KEYRING_DEST = "/etc/apt/keyrings/docker.gpg"
 
@@ -2640,7 +2640,7 @@ async def test_apt_key_absolute_dest_used_verbatim():
 
 
 async def test_apt_key_rejects_a_str_src():
-    """pyinfra's apt.key takes a filename/URL the target host reads; reemote5
+    """The baseline's apt.key takes a filename/URL the target host reads; reemote5
     takes an IO stream, so a str src raises rather than being treated as a
     controller-side path."""
     host = SimulatedHost(name="h")
@@ -2665,7 +2665,7 @@ async def test_apt_key_rejects_an_empty_dest():
 
 
 async def test_apt_key_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already strips
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already strips
     the name/sudo meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     stream = io.BytesIO(GPG_KEY_BYTES)
@@ -2938,7 +2938,7 @@ async def test_apt_mark_empty_request_is_a_noop():
 
 
 async def test_apt_mark_absorbs_unknown_kwargs():
-    """``**kwargs`` absorbs pyinfra's global arguments."""
+    """``**kwargs`` absorbs the baseline's global arguments."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.mark(ctx, packages=("docker-ce",), future_flag=True)]
@@ -3078,9 +3078,9 @@ async def test_apt_mark_dry_run_plans_without_holding():
     assert host.apt_held_packages == []
 
 
-# --- apt.packages operation (pyinfra parity) ---------------------------------
+# --- apt.packages operation (baseline parity) ---------------------------------
 
-# The non-interactive prefix every pyinfra apt.packages fixture command
+# The non-interactive prefix every baseline apt.packages fixture command
 # shares (its ``noninteractive_apt`` wrapper, without the dropped ``force``).
 APT_GET_PREFIX = (
     "DEBIAN_FRONTEND=noninteractive apt-get -y "
@@ -3089,7 +3089,7 @@ APT_GET_PREFIX = (
 
 
 async def test_apt_packages_installs_an_absent_package():
-    """pyinfra's ``add_package.json``: a single absent package yields one
+    """The baseline's ``add_package.json``: a single absent package yields one
     install whose shell matches the fixture command verbatim."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3101,7 +3101,7 @@ async def test_apt_packages_installs_an_absent_package():
 
 
 async def test_apt_packages_version_pins_match_exact_versions():
-    """pyinfra's ``add_packages.json``: a pinned package is present only at
+    """The baseline's ``add_packages.json``: a pinned package is present only at
     that exact version -- ``something=1.0`` installs over the installed 0.9
     while ``another=1.1`` is already satisfied."""
     host = SimulatedHost(
@@ -3137,7 +3137,7 @@ async def test_apt_packages_no_change_when_all_present():
 
 
 async def test_apt_packages_no_recommends():
-    """pyinfra's ``add_package_no_recommends.json``: the flag lands between
+    """The baseline's ``add_package_no_recommends.json``: the flag lands between
     ``install`` and the names."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3150,7 +3150,7 @@ async def test_apt_packages_no_recommends():
 
 
 async def test_apt_packages_allow_downgrades():
-    """pyinfra's ``add_package_allow_downgrades.json``: ``--allow-downgrades``
+    """The baseline's ``add_package_allow_downgrades.json``: ``--allow-downgrades``
     lands between ``install`` and the names."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3161,7 +3161,7 @@ async def test_apt_packages_allow_downgrades():
 
 
 async def test_apt_packages_extra_install_args():
-    """pyinfra's ``install_with_args.json``: the extra argument is appended
+    """The baseline's ``install_with_args.json``: the extra argument is appended
     verbatim after the flags, before the names."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3175,7 +3175,7 @@ async def test_apt_packages_extra_install_args():
 
 
 async def test_apt_packages_removes_installed_packages():
-    """pyinfra's ``remove_packages.json``: only the installed names are
+    """The baseline's ``remove_packages.json``: only the installed names are
     removed, in request order, with the fixture's ``remove`` command."""
     host = SimulatedHost(name="h", apt_packages={"git": [""], "python-pip": [""]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3192,7 +3192,7 @@ async def test_apt_packages_removes_installed_packages():
 
 
 async def test_apt_packages_remove_extra_uninstall_args():
-    """pyinfra's ``remove_packages_with_args.json``: the extra uninstall
+    """The baseline's ``remove_packages_with_args.json``: the extra uninstall
     argument lands between ``remove`` and the names."""
     host = SimulatedHost(name="h", apt_packages={"git": [""]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3209,7 +3209,7 @@ async def test_apt_packages_remove_extra_uninstall_args():
 
 
 async def test_apt_packages_purge():
-    """pyinfra's ``purge_packages.yaml``: ``purge=True`` switches the verb so
+    """The baseline's ``purge_packages.yaml``: ``purge=True`` switches the verb so
     configuration files go with the package."""
     host = SimulatedHost(name="h", apt_packages={"git": [""], "python-pip": [""]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3225,7 +3225,7 @@ async def test_apt_packages_purge():
 
 async def test_apt_packages_removal_respects_version_pins():
     """A pinned removal only fires when that exact version is installed, and
-    passes the pin through verbatim (pyinfra's ``inst_vers``)."""
+    passes the pin through verbatim (the baseline's ``inst_vers``)."""
     host = SimulatedHost(name="h", apt_packages={"something": ["0.9"]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
@@ -3245,7 +3245,7 @@ async def test_apt_packages_removal_respects_version_pins():
 
 
 async def test_apt_packages_latest_upgrades_installed_unpinned():
-    """pyinfra's ``upgrade_packages.json``: ``latest=True`` installs the
+    """The baseline's ``upgrade_packages.json``: ``latest=True`` installs the
     absent package first, then upgrades the installed unpinned one with a
     second ``install`` command (non-idempotent by design)."""
     host = SimulatedHost(name="h", apt_packages={"git": ["1.0"]})
@@ -3265,7 +3265,7 @@ async def test_apt_packages_latest_upgrades_installed_unpinned():
 
 async def test_apt_packages_latest_skips_pins_and_carries_no_extra_args():
     """Pinned packages are never ``latest`` candidates, and the upgrade
-    command omits ``extra_install_args`` (pyinfra builds it before appending
+    command omits ``extra_install_args`` (the baseline builds it before appending
     them) while keeping the install flags."""
     host = SimulatedHost(
         name="h", apt_packages={"git": ["1.0"], "something": ["1.0"]}
@@ -3290,7 +3290,7 @@ async def test_apt_packages_latest_skips_pins_and_carries_no_extra_args():
 
 
 async def test_apt_packages_update_is_stateless():
-    """pyinfra's ``update_nocache.json``: ``update=True`` always yields the
+    """The baseline's ``update_nocache.json``: ``update=True`` always yields the
     bare ``apt-get update`` -- no non-interactive wrapper, no stamp file."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3303,7 +3303,7 @@ async def test_apt_packages_update_is_stateless():
 
 async def test_apt_packages_update_wait_for_lock():
     """The lock timeout is inserted between ``apt-get`` and ``update``, the
-    form pyinfra's ``apt.update`` renders."""
+    form the baseline's ``apt.update`` renders."""
     assert AptUpdateCommand(wait_for_lock=True).shell() == (
         "apt-get -o DPkg::Lock::Timeout=60 update"
     )
@@ -3339,7 +3339,7 @@ async def test_apt_packages_upgrade_noop_when_no_changes_proposed():
 
 async def test_apt_packages_upgrade_runs_anyway_on_failed_simulation():
     """A failed simulation (None -- no seam entry) runs the real upgrade
-    anyway, pyinfra's ``not changes`` fallback."""
+    anyway, the baseline's ``not changes`` fallback."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.packages(ctx, upgrade=True)]
@@ -3349,7 +3349,7 @@ async def test_apt_packages_upgrade_runs_anyway_on_failed_simulation():
 
 
 async def test_apt_packages_update_then_upgrade_order():
-    """pyinfra's ``update_upgrade.json``: the update runs before the
+    """The baseline's ``update_upgrade.json``: the update runs before the
     upgrade, and the reasons join with a semicolon and space."""
     host = SimulatedHost(name="h", apt_simulations={"upgrade": SIM_ZERO_FACT})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3360,7 +3360,7 @@ async def test_apt_packages_update_then_upgrade_order():
 
 
 async def test_apt_packages_wait_for_lock():
-    """pyinfra's ``add_packages_wait_for_lock.yaml``: the 60-second lock
+    """The baseline's ``add_packages_wait_for_lock.yaml``: the 60-second lock
     timeout lands before the dpkg options in the install command."""
     host = SimulatedHost(
         name="h", apt_packages={"something": ["0.9"], "another": ["1.1"]}
@@ -3382,7 +3382,7 @@ async def test_apt_packages_wait_for_lock():
 
 
 async def test_apt_packages_cache_time_is_dropped():
-    """The developer chose to drop pyinfra's ``cache_time``: the keyword is
+    """The developer chose to drop the baseline's ``cache_time``: the keyword is
     absorbed with no effect -- update stays stateless and no stamp-file
     touch is ever yielded."""
     host = SimulatedHost(name="h")
@@ -3394,7 +3394,7 @@ async def test_apt_packages_cache_time_is_dropped():
 
 
 async def test_apt_packages_force_is_dropped():
-    """pyinfra's ``add_package_force.json`` renders ``--force-yes``; reemote5
+    """The baseline's ``add_package_force.json`` renders ``--force-yes``; reemote5
     drops the deprecated flag (the apt.deb decision), absorbing the keyword."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3416,7 +3416,7 @@ async def test_apt_packages_none_and_empty_request_nothing():
 
 
 async def test_apt_packages_accepts_a_bare_string():
-    """pyinfra accepts a single package name as a bare string."""
+    """The baseline accepts a single package name as a bare string."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.packages(ctx, packages="git")]
@@ -3424,7 +3424,7 @@ async def test_apt_packages_accepts_a_bare_string():
 
 
 async def test_apt_packages_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     strips the ``name``/``sudo`` meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3628,9 +3628,9 @@ async def test_apt_packages_remove_after_install_in_one_deploy():
     assert host.apt_packages == {}
 
 
-# --- apt.update / apt.upgrade operations (pyinfra parity) ----------------------
+# --- apt.update / apt.upgrade operations (baseline parity) ----------------------
 
-# The ``commands`` field of pyinfra's ``apt.upgrade/upgrade_wait_for_lock.yaml``
+# The ``commands`` field of the baseline's ``apt.upgrade/upgrade_wait_for_lock.yaml``
 # fixture: the 60-second lock timeout inserted before the dpkg options.
 UPGRADE_LOCK_SHELL = (
     "DEBIAN_FRONTEND=noninteractive apt-get -y -o DPkg::Lock::Timeout=60 "
@@ -3640,7 +3640,7 @@ UPGRADE_LOCK_SHELL = (
 
 
 async def test_apt_update_always_yields_bare_update():
-    """Non-idempotent like pyinfra's ``apt.update``: always changed, always
+    """Non-idempotent like the baseline's ``apt.update``: always changed, always
     the bare ``apt-get update`` -- no non-interactive wrapper, no fact read."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3652,7 +3652,7 @@ async def test_apt_update_always_yields_bare_update():
 
 
 async def test_apt_update_wait_for_lock():
-    """pyinfra's ``apt.update/update_wait_for_lock.yaml``: an int sets that
+    """The baseline's ``apt.update/update_wait_for_lock.yaml``: an int sets that
     many seconds; ``True`` maps to the 60-second default."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3677,7 +3677,7 @@ async def test_apt_update_cache_time_is_dropped():
 
 
 async def test_apt_update_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     strips the ``name``/``sudo`` meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3750,7 +3750,7 @@ async def test_apt_update_dry_run_sends_nothing():
 
 
 async def test_apt_upgrade_runs_when_changes_proposed():
-    """pyinfra's ``apt.upgrade/upgrade.json``: fifteen proposed upgrades
+    """The baseline's ``apt.upgrade/upgrade.json``: fifteen proposed upgrades
     yield the non-interactive upgrade verbatim, with the counts in the
     reason."""
     host = SimulatedHost(name="h", apt_simulations={"upgrade": SIM_UPGRADE_FACT})
@@ -3766,7 +3766,7 @@ async def test_apt_upgrade_runs_when_changes_proposed():
 
 
 async def test_apt_upgrade_noop_when_no_changes_proposed():
-    """All-zero counts are pyinfra's noop: nothing yields and the reason
+    """All-zero counts are the baseline's noop: nothing yields and the reason
     mirrors its noop_description verbatim."""
     host = SimulatedHost(name="h", apt_simulations={"upgrade": SIM_ZERO_FACT})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3778,7 +3778,7 @@ async def test_apt_upgrade_noop_when_no_changes_proposed():
 
 async def test_apt_upgrade_runs_anyway_on_failed_simulation():
     """A failed simulation (None -- no seam entry, no summary line) runs
-    the real command anyway, pyinfra's ``not changes`` fallback."""
+    the real command anyway, the baseline's ``not changes`` fallback."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.upgrade(ctx)]
@@ -3789,7 +3789,7 @@ async def test_apt_upgrade_runs_anyway_on_failed_simulation():
 
 async def test_apt_upgrade_counts_not_upgraded_too():
     """Only ``not_upgraded`` nonzero still counts as a proposed change --
-    pyinfra's condition checks all four counts."""
+    the baseline's condition checks all four counts."""
     simulation = {**SIM_ZERO_FACT, "not_upgraded": 3}
     host = SimulatedHost(name="h", apt_simulations={"upgrade": simulation})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3799,7 +3799,7 @@ async def test_apt_upgrade_counts_not_upgraded_too():
 
 
 async def test_apt_upgrade_wait_for_lock():
-    """wait_for_lock=True threads the 60-second timeout (pyinfra's
+    """wait_for_lock=True threads the 60-second timeout (the baseline's
     ``upgrade_wait_for_lock.yaml``); an int sets that many seconds."""
     host = SimulatedHost(name="h", apt_simulations={"upgrade": SIM_UPGRADE_FACT})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3812,7 +3812,7 @@ async def test_apt_upgrade_wait_for_lock():
 
 
 async def test_apt_upgrade_auto_remove_is_dropped():
-    """The developer chose to drop pyinfra's ``auto_remove`` in favour of
+    """The developer chose to drop the baseline's ``auto_remove`` in favour of
     the standalone ``apt.auto_remove`` (the dist_upgrade split): the
     keyword is absorbed and ``--autoremove`` never renders."""
     host = SimulatedHost(name="h", apt_simulations={"upgrade": SIM_UPGRADE_FACT})
@@ -3823,7 +3823,7 @@ async def test_apt_upgrade_auto_remove_is_dropped():
 
 
 async def test_apt_upgrade_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     strips the ``name``/``sudo`` meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h", apt_simulations={"upgrade": SIM_UPGRADE_FACT})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3832,7 +3832,7 @@ async def test_apt_upgrade_absorbs_unknown_kwargs():
 
 
 def test_apt_upgrade_command_shell_and_elevation():
-    """The shared descriptor renders pyinfra's upgrade.json command and
+    """The shared descriptor renders the baseline's upgrade.json command and
     elevates as a whole under sudo/su."""
     upgrade = AptUpgradeCommand()
     assert upgrade.shell() == f"{APT_GET_PREFIX}upgrade"
@@ -3939,10 +3939,10 @@ async def test_apt_upgrade_dry_run_sends_nothing():
     assert host.apt_simulations["upgrade"] == SIM_UPGRADE_FACT
 
 
-# --- apt.ppa operation (pyinfra parity) ---------------------------------------
+# --- apt.ppa operation (baseline parity) ---------------------------------------
 
-# pyinfra's apt.ppa/add.json renders ``apt-add-repository -y ppa:some-repo``;
-# the Bitcoin PPA is pyinfra's documented example. ``shlex.quote`` leaves the
+# The baseline's apt.ppa/add.json renders ``apt-add-repository -y ppa:some-repo``;
+# the Bitcoin PPA is the baseline's documented example. ``shlex.quote`` leaves the
 # safe ``ppa:bitcoin/bitcoin`` token unquoted.
 PPA_SRC = "ppa:bitcoin/bitcoin"
 PPA_URL = "http://ppa.launchpad.net/bitcoin/bitcoin/ubuntu"
@@ -3958,12 +3958,12 @@ PPA_SOURCE = {
 }
 
 
-def test_apt_ppa_command_shell_matches_pyinfra():
-    """The descriptor renders pyinfra's add/remove commands and shell-quotes the
-    src (pyinfra's add_quotes_injection.json), elevating as a whole."""
+def test_apt_ppa_command_shell_matches_baseline():
+    """The descriptor renders the baseline's add/remove commands and shell-quotes the
+    src (the baseline's add_quotes_injection.json), elevating as a whole."""
     assert AptPpaCommand(src=PPA_SRC).shell() == PPA_ADD_SHELL
     assert AptPpaCommand(src=PPA_SRC, present=False).shell() == PPA_REMOVE_SHELL
-    # pyinfra's add_quotes_injection.json: 'x"; reboot #' stays one quoted token.
+    # The baseline's add_quotes_injection.json: 'x"; reboot #' stays one quoted token.
     assert AptPpaCommand(src='x"; reboot #').shell() == (
         "apt-add-repository -y 'x\"; reboot #'"
     )
@@ -3987,7 +3987,7 @@ async def test_apt_ppa_add_always_yields():
 
 async def test_apt_ppa_remove_always_yields():
     """present=False always reports a change and yields one --remove command
-    (pyinfra's remove.json)."""
+    (the baseline's remove.json)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.ppa(ctx, src=PPA_SRC, present=False)]
@@ -3998,7 +3998,7 @@ async def test_apt_ppa_remove_always_yields():
 
 async def test_apt_ppa_is_non_idempotent():
     """Even with the PPA already configured, the operation reads no fact and
-    still yields -- pyinfra marks apt.ppa non-idempotent."""
+    still yields -- the baseline marks apt.ppa non-idempotent."""
     host = SimulatedHost(name="h", apt_sources=[dict(PPA_SOURCE)])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.ppa(ctx, src=PPA_SRC)]
@@ -4007,7 +4007,7 @@ async def test_apt_ppa_is_non_idempotent():
 
 
 async def test_apt_ppa_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already strips
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already strips
     the ``name``/``sudo`` meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -4111,9 +4111,9 @@ async def test_apt_ppa_add_then_remove_in_one_deploy():
     assert host.apt_sources == []
 
 
-# --- apt.repo operation (pyinfra parity, spool-and-install write) --------------
+# --- apt.repo operation (baseline parity, spool-and-install write) --------------
 
-# pyinfra's apt.repo fixtures all use the Canonical partner repo line; the
+# The baseline's apt.repo fixtures all use the Canonical partner repo line; the
 # AptSource below is their ``apt.AptSources`` fact entry in reemote5's shape
 # (options always list-valued -- here empty).
 REPO_SRC = "deb http://archive.canonical.com/ubuntu hardy partner"
@@ -4151,7 +4151,7 @@ REPO_INSTALL_INNER = (
 def test_apt_repo_descriptors_render_the_spool_and_install_pair():
     """The write is the family ``apt.key`` shows: an unprivileged scp of the
     transformed text to the ``/tmp`` spool, then the elevated ``sh -c``
-    install overlaying the protected file. pyinfra's ``echo >>``/``sed -i``
+    install overlaying the protected file. The baseline's ``echo >>``/``sed -i``
     in-place mutation is gone with the ``files.line`` delegation."""
     upload = AptRepoUploadCommand(content=f"{REPO_SRC}\n", dest=REPO_SPOOL)
     assert str(upload) == f"scp <apt sources> -> {REPO_SPOOL}"
@@ -4187,7 +4187,7 @@ def test_apt_repo_spool_path_is_deterministic_per_dest():
 def test_apt_repo_add_transform_is_pure_and_idempotent():
     """``_add_repo_line`` appends exactly once: an absent file becomes the
     single line, a file already carrying the line (surrounding text included,
-    pyinfra's contains match) comes back verbatim, and re-applying the
+    the baseline's contains match) comes back verbatim, and re-applying the
     transform to its own result changes nothing."""
     assert _add_repo_line(None, REPO_SRC) == f"{REPO_SRC}\n"
     assert _add_repo_line("", REPO_SRC) == f"{REPO_SRC}\n"
@@ -4217,7 +4217,7 @@ def test_apt_repo_remove_transform_keeps_other_lines():
 
 
 async def test_apt_repo_add_when_absent():
-    """pyinfra's add.json: an unconfigured repo is planned as the spool
+    """The baseline's add.json: an unconfigured repo is planned as the spool
     transfer of the new file text plus the elevated install."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -4250,7 +4250,7 @@ async def test_apt_repo_add_preserves_the_rest_of_the_file():
 
 
 async def test_apt_repo_add_with_filename():
-    """pyinfra's add_filename.json: filename targets
+    """The baseline's add_filename.json: filename targets
     /etc/apt/sources.list.d/<filename>.list -- and its own spool path."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -4263,8 +4263,8 @@ async def test_apt_repo_add_with_filename():
 
 
 async def test_apt_repo_add_noop_when_present():
-    """pyinfra's add_existing.json: a configured repo is a no-op with
-    pyinfra's noop_description verbatim."""
+    """The baseline's add_existing.json: a configured repo is a no-op with
+    the baseline's noop_description verbatim."""
     host = SimulatedHost(name="h", apt_sources=[dict(REPO_SOURCE)])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.repo(ctx, src=REPO_SRC)]
@@ -4274,7 +4274,7 @@ async def test_apt_repo_add_noop_when_present():
 
 
 async def test_apt_repo_remove_when_present():
-    """pyinfra's remove.json: a configured repo with present=False spools the
+    """The baseline's remove.json: a configured repo with present=False spools the
     file text without the matching line, then installs it over the file."""
     host = SimulatedHost(
         name="h",
@@ -4292,7 +4292,7 @@ async def test_apt_repo_remove_when_present():
 
 
 async def test_apt_repo_remove_noop_when_absent():
-    """present=False for an unconfigured repo is a no-op with pyinfra's
+    """present=False for an unconfigured repo is a no-op with the baseline's
     noop_description verbatim."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -4331,7 +4331,7 @@ async def test_apt_repo_options_match_with_list_valued_shape():
 
 
 async def test_apt_repo_unparseable_src_is_tolerated():
-    """pyinfra's tolerance: a src its regex cannot parse counts as absent,
+    """The baseline's tolerance: a src its regex cannot parse counts as absent,
     so present=True still spools it in and present=False is a no-op."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -4348,7 +4348,7 @@ async def test_apt_repo_unparseable_src_is_tolerated():
 
 
 async def test_apt_repo_add_of_a_line_the_file_lists_is_a_content_noop():
-    """The content-level fixpoint pyinfra's ``echo >>`` never reached: an
+    """The content-level fixpoint the baseline's ``echo >>`` never reached: an
     unparseable src the fact cannot see is still not appended twice, because
     the transform of the file's own text comes back unchanged."""
     host = SimulatedHost(
@@ -4364,7 +4364,7 @@ async def test_apt_repo_add_of_a_line_the_file_lists_is_a_content_noop():
 async def test_apt_repo_removal_from_a_file_that_never_listed_it_is_a_noop():
     """The other content-level no-op: the repository is configured -- so the
     fact says a change is due -- but in some *other* file, so this file's
-    text has nothing to delete and pyinfra's no-op sed is skipped."""
+    text has nothing to delete and the baseline's no-op sed is skipped."""
     host = SimulatedHost(
         name="h",
         apt_sources=[dict(REPO_SOURCE)],
@@ -4383,7 +4383,7 @@ async def test_apt_repo_removal_from_a_file_that_never_listed_it_is_a_noop():
 
 
 async def test_apt_repo_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     strips the ``name``/``sudo`` meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -4606,9 +4606,9 @@ async def test_apt_repo_add_then_remove_in_one_deploy():
     assert host.apt_sources == []
 
 
-# --- apt.sources_file operation (pyinfra parity) -------------------------------
+# --- apt.sources_file operation (baseline parity) -------------------------------
 
-# pyinfra's create.json kwargs: the Docker deb822 repository from its docstring
+# The baseline's create.json kwargs: the Docker deb822 repository from its docstring
 # example. The content below is the fixture's upload payload verbatim and the
 # source entry its apt.AptSources fact holds in reemote5's list-valued shape.
 DOCKER_KWARGS = {
@@ -4685,8 +4685,8 @@ def test_apt_sources_file_fact_command_guards_on_existence():
 # --- apt.sources_file operation cases -----------------------------------------
 
 
-async def test_apt_sources_file_create_matches_pyinfra():
-    """pyinfra's create.json: an unconfigured repository yields the spool
+async def test_apt_sources_file_create_matches_baseline():
+    """The baseline's create.json: an unconfigured repository yields the spool
     transfer plus the elevated install, and the generated deb822 content is
     the fixture's upload payload verbatim."""
     host = SimulatedHost(name="h")
@@ -4701,8 +4701,8 @@ async def test_apt_sources_file_create_matches_pyinfra():
 
 
 async def test_apt_sources_file_create_idempotent():
-    """pyinfra's create_idempotent.json: every expanded repository already
-    configured -> no-op with pyinfra's noop_description verbatim. The fact
+    """The baseline's create_idempotent.json: every expanded repository already
+    configured -> no-op with the baseline's noop_description verbatim. The fact
     entry carries list-valued options (the AptSource shape)."""
     host = SimulatedHost(name="h", apt_sources=[dict(DOCKER_SOURCE)])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -4713,7 +4713,7 @@ async def test_apt_sources_file_create_idempotent():
 
 
 async def test_apt_sources_file_create_minimal():
-    """pyinfra's create_minimal.json: only uris and suites given -> types
+    """The baseline's create_minimal.json: only uris and suites given -> types
     defaults to deb and the Components/Architectures/Signed-By lines are
     omitted from the content."""
     host = SimulatedHost(name="h")
@@ -4738,7 +4738,7 @@ async def test_apt_sources_file_create_minimal():
 
 
 async def test_apt_sources_file_string_args():
-    """pyinfra's create_string_args.json: space-separated strings normalize
+    """The baseline's create_string_args.json: space-separated strings normalize
     to lists, so multi-valued Types and Suites land on one line each."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -4764,7 +4764,7 @@ async def test_apt_sources_file_string_args():
 
 
 async def test_apt_sources_file_create_update():
-    """pyinfra's create_update.json: the file exists with different content
+    """The baseline's create_update.json: the file exists with different content
     (here an outdated suite), so the full rewrite is planned even though a
     sources file is already present."""
     outdated = {**DOCKER_SOURCE, "distribution": "bullseye"}
@@ -4783,8 +4783,8 @@ async def test_apt_sources_file_create_update():
 
 
 async def test_apt_sources_file_requires_uris():
-    """pyinfra's error_missing_uris.json: suites without any URI raises
-    ValueError with pyinfra's message verbatim (reemote5's single validation
+    """The baseline's error_missing_uris.json: suites without any URI raises
+    ValueError with the baseline's message verbatim (reemote5's single validation
     error type)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -4798,7 +4798,7 @@ async def test_apt_sources_file_requires_uris():
 
 
 async def test_apt_sources_file_requires_suites():
-    """pyinfra's error_missing_suites.json: uris without any suite raises the
+    """The baseline's error_missing_suites.json: uris without any suite raises the
     same error, and the check runs before any fact read."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -4814,7 +4814,7 @@ async def test_apt_sources_file_requires_suites():
 
 
 async def test_apt_sources_file_remove_yields_when_present():
-    """pyinfra's remove.json command (rm -f): an existing sources file --
+    """The baseline's remove.json command (rm -f): an existing sources file --
     even an empty leftover -- is removed and the change reported."""
     for content in (DOCKER_CONTENT, ""):
         host = SimulatedHost(name="h")
@@ -4828,7 +4828,7 @@ async def test_apt_sources_file_remove_yields_when_present():
 
 
 async def test_apt_sources_file_removal_noop_when_absent():
-    """The documented deviation from pyinfra's remove_missing.json (which
+    """The documented deviation from the baseline's remove_missing.json (which
     still yields rm -f): the AptSourcesFile fact gates the removal, so an
     absent file is a no-op -- the dnf.repo(present=False) pattern."""
     host = SimulatedHost(name="h")
@@ -4872,7 +4872,7 @@ async def test_apt_sources_file_multi_value_expansion_idempotence():
 
 
 async def test_apt_sources_file_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     strips the ``name``/``sudo`` meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -4895,7 +4895,7 @@ def test_apt_sources_file_upload_command_renders_as_an_unprivileged_scp():
 
 
 def test_apt_sources_file_install_command_shell_and_elevation():
-    """The install wraps mkdir, cp, chmod 0644 (pyinfra's fixed mode) and the
+    """The install wraps mkdir, cp, chmod 0644 (the baseline's fixed mode) and the
     spool cleanup in one sh -c so every step runs under the elevated shell.
     The paths are safe tokens, so shlex.quote leaves them unquoted."""
     cmd = AptSourcesFileInstallCommand(spool=_SOURCES_SPOOL_PATH, dest=DOCKER_DEST)
@@ -4923,8 +4923,8 @@ def test_apt_sources_file_install_command_quotes_unsafe_paths():
     assert "mkdir -p /etc/apt/sources.list.d" in inner
 
 
-def test_apt_sources_file_remove_command_shell_matches_pyinfra():
-    """pyinfra's remove.json command verbatim (the path is a safe token),
+def test_apt_sources_file_remove_command_shell_matches_baseline():
+    """The baseline's remove.json command verbatim (the path is a safe token),
     elevated as a whole; an unsafe filename is shell-quoted."""
     cmd = AptSourcesFileRemoveCommand(path=DOCKER_DEST)
     assert cmd.shell() == f"rm -f {DOCKER_DEST}"
@@ -4935,7 +4935,7 @@ def test_apt_sources_file_remove_command_shell_matches_pyinfra():
 
 # The same repository with tuple containers -- what a deploy passes, since
 # OperationRequest prefers immutable kwargs (lists remain accepted by the
-# operation itself, as pyinfra's fixtures use them).
+# operation itself, as the baseline's fixtures use them).
 DOCKER_DEPLOY_KWARGS = {
     "filename": "docker",
     "types": ("deb",),
@@ -5016,7 +5016,7 @@ async def test_apt_sources_file_simulated_seam_remove():
 async def test_apt_sources_file_end_to_end_write_then_noop():
     """Through run(): the apply phase spools the content by scp then installs
     it elevated; the log shows the transfer unprivileged and only the install
-    with sudo. A second run is a no-op with pyinfra's noop_description."""
+    with sudo. A second run is a no-op with the baseline's noop_description."""
 
     def sources_deploy(host):
         yield op(

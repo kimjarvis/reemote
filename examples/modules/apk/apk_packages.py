@@ -35,11 +35,11 @@ name -- here two small CLI utilities, the kind of baseline tooling a deploy
 ensures on every Alpine machine. It reads the installed versions through the
 ``ApkInstalledPackages`` fact and installs only what is missing with ``apk add``, so
 re-running is a no-op. A name can be pinned as ``<pkg>=<version>``: a pin
-counts as present only when that *exact* version is installed, pyinfra's
+counts as present only when that *exact* version is installed, the baseline's
 ``ensure_packages`` version match. ``latest=True`` would additionally upgrade
-every installed, unpinned name with ``apk upgrade`` (pyinfra's legacy blind
+every installed, unpinned name with ``apk upgrade`` (the baseline's legacy blind
 upgrade). apk never prompts, so the commands carry no ``-y`` flag -- unlike
-the apt and dnf examples. Where pyinfra's ``apk.packages`` also takes
+the apt and dnf examples. Where the baseline's ``apk.packages`` also takes
 ``update`` and ``upgrade`` options that prefix the operation with a
 whole-system ``apk update`` / ``apk upgrade``, reemote5 deliberately drops
 both -- the whole-system refresh/upgrade stays out of the package operation
@@ -167,7 +167,7 @@ def is_alpine(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Install the baseline packages -- twice, to show idempotence -- then
+    """Install baseline packages -- twice, to show idempotence -- then
     demonstrate the apk-native install modifiers on a third request.
 
     Branch-free, so the request sequence is identical in the prepare and

@@ -35,7 +35,7 @@ already exists on the *target host* -- here ``bat``, the syntax-highlighting
 ``cat`` clone, the kind of small standalone ``.deb`` one commonly downloads
 from a project's GitHub releases and installs by hand. The ``src`` is
 therefore a **remote** path, not a controller-side one: upload the file first
-with ``files.put`` (or place it there by any other means). Unlike pyinfra --
+with ``files.put`` (or place it there by any other means). Unlike the baseline --
 whose ``apt.deb`` can also *download* a remote ``.deb`` mid-deploy -- reemote5
 has no download operation, so a ``src`` with a URL scheme raises
 ``ValueError``. This example stages the file with a demo-side ``curl``
@@ -51,7 +51,7 @@ larger package on a host with room for it.
 fact, then reads the installed versions of that name through ``AptPackages``,
 and counts the package as present only when the installed version matches the
 file's. It installs only when it does not, so re-running is a no-op. The
-install runs pyinfra's three-pass sequence: a tolerant ``dpkg -i`` that
+install runs the baseline's three-pass sequence: a tolerant ``dpkg -i`` that
 ignores unmet dependencies, an ``apt-get install -f`` to resolve them (a
 no-op for self-contained ``bat``, but it pulls in the libraries a package
 like Chrome needs), then a final ``dpkg -i`` that configures the package and
@@ -65,7 +65,7 @@ per-step fact cache now sees the package the first step installed.
 Installing a package writes to the root-owned dpkg database, so the request is
 flagged ``sudo=True`` and the driver elevates its commands. The tolerant first
 pass ends in ``|| true``, which is privilege-safe -- ``true`` needs no root, so
-a ``sudo`` prefix on the whole line still elevates the ``dpkg`` arm. pyinfra's
+a ``sudo`` prefix on the whole line still elevates the ``dpkg`` arm. The baseline's
 ``force`` option (``--force-yes``) is deliberately dropped: the flag is
 deprecated in modern apt.
 
@@ -162,10 +162,10 @@ async def download_deb(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
     stages it with a stateless one-liner over the public raw ``StringCommand``
     descriptor -- the same demo-side pattern as ``server_op_sysctl.py``'s
     ``sysctl_set``. The ``test -f ... || curl`` guard downloads only when the
-    file is absent, so a re-run is cheap; like pyinfra's download step it
+    file is absent, so a re-run is cheap; like the baseline's download step it
     reads no fact and always reports a change. Writing to ``/tmp`` and running
     ``curl`` need no root, so the request is *not* elevated (the ``apt.deb``
-    install that follows is). ``**kwargs`` absorbs pyinfra's global arguments
+    install that follows is). ``**kwargs`` absorbs the baseline's global arguments
     (``op()`` already strips ``name``/``sudo``/``su``).
     """
     ctx.changed = True

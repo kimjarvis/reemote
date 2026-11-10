@@ -16,14 +16,14 @@ two-phase execution model end to end over a **real SSH transport**
    objects, each guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``postgresql.database`` mirrors pyinfra's operation and extends it beyond
+``postgresql.database`` mirrors the baseline's operation and extends it beyond
 creation: it reads the ``PostgresqlDatabases`` fact, creates an absent
 database with the requested options, and reconciles an existing one's
 OWNER, SET TABLESPACE, CONNECTION LIMIT and ALLOW_CONNECTIONS through
 ALTER DATABASE only where they differ -- creation-only options (template,
 encoding, locales) are reported as skipped rather than pretended to
 change. Tablespaces resolve by NAME against ``PostgresqlTablespaces``'
-OIDs, fixing pyinfra's comparison of the name against the OID column,
+OIDs, fixing the baseline's comparison of the name against the OID column,
 which never matched.
 
 The deploy first ensures the owner role exists, then yields the same
@@ -59,7 +59,7 @@ The shared ``inventory.json`` carries no ``privilege`` section, so ``main``
 attaches ``{"sudo_user": "postgres"}`` to the loaded ``centos`` entries:
 the ``sudo=True`` requests ride under the ``postgres`` OS user, so the
 ``psql`` client connects through peer authentication -- no password
-travels through operation arguments, plans or logs (pyinfra's
+travels through operation arguments, plans or logs (the baseline's
 ``psql_password`` option is deliberately dropped namespace-wide).
 
 Run it with::

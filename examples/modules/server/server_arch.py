@@ -29,7 +29,7 @@ two-phase execution model:
    -- then print each host's architecture string with
    ``json.dumps(..., indent=2)``.
 
-``Arch`` mirrors pyinfra's ``server.Arch``: it runs ``uname -m`` and returns
+``Arch`` mirrors the baseline's ``server.Arch``: it runs ``uname -m`` and returns
 the first line (e.g. ``x86_64`` or ``aarch64``), so a deploy can branch on the
 machine architecture -- for instance to pick a per-architecture download URL.
 

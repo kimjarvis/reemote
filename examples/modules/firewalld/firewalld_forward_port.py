@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.forward_port`` is a reemote5 original (pyinfra ships no
+``firewalld.forward_port`` is a reemote5 original (the baseline ships no
 firewalld module): it redirects traffic arriving at ``port``/``protocol``
 to ``to_port`` and/or ``to_addr`` -- here port 80/tcp to 8080 on the same
 host, the classic "unprivileged app behind the well-known port" setup.

@@ -1,55 +1,39 @@
 # lxd module
 
-## lxd Facts
-
-::: reemote5.modules.lxd.lxd
-    options:
-      show_root_heading: false
-      members:
-        - LxdContainers
-        - LxdImageAliases
-        - LxdImages
-        - LxdInstanceConfig
-        - LxdInstanceSnapshots
-        - LxdInstanceState
-        - LxdInstances
-        - LxdNetworks
-        - LxdOperations
-        - LxdProfiles
-        - LxdProjectConfig
-        - LxdProjects
-        - LxdServerInfo
-        - LxdServerResources
-        - LxdStoragePools
-        - LxdStorageVolumes
-
-## lxd Returns
-
 ::: reemote5.modules.lxd.lxd
     options:
       show_root_heading: false
       members:
         - LxdContainer
+        - LxdContainers
         - LxdImage
         - LxdImageAlias
+        - LxdImageAliases
+        - LxdImages
         - LxdInstance
+        - LxdInstanceConfig
+        - LxdInstanceSnapshots
+        - LxdInstanceState
         - LxdInstanceStateData
+        - LxdInstances
         - LxdNetwork
+        - LxdNetworks
         - LxdOperation
+        - LxdOperations
         - LxdProfile
+        - LxdProfiles
         - LxdProject
+        - LxdProjectConfig
+        - LxdProjects
+        - LxdServerInfo
         - LxdServerInfoData
+        - LxdServerResources
         - LxdServerResourcesData
         - LxdSnapshot
         - LxdStoragePool
+        - LxdStoragePools
         - LxdStorageVolume
-
-## lxd Operations
-
-::: reemote5.modules.lxd.lxd
-    options:
-      show_root_heading: false
-      members:
+        - LxdStorageVolumes
         - container
         - image
         - image_alias
@@ -71,7 +55,7 @@
 <!---
 
 `reemote5.modules.lxd.lxd` combines the LXD facts and operations in a
-single source, extending pyinfra's one-fact/one-operation `lxd` namespace
+single source, extending the baseline's one-fact/one-operation `lxd` namespace
 (`lxd.LxdContainers` / `lxd.container`) toward complete control over and
 visibility into the LXD daemon. Every fact and operation runs through the
 `lxc` client on the target host with `--format json`, so the daemon's
@@ -95,12 +79,12 @@ project-scoped listings (`LxdImages`, `LxdImageAliases`, `LxdInstances`,
 reads (`LxdInstanceConfig`, `LxdInstanceState`, `LxdInstanceSnapshots`)
 also take `project`.
 
-`LxdContainers` mirrors pyinfra's `lxd.LxdContainers` verbatim: the same
+`LxdContainers` mirrors the baseline's `lxd.LxdContainers` verbatim: the same
 `lxc list --format json --fast` command and the same passed-through
 entries, with empty output hardened to `[]` instead of upstream's
 assert-on-one-line crash.
 
-The fifteen reemote5-original facts answer the visibility gaps pyinfra
+The fifteen reemote5-original facts answer the visibility gaps the baseline
 leaves: `LxdServerInfo` (daemon metadata and the `api_extensions`
 capability list a deploy can branch on before using extension-dependent
 features), `LxdServerResources` (CPU/memory/GPU/storage/network hardware
@@ -130,7 +114,7 @@ command descriptor per mutation — never touching the host itself. Reach
 operations through the namespace (`lxd.instance`), not the top-level
 package.
 
-`lxd.container` keeps pyinfra's name, options and shells 1:1 (including
+`lxd.container` keeps the baseline's name, options and shells 1:1 (including
 the stop-then-delete sequence for a running container and its documented
 limitation of not checking an existing container's base image).
 

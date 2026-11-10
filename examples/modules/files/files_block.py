@@ -1,51 +1,51 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: manage a marked block in a remote file (pyinfra files.block parity).
+"""Example: manage a marked block in a remote file (baseline files.block parity).
 
 This is a *usage* example, not part of the library. It is reemote5's answer to
-pyinfra's ``files.block`` operation: no bespoke block editor is ported, because
+the baseline's ``files.block`` operation: no bespoke block editor is ported, because
 a managed block is fully expressible as a ``files.edit`` **content transform**.
 The ``block_transform`` factory below builds that transform from the same
-options pyinfra's operation takes, and the generic primitive does the rest --
+options the baseline's operation takes, and the generic primitive does the rest --
 ``FileContents`` reads the file's current text, the transform computes the
 desired text, and ``files.put``'s scp transfer writes it back only when it
 differs.
 
-The factory mirrors pyinfra's ``files.block`` semantics:
+The factory mirrors the baseline's ``files.block`` semantics:
 
 * ``content`` (a ``str`` split on newlines, or a list of lines) is surrounded
-  by the ``marker`` lines -- ``# BEGIN PYINFRA BLOCK`` / ``# END PYINFRA
-  BLOCK`` by default, with ``begin``/``end`` substituting the ``{mark}``
-  placeholder. The pyinfra default marker text is kept verbatim so blocks
-  already managed by pyinfra are recognized and updated in place, not
+  by the ``marker`` lines -- ``# BEGIN REEMOTE5 BLOCK`` / ``# END REEMOTE5 BLOCK``
+  by default, with ``begin``/``end`` substituting the ``{mark}``
+  placeholder. The the baseline default marker text is kept verbatim so blocks
+  already managed by the baseline are recognized and updated in place, not
   duplicated under a second pair of markers.
 * An existing marked block is replaced in place when its content differs and
   left byte-identical when it matches (the fixpoint that makes a second edit
   a no-op).
 * Without markers, ``line`` (a regex, whole-line adjusted exactly like
-  pyinfra's ``adjust_regex``, with ``escape_regex_characters`` to match it
+  the baseline's ``adjust_regex``, with ``escape_regex_characters`` to match it
   literally) positions the block ``before`` or ``after`` the first matching
   line; no match appends at the end. Without ``line``, the block is appended
   (``before == after == False``) or prepended (``before == after == True``).
 * ``present=False`` removes the marked region (markers included), ignoring
   ``content`` and ``line``; a file without markers is left untouched.
 
-Deliberate deviations from pyinfra, decided at migration time:
+Deliberate deviations from the baseline, decided at migration time:
 
-* ``backup`` is dropped: pyinfra's timestamped ``cp`` would render different
+* ``backup`` is dropped: the baseline's timestamped ``cp`` would render different
   shell text in the prepare and apply phases, tripping the determinism guard.
 * ``preserve_meta`` is dropped as moot: the write is an scp overwrite, which
   keeps an existing file's inode, owner and mode anyway (a created file gets
-  the login user's umask, as in pyinfra).
-* ``try_prevent_shell_expansion`` is dropped: pyinfra already deprecates and
+  the login user's umask, as in the baseline).
+* ``try_prevent_shell_expansion`` is dropped: the baseline already deprecates and
   ignores it, and a pure-Python transform writes ``content`` literally by
   construction -- shell metacharacters (``$(...)``, backticks, quotes) never
   reach a shell.
 * Removal from an *absent* file is a true no-op: the transform passes ``None``
   through unchanged (stretching ``files.edit``'s ``str``-return contract for
   this one case), so the content-equality check reports "already up to date"
-  and no empty file is created -- pyinfra's "no remove required: file did not
+  and no empty file is created -- the baseline's "no remove required: file did not
   exist" parity.
 
 The transform must be a **stable, hashable object**: build it ONCE (here at
@@ -113,9 +113,9 @@ from reemote5 import (
     validate_inventory,
 )
 
-# pyinfra's default marker constants (facts/files.py), kept verbatim so blocks
-# already managed by pyinfra's files.block are recognized and updated in place.
-MARKER_DEFAULT = "# {mark} PYINFRA BLOCK"
+# The baseline's default marker constants (facts/files.py), kept verbatim so blocks
+# already managed by the baseline's files.block are recognized and updated in place.
+MARKER_DEFAULT = "# {mark} REEMOTE5 BLOCK"
 MARKER_BEGIN_DEFAULT = "BEGIN"
 MARKER_END_DEFAULT = "END"
 
@@ -157,11 +157,11 @@ def is_centos(host: Host) -> bool:
 
 
 def _adjust_regex(line: str, escape_regex_characters: bool) -> str:
-    """pyinfra's whole-line regex adjustment (``operations/util/files.py``).
+    """The baseline's whole-line regex adjustment (``operations/util/files.py``).
 
     Optionally escapes regex metacharacters so ``line`` matches literally,
     then pads the pattern with ``^.*`` / ``.*$`` so a partial-line match is
-    anchored to the whole line -- exactly the regex pyinfra's awk program uses.
+    anchored to the whole line -- exactly the regex the baseline's awk program uses.
     """
     match_line = line
 
@@ -189,7 +189,7 @@ def block_transform(
 ) -> Callable[[str | None], str]:
     """Build the pure, idempotent ``files.edit`` transform for a marked block.
 
-    The option set of pyinfra's ``files.block``, expressed as a transform
+    The option set of the baseline's ``files.block``, expressed as a transform
     factory instead of a bespoke operation. Call it ONCE (module level, or a
     closure factory frozen between runs) -- the returned callable is stored in
     the ``OperationRequest`` kwargs and compared by value across phases, so a
@@ -205,10 +205,10 @@ def block_transform(
       the file (with ``after`` also True and no ``line``).
     + after: insert after the matching line (with ``line``).
     + escape_regex_characters: match ``line`` literally, escaping regex
-      metacharacters first (pyinfra's ``adjust_regex`` parity).
+      metacharacters first (the baseline's ``adjust_regex`` parity).
     + marker: the base marker string with a ``{mark}`` placeholder. Default
-      ``# {mark} PYINFRA BLOCK`` -- pyinfra's own default, kept so existing
-      pyinfra-managed blocks are recognized.
+      ``# {mark} REEMOTE5 BLOCK`` -- the baseline's own default, kept so existing
+      baseline-managed blocks are recognized.
     + begin: the ``{mark}`` value for the opening marker (default ``BEGIN``).
     + end: the ``{mark}`` value for the closing marker (default ``END``).
 
@@ -216,12 +216,12 @@ def block_transform(
     byte-identical, so ``files.edit`` reports no change on a second edit. One
     documented stretch of ``files.edit``'s ``str``-return contract: removing
     from an absent file passes ``None`` through unchanged, so the
-    content-equality check no-ops instead of creating an empty file (pyinfra's
+    content-equality check no-ops instead of creating an empty file (the baseline's
     "no remove required: file did not exist" parity).
 
-    pyinfra's ``backup``, ``preserve_meta`` and ``try_prevent_shell_expansion``
+    The baseline's ``backup``, ``preserve_meta`` and ``try_prevent_shell_expansion``
     options are deliberately dropped -- see the module docstring for why.
-    Invalid combinations raise ``ValueError`` at factory time (pyinfra's
+    Invalid combinations raise ``ValueError`` at factory time (the baseline's
     ``OperationValueError`` messages, raised controller-side before any run).
     """
     if present:
@@ -250,7 +250,7 @@ def block_transform(
         if current is None and not present:
             # Absence-preserving no-op: None == None in files.edit's
             # content-equality check, so nothing is yielded and no empty
-            # file is created (pyinfra parity, documented contract stretch).
+            # file is created (baseline parity, documented contract stretch).
             return None
         text = current or ""
         lines = text.splitlines()

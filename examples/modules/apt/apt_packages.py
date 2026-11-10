@@ -35,14 +35,14 @@ name -- here two small CLI utilities, the kind of baseline tooling a deploy
 ensures on every machine. It reads the installed versions through the
 ``AptPackages`` fact and installs only what is missing, so re-running is a
 no-op. A name can be pinned as ``<pkg>=<version>``: a pin counts as present
-only when that *exact* version is installed, pyinfra's ``ensure_packages``
+only when that *exact* version is installed, the baseline's ``ensure_packages``
 version match. ``latest=True`` would additionally upgrade every installed,
-unpinned name (pyinfra's legacy blind upgrade); ``update=True`` runs a
+unpinned name (the baseline's legacy blind upgrade); ``update=True`` runs a
 stateless ``apt-get update`` first, and ``upgrade=True`` an
 ``apt-get upgrade`` gated by the ``SimulateOperationWillChange`` simulation,
-exactly like ``apt.dist_upgrade``. Where pyinfra's ``cache_time`` skips the
+exactly like ``apt.dist_upgrade``. Where the baseline's ``cache_time`` skips the
 update while its stamp file is fresh, reemote5 deliberately drops the
-option -- update is always stateless. pyinfra's ``force`` option
+option -- update is always stateless. The baseline's ``force`` option
 (``--force-yes``) is dropped as deprecated, the same decision as ``apt.deb``.
 
 The script yields the *same* install request twice to show that idempotence
@@ -147,7 +147,7 @@ def is_ubuntu(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Install the baseline packages -- twice, to show idempotence.
+    """Install baseline packages -- twice, to show idempotence.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError),

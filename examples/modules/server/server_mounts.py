@@ -29,7 +29,7 @@ driving the two-phase execution model:
    host-name-keyed mapping -- then print each host's mount dict with
    ``json.dumps(..., indent=2)``.
 
-``Mounts`` mirrors pyinfra's ``server.Mounts``: it first reads the
+``Mounts`` mirrors the baseline's ``server.Mounts``: it first reads the
 ``Kernel`` fact to pick its shell -- FreeBSD lists ``mount -p --libxo
 json``, OpenBSD ``mount -v``, every other kernel cats
 ``/proc/self/mountinfo`` -- and returns a dict of mount point -> info

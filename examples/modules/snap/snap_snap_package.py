@@ -39,12 +39,12 @@ from the shared ``inventory.json`` in the project root:
 the package's name, publisher, store id, tracked channel and installed version.
 An absent package (or a host without ``snap``) prints no field row -- the
 command's ``2>/dev/null || true`` swallows the non-zero exit -- so it reports
-``None`` outright, the ``apt.DebPackage`` tolerance rather than pyinfra's empty
-``{}``. pyinfra's ``requires_command`` gating on ``snap`` is deliberately
+``None`` outright, the ``apt.DebPackage`` tolerance rather than the baseline's empty
+``{}``. The baseline's ``requires_command`` gating on ``snap`` is deliberately
 dropped for the same reason. The tracked ``channel`` is narrowed to
 ``<track>/<risk>`` (``4.0/stable/ubuntu-20.04`` reads as ``"4.0/stable"``) and
-the ``version`` taken from the ``installed`` row, exactly as pyinfra's capture
-groups do; the store id lands on the ``snap_id`` key, the one renames pyinfra's
+the ``version`` taken from the ``installed`` row, exactly as the baseline's capture
+groups do; the store id lands on the ``snap_id`` key, the one renames the baseline's
 hyphenated ``snap-id`` onto a valid identifier.
 
 The path is resolved from ``__file__``, so the example works from any

@@ -40,7 +40,7 @@ run end to end over SSH in both phases.
 ## Updating all packages
 
 The whole-system update: `dnf.update` runs `dnf update -y` over every installed
-package. Like pyinfra's `dnf.update` it is **non-idempotent** — it reads no fact
+package. Like the baseline's `dnf.update` it is **non-idempotent** — it reads no fact
 (there is no cheap way to know whether any package has a pending upgrade), so it
 always reports a change and always runs; dnf itself is a no-op when the system is
 already up to date. Updating the whole system needs root, so the request is
@@ -58,7 +58,7 @@ The repository-file operation: `dnf.repo` builds an
 `/etc/yum.repos.d/<name>.repo` file from its arguments (`baseurl`,
 `description`, `gpgkey`, …) and writes it only when the content differs from
 what the [`DnfRepoFile`][reemote5.modules.dnf.dnf.DnfRepoFile] fact reads back
-— so re-running is a no-op. Where pyinfra's `dnf.repo` can also *download* a
+— so re-running is a no-op. Where the baseline's `dnf.repo` can also *download* a
 remote `.repo` file, reemote5 has no download operation, so a URL `src` raises
 `ValueError` and the file is always constructed locally from the arguments.
 The script yields the same repository request twice — the second is a
@@ -68,7 +68,7 @@ sent, both plan as changes). The write rides under `sudo` (`/etc/yum.repos.d`
 is root-owned) as a two-command pair: an unprivileged scp transfer spools the
 generated text to `/tmp`, then one elevated `sh -c` creates the directory,
 copies the file, chmods it `0644` and removes the spool — the `apt.sources_file`
-pattern. Beyond pyinfra's option set, `dnf.repo` also accepts the
+pattern. Beyond the baseline's option set, `dnf.repo` also accepts the
 ansible-datadog role's `yum_repository` fields — `includepkgs`,
 `repo_gpgcheck`, `proxy`, `proxy_username` and `proxy_password` — each
 omitted from the constructed file when unset (so the plain requests here
@@ -130,7 +130,7 @@ file's `name`/`version`, once for the installed package of that name — and
 counts the package as present only when the installed version matches the
 file's, so `present=True` installs with `rpm -i` only when it does not and is
 otherwise a no-op, while `present=False` removes it with `dnf remove -y <name>`.
-Where pyinfra's `dnf.rpm` can also *download* a remote `.rpm` mid-deploy,
+Where the baseline's `dnf.rpm` can also *download* a remote `.rpm` mid-deploy,
 reemote5 has no download operation, so a URL `src` raises `ValueError`. The
 example therefore stages the file itself first: a demo-side `curl` one-liner (a
 raw `StringCommand`, the same pattern as `apt_deb.py`'s `download_deb`)
@@ -158,9 +158,9 @@ the removal is `sudo dnf remove -y sl`, which works the same way.
 
 The key operation: `dnf.key` manages the target host's rpm keyring in both
 directions. The import direction (`present=True`, the default) is
-**non-idempotent**: like pyinfra's `dnf.key` it reads no fact and always
+**non-idempotent**: like the baseline's `dnf.key` it reads no fact and always
 reports a change (rpm itself deduplicates an already-imported key). Where
-pyinfra's `src` is a *filename or URL* the target host reads directly
+the baseline's `src` is a *filename or URL* the target host reads directly
 (`rpm --import <src>`), reemote5 has no controller-side file locations, so the
 source is a *stream only* — the example uses a module-level `io.BytesIO`,
 defined once so both phases pass the identical object (request equality
@@ -175,7 +175,7 @@ in `sh -c` so the import *and* its cleanup `rm` both run as root — hence the
 request is flagged `sudo=True`.
 
 The script's second request shows the removal direction (`present=False`) —
-a reemote5 extension beyond pyinfra's import-only operation, mirroring
+a reemote5 extension beyond the baseline's import-only operation, mirroring
 Ansible's `rpm_key state=absent` (the step the ansible-datadog role uses to
 drop the legacy `4172A230` signing key). An imported key lives in the rpm
 database as a `gpg-pubkey-<keyid>-<release>` pseudo-package, so removal names
@@ -217,11 +217,11 @@ enabled on exactly the requested stream, and re-enables onto the new stream when
 it currently sits on a different one; disabling compares against
 [`DnfDisabledModules`][reemote5.modules.dnf.dnf.DnfDisabledModules]. `stream` is
 required when `enabled=True` (a missing one raises `ValueError`, mirroring
-pyinfra's `OperationValueError`). Enabling or disabling writes dnf's module
+the baseline's `OperationValueError`). Enabling or disabling writes dnf's module
 state, so the request is flagged `sudo=True`. The script yields the same enable
 request twice — the second is a guaranteed no-op in the apply phase, because the
 first enable is visible to it through the fresh per-step fact cache (in the
-prepare phase, where nothing is sent, both plan as changes). pyinfra's
+prepare phase, where nothing is sent, both plan as changes). The baseline's
 stream-switching caveat is inherited unchanged: `dnf module enable` refuses to
 switch streams while packages from the active stream are installed, so remove
 them (or `dnf module reset`) first.

@@ -29,7 +29,7 @@ driving the two-phase execution model:
    account dict with ``json.dumps(..., indent=2)``.
 
 The fact runs ``mysql -Be 'SELECT * FROM mysql.user'`` as the login user
--- the pyinfra ``mysql.MysqlUsers`` query -- folding the ``*_priv``
+-- the baseline ``mysql.MysqlUsers`` query -- folding the ``*_priv``
 columns into a sorted ``privileges`` list and coercing the resource
 limits and Y/N flags. The column set follows the server version/flavour
 (MySQL and MariaDB report different columns), so the entries carry
@@ -131,7 +131,7 @@ async def main() -> None:
         # fans MysqlUsers.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
         # running one host at a time. process runs the mysql.user select and
-        # parses the rows into a dict keyed user@host -- the pyinfra
+        # parses the rows into a dict keyed user@host -- the baseline
         # mysql.MysqlUsers shape (the anonymous account is skipped).
         users = await gather_fact(hosts, MysqlUsers)
     except (OSError, json.JSONDecodeError) as exc:

@@ -29,7 +29,7 @@ driving the two-phase execution model:
    argument verbatim, and returns a host-name-keyed mapping -- then print
    each host's authentication answer.
 
-``GitSshKeyConfigured`` is a reemote5-original fact -- pyinfra has no
+``GitSshKeyConfigured`` is a reemote5-original fact -- the baseline has no
 equivalent -- and the one git fact that is not repo-scoped: it takes a
 remote host instead of a repository path. It runs a batched,
 non-interactive ``ssh -T <user>@<remote_host>`` probe that normalizes ssh's

@@ -4,11 +4,11 @@
 """Tests for ``files.move``: move a remote path into a remote directory.
 
 Covers the ``MoveCommand``/``RemoveTreeCommand`` shell descriptors (quoting,
-elevated ``command_shell`` renderings), the operation's pyinfra
+elevated ``command_shell`` renderings), the operation's the baseline
 ``files.move`` fixture parity (no-conflict move, directory/link sources,
 overwrite's ``rm -rf`` + ``mv`` pair, and the three error branches), the
 deliberate phase-unaware deviation (absent src / absent dest directory raise
-``ValueError`` in *both* phases, where pyinfra logs softly while planning),
+``ValueError`` in *both* phases, where the baseline logs softly while planning),
 the ``SimulatedHost`` seam dispatch, end-to-end plan/log behaviour with
 ``sudo=True``, and the ``/etc/hosts`` recipe: ``files.edit``
 spools the transformed content into a writable path in one run, then
@@ -55,7 +55,7 @@ def make_host(
 ) -> SimulatedHost:
     """A SimulatedHost seeded with the stat rows ``move``'s facts read.
 
-    Mirrors pyinfra's fixture shape: ``File(src)``, ``Directory(dest)`` and
+    Mirrors the baseline's fixture shape: ``File(src)``, ``Directory(dest)`` and
     ``File(dest/basename(src))``; an unset row reads as None (absent).
     """
     host = SimulatedHost(name="h")
@@ -102,11 +102,11 @@ def test_command_shell_elevates_the_move():
     )
 
 
-# --- Operation parity with pyinfra's files.move fixtures ----------------------
+# --- Operation parity with the baseline's files.move fixtures ----------------------
 
 
 async def test_move_no_conflict_fixture():
-    # pyinfra's no_conflict.json: src exists, dest is a directory, the
+    # The baseline's no_conflict.json: src exists, dest is a directory, the
     # target path is absent -> a single mv, always changed (stateless).
     host = make_host(src_stats={"mode": 600}, dest_stats={"mode": 700})
     ctx, commands = await materialize(host, src=SRC, dest=DEST)
@@ -117,7 +117,7 @@ async def test_move_no_conflict_fixture():
 
 
 async def test_move_directory_fixture():
-    # pyinfra's directory.json: File(src) is False (a directory, not a
+    # The baseline's directory.json: File(src) is False (a directory, not a
     # regular file) -- only absence is rejected, so the move is planned.
     host = make_host(src_stats=False, dest_stats={"mode": 700})
     host.directory_stats[SRC] = {"mode": 700}
@@ -128,7 +128,7 @@ async def test_move_directory_fixture():
 
 
 async def test_move_link_fixture():
-    # pyinfra's link.json: a symlink source also reads File(src) = False
+    # The baseline's link.json: a symlink source also reads File(src) = False
     # and is accepted.
     host = make_host(src_stats=False, dest_stats={"mode": 700})
     host.link_stats[SRC] = {"mode": 600, "link_target": "file.txt"}
@@ -139,7 +139,7 @@ async def test_move_link_fixture():
 
 
 async def test_move_overwrite_fixture():
-    # pyinfra's overwrite.json: an existing target with overwrite=True
+    # The baseline's overwrite.json: an existing target with overwrite=True
     # yields rm -rf of the full destination path, then the mv.
     host = make_host(
         src_stats={"mode": 600},
@@ -159,7 +159,7 @@ async def test_move_overwrite_fixture():
 
 
 async def test_move_no_overwrite_fixture_raises():
-    # pyinfra's no_overwrite.json: an existing target without overwrite.
+    # The baseline's no_overwrite.json: an existing target without overwrite.
     host = make_host(
         src_stats={"mode": 600},
         dest_stats={"mode": 700},
@@ -172,14 +172,14 @@ async def test_move_no_overwrite_fixture_raises():
 
 
 async def test_move_invalid_dest_fixture_raises():
-    # pyinfra's invalid_dest.json: dest exists but is not a directory.
+    # The baseline's invalid_dest.json: dest exists but is not a directory.
     host = make_host(src_stats={"mode": 600}, dest_stats=False)
     with pytest.raises(ValueError, match=r"dest /tmp2 is not a directory"):
         await materialize(host, src=SRC, dest=DEST)
 
 
 async def test_move_absent_src_raises_in_both_phases():
-    # pyinfra's invalid_src.json logs softly while planning and raises only
+    # The baseline's invalid_src.json logs softly while planning and raises only
     # while executing; reemote5 is phase-unaware and deliberately raises in
     # both phases (the recorded deviation).
     host = make_host(dest_stats={"mode": 700})
@@ -188,7 +188,7 @@ async def test_move_absent_src_raises_in_both_phases():
 
 
 async def test_move_absent_dest_directory_raises_in_both_phases():
-    # pyinfra's missing_dest.json: same phase-aware softness, same
+    # The baseline's missing_dest.json: same phase-aware softness, same
     # deliberate always-raise deviation.
     host = make_host(src_stats={"mode": 600})
     with pytest.raises(
@@ -197,10 +197,10 @@ async def test_move_absent_dest_directory_raises_in_both_phases():
         await materialize(host, src=SRC, dest=DEST)
 
 
-async def test_move_kwargs_absorb_pyinfra_globals():
+async def test_move_kwargs_absorb_extra_globals():
     host = make_host(src_stats={"mode": 600}, dest_stats={"mode": 700})
     ctx, commands = await materialize(
-        host, src=SRC, dest=DEST, some_pyinfra_global="ignored"
+        host, src=SRC, dest=DEST, some_extra_global="ignored"
     )
     assert ctx.changed
     assert commands == [MoveCommand(src=SRC, dest=DEST)]
@@ -282,7 +282,7 @@ async def test_move_end_to_end_elevated_plan_and_log():
 
 
 async def test_repeating_a_move_is_not_a_no_op():
-    # Stateless like pyinfra: the second move re-validates against the
+    # Stateless like the baseline: the second move re-validates against the
     # fresh per-step fact cache, finds the source gone and raises --
     # there is deliberately no idempotent no-op branch.
     def deploy(host: Host) -> Generator[OperationRequest]:

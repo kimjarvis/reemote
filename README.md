@@ -1,7 +1,7 @@
 # reemote5
 
-A python library for configuration management, built on an execution model
-that is an alternative to [pyinfra]'s two-phase *prepare → execute* design.
+A python library for configuration management, built on a two-phase
+*prepare → execute* execution model.
 
 Deploy scripts are **Python generators** that yield `OperationRequest`
 descriptors instead of calling operations directly. That lets the driver pause
@@ -18,8 +18,7 @@ factory opens an [asyncssh] connection per entry, gathers facts and runs
 commands over it, and `run` closes the connections when it finishes. Both the
 command-execution path (`send_command`, the apply drivers) and fact gathering
 (each fact's `process`, `FactCache.get`, the operations that await it, and
-`run_prepare`) are coroutines, awaited end to end (where pyinfra uses Paramiko
-+ gevent). `SimulatedHost`, the in-memory host that lets the same model run
+`run_prepare`) are coroutines, awaited end to end. `SimulatedHost`, the in-memory host that lets the same model run
 without a network, belongs to the *test framework*
 (`tests/simulated_host.py`) and is injected through `run`'s
 `host_factory`; it is never exported by the library.
@@ -107,17 +106,19 @@ uv sync --group docs
 uv run --group docs mkdocs serve   # http://localhost:8000
 ```
 
-- [Home](docs/index.md) — what the model is and why generators
-- [Guide](docs/guide.md) — writing deploy scripts, facts, operations, commands
-- [Examples](docs/examples.md) — runnable scripts, one page per directory under
-  `examples/`
+- [Home](https://reemote.org/) — what the model is and why generators
+- [Guide](https://reemote.org/guide/) — writing deploy scripts, facts, operations, commands
+- [Examples](https://reemote.org/examples/) — runnable scripts, one page per
+  directory under `examples/`
 - API reference — one page per source module, generated from docstrings:
-  [core](docs/core.md), [drivers](docs/drivers.md), [commands](docs/commands.md),
-  [hosts](docs/hosts.md), [exceptions](docs/exceptions.md),
-  [actions](docs/actions/actions.md),
-  [connectors/ssh](docs/connectors/ssh.md),
-  [connectors/docker](docs/connectors/docker.md), and one page per namespace
-  under [modules/](docs/modules/)
+  [core](https://reemote.org/core/), [drivers](https://reemote.org/drivers/),
+  [commands](https://reemote.org/commands/), [hosts](https://reemote.org/hosts/),
+  [exceptions](https://reemote.org/exceptions/),
+  [actions](https://reemote.org/actions/actions/),
+  [connectors/ssh](https://reemote.org/connectors/ssh/),
+  [connectors/docker](https://reemote.org/connectors/docker/), and one page per
+  namespace under
+  [`modules/`](https://reemote.org/modules/)
 
 ## Layout
 
@@ -142,5 +143,16 @@ tests/test_examples.py       offline scan plus deploy drain of every example
 
 Requires Python 3.13+.
 
-[pyinfra]: https://pyinfra.com/
 [asyncssh]: https://asyncssh.readthedocs.io/
+
+## License & Intellectual Property
+
+### License
+This project is licensed under the Eclipse Public License 2.0 (EPL-2.0).
+SPDX-License-Identifier: EPL-2.0
+
+### Origin & Open Source Release
+This software is part of a commercially available application. It is being released to the open source community under the EPL-2.0 to foster collaborative development, improve software reliability, and encourage community contributions and issue identification.
+
+### Originality & Attribution
+This codebase was independently developed and was inspired by the design concepts of Pyinfra by Nick Mills-Barrett. This project is an original work and does not contain, incorporate, or derive from any source code or copyrighted material of Pyinfra.

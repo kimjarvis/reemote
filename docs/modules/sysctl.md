@@ -6,17 +6,17 @@ The `sysctl` namespace is the canonical home for everything sysctl — runtime
 visibility, persistent-configuration visibility and management. The `Sysctl`
 runtime fact was **relocated here from `server`**, which no longer exports
 it: the top-level `reemote5.Sysctl` binding now points at `sysctl.Sysctl`,
-whose parse keeps pyinfra's `server.Sysctl` semantics verbatim.
+whose parse keeps the baseline's `server.Sysctl` semantics verbatim.
 
-pyinfra ships no dedicated sysctl module — only `server.sysctl`, whose
+the baseline ships no dedicated sysctl module — only `server.sysctl`, whose
 runtime half is a raw `sysctl key=value` shell and whose persist half is a
 `files.line` edit. This namespace supersedes that recipe (which stays as the
 strict-parity demonstration in
-[`server_op_sysctl.py`](../examples/modules/server.md#ensuring-a-sysctl-setting-pyinfra-serversysctl-parity))
+[`server_op_sysctl.py`](../examples/modules/server.md#ensuring-a-sysctl-setting-baseline-serversysctl-parity))
 with three facts and two original operations:
 
 - `Sysctl` dumps the **running kernel's** values (`sysctl -a`), int-coercing
-  simple values exactly like pyinfra.
+  simple values exactly like the baseline.
 - `SysctlFile` reads the **raw text** of one config file (`str`, or `None`
   when absent — a marker distinguishes an existing-but-empty file from a
   missing one).
@@ -27,9 +27,9 @@ with three facts and two original operations:
 
 `setting` manages one kernel parameter along two independent, separately
 switchable halves: the runtime apply (`sysctl -w`, gated by `Sysctl` with
-pyinfra's value normalization — lists join with spaces, digits compare as
+the baseline's value normalization — lists join with spaces, digits compare as
 ints) and the persistence edit (gated by `SysctlFile`). The persistence edit
-is a **keyed replacement**, not pyinfra's append-only `files.line` parity:
+is a **keyed replacement**, not the baseline's append-only `files.line` parity:
 the first active `key = ...` line is replaced in place, duplicates collapse,
 the line is appended when absent, and `present=False` removes the key's
 lines — commented lines are never touched. `conf` manages a **whole file**
@@ -53,8 +53,6 @@ cannot be "unset" (a removed key keeps its live value until reboot).
 
 --->
 
-## sysctl Facts
-
 ::: reemote5.modules.sysctl.sysctl
     options:
       show_root_heading: false
@@ -62,19 +60,5 @@ cannot be "unset" (a removed key keeps its live value until reboot).
         - Sysctl
         - SysctlFile
         - SysctlFiles
-
-## sysctl Returns
-
-::: reemote5.modules.sysctl.sysctl
-    options:
-      show_root_heading: false
-      members: []
-
-## sysctl Operations
-
-::: reemote5.modules.sysctl.sysctl
-    options:
-      show_root_heading: false
-      members:
         - conf
         - setting

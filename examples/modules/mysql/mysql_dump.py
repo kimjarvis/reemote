@@ -16,13 +16,13 @@ two-phase execution model end to end over a **real SSH transport**
    objects. Every request is flagged ``sudo=True``, so the ``mysqldump``
    client rides under root and connects through unix-socket
    authentication -- no password travels through operation arguments,
-   plans or logs (pyinfra's ``mysql_password`` option is deliberately
+   plans or logs (the baseline's ``mysql_password`` option is deliberately
    dropped namespace-wide).
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``mysql.dump`` mirrors pyinfra's operation: it writes a ``mysqldump`` of
+``mysql.dump`` mirrors the baseline's operation: it writes a ``mysqldump`` of
 a database to ``dest`` on the TARGET host and is STATELESS -- the dump
-always runs, overwriting the destination. As in pyinfra, ``database=None``
+always runs, overwriting the destination. As in the baseline, ``database=None``
 renders a bare ``mysqldump`` (no ``--all-databases`` is injected), so name
 a database or supply one through the option file. The redirect runs in
 root's shell here, so ``/var/backups`` must exist and be writable by root.

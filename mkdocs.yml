@@ -3,8 +3,8 @@
 
 site_name: reemote5
 site_description: >-
-  Generator-based two-phase execution model: an alternative to
-  pyinfra's prepare/execute design.
+  Configure and deploy servers from Python: a generator-based, two-phase
+  execution model with pure, idempotent operations.
 repo_url: https://github.com/kimjarvis/reemote5
 repo_name: kimjarvis/reemote5
 
@@ -127,6 +127,7 @@ nav:
 #      - Commands: commands.md
 #      - Hosts: hosts.md
       - Modules:
+          - Overview: modules/index.md
           - apk: modules/apk.md
           - apt: modules/apt.md
           - dnf: modules/dnf.md

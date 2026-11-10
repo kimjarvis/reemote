@@ -29,7 +29,7 @@ two-phase execution model:
    mapping -- then print each host's list of key strings with
    ``json.dumps(..., indent=2)``.
 
-``AuthorizedKeys`` mirrors pyinfra's ``server.AuthorizedKeys``: it cats
+``AuthorizedKeys`` mirrors the baseline's ``server.AuthorizedKeys``: it cats
 ``~kjarvis/.ssh/authorized_keys`` (the username is passed to ``gather_fact``
 as a fact argument, forwarded to ``process`` verbatim) and returns the full
 key strings in file order, skipping blank lines and ``#`` comments. A

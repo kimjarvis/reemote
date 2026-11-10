@@ -28,11 +28,11 @@ two-phase execution model:
    inventory with ``asyncio.gather`` and returns a host-name-keyed mapping
    -- then print each host's clock with ``json.dumps(..., indent=2)``.
 
-``Date`` mirrors pyinfra's ``server.Date``: it runs
+``Date`` mirrors the baseline's ``server.Date``: it runs
 ``date +'%Y-%m-%dT%H:%M:%S%z'`` and parses the ISO 8601 timestamp into a
 timezone-aware ``datetime``, so a deploy can compare host clocks -- for
 instance to spot a machine whose time has drifted before rolling out
-certificates. A failed read maps to ``None`` (pyinfra's control-machine
+certificates. A failed read maps to ``None`` (the baseline's control-machine
 ``datetime.now`` fallback is deliberately dropped). ``datetime`` is not
 JSON-serializable, so the print step renders it with ``isoformat()``.
 

@@ -22,9 +22,9 @@ removes) packages by name, reading the
 entries' `version`s) for exact-version idempotence — a `<pkg>=<version>` pin
 counts as present only when that exact version is installed, so re-running is
 a no-op. `latest=True` additionally upgrades every installed, *unpinned* name
-with `apk upgrade` (pyinfra's legacy blind upgrade). apk never prompts, so the
+with `apk upgrade` (the baseline's legacy blind upgrade). apk never prompts, so the
 commands carry no `-y` flag, unlike the apt and dnf package examples. Where
-pyinfra's `apk.packages` also takes
+the baseline's `apk.packages` also takes
 `update`/`upgrade` options that prefix a whole-system `apk update` /
 `apk upgrade`, reemote5 deliberately drops both. Two apk-native install
 modifiers ride on the add/upgrade verbs: `no_cache` adds `--no-cache` (bypass
@@ -68,7 +68,7 @@ fan-out.
 ## Managing a virtual package group
 
 The virtual-package operation: `apk.virtual` creates (or with `present=False`
-removes) an apk *virtual package* group — a reemote5 original with no pyinfra
+removes) an apk *virtual package* group — a reemote5 original with no baseline
 counterpart. Alpine's `apk add -t <tag> <packages>` records a temporary virtual
 package `<tag>` depending on `<packages>` in `/etc/apk/world`, so a build step
 can pull in a toolchain and later tear the whole group down with a single
@@ -108,7 +108,7 @@ group on that host and skips every other one.
 
 The hold operation: `apk.hold` pins packages back from upgrades — the apk
 counterpart of [`apt.mark`](../../modules/apt.md), and a reemote5 original
-(pyinfra ships no apk hold). apk has no `apt-mark` verb; it holds a package
+(the baseline ships no apk hold). apk has no `apt-mark` verb; it holds a package
 by writing a version *constraint* into `/etc/apk/world`, so `present=True`
 re-adds it with `apk add <pkg>=<version>` and `present=False` re-adds the
 bare `apk add <pkg>`, rewriting the world line without a bound so the
@@ -152,7 +152,7 @@ in the other groups.
 
 The autoremove operation: `apk.autoremove` removes orphaned packages —
 those apk pulled in as dependencies that nothing in `/etc/apk/world`
-requires any more — a reemote5 original with no pyinfra counterpart, and
+requires any more — a reemote5 original with no baseline counterpart, and
 the apk sibling of [`apt.auto_remove`](../../modules/apt.md). apk has no
 `autoremove` verb; it exposes orphan purge as the `--purge` flag of
 `apk add`/`apk fix`, which reemote5 splits out into this standalone
@@ -192,14 +192,14 @@ the inventory's single Alpine host and skips the hosts in the other groups.
 
 The repository operation: `apk.repository` ensures one line in
 `/etc/apk/repositories` — a reemote5 original modeled on
-[`apt.repo`](../../modules/apt.md), because pyinfra's `apk` namespace
+[`apt.repo`](../../modules/apt.md), because the baseline's `apk` namespace
 ships no repository operation, so the
 [`ApkRepositories`][reemote5.modules.apk.apk.ApkRepositories] fact had no
 write counterpart. `src` is one line (a bare URL or an `@tag URL` line)
 and presence is entry-aware: the line is parsed into the same `url`/`tag`
 entry the fact reports, so a tagged line and the bare URL are *distinct*
 repositories, and an unparseable `src` raises `ValueError` in the prepare
-phase before anything is sent. Where pyinfra — and reemote5's own earlier
+phase before anything is sent. Where the baseline — and reemote5's own earlier
 form — patched the file in place with `echo >>` and `sed -i`, the
 operation now *rewrites* it through the spool-and-install family
 [`apt.repo`](../../modules/apt.md) belongs to: the

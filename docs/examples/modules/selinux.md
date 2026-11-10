@@ -64,7 +64,7 @@ requests are flagged `sudo=True`.
 
 ## Relabelling a file's context components
 
-The file-context operation: `selinux.file_context` ports pyinfra's
+The file-context operation: `selinux.file_context` ports the baseline's
 `chcon -t` scenario and extends it to the full context — each of
 `se_type`, `se_user`, `se_role`, `se_level` is optional, at least one must
 be given, and only the components differing from the
@@ -104,7 +104,7 @@ per-step state — the fact-operation pairing the design recommends. The
 ## Labelling a network port with modify idempotence
 
 The port operation: `selinux.port` labels a protocol/port pair and adds
-the *modify* capability pyinfra's add/remove-only operation lacked —
+the *modify* capability the baseline's add/remove-only operation lacked —
 `present=True` adds an unlabelled port (`semanage port -a`) or changes a
 differently-labelled one in place (`-m`), `present=False` deletes the
 label (`-d`). Idempotence dispatches on tooling: the
@@ -121,7 +121,7 @@ the requests are flagged `sudo=True`.
 
 ## Switching the runtime mode
 
-The mode operation: `selinux.mode` is a reemote5 original — pyinfra ships
+The mode operation: `selinux.mode` is a reemote5 original — the baseline ships
 no mode operation — setting the *runtime* enforcing state with
 `setenforce`, idempotent on the
 [`Mode`][reemote5.modules.selinux.selinux.Mode] fact. The script ensures
@@ -163,7 +163,7 @@ compiled policy modules through a four-state machine — `present` installs
 (`-e`/`-d`) — idempotent on the
 [`Modules`][reemote5.modules.selinux.selinux.Modules] fact. The parameter
 is named `module_name` because `op()` reserves `name` for the request
-label (pyinfra's `bool_name` precedent). The script installs a custom
+label (the baseline's `bool_name` precedent). The script installs a custom
 `myhttpd` package twice (the second a guaranteed no-op in apply); the
 compiled `.pp` must already exist on the hosts at `/tmp/myhttpd.pp`
 (upload it with `files.put` first). The `absent`/`enabled`/`disabled`
@@ -235,7 +235,7 @@ root, so the requests are flagged `sudo=True`.
 
 ## Managing /etc/selinux/config at boot
 
-The config operation: `selinux.config` is a reemote5 original — pyinfra
+The config operation: `selinux.config` is a reemote5 original — the baseline
 ships no config operation — ensuring the boot-time settings in
 `/etc/selinux/config`, and it supersedes the `files.edit` + `files.move`
 two-run recipe this example used to demonstrate: the whole

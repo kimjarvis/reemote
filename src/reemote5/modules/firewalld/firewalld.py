@@ -3,9 +3,9 @@
 
 # The ``firewalld`` module: facts and operations in one source.
 #
-# pyinfra ships no firewalld module at all, so every fact and operation
-# here is a reemote5 original answering the comprehensive-firewalld
-# proposal: full control over and visibility of the firewalld daemon
+# Every fact and operation here is a reemote5 original answering the
+# comprehensive-firewalld proposal: full control over and visibility of
+# the firewalld daemon
 # through its ``firewall-cmd`` CLI (the shell-only fact pattern -- no
 # D-Bus dependency).
 #
@@ -1098,7 +1098,7 @@ async def zone(
     # change. Rules *inside* the zone are the membership operations'
     # job (port, zone_service, ...), not this one's. The commands need
     # root: flag the request ``sudo=True``. ``**kwargs`` absorbs
-    # pyinfra-style global arguments (``op()`` already strips
+    # any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     if target is not None and target not in _ZONE_TARGETS:
         raise ValueError(

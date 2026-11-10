@@ -30,7 +30,7 @@ transport* (asyncssh):
    mapping -- then print each host's raw value word with
    ``json.dumps(..., indent=2)``.
 
-``SEBoolean`` ports pyinfra's fact of the same name: ``getsebool <name>``
+``SEBoolean`` ports the baseline's fact of the same name: ``getsebool <name>``
 prints one ``name --> on|off`` row and the fact keeps the value word --
 ``"on"`` or ``"off"`` -- for the named boolean, here
 ``httpd_can_network_connect`` (the switch that lets httpd open outbound

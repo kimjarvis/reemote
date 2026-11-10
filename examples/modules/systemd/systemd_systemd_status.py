@@ -18,7 +18,7 @@ two-phase execution model:
    ``asyncio.gather`` and returns a host-name-keyed mapping -- then print each
    host's unit map with ``json.dumps(..., indent=2)``.
 
-``SystemdStatus`` ports pyinfra's ``systemd.SystemdStatus``: it runs
+``SystemdStatus`` ports the baseline's ``systemd.SystemdStatus``: it runs
 ``systemctl show --all --property Id --property SubState '*'`` and maps each
 unit to a bool -- True when its ``SubState`` is one of ``running``, ``waiting``,
 ``exited``, ``listening``, ``mounted``, ``active`` or ``plugged`` (so a oneshot

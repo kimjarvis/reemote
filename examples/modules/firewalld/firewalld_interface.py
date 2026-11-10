@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.interface`` is a reemote5 original (pyinfra ships no firewalld
+``firewalld.interface`` is a reemote5 original (the baseline ships no firewalld
 module): it binds an interface to a zone -- here ``eth1`` to the built-in
 ``internal`` zone, the classic two-NIC split. The present direction
 renders ``--change-interface``, not ``--add-interface``: an interface

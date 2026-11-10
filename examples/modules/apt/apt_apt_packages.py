@@ -36,7 +36,7 @@ inventory comes from the shared ``inventory.json`` in the project root:
 
 ``AptPackages`` runs ``apt list --installed 2>/dev/null`` (the redirect
 suppresses apt's "Listing..." progress notice) and matches each
-``name/source-info version arch [installed,...]`` row with pyinfra's
+``name/source-info version arch [installed,...]`` row with the baseline's
 package regex: architecture-suffixed names like ``libc6:i386`` keep their
 suffix, epoch-prefixed versions stay intact, and noise lines are ignored.
 The entries are sorted by name with de-duplicated, sorted version lists.

@@ -19,7 +19,7 @@ single fact, and the facts themselves are documented on the
 The key operation: `gpg.key` spools a controller-side key stream over scp
 and installs it as a keyring file at `dest` — dearmored on the target
 when the content is ASCII-armored — idempotent on the destination's
-existence without a `keyid` (pyinfra's no-keyid semantics). The script
+existence without a `keyid` (the baseline's no-keyid semantics). The script
 yields the same install request twice (the second a guaranteed no-op in
 the apply phase through the fresh per-step existence probe); the stream
 is one module-level `io.BytesIO` constant because `OperationRequest`
@@ -42,7 +42,7 @@ spool transfer stays unprivileged.
 
 The dearmor operation: `gpg.dearmor` converts an armored key file already
 on the target host to binary keyring form — both `src` and `dest` are
-remote paths, no bytes move over the connection. Like pyinfra's
+remote paths, no bytes move over the connection. Like the baseline's
 `gpg.dearmor` it is deliberately stateless: every run converts and
 reports a change. The deploy stages a **real** armored key (the Docker
 Release CE rpm signing key) with a `files.put` upload to a `/tmp` spool, so

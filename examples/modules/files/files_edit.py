@@ -5,7 +5,7 @@
 
 This is a *usage* example, not part of the library. It shows reemote5's
 generic content-editing primitive, ``files.edit``: instead of a bespoke
-operation for every config-file format (pyinfra ships ``server.etc_hosts``,
+operation for every config-file format (the baseline ships ``server.etc_hosts``,
 ``files.line``, ``files.replace`` and more, each hard-coding one shape of
 edit), ``files.edit`` reads a file's current text with the ``FileContents``
 fact, applies a **caller-supplied pure transform**, and writes the result back

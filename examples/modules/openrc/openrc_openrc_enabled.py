@@ -35,7 +35,7 @@ inventory comes from the shared ``inventory.json`` in the project root:
    mapping -- then print each host's name -> enabled-bool mapping with
    ``json.dumps(..., indent=2)``.
 
-``OpenrcEnabled`` is a port of pyinfra's ``openrc.OpenrcEnabled``: it runs
+``OpenrcEnabled`` is a port of the baseline's ``openrc.OpenrcEnabled``: it runs
 ``rc-update show -v`` and parses each ``name | runlevels`` row into a bool
 answering *membership in one runlevel* -- ``crond | default`` reads True
 for ``"default"`` and False for ``"boot"``. The ``-v`` includes services

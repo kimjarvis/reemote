@@ -4,11 +4,11 @@
 """Tests for ``files.copy``: copy a remote path into a remote directory.
 
 Covers the ``CopyCommand`` shell descriptor (quoting, the ``-f`` overwrite
-flag, elevated ``command_shell`` renderings), the operation's pyinfra
+flag, elevated ``command_shell`` renderings), the operation's the baseline
 ``files.copy`` fixture parity (file/directory copies with and without
 overwrite, the equal-content no-op, and the error branches), the deliberate
 phase-unaware deviation (absent src / absent dest directory raise
-``ValueError`` in *both* phases, where pyinfra logs softly while planning),
+``ValueError`` in *both* phases, where the baseline logs softly while planning),
 the upstream src check that rejects a symlink source (kept verbatim, unlike
 ``files.move`` which accepts links), the ``SimulatedHost`` seam dispatch
 (the source stays in place), and end-to-end plan/log behaviour including
@@ -54,7 +54,7 @@ def make_host(
 ) -> SimulatedHost:
     """A SimulatedHost seeded with the stat rows ``copy``'s facts read.
 
-    Mirrors pyinfra's fixture shape: ``Directory(src)``/``File(src)``,
+    Mirrors the baseline's fixture shape: ``Directory(src)``/``File(src)``,
     ``Directory(dest)`` and ``File(dest/basename(src))``; an unset row
     reads as None (absent).
     """
@@ -102,11 +102,11 @@ def test_command_shell_elevates_the_copy():
     )
 
 
-# --- Operation parity with pyinfra's files.copy fixtures ----------------------
+# --- Operation parity with the baseline's files.copy fixtures ----------------------
 
 
 async def test_copy_file_fixture():
-    # pyinfra's copies_file.json: src is a regular file, dest is a
+    # The baseline's copies_file.json: src is a regular file, dest is a
     # directory, the target path is absent -> a single cp -r.
     host = make_host(src_stats={"mode": 600}, dest_stats={"mode": 700})
     ctx, commands = await materialize(host, src=SRC, dest=DEST)
@@ -117,7 +117,7 @@ async def test_copy_file_fixture():
 
 
 async def test_copy_file_overwriting_fixture():
-    # pyinfra's copies_file_overwriting.json: an existing target with
+    # The baseline's copies_file_overwriting.json: an existing target with
     # overwrite=True yields cp -r -f -- no rm -rf prelude (unlike move).
     host = make_host(
         src_stats={"mode": 600},
@@ -131,7 +131,7 @@ async def test_copy_file_overwriting_fixture():
 
 
 async def test_copy_directory_fixture():
-    # pyinfra's copies_directory.json: File(src) is None but
+    # The baseline's copies_directory.json: File(src) is None but
     # Directory(src) is truthy, so the file-or-directory check passes.
     host = make_host(src_dir_stats={"mode": 700}, dest_stats={"mode": 700})
     ctx, commands = await materialize(host, src=SRC, dest=DEST)
@@ -141,7 +141,7 @@ async def test_copy_directory_fixture():
 
 
 async def test_copy_directory_overwriting_fixture():
-    # pyinfra's copies_directory_overwriting.json: the same directory
+    # The baseline's copies_directory_overwriting.json: the same directory
     # source with overwrite=True renders cp -r -f.
     host = make_host(src_dir_stats={"mode": 700}, dest_stats={"mode": 700})
     ctx, commands = await materialize(host, src=SRC, dest=DEST, overwrite=True)
@@ -151,9 +151,9 @@ async def test_copy_directory_overwriting_fixture():
 
 
 async def test_copy_noop_dest_file_exists_fixture():
-    # pyinfra's noop_dest_file_exists.json: an existing target with equal
+    # The baseline's noop_dest_file_exists.json: an existing target with equal
     # sha1 and overwrite unset is a no-op (the idempotent branch move
-    # does not have). pyinfra's Sha1/Md5/Sha256 chain is sha1-only here.
+    # does not have). The baseline's Sha1/Md5/Sha256 chain is sha1-only here.
     host = make_host(
         src_stats={"mode": 600},
         dest_stats={"mode": 700},
@@ -168,7 +168,7 @@ async def test_copy_noop_dest_file_exists_fixture():
 
 
 async def test_copy_invalid_overwrite_fixture_raises():
-    # pyinfra's invalid_overwrite.json: an existing target whose content
+    # The baseline's invalid_overwrite.json: an existing target whose content
     # differs from src, with overwrite unset.
     host = make_host(
         src_stats={"mode": 600},
@@ -184,14 +184,14 @@ async def test_copy_invalid_overwrite_fixture_raises():
 
 
 async def test_copy_invalid_dest_fixture_raises():
-    # pyinfra's invalid_dest.json: dest exists but is not a directory.
+    # The baseline's invalid_dest.json: dest exists but is not a directory.
     host = make_host(src_stats={"mode": 600}, dest_stats=False)
     with pytest.raises(ValueError, match=r"dest /tmp2 is not a directory"):
         await materialize(host, src=SRC, dest=DEST)
 
 
 async def test_copy_absent_src_raises_in_both_phases():
-    # pyinfra's invalid_src.json logs softly while planning and raises
+    # The baseline's invalid_src.json logs softly while planning and raises
     # only while executing; reemote5 is phase-unaware and deliberately
     # raises in both phases (the files.move strictness, kept).
     host = make_host(dest_stats={"mode": 700})
@@ -201,7 +201,7 @@ async def test_copy_absent_src_raises_in_both_phases():
 
 
 async def test_copy_absent_dest_directory_raises_in_both_phases():
-    # pyinfra's missing_dest.json: same phase-aware softness, same
+    # The baseline's missing_dest.json: same phase-aware softness, same
     # deliberate always-raise deviation.
     host = make_host(src_stats={"mode": 600})
     for phase in ("prepare", "apply"):
@@ -222,7 +222,7 @@ async def test_copy_symlink_src_raises():
 
 
 async def test_copy_non_file_target_skips_the_comparison():
-    # pyinfra's truthiness kept verbatim: File(target) = False (a
+    # The baseline's truthiness kept verbatim: File(target) = False (a
     # directory, say) is falsy, so neither the no-op nor the raise branch
     # fires and the copy is planned even without overwrite.
     host = make_host(
@@ -236,10 +236,10 @@ async def test_copy_non_file_target_skips_the_comparison():
     assert commands == [CopyCommand(src=SRC, dest=DEST)]
 
 
-async def test_copy_kwargs_absorb_pyinfra_globals():
+async def test_copy_kwargs_absorb_extra_globals():
     host = make_host(src_stats={"mode": 600}, dest_stats={"mode": 700})
     ctx, commands = await materialize(
-        host, src=SRC, dest=DEST, some_pyinfra_global="ignored"
+        host, src=SRC, dest=DEST, some_extra_global="ignored"
     )
     assert ctx.changed
     assert commands == [CopyCommand(src=SRC, dest=DEST)]

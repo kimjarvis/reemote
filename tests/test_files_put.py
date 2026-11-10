@@ -4,7 +4,7 @@
 """Tests for ``files.put``: sha1-based idempotent transfer of IO-like sources.
 
 The source is always a seekable IO-like object on the control machine -- a
-path string is deliberately not supported (unlike pyinfra's ``str | IO[Any]``
+path string is deliberately not supported (unlike the baseline's ``str | IO[Any]``
 signature). Covers the content-hash comparison (the stream's locally computed
 sha1 vs remote ``RemoteFileSha1``), the non-shell ``PutCommand`` descriptor and
 its loggable rendering, the ``send_command`` dispatch onto the host's

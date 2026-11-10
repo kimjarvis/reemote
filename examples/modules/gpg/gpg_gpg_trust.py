@@ -28,7 +28,7 @@ two-phase execution model:
    across the inventory with ``asyncio.gather`` and returns a
    host-name-keyed mapping -- then print each host's trust entries as JSON.
 
-``GpgTrust`` is a reemote5 original with no pyinfra counterpart: it runs
+``GpgTrust`` is a reemote5 original with no baseline counterpart: it runs
 ``gpg --batch --export-ownertrust`` and parses the ``FPR:N:`` lines into
 ``GpgKeyTrust`` entries -- the key's full ``fingerprint``, the raw numeric
 ``ownertrust`` (1-6) and its ``level`` name (unknown=1, never=2,

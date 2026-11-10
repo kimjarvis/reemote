@@ -4,7 +4,7 @@
 """Example: load the nbd, loop and brd kernel modules on real CentOS hosts.
 
 This is a *usage* example, not part of the library. It shows reemote5's
-``server.modprobe`` operation, the pyinfra ``server.modprobe`` parity for
+``server.modprobe`` operation, baseline ``server.modprobe`` parity for
 loading and unloading kernel modules: the deploy first ensures the software
 behind the request is installed, then loads the ``nbd`` module and ensures
 the ``loop`` and ``brd`` modules are loaded, both under ``sudo`` because

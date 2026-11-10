@@ -1,30 +1,14 @@
 # ufw module
 
-## ufw Facts
-
 ::: reemote5.modules.ufw.ufw
     options:
       show_root_heading: false
       members:
         - UfwApplications
+        - UfwRule
         - UfwRules
         - UfwStatus
-
-## ufw Returns
-
-::: reemote5.modules.ufw.ufw
-    options:
-      show_root_heading: false
-      members:
-        - UfwRule
         - UfwStatusInfo
-
-## ufw Operations
-
-::: reemote5.modules.ufw.ufw
-    options:
-      show_root_heading: false
-      members:
         - default_policy
         - logging
         - reset
@@ -37,7 +21,7 @@
 
 `reemote5.modules.ufw.ufw` gives complete control over and visibility of
 UFW (Uncomplicated Firewall) — the default firewall frontend on Ubuntu
-and Debian-family hosts — through the `ufw` CLI. pyinfra ships **no ufw
+and Debian-family hosts — through the `ufw` CLI. The baseline ships **no ufw
 module at all**, so every fact and operation here is a reemote5 original:
 three facts (`UfwStatus`, `UfwRules`, `UfwApplications`), two entry
 records (`UfwStatusInfo`, `UfwRule`) and five operations (`state`,
@@ -97,7 +81,7 @@ applications:` header — the names `rule(app=...)` references.
 ## Operations
 
 Operations live in the namespace module so a deploy reads `ufw.rule`,
-mirroring pyinfra's API shape. Every operation is an async generator with
+mirroring the baseline's API shape. Every operation is an async generator with
 the same fixed signature:
 
 ```python

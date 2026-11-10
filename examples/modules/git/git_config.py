@@ -23,7 +23,7 @@ lazily opens an asyncssh connection from its ``connection`` data, gathers
 facts and runs commands for real, and ``run`` closes those connections when
 it finishes.
 
-``git.config`` mirrors pyinfra's ``git.config``: it ensures a configuration
+``git.config`` mirrors the baseline's ``git.config``: it ensures a configuration
 item at the repository, user or system level. This script sets the login
 user's *global* ``user.name`` -- no ``repo``, so the ``--global`` scope --
 comparing against the ``GitConfig`` fact and writing only when the current

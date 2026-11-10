@@ -5,11 +5,11 @@
 
 Covers the ``MkdirCommand``/``ChmodCommand``/``ChownCommand`` shell
 descriptor renderings (quoting, the unquoted mode and owner specs,
-elevated ``command_shell`` forms), the operation's pyinfra
+elevated ``command_shell`` forms), the operation's the baseline
 ``files.directory`` fixture parity (create with mode/owner, edit against
 the ``Directory`` fact's metadata, delete, the ``force`` ``rm -rf`` +
 ``mkdir -p`` pair, and the error branches), the deliberate deviations
-(pyinfra's timestamped ``force_backup``/``force_backup_dir`` mv and the
+(the baseline's timestamped ``force_backup``/``force_backup_dir`` mv and the
 internal ``_no_fail_on_link``/``_no_check_owner_mode`` knobs are
 dropped), the accepted mode spellings, the ``SimulatedHost`` seam
 dispatch, and end-to-end plan/log behaviour with ``sudo=True`` including
@@ -45,7 +45,7 @@ INVENTORY = [
     },
 ]
 
-# pyinfra's own files.directory fixtures address "testdir" (and the
+# The baseline's own files.directory fixtures address "testdir" (and the
 # add_with_spaces/edit_with_spaces pair addresses "test dir"); the
 # expectations below reuse those command strings verbatim.
 PATH = "testdir"
@@ -57,7 +57,7 @@ OWNER_ROW = {"mode": 0, "user": "testuser", "group": "testgroup"}
 def make_host(stats: dict | bool | None = None) -> SimulatedHost:
     """A SimulatedHost seeded with the stat row ``directory``'s fact reads.
 
-    Mirrors pyinfra's fixture shape: ``Directory(path)`` is the one idempotence
+    Mirrors the baseline's fixture shape: ``Directory(path)`` is the one idempotence
     fact; an unset row reads as None (absent), ``False`` names an existing
     non-directory.
     """
@@ -82,7 +82,7 @@ def test_mkdir_command_renders_quoted_path():
 
 
 def test_chmod_command_renders_mode_unquoted():
-    # pyinfra's chmod helper passes the mode through unquoted (it is the
+    # The baseline's chmod helper passes the mode through unquoted (it is the
     # normalised octal-digit int, or a symbolic string); only the target
     # is quoted.
     assert ChmodCommand(path=PATH, mode=777).shell() == "chmod 777 testdir"
@@ -99,7 +99,7 @@ def test_chmod_command_renders_mode_unquoted():
 
 def test_chown_command_renders_chown_or_chgrp():
     # user+group -> "chown user:group", user alone -> "chown user",
-    # group alone -> "chgrp group" (pyinfra's chown helper exactly).
+    # group alone -> "chgrp group" (the baseline's chown helper exactly).
     assert (
         ChownCommand(
             path=PATH, user="testuser", group="testgroup", recursive=True
@@ -134,11 +134,11 @@ def test_command_shell_elevates_the_directory_commands():
     )
 
 
-# --- Operation parity with pyinfra's files.directory fixtures ------------------
+# --- Operation parity with the baseline's files.directory fixtures ------------------
 
 
 async def test_directory_add_fixture():
-    # pyinfra's add.json: an absent path with user/group/mode/recursive
+    # The baseline's add.json: an absent path with user/group/mode/recursive
     # creates the tree, then chmods and chowns it recursively.
     host = make_host()
     ctx, commands = await materialize(
@@ -160,7 +160,7 @@ async def test_directory_add_fixture():
 
 
 async def test_directory_add_with_spaces_fixture():
-    # pyinfra's add_with_spaces.json: only the path is quoted.
+    # The baseline's add_with_spaces.json: only the path is quoted.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
         host, path=SPACED, user="testuser", group="testgroup", mode=777, recursive=True
@@ -175,7 +175,7 @@ async def test_directory_add_with_spaces_fixture():
 
 
 async def test_directory_edit_fixture():
-    # pyinfra's edit.json: the base directory misses both the requested
+    # The baseline's edit.json: the base directory misses both the requested
     # mode and the requested group, so chmod -R and chgrp -R both run --
     # no user was requested, so the user half never blocks the check.
     host = make_host(OWNER_ROW)
@@ -195,7 +195,7 @@ async def test_directory_edit_fixture():
 
 
 async def test_directory_edit_with_spaces_fixture():
-    # pyinfra's edit_with_spaces.json.
+    # The baseline's edit_with_spaces.json.
     host = SimulatedHost(name="h")
     host.directory_stats[SPACED] = OWNER_ROW
     ctx, commands = await materialize(
@@ -210,7 +210,7 @@ async def test_directory_edit_with_spaces_fixture():
 
 
 async def test_directory_delete_fixture():
-    # pyinfra's delete.json: a present directory with present=False is
+    # The baseline's delete.json: a present directory with present=False is
     # removed recursively (the shared RemoveTreeCommand).
     host = make_host(OWNER_ROW)
     ctx, commands = await materialize(host, path=PATH, present=False)
@@ -222,7 +222,7 @@ async def test_directory_delete_fixture():
 
 
 async def test_directory_unchanged_yields_nothing():
-    # All three requested values match the fact's metadata: pyinfra's
+    # All three requested values match the fact's metadata: the baseline's
     # "directory {path} already exists" noop.
     host = make_host({"mode": 777, "user": "testuser", "group": "testgroup"})
     ctx, commands = await materialize(
@@ -244,8 +244,8 @@ async def test_directory_remove_absent_is_a_no_op():
 
 
 async def test_directory_add_force_no_backup_fixture():
-    # pyinfra's add_force_no_backup.json -- and, deliberately, exactly what
-    # reemote5's plain ``force=True`` does: pyinfra's default backup form
+    # The baseline's add_force_no_backup.json -- and, deliberately, exactly what
+    # reemote5's plain ``force=True`` does: the baseline's default backup form
     # ``mv``s to a datetime.now()-stamped name, which would differ between
     # the prepare and apply phases and break the determinism guard, so the
     # timestamped force_backup/force_backup_dir are dropped and force
@@ -262,7 +262,7 @@ async def test_directory_add_force_no_backup_fixture():
 
 
 async def test_directory_remove_after_force_still_removes():
-    # pyinfra's interaction kept verbatim: force on a non-directory with
+    # The baseline's interaction kept verbatim: force on a non-directory with
     # present=False yields the rm -rf and then reports nothing left to do.
     host = make_host(False)
     ctx, commands = await materialize(host, path=PATH, present=False, force=True)
@@ -276,15 +276,15 @@ async def test_directory_remove_after_force_still_removes():
 
 
 async def test_directory_invalid_fixture_raises():
-    # pyinfra's invalid.json: a non-directory without force raises
-    # (pyinfra's OperationError spells as ValueError here).
+    # The baseline's invalid.json: a non-directory without force raises
+    # (the baseline's OperationError spells as ValueError here).
     host = make_host(False)
     with pytest.raises(ValueError, match=r"testdir exists and is not a directory"):
         await materialize(host, path=PATH, mode=777, recursive=True, group="otheruser")
 
 
 async def test_directory_drops_no_fail_on_link():
-    # pyinfra's ignore_link_type.json relied on the internal
+    # The baseline's ignore_link_type.json relied on the internal
     # _no_fail_on_link knob; it is deliberately dropped, so a path held by
     # a link raises instead of no-opping (and the knob is absorbed by
     # **kwargs).
@@ -295,7 +295,7 @@ async def test_directory_drops_no_fail_on_link():
 
 
 async def test_directory_invalid_type_fixture():
-    # pyinfra's invalid_type.json: a non-string, non-PathLike path.
+    # The baseline's invalid_type.json: a non-string, non-PathLike path.
     host = make_host()
     with pytest.raises(
         TypeError, match=r"`path` must be a string or `os.PathLike` object"
@@ -304,7 +304,7 @@ async def test_directory_invalid_type_fixture():
 
 
 async def test_directory_accepts_all_mode_spellings():
-    # pyinfra's ensure_mode_int contract: 750, "750", "0750" and "0o750"
+    # The baseline's ensure_mode_int contract: 750, "750", "0750" and "0o750"
     # all read as the octal-digit int the fact's metadata carries.
     for spelling in (750, "750", "0750", "0o750"):
         host = make_host({"mode": 750, "user": "u", "group": "g"})
@@ -322,7 +322,7 @@ async def test_directory_rejects_non_octal_mode():
 
 
 async def test_directory_symbolic_mode_always_chmods():
-    # A symbolic mode never equals the fact's octal int, so pyinfra always
+    # A symbolic mode never equals the fact's octal int, so the baseline always
     # re-runs the chmod -- and the same spelling is deterministic across
     # the phases.
     host = make_host({"mode": 750, "user": "u", "group": "g"})
@@ -332,12 +332,12 @@ async def test_directory_symbolic_mode_always_chmods():
     assert commands == [ChmodCommand(path=PATH, mode="u+x")]
 
 
-async def test_directory_kwargs_absorb_pyinfra_globals():
-    # **kwargs swallows pyinfra's global arguments and the dropped
+async def test_directory_kwargs_absorb_extra_globals():
+    # **kwargs swallows the baseline's global arguments and the dropped
     # _no_check_owner_mode knob alike.
     host = make_host()
     ctx, commands = await materialize(
-        host, path=PATH, some_pyinfra_global="ignored", _no_check_owner_mode=True
+        host, path=PATH, some_extra_global="ignored", _no_check_owner_mode=True
     )
 
     assert ctx.changed

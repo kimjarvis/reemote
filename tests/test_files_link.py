@@ -7,12 +7,12 @@ Covers the ``LinkCommand`` shell descriptor rendering (``ln [-s]``/``rm -f``,
 the quoted target and path, the elevated ``command_shell`` forms) alongside
 the ``ChownCommand`` (in its ``-h`` non-dereferencing form), ``MkdirCommand``
 and ``RemoveTreeCommand`` descriptors the operation reuses from
-``files.file``/``files.directory``, the operation's pyinfra ``files.link``
+``files.file``/``files.directory``, the operation's baseline ``files.link``
 fixture parity (create with owner, edit against the ``Link`` fact's metadata,
 the target-mismatch ``rm -f`` + ``ln`` relink pair, the
 ``create_remote_dir`` parent flow, delete, both hard-link branches read
 through ``File`` and ``SameFile``, the ``force`` ``rm -rf`` + ``ln`` pair,
-and the error branches), the deliberate deviations (pyinfra's timestamped
+and the error branches), the deliberate deviations (the baseline's timestamped
 ``force_backup``/``force_backup_dir`` mv and the internal ``_no_fail_on_link``
 knob are dropped), the ``SimulatedHost`` seam dispatch (both link stores and
 ``same_files`` stay coherent), and end-to-end plan/log behaviour with
@@ -50,7 +50,7 @@ INVENTORY = [
     },
 ]
 
-# pyinfra's own files.link fixtures address "testlink" pointing at
+# The baseline's own files.link fixtures address "testlink" pointing at
 # "/etc/init.d/nginx" (add_with_spaces uses "test link" and a spaced
 # target; edit_nothing the relative target below); the expectations reuse
 # those command strings verbatim.
@@ -78,7 +78,7 @@ HARD_FILE_ROW = {"mode": 644, "user": "testuser", "group": "testgroup"}
 def make_host(stats: dict | bool | None = None) -> SimulatedHost:
     """A SimulatedHost seeded with the stat row ``link``'s fact reads.
 
-    Mirrors pyinfra's fixture shape: ``Link(path)`` is the idempotence fact
+    Mirrors the baseline's fixture shape: ``Link(path)`` is the idempotence fact
     (``Directory(parent)`` is read only on the create branch, so those tests
     seed it directly). An unset row reads as None (absent), ``False`` names
     an existing path of the wrong type.
@@ -122,7 +122,7 @@ def test_link_command_renders_ln_or_rm():
 
 
 def test_link_command_quotes_paths_but_never_the_flags():
-    # pyinfra's add_with_spaces.json: both arguments are quoted when they
+    # The baseline's add_with_spaces.json: both arguments are quoted when they
     # need it; a safe path stays bare.
     assert LinkCommand(path=SPACED, target=TARGET).shell() == (
         f"ln -s {TARGET} 'test link'"
@@ -165,11 +165,11 @@ def test_link_command_defaults_to_symbolic():
     )
 
 
-# --- Operation parity with pyinfra's files.link fixtures -----------------------
+# --- Operation parity with the baseline's files.link fixtures -----------------------
 
 
 async def test_link_add_fixture():
-    # pyinfra's add.json: an absent path with user/group creates the link
+    # The baseline's add.json: an absent path with user/group creates the link
     # and chowns it with -h -- no parent probe (a bare "testlink" has no
     # dirname to check) and no plain chown of the target.
     host = make_host()
@@ -199,7 +199,7 @@ async def test_link_add_no_chown_without_owner_request():
 
 
 async def test_link_add_with_spaces_fixture():
-    # pyinfra's add_with_spaces.json: both arguments are quoted as needed.
+    # The baseline's add_with_spaces.json: both arguments are quoted as needed.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
         host, path=SPACED, target=SPACED_TARGET, user="testuser", group="testgroup"
@@ -213,8 +213,8 @@ async def test_link_add_with_spaces_fixture():
 
 
 async def test_link_add_no_target_raises():
-    # pyinfra's add_no_target.json: present=True without a target is a
-    # validation error before any fact is read (pyinfra's OperationError
+    # The baseline's add_no_target.json: present=True without a target is a
+    # validation error before any fact is read (the baseline's OperationError
     # spells as ValueError here).
     host = make_host()
     with pytest.raises(ValueError, match="If present is True target must be provided"):
@@ -222,7 +222,7 @@ async def test_link_add_no_target_raises():
 
 
 async def test_link_create_directory_fixture():
-    # pyinfra's create_directory.json: the parent directory is absent, so
+    # The baseline's create_directory.json: the parent directory is absent, so
     # mkdir -p runs before the ln (the fixture's single fact read is the
     # default create_remote_dir=True).
     host = SimulatedHost(name="h")
@@ -245,7 +245,7 @@ async def test_link_create_directory_fixture():
 
 
 async def test_link_create_remote_dir_chowns_a_fresh_parent():
-    # pyinfra's delegated files.directory runs its create branch when the
+    # The baseline's delegated files.directory runs its create branch when the
     # parent is missing, which chowns -- but never chmods -- the new
     # directory when an owner was requested. The parent is a directory, so
     # that chown dereferences; only the link's own chown carries -h.
@@ -267,7 +267,7 @@ async def test_link_create_remote_dir_chowns_a_fresh_parent():
 
 
 async def test_link_create_remote_dir_false_skips_the_probe():
-    # pyinfra's create_remote_dir=False: no parent read, no mkdir -- the ln
+    # The baseline's create_remote_dir=False: no parent read, no mkdir -- the ln
     # simply fails on a missing parent.
     host = make_host()
     ctx, commands = await materialize(
@@ -280,7 +280,7 @@ async def test_link_create_remote_dir_false_skips_the_probe():
 
 
 async def test_link_existing_parent_is_left_alone():
-    # pyinfra delegates with _no_check_owner_mode: an existing parent is
+    # The baseline delegates with _no_check_owner_mode: an existing parent is
     # not mkdir'd, not chmod'd and not chown'd -- only the link is. Call
     # files.directory separately to manage the parent.
     host = SimulatedHost(name="h")
@@ -298,7 +298,7 @@ async def test_link_existing_parent_is_left_alone():
 
 
 async def test_link_parent_that_is_not_a_directory_raises():
-    # pyinfra's internal _no_fail_on_link knob is deliberately dropped, so
+    # The baseline's internal _no_fail_on_link knob is deliberately dropped, so
     # a non-directory parent raises rather than being tolerated.
     host = SimulatedHost(name="h")
     host.directory_stats["/home"] = False
@@ -307,7 +307,7 @@ async def test_link_parent_that_is_not_a_directory_raises():
 
 
 async def test_link_delete_fixture():
-    # pyinfra's delete.json: present=False on an existing link removes it
+    # The baseline's delete.json: present=False on an existing link removes it
     # with rm -f, whatever target and owner the row carries.
     host = make_host(PRESENT_ROW)
     ctx, commands = await materialize(host, path=PATH, present=False)
@@ -319,8 +319,8 @@ async def test_link_delete_fixture():
 
 
 async def test_link_remove_absent_is_a_no_op():
-    # pyinfra's noop branch: present=False on an absent path reports the
-    # pyinfra wording, unchanged and with no command.
+    # The baseline's noop branch: present=False on an absent path reports the
+    # The baseline wording, unchanged and with no command.
     host = make_host()
     ctx, commands = await materialize(host, path=PATH, present=False)
 
@@ -330,8 +330,8 @@ async def test_link_remove_absent_is_a_no_op():
 
 
 async def test_link_edit_fixture():
-    # pyinfra's edit.json: the target differs, so the link is removed and
-    # recreated (pyinfra's "remove it and recreate a new one" rule -- never
+    # The baseline's edit.json: the target differs, so the link is removed and
+    # recreated (the baseline's "remove it and recreate a new one" rule -- never
     # ``ln -sf``), then the owner is edited with chown -h.
     host = make_host(WRONG_ROW)
     ctx, commands = await materialize(
@@ -356,8 +356,8 @@ async def test_link_edit_fixture():
 
 
 async def test_link_edit_nothing_fixture():
-    # pyinfra's edit_nothing.json: target and both owner halves already
-    # match, so nothing is yielded and the no-op wording is pyinfra's.
+    # The baseline's edit_nothing.json: target and both owner halves already
+    # match, so nothing is yielded and the no-op wording is the baseline's.
     host = SimulatedHost(name="h")
     host.link_stats["/etc/rc.d/nginx"] = {
         "link_target": "../init.d/nginx",
@@ -393,7 +393,7 @@ async def test_link_edit_owner_only_fixture():
 
 
 async def test_link_edit_trailing_slash_fixture():
-    # pyinfra's edit_trailing_slash.json: "target/" is not "target", so the
+    # The baseline's edit_trailing_slash.json: "target/" is not "target", so the
     # link is relinked -- the comparison is verbatim, never normalized.
     host = make_host({"link_target": "target/", "user": "root", "group": "root"})
     ctx, commands = await materialize(host, path=PATH, target="target")
@@ -417,7 +417,7 @@ async def test_link_dangling_target_row_still_relinks():
 
 
 async def test_link_delete_hard_link_fixture():
-    # pyinfra's delete_hard_link.json: Link answers False for a hard link,
+    # The baseline's delete_hard_link.json: Link answers False for a hard link,
     # so the path is re-read through File and matched to the target with
     # SameFile -- present=False then removes the name with rm -f.
     host = make_hard_link_host()
@@ -432,7 +432,7 @@ async def test_link_delete_hard_link_fixture():
 
 
 async def test_link_edit_hard_link_nothing_fixture():
-    # pyinfra's edit_hard_link_nothing.json: File's row plus SameFile's
+    # The baseline's edit_hard_link_nothing.json: File's row plus SameFile's
     # True means the hard link already is exactly what was asked for --
     # the same-inode reading is what the readlink probe alone cannot make.
     host = make_hard_link_host()
@@ -472,8 +472,8 @@ async def test_link_symbolic_true_never_reads_the_hard_link_pair():
 
 
 async def test_link_invalid_fixture_raises():
-    # pyinfra's invalid.json: an existing non-link without force raises
-    # (pyinfra's OperationError spells as ValueError here).
+    # The baseline's invalid.json: an existing non-link without force raises
+    # (the baseline's OperationError spells as ValueError here).
     host = make_host(False)
     with pytest.raises(ValueError, match=r"testlink exists and is not a link"):
         await materialize(
@@ -482,7 +482,7 @@ async def test_link_invalid_fixture_raises():
 
 
 async def test_link_invalid_hard_link_fixture_raises():
-    # pyinfra's invalid_hard_link.json: a regular file that is NOT the
+    # The baseline's invalid_hard_link.json: a regular file that is NOT the
     # target's inode raises the same error even with symbolic=False --
     # SameFile answering False keeps the "is not a link" verdict.
     host = make_hard_link_host(same_file=False)
@@ -494,7 +494,7 @@ async def test_link_invalid_hard_link_fixture_raises():
 
 
 async def test_link_invalid_type_fixture():
-    # pyinfra's invalid_type.json: a non-string, non-PathLike path.
+    # The baseline's invalid_type.json: a non-string, non-PathLike path.
     host = make_host()
     with pytest.raises(
         TypeError, match=r"`path` must be a string or `os.PathLike` object"
@@ -503,7 +503,7 @@ async def test_link_invalid_type_fixture():
 
 
 async def test_link_pathlib_edit_fixture():
-    # pyinfra's pathlib_edit.json: a PathLike path is fspath'd, the fact
+    # The baseline's pathlib_edit.json: a PathLike path is fspath'd, the fact
     # keyed on the string form, and the edit branch behaves identically.
     host = make_host(WRONG_ROW)
     ctx, commands = await materialize(
@@ -547,8 +547,8 @@ async def test_link_invalid_target_type_raises():
 
 
 async def test_link_add_force_no_backup_fixture():
-    # pyinfra's add_force_no_backup.json -- and, deliberately, exactly what
-    # reemote5's plain ``force=True`` does: pyinfra's default backup form
+    # The baseline's add_force_no_backup.json -- and, deliberately, exactly what
+    # reemote5's plain ``force=True`` does: the baseline's default backup form
     # ``mv``s to a datetime.now()-stamped name, which would differ between
     # the prepare and apply phases and break the determinism guard, so the
     # timestamped force_backup/force_backup_dir are dropped and force
@@ -590,7 +590,7 @@ async def test_link_force_absorbs_the_dropped_backup_knobs():
 
 
 async def test_link_remove_after_force_still_removes():
-    # pyinfra's interaction kept: force on a non-link with present=False
+    # The baseline's interaction kept: force on a non-link with present=False
     # yields the rm -rf and then reports nothing left to do.
     host = make_host(False)
     ctx, commands = await materialize(host, path=PATH, present=False, force=True)
@@ -602,15 +602,15 @@ async def test_link_remove_after_force_still_removes():
     )
 
 
-async def test_link_kwargs_absorb_pyinfra_globals():
-    # **kwargs swallows pyinfra's global arguments and the dropped backup
+async def test_link_kwargs_absorb_extra_globals():
+    # **kwargs swallows the baseline's global arguments and the dropped backup
     # knobs alike.
     host = make_host()
     ctx, commands = await materialize(
         host,
         path=PATH,
         target=TARGET,
-        some_pyinfra_global="ignored",
+        some_extra_global="ignored",
         force_backup=True,
     )
 

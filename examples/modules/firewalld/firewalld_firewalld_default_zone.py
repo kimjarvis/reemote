@@ -29,7 +29,7 @@ SSH transport* (asyncssh):
    across the inventory with ``asyncio.gather`` and returns a
    host-name-keyed mapping -- then print each host's zone name.
 
-``FirewalldDefaultZone`` is a reemote5 original (pyinfra ships no
+``FirewalldDefaultZone`` is a reemote5 original (the baseline ships no
 firewalld module): it answers ``firewall-cmd --get-default-zone`` -- the
 zone that connections and interfaces land in when nothing binds them
 explicitly. Unlike the other firewalld facts there is no ``permanent``

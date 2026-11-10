@@ -30,7 +30,7 @@ two-phase execution model:
    host's ``process`` -- then print each host's path list with
    ``json.dumps(..., indent=2)``.
 
-``FindDirectories`` mirrors pyinfra's ``files.FindDirectories`` -- the
+``FindDirectories`` mirrors the baseline's ``files.FindDirectories`` -- the
 find family's ``-type d`` member, sharing the family's mechanics: one
 ``find <path> -type d`` plus the filters (``fname``/``iname`` name globs,
 ``maxdepth``, size bounds, ``regex``, ``path_match``, the raw ``args``

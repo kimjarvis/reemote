@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.default_zone`` is a reemote5 original (pyinfra ships no
+``firewalld.default_zone`` is a reemote5 original (the baseline ships no
 firewalld module): it sets the zone that connections and interfaces land
 in when nothing binds them explicitly -- here ``public``, the firewalld
 default, so the script *ensures* the baseline rather than drifting from

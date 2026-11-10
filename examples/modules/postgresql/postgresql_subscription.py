@@ -67,7 +67,7 @@ The shared ``inventory.json`` carries no ``privilege`` section, so ``main``
 attaches ``{"sudo_user": "postgres"}`` to the loaded ``centos`` entries:
 the ``sudo=True`` requests ride under the ``postgres`` OS user, so the
 ``psql`` client connects through peer authentication -- no password
-travels through operation arguments, plans or logs (pyinfra's
+travels through operation arguments, plans or logs (the baseline's
 ``psql_password`` option is deliberately dropped namespace-wide).
 
 Run it with::

@@ -25,7 +25,7 @@ any working directory; point ``INVENTORY_PATH`` at your own file to target
 your machines.
 
 ``systemd.service`` is the canonical home of the operation formerly known as
-``server.service`` (which remains a deprecated alias). It ports pyinfra's
+``server.service`` (which remains a deprecated alias). It ports the baseline's
 ``systemd.service`` and manages one unit -- here the Apache web server, which
 RHEL-family hosts ship as ``httpd`` and Debian-family hosts ship as ``apache2``
 -- along two independent axes. ``running=True`` compares the
@@ -43,7 +43,7 @@ against the same pre-deployment state), while the apply phase starts on the
 first and reports the second as a no-op, because the fresh per-step fact cache
 now sees the state the first step produced.
 
-A third request demonstrates the reemote5 extensions over pyinfra's option
+A third request demonstrates the reemote5 extensions over the baseline's option
 set: ``reloaded=True`` with ``soft_reload=True`` issues
 ``systemctl reload-or-try-restart`` (re-reading configuration without a full
 restart, falling back to a restart when the unit has no reload handler),

@@ -29,7 +29,7 @@ driving the two-phase execution model:
    host-name-keyed mapping -- then print each host's config item list with
    ``json.dumps(..., indent=2)``.
 
-``GitConfig`` mirrors pyinfra's ``git.GitConfig``. This script reads the
+``GitConfig`` mirrors the baseline's ``git.GitConfig``. This script reads the
 login user's *global* scope -- no ``repo`` argument -- by running
 ``git config --global -l || true`` and parsing the ``key=value`` rows into
 a list of ``GitConfigItem`` entries (``key`` plus its ``values`` list), so

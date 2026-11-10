@@ -23,7 +23,7 @@ lazily opens an asyncssh connection from its ``connection`` data, gathers
 facts and runs commands for real, and ``run`` closes those connections when
 it finishes.
 
-``git.repo`` mirrors pyinfra's ``git.repo``: it clones a fresh repository or
+``git.repo`` mirrors the baseline's ``git.repo``: it clones a fresh repository or
 reconciles an existing one. This script ensures a ``/tmp/reemote5-deploy``
 repository cloned from the public
 ``https://github.com/octocat/Hello-World.git`` demo repository on the
@@ -55,7 +55,7 @@ path's ``GitConfig``/``GitBranch`` fact reads need it too.
 Cloning writes under ``dest``, which is often owned by another user; flag the
 request ``sudo=True`` when the login user cannot write there -- the run-as
 user and its password come from the inventory ``privilege``, never the
-operation. pyinfra's ``user``/``group`` options, its ``ssh_keyscan``
+operation. The baseline's ``user``/``group`` options, its ``ssh_keyscan``
 preflight and its leading ``files.directory`` ensure-directory step are
 deliberately dropped: reemote5 has no ``chown`` primitive or ``ssh``
 namespace, and there is no ``files.directory`` operation to reach across

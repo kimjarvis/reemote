@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.masquerade`` is a reemote5 original (pyinfra ships no
+``firewalld.masquerade`` is a reemote5 original (the baseline ships no
 firewalld module): it toggles source NAT (masquerading) on a zone -- here
 enabled on ``public``, so traffic forwarded out of the zone leaves with
 the host's own address. It is the prerequisite for cross-machine

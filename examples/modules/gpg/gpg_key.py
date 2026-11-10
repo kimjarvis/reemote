@@ -31,7 +31,7 @@ transfer stays unprivileged regardless, so the log shows a plain ``scp``
 line followed by ``sudo sh -c``.
 
 Without a ``keyid`` the operation is idempotent on the destination's
-*existence* (pyinfra's no-keyid semantics): an existing file is left
+*existence* (the baseline's no-keyid semantics): an existing file is left
 untouched, whatever keys it holds. Pass ``keyid=...`` to compare the
 actual keys held in the keyring instead, or ``present=False`` to remove
 the file. For the APT repository-keyring use case with its ``/etc/apt/

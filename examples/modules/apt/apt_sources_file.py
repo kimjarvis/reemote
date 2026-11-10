@@ -31,12 +31,12 @@ target your machines.
 driven by ``asyncio.run``.
 
 ``apt.sources_file`` writes (or with ``present=False`` removes) a complete
-deb822 ``.sources`` file, mirroring pyinfra's ``apt.sources_file`` -- here
+deb822 ``.sources`` file, mirroring the baseline's ``apt.sources_file`` -- here
 the Docker repository as ``/etc/apt/sources.list.d/docker.sources``. The
 repository is described structurally (``types``, ``uris``, ``suites``,
 ``components``, ``architectures``, ``signed_by``) rather than as a source
 line, and each list option expands into one entry per combination. Unlike
-pyinfra -- whose ``apt.sources_file`` delegates the write to ``files.put``
+the baseline -- whose ``apt.sources_file`` delegates the write to ``files.put``
 -- reemote5 keeps the namespaces separate: the generated deb822 text is
 spooled to ``/tmp`` by an unprivileged scp upload (a transfer never
 elevates), then an elevated ``sh -c`` installs it into ``sources.list.d``

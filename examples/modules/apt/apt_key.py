@@ -49,7 +49,7 @@ spool file. The request is flagged ``sudo=True`` for the install; the
 transfer stays unprivileged regardless, so the log shows a plain ``scp``
 line followed by ``sudo sh -c``.
 
-Unlike pyinfra's existence-checked ``apt.key``, this one is deliberately
+Unlike the baseline's existence-checked ``apt.key``, this one is deliberately
 **non-idempotent** (like ``dnf.key``): it always installs and always reports
 a change, on every run. The stream is compared *by identity* across the
 prepare and apply phases, so it is defined once at module level below --

@@ -132,7 +132,7 @@ async def main() -> None:
         # a host-name-keyed mapping, so both SSH round-trips overlap instead of
         # running one host at a time. process runs the psql select over
         # pg_catalog.pg_database and parses the rows into a dict keyed by
-        # database name -- the pyinfra postgres.PostgresDatabases shape.
+        # database name -- the baseline postgres.PostgresDatabases shape.
         databases = await gather_fact(hosts, PostgresqlDatabases)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's

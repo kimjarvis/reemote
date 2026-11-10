@@ -27,21 +27,21 @@ it finishes. The path is resolved from ``__file__``, so the example works
 from any working directory; point ``INVENTORY_PATH`` at your own file to
 target your machines.
 
-``apt.upgrade`` mirrors pyinfra's ``apt.upgrade``: the
+``apt.upgrade`` mirrors the baseline's ``apt.upgrade``: the
 ``SimulateOperationWillChange`` fact first runs ``upgrade --dry-run``
 (under ``LC_ALL=C`` and the non-interactive prefix) and parses the
 ``N upgraded, N newly installed, N to remove and N not upgraded.`` summary
 line. When every count is zero the operation is a no-op; otherwise it runs
 the real ``upgrade`` -- which, unlike ``dist-upgrade``, never installs new
 dependencies or removes conflicting packages. A failed simulation (no
-summary line) runs the real command anyway, pyinfra's fallback. The script
+summary line) runs the real command anyway, the baseline's fallback. The script
 yields the *same* request twice to show that idempotence across the two
 phases: on a machine with pending upgrades the prepare phase plans both as
 changes (nothing is sent yet), while the apply phase upgrades on the first
 and reports the second as a no-op, because the fresh per-step fact cache
 re-simulates against the upgraded state.
 
-Where pyinfra's ``apt.upgrade`` also takes an ``auto_remove`` parameter
+Where the baseline's ``apt.upgrade`` also takes an ``auto_remove`` parameter
 (appending ``--autoremove`` to the same command), reemote5 deliberately
 drops it in favour of the standalone ``apt.auto_remove`` operation -- see
 ``apt_auto_remove.py`` beside this script -- so orphaned dependencies can be

@@ -5,8 +5,8 @@
 and the five operations (``state``, ``default_policy``, ``logging``, ``reset``,
 ``rule``).
 
-ufw ships no pyinfra module, so every fact and operation here is a reemote5
-original -- there are no pyinfra fixtures to reuse verbatim. The real-transport
+ufw ships no baseline module, so every fact and operation here is a reemote5
+original -- there are no baseline fixtures to reuse verbatim. The real-transport
 paths are instead fed realistic canned ``ufw status verbose``, ``ufw status
 numbered`` and ``ufw app list`` output whose exact column format is taken from
 ufw's own ``backend_iptables.get_status`` renderer (the ``[%2d] %-26s %-12s

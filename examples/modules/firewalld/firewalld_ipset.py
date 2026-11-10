@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.ipset`` is a reemote5 original (pyinfra ships no firewalld
+``firewalld.ipset`` is a reemote5 original (the baseline ships no firewalld
 module): it manages a named IP set -- here ``blocked``, a ``hash:ip``
 set holding two addresses -- the dynamic block/allow list a zone rule
 references as ``ipset:blocked`` (bind it with ``firewalld.source``).

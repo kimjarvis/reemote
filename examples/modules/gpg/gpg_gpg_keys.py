@@ -28,7 +28,7 @@ two-phase execution model:
    across the inventory with ``asyncio.gather`` and returns a
    host-name-keyed mapping -- then print each host's key entries as JSON.
 
-``GpgKeys`` mirrors pyinfra's ``gpg.GpgKeys``: it runs
+``GpgKeys`` mirrors the baseline's ``gpg.GpgKeys``: it runs
 ``gpg --list-keys --with-colons`` and parses the colon records into
 ``GpgKeyInfo`` entries -- id, validity, length, plus any fingerprint, user
 id and subkeys the records attach. Without a ``keyring`` argument (as

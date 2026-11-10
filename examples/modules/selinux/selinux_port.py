@@ -26,12 +26,12 @@ it finishes.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``selinux.port`` ports pyinfra's operation of the same name and adds the
+``selinux.port`` ports the baseline's operation of the same name and adds the
 *modify* capability the port proposal asked for: it labels tcp/8080
 ``http_port_t`` so httpd may bind the alternate port. With ``present=True``
 (the default) an unlabelled port is added (``semanage port -a``) and a port
 already carrying a *different* type is modified in place (``-m``) -- the
-update scenario pyinfra's add/remove-only operation could not express;
+update scenario the baseline's add/remove-only operation could not express;
 ``present=False`` deletes the label (``-d``).
 
 Idempotence dispatches on tooling: when ``sepolicy`` is installed the

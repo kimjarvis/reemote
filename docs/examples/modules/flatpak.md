@@ -18,7 +18,7 @@ removes) flatpak applications by their reverse-domain IDs, reading the
 once for name-membership idempotence — flatpak application IDs carry no
 version to compare, so a listed ID is present — and re-running is a no-op.
 An optional `remote` names the source to install from (e.g. `flathub`),
-applied to the install direction only, as in pyinfra. The script installs
+applied to the install direction only, as in the baseline. The script installs
 one application from `flathub`, then removes it again — a self-restoring
 cycle that leaves the shared Ubuntu host's flatpak state as it found it —
 yielding each request twice so the second of each pair is a guaranteed

@@ -35,7 +35,7 @@ inventory comes from the shared ``inventory.json`` in the project root:
    mapping -- then print each host's name -> running-bool mapping with
    ``json.dumps(..., indent=2)``.
 
-``OpenrcStatus`` is a port of pyinfra's ``openrc.OpenrcStatus``: it runs
+``OpenrcStatus`` is a port of the baseline's ``openrc.OpenrcStatus``: it runs
 ``rc-status <runlevel>`` and parses each ``name [ state ]`` row into a
 running bool -- only ``started`` reads True, so ``stopped``, ``crashed`` and
 every other state read False. The optional uptime suffix a started service

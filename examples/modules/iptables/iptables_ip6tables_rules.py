@@ -28,7 +28,7 @@ driving the two-phase execution model:
    host-name-keyed mapping -- then print each host's parsed rule list
    with ``json.dumps(..., indent=2)``.
 
-The fact is the IPv6 sibling of ``IptablesRules`` (the pyinfra
+The fact is the IPv6 sibling of ``IptablesRules`` (the baseline
 ``iptables.Ip6tablesRules`` shape): it parses every ``-A`` line of
 ``ip6tables-save -t filter`` into the same definition-dict shape, with
 the address fields holding IPv6 CIDRs. Pass another table name to

@@ -29,7 +29,7 @@ target your machines.
 driven by ``asyncio.run``.
 
 ``dnf.update`` runs ``dnf update -y`` over every installed package, bringing
-the whole system up to date. Like pyinfra's ``dnf.update`` it is
+the whole system up to date. Like the baseline's ``dnf.update`` it is
 **non-idempotent**: it reads no fact -- there is no cheap way to tell whether
 any package actually has a pending upgrade -- so it always reports a change
 and always runs, and dnf is itself a no-op when the system is already up to

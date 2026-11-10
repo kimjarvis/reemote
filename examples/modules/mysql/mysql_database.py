@@ -16,15 +16,15 @@ two-phase execution model end to end over a **real SSH transport**
    objects. Every request is flagged ``sudo=True``, so the ``mysql``
    client rides under root and connects through unix-socket
    authentication -- no password travels through operation arguments,
-   plans or logs (pyinfra's ``mysql_password`` option is deliberately
+   plans or logs (the baseline's ``mysql_password`` option is deliberately
    dropped namespace-wide).
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``mysql.database`` mirrors pyinfra's operation and extends it beyond
+``mysql.database`` mirrors the baseline's operation and extends it beyond
 creation: it reads the ``MysqlDatabases`` fact, creates an absent database
 with the requested charset/collation, and reconciles an existing one's
 character set and collation through ALTER DATABASE only where they differ
-(pyinfra applies them only at CREATE time and never alters).
+(the baseline applies them only at CREATE time and never alters).
 
 The deploy yields the same create request twice: in the prepare phase
 (where nothing is sent) both plan as changes, but in the apply phase the

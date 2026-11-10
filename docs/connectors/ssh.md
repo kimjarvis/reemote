@@ -1,7 +1,7 @@
 # The ssh connector
 
 The ssh connector is the **default transport**: a deploy runs over SSH on a
-real remote machine through asyncssh, mirroring pyinfra's `@ssh` connector.
+real remote machine through asyncssh, mirroring the baseline's `@ssh` connector.
 It is selected per inventory entry with `connection.connector` — or simply
 by omitting the key, since `"ssh"` is the default:
 

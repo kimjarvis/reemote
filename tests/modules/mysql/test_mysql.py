@@ -7,12 +7,12 @@
 ``variable`` operations.
 
 Covers ``reemote5.modules.mysql.mysql``. ``MysqlDatabases``, ``MysqlUsers``
-and ``MysqlUserGrants`` mirror pyinfra's ``mysql`` facts, so their
-real-transport parity reuses pyinfra's own fact fixtures verbatim (canned
+and ``MysqlUserGrants`` mirror the baseline's ``mysql`` facts, so their
+real-transport parity reuses the baseline's own fact fixtures verbatim (canned
 ``mysql -Be`` output plus the name-keyed result), including the
 custom-connection command render (minus the ``-p`` password flag the
 namespace deliberately drops, with space-separated shlex-quoted flags).
-The operation parity reuses pyinfra's own operation-test fixtures
+The operation parity reuses the baseline's own operation-test fixtures
 (``mysql.privileges`` add/delete and the ALL+GRANT OPTION special cases,
 ``mysql.user`` resource limits and REQUIRE SSL alter, ``mysql.database``'s
 privileges bundle). The ten reemote5-original facts and eight original
@@ -109,7 +109,7 @@ async def materialize(host: Host, operation, **kwargs):
 
 
 def test_parse_rows_empty_output_is_empty_list():
-    # The hardened deviation from pyinfra: empty stdout parses to [] rather
+    # The hardened deviation from the baseline: empty stdout parses to [] rather
     # than raising on an unconditional header read (a guarded fact whose
     # command errors reads as empty output).
     assert _parse_rows([]) == []
@@ -121,7 +121,7 @@ def test_parse_rows_header_keyed_and_null_marker():
     # Tab-separated mysql -B output: the first line names the columns,
     # each following line is one row. Both the empty field and the
     # literal NULL batch marker read as None (real mysql -B prints NULL
-    # columns as NULL; pyinfra's fixtures only exercise the empty form).
+    # columns as NULL; the baseline's fixtures only exercise the empty form).
     lines = ["A\tB\tC", "x\tNULL\tz", "y\t\tw"]
     assert _parse_rows(lines) == [
         {"A": "x", "B": None, "C": "z"},
@@ -158,9 +158,9 @@ def test_account_doubles_embedded_double_quotes():
 
 
 def test_mysql_sql_flag_order_and_quoting():
-    # pyinfra's operand order: the positional database, then -u user,
+    # The baseline's operand order: the positional database, then -u user,
     # -h host, -P port. Flags are space-separated and shlex-quoted (the
-    # documented deviation from pyinfra's attached -u<user> form); plain
+    # documented deviation from the baseline's attached -u<user> form); plain
     # values quote to themselves, so ordinary names keep command parity.
     assert _mysql_sql("SELECT 1") == "mysql -Be 'SELECT 1'"
     assert _mysql_sql(
@@ -195,7 +195,7 @@ def test_database_command_rendering():
     assert MysqlDatabaseCommand(database="shop").shell() == (
         "mysql -Be 'CREATE DATABASE `shop`'"
     )
-    # pyinfra's clause order: COLLATE then CHARSET.
+    # The baseline's clause order: COLLATE then CHARSET.
     assert MysqlDatabaseCommand(
         database="shop", charset="utf8mb4", collate="utf8mb4_bin"
     ).shell() == "mysql -Be 'CREATE DATABASE `shop` COLLATE `utf8mb4_bin` CHARSET `utf8mb4`'"
@@ -211,7 +211,7 @@ def test_dump_command_rendering():
     assert MysqlDumpCommand(dest="/tmp/d b.sql", mysql_database="shop").shell() == (
         "mysqldump shop > '/tmp/d b.sql'"
     )
-    # pyinfra parity: database=None renders a bare mysqldump (no
+    # baseline parity: database=None renders a bare mysqldump (no
     # --all-databases is injected).
     assert MysqlDumpCommand(dest="/tmp/all.sql").shell() == "mysqldump > /tmp/all.sql"
 
@@ -409,7 +409,7 @@ def test_command_shell_elevated_forms():
     )
 
 
-# --- MysqlDatabases (pyinfra parity) -----------------------------------------
+# --- MysqlDatabases (baseline parity) -----------------------------------------
 
 
 DATABASES_OUTPUT = """\
@@ -417,25 +417,25 @@ CATALOG_NAME\tSCHEMA_NAME\tDEFAULT_CHARACTER_SET_NAME\tDEFAULT_COLLATION_NAME\tS
 def\tinformation_schema\tutf8\tutf8_general_ci\tNULL
 def\tmysql\tutf8mb4\tutf8mb4_general_ci\tNULL
 def\tperformance_schema\tutf8\tutf8_general_ci\tNULL
-def\tpyinfra_stuff\tutf8\tutf8_general_ci\tNULL
+def\tbaseline_stuff\tutf8\tutf8_general_ci\tNULL
 """
 
 DATABASES_FACT = {
     "information_schema": {"character_set": "utf8", "collation_name": "utf8_general_ci"},
     "mysql": {"character_set": "utf8mb4", "collation_name": "utf8mb4_general_ci"},
     "performance_schema": {"character_set": "utf8", "collation_name": "utf8_general_ci"},
-    "pyinfra_stuff": {"character_set": "utf8", "collation_name": "utf8_general_ci"},
+    "baseline_stuff": {"character_set": "utf8", "collation_name": "utf8_general_ci"},
 }
 
 
-async def test_mysql_databases_pyinfra_parity():
+async def test_mysql_databases_baseline_parity():
     host = CannedShellHost(DATABASES_OUTPUT)
     assert await MysqlDatabases.process(host) == DATABASES_FACT
     assert host.shells == ["mysql -Be 'SELECT * FROM information_schema.SCHEMATA'"]
 
 
 def test_mysql_databases_custom_connection_command():
-    # pyinfra's fixture args minus the password, with the documented
+    # The baseline's fixture args minus the password, with the documented
     # space-separated shlex-quoted flags (metacharacters quote literally).
     assert MysqlDatabases.command(
         mysql_user="x$(reboot)", mysql_host="h; rm -rf /", mysql_port=3306
@@ -453,13 +453,13 @@ async def test_mysql_databases_seam_copy_on_read():
     assert host.mysql_databases["shop"]["character_set"] == "utf8mb4"
 
 
-# --- MysqlUsers (pyinfra parity) ---------------------------------------------
+# --- MysqlUsers (baseline parity) ---------------------------------------------
 
 
 USERS_OUTPUT = """\
 Host\tUser\tPassword\tSelect_priv\tInsert_priv\tUpdate_priv\tDelete_priv\tCreate_priv\tDrop_priv\tReload_priv\tShutdown_priv\tProcess_priv\tFile_priv\tGrant_priv\tReferences_priv\tIndex_priv\tAlter_priv\tShow_db_priv\tSuper_priv\tCreate_tmp_table_priv\tLock_tables_priv\tExecute_priv\tRepl_slave_priv\tRepl_client_priv\tCreate_view_priv\tShow_view_priv\tCreate_routine_priv\tAlter_routine_priv\tCreate_user_priv\tEvent_priv\tTrigger_priv\tCreate_tablespace_priv\tssl_type\tssl_cipher\tx509_issuer\tx509_subject\tmax_questions\tmax_updates\tmax_connections\tmax_user_connections\tplugin\tauthentication_string\tpassword_expired\tis_role\tdefault_role\tmax_statement_time
 localhost\troot\t\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\tY\t\t\t\t\t0\t0\t0\t0\tunix_socket\t\tN\tN\t\t0.000000
-localhost\tpyinfra\t*DAABDB4081CCE333168409A6DB119E18D8EAA073\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\t\t\t\t\t0\t0\t0\t0\t\t\tN\tN\t\t0.000000
+localhost\tbaseline\t*DAABDB4081CCE333168409A6DB119E18D8EAA073\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\t\t\t\t\t0\t0\t0\t0\t\t\tN\tN\t\t0.000000
 \t\t*DAABDB4081CCE333168409A6DB119E18D8EAA073\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\tN\t\t\t\t\t0\t0\t0\t0\t\t\tN\tN\t\t0.000000
 """
 
@@ -490,7 +490,7 @@ USERS_FACT = {
         "max_statement_time": "0.000000",
         "privileges": ROOT_PRIVILEGES,
     },
-    "pyinfra@localhost": {
+    "baseline@localhost": {
         "Password": "*DAABDB4081CCE333168409A6DB119E18D8EAA073",
         "ssl_type": None,
         "ssl_cipher": None,
@@ -511,7 +511,7 @@ USERS_FACT = {
 }
 
 
-async def test_mysql_users_pyinfra_parity():
+async def test_mysql_users_baseline_parity():
     # The MariaDB-shaped fixture: the anonymous (empty Host/User) row is
     # skipped, *_priv columns fold into the sorted privileges list,
     # max_* coerce with try_int and password_expired/is_role from Y/N.
@@ -529,7 +529,7 @@ async def test_mysql_users_seam_copy_on_read():
     assert host.mysql_users["root@localhost"]["privileges"] == ROOT_PRIVILEGES
 
 
-# --- MysqlUserGrants (pyinfra parity) ----------------------------------------
+# --- MysqlUserGrants (baseline parity) ----------------------------------------
 
 
 GRANTS_OUTPUT = """\
@@ -543,10 +543,10 @@ GRANTS_FACT = {
 }
 
 
-async def test_mysql_user_grants_pyinfra_parity():
+async def test_mysql_user_grants_baseline_parity():
     host = CannedShellHost(GRANTS_OUTPUT)
     assert await MysqlUserGrants.process(host, "someuser") == GRANTS_FACT
-    # The || true guard is pyinfra's ignore_errors (SHOW GRANTS errors
+    # The || true guard is the baseline's ignore_errors (SHOW GRANTS errors
     # when the user does not exist, which reads as {}).
     assert host.shells == ['mysql -Be \'SHOW GRANTS FOR "someuser"@"localhost"\' || true']
 
@@ -1113,7 +1113,7 @@ async def test_database_creates_with_charset_and_collate():
 
 
 async def test_database_alters_on_charset_drift():
-    # The reemote5 extension over pyinfra: charset/collate compare
+    # The reemote5 extension over the baseline: charset/collate compare
     # against MysqlDatabases and render ALTER DATABASE on drift.
     host = SimulatedHost(
         name="h",
@@ -1144,8 +1144,8 @@ async def test_database_drops_and_reports_an_absent_database():
     assert commands == []
 
 
-async def test_database_add_privileges_pyinfra_parity():
-    # pyinfra's add_privileges fixture: CREATE DATABASE, GRANT ALL on the
+async def test_database_add_privileges_baseline_parity():
+    # The baseline's add_privileges fixture: CREATE DATABASE, GRANT ALL on the
     # database target, FLUSH PRIVILEGES.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
@@ -1162,11 +1162,11 @@ async def test_database_add_privileges_pyinfra_parity():
     ]
 
 
-# --- mysql.privileges (pyinfra parity) ---------------------------------------
+# --- mysql.privileges (baseline parity) ---------------------------------------
 
 
-async def test_privileges_add_delete_pyinfra_parity():
-    # pyinfra's add_delete fixture: extras revoked, missing granted,
+async def test_privileges_add_delete_baseline_parity():
+    # The baseline's add_delete fixture: extras revoked, missing granted,
     # sorted, then FLUSH PRIVILEGES.
     host = SimulatedHost(
         name="h",
@@ -1186,7 +1186,7 @@ async def test_privileges_add_delete_pyinfra_parity():
     ]
 
 
-async def test_privileges_delete_all_with_grant_option_pyinfra_parity():
+async def test_privileges_delete_all_with_grant_option_baseline_parity():
     # The ALL+GRANT OPTION pair revokes in two steps to keep the ON form.
     host = SimulatedHost(
         name="h",
@@ -1203,7 +1203,7 @@ async def test_privileges_delete_all_with_grant_option_pyinfra_parity():
     ]
 
 
-async def test_privileges_add_all_with_grant_option_pyinfra_parity():
+async def test_privileges_add_all_with_grant_option_baseline_parity():
     host = SimulatedHost(
         name="h", mysql_user_grants={"someuser@localhost": {"*.*": ["USAGE"]}}
     )
@@ -1291,7 +1291,7 @@ async def test_privileges_flush_false_and_database_scope():
 # --- mysql.user --------------------------------------------------------------
 
 
-async def test_user_add_resources_pyinfra_parity():
+async def test_user_add_resources_baseline_parity():
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
         host, mysql.user, user="someuser", user_hostname="localwhat",
@@ -1308,7 +1308,7 @@ async def test_user_add_resources_pyinfra_parity():
     ]
 
 
-async def test_user_update_ssl_pyinfra_parity():
+async def test_user_update_ssl_baseline_parity():
     host = SimulatedHost(
         name="h", mysql_users={"someuser@localhost": {"ssl_type": None}}
     )
@@ -1324,7 +1324,7 @@ async def test_user_update_ssl_pyinfra_parity():
 
 async def test_user_creates_with_auth_plugin_instead_of_password():
     # The credentials decision: auth_plugin (IDENTIFIED WITH) replaces
-    # pyinfra's password option and IS comparable, so it alters on drift.
+    # The baseline's password option and IS comparable, so it alters on drift.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
         host, mysql.user, user="app", auth_plugin="auth_socket"
@@ -1834,8 +1834,8 @@ async def test_sql_dump_load_are_stateless():
     assert commands == [MysqlLoadCommand(src="/tmp/shop.sql", mysql_database="shop")]
 
 
-async def test_operations_absorb_pyinfra_global_arguments():
-    # **kwargs absorbs pyinfra's global arguments (op() already strips
+async def test_operations_absorb_extra_global_arguments():
+    # **kwargs absorbs the baseline's global arguments (op() already strips
     # name/sudo/su); a dropped credential never reaches the shell.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(

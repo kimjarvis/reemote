@@ -26,7 +26,7 @@ it finishes.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``selinux.mode`` is a reemote5 original (pyinfra ships no mode operation):
+``selinux.mode`` is a reemote5 original (the baseline ships no mode operation):
 it sets the *runtime* enforcing state with ``setenforce`` -- here
 ``enforcing``, the secure default; ``permissive`` logs denials without
 enforcing them, the troubleshooting half-step. The operation is idempotent

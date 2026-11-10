@@ -29,7 +29,7 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's release info with
    ``json.dumps(..., indent=2)``.
 
-``LsbRelease`` mirrors pyinfra's ``server.LsbRelease``: it runs
+``LsbRelease`` mirrors the baseline's ``server.LsbRelease``: it runs
 ``lsb_release -ca`` and returns the release information as a dict with
 lower-cased, last-word keys (e.g. ``{"id": "Ubuntu", "description":
 "Ubuntu 18.04.3 LTS", "release": "18.04", "codename": "bionic"}``), so a

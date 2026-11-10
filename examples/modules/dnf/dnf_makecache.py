@@ -33,7 +33,7 @@ convention -- a failing makecache raises ``CommandError`` at apply, which
 
 ``dnf.repo`` also accepts the role's ``yum_repository`` fields
 (``includepkgs``, ``repo_gpgcheck``, ``proxy``, ``proxy_username``,
-``proxy_password``) as an extension beyond pyinfra; this example keeps the
+``proxy_password``) as an extension beyond the baseline; this example keeps the
 same plain Docker CE arguments as ``dnf_repo.py`` so the shared CentOS
 hosts converge on one repo-file content no matter which example ran last.
 

@@ -29,7 +29,7 @@ driving the two-phase execution model:
    entries with ``json.dumps(..., indent=2)``.
 
 The fact runs ``lxc list --format json --fast`` as the login user -- the
-pyinfra ``lxd.LxdContainers`` command verbatim, unscoped to any remote or
+baseline ``lxd.LxdContainers`` command verbatim, unscoped to any remote or
 project (the CLI's current ones apply). The login user needs access to
 the LXD daemon socket (member of the ``lxd`` group). Entries pass through
 as the CLI renders them; empty output reads as ``[]`` instead of
@@ -126,7 +126,7 @@ async def main() -> None:
         # fans LxdContainers.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
         # running one host at a time. process runs lxc list --format json
-        # --fast and passes the entries through -- the pyinfra shape.
+        # --fast and passes the entries through -- the baseline shape.
         containers = await gather_fact(hosts, LxdContainers)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's

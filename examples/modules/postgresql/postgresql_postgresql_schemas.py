@@ -29,7 +29,7 @@ driving the two-phase execution model:
    ``PostgresqlSchema`` entries (``name``, ``owner``) with
    ``json.dumps(..., indent=2)``.
 
-The fact is a reemote5-original visibility fact (pyinfra has no schema
+The fact is a reemote5-original visibility fact (the baseline has no schema
 fact): it selects user schemas and their owners from ``pg_namespace``, so
 ``postgresql.schema`` can create, re-own or drop a schema idempotently.
 The fact is database-scoped: it reads the database named by

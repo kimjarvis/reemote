@@ -31,7 +31,7 @@ your machines.
 driven by ``asyncio.run``.
 
 ``apk.hold`` is the apk counterpart of ``apt.mark`` and a reemote5 original --
-pyinfra ships no apk hold. apk has no ``apt-mark`` verb: it keeps a package
+the baseline ships no apk hold. apk has no ``apt-mark`` verb: it keeps a package
 out of upgrades by writing a version *constraint* into ``/etc/apk/world``, so
 ``present=True`` re-adds each name with ``apk add <pkg>=<version>`` to pin it,
 while ``present=False`` re-adds the bare ``apk add <pkg>``, rewriting the

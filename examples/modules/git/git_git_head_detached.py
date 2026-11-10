@@ -29,7 +29,7 @@ driving the two-phase execution model:
    path argument verbatim, and returns a host-name-keyed mapping -- then
    print each host's detached-HEAD answer.
 
-``GitHeadDetached`` is a reemote5-original fact -- pyinfra has no
+``GitHeadDetached`` is a reemote5-original fact -- the baseline has no
 equivalent. It runs ``! test -d <repo> || (cd <repo> && if git
 symbolic-ref -q HEAD >/dev/null 2>&1; then echo attached; elif git
 rev-parse --git-dir >/dev/null 2>&1; then echo detached; fi)`` and answers

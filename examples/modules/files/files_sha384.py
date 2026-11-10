@@ -29,7 +29,7 @@ two-phase execution model:
    and returns a host-name-keyed mapping -- then print each host's digest
    with ``json.dumps(..., indent=2)``.
 
-``Sha384File`` mirrors pyinfra's ``files.Sha384File`` -- the hash family's
+``Sha384File`` mirrors the baseline's ``files.Sha384File`` -- the hash family's
 SHA-384 member, sharing the family's mechanics: one guarded command tries
 the tool spellings in order (``sha384sum``, ``shasum -a 384``, ``sha384``)
 reading the file through *stdin* (``< path``) so the checksum tool never

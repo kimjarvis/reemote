@@ -1,48 +1,32 @@
 # mysql module
 
-## mysql Facts
-
-::: reemote5.modules.mysql.mysql
-    options:
-      show_root_heading: false
-      members:
-        - MysqlBinaryLogs
-        - MysqlColumns
-        - MysqlConnections
-        - MysqlDatabases
-        - MysqlEngines
-        - MysqlIndexes
-        - MysqlPlugins
-        - MysqlReplication
-        - MysqlStatus
-        - MysqlTables
-        - MysqlUserGrants
-        - MysqlUsers
-        - MysqlVariables
-
-## mysql Returns
-
 ::: reemote5.modules.mysql.mysql
     options:
       show_root_heading: false
       members:
         - MysqlBinaryLog
+        - MysqlBinaryLogs
         - MysqlColumn
+        - MysqlColumns
         - MysqlConnection
+        - MysqlConnections
         - MysqlDatabase
+        - MysqlDatabases
         - MysqlEngine
+        - MysqlEngines
         - MysqlIndex
+        - MysqlIndexes
         - MysqlPlugin
+        - MysqlPlugins
         - MysqlReplicaStatus
+        - MysqlReplication
+        - MysqlStatus
         - MysqlTable
+        - MysqlTables
         - MysqlUser
-
-## mysql Operations
-
-::: reemote5.modules.mysql.mysql
-    options:
-      show_root_heading: false
-      members:
+        - MysqlUserGrants
+        - MysqlUsers
+        - MysqlVariables
         - database
         - dump
         - index
@@ -64,7 +48,7 @@
 <!---
 
 `reemote5.modules.mysql.mysql` combines the MySQL facts and operations in a
-single source, extending pyinfra's three-fact/six-operation `mysql`
+single source, extending the baseline's three-fact/six-operation `mysql`
 namespace toward complete control over and visibility into a server. Every
 fact and operation runs through the `mysql` client on the target host
 (`mysql [--defaults-extra-file=<file>] [database] [-u user] [-h host]
@@ -73,7 +57,7 @@ fact and operation runs through the `mysql` client on the target host
 account comes from the OS user the request rides under — flag requests
 `sudo=True` for root socket authentication, or rely on a host-side
 `~/.my.cnf` or the `mysql_defaults_file` option file for a TCP login.
-pyinfra's `mysql_password` option (and the `-p<password>` it renders into
+the baseline's `mysql_password` option (and the `-p<password>` it renders into
 the command line, visible in process lists and logs) is deliberately
 dropped namespace-wide, as is `mysql.user`'s `password` parameter
 (replaced by the comparable `auth_plugin`): credentials never travel
@@ -91,12 +75,12 @@ take their target positionally: `MysqlTables(database)`,
 `MysqlColumns(database, table)`, `MysqlIndexes(database, table=None)` and
 `MysqlUserGrants(user, hostname="localhost")`.
 
-`MysqlDatabases`, `MysqlUsers` and `MysqlUserGrants` mirror pyinfra's
+`MysqlDatabases`, `MysqlUsers` and `MysqlUserGrants` mirror the baseline's
 `mysql.MysqlDatabases` / `MysqlUsers` / `MysqlUserGrants`: the same
 `information_schema.SCHEMATA` / `mysql.user` selects and the same
-`SHOW GRANTS FOR` parsed with pyinfra's grant regex (`WITH GRANT OPTION`
+`SHOW GRANTS FOR` parsed with the baseline's grant regex (`WITH GRANT OPTION`
 folded in as a `GRANT OPTION` privilege, the `|| true` guard standing in
-for pyinfra's `ignore_errors` — a missing user reads as `{}`).
+for the baseline's `ignore_errors` — a missing user reads as `{}`).
 `MysqlDatabases` keeps the name-keyed mapping of
 character-set/collation pairs; `MysqlUsers` keys `user@host`, folds the
 `*_priv` columns into a sorted `privileges` list, coerces the `max_*`
@@ -105,11 +89,11 @@ set follows the server version/flavour, so `MysqlUser` is a `total=False`
 TypedDict carrying whatever columns the server reports. Two deliberate
 deviations in `MysqlUserGrants`: the privilege values are sorted LISTS
 rather than sets (JSON-printable, deterministic in reasons), and
-role-grant lines — which pyinfra's regex skips — are additionally
+role-grant lines — which the baseline's regex skips — are additionally
 captured under their backticked ``role``@``host`` key with the single
 privilege `ROLE`, so `mysql.role` can check membership idempotently.
 
-The ten reemote5-original facts answer the visibility gaps pyinfra
+The ten reemote5-original facts answer the visibility gaps the baseline
 leaves: `MysqlBinaryLogs` (the binlog file list and sizes from
 `SHOW BINARY LOGS`, `|| true`-guarded so a server with binary logging
 disabled reads as `[]`), `MysqlColumns` (types, nullability, defaults,
@@ -147,24 +131,24 @@ command descriptor per mutation — never touching the host itself. Reach
 operations through the namespace (`mysql.database`), not the top-level
 package.
 
-The six pyinfra-parity operations keep their names and shells:
+The six the baseline-parity operations keep their names and shells:
 `mysql.sql` executes arbitrary SQL (stateless, always yields — the
 escape hatch for anything the typed operations do not cover),
 `mysql.dump` writes a `mysqldump` to a host-side file and `mysql.load`
 feeds a host-side SQL file back through `mysql` (both stateless; `load`'s
 `src` is a path on the TARGET host — spool controller-side bytes with
-`files.put` first; as in pyinfra, `dump` with no database renders a bare
+`files.put` first; as in the baseline, `dump` with no database renders a bare
 `mysqldump`, no `--all-databases` is injected). `mysql.privileges` diffs
 the desired set against `MysqlUserGrants` for the exact `db.table`
 target, revoking extras and granting missing ones in sorted order
 (`USAGE` is never revoked when something is granted, the ALL +
-GRANT OPTION pair uses pyinfra's two-step forms, and role grants are
+GRANT OPTION pair uses the baseline's two-step forms, and role grants are
 membership, excluded from the diff). `mysql.database` is extended beyond
-pyinfra: charset/collation are compared against `MysqlDatabases` and an
+the baseline: charset/collation are compared against `MysqlDatabases` and an
 existing database is altered on drift (the `postgresql.database`
 idempotent-alter precedent), while the `user`/`user_privileges` grant
 delegation shares the `mysql.privileges` core. `mysql.user` keeps
-pyinfra's REQUIRE SSL/X509 validation, resource-limit comparisons and
+the baseline's REQUIRE SSL/X509 validation, resource-limit comparisons and
 global-privileges bundle, but replaces the creation-only `password`
 (`IDENTIFIED BY`, whose hash cannot be compared) with `auth_plugin`
 (`IDENTIFIED WITH`, e.g. `auth_socket`), which IS comparable against the

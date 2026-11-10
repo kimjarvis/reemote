@@ -29,7 +29,7 @@ two-phase execution model:
    -- then print each host's boolean answer with
    ``json.dumps(..., indent=2)``.
 
-``HasGui`` mirrors pyinfra's ``server.HasGui``: it runs
+``HasGui`` mirrors the baseline's ``server.HasGui``: it runs
 ``ls /usr/bin/*session || true`` and returns ``True`` when any listed path
 is a known desktop-session binary (GNOME, MATE, LXDE, KDE Plasma, XFCE 4),
 so a deploy can branch on whether a machine is a desktop or a headless

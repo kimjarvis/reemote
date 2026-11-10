@@ -17,9 +17,9 @@ replica channels from ``SHOW REPLICA STATUS``), ``MysqlStatus`` (the
 ``SHOW GLOBAL STATUS`` runtime counters), ``MysqlTables`` (one
 database's table metadata and sizes) and ``MysqlVariables`` (the
 ``SHOW GLOBAL VARIABLES`` configuration). ``MysqlDatabases``,
-``MysqlUsers`` and ``MysqlUserGrants`` mirror pyinfra's ``mysql`` facts;
-every other fact is reemote5-original and closes a visibility gap
-pyinfra leaves open.
+``MysqlUsers`` and ``MysqlUserGrants`` are ports of the ``mysql`` facts;
+every other fact is reemote5-original and closes a visibility gap that
+set leaves open.
 
 Operation side: ``mysql.database`` and ``mysql.user`` manage databases
 and accounts (both create/drop AND idempotently alter existing ones);
@@ -37,7 +37,7 @@ host, targeting MySQL 8.0.22+ syntax (``SHOW REPLICA STATUS``,
 ``START REPLICA``).
 
 Credentials decision (developer-approved, the postgresql precedent):
-pyinfra's ``mysql_password`` connection parameter and ``user``'s
+The ``mysql_password`` connection parameter and ``user``'s
 ``password`` option are deliberately dropped. reemote5 renders raw
 shell strings into the plan/apply log, so no operation accepts a
 password. Authenticate with sudo + the ``unix_socket``/``auth_socket``
@@ -49,7 +49,7 @@ credentials. ``mysql.user`` takes an ``auth_plugin`` option (e.g.
 
 Every fact and operation accepts the connection keyword arguments
 ``mysql_user``/``mysql_host``/``mysql_port``/``mysql_database``/
-``mysql_defaults_file`` (pyinfra's ``mysql_*`` module arguments minus
+``mysql_defaults_file`` (the ``mysql_*`` module arguments minus
 the password, plus the defaults-file escape hatch).
 """
 
@@ -73,15 +73,15 @@ def _mysql_base(
     mysql_defaults_file: str | None = None,
     executable: str = "mysql",
 ) -> str:
-    """Render the mysql invocation prefix (pyinfra's ``make_mysql_command``).
+    """Render the mysql invocation prefix (the mysql prefix builder).
 
-    Mirrors pyinfra's operand order -- the positional database, then
+    The operand order -- the positional database, then
     ``-u`` user, ``-h`` host, ``-P`` port -- with the ``-p`` password
     flag deliberately dropped (the credentials decision above).
     ``--defaults-extra-file`` must be the FIRST option on a mysql
     command line, so it renders before everything else. Flags are
     space-separated and every user-supplied operand is ``shlex``-quoted,
-    a deliberate deviation from pyinfra's attached ``-u<user>`` form;
+    a deliberate deviation from the attached ``-u<user>`` form;
     plain values quote to themselves, so command parity holds for
     ordinary names.
     """
@@ -109,11 +109,11 @@ def _mysql_sql(
     mysql_defaults_file: str | None = None,
     ignore_errors: bool = False,
 ) -> str:
-    """Render ``mysql ... -Be '<sql>'`` (pyinfra's ``make_execute_mysql_command``).
+    """Render ``mysql ... -Be '<sql>'`` (the statement executor).
 
     ``-B`` is batch (tab-separated, header row) output and ``-e`` runs
     the statement(s) and exits -- the shape ``_parse_rows`` reads.
-    ``ignore_errors`` appends ``|| true`` (pyinfra's MysqlUserGrants
+    ``ignore_errors`` appends ``|| true`` (the MysqlUserGrants
     behaviour: SHOW GRANTS errors when the user does not exist).
     """
     base = _mysql_base(
@@ -132,7 +132,7 @@ def _mysql_sql(
 def _quote_ident(name: str) -> str:
     """Quote a SQL identifier in backticks, doubling embedded backticks.
 
-    pyinfra interpolates ``f'`{name}`'`` raw, which breaks on a name
+    Raw interpolation of ``f'`{name}`'`` breaks on a name
     containing a backtick; reemote5 escapes it the way MySQL's own
     identifier quoting does.
     """
@@ -149,7 +149,7 @@ def _quote_literal(value: str) -> str:
 
 
 def _try_int(value: str | None) -> int | str | None:
-    """pyinfra's ``try_int``: an integer when the text is numeric, else raw."""
+    """``try_int``: an integer when the text is numeric, else raw."""
     if value is None:
         return None
     try:
@@ -163,14 +163,14 @@ def _parse_rows(
 ) -> list[dict[str, str | None]]:
     """Parse ``mysql -B`` output into header-keyed row dicts.
 
-    Mirrors pyinfra's ``parse_columns_and_rows`` over tab-separated
+    The column/row parser over tab-separated
     output: the first line names the columns (optionally lowercased,
-    as pyinfra does for information_schema.SCHEMATA), each following
+    as for information_schema.SCHEMATA), each following
     line is one row, and an empty field reads as None. Two hardening
     deviations: empty output parses to ``[]`` instead of raising on
-    pyinfra's unconditional header read, and the literal ``NULL`` batch
+    an unconditional header read, and the literal ``NULL`` batch
     marker also reads as None (real ``mysql -B`` prints NULL columns as
-    ``NULL``; pyinfra's own fixtures only exercise the empty form).
+    ``NULL``; the fixtures only exercise the empty form).
     """
     lines = list(output)
     if not lines:
@@ -276,9 +276,9 @@ class MysqlBinaryLogs(_MysqlFact):
         Examples can be found in ``examples/modules/mysql/mysql_mysql_binary_logs.py``.
     """
 
-    # reemote5-original: pyinfra has no binary-log visibility fact. The
+    # reemote5-original: there is no other binary-log visibility fact. The
     # statement errors (1381) when binary logging is disabled, so the
-    # command carries pyinfra's MysqlUserGrants-style ``|| true`` guard
+    # command carries a MysqlUserGrants-style ``|| true`` guard
     # and a disabled/absent binlog reads as []. The ``Encrypted`` column
     # only exists on MySQL 8.0.14+; older servers report None.
 
@@ -382,7 +382,7 @@ class MysqlColumns(_MysqlFact):
         Examples can be found in ``examples/modules/mysql/mysql_mysql_columns.py``.
     """
 
-    # reemote5-original: pyinfra has no column-level fact. Reads
+    # reemote5-original: there is no other column-level fact. Reads
     # information_schema.COLUMNS (not SHOW COLUMNS, whose header set
     # varies) filtered to one table and ordered by ORDINAL_POSITION so
     # the list is deterministic. An unknown database/table reads as [].
@@ -515,7 +515,7 @@ class MysqlConnections(_MysqlFact):
         Examples can be found in ``examples/modules/mysql/mysql_mysql_connections.py``.
     """
 
-    # reemote5-original: pyinfra has no connection-visibility fact.
+    # reemote5-original: there is no other connection-visibility fact.
     # Reads information_schema.PROCESSLIST (the SHOW FULL PROCESSLIST
     # columns) but deliberately omits the ``INFO`` column -- the SQL
     # text can carry literal credentials and personal data, so the fact
@@ -609,12 +609,12 @@ class MysqlDatabases(_MysqlFact):
         Examples can be found in ``examples/modules/mysql/mysql_mysql_databases.py``.
     """
 
-    # Mirrors pyinfra's ``mysql.MysqlDatabases``: SELECT * over
+    # ``mysql.MysqlDatabases``: SELECT * over
     # information_schema.SCHEMATA with lowercased column titles, keyed
     # by schema_name and reduced to the character_set/collation_name
     # pair. The name-keyed outer dict is kept (the device-keyed-mapping
     # exception to the entry-list guideline) with a MysqlDatabase entry
-    # per database. pyinfra's ``requires_command`` gating is dropped: a
+    # per database. There is no command-existence gate: a
     # missing mysql exits 127, reported as CommandNotFoundError.
 
     MYSQL = "SELECT * FROM information_schema.SCHEMATA"
@@ -710,7 +710,7 @@ class MysqlEngines(_MysqlFact):
         Examples can be found in ``examples/modules/mysql/mysql_mysql_engines.py``.
     """
 
-    # reemote5-original: pyinfra has no engine-visibility fact. Reads
+    # reemote5-original: there is no other engine-visibility fact. Reads
     # information_schema.ENGINES (the SHOW ENGINES columns); the YES/NO
     # capability columns coerce to booleans, with NULL reading as False.
 
@@ -805,7 +805,7 @@ class MysqlIndexes(_MysqlFact):
         Examples can be found in ``examples/modules/mysql/mysql_mysql_indexes.py``.
     """
 
-    # reemote5-original: pyinfra has no index-level fact. Reads
+    # reemote5-original: there is no other index-level fact. Reads
     # information_schema.STATISTICS, which reports one row per index
     # COLUMN; rows are grouped by (table, index) in the ORDER BY order
     # so each entry's column list follows the key order. The optional
@@ -943,7 +943,7 @@ class MysqlPlugins(_MysqlFact):
         Examples can be found in ``examples/modules/mysql/mysql_mysql_plugins.py``.
     """
 
-    # reemote5-original: pyinfra has no plugin-visibility fact. Reads
+    # reemote5-original: there is no other plugin-visibility fact. Reads
     # information_schema.PLUGINS (the SHOW PLUGINS columns plus the
     # license); built-in plugins report None for PLUGIN_LIBRARY, which
     # is exactly the distinction mysql.plugin's UNINSTALL branch needs
@@ -1048,7 +1048,7 @@ class MysqlReplication(_MysqlFact):
         Examples can be found in ``examples/modules/mysql/mysql_mysql_replication.py``.
     """
 
-    # reemote5-original: pyinfra has no replication-visibility fact.
+    # reemote5-original: there is no other replication-visibility fact.
     # SHOW REPLICA STATUS (MySQL 8.0.22+; the legacy SHOW SLAVE STATUS
     # spelling is deliberately not targeted) reports one row per
     # configured channel and an EMPTY result on a server that is not a
@@ -1131,7 +1131,7 @@ class MysqlStatus(_MysqlFact):
         Examples can be found in ``examples/modules/mysql/mysql_mysql_status.py``.
     """
 
-    # reemote5-original: pyinfra has no runtime-status fact. Values stay
+    # reemote5-original: there is no other runtime-status fact. Values stay
     # TEXT (MySQL reports counters, floats like Ssl_session_cache_hits
     # ratios and even empty values through the same two-column shape);
     # callers coerce the counters they care about. A NULL/empty value
@@ -1225,7 +1225,7 @@ class MysqlTables(_MysqlFact):
         Examples can be found in ``examples/modules/mysql/mysql_mysql_tables.py``.
     """
 
-    # reemote5-original: pyinfra has no table-level fact. Reads
+    # reemote5-original: there is no other table-level fact. Reads
     # information_schema.TABLES filtered to one database and ordered by
     # name so the list is deterministic; TABLE_ROWS is the engine's
     # estimate (exact for MyISAM, approximate for InnoDB). Views appear
@@ -1305,7 +1305,7 @@ class MysqlTables(_MysqlFact):
         )
 
 
-# pyinfra's grant-line regex, verbatim: the privilege list, the
+# The grant-line regex: the privilege list, the
 # ``db`.`table`` target and the trailing extras (WITH GRANT OPTION).
 MYSQL_GRANT_REGEX = (
     r"^GRANT ([A-Z,\s]+) ON ((?:\*|`[a-z_\\]+`)\.(?:\*|`[a-z_]+`)) "
@@ -1313,7 +1313,7 @@ MYSQL_GRANT_REGEX = (
 )
 
 # reemote5 extension: a role-grant line (``GRANT `role`@`%` TO ...``)
-# has no ON clause, so pyinfra's regex skips it. Capturing the granted
+# has no ON clause, so the regex skips it. Capturing the granted
 # role names lets mysql.role check membership idempotently; role keys
 # carry an ``@`` where privilege keys carry a ``.`` so they never collide.
 MYSQL_ROLE_GRANT_REGEX = r"^GRANT (`[^`]+`@`[^`]+`(?:,\s*`[^`]+`@`[^`]+`)*) TO "
@@ -1344,16 +1344,16 @@ class MysqlUserGrants(_MysqlFact):
         Examples can be found in ``examples/modules/mysql/mysql_mysql_user_grants.py``.
     """
 
-    # Mirrors pyinfra's ``mysql.MysqlUserGrants``: SHOW GRANTS FOR the
-    # account, parsed with pyinfra's grant regex, ``WITH GRANT OPTION``
+    # ``mysql.MysqlUserGrants``: SHOW GRANTS FOR the
+    # account, parsed with the grant regex, ``WITH GRANT OPTION``
     # folded in as a "GRANT OPTION" privilege and MySQL's pre-escaped
-    # backslashes collapsed. The ``|| true`` guard is pyinfra's
+    # backslashes collapsed. The ``|| true`` guard is the
     # ignore_errors (SHOW GRANTS errors when the user does not exist,
     # which reads as {}). Two deliberate deviations: the values are
     # SORTED LISTS rather than sets (JSON-printable in the examples,
     # deterministic in reasons), and role-grant lines are additionally
     # captured under their backticked ``role``@``host`` key with the
-    # single privilege "ROLE" (pyinfra skips them; mysql.role reads
+    # single privilege "ROLE" (the grant regex skips them; mysql.role reads
     # them for membership idempotence).
 
     IGNORE_ERRORS = True
@@ -1371,7 +1371,7 @@ class MysqlUserGrants(_MysqlFact):
         mysql_defaults_file: str | None = None,
     ) -> str:
         """Shell showing one account's grants, guarded for absent users."""
-        # pyinfra interpolates the account into double quotes raw;
+        # The account is interpolated into double quotes raw;
         # embedded double quotes are doubled so the statement survives.
         user = user.replace('"', '""')
         hostname = hostname.replace('"', '""')
@@ -1521,11 +1521,11 @@ class MysqlUsers(_MysqlFact):
         Examples can be found in ``examples/modules/mysql/mysql_mysql_users.py``.
     """
 
-    # Mirrors pyinfra's ``mysql.MysqlUsers``: SELECT * over mysql.user,
+    # ``mysql.MysqlUsers``: SELECT * over mysql.user,
     # keyed user@host, ``*_priv`` columns folded into the sorted
     # ``privileges`` list, ``max_*`` columns coerced with try_int and
     # password_expired/is_role coerced from Y/N. Rows with an empty
-    # Host/User (the anonymous account) are skipped, as pyinfra does.
+    # Host/User (the anonymous account) are skipped.
     # The column set follows the server version/flavour (the fixture
     # is MariaDB-shaped: Password, max_statement_time), so MysqlUser is
     # a total=False TypedDict and the header-driven parse carries
@@ -1616,7 +1616,7 @@ class MysqlVariables(_MysqlFact):
         Examples can be found in ``examples/modules/mysql/mysql_mysql_variables.py``.
     """
 
-    # reemote5-original: pyinfra has no configuration-visibility fact.
+    # reemote5-original: there is no other configuration-visibility fact.
     # Values stay TEXT in the server's own rendering (bytes for
     # innodb_buffer_pool_size, ON/OFF for booleans) -- mysql.variable
     # compares against exactly this text, so callers pass "262144"
@@ -1730,7 +1730,7 @@ async def _privilege_plan(
 
     The shared idempotence core of ``mysql.privileges`` and the
     ``privileges`` delegation inside ``mysql.database``/``mysql.user``
-    (pyinfra's ``_privileges._inner``). Sets ``ctx.changed`` when any
+    (the shared privilege-plan core). Sets ``ctx.changed`` when any
     descriptor is planned; returns the descriptors plus their reasons
     so the caller can join them into its own ``ctx.reason``.
     """
@@ -1742,7 +1742,7 @@ async def _privilege_plan(
         database = _quote_ident(database)
     if table != "*":
         # Quote first so the error message names the target exactly as
-        # pyinfra's does (*.`mytable`).
+        # it should (*.`mytable`).
         table = _quote_ident(table)
         if database == "*":
             raise OperationError(
@@ -1821,7 +1821,7 @@ class MysqlDatabaseCommand(_MysqlCommand):
     ``PostgresqlDatabaseCommand`` precedent): ``present=False`` renders
     DROP DATABASE, ``alter=True`` renders ALTER DATABASE with the
     non-None charset/collation, and the create form renders CREATE
-    DATABASE with pyinfra's clause order (COLLATE then CHARSET).
+    DATABASE with the established clause order (COLLATE then CHARSET).
     """
 
     database: str
@@ -1901,17 +1901,17 @@ async def database(
         Examples can be found in ``examples/modules/mysql/mysql_database.py``.
     """
 
-    # pyinfra ``mysql.database`` parity, extended: pyinfra applies
+    # ``mysql.database``, extended: the baseline applies
     # charset/collate only at CREATE time and never alters an existing
     # database; reemote5 compares them against MysqlDatabases and
     # renders ALTER DATABASE on drift (the postgresql.database
     # idempotent-alter precedent). The user/user_hostname/user_privileges
-    # grant delegation is pyinfra's, sharing the mysql.privileges core.
-    # pyinfra's ``mysql_password`` is deliberately dropped (credentials
+    # grant delegation is shared, using the mysql.privileges core.
+    # The ``mysql_password`` is deliberately dropped (credentials
     # come from sudo socket auth / ~/.my.cnf / mysql_defaults_file,
     # never the operation). Needs CREATE/ALTER/DROP on the database:
     # flag the request ``sudo=True`` for root socket auth. ``**kwargs``
-    # absorbs pyinfra's global arguments (``op()`` already strips
+    # absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     conn = {
         "mysql_user": mysql_user,
@@ -1960,7 +1960,7 @@ async def database(
         else:
             reasons.append(f"mysql database {database} already exists")
 
-    # Ensure any user privileges for this database (pyinfra's bundle).
+    # Ensure any user privileges for this database (the shared privilege bundle).
     if user and user_privileges:
         commands, grant_reasons = await _privilege_plan(
             ctx,
@@ -2035,14 +2035,14 @@ async def dump(
         Examples can be found in ``examples/modules/mysql/mysql_dump.py``.
     """
 
-    # pyinfra ``mysql.dump`` parity: non-idempotent, always yields
-    # (pyinfra marks it is_idempotent=False). Requires ``mysqldump`` on
-    # the target host. As in pyinfra, database=None renders a bare
+    # ``mysql.dump``: non-idempotent, always yields
+    # (it is non-idempotent by design). Requires ``mysqldump`` on
+    # the target host. database=None renders a bare
     # mysqldump (no --all-databases is injected), so name a database or
     # supply one through the option file. The redirect runs in the
     # connection user's shell, so ``dest`` must be writable by that
     # user (or flag the request ``sudo=True``). ``mysql_password`` is
-    # deliberately dropped. ``**kwargs`` absorbs pyinfra's global
+    # deliberately dropped. ``**kwargs`` absorbs any further global
     # arguments.
     ctx.changed = True
     ctx.reason = f"mysql dump will be written to {dest}"
@@ -2149,7 +2149,7 @@ async def index(
         Examples can be found in ``examples/modules/mysql/mysql_index.py``.
     """
 
-    # reemote5-original (pyinfra has no index operation), the
+    # reemote5-original (there is no other index operation), the
     # postgresql.index shape. Idempotent against MysqlIndexes keyed on
     # the index name within the table. An existing index whose columns/
     # unique/index_type differ raises OperationError rather than
@@ -2159,7 +2159,7 @@ async def index(
     # CREATE prefix (they cannot combine with UNIQUE or USING);
     # ``columns`` entries are SQL rendered verbatim, never shell (the
     # whole statement is one shlex-quoted mysql argument). ``**kwargs``
-    # absorbs pyinfra's global arguments.
+    # absorbs any further global arguments.
     if index_type not in ("BTREE", "HASH", "FULLTEXT", "SPATIAL"):
         raise ValueError(
             "mysql.index index_type must be BTREE, HASH, FULLTEXT or SPATIAL"
@@ -2280,14 +2280,14 @@ async def kill(
         Examples can be found in ``examples/modules/mysql/mysql_kill.py``.
     """
 
-    # reemote5-original (pyinfra has no kill operation), the server.kill
+    # reemote5-original (there is no other kill operation), the server.kill
     # shape: stateless, always yields -- a connection ID is a snapshot
     # value, so comparing it against MysqlConnections inside the
     # operation would race the server anyway. Killing an already-gone
     # ID errors server-side (Unknown thread id), surfaced as
     # CommandError at apply time. Needs PROCESS/SUPER (or ownership of
     # the target thread): flag the request ``sudo=True`` for root
-    # socket auth. ``**kwargs`` absorbs pyinfra's global arguments.
+    # socket auth. ``**kwargs`` absorbs any further global arguments.
     ctx.changed = True
     verb = "query on connection" if query_only else "connection"
     ctx.reason = f"mysql {verb} {process_id} will be killed"
@@ -2357,13 +2357,13 @@ async def load(
         Examples can be found in ``examples/modules/mysql/mysql_load.py``.
     """
 
-    # pyinfra ``mysql.load`` parity: non-idempotent, always yields
-    # (pyinfra marks it is_idempotent=False). ``src`` is a host-side
+    # ``mysql.load``: non-idempotent, always yields
+    # (it is non-idempotent by design). ``src`` is a host-side
     # path read by the connection user's shell redirect -- reemote5
     # transfers take IO streams, so controller-side bytes go through
     # files.put first (the postgresql.load precedent).
     # ``mysql_password`` is deliberately dropped. ``**kwargs`` absorbs
-    # pyinfra's global arguments.
+    # any further global arguments.
     ctx.changed = True
     ctx.reason = f"mysql load will read {src}"
     yield MysqlLoadCommand(
@@ -2443,14 +2443,14 @@ async def optimize(
         Examples can be found in ``examples/modules/mysql/mysql_optimize.py``.
     """
 
-    # reemote5-original (pyinfra has no maintenance operation).
-    # Stateless like pyinfra's dump/load: maintenance is a periodic
+    # reemote5-original (there is no other maintenance operation).
+    # Stateless like dump/load: maintenance is a periodic
     # action, not a desired state, so there is nothing to compare a
     # fact against. InnoDB maps OPTIMIZE to a recreate+analyze and
     # REPAIR is unsupported (the server reports a note, not an error).
     # Needs SELECT plus INSERT (and for repair, the file-level rights
     # the engine needs): flag the request ``sudo=True`` for root
-    # socket auth. ``**kwargs`` absorbs pyinfra's global arguments.
+    # socket auth. ``**kwargs`` absorbs any further global arguments.
     if action not in ("optimize", "analyze", "check", "repair"):
         raise ValueError(
             "mysql.optimize action must be optimize, analyze, check or repair"
@@ -2540,7 +2540,7 @@ async def plugin(
         Examples can be found in ``examples/modules/mysql/mysql_plugin.py``.
     """
 
-    # reemote5-original (pyinfra has no plugin operation). Idempotent
+    # reemote5-original (there is no other plugin operation). Idempotent
     # against MysqlPlugins keyed on the plugin name. An installed
     # plugin loaded from a DIFFERENT library raises OperationError
     # (uninstall/reinstall is too disruptive to infer), and uninstalling
@@ -2549,7 +2549,7 @@ async def plugin(
     # be disabled through configuration. INSTALL PLUGIN persists in
     # mysql.plugin across restarts. Needs INSERT/DELETE on mysql.plugin
     # (SUPER): flag the request ``sudo=True`` for root socket auth.
-    # ``**kwargs`` absorbs pyinfra's global arguments.
+    # ``**kwargs`` absorbs any further global arguments.
     if present and not soname:
         raise ValueError("mysql.plugin requires soname when present=True")
     conn = {
@@ -2680,16 +2680,16 @@ async def privileges(
         Examples can be found in ``examples/modules/mysql/mysql_privileges.py``.
     """
 
-    # pyinfra ``mysql.privileges`` parity: the desired set is diffed
+    # ``mysql.privileges``: the desired set is diffed
     # against MysqlUserGrants for the exact db.table target, extras are
     # revoked and missing ones granted (sorted, so both phases render
     # identically), USAGE is never revoked when something is granted,
     # and the ALL+GRANT OPTION pair uses the two-step REVOKE / WITH
-    # GRANT OPTION forms pyinfra special-cases. Role grants captured by
+    # GRANT OPTION special-cased forms. Role grants captured by
     # the fact are membership, not privileges, and are excluded from
     # the diff. ``mysql_password`` is deliberately dropped. Needs GRANT
     # OPTION on the target: flag the request ``sudo=True`` for root
-    # socket auth. ``**kwargs`` absorbs pyinfra's global arguments.
+    # socket auth. ``**kwargs`` absorbs any further global arguments.
     conn = {
         "mysql_user": mysql_user,
         "mysql_host": mysql_host,
@@ -2785,7 +2785,7 @@ async def replica(
         Examples can be found in ``examples/modules/mysql/mysql_replica.py``.
     """
 
-    # reemote5-original (pyinfra has no replication operation), scoped
+    # reemote5-original (there is no other replication operation), scoped
     # by the developer-approved replication decision: START/STOP/RESET
     # only. CHANGE REPLICATION SOURCE TO is deliberately dropped --
     # it requires SOURCE_PASSWORD inline and MySQL has no passfile for
@@ -2797,7 +2797,7 @@ async def replica(
     # reset is stateless (STOP REPLICA; RESET REPLICA ALL). MySQL
     # 8.0.22+ syntax only. Needs REPLICATION_SLAVE_ADMIN: flag the
     # request ``sudo=True`` for root socket auth. ``**kwargs`` absorbs
-    # pyinfra's global arguments.
+    # any further global arguments.
     conn = {
         "mysql_user": mysql_user,
         "mysql_host": mysql_host,
@@ -2922,7 +2922,7 @@ async def role(
         Examples can be found in ``examples/modules/mysql/mysql_role.py``.
     """
 
-    # reemote5-original (pyinfra has no role operation). Existence is
+    # reemote5-original (there is no other role operation). Existence is
     # idempotent against MysqlUsers keyed role@role_hostname; membership
     # is idempotent against the role-grant extension of MysqlUserGrants
     # (the backticked role@host key with the "ROLE" privilege). Members
@@ -2932,7 +2932,7 @@ async def role(
     # DROP ROLE revokes every membership server-side. Roles are
     # accounts, so they carry no password here either (the credentials
     # decision). Needs CREATE ROLE / CREATE USER: flag the request
-    # ``sudo=True`` for root socket auth. ``**kwargs`` absorbs pyinfra's
+    # ``sudo=True`` for root socket auth. ``**kwargs`` absorbs any
     # global arguments.
     conn = {
         "mysql_user": mysql_user,
@@ -3048,13 +3048,13 @@ async def sql(
         Examples can be found in ``examples/modules/mysql/mysql_sql.py``.
     """
 
-    # pyinfra ``mysql.sql`` parity: non-idempotent, always yields
-    # (pyinfra marks it is_idempotent=False) -- the escape hatch for
+    # ``mysql.sql``: non-idempotent, always yields
+    # (it is non-idempotent by design) -- the escape hatch for
     # anything the typed operations do not cover (CHANGE REPLICATION
     # SOURCE TO, schema migrations, ...). The SQL text appears verbatim
     # in the plan/apply log, so never embed credentials in it
     # (``mysql_password`` is deliberately dropped namespace-wide).
-    # ``**kwargs`` absorbs pyinfra's global arguments.
+    # ``**kwargs`` absorbs any further global arguments.
     ctx.changed = True
     ctx.reason = "mysql SQL will be executed"
     yield MysqlSqlCommand(
@@ -3163,7 +3163,7 @@ async def table(
         Examples can be found in ``examples/modules/mysql/mysql_table.py``.
     """
 
-    # reemote5-original (pyinfra has no table operation). Idempotent
+    # reemote5-original (there is no other table operation). Idempotent
     # against MysqlTables on EXISTENCE only: the structure of an
     # existing table is never altered or diffed (column definitions are
     # free SQL text, and inferring ALTERs from them would be a schema
@@ -3172,7 +3172,7 @@ async def table(
     # entries are SQL rendered verbatim, never shell (the whole
     # statement is one shlex-quoted mysql argument). Needs CREATE/DROP
     # on the database: flag the request ``sudo=True`` for root socket
-    # auth. ``**kwargs`` absorbs pyinfra's global arguments.
+    # auth. ``**kwargs`` absorbs any further global arguments.
     if present and not columns:
         raise ValueError("mysql.table requires columns when present=True")
     conn = {
@@ -3225,7 +3225,7 @@ class MysqlUserCommand(_MysqlCommand):
     ``present=False`` renders DROP USER, ``alter=True`` renders ALTER
     USER with only the changed clauses, and the create form renders
     CREATE USER with the clause order IDENTIFIED WITH, REQUIRE, WITH
-    resource limits (pyinfra's order, with IDENTIFIED BY replaced by
+    resource limits (the established order, with IDENTIFIED BY replaced by
     the passwordless IDENTIFIED WITH plugin form).
     """
 
@@ -3316,7 +3316,7 @@ async def user(
             Defaults to "localhost".
         auth_plugin (str | None, optional): Authentication plugin,
             e.g. ``auth_socket``; applied at creation and altered on an
-            existing account when it differs. Replaces pyinfra's
+            existing account when it differs. Replaces the
             password option (the credentials decision). Defaults to
             None.
         privileges (str | list[str] | None, optional): Global
@@ -3363,18 +3363,18 @@ async def user(
         Examples can be found in ``examples/modules/mysql/mysql_user.py``.
     """
 
-    # pyinfra ``mysql.user`` parity, minus the credential: pyinfra's
+    # ``mysql.user``, minus the credential: the baseline
     # ``password`` option (IDENTIFIED BY, applied only at creation
     # because the hash cannot be compared) is deliberately dropped and
     # replaced by ``auth_plugin`` (IDENTIFIED WITH, e.g. auth_socket),
     # which IS comparable against the fact's plugin column and so also
     # alters on drift. The REQUIRE SSL/X509 validation and alter
     # comparisons, the WITH resource-limit comparisons and the global
-    # ``privileges`` delegation are pyinfra's (ssl_type/ssl_cipher/
+    # ``privileges`` delegation follow the fact keys (ssl_type/ssl_cipher/
     # x509_issuer/x509_subject and max_user_connections/max_questions/
     # max_updates/max_connections fact keys). Needs CREATE USER (and
     # GRANT OPTION for the privileges bundle): flag the request
-    # ``sudo=True`` for root socket auth. ``**kwargs`` absorbs pyinfra's
+    # ``sudo=True`` for root socket auth. ``**kwargs`` absorbs any
     # global arguments.
     if require and require not in ("SSL", "X509"):
         raise OperationError('Invalid `require` value, must be: "SSL" or "X509"')
@@ -3506,7 +3506,7 @@ async def user(
         else:
             reasons.append(f"mysql user {user_host} already exists")
 
-    # Ensure any global privileges (pyinfra's bundle).
+    # Ensure any global privileges (the shared privilege bundle).
     if privileges:
         commands, grant_reasons = await _privilege_plan(
             ctx,
@@ -3603,7 +3603,7 @@ async def variable(
         Examples can be found in ``examples/modules/mysql/mysql_variable.py``.
     """
 
-    # reemote5-original (pyinfra has no configuration operation), the
+    # reemote5-original (there is no other configuration operation), the
     # postgresql.setting shape. The option is ``variable``, not ``name``:
     # ``name`` is a meta-parameter consumed by op() and never reaches the
     # operation (the postgresql.setting ``setting`` precedent). Idempotent
@@ -3619,7 +3619,7 @@ async def variable(
     # server-side at apply time. Needs SYSTEM_VARIABLES_ADMIN (and
     # PERSIST_RO_VARIABLES_ADMIN for persisted read-only ones): flag
     # the request ``sudo=True`` for root socket auth. ``**kwargs``
-    # absorbs pyinfra's global arguments.
+    # absorbs any further global arguments.
     if present and value is None:
         raise ValueError("mysql.variable requires value when present=True")
     conn = {

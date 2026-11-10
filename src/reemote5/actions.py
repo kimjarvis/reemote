@@ -335,10 +335,10 @@ class Script:
         Examples can be found in ``examples/actions/action_script.py``.
     """
 
-    # The ``server.script`` counterpart of pyinfra's operation, rebuilt as an
-    # action: no transfer, no plan-phase counterpart, the outcome travels back
-    # whole. The existence check, the executable-bit branch and the invocation
-    # are ONE compound shell wrapper so a single round-trip decides everything,
+    # The ``server.script`` action: no transfer, no plan-phase counterpart,
+    # the outcome travels back whole. The existence check, the executable-bit
+    # branch and the invocation are ONE compound shell wrapper so a single
+    # round-trip decides everything,
     # and the wrapper always rides an explicit ``sh -c``: sudo and doas exec
     # their command directly rather than through a shell, so a bare ``sudo if
     # ...`` would fail -- the ``sh -c`` carrier keeps the rendering identical

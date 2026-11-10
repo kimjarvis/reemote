@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.panic`` is a reemote5 original (pyinfra ships no firewalld
+``firewalld.panic`` is a reemote5 original (the baseline ships no firewalld
 module): panic mode is the emergency kill switch -- ``--panic-on`` drops
 *all* incoming and outgoing packets, including the SSH session a deploy
 runs over, which is why this script ensures the *normal* state,

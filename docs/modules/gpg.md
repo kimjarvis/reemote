@@ -1,37 +1,21 @@
 # gpg module
 
-## gpg Facts
-
 ::: reemote5.modules.gpg.gpg
     options:
       show_root_heading: false
       members:
         - GpgKey
         - GpgKeyDetails
+        - GpgKeyInfo
+        - GpgKeyMetadata
+        - GpgKeyTrust
+        - GpgKeyring
         - GpgKeyrings
         - GpgKeys
         - GpgSecretKeys
         - GpgTrust
-        - GpgVerify
-
-## gpg Returns
-
-::: reemote5.modules.gpg.gpg
-    options:
-      show_root_heading: false
-      members:
-        - GpgKeyInfo
-        - GpgKeyMetadata
-        - GpgKeyring
-        - GpgKeyTrust
         - GpgVerification
-
-## gpg Operations
-
-::: reemote5.modules.gpg.gpg
-    options:
-      show_root_heading: false
-      members:
+        - GpgVerify
         - dearmor
         - delete_key
         - export_key
@@ -54,34 +38,34 @@ sweeps that prefix each file's `gpg --with-colons` output with a
 keychain (or one explicit keyring file), read from
 `gpg --list-keys --with-colons`, and `GpgSecretKeys`, the secret keys in
 that keychain, read from `gpg --list-secret-keys --with-colons`. All four
-mirror pyinfra's `gpg` facts and share one entry shape, the `GpgKeyInfo`
+mirror the baseline's `gpg` facts and share one entry shape, the `GpgKeyInfo`
 TypedDict (`id`, `validity`, `length`, plus the optional `fingerprint`,
 `uid_hash`, `uid` and `subkeys` the colon records attach); `GpgKeyrings`
 wraps those entries in `GpgKeyring` dicts carrying each file's `path` and
-`format`. pyinfra keys its answers by key id (and its keyrings by path);
+`format`. The baseline keys its answers by key id (and its keyrings by path);
 reemote5 returns lists of typed entries instead — the same retyping as
 `apt.AptKeys`. Beside those ports live three reemote5 originals with no
-pyinfra counterpart: `GpgTrust`, the ownertrust assignments read from
+the baseline counterpart: `GpgTrust`, the ownertrust assignments read from
 `gpg --export-ownertrust` into `GpgKeyTrust` entries, `GpgKeyDetails`,
 one key's full metadata read from a targeted `gpg --list-keys` into a
 `GpgKeyMetadata` dict (`None` when the key is absent), and `GpgVerify`, a
 read-only signature check read from `gpg --status-fd 1 --verify` into a
-`GpgVerification` dict. Key sources are stream-only: pyinfra's `GpgKey`
+`GpgVerification` dict. Key sources are stream-only: the baseline's `GpgKey`
 URL download branch is deliberately dropped (a URL `src` raises
 `ValueError`), and the keyserver touchpoint is the `gpg.refresh_keys`
 operation, never a fact.
 
-On the operation side, `gpg.key` mirrors pyinfra's `gpg.key` with
+On the operation side, `gpg.key` mirrors the baseline's `gpg.key` with
 stream-only sources — a GPG key stream is spooled over scp and installed
 as a keyring file (dearmored on the target when the content is
 ASCII-armored), idempotent on the destination's existence or, with
 `keyid`, on the `GpgKeyrings` fact; `present=False` removes a whole
 keyring file or selectively deletes keys, pruning emptied binary
-keyrings. pyinfra's `keyserver` fetch, URL download and `mode` parameter
-are deliberately dropped (0644 is fixed). `gpg.dearmor` mirrors pyinfra's
+keyrings. The baseline's `keyserver` fetch, URL download and `mode` parameter
+are deliberately dropped (0644 is fixed). `gpg.dearmor` mirrors the baseline's
 `gpg.dearmor`: convert an armored key file already on the target host to
 binary form, deliberately stateless (always yields). Six reemote5
-originals with no pyinfra counterpart complete the key lifecycle:
+originals with no baseline counterpart complete the key lifecycle:
 `gpg.import_key` and `gpg.export_key` move keys in and out of the
 executing user's keychain, `gpg.delete_key` removes a key (public or both
 halves), `gpg.gen_key` generates an unprotected key from a batch
@@ -98,25 +82,25 @@ the real implementation). Read facts through
 so results are awaited and cached within a phase step. `GpgKey` takes the
 key file's path on the *target* host: it runs `gpg --with-colons <src>`
 (shlex-quoted) and parses the colon records into `GpgKeyInfo` entries,
-mirroring pyinfra's `gpg.GpgKey` — for example the Docker release key
+mirroring the baseline's `gpg.GpgKey` — for example the Docker release key
 reads as `[{"id": "8D81803C0EBFCD88", "validity": "-", "length": 4096,
 "subkeys": [{"id": "7EA0A9C3F273FCD8", "validity": "-", "length": 4096}],
 "uid_hash": "", "uid": "Docker Release (CE deb) <docker@docker.com>"}]`.
-An empty `src` or one carrying a URL scheme raises `ValueError` — pyinfra
+An empty `src` or one carrying a URL scheme raises `ValueError` — the baseline
 would fetch a URL target-side with `(wget -O - <url> || curl -sSLf <url>)
 | gpg --with-colons`, but reemote5 never downloads mid-gather (stream the
 key through the `gpg.key` operation instead, then read the installed
 file). A missing or unreadable file exits 2 with empty stdout, which
 reads as `[]`; a missing `gpg` exits 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError] (pyinfra's
+[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError] (the baseline's
 `requires_command` gating is deliberately dropped).
 
 `GpgKeyrings` takes `directories` — a list of paths or a single path
-string; an empty argument raises `ValueError` where pyinfra would
+string; an empty argument raises `ValueError` where the baseline would
 silently search the working directory — and runs two `find` sweeps that
 read every `.gpg`/`.kbx` binary keyring (`--keyring <file>
 --no-default-keyring`) and every `.asc` armored keyring (passed directly
-to `gpg`), each behind a `KEYRING:` marker line, mirroring pyinfra's
+to `gpg`), each behind a `KEYRING:` marker line, mirroring the baseline's
 `gpg.GpgKeyrings`. Each readable file becomes one `GpgKeyring` entry —
 `{path, format, keys}` where `format` is the extension lowercased
 (`gpg`, `kbx` or `asc`) and `keys` are `GpgKeyInfo` entries in listing
@@ -132,11 +116,11 @@ reported as [`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
 `GpgKeys` takes an optional `keyring` path: without one it runs
 `gpg --list-keys --with-colons` against the executing user's default
 keychain, with one it appends `--keyring <path> --no-default-keyring`
-(shlex-quoted) to list that single file, mirroring pyinfra's `gpg.GpgKeys`.
+(shlex-quoted) to list that single file, mirroring the baseline's `gpg.GpgKeys`.
 The colon records parse into `GpgKeyInfo` entries — a primary key's
 `fpr`/`uid` records attach its `fingerprint`, `uid_hash` and `uid`, a
 `sub` record starts a subkey (only the last one before the next primary
-key is kept, exactly like pyinfra), and `tru` noise and blank lines are
+key is kept, exactly like the baseline), and `tru` noise and blank lines are
 skipped. The answer reflects the login user's `GNUPGHOME`; to inspect
 another user's keys, elevate the gather's host connection or point
 `keyring` at a file. An empty keychain prints nothing and reads as `[]`;
@@ -146,12 +130,12 @@ a missing `gpg` exits 127 — reported as
 `GpgSecretKeys` is the secret-key twin of `GpgKeys`: it runs
 `gpg --list-secret-keys --with-colons` (with the same optional `keyring`
 switch), parsing `sec` primary and `ssb` subkey records into the same
-`GpgKeyInfo` entries, mirroring pyinfra's `gpg.GpgSecretKeys`. Only key
+`GpgKeyInfo` entries, mirroring the baseline's `gpg.GpgSecretKeys`. Only key
 metadata is listed — no secret key material ever leaves the host. A
 keychain with no secret keys reads as `[]`; a missing `gpg` exits 127 —
 reported as [`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
 
-`GpgTrust` is a reemote5 original with no pyinfra counterpart: it runs
+`GpgTrust` is a reemote5 original with no baseline counterpart: it runs
 `gpg --batch --export-ownertrust` and parses the `FPR:N:` lines into
 `GpgKeyTrust` entries — `{fingerprint, ownertrust, level}` where
 `ownertrust` is the raw numeric value the export prints and `level` its
@@ -198,7 +182,7 @@ guard — also covers a missing `gpg` rather than raising
 
 [`gpg.key`][reemote5.modules.gpg.gpg.key] installs or removes GPG keyring
 files. The install half takes `src` as a seekable IO-like *stream* on the
-controller (pyinfra's filename/URL `src` — which the target host reads or
+controller (the baseline's filename/URL `src` — which the target host reads or
 downloads itself — is deliberately dropped; a `str` raises `ValueError`,
 so fetch a URL on the controller and pass its bytes). The bytes ride an
 unprivileged scp transfer to a fixed `/tmp` spool path, then one elevated
@@ -207,14 +191,14 @@ sniffs the `BEGIN PGP PUBLIC KEY BLOCK` armor marker (or copies it
 verbatim when already binary, or unconditionally with `dearmor=False`),
 chmods the keyring `0644` and removes the spool file. Flag the request
 `sudo=True` for system keyring directories; the transfer stays
-unprivileged regardless. Idempotence follows pyinfra: without `keyid` an
+unprivileged regardless. Idempotence follows the baseline: without `keyid` an
 existing `dest` file is left alone, with `keyid` (a key id, long id or
 fingerprint, `0x` prefixes accepted, one or a list) every requested id
-must already be in `dest`'s keyring entry. pyinfra's `keyserver` fetch and
+must already be in `dest`'s keyring entry. The baseline's `keyserver` fetch and
 its `mode` parameter are deliberately dropped — 0644 is fixed (the
 `apt.key` precedent), and `gpg.refresh_keys` is the keyserver touchpoint.
 
-The removal half (`present=False`) mirrors pyinfra's three branches:
+The removal half (`present=False`) mirrors the baseline's three branches:
 `dest` alone removes the whole keyring file (idempotent on its existence);
 `dest` + `keyid` selectively deletes the matching keys from that one
 keyring by full fingerprint (`gpg --batch --yes --no-default-keyring
@@ -232,7 +216,7 @@ GPG key file to binary form, both paths on the *target* host: one elevated
 `sh -c` creates the destination directory, runs
 `gpg --batch --yes --dearmor -o <dest> <src>` (`--yes` overwrites an
 existing output, which `--batch` alone refuses) and chmods the output
-`0644` (pyinfra's `mode` parameter is deliberately dropped). Like pyinfra
+`0644` (the baseline's `mode` parameter is deliberately dropped). Like the baseline
 it is stateless/non-idempotent — it always converts and always reports a
 change, reading no fact. To convert a controller-side stream, install it
 with `gpg.key` instead, whose install dearmors on the target. It

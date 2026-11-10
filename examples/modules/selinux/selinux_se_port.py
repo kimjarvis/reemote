@@ -30,12 +30,12 @@ transport* (asyncssh):
    -- then print each host's raw type string with
    ``json.dumps(..., indent=2)``.
 
-``SEPort`` ports pyinfra's fact of the same name: ``sepolicy network -p
+``SEPort`` ports the baseline's fact of the same name: ``sepolicy network -p
 <port>`` prints the specific label row first and the generic range row
 second (``8080: tcp http_port_t 8080`` then ``8080: tcp
 unreserved_port_t 1024-...``), and the fact keeps the type of the first
 row only when *both* rows are present -- a port covered by a generic range
-alone reads as the empty string, pyinfra's gate, because "inside a range"
+alone reads as the empty string, the baseline's gate, because "inside a range"
 is not a specific label. Here the question is whether tcp/8080 carries an
 explicit type (the port the ``selinux.port`` operation example labels).
 The ``|| true`` inside the command swallows sepolicy's own failure, so a

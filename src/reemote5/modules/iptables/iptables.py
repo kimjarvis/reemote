@@ -4,10 +4,10 @@
 # The ``iptables`` module: facts and operations in one source.
 #
 # Fact side: ``IptablesChains``/``IptablesRules`` and their ``Ip6tables``
-# siblings are ports of pyinfra's four iptables facts -- the chain ->
+# siblings are the four iptables facts -- the chain ->
 # policy mapping and the parsed rule-definition list, both read from
 # ``iptables-save -t <table>`` (``ip6tables-save`` for IPv6). Ten reemote5
-# originals widen the visibility pyinfra's set leaves missing:
+# originals widen the visibility that set leaves missing:
 # ``IptablesRulesOrdered``/``Ip6tablesRulesOrdered`` (rules with their
 # 1-based line numbers and exact packet/byte counters, parsed from
 # ``iptables -t <table> -L -n -v -x --line-numbers`` -- the ordered-rules
@@ -34,13 +34,13 @@
 # ``op()`` call site; their fact reads ride the same ``sudo -n`` retry,
 # so idempotence reporting works on a sudoers fleet.
 #
-# Operation side: ``iptables.chain`` and ``iptables.rule`` port pyinfra's
+# Operation side: ``iptables.chain`` and ``iptables.rule`` are the
 # two operations (chain create/delete/policy, rule add/insert/delete with
 # the core matches, NAT target arguments and the ``extras`` escape
 # hatch). ``rule`` gains first-class typed match extensions (``ctstate``,
 # ``destination_ports``/``source_ports`` multiport, ``limit``/
 # ``limit_burst``, ``match_set``, ``log_level``) folded into the same
-# extras comparison pyinfra's shortcuts use, plus a ``position`` argument
+# extras comparison the port/comment shortcuts use, plus a ``position`` argument
 # for insertion at an explicit line number. Six reemote5 originals
 # complete the control surface: ``policy`` (standalone built-in chain
 # policy management), ``flush`` (idempotent rule flush), ``zero``
@@ -82,7 +82,7 @@ from ...hosts import Host
 
 # --- Shared helpers ----------------------------------------------------------
 
-# pyinfra's ``IPTABLES_ARGS`` verbatim: the iptables-save flags that map
+# The iptables-save flags that map
 # to named definition keys. Everything else (``-m`` modules, ``--dport``,
 # ``--log-level``, ...) lands in the sorted ``extras`` pair list, which
 # is what makes the rule comparison order-independent.
@@ -107,7 +107,7 @@ _IPTABLES_ARGS = {
 def _parse_extras(tokens: Iterable[str]) -> list[list[str]]:
     """Parse tokens into a sorted list of ``[flag, value]`` pairs.
 
-    pyinfra's ``parse_extras`` verbatim: tokens that don't start with
+    Tokens that don't start with
     ``-`` are joined as the value of the preceding flag, and the pairs
     are sorted so two rules differing only in argument order compare
     equal. Pure and testable.
@@ -134,7 +134,7 @@ def _parse_extras(tokens: Iterable[str]) -> list[list[str]]:
 def _parse_iptables_rule(line: str) -> "IptablesRule":
     """Parse one ``iptables-save`` rule line into a definition dict.
 
-    pyinfra's ``parse_iptables_rule`` verbatim: each flag maps through
+    Each flag maps through
     ``_IPTABLES_ARGS`` to a named key (a preceding ``!`` prefixes the key
     with ``not_``), and unmapped flags collect into the sorted ``extras``
     pair list. Pure and testable.
@@ -223,10 +223,10 @@ def _privileged_read(command: str) -> str:
 def _normalize_host(value: str, version: int) -> str:
     """Expand a bare address to its host prefix the way iptables-save prints it.
 
-    pyinfra appends ``/32`` to a slash-less source/destination for both
-    families; reemote5 uses ``/128`` for IPv6 (the correct single-host
-    prefix) -- a deliberate deviation, because a ``/32`` IPv6 definition
-    would never compare equal to what ``ip6tables-save`` prints.
+    A slash-less source/destination gains ``/32`` for IPv4 and ``/128``
+    for IPv6 (the correct single-host prefix for each family), because a
+    ``/32`` IPv6 definition would never compare equal to what
+    ``ip6tables-save`` prints.
     """
     if "/" in value:
         return value
@@ -283,16 +283,16 @@ class IptablesChains:
         ``examples/modules/iptables/iptables_iptables_chains.py``.
     """
 
-    # Mirrors pyinfra's ``iptables.IptablesChains``: the ``:NAME POLICY
+    # The ``:NAME POLICY
     # [pkts:bytes]`` lines of ``iptables-save -t <table>`` map each chain
     # to its policy word. A user-defined chain's policy is ``-`` (it has
     # none); the built-in chains carry ACCEPT/DROP. The packet/byte
-    # counters on the same lines are ignored, pyinfra verbatim --
+    # counters on the same lines are ignored --
     # ``IptablesRulesOrdered`` answers per-rule counters instead.
     #
-    # Deliberate deviations from pyinfra: the ``table`` argument is
-    # shell-quoted (pyinfra interpolates it raw), the
-    # ``requires_command`` gating is dropped, and the bare
+    # Deliberate design choices: the ``table`` argument is
+    # shell-quoted rather than interpolated raw, there is no
+    # command-existence gate, and the bare
     # ``iptables-save -t <table>`` gains the passwordless ``sudo -n``
     # retry (the hardware.SmbiosInfo precedent) because reading the
     # tables needs CAP_NET_ADMIN -- full data for a root login or a
@@ -367,9 +367,8 @@ class Ip6tablesChains(IptablesChains):
         ``examples/modules/iptables/iptables_ip6tables_chains.py``.
     """
 
-    # The IPv6 sibling of ``IptablesChains``, mirroring pyinfra's
-    # ``iptables.Ip6tablesChains``: the parse is inherited verbatim and
-    # only the save binary and the SimulatedHost seam field flip.
+    # The IPv6 sibling of ``IptablesChains``: the parse is inherited
+    # verbatim and only the save binary and the SimulatedHost seam field flip.
 
     #: Shell template gathering the chains over SSH (IPv6), with the
     #: passwordless ``sudo -n`` retry.
@@ -414,12 +413,11 @@ class IptablesRule(TypedDict):
     """
 
     # One parsed ``iptables-save`` rule line (``IptablesRules``' entry),
-    # as a plain dict -- pyinfra's ``parse_iptables_rule`` shape verbatim.
+    # as a plain dict -- the ``_parse_iptables_rule`` shape.
     # Every key is NotRequired because the parser only records the flags
     # the line actually carried; even ``chain``/``jump`` are absent on a
     # degenerate line. The ``extras`` pairs are lists (not tuples) so the
-    # entries stay JSON-serializable and compare equal to pyinfra's
-    # fixture dicts.
+    # entries stay JSON-serializable and compare equal by value.
 
     chain: NotRequired[str]
     jump: NotRequired[str]
@@ -466,7 +464,7 @@ class IptablesRules:
         ``examples/modules/iptables/iptables_iptables_rules.py``.
     """
 
-    # Mirrors pyinfra's ``iptables.IptablesRules``: every ``-``-prefixed
+    # Every ``-``-prefixed
     # line of ``iptables-save -t <table>`` parses through
     # ``_parse_iptables_rule`` into an ``IptablesRule`` dict, in listing
     # order (which is chain order, then rule order -- but the *line
@@ -476,8 +474,8 @@ class IptablesRules:
     # others (the convenience ``IptablesNatRules`` proposal is this
     # argument).
     #
-    # Deliberate deviations from pyinfra: the ``table`` argument is
-    # shell-quoted, ``requires_command`` gating is dropped, and the save
+    # Deliberate design choices: the ``table`` argument is
+    # shell-quoted, there is no command-existence gate, and the save
     # command gains the passwordless ``sudo -n`` retry (the module
     # header's privilege note); the ``|| true`` guard masks exit 127.
     #
@@ -544,9 +542,8 @@ class Ip6tablesRules(IptablesRules):
         ``examples/modules/iptables/iptables_ip6tables_rules.py``.
     """
 
-    # The IPv6 sibling of ``IptablesRules``, mirroring pyinfra's
-    # ``iptables.Ip6tablesRules``: the parse is inherited verbatim and
-    # only the save binary and the SimulatedHost seam field flip.
+    # The IPv6 sibling of ``IptablesRules``: the parse is inherited
+    # verbatim and only the save binary and the SimulatedHost seam field flip.
 
     #: Shell template gathering the rules over SSH (IPv6), with the
     #: passwordless ``sudo -n`` retry.
@@ -808,7 +805,7 @@ class IptablesTables:
         ``examples/modules/iptables/iptables_iptables_tables.py``.
     """
 
-    # A reemote5 original: pyinfra has no table-inventory fact, yet
+    # A reemote5 original: no other fact inventories the tables, yet
     # conditional logic ("only manage nat when the module is loaded")
     # needs one. ``/proc/net/ip_tables_names`` lists exactly the tables
     # whose kernel modules are loaded (a table appears the first time
@@ -936,7 +933,7 @@ class IptablesVersion:
         ``examples/modules/iptables/iptables_iptables_version.py``.
     """
 
-    # A reemote5 original: pyinfra has no version fact, yet the backend
+    # A reemote5 original: no other fact reports the version, yet the backend
     # question (``iptables v1.8.9 (nf_tables)`` vs ``(legacy)``) decides
     # whether a host's rules are even visible to nft tooling. The
     # ``--version`` probe needs no privileged login. Unparseable or
@@ -1145,7 +1142,7 @@ class IpSets:
         Examples can be found in ``examples/modules/iptables/iptables_ip_sets.py``.
     """
 
-    # A reemote5 original (pyinfra has no ipset support at all): the
+    # A reemote5 original (there is no other ipset support): the
     # ``ipset list`` blocks -- ``Name:`` opens a set, the labeled fields
     # carry its metadata, and the rows after ``Members:`` are its
     # entries. Sets are the performance companion to ``-m set
@@ -1434,17 +1431,16 @@ async def chain(
         Examples can be found in ``examples/modules/iptables/iptables_chain.py``.
     """
 
-    # Mirrors pyinfra's ``iptables.chain``: idempotent on the Chains
-    # fact. present=False deletes an existing chain (-X) and no-ops an
-    # absent one; present=True creates a missing chain (-N) and sets the
-    # policy (-P) when one is requested and differs (or the chain is
-    # being created). The no-op reasons are pyinfra's verbatim wording.
-    # pyinfra does not validate that ``policy`` targets a built-in chain
-    # (its docs say system chains only, its code does not enforce it) --
-    # parity keeps that behaviour here; the standalone ``policy``
-    # operation is the validated alternative. The commands need root:
-    # flag the request ``sudo=True``. ``**kwargs`` absorbs pyinfra's
-    # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    # Idempotent on the Chains fact. present=False deletes an existing
+    # chain (-X) and no-ops an absent one; present=True creates a
+    # missing chain (-N) and sets the policy (-P) when one is requested
+    # and differs (or the chain is being created). The no-op reasons use
+    # a fixed wording. ``policy`` is not validated against the built-in
+    # chains (system chains only by convention, not enforced here) --
+    # the standalone ``policy`` operation is the validated alternative.
+    # The commands need root: flag the request ``sudo=True``.
+    # ``**kwargs`` absorbs any global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
     _binary(version)
     fact = IptablesChains if version == 4 else Ip6tablesChains
     chains = await ctx.facts.get(fact, table)
@@ -1513,8 +1509,8 @@ async def policy(
         Examples can be found in ``examples/modules/iptables/iptables_policy.py``.
     """
 
-    # A reemote5 original (the standalone-policy proposal): pyinfra
-    # couples policy management to chain existence inside ``chain``;
+    # A reemote5 original (the standalone-policy proposal): ``chain``
+    # couples policy management to chain existence;
     # this operation manages the policy alone, idempotent on the Chains
     # fact. Unlike ``chain``'s unvalidated ``policy`` argument it
     # validates the policy word against iptables' built-in targets
@@ -1705,16 +1701,16 @@ async def rule(
         Examples can be found in ``examples/modules/iptables/iptables_rule.py``.
     """
 
-    # Mirrors pyinfra's ``iptables.rule``: the rule definition (named
-    # matches + the sorted extras pair list) is compared against the
-    # Rules fact; a missing wanted rule yields -A (or -I), an existing
-    # unwanted rule yields -D, and the no-op reasons are pyinfra's
-    # verbatim wording (including its "does not exists" grammar).
+    # The rule definition (named matches + the sorted extras pair list)
+    # is compared against the Rules fact; a missing wanted rule yields
+    # -A (or -I), an existing unwanted rule yields -D, and the no-op
+    # reasons use a fixed wording (including the "does not exists"
+    # grammar).
     #
-    # Extensions over pyinfra (the typed-matcher decision): ``ctstate``,
+    # Typed matchers (the typed-matcher decision): ``ctstate``,
     # ``destination_ports``/``source_ports`` (multiport), ``limit``/
     # ``limit_burst``, ``match_set`` and ``log_level`` are first-class
-    # parameters folded into the same extras comparison pyinfra's
+    # parameters folded into the same extras comparison the
     # port/comment shortcuts use, so idempotence works unchanged --
     # iptables-save prints the extensions as ordinary flags and the
     # sorted pair list compares order-independently. ``log_level``
@@ -1724,26 +1720,25 @@ async def rule(
     # number; an existing rule at a different position is left alone
     # (the destructive ``exact`` reordering proposal was dropped).
     #
-    # Deliberate deviations from pyinfra: validation errors raise
-    # ValueError (reemote5's convention) with pyinfra's message text; a
-    # bare IPv6 source/destination normalizes to /128 (pyinfra appends
-    # /32 for both families, which never matches ip6tables-save output);
-    # ``not_protocol`` is lowercased in the definition too (pyinfra
-    # lowercases only the command, so an uppercase not_protocol never
-    # compares equal to the fact -- an idempotence bug); user-supplied
-    # spec values are shlex-quoted (safe tokens render unchanged, so
-    # pyinfra's fixture commands still match verbatim).
+    # Deliberate design choices: validation errors raise ValueError
+    # (reemote5's convention); a bare IPv6 source/destination normalizes
+    # to /128 (not /32 for both families, which never matches
+    # ip6tables-save output); ``not_protocol`` is lowercased in the
+    # definition too (lowercasing only the command would leave an
+    # uppercase not_protocol that never compares equal to the fact -- an
+    # idempotence bug); user-supplied spec values are shlex-quoted (safe
+    # tokens render unchanged, so the expected commands still match).
     #
     # The commands need root: flag the request ``sudo=True``.
-    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
+    # ``**kwargs`` absorbs any further global arguments (``op()`` already
     # strips ``name``/``sudo``/``su``).
     _binary(version)
     if isinstance(to_ports, int):
         to_ports = f"{to_ports}"
 
-    # The typed matchers and pyinfra's shortcuts all extend the extras
-    # string; the comparison parses it back into sorted pairs, exactly
-    # as pyinfra does for destination_port/source_port/comment.
+    # The typed matchers and the port/comment shortcuts all extend the
+    # extras string; the comparison parses it back into sorted pairs,
+    # exactly as for destination_port/source_port/comment.
     extra_bits = extras
     if destination_port:
         extra_bits = f"{extra_bits} --dport {destination_port}"
@@ -1784,7 +1779,7 @@ async def rule(
         )
 
     # NAT target arguments are only valid on the nat table with their
-    # matching jump (pyinfra's validation, message text verbatim).
+    # matching jump (validated here, message text preserved).
     if to_destination and (table != "nat" or jump != "DNAT"):
         raise ValueError(
             "iptables only supports to_destination on the nat table and the DNAT jump "
@@ -1862,7 +1857,7 @@ async def rule(
         action = "-D"
         ctx.reason = f"iptables {chain} rule will be deleted"
 
-    # Build the command spec in pyinfra's argument order: positive
+    # Build the command spec in a fixed argument order: positive
     # matches, negated matches, the extras text, the jump, then the
     # target options.
     spec: list[str] = []
@@ -2322,7 +2317,7 @@ async def ipset(
         Examples can be found in ``examples/modules/iptables/iptables_ipset.py``.
     """
 
-    # A reemote5 original (the ipset proposal -- pyinfra has no ipset
+    # A reemote5 original (the ipset proposal -- there is no other ipset
     # support): idempotent on the IpSets fact. present=True creates a
     # missing set with the requested type and adds the missing entries
     # (sorted, so plan and apply report identically); an existing set

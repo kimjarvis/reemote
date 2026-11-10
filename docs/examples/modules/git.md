@@ -21,13 +21,13 @@ facts themselves are documented on the
 
 ## Managing a git config item
 
-The configuration operation: `git.config` mirrors pyinfra's `git.config`,
+The configuration operation: `git.config` mirrors the baseline's `git.config`,
 ensuring a git configuration item at the repository, user or system level.
 It reads the [`GitConfig`][reemote5.modules.git.git.GitConfig] fact for the
 current value list of the key, so a single-valued key is written only when
 its list is not exactly `[value]` and a `multi_value` key only when `value`
 is absent from the list — otherwise the request is a no-op reporting
-`git config <key> is set to <value>`. For a `repo` scope pyinfra reads the
+`git config <key> is set to <value>`. For a `repo` scope the baseline reads the
 existing config only when `repo/.git` is a directory, so the operation probes
 that gate first; with no `repo` it targets the login user's `--global` (or,
 with `system=True`, `--system`) config. Setting a repository's `--local`
@@ -47,7 +47,7 @@ where nothing is sent, both plan as changes).
 
 ## Cloning or updating a repository
 
-The repository operation: `git.repo` mirrors pyinfra's `git.repo`, cloning a
+The repository operation: `git.repo` mirrors the baseline's `git.repo`, cloning a
 fresh repository or reconciling an existing one. It branches on whether
 `dest/.git` is a directory (read through a git-local directory probe), so an
 absent repository yields one `git clone` command carrying `branch` and
@@ -61,13 +61,13 @@ a `git checkout`) and — when `branch` names a tag
 skips the pull. Otherwise `pull` (default `True`) compares
 [`GitLocalCommit`][reemote5.modules.git.git.GitLocalCommit] against
 [`GitRemoteBranchCommit`][reemote5.modules.git.git.GitRemoteBranchCommit] and
-issues one `git pull` only when the two differ (pyinfra's `skip_pull`); a
+issues one `git pull` only when the two differ (the baseline's `skip_pull`); a
 remote reset always pulls because the cached remote tip was gathered against
 the old origin. `depth`, `rebase`, `fetch_tags` and `force` land on the verbs
 they apply to, and `update_submodules` (with `recursive_submodules`) always
 appends `git submodule update --init` at the end. Every command writes under
 `dest`, so the request can ride under `sudo` when the login user cannot write
-there. pyinfra's `user`/`group` options, its `ssh_keyscan` preflight and its
+there. The baseline's `user`/`group` options, its `ssh_keyscan` preflight and its
 leading `files.directory` ensure-directory step are deliberately dropped; the
 clone therefore names `dest` itself instead of cloning into `.` from inside a
 pre-created directory. The script clones the public
@@ -86,7 +86,7 @@ the prepare phase, where nothing is sent, both plan as changes).
 
 ## Managing a linked git worktree
 
-The worktree operation: `git.worktree` mirrors pyinfra's `git.worktree`,
+The worktree operation: `git.worktree` mirrors the baseline's `git.worktree`,
 managing a linked working tree — creating it from a main repository, pulling
 it, or removing it with `present=False`. It branches on the tree's existence
 (read through a git-local directory probe), so an absent but wanted tree
@@ -94,7 +94,7 @@ yields one `git worktree add` command (carrying the `new_branch`/`detached`,
 `force` and `commitish` options) while an already-present tree is left alone.
 When present and wanted, it pulls the tree unless `pull=False`; a tree with
 neither a tracking branch nor an explicit `from_remote_branch`, or one already
-at its remote tip (pyinfra's `skip_pull`), is a no-op. `assume_repo_exists`
+at its remote tip (the baseline's `skip_pull`), is a no-op. `assume_repo_exists`
 skips the `repo/.git` validity probe, and creating or removing a tree writes
 under the repository's `.git`, so the request can ride under `sudo` when the
 login user cannot write there. The demo hosts ship neither `git` nor the

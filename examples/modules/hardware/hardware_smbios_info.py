@@ -29,7 +29,7 @@ driving the two-phase execution model:
    host-name-keyed mapping -- then print each host's SMBIOS map with
    ``json.dumps(..., indent=2)``.
 
-``SmbiosInfo`` is a reemote5 original (pyinfra has no counterpart): it
+``SmbiosInfo`` is a reemote5 original (the baseline has no counterpart): it
 runs ``dmidecode -q`` and maps each SMBIOS section's verbatim title
 (``BIOS Information``, ``System Information``, ``Chassis Information``,
 ...) to its field dict -- manufacturer, product name, serial number,

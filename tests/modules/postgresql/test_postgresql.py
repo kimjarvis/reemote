@@ -7,8 +7,8 @@ the ``database``/``role``/``sql``/``dump``/``load``/``privilege``/
 ``tablespace``/``publication``/``subscription`` operations.
 
 Covers ``reemote5.modules.postgresql.postgresql``. ``PostgresqlRoles`` and
-``PostgresqlDatabases`` mirror pyinfra's ``postgres.PostgresRoles`` /
-``PostgresDatabases``, so their real-transport parity reuses pyinfra's own
+``PostgresqlDatabases`` mirror the baseline's ``postgres.PostgresRoles`` /
+``PostgresDatabases``, so their real-transport parity reuses the baseline's own
 fact fixtures verbatim (canned ``psql -Ac`` output plus the name-keyed
 result), including the custom-connection command render (minus the
 ``PGPASSWORD`` prefix the namespace deliberately drops). The twelve
@@ -98,7 +98,7 @@ class CannedShellHost(Host):
 
 
 def test_parse_rows_empty_output_is_empty_list():
-    # The hardened deviation from pyinfra: empty stdout parses to [] rather
+    # The hardened deviation from the baseline: empty stdout parses to [] rather
     # than raising on an unconditional last-line chop.
     assert _parse_rows([]) == []
     # A lone blank line is a header with no rows, still [].
@@ -152,7 +152,7 @@ def test_quote_literal_doubles_single_quotes():
 
 
 def test_psql_sql_flag_order_and_quoting():
-    # pyinfra's flag order: -d database, -U user, -h host, -p port. Plain
+    # The baseline's flag order: -d database, -U user, -h host, -p port. Plain
     # values quote to themselves, so ordinary names keep command parity.
     assert _psql_sql("SELECT 1") == "psql -Ac 'SELECT 1'"
     assert _psql_sql(
@@ -168,18 +168,18 @@ def test_psql_sql_flag_order_and_quoting():
     )
 
 
-# --- PostgresqlRoles (pyinfra parity) ----------------------------------------
+# --- PostgresqlRoles (baseline parity) ----------------------------------------
 
 
 ROLES_OUTPUT = """\
 rolname|rolsuper|rolinherit|rolcreaterole|rolcreatedb|rolcanlogin|rolreplication|rolconnlimit|rolpassword|rolvaliduntil|rolbypassrls|rolconfig|oid
 postgres|t|t|t|t|t|t|-1|********||t||10
-pyinfra|t|t|f|f|t|f|-1|********||f||16384
+reemote5|t|t|f|f|t|f|-1|********||f||16384
 (7 rows)
 """
 
 ROLES_FACT = {
-    "pyinfra": {
+    "reemote5": {
         "super": True,
         "inherit": True,
         "createrole": False,
@@ -210,17 +210,17 @@ ROLES_FACT = {
 }
 
 
-async def test_roles_parses_pyinfras_fixture():
-    # pyinfra's own fact fixture (tests/facts/postgresql.PostgresqlRoles,
+async def test_roles_parses_baseline_fixture():
+    # The baseline's own fact fixture (tests/facts/postgresql.PostgresqlRoles,
     # multiple.json): the rendered command matches verbatim and the
-    # name-keyed result equals pyinfra's fact dict.
+    # name-keyed result equals the baseline's fact dict.
     host = CannedShellHost(ROLES_OUTPUT)
     assert await PostgresqlRoles.process(host) == ROLES_FACT
     assert host.shells == ["psql -Ac 'SELECT * FROM pg_catalog.pg_roles'"]
 
 
 async def test_roles_custom_connection_drops_the_password_prefix():
-    # pyinfra's multiple_custom_connection.json renders a PGPASSWORD=...
+    # The baseline's multiple_custom_connection.json renders a PGPASSWORD=...
     # prefix; reemote5 drops it (the namespace credentials decision) but
     # keeps the -U/-h/-p flag order and parses the same result.
     host = CannedShellHost(ROLES_OUTPUT)
@@ -253,20 +253,20 @@ async def test_roles_reads_the_simulated_seam():
 async def test_roles_gathers_across_hosts():
     hosts = [
         SimulatedHost(name="web1", postgres_roles={"a": ROLES_FACT["postgres"]}),
-        SimulatedHost(name="web2", postgres_roles={"b": ROLES_FACT["pyinfra"]}),
+        SimulatedHost(name="web2", postgres_roles={"b": ROLES_FACT["reemote5"]}),
     ]
     result = await gather_fact(hosts, PostgresqlRoles)
     assert set(result) == {"web1", "web2"}
     assert result["web1"] == {"a": ROLES_FACT["postgres"]}
 
 
-# --- PostgresqlDatabases (pyinfra parity) ------------------------------------
+# --- PostgresqlDatabases (baseline parity) ------------------------------------
 
 
 DATABASES_OUTPUT = """\
 pg_encoding_to_char|datname|datdba|encoding|datcollate|datctype|datistemplate|datallowconn|datconnlimit|datlastsysoid|datfrozenxid|datminmxid|dattablespace|datacl|owner
 UTF8|postgres|10|6|en_US.UTF-8|en_US.UTF-8|f|t|-1|13052|548|1|1663||postgres
-UTF8|pyinfra_stuff|16384|6|en_US.UTF-8|en_US.UTF-8|f|t|-1|13052|548|1|1663||pyinfra
+UTF8|baseline_stuff|16384|6|en_US.UTF-8|en_US.UTF-8|f|t|-1|13052|548|1|1663||reemote5
 (4 rows)
 """
 
@@ -286,7 +286,7 @@ DATABASES_FACT = {
         "acl": None,
         "owner": "postgres",
     },
-    "pyinfra_stuff": {
+    "baseline_stuff": {
         "dba": 16384,
         "encoding": "UTF8",
         "collate": "en_US.UTF-8",
@@ -299,12 +299,12 @@ DATABASES_FACT = {
         "minmxid": 1,
         "tablespace": 1663,
         "acl": None,
-        "owner": "pyinfra",
+        "owner": "reemote5",
     },
 }
 
 
-async def test_databases_parses_pyinfras_fixture():
+async def test_databases_parses_baseline_fixture():
     host = CannedShellHost(DATABASES_OUTPUT)
     assert await PostgresqlDatabases.process(host) == DATABASES_FACT
     assert host.shells == [
@@ -978,12 +978,12 @@ def test_postgresql_namespace_exports_operations_and_descriptors():
         assert getattr(reemote5, name) is module_cls
 
 
-# --- database operation (pyinfra parity, extended) ---------------------------
+# --- database operation (baseline parity, extended) ---------------------------
 
 
-def test_database_command_renders_pyinfras_create_fixtures():
+def test_database_command_renders_baseline_create_fixtures():
     # add_database.json / add_database_owner.json / remove_database.json:
-    # identifiers are double-quoted exactly as pyinfra renders them.
+    # identifiers are double-quoted exactly as the baseline renders them.
     assert PostgresqlDatabaseCommand(database="somedb").shell() == (
         "psql -Ac 'CREATE DATABASE \"somedb\"'"
     )
@@ -997,8 +997,8 @@ def test_database_command_renders_pyinfras_create_fixtures():
 
 def test_database_command_renders_locales_with_quoted_encoding():
     # add_database_locales.json deviation: reemote5 renders ENCODING as a
-    # quoted literal (PostgreSQL accepts it identically to pyinfra's bare
-    # word); LC_COLLATE/LC_CTYPE keep pyinfra's quoted-literal form. The
+    # quoted literal (PostgreSQL accepts it identically to the baseline's bare
+    # word); LC_COLLATE/LC_CTYPE keep the baseline's quoted-literal form. The
     # expected shell composes shlex.quote over the SQL text -- the quoting
     # itself is covered by the helper tests.
     sql = "CREATE DATABASE \"somedb\" ENCODING 'utf8' LC_COLLATE 'C' LC_CTYPE 'C'"
@@ -1075,7 +1075,7 @@ async def test_database_create_resolves_a_known_tablespace():
 
 
 async def test_database_unknown_tablespace_raises_in_prepare():
-    # The reworked OID resolution: pyinfra compared the NAME against the
+    # The reworked OID resolution: the baseline compared the NAME against the
     # fact's OID column (never matching); reemote5 fails fast instead.
     host = SimulatedHost(name="h", postgres_tablespaces=[PG_DEFAULT_SPACE])
     with pytest.raises(OperationError, match="tablespace fast does not exist"):
@@ -1087,7 +1087,7 @@ async def test_database_unknown_tablespace_raises_in_prepare():
 async def test_database_alters_owner_and_tablespace_by_oid():
     # update_database.json reworked: the fact reports the tablespace OID
     # (1663 = pg_default), the request names "fast" (16385) -> both diffs
-    # alter, where pyinfra's name-vs-OID comparison always "matched".
+    # alter, where the baseline's name-vs-OID comparison always "matched".
     host = SimulatedHost(
         name="h",
         postgres_databases={
@@ -1116,7 +1116,7 @@ async def test_database_alters_owner_and_tablespace_by_oid():
 
 
 async def test_database_noop_when_the_parameters_match():
-    # update_database_noop.json: pyinfra's verbatim noop_description.
+    # update_database_noop.json: the baseline's verbatim noop_description.
     host = SimulatedHost(
         name="h",
         postgres_databases={
@@ -1210,7 +1210,7 @@ async def test_database_drops_an_existing_database():
     assert commands == [PostgresqlDatabaseCommand(database="somedb", present=False)]
 
 
-async def test_database_drop_noop_matches_pyinfras_description():
+async def test_database_drop_noop_matches_baseline_description():
     # remove_database_noop.json.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
@@ -1262,14 +1262,14 @@ async def test_database_seam_create_alter_drop():
     assert host.postgres_databases == {}
 
 
-# --- role operation (pyinfra parity, reworked) -------------------------------
+# --- role operation (baseline parity, reworked) -------------------------------
 
 
-def test_role_command_renders_pyinfras_create_fixtures():
+def test_role_command_renders_baseline_create_fixtures():
     # user_add_super.json / user_add_privileges.json / user_add_no_login.json
     # / user_add_replication.json, with the documented deviation: every
     # flag renders explicitly (X/NOX pairs) and inherit defaults to True,
-    # so INHERIT/NOINHERIT always appears where pyinfra omitted it.
+    # so INHERIT/NOINHERIT always appears where the baseline omitted it.
     assert PostgresqlRoleCommand(
         role="testuser",
         login=True,
@@ -1339,7 +1339,7 @@ async def test_role_creates_an_absent_role():
 
 
 async def test_role_absorbs_the_dropped_password_option():
-    # pyinfra's ``password`` is deliberately dropped (the namespace
+    # The baseline's ``password`` is deliberately dropped (the namespace
     # credentials decision); passed anyway it lands in **kwargs and is
     # ignored -- no PASSWORD clause ever renders.
     host = SimulatedHost(name="h")
@@ -1352,7 +1352,7 @@ async def test_role_absorbs_the_dropped_password_option():
 
 async def test_role_alters_only_the_differing_connection_limit():
     # role_update.json reworked: the fact's catalog key is "connlimit"
-    # (pyinfra compared "connection_limit", which never exists).
+    # (the baseline compared "connection_limit", which never exists).
     host = SimulatedHost(
         name="h",
         postgres_roles={"testuser": {**ROLE_ENTRY, "connlimit": 10}},
@@ -1369,7 +1369,7 @@ async def test_role_alters_only_the_differing_connection_limit():
 
 async def test_role_alter_maps_login_onto_canlogin():
     # The catalog-key fix: a login=False request against a canlogin=True
-    # role alters (pyinfra's option-name comparison never fired).
+    # role alters (the baseline's option-name comparison never fired).
     host = SimulatedHost(name="h", postgres_roles={"testuser": ROLE_ENTRY})
     ctx, commands = await materialize(
         host, postgresql.role, role="testuser", login=False
@@ -1380,7 +1380,7 @@ async def test_role_alter_maps_login_onto_canlogin():
     assert commands[0].shell() == "psql -Ac 'ALTER ROLE \"testuser\" NOLOGIN'"
 
 
-async def test_role_noop_matches_pyinfras_description():
+async def test_role_noop_matches_baseline_description():
     # role_update_noop.json: seeded on the catalog keys super/inherit.
     host = SimulatedHost(
         name="h",
@@ -1405,7 +1405,7 @@ async def test_role_drops_an_existing_role():
     assert commands == [PostgresqlRoleCommand(role="testuser", present=False)]
 
 
-async def test_role_drop_noop_matches_pyinfras_description():
+async def test_role_drop_noop_matches_baseline_description():
     # role_remove_noop.json.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
@@ -1448,10 +1448,10 @@ async def test_role_seam_create_alter_drop():
     assert host.postgres_roles == {}
 
 
-# --- sql / dump / load operations (stateless pyinfra parity) -----------------
+# --- sql / dump / load operations (stateless baseline parity) -----------------
 
 
-async def test_sql_renders_pyinfras_execute_fixture():
+async def test_sql_renders_baseline_execute_fixture():
     # execute.json: the custom-connection flag order, no PGPASSWORD prefix.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
@@ -1473,7 +1473,7 @@ async def test_sql_renders_pyinfras_execute_fixture():
 
 
 async def test_sql_is_stateless_and_always_yields():
-    # pyinfra marks sql is_idempotent=False: two identical requests both
+    # The baseline marks sql is_idempotent=False: two identical requests both
     # report changed, and the simulated seam executes no SQL.
     host = SimulatedHost(name="h")
     ctx1, commands1 = await materialize(host, postgresql.sql, sql="SELECT 1")
@@ -1485,7 +1485,7 @@ async def test_sql_is_stateless_and_always_yields():
     assert host.postgres_databases == {}
 
 
-async def test_dump_renders_pyinfras_fixture_without_the_password_prefix():
+async def test_dump_renders_baseline_fixture_without_the_password_prefix():
     # dump.json minus PGPASSWORD (the namespace credentials decision).
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
@@ -1523,7 +1523,7 @@ async def test_dump_seam_writes_the_marker_file():
     assert host.remote_files["/tmp/db.sql"] == b"-- simulated pg_dump of somedb\n"
 
 
-async def test_load_renders_pyinfras_fixture_without_the_password_prefix():
+async def test_load_renders_baseline_fixture_without_the_password_prefix():
     # load.json minus PGPASSWORD.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(

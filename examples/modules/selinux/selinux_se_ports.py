@@ -31,7 +31,7 @@ transport* (asyncssh):
    ``protocol="tcp"`` and ``se_type="http_port_t"`` -- then print both with
    ``json.dumps(..., indent=2)``.
 
-``SEPorts`` ports pyinfra's fact of the same name and extends it with the
+``SEPorts`` ports the baseline's fact of the same name and extends it with the
 two filter arguments the port-audit scenario asked for: ``semanage port
 -ln`` lists every defined port label, ranges (``9000-9010``) are expanded
 to individual ports, and the fact keeps them as a protocol -> port -> type

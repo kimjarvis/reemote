@@ -3,10 +3,10 @@
 
 """Tests for the server.sysctl example-only recipe (spool-and-install).
 
-pyinfra's ``server.sysctl`` is not ported as a bespoke operation -- the
+the baseline's ``server.sysctl`` is not ported as a bespoke operation -- the
 developer chose the example-only recipe: ``normalize_value`` and
 ``sysctl_persist_edit`` in ``examples/modules/server/server_op_sysctl.py``
-reproduce pyinfra's value coercion and ``files.line`` lookup on a
+reproduce the baseline's value coercion and ``files.line`` lookup on a
 ``Sysctl`` + ``FileContents`` snapshot, the generic ``files.edit``
 primitive spools the desired sysctl.conf to a writable path, an elevated
 ``files.move`` installs it, and the demo-side ``sysctl_set`` operation (a
@@ -14,7 +14,7 @@ raw ``StringCommand``) applies the live value. These tests import that
 code straight from the example module, so the shipped demonstration is
 what is verified.
 
-Covers the value normalization and command rendering against pyinfra's
+Covers the value normalization and command rendering against the baseline's
 own operation-test fixtures (``set.json``, ``set_list.json``,
 ``set_needs_quotes.json``, the four ``set_noop*`` comparisons,
 ``set_persist.json``'s appended line), the ``files.line`` persist parity
@@ -70,7 +70,7 @@ CONF_PATH = "/etc/sysctl.conf"
 SPOOL_PATH = "/tmp/sysctl.conf"
 
 # The fixture sysctl.conf: the setting commented out among unrelated lines
-# (pyinfra's files.line search-style match uncomments it in place).
+# (the baseline's files.line search-style match uncomments it in place).
 CONF_CONTENT = "# /etc/sysctl.conf\n# fs.file-max = 100000\nvm.swappiness = 10\n"
 DESIRED = "# /etc/sysctl.conf\nfs.file-max = 100000\nvm.swappiness = 10\n"
 
@@ -103,7 +103,7 @@ def seeded_factory(entry: dict) -> SimulatedHost:
     return host
 
 
-# --- Value normalization: pyinfra fixture parity -------------------------------
+# --- Value normalization: baseline fixture parity -------------------------------
 
 
 @pytest.mark.parametrize(
@@ -121,7 +121,7 @@ def seeded_factory(entry: dict) -> SimulatedHost:
         (["a", 2], ("a 2", ["a", 2])),  # non-numeric items survive try_int
     ],
 )
-def test_normalize_value_mirrors_pyinfra(value, expected):
+def test_normalize_value_mirrors_baseline(value, expected):
     assert normalize_value(value) == expected
 
 
@@ -145,7 +145,7 @@ def test_example_constants_normalize_once():
         ("kern.evil; whoami", "some value", "sysctl 'kern.evil; whoami'='some value'"),
     ],
 )
-async def test_sysctl_set_renders_pyinfra_fixture_commands(key, value, expected):
+async def test_sysctl_set_renders_baseline_fixture_commands(key, value, expected):
     string_value, _normalized = normalize_value(value)
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -159,16 +159,16 @@ async def test_sysctl_set_renders_pyinfra_fixture_commands(key, value, expected)
     assert command_shell(cmd, sudo=True) == f"sudo {expected}"
 
 
-async def test_sysctl_set_kwargs_absorb_pyinfra_globals():
+async def test_sysctl_set_kwargs_absorb_extra_globals():
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
-        cmd async for cmd in sysctl_set(ctx, KEY, "100000", _pyinfra_global="ignored")
+        cmd async for cmd in sysctl_set(ctx, KEY, "100000", _extra_global="ignored")
     ]
     assert commands == [StringCommand("sysctl fs.file-max=100000")]
 
 
-# --- The Sysctl skip gate (pyinfra's change condition) -------------------------
+# --- The Sysctl skip gate (the baseline's change condition) -------------------------
 
 
 @pytest.mark.parametrize(
@@ -191,16 +191,16 @@ async def test_sysctl_set_kwargs_absorb_pyinfra_globals():
         (2000, {"kern.max-files": 3000}, True),  # different live value
     ],
 )
-def test_sysctl_needed_mirrors_pyinfra(value, live, expected):
+def test_sysctl_needed_mirrors_baseline(value, live, expected):
     _string_value, normalized = normalize_value(value)
     assert sysctl_needed(live, "kern.max-files", normalized) is expected
 
 
-# --- The pure persist edit: pyinfra files.line parity --------------------------
+# --- The pure persist edit: the baseline files.line parity --------------------------
 
 
 def test_persist_appends_the_line_when_absent():
-    """pyinfra set_persist.json parity: no matching line -> the
+    """The baseline set_persist.json parity: no matching line -> the
     ``echo 'kern.max-files = 2000' >> /etc/sysctl.conf`` append."""
     assert sysctl_persist_edit("# comment\n", "kern.max-files", "2000") == (
         "# comment\nkern.max-files = 2000\n"
@@ -208,7 +208,7 @@ def test_persist_appends_the_line_when_absent():
 
 
 def test_persist_of_an_absent_file_creates_the_line():
-    """pyinfra's echo append creates an absent file; None content reads as
+    """The baseline's echo append creates an absent file; None content reads as
     empty here."""
     assert sysctl_persist_edit(None, "kern.max-files", "2000") == (
         "kern.max-files = 2000\n"
@@ -216,7 +216,7 @@ def test_persist_of_an_absent_file_creates_the_line():
 
 
 def test_persist_uncomments_a_matching_line_in_place():
-    """pyinfra's search-style ``^.*pattern.*$`` wrapping matches commented
+    """The baseline's search-style ``^.*pattern.*$`` wrapping matches commented
     lines too; the sed normalizes every match to the replacement."""
     assert sysctl_persist_edit(CONF_CONTENT, KEY, "100000") == DESIRED
 
@@ -238,7 +238,7 @@ def test_persist_normalizes_whitespace_spellings(spelling):
 
 
 def test_persist_normalizes_every_matching_line():
-    """pyinfra's sed replaces ALL matching lines, not just the first."""
+    """The baseline's sed replaces ALL matching lines, not just the first."""
     current = "# fs.file-max = 100000\nfs.file-max=100000\n"
     assert sysctl_persist_edit(current, KEY, "100000") == (
         "fs.file-max = 100000\nfs.file-max = 100000\n"
@@ -246,7 +246,7 @@ def test_persist_normalizes_every_matching_line():
 
 
 def test_persist_leaves_a_stale_value_line_alone():
-    """pyinfra parity: the pattern includes the value, so ``key = other``
+    """baseline parity: the pattern includes the value, so ``key = other``
     never matches -- the stale line survives beside the appended one and
     the last assignment wins at boot."""
     current = "fs.file-max = 90000\n"
@@ -256,7 +256,7 @@ def test_persist_leaves_a_stale_value_line_alone():
 
 
 def test_persist_matches_a_longer_value_sharing_the_prefix():
-    """pyinfra's unanchored pattern: ``fs.file-max = 1000000`` contains
+    """The baseline's unanchored pattern: ``fs.file-max = 1000000`` contains
     ``fs.file-max = 100000`` and is normalized like any other match."""
     assert sysctl_persist_edit("fs.file-max = 1000000\n", KEY, "100000") == (
         "fs.file-max = 100000\n"
@@ -265,7 +265,7 @@ def test_persist_matches_a_longer_value_sharing_the_prefix():
 
 def test_persist_key_and_value_are_matched_literally():
     """The documented hardening: re.escape keeps the '.' in fs.file-max
-    literal, where pyinfra's raw BRE interpolation would match any
+    literal, where the baseline's raw BRE interpolation would match any
     character -- the near-miss line survives and the exact line appends."""
     assert sysctl_persist_edit("fsXfile-max = 100000\n", KEY, "100000") == (
         "fsXfile-max = 100000\nfs.file-max = 100000\n"

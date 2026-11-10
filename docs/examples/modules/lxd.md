@@ -59,9 +59,9 @@ hosts' sudo to an unconfined domain (or set SELinux permissive) and
 install + initialize LXD, or point each script's `INVENTORY_PATH` at your
 own file of LXD-enabled machines, to execute them for real.
 
-## Managing a container (pyinfra parity)
+## Managing a container (baseline parity)
 
-The container operation: `lxd.container` mirrors pyinfra's
+The container operation: `lxd.container` mirrors the baseline's
 `lxd.container` 1:1 — same `id`/`present`/`image` options, same
 [`LxdContainers`][reemote5.modules.lxd.lxd.LxdContainers] fact read, same
 `lxc launch <image> <id> < /dev/null` create shell and the same

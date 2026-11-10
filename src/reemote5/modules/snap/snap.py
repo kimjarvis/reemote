@@ -3,16 +3,15 @@
 
 # The ``snap`` module: facts and operations in one source.
 #
-# Fact side: ``SnapPackage`` is a port of pyinfra's ``snap.SnapPackage`` --
-# one installed snap package's identity (name, publisher, snap-id, tracked
-# channel and installed version) parsed from the labelled field rows of
-# ``snap info <package>`` -- and ``SnapPackages`` ports its sibling
-# ``snap.SnapPackages``, the bare ``snap list`` names of every installed snap.
+# Fact side: ``SnapPackage`` reports one installed snap package's identity
+# (name, publisher, snap-id, tracked channel and installed version) parsed
+# from the labelled field rows of ``snap info <package>``, and
+# ``SnapPackages`` lists the bare ``snap list`` names of every installed snap.
 # Like every fact they are phase-unaware: their ``process`` coroutine just
 # gathers the raw value.
 #
-# Operation side: ``snap.package`` mirrors pyinfra's ``snap.package`` (install,
-# remove, or switch the tracked channel of snap packages) through its
+# Operation side: ``snap.package`` installs, removes, or switches the
+# tracked channel of snap packages through its
 # ``SnapInstallCommand``/``SnapRemoveCommand``/``SnapRefreshCommand``
 # descriptors. Operations are async generators that receive an ``OpContext``,
 # await facts, set ``ctx.changed``/``ctx.reason``, and yield command
@@ -56,7 +55,7 @@ class SnapPackageInfo(TypedDict):
     #
     # A TypedDict rather than a class instance: the answer is an ordinary
     # dict, so equality against a literal dict works and ``json.dumps``
-    # serializes it directly. The ``snap_id`` field renames pyinfra's
+    # serializes it directly. The ``snap_id`` field renames the
     # hyphenated ``snap-id`` key onto a valid identifier (the same
     # label-to-key normalization ``ApkPackageInfo`` makes of apk's
     # ``webpage``/``installed size`` headers).
@@ -93,12 +92,12 @@ class SnapPackage:
         Examples can be found in ``examples/modules/snap/snap_snap_package.py``.
     """
 
-    # Mirrors pyinfra's ``snap.SnapPackage``: ``snap info <package>`` prints a
-    # block of labelled rows; the five tracked ones become one
+    # ``snap info <package>`` prints a block of labelled rows; the five
+    # tracked ones become one
     # ``SnapPackageInfo`` (for example ``{"name": "lxd", "publisher":
     # "Canonical✓", "snap_id": "J60k4JY0HppjwOjW8dZdYc8obXKxujRu", "channel":
-    # "4.0/stable", "version": "4.0.9-8e2046b"}``). The regexes are pyinfra's
-    # verbatim, applied to the raw line (``re.match``), so only the top-level,
+    # "4.0/stable", "version": "4.0.9-8e2046b"}``). The regexes are applied
+    # to the raw line (``re.match``), so only the top-level,
     # unindented field rows are read: the indented ``channels:`` table, the
     # multi-line ``description: |`` body, the ``commands:``/``services:`` lists
     # and the ``refresh-date:``/``store-url:`` rows never match. The
@@ -106,16 +105,16 @@ class SnapPackage:
     # (``4.0/stable/ubuntu-20.04`` -> ``"4.0/stable"``) and the ``version``
     # from ``installed:`` to the leading version token
     # (``4.0.9-8e2046b            (22753)  71MB -`` -> ``"4.0.9-8e2046b"``),
-    # exactly as pyinfra's capture groups do.
+    # via the narrowed capture groups.
     #
-    # Two deliberate deviations from pyinfra. pyinfra's ``requires_command``
-    # gating on ``snap`` is dropped and the command is wrapped in
-    # ``2>/dev/null || true``: an absent package -- or a host without ``snap``
+    # Two deliberate design choices. Rather than gating on ``snap``
+    # existing, the command is wrapped in ``2>/dev/null || true``: an absent
+    # package -- or a host without ``snap``
     # -- prints nothing to stdout (the ``error: no snap found ...`` line goes
     # to stderr, suppressed) and exits non-zero, so the guard reads as empty
-    # output rather than raising ``CommandNotFoundError``. pyinfra's fact then
-    # returns its ``default = dict`` (an empty ``{}``); reemote5 reports
-    # ``None`` instead, the ``ApkPackage``/``DebPackage``/``RpmPackage``
+    # output rather than raising ``CommandNotFoundError``. Instead of an
+    # empty-dict default (``{}``), reemote5 reports ``None`` -- the
+    # ``ApkPackage``/``DebPackage``/``RpmPackage``
     # None-on-absent convention, so a caller tests ``info is not None``. A
     # present package whose optional field is simply absent reads that field
     # as its empty-string default, keeping the entry's five keys always
@@ -123,7 +122,7 @@ class SnapPackage:
     # cannot break out of the argument.
 
     #: The five tracked ``snap info`` rows, each result key mapped to the
-    #: pyinfra regex that reads its value from the raw line (``snap_id``
+    #: regex that reads its value from the raw line (``snap_id``
     #: reads the ``snap-id:`` row, ``channel`` the ``tracking:`` row and
     #: ``version`` the ``installed:`` row).
     FIELD_REGEXES: ClassVar[dict[str, re.Pattern[str]]] = {
@@ -142,8 +141,8 @@ class SnapPackage:
         ``package`` argument is ``shlex``-quoted, and the ``2>/dev/null ||
         true`` tail swallows the non-zero exit an absent package (or a host
         without ``snap``) produces, so nothing reaches stdout and ``process``
-        reports ``None`` -- the ``DebPackage`` tolerance rather than pyinfra's
-        ``requires_command`` gating and empty-dict answer.
+        reports ``None`` -- the ``DebPackage`` tolerance rather than a
+        command-existence gate and an empty-dict answer.
         """
         return f"snap info {shlex.quote(package)} 2>/dev/null || true"
 
@@ -215,26 +214,26 @@ class SnapPackages:
         Examples can be found in ``examples/modules/snap/snap_snap_packages.py``.
     """
 
-    # Mirrors pyinfra's ``snap.SnapPackages``: ``snap list`` prints a table
+    # ``snap list`` prints a table
     # whose first line is the ``Name Version Rev Tracking Publisher Notes``
     # header, so the header is discarded and each remaining row contributes
-    # its leading whitespace-delimited token -- the ``Name`` column. pyinfra
-    # returns a bare list of names and reemote5 keeps that ``list[str]``
-    # scalar-list shape (the same exception ``Ipv4Addrs`` and the sibling
+    # its leading whitespace-delimited token -- the ``Name`` column. The
+    # answer is a bare list of names, kept as that ``list[str]`` scalar-list
+    # shape (the same exception ``Ipv4Addrs`` and the sibling
     # ``PermissiveDomains`` make: the answer is a list of scalars, not record
     # dicts, so there is no field to wrap in an entry TypedDict). Names come
     # back in ``snap list``'s own listing order, deduplicated at their first
     # occurrence (snap never repeats a name, so the dedup is a defensive
-    # no-op), and a blank body line -- which pyinfra's ``split()[0]`` would
+    # no-op), and a blank body line -- which a naive ``split()[0]`` would
     # raise on -- is skipped rather than crash ``parse``.
     #
-    # One deliberate deviation, shared with the sibling ``SnapPackage``.
-    # pyinfra's ``requires_command`` gating on ``snap`` is dropped and the
-    # command is wrapped in ``2>/dev/null || true``: a host without ``snap``
+    # One deliberate choice, shared with the sibling ``SnapPackage``. Rather
+    # than gating on ``snap`` existing, the command is wrapped in
+    # ``2>/dev/null || true``: a host without ``snap``
     # exits non-zero, so the guard reads as empty output rather than raising
-    # ``CommandNotFoundError``. pyinfra's fact then returns its ``default =
-    # list`` (an empty ``[]``) for a host with nothing installed; reemote5
-    # keeps the empty list for both the nothing-installed and the
+    # ``CommandNotFoundError``. An empty list (``[]``) is the answer for a
+    # host with nothing installed; reemote5 keeps that empty list for both
+    # the nothing-installed and the
     # no-``snap``-binary cases, so a caller tests ``if packages:`` and never
     # sees the tool's absence as an error.
     #
@@ -292,9 +291,9 @@ class SnapPackages:
 class SnapInstallCommand(Command):
     """``snap install [--classic] <packages> --channel=<channel>``: install snaps.
 
-    The ``present=True`` direction of ``snap.package``, rendered in pyinfra's
-    exact token order -- the confinement flag between the verb and the names,
-    the channel option last. ``classic`` adds snap's ``--classic`` flag
+    The ``present=True`` direction of ``snap.package``, rendered in the
+    exact token order snap expects -- the confinement flag between the verb
+    and the names, the channel option last. ``classic`` adds snap's ``--classic`` flag
     (confine-free access to system resources, the shape most non-store snaps
     need); it belongs to ``install`` only, so ``SnapRefreshCommand`` carries no
     such field. The package names and the channel are shell-quoted, so a
@@ -318,7 +317,7 @@ class SnapInstallCommand(Command):
 class SnapRefreshCommand(Command):
     """``snap refresh <packages> --channel=<channel>``: switch the tracked channel.
 
-    The channel-change path of ``snap.package`` (pyinfra's ``snap refresh``
+    The channel-change path of ``snap.package`` (the ``snap refresh``
     branch): yielded for an already-installed snap whose tracked ``channel``
     differs from the requested one. snap has no separate "switch channel"
     verb -- a ``refresh`` carrying ``--channel`` is what moves an installed
@@ -338,7 +337,7 @@ class SnapRefreshCommand(Command):
 class SnapRemoveCommand(Command):
     """``snap remove <packages>``: remove snaps.
 
-    The ``present=False`` direction of ``snap.package`` (pyinfra's bare
+    The ``present=False`` direction of ``snap.package`` (the bare
     ``snap remove`` command). snap takes no channel or confinement flag when
     removing, so this descriptor carries the names alone, shell-quoted.
     """
@@ -387,35 +386,35 @@ async def package(
         Examples can be found in ``examples/modules/snap/snap_package.py``.
     """
 
-    # pyinfra ``snap.package`` parity.
+    # Install, remove or re-channel snap packages, idempotently.
     #
     # Idempotence comes from the ``SnapPackage`` fact, awaited once per
     # requested snap: ``None`` means "not installed", and an installed entry
     # carries the tracked ``channel`` to compare against. That per-package
-    # read deliberately replaces pyinfra's two-fact design -- upstream first
-    # asks ``snap.SnapPackages`` (the bare ``snap list`` names) whether a snap
-    # is installed and only then reads ``snap.SnapPackage`` for its channel,
+    # read deliberately replaces a two-fact design -- one could first ask
+    # ``SnapPackages`` (the bare ``snap list`` names) whether a snap is
+    # installed and only then read ``SnapPackage`` for its channel,
     # but ``SnapPackage``'s None-on-absent answer already carries the same
     # presence information for the handful of names a request names, so one
     # fact serves both questions here (the ``SnapPackages`` fact exists for
     # callers wanting the whole fleet listing in one cheap call). A present
-    # snap whose channel differs yields the channel switch pyinfra calls a
-    # refresh (snap has no
-    # separate ``switch`` verb); an absent one under ``present=False`` is the
-    # no-op pyinfra reports as ``snap package X is not installed``, folded
+    # snap whose channel differs yields the channel switch -- a ``refresh``
+    # (snap has no separate ``switch`` verb); an absent one under
+    # ``present=False`` is the
+    # no-op reported as ``snap package X is not installed``, folded
     # into the shared ``"no packages to remove"`` reason the apt/dnf/apk
     # package operations use.
     #
-    # Commands run in pyinfra's yield order: install, then remove, then
+    # Commands run in a fixed yield order: install, then remove, then
     # refresh. Installing, removing and refreshing all write system state, so
     # flag the request ``sudo=True`` (Ubuntu -- the snap fleet -- carries
     # passwordless ``sudo`` by default, unlike the Alpine/apk hosts). The
     # fact read itself is unprivileged: ``snap info`` is world-readable.
-    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already strips
+    # ``**kwargs`` absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``/``doas``).
     reasons: list[str] = []
 
-    # Normalize: pyinfra accepts a bare string, a list, or None.
+    # Normalize: accept a bare string, a list, or None.
     if packages is None:
         requested: tuple[str, ...] = ()
     elif isinstance(packages, str):

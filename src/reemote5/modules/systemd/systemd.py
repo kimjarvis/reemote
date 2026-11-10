@@ -15,7 +15,7 @@
 # None when systemd answers nothing) and ``SystemdServiceEnabled`` (whether a
 # unit's ``UnitFileState`` counts as enabled) are the per-unit probes the
 # ``service`` operation reads for idempotence. ``SystemdStatus`` and
-# ``SystemdEnabled`` port pyinfra's two fleet-wide facts (the unit -> active
+# ``SystemdEnabled`` are the two fleet-wide facts (the unit -> active
 # bool and unit -> enabled bool parsed from ``systemctl show --all``).
 # Seven reemote5 originals widen the visibility: ``SystemdUnitProperties``
 # (a unit's curated ``systemctl show`` properties as raw strings),
@@ -28,10 +28,10 @@
 # Like every fact they are phase-unaware: their ``process`` coroutine just
 # gathers the raw value.
 #
-# Operation side: ``service`` mirrors pyinfra's ``systemd.service`` through
+# Operation side: ``service`` manages a unit through
 # the ``SystemctlCommand`` descriptor, reading
 # ``SystemdServiceState``/``SystemdServiceEnabled`` for idempotence, and
-# ``daemon_reload`` ports pyinfra's stateless reload. Six reemote5 originals
+# ``daemon_reload`` runs a stateless reload. Six reemote5 originals
 # widen the control surface: ``mask``/``reset_failed``/``preset`` (systemctl
 # verbs through ``SystemctlCommand``) and ``dropin``/``tmpfiles``/``sysusers``
 # (root-owned ``/etc`` config writes through the spool-transfer +
@@ -57,7 +57,7 @@ from ...core import OpContext
 from ...hosts import Host
 
 #: Unit suffixes systemd recognises; a bare name gets ``.service`` appended
-#: (pyinfra's ``systemd.service`` normalization).
+#: (the ``service`` operation's name normalization).
 _UNIT_SUFFIXES = (
     ".service",
     ".socket",
@@ -91,13 +91,13 @@ def _systemctl_cmd(
     machine: str | None = None,
     user_name: str | None = None,
 ) -> str:
-    """Render the ``systemctl`` base command for a scope (pyinfra's ``_make_systemctl_cmd``).
+    """Render the ``systemctl`` base command for a scope.
 
     ``systemctl`` normally, ``systemctl --user`` for a per-user manager. A
     ``machine`` adds ``--machine=<machine>`` (or ``--machine=<user>@<machine>``
     when a ``user_name`` is also given); a lone ``user_name`` targets that
     user's session on the local host via ``--machine=<user>@.host``. The
-    machine/user values are interpolated verbatim, exactly as pyinfra does.
+    machine/user values are interpolated verbatim.
     """
     cmd = "systemctl --user" if user_mode else "systemctl"
     if machine is not None:
@@ -110,7 +110,7 @@ def _systemctl_cmd(
     return cmd
 
 
-# pyinfra's ``SYSTEMD_UNIT_NAME_REGEX`` verbatim: a name prefix of ASCII
+# The unit-name validation regex: a name prefix of ASCII
 # letters, digits, ``: - _ . \ @`` then a dot and a recognised unit suffix.
 # ``SystemdStatus``/``SystemdEnabled`` validate each ``Id=`` value against it
 # so a stray line never becomes a unit key.
@@ -240,12 +240,11 @@ class SystemdServiceEnabled:
         Examples can be found in ``examples/modules/server/wait_for_httpd.py``.
     """
 
-    # Mirrors pyinfra's ``SystemdEnabled``: the unit's ``UnitFileState`` is
-    # read and ``enabled`` or ``static`` count as enabled; anything else
-    # (``disabled``, ``masked``, an empty answer) does not.
+    # The unit's ``UnitFileState`` is read and ``enabled`` or ``static`` count
+    # as enabled; anything else (``disabled``, ``masked``, an empty answer)
+    # does not.
 
-    #: ``UnitFileState`` values that count as enabled (pyinfra's
-    #: ``SystemdEnabled.state_values``).
+    #: ``UnitFileState`` values that count as enabled.
     ENABLED_STATES = ("enabled", "static")
 
     @classmethod
@@ -306,22 +305,21 @@ class SystemdStatus:
         Examples can be found in ``examples/modules/systemd/systemd_systemd_status.py``.
     """
 
-    # Mirrors pyinfra's ``systemd.SystemdStatus``: ``systemctl show --all``
-    # prints ``Id=<unit>`` / ``SubState=<state>`` pairs (blank-line separated),
+    # ``systemctl show --all`` prints ``Id=<unit>`` / ``SubState=<state>``
+    # pairs (blank-line separated),
     # and a unit reads True when its SubState is one of ``state_values``
     # (``running``, ``waiting``, ``exited``, ``listening``, ``mounted``,
     # ``active``, ``plugged``) -- so a oneshot service that ``exited`` cleanly
     # counts as active, while ``dead``/``failed`` do not. Each ``Id`` value is
     # validated against ``_UNIT_NAME_RE``; a line with no ``=`` resets the
-    # current unit (pyinfra's ``current_unit = None`` guard), so a stray
+    # current unit, so a stray
     # banner can never be paired with the next unit's state.
     #
     # The ``services`` argument narrows the query (a name, a list of names, or
     # None for the ``'*'`` glob); ``user_mode`` wraps the command in
     # ``( ... 2>/dev/null || true )`` so a not-yet-available user manager bus
-    # does not fail the prepare phase (pyinfra's planning-stage guard). The
-    # ``machine``/``user_name`` scope flags render exactly as pyinfra's
-    # ``_make_systemctl_cmd`` does.
+    # does not fail the prepare phase. The ``machine``/``user_name`` scope
+    # flags render exactly as the ``_systemctl_cmd`` helper does.
     #
     # SimulatedHost seam note: the ``services`` field stores each unit's raw
     # ``ActiveState`` string (the ``SystemdServiceState`` shape), and this fact
@@ -331,7 +329,7 @@ class SystemdStatus:
     # SSH but a simulated ``inactive`` reads False. The projection ignores the
     # scope flags (one system-scope store).
 
-    #: ``SubState`` values that count as active (pyinfra's ``state_values``).
+    #: ``SubState`` values that count as active.
     state_key = "SubState"
     state_values = (
         "running",
@@ -432,11 +430,11 @@ class SystemdEnabled(SystemdStatus):
         Examples can be found in ``examples/modules/systemd/systemd_systemd_enabled.py``.
     """
 
-    # Mirrors pyinfra's ``systemd.SystemdEnabled``: a subclass of
-    # ``SystemdStatus`` flipping only ``state_key`` to ``UnitFileState`` and
-    # ``state_values`` to (``enabled``, ``static``) -- a ``static`` unit has no
-    # [Install] section but is still pulled in by its dependents, so pyinfra
-    # counts it enabled. ``command``/``parse`` are inherited verbatim.
+    # A subclass of ``SystemdStatus`` flipping only ``state_key`` to
+    # ``UnitFileState`` and ``state_values`` to (``enabled``, ``static``) -- a
+    # ``static`` unit has no
+    # [Install] section but is still pulled in by its dependents, so it
+    # counts as enabled. ``command``/``parse`` are inherited verbatim.
     #
     # SimulatedHost seam note: the ``enabled_services`` set holds the unit
     # names enabled on boot; this fact projects membership over the union of
@@ -1184,7 +1182,7 @@ class SystemctlCommand(Command):
     ``restart``, ``reload``, ``reload-or-try-restart``, ``reset-failed``,
     ``enable``, ``disable``, ``mask``, ``unmask``, ``preset`` or ``preset-all``.
     The scope flags (``user_mode``/``machine``/``user_name``) render the
-    ``systemctl`` base exactly as pyinfra's ``_make_systemctl_cmd`` does, and
+    ``systemctl`` base exactly as the ``_systemctl_cmd`` helper does, and
     ``now`` adds ``--now`` to an ``enable``/``disable`` so the boot setting
     change also starts/stops the unit immediately. Every flag defaults to the
     plain system-scope rendering, so existing descriptors are unchanged.
@@ -1269,18 +1267,18 @@ async def service(
         Examples can be found in ``examples/modules/systemd/systemd_service.py``.
     """
 
-    # Mirrors pyinfra's ``systemd.service`` (``running``/``restarted``/
+    # Manages a unit's lifecycle (``running``/``restarted``/
     # ``reloaded``/``enabled``/``daemon_reload`` plus the ``user_mode``/
     # ``machine``/``user_name`` scope), with three reemote5 extensions:
     # ``reset_failed`` clears a failed state first, ``soft_reload`` swaps
     # ``reload`` for ``reload-or-try-restart``, and ``now`` adds ``--now`` to
-    # the enable/disable. pyinfra's ``command`` (an arbitrary verb) is
+    # the enable/disable. An arbitrary ``command`` verb is
     # deliberately dropped -- ``service`` already accepts any unit suffix and
     # the dedicated operations cover the rest -- so that keyword is absorbed
     # by ``**kwargs`` with no effect.
     #
     # ``daemon_reload`` and ``restarted``/``reloaded`` are stateless (always
-    # yield when set, like pyinfra's non-idempotent operations);
+    # yield when set, like any non-idempotent operation);
     # ``running`` and ``enabled`` compare against the
     # ``SystemdServiceState``/``SystemdServiceEnabled`` facts and yield only
     # when the unit differs from the request. A unit counts as running only
@@ -1380,9 +1378,8 @@ async def daemon_reload(
         Examples can be found in ``examples/modules/systemd/systemd_daemon_reload.py``.
     """
 
-    # Mirrors pyinfra's ``systemd.daemon_reload``: stateless and
-    # non-idempotent (pyinfra marks it ``is_idempotent=False``), it reads no
-    # fact and always yields one ``daemon-reload`` command. Needs root for a
+    # Stateless and non-idempotent, it reads no fact and always yields one
+    # ``daemon-reload`` command. Needs root for a
     # system manager: flag the request ``sudo=True``.
     ctx.changed = True
     ctx.reason = "daemon-reload"
@@ -1437,7 +1434,7 @@ async def mask(
         Examples can be found in ``examples/modules/systemd/systemd_mask.py``.
     """
 
-    # A reemote5 original (pyinfra has no ``systemd.mask``). Bidirectional and
+    # A reemote5 original. Bidirectional and
     # idempotent through one present-flagged path: read the unit's
     # ``UnitFileState`` from ``SystemdUnitProperties`` and yield ``mask`` only
     # when the unit is not already masked, ``unmask`` only when it is. A unit
@@ -1500,9 +1497,9 @@ async def reset_failed(
         ``examples/modules/systemd/systemd_reset_failed.py``.
     """
 
-    # A reemote5 original (pyinfra folds reset-failed into ``service``; the
-    # enhanced ``service`` keeps a ``reset_failed`` flag, and this standalone
-    # operation covers the reset-only case). Idempotent: read
+    # A reemote5 original. The enhanced ``service`` keeps a ``reset_failed``
+    # flag, and this standalone operation covers the reset-only case.
+    # Idempotent: read
     # ``SystemdServiceState`` and yield ``reset-failed`` only when the unit is
     # ``failed`` -- any other state is left alone (the real command is a no-op
     # then). The scope flags are forwarded to both the fact read and the

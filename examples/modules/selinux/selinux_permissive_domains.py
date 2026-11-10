@@ -30,7 +30,7 @@ SSH transport* (asyncssh):
    mapping -- then print each host's raw list with
    ``json.dumps(..., indent=2)``.
 
-``PermissiveDomains`` is a reemote5 original: pyinfra's selinux namespace
+``PermissiveDomains`` is a reemote5 original: the baseline's selinux namespace
 ships no permissive-domain fact. ``semanage permissive -l`` lists the
 domains running in permissive mode *despite* a globally enforcing policy
 -- denials are logged but not enforced for them -- and the fact keeps the

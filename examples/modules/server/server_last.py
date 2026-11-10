@@ -28,7 +28,7 @@ driving the two-phase execution model:
    inventory with ``asyncio.gather`` and returns a host-name-keyed mapping
    -- then print each host's login records with ``json.dumps(..., indent=2)``.
 
-``Last`` mirrors pyinfra's ``server.Last``: it runs ``last`` (util-linux
+``Last`` mirrors the baseline's ``server.Last``: it runs ``last`` (util-linux
 ``-Fwi`` for full timestamps, wide columns and IPs, falling back to ``-w``
 on FreeBSD and the bare command on busybox) and parses the login records
 into a list of ``{user, tty, host, time}`` dicts. Parsing is intentionally

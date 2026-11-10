@@ -30,7 +30,7 @@ your machines.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``apk.virtual`` is a reemote5 original -- pyinfra's ``apk`` namespace ships
+``apk.virtual`` is a reemote5 original -- the baseline's ``apk`` namespace ships
 only ``upgrade``, ``update`` and ``packages``, with no virtual-group
 management. Alpine's ``apk add -t <tag> <packages>`` (``--virtual``) creates a
 temporary *virtual package* ``<tag>`` that depends on ``<packages>`` and

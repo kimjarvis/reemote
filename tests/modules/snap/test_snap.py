@@ -7,18 +7,18 @@ Covers ``reemote5.modules.snap.snap.SnapPackage`` -- one installed snap
 package's identity parsed from the labelled ``snap info`` rows -- and
 ``reemote5.modules.snap.snap.SnapPackages``, the bare ``snap list`` names of
 every installed snap. Each check runs both over the real-transport path (a
-``CannedShellHost`` returning pyinfra's own ``snap.SnapPackage`` /
+``CannedShellHost`` returning the baseline's own ``snap.SnapPackage`` /
 ``snap.SnapPackages`` fixture output verbatim) and through the
 ``SimulatedHost`` seam, plus the ``gather_fact`` fan-out (which forwards the
 package argument to every host only for ``SnapPackage``).
 
-The ``snap.package`` operation -- a pyinfra port reading ``SnapPackage`` once
+The ``snap.package`` operation -- a baseline port reading ``SnapPackage`` once
 per requested snap -- is exercised over its three command descriptors
 (``SnapInstallCommand`` / ``SnapRefreshCommand`` / ``SnapRemoveCommand``),
-their rendering (pyinfra's own ``snap.package`` fixture commands verbatim),
+their rendering (the baseline's own ``snap.package`` fixture commands verbatim),
 elevation and shell quoting, its idempotence in both directions, the channel
 switch, the ``classic`` confinement flag, the string/None normalization, the
-dropped pyinfra globals absorbed by ``**kwargs``, the ``SimulatedHost`` seam
+dropped the baseline globals absorbed by ``**kwargs``, the ``SimulatedHost`` seam
 dispatch, and end-to-end through ``run`` / ``run_prepare`` + ``run_apply``
 (including the ``sudo`` elevation and a dry run).
 
@@ -84,7 +84,7 @@ def _installed(name: str, channel: str = "latest/stable") -> SnapPackageInfo:
 
 def test_snap_package_command_guards_and_quotes():
     """The real-transport command is ``snap info`` of the shell-quoted package
-    behind a ``2>/dev/null || true`` guard: pyinfra's ``requires_command``
+    behind a ``2>/dev/null || true`` guard: the baseline's ``requires_command``
     gating and empty-dict-on-absent answer are deliberately dropped so an
     absent package (or a host without ``snap``) reads as ``None``."""
     command = SnapPackage.command("lxd")
@@ -100,9 +100,9 @@ def test_snap_package_command_shell_quotes_the_name():
     assert command != f"snap info {package} 2>/dev/null || true"
 
 
-# --- Real-transport parity (pyinfra's snap.SnapPackage fixtures) --------------
+# --- Real-transport parity (the baseline's snap.SnapPackage fixtures) --------------
 
-# The ``output`` field of pyinfra's ``snap.SnapPackage/lxd.json`` fixture,
+# The ``output`` field of the baseline's ``snap.SnapPackage/lxd.json`` fixture,
 # verbatim. The indented ``channels:`` table, the multi-line ``description``
 # body and the ``commands:``/``services:`` lists must never be mistaken for a
 # tracked top-level field row.
@@ -138,7 +138,7 @@ channels:
   4.0/stable:       4.0.9-8e2046b 2022-03-26 (22753)  71MB -
 installed:          4.0.9-8e2046b            (22753)  71MB -"""
 
-# pyinfra's documented ``fact`` for the lxd fixture, in reemote5's entry shape:
+# The baseline's documented ``fact`` for the lxd fixture, in reemote5's entry shape:
 # the hyphenated ``snap-id`` key becomes the ``snap_id`` field, the ``tracking``
 # row is narrowed to ``<track>/<risk>`` and the ``installed`` row to the version
 # token.
@@ -150,7 +150,7 @@ LXD_FACT: SnapPackageInfo = {
     "version": "4.0.9-8e2046b",
 }
 
-# The ``output`` of pyinfra's ``snap.SnapPackage/snapd.json`` (a ``latest/stable``
+# The ``output`` of the baseline's ``snap.SnapPackage/snapd.json`` (a ``latest/stable``
 # tracking with no branch) and the matching fact subset.
 SNAPD_OUTPUT = """\
 name:      snapd
@@ -181,7 +181,7 @@ SNAPD_FACT: SnapPackageInfo = {
 
 async def test_snap_package_parses_the_lxd_fixture():
     """Over the real-transport path, ``SnapPackage`` parses the lxd fixture's
-    ``snap info`` rows into pyinfra's documented fact (with the ``snap_id``
+    ``snap info`` rows into the baseline's documented fact (with the ``snap_id``
     key rename), ignoring the indented ``channels`` table and the multi-line
     description body."""
     host = CannedShellHost(LXD_OUTPUT)
@@ -191,7 +191,7 @@ async def test_snap_package_parses_the_lxd_fixture():
 
 async def test_snap_package_parses_the_snapd_fixture():
     """A ``latest/stable`` tracking (no branch to drop) and a version with no
-    commit suffix parse exactly as pyinfra documents."""
+    commit suffix parse exactly as the baseline documents."""
     host = CannedShellHost(SNAPD_OUTPUT)
     assert await SnapPackage.process(host, "snapd") == SNAPD_FACT
 
@@ -202,8 +202,8 @@ async def test_snap_package_parses_the_snapd_fixture():
 async def test_snap_package_absent_reads_as_none():
     """An absent package prints no tracked row (in the real guarded command the
     ``error:`` line goes to stderr and stdout is empty), so the fact reports
-    ``None`` rather than pyinfra's empty ``{}``. Both the empty-stdout case and
-    pyinfra's not-found error line parse to ``None``."""
+    ``None`` rather than the baseline's empty ``{}``. Both the empty-stdout case and
+    the baseline's not-found error line parse to ``None``."""
     assert await SnapPackage.process(CannedShellHost(""), "foo") is None
     error = 'error: no snap found for "foo"'
     assert await SnapPackage.process(CannedShellHost(error), "foo") is None
@@ -260,7 +260,7 @@ async def test_gather_fact_snap_package_over_canned_shells():
 # SnapPackages -- the bare ``snap list`` names of every installed snap
 # =============================================================================
 
-# The ``output`` field of pyinfra's ``snap.SnapPackages/packages.json``
+# The ``output`` field of the baseline's ``snap.SnapPackages/packages.json``
 # fixture verbatim: the ``Name Version Rev Tracking Publisher Notes`` header
 # followed by five installed snaps (the ``lxd`` row's Tracking column carries
 # a trailing ``…`` and several Publisher cells a ``✓`` -- neither touches the
@@ -282,20 +282,20 @@ PACKAGES_NAMES = ["core", "core18", "core20", "lxd", "snapd"]
 
 
 def test_snap_packages_command_guards_the_listing():
-    """The real-transport command is pyinfra's ``snap list`` behind a
-    ``2>/dev/null || true`` guard: pyinfra's ``requires_command`` gating on
+    """The real-transport command is the baseline's ``snap list`` behind a
+    ``2>/dev/null || true`` guard: the baseline's ``requires_command`` gating on
     ``snap`` is deliberately dropped so a host without the tool reads as an
     empty name list rather than raising ``CommandNotFoundError``."""
     assert SnapPackages.COMMAND == "snap list 2>/dev/null || true"
 
 
-# --- Real-transport parity (pyinfra's snap.SnapPackages fixture) --------------
+# --- Real-transport parity (the baseline's snap.SnapPackages fixture) --------------
 
 
 async def test_snap_packages_parses_the_packages_fixture():
     """Over the real-transport path, ``SnapPackages`` drops the ``snap list``
     header and returns each row's leading ``Name`` token in listing order --
-    pyinfra's documented fact -- ignoring the Version/Rev/Tracking/Publisher/
+    the baseline's documented fact -- ignoring the Version/Rev/Tracking/Publisher/
     Notes columns entirely."""
     host = CannedShellHost(PACKAGES_OUTPUT)
     assert await SnapPackages.process(host) == PACKAGES_NAMES
@@ -303,7 +303,7 @@ async def test_snap_packages_parses_the_packages_fixture():
 
 
 async def test_snap_packages_skips_blanks_and_dedups():
-    """A blank body line -- which pyinfra's bare ``split()[0]`` would raise on
+    """A blank body line -- which the baseline's bare ``split()[0]`` would raise on
     -- is skipped, a repeated name is kept once at its first position, and a
     row's surrounding whitespace never leaks into the token."""
     output = (
@@ -319,7 +319,7 @@ async def test_snap_packages_skips_blanks_and_dedups():
 async def test_snap_packages_empty_reads_as_empty_list():
     """Nothing installed -- the header-only listing, or the guarded command on
     a host without ``snap`` (empty stdout) -- reads as ``[]``, the same empty
-    answer pyinfra's ``default = list`` gives."""
+    answer the baseline's ``default = list`` gives."""
     assert await SnapPackages.process(CannedShellHost("")) == []
     header_only = "Name  Version  Rev  Tracking  Publisher  Notes"
     assert await SnapPackages.process(CannedShellHost(header_only)) == []
@@ -381,26 +381,26 @@ async def test_gather_fact_snap_packages_over_canned_shells():
 # =============================================================================
 
 
-# --- Command descriptors: rendering (pyinfra's snap.package fixtures) --------
+# --- Command descriptors: rendering (the baseline's snap.package fixtures) --------
 
 
 def test_snap_install_command_renders_snap_install():
     """No flag sits between the verb and the names and the channel is last --
-    pyinfra's ``snap install vlc --channel=latest/stable`` fixture command
+    the baseline's ``snap install vlc --channel=latest/stable`` fixture command
     verbatim."""
     cmd = SnapInstallCommand(packages=("vlc",))
     assert cmd.shell() == "snap install vlc --channel=latest/stable"
 
 
 def test_snap_install_command_places_classic_before_the_names():
-    """``--classic`` rides between the verb and the names, as pyinfra renders
+    """``--classic`` rides between the verb and the names, as the baseline renders
     it (``snap install --classic nvim --channel=latest/stable``)."""
     cmd = SnapInstallCommand(packages=("nvim",), classic=True)
     assert cmd.shell() == "snap install --classic nvim --channel=latest/stable"
 
 
 def test_snap_install_command_carries_the_requested_channel():
-    """A non-default channel installs on it verbatim (pyinfra's
+    """A non-default channel installs on it verbatim (the baseline's
     ``snap install lxd --channel=4.0/stable``)."""
     cmd = SnapInstallCommand(packages=("lxd",), channel="4.0/stable")
     assert cmd.shell() == "snap install lxd --channel=4.0/stable"
@@ -413,7 +413,7 @@ def test_snap_install_command_joins_multiple_names():
 
 
 def test_snap_remove_command_renders_bare_snap_remove():
-    """Removing takes no channel or confinement flag -- pyinfra's
+    """Removing takes no channel or confinement flag -- the baseline's
     ``snap remove vlc hello-world``."""
     cmd = SnapRemoveCommand(packages=("vlc", "hello-world"))
     assert cmd.shell() == "snap remove vlc hello-world"
@@ -421,7 +421,7 @@ def test_snap_remove_command_renders_bare_snap_remove():
 
 def test_snap_refresh_command_renders_snap_refresh_channel():
     """The channel switch is snap's own verb with the channel option --
-    pyinfra's ``snap refresh lxd --channel=latest/edge``."""
+    the baseline's ``snap refresh lxd --channel=latest/edge``."""
     cmd = SnapRefreshCommand(packages=("lxd",), channel="latest/edge")
     assert cmd.shell() == "snap refresh lxd --channel=latest/edge"
 
@@ -466,7 +466,7 @@ def test_snap_channel_is_quoted_but_a_plain_one_is_verbatim():
     assert shlex.quote(hostile) != hostile
 
 
-# --- Idempotence (pyinfra parity) --------------------------------------------
+# --- Idempotence (baseline parity) --------------------------------------------
 
 
 async def test_snap_package_installs_missing_packages():
@@ -499,7 +499,7 @@ async def test_snap_package_no_change_when_present():
 
 
 async def test_snap_package_accepts_a_bare_string():
-    """pyinfra accepts ``packages="vlc"`` as shorthand for a one-item list."""
+    """The baseline accepts ``packages="vlc"`` as shorthand for a one-item list."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in snap.package(ctx, packages="vlc")]
@@ -517,7 +517,7 @@ async def test_snap_package_none_is_a_noop():
 
 async def test_snap_package_refreshes_on_channel_mismatch():
     """An installed snap tracked on a different channel yields the channel
-    switch, not a reinstall -- pyinfra's ``refresh_package.json``."""
+    switch, not a reinstall -- the baseline's ``refresh_package.json``."""
     seed = {"lxd": _installed("lxd", "4.0/stable")}
     host = SimulatedHost(name="h", snap_package_info=seed)
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -529,7 +529,7 @@ async def test_snap_package_refreshes_on_channel_mismatch():
     assert commands == [SnapRefreshCommand(packages=("lxd",), channel="latest/edge")]
 
 
-async def test_snap_package_installs_and_refreshes_in_pyinfra_order():
+async def test_snap_package_installs_and_refreshes_in_baseline_order():
     """A mixed request yields the install first, then the refresh, and the
     reason lists both counts."""
     seed = {"lxd": _installed("lxd", "4.0/stable")}
@@ -589,7 +589,7 @@ async def test_snap_package_classic_does_not_affect_idempotence():
 
 
 async def test_snap_package_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     strips the ``name``/``sudo``/``su``/``doas`` meta-parameters, the rest is
     ignored."""
     host = SimulatedHost(name="h")

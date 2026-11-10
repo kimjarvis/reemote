@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: ensure an LXD container on real CentOS hosts (pyinfra parity).
+"""Example: ensure an LXD container on real CentOS hosts (baseline parity).
 
 This is a *usage* example, not part of the library. It drives reemote5's
 two-phase execution model end to end over a **real SSH transport**
@@ -18,7 +18,7 @@ two-phase execution model end to end over a **real SSH transport**
    operation arguments, plans or logs.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``lxd.container`` mirrors pyinfra's ``lxd.container`` 1:1: same
+``lxd.container`` mirrors the baseline's ``lxd.container`` 1:1: same
 ``id``/``present``/``image`` options, same ``LxdContainers`` fact read,
 same ``lxc launch <image> <id> < /dev/null`` create shell and the same
 stop-then-delete sequence for a running container. Upstream's documented

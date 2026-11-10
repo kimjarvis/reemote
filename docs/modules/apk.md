@@ -1,7 +1,5 @@
 [//]: # (## apk module)
 
-## apk Facts
-
 ::: reemote5.modules.apk.apk
     options:
       show_root_heading: false
@@ -11,25 +9,11 @@
         - ApkHeldPackages
         - ApkInstalledPackages
         - ApkPackage
-        - ApkRepositories
-        - ApkRepositoriesFile
-
-## apk Returns
-
-::: reemote5.modules.apk.apk
-    options:
-      show_root_heading: false
-      members:
         - ApkPackageInfo
         - ApkPackageVersion
+        - ApkRepositories
+        - ApkRepositoriesFile
         - ApkRepository
-
-## apk Operations
-
-::: reemote5.modules.apk.apk
-    options:
-      show_root_heading: false
-      members:
         - autoremove
         - hold
         - packages
@@ -76,7 +60,7 @@ and the `apk.repository` operation, a reemote5 original modeled on
 `apt.repo` that ensures one repository line in `/etc/apk/repositories`
 with entry-aware idempotence against `ApkRepositories`, rewriting the file
 through the spool-and-install pair (`ApkRepositoriesFile` for its current
-text) rather than patching it in place. pyinfra's `apk`
+text) rather than patching it in place. The baseline's `apk`
 namespace ships only `upgrade`, `update` and `packages` — it has no
 repository or key operation at all — and its remaining `apk.upgrade` is
 not migrated.
@@ -92,7 +76,7 @@ coroutine, so results are awaited and cached within a phase step.
 `apk add --purge --simulate 2>/dev/null` — apk's own orphan-purge
 simulation, which never removes anything (the `2>/dev/null` suppresses the
 index-noise warnings an offline simulation writes to stderr). It is a
-reemote5 original: pyinfra ships no `apk.ApkAutoremovablePackages` counterpart
+reemote5 original: the baseline ships no `apk.ApkAutoremovablePackages` counterpart
 (its `apk` namespace publishes only `ApkPackages`). Only the
 machine-readable `(N/M) Purging <name>-<version>-r<release>` rows are read
 — the `WARNING: Ignoring APKINDEX...` index-noise lines, the
@@ -122,7 +106,7 @@ The simulation needs no root, and a missing `apk` exits 127 — reported as
 [`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
 
 `ApkInstalledPackages` takes no arguments and runs `apk list --installed`,
-mirroring pyinfra's `apk.ApkPackages`. Each row is matched with pyinfra's
+mirroring the baseline's `apk.ApkPackages`. Each row is matched with the baseline's
 apk regex, so multi-dash names like `alpine-baselayout-data` and
 `openssh-client-common` split from their `3.6.5-r0`-style
 version-and-release at the last `-r<release>` boundary before the
@@ -131,17 +115,17 @@ version-and-release at the last `-r<release>` boundary before the
 file or directory` index-noise lines — which carry no `{origin}
 (license)` tail — never match. The result is a list of
 `ApkPackageVersion` entries — one per installed name-and-version pair,
-the `name` and `version` pyinfra's `parse_packages` collects into a set
+the `name` and `version` the baseline's `parse_packages` collects into a set
 per name flattened into one entry each — the shared typed-entry shape the sibling
 `ApkAutoremovablePackages`, `ApkExplicitPackages` and `ApkHeldPackages`
 report, with the entries sorted by name, then version, so reads stay
 deterministic and JSON-printable; `apt.AptPackages` reports sorted typed
 entries too, though it groups every version under one name where apk's
 entries carry one pair each, while `dnf.DnfPackages` still
-reports the name-keyed mapping pyinfra documents. Nothing installed reads as `[]` — the empty answer
-every sibling typed-list apk fact gives, in place of pyinfra's
+reports the name-keyed mapping the baseline documents. Nothing installed reads as `[]` — the empty answer
+every sibling typed-list apk fact gives, in place of the baseline's
 `default = dict`.
-pyinfra's `requires_command` gating on `apk` is deliberately dropped: a
+the baseline's `requires_command` gating on `apk` is deliberately dropped: a
 missing `apk` exits 127 — reported as
 [`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError]. Whether a
 row names a package the operator asked for or one apk pulled in as a
@@ -154,7 +138,7 @@ about a single package's dependencies, size or description either:
 *world*, the list of constraints the package selection must fulfil —
 behind a `|| true`, so a host without apk reads as `[]`, the same
 missing-file tolerance `ApkRepositories` builds into its command. Like
-that fact it is a reemote5 original: pyinfra's `apk` namespace ships only
+that fact it is a reemote5 original: the baseline's `apk` namespace ships only
 `ApkPackages`, so nothing upstream separates the packages an operator
 explicitly installed from the ones that came in as dependencies. Each
 line of the file is one dependency constraint in
@@ -212,7 +196,7 @@ facts report: TypedDict-shaped
 plain dicts, so equality and `json.dumps` work without a dual access style —
 a deliberate usability choice over the bare constraint strings this
 fact returned before, the same one `apt.AptSources` made with its
-`AptSource` entries over pyinfra's collapse convention. The entry fields still
+`AptSource` entries over the baseline's collapse convention. The entry fields still
 deliberately differ from the sibling `AptHeldPackages`' version-less
 entries (its `AptPackageInfo` entries always carry `versions` as `[]`):
 `apt-mark hold` records a bare name with no version, where an apk
@@ -229,9 +213,9 @@ writes it back through `apk add <pkg><constraint>`.
 `ApkRepositories` takes no arguments and cats `/etc/apk/repositories`
 behind a `|| true`, so a host without apk simply reads as `[]` — the same
 missing-file tolerance `DnfRepositories` builds into its command. It is a
-reemote5 original: pyinfra's `apk` namespace ships no repositories fact
+reemote5 original: the baseline's `apk` namespace ships no repositories fact
 (only `ApkPackages`), so the file cannot be audited or conditionally
-modified through pyinfra facts. Each non-comment line names one
+modified through the baseline facts. Each non-comment line names one
 repository — a bare URL, or an apk repository tag (`@testing`-style, for
 repositories referenced by tag) followed by its URL — and becomes one
 `ApkRepository` entry, a `{"url": ..., "tag": ...}` dict with the tag the
@@ -278,14 +262,14 @@ other `-a` section apk prints — the `Contains` file listing, the
 tracked: any header closes the field being collected, so those sections
 contribute nothing rather than leaking into the last tracked list. An
 absent field reads as its empty default (`""`, `0`, or `[]`). This is a
-reemote5 original — pyinfra's `apk` namespace ships only `ApkPackages`,
+reemote5 original — the baseline's `apk` namespace ships only `ApkPackages`,
 whose `apk list --installed` rows report only whether a name is installed
 and at which version, never its dependencies, size or description, so
 nothing upstream answers the version-comparison or dependency-verification
 question this fact fills. An absent package — or a host without apk —
 prints no field header (the command's `2>/dev/null || true` swallows the
 non-zero exit), so it reports `None`, the `apt.DebPackage` and
-`dnf.RpmPackage` None-on-absent convention rather than pyinfra's
+`dnf.RpmPackage` None-on-absent convention rather than the baseline's
 empty-dict answer. One deliberate gap against the sibling `apt.AptPolicy`
 (which surfaces each version's repository origins): apk's `apk info`
 prints no repository field at all, so this fact reports the package's own
@@ -299,7 +283,7 @@ argument.
 ## Operations
 
 Operations live in namespace modules so a deploy reads `apk.packages`,
-mirroring pyinfra's API. Every operation is an async generator with the same
+mirroring the baseline's API. Every operation is an async generator with the same
 fixed signature:
 
 ```python
@@ -312,7 +296,7 @@ mutate the host.
 
 `apk.autoremove` removes orphaned packages — those apk pulled in as
 dependencies that nothing in `/etc/apk/world` requires any more — a
-reemote5 original: pyinfra ships no apk autoremove, and apk itself has no
+reemote5 original: the baseline ships no apk autoremove, and apk itself has no
 `autoremove` verb; it exposes orphan purge as the `--purge` flag of
 `apk add`/`apk fix`, which reemote5 splits out into this standalone
 operation (the same split [`apt.auto_remove`][reemote5.modules.apt.apt.auto_remove]
@@ -333,14 +317,14 @@ there is deliberately no `wait_for_lock` parameter — a keyword passed for
 consistency with `apt.auto_remove` is absorbed by `**kwargs` with no
 effect.
 
-`apk.packages` installs, upgrades or removes packages by name (pyinfra's
+`apk.packages` installs, upgrades or removes packages by name (the baseline's
 `apk.packages` parity). `packages` accepts a single name, a list/tuple or
 `None`; a name can be pinned as `<pkg>=<version>`, and the `ApkInstalledPackages`
 fact supplies the installed versions, so a pin counts as present only when
-that *exact* version is installed (pyinfra's `ensure_packages` version
+that *exact* version is installed (the baseline's `ensure_packages` version
 match, the same rule `apt.packages` follows). `present=True` installs only
 what is missing with `apk add`; `latest=True` additionally upgrades every
-installed, *unpinned* name with `apk upgrade` — pyinfra's legacy behavior,
+installed, *unpinned* name with `apk upgrade` — the baseline's legacy behavior,
 which upgrades blindly without checking whether a newer version exists.
 `present=False` removes only what is installed with `apk del`. apk never
 prompts, so the commands carry no `-y` flag (unlike apt's and dnf's).
@@ -359,14 +343,14 @@ the request `sudo=True`, `doas=True` or `su=True`. Stock Alpine ships no
 `sudo`, so on an apk host `doas` is usually the escalator to reach for:
 reemote5 runs it passwordless as `doas -n`, which needs a `permit nopass`
 rule for the login user in `/etc/doas.conf` and raises `PrivilegeError`
-without one. Two pyinfra options are deliberately
+without one. Two the baseline options are deliberately
 dropped: `update` and `upgrade`, which prefix the operation with a
 whole-system `apk update` / `apk upgrade` — reemote5 keeps the whole-system
 refresh/upgrade out of the package operation, so both keywords are absorbed
 by `**kwargs` with no effect.
 
 `apk.virtual` manages an apk *virtual package* group — a reemote5 original:
-pyinfra's `apk` namespace ships only `upgrade`, `update` and `packages`, with
+the baseline's `apk` namespace ships only `upgrade`, `update` and `packages`, with
 no virtual-group management. Alpine's `apk add -t <tag> <packages>`
 (`--virtual`) creates a temporary virtual package `<tag>` that depends on
 `<packages>`, records `<tag>` in `/etc/apk/world`, and lets the whole group be
@@ -394,7 +378,7 @@ the request `sudo=True`, `doas=True` or `su=True` — stock Alpine ships no
 passwordless `doas -n` prerequisites above).
 
 `apk.hold` holds packages back from upgrades, or releases held ones — the apk
-counterpart of [`apt.mark`][reemote5.modules.apt.apt.mark]: pyinfra ships no
+counterpart of [`apt.mark`][reemote5.modules.apt.apt.mark]: the baseline ships no
 apk hold, and apk has no `apt-mark` verb, so it keeps a package out of
 upgrades by pinning a version *constraint* into `/etc/apk/world`. `packages`
 accepts a single name or a list/tuple, `present` selects the direction, and
@@ -422,7 +406,7 @@ passwordless `doas -n` prerequisites above).
 
 `apk.repository` ensures one repository line in `/etc/apk/repositories` —
 a reemote5 original modeled on [`apt.repo`][reemote5.modules.apt.apt.repo]:
-pyinfra's `apk` namespace ships no repository operation, so the
+the baseline's `apk` namespace ships no repository operation, so the
 [`ApkRepositories`][reemote5.modules.apk.apk.ApkRepositories] fact had no
 write counterpart. `src` is one line — a bare URL or an `@tag URL` line —
 and `present` selects the direction. Presence is decided by parsing `src`
@@ -448,7 +432,7 @@ one its parser skipped, such as a comment naming the URL) and a remove of a
 repository the file holds in a shape the whole-line pattern cannot match — so a
 repeat converges instead of writing a second copy. An unparseable `src` (a lone
 `@tag`, several URLs on one line) raises `ValueError` while materializing, a
-deliberate hardening over `apt.repo`'s pyinfra-inherited tolerance. The removal
+deliberate hardening over `apt.repo`'s the baseline-inherited tolerance. The removal
 transform is a *contains* match like `apt.repo`'s, so removing a bare URL also
 drops a tagged line carrying it; gate removals on the exact line when both
 variants are configured, and note the same match gates the append — which is
@@ -456,7 +440,7 @@ why the comment case above writes nothing. There is no `filename` option — apk
 reads exactly one repositories file, with no `sources.list.d` drop-in directory
 — and refreshing the package index after a change is out of scope: sequence an
 `apk update` (e.g. `server.shell`) after the operation when needed. Like
-`apt.repo`, the write replaced pyinfra's in-place `echo >>`/`sed -i` idiom, so
+`apt.repo`, the write replaced the baseline's in-place `echo >>`/`sed -i` idiom, so
 its timestamped sed backup is gone too (the timestamp would differ between the
 prepare and apply phases, breaking the determinism guard) and the file's other
 lines, comments and blank lines survive verbatim, because the transform is

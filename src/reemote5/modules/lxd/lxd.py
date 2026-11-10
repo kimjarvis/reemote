@@ -3,8 +3,8 @@
 
 # """The ``lxd`` module: comprehensive LXD management.
 #
-# Fact side: ``LxdContainers`` (pyinfra's ``lxd.LxdContainers`` port, the
-# fast container list), ``LxdImageAliases`` (alias-to-fingerprint
+# Fact side: ``LxdContainers`` (the fast container list),
+# ``LxdImageAliases`` (alias-to-fingerprint
 # mappings), ``LxdImages`` (the local image store), ``LxdInstanceConfig``
 # (one instance's expanded configuration), ``LxdInstanceSnapshots`` (one
 # instance's snapshots), ``LxdInstanceState`` (one instance's runtime
@@ -15,11 +15,11 @@
 # ``LxdProjects`` (the server's projects), ``LxdServerInfo`` (daemon
 # metadata and API extensions), ``LxdServerResources`` (host hardware),
 # ``LxdStoragePools`` (storage pools and drivers) and ``LxdStorageVolumes``
-# (a pool's volumes). Every fact but the port is reemote5-original and
-# closes a visibility gap pyinfra leaves open.
+# (a pool's volumes). Every fact but ``LxdContainers`` is reemote5-original
+# and closes a visibility gap.
 #
-# Operation side: ``lxd.container`` mirrors pyinfra's ``lxd.container``
-# (create/remove a container by image); ``lxd.instance`` extends it to
+# Operation side: ``lxd.container`` creates/removes a container by
+# image; ``lxd.instance`` extends it to
 # containers AND VMs with profiles/config/devices and non-destructive
 # reconciliation; ``lxd.instance_state`` drives the lifecycle
 # (start/stop/freeze/restart/resume); ``lxd.instance_config`` updates an
@@ -39,7 +39,7 @@
 # ``remote`` parameter (an empty string means the local daemon).
 # Project-scoped facts and operations take ``project`` (default
 # ``"default"``) and render an explicit ``--project`` flag; the
-# pyinfra-parity ``LxdContainers``/``container`` pair keeps upstream's
+# ``LxdContainers``/``container`` pair keeps its
 # exact unscoped commands.
 #
 # Image-drift decision (developer-approved): ``lxd.instance`` reconciles
@@ -84,8 +84,8 @@ def _lxc_command(parts: list[str], project: str = "") -> str:
     """Render ``lxc <parts...> [--project <project>]``.
 
     The ``--project`` flag is appended only for a non-empty project, so
-    the pyinfra-parity descriptors (which carry ``project=""``) render
-    upstream's exact unscoped shell. New operations pass their
+    the parity descriptors (which carry ``project=""``) render the
+    exact unscoped shell. New operations pass their
     ``project`` option through verbatim, rendering the flag explicitly
     even for ``"default"`` -- the CLI's *current* project can be switched
     with ``lxc project switch``, so relying on it would be ambiguous.
@@ -176,13 +176,13 @@ class LxdContainers:
         Examples can be found in ``examples/modules/lxd/lxd_lxd_containers.py``.
     """
 
-    # Mirrors pyinfra's ``lxd.LxdContainers``: the raw JSON array of
+    # The raw JSON array of
     # ``lxc list --format json --fast`` passed through verbatim (the
     # MysqlUser carry-whatever-the-server-reports precedent -- the fast
     # columns are name/status/ipv4/ipv6/type/snapshots, but any extra
-    # keys survive). Two deliberate deviations: empty stdout parses to
-    # [] instead of pyinfra's ``assert len(output) == 1`` crash, and the
-    # ``requires_command`` gating is dropped (a missing lxc exits 127,
+    # keys survive). Two deliberate design choices: empty stdout parses
+    # to [] rather than crashing on an ``assert len(output) == 1``, and
+    # there is no command-existence gate (a missing lxc exits 127,
     # reported as CommandNotFoundError). The command is unscoped -- it
     # reads the CLI's current remote/project; LxdInstances is the
     # explicit remote/project-scoped superset covering containers AND
@@ -258,7 +258,7 @@ class LxdImages:
         Examples can be found in ``examples/modules/lxd/lxd_lxd_images.py``.
     """
 
-    # reemote5-original: pyinfra has no image-visibility fact. The raw
+    # reemote5-original: there is no other image-visibility fact. The raw
     # JSON array of ``lxc image list --format json`` passed through
     # verbatim; the LxdImage entry documents the common keys but any
     # extra keys the server reports survive. Images are project-scoped
@@ -330,7 +330,7 @@ class LxdImageAliases:
         Examples can be found in ``examples/modules/lxd/lxd_lxd_image_aliases.py``.
     """
 
-    # reemote5-original: pyinfra has no alias-visibility fact. The raw
+    # reemote5-original: there is no other alias-visibility fact. The raw
     # JSON array of ``lxc image alias list --format json`` passed
     # through verbatim. lxd.image_alias compares the desired
     # alias-to-fingerprint mapping against this fact.
@@ -416,7 +416,7 @@ class LxdInstances:
         Examples can be found in ``examples/modules/lxd/lxd_lxd_instances.py``.
     """
 
-    # reemote5-original superset of pyinfra's ``lxd.LxdContainers``:
+    # reemote5-original superset of ``LxdContainers``:
     # the FULL ``lxc list --format json`` (no --fast), so each entry
     # carries config/devices/profiles and the volatile.base_image
     # fingerprint lxd.instance's drift report compares against, and VMs
@@ -477,7 +477,7 @@ class LxdInstanceConfig:
         Examples can be found in ``examples/modules/lxd/lxd_lxd_instance_config.py``.
     """
 
-    # reemote5-original: pyinfra has no per-instance configuration fact.
+    # reemote5-original: there is no other per-instance configuration fact.
     # ``lxc config show --expanded`` returns the instance's editable
     # document: its OWN config/devices plus expanded_config/
     # expanded_devices with profile inheritance applied, so the same
@@ -574,7 +574,7 @@ class LxdInstanceState:
         Examples can be found in ``examples/modules/lxd/lxd_lxd_instance_state.py``.
     """
 
-    # reemote5-original: pyinfra has no instance-state fact. ``lxc info
+    # reemote5-original: there is no other instance-state fact. ``lxc info
     # <instance> --format json`` is the CLI rendering of the REST
     # /1.0/instances/<name>/state resource plus identity and snapshots;
     # the runtime keys (pid/processes/cpu/memory/network/disk) appear
@@ -656,7 +656,7 @@ class LxdInstanceSnapshots:
         ``examples/modules/lxd/lxd_lxd_instance_snapshots.py``.
     """
 
-    # reemote5-original: pyinfra has no snapshot-visibility fact. Shares
+    # reemote5-original: there is no other snapshot-visibility fact. Shares
     # LxdInstanceState's ``lxc info <instance>`` command (the DnfRepoFile
     # shared-command precedent) and projects the document's snapshots
     # array; a missing instance or an instance without snapshots reads
@@ -743,7 +743,7 @@ class LxdNetworks:
         Examples can be found in ``examples/modules/lxd/lxd_lxd_networks.py``.
     """
 
-    # reemote5-original: pyinfra has no network-visibility fact. The raw
+    # reemote5-original: there is no other network-visibility fact. The raw
     # JSON array of ``lxc network list --format json`` passed through
     # verbatim, including unmanaged host interfaces (managed=False).
     # lxd.network compares existence, type and config against this fact
@@ -820,7 +820,7 @@ class LxdOperations:
         Examples can be found in ``examples/modules/lxd/lxd_lxd_operations.py``.
     """
 
-    # reemote5-original: pyinfra has no operation-visibility fact. The
+    # reemote5-original: there is no other operation-visibility fact. The
     # raw JSON array of ``lxc operation list --format json`` passed
     # through verbatim -- including the literal ``class`` key
     # (task/websocket/token), which a TypedDict cannot declare as an
@@ -894,7 +894,7 @@ class LxdProfiles:
         Examples can be found in ``examples/modules/lxd/lxd_lxd_profiles.py``.
     """
 
-    # reemote5-original: pyinfra has no profile-visibility fact. The raw
+    # reemote5-original: there is no other profile-visibility fact. The raw
     # JSON array of ``lxc profile list --format json`` passed through
     # verbatim; the listing already carries each profile's full config
     # and devices, so lxd.profile needs no second per-profile read.
@@ -963,7 +963,7 @@ class LxdProjects:
         Examples can be found in ``examples/modules/lxd/lxd_lxd_projects.py``.
     """
 
-    # reemote5-original: pyinfra has no project-visibility fact. The raw
+    # reemote5-original: there is no other project-visibility fact. The raw
     # JSON array of ``lxc project list --format json`` passed through
     # verbatim. Projects are server-wide, so there is no --project flag
     # (the project IS the target); every project-scoped fact and
@@ -1020,7 +1020,7 @@ class LxdProjectConfig:
         ``examples/modules/lxd/lxd_lxd_project_config.py``.
     """
 
-    # reemote5-original: pyinfra has no per-project configuration fact.
+    # reemote5-original: there is no other per-project configuration fact.
     # ``lxc project show`` returns the same document shape the project
     # listing carries, so the LxdProject entry type serves both facts.
     # The 2>/dev/null || true guard reads a MISSING project as None and
@@ -1113,7 +1113,7 @@ class LxdServerInfo:
         Examples can be found in ``examples/modules/lxd/lxd_lxd_server_info.py``.
     """
 
-    # reemote5-original: pyinfra has no daemon-visibility fact. ``lxc
+    # reemote5-original: there is no other daemon-visibility fact. ``lxc
     # info`` with no instance argument renders the REST /1.0 document;
     # the raw JSON object is passed through verbatim (an unreachable or
     # misconfigured daemon fails the command, it does not read as {}).
@@ -1190,7 +1190,7 @@ class LxdServerResources:
         ``examples/modules/lxd/lxd_lxd_server_resources.py``.
     """
 
-    # reemote5-original: pyinfra has no host-hardware fact for LXD.
+    # reemote5-original: there is no other host-hardware fact for LXD.
     # ``lxc info --resources`` renders the REST /1.0/resources document;
     # the raw JSON object is passed through verbatim. The nested
     # hardware records are deeply dynamic (per-socket CPU caches,
@@ -1264,7 +1264,7 @@ class LxdStoragePools:
         Examples can be found in ``examples/modules/lxd/lxd_lxd_storage_pools.py``.
     """
 
-    # reemote5-original: pyinfra has no storage-visibility fact. The raw
+    # reemote5-original: there is no other storage-visibility fact. The raw
     # JSON array of ``lxc storage list --format json`` passed through
     # verbatim. Space utilization is deliberately NOT gathered here:
     # the listing carries config (including the requested size) but
@@ -1340,7 +1340,7 @@ class LxdStorageVolumes:
         ``examples/modules/lxd/lxd_lxd_storage_volumes.py``.
     """
 
-    # reemote5-original: pyinfra has no volume-visibility fact. The raw
+    # reemote5-original: there is no other volume-visibility fact. The raw
     # JSON array of ``lxc storage volume list <pool> --format json``
     # passed through verbatim; the listing includes instance/image
     # volumes alongside custom ones (the type key discriminates).
@@ -1393,7 +1393,7 @@ class LxdLaunchCommand(Command):
     """``lxc launch <image> [<remote>:]<instance> ... < /dev/null``.
 
     Creates AND starts an instance in one step. The trailing
-    ``< /dev/null`` is pyinfra's: launch reads stdin for interactive
+    ``< /dev/null`` matters because launch reads stdin for interactive
     prompts, which a non-interactive SSH shell must never block on.
     """
 
@@ -1499,17 +1499,16 @@ async def container(
         Examples can be found in ``examples/modules/lxd/lxd_container.py``.
     """
 
-    # pyinfra ``lxd.container`` parity: same id/present/image options,
-    # same LxdContainers fact read, same stop-then-delete sequence for a
-    # running container and the same ``lxc launch <image> <id>
-    # < /dev/null`` create shell (QuoteString becomes shlex.quote, which
-    # renders identically for ordinary names). The unscoped command
-    # reads the CLI's current remote/project, exactly as upstream.
-    # Upstream's documented limitation stands for THIS operation: it
+    # Create or remove a container by image: the id/present/image
+    # options, the LxdContainers fact read, the stop-then-delete
+    # sequence for a running container and the ``lxc launch <image>
+    # <id> < /dev/null`` create shell (names are ``shlex``-quoted). The
+    # unscoped command reads the CLI's current remote/project.
+    # Its documented limitation stands for THIS operation: it
     # does not check an existing container's base image -- lxd.instance
     # is the comprehensive successor that reports image drift and
     # manages VMs, profiles, config and devices. ``**kwargs`` absorbs
-    # pyinfra's global arguments (``op()`` already strips
+    # any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     current_containers = await ctx.facts.get(LxdContainers)
     current = next((c for c in current_containers if c["name"] == id), None)
@@ -1606,7 +1605,7 @@ async def image(
         Examples can be found in ``examples/modules/lxd/lxd_image.py``.
     """
 
-    # reemote5-original (pyinfra has no image operation). Idempotent
+    # reemote5-original (there is no other image operation). Idempotent
     # against LxdImages: an image already present by fingerprint OR
     # alias is a no-op; an absent one copies from ``source`` (the CLI
     # waits on the asynchronous download natively), adding --alias
@@ -1616,7 +1615,7 @@ async def image(
     # controller-side files are deliberately out of scope: reemote5
     # transfers take IO streams, so spool a tarball with files.put and
     # run ``lxc image import`` through an action when needed.
-    # ``**kwargs`` absorbs pyinfra's global arguments.
+    # ``**kwargs`` absorbs any further global arguments.
     images = await ctx.facts.get(LxdImages, remote=remote, project=project)
     current = next(
         (
@@ -1719,13 +1718,13 @@ async def image_alias(
         Examples can be found in ``examples/modules/lxd/lxd_image_alias.py``.
     """
 
-    # reemote5-original (pyinfra has no alias operation). Idempotent
+    # reemote5-original (there is no other alias operation). Idempotent
     # against LxdImageAliases: an alias already targeting the desired
     # fingerprint is a no-op; one targeting a DIFFERENT fingerprint is
     # deleted and recreated (the CLI has no alias-repoint verb, and
     # create fails on an existing name). present=False removes the
     # alias only -- the image itself stays cached. ``**kwargs`` absorbs
-    # pyinfra's global arguments.
+    # any further global arguments.
     if present and not fingerprint:
         raise ValueError(
             f"lxd.image_alias requires fingerprint when present=True ({alias!r})"
@@ -1908,8 +1907,8 @@ async def instance(
         Examples can be found in ``examples/modules/lxd/lxd_instance.py``.
     """
 
-    # reemote5-original successor to pyinfra's ``lxd.container`` (which
-    # stays as the parity port). Idempotent against LxdInstances:
+    # reemote5-original successor to ``lxd.container`` (which
+    # stays as the simple port). Idempotent against LxdInstances:
     # absent -> one launch carrying type/profiles/config/devices/
     # ephemeral; existing -> NON-DESTRUCTIVE reconciliation of profiles
     # (assign), config (set per drifted key) and devices (remove+add
@@ -1923,7 +1922,7 @@ async def instance(
     # raises OperationError (LXD cannot convert container<->VM, the
     # postgresql.tablespace immutable-location precedent); ephemeral
     # is creation-only. present=False stops a running instance then
-    # deletes it, the upstream sequence. ``**kwargs`` absorbs pyinfra's
+    # deletes it, the documented sequence. ``**kwargs`` absorbs any
     # global arguments.
     if instance_type not in ("container", "vm"):
         raise ValueError(
@@ -2103,7 +2102,7 @@ async def instance_config(
         Examples can be found in ``examples/modules/lxd/lxd_instance_config.py``.
     """
 
-    # reemote5-original (pyinfra has no configuration operation). The
+    # reemote5-original (there is no other configuration operation). The
     # dedicated reconciliation half of lxd.instance for an instance
     # that must already exist: reads LxdInstanceConfig and compares
     # desired keys against the instance's OWN config (an inherited
@@ -2112,7 +2111,7 @@ async def instance_config(
     # wholesale when the tuple differs. A missing instance raises
     # OperationError in prepare (create it with lxd.instance first).
     # Config keys are only SET, never unset -- pass lxd.instance or the
-    # CLI for removals. ``**kwargs`` absorbs pyinfra's global arguments.
+    # CLI for removals. ``**kwargs`` absorbs any further global arguments.
     pairs = _config_pairs(config)
     for name, _device_type, props in devices:
         _device_props(props)
@@ -2190,7 +2189,7 @@ async def instance_config(
 
 # The instance_state option -> (CLI verb, target status) mapping. The
 # restarted/unfrozen actions have no comparable target status: they are
-# stateless and always yield, like pyinfra's non-idempotent options.
+# stateless and always yield, like any non-idempotent option.
 _STATE_ACTIONS = {
     "started": ("start", "Running"),
     "stopped": ("stop", "Stopped"),
@@ -2242,16 +2241,16 @@ async def instance_state(
         Examples can be found in ``examples/modules/lxd/lxd_instance_state.py``.
     """
 
-    # reemote5-original (pyinfra has no lifecycle operation). Idempotent
+    # reemote5-original (there is no other lifecycle operation). Idempotent
     # against LxdInstanceState for started/stopped/frozen: the CLI verb
     # (start/stop/pause) is yielded only when the status differs from
     # the target (Running/Stopped/Frozen). restarted and unfrozen are
     # STATELESS and always yield -- a restart is an action, not a
     # desired state, and a Running instance may still be frozen-state
-    # ambiguous, matching pyinfra's non-idempotent-option convention.
+    # ambiguous, matching the non-idempotent-option convention.
     # The CLI blocks on the daemon's asynchronous state operation, so
     # no explicit operation-wait is needed. A missing instance raises
-    # OperationError in prepare. ``**kwargs`` absorbs pyinfra's global
+    # OperationError in prepare. ``**kwargs`` absorbs any further global
     # arguments.
     if state not in _STATE_ACTIONS:
         raise ValueError(
@@ -2366,7 +2365,7 @@ async def instance_copy(
         Examples can be found in ``examples/modules/lxd/lxd_instance_copy.py``.
     """
 
-    # reemote5-original (pyinfra has no copy operation). Idempotent on
+    # reemote5-original (there is no other copy operation). Idempotent on
     # the DESTINATION's existence when source and destination address
     # the same daemon (dest_remote empty or equal to remote): the
     # destination is looked up in LxdInstances and an existing one is a
@@ -2375,7 +2374,7 @@ async def instance_copy(
     # host's CLI scope, so it is STATELESS and always yields; the CLI
     # itself fails if the destination name is taken. The source's
     # existence is left to the CLI (a missing source fails the copy at
-    # apply time). ``**kwargs`` absorbs pyinfra's global arguments.
+    # apply time). ``**kwargs`` absorbs any further global arguments.
     if not dest_instance:
         raise ValueError("lxd.instance_copy requires a dest_instance name")
 
@@ -2495,14 +2494,14 @@ async def instance_snapshot(
         ``examples/modules/lxd/lxd_instance_snapshot.py``.
     """
 
-    # reemote5-original (pyinfra has no snapshot operation). Idempotent
+    # reemote5-original (there is no other snapshot operation). Idempotent
     # against LxdInstanceSnapshots: an absent snapshot is created
     # (lxc snapshot, --stateful on request), an unwanted one deleted
     # through the instance/snapshot name form. restore=True is
     # STATELESS and always yields lxc restore -- stop the instance
     # first for a non-stateful restore (the CLI enforces it at apply
     # time); combining restore=True with present=False raises
-    # ValueError in prepare. ``**kwargs`` absorbs pyinfra's global
+    # ValueError in prepare. ``**kwargs`` absorbs any further global
     # arguments.
     if restore and not present:
         raise ValueError("lxd.instance_snapshot cannot restore with present=False")
@@ -2619,7 +2618,7 @@ async def network(
         Examples can be found in ``examples/modules/lxd/lxd_network.py``.
     """
 
-    # reemote5-original (pyinfra has no network operation). Idempotent
+    # reemote5-original (there is no other network operation). Idempotent
     # against LxdNetworks: absent -> create with --type and the
     # creation-time config; existing -> set per drifted config key.
     # A type mismatch raises OperationError (LXD cannot change a
@@ -2627,7 +2626,7 @@ async def network(
     # UNMANAGED interface (managed=False, a host NIC LXD merely knows
     # about) raises OperationError rather than being adopted or
     # deleted. present=False deletes the managed network.
-    # ``**kwargs`` absorbs pyinfra's global arguments.
+    # ``**kwargs`` absorbs any further global arguments.
     pairs = _config_pairs(config)
     networks = await ctx.facts.get(LxdNetworks, remote=remote, project=project)
     current = next((entry for entry in networks if entry.get("name") == network), None)
@@ -2793,7 +2792,7 @@ async def operation(
         Examples can be found in ``examples/modules/lxd/lxd_operation.py``.
     """
 
-    # reemote5-original (pyinfra has no operation primitive). The
+    # reemote5-original (there is no other operation primitive). The
     # lower-level handle the discussion calls for: long-running
     # mutations started out of band (image downloads, migrations) can
     # be waited on or cancelled explicitly. The wait is STATELESS and
@@ -2802,7 +2801,7 @@ async def operation(
     # poll at apply time. The cancel half IS idempotent against
     # LxdOperations: a registered id yields lxc operation delete, an
     # already-pruned one is a no-op. cancel=False with wait=False
-    # raises ValueError (nothing to do). ``**kwargs`` absorbs pyinfra's
+    # raises ValueError (nothing to do). ``**kwargs`` absorbs any
     # global arguments.
     if not cancel and not wait:
         raise ValueError("lxd.operation requires cancel=True or wait=True")
@@ -2892,7 +2891,7 @@ async def profile(
         Examples can be found in ``examples/modules/lxd/lxd_profile.py``.
     """
 
-    # reemote5-original (pyinfra has no profile operation). Idempotent
+    # reemote5-original (there is no other profile operation). Idempotent
     # against LxdProfiles (the listing already carries each profile's
     # config and devices): absent -> create, then set every requested
     # config key and attach every requested device (the create verb
@@ -2901,7 +2900,7 @@ async def profile(
     # devices are only ADDED/updated, never removed -- the operation
     # reconciles toward the requested subset, it does not prune.
     # present=False deletes the profile (the CLI fails while instances
-    # still apply it). ``**kwargs`` absorbs pyinfra's global arguments.
+    # still apply it). ``**kwargs`` absorbs any further global arguments.
     pairs = _config_pairs(config)
     for name, _device_type, props in devices:
         _device_props(props)
@@ -3043,14 +3042,14 @@ async def project(
         Examples can be found in ``examples/modules/lxd/lxd_project.py``.
     """
 
-    # reemote5-original (pyinfra has no project operation). Idempotent
+    # reemote5-original (there is no other project operation). Idempotent
     # against LxdProjects (existence) and LxdProjectConfig (config
     # drift): absent -> create with the -c config flags; existing ->
     # set per drifted key (features and limits are mutable after
     # creation). present=False deletes the project (the CLI fails
     # while it is still in use -- empty it first). The ``default``
     # project cannot be deleted; the CLI enforces that at apply time.
-    # ``**kwargs`` absorbs pyinfra's global arguments.
+    # ``**kwargs`` absorbs any further global arguments.
     pairs = _config_pairs(config)
     projects = await ctx.facts.get(LxdProjects, remote=remote)
     current = next((entry for entry in projects if entry.get("name") == project), None)
@@ -3157,14 +3156,14 @@ async def storage_pool(
         Examples can be found in ``examples/modules/lxd/lxd_storage_pool.py``.
     """
 
-    # reemote5-original (pyinfra has no storage operation). Idempotent
+    # reemote5-original (there is no other storage operation). Idempotent
     # against LxdStoragePools: absent -> create with the driver and
     # creation-time config; existing -> set per drifted config key.
     # A driver mismatch raises OperationError (LXD cannot change a
     # pool's driver, the postgresql.tablespace precedent).
     # present=False deletes the pool (the CLI fails while volumes
     # still live there -- empty it first). Pools are server-wide: no
-    # project option. ``**kwargs`` absorbs pyinfra's global arguments.
+    # project option. ``**kwargs`` absorbs any further global arguments.
     pairs = _config_pairs(config)
     pools = await ctx.facts.get(LxdStoragePools, remote=remote)
     current = next((entry for entry in pools if entry.get("name") == pool), None)
@@ -3282,7 +3281,7 @@ async def storage_volume(
         ``examples/modules/lxd/lxd_storage_volume.py``.
     """
 
-    # reemote5-original (pyinfra has no volume operation). Idempotent
+    # reemote5-original (there is no other volume operation). Idempotent
     # on EXISTENCE against LxdStorageVolumes (the mysql.table
     # precedent): an absent custom volume is created with its config;
     # an existing one is left alone -- config is creation-only, the
@@ -3291,7 +3290,7 @@ async def storage_volume(
     # instance/image volume (type != custom) raises OperationError:
     # those volumes are managed by LXD, never by this operation.
     # present=False deletes the custom volume (the CLI fails while it
-    # is still attached). ``**kwargs`` absorbs pyinfra's global
+    # is still attached). ``**kwargs`` absorbs any further global
     # arguments.
     _config_pairs(config)
     volumes = await ctx.facts.get(

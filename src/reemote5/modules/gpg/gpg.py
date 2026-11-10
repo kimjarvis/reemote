@@ -11,7 +11,7 @@
 # one explicit keyring file), and ``GpgSecretKeys``, the secret keys in that
 # keychain -- all sharing the ``GpgKeyInfo`` entry shape and the
 # ``_parse_key_records`` colon-record parser. Beside those ports live three
-# reemote5 originals with no pyinfra counterpart: ``GpgTrust``, the
+# reemote5 originals: ``GpgTrust``, the
 # ownertrust assignments read from ``gpg --export-ownertrust`` into
 # ``GpgKeyTrust`` entries, ``GpgKeyDetails``, one key's full metadata read
 # from a targeted ``gpg --list-keys`` into a ``GpgKeyMetadata`` dict (None
@@ -24,15 +24,15 @@
 # (``GpgKeyUploadCommand``/``GpgKeyInstallCommand`` for the install half,
 # ``GpgKeyRemoveCommand``/``GpgKeyDeleteKeysCommand``/``GpgKeyEmptyCleanupCommand``
 # for the removal half) and ``gpg.dearmor`` (``GpgDearmorCommand``).
-# ``gpg.key`` mirrors pyinfra's ``gpg.key`` with stream-only sources: a GPG
+# ``gpg.key`` installs and removes keyring files from stream-only sources: a GPG
 # key stream is spooled over scp and installed as a keyring file (dearmored
 # on the target when the content is ASCII-armored), idempotent on the
 # destination's existence (or, with ``keyid``, on the in-namespace
 # ``GpgKeyrings`` fact); ``present=False`` removes a whole keyring file or
 # selectively deletes keys from keyrings, pruning emptied binary keyrings.
-# pyinfra's ``keyserver`` fetch, URL download and ``mode`` parameter are
-# deliberately dropped (0644 is fixed). ``gpg.dearmor`` mirrors pyinfra's
-# ``gpg.dearmor``: convert an armored key file already on the target host
+# Its ``keyserver`` fetch, URL download and ``mode`` parameter are
+# deliberately dropped (0644 is fixed). ``gpg.dearmor`` converts an
+# armored key file already on the target host
 # to binary form, deliberately stateless (always yields). Operations are
 # async generators that receive an ``OpContext``, await facts, set
 # ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never
@@ -108,14 +108,14 @@ def _parse_key_records(
 ) -> list[GpgKeyInfo]:
     """Parse ``gpg --with-colons`` records into key entries.
 
-    The colon-record parser behind pyinfra's ``GpgFactBase.process`` (see
+    The colon-record parser behind the key listings (see
     GnuPG's doc/DETAILS for the field values): a primary-key record
     (``pub``, or ``sec`` for a secret listing) starts a new key
     (``validity``, ``length`` as an int, ``id``), a subkey record (``sub`` /
     ``ssb``) starts its subkey, and ``fpr``/``uid`` records attach the
     ``fingerprint``, ``uid_hash`` and ``uid`` to whichever of the two is
     current. Only the last subkey record before the next primary key is
-    kept, exactly like pyinfra. Blank lines and other record types
+    kept. Blank lines and other record types
     (``tru``, ...) are skipped, and records before the first primary key
     are ignored. Each key keeps its ``id`` and its subkeys stay a list of
     their own ``GpgKeyInfo`` entries.
@@ -208,7 +208,7 @@ class GpgKey:
         Examples can be found in ``examples/modules/gpg/gpg_gpg_key.py``.
     """
 
-    # Mirrors pyinfra's ``gpg.GpgKey``: ``gpg --with-colons <src>`` reads a
+    # ``gpg --with-colons <src>`` reads a
     # key file (ASCII-armored or binary) without importing it, and the
     # colon records parse into ``GpgKeyInfo`` entries, for example::
     #
@@ -225,17 +225,16 @@ class GpgKey:
     #         },
     #     ]
     #
-    # ``src`` is a path on the TARGET host, shlex-quoted. pyinfra keys its
-    # answer by key id (with subkeys re-keyed by their own ids); reemote5
-    # returns the list of typed entries instead, each carrying its ``id``
-    # and its subkeys as a list (the ``apt.AptKeys`` retyping precedent).
-    # pyinfra's URL branch -- ``(wget -O - <url> || curl -sSLf <url>) | gpg
+    # ``src`` is a path on the TARGET host, shlex-quoted. The answer is
+    # the list of typed entries, each carrying its ``id`` and its subkeys
+    # as a list (the ``apt.AptKeys`` retyping precedent).
+    # A URL branch -- ``(wget -O - <url> || curl -sSLf <url>) | gpg
     # --with-colons`` fetching the key target-side -- is deliberately
     # dropped: reemote5 does not download mid-gather, so a ``src`` with a
     # URL scheme raises ``ValueError`` (stream the key through ``gpg.key``
     # or ``gpg.import_key`` instead, then read the installed file). An
-    # empty ``src`` raises ``ValueError`` too. pyinfra's
-    # ``requires_command`` gating on ``gpg`` is deliberately dropped: a
+    # empty ``src`` raises ``ValueError`` too. There is no command-existence
+    # gate on ``gpg``: a
     # missing ``gpg`` exits 127, which ``run_shell`` reports as
     # ``CommandNotFoundError``; a missing or unreadable file exits 2 with
     # empty stdout, which reads as ``[]``.
@@ -284,7 +283,7 @@ class GpgKeyring(TypedDict):
         path: The keyring file's path, exactly as the ``KEYRING:``
             marker line names it.
         format: The file's extension lowercased (``gpg``, ``kbx`` or
-            ``asc``), pyinfra's format label.
+            ``asc``), the format label.
         keys: The keys the file holds, as ``GpgKeyInfo`` entries in
             listing order; a keyring ``gpg`` could not read contributes
             no entry at all rather than an empty list.
@@ -292,8 +291,7 @@ class GpgKeyring(TypedDict):
 
     # One keyring file (``GpgKeyrings``' entry), as a plain dict.
     #
-    # pyinfra keys its answer by keyring path and its ``keys`` block by key
-    # id; reemote5 returns the list of typed entries instead, each carrying
+    # The answer is the list of typed entries, each carrying
     # its ``path`` and its keys as a list (the same retyping as the key
     # entries themselves).
 
@@ -327,7 +325,7 @@ class GpgKeyrings:
         Examples can be found in ``examples/modules/gpg/gpg_gpg_keyrings.py``.
     """
 
-    # Mirrors pyinfra's ``gpg.GpgKeyrings``: two ``find`` sweeps list every
+    # Two ``find`` sweeps list every
     # ``.gpg``/``.kbx`` binary keyring and every ``.asc`` armored keyring
     # under ``directories``, each is read with ``gpg --with-colons`` behind
     # a ``KEYRING:`` marker line, and each readable file becomes one
@@ -352,22 +350,21 @@ class GpgKeyrings:
     # ``directories`` is a sequence of paths (list or tuple -- a tuple keeps
     # the argument hashable for ``FactCache.get``, which ``gpg.key`` relies
     # on) or a single path string; an empty sequence or string raises
-    # ``ValueError`` (pyinfra would silently search
+    # ``ValueError`` (an empty argument would silently search
     # the working directory). Entries keep the order the markers appeared
     # in -- binary keyrings first, then armored ones -- and a file ``gpg``
     # cannot read contributes its marker only, which parses to no entry
-    # (pyinfra's ``current_output`` guard). pyinfra keys its answer by
-    # keyring path with an id-keyed ``keys`` dict; reemote5 returns the
-    # list of typed entries instead. This is the general-purpose keyring
+    # (the ``current_output`` guard). The answer is the
+    # list of typed entries. This is the general-purpose keyring
     # inspection fact; ``apt.AptKeys`` is the APT-flavored projection that
     # flattens the same sweep into one key list and drops the per-keyring
-    # paths and formats. pyinfra's ``requires_command`` gating on ``gpg``
-    # is deliberately dropped: a missing ``gpg`` is swallowed by each
+    # paths and formats. There is no command-existence gate on ``gpg``:
+    # a missing ``gpg`` is swallowed by each
     # exec's ``|| true`` and reads as ``[]``, while a missing ``find``
     # exits 127, which ``run_shell`` reports as ``CommandNotFoundError``.
 
     #: Marker prefixing each keyring's ``gpg`` output, naming the keyring
-    #: file (pyinfra's ``KEYRING:`` echo).
+    #: file (the ``KEYRING:`` echo).
     KEYRING_MARKER = "KEYRING:"
 
     @classmethod
@@ -492,7 +489,7 @@ class GpgKeys:
         Examples can be found in ``examples/modules/gpg/gpg_gpg_keys.py``.
     """
 
-    # Mirrors pyinfra's ``gpg.GpgKeys``: ``gpg --list-keys --with-colons``
+    # ``gpg --list-keys --with-colons``
     # lists the default keychain's public keys, and the colon records parse
     # into ``GpgKeyInfo`` entries, for example::
     #
@@ -512,10 +509,9 @@ class GpgKeys:
     # (``--keyring <path> --no-default-keyring``, shlex-quoted); None (the
     # default) lists the executing user's default keychain -- elevate the
     # gather's host connection or point ``keyring`` at a file to inspect
-    # another user's keys. pyinfra keys its answer by key id (with subkeys
-    # re-keyed by their own ids); reemote5 returns the list of typed
-    # entries instead (the ``apt.AptKeys`` retyping precedent). pyinfra's
-    # ``requires_command`` gating on ``gpg`` is deliberately dropped: a
+    # another user's keys. The answer is the list of typed
+    # entries (the ``apt.AptKeys`` retyping precedent). There is no
+    # command-existence gate on ``gpg``: a
     # missing ``gpg`` exits 127, which ``run_shell`` reports as
     # ``CommandNotFoundError``; an empty keychain prints nothing and reads
     # as ``[]``.
@@ -574,7 +570,7 @@ class GpgSecretKeys:
         Examples can be found in ``examples/modules/gpg/gpg_gpg_secret_keys.py``.
     """
 
-    # Mirrors pyinfra's ``gpg.GpgSecretKeys``: the secret-key twin of
+    # The secret-key twin of
     # ``GpgKeys`` -- ``gpg --list-secret-keys --with-colons`` prints ``sec``
     # primary and ``ssb`` subkey records instead of ``pub``/``sub``, parsed
     # by the same ``_parse_key_records`` with the record types flipped, into
@@ -595,10 +591,9 @@ class GpgSecretKeys:
     #
     # Only key metadata is listed -- no secret key material ever leaves the
     # host. A ``keyring`` path switches the listing to that one file
-    # (``--keyring <path> --no-default-keyring``, shlex-quoted). pyinfra
-    # keys its answer by key id; reemote5 returns the list of typed entries
-    # instead. pyinfra's ``requires_command`` gating on ``gpg`` is
-    # deliberately dropped: a missing ``gpg`` exits 127, which ``run_shell``
+    # (``--keyring <path> --no-default-keyring``, shlex-quoted). The answer
+    # is the list of typed entries. There is no command-existence gate on
+    # ``gpg``: a missing ``gpg`` exits 127, which ``run_shell``
     # reports as ``CommandNotFoundError``; a keychain with no secret keys
     # prints nothing and reads as ``[]``.
 
@@ -693,7 +688,7 @@ class GpgTrust:
         Examples can be found in ``examples/modules/gpg/gpg_gpg_trust.py``.
     """
 
-    # A reemote5 original with no pyinfra counterpart: ``gpg
+    # A reemote5 original: ``gpg
     # --export-ownertrust`` prints ``FPR:N:`` lines (plus ``#`` comment
     # headers) which parse into ``GpgKeyTrust`` entries, for example::
     #
@@ -820,7 +815,7 @@ class GpgKeyDetails:
         Examples can be found in ``examples/modules/gpg/gpg_gpg_key_details.py``.
     """
 
-    # A reemote5 original with no pyinfra counterpart: a targeted
+    # A reemote5 original: a targeted
     # ``gpg --list-keys --with-colons -- <keyid>`` (keyid, long id or
     # fingerprint, shlex-quoted) parses into one ``GpgKeyMetadata`` dict,
     # for example::
@@ -959,7 +954,7 @@ class GpgVerify:
         Examples can be found in ``examples/modules/gpg/gpg_gpg_verify.py``.
     """
 
-    # A reemote5 original with no pyinfra counterpart (verification is
+    # A reemote5 original (verification is
     # modeled as a read-only fact, not an operation): ``gpg --status-fd 1
     # --verify`` prints machine-readable ``[GNUPG:]`` status lines which
     # parse into one ``GpgVerification`` dict, for example::
@@ -1047,7 +1042,7 @@ class GpgVerify:
 def _matches_keyid(existing_key_id: str, clean_key: str) -> bool:
     """Whether an existing key id matches a cleaned (no 0x, uppercase) key id.
 
-    pyinfra's ``gpg._matches_keyid`` verbatim: supports every common GPG key
+    Supports every common GPG key
     id form -- a short 8-char id is a suffix of the existing id, a long
     16-char id matches exactly, a prefix matches the start, and a full
     fingerprint ends with the existing id. Shared by ``gpg.key`` (install
@@ -1063,7 +1058,7 @@ def _matches_keyid(existing_key_id: str, clean_key: str) -> bool:
 
 
 def _clean_keyid(keyid: str) -> str:
-    """Strip a ``0x``/``0X`` prefix and uppercase a key id (pyinfra's cleaning)."""
+    """Strip a ``0x``/``0X`` prefix and uppercase a key id."""
     return keyid.replace("0x", "").replace("0X", "").upper()
 
 
@@ -1144,15 +1139,15 @@ class GpgKeyInstallCommand(Command):
     command of the ``&&`` chain and leave the cleanup running as the login
     user, whereas ``sudo sh -c '...'`` runs every step as root, which can
     always remove the login-user spool file. The sequence creates the
-    destination directory, then mirrors pyinfra's content sniff when
+    destination directory, then applies a content sniff when
     ``dearmor`` is set: an ASCII-armored key (``BEGIN PGP PUBLIC KEY BLOCK``
     in the bytes, regardless of any file extension) is converted to binary
     form with ``gpg --batch --yes --dearmor`` (``--yes`` overwrites an
     existing output, which ``--batch`` alone refuses), binary content is
     copied verbatim;
-    ``dearmor=False`` copies unconditionally (pyinfra's ``no_dearmor``
+    ``dearmor=False`` copies unconditionally (the ``no_dearmor``
     branch). Finally the keyring is chmod'ed ``0644`` (the fixed mode --
-    pyinfra's ``mode`` parameter is deliberately dropped, the ``apt.key``
+    the ``mode`` parameter is deliberately dropped, the ``apt.key``
     precedent) and the spool file removed. All paths are shell-quoted.
     """
 
@@ -1203,7 +1198,7 @@ class GpgKeyDeleteKeysCommand(Command):
     (``--no-default-keyring --keyring`` scopes gpg to that one file, never
     the user's keychain), with ``--batch --yes`` so no confirmation is
     asked. The fingerprints are the full ones the ``GpgKeyrings`` fact
-    attached to the matching keys (pyinfra's resolution -- gpg deletes by
+    attached to the matching keys (gpg deletes by
     fingerprint to avoid short-id collisions). A single gpg invocation, so
     a bare ``sudo`` prefix elevates all of it; the emptied-file pruning is
     the separate ``GpgKeyEmptyCleanupCommand`` that follows. The keyring
@@ -1226,7 +1221,7 @@ class GpgKeyDeleteKeysCommand(Command):
 class GpgKeyEmptyCleanupCommand(Command):
     """Remove a keyring file if the delete left it empty.
 
-    The second step of selective removal (pyinfra's pruning command): list
+    The second step of selective removal (the pruning command): list
     the keyring's remaining keys and ``rm -f`` the file when no ``pub``
     record survives. Wrapped in ``sh -c`` because the pipeline's ``||``
     must run at the same privilege as the listing -- a bare ``sudo`` prefix
@@ -1249,11 +1244,11 @@ class GpgKeyEmptyCleanupCommand(Command):
 def _keyring_removal_commands(keyring: GpgKeyring, keyids: list[str]) -> list[Command]:
     """Plan the selective removal of ``keyids`` from one keyring entry.
 
-    pyinfra's ``_remove_key_from_keyring``/``_remove_key_from_keyrings``
-    shared core: collect the fingerprints of the matching keys (deduped,
+    The shared selective-removal core: collect the fingerprints of the
+    matching keys (deduped,
     in keyid order), then branch on the keyring format -- an armored
     ``.asc`` file cannot be edited in-place, so partial matches raise
-    ``ValueError`` (pyinfra's ``OperationError``) while an all-keys match
+    ``ValueError`` (the house validation exception) while an all-keys match
     removes the whole file; a binary keyring gets the delete-keys command
     plus the empty-file cleanup. No matches plans nothing.
     """
@@ -1340,9 +1335,9 @@ async def key(
         Examples can be found in ``examples/modules/gpg/gpg_key.py``.
     """
 
-    # pyinfra ``gpg.key`` parity, stream-only sources.
+    # ``gpg.key``: install and remove keyring files, stream-only sources.
     #
-    # Install: ``src`` is an IO-like *stream* on the controller (pyinfra's
+    # Install: ``src`` is an IO-like *stream* on the controller (a
     # filename/URL ``src`` -- which the target host reads or downloads itself
     # -- is deliberately dropped: reemote5 takes IO streams, not
     # controller-side file locations, and a ``str`` raises ``ValueError``;
@@ -1351,12 +1346,12 @@ async def key(
     # spool path, then a ``GpgKeyInstallCommand`` runs the elevated install:
     # mkdir the parent, dearmor-or-copy the content, chmod 0644, remove the
     # spool. Flag the request ``sudo=True`` for system keyring directories;
-    # the transfer stays unprivileged regardless. Idempotence follows
-    # pyinfra: without ``keyid`` an existing ``dest`` file is left alone
+    # the transfer stays unprivileged regardless. Idempotence:
+    # without ``keyid`` an existing ``dest`` file is left alone
     # (the gpg-local ``_KeyringFileExists`` probe), with ``keyid`` every
     # requested id must already be in ``dest``'s ``GpgKeyrings`` entry.
-    # pyinfra's mode-repair chmod on the unchanged path is dropped along
-    # with its ``mode`` parameter (0644 is fixed, the ``apt.key`` precedent),
+    # The mode-repair chmod on the unchanged path is dropped along
+    # with the ``mode`` parameter (0644 is fixed, the ``apt.key`` precedent),
     # and its ``keyserver`` fetch is dropped -- ``gpg.refresh_keys`` is the
     # keyserver touchpoint.
     #
@@ -1366,9 +1361,9 @@ async def key(
     # the file when the delete empties it; ``keyid`` + ``working_dirs``
     # scans every keyring under those directories for the same selective
     # removal. Selective removal from an armored ``.asc`` file that still
-    # holds other keys raises ``ValueError`` (pyinfra's ``OperationError``
-    # becomes the house validation exception). ``**kwargs`` absorbs
-    # pyinfra's global arguments (``op()`` already strips
+    # holds other keys raises ``ValueError`` (the house validation
+    # exception). ``**kwargs`` absorbs
+    # any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     if isinstance(src, str):
         # ValueError (not TypeError) keeps gpg.key consistent with apt.key
@@ -1459,7 +1454,7 @@ class GpgDearmorCommand(Command):
     ``gpg --batch --yes --dearmor -o <dest> <src>`` (``--yes`` overwrites
     an existing output, which ``--batch`` alone refuses -- the stateless
     operation converts on every run), then chmod the output
-    ``0644`` (the fixed mode -- pyinfra's ``mode`` parameter is deliberately
+    ``0644`` (the fixed mode -- the ``mode`` parameter is deliberately
     dropped). Both paths are files already on the target host (no
     transfer). Wrapped in ``sh -c`` so a ``sudo``-flagged request elevates
     every step of the ``&&`` chain, not just the ``mkdir``. All paths are
@@ -1505,9 +1500,9 @@ async def dearmor(
         Examples can be found in ``examples/modules/gpg/gpg_dearmor.py``.
     """
 
-    # pyinfra ``gpg.dearmor`` parity.
+    # ``gpg.dearmor``: convert an armored key file to binary form.
     #
-    # Stateless/non-idempotent like pyinfra: it always converts and always
+    # Stateless/non-idempotent: it always converts and always
     # reports a change, reading no fact (the output is overwritten on every
     # run). Both paths are remote -- to convert a controller-side stream,
     # install it with ``gpg.key`` instead, whose install dearmors on the
@@ -1519,10 +1514,10 @@ async def dearmor(
     # Spooling would mean reimplementing armor decoding (base64 + CRC24)
     # controller-side just to produce binary content the family's ``str``
     # payload cannot carry, and the ``sh -c`` wrap already keeps a
-    # ``sudo``-flagged request elevated across the whole chain. pyinfra's
+    # ``sudo``-flagged request elevated across the whole chain. The
     # ``mode`` parameter is deliberately dropped (0644 is fixed, the
     # ``apt.key`` precedent). Flag the request ``sudo=True`` when
-    # ``dest`` lives in a system directory. ``**kwargs`` absorbs pyinfra's
+    # ``dest`` lives in a system directory. ``**kwargs`` absorbs any
     # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
     if not src:
         raise ValueError("gpg.dearmor requires a non-empty src path on the target host")
@@ -1624,7 +1619,7 @@ async def import_key(
         Examples can be found in ``examples/modules/gpg/gpg_import_key.py``.
     """
 
-    # A reemote5 original with no pyinfra counterpart (pyinfra's ``gpg.key``
+    # A reemote5 original (``gpg.key``
     # installs keyring *files*; this imports into the user's keychain).
     #
     # The stream rides an unprivileged ``GpgImportUploadCommand`` scp
@@ -1637,7 +1632,7 @@ async def import_key(
     # runs and always reports a change: the stream's fingerprint is unknown
     # controller-side (reading it would mean parsing OpenPGP packets), and
     # gpg's own merge of an already-imported key is harmless. ``str`` src
-    # is rejected like ``gpg.key``'s. ``**kwargs`` absorbs pyinfra's global
+    # is rejected like ``gpg.key``'s. ``**kwargs`` absorbs any further global
     # arguments (``op()`` already strips ``name``/``sudo``/``su``).
     if isinstance(src, str):
         # ValueError (not TypeError) for consistency with gpg.key/apt.key.
@@ -1735,7 +1730,7 @@ async def export_key(
         Examples can be found in ``examples/modules/gpg/gpg_export_key.py``.
     """
 
-    # A reemote5 original with no pyinfra counterpart.
+    # A reemote5 original.
     #
     # Stateless/non-idempotent like ``gpg.dearmor``: it always exports and
     # always reports a change, reading no fact (the output is overwritten
@@ -1745,7 +1740,7 @@ async def export_key(
     # parameter exists -- secrets never ride in plans or logs -- so a
     # passphrase-protected secret export fails fast under
     # ``--pinentry-mode loopback`` rather than prompting; only unprotected
-    # secret keys can be exported. ``**kwargs`` absorbs pyinfra's global
+    # secret keys can be exported. ``**kwargs`` absorbs any further global
     # arguments (``op()`` already strips ``name``/``sudo``/``su``).
     #
     # Deliberately NOT a spool-and-install operation (unlike ``gpg.key``
@@ -1821,7 +1816,7 @@ async def delete_key(
         Examples can be found in ``examples/modules/gpg/gpg_delete_key.py``.
     """
 
-    # A reemote5 original with no pyinfra counterpart (pyinfra's ``gpg.key``
+    # A reemote5 original (``gpg.key``
     # removes keyring *files*; this deletes from the user's keychain).
     #
     # Idempotent against ``GpgKeys`` (or ``GpgSecretKeys`` with
@@ -1832,7 +1827,7 @@ async def delete_key(
     # The deletion acts on the *executing user's* default ``GNUPGHOME``;
     # flag the request ``sudo=True`` to delete from root's keychain.
     # ``--batch --yes`` skips gpg's confirmation prompt.
-    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
+    # ``**kwargs`` absorbs any further global arguments (``op()`` already
     # strips ``name``/``sudo``/``su``).
     if not keyid:
         raise ValueError("gpg.delete_key requires a non-empty keyid")
@@ -1928,7 +1923,7 @@ async def gen_key(
         Examples can be found in ``examples/modules/gpg/gpg_gen_key.py``.
     """
 
-    # A reemote5 original with no pyinfra counterpart.
+    # A reemote5 original.
     #
     # Idempotent on the user id: when ``GpgKeys`` already holds a key whose
     # ``uid`` is exactly "{real_name} <{email}>", nothing is generated.
@@ -1940,7 +1935,7 @@ async def gen_key(
     # log. Generation acts on the *executing user's* default ``GNUPGHOME``
     # (flag the request ``sudo=True`` for root's keychain) and needs
     # entropy; on a slow virtual host the apply step can take a while.
-    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
+    # ``**kwargs`` absorbs any further global arguments (``op()`` already
     # strips ``name``/``sudo``/``su``).
     if not real_name:
         raise ValueError("gpg.gen_key requires a non-empty real_name")
@@ -2026,7 +2021,7 @@ async def trust(
         Examples can be found in ``examples/modules/gpg/gpg_trust.py``.
     """
 
-    # A reemote5 original with no pyinfra counterpart -- the write side of
+    # A reemote5 original -- the write side of
     # the ``GpgTrust`` fact.
     #
     # Idempotent against ``GpgTrust`` on the *level name*: an existing
@@ -2036,7 +2031,7 @@ async def trust(
     # (``_TRUST_VALUES``). An unknown level raises ``ValueError`` before
     # any fact is read. Ownertrust is the executing user's trust database;
     # flag the request ``sudo=True`` for root's. ``**kwargs`` absorbs
-    # pyinfra's global arguments (``op()`` already strips
+    # any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     if not fingerprint:
         raise ValueError("gpg.trust requires a non-empty fingerprint")
@@ -2113,7 +2108,7 @@ async def refresh_keys(
         Examples can be found in ``examples/modules/gpg/gpg_refresh_keys.py``.
     """
 
-    # A reemote5 original with no pyinfra counterpart -- the keyserver
+    # A reemote5 original -- the keyserver
     # touchpoint ``gpg.key`` deliberately dropped from its install.
     #
     # Stateless/non-idempotent: whether a keyserver holds an update is
@@ -2122,7 +2117,7 @@ async def refresh_keys(
     # slow or fail when the keyservers are unreachable (a gpg failure
     # surfaces as ``CommandError`` at apply time). The refresh acts on the
     # *executing user's* default ``GNUPGHOME``; flag the request
-    # ``sudo=True`` for root's keychain. ``**kwargs`` absorbs pyinfra's
+    # ``sudo=True`` for root's keychain. ``**kwargs`` absorbs any
     # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
     ids = [keyids] if isinstance(keyids, str) else list(keyids) if keyids else []
     ctx.changed = True

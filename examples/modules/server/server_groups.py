@@ -28,7 +28,7 @@ two-phase execution model:
    inventory with ``asyncio.gather`` and returns a host-name-keyed mapping
    -- then print each host's group list with ``json.dumps(..., indent=2)``.
 
-``Groups`` mirrors pyinfra's ``server.Groups``: it cats ``/etc/group`` and
+``Groups`` mirrors the baseline's ``server.Groups``: it cats ``/etc/group`` and
 returns the first ``:``-separated field of every colon-bearing line -- the
 group names in file order (e.g. ``["root", "wheel", "kjarvis"]``), so a
 deploy can check for a group's presence before managing its membership.

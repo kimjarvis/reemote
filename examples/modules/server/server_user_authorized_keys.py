@@ -4,11 +4,11 @@
 """Example: authorise SSH public keys in a user's ``authorized_keys`` file.
 
 This is a *usage* example, not part of the library. It shows reemote5's
-``server.user_authorized_keys`` operation, the pyinfra
+``server.user_authorized_keys`` operation, baseline
 ``server.user_authorized_keys`` parity for SSH keys: the deploy makes sure a
 user's ``~/.ssh`` directory (mode ``700``) and ``authorized_keys`` file
 (mode ``600``) exist and are owned correctly, then appends the public keys
-that are not already listed -- pyinfra's documented flow, minus its
+that are not already listed -- the baseline's documented flow, minus its
 controller-side key-file paths (every entry here is a literal key string).
 
 The operation is idempotent and reads four facts. The ``Home`` fact resolves
@@ -38,7 +38,7 @@ plan:
 themselves, so no elevation is needed -- writing into ``~/.ssh`` under your
 own home is unprivileged. Managing keys for *another* user is the mirror
 case: flag the request ``sudo=True``, since the directory and file sit in
-that user's home. pyinfra's ``delete_keys`` option is supported as well --
+that user's home. The baseline's ``delete_keys`` option is supported as well --
 a whole-file rewrite to exactly the requested keys, riding the same
 spool-and-install pair -- though this example only appends.
 
@@ -111,7 +111,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
 # The public keys to authorise, as literal key strings (never file paths --
-# pyinfra's controller-side ``os.path.exists`` branch is deliberately
+# The baseline's controller-side ``os.path.exists`` branch is deliberately
 # dropped). A tuple, because ``op()`` arguments must stay hashable.
 DESKTOP_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoDesktopKeyMaterial00 desktop@home"
 LAPTOP_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoLaptopKeyMaterial0000 laptop@cafe"

@@ -163,8 +163,8 @@ async def gather_fact(
     hosts with the gathered values keeps the mapping deterministic regardless
     of the order in which individual hosts finish. A dict keyed by host name is
     returned rather than a positional list so a caller can look a value up
-    without re-deriving the inventory order (mirroring pyinfra's ``get_facts``,
-    which returns ``{host: value}``).
+    without re-deriving the inventory order (the mapping is keyed by host
+    name, ``{host: value}``).
 
     ``fact_cls`` is a fact class exposing an ``async def process(host, ...)``
     classmethod (e.g. ``DnfRepositories``); ``args``/``kwargs`` are forwarded to
@@ -347,7 +347,6 @@ async def send_command(
       ``PrivilegeError`` instead, which ``run_apply``
       aggregates across hosts exactly as ``run_prepare`` aggregates
       ``HostConnectionError``.
-      This differs from pyinfra, which drives Paramiko under gevent.
     """
     execute = getattr(host, "execute_command", None)
     if execute is not None:

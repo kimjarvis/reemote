@@ -1,53 +1,37 @@
 # postgresql module
 
-## postgresql Facts
-
-::: reemote5.modules.postgresql.postgresql
-    options:
-      show_root_heading: false
-      members:
-        - PostgresqlConnections
-        - PostgresqlDatabases
-        - PostgresqlExtensions
-        - PostgresqlIndexes
-        - PostgresqlPrivileges
-        - PostgresqlPublications
-        - PostgresqlReplication
-        - PostgresqlRoleMemberships
-        - PostgresqlRoles
-        - PostgresqlSchemas
-        - PostgresqlSettings
-        - PostgresqlSubscriptions
-        - PostgresqlTables
-        - PostgresqlTablespaces
-
-## postgresql Returns
-
 ::: reemote5.modules.postgresql.postgresql
     options:
       show_root_heading: false
       members:
         - PostgresqlConnection
+        - PostgresqlConnections
         - PostgresqlDatabase
+        - PostgresqlDatabases
         - PostgresqlExtension
+        - PostgresqlExtensions
         - PostgresqlIndex
+        - PostgresqlIndexes
         - PostgresqlPrivilege
+        - PostgresqlPrivileges
         - PostgresqlPublication
+        - PostgresqlPublications
+        - PostgresqlReplication
         - PostgresqlReplicationClient
         - PostgresqlRole
         - PostgresqlRoleMembership
+        - PostgresqlRoleMemberships
+        - PostgresqlRoles
         - PostgresqlSchema
+        - PostgresqlSchemas
         - PostgresqlSetting
+        - PostgresqlSettings
         - PostgresqlSubscription
+        - PostgresqlSubscriptions
         - PostgresqlTable
+        - PostgresqlTables
         - PostgresqlTablespace
-
-## postgresql Operations
-
-::: reemote5.modules.postgresql.postgresql
-    options:
-      show_root_heading: false
-      members:
+        - PostgresqlTablespaces
         - database
         - dump
         - extension
@@ -69,14 +53,14 @@
 <!---
 
 `reemote5.modules.postgresql.postgresql` combines the PostgreSQL facts and
-operations in a single source, extending pyinfra's two-fact/five-operation
+operations in a single source, extending the baseline's two-fact/five-operation
 `postgresql` namespace toward complete control over and visibility into a
 cluster. Every fact and operation runs through the `psql` client on the
 target host (`psql [-d db] [-U user] [-h host] [-p port] -Ac '<sql>'`), so
 the connecting role comes from the OS user the request rides under — flag
 requests `sudo=True` with the inventory `privilege.sudo_user = "postgres"`
 for peer authentication, or point `psql_host`/`psql_user` at a TCP login
-backed by a host-side `.pgpass`. pyinfra's `psql_password` option (and the
+backed by a host-side `.pgpass`. The baseline's `psql_password` option (and the
 `PGPASSWORD=` prefix it renders) is deliberately dropped namespace-wide,
 as is `postgresql.role`'s `password` parameter: credentials never travel
 through operation arguments, plans or logs.
@@ -95,7 +79,7 @@ database-scoped facts (`PostgresqlSchemas`, `PostgresqlTables`,
 `PostgresqlPublications`, `PostgresqlSubscriptions`) read the database
 named by `psql_database` (the server's default, `postgres`, when unset).
 
-`PostgresqlRoles` and `PostgresqlDatabases` mirror pyinfra's
+`PostgresqlRoles` and `PostgresqlDatabases` mirror the baseline's
 `postgres.PostgresRoles` / `PostgresDatabases` verbatim: the same
 `pg_catalog.pg_roles` / `pg_catalog.pg_database` selects (the database one
 joined to `pg_get_userbyid(datdba)` for the owner name), the same
@@ -103,7 +87,7 @@ name-keyed dicts of catalog columns, with `t`/`f` coerced to bools and the
 `(N rows)` trailer dropped by pattern rather than by chopping the last
 line — so empty output reads as `{}` instead of raising.
 
-The twelve reemote5-original facts answer the visibility gaps pyinfra
+The twelve reemote5-original facts answer the visibility gaps the baseline
 leaves: `PostgresqlRoleMemberships` (role/member/admin-option rows from
 `pg_auth_members`), `PostgresqlPrivileges` (one ACL row per grant —
 object type, schema, name, grantee, privilege, grantable — expanded from
@@ -135,21 +119,21 @@ command descriptor per mutation — never touching the host itself. Reach
 operations through the namespace (`postgresql.database`), not the
 top-level package.
 
-The five pyinfra-parity operations keep their names and shells:
+The five the baseline-parity operations keep their names and shells:
 `postgresql.sql` executes arbitrary SQL (stateless, always yields — the
 escape hatch for anything the typed operations do not cover),
 `postgresql.dump` writes a `pg_dump` of a database to a host-side file
 and `postgresql.load` feeds a host-side SQL file back through `psql`
 (both stateless; `load`'s `src` is a path on the TARGET host — spool
 controller-side bytes with `files.put` first). `postgresql.database` and
-`postgresql.role` are reworked beyond pyinfra: the database operation
+`postgresql.role` are reworked beyond the baseline: the database operation
 resolves tablespaces by NAME against `PostgresqlTablespaces`' OIDs
-(pyinfra compared the name against the OID column, which never matched)
+(the baseline compared the name against the OID column, which never matched)
 and alters an existing database's `OWNER`, `SET TABLESPACE`,
 `CONNECTION LIMIT` and `ALLOW_CONNECTIONS` idempotently, reporting
 creation-only options (TEMPLATE/ENCODING/LC_*) as skipped rather than
 pretending to change them; the role operation renders every flag
-explicitly as X/NOX pairs (so `INHERIT` appears where pyinfra omitted
+explicitly as X/NOX pairs (so `INHERIT` appears where the baseline omitted
 it) and reconciles an existing role's flags and connection limit through
 `ALTER ROLE`.
 

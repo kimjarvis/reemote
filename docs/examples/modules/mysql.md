@@ -7,7 +7,7 @@ warning and the error-reporting contract every script follows.
 
 Every operation script's requests ride under `sudo`, so the `mysql`
 client connects as `root` through unix-socket authentication — no
-password travels through operation arguments, plans or logs (pyinfra's
+password travels through operation arguments, plans or logs (the baseline's
 `mysql_password` option is deliberately dropped namespace-wide, and
 `mysql.user`'s `password` parameter is replaced by the comparable
 `auth_plugin`). The read-only fact scripts gather as the login user, so
@@ -59,14 +59,14 @@ MySQL machines.
 
 ## Managing a database
 
-The database operation: `mysql.database` mirrors pyinfra's
+The database operation: `mysql.database` mirrors the baseline's
 `mysql.database` and extends it beyond creation. It reads
 [`MysqlDatabases`][reemote5.modules.mysql.mysql.MysqlDatabases]
 to decide: an absent database yields one `CREATE DATABASE` carrying
 `charset` and `collate`; an existing one whose character set or collation
-differs is reconciled through `ALTER DATABASE` (pyinfra applies them only
+differs is reconciled through `ALTER DATABASE` (the baseline applies them only
 at CREATE time and never alters). The `user`/`user_privileges` grant
-delegation is pyinfra's, sharing the `mysql.privileges` core.
+delegation is the baseline's, sharing the `mysql.privileges` core.
 `present=False` drops the database. The script yields the same create
 request twice — the second is a guaranteed no-op in the apply phase,
 because the first create is visible to it through the fresh per-step fact
@@ -78,7 +78,7 @@ cache (in the prepare phase, where nothing is sent, both plan as changes).
 
 ## Managing a user
 
-The user operation: `mysql.user` mirrors pyinfra's `mysql.user`, minus
+The user operation: `mysql.user` mirrors the baseline's `mysql.user`, minus
 the credential: `password` (`IDENTIFIED BY`, creation-only because the
 hash cannot be compared) is deliberately dropped and replaced by
 `auth_plugin` (`IDENTIFIED WITH`, e.g. `auth_socket`), which IS comparable
@@ -98,13 +98,13 @@ cache (in the prepare phase, where nothing is sent, both plan as changes).
 
 ## Granting or revoking privileges
 
-The privileges operation: `mysql.privileges` mirrors pyinfra's
+The privileges operation: `mysql.privileges` mirrors the baseline's
 `mysql.privileges`, diffing the desired set against
 [`MysqlUserGrants`][reemote5.modules.mysql.mysql.MysqlUserGrants] for the
 exact `database.table` target: only missing privileges are granted, only
 extra ones revoked (sorted, so both phases render identically), `USAGE`
 is never revoked when something is granted, and `with_grant_option=True`
-uses the two-step ALL + `WITH GRANT OPTION` forms pyinfra special-cases.
+uses the two-step ALL + `WITH GRANT OPTION` forms the baseline special-cases.
 The account must already exist — create it with `mysql.user` first (the
 `mysql_user.py` script). The script yields the same grant request twice —
 the second is a guaranteed no-op in the apply phase, because the first
@@ -117,7 +117,7 @@ prepare phase, where nothing is sent, both plan as changes).
 
 ## Executing arbitrary SQL
 
-The SQL operation: `mysql.sql` mirrors pyinfra's `mysql.sql`, executing a
+The SQL operation: `mysql.sql` mirrors the baseline's `mysql.sql`, executing a
 statement through `mysql -Be`. It is stateless — the statement always
 runs, in both the plan's apply phase and every subsequent run — so it is
 the escape hatch for anything the typed operations do not cover; prefer
@@ -132,10 +132,10 @@ in it. The script yields the same idempotent statement twice.
 
 ## Dumping a database
 
-The dump operation: `mysql.dump` mirrors pyinfra's `mysql.dump`, writing
+The dump operation: `mysql.dump` mirrors the baseline's `mysql.dump`, writing
 a `mysqldump` of a database to a file on the TARGET host (`dest`). It is
 stateless — the dump always runs, overwriting the destination — and, as
-in pyinfra, `database=None` renders a bare `mysqldump` (no
+in the baseline, `database=None` renders a bare `mysqldump` (no
 `--all-databases` is injected). The redirect runs under `sudo`, so `dest`
 must be writable by root. The script yields one dump request writing
 under `/var/backups`.
@@ -146,7 +146,7 @@ under `/var/backups`.
 
 ## Loading a SQL file
 
-The load operation: `mysql.load` mirrors pyinfra's `mysql.load`, feeding
+The load operation: `mysql.load` mirrors the baseline's `mysql.load`, feeding
 a SQL file through `mysql`. It is stateless — the file always executes —
 and `src` is a path on the TARGET host: spool controller-side bytes there
 with `files.put` first. The script pairs a dump with a load of its own
@@ -304,7 +304,7 @@ real.
 The optimize operation: `mysql.optimize` is a reemote5-original
 operation running `OPTIMIZE TABLE` (or `ANALYZE`/`CHECK`/`REPAIR` through
 `action`) over a list of tables in one database. It is stateless like
-pyinfra's dump/load: maintenance is a periodic action, not a desired
+the baseline's dump/load: maintenance is a periodic action, not a desired
 state, so there is nothing to compare a fact against — every request
 runs. InnoDB maps OPTIMIZE to a recreate+analyze and does not support
 REPAIR (the server reports a note, not an error). The script yields one

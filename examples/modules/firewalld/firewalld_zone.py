@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.zone`` is a reemote5 original (pyinfra ships no firewalld
+``firewalld.zone`` is a reemote5 original (the baseline ships no firewalld
 module): it manages the zone's *existence and properties* -- target,
 short and description -- not the rules inside it (those are the
 membership operations, e.g. ``firewalld.zone_service``). It is idempotent

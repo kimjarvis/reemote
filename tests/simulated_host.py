@@ -835,7 +835,7 @@ class SimulatedHost(Host):
     # ``AptSources`` returns -- type, url, distribution, components and
     # list-valued options, legacy .list and deb822 .sources entries already
     # merged and expanded), backing ``AptSources``. Defaults to [] -- a
-    # simulated machine with no sources files, like pyinfra's
+    # simulated machine with no sources files, like the baseline's
     # ``default = list``. A test seeds it directly; ``add_ppa``/``remove_ppa``
     # (the simulated ``apt.ppa``) append/drop the PPA's Launchpad source and
     # ``install_apt_repo_file`` (the simulated ``apt.repo``) refreshes the
@@ -883,23 +883,23 @@ class SimulatedHost(Host):
     # returns -- {blocks, used, available, used_percent, mount}), backing
     # ``BlockDevices``. Each value is the parsed form the fact returns --
     # all five entries raw strings, as ``df`` prints them. Defaults to {}
-    # -- a simulated machine with no devices listed, like pyinfra's
+    # -- a simulated machine with no devices listed, like the baseline's
     # ``default = dict`` for a failed read.
     block_devices: dict[str, BlockDevice] = field(default_factory=dict)
     # CPU details (the parsed ``LANG=C lscpu`` rows), backing ``CpuInfo``:
     # each key maps to its stripped string value, except a ``flag``-bearing
     # key (e.g. ``Flags``) whose value is the list of whitespace-split tokens.
     # Defaults to {} -- a simulated machine reporting no lscpu rows; the real
-    # transport reads None on a failed/empty read (pyinfra's ``invalid``
+    # transport reads None on a failed/empty read (the baseline's ``invalid``
     # fixture), but the seam stays a non-None dict so it never falls through
     # to the shell.
     cpu_info: dict[str, str | list[str]] = field(default_factory=dict)
     # The number of online CPUs (the parsed ``getconf NPROCESSORS_ONLN``
-    # answer), backing ``Cpus``. Defaults to pyinfra's own fact fixture value
+    # answer), backing ``Cpus``. Defaults to the baseline's own fact fixture value
     # (1) -- a real machine always answers ``getconf``, and a fixed default
     # keeps simulated reads deterministic.
     cpus: int = 1
-    # The server's clock, backing ``Date``. Defaults to pyinfra's own fact
+    # The server's clock, backing ``Date``. Defaults to the baseline's own fact
     # fixture timestamp (2019-01-01T00:00:00+00:00) -- a real machine always
     # answers ``date``, so the seam never falls through to the shell, and a
     # fixed default keeps simulated reads deterministic.
@@ -1069,7 +1069,7 @@ class SimulatedHost(Host):
     # dict-store precedent). The scope
     # key is the repo path for a ``--local`` read, or the "global"/
     # "system" sentinels for the two repo-less login-user scopes. An
-    # absent scope reads as [] (pyinfra's ``default = dict``, projected).
+    # absent scope reads as [] (the baseline's ``default = dict``, projected).
     # A test
     # seeds it directly; ``set_git_config`` (the simulated ``git.config``)
     # sets or adds a key's value list under the targeted scope, so a
@@ -1222,7 +1222,7 @@ class SimulatedHost(Host):
     os_groups: list[str] = field(default_factory=list)
     # Whether a known desktop-session binary is installed, backing
     # ``HasGui``. Defaults to False -- a simulated server is headless, like
-    # pyinfra's gui_absent fixture (``ls /usr/bin/*session`` lists nothing).
+    # The baseline's gui_absent fixture (``ls /usr/bin/*session`` lists nothing).
     has_gui: bool = False
     # Home directories, backing ``Home``: username -> home directory path,
     # with "" keying the login user (the bare ``~``). An absent user reads as
@@ -1231,7 +1231,7 @@ class SimulatedHost(Host):
     # The machine's hostname (``uname -n``), backing ``Hostname``. Named
     # ``os_hostname`` to stay distinct from ``Host.name`` (the inventory
     # label) and the inventory's ``connection.hostname`` address alias.
-    # Defaults to pyinfra's own fact fixture hostname -- a real machine
+    # Defaults to the baseline's own fact fixture hostname -- a real machine
     # always answers ``uname -n``, and a fixed default keeps simulated
     # reads deterministic. ``set_hostname`` (the simulated ``server.hostname``
     # effect) replaces it, so a repeat hostname set is a no-op.
@@ -1321,20 +1321,20 @@ class SimulatedHost(Host):
     # `ifconfig -a` listing), backing ``Ipv4Addrs``: interface name -> the
     # list of address strings the fact returns, primary first, with any
     # interfaces that carry no IPv4 already absent. Defaults to {} -- a
-    # simulated machine with no interfaces listed, like pyinfra's
+    # simulated machine with no interfaces listed, like the baseline's
     # ``default = dict`` for a failed read.
     ipv4_addrs: dict[str, list[str]] = field(default_factory=dict)
     # IPv6 addresses per network interface (the parsed `ip addr show` /
     # `ifconfig -a` listing), backing ``Ipv6Addrs``: interface name -> the
     # list of address strings the fact returns, primary first, with any
     # interfaces that carry no IPv6 already absent. Defaults to {} -- a
-    # simulated machine with no interfaces listed, like pyinfra's
+    # simulated machine with no interfaces listed, like the baseline's
     # ``default = dict`` for a failed read.
     ipv6_addrs: dict[str, list[str]] = field(default_factory=dict)
     # The kernel name (``uname -s``), backing ``Kernel``. Named ``os_kernel``
     # with the os_ prefix (like ``os_hostname``) so it stays clear of any
     # inventory field. Defaults to ``Linux`` -- a real machine always answers
-    # ``uname -s``, and the simulated fleet is Linux servers (pyinfra's own
+    # ``uname -s``, and the simulated fleet is Linux servers (the baseline's own
     # fixture value is the literal placeholder "os", not a real kernel name).
     os_kernel: str = "Linux"
     # Loaded kernel modules (module name -> info dict), backing
@@ -1342,7 +1342,7 @@ class SimulatedHost(Host):
     # Linux {size, instances, state} plus an optional depends list, on
     # FreeBSD {id, refs, address, size} -- the seam holds whichever shape
     # matches the host's ``os_kernel``. Defaults to {} -- a simulated machine
-    # with no modules listed, like pyinfra's ``default = dict`` for a failed
+    # with no modules listed, like the baseline's ``default = dict`` for a failed
     # or absent /proc/modules read. ``server.modprobe`` mutates it:
     # ``load_modules`` adds a name with a minimal Linux-shaped info dict and
     # ``unload_modules`` drops it, so a repeat operation is a no-op once the
@@ -1352,7 +1352,7 @@ class SimulatedHost(Host):
     # ``os_kernel_version`` with the os_ prefix (like ``os_kernel``) so it
     # stays clear of any inventory field. Defaults to a real Fedora kernel
     # release -- a real machine always answers ``uname -r``, and the
-    # simulated fleet is dnf-based Linux servers (pyinfra's own fixture
+    # simulated fleet is dnf-based Linux servers (the baseline's own fixture
     # value is the literal placeholder "os_version", not a real release).
     os_kernel_version: str = "6.11.4-301.fc41.x86_64"
     # Symlink metadata (path -> the stat dict ``Link`` returns -- the same
@@ -1369,7 +1369,7 @@ class SimulatedHost(Host):
     # Login records (the parsed ``last`` output), backing ``Last``. Each
     # entry is the dict the fact returns -- {user, tty, host, time} with
     # time the raw trailing string -- in ``last`` order. Defaults to [] --
-    # a simulated machine with no recorded logins, like pyinfra's
+    # a simulated machine with no recorded logins, like the baseline's
     # ``default = list`` for an empty or failed ``last`` read.
     login_records: list[dict[str, str]] = field(default_factory=list)
     # The Linux distribution info (the parsed /etc/*-release dump), backing
@@ -1377,7 +1377,7 @@ class SimulatedHost(Host):
     # the fact returns. ``LinuxName`` delegates to ``LinuxDistribution`` and
     # so reads this same seam -- there is deliberately no separate name
     # field, keeping the two facts consistent by construction. Defaults to
-    # pyinfra's ``default()`` -- all None with an empty release_meta, the
+    # The baseline's ``default()`` -- all None with an empty release_meta, the
     # "no release files matched" answer -- so a simulated machine makes no
     # distro claim until a test sets one.
     linux_distribution: dict[str, Any] = field(
@@ -1397,7 +1397,7 @@ class SimulatedHost(Host):
     # Installed locale names (the parsed ``locale -a`` listing, with ``utf8``
     # already normalized to ``UTF-8``), backing ``Locales``: the list of names
     # the fact returns, in command order. Defaults to [] -- a simulated
-    # machine with no locales listed, like pyinfra's ``default = list`` for an
+    # machine with no locales listed, like the baseline's ``default = list`` for an
     # empty or failed ``locale -a`` read. ``server.locale`` mutates it:
     # ``generate_locales`` (the simulated ``locale-gen``) adds or drops the
     # request's one name, so the next step's fresh fact cache sees the
@@ -1479,7 +1479,7 @@ class SimulatedHost(Host):
     # ``Mounts``. Each value is the parsed form the fact returns, with the
     # options already combined and octal escapes decoded -- the seam holds
     # whichever kernel's listing the host's ``os_kernel`` implies. Defaults
-    # to {} -- a simulated machine with no mounts listed, like pyinfra's
+    # to {} -- a simulated machine with no mounts listed, like the baseline's
     # ``default = dict`` for a failed read. ``server.mount`` mutates it:
     # ``mount_filesystem`` records a new mount, ``remount_filesystem`` merges
     # the requested options into the entry and ``unmount_filesystem`` drops
@@ -1535,7 +1535,7 @@ class SimulatedHost(Host):
     # ``NetworkDevices``. Each value is the parsed form the fact returns
     # -- an ipv4/ipv6 block holds the primary address plus its
     # mask/broadcast details and any ``additional_ips`` aliases. Defaults
-    # to {} -- a simulated machine with no interfaces listed, like pyinfra's
+    # to {} -- a simulated machine with no interfaces listed, like the baseline's
     # ``default = dict`` for a failed read.
     network_devices: dict[str, NetworkDevice] = field(default_factory=dict)
     # Listening sockets (``(protocol, port)`` -> the ``PortInfo`` record the
@@ -1551,7 +1551,7 @@ class SimulatedHost(Host):
     # command, args}), backing ``Processes``. Each value is the parsed form
     # the fact returns -- the seam holds the joined record regardless of
     # which kernel's ps listing ``os_kernel`` implies. Defaults to {} -- a
-    # simulated machine with no processes listed, like pyinfra's
+    # simulated machine with no processes listed, like the baseline's
     # ``default = dict`` for a failed ps read. ``server.kill`` mutates it:
     # ``kill_process`` drops the PID, so the next step's fresh fact cache
     # no longer lists the killed process.
@@ -1626,7 +1626,7 @@ class SimulatedHost(Host):
     # The system timezone (the ``readlink -f /etc/localtime | sed`` answer),
     # backing ``Timezone``. Named ``os_timezone`` with the os_ prefix (like
     # ``os_kernel``) so it stays clear of any inventory field. Defaults to
-    # pyinfra's own fact fixture timezone -- a real machine always resolves
+    # The baseline's own fact fixture timezone -- a real machine always resolves
     # ``/etc/localtime``, and a fixed default keeps simulated reads
     # deterministic. ``set_timezone`` (the simulated ``server.timezone``
     # effect) replaces it, so a repeat timezone set is a no-op.
@@ -1635,7 +1635,7 @@ class SimulatedHost(Host):
     # Named ``os_user`` with the os_ prefix (like ``os_env``) so it stays
     # clear of the inventory's ``connection.user`` login name. Defaults to
     # ``root`` -- a real machine always answers ``echo $USER``, and a fixed
-    # default keeps simulated reads deterministic (pyinfra ships no fixture
+    # default keeps simulated reads deterministic (the baseline ships no fixture
     # for this fact).
     os_user: str = "root"
     # System users (username -> the details dict ``Users`` returns -- home,
@@ -1643,14 +1643,14 @@ class SimulatedHost(Host):
     # password), backing ``Users``. Named ``os_users`` with the os_ prefix
     # (like ``os_user``) so it stays clear of the inventory's
     # ``connection.user`` login name. Defaults to {} -- a simulated machine
-    # with no users listed, like pyinfra's ``default = dict`` for a failed
+    # with no users listed, like the baseline's ``default = dict`` for a failed
     # or empty read. ``add_user``/``modify_user``/``remove_user`` (the
     # simulated ``useradd``/``usermod``/``userdel`` behind ``server.user``)
     # mutate it.
     os_users: dict[str, dict[str, Any]] = field(default_factory=dict)
     # The seconds since boot (the parsed ``cut -d. -f1 /proc/uptime`` answer,
     # or the BSD now-minus-boottime difference), backing ``Uptime``. Defaults
-    # to pyinfra's own fact fixture uptime (86400 -- one day) -- a real
+    # to the baseline's own fact fixture uptime (86400 -- one day) -- a real
     # machine always answers with an uptime, and a fixed default keeps
     # simulated reads deterministic.
     uptime_seconds: int = 86400
@@ -1734,14 +1734,14 @@ class SimulatedHost(Host):
     # ``sysctl.Sysctl`` fact. A keys filter selects the named settings; an
     # absent key reads as missing, like the swallowed ``sysctl nosuchkey``
     # error. Defaults to {} -- a simulated machine with no settings listed,
-    # like pyinfra's ``default = dict`` for an empty or failed read.
+    # like the baseline's ``default = dict`` for an empty or failed read.
     # ``set_sysctl`` (the simulated ``sysctl -w`` behind ``sysctl.setting``)
     # and ``reload_sysctl_file`` (the ``sysctl -p`` arm) mutate it; the
     # demo-side ``sysctl`` recipe step stays a raw ``StringCommand`` with no
     # simulated effect.
     sysctls: dict[str, Any] = field(default_factory=dict)
     # Simulated systemd visibility -- the read-side seams for the seven
-    # reemote5-original facts (the two pyinfra ports project the ``services``/
+    # reemote5-original facts (the two the baseline ports project the ``services``/
     # ``enabled_services`` stores above). A test seeds each directly; the
     # facts issue no write command, so no fact-only arm maintains them. The
     # ``mask``/``preset`` operations (which change a unit's boot state) do
@@ -2753,7 +2753,7 @@ class SimulatedHost(Host):
         ``apt_packages`` (the name -> sorted version list ``AptPackages``
         reads), so a repeat pinned install is a no-op; an unpinned name
         carries no repository metadata to resolve a version from, so it
-        gets the ``[""]`` placeholder pyinfra's own operation fixtures use
+        gets the ``[""]`` placeholder the baseline's own operation fixtures use
         for an unknown version -- and an already-installed name keeps its
         versions (the ``latest`` path is non-idempotent by design, so no
         candidate convergence is modeled). Kept separate from
@@ -3574,7 +3574,7 @@ class SimulatedHost(Host):
         """Record a simulated ``userdel``/``pw userdel``: drop the ``os_users`` row.
 
         The home directory is deliberately left in place -- plain ``userdel``
-        removes no files (only ``userdel -r`` does, which pyinfra and this
+        removes no files (only ``userdel -r`` does, which the baseline and this
         operation never emit). An absent user is tolerated.
         """
         self.os_users.pop(name, None)
@@ -4345,14 +4345,14 @@ class SimulatedHost(Host):
         with that present the next pass takes the reconcile/branch/pull
         branch instead of re-cloning. ``git_configs[dest]`` records the
         ``remote.origin.url`` value list ``GitConfig``'s entry carries for
-        the freshly cloned repository (matching pyinfra's own fixture shape,
+        the freshly cloned repository (matching the baseline's own fixture shape,
         a one-element list), so the origin-reconcile check reads equal on the
         second pass. ``git_branches[dest]`` becomes the requested ``branch``,
         or ``"main"`` when none was named -- the modern ``init.defaultBranch``
         a real clone resolves HEAD to -- so the branch-match check reads
         equal too. The clone's commit SHAs are deliberately not seeded:
         without a real remote there is nothing sensible to record in
-        ``git_local_commits``/``git_remote_commits``, and pyinfra's own
+        ``git_local_commits``/``git_remote_commits``, and the baseline's own
         clone fixtures assert only the clone command, never a follow-up.
         """
         self.directory_stats[dest] = {"mode": 755}
@@ -4370,7 +4370,7 @@ class SimulatedHost(Host):
         ``GitConfig`` returns and the operation compares against ``src`` -- so
         a repeat ``git.repo`` with the same ``src`` sees the values equal and
         skips the reset. The push URL is not modelled (no migrated fact reads
-        it), matching pyinfra, whose reset command only rewrites the fetch.
+        it), matching the baseline, whose reset command only rewrites the fetch.
         """
         config = self.git_configs.setdefault(dest, {})
         config["remote.origin.url"] = [url]
@@ -4382,7 +4382,7 @@ class SimulatedHost(Host):
         ``branch`` into ``git_branches[dest]`` -- the value ``GitBranch``
         reads back -- so a repeat ``git.repo`` for the same target sees the
         current branch already equal and skips the fetch/checkout pair. A tag
-        checkout writes the tag name into the same seam: pyinfra's
+        checkout writes the tag name into the same seam: the baseline's
         ``is_tag`` branch does not model the resulting detached HEAD (the
         fact's ``git describe --all`` answer for a detached tree is out of
         scope here), and the operation only compares ``GitBranch`` against
@@ -4438,7 +4438,7 @@ class SimulatedHost(Host):
         allowed, unlimited), the tablespace NAME resolved to its OID
         through ``postgres_tablespaces``, and the owner's OID looked up
         in ``postgres_roles`` (10, the bootstrap superuser, when the
-        role is unseeded); the xid placeholders mirror pyinfra's own
+        role is unseeded); the xid placeholders mirror the baseline's own
         fact fixture. An alter applies only the non-None fields (the
         operation yields exactly the diffs), and a drop pops the entry.
         """

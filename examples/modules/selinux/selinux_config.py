@@ -16,7 +16,7 @@ application drives reemote5's two-phase execution model end to end over a
    objects, each guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``selinux.config`` is a reemote5 original (pyinfra ships no config
+``selinux.config`` is a reemote5 original (the baseline ships no config
 operation): it ensures the boot-time settings ``SELINUX=enforcing`` and
 ``SELINUXTYPE=targeted`` in ``/etc/selinux/config``. It supersedes the
 ``files.edit`` + ``files.move`` two-run recipe this example used to

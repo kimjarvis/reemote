@@ -27,7 +27,7 @@ it finishes. The path is resolved from ``__file__``, so the example works
 from any working directory; point ``INVENTORY_PATH`` at your own file to
 target your machines.
 
-``apt.auto_remove`` is a reemote5 original: pyinfra only offers autoremove
+``apt.auto_remove`` is a reemote5 original: the baseline only offers autoremove
 as the ``auto_remove`` parameter of ``apt.dist_upgrade``/``apt.upgrade``,
 never as a standalone operation, so orphaned dependencies cannot be cleaned
 up without also performing an upgrade. This operation closes that gap. The
@@ -44,7 +44,7 @@ against the cleaned-up state.
 Removing packages writes to the root-owned dpkg database, so the requests
 are flagged ``sudo=True`` and the driver elevates their commands. Pair this
 with ``apt_dist_upgrade.py``'s ``apt.dist_upgrade`` to compose the
-upgrade-then-cleanup flow pyinfra expresses with a single
+upgrade-then-cleanup flow the baseline expresses with a single
 ``auto_remove=True`` flag -- here each half is an explicit, separately
 plannable step.
 

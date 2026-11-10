@@ -5,7 +5,7 @@
 ``Sha384File`` and ``Md5File``.
 
 Covers ``reemote5.modules.files.files.Sha256File`` / ``Sha384File`` /
-``Md5File``: pyinfra's own twelve hash fixtures over the real-transport
+``Md5File``: the baseline's own twelve hash fixtures over the real-transport
 path (four per fact -- the GNU stdin ``<hash>  -`` form, the bare BSD
 digest form, a backslash-bearing path and a metacharacter path), the
 exact digit-count parse guard, and the ``remote_files``-derived
@@ -38,7 +38,7 @@ class CannedShellHost(Host):
         return self._stdout
 
 
-# pyinfra's fixture digests, verbatim.
+# The baseline's fixture digests, verbatim.
 SHA256 = "3867882e8ccc16bd6a1e3e214a46608f9cf5d21687bbb8c25751da3c47b48033"
 SHA384 = (
     "1dd2e448df7c4dc19848a37fdf25c86660b19d06a4cd6987ca2c4071f80e9dd3"
@@ -65,7 +65,7 @@ BACKSLASH = (r"/tmp/mnt-data\x2dbig.mount", r"'/tmp/mnt-data\x2dbig.mount'")
 SPECIAL = ("my () file && special_chars.txt", "'my () file && special_chars.txt'")
 
 
-# --- Real-transport parity: pyinfra's own hash-family fixtures ---------------------
+# --- Real-transport parity: the baseline's own hash-family fixtures ---------------------
 
 
 @pytest.mark.parametrize(
@@ -99,10 +99,10 @@ SPECIAL = ("my () file && special_chars.txt", "'my () file && special_chars.txt'
         "md5-needs-quotes",
     ],
 )
-async def test_hash_family_parses_pyintras_fixtures(
+async def test_hash_family_parses_baseline_fixtures(
     fact_cls, template, digest, paths, suffix
 ):
-    # pyinfra's file.json / file_bsd_style.json / backslash.json /
+    # The baseline's file.json / file_bsd_style.json / backslash.json /
     # file_needs_quotes.json fixtures, verbatim: the stdin form keeps the
     # filename out of the tool's output, so even a backslash-bearing name
     # parses as a bare digest line.

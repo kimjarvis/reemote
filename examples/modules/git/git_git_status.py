@@ -29,7 +29,7 @@ driving the two-phase execution model:
    path argument verbatim, and returns a host-name-keyed mapping -- then
    print each host's working-tree summary.
 
-``GitStatus`` is a reemote5-original fact -- pyinfra has no equivalent. It
+``GitStatus`` is a reemote5-original fact -- the baseline has no equivalent. It
 runs ``! test -d <repo> || (cd <repo> && git status --porcelain)`` and
 classifies each row into a ``GitStatusSummary`` -- a ``dirty`` flag plus the
 ``staged``, ``unstaged`` and ``untracked`` path lists -- from the two-column

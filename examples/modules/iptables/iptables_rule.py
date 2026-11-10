@@ -17,14 +17,14 @@ two-phase execution model end to end over a **real SSH transport**
    need CAP_NET_ADMIN, so the commands ride under root.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``iptables.rule`` mirrors pyinfra's operation and extends it with
+``iptables.rule`` mirrors the baseline's operation and extends it with
 first-class match extensions (the typed-matcher decision): ``ctstate``
 renders ``-m conntrack --ctstate``, ``destination_ports``/``source_ports``
 render multiport matches, ``limit``/``limit_burst`` rate limiting,
 ``match_set`` an ipset match, and ``comment`` the comment match -- the
 reliable idempotency and auditing marker. No raw ``extras`` string is
 needed for any of them: each is folded into the same sorted-pair
-comparison pyinfra's port shortcuts use, so the rule definition read back
+comparison the baseline's port shortcuts use, so the rule definition read back
 from ``iptables-save`` compares order-independently and the operation
 stays idempotent. Tuple arguments (not lists) keep every request hashable.
 

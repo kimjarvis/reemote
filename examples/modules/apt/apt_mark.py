@@ -27,7 +27,7 @@ it finishes. The path is resolved from ``__file__``, so the example works
 from any working directory; point ``INVENTORY_PATH`` at your own file to
 target your machines.
 
-``apt.mark`` is a reemote5 original: pyinfra ships no operation managing
+``apt.mark`` is a reemote5 original: the baseline ships no operation managing
 package hold states. A held package is skipped by ``apt upgrade`` /
 ``apt.dist_upgrade`` until it is released again, which is how a deploy
 pins critical packages at their current version without uninstalling

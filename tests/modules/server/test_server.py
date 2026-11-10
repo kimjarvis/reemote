@@ -4,108 +4,108 @@
 """Tests for the server module: host facts, ``Arch``, ``Port`` and the waits.
 
 Covers ``reemote5.modules.server.server``: the ``Arch`` fact, the
-``AuthorizedKeys`` fact (pyinfra's own fixtures over the real-transport
+``AuthorizedKeys`` fact (the baseline's own fixtures over the real-transport
 path, tilde-username validation, and the ``SimulatedHost`` seam), the
 ``AuthorizedKeysFile`` raw-content fact (command quoting, the
 ``remote_files`` seam and the marker parse over the real-transport path),
-the ``Date`` fact (pyinfra's own fixture over the real-transport path, offset
+the ``Date`` fact (the baseline's own fixture over the real-transport path, offset
 parsing, and the ``SimulatedHost`` seam), the ``Env`` fact (canned
 ``echo $<name>`` output over the real-transport path, variable-name
 validation, parsing edge cases, and the ``SimulatedHost`` seam), the
-``EtcHosts`` fact (pyinfra's own fixture over the real-transport path,
+``EtcHosts`` fact (the baseline's own fixture over the real-transport path,
 comment/duplicate-IP parsing edge cases, and the shared ``remote_files``
 ``SimulatedHost`` seam), the
-``Groups`` fact (pyinfra's own
+``Groups`` fact (the baseline's own
 fixture over the real-transport path, ``/etc/group`` parsing edge cases, and
-the ``SimulatedHost`` seam), the ``HasGui`` fact (pyinfra's own fixtures over
+the ``SimulatedHost`` seam), the ``HasGui`` fact (the baseline's own fixtures over
 the real-transport path, session-binary parsing edge cases, and the
-``SimulatedHost`` seam), the ``Home`` fact (pyinfra's own fixtures over the
+``SimulatedHost`` seam), the ``Home`` fact (the baseline's own fixtures over the
 real-transport path, unexpanded-tilde handling, tilde-username validation,
-and the ``SimulatedHost`` seam), the ``Hostname`` fact (pyinfra's own
+and the ``SimulatedHost`` seam), the ``Hostname`` fact (the baseline's own
 fixture over the real-transport path, parsing edge cases, and the
-``SimulatedHost`` seam), the ``Kernel`` fact (pyinfra's own fixture over
+``SimulatedHost`` seam), the ``Kernel`` fact (the baseline's own fixture over
 the real-transport path, parsing edge cases, and the ``SimulatedHost``
-seam), the ``KernelModules`` fact (pyinfra's own Linux and FreeBSD fixtures
+seam), the ``KernelModules`` fact (the baseline's own Linux and FreeBSD fixtures
 over the real-transport path, kernel-dispatched command and parser edge
 cases, and the ``SimulatedHost`` seam), the ``KernelVersion`` fact
-(pyinfra's own fixture over the real-transport path, parsing edge cases,
-and the ``SimulatedHost`` seam), the ``Last`` fact (pyinfra's own
+(the baseline's own fixture over the real-transport path, parsing edge cases,
+and the ``SimulatedHost`` seam), the ``Last`` fact (the baseline's own
 fixtures over the real-transport path, login-record parsing edge cases,
-and the ``SimulatedHost`` seam), the ``LinuxDistribution`` fact (pyinfra's
+and the ``SimulatedHost`` seam), the ``LinuxDistribution`` fact (the baseline's
 own nine fixtures over the real-transport path, release-file parsing edge
-cases, and the ``SimulatedHost`` seam), the ``LinuxGui`` fact (pyinfra's own
+cases, and the ``SimulatedHost`` seam), the ``LinuxGui`` fact (the baseline's own
 fixture over the real-transport path, session-binary parsing edge cases,
 agreement with ``HasGui``, and the ``SimulatedHost`` seam), the
-``LinuxName`` fact (pyinfra's own fixture and the nine
+``LinuxName`` fact (the baseline's own fixture and the nine
 ``LinuxDistribution`` fixtures over the real-transport path, agreement
 with ``LinuxDistribution``, and the shared ``SimulatedHost`` seam), the
-``Locales`` fact (pyinfra's documented example over the real-transport
+``Locales`` fact (the baseline's documented example over the real-transport
 path, ``utf8`` normalization edge cases, and the ``SimulatedHost`` seam),
-the ``LsbRelease`` fact (pyinfra's own fixture over the real-transport
+the ``LsbRelease`` fact (the baseline's own fixture over the real-transport
 path, key-normalization parsing edge cases, and the ``SimulatedHost``
-seam), the ``Mounts`` fact (pyinfra's own Linux and OpenBSD fixtures over
+seam), the ``Mounts`` fact (the baseline's own Linux and OpenBSD fixtures over
 the real-transport path, kernel-dispatched command and parser edge cases
 including the FreeBSD JSON branch, and the ``SimulatedHost`` seam), the
-``Port`` fact (pyinfra's own thirteen fixtures over the real-transport
+``Port`` fact (the baseline's own thirteen fixtures over the real-transport
 path, the ``Kernel``/``Which``-dispatched tool selection, the
 port/protocol validation and the parser edge cases -- including the
 owner-less rows an unprivileged read produces, which is where reemote5's
-record deliberately differs from pyinfra's tuple -- and the
+record deliberately differs from the baseline's tuple -- and the
 ``listening_ports`` ``SimulatedHost`` seam), the
 ``Processes`` fact
-(pyinfra's own eleven Linux, FreeBSD, BusyBox and Darwin fixtures over the
+(the baseline's own eleven Linux, FreeBSD, BusyBox and Darwin fixtures over the
 real-transport path, kernel/busybox-dispatched command and parser edge
-cases, and the ``SimulatedHost`` seam), the ``Timezone`` fact (pyinfra's own
+cases, and the ``SimulatedHost`` seam), the ``Timezone`` fact (the baseline's own
 fixture over the real-transport path, parsing edge cases, and the
-``SimulatedHost`` seam), the ``Uptime`` fact (pyinfra's own Linux and macOS
+``SimulatedHost`` seam), the ``Uptime`` fact (the baseline's own Linux and macOS
 fixtures over the real-transport path, kernel-dispatched command and parser
-edge cases, and the ``SimulatedHost`` seam), the ``Users`` fact (pyinfra's
+edge cases, and the ``SimulatedHost`` seam), the ``Users`` fact (the baseline's
 own mixed fixture over the real-transport path, passwd/lastlog parsing edge
-cases, and the ``SimulatedHost`` seam), the ``Which`` fact (pyinfra's own
+cases, and the ``SimulatedHost`` seam), the ``Which`` fact (the baseline's own
 fixtures over the real-transport path, name quoting and parsing edge cases,
 and the ``SimulatedHost`` seam), the ``group`` operation's option set and its
-``GroupAddCommand``/``GroupDelCommand`` descriptors (pyinfra's own eight
+``GroupAddCommand``/``GroupDelCommand`` descriptors (the baseline's own eight
 operation fixtures replayed over the ``SimulatedHost`` seams, idempotence,
 the kernel dispatch and the end-to-end lockstep run), the ``user`` operation
 and its ``UserAddCommand``/``UserModCommand``/``UserDelCommand`` descriptors
-with the private ``_HomeMkdirCommand``/``_HomeChownCommand`` pair (pyinfra's
+with the private ``_HomeMkdirCommand``/``_HomeChownCommand`` pair (the baseline's
 own operation fixtures replayed over the ``SimulatedHost`` seams minus the
 dropped ``public_keys``/``delete_keys`` and ``Which`` guard cases, per-field
 update idempotence, the Linux/FreeBSD/OpenBSD dispatch, the
 ``directory_stats``/``link_stats`` home branch, the argument-hashability
 boundary and the end-to-end lockstep run), the ``user_authorized_keys``
 operation and its ``AuthorizedKeysUploadCommand``/
-``AuthorizedKeysInstallCommand`` spool-and-install pair (pyinfra's own
+``AuthorizedKeysInstallCommand`` spool-and-install pair (the baseline's own
 operation fixtures, the in-place state verbs, the ``delete_keys``
 whole-file rewrite, both no-op levels and the end-to-end lockstep run),
 the ``etc_hosts`` operation and its ``EtcHostsUploadCommand``/
-``EtcHostsInstallCommand`` spool-and-install pair (pyinfra's own nine
+``EtcHostsInstallCommand`` spool-and-install pair (the baseline's own nine
 operation fixtures, the pure hosts-file rewrite, both no-op levels and
 the end-to-end lockstep run),
 the ``hostname``
-operation and its ``SetHostnameCommand`` descriptor (pyinfra's own six
+operation and its ``SetHostnameCommand`` descriptor (the baseline's own six
 operation fixtures replayed over the ``SimulatedHost`` seams with the
 dropped ``hostname_file`` upload step, the ``Which`` dispatch between
 ``hostnamectl`` and the bare ``hostname`` command, idempotence and the
 end-to-end lockstep run), the ``kill`` operation and its ``KillCommand``
-descriptor (pyinfra's own three operation fixtures replayed over the
+descriptor (the baseline's own three operation fixtures replayed over the
 ``SimulatedHost`` seam, the stateless always-changed behaviour, the
 ``processes`` seam mutation, the snapshot-factory pattern, the determinism
 guard against live-state branching and the end-to-end lockstep run), the
-``modprobe`` operation and its ``ModprobeCommand`` descriptor (pyinfra's own
+``modprobe`` operation and its ``ModprobeCommand`` descriptor (the baseline's own
 nine operation fixtures replayed over the ``SimulatedHost`` seam, the
 load/unload partition against ``KernelModules``, the ``kernel_modules`` seam
 mutation, the determinism guard against live-state branching and the
 end-to-end lockstep run), the ``mount`` operation and its ``MountCommand``
-descriptor (pyinfra's own fifteen operation fixtures replayed over the
+descriptor (the baseline's own fifteen operation fixtures replayed over the
 ``SimulatedHost`` seam, the lookup-by-device fallback and the BSD remount
 dispatch against ``Mounts``/``Kernel``, the ``mounts`` seam mutation, the
 determinism guard against live-state branching and the end-to-end lockstep
 run), the ``timezone`` operation and its ``SetTimezoneCommand`` descriptor
-(pyinfra's own noop and set_timedatectl fixtures replayed over the
+(the baseline's own noop and set_timedatectl fixtures replayed over the
 ``SimulatedHost`` seams, the dropped non-systemd fallback raising
 ``OperationError`` instead, idempotence and the end-to-end lockstep run),
-the ``wait`` operation (pyinfra's ``server.wait`` port argument, the
+the ``wait`` operation (the baseline's ``server.wait`` port argument, the
 protocol/timeout/interval options it adds, the port/protocol validation at
 plan time and the end-to-end lockstep run through ``run``),
 and the waiting design: the ``WaitCommand`` base, the generic
@@ -315,7 +315,7 @@ async def materialize(host: Host, request: OperationRequest):
 
 
 async def test_arch_parses_uname_m():
-    # pyinfra's own fact fixture (tests/facts/server.Arch/arch.json):
+    # The baseline's own fact fixture (tests/facts/server.Arch/arch.json):
     # command "uname -m", output ["x86_64"] -> fact "x86_64".
     host = CannedShellHost("x86_64\n")
     assert await Arch.process(host) == "x86_64"
@@ -341,14 +341,14 @@ async def test_arch_reads_the_simulated_seam():
 
 # --- AuthorizedKeys ----------------------------------------------------------
 
-# pyinfra's documented example keys (tests/facts/server.AuthorizedKeys/
+# The baseline's documented example keys (tests/facts/server.AuthorizedKeys/
 # default_path.json), reused verbatim for parity.
 KEY1 = "ssh-ed25519 AAAAC3Nz...key1 user@host"
 KEY2 = "ssh-rsa AAAAB3Nz...key2 other@host"
 
 
 async def test_authorized_keys_parses_the_default_path():
-    # pyinfra's default_path.json fixture: comment, blank and whitespace-only
+    # The baseline's default_path.json fixture: comment, blank and whitespace-only
     # lines are skipped; the file's order is preserved.
     host = CannedShellHost(f"# some comment\n\n{KEY1}\n   \n{KEY2}\n")
     assert await AuthorizedKeys.process(host, "alice") == [KEY1, KEY2]
@@ -356,7 +356,7 @@ async def test_authorized_keys_parses_the_default_path():
 
 
 async def test_authorized_keys_custom_path_with_empty_output():
-    # pyinfra's custom_path.json fixture: output [] -> fact [].
+    # The baseline's custom_path.json fixture: output [] -> fact [].
     host = CannedShellHost("")
     assert await AuthorizedKeys.process(host, "alice", path="/etc/ssh/keys/alice") == []
     assert host.shells == ["cat /etc/ssh/keys/alice 2>/dev/null || true"]
@@ -393,7 +393,7 @@ async def test_authorized_keys_rejects_unsafe_tilde_usernames():
         with pytest.raises(ValueError, match="Unsafe username"):
             await AuthorizedKeys.process(SimulatedHost(name="h"), user)
     # An explicit path never uses tilde expansion, so the username is not
-    # consulted (pyinfra only validates in the tilde branch).
+    # consulted (the baseline only validates in the tilde branch).
     host = CannedShellHost("")
     assert await AuthorizedKeys.process(host, "bad;rm", path="/keys") == []
     assert host.shells == ["cat /keys 2>/dev/null || true"]
@@ -433,8 +433,8 @@ async def test_authorized_keys_gather_fact_forwards_the_user():
 # --- Date --------------------------------------------------------------------
 
 
-async def test_date_parses_pyintras_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.Date/date.json):
+async def test_date_parses_baseline_fixture():
+    # The baseline's own fact fixture (tests/facts/server.Date/date.json):
     # command "date +'%Y-%m-%dT%H:%M:%S%z'", output ["2019-01-01T00:00:00+0000"]
     # -> fact 2019-01-01T00:00:00+00:00.
     host = CannedShellHost("2019-01-01T00:00:00+0000\n")
@@ -462,7 +462,7 @@ def test_date_parse_rejects_a_non_timestamp():
 
 
 async def test_date_is_none_on_empty_output():
-    # pyinfra's ``default = datetime.now`` fallback is deliberately dropped:
+    # The baseline's ``default = datetime.now`` fallback is deliberately dropped:
     # a failed command reads as None, never as the control machine's clock.
     assert await Date.process(CannedShellHost("")) is None
 
@@ -471,7 +471,7 @@ async def test_date_reads_the_simulated_seam():
     clock = datetime(2026, 10, 30, 9, 0, tzinfo=UTC)
     host = SimulatedHost(name="h", date=clock)
     assert await Date.process(host) == clock
-    # The seam defaults to pyinfra's fixture timestamp: a simulated machine
+    # The seam defaults to the baseline's fixture timestamp: a simulated machine
     # always answers `date`, deterministically.
     assert await Date.process(SimulatedHost(name="h")) == datetime(
         2019, 1, 1, tzinfo=UTC
@@ -494,7 +494,7 @@ async def test_date_gather_fact_across_hosts():
 async def test_env_parses_echo_path():
     # Env replaces the migrated server.Path: the name "PATH" issues the
     # exact shell Path used and returns the raw colon-separated string
-    # (pyinfra's FactBase default joins the single output line).
+    # (the baseline's FactBase default joins the single output line).
     host = CannedShellHost("/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin\n")
     assert await Env.process(host, "PATH") == (
         "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin"
@@ -563,8 +563,8 @@ async def test_env_gather_fact_across_hosts():
 # --- Groups --------------------------------------------------------------------
 
 
-async def test_groups_parses_pyintras_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.Groups/groups.json):
+async def test_groups_parses_baseline_fixture():
+    # The baseline's own fact fixture (tests/facts/server.Groups/groups.json):
     # command "cat /etc/group", three rows -> the first field of each.
     host = CannedShellHost(
         """lpadmin:x:114:vagrant
@@ -578,7 +578,7 @@ vboxsf:x:999:
 
 def test_groups_parse_skips_lines_without_a_colon():
     # Blank lines and stray output carry no colon and are ignored; the
-    # file's order is preserved, with no dedup (pyinfra's process).
+    # file's order is preserved, with no dedup (the baseline's process).
     assert Groups.parse(
         ["", "wheel:x:10:", "no-colon-here", "root:x:0:", "wheel:x:10:"]
     ) == ["wheel", "root", "wheel"]
@@ -617,8 +617,8 @@ async def test_groups_gather_fact_across_hosts():
 # --- HasGui --------------------------------------------------------------------
 
 
-async def test_has_gui_parses_pyintras_gui_present_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.HasGui/gui_present.json):
+async def test_has_gui_parses_baseline_gui_present_fixture():
+    # The baseline's own fact fixture (tests/facts/server.HasGui/gui_present.json):
     # command "ls /usr/bin/*session || true", output ["/usr/bin/gnome-session"]
     # -> fact True.
     host = CannedShellHost("/usr/bin/gnome-session\n")
@@ -626,8 +626,8 @@ async def test_has_gui_parses_pyintras_gui_present_fixture():
     assert host.shells == ["ls /usr/bin/*session || true"]
 
 
-async def test_has_gui_parses_pyintras_gui_absent_fixture():
-    # pyinfra's gui_absent.json fixture: output [] -> fact False (the ls
+async def test_has_gui_parses_baseline_gui_absent_fixture():
+    # The baseline's gui_absent.json fixture: output [] -> fact False (the ls
     # error is swallowed by ``|| true``, so a headless host lists nothing).
     host = CannedShellHost("")
     assert await HasGui.process(host) is False
@@ -635,7 +635,7 @@ async def test_has_gui_parses_pyintras_gui_absent_fixture():
 
 
 def test_has_gui_parse_matches_every_known_session_binary():
-    # All five binaries from pyinfra's LinuxGui.known_gui_binaries count.
+    # All five binaries from the baseline's LinuxGui.known_gui_binaries count.
     for binary in (
         "/usr/bin/gnome-session",
         "/usr/bin/mate-session",
@@ -648,7 +648,7 @@ def test_has_gui_parse_matches_every_known_session_binary():
 
 
 def test_has_gui_parse_ignores_unknown_lines():
-    # Lines are matched exactly (pyinfra does not strip them): an unknown
+    # Lines are matched exactly (the baseline does not strip them): an unknown
     # *session file, a padded path or stray output is not a known GUI.
     assert HasGui.parse(["/usr/bin/unknown-session"]) is False
     assert HasGui.parse([" /usr/bin/gnome-session "]) is False
@@ -673,24 +673,24 @@ async def test_has_gui_gather_fact_across_hosts():
 # --- Home ----------------------------------------------------------------------
 
 
-async def test_home_parses_pyintras_home_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.Home/home.json):
-    # command "echo ~", output ["/home/pyinfra"] -> fact "/home/pyinfra".
-    host = CannedShellHost("/home/pyinfra\n")
-    assert await Home.process(host) == "/home/pyinfra"
+async def test_home_parses_baseline_home_fixture():
+    # The baseline's own fact fixture (tests/facts/server.Home/home.json):
+    # command "echo ~", output ["/home/reemote5"] -> fact "/home/reemote5".
+    host = CannedShellHost("/home/reemote5\n")
+    assert await Home.process(host) == "/home/reemote5"
     assert host.shells == ["echo ~"]
 
 
-async def test_home_parses_pyintras_root_fixture():
-    # pyinfra's root.json fixture: arg ["root"], command "echo ~root",
+async def test_home_parses_baseline_root_fixture():
+    # The baseline's root.json fixture: arg ["root"], command "echo ~root",
     # output ["/root"] -> fact "/root".
     host = CannedShellHost("/root\n")
     assert await Home.process(host, "root") == "/root"
     assert host.shells == ["echo ~root"]
 
 
-async def test_home_parses_pyintras_some_user_fixture():
-    # pyinfra's some_user.json fixture: arg ["some_user"], command
+async def test_home_parses_baseline_some_user_fixture():
+    # The baseline's some_user.json fixture: arg ["some_user"], command
     # "echo ~some_user", output ["/home/some_user"] -> fact "/home/some_user".
     host = CannedShellHost("/home/some_user\n")
     assert await Home.process(host, "some_user") == "/home/some_user"
@@ -698,12 +698,12 @@ async def test_home_parses_pyintras_some_user_fixture():
 
 
 def test_home_parse_takes_the_first_non_blank_line():
-    assert Home.parse(["", "  /home/pyinfra  ", "ignored"]) == "/home/pyinfra"
+    assert Home.parse(["", "  /home/reemote5  ", "ignored"]) == "/home/reemote5"
     assert Home.parse([]) is None
 
 
 def test_home_parse_maps_an_unexpanded_tilde_to_none():
-    # The shell echoes ``~user`` back verbatim for an unknown user; pyinfra
+    # The shell echoes ``~user`` back verbatim for an unknown user; the baseline
     # returns that literal string, reemote5 deliberately reads it as None.
     assert Home.parse(["~nosuchuser"]) is None
 
@@ -747,8 +747,8 @@ async def test_home_gather_fact_forwards_the_user():
 # --- Hostname --------------------------------------------------------------------
 
 
-async def test_hostname_parses_pyintras_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.Hostname/hostname.json):
+async def test_hostname_parses_baseline_fixture():
+    # The baseline's own fact fixture (tests/facts/server.Hostname/hostname.json):
     # command "uname -n", output ["my-host.net"] -> fact "my-host.net".
     host = CannedShellHost("my-host.net\n")
     assert await Hostname.process(host) == "my-host.net"
@@ -768,7 +768,7 @@ async def test_hostname_is_empty_on_empty_output():
 async def test_hostname_reads_the_simulated_seam():
     host = SimulatedHost(name="h", os_hostname="db1.example.net")
     assert await Hostname.process(host) == "db1.example.net"
-    # The seam defaults to pyinfra's fixture hostname: a simulated machine
+    # The seam defaults to the baseline's fixture hostname: a simulated machine
     # always answers `uname -n`, deterministically.
     assert await Hostname.process(SimulatedHost(name="h")) == "my-host.net"
 
@@ -787,8 +787,8 @@ async def test_hostname_gather_fact_across_hosts():
 # --- Kernel ------------------------------------------------------------------
 
 
-async def test_kernel_parses_pyintras_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.Os/os.json -- Kernel is
+async def test_kernel_parses_baseline_fixture():
+    # The baseline's own fact fixture (tests/facts/server.Os/os.json -- Kernel is
     # the renamed Os fact): command "uname -s", output ["os"] -> fact "os".
     host = CannedShellHost("os\n")
     assert await Kernel.process(host) == "os"
@@ -827,8 +827,8 @@ async def test_kernel_gather_fact_across_hosts():
 # --- KernelVersion -------------------------------------------------------------
 
 
-async def test_kernel_version_parses_pyintras_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.OsVersion/os_version.json
+async def test_kernel_version_parses_baseline_fixture():
+    # The baseline's own fact fixture (tests/facts/server.OsVersion/os_version.json
     # -- KernelVersion is the renamed OsVersion fact): command "uname -r",
     # output ["os_version"] -> fact "os_version".
     host = CannedShellHost("os_version\n")
@@ -874,8 +874,8 @@ async def test_kernel_version_gather_fact_across_hosts():
 # --- KernelModules -----------------------------------------------------------
 
 
-async def test_kernel_modules_parses_pyintras_linux_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.KernelModules/
+async def test_kernel_modules_parses_baseline_linux_fixture():
+    # The baseline's own fact fixture (tests/facts/server.KernelModules/
     # linux_modules.json): Kernel "Linux", command
     # "! test -f /proc/modules || cat /proc/modules", five rows.
     host = CannedKernelHost(
@@ -902,8 +902,8 @@ video 45056 0 - Live 0x0000000000000000
     assert host.shells == ["uname -s", "! test -f /proc/modules || cat /proc/modules"]
 
 
-async def test_kernel_modules_parses_pyintras_freebsd_fixture():
-    # pyinfra's freebsd_modules.json fixture: Kernel "FreeBSD", command
+async def test_kernel_modules_parses_baseline_freebsd_fixture():
+    # The baseline's freebsd_modules.json fixture: Kernel "FreeBSD", command
     # "kldstat | tail +2" (the header row already dropped), five rows.
     host = CannedKernelHost(
         "FreeBSD",
@@ -986,7 +986,7 @@ def test_kernel_modules_command_dispatches_on_the_kernel():
     assert KernelModules.command("FreeBSD") == "kldstat | tail +2"
     assert KernelModules.command(" FreeBSD ") == "kldstat | tail +2"
     # Anything else -- including a failed `uname -s` ("") -- takes the
-    # /proc/modules branch, exactly like pyinfra.
+    # /proc/modules branch, exactly like the baseline.
     for kernel in ("Linux", "Darwin", ""):
         assert (
             KernelModules.command(kernel)
@@ -996,7 +996,7 @@ def test_kernel_modules_command_dispatches_on_the_kernel():
 
 async def test_kernel_modules_is_empty_on_empty_output():
     # The ``! test -f`` guard short-circuits when /proc/modules is absent,
-    # so a failed read maps to {} (pyinfra's ``default = dict``).
+    # so a failed read maps to {} (the baseline's ``default = dict``).
     assert await KernelModules.process(CannedKernelHost("Linux", "")) == {}
 
 
@@ -1051,8 +1051,8 @@ async def test_kernel_modules_gather_fact_across_hosts():
 # --- Last ----------------------------------------------------------------------
 
 
-async def test_last_parses_pyintras_full_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.Last/last_full.json):
+async def test_last_parses_baseline_full_fixture():
+    # The baseline's own fact fixture (tests/facts/server.Last/last_full.json):
     # full -Fwi timestamps, a reboot row, an empty host column and the
     # wtmp footer, reused verbatim for parity.
     host = CannedShellHost(
@@ -1093,7 +1093,7 @@ wtmp begins Thu Apr 17 09:00:00 2026
     assert host.shells == [Last.COMMAND]
 
 
-def test_last_command_matches_pyinfra():
+def test_last_command_matches_baseline():
     # The fixture's command field: util-linux -Fwi, FreeBSD -w, then the
     # bare busybox-compatible fallback, all errors swallowed.
     assert (
@@ -1102,8 +1102,8 @@ def test_last_command_matches_pyinfra():
     )
 
 
-async def test_last_parses_pyintras_freebsd_fixture():
-    # pyinfra's last_freebsd.json fixture: short (no -F) timestamps and a
+async def test_last_parses_baseline_freebsd_fixture():
+    # The baseline's last_freebsd.json fixture: short (no -F) timestamps and a
     # hostname instead of an IP, reused verbatim.
     host = CannedShellHost(
         """root       pts/1    golgoth.tosser.interna Fri Apr 17 11:56   still logged in
@@ -1129,7 +1129,7 @@ wtmp begins Sat Apr 12 10:00:00 EDT 2026
 
 
 async def test_last_alpine_header_only_fixture_reads_empty():
-    # pyinfra's last_alpine_empty.json fixture: busybox last prints only a
+    # The baseline's last_alpine_empty.json fixture: busybox last prints only a
     # header row, which is skipped -> [].
     host = CannedShellHost(
         "USER       TTY            HOST               LOGIN        TIME\n"
@@ -1137,8 +1137,8 @@ async def test_last_alpine_header_only_fixture_reads_empty():
     assert await Last.process(host) == []
 
 
-def test_last_parses_pyintras_documented_example():
-    # pyinfra's docstring example result: the parser joins time tokens with
+def test_last_parses_baseline_documented_example():
+    # The baseline's docstring example result: the parser joins time tokens with
     # single spaces, collapsing the output's column padding.
     assert Last.parse(
         [
@@ -1198,7 +1198,7 @@ def test_last_parse_edge_cases():
 
 async def test_last_is_empty_on_empty_output():
     # `last` missing or failed: the shell's `|| true` swallows the error,
-    # so empty stdout maps to [] (pyinfra's default = list).
+    # so empty stdout maps to [] (the baseline's default = list).
     assert await Last.process(CannedShellHost("")) == []
 
 
@@ -1252,9 +1252,9 @@ async def test_last_gather_fact_across_hosts():
 
 # --- LinuxDistribution ---------------------------------------------------------
 
-# pyinfra's own fact fixtures (tests/facts/server.LinuxDistribution/*.json),
+# The baseline's own fact fixtures (tests/facts/server.LinuxDistribution/*.json),
 # reused verbatim for parity: each entry is the canned shell output (the
-# ---separated /etc/*-release dump) and the fact pyinfra expects from it.
+# ---separated /etc/*-release dump) and the fact the baseline expects from it.
 LINUX_DISTRIBUTION_FIXTURES = [
     pytest.param(
         """/etc/arch-release
@@ -1593,14 +1593,14 @@ VERSION_ID="20.04"
 
 
 @pytest.mark.parametrize(("output", "expected"), LINUX_DISTRIBUTION_FIXTURES)
-async def test_linux_distribution_matches_pyinfra_fixtures(output, expected):
+async def test_linux_distribution_matches_baseline_fixtures(output, expected):
     host = CannedShellHost(output)
     assert await LinuxDistribution.process(host) == expected
     assert host.shells == [LinuxDistribution.COMMAND]
 
 
-def test_linux_distribution_command_matches_pyinfra():
-    # The command every pyinfra fixture records, verbatim.
+def test_linux_distribution_command_matches_baseline():
+    # The command every baseline fixture records, verbatim.
     assert LinuxDistribution.COMMAND == (
         'cd /etc/ && for file in $(ls -pdL *-release | grep -v /); '
         'do echo "/etc/${file}"; cat "/etc/${file}"; echo ---; '
@@ -1610,7 +1610,7 @@ def test_linux_distribution_command_matches_pyinfra():
 
 def test_linux_distribution_parse_skips_empty_release_files():
     # Arch's /etc/arch-release is an empty file: a part with only a filename
-    # is skipped, leaving no parts and pyinfra's default dict.
+    # is skipped, leaving no parts and the baseline's default dict.
     assert LinuxDistribution.parse(["/etc/arch-release", "---"]) == {
         "name": None,
         "major": None,
@@ -1637,7 +1637,7 @@ async def test_linux_distribution_reads_the_simulated_seam():
     }
     host = SimulatedHost(name="h", linux_distribution=info)
     assert await LinuxDistribution.process(host) == info
-    # The seam defaults to pyinfra's default(): no distro claim until set.
+    # The seam defaults to the baseline's default(): no distro claim until set.
     assert await LinuxDistribution.process(SimulatedHost(name="h")) == {
         "name": None,
         "major": None,
@@ -1689,8 +1689,8 @@ async def test_linux_distribution_gather_fact_across_hosts():
 # --- LinuxGui ------------------------------------------------------------------
 
 
-async def test_linux_gui_parses_pyintras_gnome_present_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.LinuxGui/gnome_present.json):
+async def test_linux_gui_parses_baseline_gnome_present_fixture():
+    # The baseline's own fact fixture (tests/facts/server.LinuxGui/gnome_present.json):
     # command "ls /usr/bin/*session || true", output ["/usr/bin/gnome-session"]
     # -> fact ["GNOME"].
     host = CannedShellHost("/usr/bin/gnome-session\n")
@@ -1706,7 +1706,7 @@ def test_linux_gui_command_and_binaries_match_has_gui():
 
 
 def test_linux_gui_parse_maps_every_known_session_binary():
-    # All five binaries pyinfra's known_gui_binaries recognises, in listing
+    # All five binaries the baseline's known_gui_binaries recognises, in listing
     # order -- the names come back in the same order (no sorting).
     assert LinuxGui.parse(
         [
@@ -1720,7 +1720,7 @@ def test_linux_gui_parse_maps_every_known_session_binary():
 
 
 def test_linux_gui_parse_ignores_unknown_lines():
-    # Lines are matched exactly (pyinfra does not strip them).
+    # Lines are matched exactly (the baseline does not strip them).
     assert LinuxGui.parse(["/usr/bin/unknown-session"]) == []
     assert LinuxGui.parse([" /usr/bin/gnome-session "]) == []
     assert LinuxGui.parse(["", "gnome-session"]) == []
@@ -1728,7 +1728,7 @@ def test_linux_gui_parse_ignores_unknown_lines():
 
 
 async def test_linux_gui_is_empty_on_empty_output():
-    # pyinfra's server.HasGui/gui_absent.json output ([]): no *session match,
+    # The baseline's server.HasGui/gui_absent.json output ([]): no *session match,
     # the ls error swallowed by || true -- reads as [] (default = list).
     assert await LinuxGui.process(CannedShellHost("")) == []
 
@@ -1769,8 +1769,8 @@ async def test_linux_gui_gather_fact_across_hosts():
 # --- LinuxName -----------------------------------------------------------------
 
 
-async def test_linux_name_parses_pyintras_ubuntu_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.LinuxName/ubuntu.json):
+async def test_linux_name_parses_baseline_ubuntu_fixture():
+    # The baseline's own fact fixture (tests/facts/server.LinuxName/ubuntu.json):
     # the LinuxDistribution release-file dump command, output
     # ["/etc/os-release", 'NAME="Ubuntu"'] -> fact "Ubuntu".
     host = CannedShellHost('/etc/os-release\nNAME="Ubuntu"\n')
@@ -1780,15 +1780,15 @@ async def test_linux_name_parses_pyintras_ubuntu_fixture():
 
 
 @pytest.mark.parametrize(("output", "expected"), LINUX_DISTRIBUTION_FIXTURES)
-async def test_linux_name_matches_pyinfra_linux_distribution_fixtures(output, expected):
+async def test_linux_name_matches_baseline_linux_distribution_fixtures(output, expected):
     # LinuxName is the name projection of LinuxDistribution, so every one of
-    # pyinfra's nine distribution fixtures doubles as a LinuxName fixture.
+    # The baseline's nine distribution fixtures doubles as a LinuxName fixture.
     host = CannedShellHost(output)
     assert await LinuxName.process(host) == expected["name"]
 
 
 async def test_linux_name_is_none_on_empty_output():
-    # No release files at all: pyinfra's default() name is None.
+    # No release files at all: the baseline's default() name is None.
     assert await LinuxName.process(CannedShellHost("")) is None
 
 
@@ -1811,7 +1811,7 @@ async def test_linux_name_reads_the_simulated_seam():
         },
     )
     assert await LinuxName.process(host) == "Fedora"
-    # The seam defaults to pyinfra's default(): no distro claim until set.
+    # The seam defaults to the baseline's default(): no distro claim until set.
     assert await LinuxName.process(SimulatedHost(name="h")) is None
 
 
@@ -1834,10 +1834,10 @@ async def test_linux_name_gather_fact_across_hosts():
 # --- Locales -------------------------------------------------------------------
 
 
-async def test_locales_parses_pyintras_documented_example():
-    # pyinfra's documented example result (server.Locales docstring):
+async def test_locales_parses_baseline_documented_example():
+    # The baseline's documented example result (server.Locales docstring):
     # command "locale -a", output ["C.utf8", "en_US.utf8"] -> fact
-    # ["C.UTF-8", "en_US.UTF-8"]. pyinfra ships no fixture for this fact.
+    # ["C.UTF-8", "en_US.UTF-8"]. The baseline ships no fixture for this fact.
     host = CannedShellHost("C.utf8\nen_US.utf8\n")
     assert await Locales.process(host) == ["C.UTF-8", "en_US.UTF-8"]
     assert host.shells == ["locale -a"]
@@ -1852,7 +1852,7 @@ def test_locales_parse_normalizes_only_lowercase_utf8():
 
 
 def test_locales_parse_preserves_order_without_dedup():
-    # pyinfra maps every line verbatim: no sorting, no dedup, no stripping.
+    # The baseline maps every line verbatim: no sorting, no dedup, no stripping.
     assert Locales.parse(["en_US.utf8", "C.utf8", "en_US.utf8"]) == [
         "en_US.UTF-8",
         "C.UTF-8",
@@ -1905,8 +1905,8 @@ class MissingLsbReleaseHost(Host):
         )
 
 
-async def test_lsb_release_parses_pyintras_release_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.LsbRelease/release.json):
+async def test_lsb_release_parses_baseline_release_fixture():
+    # The baseline's own fact fixture (tests/facts/server.LsbRelease/release.json):
     # command "lsb_release -ca", the Ubuntu 18.04.3 listing below -> the
     # four-key dict, with the "No LSB modules" hint line skipped.
     host = CannedShellHost(
@@ -2033,8 +2033,8 @@ async def test_lsb_release_gather_fact_across_hosts():
 # --- Mounts --------------------------------------------------------------------
 
 
-async def test_mounts_parses_pyintras_linux_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.Mounts/mounts.json):
+async def test_mounts_parses_baseline_linux_fixture():
+    # The baseline's own fact fixture (tests/facts/server.Mounts/mounts.json):
     # Kernel "Linux", command "cat /proc/self/mountinfo", three rows --
     # including the octal-escaped overlay mount point, device options and
     # a "shared" optional tag, reused verbatim for parity.
@@ -2082,8 +2082,8 @@ async def test_mounts_parses_pyintras_linux_fixture():
     assert host.shells == ["uname -s", "cat /proc/self/mountinfo"]
 
 
-async def test_mounts_parses_pyintras_openbsd_fixture():
-    # pyinfra's openbsd.json fixture: Kernel "OpenBSD", command "mount -v";
+async def test_mounts_parses_baseline_openbsd_fixture():
+    # The baseline's openbsd.json fixture: Kernel "OpenBSD", command "mount -v";
     # the (diskname.label) part is optional, ctime= flags are dropped and
     # options after them are kept, reused verbatim for parity.
     host = CannedKernelHost(
@@ -2158,7 +2158,7 @@ mfs:75 on /run type mfs (rw, noexec, nosuid, ctime=Thu Jan  1 12:00:00 1970)
 
 
 async def test_mounts_parses_freebsd_json():
-    # pyinfra ships no FreeBSD fixture for Mounts; the JSON shape is its
+    # The baseline ships no FreeBSD fixture for Mounts; the JSON shape is its
     # parser's contract: mount.fstab entries with mntpoint/device/fstype
     # and a comma-separated opts string whose items are stripped.
     host = CannedKernelHost(
@@ -2184,8 +2184,8 @@ async def test_mounts_parses_freebsd_json():
     assert host.shells == ["uname -s", "mount -p --libxo json"]
 
 
-def test_mounts_parses_pyintras_documented_example():
-    # pyinfra's docstring example result: "/" on /dev/mv2, ext4, rw+relatime.
+def test_mounts_parses_baseline_documented_example():
+    # The baseline's docstring example result: "/" on /dev/mv2, ext4, rw+relatime.
     # The super-block "rw" is filtered so it never appears twice.
     assert Mounts.parse(
         ["29 1 253:0 / / rw,relatime - ext4 /dev/mv2 rw"], "Linux"
@@ -2209,7 +2209,7 @@ def test_mounts_parse_linux_edge_cases():
 
 def test_mounts_parse_openbsd_skips_unmatched_lines():
     # Only full "device on /path type (flags)" rows count; anything else
-    # (headers, blank lines) is skipped, like pyinfra's fullmatch guard.
+    # (headers, blank lines) is skipped, like the baseline's fullmatch guard.
     assert (
         Mounts.parse(["not a mount row", "", "dev on relative type x (rw)"], "OpenBSD")
         == {}
@@ -2222,13 +2222,13 @@ def test_mounts_command_dispatches_on_the_kernel():
     assert Mounts.command("OpenBSD") == "mount -v"
     assert Mounts.command(" OpenBSD ") == "mount -v"
     # Anything else -- including a failed `uname -s` ("") -- takes the
-    # /proc/self/mountinfo branch, exactly like pyinfra.
+    # /proc/self/mountinfo branch, exactly like the baseline.
     for kernel in ("Linux", "Darwin", ""):
         assert Mounts.command(kernel) == "cat /proc/self/mountinfo"
 
 
 async def test_mounts_is_empty_on_empty_output():
-    # A failed read maps to {} on every branch (pyinfra's ``default =
+    # A failed read maps to {} on every branch (the baseline's ``default =
     # dict``); on FreeBSD empty output is caught before json.loads.
     for kernel in ("Linux", "FreeBSD", "OpenBSD"):
         assert await Mounts.process(CannedKernelHost(kernel, "")) == {}
@@ -2277,7 +2277,7 @@ async def test_mounts_gather_fact_across_hosts():
 NOT_LISTENING = PortInfo(listening=False, process=None, pid=None)
 
 # The column header FreeBSD's sockstat prints even when nothing matches --
-# pyinfra's empty fixture holds nothing else, and it is no socket row.
+# The baseline's empty fixture holds nothing else, and it is no socket row.
 _SOCKSTAT_HEADER = "USER     COMMAND    PID   FD PROTO  LOCAL ADDRESS         FOREIGN ADDRESS"
 
 
@@ -2286,13 +2286,13 @@ def _listening(process: str | None, pid: int | None) -> PortInfo:
     return PortInfo(listening=True, process=process, pid=pid)
 
 
-# pyinfra's own fact fixtures (tests/facts/server.Port/*.json), captured
+# The baseline's own fact fixtures (tests/facts/server.Port/*.json), captured
 # verbatim: the kernel name and ``command -v ss`` answer its ``facts`` block
 # seeds, the port and protocol arguments, the command string the fixture
 # records, its raw output lines and the record reemote5 derives. The last
-# column is where reemote5 deliberately departs from pyinfra's
+# column is where reemote5 deliberately departs from the baseline's
 # ``(process, pid)`` tuple: the ``ss_no_process_info`` rows are a listening
-# port with no owner to name, where pyinfra answers ``(None, None)`` and its
+# port with no owner to name, where the baseline answers ``(None, None)`` and its
 # ``server.wait`` would keep looping.
 PORT_FIXTURES: list[tuple[str, str, str, int, str, str, list[str], PortInfo]] = [
     ("ss_empty", "Linux", "/usr/sbin/ss", 53, "tcp", "ss -lptn | grep ':53 ' || true", [], NOT_LISTENING),
@@ -2423,7 +2423,7 @@ PORT_FIXTURES: list[tuple[str, str, str, int, str, str, list[str], PortInfo]] = 
     PORT_FIXTURES,
     ids=[row[0] for row in PORT_FIXTURES],
 )
-async def test_port_matches_pyinfra_fixtures(
+async def test_port_matches_baseline_fixtures(
     name, kernel, ss, port, protocol, command, output, expected
 ):
     host = CannedPortHost(kernel, ss, "\n".join(output))
@@ -2439,7 +2439,7 @@ def test_port_tool_dispatches_on_the_kernel_and_ss():
     assert Port._tool(" FreeBSD ", has_ss=False) == "sockstat"
     assert Port._tool("Linux", has_ss=True) == "ss"
     # Anything else -- including a failed `uname -s` ("") -- is a Linux
-    # kernel, which prefers ss and falls back to netstat, like pyinfra.
+    # kernel, which prefers ss and falls back to netstat, like the baseline.
     assert Port._tool("Darwin", has_ss=True) == "ss"
     for kernel in ("Linux", "Darwin", ""):
         assert Port._tool(kernel, has_ss=False) == "netstat"
@@ -2454,7 +2454,7 @@ def test_port_parse_skips_the_sockstat_header_and_blank_lines():
 
 
 def test_port_parse_owner_is_optional_but_the_row_still_listens():
-    # The deviation from pyinfra in three lines: an unprivileged read sees
+    # The deviation from the baseline in three lines: an unprivileged read sees
     # the socket without its owner, and that is a listening port.
     assert Port.parse(["LISTEN 0 128 0.0.0.0:22 0.0.0.0:*"], "ss") == _listening(None, None)
     assert Port.parse(["tcp 0 0 0.0.0.0:22 0.0.0.0:* LISTEN -"], "netstat") == _listening(
@@ -2473,7 +2473,7 @@ def test_port_parse_survives_a_malformed_owner_cell():
         None, None
     )
     # netstat's unprivileged "-/nginx" cell has a separator but no PID, and
-    # the scan stops at the first slashed cell (pyinfra's `break`).
+    # the scan stops at the first slashed cell (the baseline's `break`).
     assert Port.parse(["tcp 0 0 0.0.0.0:80 0.0.0.0:* LISTEN -/nginx"], "netstat") == (
         _listening(None, None)
     )
@@ -2483,7 +2483,7 @@ def test_port_parse_survives_a_malformed_owner_cell():
 
 async def test_port_is_not_listening_on_empty_output():
     # A failed or unmatched read maps to "nothing listening" on every branch
-    # (pyinfra's ``(None, None)`` default).
+    # (the baseline's ``(None, None)`` default).
     assert await Port.process(CannedPortHost("Linux", "/usr/sbin/ss", ""), 80) == NOT_LISTENING
     assert await Port.process(CannedPortHost("Linux", "", ""), 80) == NOT_LISTENING
     assert await Port.process(CannedPortHost("FreeBSD", "", ""), 80) == NOT_LISTENING
@@ -2542,8 +2542,8 @@ async def test_port_gather_fact_across_hosts():
 # --- Processes -----------------------------------------------------------------
 
 
-async def test_processes_parses_pyintras_linux_all_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.Processes/linux_all.json):
+async def test_processes_parses_baseline_linux_all_fixture():
+    # The baseline's own fact fixture (tests/facts/server.Processes/linux_all.json):
     # a non-BusyBox Linux kernel selects the --no-headers listing.
     host = CannedProcessesHost(
         "Linux",
@@ -2580,7 +2580,7 @@ async def test_processes_parses_pyintras_linux_all_fixture():
             "args": "/usr/lib/postgresql/14/bin/postgres -D /var/lib/postgresql/14/main",
         },
     }
-    # The PID 1 record is pyinfra's documented example result, verbatim.
+    # The PID 1 record is the baseline's documented example result, verbatim.
     assert result[1] == {
         "user": "root",
         "state": "Ss",
@@ -2597,7 +2597,7 @@ async def test_processes_parses_pyintras_linux_all_fixture():
     ]
 
 
-async def test_processes_parses_pyintras_linux_single_pid_fixture():
+async def test_processes_parses_baseline_linux_single_pid_fixture():
     # linux_single_pid.json: ps -p keeps the header row, which is skipped.
     host = CannedProcessesHost(
         "Linux",
@@ -2619,7 +2619,7 @@ async def test_processes_parses_pyintras_linux_single_pid_fixture():
     assert host.shells[-1] == "LANG=C ps -p 1 -o pid,user,stat,%cpu,%mem,comm,args"
 
 
-async def test_processes_parses_pyintras_bsd_all_fixture():
+async def test_processes_parses_baseline_bsd_all_fixture():
     # bsd_all.json: FreeBSD keeps the header row and never probes BusyBox.
     host = CannedProcessesHost(
         "FreeBSD",
@@ -2653,7 +2653,7 @@ async def test_processes_parses_pyintras_bsd_all_fixture():
     ]
 
 
-async def test_processes_parses_pyintras_bsd_single_pid_fixture():
+async def test_processes_parses_baseline_bsd_single_pid_fixture():
     # bsd_single_pid.json.
     host = CannedProcessesHost(
         "FreeBSD",
@@ -2675,7 +2675,7 @@ async def test_processes_parses_pyintras_bsd_single_pid_fixture():
     assert host.shells[-1] == "LANG=C ps -p 742 -o pid,user,stat,%cpu,%mem,comm,args"
 
 
-async def test_processes_parses_pyintras_busybox_all_fixture():
+async def test_processes_parses_baseline_busybox_all_fixture():
     # busybox_all.json: the probe answers a path, selecting the five-column
     # listing; percents are always 0.0 and command is args' basename.
     host = CannedProcessesHost(
@@ -2720,7 +2720,7 @@ async def test_processes_parses_pyintras_busybox_all_fixture():
     ]
 
 
-async def test_processes_parses_pyintras_busybox_single_pid_fixture():
+async def test_processes_parses_baseline_busybox_single_pid_fixture():
     # busybox_single_pid.json: BusyBox ps has no -p, so awk filters the PID.
     host = CannedProcessesHost(
         "Linux",
@@ -2744,7 +2744,7 @@ async def test_processes_parses_pyintras_busybox_single_pid_fixture():
     )
 
 
-async def test_processes_parses_pyintras_darwin_all_fixture():
+async def test_processes_parses_baseline_darwin_all_fixture():
     # darwin_all.json: two ps snapshots joined by the marker line; comm
     # supplies the untruncated command, args the full command line.
     helper = (
@@ -2760,7 +2760,7 @@ async def test_processes_parses_pyintras_darwin_all_fixture():
   300 root     Ss    0.0  0.2 /usr/sbin/sshd -D -o PermitRootLogin=no
   500 root     Ss    0.3  1.2 {helper}
   600 karlicos S     0.1  0.4 /Applications/Some App.app/Contents/MacOS/Some App --flag value
-===PYINFRA-PROCESSES-COMM===
+===REEMOTE5-PROCESSES-COMM===
   PID COMM
     1 /sbin/launchd
   200 /usr/libexec/opendirectoryd
@@ -2816,19 +2816,19 @@ async def test_processes_parses_pyintras_darwin_all_fixture():
         "uname -s",
         (
             "LANG=C ps -eo pid,user,stat,%cpu,%mem,args -ww && "
-            "echo ===PYINFRA-PROCESSES-COMM=== && LANG=C ps -eo pid,comm -ww"
+            "echo ===REEMOTE5-PROCESSES-COMM=== && LANG=C ps -eo pid,comm -ww"
         ),
     ]
 
 
-async def test_processes_parses_pyintras_darwin_single_pid_fixture():
+async def test_processes_parses_baseline_darwin_single_pid_fixture():
     # darwin_single_pid.json: both ps runs are restricted to the one PID.
     host = CannedProcessesHost(
         "Darwin",
         "",
         """  PID USER     STAT  %CPU %MEM ARGS
   742 root     Ss    0.0  0.2 /usr/sbin/sshd -D
-===PYINFRA-PROCESSES-COMM===
+===REEMOTE5-PROCESSES-COMM===
   PID COMM
   742 /usr/sbin/sshd
 """,
@@ -2845,11 +2845,11 @@ async def test_processes_parses_pyintras_darwin_single_pid_fixture():
     }
     assert host.shells[-1] == (
         "LANG=C ps -p 742 -o pid,user,stat,%cpu,%mem,args -ww && "
-        "echo ===PYINFRA-PROCESSES-COMM=== && LANG=C ps -p 742 -o pid,comm -ww"
+        "echo ===REEMOTE5-PROCESSES-COMM=== && LANG=C ps -p 742 -o pid,comm -ww"
     )
 
 
-async def test_processes_parses_pyintras_darwin_pty_crlf_fixture():
+async def test_processes_parses_baseline_darwin_pty_crlf_fixture():
     # darwin_pty_crlf.json: a PTY transport leaves \r on every line; the
     # parser strips them (and the trailing empty line is skipped).
     helper = (
@@ -2864,7 +2864,7 @@ async def test_processes_parses_pyintras_darwin_pty_crlf_fixture():
   200 root     S     0.0  0.0 /usr/libexec/opendirectoryd\r
   300 root     Ss    0.0  0.2 /usr/sbin/sshd -D -o PermitRootLogin=no\r
   500 root     Ss    0.3  1.2 {helper}\r
-===PYINFRA-PROCESSES-COMM===\r
+===REEMOTE5-PROCESSES-COMM===\r
   PID COMM\r
     1 /sbin/launchd\r
   200 /usr/libexec/opendirectoryd\r
@@ -2877,7 +2877,7 @@ async def test_processes_parses_pyintras_darwin_pty_crlf_fixture():
     assert result[500]["command"] == helper
 
 
-async def test_processes_parses_pyintras_darwin_spaced_executable_fixture():
+async def test_processes_parses_baseline_darwin_spaced_executable_fixture():
     # darwin_spaced_executable.json: an executable path with spaces stays
     # whole because comm is the last column of its own ps run.
     host = CannedProcessesHost(
@@ -2885,7 +2885,7 @@ async def test_processes_parses_pyintras_darwin_spaced_executable_fixture():
         "",
         """  PID USER             STAT  %CPU %MEM ARGS
 36470 karlicos         S      0.0  0.0 ./Example Application 120
-===PYINFRA-PROCESSES-COMM===
+===REEMOTE5-PROCESSES-COMM===
   PID COMM
 36470 ./Example Application
 """,
@@ -2902,7 +2902,7 @@ async def test_processes_parses_pyintras_darwin_spaced_executable_fixture():
     }
 
 
-async def test_processes_parses_pyintras_darwin_vanished_pid_fixture():
+async def test_processes_parses_baseline_darwin_vanished_pid_fixture():
     # darwin_vanished_pid.json: PID 200 appears only in the args snapshot,
     # so it vanished between the two ps runs and is dropped.
     host = CannedProcessesHost(
@@ -2912,7 +2912,7 @@ async def test_processes_parses_pyintras_darwin_vanished_pid_fixture():
     1 root     Ss    0.0  0.1 /sbin/launchd
   200 root     S     0.0  0.0 /usr/libexec/opendirectoryd
   300 root     Ss    0.0  0.2 /usr/sbin/sshd -D
-===PYINFRA-PROCESSES-COMM===
+===REEMOTE5-PROCESSES-COMM===
   PID COMM
     1 /sbin/launchd
   300 /usr/sbin/sshd
@@ -2923,8 +2923,8 @@ async def test_processes_parses_pyintras_darwin_vanished_pid_fixture():
     assert result[300]["command"] == "/usr/sbin/sshd"
 
 
-def test_processes_command_matches_pyintras_fixture_commands():
-    # Every command string is the "command" field of the matching pyinfra
+def test_processes_command_matches_baseline_fixture_commands():
+    # Every command string is the "command" field of the matching the baseline
     # fixture, verbatim.
     assert Processes.command("Linux") == (
         "LANG=C ps -eo pid,user,stat,%cpu,%mem,comm,args --no-headers"
@@ -2946,14 +2946,14 @@ def test_processes_command_matches_pyintras_fixture_commands():
     )
     assert Processes.command("Darwin") == (
         "LANG=C ps -eo pid,user,stat,%cpu,%mem,args -ww && "
-        "echo ===PYINFRA-PROCESSES-COMM=== && LANG=C ps -eo pid,comm -ww"
+        "echo ===REEMOTE5-PROCESSES-COMM=== && LANG=C ps -eo pid,comm -ww"
     )
     assert Processes.command("Darwin", pid=742) == (
         "LANG=C ps -p 742 -o pid,user,stat,%cpu,%mem,args -ww && "
-        "echo ===PYINFRA-PROCESSES-COMM=== && LANG=C ps -p 742 -o pid,comm -ww"
+        "echo ===REEMOTE5-PROCESSES-COMM=== && LANG=C ps -p 742 -o pid,comm -ww"
     )
     # The kernel name is stripped; an unknown kernel (or a failed uname -s,
-    # which reads as "") takes the Linux branch, exactly like pyinfra.
+    # which reads as "") takes the Linux branch, exactly like the baseline.
     assert Processes.command(" Linux ") == Processes.COMMAND_LINUX
     assert Processes.command("") == Processes.COMMAND_LINUX
     assert Processes.command(" FreeBSD ") == Processes.COMMAND_BSD
@@ -2977,14 +2977,14 @@ def test_processes_parse_skips_headers_and_malformed_rows():
             "args": "/sbin/init",
         },
     }
-    # Empty output reads as {} on every branch (pyinfra's default = dict).
+    # Empty output reads as {} on every branch (the baseline's default = dict).
     assert Processes.parse([], "Linux") == {}
     assert Processes.parse([], "FreeBSD") == {}
     assert Processes.parse([], "Linux", busybox=True) == {}
 
 
 def test_processes_parse_args_falls_back_to_comm():
-    # A row with no separate args column reuses comm (pyinfra's fallback).
+    # A row with no separate args column reuses comm (the baseline's fallback).
     result = Processes.parse(["1 root Ss 0.0 0.1 init"], "Linux")
     assert result[1]["command"] == "init"
     assert result[1]["args"] == "init"
@@ -3012,14 +3012,14 @@ def test_processes_parse_busybox_edge_cases():
 
 def test_processes_darwin_parse_requires_the_marker():
     # A missing marker means the double-ps pipeline produced unexpected
-    # output; reemote5 raises ValueError (pyinfra a bare Exception).
-    with pytest.raises(ValueError, match="PYINFRA-PROCESSES-COMM"):
+    # output; reemote5 raises ValueError (the baseline a bare Exception).
+    with pytest.raises(ValueError, match="REEMOTE5-PROCESSES-COMM"):
         Processes.parse(["    1 root     Ss    0.0  0.1 /sbin/launchd"], "Darwin")
-    assert Processes.parse(["===PYINFRA-PROCESSES-COMM==="], "Darwin") == {}
+    assert Processes.parse(["===REEMOTE5-PROCESSES-COMM==="], "Darwin") == {}
 
 
 async def test_processes_is_empty_on_empty_output():
-    # A failed ps read maps to {} (pyinfra's default = dict); the Darwin
+    # A failed ps read maps to {} (the baseline's default = dict); the Darwin
     # branch never sees empty output here because the marker echo always
     # runs, but a bare empty stdout still reads as {} on Linux/BSD/BusyBox.
     assert await Processes.process(CannedProcessesHost("Linux", "", "")) == {}
@@ -3117,8 +3117,8 @@ async def test_processes_gather_fact_across_hosts():
 # --- Timezone ----------------------------------------------------------------
 
 
-async def test_timezone_parses_pyintras_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.Timezone/timezone.json):
+async def test_timezone_parses_baseline_fixture():
+    # The baseline's own fact fixture (tests/facts/server.Timezone/timezone.json):
     # command "readlink -f /etc/localtime | sed 's|.*/zoneinfo/||'",
     # output ["Europe/Amsterdam"] -> fact "Europe/Amsterdam".
     host = CannedShellHost("Europe/Amsterdam\n")
@@ -3126,7 +3126,7 @@ async def test_timezone_parses_pyintras_fixture():
     assert host.shells == ["readlink -f /etc/localtime | sed 's|.*/zoneinfo/||'"]
 
 
-def test_timezone_command_matches_pyinfra():
+def test_timezone_command_matches_baseline():
     assert Timezone.COMMAND == "readlink -f /etc/localtime | sed 's|.*/zoneinfo/||'"
 
 
@@ -3138,7 +3138,7 @@ def test_timezone_parse_takes_the_first_non_blank_line():
 
 def test_timezone_parse_keeps_a_non_zoneinfo_path_verbatim():
     # /etc/localtime copied instead of symlinked: the sed matches nothing
-    # and the resolved path comes back as is, exactly like pyinfra.
+    # and the resolved path comes back as is, exactly like the baseline.
     assert Timezone.parse(["/etc/localtime"]) == "/etc/localtime"
 
 
@@ -3149,7 +3149,7 @@ async def test_timezone_is_empty_on_empty_output():
 async def test_timezone_reads_the_simulated_seam():
     host = SimulatedHost(name="h", os_timezone="Australia/Sydney")
     assert await Timezone.process(host) == "Australia/Sydney"
-    # The seam defaults to pyinfra's fixture timezone: a simulated machine
+    # The seam defaults to the baseline's fixture timezone: a simulated machine
     # always resolves /etc/localtime, deterministically.
     assert await Timezone.process(SimulatedHost(name="h")) == "Europe/Amsterdam"
 
@@ -3168,8 +3168,8 @@ async def test_timezone_gather_fact_across_hosts():
 # --- Uptime --------------------------------------------------------------------
 
 
-async def test_uptime_parses_pyintras_linux_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.Uptime/uptime_linux.json):
+async def test_uptime_parses_baseline_linux_fixture():
+    # The baseline's own fact fixture (tests/facts/server.Uptime/uptime_linux.json):
     # Kernel "Linux", command "cut -d. -f1 /proc/uptime",
     # output ["86400"] -> fact 86400.
     host = CannedKernelHost("Linux", "86400\n")
@@ -3177,8 +3177,8 @@ async def test_uptime_parses_pyintras_linux_fixture():
     assert host.shells == ["uname -s", "cut -d. -f1 /proc/uptime"]
 
 
-async def test_uptime_parses_pyintras_macos_fixture():
-    # pyinfra's uptime_macos.json fixture: Kernel "Darwin", command
+async def test_uptime_parses_baseline_macos_fixture():
+    # The baseline's uptime_macos.json fixture: Kernel "Darwin", command
     # "date +%s; sysctl -n kern.boottime | awk '{print $4}' | tr -d ','",
     # output ["1746748800", "1746662400"] -> fact 86400 (now - boottime).
     host = CannedKernelHost("Darwin", "1746748800\n1746662400\n")
@@ -3195,7 +3195,7 @@ def test_uptime_command_dispatches_on_the_kernel():
     assert Uptime.command("FreeBSD") == bsd
     assert Uptime.command(" FreeBSD ") == bsd
     # Anything else -- including a failed `uname -s` ("") -- takes the
-    # /proc/uptime branch, exactly like pyinfra.
+    # /proc/uptime branch, exactly like the baseline.
     for kernel in ("Linux", "OpenBSD", ""):
         assert Uptime.command(kernel) == "cut -d. -f1 /proc/uptime"
 
@@ -3209,9 +3209,9 @@ def test_uptime_parse_edge_cases():
     assert Uptime.parse(["100", "40"], "Darwin") == 60
 
 
-def test_uptime_parse_rejects_bad_rows_like_pyinfra():
+def test_uptime_parse_rejects_bad_rows_like_baseline():
     # A non-integer line raises ValueError, and a BSD answer missing its
-    # second line raises IndexError -- pyinfra's parser does neither guard.
+    # second line raises IndexError -- the baseline's parser does neither guard.
     with pytest.raises(ValueError):
         Uptime.parse(["oops"], "Linux")
     with pytest.raises(IndexError):
@@ -3219,7 +3219,7 @@ def test_uptime_parse_rejects_bad_rows_like_pyinfra():
 
 
 async def test_uptime_is_none_on_empty_output():
-    # A failed read maps to None (pyinfra's FactBase default), never to a
+    # A failed read maps to None (the baseline's FactBase default), never to a
     # freshly booted host's 0.
     assert await Uptime.process(CannedKernelHost("Linux", "")) is None
     assert await Uptime.process(CannedKernelHost("Darwin", "")) is None
@@ -3228,7 +3228,7 @@ async def test_uptime_is_none_on_empty_output():
 async def test_uptime_reads_the_simulated_seam():
     host = SimulatedHost(name="h", uptime_seconds=123)
     assert await Uptime.process(host) == 123
-    # The seam defaults to pyinfra's fixture uptime: a simulated machine
+    # The seam defaults to the baseline's fixture uptime: a simulated machine
     # always answers with an uptime, deterministically.
     assert await Uptime.process(SimulatedHost(name="h")) == 86400
 
@@ -3245,8 +3245,8 @@ async def test_uptime_gather_fact_across_hosts():
 
 
 async def test_user_parses_echo_user():
-    # pyinfra ships no fixture for server.User; a plain username is echoed
-    # verbatim and returned as the raw string (pyinfra's FactBase default
+    # The baseline ships no fixture for server.User; a plain username is echoed
+    # verbatim and returned as the raw string (the baseline's FactBase default
     # joins the single output line).
     host = CannedShellHost("kjarvis\n")
     assert await User.process(host) == "kjarvis"
@@ -3284,13 +3284,13 @@ async def test_user_gather_fact_across_hosts():
 
 # --- Users ---------------------------------------------------------------------
 
-# pyinfra's own fact fixture (tests/facts/server.Users/mixed.json), reused
+# The baseline's own fact fixture (tests/facts/server.Users/mixed.json), reused
 # verbatim: passwd entries joined with id/lastlog/shadow answers, covering
 # secondary groups, empty passwd fields, "Never logged in" rows and the
 # BSD lastlogin timestamp layout.
 USERS_MIXED_OUTPUT = """\
 root:x:0:0:root:/root:/bin/ks|wheel|wheel kmem sys tty operator staff guest|root pts/0 Sat Jun 5 12:03:23 -0600 2021|$rootpw$
-_tesTy.test:x:1004:1004::/home/_tesTy.test:/bin/ksh|_tesTy.test|_tesTy.test pyinfra|_tesTy.test pts/0 host-ip Sat Jun 12 13:43:42 -0600 2021|$testpw$
+_tesTy.test:x:1004:1004::/home/_tesTy.test:/bin/ksh|_tesTy.test|_tesTy.test reemote5|_tesTy.test pts/0 host-ip Sat Jun 12 13:43:42 -0600 2021|$testpw$
 test.testy:x:1003:1003:Testy,,,:/home/test.testy:/bin/ksh|test.testy||test.testy Fri Jun 11 22:26:04 -0600 2021|$testpw$
 noshell:x:1002:1002:noshell comment with spaces:/home/noshell:|noshell||noshell **Never logged in**|
 nohome:x:1002:1002:nohome comment::/bin/bash|nohome||**Never logged in**|
@@ -3299,7 +3299,7 @@ freebsdnologin:*:1001:1001:FreeBSD NoLogin:/home/freebsdnologin:/bin/sh|freebsdn
 """
 
 # The fixture's expected fact, with the JSON login_time strings read as
-# datetimes (pyinfra's parser returns datetime objects; its test harness
+# datetimes (the baseline's parser returns datetime objects; its test harness
 # serializes them to ISO strings).
 USERS_MIXED_FACT = {
     "root": {
@@ -3319,7 +3319,7 @@ USERS_MIXED_FACT = {
         "comment": None,
         "shell": "/bin/ksh",
         "group": "_tesTy.test",
-        "groups": ["pyinfra"],
+        "groups": ["reemote5"],
         "uid": 1004,
         "gid": 1004,
         "lastlog": "Sat Jun 12 13:43:42 -0600 2021",
@@ -3389,14 +3389,14 @@ USERS_MIXED_FACT = {
 }
 
 
-async def test_users_parses_pyintras_mixed_fixture():
+async def test_users_parses_baseline_mixed_fixture():
     host = CannedShellHost(USERS_MIXED_OUTPUT)
     assert await Users.process(host) == USERS_MIXED_FACT
     assert host.shells == [Users.COMMAND]
 
 
-def test_users_command_matches_pyinfra():
-    # The command field of pyinfra's mixed.json fixture, verbatim.
+def test_users_command_matches_baseline():
+    # The command field of the baseline's mixed.json fixture, verbatim.
     assert Users.COMMAND == """for i in `cat /etc/passwd | cut -d: -f1`; do
             ENTRY=`grep ^$i: /etc/passwd`;
             LASTLOG=`(((lastlog -u $i || lastlogin $i) 2> /dev/null) | grep ^$i | tr -s ' ')`;
@@ -3407,13 +3407,13 @@ def test_users_command_matches_pyinfra():
 
 def test_users_parse_skips_blank_lines_and_empty_entries():
     # A row whose passwd entry is empty (the grep failed) is skipped, like
-    # pyinfra's ``if entry:`` guard; blank lines never reach the splitter.
+    # The baseline's ``if entry:`` guard; blank lines never reach the splitter.
     assert Users.parse(["", "   ", "|nobody|nobody||", "\t"]) == {}
 
 
 def test_users_parse_rejects_malformed_rows():
     # A row without the four ``|`` separators cannot be unpacked, exactly
-    # like pyinfra's rsplit.
+    # like the baseline's rsplit.
     with pytest.raises(ValueError, match="not enough values to unpack"):
         Users.parse(["root:x:0:0:root:/root:/bin/bash"])
 
@@ -3421,7 +3421,7 @@ def test_users_parse_rejects_malformed_rows():
 def test_users_parse_unmatched_login_layout_stays_none():
     # A timestamp the regex matches but neither strptime layout knows
     # (a named zone) keeps the raw lastlog and leaves login_time None --
-    # the documented deviation from pyinfra's fuzzy dateutil parse.
+    # the documented deviation from the baseline's fuzzy dateutil parse.
     row = "root:x:0:0:root:/root:/bin/bash|root|root|root pts/0 Sat Jun 5 12:03:23 EST 2021|$rootpw$"
     (info,) = Users.parse([row]).values()
     assert info["lastlog"] == "Sat Jun 5 12:03:23 EST 2021"
@@ -3429,7 +3429,7 @@ def test_users_parse_unmatched_login_layout_stays_none():
 
 
 async def test_users_is_empty_on_empty_output():
-    # A failed loop reads as {} -- pyinfra's ``default = dict``.
+    # A failed loop reads as {} -- the baseline's ``default = dict``.
     assert await Users.process(CannedShellHost("")) == {}
     assert await Users.process(CannedShellHost("\n")) == {}
 
@@ -3466,8 +3466,8 @@ async def test_users_gather_fact_across_hosts():
 # --- Which ---------------------------------------------------------------------
 
 
-async def test_which_parses_pyintras_which_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.Which/which.json):
+async def test_which_parses_baseline_which_fixture():
+    # The baseline's own fact fixture (tests/facts/server.Which/which.json):
     # arg "python", command "command -v python || true",
     # output ["/usr/local/bin/python"] -> fact "/usr/local/bin/python".
     host = CannedShellHost("/usr/local/bin/python\n")
@@ -3475,11 +3475,11 @@ async def test_which_parses_pyintras_which_fixture():
     assert host.shells == ["command -v python || true"]
 
 
-async def test_which_quotes_pyintras_injection_fixture():
-    # pyinfra's quotes_injection.json fixture: arg "py; reboot", command
+async def test_which_quotes_baseline_injection_fixture():
+    # The baseline's quotes_injection.json fixture: arg "py; reboot", command
     # "command -v 'py; reboot' || true", output [] -- the quoted name is
     # looked up literally, never executed, and an unavailable command reads
-    # as None (pyinfra's runtime default; its raw parser joins lines to "").
+    # as None (the baseline's runtime default; its raw parser joins lines to "").
     host = CannedShellHost("")
     assert await Which.process(host, "py; reboot") is None
     assert host.shells == ["command -v 'py; reboot' || true"]
@@ -3499,13 +3499,13 @@ def test_which_parse_takes_the_first_non_blank_line():
 
 def test_which_parse_keeps_a_builtin_name():
     # `command -v` answers a shell builtin or alias with its own name, not
-    # a path; the string is returned verbatim, like pyinfra.
+    # a path; the string is returned verbatim, like the baseline.
     assert Which.parse(["cd"]) == "cd"
 
 
 async def test_which_is_none_on_empty_output():
     # The `|| true` swallows the non-zero exit of an unknown command, so no
-    # output means unavailable -- None, pyinfra's FactBase default.
+    # output means unavailable -- None, the baseline's FactBase default.
     assert await Which.process(CannedShellHost(""), "nosuchcommand") is None
     assert await Which.process(CannedShellHost("\n"), "nosuchcommand") is None
 
@@ -3572,7 +3572,7 @@ def test_group_del_command_shell_rendering():
 @pytest.mark.parametrize(
     ("group", "kernel", "groups", "kwargs", "expected"),
     [
-        # pyinfra's own operation fixtures (tests/operations/server.group/):
+        # The baseline's own operation fixtures (tests/operations/server.group/):
         # add.json, add_needs_quotes.json, add.freebsd.json,
         # add_freebsd_needs_quotes.json, delete.json, delete_needs_quotes.json,
         # delete.freebsd.json, delete_freebsd_needs_quotes.json. Its server.Os
@@ -3597,7 +3597,7 @@ def test_group_del_command_shell_rendering():
          ["pw groupdel -n 'my group; whoami'"]),
     ],
 )
-async def test_group_matches_pyinfra_operation_fixtures(
+async def test_group_matches_baseline_operation_fixtures(
     group: str, kernel: str, groups: list[str], kwargs: dict, expected: list[str]
 ):
     host = SimulatedHost(name="h", os_groups=groups, os_kernel=kernel)
@@ -3647,14 +3647,14 @@ async def test_group_gid_accepts_a_string_and_zero_is_skipped():
     _, commands = await materialize(host, op(server.group, group="docker", gid="1500"))
     assert commands == [GroupAddCommand(group="docker", gid="1500")]
     assert commands[0].shell() == "groupadd docker --gid 1500"
-    # pyinfra's `if gid:` truthiness check: a gid of 0 renders no flag.
+    # The baseline's `if gid:` truthiness check: a gid of 0 renders no flag.
     _, commands = await materialize(host, op(server.group, group="docker", gid=0))
     assert commands[0].shell() == "groupadd docker"
 
 
 async def test_group_existing_group_is_never_modified():
     # system/gid only apply at creation; a present group plans no command
-    # even when the request's gid or system flag differs (pyinfra parity).
+    # even when the request's gid or system flag differs (baseline parity).
     host = SimulatedHost(name="h", os_groups=["docker"])
     ctx, commands = await materialize(
         host, op(server.group, group="docker", system=True, gid=1500)
@@ -3666,7 +3666,7 @@ async def test_group_existing_group_is_never_modified():
 async def test_group_absorbs_unknown_keyword_arguments():
     host = SimulatedHost(name="h")
     _ctx, commands = await materialize(
-        host, op(server.group, group="docker", _pyinfra_global=True)
+        host, op(server.group, group="docker", _extra_global=True)
     )
     assert commands == [GroupAddCommand(group="docker")]
 
@@ -3778,7 +3778,7 @@ async def test_group_dry_run_sends_nothing():
 
 def test_user_add_command_shell_rendering():
     assert UserAddCommand(user="someuser").shell() == "useradd -M someuser"
-    # pyinfra's add.json argument order, verbatim.
+    # The baseline's add.json argument order, verbatim.
     assert (
         UserAddCommand(
             user="someuser",
@@ -3796,7 +3796,7 @@ def test_user_add_command_shell_rendering():
         " -G secondary_group,another -r --uid 1000 -c 'Full Name' -m"
         " -p '$somecryptedpassword$' someuser"
     )
-    # unique=False renders -o; a uid of 0 is skipped (pyinfra's `if uid:`).
+    # unique=False renders -o; a uid of 0 is skipped (the baseline's `if uid:`).
     assert (
         UserAddCommand(user="someuser", uid=0, unique=False).shell()
         == "useradd -o -M someuser"
@@ -3845,7 +3845,7 @@ def test_user_mod_command_shell_rendering():
         == "usermod -d /home/someotheruser -s /bin/false -g somegroup"
         " -G group1,group2,group3 -c 'New Full Name' someuser"
     )
-    # append=True is the -a -G pair (pyinfra's append_secondary_groups).
+    # append=True is the -a -G pair (the baseline's append_secondary_groups).
     assert (
         UserModCommand(user="someuser", groups=("group3", "group4"), append=True).shell()
         == "usermod -a -G group3,group4 someuser"
@@ -3901,7 +3901,7 @@ def test_home_descriptor_shell_rendering():
     )
 
 
-# pyinfra's own operation fixtures (tests/operations/server.user/), replayed
+# The baseline's own operation fixtures (tests/operations/server.user/), replayed
 # verbatim: (fixture, user, kernel, os_users, os_groups, directory_stats,
 # link_stats, kwargs, expected shells). Its server.Os fact is the deprecated
 # alias of server.Kernel, so the fixture's Os value feeds os_kernel; a
@@ -3909,7 +3909,7 @@ def test_home_descriptor_shell_rendering():
 # False or dict directory_stats entry, and files.Link onto link_stats.
 # The keys* and *_missing_* fixtures are deliberately not replayed: the
 # public_keys/delete_keys branch and the plan-time Which guards were dropped.
-PYINFRA_USER_FIXTURES = [
+BASELINE_USER_FIXTURES = [
     ("add.json", "someuser", "Linux", {}, [], {}, {}, {
         "home": "homedir", "shell": "shellbin", "group": "mygroup",
         "groups": ("secondary_group", "another"), "uid": 1000, "system": True,
@@ -3992,7 +3992,7 @@ PYINFRA_USER_FIXTURES = [
     ("add_non_unique.freebsd.json", "someuser", "FreeBSD", {}, [], {}, {}, {
         "unique": False, "ensure_home": False,
     }, ["pw useradd -n someuser -d /home/someuser -o"]),
-    # A symlinked home is accepted as-is (pyinfra's _no_fail_on_link).
+    # A symlinked home is accepted as-is (the baseline's _no_fail_on_link).
     ("add_home_is_link.json", "someuser", "Linux", {}, [], {"homedir": False},
      {"homedir": {"mode": 777}}, {"home": "homedir"},
      ["useradd -d homedir -M someuser"]),
@@ -4077,10 +4077,10 @@ PYINFRA_USER_FIXTURES = [
 @pytest.mark.parametrize(
     ("fixture", "user", "kernel", "users", "groups", "directories", "links",
      "kwargs", "expected"),
-    PYINFRA_USER_FIXTURES,
-    ids=[row[0] for row in PYINFRA_USER_FIXTURES],
+    BASELINE_USER_FIXTURES,
+    ids=[row[0] for row in BASELINE_USER_FIXTURES],
 )
-async def test_user_matches_pyinfra_operation_fixtures(
+async def test_user_matches_baseline_operation_fixtures(
     fixture: str,
     user: str,
     kernel: str,
@@ -4123,7 +4123,7 @@ async def test_user_removes_a_present_user():
     )
     assert ctx.changed
     assert ctx.reason == "user deploy present, will remove"
-    # The deletion branch never touches the home directory (pyinfra parity).
+    # The deletion branch never touches the home directory (baseline parity).
     assert commands == [UserDelCommand(user="deploy")]
 
 
@@ -4166,7 +4166,7 @@ async def test_user_wrong_home_owner_only_chowns():
 
 
 async def test_user_rejects_a_non_directory_home():
-    # pyinfra's files.directory raises when the path exists as a plain file
+    # The baseline's files.directory raises when the path exists as a plain file
     # and is not a symlink either (_no_fail_on_link only covers links).
     host = SimulatedHost(
         name="h",
@@ -4223,7 +4223,7 @@ async def test_user_password_only_change_on_freebsd_is_one_pipe_command():
 
 
 async def test_user_uid_zero_is_skipped():
-    # pyinfra's `if uid:` truthiness check: a uid of 0 renders no flag.
+    # The baseline's `if uid:` truthiness check: a uid of 0 renders no flag.
     host = SimulatedHost(name="h")
     _ctx, commands = await materialize(
         host, op(server.user, user="deploy", uid=0, ensure_home=False)
@@ -4234,7 +4234,7 @@ async def test_user_uid_zero_is_skipped():
 async def test_user_absorbs_unknown_keyword_arguments():
     host = SimulatedHost(name="h")
     _ctx, commands = await materialize(
-        host, op(server.user, user="deploy", _pyinfra_global=True, ensure_home=False)
+        host, op(server.user, user="deploy", _extra_global=True, ensure_home=False)
     )
     assert commands == [UserAddCommand(user="deploy", home="/home/deploy", groups=())]
 
@@ -4456,7 +4456,7 @@ def test_set_hostname_command_shell_rendering():
         SetHostnameCommand(hostname="web1.example.com", hostnamectl=True).shell()
         == "hostnamectl set-hostname web1.example.com"
     )
-    # pyinfra's QuoteString: a name carrying shell metacharacters is quoted.
+    # The baseline's QuoteString: a name carrying shell metacharacters is quoted.
     assert (
         SetHostnameCommand(hostname="my host; whoami", hostnamectl=True).shell()
         == "hostnamectl set-hostname 'my host; whoami'"
@@ -4479,7 +4479,7 @@ def test_set_hostname_command_shell_rendering():
 @pytest.mark.parametrize(
     ("name", "current", "hostnamectl", "expected"),
     [
-        # pyinfra's own operation fixtures (tests/operations/server.hostname/).
+        # The baseline's own operation fixtures (tests/operations/server.hostname/).
         # The upload step of set_hostname_bsd.json and set_hostname_linux.json
         # is the deliberately dropped hostname_file branch, so only the shell
         # command remains; the fixtures' server.Os value fed that branch's
@@ -4512,7 +4512,7 @@ def test_set_hostname_command_shell_rendering():
         ),
     ],
 )
-async def test_hostname_matches_pyinfra_operation_fixtures(
+async def test_hostname_matches_baseline_operation_fixtures(
     name: str, current: str, hostnamectl: str | None, expected: list[str]
 ):
     host = SimulatedHost(name="h", os_hostname=current)
@@ -4522,7 +4522,7 @@ async def test_hostname_matches_pyinfra_operation_fixtures(
     assert ctx.changed == bool(expected)
     assert [cmd.shell() for cmd in commands] == expected
     if not expected:
-        # pyinfra's noop_description, verbatim.
+        # The baseline's noop_description, verbatim.
         assert ctx.reason == "hostname is set"
 
 
@@ -4569,7 +4569,7 @@ async def test_hostname_no_change_when_already_set():
 async def test_hostname_absorbs_unknown_keyword_arguments():
     host = SimulatedHost(name="h", os_hostname="old-host.net")
     _ctx, commands = await materialize(
-        host, op(server.hostname, hostname="web1.example.com", _pyinfra_global=True)
+        host, op(server.hostname, hostname="web1.example.com", _extra_global=True)
     )
     assert commands == [SetHostnameCommand(hostname="web1.example.com")]
 
@@ -4713,7 +4713,7 @@ SSHD_RECORD = {
 def test_kill_command_shell_rendering():
     assert KillCommand(pid=1234).shell() == "kill -TERM 1234"
     assert KillCommand(pid=5678, signal="KILL").shell() == "kill -KILL 5678"
-    # pyinfra's QuoteString: a signal carrying shell metacharacters is
+    # The baseline's QuoteString: a signal carrying shell metacharacters is
     # quoted, so it reaches kill literally instead of being executed.
     assert (
         KillCommand(pid=1234, signal="9; rm -rf /").shell()
@@ -4726,7 +4726,7 @@ def test_kill_command_shell_rendering():
 @pytest.mark.parametrize(
     ("pid", "kwargs", "expected"),
     [
-        # pyinfra's own operation fixtures (tests/operations/server.kill/),
+        # The baseline's own operation fixtures (tests/operations/server.kill/),
         # all marked "idempotent": false -- the kill always yields.
         pytest.param(1234, {}, ["kill -TERM 1234"], id="kill_default"),
         pytest.param(
@@ -4740,7 +4740,7 @@ def test_kill_command_shell_rendering():
         ),
     ],
 )
-async def test_kill_matches_pyinfra_operation_fixtures(
+async def test_kill_matches_baseline_operation_fixtures(
     pid: int, kwargs: dict, expected: list[str]
 ):
     host = SimulatedHost(name="h")
@@ -4751,7 +4751,7 @@ async def test_kill_matches_pyinfra_operation_fixtures(
 
 async def test_kill_is_stateless_and_sets_the_reason():
     # No processes seeded at all: the operation reads no fact and still
-    # plans the kill (pyinfra's non-idempotent behaviour).
+    # plans the kill (the baseline's non-idempotent behaviour).
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(host, op(server.kill, pid=1234))
     assert ctx.changed
@@ -4770,7 +4770,7 @@ async def test_kill_reads_no_fact():
 async def test_kill_absorbs_unknown_keyword_arguments():
     host = SimulatedHost(name="h")
     _ctx, commands = await materialize(
-        host, op(server.kill, pid=1234, _pyinfra_global=True)
+        host, op(server.kill, pid=1234, _extra_global=True)
     )
     assert commands == [KillCommand(pid=1234)]
 
@@ -4946,13 +4946,13 @@ def test_modprobe_command_shell_rendering():
 @pytest.mark.parametrize(
     ("module", "loaded", "kwargs", "expected", "changed"),
     [
-        # pyinfra's own operation fixtures (tests/operations/server.modprobe/):
+        # The baseline's own operation fixtures (tests/operations/server.modprobe/):
         # add.json, add_exists.json, add_force.json, add-list.json,
         # add_multiple_exists.json, add_needs_quotes.json, remove.json,
         # remove-list.json, remove_needs_quotes.json. Only membership in the
         # KernelModules dict matters, so the fixtures' empty info dicts feed
         # the kernel_modules seam verbatim. The *request* arguments are tuples
-        # where pyinfra's JSON has lists: OperationRequest rejects an
+        # where the baseline's JSON has lists: OperationRequest rejects an
         # unhashable argument value (UnhashableArgumentError).
         ("somemodule", [], {}, ["modprobe -a somemodule"], True),
         ("somemodule", ["somemodule"], {}, [], False),
@@ -4969,7 +4969,7 @@ def test_modprobe_command_shell_rendering():
          ["modprobe -r -a 'evil; rm -rf /'"], True),
     ],
 )
-async def test_modprobe_matches_pyinfra_operation_fixtures(
+async def test_modprobe_matches_baseline_operation_fixtures(
     module, loaded: list[str], kwargs: dict, expected: list[str], changed: bool
 ):
     host = SimulatedHost(name="h", kernel_modules={name: {} for name in loaded})
@@ -4999,7 +4999,7 @@ async def test_modprobe_unloads_a_loaded_module():
 
 
 async def test_modprobe_no_change_when_already_loaded():
-    # pyinfra's add_exists.json noop_description, verbatim.
+    # The baseline's add_exists.json noop_description, verbatim.
     host = SimulatedHost(name="h", kernel_modules={"somemodule": {}})
     ctx, commands = await materialize(host, op(server.modprobe, module="somemodule"))
     assert not ctx.changed
@@ -5018,7 +5018,7 @@ async def test_modprobe_no_change_when_already_absent():
 
 
 async def test_modprobe_noop_reason_plural_wording():
-    # pyinfra's add_multiple_exists.json noop_description, verbatim.
+    # The baseline's add_multiple_exists.json noop_description, verbatim.
     host = SimulatedHost(
         name="h", kernel_modules={"somemodule": {}, "someothermodule": {}}
     )
@@ -5041,7 +5041,7 @@ async def test_modprobe_partial_list_reason_names_only_the_difference():
 
 
 async def test_modprobe_force_does_not_reload_an_in_state_module():
-    # Like pyinfra, force only flags the command -- it never turns an
+    # Like the baseline, force only flags the command -- it never turns an
     # in-state request into a reload, in either direction.
     host = SimulatedHost(name="h", kernel_modules={"floppy": {}})
     ctx, commands = await materialize(
@@ -5061,7 +5061,7 @@ async def test_modprobe_force_does_not_reload_an_in_state_module():
 async def test_modprobe_absorbs_unknown_keyword_arguments():
     host = SimulatedHost(name="h")
     _ctx, commands = await materialize(
-        host, op(server.modprobe, module="floppy", _pyinfra_global=True)
+        host, op(server.modprobe, module="floppy", _extra_global=True)
     )
     assert commands == [ModprobeCommand(modules=("floppy",))]
 
@@ -5243,13 +5243,13 @@ def test_mount_command_shell_rendering():
 @pytest.mark.parametrize(
     ("path", "mounts", "kernel", "kwargs", "expected", "changed"),
     [
-        # pyinfra's own fifteen operation fixtures
+        # The baseline's own fifteen operation fixtures
         # (tests/operations/server.mount/), replayed verbatim over the
         # SimulatedHost seams. The bare {} info dicts (mount_exists.json,
         # unmount.json) feed the mounts seam as-is: only membership matters.
-        # The *request* arguments are tuples where pyinfra's JSON has lists,
+        # The *request* arguments are tuples where the baseline's JSON has lists,
         # because OperationRequest rejects an unhashable argument value
-        # (UnhashableArgumentError); the seam entries keep pyinfra's lists.
+        # (UnhashableArgumentError); the seam entries keep the baseline's lists.
         # mount.json
         ("/data", {}, "Linux", {}, ["mount /data"], True),
         # mount_device.json
@@ -5311,7 +5311,7 @@ def test_mount_command_shell_rendering():
          ["mount -uo rw,noatime -t ufs /dev/sd0a /data"], True),
     ],
 )
-async def test_mount_matches_pyinfra_operation_fixtures(
+async def test_mount_matches_baseline_operation_fixtures(
     path, mounts: dict, kernel: str, kwargs: dict, expected: list[str], changed: bool
 ):
     host = SimulatedHost(name="h", mounts=mounts, os_kernel=kernel)
@@ -5341,7 +5341,7 @@ async def test_mount_mounts_a_missing_filesystem():
 
 async def test_mount_unmount_reason_names_the_found_mount_point():
     # The device fallback finds /mnt/data; the unmount reason and command
-    # act on the found mount point, not the requested path (pyinfra).
+    # act on the found mount point, not the requested path (the baseline).
     host = SimulatedHost(
         name="h",
         mounts={"/mnt/data": {"device": "/dev/sdb1", "type": "ext4", "options": ["rw"]}},
@@ -5355,7 +5355,7 @@ async def test_mount_unmount_reason_names_the_found_mount_point():
 
 
 async def test_mount_no_change_when_already_mounted():
-    # pyinfra's mount_exists.json noop_description, verbatim.
+    # The baseline's mount_exists.json noop_description, verbatim.
     host = SimulatedHost(name="h", mounts={"/data": {}})
     ctx, commands = await materialize(host, op(server.mount, path="/data"))
     assert not ctx.changed
@@ -5375,7 +5375,7 @@ async def test_mount_no_change_when_already_unmounted():
 
 async def test_mount_no_change_when_options_already_present():
     # The options check is a subset test: extra options on the mount never
-    # trigger a remount, and the noop wording stays pyinfra's "is mounted".
+    # trigger a remount, and the noop wording stays the baseline's "is mounted".
     host = SimulatedHost(
         name="h", mounts={"/data": {"options": ["rw", "relatime", "noatime"]}}
     )
@@ -5403,7 +5403,7 @@ async def test_mount_remount_reason_lists_missing_options_sorted():
 
 async def test_mount_remounts_on_bsd_with_fact_device_and_type():
     # The Kernel fact picks the -uo form; device/type come from the Mounts
-    # entry, not the request (pyinfra's BSD remount branch).
+    # entry, not the request (the baseline's BSD remount branch).
     host = SimulatedHost(
         name="h",
         os_kernel="FreeBSD",
@@ -5428,7 +5428,7 @@ async def test_mount_remounts_on_bsd_with_fact_device_and_type():
 async def test_mount_absorbs_unknown_keyword_arguments():
     host = SimulatedHost(name="h")
     _ctx, commands = await materialize(
-        host, op(server.mount, path="/data", _pyinfra_global=True)
+        host, op(server.mount, path="/data", _extra_global=True)
     )
     assert commands == [MountCommand(path="/data")]
 
@@ -5633,8 +5633,8 @@ def test_set_timezone_command_shell_rendering():
         SetTimezoneCommand(timezone="Europe/Amsterdam").shell()
         == "timedatectl set-timezone Europe/Amsterdam"
     )
-    # pyinfra's QuoteString: a name carrying shell metacharacters is quoted
-    # (the argument of pyinfra's own set_quotes_injection.json fixture).
+    # The baseline's QuoteString: a name carrying shell metacharacters is quoted
+    # (the argument of the baseline's own set_quotes_injection.json fixture).
     assert (
         SetTimezoneCommand(timezone="x; reboot").shell()
         == "timedatectl set-timezone 'x; reboot'"
@@ -5650,7 +5650,7 @@ def test_set_timezone_command_shell_rendering():
 @pytest.mark.parametrize(
     ("zone", "current", "timedatectl", "expected"),
     [
-        # pyinfra's own operation fixtures (tests/operations/server.timezone/).
+        # The baseline's own operation fixtures (tests/operations/server.timezone/).
         # set_no_timedatectl.json and set_quotes_injection.json exercise the
         # deliberately dropped non-systemd fallback (ln -sf /etc/localtime
         # plus echo > /etc/timezone); a host without timedatectl now raises
@@ -5666,7 +5666,7 @@ def test_set_timezone_command_shell_rendering():
         ),
     ],
 )
-async def test_timezone_matches_pyinfra_operation_fixtures(
+async def test_timezone_matches_baseline_operation_fixtures(
     zone: str, current: str, timedatectl: str | None, expected: list[str]
 ):
     host = SimulatedHost(name="h", os_timezone=current)
@@ -5676,7 +5676,7 @@ async def test_timezone_matches_pyinfra_operation_fixtures(
     assert ctx.changed == bool(expected)
     assert [cmd.shell() for cmd in commands] == expected
     if not expected:
-        # pyinfra's noop_description, verbatim.
+        # The baseline's noop_description, verbatim.
         assert ctx.reason == "timezone is set"
 
 
@@ -5707,7 +5707,7 @@ async def test_timezone_raises_without_timedatectl():
 
 
 async def test_timezone_no_change_when_already_set():
-    # Like pyinfra, the fact comparison comes first: an already-set zone is
+    # Like the baseline, the fact comparison comes first: an already-set zone is
     # a no-op even on a host without timedatectl (no probe, no raise).
     for paths in ({}, {"timedatectl": "/usr/bin/timedatectl"}):
         host = SimulatedHost(
@@ -5728,7 +5728,7 @@ async def test_timezone_absorbs_unknown_keyword_arguments():
         command_paths={"timedatectl": "/usr/bin/timedatectl"},
     )
     _ctx, commands = await materialize(
-        host, op(server.timezone, timezone="Europe/Amsterdam", _pyinfra_global=True)
+        host, op(server.timezone, timezone="Europe/Amsterdam", _extra_global=True)
     )
     assert commands == [SetTimezoneCommand(timezone="Europe/Amsterdam")]
 
@@ -6263,7 +6263,7 @@ async def test_wait_times_out_and_aborts_the_run():
 
 # --- server.user_authorized_keys --------------------------------------------
 
-# pyinfra's own operation fixtures (tests/operations/server.user_authorized_
+# The baseline's own operation fixtures (tests/operations/server.user_authorized_
 # keys/) use these two keys; reused verbatim here for parity.
 UA_KEY_A = "ssh-ed25519 AAAAkey1 alice"
 UA_KEY_B = "ssh-rsa AAAAkey2 bob"
@@ -6281,7 +6281,7 @@ UA_INSTALL_INNER = (
 
 
 def test_keys_chmod_touch_shell_rendering():
-    # Fixed-mode chmod and the plain touch mirror pyinfra's own chmod/touch
+    # Fixed-mode chmod and the plain touch mirror the baseline's own chmod/touch
     # helper shape: unquoted mode digit string, shell-quoted path.
     assert _KeysChmodCommand(path=UA_SSH_DIR, mode=700).shell() == f"chmod 700 {UA_SSH_DIR}"
     assert _KeysChmodCommand(path="/home/evil $(id)", mode=600).shell() == (
@@ -6415,18 +6415,18 @@ def test_add_keys_transform_purity_and_fixpoint():
     assert _add_keys(None, ()) == ""
 
 
-def test_rewrite_keys_transform_is_pyinfra_whole_file_semantics():
+def test_rewrite_keys_transform_is_baseline_whole_file_semantics():
     # Exactly the requested keys, caller order, trailing newline -- current
     # text is not an input, everything else is discarded.
     assert _rewrite_keys((UA_KEY_B, UA_KEY_A)) == f"{UA_KEY_B}\n{UA_KEY_A}\n"
-    # pyinfra's "{}\n".format quirk: an empty key list writes a lone newline.
+    # The baseline's "{}\n".format quirk: an empty key list writes a lone newline.
     assert _rewrite_keys(()) == "\n"
 
 
 @pytest.mark.parametrize(
     ("seed", "kwargs", "expected"),
     [
-        # pyinfra's all_keys_present.json: a fully-correct directory/file
+        # The baseline's all_keys_present.json: a fully-correct directory/file
         # pair plus every requested key already listed -> no commands.
         (
             {
@@ -6438,7 +6438,7 @@ def test_rewrite_keys_transform_is_pyinfra_whole_file_semantics():
             {"public_keys": (UA_KEY_A, UA_KEY_B)},
             [],
         ),
-        # pyinfra's append_missing_only.json: one key already listed, the
+        # The baseline's append_missing_only.json: one key already listed, the
         # other absent -> one spool-and-install pair carrying the whole new
         # text (the append is now a whole-content write).
         (
@@ -6456,7 +6456,7 @@ def test_rewrite_keys_transform_is_pyinfra_whole_file_semantics():
                 AuthorizedKeysInstallCommand(spool=UA_SPOOL, dest=UA_KEYS_FILE),
             ],
         ),
-        # pyinfra's long_inline_key_not_a_file.yaml: an inline key longer
+        # The baseline's long_inline_key_not_a_file.yaml: an inline key longer
         # than PATH_MAX still lands because reemote5 never treats
         # public_keys entries as controller-side paths (dropped branch).
         (
@@ -6476,7 +6476,7 @@ def test_rewrite_keys_transform_is_pyinfra_whole_file_semantics():
         ),
     ],
 )
-async def test_user_authorized_keys_matches_pyinfra_operation_fixtures(
+async def test_user_authorized_keys_matches_baseline_operation_fixtures(
     seed: dict, kwargs: dict, expected: list
 ):
     host = SimulatedHost(
@@ -6556,7 +6556,7 @@ async def test_user_authorized_keys_fixes_directory_mode_only():
 
 
 async def test_user_authorized_keys_fixes_directory_owner_only():
-    # A ``group`` option overrides the chown target (pyinfra's ``group or
+    # A ``group`` option overrides the chown target (the baseline's ``group or
     # user`` shape): a mismatch against the requested group yields a chown
     # while the mode already matches.
     host = SimulatedHost(
@@ -6603,7 +6603,7 @@ async def test_user_authorized_keys_fixes_file_mode_and_appends():
 
 
 async def test_user_authorized_keys_raises_on_wrong_typed_directory():
-    # A regular file where the .ssh directory must live: pyinfra's
+    # A regular file where the .ssh directory must live: the baseline's
     # files.directory raises its OperationError with the same wording.
     host = SimulatedHost(
         name="h",
@@ -6661,7 +6661,7 @@ async def test_user_authorized_keys_honours_custom_directory_and_filename():
 
 
 async def test_user_authorized_keys_absorbs_unknown_kwargs():
-    # ``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    # ``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     # strips name/sudo/su, the rest is ignored.
     host = SimulatedHost(
         name="h",
@@ -6684,7 +6684,7 @@ async def test_user_authorized_keys_absorbs_unknown_kwargs():
 
 
 async def test_user_authorized_keys_delete_keys_rewrites_to_exactly_the_request():
-    # delete_keys=True is pyinfra's whole-file rewrite: comments and every
+    # delete_keys=True is the baseline's whole-file rewrite: comments and every
     # unrequested key are discarded, only the requested keys survive, in
     # the caller's order.
     host = SimulatedHost(
@@ -6741,7 +6741,7 @@ async def test_user_authorized_keys_delete_keys_noop_when_lists_equal():
 
 
 async def test_user_authorized_keys_delete_keys_is_order_sensitive():
-    # pyinfra compares LISTS, not sets: a pure reorder is a rewrite.
+    # The baseline compares LISTS, not sets: a pure reorder is a rewrite.
     host = SimulatedHost(
         name="h",
         home_directories={UA_USER: UA_HOME},
@@ -6769,7 +6769,7 @@ async def test_user_authorized_keys_delete_keys_is_order_sensitive():
 
 
 async def test_user_authorized_keys_delete_keys_empty_request_writes_lone_newline():
-    # pyinfra's "{}\n".format quirk: an empty key list empties the file to
+    # The baseline's "{}\n".format quirk: an empty key list empties the file to
     # a lone newline, not zero bytes.
     host = SimulatedHost(
         name="h",
@@ -7099,7 +7099,7 @@ async def test_user_authorized_keys_dry_run_sends_nothing():
 
 # --- server.etc_hosts --------------------------------------------------------
 
-# pyinfra's own operation fixtures (tests/operations/server.etc_hosts/) key
+# The baseline's own operation fixtures (tests/operations/server.etc_hosts/) key
 # their entries by this IP; reused verbatim here for parity.
 EH_IP = "192.168.1.10"
 EH_NAMES = ("db.internal", "db")
@@ -7111,7 +7111,7 @@ EH_INSTALL_INNER = (
     f"mkdir -p /etc && cp {EH_SPOOL} {EH_PATH} && "
     f"chmod 0644 {EH_PATH} && rm -f {EH_SPOOL}"
 )
-# pyinfra's own fact fixture (tests/facts/server.EtcHosts/etc_hosts.json):
+# The baseline's own fact fixture (tests/facts/server.EtcHosts/etc_hosts.json):
 # comments, tabs, a duplicate IP and a one-token line, reused verbatim.
 EH_FIXTURE_OUTPUT = (
     "# This is /etc/hosts\n"
@@ -7137,14 +7137,14 @@ def test_etc_hosts_command_quotes_the_path():
     )
 
 
-async def test_etc_hosts_parses_the_pyinfra_fact_fixture():
+async def test_etc_hosts_parses_the_baseline_fact_fixture():
     # Comments and blank lines dropped, the duplicate IP's hostnames merged
     # in file order without duplicates, the one-token "nohostname" skipped.
     host = CannedShellHost(EH_FIXTURE_OUTPUT)
     assert await EtcHosts.process(host) == EH_FIXTURE_FACT
     assert host.shells == ["cat /etc/hosts 2>/dev/null || true"]
     # A missing file: the || true guard turns the cat error into empty
-    # output, which reads as {} (pyinfra's default = dict).
+    # output, which reads as {} (the baseline's default = dict).
     assert await EtcHosts.process(CannedShellHost("")) == {}
 
 
@@ -7178,7 +7178,7 @@ def test_hosts_content_transform_purity_and_fixpoint():
     assert once == "192.168.1.10 db.internal db\n"
     assert _hosts_content(once, EH_IP, EH_NAMES, True) == once
     # Untouched lines, comments, blank lines and their order survive; the
-    # edited line keeps its position mid-file (pyinfra's update_entry).
+    # edited line keeps its position mid-file (the baseline's update_entry).
     current = "127.0.0.1 localhost\n192.168.1.10 old.name\n::1 localhost\n"
     updated = _hosts_content(current, EH_IP, EH_NAMES, True)
     assert updated == "127.0.0.1 localhost\n192.168.1.10 db.internal db\n::1 localhost\n"
@@ -7187,7 +7187,7 @@ def test_hosts_content_transform_purity_and_fixpoint():
     assert _hosts_content(content, EH_IP, EH_NAMES, True) == (
         f"{content}192.168.1.10 db.internal db\n"
     )
-    # A comment on the edited line is dropped (pyinfra parity); a comment
+    # A comment on the edited line is dropped (baseline parity); a comment
     # on any other line survives verbatim.
     assert _hosts_content(f"{EH_IP} old # note\n", EH_IP, EH_NAMES, True) == (
         "192.168.1.10 db.internal db\n"
@@ -7267,7 +7267,7 @@ def test_hosts_spool_path_is_dest_derived_and_deterministic():
 @pytest.mark.parametrize(
     ("seed", "ip", "kwargs", "content", "reason"),
     [
-        # pyinfra's add_new_entry.json: the IP is unknown -> the entry is
+        # The baseline's add_new_entry.json: the IP is unknown -> the entry is
         # appended and the whole new text rides one spool-and-install pair.
         (
             b"127.0.0.1 localhost\n",
@@ -7346,7 +7346,7 @@ def test_hosts_spool_path_is_dest_derived_and_deterministic():
         ),
     ],
 )
-async def test_etc_hosts_matches_pyinfra_operation_fixtures(
+async def test_etc_hosts_matches_baseline_operation_fixtures(
     seed: bytes | None, ip: str, kwargs: dict, content: str | None, reason: str
 ):
     # Every removal fixture seeds remote_files too: EtcHosts parses that
@@ -7370,7 +7370,7 @@ async def test_etc_hosts_matches_pyinfra_operation_fixtures(
 
 
 async def test_etc_hosts_requires_hostnames_when_present():
-    # pyinfra's OperationError message, raised as the house ValueError.
+    # The baseline's OperationError message, raised as the house ValueError.
     host = SimulatedHost(name="h")
     with pytest.raises(ValueError, match="hostnames must be provided when present=True"):
         await materialize(host, op(server.etc_hosts, ip=EH_IP))
@@ -7391,7 +7391,7 @@ async def test_etc_hosts_content_noop_when_transform_is_a_fixpoint():
 
 
 async def test_etc_hosts_reorders_hostnames_with_a_rewrite():
-    # The present comparison is order-sensitive (pyinfra parity): a mere
+    # The present comparison is order-sensitive (baseline parity): a mere
     # reordering of the names rewrites the line.
     host = SimulatedHost(
         name="h", remote_files={EH_PATH: b"192.168.1.10 db db.internal\n"}
@@ -7423,7 +7423,7 @@ async def test_etc_hosts_honours_custom_path():
 
 
 async def test_etc_hosts_absorbs_unknown_kwargs():
-    # ``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    # ``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     # strips name/sudo/su, the rest is ignored.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
@@ -7655,7 +7655,7 @@ def test_locale_edit_enable_purity_and_fixpoint():
 
 
 def test_locale_edit_enable_strips_every_comment_marker():
-    # pyinfra's str.replace verbatim: a doubly commented line is fully
+    # The baseline's str.replace verbatim: a doubly commented line is fully
     # enabled in one edit, not just unpeeled one layer.
     assert _locale_edit("# # fr_FR.UTF-8 UTF-8\n", LG_LOCALE, True) == (
         "fr_FR.UTF-8 UTF-8\n"
@@ -7665,7 +7665,7 @@ def test_locale_edit_enable_strips_every_comment_marker():
 def test_locale_edit_disable_and_fixpoint_guard():
     off = _locale_edit(LG_ENABLED_FILE, LG_LOCALE, False)
     assert off == LG_FILE
-    # The guard pyinfra's unconditional prepend lacks: an already commented
+    # The guard the baseline's unconditional prepend lacks: an already commented
     # line is never double-commented, so the transform is a fixpoint.
     assert _locale_edit(off, LG_LOCALE, False) == off
 
@@ -7678,7 +7678,7 @@ def test_locale_edit_preserves_trailing_newline_state():
 
 
 def test_locale_edit_raises_on_zero_and_multiple_matches():
-    # pyinfra's verbatim messages, including the absent file (None content
+    # The baseline's verbatim messages, including the absent file (None content
     # -- a RHEL-family host with no /etc/locale.gen at all).
     with pytest.raises(OperationError, match="not found in /etc/locale.gen"):
         _locale_edit("# en_US.UTF-8 UTF-8\n", LG_LOCALE, True)
@@ -7689,7 +7689,7 @@ def test_locale_edit_raises_on_zero_and_multiple_matches():
 
 
 def test_locale_edit_escapes_the_locale_literally():
-    # pyinfra interpolates the locale raw into its grep pattern, so the dot
+    # The baseline interpolates the locale raw into its grep pattern, so the dot
     # in fr_FR.UTF-8 would match any character; re.escape hardens that.
     with pytest.raises(OperationError, match="not found"):
         _locale_edit("# fr_FRXUTF-8 UTF-8\n", LG_LOCALE, True)
@@ -7793,7 +7793,7 @@ async def test_locale_disable_plans_comment_out():
 async def test_locale_noop_when_already_enabled_or_disabled():
     # The fact-level no-op: the Locales listing already agrees with the
     # request, so nothing is planned even though the definition line's own
-    # state differs (pyinfra gates on locale -a, not on the file).
+    # state differs (the baseline gates on locale -a, not on the file).
     host = SimulatedHost(
         name="h", locales=[LG_LOCALE], remote_files={LG_PATH: LG_FILE.encode()}
     )
@@ -7813,7 +7813,7 @@ async def test_locale_noop_when_already_enabled_or_disabled():
 
 
 async def test_locale_missing_definition_raises_even_when_in_state():
-    # pyinfra's FindInFile read runs BEFORE the presence gate, so a missing
+    # The baseline's FindInFile read runs BEFORE the presence gate, so a missing
     # definition raises even for an already-enabled request -- and an
     # absent /etc/locale.gen (the RHEL-family case) reads as no matches.
     host = SimulatedHost(name="h", locales=[LG_LOCALE], remote_files={})
@@ -7999,7 +7999,7 @@ async def test_locale_dry_run_sends_nothing():
 
 # --- server.security_limit ---------------------------------------------------
 
-# pyinfra's documented example ("Set nofile limit for all users") supplies
+# The baseline's documented example ("Set nofile limit for all users") supplies
 # these fields; its own operation fixture appends root/hard/memlock/unlimited.
 SL_DOMAIN = "*"
 SL_TYPE = "soft"
@@ -8020,8 +8020,8 @@ SL_LINE = "*\tsoft\tnofile\t1024\n"
 SL_DESIRED = SL_FILE + SL_LINE
 
 
-def test_security_limit_edit_matches_the_pyinfra_memlock_fixture():
-    # pyinfra's own operation fixture: domain root, type hard, item memlock,
+def test_security_limit_edit_matches_the_baseline_memlock_fixture():
+    # The baseline's own operation fixture: domain root, type hard, item memlock,
     # value "unlimited" (a string, as in the fixture), no matching line ->
     # the tab-formatted append. An absent file (None) reads as empty too.
     assert _security_limit_edit("", "root", "hard", "memlock", "unlimited") == (
@@ -8042,7 +8042,7 @@ def test_security_limit_edit_appends_when_nothing_matches():
 
 
 def test_security_limit_edit_normalizes_stale_and_valueless_lines():
-    # The value is NOT part of the pattern (pyinfra parity): a stale value
+    # The value is NOT part of the pattern (baseline parity): a stale value
     # line MATCHES and is replaced wholesale, not kept beside an append...
     assert _security_limit_edit(
         "* soft nofile 65535\n", SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE
@@ -8051,7 +8051,7 @@ def test_security_limit_edit_normalizes_stale_and_valueless_lines():
     assert _security_limit_edit(
         "*   soft\tnofile\n", SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE
     ) == SL_LINE
-    # pyinfra's sed replaces ALL matching lines, not just the first.
+    # The baseline's sed replaces ALL matching lines, not just the first.
     current = "* soft nofile 65535\n*\tsoft\tnofile\t999\n"
     assert _security_limit_edit(current, SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE) == (
         "*\tsoft\tnofile\t1024\n*\tsoft\tnofile\t1024\n"
@@ -8059,7 +8059,7 @@ def test_security_limit_edit_normalizes_stale_and_valueless_lines():
 
 
 def test_security_limit_edit_anchor_and_escape_boundaries():
-    # The anchored pattern does not match a commented-out line; pyinfra
+    # The anchored pattern does not match a commented-out line; the baseline
     # appends beside it.
     assert _security_limit_edit(
         "# * soft nofile 1024\n", SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE
@@ -8068,12 +8068,12 @@ def test_security_limit_edit_anchor_and_escape_boundaries():
     assert _security_limit_edit(
         "root\tsoft\tnofile\t1024\n", SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE
     ) == ("root\tsoft\tnofile\t1024\n" + SL_LINE)
-    # pyinfra's ``.*$`` tail: an item prefix (nofilex) matches too.
+    # The baseline's ``.*$`` tail: an item prefix (nofilex) matches too.
     assert _security_limit_edit(
         "* soft nofilex 5\n", SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE
     ) == SL_LINE
     # The documented hardening: re.escape keeps the ``*`` domain literal,
-    # where pyinfra's raw BRE interpolation makes it a quantifier -- the
+    # where the baseline's raw BRE interpolation makes it a quantifier -- the
     # near-miss line survives and the exact line appends.
     assert _security_limit_edit(
         ". soft nofile 5\n", SL_DOMAIN, SL_TYPE, SL_ITEM, SL_VALUE
@@ -8156,7 +8156,7 @@ async def test_security_limit_appends_and_plans_the_pair():
 
 
 async def test_security_limit_creates_an_absent_file():
-    # pyinfra's echo append creates the file; None content reads as empty.
+    # The baseline's echo append creates the file; None content reads as empty.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
         host,
@@ -8176,7 +8176,7 @@ async def test_security_limit_creates_an_absent_file():
 
 
 async def test_security_limit_noop_when_the_line_is_already_set():
-    # The content-level fixpoint -- pyinfra's files.line no-op when a
+    # The content-level fixpoint -- the baseline's files.line no-op when a
     # matching line already reads exactly the replacement.
     host = SimulatedHost(name="h", remote_files={SL_PATH: SL_DESIRED.encode()})
     ctx, commands = await materialize(
@@ -8240,7 +8240,7 @@ async def test_security_limit_rewrites_once_for_the_missing_newline():
 
 
 async def test_security_limit_absorbs_unknown_kwargs():
-    # ``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    # ``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     # strips name/sudo/su, the rest is ignored.
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(

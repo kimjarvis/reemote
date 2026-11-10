@@ -29,7 +29,7 @@ driving the two-phase execution model:
    path, remote name and branch arguments verbatim, and returns a
    host-name-keyed mapping -- then print each host's tip SHA.
 
-``GitRemoteBranchCommit`` mirrors pyinfra's ``git.GitRemoteBranchCommit``:
+``GitRemoteBranchCommit`` mirrors the baseline's ``git.GitRemoteBranchCommit``:
 it runs ``! test -d <repo> || (cd <repo> && git ls-remote <remote>
 <branch> 2>/dev/null | head -n1)`` and keeps the first row's first
 tab-separated column under the full-SHA gate. A missing repository, an

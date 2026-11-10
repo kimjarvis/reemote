@@ -36,9 +36,9 @@ these examples can apply; the read-only fact gathers are unaffected.
 ## Managing a single kernel parameter
 
 The setting operation: `sysctl.setting` is a reemote5 original superseding
-pyinfra's `server.sysctl` recipe. It manages one parameter along two
+the baseline's `server.sysctl` recipe. It manages one parameter along two
 independent halves — the runtime apply (`sysctl -w`, gated by the
-[`Sysctl`][reemote5.modules.sysctl.sysctl.Sysctl] fact with pyinfra's value
+[`Sysctl`][reemote5.modules.sysctl.sysctl.Sysctl] fact with the baseline's value
 normalization) and the persistence edit (a keyed line replacement gated by
 [`SysctlFile`][reemote5.modules.sysctl.sysctl.SysctlFile]) — each switchable
 via `sysctl_set` and `persist`. `present=False` removes the key from the

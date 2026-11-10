@@ -37,7 +37,7 @@ at your own throwaway machines to execute them for real.
 
 The service operation: `systemd.service` is the canonical home of the
 operation formerly known as `server.service` (which remains a deprecated
-alias). It ports pyinfra's `systemd.service` and manages one unit along two
+alias). It ports the baseline's `systemd.service` and manages one unit along two
 independent axes — `running` against the
 [`SystemdServiceState`][reemote5.modules.systemd.systemd.SystemdServiceState]
 fact and `enabled` against
@@ -56,7 +56,7 @@ determinism guard holds even though the unit name differs per host.
 
 ## Reloading the daemon
 
-The daemon-reload operation: `systemd.daemon_reload` ports pyinfra's stateless
+The daemon-reload operation: `systemd.daemon_reload` ports the baseline's stateless
 `systemctl daemon-reload`. It reads no fact and always yields, so every planned
 reload shows as a change — the step that makes systemd re-read unit files
 after an edit.

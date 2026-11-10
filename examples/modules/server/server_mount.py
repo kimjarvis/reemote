@@ -4,7 +4,7 @@
 """Example: mount a data filesystem and unmount a scratch one on real CentOS hosts.
 
 This is a *usage* example, not part of the library. It shows reemote5's
-``server.mount`` operation, the pyinfra ``server.mount`` parity for managing
+``server.mount`` operation, baseline ``server.mount`` parity for managing
 mounted filesystems: the deploy mounts ``/data`` from ``/dev/sdb1`` as ext4
 with the ``rw`` and ``noatime`` options, then ensures the ``/scratch``
 filesystem is unmounted, both under ``sudo`` because ``mount``/``umount``
@@ -16,11 +16,11 @@ the mount point is absent, an ``umount`` only when it is present, and a
 ``mount -o remount,...`` only when an already-mounted filesystem is missing
 some of the requested options -- so a second run is a no-op everywhere.
 When ``path`` is not found directly but ``device`` is given, the mount is
-located by device instead (pyinfra's fallback for paths whose spelling
+located by device instead (the baseline's fallback for paths whose spelling
 differs from the kernel's listing), and that found mount point is what an
 unmount or remount acts on. On a BSD host the remount takes the
 ``mount -uo ... -t ...`` form instead (the ``Kernel`` fact picks it). Like
-pyinfra, ``/etc/fstab`` is never touched: a mount made this way does not
+the baseline, ``/etc/fstab`` is never touched: a mount made this way does not
 survive a reboot unless an fstab entry is managed separately (a
 ``files.edit`` recipe).
 

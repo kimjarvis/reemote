@@ -42,7 +42,7 @@ the ``chown`` never fails on an unknown user -- both steps are no-ops once
 the account is there. The mode is ``755``, not ``750``: the facts read
 *unprivileged*, so the web root must stay traversable by the login user
 (and by the ``files.file`` sibling example's ``File`` fact, which manages
-a config file inside it). pyinfra also offers ``force``/``force_backup`` here;
+a config file inside it). The baseline also offers ``force``/``force_backup`` here;
 reemote5 keeps ``force`` (a non-directory is removed with ``rm -rf`` and
 recreated; without it such a path raises ``ValueError``) but deliberately
 drops the timestamped backup ``mv``, whose ``datetime.now()`` would differ

@@ -28,7 +28,7 @@ two-phase execution model:
    inventory with ``asyncio.gather`` and returns a host-name-keyed mapping
    -- then print each host's settings with ``json.dumps(..., indent=2)``.
 
-``Sysctl`` mirrors pyinfra's ``server.Sysctl`` (the class was relocated to
+``Sysctl`` mirrors the baseline's ``server.Sysctl`` (the class was relocated to
 the ``sysctl`` namespace, the canonical home for everything sysctl, but
 the top-level ``reemote5.Sysctl`` import keeps working): with no arguments
 it runs ``sysctl -a 2>/dev/null || true`` and parses every setting; this

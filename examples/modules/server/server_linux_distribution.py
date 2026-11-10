@@ -29,7 +29,7 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's distribution info dict
    with ``json.dumps(..., indent=2)``.
 
-``LinuxDistribution`` mirrors pyinfra's ``server.LinuxDistribution``: it
+``LinuxDistribution`` mirrors the baseline's ``server.LinuxDistribution``: it
 dumps every ``/etc/*-release`` file and parses them with the ``distro``
 library, returning ``{name, major, minor, release_meta}`` -- the pretty
 distribution name (e.g. ``CentOS``, ``Fedora``), the version resolved from

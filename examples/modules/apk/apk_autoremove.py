@@ -27,7 +27,7 @@ it finishes. The path is resolved from ``__file__``, so the example works from
 any working directory; point ``INVENTORY_PATH`` at your own file to target
 your machines.
 
-``apk.autoremove`` is a reemote5 original: pyinfra ships no apk autoremove,
+``apk.autoremove`` is a reemote5 original: the baseline ships no apk autoremove,
 and apk itself has no ``autoremove`` verb -- it exposes orphan purge as the
 ``--purge`` flag of ``apk add``/``apk fix``, which reemote5 splits out into
 this standalone operation so a deploy can clean up orphans without also

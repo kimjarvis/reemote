@@ -4,7 +4,7 @@
 """Example: a health-check style deploy combining dnf, files.put and files.get.
 
 This is a *usage* example, not part of the library. It is the reemote5 take on
-a relatable pyinfra scenario -- a simple web-server health-check / log-rotation
+a relatable the baseline scenario -- a simple web-server health-check / log-rotation
 deploy -- in one flat generator that crosses module boundaries:
 
 1. ``dnf.packages`` installs a lightweight, harmless tool (``htop``) so the
@@ -19,7 +19,7 @@ deploy -- in one flat generator that crosses module boundaries:
    every Fedora/RHEL host, so a safe stand-in for "fetch the logs" -- back
    into an in-memory stream the script prints afterwards.
 
-Where the pyinfra original works with local *paths* (``src="files/motd"``,
+Where the baseline original works with local *paths* (``src="files/motd"``,
 ``dest="local_os_release.txt"``, ``add_deploy_dir=True``), reemote5's transfer
 operations take **IO-like objects only**: the put source is a module-level
 ``io.StringIO`` (no local ``files/`` directory needed) and the get destination

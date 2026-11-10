@@ -12,7 +12,7 @@ filter before each `gather_fact` fan-out). The shared file carries no
 `{"sudo_user": "postgres"}` to the loaded `centos` entries and the
 requests ride under `sudo`, so the `psql` client connects as the
 `postgres` OS user through peer authentication — no password travels
-through operation arguments, plans or logs (pyinfra's `psql_password`
+through operation arguments, plans or logs (the baseline's `psql_password`
 option and `postgresql.role`'s `password` parameter are deliberately
 dropped namespace-wide).
 
@@ -63,7 +63,7 @@ the login user (facts) and the `postgres` OS user (operations).
 
 ## Managing a database
 
-The database operation: `postgresql.database` mirrors pyinfra's
+The database operation: `postgresql.database` mirrors the baseline's
 `postgresql.database` and extends it beyond creation. It reads
 [`PostgresqlDatabases`][reemote5.modules.postgresql.postgresql.PostgresqlDatabases]
 to decide: an absent database yields one `CREATE DATABASE` carrying
@@ -74,7 +74,7 @@ through `ALTER DATABASE` only where they differ, reporting the
 creation-only options (template, encoding, locales) as skipped rather than
 pretending to change them. Tablespaces resolve by NAME against
 [`PostgresqlTablespaces`][reemote5.modules.postgresql.postgresql.PostgresqlTablespaces]'
-OIDs — fixing pyinfra's comparison of the name against the OID column,
+OIDs — fixing the baseline's comparison of the name against the OID column,
 which never matched. `present=False` drops the database. The script yields
 the same create request twice — the second is a guaranteed no-op in the
 apply phase, because the first create is visible to it through the fresh
@@ -87,14 +87,14 @@ as changes).
 
 ## Managing a role
 
-The role operation: `postgresql.role` mirrors pyinfra's
+The role operation: `postgresql.role` mirrors the baseline's
 `postgresql.role` and extends it beyond creation. It reads
 [`PostgresqlRoles`][reemote5.modules.postgresql.postgresql.PostgresqlRoles]
 to decide: an absent role yields one `CREATE ROLE` rendering every flag
 explicitly as X/NOX pairs (`SUPERUSER`, `CREATEDB`, `CREATEROLE`, `INHERIT`,
 `LOGIN`, `REPLICATION`) plus `CONNECTION LIMIT`; an existing
 one reconciles the flags and the connection limit through `ALTER ROLE`
-only where they differ. pyinfra's `password` parameter is deliberately
+only where they differ. The baseline's `password` parameter is deliberately
 dropped — credentials never travel through operation arguments, plans or
 logs. `present=False` drops the role. The script yields the same create
 request twice — the second is a guaranteed no-op in the apply phase,
@@ -107,7 +107,7 @@ cache (in the prepare phase, where nothing is sent, both plan as changes).
 
 ## Executing arbitrary SQL
 
-The SQL operation: `postgresql.sql` mirrors pyinfra's `postgresql.sql`,
+The SQL operation: `postgresql.sql` mirrors the baseline's `postgresql.sql`,
 executing a statement through `psql -Ac`. It is stateless — the statement
 always runs, in both the plan's apply phase and every subsequent run — so
 it is the escape hatch for anything the typed operations do not cover;
@@ -121,7 +121,7 @@ does not. The script yields the same idempotent statement twice.
 
 ## Dumping a database
 
-The dump operation: `postgresql.dump` mirrors pyinfra's `postgresql.dump`,
+The dump operation: `postgresql.dump` mirrors the baseline's `postgresql.dump`,
 writing a `pg_dump` of a database to a file on the TARGET host (`dest`).
 It is stateless — the dump always runs, overwriting the destination — with
 `pg_dump` carrying the connection options. The script yields one dump
@@ -134,7 +134,7 @@ request rides under can write.
 
 ## Loading a SQL file
 
-The load operation: `postgresql.load` mirrors pyinfra's `postgresql.load`,
+The load operation: `postgresql.load` mirrors the baseline's `postgresql.load`,
 feeding a SQL file through `psql`. It is stateless — the file always
 executes — and `src` is a path on the TARGET host: spool controller-side
 bytes there with `files.put` first. The script pairs a dump with a load of

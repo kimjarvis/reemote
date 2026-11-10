@@ -29,7 +29,7 @@ two-phase execution model:
    forwards the filter kwargs to every host's ``process`` -- then print
    each host's path list with ``json.dumps(..., indent=2)``.
 
-``FindLinks`` mirrors pyinfra's ``files.FindLinks`` -- the find family's
+``FindLinks`` mirrors the baseline's ``files.FindLinks`` -- the find family's
 ``-type l`` member, sharing the family's mechanics: one
 ``find <path> -type l`` plus the filters (``fname``/``iname`` name globs,
 ``maxdepth``, size bounds, ``regex``, ``path_match``, the raw ``args``

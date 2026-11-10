@@ -30,7 +30,7 @@ transport* (asyncssh):
    mapping -- then print each host's raw dictionary with
    ``json.dumps(..., indent=2)``.
 
-``Booleans`` is a reemote5 original (pyinfra ships only the single-name
+``Booleans`` is a reemote5 original (the baseline ships only the single-name
 ``SEBoolean``): ``getsebool -a`` prints every kernel security boolean as a
 ``name --> on|off`` row, and the fact keeps them all as a name -> bool
 mapping -- True only for ``on``. One read answers the whole audit question

@@ -29,7 +29,7 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's hostname string with
    ``json.dumps(..., indent=2)``.
 
-``Hostname`` mirrors pyinfra's ``server.Hostname``: it runs ``uname -n``
+``Hostname`` mirrors the baseline's ``server.Hostname``: it runs ``uname -n``
 and returns the first line (e.g. ``my-host.net``), the name the machine
 calls itself -- which need not match the inventory label or the address
 used to reach it.

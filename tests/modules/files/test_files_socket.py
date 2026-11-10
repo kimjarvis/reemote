@@ -55,7 +55,7 @@ SOCKET_STAT = {
 
 
 def test_socket_command_is_files_command():
-    # pyinfra's Socket subclasses File without touching the command; the
+    # The baseline's Socket subclasses File without touching the command; the
     # same guard/stat/ls chain (tilde branch included) is inherited.
     assert Socket.command("/var/run/docker.sock") == File.command("/var/run/docker.sock")
     assert Socket.command("~/agent.sock") == File.command("~/agent.sock")
@@ -88,7 +88,7 @@ async def test_socket_parses_the_ls_fallback_socket_row():
 
 async def test_socket_is_false_for_a_regular_file():
     host = CannedShellHost(
-        "user=pyinfra group=pyinfra mode=-rw-r--r-- atime=0 mtime=0 ctime=0 "
+        "user=reemote5 group=reemote5 mode=-rw-r--r-- atime=0 mtime=0 ctime=0 "
         "size=8 '/etc/hosts'\n"
     )
     assert await Socket.process(host, "/etc/hosts") is False

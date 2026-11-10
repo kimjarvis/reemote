@@ -6,9 +6,9 @@
 Covers ``reemote5.modules.systemd.systemd``: the ``unit_name`` normalization
 helper; the per-unit ``SystemdServiceState``/``SystemdServiceEnabled`` probes
 and the ``service``/``daemon_reload`` operations (idempotence against the
-seams, seam mutation, the pyinfra operation-fixture parity and the
+seams, seam mutation, the baseline operation-fixture parity and the
 backward-compatible ``server.service`` alias); the fleet-wide
-``SystemdStatus``/``SystemdEnabled`` ports (pyinfra fact-fixture parity over
+``SystemdStatus``/``SystemdEnabled`` ports (the baseline fact-fixture parity over
 canned shell output, plus the seam projections); and the seven reemote5
 originals -- ``SystemdUnitProperties``, ``SystemdFailedUnits``,
 ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``,
@@ -199,7 +199,7 @@ async def test_service_restart_only_when_running():
     _, commands = await materialize(
         stopped, op(systemd.service, service="httpd", restarted=True)
     )
-    # A stopped unit is started, not restarted (pyinfra's handle_service_control).
+    # A stopped unit is started, not restarted (the baseline's handle_service_control).
     assert commands == [SystemctlCommand(action="start", unit="httpd.service")]
 
 
@@ -271,7 +271,7 @@ def test_systemctl_command_renders_scope_and_now():
         "systemctl start httpd.service"
     )
     assert SystemctlCommand(action="daemon-reload").shell() == "systemctl daemon-reload"
-    # user / machine / user@machine / user@.host bases (pyinfra _make_systemctl_cmd).
+    # user / machine / user@machine / user@.host bases (the baseline _make_systemctl_cmd).
     assert SystemctlCommand(action="start", unit="httpd.service", user_mode=True).shell() == (
         "systemctl --user start httpd.service"
     )
@@ -295,7 +295,7 @@ def test_systemctl_command_renders_scope_and_now():
     assert SystemctlCommand(action="disable", unit="httpd.service", now=True).shell() == (
         "systemctl disable --now httpd.service"
     )
-    # The unit is shell-quoted; the scope base is not (pyinfra interpolates it raw).
+    # The unit is shell-quoted; the scope base is not (the baseline interpolates it raw).
     assert SystemctlCommand(action="enable", unit="my-service; whoami.service").shell() == (
         "systemctl enable 'my-service; whoami.service'"
     )
@@ -313,17 +313,17 @@ def test_systemctl_command_is_hashable_and_value_equal_with_scope():
     assert a != SystemctlCommand(action="start", unit="httpd.service")
 
 
-# --- service: pyinfra operation fixture parity -------------------------------
+# --- service: baseline operation fixture parity -------------------------------
 
 
 @pytest.mark.parametrize(
     ("service", "kwargs", "state", "enabled_units", "expected", "changed"),
     [
-        # pyinfra's own operation fixtures (tests/operations/systemd.service/),
+        # The baseline's own operation fixtures (tests/operations/systemd.service/),
         # replayed over the SimulatedHost seams. SystemdStatus's running bool
         # maps to the ActiveState string the seam stores (true -> "active",
         # false -> "inactive"); SystemdEnabled's bool maps to membership in
-        # enabled_services. The expected strings are pyinfra's verbatim.
+        # enabled_services. The expected strings are the baseline's verbatim.
         ("redis-server.service", {}, "inactive", [], ["systemctl start redis-server.service"], True),
         ("redis-server.service", {"running": False}, "inactive", [], [], False),
         ("redis-server.service", {}, "active", [], [], False),
@@ -349,7 +349,7 @@ def test_systemctl_command_is_hashable_and_value_equal_with_scope():
         ("my-service; whoami", {"enabled": False}, "active", ["my-service; whoami.service"], ["systemctl disable 'my-service; whoami.service'"], True),
     ],
 )
-async def test_service_matches_pyinfra_operation_fixtures(
+async def test_service_matches_baseline_operation_fixtures(
     service, kwargs: dict, state: str, enabled_units: list, expected: list, changed: bool
 ):
     host = SimulatedHost(
@@ -670,9 +670,9 @@ async def test_service_snapshot_factory_runs_deterministically():
         assert host.services == {"httpd.service": "active"}
 
 
-# --- SystemdStatus / SystemdEnabled: pyinfra fact-fixture parity -------------
+# --- SystemdStatus / SystemdEnabled: the baseline fact-fixture parity -------------
 
-# pyinfra's own fact fixtures (tests/facts/systemd.SystemdStatus/ and
+# The baseline's own fact fixtures (tests/facts/systemd.SystemdStatus/ and
 # systemd.SystemdEnabled/), replayed verbatim through CannedShellHost. The
 # four-unit output is shared by the user/machine scope fixtures; the
 # eight-unit output and the invalid-line output are SystemdStatus-only.
@@ -761,7 +761,7 @@ _ENABLED_FACT = {
          _ENABLED_FACT),
     ],
 )
-async def test_status_enabled_match_pyinfra_fact_fixtures(
+async def test_status_enabled_match_baseline_fact_fixtures(
     fact_cls, kwargs: dict, output: str, expected_command: str, expected_fact: dict
 ):
     host = CannedShellHost(output)

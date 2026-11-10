@@ -33,7 +33,7 @@ default) it enables ``module:stream`` (``dnf module enable -y <module>:<stream>`
 and with ``enabled=False`` it disables the module outright (``dnf module
 disable -y <module>``), making every one of its streams inactive. Application
 streams let a host install one of several parallel versions of a component --
-here the PostgreSQL 16 stream, matching pyinfra's documented example.
+here the PostgreSQL 16 stream, matching the baseline's documented example.
 
 The operation is idempotent: enabling reads the ``DnfEnabledModules`` fact (a
 list of name-and-stream entries) and is a no-op when the module is already
@@ -47,7 +47,7 @@ per-step fact cache now sees the stream the first step enabled.
 
 Enabling a stream writes dnf's module state under ``/etc`` and the rpm
 database, so the request is flagged ``sudo=True`` and the driver elevates its
-``dnf module enable`` command. Note pyinfra's stream-switching caveat, inherited
+``dnf module enable`` command. Note the baseline's stream-switching caveat, inherited
 unchanged: ``dnf module enable`` refuses to switch streams while packages from
 the currently-active stream are installed, so remove those packages (or run
 ``dnf module reset``) before switching.

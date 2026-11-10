@@ -19,7 +19,7 @@ Fact gathering is per-host by default — [`FactCache.get`][reemote5.core.FactCa
 reads one fact for one host. [`gather_fact`][reemote5.drivers.gather_fact] is
 the driver-level fan-out across the whole inventory: it runs a fact's `process`
 for every host concurrently with `asyncio.gather` and returns a host-aligned
-mapping of `host.name` to that host's value (mirroring pyinfra's `get_facts`,
+mapping of `host.name` to that host's value (mirroring the baseline's `get_facts`,
 which returns `{host: value}`). Facts stay single-host — only the driver owns
 the concurrency — so `process`, `FactCache` and the `SimulatedHost` seams are
 untouched.

@@ -29,7 +29,7 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's kernel name string with
    ``json.dumps(..., indent=2)``.
 
-``Kernel`` mirrors pyinfra's ``server.Kernel``: it runs ``uname -s`` and
+``Kernel`` mirrors the baseline's ``server.Kernel``: it runs ``uname -s`` and
 returns the first line (e.g. ``Linux``, ``Darwin``, ``FreeBSD``), the kernel
 name the machine reports -- useful for branching per-host logic on the
 operating system family before applying platform-specific operations.

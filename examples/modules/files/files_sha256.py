@@ -29,7 +29,7 @@ two-phase execution model:
    and returns a host-name-keyed mapping -- then print each host's digest
    with ``json.dumps(..., indent=2)``.
 
-``Sha256File`` mirrors pyinfra's ``files.Sha256File``: one guarded command
+``Sha256File`` mirrors the baseline's ``files.Sha256File``: one guarded command
 tries the tool spellings in order (``sha256sum``, ``shasum -a 256``,
 ``sha256``) reading the file through *stdin* (``< path``) so the checksum
 tool never sees the filename -- GNU coreutils escapes backslash/newline

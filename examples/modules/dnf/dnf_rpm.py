@@ -33,7 +33,7 @@ already exists on the *target host* -- here ``sl``, the steam-locomotive ``ls``
 joke, the kind of small standalone ``.rpm`` one commonly downloads from a
 mirror and installs by hand. The ``src`` is therefore a **remote** path, not a
 controller-side one: upload the file first with ``files.put`` (or place it
-there by any other means). Unlike pyinfra -- whose ``dnf.rpm`` can also
+there by any other means). Unlike the baseline -- whose ``dnf.rpm`` can also
 *download* a remote ``.rpm`` mid-deploy -- reemote5 has no download operation,
 so a ``src`` with a URL scheme raises ``ValueError``. This example stages the
 file with a demo-side ``curl`` one-liner (a raw ``StringCommand``, the same
@@ -61,7 +61,7 @@ use to avoid sweep-ordering pollution).
 Installing a package writes to the root-owned rpm database, so the request is
 flagged ``sudo=True`` and the driver elevates its ``rpm -i`` command. Because
 reemote5 re-materializes the operation at apply time against a fresh fact
-cache, the command is a plain ``rpm -i`` -- not pyinfra's defensive
+cache, the command is a plain ``rpm -i`` -- not the baseline's defensive
 ``rpm -q \\`rpm -qp <src>\\` ... || rpm -i <src>`` runtime check -- which also
 keeps elevation correct (a ``sudo``-prefixed ``|| ...`` chain would leave its
 fallback arm unprivileged).
@@ -164,10 +164,10 @@ async def download_rpm(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
     descriptor -- the same demo-side pattern as ``server_op_sysctl.py``'s
     ``sysctl_set`` and ``apt_deb.py``'s ``download_deb``. The ``test -f ... ||
     curl`` guard downloads only when the file is absent, so a re-run is cheap;
-    like pyinfra's download step it reads no fact and always reports a change.
+    like the baseline's download step it reads no fact and always reports a change.
     Writing to ``/tmp`` and running ``curl`` need no root, so the request is
     *not* elevated (the ``dnf.rpm`` install that follows is). ``**kwargs``
-    absorbs pyinfra's global arguments (``op()`` already strips
+    absorbs the baseline's global arguments (``op()`` already strips
     ``name``/``sudo``/``su``).
     """
     ctx.changed = True

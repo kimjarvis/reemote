@@ -29,7 +29,7 @@ transport* (asyncssh):
    inventory with ``asyncio.gather`` and returns a host-name-keyed mapping
    -- then print each host's raw record with ``json.dumps(..., indent=2)``.
 
-``Mode`` is a reemote5 original: pyinfra's selinux namespace ships no mode
+``Mode`` is a reemote5 original: the baseline's selinux namespace ships no mode
 fact, so every SELinux decision starts with a manual getenforce.
 ``sestatus`` answers the whole question in one command and the fact keeps
 three fields -- ``mode`` (the runtime state: enforcing, permissive or

@@ -6,28 +6,28 @@
 
 Covers the read-only state discovery in ``reemote5.modules.apk.apk``:
 ``ApkInstalledPackages`` is exercised both over the real-transport path (parsing
-canned ``apk list --installed`` output, reusing the rows of pyinfra's own
+canned ``apk list --installed`` output, reusing the rows of the baseline's own
 ``apk.ApkPackages`` fact fixtures verbatim -- the small
 ``packages_2.json`` fixture in full and a selected row set of the large
 alpine ``packages.json`` fixture -- and asserting them in reemote5's own
 ``ApkPackageVersion`` entry shape) and through the ``SimulatedHost`` seam,
 plus the de-dup/sort and ``WARNING:`` noise-filtering edge cases and the
 ``gather_fact`` fan-out. ``ApkExplicitPackages`` and ``ApkRepositories`` --
-reemote5 originals with no pyinfra fixtures -- are fed a realistic canned
+reemote5 originals with no baseline fixtures -- are fed a realistic canned
 ``/etc/apk/world`` and ``/etc/apk/repositories`` file respectively, plus the
 tag-dropping, comment/conflict and malformed-line skips, the seam
 copy semantics and their own fan-outs. ``ApkPackage`` -- a reemote5 original
-querying one package's detail with no pyinfra fixture -- is fed a realistic
+querying one package's detail with no baseline fixture -- is fed a realistic
 canned ``apk info -a`` block, plus the untracked-section skip, the scalar
 absent-field defaults, the size coercion, the shell-quoting and None-on-
 absent edges, the seam copy semantics and its package-argument fan-out.
 ``ApkAutoremovablePackages`` -- the apk counterpart of ``apt.AptAutoremovable``,
-also a reemote5 original with no pyinfra fixture -- is fed a realistic
+also a reemote5 original with no baseline fixture -- is fed a realistic
 canned ``apk add --purge --simulate`` block, plus the summary/footer skip,
 the multi-dash and punctuation name preservation, the dedup+sort and the
 seam copy semantics and fan-out.
 
-The ``apk.packages`` operation -- a pyinfra port reading ``ApkInstalledPackages`` --
+The ``apk.packages`` operation -- a baseline port reading ``ApkInstalledPackages`` --
 is exercised over its three command descriptors (``ApkInstallCommand`` /
 ``ApkRemoveCommand`` / ``ApkUpgradeCommand``), its idempotence and
 version-pin matching, the ``latest`` upgrade path, the deliberately dropped
@@ -35,7 +35,7 @@ version-pin matching, the ``latest`` upgrade path, the deliberately dropped
 end-to-end through ``run`` / ``run_prepare`` + ``run_apply`` (including the
 ``sudo`` elevation and a dry run).
 
-The ``apk.virtual`` operation -- a reemote5 original with no pyinfra
+The ``apk.virtual`` operation -- a reemote5 original with no baseline
 counterpart, managing a virtual package group through its single
 present-flagged ``ApkVirtualCommand`` -- is exercised over the descriptor's
 create/remove rendering and elevation, its world-name idempotence against
@@ -69,7 +69,7 @@ the holds untouched), and end-to-end through ``run_prepare`` + ``run_apply``
 (purge-then-noop, and a dry run).
 
 The ``apk.repository`` operation -- a reemote5 original modeled on
-``apt.repo`` (pyinfra's apk namespace ships no repository operation), a member
+``apt.repo`` (the baseline's apk namespace ships no repository operation), a member
 of the spool-and-install write family -- is exercised over the
 ``ApkRepoUploadCommand``/``ApkRepoInstallCommand`` pair (the unprivileged scp of
 the transformed text to the ``/tmp`` spool and the elevated ``sh -c`` install,
@@ -163,19 +163,19 @@ def _repository(url: str, tag: str = "") -> ApkRepository:
     return {"url": url, "tag": tag}
 
 
-# --- Command parity (pyinfra's apk.ApkPackages fixtures) ----------------------
+# --- Command parity (the baseline's apk.ApkPackages fixtures) ----------------------
 
 
-def test_apk_packages_command_matches_pyinfra():
-    """The command is pyinfra's fixture command verbatim: apk list of the
-    installed packages (pyinfra's ``requires_command`` gating on ``apk`` is
+def test_apk_packages_command_matches_baseline():
+    """The command is the baseline's fixture command verbatim: apk list of the
+    installed packages (the baseline's ``requires_command`` gating on ``apk`` is
     deliberately dropped)."""
     assert ApkInstalledPackages.COMMAND == "apk list --installed"
 
 
-# --- Real-transport parity (pyinfra's apk.ApkPackages/packages_2.json) --------
+# --- Real-transport parity (the baseline's apk.ApkPackages/packages_2.json) --------
 
-# The ``output`` field of pyinfra's ``apk.ApkPackages/packages_2.json``
+# The ``output`` field of the baseline's ``apk.ApkPackages/packages_2.json``
 # fixture verbatim: two ``WARNING:`` index-noise lines followed by six
 # installed packages on an old alpine host.
 PACKAGES_2_OUTPUT = """\
@@ -189,7 +189,7 @@ iproute2-5.17.0-r0 x86_64 {iproute2} (GPL-2.0-or-later) [installed]
 linux-firmware-rtl_nic-20220509-r1 x86_64 {linux-firmware} (custom:multiple) [installed]
 """
 
-# The fixture's ``fact`` field -- pyinfra's name-keyed dict of version lists,
+# The fixture's ``fact`` field -- the baseline's name-keyed dict of version lists,
 # which is also the shape of the ``apk_packages`` SimulatedHost seam (the state
 # store the install/remove mutators edit).
 PACKAGES_2_SEAM = {
@@ -223,9 +223,9 @@ async def test_apk_packages_parses_the_warning_fixture():
     assert host.last_shell == ApkInstalledPackages.COMMAND
 
 
-# --- Real-transport parity (pyinfra's apk.ApkPackages/packages.json) ----------
+# --- Real-transport parity (the baseline's apk.ApkPackages/packages.json) ----------
 
-# A selected set of the ``output`` field of pyinfra's
+# A selected set of the ``output`` field of the baseline's
 # ``apk.ApkPackages/packages.json`` fixture (the modern-alpine 143-row
 # listing), verbatim rows covering the regex's edge cases: multi-dash names
 # (``alpine-baselayout-data``, ``openssh-client-common``), names with
@@ -285,7 +285,7 @@ async def test_apk_packages_parses_the_alpine_fixture():
 async def test_apk_packages_empty_reads_as_empty_list():
     """No rows at all -- empty stdout or only blank lines and warnings --
     reads as ``[]``, the empty answer every sibling typed-list apk fact
-    gives (in place of pyinfra's ``default = dict``)."""
+    gives (in place of the baseline's ``default = dict``)."""
     assert await ApkInstalledPackages.process(CannedShellHost("")) == []
     assert await ApkInstalledPackages.process(CannedShellHost("\n\n")) == []
     noise = "WARNING: Ignoring APKINDEX.00740ba1.tar.gz: No such file or directory\n"
@@ -307,7 +307,7 @@ musl-1.2.5-r0 x86_64 {musl} (MIT) [installed]
 
 async def test_apk_packages_dedups_and_sorts_versions():
     """The same name listed at two versions contributes one entry per
-    name-and-version pair, sorted and de-duplicated -- pyinfra's
+    name-and-version pair, sorted and de-duplicated -- the baseline's
     parse_packages set semantics, one entry per pair."""
     stdout = """\
 musl-1.2.5-r0 x86_64 {musl} (MIT) [installed]
@@ -389,7 +389,7 @@ def test_apk_explicit_packages_command_cats_the_world_file():
 
 # A realistic modern-Alpine ``/etc/apk/world``: the bare names apk writes for
 # the base system, a version-pinned package, a package allowed from a tagged
-# repository, a prefix-bound constraint and a conflict constraint. (pyinfra
+# repository, a prefix-bound constraint and a conflict constraint. (the baseline
 # ships no apk world fact, hence no fixture.)
 WORLD_OUTPUT = """\
 # explicitly requested packages
@@ -723,7 +723,7 @@ def test_apk_repositories_command_cats_the_repositories_file():
 
 # A realistic modern-Alpine ``/etc/apk/repositories``: a leading comment
 # block, the two untagged v3.19 lines, blank lines, and a tagged edge
-# repository. (pyinfra ships no apk repositories fact, hence no fixture.)
+# repository. (the baseline ships no apk repositories fact, hence no fixture.)
 REPOSITORIES_OUTPUT = """\
 # Alpine package repositories
 https://dl-cdn.alpinelinux.org/alpine/v3.19/main
@@ -854,7 +854,7 @@ def test_apk_package_command_queries_the_package_and_quotes_it():
 # labels are capitalized (``Description``, ``Installed size``, ``Webpage``,
 # ``Depends on``, ``Provides``) except ``is required by``. The ``Contains``
 # file listing and ``is required by`` reverse-dependency sections are present
-# precisely to prove they never leak into the tracked ``provides`` list. (pyinfra
+# precisely to prove they never leak into the tracked ``provides`` list. (the baseline
 # ships no per-package apk info fact, hence no fixture.)
 INFO_OUTPUT = """\
 curl-8.14.0-r0 Description:
@@ -917,7 +917,7 @@ async def test_apk_package_absent_or_noise_reads_as_none():
     """Empty stdout -- what the ``|| true`` command leaves behind for an
     absent package or a host without apk -- reads as ``None``, and so does
     output with no field header (apk's index-warning noise alone). This is
-    ``apt.DebPackage``/``dnf.RpmPackage``'s None-on-absent, not pyinfra's
+    ``apt.DebPackage``/``dnf.RpmPackage``'s None-on-absent, not the baseline's
     empty-dict."""
     assert await ApkPackage.process(CannedShellHost(""), "nope") is None
     noise = "WARNING: Ignoring APKINDEX.00740ba1.tar.gz: No such file or directory\n"
@@ -1011,7 +1011,7 @@ async def test_gather_fact_apk_package_over_canned_shells():
 
 
 def test_apk_install_command_renders_apk_add():
-    """``apk add`` needs no ``-y`` (apk never prompts): pyinfra's bare
+    """``apk add`` needs no ``-y`` (apk never prompts): the baseline's bare
     install command plus the shell-quoted names."""
     assert ApkInstallCommand(packages=("nginx", "vim")).shell() == "apk add nginx vim"
 
@@ -1044,7 +1044,7 @@ def test_apk_package_commands_shell_quote_the_names():
     assert ApkUpgradeCommand(packages=(package,)).shell() == f"apk upgrade {quoted}"
 
 
-# --- apk.packages: idempotence (pyinfra parity) ------------------------------
+# --- apk.packages: idempotence (baseline parity) ------------------------------
 
 
 async def test_apk_packages_installs_missing_packages():
@@ -1066,7 +1066,7 @@ async def test_apk_packages_no_change_when_present():
 
 
 async def test_apk_packages_accepts_a_bare_string():
-    """pyinfra accepts ``packages="nginx"`` as shorthand for a one-item list."""
+    """The baseline accepts ``packages="nginx"`` as shorthand for a one-item list."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apk.packages(ctx, packages="nginx")]
@@ -1125,7 +1125,7 @@ async def test_apk_packages_version_pin_installs_when_version_differs():
 
 
 async def test_apk_packages_version_pin_splits_on_the_last_equals():
-    """The pin splits on the *last* ``=`` (pyinfra's ``rsplit`` join, apt's and
+    """The pin splits on the *last* ``=`` (the baseline's ``rsplit`` join, apt's and
     dnf's ``rpartition``), so an ``=`` inside the name never cuts it short:
     the installed name ``foo=1.0`` matches the pin ``foo=1.0=2``."""
     host = SimulatedHost(name="h", apk_packages={"foo=1.0": ["2"]})
@@ -1172,7 +1172,7 @@ async def test_apk_packages_latest_skips_version_pins():
 
 
 async def test_apk_packages_drops_update_and_upgrade_options():
-    """pyinfra's ``update``/``upgrade`` prefix options are deliberately dropped:
+    """The baseline's ``update``/``upgrade`` prefix options are deliberately dropped:
     both keywords are absorbed by ``**kwargs`` with no effect, so only the
     install command is yielded -- no bare ``apk update``/``apk upgrade``
     prefix runs."""
@@ -1187,7 +1187,7 @@ async def test_apk_packages_drops_update_and_upgrade_options():
 
 
 async def test_apk_packages_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     strips the ``name``/``sudo`` meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1571,7 +1571,7 @@ async def test_apk_virtual_remove_noop_when_absent():
 
 
 async def test_apk_virtual_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     strips the ``name``/``sudo``/``su`` meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1919,7 +1919,7 @@ async def test_apk_unhold_noop_when_nothing_held():
 
 
 async def test_apk_hold_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     strips the ``name``/``sudo``/``su`` meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2280,7 +2280,7 @@ async def test_apk_autoremove_noop_when_nothing_to_purge():
 
 
 async def test_apk_autoremove_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; ``op()`` already
+    """``**kwargs`` mirrors the baseline's global-arguments slot; ``op()`` already
     strips the ``name``/``sudo``/``su`` meta-parameters, the rest is
     ignored -- including apt's ``wait_for_lock``, which apk deliberately
     does not offer."""
@@ -2721,7 +2721,7 @@ async def test_apk_repository_rejects_an_unparseable_line():
 
 
 async def test_apk_repository_absorbs_unknown_kwargs():
-    """``**kwargs`` mirrors pyinfra's global-arguments slot; op() already
+    """``**kwargs`` mirrors the baseline's global-arguments slot; op() already
     strips the ``name``/escalation meta-parameters, the rest is ignored."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))

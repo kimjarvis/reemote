@@ -30,7 +30,7 @@ transport* (asyncssh):
    mapping -- then print each host's raw list with
    ``json.dumps(..., indent=2)``.
 
-``Modules`` is a reemote5 original: pyinfra's selinux namespace ships no
+``Modules`` is a reemote5 original: the baseline's selinux namespace ships no
 module fact, so custom-policy management has no visibility. ``semodule
 -lfull`` lists *every* module instance in the store as a ``priority name
 format [disabled]`` row -- unlike ``semodule -l``, which hides disabled

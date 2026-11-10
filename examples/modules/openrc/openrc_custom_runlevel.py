@@ -30,7 +30,7 @@ your machines.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``openrc.custom_runlevel`` is a reemote5 original with no pyinfra
+``openrc.custom_runlevel`` is a reemote5 original with no baseline
 counterpart: it manages the runlevel *directories themselves* under
 ``/etc/runlevels``, where ``openrc.runlevel`` only manages one service's
 membership in an existing runlevel. A runlevel is just a directory of

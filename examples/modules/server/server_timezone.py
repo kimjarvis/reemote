@@ -29,7 +29,7 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's timezone string with
    ``json.dumps(..., indent=2)``.
 
-``Timezone`` mirrors pyinfra's ``server.Timezone``: it runs
+``Timezone`` mirrors the baseline's ``server.Timezone``: it runs
 ``readlink -f /etc/localtime | sed 's|.*/zoneinfo/||'`` and returns the
 first line (e.g. ``Europe/Amsterdam``), the system timezone the
 ``/etc/localtime`` symlink points at -- which need not match the timezone

@@ -4,10 +4,10 @@
 """Tests for the sysctl module: facts, descriptors and operations.
 
 Covers ``reemote5.modules.sysctl.sysctl``: the private helpers
-(``_normalize_value``'s pyinfra chain, ``_parse_conf`` and ``_edit_conf``'s
+(``_normalize_value``'s the baseline chain, ``_parse_conf`` and ``_edit_conf``'s
 keyed replacement); the relocated ``Sysctl`` runtime fact (its ten tests
 moved from ``tests/modules/server/test_server.py`` alongside the class
-itself, pyinfra fixture parity included) and the two originals
+itself, baseline fixture parity included) and the two originals
 ``SysctlFile``/``SysctlFiles`` (command rendering, marker parsing,
 copy-on-read seam reads and ``gather_fact`` forwarding); the five typed
 descriptors (shell rendering + elevation, the non-shell transfer's
@@ -90,7 +90,7 @@ async def materialize(host: Host, request: OperationRequest):
 # --- Helpers -------------------------------------------------------------------
 
 
-def test_normalize_value_follows_pyintras_chain():
+def test_normalize_value_follows_baseline_chain():
     # Single values try_int; a multi-word string splits into a list; a list
     # joins with spaces for the shell and collapses when single-item.
     assert _normalize_value(10) == ("10", 10)
@@ -162,8 +162,8 @@ def test_edit_conf_is_a_fixpoint_and_escapes_the_key():
 # --- Sysctl (relocated from server) ---------------------------------------------
 
 
-async def test_sysctl_parses_pyintras_linux_fixture():
-    # pyinfra's own fact fixture (tests/facts/server.Sysctl/sysctl_linux.json):
+async def test_sysctl_parses_baseline_linux_fixture():
+    # The baseline's own fact fixture (tests/facts/server.Sysctl/sysctl_linux.json):
     # command "sysctl -a 2>/dev/null || true", int values including a negative
     # one, and a row without a separator ("nope what") skipped.
     host = CannedShellHost(
@@ -180,8 +180,8 @@ async def test_sysctl_parses_pyintras_linux_fixture():
     assert host.shells == ["sysctl -a 2>/dev/null || true"]
 
 
-async def test_sysctl_parses_pyintras_macos_fixture():
-    # pyinfra's sysctl_macos.json fixture: BSD rows separate with ":".
+async def test_sysctl_parses_baseline_macos_fixture():
+    # The baseline's sysctl_macos.json fixture: BSD rows separate with ":".
     host = CannedShellHost(
         "security.mac.sysvmsg_enforce: 1\n"
         "security.mac.sysvsem_enforce: 1\n"
@@ -194,8 +194,8 @@ async def test_sysctl_parses_pyintras_macos_fixture():
     }
 
 
-async def test_sysctl_parses_pyintras_port_range_fixture():
-    # pyinfra's sysctl_port_range.json fixture: a tab-separated pair becomes
+async def test_sysctl_parses_baseline_port_range_fixture():
+    # The baseline's sysctl_port_range.json fixture: a tab-separated pair becomes
     # a list of ints, a whitespace-only value keeps "", and a simple word
     # stays a string.
     host = CannedShellHost(
@@ -212,7 +212,7 @@ async def test_sysctl_parses_pyintras_port_range_fixture():
 
 def test_sysctl_command_quotes_the_named_keys():
     assert Sysctl.command() == "sysctl -a 2>/dev/null || true"
-    # Safe tokens stay unquoted (pyinfra's QuoteString), multiple keys join
+    # Safe tokens stay unquoted (the baseline's QuoteString), multiple keys join
     # with spaces, and a key carrying metacharacters is a literal lookup.
     assert (
         Sysctl.command(["kern.max-files"])
@@ -252,7 +252,7 @@ def test_sysctl_parse_edge_cases():
 
 
 async def test_sysctl_is_empty_on_empty_output():
-    # An unknown key or a failed read maps to {} (pyinfra's default = dict).
+    # An unknown key or a failed read maps to {} (the baseline's default = dict).
     assert await Sysctl.process(CannedShellHost("")) == {}
 
 
@@ -550,7 +550,7 @@ async def test_setting_no_change_when_fully_in_state():
     assert commands == []
 
 
-async def test_setting_normalizes_a_multi_word_string_like_pyinfra():
+async def test_setting_normalizes_a_multi_word_string_like_baseline():
     # "1024 65535" compares as the int list the Sysctl fact parses.
     host = SimulatedHost(
         name="h",
@@ -567,7 +567,7 @@ async def test_setting_normalizes_a_multi_word_string_like_pyinfra():
     assert commands == []
 
 
-async def test_setting_list_value_normalizes_like_pyinfra():
+async def test_setting_list_value_normalizes_like_baseline():
     # A list value takes the same normalization path (direct generator call;
     # op() itself rejects a list -- see the hashability regression below).
     host = SimulatedHost(
@@ -591,7 +591,7 @@ async def test_setting_list_value_normalizes_like_pyinfra():
 
 def test_op_rejects_a_list_value_but_the_string_spelling_is_equivalent():
     # OperationRequest kwargs must be hashable; the multi-word string is the
-    # op()-safe spelling of pyinfra's list value (same normalization).
+    # op()-safe spelling of the baseline's list value (same normalization).
     with pytest.raises(UnhashableArgumentError):
         op(sysctl.setting, key="net.ipv4.ip_local_port_range", value=[1024, 65535])
     request = op(
@@ -704,7 +704,7 @@ async def test_setting_kwargs_absorb_an_unknown_argument():
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(
         host,
-        op(sysctl.setting, key="vm.swappiness", value=10, pyinfra_global="ignored"),
+        op(sysctl.setting, key="vm.swappiness", value=10, extra_global="ignored"),
     )
     assert ctx.changed
     assert len(commands) == 4
@@ -828,7 +828,7 @@ def test_op_rejects_a_dict_of_settings():
 async def test_conf_kwargs_absorb_an_unknown_argument():
     host = SimulatedHost(name="h")
     ctx, _commands = await materialize(
-        host, op(sysctl.conf, settings=_SETTINGS, pyinfra_global="ignored")
+        host, op(sysctl.conf, settings=_SETTINGS, extra_global="ignored")
     )
     assert ctx.changed
 

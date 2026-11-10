@@ -28,7 +28,7 @@ two-phase execution model:
    across the inventory with ``asyncio.gather`` and returns a
    host-name-keyed mapping -- then print each host's key entries as JSON.
 
-``GpgSecretKeys`` mirrors pyinfra's ``gpg.GpgSecretKeys``: the secret-key
+``GpgSecretKeys`` mirrors the baseline's ``gpg.GpgSecretKeys``: the secret-key
 twin of ``GpgKeys``, running ``gpg --list-secret-keys --with-colons`` and
 parsing the ``sec``/``ssb`` colon records into the same ``GpgKeyInfo``
 entries. Only key *metadata* is listed -- no secret key material ever

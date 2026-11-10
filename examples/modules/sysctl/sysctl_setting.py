@@ -21,10 +21,10 @@ via ``run``'s ``host_factory`` and never touches the network -- this example
 uses the *default* factory (``Host.from_inventory``), opening real asyncssh
 connections that ``run`` closes when it finishes.
 
-``sysctl.setting`` is a reemote5 original superseding pyinfra's basic
+``sysctl.setting`` is a reemote5 original superseding the baseline's basic
 ``server.sysctl``: two independent idempotent halves, each gated by its own
 fact. The **runtime half** compares the desired value against the ``Sysctl``
-fact (pyinfra's normalization: digits compare as ints, a multi-word value as
+fact (the baseline's normalization: digits compare as ints, a multi-word value as
 a list) and applies ``sysctl -w`` only on a difference; ``sysctl_set=False``
 skips it. The **persist half** performs a keyed line replacement in
 ``sysctl_file`` (default ``/etc/sysctl.conf``) -- replace the key's line in
@@ -92,7 +92,7 @@ from reemote5 import (
 )
 
 # The parameter and value to ensure. A multi-word value like "1024 65535"
-# (net.ipv4.ip_local_port_range) is the op()-safe spelling of pyinfra's list:
+# (net.ipv4.ip_local_port_range) is the op()-safe spelling of the baseline's list:
 # request kwargs must be hashable, and the string normalizes identically.
 KEY = "vm.swappiness"
 VALUE = 10

@@ -4,7 +4,7 @@
 """Example: create, adjust and remove a user account on real CentOS hosts.
 
 This is a *usage* example, not part of the library. It shows reemote5's
-``server.user`` operation, the pyinfra ``server.user`` parity for user
+``server.user`` operation, baseline ``server.user`` parity for user
 accounts: the deploy creates a ``deploy`` service account with a login
 shell and a GECOS comment, puts it in the ``apps`` group, then *appends*
 the ``staff`` group to it, and finally removes a ``legacy`` account that
@@ -20,7 +20,7 @@ absent user, a ``usermod`` carrying just the differing fields for a
 present one, ``userdel`` for ``present=False``. A second run therefore
 plans no change. Two details are worth seeing in the plan:
 
-* the ``ensure_home`` branch (on by default) is pyinfra's delegation to
+* the ``ensure_home`` branch (on by default) is the baseline's delegation to
   ``files.directory``, inlined as ``mkdir -p /home/deploy`` plus ``chown
   deploy:deploy /home/deploy`` when the home is missing, a plain
   ``chown`` when only the owner differs, and no command at all when the
@@ -36,10 +36,10 @@ plans no change. Two details are worth seeing in the plan:
 hashable for ``compose(dedupe=True)``, so a list would be rejected with
 ``UnhashableArgumentError``. The two secondary groups are created first
 by ``server.group`` requests, which the lockstep barrier completes before
-the account is touched. pyinfra's ``public_keys``/``delete_keys`` options
+the account is touched. The baseline's ``public_keys``/``delete_keys`` options
 are deliberately dropped -- that branch rides ``files.line`` appends and
 an elevated ``files.put``, neither of which reemote5 has -- so the script
-manages no ``authorized_keys`` file; pyinfra's plan-time ``Which`` guards
+manages no ``authorized_keys`` file; the baseline's plan-time ``Which`` guards
 are dropped too, so a missing ``useradd`` surfaces at apply as
 ``CommandNotFoundError`` from the exit status. ``password`` is also left
 unset here: it takes a pre-encrypted shadow hash, which a shared demo
@@ -191,7 +191,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         when=is_centos,
     )
     # The mirror image: ``userdel`` only where the account exists, and no
-    # home directory is touched -- neither ``userdel`` nor pyinfra's branch
+    # home directory is touched -- neither ``userdel`` nor the baseline's branch
     # removes files.
     yield op(
         server.user,

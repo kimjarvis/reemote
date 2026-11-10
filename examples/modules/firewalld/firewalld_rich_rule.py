@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.rich_rule`` is a reemote5 original (pyinfra ships no firewalld
+``firewalld.rich_rule`` is a reemote5 original (the baseline ships no firewalld
 module): it manages firewalld's rich language -- the expressive rules for
 source/destination restrictions, logging and rate limiting that the
 simple membership operations cannot express. Here SSH is accepted only

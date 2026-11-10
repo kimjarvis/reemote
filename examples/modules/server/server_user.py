@@ -29,7 +29,7 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's username with
    ``json.dumps(..., indent=2)``.
 
-``User`` mirrors pyinfra's ``server.User``: it runs ``echo $USER`` and
+``User`` mirrors the baseline's ``server.User``: it runs ``echo $USER`` and
 returns the current user's name (e.g. ``kjarvis``) -- the account the SSH
 session logged in as, straight from the shell environment. The name is
 returned as the raw string; empty output (a failed command, or an unset

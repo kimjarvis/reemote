@@ -1,10 +1,10 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: ensure a sysctl setting (pyinfra server.sysctl parity).
+"""Example: ensure a sysctl setting (baseline server.sysctl parity).
 
 This is a *usage* example, not part of the library. It is reemote5's
-strict-parity demonstration of pyinfra's ``server.sysctl`` operation,
+strict-parity demonstration of the baseline's ``server.sysctl`` operation,
 built from generic primitives: the persist half is a file edit fully
 expressible with the ``files.edit`` content-transform primitive plus the
 elevated ``files.move`` -- the two-run recipe shape ``server_op_locale.py``
@@ -13,10 +13,10 @@ operation -- and the runtime half is a single
 ``sysctl key=value`` shell line this example defines itself over the
 public raw ``StringCommand`` descriptor. The native ``sysctl`` module
 (``sysctl.setting`` / ``sysctl.conf``) now supersedes this recipe for
-everyday use; the recipe stays as the demonstration that pyinfra's
+everyday use; the recipe stays as the demonstration that the baseline's
 semantics are expressible without a bespoke operation.
 
-pyinfra's ``server.sysctl(key, value, persist=False,
+the baseline's ``server.sysctl(key, value, persist=False,
 persist_file="/etc/sysctl.conf")`` normalizes ``value`` (a list joins with
 spaces for the shell; digits become ints so the fact comparison matches),
 reads the ``Sysctl`` fact for the key, runs ``sysctl 'key'='value'`` only
@@ -27,19 +27,19 @@ append when absent). The recipe mirrors all of that:
 
 1. Two fact SNAPSHOTS: ``gather_fact`` reads ``Sysctl`` for the one key and
    ``FileContents`` of ``/etc/sysctl.conf`` from every guarded host
-   (read-only SSH). The pure ``sysctl_persist_edit`` function performs pyinfra's
+   (read-only SSH). The pure ``sysctl_persist_edit`` function performs the baseline's
    ``files.line`` lookup with a Python regex over the content -- reemote5
    ships no grep-style ``FindInFile`` fact, and ``FileContents`` plus local
    parsing is its content-read convention.
-2. Two independent skip gates on the frozen snapshots, matching pyinfra's
+2. Two independent skip gates on the frozen snapshots, matching the baseline's
    two independent decisions: the runtime gate (``sysctl_needed``) is
-   pyinfra's ``existing_value != value`` fact comparison on the normalized
+   the baseline's ``existing_value != value`` fact comparison on the normalized
    value; the persist gate compares the transformed content against the
-   file's current text (pyinfra's ``files.line`` no-ops when the exact
+   file's current text (the baseline's ``files.line`` no-ops when the exact
    ``key = value`` line is already present). A host can need either half,
    both or neither.
 3. Run 1 applies the runtime value: the demo-side ``sysctl_set`` operation
-   yields ``sysctl key=value`` (each side shell-quoted, pyinfra's
+   yields ``sysctl key=value`` (each side shell-quoted, the baseline's
    ``QuoteString`` parity), flagged ``sudo=True``. reemote5 ships no
    generic "run a shell command" operation, so this example defines the
    stateless one-liner itself; the snapshot gate upstream decides whether
@@ -55,29 +55,29 @@ append when absent). The recipe mirrors all of that:
    one deploy: ``files.move`` validates ``src`` in the prepare phase too,
    and prepare never sends, so the spool file must really exist first.
 
-Deliberate deviations from pyinfra, decided at migration time:
+Deliberate deviations from the baseline, decided at migration time:
 
 * The persist edit (``files.line``'s sed/echo) is replaced by the
   ``files.edit`` transform: the generic primitive expresses the edit
   without a bespoke operation, and reemote5's transfers are unprivileged,
   so root-owned ``/etc/sysctl.conf`` is written through the
-  spool-and-install vehicle instead of an elevated sed/echo. pyinfra's
+  spool-and-install vehicle instead of an elevated sed/echo. The baseline's
   timestamped sed backup dance goes with it.
 * The line regex escapes the key and the value literally (``re.escape``);
-  pyinfra interpolates them raw into a grep pattern, where the ``.`` in
+  the baseline interpolates them raw into a grep pattern, where the ``.`` in
   ``fs.file-max`` would match any character. The POSIX ``[[:space:]]*``
   class is translated verbatim (minus the newline -- matching is per line).
-* pyinfra's ``files.line`` search semantics are kept: the pattern is
+* the baseline's ``files.line`` search semantics are kept: the pattern is
   unanchored, so a commented ``# key = value`` line matches and is
   normalized (uncommented) in place, and a longer value sharing the prefix
   (``key = 1000000``) matches too. A *stale* ``key = other`` line does NOT
-  match and survives beside the new line, exactly like pyinfra -- the last
+  match and survives beside the new line, exactly like the baseline -- the last
   assignment wins when sysctl.conf is replayed at boot.
 * The desired content always ends in one trailing newline (the recipe's
   ``"\\n".join(lines) + "\\n"`` house style), so a file missing its final
   newline is rewritten once even when the line itself is already correct.
-* The runtime ``sysctl`` step is stateless like pyinfra's yielded command;
-  pyinfra's noop message ("sysctl {key} is set to {value}") becomes the
+* The runtime ``sysctl`` step is stateless like the baseline's yielded command;
+  the baseline's noop message ("sysctl {key} is set to {value}") becomes the
   controller-side skip, printed from the frozen snapshot.
 
 Re-running the whole script is a no-op once the live value and the persist
@@ -130,13 +130,13 @@ from reemote5 import (
     validate_inventory,
 )
 
-# The setting to ensure: pyinfra's documented example (fs.file-max=100000),
+# The setting to ensure: the baseline's documented example (fs.file-max=100000),
 # persisted so it survives a reboot. persist=False would keep run 1 alone.
 SYSCTL_KEY = "fs.file-max"
 SYSCTL_VALUE: str | int | list[str | int] = 100000
 PERSIST = True
 
-# pyinfra's default persist file, and the spool path: the basename
+# The baseline's default persist file, and the spool path: the basename
 # ("sysctl.conf") is what files.move appends to /etc, landing the target.
 PERSIST_FILE = "/etc/sysctl.conf"
 SPOOL_PATH = "/tmp/sysctl.conf"
@@ -184,7 +184,7 @@ def is_centos(host: Host) -> bool:
 def _try_int(value: str | int) -> int | str:
     """``int()`` that returns its input unchanged on failure.
 
-    pyinfra's ``try_int`` -- the operation side of the same coercion the
+    The baseline's ``try_int`` -- the operation side of the same coercion the
     ``Sysctl`` fact applies to its parsed values, so ``"2000"`` and ``2000``
     compare equal against the snapshot.
     """
@@ -195,7 +195,7 @@ def _try_int(value: str | int) -> int | str:
 
 
 def normalize_value(value: str | int | list[str | int]) -> tuple[str, Any]:
-    """pyinfra's ``server.sysctl`` value normalization, verbatim.
+    """The baseline's ``server.sysctl`` value normalization, verbatim.
 
     Returns ``(string_value, normalized)``: ``string_value`` is the shell
     spelling (a list joins its items with single spaces), ``normalized`` is
@@ -231,10 +231,10 @@ def sysctl_persist_edit(content: str | None, key: str, string_value: str) -> str
     matches every line containing ``key`` = ``string_value`` with optional
     surrounding spaces -- commented lines included -- and each match is
     normalized to ``key = string_value``; with no match the line is
-    appended (an absent file, ``None`` content, reads as empty, pyinfra's
+    appended (an absent file, ``None`` content, reads as empty, the baseline's
     echo creating it). Stale ``key = other`` lines do not match and
     survive. The key and value are escaped literally (``re.escape``), the
-    documented hardening over pyinfra's raw BRE interpolation. The result
+    documented hardening over the baseline's raw BRE interpolation. The result
     always ends in one trailing newline and the edit is a fixpoint.
     """
     pattern = re.compile(
@@ -252,11 +252,11 @@ def sysctl_persist_edit(content: str | None, key: str, string_value: str) -> str
 
 
 def sysctl_needed(sysctls: dict[str, Any], key: str, normalized: Any) -> bool:
-    """pyinfra's change condition on the ``Sysctl`` fact snapshot.
+    """The baseline's change condition on the ``Sysctl`` fact snapshot.
 
     Apply only when the live value differs from the normalized desired
     value (an absent key reads as ``None`` and always differs) -- the fact
-    comparison that makes pyinfra's operation idempotent, moved to the gap
+    comparison that makes the baseline's operation idempotent, moved to the gap
     between runs. An unknown key on a real host reads as absent too: the
     ``sysctl`` command then fails loudly rather than silently no-opping.
     """
@@ -283,14 +283,14 @@ async def sysctl_set(
 ) -> AsyncGenerator[Command]:
     """Apply a live sysctl value (demo-side ``sysctl key=value`` step).
 
-    pyinfra's ``server.sysctl`` yields ``sysctl 'key'='value'`` (each side
+    The baseline's ``server.sysctl`` yields ``sysctl 'key'='value'`` (each side
     ``QuoteString``-ed, joined by a bare ``=``) when the fact differs;
     reemote5 ships no generic shell operation, so this example defines the
     stateless one-liner itself over the public raw ``StringCommand``
-    descriptor. Like pyinfra's step it reads no fact and always reports a
+    descriptor. Like the baseline's step it reads no fact and always reports a
     change; the ``Sysctl`` snapshot gate upstream of it decides whether it
     runs at all. The command needs root, so flag the request ``sudo=True``.
-    ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
+    ``**kwargs`` absorbs the baseline's global arguments (``op()`` already
     strips ``name``/``sudo``/``su``).
     """
     ctx.changed = True
@@ -359,9 +359,9 @@ async def main() -> None:
             for host in hosts:
                 await host.aclose()
 
-        # Controller-side idempotence: pyinfra's two independent decisions
+        # Controller-side idempotence: the baseline's two independent decisions
         # on the frozen snapshots. The persist gate holds even when the
-        # live value already matches -- exactly like pyinfra, whose
+        # live value already matches -- exactly like the baseline, whose
         # files.line half runs regardless of the runtime noop. Only guarded
         # hosts carry a snapshot entry; the rest stay skipped.
         pending_apply = []
@@ -384,7 +384,7 @@ async def main() -> None:
             print(f"All hosts already have {SYSCTL_KEY} = {STRING_VALUE}.")
             return
 
-        # Run 1: apply the live value, elevated. pyinfra's order too --
+        # Run 1: apply the live value, elevated. The baseline's order too --
         # the runtime command precedes the persist edit.
         if pending_apply:
             plans, _, _hosts = await run(pending_apply, apply, dry=True)

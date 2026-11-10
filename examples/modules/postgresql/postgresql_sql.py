@@ -16,7 +16,7 @@ two-phase execution model end to end over a **real SSH transport**
    objects, each guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``postgresql.sql`` mirrors pyinfra's operation: it is *stateless* -- the
+``postgresql.sql`` mirrors the baseline's operation: it is *stateless* -- the
 statement always runs, in every apply -- the escape hatch for anything
 the typed operations do not cover. Prefer a fact-comparing operation when
 one exists, and a naturally idempotent statement (``CREATE ... IF NOT
@@ -52,7 +52,7 @@ The shared ``inventory.json`` carries no ``privilege`` section, so ``main``
 attaches ``{"sudo_user": "postgres"}`` to the loaded ``centos`` entries:
 the ``sudo=True`` requests ride under the ``postgres`` OS user, so the
 ``psql`` client connects through peer authentication -- no password
-travels through operation arguments, plans or logs (pyinfra's
+travels through operation arguments, plans or logs (the baseline's
 ``psql_password`` option is deliberately dropped namespace-wide).
 
 Run it with::

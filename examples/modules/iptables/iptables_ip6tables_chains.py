@@ -28,7 +28,7 @@ driving the two-phase execution model:
    host-name-keyed mapping -- then print each host's chain-to-policy dict
    with ``json.dumps(..., indent=2)``.
 
-The fact is the IPv6 sibling of ``IptablesChains`` (the pyinfra
+The fact is the IPv6 sibling of ``IptablesChains`` (the baseline
 ``iptables.Ip6tablesChains`` shape): it parses the ``:NAME POLICY
 [pkts:bytes]`` lines of ``ip6tables-save -t filter``; pass another table
 name to ``gather_fact`` for nat/mangle/raw. Reading the tables needs

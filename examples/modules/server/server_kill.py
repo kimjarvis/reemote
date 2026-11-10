@@ -4,8 +4,8 @@
 """Example: find a process's PID, then kill it -- in ONE deterministic deploy.
 
 This is a *usage* example, not part of the library. It shows reemote5's
-``server.kill`` operation, the pyinfra ``server.kill`` parity for sending a
-signal to a running process. Like pyinfra, the operation takes an explicit
+``server.kill`` operation, baseline ``server.kill`` parity for sending a
+signal to a running process. Like the baseline, the operation takes an explicit
 ``pid`` (and an optional ``signal``, default ``TERM``): discovering *which*
 PID to kill is the caller's job, and this script demonstrates the
 determinism-safe way to do it.
@@ -34,7 +34,7 @@ split earns its keep when an earlier deploy step changes the fact the
 second deploy branches on -- install nginx, then configure it.)
 
 The operation itself is stateless and non-idempotent, exactly like
-pyinfra: it reads no fact and always yields one ``kill -<signal> <pid>``
+the baseline: it reads no fact and always yields one ``kill -<signal> <pid>``
 command, so every planned kill shows as a change. The signal flag and the
 PID are shell-quoted, so a signal string carrying metacharacters reaches
 ``kill`` literally. The requests carry ``sudo=True`` because the nginx
@@ -43,7 +43,7 @@ the inventory ``privilege`` section, never from the operation.
 
 The trade-off: the snapshot is frozen. If nginx exits between the snapshot
 and the apply, ``kill`` targets a dead PID, exits non-zero and the run
-fails with ``CommandError`` (pyinfra behaves the same). Re-running the
+fails with ``CommandError`` (the baseline behaves the same). Re-running the
 whole script is naturally safe: it re-snapshots, finds no nginx PID and
 plans an empty deploy.
 

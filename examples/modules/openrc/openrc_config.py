@@ -30,8 +30,8 @@ your machines.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``openrc.config`` is a reemote5 original with no pyinfra counterpart
-(pyinfra's ``openrc`` namespace ships only ``service``). It sets or unsets
+``openrc.config`` is a reemote5 original with no baseline counterpart
+(the baseline's ``openrc`` namespace ships only ``service``). It sets or unsets
 one shell variable in ``/etc/rc.conf`` -- or, with ``service="<name>"``, in
 that service's ``/etc/conf.d/<name>`` file -- and belongs to the
 spool-and-install write family. The file's current text is read with the

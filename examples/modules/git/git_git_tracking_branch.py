@@ -29,7 +29,7 @@ driving the two-phase execution model:
    path argument verbatim, and returns a host-name-keyed mapping -- then
    print each host's upstream branch.
 
-``GitTrackingBranch`` mirrors pyinfra's ``git.GitTrackingBranch``: it runs
+``GitTrackingBranch`` mirrors the baseline's ``git.GitTrackingBranch``: it runs
 ``! test -d <repo> || (cd <repo> && git status --branch --porcelain)`` and
 reads the token after the ``...`` separator in the first header line
 (``## <branch>...<upstream>``). A branch without an upstream -- or a

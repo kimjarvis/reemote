@@ -29,7 +29,7 @@ two-phase execution model:
    and returns a host-name-keyed mapping -- then print each host's digest
    with ``json.dumps(..., indent=2)``.
 
-``Md5File`` mirrors pyinfra's ``files.Md5File`` -- the hash family's MD5
+``Md5File`` mirrors the baseline's ``files.Md5File`` -- the hash family's MD5
 member (two tool spellings, ``md5sum`` then ``md5``, no shasum variant),
 sharing the family's mechanics: the file is read through *stdin*
 (``< path``) so the checksum tool never sees the filename (GNU coreutils

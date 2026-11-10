@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.protocol`` is a reemote5 original (pyinfra ships no firewalld
+``firewalld.protocol`` is a reemote5 original (the baseline ships no firewalld
 module): it allows an IP protocol *by name* in a zone -- here ``gre``,
 the tunnel protocol that has no port number at all, so neither
 ``firewalld.port`` nor a service bundle's port list can express it. Any

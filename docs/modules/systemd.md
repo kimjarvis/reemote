@@ -9,7 +9,7 @@ here from `server`, which re-exports them for backward compatibility (its
 `service` is now a deprecated alias) and keeps `server.wait_service`, polling
 the relocated `SystemdServiceState`.
 
-Beyond the two pyinfra ports (`SystemdStatus`/`SystemdEnabled` facts and the
+Beyond the two the baseline ports (`SystemdStatus`/`SystemdEnabled` facts and the
 `service`/`daemon_reload` operations), the namespace adds seven original facts
 and six original operations. Every `systemctl`-based fact and operation
 accepts the scope flags `user_mode`/`machine`/`user_name` to target the
@@ -27,41 +27,25 @@ never forwarded to the operation.
 
 --->
 
-## systemd Facts
-
 ::: reemote5.modules.systemd.systemd
     options:
       show_root_heading: false
       members:
         - SystemdDependencies
         - SystemdEnabled
+        - SystemdFailedUnit
         - SystemdFailedUnits
         - SystemdServiceEnabled
         - SystemdServiceState
         - SystemdStatus
         - SystemdSystemState
+        - SystemdTimer
         - SystemdTimers
+        - SystemdUnitFile
         - SystemdUnitFiles
         - SystemdUnitProperties
         - SystemdVersion
-
-## systemd Returns
-
-::: reemote5.modules.systemd.systemd
-    options:
-      show_root_heading: false
-      members:
-        - SystemdFailedUnit
-        - SystemdTimer
-        - SystemdUnitFile
         - SystemdVersionInfo
-
-## systemd Operations
-
-::: reemote5.modules.systemd.systemd
-    options:
-      show_root_heading: false
-      members:
         - daemon_reload
         - dropin
         - mask
@@ -70,11 +54,4 @@ never forwarded to the operation.
         - service
         - sysusers
         - tmpfiles
-
-## Helpers
-
-::: reemote5.modules.systemd.systemd
-    options:
-      show_root_heading: false
-      members:
         - unit_name

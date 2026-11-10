@@ -12,7 +12,7 @@
 # raw text of a remote file, or None when absent, that ``files.edit`` reads to
 # transform it), ``FileFlags`` (the list of ext2-family attribute letters
 # ``lsattr -d`` reports for a path, the read behind ``files.flags``), and
-# ``File`` (pyinfra's stat-level metadata for a regular
+# ``File`` (the baseline's stat-level metadata for a regular
 # file -- owner, group, mode, timestamps, size -- False for a non-file path,
 # None when absent) with its ``Directory``, ``Link`` and ``Socket`` siblings
 # (the same metadata for a directory, symlink or socket, False for a
@@ -20,7 +20,7 @@
 # and is the fact ``files.link`` compares against) and ``SameFile`` (whether
 # two paths name one and the same inode, the hard-link half of ``files.link``'s
 # idempotence). The enumeration side is ``FindFiles``/``FindDirectories``/
-# ``FindLinks`` (pyinfra's find family -- the paths under a start path, the
+# ``FindLinks`` (the baseline's find family -- the paths under a start path, the
 # read that discovers names the deploy author does not know), ``FindInFile``
 # (grep's matching lines, [] for no match vs None for absent), and the
 # originals ``FindFilesInfo`` (find -printf metadata per hit) and
@@ -235,9 +235,9 @@ class RemoteFileSha1:
 
 
 class _HashFileBase:
-    """Shared command/parse/process for the pyinfra hash-fact family."""
+    """Shared command/parse/process for the baseline hash-fact family."""
 
-    # Mirrors pyinfra's ``HashFileFactBase``: the file is read through stdin
+    # Mirrors the baseline's ``HashFileFactBase``: the file is read through stdin
     # (``< path``) so the checksum tool never sees the filename, avoiding
     # GNU coreutils' backslash/newline escaping of names in its output (the
     # upstream #1911 fix). The ``test -e`` guard plus the trailing
@@ -247,7 +247,7 @@ class _HashFileBase:
     # ``CommandNotFoundError``. Two output spellings are accepted: the GNU
     # coreutils / shasum stdin form ``<hash>  -`` and the BSD digest form
     # (a bare ``<hash>``). Unlike the ``File`` family there is no leading
-    # ``~/`` exception -- the whole path is quoted, pyinfra's behaviour.
+    # ``~/`` exception -- the whole path is quoted, the baseline's behaviour.
     # ``RemoteFileSha1`` predates this family and deliberately keeps its
     # simpler ``sha1sum <path>`` probe: it backs ``files.put``/``files.get``
     # idempotence, where the argv form and the 127-as-CommandNotFoundError
@@ -328,7 +328,7 @@ class Sha256File(_HashFileBase):
         Examples can be found in ``examples/modules/files/files_sha256.py``.
     """
 
-    # Mirrors pyinfra's ``files.Sha256File`` -- the hash family's SHA-256
+    # Mirrors the baseline's ``files.Sha256File`` -- the hash family's SHA-256
     # member, the digest Ansible's ``stat`` module defaults to
     # (``checksum_algorithm: sha256``) and the one repository/keyring
     # verification recipes compare. Command/parse/process are the shared
@@ -364,7 +364,7 @@ class Sha384File(_HashFileBase):
         Examples can be found in ``examples/modules/files/files_sha384.py``.
     """
 
-    # Mirrors pyinfra's ``files.Sha384File`` -- the hash family's SHA-384
+    # Mirrors the baseline's ``files.Sha384File`` -- the hash family's SHA-384
     # member; the shared base carries the mechanics.
 
     DIGITS = 96
@@ -397,7 +397,7 @@ class Md5File(_HashFileBase):
         Examples can be found in ``examples/modules/files/files_md5.py``.
     """
 
-    # Mirrors pyinfra's ``files.Md5File`` -- the hash family's MD5 member
+    # Mirrors the baseline's ``files.Md5File`` -- the hash family's MD5 member
     # (two tool spellings, no shasum variant); the shared base carries the
     # mechanics. MD5 is for legacy checksum manifests (Repomd/Release
     # files, vendor download pages), not a security boundary.
@@ -432,9 +432,9 @@ class FileContents:
         Examples can be found in ``examples/modules/files/files_edit.py``.
     """
 
-    # Mirrors pyinfra's ``files.FileContents`` (gathered with ``cat``), with one
+    # Mirrors the baseline's ``files.FileContents`` (gathered with ``cat``), with one
     # deliberate deviation: reemote5 returns the content as a single ``str``
-    # rather than pyinfra's list of lines, so a content transform (``files.edit``)
+    # rather than the baseline's list of lines, so a content transform (``files.edit``)
     # can treat the file as one blob and re-split it however it likes. Like
     # ``dnf.DnfRepoFile`` -- the same read-content-or-None shape -- absence is
     # reported as ``None``, never the empty string, so a file that exists but is
@@ -476,7 +476,7 @@ class FileContents:
         return stdout[len(prefix) :]
 
 
-#: The leading ``ls``/``stat`` mode character mapped to pyinfra's path type;
+#: The leading ``ls``/``stat`` mode character mapped to the baseline's path type;
 #: each fact class (``File``, ``Directory``, ``Link``) accepts only its own
 #: ``TYPE``, every other type reads as False.
 _FLAG_TO_TYPE = {
@@ -489,7 +489,7 @@ _FLAG_TO_TYPE = {
     "-": "file",
 }
 
-#: Per-position mode character -> permission bit (pyinfra's
+#: Per-position mode character -> permission bit (the baseline's
 #: ``CHAR_TO_PERMISSION``, taken from the stdlib ``stat`` table): ``s``/``S``
 #: encode setuid/setgid combined with execute, ``t``/``T`` the sticky bit.
 _CHAR_TO_PERMISSION = (
@@ -522,7 +522,7 @@ _LS_REGEX = (
     r"\s+(\S+)\s+(\S+)\s+(\S+)\s+(.+)$"
 )
 
-#: ``ls`` month abbreviations (pyinfra's explicit map -- locale-independent,
+#: ``ls`` month abbreviations (the baseline's explicit map -- locale-independent,
 #: unlike ``strptime``'s ``%b``).
 _LS_MONTHS = {
     "Jan": 1,
@@ -540,10 +540,10 @@ _LS_MONTHS = {
 }
 
 #: GNU ``stat -c`` format printing the keyed row ``File.parse`` matches
-#: (pyinfra's ``LINUX_STAT_COMMAND`` format string).
+#: (the baseline's ``LINUX_STAT_COMMAND`` format string).
 _LINUX_STAT_FORMAT = "user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N"
 
-#: BSD ``stat -f`` format printing the same keyed row (pyinfra's
+#: BSD ``stat -f`` format printing the same keyed row (the baseline's
 #: ``BSD_STAT_COMMAND`` format string).
 _BSD_STAT_FORMAT = (
     "user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY"
@@ -553,7 +553,7 @@ _BSD_STAT_FORMAT = (
 def _unquote_stat_name(name: str) -> str:
     """Strip the quoting ``stat %N`` (or ``ls -ld``) wraps a path in.
 
-    pyinfra's ``_unquote_stat_name``: ``'name'`` (GNU coreutils), ```name'``
+    The baseline's ``_unquote_stat_name``: ``'name'`` (GNU coreutils), ```name'``
     (older GNU/RHEL 6), or ``"name"`` (uutils-coreutils).
     """
     for opener, closer in (("'", "'"), ("`", "'"), ('"', '"')):
@@ -563,7 +563,7 @@ def _unquote_stat_name(name: str) -> str:
 
 
 def _try_int(value: str) -> int | str:
-    """pyinfra's ``try_int``: the int a string denotes, else the string itself."""
+    """The baseline's ``try_int``: the int a string denotes, else the string itself."""
     try:
         return int(value)
     except ValueError:
@@ -571,7 +571,7 @@ def _try_int(value: str) -> int | str:
 
 
 def _parse_mode(mode: str) -> int:
-    """Convert a nine-character rwx mode string to pyinfra's octal int (755)."""
+    """Convert a nine-character rwx mode string to the baseline's octal int (755)."""
     out = 0
     for i, char in enumerate(mode):
         for c, m in _CHAR_TO_PERMISSION[i].items():
@@ -582,7 +582,7 @@ def _parse_mode(mode: str) -> int:
 
 
 def _parse_epoch(value: str) -> datetime | None:
-    """Parse epoch seconds into a *naive UTC* datetime (pyinfra's convention).
+    """Parse epoch seconds into a *naive UTC* datetime (the baseline's convention).
 
     A non-numeric value (an empty or unsupported timestamp field) reads as
     None rather than raising.
@@ -672,26 +672,26 @@ class File:
         Examples can be found in ``examples/modules/files/files_file.py``.
     """
 
-    # Mirrors pyinfra's ``files.File``: the path is guarded with
+    # Mirrors the baseline's ``files.File``: the path is guarded with
     # ``test -e``/``test -L`` (so a dangling symlink is still probed), then
     # described by GNU ``stat -c``, falling back to BSD ``stat -f`` and
     # finally ``ls -ld``. The parsed result is a dict, for example::
     #
-    #     {"user": "pyinfra", "group": "pyinfra", "mode": 644, "size": 3928}
+    #     {"user": "reemote5", "group": "reemote5", "mode": 644, "size": 3928}
     #
     # plus ``atime``/``mtime``/``ctime`` -- epoch timestamps parsed into
-    # *naive UTC* ``datetime``s, pyinfra's convention (the ``ls -ld`` fallback
+    # *naive UTC* ``datetime``s, the baseline's convention (the ``ls -ld`` fallback
     # provides only an mtime, so its atime/ctime read as None). ``mode`` is
-    # the octal-looking int pyinfra returns (644, 4755, ...), including the
+    # the octal-looking int the baseline returns (644, 4755, ...), including the
     # setuid/setgid/sticky bits. A path that does not exist (no output) reads
     # as ``None``; one that exists but is not a regular file (a directory,
     # symlink, socket, ...) reads as ``False`` -- ``Directory``, ``Link`` and
     # ``Socket`` are the directory-, link- and socket-accepting siblings,
-    # and only ``Link``'s dict carries the ``link_target`` key. Like pyinfra,
+    # and only ``Link``'s dict carries the ``link_target`` key. Like the baseline,
     # a leading ``~/`` stays unquoted so the remote shell expands it; the
     # rest of the path is quoted.
 
-    #: pyinfra's ``type`` field: only a regular file is accepted; every other
+    #: The baseline's ``type`` field: only a regular file is accepted; every other
     #: path type (directory, link, socket, ...) reads as False.
     TYPE = "file"
 
@@ -704,7 +704,7 @@ class File:
         through to ``ls -ld`` (both ``stat`` forms follow the link and
         fail), which reports it as a non-file.
         """
-        # A leading ~/ must stay unquoted so the shell expands it (pyinfra's
+        # A leading ~/ must stay unquoted so the shell expands it (the baseline's
         # tilde branch); everything after it -- or the whole path -- is quoted.
         if path.startswith("~/"):
             quoted = "~/" + shlex.quote(path[2:])
@@ -746,7 +746,7 @@ class File:
                 return False
             if path_type == "link":
                 # stat %N prints 'link' -> 'target'; keep the target,
-                # unquoted (pyinfra's link_target extraction).
+                # unquoted (the baseline's link_target extraction).
                 _, target = match.group(8).split(" -> ", 1)
                 data["link_target"] = _unquote_stat_name(target)
             return data
@@ -799,7 +799,7 @@ class Directory(File):
         Examples can be found in ``examples/modules/files/files_directory.py``.
     """
 
-    # Mirrors pyinfra's ``files.Directory`` -- its ``File`` subclass with
+    # Mirrors the baseline's ``files.Directory`` -- its ``File`` subclass with
     # ``type = "directory"``: the same ``test -e``/``test -L`` guard and
     # stat/ls chain (``command`` and ``parse`` are inherited), but the type
     # flag must be ``d``, so a regular file, symlink, socket, ... reads as
@@ -810,7 +810,7 @@ class Directory(File):
     # the listing see ``DirectoryEntries`` (shallow, with types) or
     # ``FindDirectories`` (recursive paths).
 
-    #: pyinfra's ``type`` field: only a directory is accepted; every other
+    #: The baseline's ``type`` field: only a directory is accepted; every other
     #: path type (file, link, socket, ...) reads as False.
     TYPE = "directory"
 
@@ -861,7 +861,7 @@ class Link(File):
         Examples can be found in ``examples/modules/files/files_link.py``.
     """
 
-    # Mirrors pyinfra's ``files.Link`` -- its ``File`` subclass with
+    # Mirrors the baseline's ``files.Link`` -- its ``File`` subclass with
     # ``type = "link"``: the same ``test -e``/``test -L`` guard and stat/ls
     # chain (``command`` and ``parse`` are inherited), but the type flag must
     # be ``l``, so a regular file, directory, socket, ... reads as ``False``
@@ -869,7 +869,7 @@ class Link(File):
     # target path with the stat/ls quoting stripped, exactly as the link
     # records it (a relative target stays relative), for example::
     #
-    #     {"user": "pyinfra", "group": "pyinfra", "link_target": "/path/to/link/target"}
+    #     {"user": "reemote5", "group": "reemote5", "link_target": "/path/to/link/target"}
     #
     # The ``test -L`` guard lets a *dangling* symlink through to the
     # ``ls -ld`` fallback (both ``stat`` forms follow the link and fail), so
@@ -879,7 +879,7 @@ class Link(File):
     # ``FileLink`` is the cheaper
     # ``readlink`` probe for the callers that only want the target.
 
-    #: pyinfra's ``type`` field: only a symlink is accepted; every other
+    #: The baseline's ``type`` field: only a symlink is accepted; every other
     #: path type (file, directory, socket, ...) reads as False.
     TYPE = "link"
 
@@ -930,7 +930,7 @@ class Socket(File):
         Examples can be found in ``examples/modules/files/files_socket.py``.
     """
 
-    # Mirrors pyinfra's ``files.Socket`` -- its ``File`` subclass with
+    # Mirrors the baseline's ``files.Socket`` -- its ``File`` subclass with
     # ``type = "socket"``: pure inheritance, the same ``test -e``/``test -L``
     # guard and stat/ls chain (``command`` and ``parse`` are inherited
     # unchanged -- the shared parse already maps the ``s`` type flag), so a
@@ -945,7 +945,7 @@ class Socket(File):
     # ``/var/run/docker.sock``, a database or agent IPC socket -- owner and
     # mode decide which users may talk to the daemon.
 
-    #: pyinfra's ``type`` field: only a socket is accepted; every other
+    #: The baseline's ``type`` field: only a socket is accepted; every other
     #: path type (file, directory, link, ...) reads as False.
     TYPE = "socket"
 
@@ -996,7 +996,7 @@ class SameFile:
         Examples can be found in ``examples/modules/files/files_same_file.py``.
     """
 
-    # Mirrors pyinfra's ``files.SameFile``: the shell ``-ef`` operator reduced
+    # Mirrors the baseline's ``files.SameFile``: the shell ``-ef`` operator reduced
     # to the bool the fact returns. ``test`` ``stat``s the *resolved* paths
     # (symlinks are dereferenced), so the verdict is about the inodes the two
     # arguments resolve to: a hard link answers True for the file it is
@@ -1007,10 +1007,10 @@ class SameFile:
     # so the command exits zero whatever it compares: a nonexistent path is
     # the plain False answer rather than a transport error, and there is no
     # missing-binary case to report as ``CommandNotFoundError``. Both paths
-    # are quoted (pyinfra's ``QuoteString`` behaviour, which ``shlex.quote``
+    # are quoted (the baseline's ``QuoteString`` behaviour, which ``shlex.quote``
     # matches for a safe path); unlike the ``File`` family this fact has no
     # leading ``~/`` exception, because the operator compares inodes and a
-    # quoted tilde path simply reads as an absent one -- pyinfra's own
+    # quoted tilde path simply reads as an absent one -- the baseline's own
     # fixture command, ``test /foo/hardlink -ef /foo/file``, stays bare.
 
     @classmethod
@@ -1025,7 +1025,7 @@ class SameFile:
     def parse(cls, output: Iterable[str]) -> bool:
         """Parse the ``echo``ed verdict; anything but a lone ``true`` is False.
 
-        pyinfra's ``process`` compares the whole output list, so empty (a
+        The baseline's ``process`` compares the whole output list, so empty (a
         short-circuited or failed read) or unexpected output reports False.
         """
         return list(output) == ["true"]
@@ -1072,13 +1072,13 @@ class FileFlags:
         Examples can be found in ``examples/modules/files/files_flags.py``.
     """
 
-    # Replaces pyinfra's ``files.Flags``, which read BSD ``stat -f %Sf``
+    # Replaces the baseline's ``files.Flags``, which read BSD ``stat -f %Sf``
     # (comma-joined flag *names*) behind a ``requires_command("chflags")``
     # gate: the Linux reading of the same capability (the developer-chosen
     # adaptation) is ``lsattr -d``, whose flags field is a fixed-width string
     # of one-letter attribute codes -- the fact returns those letters (``i``
     # for immutable, ``a`` for append-only, ...) with the padding dashes and
-    # the trailing path dropped. Absence answers ``[]`` exactly as pyinfra's
+    # the trailing path dropped. Absence answers ``[]`` exactly as the baseline's
     # Flags process does: the ``! test -e`` guard short-circuits a missing
     # path to empty output (no exit status reaches the transport, so the
     # 127-as-CommandNotFoundError rule stays truthful -- ``lsattr`` is not
@@ -1087,7 +1087,7 @@ class FileFlags:
     # same empty answer rather than aborting the read. A *present* file on
     # such a filesystem therefore also reads ``[]`` and the operation plans a
     # change the ``chattr`` then fails on -- the documented consequence of
-    # the stand-in gate pyinfra expresses through ``requires_command``. The
+    # the stand-in gate the baseline expresses through ``requires_command``. The
     # command guards existence but not a missing binary: no ``lsattr``
     # installed raises ``CommandNotFoundError``. Like ``File.command``, a
     # leading ``~/`` stays unquoted so the remote shell expands it; the rest
@@ -1109,7 +1109,7 @@ class FileFlags:
         The whitespace-separated fields are ``<flags> <path>``; the flags
         field keeps only the attribute letters, dropping the ``-`` padding.
         No output (absent path, unsupported filesystem) or a row without a
-        flags field parses to ``[]``, pyinfra's Flags answer for "nothing
+        flags field parses to ``[]``, the baseline's Flags answer for "nothing
         set".
         """
         line = next(iter(output), "")
@@ -1127,13 +1127,13 @@ class FileFlags:
             # and never mutate simulated state.
             return sorted(file_flags.get(path, set()))
         # Real transport: lsattr over asyncssh. A missing path short-circuits
-        # the guard to empty stdout, which parses to [] like pyinfra's.
+        # the guard to empty stdout, which parses to [] like the baseline's.
         stdout = await host.run_shell(cls.command(path))
         return cls.parse(stdout.splitlines())
 
 
 #: Byte multipliers for the find family's human-readable size filters
-#: (pyinfra's ``facts.util.units`` table: decimal KB/MB/GB/TB, binary
+#: (the baseline's ``facts.util.units`` table: decimal KB/MB/GB/TB, binary
 #: KiB/MiB/GiB/TiB).
 _SIZE_UNITS = {
     "B": 1,
@@ -1149,7 +1149,7 @@ _SIZE_UNITS = {
 
 
 def _parse_size(size: str | int) -> int:
-    """Bytes denoted by an int or a human-readable size string (pyinfra's
+    """Bytes denoted by an int or a human-readable size string (the baseline's
     ``parse_size``): ``"1GB"`` is 1e9 bytes, ``"1GiB"`` is 2**30. An
     unrecognised spelling raises ``ValueError`` before anything reaches the
     host.
@@ -1175,10 +1175,10 @@ def _find_filter_args(
     args: list[str] | None = None,
     quote_path: bool = True,
 ) -> list[str]:
-    """The filter arguments of pyinfra's ``FindFilesBase.command``, in its
+    """The filter arguments of the baseline's ``FindFilesBase.command``, in its
     order: size bounds, maxdepth, name/iname globs, regex, path glob, then
     the raw ``args`` escape hatch. Each typed filter is skipped when ``args``
-    already spells the same find predicate (pyinfra's guards). Sizes always
+    already spells the same find predicate (the baseline's guards). Sizes always
     render in bytes (the ``c`` suffix) -- any other unit has
     implementation-specific 512-byte-block rounding.
     """
@@ -1215,12 +1215,12 @@ def _find_filter_args(
 
 
 class _FindPathsBase:
-    """Shared command/parse/process for pyinfra's find-path fact family."""
+    """Shared command/parse/process for the baseline's find-path fact family."""
 
-    # Mirrors pyinfra's ``FindFilesBase``: ``find <path> -type <flag>`` plus
+    # Mirrors the baseline's ``FindFilesBase``: ``find <path> -type <flag>`` plus
     # the typed filters, always ending ``|| true`` so a missing start path
     # (or an unreadable subtree) reads as the empty list rather than a
-    # failed read -- pyinfra's ``default = list`` behaviour, and the reason
+    # failed read -- the baseline's ``default = list`` behaviour, and the reason
     # there is no missing-binary ``CommandNotFoundError`` case. The bare
     # ``list[str]`` return is an agreed exception to the TypedDict-or-list-
     # of-TypedDicts guideline: a path string carries all the information.
@@ -1251,7 +1251,7 @@ class _FindPathsBase:
         """Shell listing the matching paths, guarded with ``|| true``.
 
         ``quote_path=False`` passes the start path and name patterns to the
-        shell unquoted (pyinfra's escape hatch for shell-expanded globs);
+        shell unquoted (the baseline's escape hatch for shell-expanded globs);
         the default quotes everything.
         """
         quoted = shlex.quote(path) if quote_path else path
@@ -1341,7 +1341,7 @@ class FindFiles(_FindPathsBase):
         Examples can be found in ``examples/modules/files/files_find_files.py``.
     """
 
-    # Mirrors pyinfra's ``files.FindFiles`` -- the enumeration fact the
+    # Mirrors the baseline's ``files.FindFiles`` -- the enumeration fact the
     # stat-only ``File``/``Directory`` metadata facts cannot replace: it
     # discovers names the deploy author does not know ("every
     # conf.d/*/conf.yaml", "every legacy .list file"), the read side of a
@@ -1379,7 +1379,7 @@ class FindDirectories(_FindPathsBase):
         Examples can be found in ``examples/modules/files/files_find_directories.py``.
     """
 
-    # Mirrors pyinfra's ``files.FindDirectories`` -- the shared base with
+    # Mirrors the baseline's ``files.FindDirectories`` -- the shared base with
     # ``-type d``. The start path itself is always reported when it exists
     # (find matches it too); ``maxdepth=1`` lists its immediate
     # subdirectories, the enumeration behind "which check directories
@@ -1413,7 +1413,7 @@ class FindLinks(_FindPathsBase):
         Examples can be found in ``examples/modules/files/files_find_links.py``.
     """
 
-    # Mirrors pyinfra's ``files.FindLinks`` -- the shared base with
+    # Mirrors the baseline's ``files.FindLinks`` -- the shared base with
     # ``-type l``. Dangling symlinks are reported too (find does not follow
     # links); read each hit's target with ``FileLink`` or ``Link``.
 
@@ -1426,7 +1426,7 @@ class FindInFile:
     **Commands:**
 
     ```bash
-    grep -e <pattern> <path> 2> /dev/null || ( find <path> -type f > /dev/null && echo __pyinfra_exists_<path> || true )
+    grep -e <pattern> <path> 2> /dev/null || ( find <path> -type f > /dev/null && echo __reemote5_exists_<path> || true )
     ```
 
     **Returns:**
@@ -1445,10 +1445,10 @@ class FindInFile:
         Examples can be found in ``examples/modules/files/files_find_in_file.py``.
     """
 
-    # Mirrors pyinfra's ``files.FindInFile``: grep prints the matching
+    # Mirrors the baseline's ``files.FindInFile``: grep prints the matching
     # lines; when it fails (no match *or* no file), the fallback arm
     # distinguishes the two -- an existing regular file echoes the
-    # ``__pyinfra_exists_<path>`` sentinel (kept verbatim, prefix included,
+    # ``__reemote5_exists_<path>`` sentinel (kept verbatim, prefix included,
     # for fixture parity), which parses to [], while a missing file echoes
     # nothing and reads as None. ``extended_regex`` selects ``grep -E``;
     # ``interpolate_variables`` wraps the pattern in double quotes (with
@@ -1462,8 +1462,8 @@ class FindInFile:
     # exists but nothing matches, an absent key = the file is missing).
 
     #: Sentinel prefix the fallback arm echoes for an existing file with
-    #: no matches (pyinfra's spelling, kept for fixture parity).
-    EXISTS_PREFIX = "__pyinfra_exists_"
+    #: no matches (the baseline's spelling, kept for fixture parity).
+    EXISTS_PREFIX = "__reemote5_exists_"
 
     @classmethod
     def command(
@@ -1578,7 +1578,7 @@ class FindFilesInfo:
         Examples can be found in ``examples/modules/files/files_find_files_info.py``.
     """
 
-    # A reemote5 ORIGINAL: pyinfra ships no counterpart -- its FindFiles
+    # A reemote5 ORIGINAL: the baseline ships no counterpart -- its FindFiles
     # returns bare paths, so filtering hits by size/mtime/owner (Ansible's
     # ``find`` module returns that metadata per hit, and roles branch on
     # it: "delete logs older than X") would need one stat-level File read
@@ -1766,7 +1766,7 @@ class DirectoryEntries:
         Examples can be found in ``examples/modules/files/files_directory_entries.py``.
     """
 
-    # A reemote5 ORIGINAL: pyinfra ships no counterpart. This is the
+    # A reemote5 ORIGINAL: the baseline ships no counterpart. This is the
     # listing the stat-only ``Directory`` fact cannot give -- that fact
     # describes the directory *itself* (owner, mode, timestamps), never
     # the names inside it -- and the cheap shallow form of the find
@@ -1826,12 +1826,12 @@ class DirectoryEntries:
 # --- Operations --------------------------------------------------------------
 
 #: The ext2-family attribute letters ``lsattr`` prints in its flags field --
-#: the vocabulary ``files.flags`` accepts (pyinfra's BSD ``chflags`` verb
+#: the vocabulary ``files.flags`` accepts (the baseline's BSD ``chflags`` verb
 #: names, like ``hidden``, are not valid here; the developer-chosen Linux
 #: adaptation of ``files.flags``). ``e`` (extent) is real ext4 state and
 #: readable, though ``chattr`` refuses to set or clear it -- the operation
 #: deliberately does not special-case it, so requesting it plans a
-#: ``chattr`` that fails at apply, exactly pyinfra's shape for a
+#: ``chattr`` that fails at apply, exactly the baseline's shape for a
 #: no-op-protection verb on a wrong-flavoured host.
 _LINUX_FLAG_LETTERS = "AaCcDeEFfiJlmPSsTtuXxz"
 
@@ -1842,7 +1842,7 @@ class LinkCommand(Command):
     ``path`` (``rm -f path``) when ``target`` is None.
 
     Both paths are shell-quoted, so a name carrying spaces or shell
-    metacharacters stays a single argument -- matching pyinfra's quoting of
+    metacharacters stays a single argument -- matching the baseline's quoting of
     the link helpers. ``symbolic`` selects ``ln -s``; the command never
     carries ``-f``: the operation removes an existing link before creating
     the new one instead of forcing the write over it.
@@ -1906,11 +1906,11 @@ async def link(
         Examples can be found in ``examples/modules/files/files_op_link.py``.
     """
 
-    # pyinfra ``files.link`` parity -- the ``files.file``/``files.directory``
+    # baseline ``files.link`` parity -- the ``files.file``/``files.directory``
     # shape with ``touch``/``mkdir`` traded for ``ln``. The ``Link`` fact is
     # read once and only the differing commands are yielded: ``ln -s`` (or
     # plain ``ln``, hard) creates a missing link, ``rm -f`` plus a second
-    # ``ln`` re-points an existing one whose target differs (pyinfra's
+    # ``ln`` re-points an existing one whose target differs (the baseline's
     # "remove it and recreate a new one" rule), ``chown -h`` edits the
     # ownership, and ``rm -f`` (the same ``LinkCommand`` with no target)
     # removes it when ``present=False``. The link's own metadata is read
@@ -1927,34 +1927,34 @@ async def link(
     # asked for. Where ``FileLink`` alone could not tell a hard link from an
     # unrelated file, the pair of reads can.
     #
-    # Known asymmetry, disclosed as upstream pyinfra parity rather than
+    # Known asymmetry, disclosed as upstream parity rather than
     # changed: ``symbolic`` is not compared on the update branch, so an
     # existing symlink whose target matches is never converted into a hard
     # link (nor the reverse) -- the ensure no-ops on the target and owner
-    # alone. pyinfra's ``files.link`` has the same gap.
+    # alone. The baseline's ``files.link`` has the same gap.
     #
-    # pyinfra's ``create_remote_dir=True`` delegates to ``files.directory``
+    # The baseline's ``create_remote_dir=True`` delegates to ``files.directory``
     # with ``_no_check_owner_mode``: a missing parent is ``mkdir -p``'d (and
-    # ``chown``'d to the requested user/group, as pyinfra's create branch
+    # ``chown``'d to the requested user/group, as the baseline's create branch
     # does), an existing parent is left alone -- its mode is deliberately
-    # *not* copied over, pyinfra's doc note ("call ``files.directory``
+    # *not* copied over, the baseline's doc note ("call ``files.directory``
     # separately" for that). ``create_remote_dir=False`` skips the probe and
     # lets the ``ln`` fail on a missing parent.
     #
-    # pyinfra's ``force_backup``/``force_backup_dir`` are deliberately
+    # The baseline's ``force_backup``/``force_backup_dir`` are deliberately
     # dropped (developer decision, same as ``files.file`` and
     # ``files.directory``): the backup form ``mv``s the invalid path to a
     # ``datetime.now()``-stamped name, which would differ between the
     # prepare and apply phases and break the request-sequence determinism
     # the driver guards. ``force=True`` therefore always removes the
-    # non-link first (``rm -rf``, exactly pyinfra's ``force`` with
+    # non-link first (``rm -rf``, exactly the baseline's ``force`` with
     # ``force_backup=False``), and ``force=False`` raises ``ValueError``
-    # (pyinfra's ``OperationError``). pyinfra's tolerance of a *symlink*
+    # (the baseline's ``OperationError``). The baseline's tolerance of a *symlink*
     # parent (its internal ``_no_fail_on_link`` knob) is dropped with the
     # knob, so a parent that is a link reads as "exists and is not a
     # directory" and raises. The commands touch arbitrary paths, so for
     # root-owned locations flag the request ``sudo=True``; ``**kwargs``
-    # absorbs pyinfra's global arguments (``op()`` already strips
+    # absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     try:
         path = os.fspath(path)
@@ -2013,7 +2013,7 @@ async def link(
         reasons.append(f"{path} missing, will create")
         if create_remote_dir:
             # posixpath, not os.path: the remote is always *nix while the
-            # controller might be Windows (pyinfra's own reasoning).
+            # controller might be Windows (the baseline's own reasoning).
             parent = posixpath.dirname(path)
             if parent:
                 parent_info = await ctx.facts.get(Directory, parent)
@@ -2023,7 +2023,7 @@ async def link(
                     reasons.append(f"parent {parent} missing, will create")
                     yield MkdirCommand(path=parent)
                     if user or group:
-                        # pyinfra's delegated directory chowns a freshly
+                        # The baseline's delegated directory chowns a freshly
                         # created parent (its create branch) but never
                         # chmods it -- the mode is not copied over. The
                         # parent is a directory, so the chown dereferences.
@@ -2039,7 +2039,7 @@ async def link(
 
     # update: compare the requested target/owner against the fact's metadata
     # (.get: a dangling link read through the ls fallback carries no
-    # link_target at all, which pyinfra's subscription would KeyError on).
+    # link_target at all, which the baseline's subscription would KeyError on).
     if info.get("link_target") != target:
         changed = True
         reasons.append(f"target {info.get('link_target')} differs, will relink")
@@ -2064,7 +2064,7 @@ class FileCommand(Command):
     (``rm -f path``) when ``present`` is False.
 
     The path is shell-quoted, so a filename carrying spaces or shell
-    metacharacters stays a single argument -- matching pyinfra's quoting of
+    metacharacters stays a single argument -- matching the baseline's quoting of
     the touch/rm helpers.
     """
 
@@ -2126,13 +2126,13 @@ async def file(
         Examples can be found in ``examples/modules/files/files_op_file.py``.
     """
 
-    # pyinfra ``files.file`` parity -- the ``files.directory`` shape with
+    # baseline ``files.file`` parity -- the ``files.directory`` shape with
     # ``mkdir -p``/``rm -rf`` traded for ``touch``/``rm -f``. The ``File``
     # fact is read once and only the differing commands are yielded:
     # ``touch`` (plus ``chmod``/``chown`` when requested) creates a missing
     # file, the metadata comparison edits an existing one, and ``rm -f``
     # (the same ``FileCommand`` with ``present=False``) removes it. Like
-    # pyinfra's ``touch`` option, ``touch=True`` always re-runs the
+    # The baseline's ``touch`` option, ``touch=True`` always re-runs the
     # ``touch`` on an existing file (a deliberately non-idempotent option),
     # and a symbolic mode never equals the fact's octal int, so it re-runs
     # the ``chmod`` on every materialization. The path is validated and the
@@ -2140,26 +2140,26 @@ async def file(
     # ``_ensure_mode_int``). The commands touch arbitrary paths, so for
     # root-owned locations flag the request ``sudo=True``.
     #
-    # pyinfra's ``create_remote_dir=True`` delegates to ``files.directory``
+    # The baseline's ``create_remote_dir=True`` delegates to ``files.directory``
     # with ``_no_check_owner_mode``: a missing parent is ``mkdir -p``'d
-    # (and ``chown``'d to the requested user/group, as pyinfra's create
+    # (and ``chown``'d to the requested user/group, as the baseline's create
     # branch does), an existing parent is left alone -- its mode is
-    # deliberately *not* copied over, pyinfra's doc note ("call
+    # deliberately *not* copied over, the baseline's doc note ("call
     # ``files.directory`` separately" for that). ``create_remote_dir=False``
     # skips the probe and lets the ``touch`` fail on a missing parent.
     #
-    # pyinfra's ``force_backup``/``force_backup_dir`` are deliberately
+    # The baseline's ``force_backup``/``force_backup_dir`` are deliberately
     # dropped (developer decision, same as ``files.directory``): the backup
     # form ``mv``s the invalid path to a ``datetime.now()``-stamped name,
     # which would differ between the prepare and apply phases and break the
     # request-sequence determinism the driver guards. ``force=True``
     # therefore always removes the non-file first (``rm -rf``, exactly
-    # pyinfra's ``force`` with ``force_backup=False``), and ``force=False``
-    # raises ``ValueError`` (pyinfra's ``OperationError``). pyinfra's
+    # The baseline's ``force`` with ``force_backup=False``), and ``force=False``
+    # raises ``ValueError`` (the baseline's ``OperationError``). The baseline's
     # tolerance of a *symlink* path or parent (its internal
     # ``_no_fail_on_link`` knob) is dropped with the knob, so either one
     # reads as "exists and is not a ..." and raises; ``**kwargs`` absorbs
-    # pyinfra's global arguments (``op()`` already strips
+    # any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     try:
         path = os.fspath(path)
@@ -2198,7 +2198,7 @@ async def file(
         reasons.append(f"{path} missing, will create")
         if create_remote_dir:
             # posixpath, not os.path: the remote is always *nix while the
-            # controller might be Windows (pyinfra's own reasoning).
+            # controller might be Windows (the baseline's own reasoning).
             parent = posixpath.dirname(path)
             if parent:
                 parent_info = await ctx.facts.get(Directory, parent)
@@ -2208,7 +2208,7 @@ async def file(
                     reasons.append(f"parent {parent} missing, will create")
                     yield MkdirCommand(path=parent)
                     if user or group:
-                        # pyinfra's delegated directory chowns a freshly
+                        # The baseline's delegated directory chowns a freshly
                         # created parent (its create branch) but never
                         # chmods it -- the mode is not copied over.
                         yield ChownCommand(path=parent, user=user, group=group)
@@ -2290,7 +2290,7 @@ async def put(ctx: OpContext, src: IO[Any], dest: str) -> AsyncGenerator[Command
 
     # ``src`` is a seekable IO-like object on the control machine (a file
     # opened with ``open()``, an ``io.BytesIO``/``io.StringIO``, ...); unlike
-    # pyinfra's ``files.put``, which accepts ``str | IO[Any]``, a *path string
+    # The baseline's ``files.put``, which accepts ``str | IO[Any]``, a *path string
     # is deliberately not supported* -- the content source is always a stream,
     # rewound to position 0 before every read. Idempotence is content-based:
     # the source's sha1 (hashed locally with ``hashlib`` in a worker thread,
@@ -2368,10 +2368,10 @@ async def get(ctx: OpContext, src: str, dest: IO[Any]) -> AsyncGenerator[Command
     # destination's current content sha1 (hashed locally with ``hashlib`` in a
     # worker thread), and a ``GetCommand`` is yielded only when they differ,
     # so a fresh or empty destination always
-    # downloads and a second get of the same file is a no-op. pyinfra's
+    # downloads and a second get of the same file is a no-op. The baseline's
     # ``add_deploy_dir``, ``create_local_dir`` and ``force`` options are
     # deliberately dropped: there is no local path to place, create or force.
-    # Like pyinfra, an absent remote source still plans a download (which
+    # Like the baseline, an absent remote source still plans a download (which
     # fails at scp if the file truly is not there).
     #
     # The transfer is unprivileged: it rides the connection's scp channel as
@@ -2414,7 +2414,7 @@ async def edit(
     """
 
     # The generic content-editing primitive: instead of a bespoke operation
-    # per config-file format (pyinfra's ``files.line``, ``files.replace``
+    # per config-file format (the baseline's ``files.line``, ``files.replace``
     # and friends each hard-code one shape of edit), this reads the file's
     # current text with the ``FileContents`` fact, applies a caller-supplied
     # *pure* ``transform``, and writes the result back with a ``PutCommand``
@@ -2422,7 +2422,7 @@ async def edit(
     # ``sysctl`` key, appending a managed block -- is then just a transform,
     # with no new operation needed. A few high-traffic formats do get a
     # dedicated spool-and-install operation (``server.etc_hosts`` ports
-    # pyinfra's ``/etc/hosts`` editor); this primitive covers the rest.
+    # The baseline's ``/etc/hosts`` editor); this primitive covers the rest.
     #
     # The transform must be *idempotent* -- ``transform(transform(x)) ==
     # transform(x)`` -- so a second run is a no-op, and side-effect free,
@@ -2640,7 +2640,7 @@ async def install(
     # every deploy -- content idempotence needs a login-readable file.
     # There is deliberately no ``present=False`` removal branch --
     # ``files.file(present=False)`` already owns removal. ``**kwargs``
-    # absorbs pyinfra-style global arguments (``op()`` already strips
+    # absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     if not mode or any(c not in "01234567" for c in mode):
         raise ValueError(
@@ -2725,18 +2725,18 @@ async def move(
         Examples can be found in ``examples/modules/files/files_move.py``.
     """
 
-    # Mirrors pyinfra's ``files.move``. Stateless like pyinfra: there is no
+    # Mirrors the baseline's ``files.move``. Stateless like the baseline: there is no
     # no-op branch -- a valid move always yields a ``MoveCommand`` (preceded
     # by a ``RemoveTreeCommand`` when ``overwrite`` clears an existing
     # target), so ``ctx.changed`` is always True. Repeating the same move
     # fails at apply when ``mv`` exits non-zero on the now-absent source
     # (``CommandError``, fail-fast).
     #
-    # Reads ``File(src)`` (a directory or symlink reads False, which pyinfra
+    # Reads ``File(src)`` (a directory or symlink reads False, which the baseline
     # accepts -- only absence is rejected), ``Directory(dest)`` and
     # ``File(dest/basename(src))``. An absent ``src``, a ``dest`` that is not
     # a directory or does not exist, and an existing target without
-    # ``overwrite`` all raise ``ValueError``. pyinfra's phase-aware handling
+    # ``overwrite`` all raise ``ValueError``. The baseline's phase-aware handling
     # of the two absence cases (a soft log while planning, an error only
     # while executing) is deliberately dropped because reemote5 operations
     # are phase-unaware: they raise in *both* phases. A consequence is that
@@ -2748,7 +2748,7 @@ async def move(
     # Both commands are shell text, so flagging the request ``sudo=True``
     # elevates the whole move -- the vehicle for installing a login-user
     # spool file into a root-owned directory such as ``/etc``. ``**kwargs``
-    # absorbs pyinfra's global arguments (``op()`` already strips
+    # absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     if await ctx.facts.get(File, src) is None:
         raise ValueError(f"src {src} does not exist")
@@ -2780,7 +2780,7 @@ class CopyCommand(Command):
     """Copy a remote path into a remote directory (``cp -r [-f] src dest``).
 
     Unlike ``files.move``'s overwrite branch there is no ``rm -rf`` prelude:
-    pyinfra's copy expresses overwrite as ``cp``'s own ``-f`` flag, so one
+    The baseline's copy expresses overwrite as ``cp``'s own ``-f`` flag, so one
     descriptor with an ``overwrite`` field covers both forms.
     """
 
@@ -2825,13 +2825,13 @@ async def copy(
         Examples can be found in ``examples/modules/files/files_copy.py``.
     """
 
-    # Mirrors pyinfra's ``files.copy``. Unlike ``files.move`` there is no
-    # ``rm -rf`` prelude -- pyinfra's copy expresses overwrite as ``cp``'s own
+    # Mirrors the baseline's ``files.copy``. Unlike ``files.move`` there is no
+    # ``rm -rf`` prelude -- the baseline's copy expresses overwrite as ``cp``'s own
     # ``-f`` flag (which merges into an existing directory target rather than
     # replacing it).
     #
     # Reads ``Directory(src)`` and ``File(src)`` and requires one of them to
-    # be truthy, exactly pyinfra's check: a *symlink* source reads False for
+    # be truthy, exactly the baseline's check: a *symlink* source reads False for
     # both and raises, even though ``files.move`` accepts links (upstream's
     # own asymmetry, kept). ``Directory(dest)`` must be a present directory,
     # and ``File(dest/basename(src))`` probes the target.
@@ -2840,15 +2840,15 @@ async def copy(
     # regular-file target and ``overwrite`` unset, the source's and target's
     # ``RemoteFileSha1`` are compared -- equal content is a no-op
     # ("<target> already exists"), different content raises ``ValueError``.
-    # pyinfra's ``Sha1File`` -> ``Md5File`` -> ``Sha256File`` fallback chain
+    # The baseline's ``Sha1File`` -> ``Md5File`` -> ``Sha256File`` fallback chain
     # is deliberately reduced to the sha1-only ``RemoteFileSha1``, the same
     # single-hash precedent as ``files.put``/``files.get``. A target that is
     # not a regular file (``File`` reads False/None) skips the comparison
-    # and the copy is planned, pyinfra's truthiness kept verbatim.
+    # and the copy is planned, the baseline's truthiness kept verbatim.
     #
     # An absent ``src``, a ``dest`` that is not a directory or does not
     # exist, and an existing *different* target without ``overwrite`` all
-    # raise ``ValueError``. pyinfra's phase-aware handling of the two
+    # raise ``ValueError``. The baseline's phase-aware handling of the two
     # absence cases (a soft log while planning, an error only while
     # executing) is deliberately dropped because reemote5 operations are
     # phase-unaware: they raise in *both* phases, the same strictness chosen
@@ -2857,7 +2857,7 @@ async def copy(
     # the not-yet-created source -- so it spans two runs.
     #
     # The command is shell text, so flagging the request ``sudo=True``
-    # elevates the whole copy. ``**kwargs`` absorbs pyinfra's global
+    # elevates the whole copy. ``**kwargs`` absorbs any further global
     # arguments (``op()`` already strips ``name``/``sudo``/``su``).
     src_is_dir = await ctx.facts.get(Directory, src)
     src_is_file = await ctx.facts.get(File, src)
@@ -2886,7 +2886,7 @@ async def copy(
 
 
 def _ensure_mode_int(mode: int | str | None) -> int | str | None:
-    """Normalise a requested mode to pyinfra's canonical octal-digit int.
+    """Normalise a requested mode to the baseline's canonical octal-digit int.
 
     ``644``, ``"644"``, ``"0644"`` and ``"0o644"`` all mean ``rw-r--r--``;
     symbolic modes (``"u+x"``) and ``None`` pass through unchanged. An
@@ -2894,7 +2894,7 @@ def _ensure_mode_int(mode: int | str | None) -> int | str | None:
     ``rw-r--r--``): a true octal literal is indistinguishable from its
     decimal value at runtime, so use the ``"0o644"`` string form instead.
     """
-    # Ports pyinfra's ``operations.util.files.ensure_mode_int`` verbatim,
+    # Ports the baseline's ``operations.util.files.ensure_mode_int`` verbatim,
     # including the non-octal-digit ``ValueError``.
     if mode is None or isinstance(mode, bool):
         return mode
@@ -2933,7 +2933,7 @@ class ChmodCommand(Command):
 
     The mode is the canonical spelling ``directory`` normalised it to --
     an octal-digit int, or the symbolic string verbatim -- and renders
-    unquoted exactly as pyinfra's chmod helper does; only the target is
+    unquoted exactly as the baseline's chmod helper does; only the target is
     shell-quoted.
     """
 
@@ -2950,7 +2950,7 @@ class ChmodCommand(Command):
 class ChownCommand(Command):
     """Set a path's owner and/or group (``chown``/``chgrp [-R] [-h] spec path``).
 
-    Mirrors pyinfra's chown helper: a user alone or a ``user:group`` pair
+    Mirrors the baseline's chown helper: a user alone or a ``user:group`` pair
     render ``chown``, a group alone switches to ``chgrp``. At least one of
     the two must be set. ``recursive`` adds ``-R``, and ``dereference``
     (False only for ``files.link``, which owns the link and not its target)
@@ -3026,33 +3026,33 @@ async def directory(
         Examples can be found in ``examples/modules/files/files_op_directory.py``.
     """
 
-    # pyinfra ``files.directory`` parity. The parameter is named ``path``
+    # baseline ``files.directory`` parity. The parameter is named ``path``
     # exactly as upstream spells it (``files.file`` and ``files.link`` spell
     # their own ``path`` too). Reads the ``Directory`` fact
     # once and yields only on a difference: ``mkdir -p`` when the path is
     # absent, ``chmod``/``chown`` when the requested mode or owner differs
     # from the fact's metadata,
     # and ``rm -rf`` (the shared ``RemoveTreeCommand``) when
-    # ``present=False``. Like pyinfra's ``recursive`` contract, mode is only
+    # ``present=False``. Like the baseline's ``recursive`` contract, mode is only
     # applied recursively when the base directory's own mode does not
     # match, and user/group only when the base directory misses either
     # owner -- the ``-R`` flag then covers the whole tree. Symbolic modes
     # never equal the fact's octal int, so they re-run the ``chmod`` on
-    # every materialization, pyinfra's behaviour kept. The commands touch
+    # every materialization, the baseline's behaviour kept. The commands touch
     # arbitrary paths, so for root-owned locations flag the request
     # ``sudo=True``.
     #
-    # pyinfra's ``force_backup``/``force_backup_dir`` are deliberately
+    # The baseline's ``force_backup``/``force_backup_dir`` are deliberately
     # dropped (developer decision): the backup form ``mv``s the invalid
     # path to a name built from ``datetime.now()``, and a timestamp inside
     # a yielded command would differ between the prepare and apply phases,
     # breaking the request-sequence determinism the driver guards.
     # ``force=True`` therefore always removes the non-directory first
-    # (``rm -rf``, exactly pyinfra's ``force`` with ``force_backup=False``),
-    # and ``force=False`` raises ``ValueError`` (pyinfra's
-    # ``OperationError``). pyinfra's internal ``_no_check_owner_mode`` and
+    # (``rm -rf``, exactly the baseline's ``force`` with ``force_backup=False``),
+    # and ``force=False`` raises ``ValueError`` (the baseline's
+    # ``OperationError``). The baseline's internal ``_no_check_owner_mode`` and
     # ``_no_fail_on_link`` knobs are deliberately dropped too; ``**kwargs``
-    # absorbs pyinfra's global arguments (``op()`` already strips
+    # absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     try:
         path = os.fspath(path)
@@ -3174,19 +3174,19 @@ async def flags(
         Examples can be found in ``examples/modules/files/files_flags.py``.
     """
 
-    # pyinfra ``files.flags`` parity, in the developer-chosen Linux
-    # adaptation: pyinfra's verb pair (``chflags`` over BSD ``stat -f %Sf``
+    # baseline ``files.flags`` parity, in the developer-chosen Linux
+    # adaptation: the baseline's verb pair (``chflags`` over BSD ``stat -f %Sf``
     # flag names like ``hidden``) does not exist on Linux, so the same
     # set/clear capability is expressed over ``lsattr -d`` letters (the
     # ``FileFlags`` fact) and ``chattr +flag``/``-flag``. The idempotence
     # logic is kept verbatim: requested flags minus the current set decide
     # a set, the current set intersected with the requested flags decide a
-    # clear, and anything else is a no-op whose reason mirrors pyinfra's
+    # clear, and anything else is a no-op whose reason mirrors the baseline's
     # noop text (``already has 'a,b' set``/``clear``) over the sorted
     # requested spelling, so plan and apply phase report identically.
-    # pyinfra accepts a scalar ``flags`` string as its own spelling of the
+    # The baseline accepts a scalar ``flags`` string as its own spelling of the
     # one-flag list (``flags="hidden"``), kept here as the same
-    # normalisation; empty or absent flags are pyinfra's empty-list noop
+    # normalisation; empty or absent flags are the baseline's empty-list noop
     # branch. A list stays valid for direct generator calls but ``op()``
     # rejects it (UnhashableArgumentError), hence the tuple preference.
     # ``chattr`` addresses only the ``_LINUX_FLAG_LETTERS`` vocabulary -- a
@@ -3195,10 +3195,10 @@ async def flags(
     # left unfiltered: it is readable ext4 state ``chattr`` refuses to
     # change, so requesting it plans a command that fails at apply.
     # An absent path reads no flags (``FileFlags`` answers ``[]``), so the
-    # request plans a ``chattr`` that fails at apply -- pyinfra's Flags
+    # request plans a ``chattr`` that fails at apply -- the baseline's Flags
     # answers ``[]`` for absence identically. Setting or clearing
     # attributes needs root in practice, so for the common protected paths
-    # flag the request ``sudo=True``. ``**kwargs`` absorbs pyinfra's global
+    # flag the request ``sudo=True``. ``**kwargs`` absorbs any further global
     # arguments (``op()`` already strips ``name``/``sudo``/``su``).
     if flags is None:
         requested: tuple[str, ...] = ()

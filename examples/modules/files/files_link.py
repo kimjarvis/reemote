@@ -29,7 +29,7 @@ two-phase execution model:
    a host-name-keyed mapping -- then print each host's metadata with
    ``json.dumps(..., indent=2)``.
 
-``Link`` mirrors pyinfra's ``files.Link`` -- its ``File`` subclass with
+``Link`` mirrors the baseline's ``files.Link`` -- its ``File`` subclass with
 ``type = "link"``: the same ``test -e``/``test -L`` guard and GNU
 ``stat -c`` / BSD ``stat -f`` / ``ls -ld`` chain, but the path's type flag
 must be ``l``. The result is a metadata dict -- ``user``, ``group``,

@@ -1,7 +1,5 @@
 # selinux module
 
-## selinux Facts
-
 ::: reemote5.modules.selinux.selinux
     options:
       show_root_heading: false
@@ -10,6 +8,8 @@
         - FileContext
         - FileContextMapping
         - Mode
+        - ModeInfo
+        - Module
         - Modules
         - PermissiveDomains
         - SEBoolean
@@ -17,26 +17,10 @@
         - SEPort
         - SEPorts
         - SEUser
-        - SelinuxConfigFile
-
-## selinux Returns
-
-::: reemote5.modules.selinux.selinux
-    options:
-      show_root_heading: false
-      members:
-        - ModeInfo
-        - Module
         - SeContext
         - SeLogin
         - SeUser
-
-## selinux Operations
-
-::: reemote5.modules.selinux.selinux
-    options:
-      show_root_heading: false
-      members:
+        - SelinuxConfigFile
         - autorelabel
         - boolean
         - config
@@ -57,12 +41,12 @@
 operations in a single source, covering the core toolchain of
 `getenforce`/`setenforce`, `semanage` (fcontext/login/user/port/permissive),
 `semodule` and `restorecon` for complete control over and visibility of
-SELinux on RHEL-family hosts. Five facts port pyinfra's baseline
+SELinux on RHEL-family hosts. Five facts port the baseline's baseline
 (`SEBoolean`, `FileContext`, `FileContextMapping`, `SEPorts`, `SEPort`) and
-seven are reemote5 originals filling the gaps pyinfra leaves (`Mode`,
+seven are reemote5 originals filling the gaps the baseline leaves (`Mode`,
 `Booleans`, `SELogin`, `SEUser`, `Modules`, `PermissiveDomains`,
 `SelinuxConfigFile`); four
-operations port pyinfra's baseline (`boolean`, `file_context`,
+operations port the baseline's baseline (`boolean`, `file_context`,
 `file_context_mapping`, `port` — the latter three enhanced) and seven are
 originals (`mode`, `login`, `module`, `permissive_domain`, `restorecon`,
 `autorelabel`, `config`).
@@ -83,7 +67,7 @@ generator — implemented as a `process` coroutine returning the raw value
 coroutine, so results are awaited and cached within a phase step.
 
 `SEBoolean` takes a boolean name and runs `getsebool <name>`, keeping the
-`on`/`off` value word of the first `--> ` row (pyinfra parity); empty or
+`on`/`off` value word of the first `--> ` row (baseline parity); empty or
 malformed output reads as the empty string. `Booleans` is the original
 whole-table sibling: `getsebool -a` parsed into a name → bool mapping
 (True only for `on`), one read for a full boolean audit.
@@ -91,26 +75,26 @@ whole-table sibling: `getsebool -a` parsed into a name → bool mapping
 `FileContext` takes a path and runs `stat -c %C <path> || exit 0`,
 splitting the `user:role:type:level` label into the shared `SeContext`
 TypedDict; an unlabelled filesystem (`?`) or a missing path reads `None`
-(pyinfra's None-on-absent). `FileContextMapping` takes a target expression
+(the baseline's None-on-absent). `FileContextMapping` takes a target expression
 and greps the *local-only* fcontext database
 (`set -o pipefail && semanage fcontext -n -l | (grep '^<target>' || true)`)
 for the single matching row's trailing context, returning the same
 `SeContext` shape — the persistent rule a relabel would apply, not the
-label a file carries now. Deliberate deviation from pyinfra: no mapping
+label a file carries now. Deliberate deviation from the baseline: no mapping
 reads `None` rather than `{}`, the house None-on-absent convention. A
 missing `semanage` exits 127, reported as
 [`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
 
 `SEPorts` runs `semanage port -ln` and keeps a protocol → port → type map,
 expanding ranges (`9000-9010`) to individual ports and skipping the
-`unreserved_port_t` catch-all (pyinfra parity); the two optional filter
+`unreserved_port_t` catch-all (baseline parity); the two optional filter
 arguments are the reemote5 enhancement — `protocol` keeps one protocol's
 table, `se_type` keeps only ports carrying one type label, so a port audit
 is one filtered read. `SEPort` takes a protocol and port and runs
 `(sepolicy network -p <port> 2>/dev/null || true) | grep <protocol>`,
 keeping the first row's type only when *both* the specific and the generic
 range row are present — a port covered by a generic range alone reads as
-the empty string (pyinfra's gate). The `|| true` tolerates a host without
+the empty string (the baseline's gate). The `|| true` tolerates a host without
 `sepolicy` (policycoreutils-dev is not stock).
 
 `Mode` is the original foundation every SELinux decision starts from:
@@ -148,7 +132,7 @@ domains exempted from enforcement despite a globally enforcing policy.
 ## Operations
 
 Operations live in namespace modules so a deploy reads `selinux.boolean`,
-mirroring pyinfra's API. Every operation is an async generator with the
+mirroring the baseline's API. Every operation is an async generator with the
 same fixed signature:
 
 ```python
@@ -160,19 +144,19 @@ it decides a change is needed, and yields one descriptor per command that
 would mutate the host. Every operation here writes root-owned kernel or
 policy state, so flag the request `sudo=True` (or `su=True`/`doas=True`).
 
-`selinux.boolean` (pyinfra parity) sets one boolean to `on`/`off`,
+`selinux.boolean` (baseline parity) sets one boolean to `on`/`off`,
 idempotent on `SEBoolean` — the check-before-executing the enhancement
 asked for falls out of the fact-driven model, sparing the expensive
 `setsebool -P` policy rewrite on an unchanged boolean. `persistent=True`
-adds `-P`. pyinfra's `Boolean` enum is dropped: `value` is the plain
+adds `-P`. The baseline's `Boolean` enum is dropped: `value` is the plain
 `on`/`off` string, anything else raises `ValueError`.
 
-`selinux.file_context` (pyinfra parity, enhanced to the full context)
+`selinux.file_context` (baseline parity, enhanced to the full context)
 relabels one existing path with `chcon`: each of `se_type`, `se_user`,
 `se_role`, `se_level` is optional, at least one must be given, and only
 the components differing from the `FileContext` fact are yielded. The
 label is runtime-only — a relabel reverts it to the database rule, which
-is `selinux.file_context_mapping`'s job (pyinfra parity): `present=True`
+is `selinux.file_context_mapping`'s job (baseline parity): `present=True`
 adds (`semanage fcontext -a`) or modifies (`-m`) the persistent rule for a
 target expression, `present=False` deletes it (`-d`), idempotent on
 `FileContextMapping`. `selinux.restorecon` (original) is the documented
@@ -181,10 +165,10 @@ remedy for both limitations: it reapplies the database to a tree
 fact compares a whole tree against the database — so every request yields
 and reports a change; restorecon itself only writes labels that differ.
 
-`selinux.port` (pyinfra parity, enhanced with modify) labels a
+`selinux.port` (baseline parity, enhanced with modify) labels a
 protocol/port pair: `present=True` adds an unlabelled port
 (`semanage port -a`) or modifies a differently-labelled one in place
-(`-m`) — the update scenario pyinfra's add/remove-only operation could not
+(`-m`) — the update scenario the baseline's add/remove-only operation could not
 express — and `present=False` deletes the label (`-d`). Idempotence
 dispatches on tooling: the `SEPort` fact when `sepolicy` is installed,
 otherwise the `SEPorts` table.
@@ -219,7 +203,7 @@ machine — `present` installs (`semodule -X <priority> -i <source>`) or
 re-enables, `absent` removes (`-r`), `enabled`/`disabled` flip an
 installed instance (`-e`/`-d`) — idempotent on `Modules`; the parameter is
 named `module_name` because `op()` reserves `name` for the request label
-(pyinfra's `bool_name` precedent), and enabling/disabling an uninstalled
+(the baseline's `bool_name` precedent), and enabling/disabling an uninstalled
 module raises `ValueError` in prepare. `selinux.permissive_domain`
 (original) adds or removes one domain from the permissive list
 (`semanage permissive -a/-d`), idempotent on `PermissiveDomains` — the

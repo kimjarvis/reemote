@@ -28,8 +28,8 @@ driving the two-phase execution model:
    target-keyed privilege lists with ``json.dumps(..., indent=2)``.
 
 The fact runs ``mysql -Be 'SHOW GRANTS FOR "shop_app"@"localhost"' ||
-true`` as the login user -- the pyinfra ``mysql.MysqlUserGrants`` query,
-with the guard standing in for pyinfra's ``ignore_errors``: an account
+true`` as the login user -- the baseline ``mysql.MysqlUserGrants`` query,
+with the guard standing in for the baseline's ``ignore_errors``: an account
 that does not exist reads as ``{}`` instead of failing. Edit the account
 below to one that exists on your hosts (the ``mysql_user.py`` operation
 example creates ``shop_app@localhost``). ``WITH GRANT OPTION`` is folded
@@ -132,7 +132,7 @@ async def main() -> None:
         # fans MysqlUserGrants.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
         # running one host at a time. process runs SHOW GRANTS FOR the account
-        # and parses the lines into a dict keyed `db`.`table` -- the pyinfra
+        # and parses the lines into a dict keyed `db`.`table` -- the baseline
         # mysql.MysqlUserGrants shape, with sorted privilege lists.
         grants = await gather_fact(hosts, MysqlUserGrants, "shop_app", "localhost")
     except (OSError, json.JSONDecodeError) as exc:

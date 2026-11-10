@@ -43,7 +43,7 @@ target is removed and recreated (`rm -f` then `ln`, never `ln -sf`),
 target), and `present=False` removes it with `rm -f`. A missing parent
 directory is created first unless `create_remote_dir=False`, and a path
 held by a regular file or directory raises unless `force=True` removes it
-first — pyinfra's timestamped `force_backup` is deliberately dropped (a
+first — the baseline's timestamped `force_backup` is deliberately dropped (a
 `datetime.now()` in the command would differ between the phases). The
 example ensures the same link twice in `/tmp` — writable by any login user,
 so no elevation is needed — and the second request is a guaranteed no-op
@@ -57,7 +57,7 @@ needs `files.file` below.
 
 ## Ensuring a regular file
 
-`files.file` (pyinfra parity, in the `files.directory` shape): it stats the
+`files.file` (baseline parity, in the `files.directory` shape): it stats the
 path through the `File` fact and yields only the commands that close a gap
 — `touch` creates a missing file, plus `chmod`/`chown` when
 `mode`/`user`/`group` are requested and a `mkdir -p` of a *missing* parent
@@ -74,7 +74,7 @@ the file — then ensures the same
 root-owned file twice — the second file request is a guaranteed no-op
 through the fresh per-step fact cache — so those requests carry
 `sudo=True`, then removes a `/tmp` marker unprivileged.
-pyinfra's timestamped `force_backup` is deliberately dropped (a
+the baseline's timestamped `force_backup` is deliberately dropped (a
 `datetime.now()` in the command would differ between the phases), and the
 `touch` option is shown unused because it is deliberately non-idempotent.
 
@@ -86,7 +86,7 @@ pyinfra's timestamped `force_backup` is deliberately dropped (a
 
 The first non-shell operation: `files.put` compares the sha1 of an IO-like
 source on the control machine against the remote file's and transfers over
-the asyncssh connection's scp channel only when they differ. Unlike pyinfra's
+the asyncssh connection's scp channel only when they differ. Unlike the baseline's
 `str | IO[Any]`, the source is a *stream only* — the example uses a
 module-level `io.BytesIO`, defined once so both phases pass the identical
 object (request equality compares it by identity). The script puts the same
@@ -103,7 +103,7 @@ rides the connection as the login user, so the destination is a path in
 
 The mirror operation: `files.get` compares the remote file's sha1 against the
 sha1 of an IO-like destination's current content and downloads over the
-asyncssh connection's scp channel only when they differ. Where pyinfra writes
+asyncssh connection's scp channel only when they differ. Where the baseline writes
 to a local path (with `add_deploy_dir`/`create_local_dir`/`force`), reemote5's
 destination is a *stream only* — the example reads `/etc/hostname` into a
 module-level `io.BytesIO` and prints the bytes back, so no local file is
@@ -139,18 +139,18 @@ target is a login-user-writable path in `/tmp`, not a root-owned file like
     options:
       members: []
 
-## Managing a marked block (pyinfra files.block parity)
+## Managing a marked block (baseline files.block parity)
 
-reemote5's answer to pyinfra's `files.block`: no bespoke block editor, just a
+reemote5's answer to the baseline's `files.block`: no bespoke block editor, just a
 transform. The example's `block_transform` factory builds a pure, idempotent
-`files.edit` transform from pyinfra's option set — `content` (a string or a
-list of lines) surrounded by the `marker` lines (`# BEGIN/END PYINFRA BLOCK`
-by default, kept verbatim so existing pyinfra-managed blocks are recognized),
+`files.edit` transform from the baseline's option set — `content` (a string or a
+list of lines) surrounded by the `marker` lines (`# BEGIN/END REEMOTE5 BLOCK`
+by default, kept verbatim so existing baseline-managed blocks are recognized),
 `line`/`before`/`after` regex positioning with `escape_regex_characters`, and
 `present=False` to remove the marked region. An existing block is replaced in
 place or returned byte-identical (the fixpoint that makes the second edit a
 no-op); the factory must be called once outside the deploy generator, or the
-fresh closure per phase would raise `DeterminismError`. pyinfra's `backup`
+fresh closure per phase would raise `DeterminismError`. The baseline's `backup`
 (a non-deterministic timestamped `cp`), `preserve_meta` (moot under an scp
 overwrite) and the deprecated `try_prevent_shell_expansion` are deliberately
 dropped; removal from an absent file passes `None` through so no empty file
@@ -165,7 +165,7 @@ below).
 
 ## Moving a remote file into a remote directory
 
-`files.move` (pyinfra parity): `src` is a remote path, `dest` the remote
+`files.move` (baseline parity): `src` is a remote path, `dest` the remote
 *directory* to move it into, and `overwrite=True` clears an existing target
 with `rm -rf` before the `mv`. The operation is stateless — a valid move
 always plans a command — and raises `ValueError` on an absent source or
@@ -183,7 +183,7 @@ destination would carry `sudo=True`.
 
 ## Copying a remote file into a remote directory
 
-`files.copy` (pyinfra parity): `src` is a remote path, `dest` the remote
+`files.copy` (baseline parity): `src` is a remote path, `dest` the remote
 *directory* to copy it into, and the source stays in place — the difference
 from `files.move`. `overwrite=True` forces the copy (`cp -r -f`, no `rm -rf`
 prelude); without it an existing target with equal sha1 content is a no-op
@@ -202,13 +202,13 @@ destination would carry `sudo=True`.
 
 ## Creating and managing a directory
 
-`files.directory` (pyinfra parity): an absent path is created with
+`files.directory` (baseline parity): an absent path is created with
 `mkdir -p`, then `chmod`/`chown` when `mode`/`user`/`group` are requested;
 an existing directory re-runs only the `chmod`/`chown` whose values differ
 from the `Directory` fact's metadata, so the second request in the example
 is a guaranteed no-op; `present=False` removes it with `rm -rf`, and a path
 held by a regular file raises unless `force=True` removes it first.
-pyinfra's timestamped `force_backup` is deliberately dropped — a
+the baseline's timestamped `force_backup` is deliberately dropped — a
 `datetime.now()` in the command would differ between the phases. The
 web-root path (`/srv/web`) and the `www` ownership are root-owned, so the
 request carries `sudo=True`. The `www` account is not assumed to exist:
@@ -224,11 +224,11 @@ example's `File` fact reads a config file inside it).
 
 ## Setting and clearing ext2 attribute flags
 
-`files.flags` (pyinfra parity, in the developer-chosen Linux adaptation):
-pyinfra's BSD `chflags`/`stat -f %Sf` verb pair does not exist on Linux, so
+`files.flags` (baseline parity, in the developer-chosen Linux adaptation):
+the baseline's BSD `chflags`/`stat -f %Sf` verb pair does not exist on Linux, so
 the same set/clear capability runs over `lsattr -d` (read through the
 `FileFlags` fact) and `chattr +flag`/`-flag`. The idempotence is verbatim
-pyinfra's — a set yields only the requested letters missing from the current
+the baseline's — a set yields only the requested letters missing from the current
 set, a clear (`present=False`) only those actually present, and anything
 else is a no-op. `flags` takes one letter or a tuple of letters (a tuple at
 `op()` call sites, since request arguments must stay hashable); a letter
@@ -292,12 +292,12 @@ service-account file would read back as empty and re-install on every deploy.
 
 ## A health-check deploy: dnf install, put and get
 
-The reemote5 take on a relatable pyinfra scenario — a simple web-server
+The reemote5 take on a relatable the baseline scenario — a simple web-server
 health-check / log-rotation deploy — in one flat generator: `dnf.packages`
 installs `htop` (elevated with `sudo=True`), `files.put` pushes an
 in-memory motd stream to `/tmp/remote_motd` (unprivileged scp), and
 `files.get` pulls `/etc/os-release` back into a per-host `io.BytesIO` sink
-whose content the script prints. Where the pyinfra original uses local paths
+whose content the script prints. Where the baseline original uses local paths
 (`files/motd`, `local_os_release.txt`, `add_deploy_dir=True`), reemote5's
 transfers take IO-like objects only — no local file is involved in either
 direction.

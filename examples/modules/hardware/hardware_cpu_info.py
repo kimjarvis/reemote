@@ -28,7 +28,7 @@ the two-phase execution model:
    inventory with ``asyncio.gather`` and returns a host-name-keyed mapping --
    then print each host's CPU info with ``json.dumps(..., indent=2)``.
 
-``CpuInfo`` mirrors pyinfra's ``hardware.CpuInfo``: it runs ``LANG=C lscpu``
+``CpuInfo`` mirrors the baseline's ``hardware.CpuInfo``: it runs ``LANG=C lscpu``
 and maps each ``Key: value`` row to its stripped key and value. A key
 containing ``flag`` (e.g. ``Flags``) has its value split into a list of
 tokens; every other value stays a raw string. A failed read reports ``None``

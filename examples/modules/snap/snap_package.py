@@ -40,7 +40,7 @@ has no separate ``switch`` verb). An installed snap already on the requested
 channel is a no-op, so re-running converges. ``channel`` defaults to
 ``latest/stable``; ``classic=True`` would add snap's ``--classic``
 confinement flag to installs only (the shape most non-store snaps need).
-pyinfra's ``requires_command`` gating on ``snap`` is deliberately dropped,
+the baseline's ``requires_command`` gating on ``snap`` is deliberately dropped,
 matching the fact: the guarded command reads an absent package as ``None``
 rather than failing.
 
@@ -146,7 +146,7 @@ def is_ubuntu(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Install the baseline snaps -- twice, to show idempotence.
+    """Install baseline snaps -- twice, to show idempotence.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError),

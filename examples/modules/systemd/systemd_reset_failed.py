@@ -20,7 +20,7 @@ uses the *default* factory (``Host.from_inventory``), opening real asyncssh
 connections that ``run`` closes when it finishes. The path is resolved from
 ``__file__``, so the example works from any working directory.
 
-``systemd.reset_failed`` is a reemote5 original. pyinfra folds reset-failed
+``systemd.reset_failed`` is a reemote5 original. The baseline folds reset-failed
 into ``systemd.service`` (the enhanced ``service`` keeps a ``reset_failed``
 flag); this standalone operation covers the reset-only case. It is idempotent:
 it reads the ``SystemdServiceState`` fact and yields ``systemctl reset-failed``

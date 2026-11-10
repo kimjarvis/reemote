@@ -49,7 +49,7 @@ which guards on `is_ubuntu` because it is Debian-family only.
 
 ## Ensuring system groups
 
-`server.group` in action: the deploy creates the `docker` group (pyinfra's
+`server.group` in action: the deploy creates the `docker` group (the baseline's
 documented example) and a `lusers` system group with a fixed gid, both under
 `sudo`. The operation is idempotent — it compares each name against the
 `Groups` fact and yields a `GroupAddCommand` only where the group is absent,
@@ -71,7 +71,7 @@ idempotent — it compares the requested name against the `Hostname` fact and
 yields a `SetHostnameCommand` only where they differ, so a second run plans
 no change. The `Which` fact picks the command form: `hostnamectl
 set-hostname` where `hostnamectl` is available (it persists the name across
-reboots), the bare `hostname` command on older systems. pyinfra's
+reboots), the bare `hostname` command on older systems. The baseline's
 `hostname_file` upload branch is deliberately dropped — reemote5's
 transfers cannot be elevated, so the root-owned `/etc/hostname` write has
 no faithful equivalent; on a systemd host `hostnamectl` already persists
@@ -85,7 +85,7 @@ from the read-only `server_hostname.py` fact example.
 ## Killing a process by PID
 
 `server.kill` in action, and the determinism-safe way to "find the PID,
-then kill it" in ONE deploy. Like pyinfra, the operation takes an explicit
+then kill it" in ONE deploy. Like the baseline, the operation takes an explicit
 `pid` (and an optional `signal`, default `TERM`), so the script first takes
 a `Processes` snapshot via `gather_fact` across the guarded hosts, then builds the
 deploy from a factory closing over that frozen mapping: the generator loops
@@ -145,7 +145,7 @@ extra options already on the mount never trigger a remount). When `path`
 is not found directly but `device` is given, the mount is located by device
 instead, and that found mount point is what an unmount or remount acts on;
 on a BSD host the remount takes the `mount -uo ... -t ...` form (the
-`Kernel` fact picks it). Like pyinfra, `/etc/fstab` is never touched — a
+`Kernel` fact picks it). Like the baseline, `/etc/fstab` is never touched — a
 mount made this way does not survive a reboot unless an fstab entry is
 managed separately. The mount target directory must already exist and the
 device must be present; a missing device or directory makes `mount` exit
@@ -163,14 +163,14 @@ unconfined `sudo` domain.
 ## Setting the timezone
 
 `server.timezone` in action: the deploy ensures every host keeps
-`Europe/Amsterdam` (pyinfra's documented example), under `sudo`. The
+`Europe/Amsterdam` (the baseline's documented example), under `sudo`. The
 operation is idempotent — it compares the requested zone against the
 `Timezone` fact and yields a `SetTimezoneCommand` (`timedatectl
 set-timezone`) only where they differ, so a second run plans no change.
 It is supported on **systemd systems only**: when a change is needed the
 `Which` fact probes `timedatectl`, and a host without it raises
 `OperationError` during the prepare phase — before anything is sent —
-rather than falling back. pyinfra's non-systemd fallback (symlinking
+rather than falling back. The baseline's non-systemd fallback (symlinking
 `/etc/localtime` and writing `/etc/timezone`) is deliberately dropped; on
 a systemd host `timedatectl` already persists the zone across reboots. The
 script is named `server_op_timezone.py` to keep it distinct from the
@@ -193,14 +193,14 @@ idempotent — it compares the request against the `Users` fact and yields
 fields for a present one, and `userdel` for `present=False`, so a second run
 plans no change. `groups` is a tuple because `op()` arguments must stay
 hashable, and `append=True` adds memberships without removing any. The default
-`ensure_home` is pyinfra's `files.directory` delegation, inlined: with
+`ensure_home` is the baseline's `files.directory` delegation, inlined: with
 `create_home=False` (the default) `useradd` builds nothing from the skeleton,
 so the plan shows the `mkdir -p /home/deploy` plus `chown deploy:deploy
 /home/deploy` pair that actually creates the directory. The append step also
 makes the per-phase fact cache visible: in the plan both user requests read
 the same pre-deployment state and both show a change, while in the apply each
 step re-reads the facts, so the fourth step sees the groups the third wrote
-and sends only `usermod -a -G staff deploy`. pyinfra's
+and sends only `usermod -a -G staff deploy`. The baseline's
 `public_keys`/`delete_keys` options are deliberately dropped (key files are
 managed through the separate `server.user_authorized_keys` operation), as
 are its plan-time
@@ -219,7 +219,7 @@ read-only `server_user.py` fact example.
 `server.user_authorized_keys` in action: the deploy ensures the login user's
 `~/.ssh` directory (mode `700`) and `authorized_keys` file (mode `600`) exist
 and are owned correctly, then writes the public keys not already listed —
-pyinfra's documented flow with its controller-side key-file paths dropped
+the baseline's documented flow with its controller-side key-file paths dropped
 (every `public_keys` entry here is a literal key string, and it is a tuple
 because `op()` arguments must stay hashable). The operation is idempotent —
 it reads the `Home` fact to resolve the directory, a private `_KeysPathStat`
@@ -236,7 +236,7 @@ file, then installs it with `sh -c 'mkdir -p … && cp … && chmod 600 … &&
 rm -f …'`. The scp half stays unprivileged even under `sudo=True` — transfers
 never elevate — so the log shows two privilege levels in one request. Here
 the keys are managed for the login user themselves, so no `sudo` is needed;
-managing another user's keys would flag `sudo=True`. pyinfra's `delete_keys`
+managing another user's keys would flag `sudo=True`. The baseline's `delete_keys`
 option is supported too (a whole-file rewrite to exactly the requested keys,
 riding the same spool-and-install pair), though this example only appends.
 The script is named
@@ -255,7 +255,7 @@ The script is named
 `files.edit` → `files.move` recipe that used to live in the files
 examples — the fact read, the pure hosts-file transform and the install
 now live in one operation, so a single deploy suffices. The operation is
-idempotent: it compares the parsed `EtcHosts` fact first (pyinfra's
+idempotent: it compares the parsed `EtcHosts` fact first (the baseline's
 no-op reasons verbatim, order-sensitive on the hostnames), and only a
 differing entry triggers the write — the `AuthorizedKeysFile`
 raw-content fact reads the file's current text, the transform rewrites
@@ -275,10 +275,10 @@ wrote and reports no change.
     options:
       members: []
 
-## Managing locales (pyinfra server.locale parity)
+## Managing locales (baseline server.locale parity)
 
 `server.locale` in action: the deploy ensures `fr_FR.UTF-8` is enabled
-under `sudo`, the pyinfra parity for `/etc/locale.gen`. It is a
+under `sudo`, the baseline parity for `/etc/locale.gen`. It is a
 **Debian-family operation**: `/etc/locale.gen` and `locale-gen` exist only
 on Debian/Ubuntu (the `locales` package), so it targets the `ubuntu` host, not
 the CentOS `web1`/`web2` servers — RHEL-family hosts install locales through
@@ -286,10 +286,10 @@ the CentOS `web1`/`web2` servers — RHEL-family hosts install locales through
 request there raises `OperationError` in the prepare phase.
 The operation is **spool-and-install**: in one request it reads the
 `Locales` fact (`locale -a`) and the raw `/etc/locale.gen` text, applies
-pyinfra's change condition (enable only when the locale is absent from
+the baseline's change condition (enable only when the locale is absent from
 `locale -a`, disable only when present) and definition-line lookup — a
 Python regex instead of a `FindInFile` grep, `OperationError` with
-pyinfra's messages on zero or multiple matches — then scp's the
+the baseline's messages on zero or multiple matches — then scp's the
 transformed text to a deterministic `/tmp` spool as the login user,
 installs it over `/etc/locale.gen` with an elevated `sh -c` (`chmod 0644`,
 spool removed) and finishes with one elevated `locale-gen`. The log shows
@@ -307,7 +307,7 @@ keep it distinct from the read-only `server_locales.py` fact example.
     options:
       members: []
 
-## Ensuring a sysctl setting (pyinfra server.sysctl parity)
+## Ensuring a sysctl setting (baseline server.sysctl parity)
 
 `server.sysctl` is superseded by the native
 [`sysctl`](../../modules/sysctl.md) module (`sysctl.setting` /
@@ -316,12 +316,12 @@ built on the generic `files.edit` primitive (the `Sysctl` fact it compares
 against relocated to that namespace as `sysctl.Sysctl`; the top-level
 `reemote5.Sysctl` binding still resolves).
 The script snapshots `Sysctl` for `fs.file-max` and
-`FileContents("/etc/sysctl.conf")` from every guarded host, then applies pyinfra's
+`FileContents("/etc/sysctl.conf")` from every guarded host, then applies the baseline's
 two independent decisions to the frozen snapshots: the runtime gate is
-pyinfra's fact comparison on the normalized value (lists join with spaces
+the baseline's fact comparison on the normalized value (lists join with spaces
 for the shell, digits become ints so `"2000"` and `2000` compare equal),
 and the persist gate compares the desired content — computed by the pure
-`sysctl_persist_edit` function with pyinfra's `files.line` semantics
+`sysctl_persist_edit` function with the baseline's `files.line` semantics
 (match `key = value` with flexible spacing, commented lines included,
 normalize every match, append when absent, stale `key = other` lines
 survive) — against the file's current text. Run 1 applies the live value
@@ -335,26 +335,26 @@ prepare phase too, and prepare never sends. Re-running the script is a
 no-op once the live value and the persist line both match. The script is
 named `server_op_sysctl.py`; the read-only fact example relocated to
 [`sysctl_sysctl.py`](sysctl.md), and everyday use should prefer the native
-[`sysctl.setting`](../../modules/sysctl.md#sysctl-operations) operation.
+[`sysctl.setting`](../../modules/sysctl.md#reemote5.modules.sysctl.sysctl.setting) operation.
 
 ::: server_op_sysctl
     options:
       members: []
 
-## Ensuring a resource limit (pyinfra server.security_limit parity)
+## Ensuring a resource limit (baseline server.security_limit parity)
 
 `server.security_limit` in action: the deploy ensures `* soft nofile 1024`
-is set under `sudo`, the pyinfra parity for `/etc/security/limits.conf`. It
+is set under `sudo`, the baseline parity for `/etc/security/limits.conf`. It
 is a **spool-and-install** operation, and it replaces the earlier
 `files.edit` + demo-side install recipe that used to live in this file: the
 fact read, the line edit and the install now live inside one operation, so a
 single deploy suffices. In one request it reads the raw
 `/etc/security/limits.conf` text through the `AuthorizedKeysFile` content
-fact and applies pyinfra's anchored `files.line` lookup — a Python regex
+fact and applies the baseline's anchored `files.line` lookup — a Python regex
 instead of a `FindInFile` grep, the value *not* part of the pattern, so a
 stale `* soft nofile 65535` line is corrected in place and every match
 becomes the tab-formatted replacement; with no match the line appends — the
-fields escaped literally where pyinfra interpolates them raw into a BRE.
+fields escaped literally where the baseline interpolates them raw into a BRE.
 It then scp's the transformed text to a deterministic `/tmp` spool as the
 login user and installs it over `/etc/security/limits.conf` with an elevated
 `sh -c` (`chmod 0644`, spool removed). The log shows the family's two
@@ -379,7 +379,7 @@ yields `systemctl` commands only where the unit differs), then
 `server.wait_service` yields a `WaitForFactCommand` that the driver *polls*
 over SSH every two seconds until `SystemdServiceState` reports `active`, or
 raises `WaitTimeoutError` after sixty. The wait is always planned as a change
-— like pyinfra's `server.wait` it reads no facts, so the request sequence is
+— like the baseline's `server.wait` it reads no facts, so the request sequence is
 identical in both phases; whether the unit is already active is discovered by
 the first poll. Both hosts finish the start step before either polls, and the
 two poll loops then run concurrently.
@@ -391,7 +391,7 @@ two poll loops then run concurrently.
 ## Waiting for a port to listen
 
 The same waiting design, asked of the kernel instead of systemd: `server.wait`
-yields the very same `WaitForFactCommand` — its `port` argument is pyinfra's
+yields the very same `WaitForFactCommand` — its `port` argument is the baseline's
 only option — but polls the `Port` fact until its `listening` flag turns
 true. The deploy starts httpd under `sudo`, then waits up to forty-five
 seconds for TCP port 80 at a one second interval — a port on its way up

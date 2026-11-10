@@ -26,12 +26,12 @@ it finishes.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``selinux.file_context`` ports pyinfra's operation of the same name and
-extends it to the *full* context: pyinfra only sets the type (``chcon -t``),
+``selinux.file_context`` ports the baseline's operation of the same name and
+extends it to the *full* context: the baseline only sets the type (``chcon -t``),
 while here each of ``se_type``, ``se_user``, ``se_role`` and ``se_level`` is
 optional, at least one must be given, and only the components that differ
 from the ``FileContext`` fact are relabelled. The first two requests are
-pyinfra's exact scenario -- label httpd's index page ``httpd_sys_content_t``
+the baseline's exact scenario -- label httpd's index page ``httpd_sys_content_t``
 so the daemon may serve it -- yielded twice to show idempotence: the prepare
 phase plans both as changes when the type differs (nothing is sent in
 prepare), while the apply phase relabels on the first and reports the second

@@ -22,24 +22,24 @@
 #
 # Operation side: ``apk.packages`` plus the typed command descriptors it
 # yields (``ApkInstallCommand``/``ApkRemoveCommand``/``ApkUpgradeCommand``).
-# ``apk.packages`` mirrors pyinfra's ``apk.packages`` (add/remove packages
-# with version pins and ``latest`` upgrades), reading ``ApkInstalledPackages``, and
+# ``apk.packages`` adds and removes packages with version pins and
+# ``latest`` upgrades, reading ``ApkInstalledPackages``, and
 # exposes two apk-native install modifiers -- ``no_cache``
 # (``apk add --no-cache``, bypass the package cache) and ``no_scripts``
 # (``apk add --no-scripts``, skip post-install triggers) -- which apt and
 # dnf have no equivalent for, so they are a deliberate apk-only asymmetry
 # on the shared package-manager surface;
-# pyinfra's ``update`` and ``upgrade`` prefix options are deliberately
+# The ``update`` and ``upgrade`` prefix options are deliberately
 # dropped -- reemote5 keeps the whole-system ``apk update``/``apk upgrade``
 # out of the package operation, and both keywords are absorbed by
-# ``**kwargs`` with no effect. pyinfra's remaining ``apk`` operations
-# (``apk.upgrade``, ``apk.update``) are not migrated; upstream ships no
+# ``**kwargs`` with no effect. No whole-system ``apk.upgrade``/``apk.update``
+# operations are provided, and there is no
 # ``apk.key`` or ``apk.repo`` at all, so ``apk.repository`` -- the
 # ``apt.repo`` counterpart managing ``/etc/apk/repositories`` lines, reading
 # ``ApkRepositories`` for idempotence and ``ApkRepositoriesFile`` for the
 # file's text and rewriting it through its ``ApkRepoUploadCommand``/
 # ``ApkRepoInstallCommand`` spool-and-install pair -- is a reemote5 original.
-# ``apk.virtual`` -- a reemote5 original with no pyinfra counterpart --
+# ``apk.virtual`` -- a reemote5 original --
 # manages a *virtual package* group (``apk add -t <tag>`` to create it,
 # ``apk del <tag>`` to remove it) through its present-flagged
 # ``ApkVirtualCommand``, reading ``ApkExplicitPackages``' entry names for
@@ -48,8 +48,8 @@
 # ``/etc/apk/world`` (``apk add <pkg>=<version>`` to hold, ``apk add <pkg>``
 # to release the pin) through its present-flagged ``ApkHoldCommand``, reading
 # ``ApkHeldPackages`` for version-aware idempotence. ``apk.autoremove`` -- the
-# apk counterpart of ``apt.auto_remove``, and a reemote5 original: pyinfra's
-# ``apk`` namespace has no cleanup verb, and apk itself ships no
+# apk counterpart of ``apt.auto_remove``, and a reemote5 original: there
+# is no cleanup verb elsewhere, and apk itself ships no
 # ``autoremove`` subcommand -- purges the orphan packages nothing in
 # ``/etc/apk/world`` reaches any more through its ``ApkPurgeCommand``
 # (``apk add --purge``), reading ``ApkAutoremovablePackages`` for idempotence.
@@ -216,7 +216,7 @@ class ApkAutoremovablePackages:
     """
 
     # The apk counterpart of ``apt.AptAutoremovable`` and a reemote5 original:
-    # pyinfra's ``apk`` namespace ships no cleanup verb, and apk itself has no
+    # there is no cleanup verb elsewhere, and apk itself has no
     # ``autoremove`` subcommand -- but it does have a first-class orphan-purge
     # mechanism, the ``--purge`` flag of ``apk add``/``apk fix``. Running
     # ``apk add --purge`` with no packages asks apk's solver to remove every
@@ -338,8 +338,7 @@ class ApkExplicitPackages:
         Examples can be found in ``examples/modules/apk/apk_apk_explicit_packages.py``.
     """
 
-    # A reemote5 original: pyinfra's ``apk`` namespace ships only
-    # ``ApkPackages``, so nothing upstream can separate the packages an
+    # A reemote5 original: nothing else separates the packages an
     # operator asked for from the ones apk pulled in as dependencies. apk
     # records the former -- its *world* -- in ``/etc/apk/world``, one
     # dependency constraint per line in ``[!]name{@tag}{[<>~=]version}``
@@ -499,7 +498,7 @@ class ApkHeldPackages:
     # Like every package-list sibling in this namespace the entries are
     # ``ApkPackageVersion`` TypedDict-shaped dicts rather than bare
     # strings -- the same usability choice ``apt.AptSources`` made over
-    # pyinfra's collapse convention. The ``@tag`` repository selector a line
+    # a collapse convention. The ``@tag`` repository selector a line
     # may carry is deliberately dropped: a tagged repository is a selection,
     # not part of the version bound. The ``apk.hold``
     # operation reads this fact for version-aware idempotence and writes it
@@ -587,12 +586,12 @@ class ApkInstalledPackages:
         Examples can be found in ``examples/modules/apk/apk_apk_packages.py``.
     """
 
-    # Ported from pyinfra's ``apk.ApkPackages`` -- the same
+    # The same
     # ``apk list --installed`` command and the same row regex, but reported in
     # reemote5's own shape: a list of ``ApkPackageVersion`` entries rather
-    # than pyinfra's name-keyed dict of version lists. The
+    # than a name-keyed dict of version lists. The
     # ``name-version arch {origin} (license) [installed]`` rows are matched
-    # with pyinfra's Superuser-derived pattern, which keeps version and release
+    # with a Superuser-derived pattern, which keeps version and release
     # inside one group, so multi-dash names (``alpine-baselayout-data``) split
     # from their ``3.6.5-r0``-style versions at the last ``-r<release>``
     # boundary, names carrying punctuation (``libstdc++``, ``p11-kit``,
@@ -600,8 +599,8 @@ class ApkInstalledPackages:
     # file or directory`` index-noise lines never match. Each installed
     # name-and-version pair becomes one entry -- apk lists a name once per
     # installed version, so a name installed at two versions contributes two
-    # entries -- de-duplicated and sorted by name, then version (pyinfra's
-    # ``parse_packages`` de-dups into a set per name), so the read is
+    # entries -- de-duplicated and sorted by name, then version (de-duped
+    # into a set per name), so the read is
     # deterministic and ``json.dumps``-printable, for example::
     #
     #     [
@@ -615,11 +614,11 @@ class ApkInstalledPackages:
     # ``ApkHeldPackages``); ``apt.AptPackages`` reports sorted typed entries
     # too, though it groups every version under one name where apk's entries
     # carry one pair each, while ``dnf.DnfPackages`` still reports the
-    # name-keyed mapping pyinfra documents, so apk is deliberately no longer
+    # name-keyed mapping dnf documents, so apk is deliberately no longer
     # shape-symmetric with dnf. Nothing installed reads as ``[]`` --
     # the empty answer every sibling typed-list fact gives -- in place of
-    # pyinfra's ``default = dict``. pyinfra's ``requires_command`` gating on
-    # ``apk`` is deliberately dropped: a missing ``apk`` exits 127, which
+    # an empty-dict default. There is no command-existence gate on
+    # ``apk``: a missing ``apk`` exits 127, which
     # ``run_shell`` reports as ``CommandNotFoundError``. Which of these
     # packages the operator asked for, rather than one apk pulled in as a
     # dependency, is not visible in the rows either: ``ApkExplicitPackages``
@@ -629,12 +628,12 @@ class ApkInstalledPackages:
     # dependencies, size or description either: ``ApkPackage`` queries one
     # package's detail directly.
 
-    #: Shell listing installed packages over SSH (pyinfra's
-    #: ``ApkPackages.command``). ``apk list --installed`` prints one
+    #: Shell listing installed packages over SSH.
+    #: ``apk list --installed`` prints one
     #: ``name-version arch {origin} (license) [installed]`` row per package.
     COMMAND = "apk list --installed"
 
-    #: pyinfra's apk-row regex: the greedy name group stops at the last
+    #: The apk-row regex: the greedy name group stops at the last
     #: ``-<version>-r<release>`` boundary (version and release stay one
     #: group), followed by the architecture, the ``{origin}`` package
     #: name and the parenthesized licenses -- the tail that keeps noise
@@ -645,8 +644,8 @@ class ApkInstalledPackages:
     def parse(cls, output: Iterable[str]) -> list[ApkPackageVersion]:
         """Parse ``apk list --installed`` rows into sorted entries.
 
-        Each matching line contributes its name-and-version pair (pyinfra's
-        ``parse_packages`` de-dup); non-matching
+        Each matching line contributes its name-and-version pair (de-duplicated
+        per name); non-matching
         lines -- the ``WARNING:`` index noise, blank lines, rows without
         the ``{origin} (license)`` tail -- are skipped. One
         ``ApkPackageVersion`` per installed name-and-version pair is
@@ -741,8 +740,7 @@ class ApkPackage:
         Examples can be found in ``examples/modules/apk/apk_apk_package.py``.
     """
 
-    # A reemote5 original: pyinfra's ``apk`` namespace ships only
-    # ``ApkPackages``, so nothing upstream reports a single package's
+    # A reemote5 original: nothing else reports a single package's
     # dependencies, size or description -- the detail a version comparison or a
     # dependency check needs. ``apk info -a <package>`` prints every field apk
     # knows about the package, each as a ``<name>-<version> <field>:`` header
@@ -775,7 +773,7 @@ class ApkPackage:
     # An absent package -- or a host without apk -- prints no field header (the
     # command's ``2>/dev/null || true`` swallows the non-zero exit), so
     # ``process`` reports ``None``, mirroring ``apt.DebPackage`` and
-    # ``dnf.RpmPackage``'s None-on-absent convention rather than pyinfra's
+    # ``dnf.RpmPackage``'s None-on-absent convention rather than an
     # empty-dict answer. This fact fills a coverage gap of
     # ``ApkInstalledPackages``:
     # the ``apk list --installed`` rows that fact parses report only whether a
@@ -825,7 +823,7 @@ class ApkPackage:
         # true`` tail swallows the non-zero exit an absent package (or a host
         # without apk) produces, so nothing reaches stdout and ``process``
         # reports ``None`` -- the ``apt.DebPackage`` tolerance rather than
-        # pyinfra's ``requires_command`` gating.
+        # a command-existence gate.
         return f"apk info -a {shlex.quote(package)} 2>/dev/null || true"
 
     @classmethod
@@ -916,7 +914,7 @@ class ApkRepository(TypedDict):
     # A TypedDict rather than a class instance, like ``ApkPackageVersion``:
     # entries are ordinary dicts, so equality against a
     # literal dict works and ``json.dumps`` serializes them directly -- the same
-    # choice ``apt.AptSources`` made with its ``AptSource`` entries over pyinfra's
+    # choice ``apt.AptSources`` made with its ``AptSource`` entries over a
     # dataclass/dict hybrid.
 
     url: str
@@ -949,9 +947,9 @@ class ApkRepositories:
     """
 
     #
-    # A reemote5 original: pyinfra's ``apk`` namespace ships no repositories
-    # fact (only ``ApkPackages``), so ``/etc/apk/repositories`` cannot be
-    # audited or conditionally modified through pyinfra facts. Each
+    # A reemote5 original: there is no repositories fact elsewhere, so
+    # ``/etc/apk/repositories`` cannot otherwise be
+    # audited or conditionally modified. Each
     # non-comment line names one repository -- an optional ``@tag``
     # (``@testing``-style, for a repository referenced by ``apk add --repository``
     # or ``/etc/apk/world`` tags) followed by the URL -- and becomes one
@@ -970,8 +968,8 @@ class ApkRepositories:
     # and a URL is skipped, the way the siblings ignore unparseable rows.
     # A missing or unreadable file -- any host without apk -- reads as ``[]``
     # through the command's ``|| true``, like ``DnfRepositories`` tolerates
-    # missing repo files (pyinfra's ``default = list``, had this fact existed
-    # upstream). The return shape deliberately differs in size, not kind,
+    # missing repo files (an empty-list default). The return shape
+    # deliberately differs in size, not kind,
     # from the siblings: apk's one-line format carries only a URL and an
     # optional tag, where apt entries hold distribution/components/options
     # and dnf entries hold every INI option. Like the shared
@@ -1115,7 +1113,7 @@ class ApkRepositoriesFile:
 def _split_version(package: str) -> tuple[str, str | None]:
     """Split ``pkg=version`` into ``(name, version)``; version is None if absent.
 
-    pyinfra's ``PkgInfo.from_possible_pair`` splits on the *last* ``=``
+    The version pair splits on the *last* ``=``
     (``rsplit``), so a version string carrying ``=`` stays intact -- the
     same split ``apt.packages`` and ``dnf.packages`` use.
     """
@@ -1128,7 +1126,7 @@ class ApkInstallCommand(Command):
     """``apk add <packages>``: install (or upgrade) packages.
 
     The ``present=True`` direction of ``apk.packages``. apk never prompts,
-    so the shell is pyinfra's bare ``apk add`` (no ``-y``) plus the
+    so the shell is a bare ``apk add`` (no ``-y``) plus the
     shell-quoted package names, ``<pkg>=<version>`` pins included.
     ``no_cache`` adds apk's ``--no-cache`` flag (bypass the package cache
     entirely -- neither read from nor write to ``/var/cache/apk``), and
@@ -1157,7 +1155,7 @@ class ApkInstallCommand(Command):
 class ApkRemoveCommand(Command):
     """``apk del <packages>``: remove packages.
 
-    The ``present=False`` direction of ``apk.packages`` (pyinfra's bare
+    The ``present=False`` direction of ``apk.packages`` (the bare
     ``apk del`` uninstall command); names are shell-quoted, ``<pkg>=<version>``
     pins included.
     """
@@ -1173,7 +1171,7 @@ class ApkRemoveCommand(Command):
 class ApkUpgradeCommand(Command):
     """``apk upgrade <packages>``: upgrade the named packages.
 
-    The ``latest`` upgrade path of ``apk.packages`` (pyinfra's
+    The ``latest`` upgrade path of ``apk.packages`` (the
     ``upgrade_command``); names are shell-quoted. ``no_cache`` and
     ``no_scripts`` behave exactly as on ``ApkInstallCommand`` -- apk's
     ``upgrade`` accepts the same flags -- so the ``latest`` path honours
@@ -1238,8 +1236,8 @@ async def packages(
     # The ``ApkInstalledPackages`` fact supplies the installed versions, so a
     # pinned
     # ``<pkg>=<version>`` is present only when that *exact* version is
-    # installed (pyinfra's ``ensure_packages`` version match, the same rule
-    # ``apt.packages`` follows), and ``latest`` follows pyinfra's legacy
+    # installed (the ``ensure_packages`` version match, the same rule
+    # ``apt.packages`` follows), and ``latest`` follows the legacy
     # behavior: every installed, unpinned package is upgraded with
     # ``apk upgrade`` without checking whether an upgrade actually exists.
     # Installing, removing and upgrading all need root, so flag the request
@@ -1247,7 +1245,7 @@ async def packages(
     # ``sudo``, so on an apk host ``doas`` is usually the escalator to reach
     # for: reemote5 runs it passwordless as ``doas -n``, which needs a
     # ``permit nopass`` rule for the login user in ``/etc/doas.conf`` and
-    # raises ``PrivilegeError`` without one. ``**kwargs`` absorbs pyinfra's
+    # raises ``PrivilegeError`` without one. ``**kwargs`` absorbs any
     # global arguments (``op()`` already strips ``name`` and the
     # ``sudo``/``su``/``doas`` escalation flags).
     #
@@ -1260,7 +1258,7 @@ async def packages(
     # ``ApkInstalledPackages`` fact reports, so idempotence is unchanged and the
     # removal direction (``present=False``) ignores both.
     #
-    # Deliberate deviations from pyinfra: the ``update`` and ``upgrade``
+    # Deliberate design choices: the ``update`` and ``upgrade``
     # options -- which prefix the operation with a whole-system ``apk update``
     # / ``apk upgrade`` -- are deliberately dropped, so those keywords are
     # absorbed by ``**kwargs`` with no effect; reemote5 keeps the
@@ -1268,7 +1266,7 @@ async def packages(
 
     reasons: list[str] = []
 
-    # Normalize: pyinfra accepts a bare string, a list, or None.
+    # Normalize: accept a bare string, a list, or None.
     if packages is None:
         requested: tuple[str, ...] = ()
     elif isinstance(packages, str):
@@ -1280,7 +1278,7 @@ async def packages(
         installed = await ctx.facts.get(ApkInstalledPackages)
         # The fact reports one entry per installed name-and-version; group
         # the versions by name so the lookups below read as the version-list
-        # comparison pyinfra's ``ensure_packages`` does.
+        # comparison ``ensure_packages`` does.
         versions_by_name: dict[str, list[str]] = {}
         for entry in installed:
             versions_by_name.setdefault(entry["name"], []).append(entry["version"])
@@ -1403,9 +1401,8 @@ async def virtual(
         Examples can be found in ``examples/modules/apk/apk_virtual.py``.
     """
 
-    # A reemote5 original: pyinfra's ``apk`` namespace ships only ``upgrade``,
-    # ``update`` and ``packages`` -- no virtual-group management -- so this
-    # operation has no upstream counterpart. Alpine's ``apk add -t <tag>
+    # A reemote5 original: nothing else manages virtual groups, so this
+    # operation has no counterpart. Alpine's ``apk add -t <tag>
     # <packages>`` (``--virtual``) creates a temporary virtual package ``tag``
     # that depends on ``packages``, records ``tag`` in ``/etc/apk/world``, and
     # lets the whole group be torn down later with a single ``apk del <tag>`` --
@@ -1428,12 +1425,12 @@ async def virtual(
     # ``sudo=True``, ``doas=True`` or ``su=True`` -- stock Alpine ships no
     # ``sudo``, so ``doas`` is usually the escalator on an apk host (see
     # ``packages`` for its passwordless ``doas -n`` prerequisites). ``**kwargs``
-    # absorbs pyinfra's global arguments (``op()`` already strips ``name`` and the
+    # absorbs any further global arguments (``op()`` already strips ``name`` and the
     # ``sudo``/``su``/``doas`` escalation flags).
 
     reasons: list[str] = []
 
-    # Normalize: pyinfra-style operations accept a bare string, a list, or None.
+    # Normalize: accept a bare string, a list, or None.
     if packages is None:
         requested: tuple[str, ...] = ()
     elif isinstance(packages, str):
@@ -1533,7 +1530,7 @@ async def hold(
         Examples can be found in ``examples/modules/apk/apk_hold.py``.
     """
 
-    # The apk counterpart of ``apt.mark``: pyinfra ships no apk hold, and apk
+    # The apk counterpart of ``apt.mark``: there is no apk hold elsewhere, and apk
     # has no ``apt-mark`` verb -- it keeps a package out of upgrades by pinning
     # a version constraint into ``/etc/apk/world``. Idempotent on
     # ``ApkHeldPackages`` (the ``ApkPackageVersion`` entries, looked up by
@@ -1553,7 +1550,7 @@ async def hold(
     # ``sudo=True``, ``doas=True`` or ``su=True`` -- stock Alpine ships no
     # ``sudo``, so ``doas`` is usually the escalator on an apk host (see
     # ``packages`` for its passwordless ``doas -n`` prerequisites). ``**kwargs``
-    # absorbs pyinfra's global arguments (``op()`` already strips ``name`` and the
+    # absorbs any further global arguments (``op()`` already strips ``name`` and the
     # ``sudo``/``su``/``doas`` escalation flags).
 
     # Normalize like apt.mark: a bare string is one name.
@@ -1665,7 +1662,7 @@ async def autoremove(ctx: OpContext, **kwargs: Any) -> AsyncGenerator[Command]:
     """
 
     # The apk counterpart of ``apt.auto_remove`` and a reemote5 original:
-    # pyinfra's ``apk`` namespace ships no cleanup verb, and apk itself has no
+    # there is no cleanup verb elsewhere, and apk itself has no
     # ``autoremove`` subcommand -- but it does have the ``--purge`` flag of
     # ``apk add``, which runs the solver and removes every installed package
     # no ``/etc/apk/world`` constraint (directly or transitively) needs any
@@ -1676,7 +1673,7 @@ async def autoremove(ctx: OpContext, **kwargs: Any) -> AsyncGenerator[Command]:
     # request ``sudo=True``, ``doas=True`` or ``su=True`` -- stock Alpine ships
     # no ``sudo``, so ``doas`` is usually the escalator on an apk host (see
     # ``packages`` for its passwordless ``doas -n`` prerequisites). ``**kwargs``
-    # absorbs pyinfra's global arguments (``op()`` already strips ``name`` and the
+    # absorbs any further global arguments (``op()`` already strips ``name`` and the
     # ``sudo``/``su``/``doas`` escalation flags).
     #
     # Deliberate deviation from ``apt.auto_remove``: no ``wait_for_lock``
@@ -1702,7 +1699,7 @@ def _repo_line_pattern(line: str) -> str:
     """The anchored, escaped whole-line regex for an apk repository line.
 
     The same construction ``apt.repo``'s ``_repo_line_pattern`` ports from
-    pyinfra's ``adjust_regex(line, escape_regex_characters=True)``: every
+    an ``adjust_regex(line, escape_regex_characters=True)`` helper: every
     regex metacharacter in ``line`` is escaped so the repository string
     matches literally, then the pattern is anchored with ``^.*`` / ``.*$``
     so a line carrying extra surrounding text still matches. Kept as a
@@ -1819,7 +1816,7 @@ class ApkRepoInstallCommand(Command):
     ``cp`` would otherwise leave the login-user spool's ownership and mode on the
     root-owned file) and removes the spool -- the
     ``AptRepoInstallCommand``/``AptSourcesFileInstallCommand`` pattern. Busybox
-    needs nothing special here: the whole edit is a ``cp``, so pyinfra's
+    needs nothing special here: the whole edit is a ``cp``, so the
     ``sed -i`` backup dance (whose per-phase timestamp would break the
     determinism guard) is gone with it. All paths are shell-quoted.
     """
@@ -1871,9 +1868,8 @@ async def repository(
 
     # A reemote5 original modeled on ``apt.repo`` -- and, like it since that
     # operation's conversion, a member of the spool-and-install write family:
-    # pyinfra's ``apk`` namespace ships no repository operation at all (only
-    # upgrade/update/packages), so the ``ApkRepositories`` fact had no write
-    # counterpart.
+    # there is no repository operation elsewhere, so the ``ApkRepositories``
+    # fact had no write counterpart.
     #
     # Presence is decided by parsing ``src`` with ``ApkRepositories.parse`` and
     # comparing the resulting ``ApkRepository`` entry (url and tag) against the
@@ -1901,7 +1897,7 @@ async def repository(
     # ``@tag``, several URLs on one line) raises ``ValueError`` while
     # materializing instead of being appended blindly -- apk's one-line format
     # is simple enough to validate strictly, where ``apt.repo`` inherits
-    # pyinfra's tolerance for lines its parser cannot read. The removal
+    # a tolerance for lines its parser cannot read. The removal
     # transform, like ``apt.repo``'s line pattern, is a *contains* match, so
     # removing a bare URL also drops a tagged line carrying it -- gate removals
     # on the exact line when both variants are configured. No ``filename``
@@ -1910,7 +1906,7 @@ async def repository(
     # change is out of scope -- sequence an ``apk update`` (e.g. ``server.shell``)
     # after this operation when needed.
     #
-    # What the conversion added beyond pyinfra's/in-place shape: two further
+    # What the conversion added beyond the in-place shape: two further
     # content-level no-ops the ``echo >>``/``sed -i`` pair could never reach --
     # an add whose line the file already carries (an entry the parser cannot read
     # repeats cleanly instead of being duplicated) and a remove of a repository
@@ -1918,7 +1914,7 @@ async def repository(
     # verbatim -- and the file's comments, blank lines and untouched lines now
     # survive byte-for-byte, because the transform is line-based over the real
     # content. The in-place form's sed backup file is gone (its timestamp is
-    # non-deterministic across phases). ``**kwargs`` absorbs pyinfra's global
+    # non-deterministic across phases). ``**kwargs`` absorbs any further global
     # arguments (``op()`` already strips ``name`` and the
     # ``sudo``/``su``/``doas`` escalation flags).
     parsed = ApkRepositories.parse([src])
