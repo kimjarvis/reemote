@@ -1,5 +1,0 @@
-dpkg-query: no path found matching pattern /usr/sbin/lxc
-ls: cannot access '/usr/bin/lxc': No such file or directory
-ls: cannot access '/snap/bin/lxc': No such file or directory
-No snaps are installed yet. Try 'snap install hello-world'.
-=== LXC_VERSION ===

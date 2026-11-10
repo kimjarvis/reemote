@@ -1,3 +1,0 @@
-NAME="CentOS Stream"
-VERSION="9"
-Last metadata expiration check: 3:03:36 ago on Mon Nov  9 08:19:31 2026.
