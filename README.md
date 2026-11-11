@@ -1,5 +1,5 @@
 
-# reemote
+# Reemote
 
 **Reemote is a Python library for configuring and deploying servers.** Describe
 the packages, files and services you want using Python functions; reemote
