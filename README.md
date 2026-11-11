@@ -39,7 +39,7 @@ source .venv/bin/activate
 
 `uv sync` creates `.venv`, installs reemote in editable mode and resolves its
 declared dependencies — `asyncssh`, `distro` and `pydantic` — so the SSH
-transport needs no separate install step. This tutorial uses
+transport needs no separate install step. Here we use 
 [uv](https://docs.astral.sh/uv/); `venv` and `pip` work just as well if you
 prefer them.
 
