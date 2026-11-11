@@ -28,8 +28,8 @@ The *controller* is the machine running your Python script. It needs **Python 3.
 **Installing from source is the recommended route**, because the checkout also gives you the runnable `examples/` tree that the reference pages link to, and lets you pin the exact revision you deploy from. Run this in a directory where you want to keep the project:
 
 ```bash
-git clone https://github.com/kimjarvis/reemote5.git
-cd reemote5
+git clone https://github.com/kimjarvis/reemote.git
+cd reemote
 uv sync
 source .venv/bin/activate
 ```
