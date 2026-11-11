@@ -44,8 +44,8 @@ dependencies = [
 [project.urls]
 Homepage = "https://reemote.org/index.html"
 Documentation = "https://reemote.org/index.html"
-"Source Code" = "https://github.com/kimjarvis/reemote5"
-"Bug Tracker" = "https://github.com/kimjarvis/reemote5/issues"
+"Source Code" = "https://github.com/kimjarvis/reemote"
+"Bug Tracker" = "https://github.com/kimjarvis/reemote/issues"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

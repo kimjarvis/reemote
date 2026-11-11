@@ -1,149 +1,57 @@
+
 # reemote
 
-A python library for configuration management, built on a two-phase
-*prepare → execute* execution model.
+**Reemote is a Python library for configuring and deploying servers.** Describe
+the packages, files and services you want using Python functions; reemote
+queries each server, plans the work and applies the changes. Your deployment is
+a Python program that you can import, test, compose and run from your existing
+automation.
 
-Deploy scripts are **Python generators** that yield `OperationRequest`
-descriptors instead of calling operations directly. That lets the driver pause
-the script at every operation boundary: the prepare phase produces a full plan
-for dry-run reporting, the apply phase runs all hosts in lockstep with a fresh
-fact cache per step, so sequential *"act, then read"* logic gives the correct
-answer in both phases. Facts and operations stay phase-unaware — only the
-drivers know which phase they are in.
+Reemote is built on a two-phase *prepare → execute* execution model. Deploy
+scripts are **Python generators** that yield `OperationRequest` descriptors
+instead of calling operations directly. That lets the driver pause the script at
+every operation boundary: the prepare phase produces a full plan for dry-run
+reporting, and the apply phase runs all hosts in lockstep with a fresh fact
+cache per step, so sequential *"act, then read"* logic gives the correct answer
+in both phases.
 
-**Scope.** reemote is a library, not a deployment tool. It ships no CLI and
-no inventory format: hosts are a plain *inventory* (a list of dictionaries)
-handed to `run`. The transport is real -- the default `Host.from_inventory`
-factory opens an [asyncssh] connection per entry, gathers facts and runs
-commands over it, and `run` closes the connections when it finishes. Both the
-command-execution path (`send_command`, the apply drivers) and fact gathering
-(each fact's `process`, `FactCache.get`, the operations that await it, and
-`run_prepare`) are coroutines, awaited end to end. `SimulatedHost`, the in-memory host that lets the same model run
-without a network, belongs to the *test framework*
-(`tests/simulated_host.py`) and is injected through `run`'s
-`host_factory`; it is never exported by the library.
+**Scope.** reemote is a library, not a deployment tool. It ships no CLI and no
+inventory format: hosts are a plain *inventory* (a list of dictionaries) handed
+to `run`. The transport is real — the default `Host.from_inventory` factory
+opens an [asyncssh] connection per entry, gathers facts and runs commands over
+it, and `run` closes the connections when it finishes.
 
-```python
-import asyncio
-import json
-from collections.abc import Generator
-from pathlib import Path
+## Installation
 
-from reemote import Host, OperationRequest, dnf, files, format_log, op, run
+The *controller* is the machine running your Python script. It needs **Python
+3.13 or newer**. You do not install reemote on the target servers.
 
-HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
-
-
-def is_centos(host: Host) -> bool:
-  # A `when` guard reads static inventory data (host.group) only, so the
-  # prepare and apply phases reach the same eligibility decision and the
-  # steps never reach a host that has no dnf.
-  return host.group == "centos"
-
-
-def deploy(host: Host) -> Generator[OperationRequest, None, None]:
-  # The welcome configuration only appears once the package is installed.
-  # The apply phase rebuilds the fact cache before each step, so this
-  # removal still sees it -- no branch, no phase flag.
-  yield op(
-    dnf.packages,
-    name="Install httpd",
-    packages=("httpd",),
-    sudo=True,
-    when=is_centos,
-  )
-  yield op(
-    files.file,
-    name="Remove welcome configuration",
-    path=HTTPD_WELCOME_CONF,
-    present=False,
-    sudo=True,
-    when=is_centos,
-  )
-
-
-async def main() -> None:
-  inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
-  plans, report, hosts = await run(inventory, deploy)
-  print(format_log(report))
-
-
-asyncio.run(main())
-```
-
-Pass `dry=True` to stop after the prepare phase (`report` is `None`), or a
-`host_factory` building `SimulatedHost` to exercise a deploy offline -- that is
-how the test suite and `tests/test_core.py` run it.
-
-## Getting started
+**Installing from source is the recommended route**, because the checkout also
+gives you the runnable `examples/` tree and lets you pin the exact revision you
+deploy from. Run this in a directory where you want to keep the project:
 
 ```bash
-uv sync                          # library + pytest
-uv run python examples/modules/dnf/dnf_packages.py
-uv run pytest
+git clone https://github.com/kimjarvis/reemote.git
+cd reemote
+uv sync
+source .venv/bin/activate
 ```
 
-> **Warning — the examples connect for real.** Running one opens asyncssh
-> connections to the hosts in the project-root `inventory.json` and executes
-> against them: the script's first pass is the read-only `dry=True` plan, the
-> second applies for real (here installing `httpd` and removing
-> `/etc/httpd/conf.d/welcome.conf`, both under `sudo`). The `when=is_centos`
-> guard limits which hosts are touched, it does not make the run safe on
-> machines you do not own — point the inventory at your own hosts, or keep only
-> the dry run.
->
-> Two scripts need no host at all:
-> `examples/demonstrations/composition/composed_group_tag_roles.py` injects the
-> test framework's `SimulatedHost` and runs in memory, and
-> `examples/actions/action_in_deploy_guard.py` never opens a transport because
-> its guard aborts during prepare. The pytest suite never touches the network
-> either.
+`uv sync` creates `.venv`, installs reemote in editable mode and resolves its
+declared dependencies — `asyncssh`, `distro` and `pydantic` — so the SSH
+transport needs no separate install step. This tutorial uses
+[uv](https://docs.astral.sh/uv/); `venv` and `pip` work just as well if you
+prefer them.
 
-## Documentation
+The package is **also published on [PyPI](https://pypi.org/project/reemote/)**,
+which is enough if you only need the library and not the examples:
 
 ```bash
-uv sync --group docs
-uv run --group docs mkdocs serve   # http://localhost:8000
+uv pip install reemote
 ```
 
-- [Home](https://reemote.org/) — what the model is and why generators
-- [Guide](https://reemote.org/guide/) — writing deploy scripts, facts, operations, commands
-- [Examples](https://reemote.org/examples/) — runnable scripts, one page per
-  directory under `examples/`
-- API reference — one page per source module, generated from docstrings:
-  [core](https://reemote.org/core/), [drivers](https://reemote.org/drivers/),
-  [commands](https://reemote.org/commands/), [hosts](https://reemote.org/hosts/),
-  [exceptions](https://reemote.org/exceptions/),
-  [actions](https://reemote.org/actions/actions/),
-  [connectors/ssh](https://reemote.org/connectors/ssh/),
-  [connectors/docker](https://reemote.org/connectors/docker/), and one page per
-  namespace under
-  [`modules/`](https://reemote.org/modules/)
-
-## Layout
-
-```text
-src/reemote/core.py         OperationRequest, OpContext, FactCache, HostRuntime, op()
-src/reemote/commands.py     command descriptors yielded by operations
-src/reemote/drivers.py      run_prepare / run_apply / send_command / run
-src/reemote/actions.py      Shell + WaitForConnection actions (outside deploys)
-src/reemote/hosts.py        Host (inventory entry, owns the asyncssh transport)
-src/reemote/connectors/     alternative transports, e.g. docker.py (local
-                             Docker/Podman containers via the CLI)
-src/reemote/modules/        self-contained namespaces, facts + operations together:
-                             apk, apt, dnf, files, firewalld, git, gpg, hardware,
-                             iptables, lxd, mysql, openrc, postgresql, selinux,
-                             server, sysctl, systemd, ufw
-examples/                    runnable scripts, mirroring the module/action layout
-tests/simulated_host.py      SimulatedHost (test framework, not shipped)
-tests/test_core.py           model tests, incl. the httpd trace and determinism
-tests/modules/<ns>/          per-namespace fact and operation tests
-tests/test_examples.py       offline scan plus deploy drain of every example
-```
-
-Requires Python 3.13+.
-
-[asyncssh]: https://asyncssh.readthedocs.io/
+Inside a project of your own, use `uv add reemote` instead so it lands in your
+`pyproject.toml`.
 
 ## License & Intellectual Property
 
@@ -156,3 +64,5 @@ This software is part of a commercially available application. It is being relea
 
 ### Originality & Attribution
 This codebase was independently developed and was inspired by the design concepts of Pyinfra by Nick Mills-Barrett. This project is an original work and does not contain, incorporate, or derive from any source code or copyrighted material of Pyinfra.
+
+[asyncssh]: https://asyncssh.readthedocs.io/
