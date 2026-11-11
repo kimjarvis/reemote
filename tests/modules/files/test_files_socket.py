@@ -3,7 +3,7 @@
 
 """Tests for the files module's ``Socket`` fact.
 
-Covers ``reemote5.modules.files.files.Socket``: the inherited ``File``
+Covers ``reemote.modules.files.files.Socket``: the inherited ``File``
 guard/stat/ls command and parse chain against socket-typed rows (GNU
 stat and the ``ls -ld`` fallback), the False answers for every other
 path type and the None answers for absent/unmatched output, the ``File``
@@ -15,9 +15,9 @@ separation from ``file_stats``, copy-on-read, tilde keying and
 
 from datetime import datetime
 
-from reemote5.drivers import gather_fact
-from reemote5.hosts import Host
-from reemote5.modules.files.files import File, Socket
+from reemote.drivers import gather_fact
+from reemote.hosts import Host
+from reemote.modules.files.files import File, Socket
 from tests.simulated_host import SimulatedHost
 
 EPOCH = datetime(1970, 1, 1)
@@ -88,7 +88,7 @@ async def test_socket_parses_the_ls_fallback_socket_row():
 
 async def test_socket_is_false_for_a_regular_file():
     host = CannedShellHost(
-        "user=reemote5 group=reemote5 mode=-rw-r--r-- atime=0 mtime=0 ctime=0 "
+        "user=reemote group=reemote mode=-rw-r--r-- atime=0 mtime=0 ctime=0 "
         "size=8 '/etc/hosts'\n"
     )
     assert await Socket.process(host, "/etc/hosts") is False

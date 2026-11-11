@@ -15,7 +15,7 @@ themselves are documented on the [`snap` module page](../../modules/snap.md).
 
 The package operation: `snap.package` mirrors the baseline's `snap.package`,
 installing, removing or re-channeling snaps by name. It reads the
-[`SnapPackage`][reemote5.modules.snap.snap.SnapPackage] fact once per
+[`SnapPackage`][reemote.modules.snap.snap.SnapPackage] fact once per
 requested name, so `None` reads as not installed (`present=True` installs it,
 `present=False` on an absent name is a no-op), while an installed snap tracked
 on a different `channel` yields a `snap refresh --channel=` switch — snap has

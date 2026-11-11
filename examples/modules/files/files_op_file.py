@@ -4,7 +4,7 @@
 """Example: manage a regular file on real CentOS hosts with files.file.
 
 This is a *usage* example, not part of the library. It drives the
-``files.file`` operation through reemote5's two-phase execution model:
+``files.file`` operation through reemote's two-phase execution model:
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
    -- an inventory is just a list of dictionaries, which is exactly what
@@ -55,7 +55,7 @@ are ensured ``755`` ``www:www`` by ``files.directory`` requests: the
 by the login user -- a ``750`` web root would hide the file from the fact
 and every run would plan a re-create. The marker lives in ``/tmp``,
 writable by any login user, so its removal needs no elevation.
-the baseline also offers ``force``/``force_backup`` here; reemote5 keeps ``force`` (a
+the baseline also offers ``force``/``force_backup`` here; reemote keeps ``force`` (a
 non-file is removed with ``rm -rf`` and recreated; without it such a path
 raises ``ValueError``) but deliberately drops the timestamped backup ``mv``,
 whose ``datetime.now()`` would differ between the phases. The ``touch``
@@ -93,7 +93,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -120,7 +120,7 @@ CONF_DIR = "/srv/web/conf.d"
 # A stale marker in /tmp, writable by whatever account the inventory logs in
 # as: removal needs no elevation, and files.file is the operation that can
 # remove a *regular* file.
-MARKER_PATH = "/tmp/reemote5-marker"
+MARKER_PATH = "/tmp/reemote-marker"
 
 # examples/modules/files/files_op_file.py -> the project root, so the inventory
 # is found whatever the current working directory is.

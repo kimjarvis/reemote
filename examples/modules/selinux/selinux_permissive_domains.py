@@ -4,7 +4,7 @@
 """Example: gather the ``selinux.PermissiveDomains`` fact on real CentOS hosts.
 
 This is a *usage* example, not part of the library. Where
-``examples/modules/selinux/selinux_permissive_domain.py`` drives reemote5's
+``examples/modules/selinux/selinux_permissive_domain.py`` drives reemote's
 two-phase execution model (a deploy generator of operations run through
 ``run``), this one reads a single **fact** directly over the same *real
 SSH transport* (asyncssh):
@@ -30,7 +30,7 @@ SSH transport* (asyncssh):
    mapping -- then print each host's raw list with
    ``json.dumps(..., indent=2)``.
 
-``PermissiveDomains`` is a reemote5 original: the baseline's selinux namespace
+``PermissiveDomains`` is a reemote original: the baseline's selinux namespace
 ships no permissive-domain fact. ``semanage permissive -l`` lists the
 domains running in permissive mode *despite* a globally enforcing policy
 -- denials are logged but not enforced for them -- and the fact keeps the
@@ -62,7 +62,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

@@ -16,10 +16,10 @@ from collections.abc import Generator
 
 import pytest
 
-from reemote5.core import OperationRequest, compose, op, sub_deploy
-from reemote5.drivers import DeterminismError, format_log, format_plan, run
-from reemote5.hosts import Host
-from reemote5.modules import dnf
+from reemote.core import OperationRequest, compose, op, sub_deploy
+from reemote.drivers import DeterminismError, format_log, format_plan, run
+from reemote.hosts import Host
+from reemote.modules import dnf
 from tests.simulated_host import SimulatedHost
 
 INVENTORY = [

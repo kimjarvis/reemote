@@ -32,18 +32,18 @@ from pathlib import Path
 
 import pytest
 
-from reemote5 import StringCommand
-from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import (
+from reemote import StringCommand
+from reemote.core import FactCache, OpContext, OperationRequest, op
+from reemote.drivers import (
     DeterminismError,
     command_shell,
     format_log,
     format_plan,
     run,
 )
-from reemote5.hosts import Host
-from reemote5.modules import files
-from reemote5.modules.files.files import PutCommand, read_source_bytes
+from reemote.hosts import Host
+from reemote.modules import files
+from reemote.modules.files.files import PutCommand, read_source_bytes
 from tests.simulated_host import SimulatedHost
 
 # Import the example module by path: the recipe under test lives in

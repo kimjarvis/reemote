@@ -1,6 +1,6 @@
 # snap module
 
-::: reemote5.modules.snap.snap
+::: reemote.modules.snap.snap
     options:
       show_root_heading: false
       members:
@@ -13,7 +13,7 @@
 
 <!---
 
-`reemote5.modules.snap.snap` holds the snap facts and the `snap.package`
+`reemote.modules.snap.snap` holds the snap facts and the `snap.package`
 operation. `SnapPackage` reads one installed snap package's identity (its
 name, publisher, store id, tracked channel and installed version) from the
 labelled field rows of `snap info <package>`, and `SnapPackages` lists the

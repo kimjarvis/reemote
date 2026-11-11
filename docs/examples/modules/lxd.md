@@ -63,7 +63,7 @@ own file of LXD-enabled machines, to execute them for real.
 
 The container operation: `lxd.container` mirrors the baseline's
 `lxd.container` 1:1 — same `id`/`present`/`image` options, same
-[`LxdContainers`][reemote5.modules.lxd.lxd.LxdContainers] fact read, same
+[`LxdContainers`][reemote.modules.lxd.lxd.LxdContainers] fact read, same
 `lxc launch <image> <id> < /dev/null` create shell and the same
 stop-then-delete sequence for a running container. Upstream's documented
 limitation stands for THIS operation: it does not check an existing
@@ -79,18 +79,18 @@ phase, where nothing is sent, both plan as changes).
 
 ## Managing an instance
 
-The instance operation: `lxd.instance` is the reemote5-original
+The instance operation: `lxd.instance` is the reemote-original
 successor to `lxd.container`. It reads
-[`LxdInstances`][reemote5.modules.lxd.lxd.LxdInstances] to decide: an
+[`LxdInstances`][reemote.modules.lxd.lxd.LxdInstances] to decide: an
 absent instance yields one `lxc launch` carrying the type
 (container/VM), profiles, config, devices and the ephemeral flag; an
 existing one is reconciled NON-DESTRUCTIVELY — profiles assigned,
 drifted config keys set, drifted devices removed and re-added. Base-image
 drift is resolved through
-[`LxdImages`][reemote5.modules.lxd.lxd.LxdImages] and REPORTED in the
+[`LxdImages`][reemote.modules.lxd.lxd.LxdImages] and REPORTED in the
 reason only, never recreated (destructive recreation stays an explicit
 `present=False` choice); a container/VM type mismatch raises
-[`OperationError`][reemote5.core.OperationError]. The script yields the
+[`OperationError`][reemote.core.OperationError]. The script yields the
 same create request twice — the second is a guaranteed no-op in the
 apply phase, because the first launch is visible to it through the fresh
 per-step fact cache (in the prepare phase, where nothing is sent, both
@@ -104,12 +104,12 @@ plan as changes).
 
 The state operation: `lxd.instance_state` drives
 started/stopped/frozen idempotently against
-[`LxdInstanceState`][reemote5.modules.lxd.lxd.LxdInstanceState] — the
+[`LxdInstanceState`][reemote.modules.lxd.lxd.LxdInstanceState] — the
 CLI verb is yielded only when the status differs from the target.
 `restarted` and `unfrozen` are STATELESS actions that always yield (a
 restart is an action, not a desired state). The instance must already
 exist — a missing one raises
-[`OperationError`][reemote5.core.OperationError] in prepare, so create it
+[`OperationError`][reemote.core.OperationError] in prepare, so create it
 with `lxd_instance.py` first. The script yields the same stop request
 twice: on a running instance the second is a guaranteed no-op in the
 apply phase, because the first stop is visible to it through the fresh
@@ -124,13 +124,13 @@ per-step fact cache; on an already-stopped instance both plan as no-ops.
 The config operation: `lxd.instance_config` is the dedicated
 reconciliation half of `lxd.instance` for an instance that must already
 exist. It reads
-[`LxdInstanceConfig`][reemote5.modules.lxd.lxd.LxdInstanceConfig] and
+[`LxdInstanceConfig`][reemote.modules.lxd.lxd.LxdInstanceConfig] and
 compares desired keys against the instance's OWN config — an inherited
 profile value is not an own key, so setting it IS a change; drifted
 devices are removed and re-added, and a `profiles` tuple is assigned
 wholesale when it differs (`None` leaves the current list alone). Config
 keys are only SET, never unset. A missing instance raises
-[`OperationError`][reemote5.core.OperationError] in prepare, so create it
+[`OperationError`][reemote.core.OperationError] in prepare, so create it
 with `lxd_instance.py` first. The script yields the same set request
 twice — the second is a guaranteed no-op in the apply phase, because the
 first set is visible to it through the fresh per-step fact cache (in the
@@ -143,7 +143,7 @@ prepare phase, where nothing is sent, both plan as changes).
 ## Managing an instance snapshot
 
 The snapshot operation: `lxd.instance_snapshot` reads
-[`LxdInstanceSnapshots`][reemote5.modules.lxd.lxd.LxdInstanceSnapshots]:
+[`LxdInstanceSnapshots`][reemote.modules.lxd.lxd.LxdInstanceSnapshots]:
 an absent snapshot is created (`stateful=True` includes the runtime
 state), an unwanted one deleted through the `instance/snapshot` name
 form. `restore=True` is STATELESS and always yields `lxc restore` — stop
@@ -182,7 +182,7 @@ changes).
 ## Caching an image
 
 The image operation: `lxd.image` reads
-[`LxdImages`][reemote5.modules.lxd.lxd.LxdImages]: an image already
+[`LxdImages`][reemote.modules.lxd.lxd.LxdImages]: an image already
 cached by fingerprint OR alias is a no-op; an absent one is copied from
 `source` (e.g. `images:ubuntu/24.04` — the CLI waits on the asynchronous
 download natively), adding `--alias` when the reference is an alias
@@ -199,7 +199,7 @@ phase, where nothing is sent, both plan as changes).
 ## Managing an image alias
 
 The alias operation: `lxd.image_alias` reads
-[`LxdImageAliases`][reemote5.modules.lxd.lxd.LxdImageAliases]: an alias
+[`LxdImageAliases`][reemote.modules.lxd.lxd.LxdImageAliases]: an alias
 already targeting the desired fingerprint is a no-op; one targeting a
 DIFFERENT fingerprint is deleted and recreated (the CLI has no
 alias-repoint verb). `present=False` removes the alias only — the image
@@ -217,8 +217,8 @@ the prepare phase, where nothing is sent, both plan as changes).
 ## Managing a project
 
 The project operation: `lxd.project` reads
-[`LxdProjects`][reemote5.modules.lxd.lxd.LxdProjects] for existence and
-[`LxdProjectConfig`][reemote5.modules.lxd.lxd.LxdProjectConfig] for
+[`LxdProjects`][reemote.modules.lxd.lxd.LxdProjects] for existence and
+[`LxdProjectConfig`][reemote.modules.lxd.lxd.LxdProjectConfig] for
 config drift: an absent project is created with its `-c` config flags,
 an existing one gets per-key sets (features and limits are mutable after
 creation). `present=False` deletes the project — the CLI fails while it
@@ -235,7 +235,7 @@ sent, both plan as changes).
 ## Managing a profile
 
 The profile operation: `lxd.profile` reads
-[`LxdProfiles`][reemote5.modules.lxd.lxd.LxdProfiles]: an absent profile
+[`LxdProfiles`][reemote.modules.lxd.lxd.LxdProfiles]: an absent profile
 is created empty, then the requested config keys and devices are
 attached; an existing one gets only the drifted entries set or
 re-attached. `present=False` deletes the profile. The script yields the
@@ -251,10 +251,10 @@ phase, where nothing is sent, both plan as changes).
 ## Managing a network
 
 The network operation: `lxd.network` reads
-[`LxdNetworks`][reemote5.modules.lxd.lxd.LxdNetworks]: an absent network
+[`LxdNetworks`][reemote.modules.lxd.lxd.LxdNetworks]: an absent network
 is created with its `--type` and creation-time config, an existing one
 gets per-key config sets. A type mismatch raises
-[`OperationError`][reemote5.core.OperationError] (LXD cannot change a
+[`OperationError`][reemote.core.OperationError] (LXD cannot change a
 network's type), and an UNMANAGED interface (a host NIC LXD merely knows
 about) raises rather than being adopted or deleted. `present=False`
 deletes the managed network. The script yields the same bridge create
@@ -270,10 +270,10 @@ changes).
 ## Managing a storage pool
 
 The pool operation: `lxd.storage_pool` reads
-[`LxdStoragePools`][reemote5.modules.lxd.lxd.LxdStoragePools]: an absent
+[`LxdStoragePools`][reemote.modules.lxd.lxd.LxdStoragePools]: an absent
 pool is created with its driver and creation-time config, an existing
 one gets per-key config sets. A driver mismatch raises
-[`OperationError`][reemote5.core.OperationError] (LXD cannot change a
+[`OperationError`][reemote.core.OperationError] (LXD cannot change a
 pool's driver). `present=False` deletes the pool — the CLI fails while
 volumes still live there. Pools are server-wide: no project option. The
 script yields the same `dir` pool create request twice — the second is a
@@ -288,11 +288,11 @@ nothing is sent, both plan as changes).
 ## Managing a storage volume
 
 The volume operation: `lxd.storage_volume` reads
-[`LxdStorageVolumes`][reemote5.modules.lxd.lxd.LxdStorageVolumes] and is
+[`LxdStorageVolumes`][reemote.modules.lxd.lxd.LxdStorageVolumes] and is
 idempotent on EXISTENCE: an absent custom volume is created with its
 config; an existing one is left alone — config is creation-only. Only
 CUSTOM volumes are managed: a name collision with an instance/image
-volume raises [`OperationError`][reemote5.core.OperationError].
+volume raises [`OperationError`][reemote.core.OperationError].
 `present=False` deletes the custom volume (the CLI fails while it is
 still attached). The pool must already exist, so create it with
 `lxd_storage_pool.py` first. The script yields the same create request
@@ -309,7 +309,7 @@ the prepare phase, where nothing is sent, both plan as changes).
 The operation primitive: `lxd.operation` is the lower-level handle for
 out-of-band mutations (image downloads, migrations started elsewhere).
 The cancel half is idempotent against
-[`LxdOperations`][reemote5.modules.lxd.lxd.LxdOperations] — a registered
+[`LxdOperations`][reemote.modules.lxd.lxd.LxdOperations] — a registered
 id yields `lxc operation delete`, an already-pruned one is a no-op. The
 wait half is STATELESS and always yields (a wait is an action, not a
 desired state): it polls until the id disappears from the operation

@@ -4,7 +4,7 @@
 """Manage a deb822 apt sources file, with fact-based idempotence.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -37,10 +37,10 @@ repository is described structurally (``types``, ``uris``, ``suites``,
 ``components``, ``architectures``, ``signed_by``) rather than as a source
 line, and each list option expands into one entry per combination. Unlike
 the baseline -- whose ``apt.sources_file`` delegates the write to ``files.put``
--- reemote5 keeps the namespaces separate: the generated deb822 text is
+-- reemote keeps the namespaces separate: the generated deb822 text is
 spooled to ``/tmp`` by an unprivileged scp upload (a transfer never
 elevates), then an elevated ``sh -c`` installs it into ``sources.list.d``
-with mode ``0644`` and removes the spool file -- the same privilege split as
+with mode ``0644`` and removes the spool directory -- the same privilege split as
 ``apt.key``. The removal direction is idempotent too: the ``AptSourcesFile``
 fact reads the file's content (None when absent), so ``present=False`` yields
 ``rm -f`` only when the file exists -- the same in-namespace existence gate
@@ -88,7 +88,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

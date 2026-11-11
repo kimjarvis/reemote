@@ -3,7 +3,7 @@
 
 """Example: ensure an LXD instance on real CentOS hosts.
 
-This is a *usage* example, not part of the library. It drives reemote5's
+This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
@@ -18,7 +18,7 @@ two-phase execution model end to end over a **real SSH transport**
    operation arguments, plans or logs.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``lxd.instance`` is the reemote5-original successor to the baseline's
+``lxd.instance`` is the reemote-original successor to the baseline's
 ``lxd.container``. It reads the ``LxdInstances`` fact: an absent instance
 yields one ``lxc launch`` carrying the type (``instance_type="vm"`` for
 a virtual machine), ``profiles``, ``config`` (``"key=value"`` strings),
@@ -67,7 +67,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

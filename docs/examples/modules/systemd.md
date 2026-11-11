@@ -39,11 +39,11 @@ The service operation: `systemd.service` is the canonical home of the
 operation formerly known as `server.service` (which remains a deprecated
 alias). It ports the baseline's `systemd.service` and manages one unit along two
 independent axes — `running` against the
-[`SystemdServiceState`][reemote5.modules.systemd.systemd.SystemdServiceState]
+[`SystemdServiceState`][reemote.modules.systemd.systemd.SystemdServiceState]
 fact and `enabled` against
-[`SystemdServiceEnabled`][reemote5.modules.systemd.systemd.SystemdServiceEnabled]
+[`SystemdServiceEnabled`][reemote.modules.systemd.systemd.SystemdServiceEnabled]
 — yielding a command only where the unit differs from the request. The script
-also shows the reemote5 extensions: `reloaded=True` with `soft_reload=True`
+also shows the reemote extensions: `reloaded=True` with `soft_reload=True`
 issues `systemctl reload-or-try-restart`, gated on the unit actually running.
 The managed unit is chosen per OS family by `web_server_unit` — `httpd` on the
 RHEL-family `centos` hosts, `apache2` on the Debian-family `ubuntu` host — a
@@ -67,10 +67,10 @@ after an edit.
 
 ## Masking a unit
 
-The mask operation: `systemd.mask` is a reemote5 original, bidirectional and
+The mask operation: `systemd.mask` is a reemote original, bidirectional and
 idempotent through one present-flagged path. It reads the unit's
 `UnitFileState` from
-[`SystemdUnitProperties`][reemote5.modules.systemd.systemd.SystemdUnitProperties]
+[`SystemdUnitProperties`][reemote.modules.systemd.systemd.SystemdUnitProperties]
 and yields `systemctl mask` only when the unit is not already masked
 (`masked=False` yields `unmask`). Masking symlinks the unit to `/dev/null` so
 neither a manual start nor a dependency can activate it — stronger than
@@ -85,10 +85,10 @@ deploy is not blocked by a lingering mask — safe to run live.
 
 ## Clearing a failed state
 
-The reset-failed operation: `systemd.reset_failed` is a reemote5 original
+The reset-failed operation: `systemd.reset_failed` is a reemote original
 covering the reset-only case (the enhanced `service` keeps a `reset_failed`
 flag too). It reads
-[`SystemdServiceState`][reemote5.modules.systemd.systemd.SystemdServiceState]
+[`SystemdServiceState`][reemote.modules.systemd.systemd.SystemdServiceState]
 and yields `systemctl reset-failed` only when the unit's `ActiveState` is
 `failed` — the recovery step before a start, since a failed unit otherwise
 refuses to start.
@@ -99,16 +99,17 @@ refuses to start.
 
 ## Host-policy prerequisite (drop-in, tmpfiles, sysusers)
 
-The drop-in, tmpfiles and sysusers operations spool their fragment to a fixed
-`/tmp` path with an **unprivileged** scp transfer, then install it with an
-**elevated** `sh -c` (`mkdir` + `cp` + `chmod`). The scripts are correct —
+The drop-in, tmpfiles and sysusers operations spool their fragment into a
+dest-derived `/tmp` directory with an **unprivileged** scp transfer, then install
+it with an **elevated** `sh -c` (`mkdir` + `cp` + `chmod`). The scripts are correct —
 `sudo=True` is set and the transfer is never elevated — but on the CentOS demo
 hosts (`web1`/`web2`) SELinux is `Enforcing` and `sudo` transitions to the
 confined `staff_t` domain, which blocks the install two ways:
 
 - the scp spool lands mode `0600` owned by the connecting user, and `staff_t`
   lacks `CAP_DAC_OVERRIDE`, so the elevated `cp` cannot read another user's
-  private file (`cp: cannot open '/tmp/reemote5-systemd.conf' for reading:
+  private file (`cp: cannot open
+  '/tmp/reemote-systemd-<digest>/systemd.conf' for reading:
   Permission denied`);
 - creating a new `etc_t`-labelled directory such as `/etc/sysusers.d` is denied
   (`mkdir: cannot create directory '/etc/sysusers.d': Permission denied`),
@@ -121,7 +122,7 @@ unconfined domain (e.g. `unconfined_t`) or set SELinux permissive, then re-run.
 
 ## Installing a drop-in override
 
-The drop-in operation: `systemd.dropin` is a reemote5 original that manages a
+The drop-in operation: `systemd.dropin` is a reemote original that manages a
 fragment under `/etc/systemd/system/<unit>.d/<filename>.conf`, overriding
 selected settings of a vendor unit without editing the packaged file. It
 writes only when the content differs (idempotent through the in-namespace
@@ -136,7 +137,7 @@ transfer to `/tmp` then an elevated install — and the file-name parameter is
 
 ## Declaring runtime files and directories
 
-The tmpfiles operation: `systemd.tmpfiles` is a reemote5 original managing a
+The tmpfiles operation: `systemd.tmpfiles` is a reemote original managing a
 `/etc/tmpfiles.d/<filename>.conf` fragment. It writes only when the content
 differs, then applies it with `systemd-tmpfiles --create` so the declared
 runtime paths exist immediately rather than at the next boot. `present=False`
@@ -149,7 +150,7 @@ parameter as the drop-in; system-scope only.
 
 ## Declaring system users and groups
 
-The sysusers operation: `systemd.sysusers` is a reemote5 original managing a
+The sysusers operation: `systemd.sysusers` is a reemote original managing a
 `/etc/sysusers.d/<filename>.conf` fragment — the declarative alternative to
 imperative `useradd`. It writes only when the content differs, then applies it
 with `systemd-sysusers` so the declared accounts exist immediately.
@@ -163,9 +164,9 @@ parameter; system-scope only.
 
 ## Applying a preset policy
 
-The preset operation: `systemd.preset` is a reemote5 original applying a unit's
+The preset operation: `systemd.preset` is a reemote original applying a unit's
 vendor preset policy. It reads
-[`SystemdUnitFiles`][reemote5.modules.systemd.systemd.SystemdUnitFiles] and
+[`SystemdUnitFiles`][reemote.modules.systemd.systemd.SystemdUnitFiles] and
 yields `systemctl preset <unit>` only when the unit's current state differs
 from its preset policy; a unit already matching, or with no policy, is a no-op.
 `all_units=True` would instead issue a stateless `systemctl preset-all`.

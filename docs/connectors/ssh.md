@@ -20,8 +20,8 @@ inventory = [
 
 <!---
 
-[`Host.from_inventory`][reemote5.hosts.Host.from_inventory] materializes the
-entry into a plain [`Host`][reemote5.hosts.Host], which owns a lazily
+[`Host.from_inventory`][reemote.hosts.Host.from_inventory] materializes the
+entry into a plain [`Host`][reemote.hosts.Host], which owns a lazily
 established asyncssh connection built from its `connection` data: `connect`
 opens (and caches) it, `run_shell` runs one command over it, `upload_file`
 and `download_file` copy through asyncssh's scp, and `aclose` tears it down.
@@ -41,9 +41,9 @@ askpass helpers instead of prompts.
 
 A transport-level failure — an `OSError` (reset, timeout, unreachable) or an
 `asyncssh.Error` (host-key or authentication rejection) — surfaces as
-[`HostConnectionError`][reemote5.hosts.HostConnectionError] labelled `SSH`,
+[`HostConnectionError`][reemote.hosts.HostConnectionError] labelled `SSH`,
 aggregated across the inventory by
-[`run_prepare`][reemote5.drivers.run_prepare] so every unreachable host is
+[`run_prepare`][reemote.drivers.run_prepare] so every unreachable host is
 reported at once. The message stays generic (which hosts could not be
 reached); the original error is chained as `__cause__` for diagnosis.
 
@@ -113,10 +113,10 @@ option is *expressly forbidden* rather than merely omitted.
 ### Forbidden options
 
 `kbdint_auth` (keyboard-interactive authentication) raises
-[`InventoryError`][reemote5.hosts.InventoryError] instead of being silently
+[`InventoryError`][reemote.hosts.InventoryError] instead of being silently
 dropped or passed on to asyncssh: it produces interactive challenge/MFA
 prompts, which asyncssh's non-interactive channels cannot answer, so
-reemote5 does not support keyboard-interactive auth at all. The rejection
+reemote does not support keyboard-interactive auth at all. The rejection
 covers both the top-level `connection` mapping and the
 `asyncssh_connect_kwargs` passthrough — because that mapping is merged last,
 a forbidden key cannot be smuggled through it either. The check runs in
@@ -125,8 +125,8 @@ a forbidden key cannot be smuggled through it either. The check runs in
 ## Lifecycle
 
 The connection is opened lazily on first use and cached on the instance;
-[`run_prepare`][reemote5.drivers.run_prepare] connects the whole inventory
-concurrently, and [`run`][reemote5.drivers.run] closes every host when it
+[`run_prepare`][reemote.drivers.run_prepare] connects the whole inventory
+concurrently, and [`run`][reemote.drivers.run] closes every host when it
 finishes. `aclose` first removes any askpass helpers created for
 `sudo_password`/`su_password` (best-effort — a dropped connection must not
 fail teardown), then closes the connection and waits for it to finish.
@@ -143,12 +143,12 @@ fail teardown), then closes the connection and waits for it to finish.
 Commands run over asyncssh's non-interactive channels (no TTY, exactly like
 the docker connector's `exec -i`). Remote exit codes propagate verbatim, so
 exit 127 still raises
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError] on every path
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError] on every path
 and the apply path still fails fast with
-[`CommandError`][reemote5.hosts.CommandError].
+[`CommandError`][reemote.hosts.CommandError].
 
-[`files.put`][reemote5.modules.files.files.put] and
-[`files.get`][reemote5.modules.files.files.get] ride asyncssh's scp through a
+[`files.put`][reemote.modules.files.files.put] and
+[`files.get`][reemote.modules.files.files.get] ride asyncssh's scp through a
 temporary local file (scp copies between paths, not streams); a failed copy
 raises `CommandError` with no exit status, since scp reports an exception
 rather than a shell exit. Transfers run as the login user — no privilege
@@ -159,11 +159,11 @@ combines in the fixed order `doas` then `sudo` then `su`. Passwords ride
 generated askpass helpers (sudo's `SUDO_ASKPASS`, a stdin pipe for su; doas
 is passwordless-only, `doas -n`), never appear in the rendered apply log,
 and a rejected credential raises
-[`PrivilegeError`][reemote5.hosts.PrivilegeError] rather than a generic
+[`PrivilegeError`][reemote.hosts.PrivilegeError] rather than a generic
 `CommandError` — see [Hosts and the inventory](../hosts.md) for the full
 privilege contract.
 
-::: reemote5.hosts
+::: reemote.hosts
     options:
       members:
         - Host

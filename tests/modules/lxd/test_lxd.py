@@ -7,12 +7,12 @@
 ``network``/``profile``/``project``/``storage_pool``/``storage_volume``/
 ``operation`` operations.
 
-Covers ``reemote5.modules.lxd.lxd``. ``LxdContainers`` and ``container``
+Covers ``reemote.modules.lxd.lxd``. ``LxdContainers`` and ``container``
 mirror the baseline's ``lxd.LxdContainers`` / ``lxd.container``, so their
 real-transport parity reuses the baseline's own fixtures verbatim (the canned
 ``lxc list --format json --fast`` output, the launch/stop/delete shells
 including the injection-quoting case, and the noop reasons). The fifteen
-reemote5-original facts have no upstream fixture, so they are exercised
+reemote-original facts have no upstream fixture, so they are exercised
 with realistic canned ``lxc --format json`` documents plus their parsing
 edge cases (empty output, the guarded single-target reads, the shared
 ``lxc info`` command, the snapshots projection).
@@ -29,10 +29,10 @@ import json
 
 import pytest
 
-import reemote5
-from reemote5.commands import WaitTimeoutError
-from reemote5.core import FactCache, OpContext, OperationError, op
-from reemote5.drivers import (
+import reemote
+from reemote.commands import WaitTimeoutError
+from reemote.core import FactCache, OpContext, OperationError, op
+from reemote.drivers import (
     DeterminismError,
     command_shell,
     format_log,
@@ -42,9 +42,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import lxd
-from reemote5.modules.lxd.lxd import (
+from reemote.hosts import Host
+from reemote.modules import lxd
+from reemote.modules.lxd.lxd import (
     LxdContainer,
     LxdContainers,
     LxdCopyCommand,
@@ -341,7 +341,7 @@ def test_lxd_namespace_exports_operations_and_descriptors():
         "storage_volume",
     ):
         assert getattr(lxd, name) is getattr(lxd.lxd, name)
-        assert not hasattr(reemote5, name)
+        assert not hasattr(reemote, name)
     for name in (
         "LxdContainers",
         "LxdImageAliases",
@@ -380,7 +380,7 @@ def test_lxd_namespace_exports_operations_and_descriptors():
     ):
         module_cls = getattr(lxd.lxd, name)
         assert getattr(lxd, name) is module_cls
-        assert getattr(reemote5, name) is module_cls
+        assert getattr(reemote, name) is module_cls
 
 
 def test_lxd_all_lists_are_sorted_and_complete():

@@ -71,7 +71,7 @@ from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -92,7 +92,7 @@ from reemote5 import (
 # local path. The same object is passed to put in every phase, so the prepare
 # and apply request sequences compare equal.
 NGINX_CONF = io.StringIO(
-    "# Managed by reemote5 -- staged by the two-deploy split example.\n"
+    "# Managed by reemote -- staged by the two-deploy split example.\n"
     "worker_processes auto;\n"
 )
 

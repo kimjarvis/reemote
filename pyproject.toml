@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: EPL-2.0
 
 [project]
-name = "reemote5"
+name = "reemote"
 version = "0.1.4"
 description = "A Python library for configuring and deploying servers"
 readme = "README.md"

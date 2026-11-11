@@ -3,7 +3,7 @@
 
 """Example: ensure an application table on real CentOS hosts.
 
-This is a *usage* example, not part of the library. It drives reemote5's
+This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
@@ -20,7 +20,7 @@ two-phase execution model end to end over a **real SSH transport**
    dropped namespace-wide).
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``mysql.table`` is a reemote5-original operation: it reads the
+``mysql.table`` is a reemote-original operation: it reads the
 ``MysqlTables`` fact and is idempotent on EXISTENCE only. An absent table
 yields CREATE TABLE with the verbatim ``columns`` definitions plus the
 engine/charset/collation/comment clauses; an existing one is left alone --
@@ -70,7 +70,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

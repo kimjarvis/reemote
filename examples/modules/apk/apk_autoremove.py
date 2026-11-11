@@ -4,7 +4,7 @@
 """Remove orphaned apk packages standalone, without an install.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -27,9 +27,9 @@ it finishes. The path is resolved from ``__file__``, so the example works from
 any working directory; point ``INVENTORY_PATH`` at your own file to target
 your machines.
 
-``apk.autoremove`` is a reemote5 original: the baseline ships no apk autoremove,
+``apk.autoremove`` is a reemote original: the baseline ships no apk autoremove,
 and apk itself has no ``autoremove`` verb -- it exposes orphan purge as the
-``--purge`` flag of ``apk add``/``apk fix``, which reemote5 splits out into
+``--purge`` flag of ``apk add``/``apk fix``, which reemote splits out into
 this standalone operation so a deploy can clean up orphans without also
 performing an install or a repair. The ``ApkAutoremovablePackages`` fact simulates
 the purge (``apk add --purge --simulate``, which never removes anything
@@ -45,7 +45,7 @@ Purging writes to the root-owned apk database, so the requests are flagged
 ``doas=True`` and the driver elevates their commands. ``doas`` rather than
 ``sudo`` because the Alpine host has no ``sudo`` installed at all --
 ``sudo apk add --purge`` would die with ``sh: sudo: not found`` (exit 127)
-before reaching ``apk``. ``doas`` is passwordless here: reemote5 always runs
+before reaching ``apk``. ``doas`` is passwordless here: reemote always runs
 ``doas -n``, which fails rather than prompts, so the host must grant the
 login user a ``permit nopass`` rule in ``/etc/doas.conf`` (see
 ``examples/demonstrations/privilege/privilege_doas.py``); without one the
@@ -84,7 +84,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

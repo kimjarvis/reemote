@@ -4,7 +4,7 @@
 """Example: gather the ``firewalld.FirewalldZones`` fact on real CentOS hosts.
 
 This is a *usage* example, not part of the library. Where
-``examples/modules/firewalld/firewalld_zone.py`` drives reemote5's two-phase
+``examples/modules/firewalld/firewalld_zone.py`` drives reemote's two-phase
 execution model (a deploy generator of operations run through ``run``),
 this one reads a single **fact** directly over the same *real SSH
 transport* (asyncssh):
@@ -30,7 +30,7 @@ transport* (asyncssh):
    host-name-keyed mapping -- then print each host's raw records with
    ``json.dumps(..., indent=2)``.
 
-``FirewalldZones`` is a reemote5 original (the baseline ships no firewalld
+``FirewalldZones`` is a reemote original (the baseline ships no firewalld
 module): it parses ``firewall-cmd --list-all-zones`` into a mapping of
 zone name to the zone's *complete* configuration -- target, display text,
 interfaces, sources, services, ports, protocols, masquerade, forward
@@ -68,7 +68,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     FirewalldZones,
     Host,

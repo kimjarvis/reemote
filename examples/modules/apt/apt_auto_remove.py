@@ -4,7 +4,7 @@
 """Remove orphaned apt dependencies standalone, without an upgrade.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -27,7 +27,7 @@ it finishes. The path is resolved from ``__file__``, so the example works
 from any working directory; point ``INVENTORY_PATH`` at your own file to
 target your machines.
 
-``apt.auto_remove`` is a reemote5 original: the baseline only offers autoremove
+``apt.auto_remove`` is a reemote original: the baseline only offers autoremove
 as the ``auto_remove`` parameter of ``apt.dist_upgrade``/``apt.upgrade``,
 never as a standalone operation, so orphaned dependencies cannot be cleaned
 up without also performing an upgrade. This operation closes that gap. The
@@ -70,7 +70,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

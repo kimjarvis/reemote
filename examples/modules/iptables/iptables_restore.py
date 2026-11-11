@@ -3,7 +3,7 @@
 
 """Example: atomically restore an uploaded rule snapshot on real CentOS hosts.
 
-This is a *usage* example, not part of the library. It drives reemote5's
+This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
@@ -21,7 +21,7 @@ two-phase execution model end to end over a **real SSH transport**
 ``iptables.restore`` is the atomic bulk-apply surface: iptables-restore
 applies the whole file or fails without partial state -- the resolution
 of the ``bulk_rule(rules=[...])`` proposal, which cannot exist because
-``op()`` arguments must be hashable. The path is HOST-side (reemote5
+``op()`` arguments must be hashable. The path is HOST-side (reemote
 transfers are IO-only), so a controller-side snapshot rides ``files.put``
 first: the source here is a module-level ``io.BytesIO``, seekable and
 identity-stable across phases (a fresh stream inside the generator would
@@ -73,7 +73,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -106,7 +106,7 @@ RULES_V4 = io.BytesIO(
 # The host-side snapshot path: under /tmp, writable by whatever account
 # the inventory logs in as, so the unprivileged scp transfer can write it;
 # iptables-restore then reads it elevated through the sh -c wrapper.
-REMOTE_RULES = "/tmp/reemote5-rules.v4"
+REMOTE_RULES = "/tmp/reemote-rules.v4"
 
 # examples/modules/iptables/iptables_restore.py -> the project root, so the inventory
 # is found whatever the current working directory is.

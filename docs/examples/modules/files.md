@@ -104,7 +104,7 @@ rides the connection as the login user, so the destination is a path in
 The mirror operation: `files.get` compares the remote file's sha1 against the
 sha1 of an IO-like destination's current content and downloads over the
 asyncssh connection's scp channel only when they differ. Where the baseline writes
-to a local path (with `add_deploy_dir`/`create_local_dir`/`force`), reemote5's
+to a local path (with `add_deploy_dir`/`create_local_dir`/`force`), reemote's
 destination is a *stream only* — the example reads `/etc/hostname` into a
 module-level `io.BytesIO` and prints the bytes back, so no local file is
 involved. Because a get *writes* its destination, each host keeps its own sink
@@ -141,10 +141,10 @@ target is a login-user-writable path in `/tmp`, not a root-owned file like
 
 ## Managing a marked block (baseline files.block parity)
 
-reemote5's answer to the baseline's `files.block`: no bespoke block editor, just a
+reemote's answer to the baseline's `files.block`: no bespoke block editor, just a
 transform. The example's `block_transform` factory builds a pure, idempotent
 `files.edit` transform from the baseline's option set — `content` (a string or a
-list of lines) surrounded by the `marker` lines (`# BEGIN/END REEMOTE5 BLOCK`
+list of lines) surrounded by the `marker` lines (`# BEGIN/END REEMOTE BLOCK`
 by default, kept verbatim so existing baseline-managed blocks are recognized),
 `line`/`before`/`after` regex positioning with `escape_regex_characters`, and
 `present=False` to remove the marked region. An existing block is replaced in
@@ -264,7 +264,7 @@ and `chmod` are unprivileged in `/tmp`.
 
 ## Installing content at a root-owned path
 
-`files.install` (a reemote5 original) is the one-deploy answer to a
+`files.install` (a reemote original) is the one-deploy answer to a
 root-owned content write that a `files.edit` + `files.move` recipe would
 need two runs for: it reads the
 destination's text with `FileContents` and, only when it differs from the
@@ -292,13 +292,13 @@ service-account file would read back as empty and re-install on every deploy.
 
 ## A health-check deploy: dnf install, put and get
 
-The reemote5 take on a relatable the baseline scenario — a simple web-server
+The reemote take on a relatable the baseline scenario — a simple web-server
 health-check / log-rotation deploy — in one flat generator: `dnf.packages`
 installs `htop` (elevated with `sudo=True`), `files.put` pushes an
 in-memory motd stream to `/tmp/remote_motd` (unprivileged scp), and
 `files.get` pulls `/etc/os-release` back into a per-host `io.BytesIO` sink
 whose content the script prints. Where the baseline original uses local paths
-(`files/motd`, `local_os_release.txt`, `add_deploy_dir=True`), reemote5's
+(`files/motd`, `local_os_release.txt`, `add_deploy_dir=True`), reemote's
 transfers take IO-like objects only — no local file is involved in either
 direction.
 

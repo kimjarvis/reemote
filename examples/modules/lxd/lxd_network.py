@@ -3,7 +3,7 @@
 
 """Example: manage an LXD network on real CentOS hosts.
 
-This is a *usage* example, not part of the library. It drives reemote5's
+This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
@@ -23,7 +23,7 @@ created with ``network_type`` and the desired ``config``, an existing
 MANAGED one has only its DRIFTED keys set (config keys are only SET,
 never unset), and ``present=False`` deletes it. An UNMANAGED network
 (e.g. a host bridge LXD merely sees) or a type mismatch raises
-``OperationError`` in prepare -- reemote5 never reconfigures interfaces
+``OperationError`` in prepare -- reemote never reconfigures interfaces
 it does not own.
 
 The deploy yields the same bridge create request twice: the second is a
@@ -63,7 +63,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

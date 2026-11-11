@@ -56,7 +56,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     GitRemoteBranchCommit,
     Host,
@@ -69,7 +69,7 @@ from reemote5 import (
 # The repository, remote and branch to inspect on each host: the command
 # guards on the directory and swallows ls-remote failures, so a host
 # without the repo or the remote answers None rather than raising.
-REPO = "/tmp/reemote5-app"
+REPO = "/tmp/reemote-app"
 REMOTE = "origin"
 BRANCH = "main"
 

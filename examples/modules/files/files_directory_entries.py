@@ -29,7 +29,7 @@ two-phase execution model:
    ``asyncio.gather`` and returns a host-name-keyed mapping -- then print
    each host's entry rows with ``json.dumps(..., indent=2)``.
 
-``DirectoryEntries`` is a reemote5 *original* -- the baseline ships no
+``DirectoryEntries`` is a reemote *original* -- the baseline ships no
 counterpart, and the stat-only ``Directory`` fact cannot answer this: it
 describes the directory *itself* (owner, mode, timestamps), never the
 names inside it. One shallow ``find <path> -mindepth 1 -maxdepth 1
@@ -68,7 +68,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     DirectoryEntries,
     Host,

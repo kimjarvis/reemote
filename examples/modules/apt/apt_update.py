@@ -4,7 +4,7 @@
 """Update apt repositories -- the standalone, stateless package-list refresh.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -39,7 +39,7 @@ unattended-upgrades may hold it right after boot.
 
 Where the baseline's ``apt.update`` also takes a ``cache_time`` parameter (skip
 the update while the ``/var/lib/apt/periodic/update-success-stamp`` file is
-fresh, and ``touch`` it afterwards), reemote5 deliberately drops the option
+fresh, and ``touch`` it afterwards), reemote deliberately drops the option
 -- the same decision ``apt.packages`` made -- so the update is always
 stateless and a ``cache_time`` keyword is absorbed with no effect.
 
@@ -68,7 +68,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

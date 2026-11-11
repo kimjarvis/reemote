@@ -102,16 +102,16 @@ sub-directory. Pick a page from the navigation, or start from this table:
 
 Each real-host script also owns its *error reporting*, because the library is
 CLI-free and only raises: `main` catches the typed errors a run can produce —
-[`HostConnectionError`][reemote5.hosts.HostConnectionError] for a host that
-cannot be reached, [`PrivilegeError`][reemote5.hosts.PrivilegeError] for a
-rejected elevation, [`CommandError`][reemote5.hosts.CommandError] for a command
+[`HostConnectionError`][reemote.hosts.HostConnectionError] for a host that
+cannot be reached, [`PrivilegeError`][reemote.hosts.PrivilegeError] for a
+rejected elevation, [`CommandError`][reemote.hosts.CommandError] for a command
 that exits non-zero — including its
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError] subclass when the
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError] subclass when the
 command is not installed on the host — plus
-[`OperationError`][reemote5.core.OperationError] when an operation's
+[`OperationError`][reemote.core.OperationError] when an operation's
 prerequisites are not met (the timezone example on a non-systemd host),
-[`WaitTimeoutError`][reemote5.commands.WaitTimeoutError]
-in the polling example and [`InventoryError`][reemote5.hosts.InventoryError]
+[`WaitTimeoutError`][reemote.commands.WaitTimeoutError]
+in the polling example and [`InventoryError`][reemote.hosts.InventoryError]
 (together with Python's own `OSError`/`json.JSONDecodeError` for the file
 itself) in every SSH example — they all read their inventory from a JSON
 file — prints the
@@ -122,12 +122,12 @@ Python traceback.
 
 The [action](actions.md) examples follow the same contract with one difference:
 a bespoke command's own non-zero exit is **data in the
-[`Result`][reemote5.actions.Result]**, not a raised `CommandError` — only
+[`Result`][reemote.actions.Result]**, not a raised `CommandError` — only
 library-level failures (`HostConnectionError`, `PrivilegeError`,
 `ConnectionTimeoutError`) raise. The in-deploy guard example catches
-[`ActionInDeployError`][reemote5.actions.ActionInDeployError] as its *expected*
+[`ActionInDeployError`][reemote.actions.ActionInDeployError] as its *expected*
 outcome and exits zero, and the connection-wait example likewise treats the
-[`ConnectionTimeoutError`][reemote5.actions.ConnectionTimeoutError] from a
+[`ConnectionTimeoutError`][reemote.actions.ConnectionTimeoutError] from a
 deliberately unreachable TEST-NET address as its expected demonstration.
 
 --->

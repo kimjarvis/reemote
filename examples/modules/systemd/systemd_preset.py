@@ -4,7 +4,7 @@
 """Apply a unit's vendor preset policy with ``systemd.preset``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root and
@@ -20,7 +20,7 @@ uses the *default* factory (``Host.from_inventory``), opening real asyncssh
 connections that ``run`` closes when it finishes. The path is resolved from
 ``__file__``, so the example works from any working directory.
 
-``systemd.preset`` is a reemote5 original. A distribution ships *preset*
+``systemd.preset`` is a reemote original. A distribution ships *preset*
 policies (``/usr/lib/systemd/system-preset``) saying which units should be
 enabled or disabled by default; ``systemctl preset <unit>`` applies that policy
 rather than an operator's explicit choice. The operation reads the
@@ -54,7 +54,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

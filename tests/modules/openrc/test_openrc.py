@@ -4,14 +4,14 @@
 """Tests for the openrc module: ``OpenrcEnabled``, ``OpenrcRunlevels``,
 ``OpenrcServices``, ``OpenrcStatus`` and ``OpenrcVersion``.
 
-Covers the read-only state discovery in ``reemote5.modules.openrc.openrc``:
+Covers the read-only state discovery in ``reemote.modules.openrc.openrc``:
 ``OpenrcStatus`` and ``OpenrcEnabled`` are the baseline ports, exercised over the
 real-transport path with the baseline's own fact fixtures verbatim (the
 ``services.json`` and ``services_runlevel.json`` outputs and facts of both
 ``openrc.OpenrcStatus`` and ``openrc.OpenrcEnabled``, including the crashed
 state, the dotted/hyphenated names and both uptime-suffix forms), plus the
 ``SimulatedHost`` seam projections and their copy semantics.
-``OpenrcServices``, ``OpenrcRunlevels`` and ``OpenrcVersion`` -- reemote5
+``OpenrcServices``, ``OpenrcRunlevels`` and ``OpenrcVersion`` -- reemote
 originals with no baseline fixtures -- are fed realistic canned ``rc-status``,
 ``ls -R /etc/runlevels`` and ``openrc --version`` output respectively, plus
 the raw-state preservation, the empty/stacked/deep-header runlevel edges, the
@@ -29,7 +29,7 @@ option, the ``SimulatedHost`` seam dispatch, and end-to-end through ``run`` /
 ``run_prepare`` + ``run_apply`` (including the ``doas`` elevation Alpine
 needs and a dry run).
 
-The ``openrc.runlevel`` and ``openrc.custom_runlevel`` operations -- reemote5
+The ``openrc.runlevel`` and ``openrc.custom_runlevel`` operations -- reemote
 originals with no baseline counterpart -- are exercised over their descriptor
 rendering and elevation, their fact-backed idempotence in both directions,
 the stacking and unstack-before-removal paths, the sorted-target removal
@@ -44,8 +44,8 @@ import shlex
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, op
+from reemote.drivers import (
     command_shell,
     format_log,
     gather_fact,
@@ -54,9 +54,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import openrc
-from reemote5.modules.openrc.openrc import (
+from reemote.hosts import Host
+from reemote.modules import openrc
+from reemote.modules.openrc.openrc import (
     OpenrcConfigFile,
     OpenrcConfigInstallCommand,
     OpenrcConfigUploadCommand,
@@ -1448,11 +1448,11 @@ def test_openrc_config_file_command_guards_and_quotes():
     """The ``test -e`` + marker + ``cat`` form, with the path shell-quoted
     (the ``ApkRepositoriesFile.command`` pattern)."""
     assert OpenrcConfigFile.command("/etc/rc.conf") == (
-        "test -e /etc/rc.conf && { printf '#reemote5-openrcconfig\\n'; "
+        "test -e /etc/rc.conf && { printf '#reemote-openrcconfig\\n'; "
         "cat -- /etc/rc.conf; }"
     )
     assert OpenrcConfigFile.command("/etc/my rc.conf") == (
-        "test -e '/etc/my rc.conf' && { printf '#reemote5-openrcconfig\\n'; "
+        "test -e '/etc/my rc.conf' && { printf '#reemote-openrcconfig\\n'; "
         "cat -- '/etc/my rc.conf'; }"
     )
 
@@ -1480,7 +1480,7 @@ async def test_openrc_config_file_seam_decodes_content():
 async def test_openrc_config_file_canned_parses_marker_and_content():
     """Over the real-transport path the marker line is stripped and the
     rest returned verbatim (the seam short-circuit never exercises this)."""
-    host = CannedShellHost(f"#reemote5-openrcconfig\n{RC_CONF_TEXT}")
+    host = CannedShellHost(f"#reemote-openrcconfig\n{RC_CONF_TEXT}")
     assert await OpenrcConfigFile.process(host, "/etc/rc.conf") == RC_CONF_TEXT
     assert host.last_shell == OpenrcConfigFile.command("/etc/rc.conf")
 
@@ -1492,7 +1492,7 @@ async def test_openrc_config_file_canned_absent_reads_none():
 
 async def test_openrc_config_file_canned_empty_reads_empty_string():
     """The marker alone -- an existing empty file -- reads as \"\"."""
-    host = CannedShellHost("#reemote5-openrcconfig\n")
+    host = CannedShellHost("#reemote-openrcconfig\n")
     assert await OpenrcConfigFile.process(host, "/etc/rc.conf") == ""
 
 
@@ -1589,8 +1589,9 @@ def test_config_spool_path_is_dest_derived_and_deterministic():
     spool = _config_spool_path("/etc/rc.conf")
     assert spool == _config_spool_path("/etc/rc.conf")
     assert spool != _config_spool_path("/etc/conf.d/sshd")
-    assert spool.startswith("/tmp/reemote5-openrc-config-")
-    assert len(spool.rsplit("-", 1)[1]) == 16
+    assert spool.startswith("/tmp/reemote-openrc-config-")
+    assert spool.endswith("/config")
+    assert len(spool.rsplit("-", 1)[1].split("/")[0]) == 16
 
 
 def test_openrc_config_upload_str_and_never_elevates():
@@ -1608,10 +1609,11 @@ def test_openrc_config_install_shell_and_elevation():
     """The install wraps the whole ``&&`` chain in ``sh -c`` so the
     escalator elevates every step, cleanup included."""
     spool = _config_spool_path("/etc/rc.conf")
+    spool_dir = spool.rsplit("/", 1)[0]
     cmd = OpenrcConfigInstallCommand(spool=spool, dest="/etc/rc.conf")
     inner = (
         f"mkdir -p /etc && cp {spool} /etc/rc.conf && "
-        f"chmod 0644 /etc/rc.conf && rm -f {spool}"
+        f"chmod 0644 /etc/rc.conf && rm -rf {spool_dir}"
     )
     assert cmd.shell() == f"sh -c {shlex.quote(inner)}"
     assert command_shell(cmd, sudo=True) == f"sudo sh -c {shlex.quote(inner)}"
@@ -1624,13 +1626,13 @@ def test_openrc_config_install_quotes_paths_with_spaces():
     left unquoted by shlex.quote); assert through shlex.split, never a raw
     substring of the quoted wrapper."""
     cmd = OpenrcConfigInstallCommand(
-        spool="/tmp/spool x", dest="/etc/openrc conf.d/wei rd"
+        spool="/tmp/spool dir/config x", dest="/etc/openrc conf.d/wei rd"
     )
     inner = shlex.split(cmd.shell())[2]
     assert "mkdir -p '/etc/openrc conf.d'" in inner
-    assert "cp '/tmp/spool x' '/etc/openrc conf.d/wei rd'" in inner
+    assert "cp '/tmp/spool dir/config x' '/etc/openrc conf.d/wei rd'" in inner
     assert "chmod 0644 '/etc/openrc conf.d/wei rd'" in inner
-    assert "rm -f '/tmp/spool x'" in inner
+    assert "rm -rf '/tmp/spool dir'" in inner
 
 
 # --- openrc.config: the operation -----------------------------------------------

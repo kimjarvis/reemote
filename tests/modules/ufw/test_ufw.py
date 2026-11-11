@@ -5,7 +5,7 @@
 and the five operations (``state``, ``default_policy``, ``logging``, ``reset``,
 ``rule``).
 
-ufw ships no baseline module, so every fact and operation here is a reemote5
+ufw ships no baseline module, so every fact and operation here is a reemote
 original -- there are no baseline fixtures to reuse verbatim. The real-transport
 paths are instead fed realistic canned ``ufw status verbose``, ``ufw status
 numbered`` and ``ufw app list`` output whose exact column format is taken from
@@ -31,8 +31,8 @@ import shlex
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, op
+from reemote.drivers import (
     command_shell,
     format_log,
     format_plan,
@@ -42,9 +42,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import ufw
-from reemote5.modules.ufw.ufw import (
+from reemote.hosts import Host
+from reemote.modules import ufw
+from reemote.modules.ufw.ufw import (
     UfwApplications,
     UfwDefaultPolicyCommand,
     UfwLoggingCommand,

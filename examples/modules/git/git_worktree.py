@@ -4,7 +4,7 @@
 """Example: ensure a linked git worktree on real CentOS hosts.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -26,14 +26,14 @@ it finishes.
 ``git.worktree`` mirrors the baseline's ``git.worktree``: it manages a linked
 working tree -- creating it from a main repository, pulling it, or removing it
 (``present=False``). This script ensures a ``hotfix`` worktree checked out on
-a new ``hotfix`` branch from the ``/tmp/reemote5-app`` repository
-into ``/tmp/reemote5-app-hotfix`` -- /tmp paths, writable by whatever
+a new ``hotfix`` branch from the ``/tmp/reemote-app`` repository
+into ``/tmp/reemote-app-hotfix`` -- /tmp paths, writable by whatever
 account the inventory logs in as. The demo hosts ship neither ``git`` nor
 that repository, so ``main`` first drives a tiny *install deploy*
 (``dnf.packages`` under ``sudo=True``, idempotent), and the deploy itself
 opens with a ``git.repo`` request cloning the public
 ``https://github.com/octocat/Hello-World.git`` demo repository into
-``/tmp/reemote5-app`` -- the worktree's main repository. The operation
+``/tmp/reemote-app`` -- the worktree's main repository. The operation
 branches on the tree's existence, read through the git-local
 ``_DirectoryExists`` fact, so an absent tree yields one
 ``cd <repo> && git worktree add -b hotfix <worktree>`` command
@@ -84,7 +84,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -159,7 +159,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         git.repo,
         name="Clone the main app repository",
         src="https://github.com/octocat/Hello-World.git",
-        dest="/tmp/reemote5-app",
+        dest="/tmp/reemote-app",
         branch="master",
         pull=False,
         when=is_centos,
@@ -167,8 +167,8 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     yield op(
         git.worktree,
         name="Add the hotfix worktree",
-        worktree="/tmp/reemote5-app-hotfix",
-        repo="/tmp/reemote5-app",
+        worktree="/tmp/reemote-app-hotfix",
+        repo="/tmp/reemote-app",
         new_branch="hotfix",
         assume_repo_exists=True,
         pull=False,
@@ -177,8 +177,8 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     yield op(
         git.worktree,
         name="Add the hotfix worktree",
-        worktree="/tmp/reemote5-app-hotfix",
-        repo="/tmp/reemote5-app",
+        worktree="/tmp/reemote-app-hotfix",
+        repo="/tmp/reemote-app",
         new_branch="hotfix",
         assume_repo_exists=True,
         pull=False,

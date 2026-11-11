@@ -29,7 +29,7 @@ driving the two-phase execution model:
    path argument verbatim, and returns a host-name-keyed mapping -- then
    print each host's working-tree summary.
 
-``GitStatus`` is a reemote5-original fact -- the baseline has no equivalent. It
+``GitStatus`` is a reemote-original fact -- the baseline has no equivalent. It
 runs ``! test -d <repo> || (cd <repo> && git status --porcelain)`` and
 classifies each row into a ``GitStatusSummary`` -- a ``dirty`` flag plus the
 ``staged``, ``unstaged`` and ``untracked`` path lists -- from the two-column
@@ -57,7 +57,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     GitStatus,
     Host,
@@ -70,7 +70,7 @@ from reemote5 import (
 # The repository to inspect on each host: every git fact takes the repo path
 # it reads, and the command guards on the directory, so a host without it
 # answers a clean, empty summary rather than raising.
-REPO = "/tmp/reemote5-app"
+REPO = "/tmp/reemote-app"
 
 # examples/modules/git/git_git_status.py -> the project root, so the inventory
 # is found whatever the current working directory is.

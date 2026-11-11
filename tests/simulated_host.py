@@ -4,7 +4,7 @@
 """Test-framework stand-in for a real machine.
 
 ``SimulatedHost`` is part of the *test framework*, not of the library, so it
-lives here in ``tests/`` rather than in ``src/reemote5/``. Tests and examples
+lives here in ``tests/`` rather than in ``src/reemote/``. Tests and examples
 inject it via ``run``'s ``host_factory`` argument (or hand it to
 ``run_prepare`` directly); the library never imports or constructs one.
 
@@ -12,7 +12,7 @@ The library relies only on the seams this class provides at the points where
 a real asyncssh transport is missing:
 
 - ``execute_command(cmd)``: applies the simulated effect of a command
-  descriptor to the in-memory state. ``reemote5.drivers.send_command``
+  descriptor to the in-memory state. ``reemote.drivers.send_command``
   forwards to it when the host provides it. Without the seam the same call
   takes the real-transport path instead, dispatching on the descriptor kind:
   ``transfer`` for a ``TransferCommand``, ``wait`` for a ``WaitCommand``, and
@@ -158,9 +158,9 @@ from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any
 
-from reemote5.commands import Command, StringCommand, WaitTimeoutError
-from reemote5.hosts import Host
-from reemote5.modules.apk.apk import (
+from reemote.commands import Command, StringCommand, WaitTimeoutError
+from reemote.hosts import Host
+from reemote.modules.apk.apk import (
     ApkHoldCommand,
     ApkInstallCommand,
     ApkPackageInfo,
@@ -175,7 +175,7 @@ from reemote5.modules.apk.apk import (
     ApkVirtualCommand,
     _split_constraint,
 )
-from reemote5.modules.apt.apt import (
+from reemote.modules.apt.apt import (
     AptAutoRemoveCommand,
     AptDistUpgradeCommand,
     AptInstallCommand,
@@ -203,7 +203,7 @@ from reemote5.modules.apt.apt import (
     DebInstallCommand,
     DebPackageInfo,
 )
-from reemote5.modules.dnf.dnf import (
+from reemote.modules.dnf.dnf import (
     DnfCleanCommand,
     DnfInstallCommand,
     DnfKeyImportCommand,
@@ -223,7 +223,7 @@ from reemote5.modules.dnf.dnf import (
     RpmInstallCommand,
     RpmPackageInfo,
 )
-from reemote5.modules.files.files import (
+from reemote.modules.files.files import (
     ChattrCommand,
     ChmodCommand,
     ChownCommand,
@@ -242,7 +242,7 @@ from reemote5.modules.files.files import (
     read_source_bytes,
     write_dest_bytes,
 )
-from reemote5.modules.firewalld.firewalld import (
+from reemote.modules.firewalld.firewalld import (
     _SERVICE_MEMBER_FIELDS,
     _ZONE_MEMBER_FIELDS,
     FirewalldDefaultZoneCommand,
@@ -266,12 +266,12 @@ from reemote5.modules.firewalld.firewalld import (
     FirewalldZoneTextCommand,
     _copy_record,
 )
-from reemote5.modules.flatpak.flatpak import (
+from reemote.modules.flatpak.flatpak import (
     FlatpakInstallCommand,
     FlatpakPackageInfo,
     FlatpakRemoveCommand,
 )
-from reemote5.modules.git.git import (
+from reemote.modules.git.git import (
     GitCheckoutCommand,
     GitCloneCommand,
     GitConfigCommand,
@@ -286,7 +286,7 @@ from reemote5.modules.git.git import (
     GitWorktreeAddCommand,
     GitWorktreeRemoveCommand,
 )
-from reemote5.modules.gpg.gpg import (
+from reemote.modules.gpg.gpg import (
     GpgDearmorCommand,
     GpgDeleteKeyCommand,
     GpgExportCommand,
@@ -306,13 +306,13 @@ from reemote5.modules.gpg.gpg import (
     GpgTrustCommand,
     GpgVerification,
 )
-from reemote5.modules.hardware.hardware import (
+from reemote.modules.hardware.hardware import (
     BlockDevice,
     DiskStat,
     LsBlkNode,
     NetworkDevice,
 )
-from reemote5.modules.iptables.iptables import (
+from reemote.modules.iptables.iptables import (
     IpSet,
     IpsetCreateCommand,
     IpsetDestroyCommand,
@@ -329,7 +329,7 @@ from reemote5.modules.iptables.iptables import (
     _normalize_host,
     _parse_iptables_rule,
 )
-from reemote5.modules.lxd.lxd import (
+from reemote.modules.lxd.lxd import (
     LxdContainer,
     LxdCopyCommand,
     LxdDeleteCommand,
@@ -364,7 +364,7 @@ from reemote5.modules.lxd.lxd import (
     LxdStorageVolumeCommand,
     _config_pairs,
 )
-from reemote5.modules.mysql.mysql import (
+from reemote.modules.mysql.mysql import (
     MysqlBinaryLog,
     MysqlColumn,
     MysqlConnection,
@@ -390,14 +390,14 @@ from reemote5.modules.mysql.mysql import (
     MysqlUserCommand,
     MysqlVariableCommand,
 )
-from reemote5.modules.openrc.openrc import (
+from reemote.modules.openrc.openrc import (
     OpenrcConfigInstallCommand,
     OpenrcConfigUploadCommand,
     RcServiceCommand,
     RcUpdateCommand,
     RunlevelCommand,
 )
-from reemote5.modules.postgresql.postgresql import (
+from reemote.modules.postgresql.postgresql import (
     _PRIVILEGE_ALIASES,
     PostgresqlConnection,
     PostgresqlDatabase,
@@ -429,7 +429,7 @@ from reemote5.modules.postgresql.postgresql import (
     PostgresqlTablespaceCommand,
     _normalize_object,
 )
-from reemote5.modules.selinux.selinux import (
+from reemote.modules.selinux.selinux import (
     AUTORELABEL_PATH,
     AutorelabelCommand,
     ChconCommand,
@@ -451,7 +451,7 @@ from reemote5.modules.selinux.selinux import (
     SetseboolCommand,
     SeUser,
 )
-from reemote5.modules.server.server import (
+from reemote.modules.server.server import (
     AuthorizedKeys,
     AuthorizedKeysInstallCommand,
     AuthorizedKeysUploadCommand,
@@ -480,13 +480,13 @@ from reemote5.modules.server.server import (
     _KeysChmodCommand,
     _KeysTouchCommand,
 )
-from reemote5.modules.snap.snap import (
+from reemote.modules.snap.snap import (
     SnapInstallCommand,
     SnapPackageInfo,
     SnapRefreshCommand,
     SnapRemoveCommand,
 )
-from reemote5.modules.sysctl.sysctl import (
+from reemote.modules.sysctl.sysctl import (
     Sysctl,
     SysctlFileInstallCommand,
     SysctlFileRemoveCommand,
@@ -495,7 +495,7 @@ from reemote5.modules.sysctl.sysctl import (
     SysctlSetCommand,
     _parse_conf,
 )
-from reemote5.modules.systemd.systemd import (
+from reemote.modules.systemd.systemd import (
     SystemctlCommand,
     SystemdFailedUnit,
     SystemdFileInstallCommand,
@@ -507,7 +507,7 @@ from reemote5.modules.systemd.systemd import (
     SystemdTmpfilesCommand,
     SystemdUnitFile,
 )
-from reemote5.modules.ufw.ufw import (
+from reemote.modules.ufw.ufw import (
     UfwDefaultPolicyCommand,
     UfwLoggingCommand,
     UfwResetCommand,
@@ -1741,7 +1741,7 @@ class SimulatedHost(Host):
     # simulated effect.
     sysctls: dict[str, Any] = field(default_factory=dict)
     # Simulated systemd visibility -- the read-side seams for the seven
-    # reemote5-original facts (the two the baseline ports project the ``services``/
+    # reemote-original facts (the two the baseline ports project the ``services``/
     # ``enabled_services`` stores above). A test seeds each directly; the
     # facts issue no write command, so no fact-only arm maintains them. The
     # ``mask``/``preset`` operations (which change a unit's boot state) do
@@ -1815,7 +1815,7 @@ class SimulatedHost(Host):
     installs_links: dict[str, dict[str, str]] = field(default_factory=dict)
     installs_files: dict[str, set[str]] = field(default_factory=dict)
 
-    # Command seam: reemote5.drivers.send_command forwards here. The match
+    # Command seam: reemote.drivers.send_command forwards here. The match
     # on the typed descriptors lives in the test framework, not the library.
 
     def execute_command(self, cmd: Command) -> None:
@@ -3078,7 +3078,7 @@ class SimulatedHost(Host):
                     {
                         "keyid": keyid,
                         "release": release,
-                        "summary": "gpg(reemote5 simulated key)",
+                        "summary": "gpg(reemote simulated key)",
                     }
                 )
 

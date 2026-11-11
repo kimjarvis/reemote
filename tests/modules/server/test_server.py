@@ -3,7 +3,7 @@
 
 """Tests for the server module: host facts, ``Arch``, ``Port`` and the waits.
 
-Covers ``reemote5.modules.server.server``: the ``Arch`` fact, the
+Covers ``reemote.modules.server.server``: the ``Arch`` fact, the
 ``AuthorizedKeys`` fact (the baseline's own fixtures over the real-transport
 path, tilde-username validation, and the ``SimulatedHost`` seam), the
 ``AuthorizedKeysFile`` raw-content fact (command quoting, the
@@ -49,7 +49,7 @@ including the FreeBSD JSON branch, and the ``SimulatedHost`` seam), the
 ``Port`` fact (the baseline's own thirteen fixtures over the real-transport
 path, the ``Kernel``/``Which``-dispatched tool selection, the
 port/protocol validation and the parser edge cases -- including the
-owner-less rows an unprivileged read produces, which is where reemote5's
+owner-less rows an unprivileged read produces, which is where reemote's
 record deliberately differs from the baseline's tuple -- and the
 ``listening_ports`` ``SimulatedHost`` seam), the
 ``Processes`` fact
@@ -127,8 +127,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from reemote5.commands import WaitCommand, WaitTimeoutError
-from reemote5.core import (
+from reemote.commands import WaitCommand, WaitTimeoutError
+from reemote.core import (
     FactCache,
     OpContext,
     OperationError,
@@ -136,7 +136,7 @@ from reemote5.core import (
     UnhashableArgumentError,
     op,
 )
-from reemote5.drivers import (
+from reemote.drivers import (
     DeterminismError,
     command_shell,
     format_log,
@@ -147,9 +147,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import CommandError, CommandNotFoundError, Host
-from reemote5.modules import server
-from reemote5.modules.server.server import (
+from reemote.hosts import CommandError, CommandNotFoundError, Host
+from reemote.modules import server
+from reemote.modules.server.server import (
     Arch,
     AuthorizedKeys,
     AuthorizedKeysFile,
@@ -675,9 +675,9 @@ async def test_has_gui_gather_fact_across_hosts():
 
 async def test_home_parses_baseline_home_fixture():
     # The baseline's own fact fixture (tests/facts/server.Home/home.json):
-    # command "echo ~", output ["/home/reemote5"] -> fact "/home/reemote5".
-    host = CannedShellHost("/home/reemote5\n")
-    assert await Home.process(host) == "/home/reemote5"
+    # command "echo ~", output ["/home/reemote"] -> fact "/home/reemote".
+    host = CannedShellHost("/home/reemote\n")
+    assert await Home.process(host) == "/home/reemote"
     assert host.shells == ["echo ~"]
 
 
@@ -698,13 +698,13 @@ async def test_home_parses_baseline_some_user_fixture():
 
 
 def test_home_parse_takes_the_first_non_blank_line():
-    assert Home.parse(["", "  /home/reemote5  ", "ignored"]) == "/home/reemote5"
+    assert Home.parse(["", "  /home/reemote  ", "ignored"]) == "/home/reemote"
     assert Home.parse([]) is None
 
 
 def test_home_parse_maps_an_unexpanded_tilde_to_none():
     # The shell echoes ``~user`` back verbatim for an unknown user; the baseline
-    # returns that literal string, reemote5 deliberately reads it as None.
+    # returns that literal string, reemote deliberately reads it as None.
     assert Home.parse(["~nosuchuser"]) is None
 
 
@@ -2289,8 +2289,8 @@ def _listening(process: str | None, pid: int | None) -> PortInfo:
 # The baseline's own fact fixtures (tests/facts/server.Port/*.json), captured
 # verbatim: the kernel name and ``command -v ss`` answer its ``facts`` block
 # seeds, the port and protocol arguments, the command string the fixture
-# records, its raw output lines and the record reemote5 derives. The last
-# column is where reemote5 deliberately departs from the baseline's
+# records, its raw output lines and the record reemote derives. The last
+# column is where reemote deliberately departs from the baseline's
 # ``(process, pid)`` tuple: the ``ss_no_process_info`` rows are a listening
 # port with no owner to name, where the baseline answers ``(None, None)`` and its
 # ``server.wait`` would keep looping.
@@ -2760,7 +2760,7 @@ async def test_processes_parses_baseline_darwin_all_fixture():
   300 root     Ss    0.0  0.2 /usr/sbin/sshd -D -o PermitRootLogin=no
   500 root     Ss    0.3  1.2 {helper}
   600 karlicos S     0.1  0.4 /Applications/Some App.app/Contents/MacOS/Some App --flag value
-===REEMOTE5-PROCESSES-COMM===
+===REEMOTE-PROCESSES-COMM===
   PID COMM
     1 /sbin/launchd
   200 /usr/libexec/opendirectoryd
@@ -2816,7 +2816,7 @@ async def test_processes_parses_baseline_darwin_all_fixture():
         "uname -s",
         (
             "LANG=C ps -eo pid,user,stat,%cpu,%mem,args -ww && "
-            "echo ===REEMOTE5-PROCESSES-COMM=== && LANG=C ps -eo pid,comm -ww"
+            "echo ===REEMOTE-PROCESSES-COMM=== && LANG=C ps -eo pid,comm -ww"
         ),
     ]
 
@@ -2828,7 +2828,7 @@ async def test_processes_parses_baseline_darwin_single_pid_fixture():
         "",
         """  PID USER     STAT  %CPU %MEM ARGS
   742 root     Ss    0.0  0.2 /usr/sbin/sshd -D
-===REEMOTE5-PROCESSES-COMM===
+===REEMOTE-PROCESSES-COMM===
   PID COMM
   742 /usr/sbin/sshd
 """,
@@ -2845,7 +2845,7 @@ async def test_processes_parses_baseline_darwin_single_pid_fixture():
     }
     assert host.shells[-1] == (
         "LANG=C ps -p 742 -o pid,user,stat,%cpu,%mem,args -ww && "
-        "echo ===REEMOTE5-PROCESSES-COMM=== && LANG=C ps -p 742 -o pid,comm -ww"
+        "echo ===REEMOTE-PROCESSES-COMM=== && LANG=C ps -p 742 -o pid,comm -ww"
     )
 
 
@@ -2864,7 +2864,7 @@ async def test_processes_parses_baseline_darwin_pty_crlf_fixture():
   200 root     S     0.0  0.0 /usr/libexec/opendirectoryd\r
   300 root     Ss    0.0  0.2 /usr/sbin/sshd -D -o PermitRootLogin=no\r
   500 root     Ss    0.3  1.2 {helper}\r
-===REEMOTE5-PROCESSES-COMM===\r
+===REEMOTE-PROCESSES-COMM===\r
   PID COMM\r
     1 /sbin/launchd\r
   200 /usr/libexec/opendirectoryd\r
@@ -2885,7 +2885,7 @@ async def test_processes_parses_baseline_darwin_spaced_executable_fixture():
         "",
         """  PID USER             STAT  %CPU %MEM ARGS
 36470 karlicos         S      0.0  0.0 ./Example Application 120
-===REEMOTE5-PROCESSES-COMM===
+===REEMOTE-PROCESSES-COMM===
   PID COMM
 36470 ./Example Application
 """,
@@ -2912,7 +2912,7 @@ async def test_processes_parses_baseline_darwin_vanished_pid_fixture():
     1 root     Ss    0.0  0.1 /sbin/launchd
   200 root     S     0.0  0.0 /usr/libexec/opendirectoryd
   300 root     Ss    0.0  0.2 /usr/sbin/sshd -D
-===REEMOTE5-PROCESSES-COMM===
+===REEMOTE-PROCESSES-COMM===
   PID COMM
     1 /sbin/launchd
   300 /usr/sbin/sshd
@@ -2946,11 +2946,11 @@ def test_processes_command_matches_baseline_fixture_commands():
     )
     assert Processes.command("Darwin") == (
         "LANG=C ps -eo pid,user,stat,%cpu,%mem,args -ww && "
-        "echo ===REEMOTE5-PROCESSES-COMM=== && LANG=C ps -eo pid,comm -ww"
+        "echo ===REEMOTE-PROCESSES-COMM=== && LANG=C ps -eo pid,comm -ww"
     )
     assert Processes.command("Darwin", pid=742) == (
         "LANG=C ps -p 742 -o pid,user,stat,%cpu,%mem,args -ww && "
-        "echo ===REEMOTE5-PROCESSES-COMM=== && LANG=C ps -p 742 -o pid,comm -ww"
+        "echo ===REEMOTE-PROCESSES-COMM=== && LANG=C ps -p 742 -o pid,comm -ww"
     )
     # The kernel name is stripped; an unknown kernel (or a failed uname -s,
     # which reads as "") takes the Linux branch, exactly like the baseline.
@@ -3012,10 +3012,10 @@ def test_processes_parse_busybox_edge_cases():
 
 def test_processes_darwin_parse_requires_the_marker():
     # A missing marker means the double-ps pipeline produced unexpected
-    # output; reemote5 raises ValueError (the baseline a bare Exception).
-    with pytest.raises(ValueError, match="REEMOTE5-PROCESSES-COMM"):
+    # output; reemote raises ValueError (the baseline a bare Exception).
+    with pytest.raises(ValueError, match="REEMOTE-PROCESSES-COMM"):
         Processes.parse(["    1 root     Ss    0.0  0.1 /sbin/launchd"], "Darwin")
-    assert Processes.parse(["===REEMOTE5-PROCESSES-COMM==="], "Darwin") == {}
+    assert Processes.parse(["===REEMOTE-PROCESSES-COMM==="], "Darwin") == {}
 
 
 async def test_processes_is_empty_on_empty_output():
@@ -3290,7 +3290,7 @@ async def test_user_gather_fact_across_hosts():
 # BSD lastlogin timestamp layout.
 USERS_MIXED_OUTPUT = """\
 root:x:0:0:root:/root:/bin/ks|wheel|wheel kmem sys tty operator staff guest|root pts/0 Sat Jun 5 12:03:23 -0600 2021|$rootpw$
-_tesTy.test:x:1004:1004::/home/_tesTy.test:/bin/ksh|_tesTy.test|_tesTy.test reemote5|_tesTy.test pts/0 host-ip Sat Jun 12 13:43:42 -0600 2021|$testpw$
+_tesTy.test:x:1004:1004::/home/_tesTy.test:/bin/ksh|_tesTy.test|_tesTy.test reemote|_tesTy.test pts/0 host-ip Sat Jun 12 13:43:42 -0600 2021|$testpw$
 test.testy:x:1003:1003:Testy,,,:/home/test.testy:/bin/ksh|test.testy||test.testy Fri Jun 11 22:26:04 -0600 2021|$testpw$
 noshell:x:1002:1002:noshell comment with spaces:/home/noshell:|noshell||noshell **Never logged in**|
 nohome:x:1002:1002:nohome comment::/bin/bash|nohome||**Never logged in**|
@@ -3319,7 +3319,7 @@ USERS_MIXED_FACT = {
         "comment": None,
         "shell": "/bin/ksh",
         "group": "_tesTy.test",
-        "groups": ["reemote5"],
+        "groups": ["reemote"],
         "uid": 1004,
         "gid": 1004,
         "lastlog": "Sat Jun 12 13:43:42 -0600 2021",
@@ -6274,9 +6274,10 @@ UA_KEYS_FILE = "/home/someuser/.ssh/authorized_keys"
 # The dest-derived spool and the install inner script -- the text inside the
 # ``sh -c '...'`` wrapper the install descriptor emits.
 UA_SPOOL = _keys_spool_path(UA_KEYS_FILE)
+UA_SPOOL_DIR = UA_SPOOL.rsplit("/", 1)[0]
 UA_INSTALL_INNER = (
     f"mkdir -p {UA_SSH_DIR} && cp {UA_SPOOL} {UA_KEYS_FILE} && "
-    f"chmod 600 {UA_KEYS_FILE} && rm -f {UA_SPOOL}"
+    f"chmod 600 {UA_KEYS_FILE} && rm -rf {UA_SPOOL_DIR}"
 )
 
 
@@ -6325,11 +6326,12 @@ def test_authorized_keys_install_command_shell_rendering():
     # substring of the quoted text.
     path = "/home/some user/.s sh/authorized_keys"
     spool = _keys_spool_path(path)
+    spool_dir = spool.rsplit("/", 1)[0]
     inner = shlex.split(
         AuthorizedKeysInstallCommand(spool=spool, dest=path).shell()
     )[2]
     assert inner.startswith("mkdir -p '/home/some user/.s sh' && ")
-    assert inner.endswith(f"&& rm -f {spool}")
+    assert inner.endswith(f"&& rm -rf {spool_dir}")
 
 
 def test_keys_spool_path_is_dest_derived_and_deterministic():
@@ -6339,18 +6341,18 @@ def test_keys_spool_path_is_dest_derived_and_deterministic():
     assert _keys_spool_path(UA_KEYS_FILE) == _keys_spool_path(UA_KEYS_FILE)
     assert _keys_spool_path("/etc/ssh/keys/alice") != UA_SPOOL
     digest = hashlib.sha1(UA_KEYS_FILE.encode()).hexdigest()[:16]
-    assert UA_SPOOL == f"/tmp/reemote5-server-user-authorized-keys-{digest}"
+    assert UA_SPOOL == f"/tmp/reemote-server-user-authorized-keys-{digest}/authorized_keys"
 
 
 def test_authorized_keys_file_command_quotes_the_path():
     assert AuthorizedKeysFile.command(UA_KEYS_FILE) == (
         f"test -e {UA_KEYS_FILE} && "
-        f"{{ printf '#reemote5-authorizedkeysfile\\n'; cat -- {UA_KEYS_FILE}; }}"
+        f"{{ printf '#reemote-authorizedkeysfile\\n'; cat -- {UA_KEYS_FILE}; }}"
     )
     quoted = shlex.quote("/home/some user/.ssh/authorized keys")
     assert AuthorizedKeysFile.command("/home/some user/.ssh/authorized keys") == (
         f"test -e {quoted} && "
-        f"{{ printf '#reemote5-authorizedkeysfile\\n'; cat -- {quoted}; }}"
+        f"{{ printf '#reemote-authorizedkeysfile\\n'; cat -- {quoted}; }}"
     )
 
 
@@ -6373,13 +6375,13 @@ async def test_authorized_keys_file_reads_the_simulated_seam():
 
 
 async def test_authorized_keys_file_parses_the_marker_over_real_transport():
-    host = CannedShellHost(f"#reemote5-authorizedkeysfile\n{UA_KEY_A}\n")
+    host = CannedShellHost(f"#reemote-authorizedkeysfile\n{UA_KEY_A}\n")
     assert await AuthorizedKeysFile.process(host, UA_KEYS_FILE) == f"{UA_KEY_A}\n"
     assert host.shells == [AuthorizedKeysFile.command(UA_KEYS_FILE)]
     # Marker only: an existing empty file reads "", not None.
     assert (
         await AuthorizedKeysFile.process(
-            CannedShellHost("#reemote5-authorizedkeysfile\n"), UA_KEYS_FILE
+            CannedShellHost("#reemote-authorizedkeysfile\n"), UA_KEYS_FILE
         )
         == ""
     )
@@ -6457,7 +6459,7 @@ def test_rewrite_keys_transform_is_baseline_whole_file_semantics():
             ],
         ),
         # The baseline's long_inline_key_not_a_file.yaml: an inline key longer
-        # than PATH_MAX still lands because reemote5 never treats
+        # than PATH_MAX still lands because reemote never treats
         # public_keys entries as controller-side paths (dropped branch).
         (
             {
@@ -7107,9 +7109,10 @@ EH_PATH = "/etc/hosts"
 # The dest-derived spool and the install inner script -- the text inside the
 # ``sh -c '...'`` wrapper the install descriptor emits.
 EH_SPOOL = _hosts_spool_path(EH_PATH)
+EH_SPOOL_DIR = EH_SPOOL.rsplit("/", 1)[0]
 EH_INSTALL_INNER = (
     f"mkdir -p /etc && cp {EH_SPOOL} {EH_PATH} && "
-    f"chmod 0644 {EH_PATH} && rm -f {EH_SPOOL}"
+    f"chmod 0644 {EH_PATH} && rm -rf {EH_SPOOL_DIR}"
 )
 # The baseline's own fact fixture (tests/facts/server.EtcHosts/etc_hosts.json):
 # comments, tabs, a duplicate IP and a one-token line, reused verbatim.
@@ -7249,9 +7252,10 @@ def test_etc_hosts_install_command_shell_rendering():
     # substring of the quoted text.
     path = "/etc dir/hosts file"
     spool = _hosts_spool_path(path)
+    spool_dir = spool.rsplit("/", 1)[0]
     inner = shlex.split(EtcHostsInstallCommand(spool=spool, dest=path).shell())[2]
     assert inner.startswith("mkdir -p '/etc dir' && ")
-    assert inner.endswith(f"&& rm -f {spool}")
+    assert inner.endswith(f"&& rm -rf {spool_dir}")
 
 
 def test_hosts_spool_path_is_dest_derived_and_deterministic():
@@ -7261,7 +7265,7 @@ def test_hosts_spool_path_is_dest_derived_and_deterministic():
     assert _hosts_spool_path(EH_PATH) == _hosts_spool_path(EH_PATH)
     assert _hosts_spool_path("/etc/hosts.custom") != EH_SPOOL
     digest = hashlib.sha1(EH_PATH.encode()).hexdigest()[:16]
-    assert EH_SPOOL == f"/tmp/reemote5-server-etc-hosts-{digest}"
+    assert EH_SPOOL == f"/tmp/reemote-server-etc-hosts-{digest}/hosts"
 
 
 @pytest.mark.parametrize(
@@ -7629,9 +7633,10 @@ async def test_etc_hosts_dry_run_sends_nothing():
 LG_PATH = "/etc/locale.gen"
 LG_LOCALE = "fr_FR.UTF-8"
 LG_SPOOL = _locale_spool_path(LG_PATH)
+LG_SPOOL_DIR = LG_SPOOL.rsplit("/", 1)[0]
 LG_INSTALL_INNER = (
     f"mkdir -p /etc && cp {LG_SPOOL} {LG_PATH} && "
-    f"chmod 0644 {LG_PATH} && rm -f {LG_SPOOL}"
+    f"chmod 0644 {LG_PATH} && rm -rf {LG_SPOOL_DIR}"
 )
 # A miniature locale.gen: header comment, an unrelated commented definition,
 # an uncommented one, the commented target and a near-miss @euro variant the
@@ -7722,9 +7727,10 @@ def test_locale_install_command_shell_rendering():
     # substring of the quoted text.
     path = "/etc dir/locale gen"
     spool = _locale_spool_path(path)
+    spool_dir = spool.rsplit("/", 1)[0]
     inner = shlex.split(LocaleInstallCommand(spool=spool, dest=path).shell())[2]
     assert inner.startswith("mkdir -p '/etc dir' && ")
-    assert inner.endswith(f"&& rm -f {spool}")
+    assert inner.endswith(f"&& rm -rf {spool_dir}")
 
 
 def test_locale_gen_command_rendering():
@@ -7744,7 +7750,7 @@ def test_locale_spool_path_is_dest_derived_and_deterministic():
     assert _locale_spool_path(LG_PATH) == _locale_spool_path(LG_PATH)
     assert _locale_spool_path("/etc/locale.gen.custom") != LG_SPOOL
     digest = hashlib.sha1(LG_PATH.encode()).hexdigest()[:16]
-    assert LG_SPOOL == f"/tmp/reemote5-server-locale-{digest}"
+    assert LG_SPOOL == f"/tmp/reemote-server-locale-{digest}/locale"
 
 
 async def test_locale_enable_plans_spool_install_and_gen():
@@ -8009,9 +8015,10 @@ SL_PATH = "/etc/security/limits.conf"
 # The dest-derived spool and the install inner script -- the text inside the
 # ``sh -c '...'`` wrapper the install descriptor emits.
 SL_SPOOL = _security_limit_spool_path(SL_PATH)
+SL_SPOOL_DIR = SL_SPOOL.rsplit("/", 1)[0]
 SL_INSTALL_INNER = (
     f"mkdir -p /etc/security && cp {SL_SPOOL} {SL_PATH} && "
-    f"chmod 0644 {SL_PATH} && rm -f {SL_SPOOL}"
+    f"chmod 0644 {SL_PATH} && rm -rf {SL_SPOOL_DIR}"
 )
 # A stock limits.conf: header comment plus a hard limit that never matches
 # the anchored soft/nofile/* pattern, so the desired line appends.
@@ -8115,9 +8122,10 @@ def test_security_limit_install_command_shell_rendering():
     # substring of the quoted text.
     path = "/etc dir/limits conf"
     spool = _security_limit_spool_path(path)
+    spool_dir = spool.rsplit("/", 1)[0]
     inner = shlex.split(SecurityLimitInstallCommand(spool=spool, dest=path).shell())[2]
     assert inner.startswith("mkdir -p '/etc dir' && ")
-    assert inner.endswith(f"&& rm -f {spool}")
+    assert inner.endswith(f"&& rm -rf {spool_dir}")
 
 
 def test_security_limit_spool_path_is_dest_derived_and_deterministic():
@@ -8127,7 +8135,7 @@ def test_security_limit_spool_path_is_dest_derived_and_deterministic():
     assert _security_limit_spool_path(SL_PATH) == _security_limit_spool_path(SL_PATH)
     assert _security_limit_spool_path("/etc/security/limits.conf.custom") != SL_SPOOL
     digest = hashlib.sha1(SL_PATH.encode()).hexdigest()[:16]
-    assert SL_SPOOL == f"/tmp/reemote5-server-security-limit-{digest}"
+    assert SL_SPOOL == f"/tmp/reemote-server-security-limit-{digest}/security-limit"
 
 
 async def test_security_limit_appends_and_plans_the_pair():

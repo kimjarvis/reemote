@@ -27,7 +27,7 @@ never forwarded to the operation.
 
 --->
 
-::: reemote5.modules.systemd.systemd
+::: reemote.modules.systemd.systemd
     options:
       show_root_heading: false
       members:

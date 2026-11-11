@@ -1,6 +1,6 @@
 # flatpak module
 
-::: reemote5.modules.flatpak.flatpak
+::: reemote.modules.flatpak.flatpak
     options:
       show_root_heading: false
       members:
@@ -13,7 +13,7 @@
 
 <!---
 
-`reemote5.modules.flatpak.flatpak` holds the flatpak facts and the
+`reemote.modules.flatpak.flatpak` holds the flatpak facts and the
 `flatpak.packages` operation. `FlatpakPackage` reads one installed flatpak
 package's identity — its reverse-domain application `id`, its full install
 `ref` and its installed `version` — from the indented label rows of

@@ -3,7 +3,7 @@
 
 """Example: set ufw's logging level on real CentOS hosts.
 
-This is a *usage* example, not part of the library. It drives reemote5's
+This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
@@ -63,7 +63,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

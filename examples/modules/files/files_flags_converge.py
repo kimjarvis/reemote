@@ -9,7 +9,7 @@ clears it again in the same run, so a rerun re-applies the same ``chattr +i``
 then ``chattr -i`` cycle), this one is a plain **converge-to-state** deploy:
 every request declares a desired end state and never undoes it, so the second
 invocation of the exact same script reports *no change on every step*. That is
-the literal idempotence guarantee reemote5 operations are built around, shown
+the literal idempotence guarantee reemote operations are built around, shown
 across two different converge dimensions at once:
 
 * ``files.file`` with a fixed ``mode``. It reads the ``File`` fact and yields
@@ -65,7 +65,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -84,7 +84,7 @@ from reemote5 import (
 # the create unprivileged whatever account the inventory logs in as; only the
 # chattr is elevated. A distinct path from the self-reversing sibling so the two
 # never collide.
-MARKER = "/tmp/reemote5-flags-converge.txt"
+MARKER = "/tmp/reemote-flags-converge.txt"
 
 # The octal mode to converge onto. Deliberately *not* 644 (what a bare
 # ``touch`` leaves), so the create run genuinely issues a ``chmod`` and a

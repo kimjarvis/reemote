@@ -3,7 +3,7 @@
 
 """Example: analyze a table's index statistics on real CentOS hosts.
 
-This is a *usage* example, not part of the library. It drives reemote5's
+This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
@@ -20,7 +20,7 @@ two-phase execution model end to end over a **real SSH transport**
    dropped namespace-wide).
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``mysql.optimize`` is a reemote5-original operation running
+``mysql.optimize`` is a reemote-original operation running
 OPTIMIZE TABLE -- or ANALYZE/CHECK/REPAIR through ``action`` -- over a
 list of tables in one database, in a single statement. It is STATELESS
 like the baseline's dump/load: maintenance is a periodic action, not a
@@ -67,7 +67,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

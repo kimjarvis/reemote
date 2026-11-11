@@ -63,7 +63,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Directory,
     Host,

@@ -3,7 +3,7 @@
 
 """Example: tune a PostgreSQL configuration parameter on real CentOS hosts.
 
-This is a *usage* example, not part of the library. It drives reemote5's
+This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
@@ -16,7 +16,7 @@ two-phase execution model end to end over a **real SSH transport**
    objects, each guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``postgresql.setting`` is a reemote5-original operation modeled on
+``postgresql.setting`` is a reemote-original operation modeled on
 Ansible's ``postgresql_set``, tuning a GUC through ALTER SYSTEM SET/RESET
 -- which writes ``postgresql.auto.conf``, overriding the main
 configuration file (the config-file-rewrite apply method is deliberately
@@ -82,7 +82,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

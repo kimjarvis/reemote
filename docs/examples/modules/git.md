@@ -23,7 +23,7 @@ facts themselves are documented on the
 
 The configuration operation: `git.config` mirrors the baseline's `git.config`,
 ensuring a git configuration item at the repository, user or system level.
-It reads the [`GitConfig`][reemote5.modules.git.git.GitConfig] fact for the
+It reads the [`GitConfig`][reemote.modules.git.git.GitConfig] fact for the
 current value list of the key, so a single-valued key is written only when
 its list is not exactly `[value]` and a `multi_value` key only when `value`
 is absent from the list — otherwise the request is a no-op reporting
@@ -53,14 +53,14 @@ fresh repository or reconciling an existing one. It branches on whether
 absent repository yields one `git clone` command carrying `branch` and
 `depth`, while an existing one reconciles `origin` against `src` (writing
 `git remote set-url origin <src>` only when the current
-[`GitConfig`][reemote5.modules.git.git.GitConfig] URL differs), switches
+[`GitConfig`][reemote.modules.git.git.GitConfig] URL differs), switches
 branch when the requested one differs from
-[`GitBranch`][reemote5.modules.git.git.GitBranch] (a `git fetch` followed by
+[`GitBranch`][reemote.modules.git.git.GitBranch] (a `git fetch` followed by
 a `git checkout`) and — when `branch` names a tag
-([`GitTag`][reemote5.modules.git.git.GitTag]) — detaches HEAD onto it and
+([`GitTag`][reemote.modules.git.git.GitTag]) — detaches HEAD onto it and
 skips the pull. Otherwise `pull` (default `True`) compares
-[`GitLocalCommit`][reemote5.modules.git.git.GitLocalCommit] against
-[`GitRemoteBranchCommit`][reemote5.modules.git.git.GitRemoteBranchCommit] and
+[`GitLocalCommit`][reemote.modules.git.git.GitLocalCommit] against
+[`GitRemoteBranchCommit`][reemote.modules.git.git.GitRemoteBranchCommit] and
 issues one `git pull` only when the two differ (the baseline's `skip_pull`); a
 remote reset always pulls because the cached remote tip was gathered against
 the old origin. `depth`, `rebase`, `fetch_tags` and `force` land on the verbs
@@ -102,7 +102,7 @@ main repository, so `main` first drives a small idempotent `git` install
 deploy (`dnf.packages` under `sudo=True`), and the deploy opens with a
 `git.repo` request cloning the public
 `https://github.com/octocat/Hello-World.git` demo repository into
-`/tmp/reemote5-app` before the worktree requests. The script yields the same
+`/tmp/reemote-app` before the worktree requests. The script yields the same
 add request twice with `pull=False` — the second is a guaranteed no-op in the
 apply phase,
 because the first add is visible to it through the fresh per-step fact cache

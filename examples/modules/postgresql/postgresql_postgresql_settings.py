@@ -29,7 +29,7 @@ driving the two-phase execution model:
    ``PostgresqlSetting`` entries (``name``, ``setting``, ``unit``,
    ``source``, ``pending_restart``) with ``json.dumps(..., indent=2)``.
 
-The fact is a reemote5-original visibility fact (the baseline has no settings
+The fact is a reemote-original visibility fact (the baseline has no settings
 fact): it selects every GUC from ``pg_settings`` -- the value as text in
 the parameter's own unit, where the value came from, and whether a
 restart is still pending -- the foundation for configuration-drift
@@ -70,7 +70,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

@@ -4,7 +4,7 @@
 """Example: gather the ``firewalld.FirewalldDefaultZone`` fact on real CentOS hosts.
 
 This is a *usage* example, not part of the library. Where
-``examples/modules/firewalld/firewalld_default_zone.py`` drives reemote5's
+``examples/modules/firewalld/firewalld_default_zone.py`` drives reemote's
 two-phase execution model (a deploy generator of operations run through
 ``run``), this one reads a single **fact** directly over the same *real
 SSH transport* (asyncssh):
@@ -29,7 +29,7 @@ SSH transport* (asyncssh):
    across the inventory with ``asyncio.gather`` and returns a
    host-name-keyed mapping -- then print each host's zone name.
 
-``FirewalldDefaultZone`` is a reemote5 original (the baseline ships no
+``FirewalldDefaultZone`` is a reemote original (the baseline ships no
 firewalld module): it answers ``firewall-cmd --get-default-zone`` -- the
 zone that connections and interfaces land in when nothing binds them
 explicitly. Unlike the other firewalld facts there is no ``permanent``
@@ -60,7 +60,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     FirewalldDefaultZone,
     Host,

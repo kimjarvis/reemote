@@ -4,7 +4,7 @@
 """Clear a systemd unit's failed state with ``systemd.reset_failed``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root and
@@ -20,7 +20,7 @@ uses the *default* factory (``Host.from_inventory``), opening real asyncssh
 connections that ``run`` closes when it finishes. The path is resolved from
 ``__file__``, so the example works from any working directory.
 
-``systemd.reset_failed`` is a reemote5 original. The baseline folds reset-failed
+``systemd.reset_failed`` is a reemote original. The baseline folds reset-failed
 into ``systemd.service`` (the enhanced ``service`` keeps a ``reset_failed``
 flag); this standalone operation covers the reset-only case. It is idempotent:
 it reads the ``SystemdServiceState`` fact and yields ``systemctl reset-failed``
@@ -52,7 +52,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

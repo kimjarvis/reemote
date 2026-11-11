@@ -34,7 +34,7 @@ inventory comes from the shared ``inventory.json`` in the project root:
    mapping -- then print each host's release string (or ``null``) with
    ``json.dumps(..., indent=2)``.
 
-``OpenrcVersion`` is a reemote5 original: the baseline's ``openrc`` namespace
+``OpenrcVersion`` is a reemote original: the baseline's ``openrc`` namespace
 ships no version fact, so nothing can adapt to the OpenRC release present.
 The ``openrc`` binary answers ``--version`` with one banner line --
 ``openrc (OpenRC) 0.54.1`` -- and the fact returns the last token, the
@@ -67,7 +67,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

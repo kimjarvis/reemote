@@ -1,9 +1,9 @@
 # Action examples
 
 Scripts under `examples/actions/` — runnable demonstrations of
-[`action.Shell`][reemote5.actions.Shell],
-[`Script`][reemote5.actions.Script] (also reachable as `server.script`),
-[`WaitForConnection`][reemote5.actions.WaitForConnection] and
+[`action.Shell`][reemote.actions.Shell],
+[`Script`][reemote.actions.Script] (also reachable as `server.script`),
+[`WaitForConnection`][reemote.actions.WaitForConnection] and
 `gather_action`, the escape hatch for acting
 on servers outside the deploy model. Each reads the shared `inventory.json`
 with `load_inventory` and guards the `centos` group with `is_centos`
@@ -16,7 +16,7 @@ and the [Actions reference](../actions/actions.md) for the feature itself.
 ## Running a bespoke command
 
 `action_shell` fans a command out across the `centos` hosts with
-`gather_action` and inspects the [`Result`][reemote5.actions.Result] dicts —
+`gather_action` and inspects the [`Result`][reemote.actions.Result] dicts —
 `exit_status`, `stdout`, `stderr`. The `is_centos` guard filters the host list
 before the fan-out, so the `alpine` and `ubuntu` entries are reported as
 skipped and never contacted. It runs a command that succeeds
@@ -38,7 +38,7 @@ asks with `sudo=True`. The `is_centos` guard filters the host list before the
 fan-out. It runs `id` unprivileged (the login user) and elevated
 (root), showing that the elevated path rides the raw-result privileged seam —
 the command's own exit is data, but a *rejected credential* raises
-[`PrivilegeError`][reemote5.hosts.PrivilegeError].
+[`PrivilegeError`][reemote.hosts.PrivilegeError].
 
 ::: action_shell_sudo
     options:
@@ -47,7 +47,7 @@ the command's own exit is data, but a *rejected credential* raises
 ## Running a staged script
 
 `action_script` demonstrates `server.script` — the namespace alias of the
-[`Script`][reemote5.actions.Script] action — end to end: a deploy stages the
+[`Script`][reemote.actions.Script] action — end to end: a deploy stages the
 script with `files.put` (the action never transfers anything itself), then
 `gather_action` runs it. The staged file has no executable bit, so the first
 run falls back to `sh <path> <args>`; a `Shell` action adds `chmod +x` and the
@@ -63,7 +63,7 @@ exception. The `is_centos` guard filters the host list before each fan-out.
 ## Waiting for connections after a reboot
 
 `action_wait_for_connection` demonstrates
-[`WaitForConnection`][reemote5.actions.WaitForConnection]: the wait that
+[`WaitForConnection`][reemote.actions.WaitForConnection]: the wait that
 re-establishes SSH connections after a reboot, so the next deploy starts only
 once every selected host is reachable. The `is_centos` guard filters the host
 list before the fan-out, and the wait then selects with the fan-out's own

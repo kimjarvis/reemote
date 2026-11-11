@@ -16,10 +16,10 @@ from collections.abc import Generator
 
 import pytest
 
-from reemote5 import OperationRequest, op
-from reemote5.drivers import run, run_prepare
-from reemote5.hosts import Host, HostConnectionError
-from reemote5.modules import dnf
+from reemote import OperationRequest, op
+from reemote.drivers import run, run_prepare
+from reemote.hosts import Host, HostConnectionError
+from reemote.modules import dnf
 
 
 class UnreachableHost(Host):

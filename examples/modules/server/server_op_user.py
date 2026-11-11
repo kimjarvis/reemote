@@ -3,7 +3,7 @@
 
 """Example: create, adjust and remove a user account on real CentOS hosts.
 
-This is a *usage* example, not part of the library. It shows reemote5's
+This is a *usage* example, not part of the library. It shows reemote's
 ``server.user`` operation, baseline ``server.user`` parity for user
 accounts: the deploy creates a ``deploy`` service account with a login
 shell and a GECOS comment, puts it in the ``apps`` group, then *appends*
@@ -38,7 +38,7 @@ hashable for ``compose(dedupe=True)``, so a list would be rejected with
 by ``server.group`` requests, which the lockstep barrier completes before
 the account is touched. The baseline's ``public_keys``/``delete_keys`` options
 are deliberately dropped -- that branch rides ``files.line`` appends and
-an elevated ``files.put``, neither of which reemote5 has -- so the script
+an elevated ``files.put``, neither of which reemote has -- so the script
 manages no ``authorized_keys`` file; the baseline's plan-time ``Which`` guards
 are dropped too, so a missing ``useradd`` surfaces at apply as
 ``CommandNotFoundError`` from the exit status. ``password`` is also left
@@ -93,7 +93,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

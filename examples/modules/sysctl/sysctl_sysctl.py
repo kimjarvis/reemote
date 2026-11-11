@@ -30,7 +30,7 @@ two-phase execution model:
 
 ``Sysctl`` mirrors the baseline's ``server.Sysctl`` (the class was relocated to
 the ``sysctl`` namespace, the canonical home for everything sysctl, but
-the top-level ``reemote5.Sysctl`` import keeps working): with no arguments
+the top-level ``reemote.Sysctl`` import keeps working): with no arguments
 it runs ``sysctl -a 2>/dev/null || true`` and parses every setting; this
 example passes ``keys`` instead, so only the named settings are read (each
 key is shell-quoted, and an unknown key simply reads as absent). Values
@@ -59,7 +59,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

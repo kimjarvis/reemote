@@ -20,17 +20,17 @@ from collections.abc import Generator
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, OperationRequest, op
+from reemote.drivers import (
     command_shell,
     format_log,
     format_plan,
     run,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import files
-from reemote5.modules.files.files import CopyCommand
+from reemote.hosts import Host
+from reemote.modules import files
+from reemote.modules.files.files import CopyCommand
 from tests.simulated_host import SimulatedHost
 
 INVENTORY = [
@@ -192,7 +192,7 @@ async def test_copy_invalid_dest_fixture_raises():
 
 async def test_copy_absent_src_raises_in_both_phases():
     # The baseline's invalid_src.json logs softly while planning and raises
-    # only while executing; reemote5 is phase-unaware and deliberately
+    # only while executing; reemote is phase-unaware and deliberately
     # raises in both phases (the files.move strictness, kept).
     host = make_host(dest_stats={"mode": 700})
     for phase in ("prepare", "apply"):

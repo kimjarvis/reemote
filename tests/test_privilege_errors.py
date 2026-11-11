@@ -21,12 +21,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from reemote5 import OperationRequest, op
-from reemote5.core import FactCache, HostRuntime
-from reemote5.drivers import run, run_apply, send_command
-from reemote5.hosts import CommandError, Host, PrivilegeError
-from reemote5.modules import dnf
-from reemote5.modules.dnf.dnf import DnfInstallCommand
+from reemote import OperationRequest, op
+from reemote.core import FactCache, HostRuntime
+from reemote.drivers import run, run_apply, send_command
+from reemote.hosts import CommandError, Host, PrivilegeError
+from reemote.modules import dnf
+from reemote.modules.dnf.dnf import DnfInstallCommand
 
 # What sudo prints when the askpass helper keeps supplying a wrong password:
 # three attempts (the ``passwd_tries`` default), then it gives up and exits 1.
@@ -57,7 +57,7 @@ class RejectingSudoHost(Host):
             connection={"address": "10.0.0.1"},
             privilege={"sudo_user": "root", "sudo_password": PASSWORD},
         )
-        self._askpass_path = "/tmp/reemote5-askpass-cached"
+        self._askpass_path = "/tmp/reemote-askpass-cached"
         self.stderr = stderr
         self.exit_status = exit_status
 
@@ -198,7 +198,7 @@ class RejectingSuHost(Host):
             connection={"address": "10.0.0.1"},
             privilege={"su_user": "deploy", "su_password": PASSWORD},
         )
-        self._su_askpass_path = "/tmp/reemote5-su-askpass-cached"
+        self._su_askpass_path = "/tmp/reemote-su-askpass-cached"
         self.stderr = stderr
         self.exit_status = exit_status
 
@@ -271,7 +271,7 @@ class RejectingDoasHost(Host):
 
     Mirrors ``RejectingSudoHost`` for the passwordless doas path: ``_run_shell``
     returns doas's authorization-failure output for every command. doas is
-    passwordless in reemote5 (``doas -n``), so there is no password and no
+    passwordless in reemote (``doas -n``), so there is no password and no
     askpass helper to pre-seed -- only the ``doas_user`` from the inventory
     privilege section.
     """

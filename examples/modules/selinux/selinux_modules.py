@@ -4,7 +4,7 @@
 """Example: gather the ``selinux.Modules`` fact on real CentOS hosts.
 
 This is a *usage* example, not part of the library. Where
-``examples/modules/selinux/selinux_module.py`` drives reemote5's two-phase
+``examples/modules/selinux/selinux_module.py`` drives reemote's two-phase
 execution model (a deploy generator of operations run through ``run``),
 this one reads a single **fact** directly over the same *real SSH
 transport* (asyncssh):
@@ -30,7 +30,7 @@ transport* (asyncssh):
    mapping -- then print each host's raw list with
    ``json.dumps(..., indent=2)``.
 
-``Modules`` is a reemote5 original: the baseline's selinux namespace ships no
+``Modules`` is a reemote original: the baseline's selinux namespace ships no
 module fact, so custom-policy management has no visibility. ``semodule
 -lfull`` lists *every* module instance in the store as a ``priority name
 format [disabled]`` row -- unlike ``semodule -l``, which hides disabled
@@ -64,7 +64,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

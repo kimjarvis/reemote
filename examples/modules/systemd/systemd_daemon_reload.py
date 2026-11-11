@@ -5,7 +5,7 @@
 
 This is a *usage* example, not part of the library. It shows the stateless,
 non-idempotent half of systemd control over a **real SSH transport**
-(asyncssh), using reemote5's two-phase execution model:
+(asyncssh), using reemote's two-phase execution model:
 
 1. Read the target hosts from ``inventory.json`` in the project root and
    validate it with ``validate_inventory``.
@@ -43,7 +43,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

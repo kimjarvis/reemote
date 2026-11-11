@@ -3,7 +3,7 @@
 
 """Example: manage a marked block in a remote file (baseline files.block parity).
 
-This is a *usage* example, not part of the library. It is reemote5's answer to
+This is a *usage* example, not part of the library. It is reemote's answer to
 the baseline's ``files.block`` operation: no bespoke block editor is ported, because
 a managed block is fully expressible as a ``files.edit`` **content transform**.
 The ``block_transform`` factory below builds that transform from the same
@@ -15,7 +15,7 @@ differs.
 The factory mirrors the baseline's ``files.block`` semantics:
 
 * ``content`` (a ``str`` split on newlines, or a list of lines) is surrounded
-  by the ``marker`` lines -- ``# BEGIN REEMOTE5 BLOCK`` / ``# END REEMOTE5 BLOCK``
+  by the ``marker`` lines -- ``# BEGIN REEMOTE BLOCK`` / ``# END REEMOTE BLOCK``
   by default, with ``begin``/``end`` substituting the ``{mark}``
   placeholder. The the baseline default marker text is kept verbatim so blocks
   already managed by the baseline are recognized and updated in place, not
@@ -98,7 +98,7 @@ from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -115,7 +115,7 @@ from reemote5 import (
 
 # The baseline's default marker constants (facts/files.py), kept verbatim so blocks
 # already managed by the baseline's files.block are recognized and updated in place.
-MARKER_DEFAULT = "# {mark} REEMOTE5 BLOCK"
+MARKER_DEFAULT = "# {mark} REEMOTE BLOCK"
 MARKER_BEGIN_DEFAULT = "BEGIN"
 MARKER_END_DEFAULT = "END"
 
@@ -123,7 +123,7 @@ MARKER_END_DEFAULT = "END"
 # inventory logs in as, so the unprivileged scp transfer can create it. Seed it
 # with a "localhost" line to see the block positioned before that line; on an
 # absent file the block simply creates it.
-REMOTE_PATH = "/tmp/reemote5-block.txt"
+REMOTE_PATH = "/tmp/reemote-block.txt"
 
 # examples/modules/files/files_block.py -> the project root, so the inventory
 # is found whatever the current working directory is.
@@ -207,7 +207,7 @@ def block_transform(
     + escape_regex_characters: match ``line`` literally, escaping regex
       metacharacters first (the baseline's ``adjust_regex`` parity).
     + marker: the base marker string with a ``{mark}`` placeholder. Default
-      ``# {mark} REEMOTE5 BLOCK`` -- the baseline's own default, kept so existing
+      ``# {mark} REEMOTE BLOCK`` -- the baseline's own default, kept so existing
       baseline-managed blocks are recognized.
     + begin: the ``{mark}`` value for the opening marker (default ``BEGIN``).
     + end: the ``{mark}`` value for the closing marker (default ``END``).

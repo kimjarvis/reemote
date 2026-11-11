@@ -29,7 +29,7 @@ two-phase execution model:
    the key id, and returns a host-name-keyed mapping -- then print each
    host's metadata dict as JSON.
 
-``GpgKeyDetails`` is a reemote5 original with no baseline counterpart: it
+``GpgKeyDetails`` is a reemote original with no baseline counterpart: it
 runs ``gpg --list-keys --with-colons -- <keyid>`` against the *executing
 user's* default keychain and parses the records into one
 ``GpgKeyMetadata`` dict -- id, fingerprint, validity, length, algorithm
@@ -60,7 +60,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     GpgKeyDetails,
     Host,

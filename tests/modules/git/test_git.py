@@ -7,7 +7,7 @@
 ``GitStatus``, ``GitSubmodule``, ``GitTag`` and ``GitTrackingBranch``,
 plus the ``config``, ``repo`` and ``worktree`` operations.
 
-Covers ``reemote5.modules.git.git``: the baseline's own fixtures over the
+Covers ``reemote.modules.git.git``: the baseline's own fixtures over the
 real-transport path (verbatim canned outputs and rendered command
 strings), parsing edge cases (the ``heads/``/``tags/`` prefix strip,
 ``key=value`` rows with and without ``=``, multi-valued keys, the SHA
@@ -15,7 +15,7 @@ fullmatch gate for both digest lengths, the tab-separated ``ls-remote``
 row, the porcelain ``...`` upstream token with and without its trailing
 status detail), empty output, the repo-path ``shlex`` quoting, the
 ``SimulatedHost`` seams (read, defaults, copy semantics) and the
-``gather_fact`` fan-out across hosts. The six reemote5-original facts
+``gather_fact`` fan-out across hosts. The six reemote-original facts
 (``GitHeadDetached``, ``GitIsRepo``, ``GitRemoteUrl``,
 ``GitSshKeyConfigured``, ``GitStatus`` and ``GitSubmodule``) have no
 baseline fixture, so they are exercised with realistic canned output plus
@@ -56,9 +56,9 @@ them.
 
 import pytest
 
-import reemote5
-from reemote5.core import FactCache, OpContext, OperationError, op
-from reemote5.drivers import (
+import reemote
+from reemote.core import FactCache, OpContext, OperationError, op
+from reemote.drivers import (
     command_shell,
     format_log,
     format_plan,
@@ -68,9 +68,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import git
-from reemote5.modules.git.git import (
+from reemote.hosts import Host
+from reemote.modules import git
+from reemote.modules.git.git import (
     GitBranch,
     GitCheckoutCommand,
     GitCloneCommand,
@@ -213,7 +213,7 @@ async def test_git_config_parses_baseline_repo_fixture():
 
 def test_git_config_parse_splits_on_the_first_equals_only():
     # A value may itself carry "="; rows without one are skipped (the baseline
-    # would raise ValueError on them -- reemote5 hardens the parser).
+    # would raise ValueError on them -- reemote hardens the parser).
     assert GitConfig.parse(
         [
             "url.https://example.com/.insteadof=git@example.com:",
@@ -274,7 +274,7 @@ async def test_git_config_seam_returns_a_copy():
 
 
 async def test_git_head_detached_reads_an_attached_head():
-    # A reemote5-original fact: on a branch `git symbolic-ref -q HEAD`
+    # A reemote-original fact: on a branch `git symbolic-ref -q HEAD`
     # succeeds, which the wrapped probe reports as "attached" -> False.
     host = CannedShellHost("attached\n")
     assert await GitHeadDetached.process(host, "myrepo") is False
@@ -330,7 +330,7 @@ async def test_git_head_detached_reads_the_simulated_seam():
 
 
 async def test_git_is_repo_reads_a_valid_work_tree():
-    # A reemote5-original fact: `git rev-parse --is-inside-work-tree` prints
+    # A reemote-original fact: `git rev-parse --is-inside-work-tree` prints
     # "true" in a valid work tree -> True.
     host = CannedShellHost("true\n")
     assert await GitIsRepo.process(host, "myrepo") is True
@@ -524,7 +524,7 @@ async def test_git_remote_branch_commit_reads_the_simulated_seam():
 
 
 async def test_git_remote_url_reads_the_fetch_url():
-    # A reemote5-original fact: `git remote get-url origin` prints the fetch
+    # A reemote-original fact: `git remote get-url origin` prints the fetch
     # URL behind the directory guard.
     host = CannedShellHost("git@github.com:acme/app.git\n")
     assert await GitRemoteUrl.process(host, "myrepo") == "git@github.com:acme/app.git"
@@ -612,7 +612,7 @@ async def test_git_remote_url_gathers_across_hosts():
 
 
 async def test_git_ssh_key_configured_reads_an_authenticated_probe():
-    # A reemote5-original fact, and the one git fact that is not repo-scoped:
+    # A reemote-original fact, and the one git fact that is not repo-scoped:
     # the in-shell probe normalizes ssh's exit status to a single token, so a
     # successful handshake (any status but 255) prints "authenticated".
     host = CannedShellHost("authenticated\n")
@@ -676,7 +676,7 @@ async def test_git_ssh_key_configured_reads_the_simulated_seam():
 
 
 async def test_git_status_reads_a_dirty_work_tree():
-    # A reemote5-original fact: `git status --porcelain` rows fold into the
+    # A reemote-original fact: `git status --porcelain` rows fold into the
     # staged/unstaged/untracked summary behind the directory guard.
     host = CannedShellHost(" M app.py\n?? new.txt\n")
     assert await GitStatus.process(host, "myrepo") == {
@@ -777,7 +777,7 @@ async def test_git_status_seam_returns_a_copy():
 
 
 async def test_git_submodule_reads_the_rows():
-    # A reemote5-original fact: each `git submodule status` row folds into a
+    # A reemote-original fact: each `git submodule status` row folds into a
     # path/sha/state/describe dict behind the directory guard.
     host = CannedShellHost(f" {SHA40} vendor/foo (heads/main)\n")
     assert await GitSubmodule.process(host, "myrepo") == [
@@ -1041,8 +1041,8 @@ def test_git_namespace_exports_every_fact():
     ):
         module_cls = getattr(git.git, name)
         assert getattr(git, name) is module_cls
-        assert getattr(reemote5, name) is module_cls
-    assert reemote5.git is git
+        assert getattr(reemote, name) is module_cls
+    assert reemote.git is git
 
 
 def test_git_namespace_exports_the_config_operation_and_descriptor():
@@ -1051,8 +1051,8 @@ def test_git_namespace_exports_the_config_operation_and_descriptor():
     # all three sites like the other command descriptors.
     assert git.config is git.git.config
     assert git.GitConfigCommand is git.git.GitConfigCommand
-    assert reemote5.GitConfigCommand is git.git.GitConfigCommand
-    assert not hasattr(reemote5, "config")
+    assert reemote.GitConfigCommand is git.git.GitConfigCommand
+    assert not hasattr(reemote, "config")
 
 
 def test_git_namespace_exports_the_worktree_operation_and_descriptors():
@@ -1067,14 +1067,14 @@ def test_git_namespace_exports_the_worktree_operation_and_descriptors():
     ):
         module_cls = getattr(git.git, name)
         assert getattr(git, name) is module_cls
-        assert getattr(reemote5, name) is module_cls
-    assert not hasattr(reemote5, "worktree")
+        assert getattr(reemote, name) is module_cls
+    assert not hasattr(reemote, "worktree")
 
 
 # --- config operation --------------------------------------------------------
 
 # The baseline's git.config fixtures render the scope selector first, then --add
-# for a multi-valued key, then the key and value. reemote5 shlex-quotes the
+# for a multi-valued key, then the key and value. reemote shlex-quotes the
 # value (the baseline wraps it in literal double quotes), so a plain value renders
 # bare -- command parity holds for ordinary keys and values.
 GIT_CONFIG_GLOBAL_SHELL = "git config --global key value"
@@ -1365,7 +1365,7 @@ async def test_git_config_privilege_sudo_flows_into_the_log():
 
 # The baseline's git.worktree renders ``cd <repo> && git worktree add ...`` to
 # create, ``cd <worktree> && git worktree remove .`` to remove and
-# ``cd <worktree> && git pull[...]`` to update. reemote5 shlex-quotes every
+# ``cd <worktree> && git pull[...]`` to update. reemote shlex-quotes every
 # operand (the baseline uses raw QuoteString interpolation), so plain paths quote
 # to themselves and command parity holds for ordinary values.
 GIT_WORKTREE_ADD_SHELL = "cd /srv/app && git worktree add /srv/wt"
@@ -1619,7 +1619,7 @@ async def test_git_worktree_absorbs_unknown_kwargs():
 
 
 async def test_git_worktree_requires_repo_when_creating():
-    # Create with no repo -> ValueError (reemote5's argument-validation idiom,
+    # Create with no repo -> ValueError (reemote's argument-validation idiom,
     # raised before the repo/.git probe).
     host = SimulatedHost(name="h")
     with pytest.raises(ValueError, match="repo must be specified"):
@@ -1757,7 +1757,7 @@ async def test_git_worktree_privilege_sudo_flows_into_the_log():
 # --- repo operation ----------------------------------------------------------
 
 # The baseline's git.repo renders ``cd <dest> && git clone <src> ... .`` because it
-# first mkdir -p's ``dest`` and clones into ``.``. reemote5 deliberately drops
+# first mkdir -p's ``dest`` and clones into ``.``. reemote deliberately drops
 # the ensure-directory step (there is no files.directory to delegate to), so
 # the clone descriptor names ``dest`` itself and needs no ``cd`` prefix. Every
 # other verb keeps the baseline's ``cd <dest> &&`` shape, and the baseline's final
@@ -1782,7 +1782,7 @@ async def materialize_repo(host: Host, **kwargs):
 def test_git_clone_command_renders_flags():
     # The baseline's clone.json / clone_depth.json / branch_pull.json fixtures
     # order the flags ``--depth N --branch B <dest>`` after the src, exactly
-    # as reemote5 does -- but without the baseline's leading ``cd <dest> &&``
+    # as reemote does -- but without the baseline's leading ``cd <dest> &&``
     # because the ensure-directory step is dropped.
     assert GitCloneCommand(src="myrepo", dest="/home/myrepo").shell() == (
         GIT_CLONE_SHELL
@@ -1883,7 +1883,7 @@ async def test_git_repo_clones_a_missing_repository():
 
 
 async def test_git_repo_clone_carries_depth_and_branch():
-    # clone_depth.json -- reemote5 drops the trailing chown -R <user> that
+    # clone_depth.json -- reemote drops the trailing chown -R <user> that
     # The baseline emits after the clone, so only the clone is yielded.
     host = SimulatedHost(name="h")
     _ctx, commands = await materialize_repo(

@@ -4,7 +4,7 @@
 """Carve a per-domain SELinux exception with ``selinux.permissive_domain``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -26,7 +26,7 @@ it finishes.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``selinux.permissive_domain`` is a reemote5 original (the baseline ships no
+``selinux.permissive_domain`` is a reemote original (the baseline ships no
 permissive-domain operation): it adds or removes one domain from the
 permissive list -- here ``httpd_t``, the web server's domain -- so its
 denials are logged but not enforced while the rest of the system stays
@@ -74,7 +74,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

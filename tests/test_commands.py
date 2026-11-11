@@ -14,8 +14,8 @@ the rendering, the elevation prefixes and both ``send_command`` paths.
 
 from types import SimpleNamespace
 
-from reemote5 import Host, StringCommand
-from reemote5.drivers import command_shell, send_command
+from reemote import Host, StringCommand
+from reemote.drivers import command_shell, send_command
 from tests.simulated_host import SimulatedHost
 
 

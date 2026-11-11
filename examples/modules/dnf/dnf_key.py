@@ -3,7 +3,7 @@
 
 """Manage the rpm keyring: import a GPG key from a stream, remove a legacy key.
 
-This is a *usage* example, not part of the library. It shows reemote5's
+This is a *usage* example, not part of the library. It shows reemote's
 ``dnf.key`` operation -- a non-idempotent import direction plus an idempotent
 ``present=False`` removal direction -- driven end to end over a **real SSH
 transport** (asyncssh):
@@ -31,7 +31,7 @@ driven by ``asyncio.run``.
 
 The source is an **IO-like object only** -- the baseline's ``dnf.key`` takes a
 ``src`` that is a *filename or URL* the target host reads directly
-(``rpm --import <src>``), but reemote5 deliberately has no controller-side
+(``rpm --import <src>``), but reemote deliberately has no controller-side
 file locations, so a ``str`` ``src`` raises ``ValueError`` and the key content
 must be handed over as a stream: here a module-level ``io.BytesIO``. Two rules
 follow. The stream must be *seekable*: it is rewound to position 0 before it
@@ -51,7 +51,7 @@ elevated), then an elevated ``rpm --import`` of that spool file -- wrapped in
 writes to the root-owned rpm keyring, so the request is flagged ``sudo=True``
 and the driver elevates only the shell half, never the scp half.
 
-The second request shows the ``present=False`` direction -- a reemote5
+The second request shows the ``present=False`` direction -- a reemote
 extension beyond the baseline's import-only ``dnf.key``, mirroring Ansible's
 ``rpm_key state=absent`` (the step the ansible-datadog role loops over
 ``datadog_rpm_remove_keys`` to drop the legacy ``4172A230`` signing key).
@@ -101,7 +101,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -233,7 +233,7 @@ async def main() -> None:
 
         # Real run: prepare, then apply in lockstep across hosts over SSH. Each
         # eligible host spools the key over scp, runs the elevated
-        # rpm --import and removes the spool file, then erases the legacy
+        # rpm --import and removes the spool directory, then erases the legacy
         # key's pseudo-package if the RpmGpgKeys fact reports it present.
         plans, report, _hosts = await run(inventory, deploy)
         print("\n== Run log (apply phase) ==")

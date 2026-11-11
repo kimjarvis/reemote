@@ -57,9 +57,9 @@ change and render `$ sudo dnf update -y`.
 The repository-file operation: `dnf.repo` builds an
 `/etc/yum.repos.d/<name>.repo` file from its arguments (`baseurl`,
 `description`, `gpgkey`, …) and writes it only when the content differs from
-what the [`DnfRepoFile`][reemote5.modules.dnf.dnf.DnfRepoFile] fact reads back
+what the [`DnfRepoFile`][reemote.modules.dnf.dnf.DnfRepoFile] fact reads back
 — so re-running is a no-op. Where the baseline's `dnf.repo` can also *download* a
-remote `.repo` file, reemote5 has no download operation, so a URL `src` raises
+remote `.repo` file, reemote has no download operation, so a URL `src` raises
 `ValueError` and the file is always constructed locally from the arguments.
 The script yields the same repository request twice — the second is a
 guaranteed no-op in the apply phase, because the first write is visible to it
@@ -91,7 +91,7 @@ the ansible-datadog role's `makecache --disablerepo="*"
 touches another repo's cache. The operation is **non-idempotent** like
 `dnf.update`: it reads no fact and always runs — dnf itself is cheap on a
 warm cache. The role gates the refresh on the repo task's `changed` flag;
-reemote5 cannot gate on a same-deploy write determinism-safely, so the
+reemote cannot gate on a same-deploy write determinism-safely, so the
 example places the unconditional refresh right after the `dnf.repo`
 request that ensures the Docker CE file (with the same arguments as the
 repo example above, so the shared hosts converge on one content). Both
@@ -125,13 +125,13 @@ above.
 
 The package-file operation: `dnf.rpm` installs or removes a `.rpm` that already
 exists on the *target host*. It reads the
-[`RpmPackage`][reemote5.modules.dnf.dnf.RpmPackage] fact twice — once for the
+[`RpmPackage`][reemote.modules.dnf.dnf.RpmPackage] fact twice — once for the
 file's `name`/`version`, once for the installed package of that name — and
 counts the package as present only when the installed version matches the
 file's, so `present=True` installs with `rpm -i` only when it does not and is
 otherwise a no-op, while `present=False` removes it with `dnf remove -y <name>`.
 Where the baseline's `dnf.rpm` can also *download* a remote `.rpm` mid-deploy,
-reemote5 has no download operation, so a URL `src` raises `ValueError`. The
+reemote has no download operation, so a URL `src` raises `ValueError`. The
 example therefore stages the file itself first: a demo-side `curl` one-liner (a
 raw `StringCommand`, the same pattern as `apt_deb.py`'s `download_deb`)
 downloads `sl` — the small steam-locomotive `ls` joke, whose only library
@@ -161,7 +161,7 @@ directions. The import direction (`present=True`, the default) is
 **non-idempotent**: like the baseline's `dnf.key` it reads no fact and always
 reports a change (rpm itself deduplicates an already-imported key). Where
 the baseline's `src` is a *filename or URL* the target host reads directly
-(`rpm --import <src>`), reemote5 has no controller-side file locations, so the
+(`rpm --import <src>`), reemote has no controller-side file locations, so the
 source is a *stream only* — the example uses a module-level `io.BytesIO`,
 defined once so both phases pass the identical object (request equality
 compares it by identity), and a `str` `src` raises `ValueError`. The stream
@@ -175,14 +175,14 @@ in `sh -c` so the import *and* its cleanup `rm` both run as root — hence the
 request is flagged `sudo=True`.
 
 The script's second request shows the removal direction (`present=False`) —
-a reemote5 extension beyond the baseline's import-only operation, mirroring
+a reemote extension beyond the baseline's import-only operation, mirroring
 Ansible's `rpm_key state=absent` (the step the ansible-datadog role uses to
 drop the legacy `4172A230` signing key). An imported key lives in the rpm
 database as a `gpg-pubkey-<keyid>-<release>` pseudo-package, so removal names
 a `keyid` (8 hex digits, or the 16-digit long form matched by its last 8;
 case-insensitive), never a stream — passing `src` with `present=False`
 raises `ValueError`. Removal **is idempotent**: it compares the requested id
-against the [`RpmGpgKeys`][reemote5.modules.dnf.dnf.RpmGpgKeys] fact and
+against the [`RpmGpgKeys`][reemote.modules.dnf.dnf.RpmGpgKeys] fact and
 yields an elevated `rpm -e gpg-pubkey-…` only for keys actually present, so a
 host without the legacy key plans a no-op. The erase is a *plain* `sudo rpm
 -e` (a single command, no `sh -c` wrapper), so — like `dnf.rpm` above and
@@ -211,11 +211,11 @@ wrapped in `sh -c` and so apply cleanly even here.
 The application-stream operation: `dnf.module` enables a module stream
 (`dnf module enable -y <module>:<stream>`) or, with `enabled=False`, disables a
 module outright (`dnf module disable -y <module>`). Enabling compares against the
-[`DnfEnabledModules`][reemote5.modules.dnf.dnf.DnfEnabledModules] fact — a
+[`DnfEnabledModules`][reemote.modules.dnf.dnf.DnfEnabledModules] fact — a
 list of name-and-stream entries — so it is a no-op when the module is already
 enabled on exactly the requested stream, and re-enables onto the new stream when
 it currently sits on a different one; disabling compares against
-[`DnfDisabledModules`][reemote5.modules.dnf.dnf.DnfDisabledModules]. `stream` is
+[`DnfDisabledModules`][reemote.modules.dnf.dnf.DnfDisabledModules]. `stream` is
 required when `enabled=True` (a missing one raises `ValueError`, mirroring
 the baseline's `OperationValueError`). Enabling or disabling writes dnf's module
 state, so the request is flagged `sudo=True`. The script yields the same enable

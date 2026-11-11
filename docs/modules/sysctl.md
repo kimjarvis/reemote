@@ -5,7 +5,7 @@
 The `sysctl` namespace is the canonical home for everything sysctl — runtime
 visibility, persistent-configuration visibility and management. The `Sysctl`
 runtime fact was **relocated here from `server`**, which no longer exports
-it: the top-level `reemote5.Sysctl` binding now points at `sysctl.Sysctl`,
+it: the top-level `reemote.Sysctl` binding now points at `sysctl.Sysctl`,
 whose parse keeps the baseline's `server.Sysctl` semantics verbatim.
 
 the baseline ships no dedicated sysctl module — only `server.sysctl`, whose
@@ -35,15 +35,15 @@ the line is appended when absent, and `present=False` removes the key's
 lines — commented lines are never touched. `conf` manages a **whole file**
 from a tuple of `(key, value)` pairs (the `systemd.dropin` whole-file model:
 stale lines are replaced, not kept), defaulting to the
-`/etc/sysctl.d/99-reemote5.conf` drop-in so the legacy file and other
+`/etc/sysctl.d/99-reemote.conf` drop-in so the legacy file and other
 packages' drop-ins stay untouched. A tuple, not a dict: `op()` rejects
 unhashable request arguments.
 
 Both operations write root-owned `/etc` paths through the spool-transfer +
 elevated-install pattern (`systemd.dropin` / `dnf.repo`): an unprivileged scp
-spools the content to a fixed `/tmp` path, then an elevated `sh -c` creates
-the destination directory if needed, installs the file `0644` and removes
-the spool. A changed write is followed by a **scoped** `sysctl -p <file>`
+spools the content into a dest-derived `/tmp` directory, then an elevated `sh -c`
+creates the destination directory if needed, installs the file `0644` and removes
+the spool directory. A changed write is followed by a **scoped** `sysctl -p <file>`
 reload (`reload=False` defers the settings to the next boot) — scoped
 rather than `sysctl --system`, which would re-apply unrelated drop-ins too.
 Writing and applying need root, so flag the requests `sudo=True`; the
@@ -53,7 +53,7 @@ cannot be "unset" (a removed key keeps its live value until reboot).
 
 --->
 
-::: reemote5.modules.sysctl.sysctl
+::: reemote.modules.sysctl.sysctl
     options:
       show_root_heading: false
       members:

@@ -3,7 +3,7 @@
 
 """Example: ensure a logical-replication subscription on real CentOS hosts.
 
-This is a *usage* example, not part of the library. It drives reemote5's
+This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
@@ -16,7 +16,7 @@ two-phase execution model end to end over a **real SSH transport**
    objects, each guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``postgresql.subscription`` is a reemote5-original operation managing
+``postgresql.subscription`` is a reemote-original operation managing
 logical-replication subscriptions: it reads the
 ``PostgresqlSubscriptions`` fact for the database named by
 ``psql_database`` -- an absent subscription yields CREATE SUBSCRIPTION
@@ -82,7 +82,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

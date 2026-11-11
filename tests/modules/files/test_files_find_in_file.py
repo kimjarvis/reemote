@@ -3,7 +3,7 @@
 
 """Tests for the files module's ``FindInFile`` fact.
 
-Covers ``reemote5.modules.files.files.FindInFile``: the baseline's own six
+Covers ``reemote.modules.files.files.FindInFile``: the baseline's own six
 ``files.FindInFile`` fixtures over the real-transport path (matching
 lines, ``$USER`` interpolation on/off, a double-quote-bearing pattern,
 the missing-file None answer and the exists-sentinel [] answer), the
@@ -12,9 +12,9 @@ the missing-file None answer and the exists-sentinel [] answer), the
 None vs absent key, copy-on-read, ``gather_fact`` argument forwarding).
 """
 
-from reemote5.drivers import gather_fact
-from reemote5.hosts import Host
-from reemote5.modules.files.files import FindInFile
+from reemote.drivers import gather_fact
+from reemote.hosts import Host
+from reemote.modules.files.files import FindInFile
 from tests.simulated_host import SimulatedHost
 
 
@@ -32,8 +32,8 @@ class CannedShellHost(Host):
 
 
 # The baseline's fixture path and the fallback arm's sentinel for it.
-PATH = "/home/reemote5/mylink"
-SENTINEL = f"__reemote5_exists_{PATH}"
+PATH = "/home/reemote/mylink"
+SENTINEL = f"__reemote_exists_{PATH}"
 LINES_COMMAND = (
     f"grep -e test {PATH} 2> /dev/null || "
     f"( find {PATH} -type f > /dev/null && echo {SENTINEL} || true )"
@@ -102,14 +102,14 @@ async def test_find_in_file_parses_baseline_no_matches_fixture():
 def test_find_in_file_extended_regex_switches_to_grep_e():
     assert FindInFile.command("/f", "a|b", extended_regex=True) == (
         "grep -E -e 'a|b' /f 2> /dev/null || "
-        "( find /f -type f > /dev/null && echo __reemote5_exists_/f || true )"
+        "( find /f -type f > /dev/null && echo __reemote_exists_/f || true )"
     )
 
 
 def test_find_in_file_interpolation_escapes_embedded_double_quotes():
     assert FindInFile.command("/f", 'say "hi"', interpolate_variables=True) == (
         'grep -e "say \\"hi\\"" /f 2> /dev/null || '
-        "( find /f -type f > /dev/null && echo __reemote5_exists_/f || true )"
+        "( find /f -type f > /dev/null && echo __reemote_exists_/f || true )"
     )
 
 
@@ -119,12 +119,12 @@ def test_find_in_file_parse_recognises_the_sentinel_only_as_first_line():
     # with the prefix -- or names another path -- is just a matching line.
     assert FindInFile.parse([SENTINEL], PATH) == []
     assert FindInFile.parse(["x", SENTINEL], PATH) == ["x", SENTINEL]
-    assert FindInFile.parse([f"__reemote5_exists_{PATH}/other"], PATH) == [
-        f"__reemote5_exists_{PATH}/other"
+    assert FindInFile.parse([f"__reemote_exists_{PATH}/other"], PATH) == [
+        f"__reemote_exists_{PATH}/other"
     ]
     # A sentinel for a different path is not this file's exists marker.
-    assert FindInFile.parse(["__reemote5_exists_/elsewhere"], PATH) == [
-        "__reemote5_exists_/elsewhere"
+    assert FindInFile.parse(["__reemote_exists_/elsewhere"], PATH) == [
+        "__reemote_exists_/elsewhere"
     ]
 
 

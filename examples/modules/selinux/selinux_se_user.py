@@ -4,7 +4,7 @@
 """Example: gather the ``selinux.SEUser`` fact on real CentOS hosts.
 
 This is a *usage* example, not part of the library. Where
-``examples/modules/selinux/selinux_login.py`` drives reemote5's two-phase
+``examples/modules/selinux/selinux_login.py`` drives reemote's two-phase
 execution model (a deploy generator of operations run through ``run``),
 this one reads a single **fact** directly over the same *real SSH
 transport* (asyncssh):
@@ -30,7 +30,7 @@ transport* (asyncssh):
    mapping -- then print each host's raw dictionary with
    ``json.dumps(..., indent=2)``.
 
-``SEUser`` is a reemote5 original complementing ``SELogin``: the login
+``SEUser`` is a reemote original complementing ``SELogin``: the login
 mapping names a SELinux user, and this fact reports what that user *is*.
 ``semanage user -ln`` prints one ``user prefix level range roles...`` row
 per definition and the fact keys them by the SELinux user name, keeping
@@ -63,7 +63,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

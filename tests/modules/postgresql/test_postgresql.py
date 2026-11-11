@@ -6,13 +6,13 @@ the ``database``/``role``/``sql``/``dump``/``load``/``privilege``/
 ``membership``/``schema``/``extension``/``index``/``setting``/
 ``tablespace``/``publication``/``subscription`` operations.
 
-Covers ``reemote5.modules.postgresql.postgresql``. ``PostgresqlRoles`` and
+Covers ``reemote.modules.postgresql.postgresql``. ``PostgresqlRoles`` and
 ``PostgresqlDatabases`` mirror the baseline's ``postgres.PostgresRoles`` /
 ``PostgresDatabases``, so their real-transport parity reuses the baseline's own
 fact fixtures verbatim (canned ``psql -Ac`` output plus the name-keyed
 result), including the custom-connection command render (minus the
 ``PGPASSWORD`` prefix the namespace deliberately drops). The twelve
-reemote5-original facts have no upstream fixture, so they are exercised
+reemote-original facts have no upstream fixture, so they are exercised
 with realistic canned ``psql -Ac`` output plus their parsing edge cases
 (empty output, the ``(N rows)`` trailer, t/f bool coercion, the
 ``text[]`` array parse, and the credential-free column omissions).
@@ -27,9 +27,9 @@ import shlex
 
 import pytest
 
-import reemote5
-from reemote5.core import FactCache, OpContext, OperationError, op
-from reemote5.drivers import (
+import reemote
+from reemote.core import FactCache, OpContext, OperationError, op
+from reemote.drivers import (
     DeterminismError,
     command_shell,
     format_log,
@@ -40,9 +40,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import postgresql
-from reemote5.modules.postgresql.postgresql import (
+from reemote.hosts import Host
+from reemote.modules import postgresql
+from reemote.modules.postgresql.postgresql import (
     PostgresqlConnections,
     PostgresqlDatabaseCommand,
     PostgresqlDatabases,
@@ -174,12 +174,12 @@ def test_psql_sql_flag_order_and_quoting():
 ROLES_OUTPUT = """\
 rolname|rolsuper|rolinherit|rolcreaterole|rolcreatedb|rolcanlogin|rolreplication|rolconnlimit|rolpassword|rolvaliduntil|rolbypassrls|rolconfig|oid
 postgres|t|t|t|t|t|t|-1|********||t||10
-reemote5|t|t|f|f|t|f|-1|********||f||16384
+reemote|t|t|f|f|t|f|-1|********||f||16384
 (7 rows)
 """
 
 ROLES_FACT = {
-    "reemote5": {
+    "reemote": {
         "super": True,
         "inherit": True,
         "createrole": False,
@@ -221,7 +221,7 @@ async def test_roles_parses_baseline_fixture():
 
 async def test_roles_custom_connection_drops_the_password_prefix():
     # The baseline's multiple_custom_connection.json renders a PGPASSWORD=...
-    # prefix; reemote5 drops it (the namespace credentials decision) but
+    # prefix; reemote drops it (the namespace credentials decision) but
     # keeps the -U/-h/-p flag order and parses the same result.
     host = CannedShellHost(ROLES_OUTPUT)
     assert (
@@ -253,7 +253,7 @@ async def test_roles_reads_the_simulated_seam():
 async def test_roles_gathers_across_hosts():
     hosts = [
         SimulatedHost(name="web1", postgres_roles={"a": ROLES_FACT["postgres"]}),
-        SimulatedHost(name="web2", postgres_roles={"b": ROLES_FACT["reemote5"]}),
+        SimulatedHost(name="web2", postgres_roles={"b": ROLES_FACT["reemote"]}),
     ]
     result = await gather_fact(hosts, PostgresqlRoles)
     assert set(result) == {"web1", "web2"}
@@ -266,7 +266,7 @@ async def test_roles_gathers_across_hosts():
 DATABASES_OUTPUT = """\
 pg_encoding_to_char|datname|datdba|encoding|datcollate|datctype|datistemplate|datallowconn|datconnlimit|datlastsysoid|datfrozenxid|datminmxid|dattablespace|datacl|owner
 UTF8|postgres|10|6|en_US.UTF-8|en_US.UTF-8|f|t|-1|13052|548|1|1663||postgres
-UTF8|baseline_stuff|16384|6|en_US.UTF-8|en_US.UTF-8|f|t|-1|13052|548|1|1663||reemote5
+UTF8|baseline_stuff|16384|6|en_US.UTF-8|en_US.UTF-8|f|t|-1|13052|548|1|1663||reemote
 (4 rows)
 """
 
@@ -299,7 +299,7 @@ DATABASES_FACT = {
         "minmxid": 1,
         "tablespace": 1663,
         "acl": None,
-        "owner": "reemote5",
+        "owner": "reemote",
     },
 }
 
@@ -956,7 +956,7 @@ def test_postgresql_namespace_exports_operations_and_descriptors():
         "tablespace",
     ):
         assert getattr(postgresql, name) is getattr(postgresql.postgresql, name)
-        assert not hasattr(reemote5, name)
+        assert not hasattr(reemote, name)
     for name in (
         "PostgresqlDatabaseCommand",
         "PostgresqlDumpCommand",
@@ -975,7 +975,7 @@ def test_postgresql_namespace_exports_operations_and_descriptors():
     ):
         module_cls = getattr(postgresql.postgresql, name)
         assert getattr(postgresql, name) is module_cls
-        assert getattr(reemote5, name) is module_cls
+        assert getattr(reemote, name) is module_cls
 
 
 # --- database operation (baseline parity, extended) ---------------------------
@@ -996,7 +996,7 @@ def test_database_command_renders_baseline_create_fixtures():
 
 
 def test_database_command_renders_locales_with_quoted_encoding():
-    # add_database_locales.json deviation: reemote5 renders ENCODING as a
+    # add_database_locales.json deviation: reemote renders ENCODING as a
     # quoted literal (PostgreSQL accepts it identically to the baseline's bare
     # word); LC_COLLATE/LC_CTYPE keep the baseline's quoted-literal form. The
     # expected shell composes shlex.quote over the SQL text -- the quoting
@@ -1076,7 +1076,7 @@ async def test_database_create_resolves_a_known_tablespace():
 
 async def test_database_unknown_tablespace_raises_in_prepare():
     # The reworked OID resolution: the baseline compared the NAME against the
-    # fact's OID column (never matching); reemote5 fails fast instead.
+    # fact's OID column (never matching); reemote fails fast instead.
     host = SimulatedHost(name="h", postgres_tablespaces=[PG_DEFAULT_SPACE])
     with pytest.raises(OperationError, match="tablespace fast does not exist"):
         await materialize(
@@ -1174,7 +1174,7 @@ async def test_database_encoding_comparison_is_case_insensitive():
 
 
 async def test_database_alters_connection_limit_and_allow_connections():
-    # The reemote5 database-enhancement: ALLOW_CONNECTIONS joins the
+    # The reemote database-enhancement: ALLOW_CONNECTIONS joins the
     # alterable set alongside CONNECTION LIMIT.
     host = SimulatedHost(
         name="h", postgres_databases={"somedb": DATABASES_FACT["postgres"]}
@@ -1551,7 +1551,7 @@ async def test_load_seam_changes_no_catalog_state():
     assert host.postgres_databases == {}
 
 
-# --- privilege operation (reemote5-original) ---------------------------------
+# --- privilege operation (reemote-original) ---------------------------------
 
 
 def _grant_entry(
@@ -1974,7 +1974,7 @@ async def test_privilege_seam_grant_upgrade_and_revoke():
     assert host.postgres_privileges == {"postgres": []}
 
 
-# --- membership operation (reemote5-original) --------------------------------
+# --- membership operation (reemote-original) --------------------------------
 
 
 def test_membership_command_renders_grant_revoke_and_admin_forms():
@@ -2113,7 +2113,7 @@ async def test_membership_seam_grant_upgrade_downgrade_remove():
     assert host.postgres_role_memberships == []
 
 
-# --- schema operation (reemote5-original) ------------------------------------
+# --- schema operation (reemote-original) ------------------------------------
 
 
 def test_schema_command_renders_create_alter_and_drop():
@@ -2201,7 +2201,7 @@ async def test_schema_seam_create_reown_drop():
     assert host.postgres_schemas == {"postgres": []}
 
 
-# --- extension operation (reemote5-original) ---------------------------------
+# --- extension operation (reemote-original) ---------------------------------
 
 
 def test_extension_command_renders_create_alter_and_drop():
@@ -2332,7 +2332,7 @@ async def test_extension_seam_create_update_move_drop():
     assert host.postgres_extensions == {"postgres": []}
 
 
-# --- index operation (reemote5-original) -------------------------------------
+# --- index operation (reemote-original) -------------------------------------
 
 
 INDEX_ENTRY = {
@@ -2491,7 +2491,7 @@ async def test_index_seam_create_then_noop_then_drop():
     assert host.postgres_indexes == {"postgres": []}
 
 
-# --- setting operation (reemote5-original) -----------------------------------
+# --- setting operation (reemote-original) -----------------------------------
 
 
 MAX_CONNECTIONS_ENTRY = {
@@ -2607,7 +2607,7 @@ async def test_setting_seam_set_then_noop_then_reset():
     assert commands == []
 
 
-# --- tablespace operation (reemote5-original) --------------------------------
+# --- tablespace operation (reemote-original) --------------------------------
 
 
 def test_tablespace_command_renders_create_alter_and_drop():
@@ -2715,7 +2715,7 @@ async def test_tablespace_seam_create_reown_drop():
     assert host.postgres_tablespaces == []
 
 
-# --- publication operation (reemote5-original) -------------------------------
+# --- publication operation (reemote-original) -------------------------------
 
 
 PUBLICATION_ENTRY = {
@@ -2854,7 +2854,7 @@ async def test_publication_seam_create_own_then_noop_then_drop():
     assert host.postgres_publications == {"postgres": []}
 
 
-# --- subscription operation (reemote5-original) ------------------------------
+# --- subscription operation (reemote-original) ------------------------------
 
 
 SUBSCRIPTION_ENTRY = {

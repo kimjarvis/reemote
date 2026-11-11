@@ -3,7 +3,7 @@
 
 """Example: ensure the docker and lusers system groups exist on real CentOS hosts.
 
-This is a *usage* example, not part of the library. It shows reemote5's
+This is a *usage* example, not part of the library. It shows reemote's
 ``server.group`` operation, baseline ``server.group`` parity for adding
 and removing system groups: the deploy creates the ``docker`` group
 (the baseline's documented example) and a ``lusers`` system group with a fixed
@@ -59,7 +59,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

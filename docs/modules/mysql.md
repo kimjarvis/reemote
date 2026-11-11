@@ -1,6 +1,6 @@
 # mysql module
 
-::: reemote5.modules.mysql.mysql
+::: reemote.modules.mysql.mysql
     options:
       show_root_heading: false
       members:
@@ -47,7 +47,7 @@
 
 <!---
 
-`reemote5.modules.mysql.mysql` combines the MySQL facts and operations in a
+`reemote.modules.mysql.mysql` combines the MySQL facts and operations in a
 single source, extending the baseline's three-fact/six-operation `mysql`
 namespace toward complete control over and visibility into a server. Every
 fact and operation runs through the `mysql` client on the target host
@@ -68,7 +68,7 @@ through operation arguments, plans or logs.
 A fact is an asynchronous, queryable resource — never yielded by a
 generator — implemented as a `process` coroutine returning the raw value
 (over asyncssh in the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get]. The server-wide facts take
+[`FactCache.get`][reemote.core.FactCache.get]. The server-wide facts take
 only the five connection options (`mysql_user`, `mysql_host`, `mysql_port`,
 `mysql_database`, `mysql_defaults_file`); the scoped facts additionally
 take their target positionally: `MysqlTables(database)`,
@@ -93,7 +93,7 @@ role-grant lines — which the baseline's regex skips — are additionally
 captured under their backticked ``role``@``host`` key with the single
 privilege `ROLE`, so `mysql.role` can check membership idempotently.
 
-The ten reemote5-original facts answer the visibility gaps the baseline
+The ten reemote-original facts answer the visibility gaps the baseline
 leaves: `MysqlBinaryLogs` (the binlog file list and sizes from
 `SHOW BINARY LOGS`, `|| true`-guarded so a server with binary logging
 disabled reads as `[]`), `MysqlColumns` (types, nullability, defaults,
@@ -125,7 +125,7 @@ IS the global value).
 ## Operations
 
 An operation is an async generator: it reads facts through
-[`FactCache.get`][reemote5.core.FactCache.get], decides whether a change
+[`FactCache.get`][reemote.core.FactCache.get], decides whether a change
 is needed, records `ctx.changed`/`ctx.reason`, and yields one typed
 command descriptor per mutation — never touching the host itself. Reach
 operations through the namespace (`mysql.database`), not the top-level
@@ -154,7 +154,7 @@ global-privileges bundle, but replaces the creation-only `password`
 (`IDENTIFIED WITH`, e.g. `auth_socket`), which IS comparable against the
 fact's plugin column and so also alters on drift.
 
-The eight reemote5-original operations close the control gaps:
+The eight reemote-original operations close the control gaps:
 `mysql.table` creates/drops tables idempotent on EXISTENCE only — the
 structure of an existing table is never diffed (column definitions are
 free SQL text; inferring ALTERs would be a schema migration engine),
@@ -162,7 +162,7 @@ free SQL text; inferring ALTERs would be a schema migration engine),
 migration escape hatch. `mysql.index` creates/drops indexes idempotent
 against `MysqlIndexes`; an existing index whose columns, uniqueness or
 type differ raises
-[`OperationError`][reemote5.core.OperationError] rather than silently
+[`OperationError`][reemote.core.OperationError] rather than silently
 rebuilding a possibly constraint-backing index (the `postgresql.index`
 precedent), and FULLTEXT/SPATIAL render as the CREATE prefix.
 `mysql.variable` tunes global system variables through
@@ -202,7 +202,7 @@ The read-only fact-gathering scripts `mysql_mysql_databases.py`,
 `mysql_mysql_tables.py` and `mysql_mysql_variables.py` under
 [`examples/modules/mysql/`](../examples/modules/mysql.md) gather the
 thirteen facts respectively across an inventory with
-[`gather_fact`][reemote5.drivers.gather_fact] and print each host's
+[`gather_fact`][reemote.drivers.gather_fact] and print each host's
 result as JSON.
 
 The operation scripts (`mysql_database.py`, `mysql_user.py`,
@@ -210,7 +210,7 @@ The operation scripts (`mysql_database.py`, `mysql_user.py`,
 `mysql_table.py`, `mysql_index.py`, `mysql_variable.py`,
 `mysql_plugin.py`, `mysql_role.py`, `mysql_replica.py`, `mysql_kill.py`,
 `mysql_optimize.py`) under the same directory drive each operation
-through the two-phase [`run`][reemote5.drivers.run] — a dry-run plan then
+through the two-phase [`run`][reemote.drivers.run] — a dry-run plan then
 a real apply — over an inventory. The idempotent scripts yield the same
 request twice so the second is a guaranteed apply-phase no-op; the
 stateless ones (sql, dump, load, kill, optimize) always run.

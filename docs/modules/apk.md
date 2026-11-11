@@ -1,6 +1,6 @@
 [//]: # (## apk module)
 
-::: reemote5.modules.apk.apk
+::: reemote.modules.apk.apk
     options:
       show_root_heading: false
       members:
@@ -24,7 +24,7 @@
 
 <!---
 
-`reemote5.modules.apk.apk` combines the apk facts and the apk operations in a
+`reemote.modules.apk.apk` combines the apk facts and the apk operations in a
 single source. The facts are `ApkAutoremovablePackages`, the orphaned packages an
 `apk add --purge` would remove — each one an `ApkPackageVersion` dict
 naming it and its version-and-release — parsed from the `(N/M) Purging
@@ -50,13 +50,13 @@ facts lives the
 `ApkAutoremovablePackages` names with `apk add --purge`, the
 `apk.packages` operation, which installs, upgrades or removes packages by
 name, reading `ApkInstalledPackages` for exact-version idempotence, and the
-`apk.virtual` operation, a reemote5 original that manages an apk *virtual
+`apk.virtual` operation, a reemote original that manages an apk *virtual
 package* group (`apk add -t <tag>` to create it, `apk del <tag>` to remove
 it) with world-name idempotence against `ApkExplicitPackages`' entries, and the
 `apk.hold` operation, the apk counterpart of `apt.mark`, which pins packages
 back from upgrades (`apk add <pkg>=<version>` to hold, `apk add <pkg>` to
 release the pin) with version-aware idempotence against `ApkHeldPackages`,
-and the `apk.repository` operation, a reemote5 original modeled on
+and the `apk.repository` operation, a reemote original modeled on
 `apt.repo` that ensures one repository line in `/etc/apk/repositories`
 with entry-aware idempotence against `ApkRepositories`, rewriting the file
 through the spool-and-install pair (`ApkRepositoriesFile` for its current
@@ -70,13 +70,13 @@ not migrated.
 A fact is an asynchronous, queryable resource — never yielded by a
 generator — implemented as a `process` coroutine returning the raw value
 (over asyncssh in the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get], which is itself a
+[`FactCache.get`][reemote.core.FactCache.get], which is itself a
 coroutine, so results are awaited and cached within a phase step.
 `ApkAutoremovablePackages` takes no arguments and runs
 `apk add --purge --simulate 2>/dev/null` — apk's own orphan-purge
 simulation, which never removes anything (the `2>/dev/null` suppresses the
 index-noise warnings an offline simulation writes to stderr). It is a
-reemote5 original: the baseline ships no `apk.ApkAutoremovablePackages` counterpart
+reemote original: the baseline ships no `apk.ApkAutoremovablePackages` counterpart
 (its `apk` namespace publishes only `ApkPackages`). Only the
 machine-readable `(N/M) Purging <name>-<version>-r<release>` rows are read
 — the `WARNING: Ignoring APKINDEX...` index-noise lines, the
@@ -103,7 +103,7 @@ cannot tell a legacy dependency from one still in use, so the installed
 names missing from the world are candidates a cleanup would consider
 removing — this fact names exactly those `apk add --purge` would purge.
 The simulation needs no root, and a missing `apk` exits 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError].
 
 `ApkInstalledPackages` takes no arguments and runs `apk list --installed`,
 mirroring the baseline's `apk.ApkPackages`. Each row is matched with the baseline's
@@ -127,7 +127,7 @@ every sibling typed-list apk fact gives, in place of the baseline's
 `default = dict`.
 the baseline's `requires_command` gating on `apk` is deliberately dropped: a
 missing `apk` exits 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError]. Whether a
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError]. Whether a
 row names a package the operator asked for or one apk pulled in as a
 dependency is invisible in it too: `ApkExplicitPackages` reports the world
 names. Neither a row's `{origin}` nor its `apk list` presence says anything
@@ -138,7 +138,7 @@ about a single package's dependencies, size or description either:
 *world*, the list of constraints the package selection must fulfil —
 behind a `|| true`, so a host without apk reads as `[]`, the same
 missing-file tolerance `ApkRepositories` builds into its command. Like
-that fact it is a reemote5 original: the baseline's `apk` namespace ships only
+that fact it is a reemote original: the baseline's `apk` namespace ships only
 `ApkPackages`, so nothing upstream separates the packages an operator
 explicitly installed from the ones that came in as dependencies. Each
 line of the file is one dependency constraint in
@@ -213,7 +213,7 @@ writes it back through `apk add <pkg><constraint>`.
 `ApkRepositories` takes no arguments and cats `/etc/apk/repositories`
 behind a `|| true`, so a host without apk simply reads as `[]` — the same
 missing-file tolerance `DnfRepositories` builds into its command. It is a
-reemote5 original: the baseline's `apk` namespace ships no repositories fact
+reemote original: the baseline's `apk` namespace ships no repositories fact
 (only `ApkPackages`), so the file cannot be audited or conditionally
 modified through the baseline facts. Each non-comment line names one
 repository — a bare URL, or an apk repository tag (`@testing`-style, for
@@ -235,7 +235,7 @@ access style and the shape is importable rather than anonymous.
 when it is absent — the `AptSourcesFile`/`DnfRepoFile` pattern in this
 namespace, generic over the path because the fact never interprets the text.
 The real-transport command cats the file only behind a `test -e` guard and
-leads with a `#reemote5-apkrepositories` marker line, so a missing file (no
+leads with a `#reemote-apkrepositories` marker line, so a missing file (no
 marker) reads as `None` while an existing but empty file reads as `""` — the
 distinction that lets a removal empty the file and then leave it alone. Where
 `ApkRepositories` parses *every* configured repository into `ApkRepository`
@@ -262,7 +262,7 @@ other `-a` section apk prints — the `Contains` file listing, the
 tracked: any header closes the field being collected, so those sections
 contribute nothing rather than leaking into the last tracked list. An
 absent field reads as its empty default (`""`, `0`, or `[]`). This is a
-reemote5 original — the baseline's `apk` namespace ships only `ApkPackages`,
+reemote original — the baseline's `apk` namespace ships only `ApkPackages`,
 whose `apk list --installed` rows report only whether a name is installed
 and at which version, never its dependencies, size or description, so
 nothing upstream answers the version-comparison or dependency-verification
@@ -296,12 +296,12 @@ mutate the host.
 
 `apk.autoremove` removes orphaned packages — those apk pulled in as
 dependencies that nothing in `/etc/apk/world` requires any more — a
-reemote5 original: the baseline ships no apk autoremove, and apk itself has no
+reemote original: the baseline ships no apk autoremove, and apk itself has no
 `autoremove` verb; it exposes orphan purge as the `--purge` flag of
-`apk add`/`apk fix`, which reemote5 splits out into this standalone
-operation (the same split [`apt.auto_remove`][reemote5.modules.apt.apt.auto_remove]
+`apk add`/`apk fix`, which reemote splits out into this standalone
+operation (the same split [`apt.auto_remove`][reemote.modules.apt.apt.auto_remove]
 made against `apt.dist_upgrade`'s `auto_remove=True`). The
-[`ApkAutoremovablePackages`][reemote5.modules.apk.apk.ApkAutoremovablePackages] fact
+[`ApkAutoremovablePackages`][reemote.modules.apk.apk.ApkAutoremovablePackages] fact
 simulates the purge and names exactly the orphaned packages: a non-empty
 list yields the real `apk add --purge` (the reason names the packages,
 already sorted so both phases report identically), an empty list is a
@@ -341,15 +341,15 @@ cousins, but neither tool exposes a cache-bypass or script-skip flag on its
 package operation. Installing, upgrading and removing all need root, so flag
 the request `sudo=True`, `doas=True` or `su=True`. Stock Alpine ships no
 `sudo`, so on an apk host `doas` is usually the escalator to reach for:
-reemote5 runs it passwordless as `doas -n`, which needs a `permit nopass`
+reemote runs it passwordless as `doas -n`, which needs a `permit nopass`
 rule for the login user in `/etc/doas.conf` and raises `PrivilegeError`
 without one. Two the baseline options are deliberately
 dropped: `update` and `upgrade`, which prefix the operation with a
-whole-system `apk update` / `apk upgrade` — reemote5 keeps the whole-system
+whole-system `apk update` / `apk upgrade` — reemote keeps the whole-system
 refresh/upgrade out of the package operation, so both keywords are absorbed
 by `**kwargs` with no effect.
 
-`apk.virtual` manages an apk *virtual package* group — a reemote5 original:
+`apk.virtual` manages an apk *virtual package* group — a reemote original:
 the baseline's `apk` namespace ships only `upgrade`, `update` and `packages`, with
 no virtual-group management. Alpine's `apk add -t <tag> <packages>`
 (`--virtual`) creates a temporary virtual package `<tag>` that depends on
@@ -359,7 +359,7 @@ compile step wraps itself in so its toolchain does not linger on the finished
 image. `tag` names the group, `packages` accepts a single name, a list/tuple
 or `None` (a name can be pinned as `<pkg>=<version>`), and `present` selects
 the direction. Idempotence reads the
-[`ApkExplicitPackages`][reemote5.modules.apk.apk.ApkExplicitPackages] fact
+[`ApkExplicitPackages`][reemote.modules.apk.apk.ApkExplicitPackages] fact
 (the world entries, `ApkPackageVersion` dicts of name and version
 constraint): the group is
 present exactly when `tag` matches an entry's `name`, so
@@ -378,7 +378,7 @@ the request `sudo=True`, `doas=True` or `su=True` — stock Alpine ships no
 passwordless `doas -n` prerequisites above).
 
 `apk.hold` holds packages back from upgrades, or releases held ones — the apk
-counterpart of [`apt.mark`][reemote5.modules.apt.apt.mark]: the baseline ships no
+counterpart of [`apt.mark`][reemote.modules.apt.apt.mark]: the baseline ships no
 apk hold, and apk has no `apt-mark` verb, so it keeps a package out of
 upgrades by pinning a version *constraint* into `/etc/apk/world`. `packages`
 accepts a single name or a list/tuple, `present` selects the direction, and
@@ -386,7 +386,7 @@ accepts a single name or a list/tuple, `present` selects the direction, and
 (normalized to `=1.2.3-r0`) or an operator-led `~1.2`/`<2.0`; omitted with
 `present=True` it pins each name to its currently installed version
 (`ApkInstalledPackages`' newest). Idempotence reads the
-[`ApkHeldPackages`][reemote5.modules.apk.apk.ApkHeldPackages] fact
+[`ApkHeldPackages`][reemote.modules.apk.apk.ApkHeldPackages] fact
 (a list of `ApkPackageVersion` entries, looked up by `name` and compared on
 the entry's `version` — the world constraint verbatim):
 `present=True` re-adds with `apk add <pkg>=<version>`
@@ -405,9 +405,9 @@ ships no `sudo`, so `doas` is usually the escalator on an apk host (see its
 passwordless `doas -n` prerequisites above).
 
 `apk.repository` ensures one repository line in `/etc/apk/repositories` —
-a reemote5 original modeled on [`apt.repo`][reemote5.modules.apt.apt.repo]:
+a reemote original modeled on [`apt.repo`][reemote.modules.apt.apt.repo]:
 the baseline's `apk` namespace ships no repository operation, so the
-[`ApkRepositories`][reemote5.modules.apk.apk.ApkRepositories] fact had no
+[`ApkRepositories`][reemote.modules.apk.apk.ApkRepositories] fact had no
 write counterpart. `src` is one line — a bare URL or an `@tag URL` line —
 and `present` selects the direction. Presence is decided by parsing `src`
 with `ApkRepositories.parse` and comparing the resulting `ApkRepository`
@@ -464,7 +464,7 @@ since `gather_fact` takes no `when` parameter of its own. They gather
 (`apk_apk_autoremovable.py`), `ApkRepositories`
 (`apk_apk_repositories.py`) or `ApkPackage` for one package
 (`apk_apk_package.py`) on the Alpine hosts only with
-[`gather_fact`][reemote5.drivers.gather_fact], printing each result as
+[`gather_fact`][reemote.drivers.gather_fact], printing each result as
 JSON.
 
 The `apk_packages.py` script beside them demonstrates the `apk.packages`

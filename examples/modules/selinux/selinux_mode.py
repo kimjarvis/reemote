@@ -4,7 +4,7 @@
 """Example: gather the ``selinux.Mode`` fact on real CentOS hosts.
 
 This is a *usage* example, not part of the library. Where
-``examples/modules/selinux/selinux_op_mode.py`` drives reemote5's two-phase
+``examples/modules/selinux/selinux_op_mode.py`` drives reemote's two-phase
 execution model (a deploy generator of operations run through ``run``),
 this one reads a single **fact** directly over the same *real SSH
 transport* (asyncssh):
@@ -29,7 +29,7 @@ transport* (asyncssh):
    inventory with ``asyncio.gather`` and returns a host-name-keyed mapping
    -- then print each host's raw record with ``json.dumps(..., indent=2)``.
 
-``Mode`` is a reemote5 original: the baseline's selinux namespace ships no mode
+``Mode`` is a reemote original: the baseline's selinux namespace ships no mode
 fact, so every SELinux decision starts with a manual getenforce.
 ``sestatus`` answers the whole question in one command and the fact keeps
 three fields -- ``mode`` (the runtime state: enforcing, permissive or
@@ -62,7 +62,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

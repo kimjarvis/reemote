@@ -5,7 +5,7 @@
 
 This is a *usage* example, not part of the library. Where
 ``examples/modules/selinux/selinux_op_file_context_mapping.py`` drives
-reemote5's two-phase execution model (a deploy generator of operations run
+reemote's two-phase execution model (a deploy generator of operations run
 through ``run``), this one reads a single **fact** directly over the same
 *real SSH transport* (asyncssh):
 
@@ -61,7 +61,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     FileContextMapping,
     Host,

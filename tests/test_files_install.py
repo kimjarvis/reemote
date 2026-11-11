@@ -3,7 +3,7 @@
 
 """Tests for ``files.install``: the generic spool-and-install operation.
 
-``files.install`` is a reemote5 original closing the root-owned-write gap:
+``files.install`` is a reemote original closing the root-owned-write gap:
 ``files.put``/``files.edit`` ride unprivileged scp, and the put-then-move
 recipe spans two runs. This operation reads the destination's text with the
 ``FileContents`` fact and, only when it differs from the desired ``content``,
@@ -27,17 +27,17 @@ from collections.abc import Generator
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, OperationRequest, op
+from reemote.drivers import (
     command_shell,
     format_log,
     format_plan,
     run,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import files
-from reemote5.modules.files.files import (
+from reemote.hosts import Host
+from reemote.modules import files
+from reemote.modules.files.files import (
     FileContents,
     InstallCommand,
     InstallSpoolCommand,
@@ -52,9 +52,12 @@ INVENTORY = [
     },
 ]
 
-DEST = "/etc/reemote5-demo.conf"
-CONTENT = "# managed by reemote5\nkey = value\n"
+DEST = "/etc/reemote-demo.conf"
+CONTENT = "# managed by reemote\nkey = value\n"
 SPOOL = _install_spool_path(DEST)
+# The spool file lives inside a sha1-derived /tmp directory; the install
+# rm -rf's the whole directory rather than the bare file.
+SPOOL_DIR = SPOOL.rsplit("/", 1)[0]
 
 
 class CannedShellHost(Host):
@@ -75,7 +78,7 @@ def test_spool_path_is_deterministic_and_dest_derived():
     """The same dest always yields the same /tmp spool name (both phases must
     agree), and different dests never share one spool file."""
     assert SPOOL == _install_spool_path(DEST)
-    assert SPOOL.startswith("/tmp/reemote5-install-")
+    assert SPOOL.startswith("/tmp/reemote-install-")
     assert _install_spool_path("/etc/other.conf") != SPOOL
 
 
@@ -102,7 +105,7 @@ def test_install_command_renders_the_elevated_install_chain():
     cmd = InstallCommand(spool=SPOOL, dest=DEST, mode=644)
     expected = (
         f"sh -c 'mkdir -p /etc && cp {SPOOL} {DEST} && "
-        f"chmod 644 {DEST} && rm -f {SPOOL}'"
+        f"chmod 644 {DEST} && rm -rf {SPOOL_DIR}'"
     )
     assert cmd.shell() == expected
     elevated = command_shell(cmd, sudo=True)
@@ -110,7 +113,7 @@ def test_install_command_renders_the_elevated_install_chain():
     # The inner pipeline survives the outer quoting as one argument.
     assert shlex.split(elevated)[3] == (
         f"mkdir -p /etc && cp {SPOOL} {DEST} && "
-        f"chmod 644 {DEST} && rm -f {SPOOL}"
+        f"chmod 644 {DEST} && rm -rf {SPOOL_DIR}"
     )
 
 
@@ -133,7 +136,7 @@ def test_install_command_renders_the_user_group_chown():
     expected = (
         f"sh -c 'mkdir -p /etc && cp {SPOOL} {DEST} && "
         f"chown dd-agent:dd-agent {DEST} && "
-        f"chmod 640 {DEST} && rm -f {SPOOL}'"
+        f"chmod 640 {DEST} && rm -rf {SPOOL_DIR}'"
     )
     assert cmd.shell() == expected
     tokens = shlex.split(shlex.split(cmd.shell())[2])
@@ -364,7 +367,7 @@ async def test_send_command_user_only_leaves_the_group_root():
     assert host.file_stats[DEST]["user"] == "dd-agent"
     assert host.file_stats[DEST]["group"] == "root"
 
-    other = "/etc/reemote5-group-only.conf"
+    other = "/etc/reemote-group-only.conf"
     other_spool = _install_spool_path(other)
     await send_command(host, InstallSpoolCommand(content=CONTENT, dest=other_spool))
     await send_command(
@@ -446,7 +449,7 @@ async def test_install_dry_run_sends_nothing():
 
 async def test_two_installs_to_different_dests_use_distinct_spools():
     """Two installs in one deploy never clobber each other's spool file."""
-    other_dest = "/etc/reemote5-other.conf"
+    other_dest = "/etc/reemote-other.conf"
     other_content = "other = true\n"
 
     def deploy(host: Host) -> Generator[OperationRequest]:

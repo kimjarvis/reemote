@@ -29,7 +29,7 @@ driving the two-phase execution model:
    ``PostgresqlPublication`` entries (``name``, ``owner``, ``all_tables``,
    ``tables``) with ``json.dumps(..., indent=2)``.
 
-The fact is a reemote5-original visibility fact added alongside the
+The fact is a reemote-original visibility fact added alongside the
 ``postgresql.publication`` operation so logical-replication publications
 can be managed idempotently: it selects ``pg_publication`` with each
 publication's schema-qualified table set from ``pg_publication_rel`` (a
@@ -72,7 +72,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

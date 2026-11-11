@@ -29,7 +29,7 @@ driving the two-phase execution model:
    ``PostgresqlSubscription`` entries (``name``, ``owner``, ``enabled``,
    ``publications``) with ``json.dumps(..., indent=2)``.
 
-The fact is a reemote5-original visibility fact added alongside the
+The fact is a reemote-original visibility fact added alongside the
 ``postgresql.subscription`` operation so logical-replication
 subscriptions can be managed idempotently: it selects ``pg_subscription``
 with each subscription's publication list and enabled flag. The
@@ -74,7 +74,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

@@ -1,6 +1,6 @@
 # iptables module
 
-::: reemote5.modules.iptables.iptables
+::: reemote.modules.iptables.iptables
     options:
       show_root_heading: false
       members:
@@ -35,14 +35,14 @@
 
 <!---
 
-`reemote5.modules.iptables.iptables` combines the netfilter facts and the
+`reemote.modules.iptables.iptables` combines the netfilter facts and the
 firewall operations in a single source, covering the `iptables`/`ip6tables`
 toolchain — `iptables-save` rule parsing, numbered/countered listings,
 `-N/-X/-P/-A/-I/-D/-F/-Z` mutations, `iptables-save`/`iptables-restore`
 atomic snapshots and the `ipset` companion — for complete control over and
 visibility of Linux packet filtering. Four facts port the baseline's baseline
 (`IptablesChains`, `IptablesRules` and their `Ip6tables*` siblings) and ten
-are reemote5 originals filling the gaps the baseline leaves
+are reemote originals filling the gaps the baseline leaves
 (`IptablesRulesOrdered`/`Ip6tablesRulesOrdered`,
 `IptablesTables`/`Ip6tablesTables`, `IptablesVersion`/`Ip6tablesVersion`,
 `IptablesModules`, `IpSets`, `IptablesPersistence`/`Ip6tablesPersistence`);
@@ -60,7 +60,7 @@ value (`{}`/`[]`/`False`) rather than failing. The `IptablesTables` siblings
 read world-readable `/proc` files and `IptablesModules` reads `lsmod`, so
 they need no retry; the `IptablesVersion` siblings run an unguarded
 `--version` (no privilege needed) and surface a missing binary as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError]. Every
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError]. Every
 mutating operation needs root: flag the request `sudo=True`.
 
 Deliberately absent, with the resolution recorded: a `bulk_rule(rules=[...])`
@@ -90,7 +90,7 @@ module cross-refers it rather than duplicating it.
 A fact is an asynchronous, queryable resource — never yielded by a
 generator — implemented as a `process` coroutine returning the raw value
 (over asyncssh in the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get], which is itself a
+[`FactCache.get`][reemote.core.FactCache.get], which is itself a
 coroutine, so results are awaited and cached within a phase step.
 
 `IptablesChains` parses the `:NAME POLICY [pkts:bytes]` lines of
@@ -191,7 +191,7 @@ same reason `mysql.dump` and `postgresql.dump` stay in place).
 `iptables.restore` (original) is the
 atomic bulk-apply surface: `iptables-restore` applies the whole file or
 fails without partial state, idempotent on the same fact (`noflush=True`
-merges instead of replacing). Both take a HOST-side path — reemote5
+merges instead of replacing). Both take a HOST-side path — reemote
 transfers are IO-only, so a controller-side snapshot rides `files.put`
 first. Reloading at boot is the distro's netfilter-persistent service, not
 an operation's job.

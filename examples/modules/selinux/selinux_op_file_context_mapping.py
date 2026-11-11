@@ -4,7 +4,7 @@
 """Manage a persistent fcontext rule, then relabel the tree it covers.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -45,7 +45,7 @@ to the tree (``restorecon -R /web``), and because it runs *after* the
 mapping step in the same deploy, the fresh per-step state sees the new rule
 -- the composition the fact-operation pairing table recommends. The ``/web``
 tree must exist on the hosts (create it with ``files.directory`` first);
-``restorecon`` is stateless and always reports a change, since reemote5 has
+``restorecon`` is stateless and always reports a change, since reemote has
 no fact that compares a whole tree against the database.
 
 ``semanage`` and ``restorecon`` write root-owned policy and labels, so every
@@ -76,7 +76,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

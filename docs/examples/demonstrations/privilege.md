@@ -21,7 +21,7 @@ plain-text `sudo_password`. The operations still only *ask* to elevate with
 supplies it through a generated askpass helper (`sudo -A`, no TTY) without ever
 logging it.
 It also shows how a rejected credential is reported: `main` catches
-[`PrivilegeError`][reemote5.hosts.PrivilegeError] and prints one line naming the
+[`PrivilegeError`][reemote.hosts.PrivilegeError] and prints one line naming the
 host, instead of surfacing sudo's three password retries as a traceback.
 
 ::: privilege_sudo_pw
@@ -33,12 +33,12 @@ host, instead of surfacing sudo's three password retries as a traceback.
 The `su` counterpart of the sudo-password example: the same deploy shape, run
 against the `centos` hosts whose loaded inventory entries are given a
 `privilege` section carrying a `su_user` and a plain-text `su_password`. The
-operations only *ask* to elevate with `su=True`; reemote5 runs a *default*
+operations only *ask* to elevate with `su=True`; reemote runs a *default*
 `su <user> -c` (no login shell) and, since `su` has no askpass mechanism, pipes
 the password to su's stdin through a generated helper. The credential comes
 from the inventory alone and never
 reaches the log, and a rejected password surfaces as a single
-[`PrivilegeError`][reemote5.hosts.PrivilegeError] naming the host.
+[`PrivilegeError`][reemote.hosts.PrivilegeError] naming the host.
 
 ::: privilege_su
     options:
@@ -49,12 +49,12 @@ reaches the log, and a rejected password surfaces as a single
 The `doas` counterpart of the su example: the same deploy shape, run against
 the `centos` hosts whose loaded inventory entries are given a `privilege`
 section carrying only a `doas_user` — no password. The operations only *ask* to
-elevate with `doas=True`; reemote5 always
+elevate with `doas=True`; reemote always
 runs `doas -n` (non-interactive), because `doas` has no askpass mechanism and
 asyncssh channels offer no TTY. doas is therefore *passwordless*: the host must
 grant the login user a `permit nopass` rule in `/etc/doas.conf`, and a denied
 rule surfaces as a single
-[`PrivilegeError`][reemote5.hosts.PrivilegeError] naming the host. `doas` is the
+[`PrivilegeError`][reemote.hosts.PrivilegeError] naming the host. `doas` is the
 *outermost* escalation, so it combines with `sudo`/`su` in the fixed order
 `doas` then `sudo` then `su`.
 

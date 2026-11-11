@@ -16,7 +16,7 @@ two-phase execution model:
 3. Gather ``SystemdSystemState`` on every remaining host at once with
    ``gather_fact``, then print each host's health word.
 
-``SystemdSystemState`` is a reemote5 original: it runs
+``SystemdSystemState`` is a reemote original: it runs
 ``systemctl is-system-running || true`` and returns the system manager's
 overall health word -- ``running``, ``degraded`` (a unit failed),
 ``maintenance``, ``starting`` or ``stopping``. The ``|| true`` swallows the
@@ -41,7 +41,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

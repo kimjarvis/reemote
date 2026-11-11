@@ -3,7 +3,7 @@
 
 """Example: ensure a sysctl setting (baseline server.sysctl parity).
 
-This is a *usage* example, not part of the library. It is reemote5's
+This is a *usage* example, not part of the library. It is reemote's
 strict-parity demonstration of the baseline's ``server.sysctl`` operation,
 built from generic primitives: the persist half is a file edit fully
 expressible with the ``files.edit`` content-transform primitive plus the
@@ -28,7 +28,7 @@ append when absent). The recipe mirrors all of that:
 1. Two fact SNAPSHOTS: ``gather_fact`` reads ``Sysctl`` for the one key and
    ``FileContents`` of ``/etc/sysctl.conf`` from every guarded host
    (read-only SSH). The pure ``sysctl_persist_edit`` function performs the baseline's
-   ``files.line`` lookup with a Python regex over the content -- reemote5
+   ``files.line`` lookup with a Python regex over the content -- reemote
    ships no grep-style ``FindInFile`` fact, and ``FileContents`` plus local
    parsing is its content-read convention.
 2. Two independent skip gates on the frozen snapshots, matching the baseline's
@@ -40,7 +40,7 @@ append when absent). The recipe mirrors all of that:
    both or neither.
 3. Run 1 applies the runtime value: the demo-side ``sysctl_set`` operation
    yields ``sysctl key=value`` (each side shell-quoted, the baseline's
-   ``QuoteString`` parity), flagged ``sudo=True``. reemote5 ships no
+   ``QuoteString`` parity), flagged ``sudo=True``. reemote ships no
    generic "run a shell command" operation, so this example defines the
    stateless one-liner itself; the snapshot gate upstream decides whether
    it runs at all.
@@ -59,7 +59,7 @@ Deliberate deviations from the baseline, decided at migration time:
 
 * The persist edit (``files.line``'s sed/echo) is replaced by the
   ``files.edit`` transform: the generic primitive expresses the edit
-  without a bespoke operation, and reemote5's transfers are unprivileged,
+  without a bespoke operation, and reemote's transfers are unprivileged,
   so root-owned ``/etc/sysctl.conf`` is written through the
   spool-and-install vehicle instead of an elevated sed/echo. The baseline's
   timestamped sed backup dance goes with it.
@@ -109,7 +109,7 @@ from collections.abc import AsyncGenerator, Callable, Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     Command,
     CommandError,
     FileContents,
@@ -285,7 +285,7 @@ async def sysctl_set(
 
     The baseline's ``server.sysctl`` yields ``sysctl 'key'='value'`` (each side
     ``QuoteString``-ed, joined by a bare ``=``) when the fact differs;
-    reemote5 ships no generic shell operation, so this example defines the
+    reemote ships no generic shell operation, so this example defines the
     stateless one-liner itself over the public raw ``StringCommand``
     descriptor. Like the baseline's step it reads no fact and always reports a
     change; the ``Sysctl`` snapshot gate upstream of it decides whether it

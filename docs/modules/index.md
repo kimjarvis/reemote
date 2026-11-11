@@ -1,8 +1,8 @@
 # Modules
 
-reemote5's facts and operations are grouped into twenty self-contained
-*module namespaces*, each shipped under `reemote5.modules.<name>` and
-imported into a deploy by that name — `from reemote5 import apt, files,
+reemote's facts and operations are grouped into twenty self-contained
+*module namespaces*, each shipped under `reemote.modules.<name>` and
+imported into a deploy by that name — `from reemote import apt, files,
 systemd`. A namespace keeps its own facts, operations, typed entry shapes
 and command descriptors together, so `apt.packages` reads `apt.AptPackages`
 and never crosses into another namespace.

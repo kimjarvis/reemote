@@ -29,7 +29,7 @@ driving the two-phase execution model:
    path argument verbatim, and returns a host-name-keyed mapping -- then
    print each host's submodule list.
 
-``GitSubmodule`` is a reemote5-original fact -- the baseline has no
+``GitSubmodule`` is a reemote-original fact -- the baseline has no
 equivalent. It runs ``! test -d <repo> || (cd <repo> && git submodule
 status)`` and returns one ``GitSubmoduleStatus`` entry per line -- the
 ``path``, the recorded ``sha``, the optional ``describe`` and a ``state``
@@ -58,7 +58,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     GitSubmodule,
     Host,
@@ -71,7 +71,7 @@ from reemote5 import (
 # The repository to inspect on each host: every git fact takes the repo path
 # it reads, and the command guards on the directory, so a host without it
 # answers [] rather than raising.
-REPO = "/tmp/reemote5-app"
+REPO = "/tmp/reemote-app"
 
 # examples/modules/git/git_git_submodule.py -> the project root, so the inventory
 # is found whatever the current working directory is.

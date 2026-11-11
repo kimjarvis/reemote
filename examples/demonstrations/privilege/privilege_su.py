@@ -18,9 +18,9 @@ sudo, the deploy script never names a user or a password -- it only asks for
   ``root``, a ``su_user`` of ``root`` (or none at all) collapses to a bare
   ``su -c '<command>'``.
 - ``su_password`` supplies the target's password. ``su`` has no ``-A`` askpass
-  mechanism like sudo, so reemote5 generates a small helper on the host that
+  mechanism like sudo, so reemote generates a small helper on the host that
   prints the password and pipes it to su's stdin
-  (``env REEMOTE5_SU_PASSWORD=... <helper> | su ...``), which works over
+  (``env REEMOTE_SU_PASSWORD=... <helper> | su ...``), which works over
   asyncssh's non-interactive channels. Without a password, plain ``su`` is
   used (which assumes the login user may already become the target).
 
@@ -65,7 +65,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

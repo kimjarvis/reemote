@@ -4,7 +4,7 @@
 """Example: gather the ``firewalld.FirewalldStatus`` fact on real CentOS hosts.
 
 This is a *usage* example, not part of the library. Where
-``examples/modules/firewalld/firewalld_zone.py`` drives reemote5's two-phase
+``examples/modules/firewalld/firewalld_zone.py`` drives reemote's two-phase
 execution model (a deploy generator of operations run through ``run``),
 this one reads a single **fact** directly over the same *real SSH
 transport* (asyncssh):
@@ -30,7 +30,7 @@ transport* (asyncssh):
    host-name-keyed mapping -- then print each host's raw record with
    ``json.dumps(..., indent=2)``.
 
-``FirewalldStatus`` is a reemote5 original: the baseline ships no firewalld
+``FirewalldStatus`` is a reemote original: the baseline ships no firewalld
 module at all, so every firewalld deploy starts with a manual
 ``firewall-cmd --state``. The fact answers both halves of the daemon
 question in one shell round-trip (``--state`` and ``--version`` behind
@@ -62,7 +62,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     FirewalldStatus,
     Host,

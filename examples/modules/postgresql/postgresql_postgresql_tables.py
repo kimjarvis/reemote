@@ -30,7 +30,7 @@ driving the two-phase execution model:
    ``tablespace``, ``rows`` -- the planner's row estimate) with
    ``json.dumps(..., indent=2)``.
 
-The fact is a reemote5-original visibility fact (the baseline has no table
+The fact is a reemote-original visibility fact (the baseline has no table
 fact): it selects ``pg_tables`` joined to ``pg_class`` for the row
 estimate, giving a deployment the object inventory it needs before
 managing indexes or grants. The fact is database-scoped: it reads the
@@ -72,7 +72,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

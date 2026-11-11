@@ -4,7 +4,7 @@
 """Ensure one kernel parameter with ``sysctl.setting`` -- runtime and disk.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -21,7 +21,7 @@ via ``run``'s ``host_factory`` and never touches the network -- this example
 uses the *default* factory (``Host.from_inventory``), opening real asyncssh
 connections that ``run`` closes when it finishes.
 
-``sysctl.setting`` is a reemote5 original superseding the baseline's basic
+``sysctl.setting`` is a reemote original superseding the baseline's basic
 ``server.sysctl``: two independent idempotent halves, each gated by its own
 fact. The **runtime half** compares the desired value against the ``Sysctl``
 fact (the baseline's normalization: digits compare as ints, a multi-word value as
@@ -36,7 +36,7 @@ write is followed by a scoped ``sysctl -p <sysctl_file>`` reload unless
 ``|| true`` for cross-platform key sets.
 
 The write follows the ``systemd.dropin`` spool pattern: an **unprivileged**
-scp transfer spools the edited text to a fixed ``/tmp`` path, then an
+scp transfer spools the edited text into a dest-derived ``/tmp`` directory, then an
 **elevated** ``sh -c`` install copies it into place ``0644`` and removes the
 spool. Only the shell steps are escalated -- the transfer itself never is --
 so the request is flagged ``sudo=True`` while the file lands root-owned.
@@ -76,7 +76,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

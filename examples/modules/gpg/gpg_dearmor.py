@@ -3,7 +3,7 @@
 
 """Dearmor an ASCII-armored key file already on the target hosts.
 
-This is a *usage* example, not part of the library. It drives reemote5's
+This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
@@ -74,7 +74,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -94,8 +94,8 @@ from reemote5 import (
 # binary keyring to write under /etc/apt/keyrings. The files.put transfer
 # rides scp as the login user (never elevated), so src must be writable by
 # that user; the dearmor request itself moves no bytes over the connection.
-SRC = "/tmp/reemote5-demo.asc"
-DEST = "/etc/apt/keyrings/reemote5-demo.gpg"
+SRC = "/tmp/reemote-demo.asc"
+DEST = "/etc/apt/keyrings/reemote-demo.gpg"
 
 # The key content, as ONE module-level stream: OperationRequest compares the
 # IO object by identity, so both phases must pass the same object (a stream

@@ -72,7 +72,7 @@ yields a `SetHostnameCommand` only where they differ, so a second run plans
 no change. The `Which` fact picks the command form: `hostnamectl
 set-hostname` where `hostnamectl` is available (it persists the name across
 reboots), the bare `hostname` command on older systems. The baseline's
-`hostname_file` upload branch is deliberately dropped — reemote5's
+`hostname_file` upload branch is deliberately dropped — reemote's
 transfers cannot be elevated, so the root-owned `/etc/hostname` write has
 no faithful equivalent; on a systemd host `hostnamectl` already persists
 the name. The script is named `server_op_hostname.py` to keep it distinct
@@ -314,7 +314,7 @@ keep it distinct from the read-only `server_locales.py` fact example.
 `sysctl.conf`) — this recipe stays as the strict-parity demonstration,
 built on the generic `files.edit` primitive (the `Sysctl` fact it compares
 against relocated to that namespace as `sysctl.Sysctl`; the top-level
-`reemote5.Sysctl` binding still resolves).
+`reemote.Sysctl` binding still resolves).
 The script snapshots `Sysctl` for `fs.file-max` and
 `FileContents("/etc/sysctl.conf")` from every guarded host, then applies the baseline's
 two independent decisions to the frozen snapshots: the runtime gate is
@@ -335,7 +335,7 @@ prepare phase too, and prepare never sends. Re-running the script is a
 no-op once the live value and the persist line both match. The script is
 named `server_op_sysctl.py`; the read-only fact example relocated to
 [`sysctl_sysctl.py`](sysctl.md), and everyday use should prefer the native
-[`sysctl.setting`](../../modules/sysctl.md#reemote5.modules.sysctl.sysctl.setting) operation.
+[`sysctl.setting`](../../modules/sysctl.md#reemote.modules.sysctl.sysctl.setting) operation.
 
 ::: server_op_sysctl
     options:

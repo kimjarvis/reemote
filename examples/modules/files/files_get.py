@@ -10,7 +10,7 @@ protocol, into an **IO-like object** on the control machine.
 
 The destination is a stream, never a local filename -- the baseline's ``files.get``
 writes to a local path (with ``add_deploy_dir``/``create_local_dir``/``force``
-options reemote5 deliberately drops), but here the bytes land in a module-level
+options reemote deliberately drops), but here the bytes land in a module-level
 ``io.BytesIO`` the script reads back afterwards. Two rules follow, mirroring
 ``files.put``. The stream must be *seekable* and *writable*: it is rewound and
 truncated before the download, then rewound again so the caller reads the fresh
@@ -72,7 +72,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

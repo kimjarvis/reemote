@@ -3,7 +3,7 @@
 
 """Example: authorise SSH public keys in a user's ``authorized_keys`` file.
 
-This is a *usage* example, not part of the library. It shows reemote5's
+This is a *usage* example, not part of the library. It shows reemote's
 ``server.user_authorized_keys`` operation, baseline
 ``server.user_authorized_keys`` parity for SSH keys: the deploy makes sure a
 user's ``~/.ssh`` directory (mode ``700``) and ``authorized_keys`` file
@@ -27,8 +27,8 @@ plan:
   run where everything already matches yields nothing at all;
 * the write is a spool-and-install pair: the transformed text rides an
   unprivileged scp to a ``/tmp`` spool named after the key file, then an
-  ``sh -c 'mkdir -p ... && cp ... && chmod 600 ... && rm -f ...'`` install
-  overlays the key file and removes the spool. The scp half stays
+  ``sh -c 'mkdir -p ... && cp ... && chmod 600 ... && rm -rf ...'`` install
+  overlays the key file and removes the spool directory. The scp half stays
   unprivileged even under ``sudo=True`` -- transfers never elevate -- so a
   request for another user's keys shows two privilege levels in one log.
 
@@ -89,7 +89,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

@@ -19,7 +19,7 @@ Two properties shape the script:
   ``overwrite=True`` so a target left by a previous run is simply
   overwritten; drop the flag and the second script run becomes a no-op.
 * An absent source or an absent/non-directory destination raises
-  ``ValueError`` in **both** phases -- reemote5 operations are phase-unaware,
+  ``ValueError`` in **both** phases -- reemote operations are phase-unaware,
   so the baseline's soft plan-time logging of those cases is deliberately dropped
   (the same strictness as ``files.move``). A "create the file then copy it"
   flow therefore cannot share one deploy: the prepare phase would raise on
@@ -60,7 +60,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -78,13 +78,13 @@ from reemote5 import (
 # The payload, created once on the control machine: a stream, never a local
 # path. The same object is passed to put in every phase, so the prepare and
 # apply request sequences compare equal.
-PAYLOAD = io.StringIO("staged by the reemote5 files.copy example\n")
+PAYLOAD = io.StringIO("staged by the reemote files.copy example\n")
 
 # Staging source under /tmp and the destination directory /var/tmp: its
-# basename makes the copied path /var/tmp/reemote5-copy.txt. Two distinct
+# basename makes the copied path /var/tmp/reemote-copy.txt. Two distinct
 # world-writable directories that exist on every host, so the copy has a real
 # destination other than its source and no home directory is assumed.
-STAGED = "/tmp/reemote5-copy.txt"
+STAGED = "/tmp/reemote-copy.txt"
 DEST_DIR = "/var/tmp"
 
 # examples/modules/files/files_copy.py -> the project root, so the inventory

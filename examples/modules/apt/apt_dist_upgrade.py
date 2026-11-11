@@ -4,7 +4,7 @@
 """Upgrade all apt packages with dist-upgrade, gated by a dry-run simulation.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -43,7 +43,7 @@ a no-op, because the fresh per-step fact cache re-simulates against the
 upgraded state.
 
 Where the baseline's ``apt.dist_upgrade`` also takes an ``auto_remove`` parameter
-(appending ``--autoremove`` to the same command), reemote5 deliberately
+(appending ``--autoremove`` to the same command), reemote deliberately
 splits that into the standalone ``apt.auto_remove`` operation -- see
 ``apt_auto_remove.py`` beside this script -- so orphaned dependencies can be
 cleaned up without also performing an upgrade. This operation never passes
@@ -75,7 +75,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

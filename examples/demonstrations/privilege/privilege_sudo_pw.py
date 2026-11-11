@@ -35,7 +35,7 @@ reaches the rendered log: ``format_log`` shows the credential-free
 ``$ sudo dnf install -y httpd``, because the log renders command descriptors
 through ``command_shell``, which is deliberately password-free.
 
-A wrong password is reported once, not three times. reemote5 invokes ``sudo -A``
+A wrong password is reported once, not three times. reemote invokes ``sudo -A``
 exactly once, but sudo re-runs the askpass helper up to its own ``passwd_tries``
 limit (3 by default), so one bad credential costs three identical attempts plus
 sudo's ``Sorry, try again.`` noise. ``Host.run_shell_sudo`` recognises that
@@ -60,7 +60,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

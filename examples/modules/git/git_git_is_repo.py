@@ -29,7 +29,7 @@ driving the two-phase execution model:
    path argument verbatim, and returns a host-name-keyed mapping -- then
    print each host's is-a-repository answer.
 
-``GitIsRepo`` is a reemote5-original fact -- the baseline has no equivalent. It
+``GitIsRepo`` is a reemote-original fact -- the baseline has no equivalent. It
 runs ``! test -d <repo> || (cd <repo> && git rev-parse --is-inside-work-tree
 2>/dev/null)`` and answers ``True`` only when git prints ``true``, so it
 validates a work tree precisely instead of trusting the existence of a
@@ -57,7 +57,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     GitIsRepo,
     Host,
@@ -70,7 +70,7 @@ from reemote5 import (
 # The repository to inspect on each host: every git fact takes the repo path
 # it reads, and the command guards on the directory, so a host without it
 # answers False rather than raising.
-REPO = "/tmp/reemote5-app"
+REPO = "/tmp/reemote-app"
 
 # examples/modules/git/git_git_is_repo.py -> the project root, so the inventory
 # is found whatever the current working directory is.

@@ -34,7 +34,7 @@ decision).
 
 The state operation: `ufw.state` ensures the firewall is active (and on
 at boot), idempotent on the
-[`UfwStatus`][reemote5.modules.ufw.ufw.UfwStatus] fact — `ufw --force
+[`UfwStatus`][reemote.modules.ufw.ufw.UfwStatus] fact — `ufw --force
 enable` only when inactive (the `--force` skips the interactive SSH
 disruption prompt), `ufw disable` only when active. The script yields
 the same enable request twice (the second a guaranteed no-op in the
@@ -52,7 +52,7 @@ locks itself out. The requests are flagged `sudo=True`.
 The default policy operation: `ufw.default_policy` sets one direction's
 fallback verdict (incoming/outgoing/routed × allow/deny/reject),
 idempotent on the same
-[`UfwStatus`][reemote5.modules.ufw.ufw.UfwStatus] fact's
+[`UfwStatus`][reemote.modules.ufw.ufw.UfwStatus] fact's
 `default_<direction>` field. The script targets `routed` deny — the
 forwarded-traffic default a non-router host can safely deny, leaving
 `incoming` alone so SSH stays reachable — and yields the request twice.
@@ -67,7 +67,7 @@ demo hosts.** The requests are flagged `sudo=True`.
 
 The logging operation: `ufw.logging` sets the audit level
 (off/on/low/medium/high/full), idempotent on the
-[`UfwStatus`][reemote5.modules.ufw.ufw.UfwStatus] fact's `logging` word.
+[`UfwStatus`][reemote.modules.ufw.ufw.UfwStatus] fact's `logging` word.
 `on` mirrors ufw's own semantics — it keeps the current level when
 already logging — so the script targets the concrete `low` level (ufw's
 installation default) and yields it twice. **Compile-checked by the test
@@ -97,7 +97,7 @@ live ruleset. The request is flagged `sudo=True`.
 ## Managing rules (ports, multiports, subnets)
 
 The rule operation: `ufw.rule` adds or removes one rule, idempotent on
-the [`UfwRules`][reemote5.modules.ufw.ufw.UfwRules] fact — ufw accepts
+the [`UfwRules`][reemote.modules.ufw.ufw.UfwRules] fact — ufw accepts
 duplicates, so the comparison is what keeps a ruleset clean. The script
 allows SSH first (the lockout guard, yielded twice) then opens HTTP/HTTPS
 from a trusted subnet with one multiport rule (`port=(80, 443)` — a

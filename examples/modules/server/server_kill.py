@@ -3,7 +3,7 @@
 
 """Example: find a process's PID, then kill it -- in ONE deterministic deploy.
 
-This is a *usage* example, not part of the library. It shows reemote5's
+This is a *usage* example, not part of the library. It shows reemote's
 ``server.kill`` operation, baseline ``server.kill`` parity for sending a
 signal to a running process. Like the baseline, the operation takes an explicit
 ``pid`` (and an optional ``signal``, default ``TERM``): discovering *which*
@@ -80,7 +80,7 @@ from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

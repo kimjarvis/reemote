@@ -4,7 +4,7 @@
 """Tests for the files module: the ``File``, ``Directory``, ``Link`` and
 ``SameFile`` facts.
 
-Covers ``reemote5.modules.files.files.File``: the baseline's own thirteen
+Covers ``reemote.modules.files.files.File``: the baseline's own thirteen
 ``files.File`` fixtures over the real-transport path (GNU stat rows, the
 ``ls -ld`` fallback with its SELinux marker and HH:MM current-year stamps,
 setuid/setgid/sticky modes, directory/link False answers, tilde expansion
@@ -12,20 +12,20 @@ and path quoting), stat/ls parsing edge cases, and the ``SimulatedHost``
 ``file_stats`` seam (dict/False/None answers, copy-on-read, and
 ``gather_fact`` argument forwarding).
 
-Covers ``reemote5.modules.files.files.Directory`` the same way: the baseline's
+Covers ``reemote.modules.files.files.Directory`` the same way: the baseline's
 six ``files.Directory`` fixtures (stat and ls rows for directories,
 file/link False answers, ACL/extended-attr markers, DD-MMM date order),
 the shared command/parse chain, sticky/setgid directory modes, and the
 separate ``directory_stats`` seam.
 
-Covers ``reemote5.modules.files.files.Link`` the same way: the baseline's six
+Covers ``reemote.modules.files.files.Link`` the same way: the baseline's six
 ``files.Link`` fixtures (GNU stat rows with single-quote, backtick and
 double-quote ``%N`` quoting, the ls fallback naming the target, file/
 directory False answers), ``link_target`` extraction edge cases (dangling
 links, arrow-bearing targets, rows without an arrow), and the separate
 ``link_stats`` seam.
 
-Covers ``reemote5.modules.files.files.SameFile``: the baseline's two
+Covers ``reemote.modules.files.files.SameFile``: the baseline's two
 ``files.SameFile`` fixtures verbatim (the ``test -ef`` probe answering true
 and false), the shell quoting of both arguments, and the ``same_files``
 ``SimulatedHost`` seam (symmetric pair lookup, copy-on-read semantics for a
@@ -34,9 +34,9 @@ frozen pair set, and ``gather_fact`` argument forwarding).
 
 from datetime import UTC, datetime
 
-from reemote5.drivers import gather_fact
-from reemote5.hosts import Host
-from reemote5.modules.files.files import Directory, File, Link, SameFile
+from reemote.drivers import gather_fact
+from reemote.hosts import Host
+from reemote.modules.files.files import Directory, File, Link, SameFile
 from tests.simulated_host import SimulatedHost
 
 # The baseline's ls fallback assumes the *current* year for an "MMM DD HH:MM"
@@ -67,11 +67,11 @@ async def test_file_parses_baseline_valid_fixture():
     # The baseline's valid.json fixture: a GNU stat row with a space-bearing
     # group name -> the metadata dict (naive UTC datetimes, octal int mode).
     host = CannedShellHost(
-        "user=reemote5 group=domain users mode=-rwxrwx--- atime=1594804767 "
-        "mtime=1594804767 ctime=0 size=8 '/home/reemote5/fil-@_e.txt'\n"
+        "user=reemote group=domain users mode=-rwxrwx--- atime=1594804767 "
+        "mtime=1594804767 ctime=0 size=8 '/home/reemote/fil-@_e.txt'\n"
     )
-    assert await File.process(host, "/home/reemote5/fil-@_e.txt") == {
-        "user": "reemote5",
+    assert await File.process(host, "/home/reemote/fil-@_e.txt") == {
+        "user": "reemote",
         "group": "domain users",
         "mode": 770,
         "atime": datetime(2020, 7, 15, 9, 19, 27),
@@ -79,7 +79,7 @@ async def test_file_parses_baseline_valid_fixture():
         "ctime": EPOCH,
         "size": 8,
     }
-    assert host.shells == [File.command("/home/reemote5/fil-@_e.txt")]
+    assert host.shells == [File.command("/home/reemote/fil-@_e.txt")]
 
 
 def test_file_command_guards_then_stat_then_ls():
@@ -98,11 +98,11 @@ async def test_file_quotes_baseline_injection_fixture():
     # The baseline's valid_needs_quotes.json fixture: shell metacharacters in the
     # path are quoted, and the stat row still parses.
     host = CannedShellHost(
-        "user=reemote5 group=domain users mode=-rwxrwx--- atime=1594804767 "
+        "user=reemote group=domain users mode=-rwxrwx--- atime=1594804767 "
         "mtime=1594804767 ctime=0 size=8 'fil () &&-@_e.txt'\n"
     )
     assert await File.process(host, "fil () &&-@_e.txt") == {
-        "user": "reemote5",
+        "user": "reemote",
         "group": "domain users",
         "mode": 770,
         "atime": datetime(2020, 7, 15, 9, 19, 27),
@@ -118,31 +118,31 @@ async def test_file_parses_baseline_valid_with_space_fixture():
     # The baseline's valid_with_space.json fixture: a space-bearing path is
     # quoted and a zero size stays the int 0.
     host = CannedShellHost(
-        "user=reemote5 group=reemote5 mode=-rw-r--r-- atime=1594804348 "
-        "mtime=1594804348 ctime=0 size=0 '/home/reemote5 dir/fil-@_e.txt'\n"
+        "user=reemote group=reemote mode=-rw-r--r-- atime=1594804348 "
+        "mtime=1594804348 ctime=0 size=0 '/home/reemote dir/fil-@_e.txt'\n"
     )
-    assert await File.process(host, "/home/reemote5 dir/fil-@_e.txt") == {
-        "user": "reemote5",
-        "group": "reemote5",
+    assert await File.process(host, "/home/reemote dir/fil-@_e.txt") == {
+        "user": "reemote",
+        "group": "reemote",
         "mode": 644,
         "atime": datetime(2020, 7, 15, 9, 12, 28),
         "mtime": datetime(2020, 7, 15, 9, 12, 28),
         "ctime": EPOCH,
         "size": 0,
     }
-    assert "test -e '/home/reemote5 dir/fil-@_e.txt'" in host.shells[0]
+    assert "test -e '/home/reemote dir/fil-@_e.txt'" in host.shells[0]
 
 
 async def test_file_keeps_a_leading_tilde_unquoted():
     # The baseline's tilde.json fixture: ~/ must reach the shell unquoted so it
     # expands; the row's timestamps parse into naive UTC datetimes.
     host = CannedShellHost(
-        "user=reemote5 group=reemote5 mode=-rw-r--r-- atime=1723483091 "
-        "mtime=1722760187 ctime=1722760187 size=4310 '/home/reemote5/.bashrc'\n"
+        "user=reemote group=reemote mode=-rw-r--r-- atime=1723483091 "
+        "mtime=1722760187 ctime=1722760187 size=4310 '/home/reemote/.bashrc'\n"
     )
     assert await File.process(host, "~/.bashrc") == {
-        "user": "reemote5",
-        "group": "reemote5",
+        "user": "reemote",
+        "group": "reemote",
         "mode": 644,
         "atime": datetime(2024, 8, 12, 17, 18, 11),
         "mtime": datetime(2024, 8, 4, 8, 29, 47),
@@ -157,13 +157,13 @@ async def test_file_quotes_the_rest_of_a_tilde_path():
     # The baseline's tilde_with_space.json fixture: only the leading ~/ stays
     # bare; the space-bearing remainder is quoted.
     host = CannedShellHost(
-        "user=reemote5 group=reemote5 mode=-rw-r--r-- atime=1723484281 "
+        "user=reemote group=reemote mode=-rw-r--r-- atime=1723484281 "
         "mtime=1723484281 ctime=1723484281 size=0 "
-        "'/home/reemote5/My Documents/file'\n"
+        "'/home/reemote/My Documents/file'\n"
     )
     assert await File.process(host, "~/My Documents/file") == {
-        "user": "reemote5",
-        "group": "reemote5",
+        "user": "reemote",
+        "group": "reemote",
         "mode": 644,
         "atime": datetime(2024, 8, 12, 17, 38, 1),
         "mtime": datetime(2024, 8, 12, 17, 38, 1),
@@ -178,9 +178,9 @@ async def test_file_is_false_for_a_directory():
     # is 'd', so the fact reads False, not a dict.
     host = CannedShellHost(
         "user=root group=root mode=drw-r--r-- atime=1594804583 "
-        "mtime=1594804583 ctime=0 size=0 '/home/reemote5'\n"
+        "mtime=1594804583 ctime=0 size=0 '/home/reemote'\n"
     )
-    assert await File.process(host, "/home/reemote5") is False
+    assert await File.process(host, "/home/reemote") is False
 
 
 async def test_file_is_false_for_a_link():
@@ -188,16 +188,16 @@ async def test_file_is_false_for_a_link():
     # regular file -> False (Link is the link-accepting sibling).
     host = CannedShellHost(
         "user=root group=root mode=lrwxrwxrwx atime=1594804774 "
-        "mtime=1594804770 ctime=0 size=6 '/home/reemote5/mylink' -> 'file.txt'\n"
+        "mtime=1594804770 ctime=0 size=6 '/home/reemote/mylink' -> 'file.txt'\n"
     )
-    assert await File.process(host, "/home/reemote5/mylink") is False
+    assert await File.process(host, "/home/reemote/mylink") is False
 
 
 async def test_file_is_none_on_unmatched_output():
     # The baseline's invalid_output.json fixture: a row matching neither the
     # stat nor the ls format reads as None.
     host = CannedShellHost("not-gonna-match\n")
-    assert await File.process(host, "/home/reemote5/fil-@_e.txt") is None
+    assert await File.process(host, "/home/reemote/fil-@_e.txt") is None
 
 
 async def test_file_is_none_on_empty_output():
@@ -210,12 +210,12 @@ async def test_file_parses_setuid_setgid_modes():
     # The baseline's mode_setgid_setuid.json fixture: -rwsr-Sr-- -> 6744 (setuid
     # + setgid, the group's S meaning setgid without execute).
     host = CannedShellHost(
-        "user=reemote5 group=reemote5 mode=-rwsr-Sr-- atime=0 mtime=0 ctime=0 "
+        "user=reemote group=reemote mode=-rwsr-Sr-- atime=0 mtime=0 ctime=0 "
         "size=8 'file.txt'\n"
     )
     assert await File.process(host, "file.txt") == {
-        "user": "reemote5",
-        "group": "reemote5",
+        "user": "reemote",
+        "group": "reemote",
         "mode": 6744,
         "atime": EPOCH,
         "mtime": EPOCH,
@@ -228,12 +228,12 @@ async def test_file_parses_the_sticky_mode():
     # The baseline's mode_sticky.json fixture: -rw-r--r-T -> 1644 (sticky bit
     # without execute).
     host = CannedShellHost(
-        "user=reemote5 group=reemote5 mode=-rw-r--r-T atime=0 mtime=0 ctime=0 "
+        "user=reemote group=reemote mode=-rw-r--r-T atime=0 mtime=0 ctime=0 "
         "size=8 'file.txt'\n"
     )
     assert await File.process(host, "file.txt") == {
-        "user": "reemote5",
-        "group": "reemote5",
+        "user": "reemote",
+        "group": "reemote",
         "mode": 1644,
         "atime": EPOCH,
         "mtime": EPOCH,
@@ -405,12 +405,12 @@ async def test_directory_parses_baseline_valid_fixture():
     # The baseline's valid.json fixture: a GNU stat row whose type flag is 'd'
     # -> the metadata dict (the same shape File returns for a regular file).
     host = CannedShellHost(
-        "user=reemote5 group=reemote5 mode=drw-r--r-- atime=1594804583 "
-        "mtime=1594804583 ctime=0 size=0 '/home/reemote5/myd@-_ir'\n"
+        "user=reemote group=reemote mode=drw-r--r-- atime=1594804583 "
+        "mtime=1594804583 ctime=0 size=0 '/home/reemote/myd@-_ir'\n"
     )
-    assert await Directory.process(host, "/home/reemote5/myd@-_ir") == {
-        "user": "reemote5",
-        "group": "reemote5",
+    assert await Directory.process(host, "/home/reemote/myd@-_ir") == {
+        "user": "reemote",
+        "group": "reemote",
         "mode": 644,
         "atime": datetime(2020, 7, 15, 9, 16, 23),
         "mtime": datetime(2020, 7, 15, 9, 16, 23),
@@ -421,11 +421,11 @@ async def test_directory_parses_baseline_valid_fixture():
     # accepted type, so the fixture's command string is shared.
     assert host.shells == [
         (
-            "! (test -e /home/reemote5/myd@-_ir || test -L /home/reemote5/myd@-_ir ) || "
+            "! (test -e /home/reemote/myd@-_ir || test -L /home/reemote/myd@-_ir ) || "
             "( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' "
-            "/home/reemote5/myd@-_ir 2> /dev/null || "
+            "/home/reemote/myd@-_ir 2> /dev/null || "
             "stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' "
-            "/home/reemote5/myd@-_ir || ls -ld /home/reemote5/myd@-_ir )"
+            "/home/reemote/myd@-_ir || ls -ld /home/reemote/myd@-_ir )"
         )
     ]
 
@@ -434,7 +434,7 @@ async def test_directory_is_false_for_a_regular_file():
     # The baseline's file.json fixture: the path exists but its type flag is
     # '-', so the fact reads False, not a dict.
     host = CannedShellHost(
-        "user=reemote5 group=reemote5 mode=-rwxrwxrwx atime=1594804767 "
+        "user=reemote group=reemote mode=-rwxrwxrwx atime=1594804767 "
         "mtime=1594804767 ctime=0 size=8 '/path/to/a/file'\n"
     )
     assert await Directory.process(host, "/path/to/a/file") is False
@@ -445,9 +445,9 @@ async def test_directory_is_false_for_a_link():
     # directory -> False (Link is the link-accepting sibling).
     host = CannedShellHost(
         "user=root group=root mode=lrwxrwxrwx atime=1594804774 "
-        "mtime=1594804770 ctime=0 size=6 '/home/reemote5/mylink' -> 'file.txt'\n"
+        "mtime=1594804770 ctime=0 size=6 '/home/reemote/mylink' -> 'file.txt'\n"
     )
-    assert await Directory.process(host, "/home/reemote5/mylink") is False
+    assert await Directory.process(host, "/home/reemote/mylink") is False
 
 
 async def test_directory_parses_the_ls_fallback_fixture():
@@ -614,13 +614,13 @@ async def test_link_parses_baseline_valid_fixture():
     # The baseline's valid.json fixture: a GNU stat row whose %N names the link
     # and its single-quoted target -> the metadata dict plus link_target.
     host = CannedShellHost(
-        "user=reemote5 group=reemote5 mode=lrwxrwxrwx atime=1594804774 "
+        "user=reemote group=reemote mode=lrwxrwxrwx atime=1594804774 "
         "mtime=1594804770 ctime=0 size=6 "
-        "'/home/reemote5/my@-_link' -> 'my_f@-ile.txt'\n"
+        "'/home/reemote/my@-_link' -> 'my_f@-ile.txt'\n"
     )
-    assert await Link.process(host, "/home/reemote5/my@-_link") == {
-        "user": "reemote5",
-        "group": "reemote5",
+    assert await Link.process(host, "/home/reemote/my@-_link") == {
+        "user": "reemote",
+        "group": "reemote",
         "mode": 777,
         "atime": datetime(2020, 7, 15, 9, 19, 34),
         "mtime": datetime(2020, 7, 15, 9, 19, 30),
@@ -632,11 +632,11 @@ async def test_link_parses_baseline_valid_fixture():
     # accepted type, so the fixture's command string is shared.
     assert host.shells == [
         (
-            "! (test -e /home/reemote5/my@-_link || test -L /home/reemote5/my@-_link ) || "
+            "! (test -e /home/reemote/my@-_link || test -L /home/reemote/my@-_link ) || "
             "( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' "
-            "/home/reemote5/my@-_link 2> /dev/null || "
+            "/home/reemote/my@-_link 2> /dev/null || "
             "stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' "
-            "/home/reemote5/my@-_link || ls -ld /home/reemote5/my@-_link )"
+            "/home/reemote/my@-_link || ls -ld /home/reemote/my@-_link )"
         )
     ]
 
@@ -664,13 +664,13 @@ async def test_link_parses_baseline_uutils_double_quote_fixture():
     # The baseline's valid_uutils.json fixture: uutils-coreutils stat quotes %N
     # in double quotes -> that quoting is stripped as well.
     host = CannedShellHost(
-        "user=reemote5 group=reemote5 mode=lrwxrwxrwx atime=1594804774 "
+        "user=reemote group=reemote mode=lrwxrwxrwx atime=1594804774 "
         "mtime=1594804770 ctime=0 size=8 "
-        '"/home/reemote5/mylink" -> "file.txt"\n'
+        '"/home/reemote/mylink" -> "file.txt"\n'
     )
-    assert await Link.process(host, "/home/reemote5/mylink") == {
-        "user": "reemote5",
-        "group": "reemote5",
+    assert await Link.process(host, "/home/reemote/mylink") == {
+        "user": "reemote",
+        "group": "reemote",
         "mode": 777,
         "atime": datetime(2020, 7, 15, 9, 19, 34),
         "mtime": datetime(2020, 7, 15, 9, 19, 30),
@@ -705,19 +705,19 @@ async def test_link_is_false_for_a_directory():
     # is 'd', so the fact reads False, not a dict.
     host = CannedShellHost(
         "user=root group=root mode=drw-r--r-- atime=1594804583 "
-        "mtime=1594804583 ctime=0 size=0 '/home/reemote5/myd@-_ir'\n"
+        "mtime=1594804583 ctime=0 size=0 '/home/reemote/myd@-_ir'\n"
     )
-    assert await Link.process(host, "/home/reemote5/myd@-_ir") is False
+    assert await Link.process(host, "/home/reemote/myd@-_ir") is False
 
 
 async def test_link_is_false_for_a_regular_file():
     # The baseline's file.json fixture: the path exists but its type flag is
     # '-', so the fact reads False, not a dict.
     host = CannedShellHost(
-        "user=reemote5 group=reemote5 mode=-rwxrwxrwx atime=1594804767 "
-        "mtime=1594804767 ctime=0 size=8 '/home/reemote5/fil-@_e.txt'\n"
+        "user=reemote group=reemote mode=-rwxrwxrwx atime=1594804767 "
+        "mtime=1594804767 ctime=0 size=8 '/home/reemote/fil-@_e.txt'\n"
     )
-    assert await Link.process(host, "/home/reemote5/fil-@_e.txt") is False
+    assert await Link.process(host, "/home/reemote/fil-@_e.txt") is False
 
 
 # --- Link parser edge cases ----------------------------------------------------

@@ -2,33 +2,33 @@
 
 <!---
 
-`reemote5.actions` is the escape hatch for acting on servers **outside the
+`reemote.actions` is the escape hatch for acting on servers **outside the
 deploy model** — the pragmatic cases the deploy model cannot serve: bespoke
 software with no [fact](guide.md#facts) to read it and no
-[operation](guide.md#operations) to manage it ([`Shell`][reemote5.actions.Shell]),
+[operation](guide.md#operations) to manage it ([`Shell`][reemote.actions.Shell]),
 a script file already staged on the host that just needs running
-([`Script`][reemote5.actions.Script], also reachable as `server.script`),
+([`Script`][reemote.actions.Script], also reachable as `server.script`),
 and connectivity itself — waiting for hosts to come back after a reboot
-([`WaitForConnection`][reemote5.actions.WaitForConnection]). An action acts on
+([`WaitForConnection`][reemote.actions.WaitForConnection]). An action acts on
 the target servers *now* and hands back what happened.
 
 Actions are conceptually **orthogonal** to the prepare/apply model, and the
 split is *enforced*, not conventional. They are deliberately not facts, not
 operations, and not part of any `modules/` namespace: they live in their own
-[`reemote5.actions`][reemote5.actions] module and are driven by their own
-fan-out, [`gather_action`][reemote5.actions.gather_action].
+[`reemote.actions`][reemote.actions] module and are driven by their own
+fan-out, [`gather_action`][reemote.actions.gather_action].
 
 ## Where actions belong
 
 Users call actions **before, between and after deploys — never inside one**.
-The awaited [`gather_action`][reemote5.actions.gather_action] is a barrier:
+The awaited [`gather_action`][reemote.actions.gather_action] is a barrier:
 every host's command has completed before the next deploy starts or the next
 fact is read. Composed deploys never contain an action; composition operates on
-[`OperationRequest`][reemote5.core.OperationRequest] sequences, which actions
+[`OperationRequest`][reemote.core.OperationRequest] sequences, which actions
 are not.
 
 ```python
-from reemote5 import Host, Shell, gather_action, run
+from reemote import Host, Shell, gather_action, run
 
 hosts = [Host.from_inventory(entry) for entry in inventory]
 
@@ -46,7 +46,7 @@ for name, result in results.items():
 
 ## The Result object
 
-[`Result`][reemote5.actions.Result] is a tiny library-owned `TypedDict`:
+[`Result`][reemote.actions.Result] is a tiny library-owned `TypedDict`:
 
 | Key | Meaning |
 | --- | --- |
@@ -64,7 +64,7 @@ The crucial difference from a fact or an operation: **an action interprets
 nothing**. A non-zero exit — including 127, command-not-found — is *data in the
 Result*, not an exception. The caller, not the library, decides what a bespoke
 command's failure means. (A fact read, by contrast, raises
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError] on exit 127 so a
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError] on exit 127 so a
 missing tool never parses as an empty default.)
 
 ## What still raises
@@ -72,19 +72,19 @@ missing tool never parses as an empty default.)
 A bespoke command's own outcome is data, but **library-level failures still
 raise**, exactly as they do elsewhere:
 
-- [`HostConnectionError`][reemote5.hosts.HostConnectionError] — a host that
+- [`HostConnectionError`][reemote.hosts.HostConnectionError] — a host that
   cannot be reached. Because hosts run concurrently, several may be unreachable
   at once; the per-host errors are merged into one aggregate naming every
-  affected host, the same treatment [`run_prepare`][reemote5.drivers.run_prepare]
+  affected host, the same treatment [`run_prepare`][reemote.drivers.run_prepare]
   gives them.
-- [`PrivilegeError`][reemote5.hosts.PrivilegeError] — sudo's or su's *own*
+- [`PrivilegeError`][reemote.hosts.PrivilegeError] — sudo's or su's *own*
   authentication rejection (a wrong or missing password, a forbidden run-as
   user). A rejected credential is never reported as a mere exit status; it
   raises, with the credential-free rendering and the would-be `CommandError` as
   its cause, and is aggregated across hosts like
-  [`run_apply`][reemote5.drivers.run_apply] does.
-- [`ConnectionTimeoutError`][reemote5.actions.ConnectionTimeoutError] — a host
-  [`WaitForConnection`][reemote5.actions.WaitForConnection] waited for never
+  [`run_apply`][reemote.drivers.run_apply] does.
+- [`ConnectionTimeoutError`][reemote.actions.ConnectionTimeoutError] — a host
+  [`WaitForConnection`][reemote.actions.WaitForConnection] waited for never
   became reachable within its timeout. Fatal by design: the next deploy must
   not start against a dead machine. Aggregated across hosts the same way.
 
@@ -93,7 +93,7 @@ exception propagates unchanged.
 
 ## Privilege escalation
 
-[`Shell`][reemote5.actions.Shell] honours `doas=True`, `sudo=True` and/or
+[`Shell`][reemote.actions.Shell] honours `doas=True`, `sudo=True` and/or
 `su=True` with the
 host's inventory `privilege` data — the run-as users and passwords come from the
 inventory, **never from the call**, exactly as for an operation. The escalations
@@ -103,20 +103,20 @@ supplied through an askpass helper without ever reaching the `Result` or a log
 [Privilege: sudo, su and doas](hosts.md#privilege-sudo-su-and-doas).
 
 Actions use plain `doas`/`sudo`/`su` **bools** — the execution-layer spelling —
-rather than the plan layer's [`Privilege`][reemote5.core.Privilege] tri-state,
+rather than the plan layer's [`Privilege`][reemote.core.Privilege] tri-state,
 because an action is executed immediately and never composed into a plan.
 
 The elevated path rides
-[`Host.run_shell_privileged_result`][reemote5.hosts.Host.run_shell_privileged_result],
+[`Host.run_shell_privileged_result`][reemote.hosts.Host.run_shell_privileged_result],
 the raw-result variant of
-[`Host.run_shell_privileged`][reemote5.hosts.Host.run_shell_privileged]: the
+[`Host.run_shell_privileged`][reemote.hosts.Host.run_shell_privileged]: the
 escalation is built identically, but the command's own exit status travels back
 in the result instead of raising `CommandError`. The unprivileged path rides
-[`Host.run_shell_result`][reemote5.hosts.Host.run_shell_result].
+[`Host.run_shell_result`][reemote.hosts.Host.run_shell_result].
 
 ## Selecting hosts: group and tags
 
-[`gather_action`][reemote5.actions.gather_action] accepts `group` and `tags`
+[`gather_action`][reemote.actions.gather_action] accepts `group` and `tags`
 keywords that select which hosts run, from the inventory's static classifiers
 (the same `host.group` / `host.tags` a deploy branches on):
 
@@ -140,13 +140,13 @@ await gather_action(
 
 ## Running a script file
 
-[`Script`][reemote5.actions.Script] — reachable as `server.script`, an alias
+[`Script`][reemote.actions.Script] — reachable as `server.script`, an alias
 in the `server` namespace — runs a script file that is **already on the
 host**. It never transfers anything: stage the file with `files.put` in a
 deploy first, then run it between deploys:
 
 ```python
-from reemote5 import gather_action, server
+from reemote import gather_action, server
 
 # The deploy staged /tmp/setup.sh with files.put; now run it.
 results = await gather_action(hosts, server.script, path="/tmp/setup.sh", args=("--verbose",))
@@ -169,13 +169,13 @@ doas exec their command directly rather than through a shell).
 
 ## Waiting for connections
 
-[`WaitForConnection`][reemote5.actions.WaitForConnection] is the reboot
+[`WaitForConnection`][reemote.actions.WaitForConnection] is the reboot
 companion to `Shell`: after a deploy configures hosts and a `Shell` action
 reboots them, it waits for every selected host to accept an SSH connection
 again **before the next deploy starts**.
 
 ```python
-from reemote5 import Host, Shell, WaitForConnection, gather_action, run
+from reemote import Host, Shell, WaitForConnection, gather_action, run
 
 # Deploy 1: configure the hosts.
 plans, report, hosts = await run(inventory, configure)
@@ -196,7 +196,7 @@ The parameters, both in seconds:
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `timeout` | `300` | Overall wait budget per host, from the start of its wait. Exhausting it raises the fatal [`ConnectionTimeoutError`][reemote5.actions.ConnectionTimeoutError]. |
+| `timeout` | `300` | Overall wait budget per host, from the start of its wait. Exhausting it raises the fatal [`ConnectionTimeoutError`][reemote.actions.ConnectionTimeoutError]. |
 | `retry` | `5` | Pause between failed attempts. The final pause is clamped so the wait never sleeps past its deadline. |
 
 Each attempt is a full `Host.connect` — the SSH handshake and authentication,
@@ -220,14 +220,14 @@ every host's connection when it finishes (removing any askpass helpers), so the
 next call — action or fact — opens a fresh one. This keeps actions
 self-contained and leaves no long-lived state behind for future action kinds to
 inherit. It also means a script needs no manual `aclose` after an action call,
-and an action can follow a [`run`][reemote5.drivers.run] (which closes its own
+and an action can follow a [`run`][reemote.drivers.run] (which closes its own
 hosts) transparently: `connect` is lazy, so the action re-opens them.
 
 ## The in-deploy guard
 
 An action **cannot run inside a deploy**, and
-[`gather_action`][reemote5.actions.gather_action] raises
-[`ActionInDeployError`][reemote5.actions.ActionInDeployError] the moment it is
+[`gather_action`][reemote.actions.gather_action] raises
+[`ActionInDeployError`][reemote.actions.ActionInDeployError] the moment it is
 *called* while a deploy is being prepared or applied. Three properties of the
 model demand this:
 
@@ -250,9 +250,9 @@ coroutine to await, so the check fires *at the call site* — even the un-awaite
 call inside a sync deploy generator (which could never have awaited it anyway)
 fails immediately rather than being silently swallowed as a never-awaited
 coroutine. Wrapping the action class as an operation — `op(Shell, ...)` — is
-refused too: [`materialize`][reemote5.drivers.materialize] requires an
+refused too: [`materialize`][reemote.drivers.materialize] requires an
 async-generator operation and raises
-[`OperationError`][reemote5.core.OperationError] for anything else.
+[`OperationError`][reemote.core.OperationError] for anything else.
 
 The sanctioned way to let a deploy depend on a bespoke command's outcome is the
 **deploy → action → deploy** split: run the action *between* two complete
@@ -267,7 +267,7 @@ split; see the [example](examples/actions.md#deploy-action-deploy).
 
 ## shell Actions
 
-::: reemote5.actions
+::: reemote.actions
     options:
       show_root_heading: false
       members:
@@ -283,7 +283,7 @@ split; see the [example](examples/actions.md#deploy-action-deploy).
 
 ## shell Returns
 
-::: reemote5.actions
+::: reemote.actions
     options:
       show_root_heading: false
       members:

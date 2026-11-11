@@ -4,7 +4,7 @@
 """Example: gather the ``dnf.DnfRepositories`` fact on real CentOS hosts.
 
 This is a *usage* example, not part of the library. Where
-``examples/modules/dnf/dnf_packages.py`` drives reemote5's two-phase execution model
+``examples/modules/dnf/dnf_packages.py`` drives reemote's two-phase execution model
 (a deploy generator of operations run through ``run``), this one reads a
 single **fact** directly over the same *real SSH transport* (asyncssh):
 
@@ -51,7 +51,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     DnfRepositories,
     Host,

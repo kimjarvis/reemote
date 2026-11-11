@@ -4,7 +4,7 @@
 """Example: start httpd on real CentOS hosts, then wait until port 80 is listening.
 
 This is a *usage* example, not part of the library. It shows the port half of
-reemote5's second kind of **non-shell** operation: ``server.wait`` runs no
+reemote's second kind of **non-shell** operation: ``server.wait`` runs no
 command string, it yields a ``WaitForFactCommand`` that the driver *polls* --
 re-gathering the ``Port`` fact over each host's asyncssh connection every
 ``interval`` seconds until the ``is_listening`` predicate holds or ``timeout``
@@ -93,7 +93,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

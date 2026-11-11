@@ -37,7 +37,7 @@ inventory comes from the shared ``inventory.json`` in the project root:
 ``AptSources`` cats ``/etc/apt/sources.list``, every
 ``/etc/apt/sources.list.d/*.list`` (legacy one-line format) and every
 ``/etc/apt/sources.list.d/*.sources`` (modern deb822 format), each behind
-a ``#reemote5-aptsource`` marker line naming the file. Legacy lines and
+a ``#reemote-aptsource`` marker line naming the file. Legacy lines and
 deb822 stanzas both expand into plain ``AptSource`` TypedDict-shaped
 dicts -- ``{type, url, distribution, components, options}`` -- with every
 ``options`` value a list of strings (``options["arch"]`` is always e.g.
@@ -65,7 +65,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     AptSources,
     CommandError,
     Host,

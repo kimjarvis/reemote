@@ -51,7 +51,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     Host,
     HostConnectionError,
     InventoryError,
@@ -132,7 +132,7 @@ async def main() -> None:
         # point of the escape hatch: bespoke software whose failure modes the
         # library cannot anticipate.
         missing = await gather_action(
-            hosts, Shell, command="cat /etc/reemote5-does-not-exist"
+            hosts, Shell, command="cat /etc/reemote-does-not-exist"
         )
     except (HostConnectionError, PrivilegeError) as exc:
         # A library-level failure (unreachable host, rejected elevation) is a

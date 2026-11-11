@@ -16,7 +16,7 @@ two-phase execution model:
 3. Gather ``SystemdVersion`` on every remaining host at once with
    ``gather_fact``, then print each host's version record with ``json.dumps``.
 
-``SystemdVersion`` is a reemote5 original: it runs ``systemctl --version`` and
+``SystemdVersion`` is a reemote original: it runs ``systemctl --version`` and
 parses the banner into a ``SystemdVersionInfo`` entry (``{version, release,
 features}``) -- the upstream integer version (e.g. ``255``), the distribution
 release in parentheses (e.g. ``255.4-1ubuntu8.6``) and the compiled-in feature
@@ -39,7 +39,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

@@ -3,7 +3,7 @@
 
 """Example: ensure replication is running on two real replica hosts.
 
-This is a *usage* example, not part of the library. It drives reemote5's
+This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
@@ -20,7 +20,7 @@ two-phase execution model end to end over a **real SSH transport**
    dropped namespace-wide).
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``mysql.replica`` is a reemote5-original operation scoped to
+``mysql.replica`` is a reemote-original operation scoped to
 START/STOP/RESET REPLICA (MySQL 8.0.22+ syntax). ``CHANGE REPLICATION
 SOURCE TO`` is deliberately dropped -- it requires ``SOURCE_PASSWORD``
 inline and MySQL has no passfile for replication, so configure the
@@ -71,7 +71,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

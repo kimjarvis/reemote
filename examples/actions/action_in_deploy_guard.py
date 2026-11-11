@@ -48,7 +48,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     ActionInDeployError,
     Host,
     InventoryError,

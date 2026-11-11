@@ -1,6 +1,6 @@
 # postgresql module
 
-::: reemote5.modules.postgresql.postgresql
+::: reemote.modules.postgresql.postgresql
     options:
       show_root_heading: false
       members:
@@ -52,7 +52,7 @@
 
 <!---
 
-`reemote5.modules.postgresql.postgresql` combines the PostgreSQL facts and
+`reemote.modules.postgresql.postgresql` combines the PostgreSQL facts and
 operations in a single source, extending the baseline's two-fact/five-operation
 `postgresql` namespace toward complete control over and visibility into a
 cluster. Every fact and operation runs through the `psql` client on the
@@ -70,7 +70,7 @@ through operation arguments, plans or logs.
 A fact is an asynchronous, queryable resource — never yielded by a
 generator — implemented as a `process` coroutine returning the raw value
 (over asyncssh in the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get]. The cluster-wide facts
+[`FactCache.get`][reemote.core.FactCache.get]. The cluster-wide facts
 (`PostgresqlRoles`, `PostgresqlDatabases`, `PostgresqlRoleMemberships`,
 `PostgresqlSettings`, `PostgresqlTablespaces`, `PostgresqlReplication`,
 `PostgresqlConnections`) take only the four connection options; the
@@ -87,7 +87,7 @@ name-keyed dicts of catalog columns, with `t`/`f` coerced to bools and the
 `(N rows)` trailer dropped by pattern rather than by chopping the last
 line — so empty output reads as `{}` instead of raising.
 
-The twelve reemote5-original facts answer the visibility gaps the baseline
+The twelve reemote-original facts answer the visibility gaps the baseline
 leaves: `PostgresqlRoleMemberships` (role/member/admin-option rows from
 `pg_auth_members`), `PostgresqlPrivileges` (one ACL row per grant —
 object type, schema, name, grantee, privilege, grantable — expanded from
@@ -113,7 +113,7 @@ reason).
 ## Operations
 
 An operation is an async generator: it reads facts through
-[`FactCache.get`][reemote5.core.FactCache.get], decides whether a change
+[`FactCache.get`][reemote.core.FactCache.get], decides whether a change
 is needed, records `ctx.changed`/`ctx.reason`, and yields one typed
 command descriptor per mutation — never touching the host itself. Reach
 operations through the namespace (`postgresql.database`), not the
@@ -137,7 +137,7 @@ explicitly as X/NOX pairs (so `INHERIT` appears where the baseline omitted
 it) and reconciles an existing role's flags and connection limit through
 `ALTER ROLE`.
 
-The nine reemote5-original operations close the control gaps, modeled on
+The nine reemote-original operations close the control gaps, modeled on
 the Ansible `community.postgresql` parameter shapes:
 `postgresql.privilege` grants/revokes object privileges (only missing
 privileges are granted, only held ones revoked; `grant_option` upgrades
@@ -149,7 +149,7 @@ type the grantee holds grants on), `postgresql.membership` manages
 `postgresql.extension` installs extensions and reconciles schema moves
 and version updates, `postgresql.index` creates/drops indexes
 (`CONCURRENTLY` supported; a differing definition raises
-[`OperationError`][reemote5.core.OperationError] rather than silently
+[`OperationError`][reemote.core.OperationError] rather than silently
 rebuilding a possibly constraint-backing index), `postgresql.setting`
 tunes GUCs through `ALTER SYSTEM SET`/`RESET` with an optional
 `SELECT pg_reload_conf()` follow-up (the config-file-rewrite apply method
@@ -178,7 +178,7 @@ The read-only fact-gathering scripts `postgresql_postgresql_roles.py`,
 `postgresql_postgresql_subscriptions.py` under
 [`examples/modules/postgresql/`](../examples/modules/postgresql.md)
 gather the fourteen facts respectively across an inventory with
-[`gather_fact`][reemote5.drivers.gather_fact] and print each host's
+[`gather_fact`][reemote.drivers.gather_fact] and print each host's
 result as JSON.
 
 The operation scripts (`postgresql_database.py`, `postgresql_role.py`,
@@ -188,7 +188,7 @@ The operation scripts (`postgresql_database.py`, `postgresql_role.py`,
 `postgresql_setting.py`, `postgresql_tablespace.py`,
 `postgresql_publication.py`, `postgresql_subscription.py`) under the same
 directory drive each operation through the two-phase
-[`run`][reemote5.drivers.run] — a dry-run plan then a real apply — over an
+[`run`][reemote.drivers.run] — a dry-run plan then a real apply — over an
 inventory, yielding the same request twice so the second is a guaranteed
 apply-phase no-op.
 

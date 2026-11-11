@@ -47,7 +47,7 @@ operator-supplied compiled package at `/tmp/myhttpd.pp` (upload it with
 
 The boolean operation: `selinux.boolean` sets one kernel security boolean
 to `on`/`off`, idempotent on the
-[`SEBoolean`][reemote5.modules.selinux.selinux.SEBoolean] fact — the
+[`SEBoolean`][reemote.modules.selinux.selinux.SEBoolean] fact — the
 check-before-executing the enhancement asked for falls out of the
 fact-driven model, sparing the expensive `setsebool -P` policy rewrite on
 an unchanged boolean. The script enables `httpd_can_network_connect` (the
@@ -68,7 +68,7 @@ The file-context operation: `selinux.file_context` ports the baseline's
 `chcon -t` scenario and extends it to the full context — each of
 `se_type`, `se_user`, `se_role`, `se_level` is optional, at least one must
 be given, and only the components differing from the
-[`FileContext`][reemote5.modules.selinux.selinux.FileContext] fact are
+[`FileContext`][reemote.modules.selinux.selinux.FileContext] fact are
 relabelled. The script labels httpd's index page `httpd_sys_content_t`
 twice (the second a guaranteed no-op in apply), then asks for the whole
 context on the same file — a component-wise no-op once the stock
@@ -87,12 +87,12 @@ The mapping operation: `selinux.file_context_mapping` manages one
 persistent rule in the local fcontext database — `present=True` adds
 (`semanage fcontext -a`) or modifies (`-m`) the rule for a target
 expression, `present=False` deletes it (`-d`) — idempotent on the
-[`FileContextMapping`][reemote5.modules.selinux.selinux.FileContextMapping]
+[`FileContextMapping`][reemote.modules.selinux.selinux.FileContextMapping]
 fact. The script ensures `/web(/.*)?` carries `httpd_sys_content_t` twice
 (the second a guaranteed no-op in apply), then composes the documented
 remedy for the operation's own limitation: a database rule never touches
 labels existing files carry, so a third request runs
-[`selinux.restorecon`][reemote5.modules.selinux.selinux.restorecon] over
+[`selinux.restorecon`][reemote.modules.selinux.selinux.restorecon] over
 `/web` *after* the mapping step, seeing the new rule through the fresh
 per-step state — the fact-operation pairing the design recommends. The
 `/web` tree must exist on the hosts. All requests are flagged `sudo=True`.
@@ -108,9 +108,9 @@ the *modify* capability the baseline's add/remove-only operation lacked —
 `present=True` adds an unlabelled port (`semanage port -a`) or changes a
 differently-labelled one in place (`-m`), `present=False` deletes the
 label (`-d`). Idempotence dispatches on tooling: the
-[`SEPort`][reemote5.modules.selinux.selinux.SEPort] fact when `sepolicy`
+[`SEPort`][reemote.modules.selinux.selinux.SEPort] fact when `sepolicy`
 is installed, otherwise the
-[`SEPorts`][reemote5.modules.selinux.selinux.SEPorts] table. The script
+[`SEPorts`][reemote.modules.selinux.selinux.SEPorts] table. The script
 labels tcp/8080 `http_port_t` (httpd's alternate port) twice — the second
 a guaranteed no-op in apply. `semanage port` writes the policy store, so
 the requests are flagged `sudo=True`.
@@ -121,10 +121,10 @@ the requests are flagged `sudo=True`.
 
 ## Switching the runtime mode
 
-The mode operation: `selinux.mode` is a reemote5 original — the baseline ships
+The mode operation: `selinux.mode` is a reemote original — the baseline ships
 no mode operation — setting the *runtime* enforcing state with
 `setenforce`, idempotent on the
-[`Mode`][reemote5.modules.selinux.selinux.Mode] fact. The script ensures
+[`Mode`][reemote.modules.selinux.selinux.Mode] fact. The script ensures
 `enforcing` twice (both no-ops on an already-enforcing host; on a
 permissive host the first switches and the second is the apply-phase
 no-op). Two boundaries are deliberate: the boot-time mode in
@@ -139,10 +139,10 @@ requests are flagged `sudo=True`.
 
 ## Confining a login to an SELinux user
 
-The login operation: `selinux.login` is a reemote5 original managing the
+The login operation: `selinux.login` is a reemote original managing the
 Linux-user → SELinux-user mapping (`semanage login -a/-m/-d`), the core of
 least-privilege confined-user management, idempotent on the
-[`SELogin`][reemote5.modules.selinux.selinux.SELogin] fact comparing both
+[`SELogin`][reemote.modules.selinux.selinux.SELogin] fact comparing both
 the SELinux user and the MLS/MCS range. The script maps the login
 `kjarvis` to `staff_u` at range `s0` — the confined-administrator user
 whose roles the `SEUser` fact reports — twice (the second a guaranteed
@@ -156,12 +156,12 @@ no-op in apply). The mapping takes effect at the user's *next* login.
 
 ## Installing a custom policy module
 
-The module operation: `selinux.module` is a reemote5 original managing
+The module operation: `selinux.module` is a reemote original managing
 compiled policy modules through a four-state machine — `present` installs
 (`semodule -X <priority> -i <source>`) or re-enables a disabled instance,
 `absent` removes (`-r`), `enabled`/`disabled` flip an installed instance
 (`-e`/`-d`) — idempotent on the
-[`Modules`][reemote5.modules.selinux.selinux.Modules] fact. The parameter
+[`Modules`][reemote.modules.selinux.selinux.Modules] fact. The parameter
 is named `module_name` because `op()` reserves `name` for the request
 label (the baseline's `bool_name` precedent). The script installs a custom
 `myhttpd` package twice (the second a guaranteed no-op in apply); the
@@ -180,9 +180,9 @@ are flagged `sudo=True`.
 ## Carving a per-domain permissive exception
 
 The permissive-domain operation: `selinux.permissive_domain` is a
-reemote5 original adding or removing one domain from the permissive list
+reemote original adding or removing one domain from the permissive list
 (`semanage permissive -a/-d`), idempotent on the
-[`PermissiveDomains`][reemote5.modules.selinux.selinux.PermissiveDomains]
+[`PermissiveDomains`][reemote.modules.selinux.selinux.PermissiveDomains]
 fact — the safe alternative to global permissive mode when
 troubleshooting one service: the exception is one domain wide, persistent
 and auditable. The script runs a full add → no-op → remove cycle on
@@ -199,7 +199,7 @@ flagged `sudo=True`.
 
 ## Relabelling a tree (the stateless contract)
 
-The restorecon operation: `selinux.restorecon` is a reemote5 original
+The restorecon operation: `selinux.restorecon` is a reemote original
 reapplying the persistent fcontext database to existing files
 (`restorecon [-R] [-F] <path>`) — the remedy for `chcon` labels being
 runtime-only and database rules never touching existing labels. It is
@@ -217,7 +217,7 @@ requests are flagged `sudo=True`.
 
 ## Scheduling a full-system relabel
 
-The autorelabel operation: `selinux.autorelabel` is a reemote5 original
+The autorelabel operation: `selinux.autorelabel` is a reemote original
 creating the `/.autorelabel` marker (`touch /.autorelabel`) that tells the
 next boot to relabel *every* file from the database — the heavy remedy
 for a disabled-to-enabled transition (files created while SELinux was off
@@ -235,18 +235,18 @@ root, so the requests are flagged `sudo=True`.
 
 ## Managing /etc/selinux/config at boot
 
-The config operation: `selinux.config` is a reemote5 original — the baseline
+The config operation: `selinux.config` is a reemote original — the baseline
 ships no config operation — ensuring the boot-time settings in
 `/etc/selinux/config`, and it supersedes the `files.edit` + `files.move`
 two-run recipe this example used to demonstrate: the whole
 spool-and-install dance is now inside
-[`config`][reemote5.modules.selinux.selinux.config], so one request in one
+[`config`][reemote.modules.selinux.selinux.config], so one request in one
 deploy replaces the snapshot gather, the controller-side gate and both
 runs. The script ensures `SELINUX=enforcing` and `SELINUXTYPE=targeted`
 (the runtime half is `selinux.mode`'s job); each setting is optional —
 `None` leaves that key untouched. Internally the operation reads the
 file's text with the
-[`SelinuxConfigFile`][reemote5.modules.selinux.selinux.SelinuxConfigFile]
+[`SelinuxConfigFile`][reemote.modules.selinux.selinux.SelinuxConfigFile]
 content fact, drops every existing assignment of each requested key
 (commented ones included) and appends `KEY=value` unquoted; a file that
 already holds exactly the wanted assignments is a no-op. When the content

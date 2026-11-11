@@ -4,7 +4,7 @@
 """Install an APT GPG keyring file from a controller-side key stream.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -39,13 +39,13 @@ controller and pass its bytes); ``dest`` names the keyring file, resolved
 under ``/etc/apt/keyrings/`` when relative.
 
 One request yields two commands at different privilege levels: an
-``AptKeyUploadCommand`` transfer spools the stream to a fixed ``/tmp`` path
-over scp as the login user, then an ``AptKeyInstallCommand`` runs one
+``AptKeyUploadCommand`` transfer spools the stream into a dest-derived
+``/tmp`` directory over scp as the login user, then an ``AptKeyInstallCommand`` runs one
 elevated ``sh -c`` that creates the keyrings directory, dearmors the key
 with ``gpg --batch --yes --dearmor`` when the content is ASCII-armored
 (``--yes`` overwrites the keyring a previous run left behind; binary
 content is copied verbatim), chmods the keyring ``0644`` and removes the
-spool file. The request is flagged ``sudo=True`` for the install; the
+spool directory. The request is flagged ``sudo=True`` for the install; the
 transfer stays unprivileged regardless, so the log shows a plain ``scp``
 line followed by ``sudo sh -c``.
 
@@ -84,7 +84,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -208,7 +208,7 @@ def is_ubuntu(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Install the key stream as ``/etc/apt/keyrings/reemote5-demo.gpg``.
+    """Install the key stream as ``/etc/apt/keyrings/reemote-demo.gpg``.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases. Writing under ``/etc/apt/keyrings/`` needs root, so the
@@ -219,7 +219,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         apt.key,
         name="Install demo apt GPG keyring",
         src=GPG_KEY,
-        dest="reemote5-demo.gpg",
+        dest="reemote-demo.gpg",
         sudo=True,
         when=is_ubuntu,
     )

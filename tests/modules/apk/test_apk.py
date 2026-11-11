@@ -4,25 +4,25 @@
 """Tests for the apk module: ``ApkAutoremovablePackages``, ``ApkExplicitPackages``,
 ``ApkHeldPackages``, ``ApkInstalledPackages`` and ``ApkRepositories``.
 
-Covers the read-only state discovery in ``reemote5.modules.apk.apk``:
+Covers the read-only state discovery in ``reemote.modules.apk.apk``:
 ``ApkInstalledPackages`` is exercised both over the real-transport path (parsing
 canned ``apk list --installed`` output, reusing the rows of the baseline's own
 ``apk.ApkPackages`` fact fixtures verbatim -- the small
 ``packages_2.json`` fixture in full and a selected row set of the large
-alpine ``packages.json`` fixture -- and asserting them in reemote5's own
+alpine ``packages.json`` fixture -- and asserting them in reemote's own
 ``ApkPackageVersion`` entry shape) and through the ``SimulatedHost`` seam,
 plus the de-dup/sort and ``WARNING:`` noise-filtering edge cases and the
 ``gather_fact`` fan-out. ``ApkExplicitPackages`` and ``ApkRepositories`` --
-reemote5 originals with no baseline fixtures -- are fed a realistic canned
+reemote originals with no baseline fixtures -- are fed a realistic canned
 ``/etc/apk/world`` and ``/etc/apk/repositories`` file respectively, plus the
 tag-dropping, comment/conflict and malformed-line skips, the seam
-copy semantics and their own fan-outs. ``ApkPackage`` -- a reemote5 original
+copy semantics and their own fan-outs. ``ApkPackage`` -- a reemote original
 querying one package's detail with no baseline fixture -- is fed a realistic
 canned ``apk info -a`` block, plus the untracked-section skip, the scalar
 absent-field defaults, the size coercion, the shell-quoting and None-on-
 absent edges, the seam copy semantics and its package-argument fan-out.
 ``ApkAutoremovablePackages`` -- the apk counterpart of ``apt.AptAutoremovable``,
-also a reemote5 original with no baseline fixture -- is fed a realistic
+also a reemote original with no baseline fixture -- is fed a realistic
 canned ``apk add --purge --simulate`` block, plus the summary/footer skip,
 the multi-dash and punctuation name preservation, the dedup+sort and the
 seam copy semantics and fan-out.
@@ -35,7 +35,7 @@ version-pin matching, the ``latest`` upgrade path, the deliberately dropped
 end-to-end through ``run`` / ``run_prepare`` + ``run_apply`` (including the
 ``sudo`` elevation and a dry run).
 
-The ``apk.virtual`` operation -- a reemote5 original with no baseline
+The ``apk.virtual`` operation -- a reemote original with no baseline
 counterpart, managing a virtual package group through its single
 present-flagged ``ApkVirtualCommand`` -- is exercised over the descriptor's
 create/remove rendering and elevation, its world-name idempotence against
@@ -68,7 +68,7 @@ fact and popping the names from ``apk_packages`` while leaving the world and
 the holds untouched), and end-to-end through ``run_prepare`` + ``run_apply``
 (purge-then-noop, and a dry run).
 
-The ``apk.repository`` operation -- a reemote5 original modeled on
+The ``apk.repository`` operation -- a reemote original modeled on
 ``apt.repo`` (the baseline's apk namespace ships no repository operation), a member
 of the spool-and-install write family -- is exercised over the
 ``ApkRepoUploadCommand``/``ApkRepoInstallCommand`` pair (the unprivileged scp of
@@ -91,8 +91,8 @@ import shlex
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, op
+from reemote.drivers import (
     command_shell,
     format_log,
     gather_fact,
@@ -101,9 +101,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import apk
-from reemote5.modules.apk.apk import (
+from reemote.hosts import Host
+from reemote.modules import apk
+from reemote.modules.apk.apk import (
     ApkAutoremovablePackages,
     ApkExplicitPackages,
     ApkHeldPackages,
@@ -201,7 +201,7 @@ PACKAGES_2_SEAM = {
     "linux-firmware-rtl_nic": ["20220509-r1"],
 }
 
-# The same answer in reemote5's shape: one ``ApkPackageVersion`` entry per
+# The same answer in reemote's shape: one ``ApkPackageVersion`` entry per
 # installed name-and-version pair, sorted by name, then version.
 PACKAGES_2_FACT = [
     _installed("apk-tools", "2.10.4-r2"),
@@ -215,7 +215,7 @@ PACKAGES_2_FACT = [
 
 async def test_apk_packages_parses_the_warning_fixture():
     """Over the real-transport path, ``ApkInstalledPackages`` parses the
-    fixture's rows into the fixture fact's answer, in reemote5's entry shape:
+    fixture's rows into the fixture fact's answer, in reemote's entry shape:
     the ``WARNING:`` lines carry no ``{origin} (license)`` tail and never match
     the regex."""
     host = CannedShellHost(PACKAGES_2_OUTPUT)
@@ -2412,12 +2412,15 @@ TESTING_LINE = f"@testing {TESTING_URL}"
 REPOS_PATH = ApkRepositories.PATH
 # The spool path apk.repository uploads to, derived from the managed file --
 # the tests spell the same call the operation makes, so both name it alike.
+# The spool file now lives inside a sha1-derived /tmp directory; the install
+# rm -rf's the directory rather than the bare file.
 REPO_SPOOL = _repo_spool_path(REPOS_PATH)
+REPO_SPOOL_DIR = REPO_SPOOL.rsplit("/", 1)[0]
 # The install's inner script: create /etc/apk, overlay the protected file with
-# the spooled text, reset apk's mode to 644, drop the spool.
+# the spooled text, reset apk's mode to 644, drop the spool directory.
 REPO_INSTALL_INNER = (
     f"mkdir -p /etc/apk && cp {REPO_SPOOL} {REPOS_PATH} && "
-    f"chmod 0644 {REPOS_PATH} && rm -f {REPO_SPOOL}"
+    f"chmod 0644 {REPOS_PATH} && rm -rf {REPO_SPOOL_DIR}"
 )
 
 
@@ -2454,12 +2457,13 @@ def test_apk_repo_spool_path_is_deterministic_per_dest():
     path = "/etc/apk repos/wei rd"
     spool = _repo_spool_path(path)
     assert spool == _repo_spool_path(path)
-    assert spool.startswith("/tmp/reemote5-apk-repo-")
+    assert spool.startswith("/tmp/reemote-apk-repo-")
     assert spool != REPO_SPOOL
+    spool_dir = spool.rsplit("/", 1)[0]
     inner = shlex.split(ApkRepoInstallCommand(spool=spool, dest=path).shell())[2]
     assert inner.startswith("mkdir -p '/etc/apk repos' && ")
     assert f"cp {shlex.quote(spool)} {shlex.quote(path)} && " in inner
-    assert f"chmod 0644 {shlex.quote(path)} && rm -f {shlex.quote(spool)}" in inner
+    assert f"chmod 0644 {shlex.quote(path)} && rm -rf {shlex.quote(spool_dir)}" in inner
 
 
 # --- apk.repository: the raw-content fact --------------------------------------

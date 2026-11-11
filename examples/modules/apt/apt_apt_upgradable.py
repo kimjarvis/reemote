@@ -68,7 +68,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     AptUpgradable,
     CommandError,
     Host,

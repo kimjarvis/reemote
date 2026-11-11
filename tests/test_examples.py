@@ -36,8 +36,8 @@ import types
 
 import pytest
 
-from reemote5 import Host, Result
-from reemote5.core import OperationRequest
+from reemote import Host, Result
+from reemote.core import OperationRequest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 EXAMPLES_ROOT = REPO_ROOT / "examples"

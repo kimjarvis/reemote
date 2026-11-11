@@ -3,7 +3,7 @@
 
 """Example: ensure a logical-replication publication on real CentOS hosts.
 
-This is a *usage* example, not part of the library. It drives reemote5's
+This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
@@ -16,7 +16,7 @@ two-phase execution model end to end over a **real SSH transport**
    objects, each guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``postgresql.publication`` is a reemote5-original operation managing
+``postgresql.publication`` is a reemote-original operation managing
 logical-replication publications: it reads the ``PostgresqlPublications``
 fact for the database named by ``psql_database`` -- an absent publication
 yields CREATE PUBLICATION ... FOR TABLE (the table set sorted and
@@ -77,7 +77,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

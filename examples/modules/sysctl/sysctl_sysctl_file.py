@@ -28,7 +28,7 @@ two-phase execution model:
    across the inventory with ``asyncio.gather`` and returns a
    host-name-keyed mapping -- then print each host's file text.
 
-``SysctlFile`` is a reemote5 original: it returns the **raw text** of one
+``SysctlFile`` is a reemote original: it returns the **raw text** of one
 sysctl config file, or ``None`` when the file is absent. The shell prints
 a marker line before the ``cat``'d content only when ``test -e`` passes,
 so an existing-but-empty file reads as ``""`` rather than being confused
@@ -58,7 +58,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

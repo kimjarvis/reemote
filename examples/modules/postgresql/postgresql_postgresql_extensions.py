@@ -29,7 +29,7 @@ driving the two-phase execution model:
    ``PostgresqlExtension`` entries (``name``, ``version``, ``schema``)
    with ``json.dumps(..., indent=2)``.
 
-The fact is a reemote5-original visibility fact (the baseline has no extension
+The fact is a reemote-original visibility fact (the baseline has no extension
 fact): it selects installed extensions from ``pg_extension`` joined to
 ``pg_namespace`` for the schema name, so ``postgresql.extension`` can
 install an extension once and reconcile schema moves and version updates
@@ -71,7 +71,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

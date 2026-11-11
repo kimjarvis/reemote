@@ -10,7 +10,7 @@ anything: the transfer is a deploy's job (``files.put``), the execution is
 an action's job, and the two meet outside the deploy model:
 
 1. A deploy stages the script: ``files.put`` copies a module-level
-   ``io.StringIO`` payload to ``/tmp/reemote5-script-demo.sh`` on the
+   ``io.StringIO`` payload to ``/tmp/reemote-script-demo.sh`` on the
    ``centos`` hosts (``when=is_centos``). The put source is one stable
    stream identity across both phases, as ``OperationRequest`` compares a
    stream by identity. scp writes the file as the login user WITHOUT an
@@ -54,7 +54,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -76,13 +76,13 @@ from reemote5 import (
 # and apply request sequences compare equal.
 SCRIPT_BODY = io.StringIO(
     "#!/bin/sh\n"
-    "# Staged by reemote5 -- the server.script action example.\n"
+    "# Staged by reemote -- the server.script action example.\n"
     'echo "hello $1"\n'
 )
 
 # Staging destination under /tmp: the unprivileged scp transfer can write it
 # as the login user, and the action can run it from there.
-STAGED_SCRIPT = "/tmp/reemote5-script-demo.sh"
+STAGED_SCRIPT = "/tmp/reemote-script-demo.sh"
 
 # The shared inventory in the project root -- the same inventory.json the
 # library's other examples read.
@@ -179,7 +179,7 @@ async def main() -> None:
         missing = await gather_action(
             centos_hosts,
             server.script,
-            path="/tmp/reemote5-script-does-not-exist.sh",
+            path="/tmp/reemote-script-does-not-exist.sh",
         )
     except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # A library-level failure is a typed error naming the host. Print

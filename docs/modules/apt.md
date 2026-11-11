@@ -1,6 +1,6 @@
 # apt module
 
-::: reemote5.modules.apt.apt
+::: reemote.modules.apt.apt
     options:
       show_root_heading: false
       members:
@@ -35,7 +35,7 @@
 
 <!---
 
-`reemote5.modules.apt.apt` holds the apt facts — `AptAutoremovable`, the
+`reemote.modules.apt.apt` holds the apt facts — `AptAutoremovable`, the
 no-longer-needed packages an autoremove would clean up, parsed from the
 `Remv` rows of an `apt-get --just-print autoremove` simulation into plain
 `AptPackageInfo` TypedDict-shaped dicts (name and a one-element versions
@@ -75,7 +75,7 @@ standalone cleanup of orphaned dependencies, idempotent on
 keyring file under `/etc/apt/keyrings/` for `signed-by=` references —
 deliberately non-idempotent, like `dnf.key`; `apt.mark`, which holds
 packages back from upgrades (or releases held ones) with
-`apt-mark hold`/`unhold`, idempotent on `AptHeldPackages` — a reemote5
+`apt-mark hold`/`unhold`, idempotent on `AptHeldPackages` — a reemote
 original; `apt.packages`, which
 installs, upgrades or removes packages by name, reading `AptPackages`
 for exact-version idempotence and `SimulateOperationWillChange` to gate
@@ -98,12 +98,12 @@ proposes changes.
 A fact is an asynchronous, queryable resource — never yielded by a generator —
 implemented as a `process` coroutine returning the raw value (over asyncssh in
 the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get], which is itself a coroutine,
+[`FactCache.get`][reemote.core.FactCache.get], which is itself a coroutine,
 so results are awaited and cached within a phase step. `AptAutoremovable`
 takes no arguments and runs `apt-get --just-print autoremove 2>/dev/null`
 — a simulation that never removes anything (the `2>/dev/null` suppresses
 the lock/permission warnings an unprivileged simulation writes to
-stderr). It is a reemote5 original: the baseline ships no
+stderr). It is a reemote original: the baseline ships no
 `apt.AptAutoremovable` counterpart (its `apt.SimulateOperationWillChange`
 only counts a simulation's changes, never names them). Only the
 machine-readable `Remv <name> [<version>]` rows are read — the progress
@@ -127,12 +127,12 @@ list; removal stays an explicit operator decision, never a fact side
 effect — the `apt.auto_remove` operation performs that cleanup. The
 simulation needs no root, and a missing `apt-get` exits
 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError].
 
 `AptHeldPackages`
 takes no arguments and runs `apt-mark showhold`, which prints one held
 package name per line — the names marked with `apt-mark hold`, which keeps
-them out of upgrades. It is a reemote5 original: the baseline ships no
+them out of upgrades. It is a reemote original: the baseline ships no
 `apt.AptHeldPackages` counterpart. Blank lines are skipped and the entries
 are de-duplicated and sorted, so the result is a deterministic,
 JSON-printable list of `AptPackageInfo` entries like
@@ -149,7 +149,7 @@ critical packages reads the held names here — and only collects the
 list; marking stays an explicit operator decision, never a fact side
 effect — the `apt.mark` operation sets or clears those marks. A missing
 `apt-mark` exits 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError].
 
 `AptKeys` takes an
 optional `directories` argument — a list of paths, a single path string or
@@ -162,18 +162,18 @@ dicts, with `length` an int and `subkeys` a list of further `AptKey`
 entries; if the same key id appears
 in several keyring files, the last one wins and entries keep the order
 their ids first appeared in. The baseline keys its answer by key id (with
-subkeys re-keyed by their own ids); reemote5 returns the typed entry list
+subkeys re-keyed by their own ids); reemote returns the typed entry list
 instead. The baseline builds the fact on its
-`gpg.GpgKeyrings` infrastructure; reemote5 collapses that stack into the one
+`gpg.GpgKeyrings` infrastructure; reemote collapses that stack into the one
 class, so the per-keyring paths and formats the parent reports are
-deliberately dropped (`AptKeys` discards them anyway). reemote5's own
-[`GpgKeyrings`][reemote5.modules.gpg.gpg.GpgKeyrings] in the gpg namespace
+deliberately dropped (`AptKeys` discards them anyway). reemote's own
+[`GpgKeyrings`][reemote.modules.gpg.gpg.GpgKeyrings] in the gpg namespace
 is the general-purpose keyring inspection fact that keeps those
 per-keyring paths and formats. The baseline's
 `requires_command` gating on `gpg` is deliberately dropped too: a missing
 `gpg` is swallowed by the command's `|| true` and reads as `[]`, while a
 missing `find` exits 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError].
 
 `AptPackages` takes no arguments and runs `apt list --installed 2>/dev/null`
 (the redirect suppresses the "Listing..." progress notice modern apt writes
@@ -185,12 +185,12 @@ keep their suffix, epoch-prefixed versions stay intact, and the
 sorted list of `AptPackageInfo` entries — each a name plus its sorted,
 de-duplicated version list, the shared shape `AptAutoremovable` and
 `AptHeldPackages` return too; the baseline keys its answer by name (the
-list-of-versions shape it shares with `deb.DebPackages`), while reemote5
+list-of-versions shape it shares with `deb.DebPackages`), while reemote
 returns the typed entry list (the same deliberate divergence
 `ApkInstalledPackages` made) so reads stay deterministic and JSON-printable.
 the baseline's `requires_command` gating on `apt` is deliberately dropped: a
 missing `apt` exits 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError]. Hold state
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError]. Hold state
 is not visible in these rows: `AptHeldPackages` reports the names marked
 with `apt-mark hold`. Candidate versions and repository origins are not
 visible either: `AptPolicy` reports which version `apt install` would
@@ -203,7 +203,7 @@ autoremove would clean up.
 `LC_ALL=C apt-cache policy <package>` — the `LC_ALL=C` prefix keeps apt's
 field labels untranslated on localized hosts, overriding any `LC_*`
 variable the login environment sets (a bare `LANG=C` would lose to an
-exported `LC_ALL`). It is a reemote5 original: the baseline ships no `apt.AptPolicy`
+exported `LC_ALL`). It is a reemote original: the baseline ships no `apt.AptPolicy`
 counterpart. The result is an `AptPackagePolicy` dict — `{installed,
 candidate, versions}` — where `installed` is the installed version and
 `candidate` the version `apt install` would pick right now (either maps
@@ -221,12 +221,12 @@ that a specific version is available before rolling it out reads the
 candidate and origins here. An unknown package prints nothing on stdout
 (apt's "Unable to locate package" notice goes to stderr) — that reads as
 `None`. A missing `apt-cache` exits 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError].
 
 `AptSources` takes no arguments and cats `/etc/apt/sources.list`, every
 `/etc/apt/sources.list.d/*.list` (legacy one-line format) and every
 `/etc/apt/sources.list.d/*.sources` (modern deb822 format), each behind a
-`#reemote5-aptsource` marker line naming the file so the parser can pick
+`#reemote-aptsource` marker line naming the file so the parser can pick
 the format by extension, mirroring the baseline's `apt.AptSources` (whose
 `##UPSTREAM_FILE` marker is renamed here, like `DnfRepositories`' filename
 marker). Legacy lines parse with the baseline's regex — bracketed `[key=value]`
@@ -256,7 +256,7 @@ files (usually `[]`).
 apt sources file, or `None` when it is absent — the `DnfRepoFile` pattern
 in this namespace, generic over a `.list` or a `.sources` file because the
 fact never interprets the text. The real-transport command cats the file
-only behind a `test -e` guard and leads with a `#reemote5-sourcesfile`
+only behind a `test -e` guard and leads with a `#reemote-sourcesfile`
 marker line, so a missing file (no marker) reads as `None` while an
 existing but empty file reads as `""` — the distinction that lets a removal
 delete an empty leftover. Where `AptSources` parses *every* configured
@@ -268,7 +268,7 @@ spools back — both without importing another namespace's facts.
 `AptUpgradable` takes no arguments and runs
 `apt list --upgradable 2>/dev/null` (the redirect suppresses the
 "Listing..." progress notice modern apt writes to stderr, like
-`AptPackages`' command). It is a reemote5 original: the baseline ships no
+`AptPackages`' command). It is a reemote original: the baseline ships no
 `apt.AptUpgradable` counterpart. Each
 `name/source-info version arch [upgradable from: old-version]` row is
 matched with a package regex modeled on `AptPackages`', so
@@ -288,7 +288,7 @@ listing names every package an upgrade would move and both versions of
 each jump — the change-management and auditing view to read before
 executing `apt upgrade`. No pending upgrades reads as `[]`. A missing
 `apt` exits 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError].
 
 `DebPackage` takes a `.deb` file path or an installed package name and runs
 the baseline's `test -f ... && case ...` form: when the path exists and ends in
@@ -299,7 +299,7 @@ control fields parse into a `DebPackageInfo` dict — `{"name", "version"}`
 (each line stripped first, so
 `dpkg -I`'s tab-indented fields parse); a name that is neither an existing
 `.deb` file nor installed reads as `None`. The baseline returns an empty dict in
-that case; reemote5 reports `None`, mirroring `RpmPackage`'s None-on-absent
+that case; reemote reports `None`, mirroring `RpmPackage`'s None-on-absent
 convention so `apt.deb` can test `info is not None`. The fact is the read side
 of `apt.deb`: the operation reads the file's metadata here, then compares the
 file's version against the installed versions `AptPackages` reports for that
@@ -321,12 +321,12 @@ would do anything, counting newly-installed and removed packages too —
 which `AptUpgradable` (a plain `upgrade` listing) cannot see. Deliberate
 deviation from the baseline: when no summary line appears, upstream raises an
 exception (which its caller swallows into "run the real command anyway");
-reemote5 reports `None` instead, so the caller branches on a value rather
+reemote reports `None` instead, so the caller branches on a value rather
 than on exception control flow. A non-zero exit of the simulation itself
-still raises `CommandError` — reemote5's fail-fast convention. The baseline's
+still raises `CommandError` — reemote's fail-fast convention. The baseline's
 `requires_command` gating on `apt-get` is deliberately dropped: a missing
 `apt-get` exits 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError].
 
 
 ## Operations
@@ -358,7 +358,7 @@ whose `.deb` is absent cannot resolve a name and is a no-op. `wait_for_lock`
 (`True` → 60s, an int → that many seconds) makes apt wait for its lock instead
 of failing instantly. Installing or removing needs root, so flag the request
 `sudo=True` (or `su=True`). Two the baseline options are deliberately dropped: a URL
-`src` (reemote5 has no download operation, so it raises `ValueError`, mirroring
+`src` (reemote has no download operation, so it raises `ValueError`, mirroring
 `dnf.rpm`) and `force` (`--force-yes` is deprecated in modern apt).
 
 `apt.dist_upgrade` updates all apt packages, employing `dist-upgrade`
@@ -378,7 +378,7 @@ cleaned up without also performing an upgrade; `apt.dist_upgrade` never
 passes `--autoremove`.
 
 `apt.auto_remove` removes transitive dependencies that are no longer
-needed — a reemote5 original: the baseline only offers autoremove as the
+needed — a reemote original: the baseline only offers autoremove as the
 `auto_remove` parameter of `apt.dist_upgrade`/`apt.upgrade`, never as a
 standalone operation. The `AptAutoremovable` fact simulates the autoremove
 and names exactly the no-longer-needed packages: a non-empty list yields
@@ -401,13 +401,13 @@ name resolves under `/etc/apt/keyrings/`, an explicit path is used
 verbatim. The operation is **non-idempotent** — a deliberate deviation
 from the baseline, which skips installation when the destination file exists:
 it always reports a change and yields two descriptors, an
-`AptKeyUploadCommand` transfer that spools the stream to a fixed `/tmp`
-path over scp, then an `AptKeyInstallCommand` running one elevated
+`AptKeyUploadCommand` transfer that spools the stream into a dest-derived
+`/tmp` directory over scp, then an `AptKeyInstallCommand` running one elevated
 `sh -c` that creates the destination directory, dearmors the key with
 `gpg --batch --yes --dearmor` when the content is ASCII-armored (`--yes`
 overwrites a keyring a previous run left behind, which `--batch` alone
 refuses; binary content is copied verbatim), chmods the keyring `0644`
-and removes the spool file.
+and removes the spool directory.
 Flag the request `sudo=True` (or `su=True`) for the install; the transfer
 stays unprivileged regardless, so the log shows a plain `scp` followed by
 `sudo sh -c`. The stream is compared by identity across the prepare and
@@ -418,7 +418,7 @@ removal is expressible with the `files` primitives. `dest` is required
 because an anonymous stream provides no name to derive one from.
 
 `apt.mark` holds packages back from upgrades, or releases held ones — a
-reemote5 original: the baseline ships no operation managing package hold
+reemote original: the baseline ships no operation managing package hold
 states. `packages` accepts a single name or a list/tuple, and `held`
 selects the direction: `held=True` runs `apt-mark hold`, keeping the
 packages out of `apt upgrade`/`apt.dist_upgrade` until released;
@@ -432,7 +432,7 @@ architecture-suffixed package must be requested in its suffixed form
 (`libc6:i386`). Marking writes to the root-owned dpkg database, so flag
 the request `sudo=True` (or `su=True`); a missing `apt-mark` exits 127 —
 reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError].
 `apt-mark`'s `auto`/`manual` installation-reason marks are deliberately
 out of scope (only the hold state `AptHeldPackages` reports is managed),
 and there is no `wait_for_lock` option — `apt-mark` is not `apt-get` and
@@ -479,7 +479,7 @@ sources, so flag the request `sudo=True` (or `su=True`). It requires
 `apt-add-repository` (from `software-properties-common`) on the target host;
 the baseline's `requires_command` gating is deliberately dropped, so a missing
 binary exits 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError]. Unlike
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError]. Unlike
 `apt.repo` and `apt.sources_file`, this operation deliberately stays outside
 the spool-and-install family: its payload is a CLI invocation, not the
 file's text — `apt-add-repository` owns the sources file and also fetches
@@ -516,7 +516,7 @@ the file already carries, and a remove of a repository configured in some
 *other* file — the transforms are fixpoints, so a repeat converges instead
 of writing a second copy. Deliberate deviations from the baseline, which
 delegates the edit to `files.line` and so mutates the protected file in
-place with `echo >>` and `sed -i`: reemote5 has no line operation
+place with `echo >>` and `sed -i`: reemote has no line operation
 (`files.edit` is its generic editing primitive) and namespaces never reuse
 each other's operations, so the write rides self-contained apt descriptors
 of the spool-and-install family. That also drops the baseline's timestamped sed
@@ -532,24 +532,24 @@ over the real content.
 list, a tuple or a space-separated string; `signed_by` names the keyring
 file for signature verification (the natural pairing with `apt.key`).
 `present=True` requires at least one URI and one suite — otherwise
-`ValueError` is raised with the baseline's message (reemote5's single
+`ValueError` is raised with the baseline's message (reemote's single
 validation error type) — and is idempotent on `AptSources`: the fields
 expand into one desired repository per type/URI/suite combination (in the
 fact's list-valued `AptSource` shape), and when every combination is already
 configured the operation is a no-op. Otherwise one request yields two
 commands at different privilege levels, the `apt.key` pattern:
-`AptSourcesFileUploadCommand` spools the generated deb822 text to a fixed
-`/tmp` path over scp as the login user, then `AptSourcesFileInstallCommand`
+`AptSourcesFileUploadCommand` spools the generated deb822 text into a
+dest-derived `/tmp` directory over scp as the login user, then `AptSourcesFileInstallCommand`
 runs one elevated `sh -c` that creates the directory, copies the file,
 chmods it `0644` (the baseline's fixed mode) and removes the spool — so flag the
 request `sudo=True` (or `su=True`); the transfer stays unprivileged
 regardless. This spool-and-install pair is the deliberate replacement for
-the baseline's `files.put` delegation: reemote5's transfers are unprivileged
+the baseline's `files.put` delegation: reemote's transfers are unprivileged
 scp and namespaces never reuse each other's operations.
 `present=False` is idempotent on `AptSourcesFile`: it yields `rm -f`
 only when the file exists (an empty leftover included) and is a no-op
 when it is already absent. The baseline checks its `files.File` fact for the
-same gate; reemote5's apt namespace never imports another module's
+same gate; reemote's apt namespace never imports another module's
 facts, so the in-namespace `AptSourcesFile` content fact provides the
 existence answer — the same pattern `dnf.repo` uses with `DnfRepoFile`.
 
@@ -596,7 +596,7 @@ under
 `AptPolicy`, `AptSources`, `AptUpgradable` and
 `SimulateOperationWillChange`
 on an inventory of Ubuntu hosts with
-[`gather_fact`][reemote5.drivers.gather_fact] and print each host's result
+[`gather_fact`][reemote.drivers.gather_fact] and print each host's result
 as JSON.
 
 The `apt_deb.py` script beside them demonstrates the `apt.deb` operation: it
@@ -606,7 +606,7 @@ The `apt_dist_upgrade.py` and `apt_auto_remove.py` scripts demonstrate the
 upgrade-then-cleanup pair the same way — each yields its request twice to
 show simulation-gated idempotence. The `apt_key.py` script demonstrates
 `apt.key`: it installs a module-level key stream as
-`/etc/apt/keyrings/reemote5-demo.gpg`, unprivileged spool transfer plus
+`/etc/apt/keyrings/reemote-demo.gpg`, unprivileged spool transfer plus
 elevated install in one request. The `apt_mark.py` script demonstrates
 `apt.mark`: it holds the baseline packages back from upgrades with
 `apt-mark hold`, yielding the same request twice so the second is a

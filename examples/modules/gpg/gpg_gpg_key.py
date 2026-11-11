@@ -57,7 +57,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     GpgKey,
     Host,
@@ -69,7 +69,7 @@ from reemote5 import (
 
 # The key file to inspect on each host: a path on the TARGET host, read
 # without importing. A missing or unreadable file answers [] rather than
-# raising; a URL would raise ValueError (reemote5 never downloads keys
+# raising; a URL would raise ValueError (reemote never downloads keys
 # mid-gather).
 SRC = "/etc/apt/keyrings/docker.gpg"
 

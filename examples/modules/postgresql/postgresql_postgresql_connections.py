@@ -29,7 +29,7 @@ driving the two-phase execution model:
    ``PostgresqlConnection`` entries (``pid``, ``database``, ``username``,
    ``client_addr``, ``state``) with ``json.dumps(..., indent=2)``.
 
-The fact is a reemote5-original visibility fact (the baseline has no connection
+The fact is a reemote-original visibility fact (the baseline has no connection
 fact): it selects ``pg_stat_activity`` so a deployment can count client
 connections per database/user before tuning ``max_connections`` or
 draining a node. The query-text column is deliberately NOT selected -- it
@@ -69,7 +69,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

@@ -1,17 +1,17 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Tests for the files module's reemote5-original listing facts:
+"""Tests for the files module's reemote-original listing facts:
 ``FindFilesInfo`` and ``DirectoryEntries``.
 
-Covers ``reemote5.modules.files.files.FindFilesInfo``: the ``find
+Covers ``reemote.modules.files.files.FindFilesInfo``: the ``find
 -printf`` command construction (the shared filter set plus the
 tab-separated metadata format), row parsing (six fields, integer
 size/mode, naive-UTC mtime, malformed-row skips, deterministic path
 sorting), and the command-keyed ``found_files`` ``SimulatedHost`` seam
 (default [], per-dict copy-on-read, ``gather_fact`` kwargs forwarding).
 
-Covers ``reemote5.modules.files.files.DirectoryEntries``: the shallow
+Covers ``reemote.modules.files.files.DirectoryEntries``: the shallow
 ``-mindepth 1 -maxdepth 1`` command, the ``%y`` type-letter mapping for
 all seven path types, unknown-letter and malformed-row skips, name
 sorting, and the path-keyed ``directory_entries`` seam.
@@ -19,9 +19,9 @@ sorting, and the path-keyed ``directory_entries`` seam.
 
 from datetime import datetime
 
-from reemote5.drivers import gather_fact
-from reemote5.hosts import Host
-from reemote5.modules.files.files import DirectoryEntries, FindFilesInfo
+from reemote.drivers import gather_fact
+from reemote.hosts import Host
+from reemote.modules.files.files import DirectoryEntries, FindFilesInfo
 from tests.simulated_host import SimulatedHost
 
 

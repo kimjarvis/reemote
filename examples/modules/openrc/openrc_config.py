@@ -4,7 +4,7 @@
 """Set a variable in /etc/rc.conf with ``openrc.config``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -30,7 +30,7 @@ your machines.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``openrc.config`` is a reemote5 original with no baseline counterpart
+``openrc.config`` is a reemote original with no baseline counterpart
 (the baseline's ``openrc`` namespace ships only ``service``). It sets or unsets
 one shell variable in ``/etc/rc.conf`` -- or, with ``service="<name>"``, in
 that service's ``/etc/conf.d/<name>`` file -- and belongs to the
@@ -42,12 +42,12 @@ differs from what is there the request yields *two* commands at two
 privilege levels:
 
 * an unprivileged scp transfer spooling the whole transformed text to a
-  ``/tmp`` path derived from the managed file's sha1 -- reemote5's
+  ``/tmp`` path derived from the managed file's sha1 -- reemote's
   transfers never elevate, which is *why* the root-owned ``/etc/rc.conf``
   cannot be written directly and the content detours through ``/tmp``;
 * an elevated ``sh -c 'mkdir -p ... && cp ... && chmod 0644 ... &&
-  rm -f <spool>'`` installing the spooled text over the protected file and
-  removing the spool, every step of the chain running as root.
+  rm -rf <spool dir>'`` installing the spooled text over the protected file
+  and removing the spool directory, every step of the chain running as root.
 
 The operation is idempotent on the transform's fixpoint: a file whose only
 assignment of the key already carries the wanted value plans no change, so
@@ -74,7 +74,7 @@ The install writes root-owned ``/etc``, so the requests are flagged
 ``doas=True`` and the driver elevates that command -- the scp half stays
 unprivileged regardless. ``doas`` rather than ``sudo`` because the Alpine
 host has no ``sudo`` installed at all -- ``sudo sh -c`` would die with
-``sh: sudo: not found`` (exit 127). ``doas`` is passwordless here: reemote5
+``sh: sudo: not found`` (exit 127). ``doas`` is passwordless here: reemote
 always runs ``doas -n``, which fails rather than prompts, so the host must
 grant the login user a ``permit nopass`` rule in ``/etc/doas.conf`` (see
 ``examples/demonstrations/privilege/privilege_doas.py``); without one the
@@ -108,7 +108,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

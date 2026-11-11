@@ -1,6 +1,6 @@
 [//]: # (## openrc module)
 
-::: reemote5.modules.openrc.openrc
+::: reemote.modules.openrc.openrc
     options:
       show_root_heading: false
       members:
@@ -19,7 +19,7 @@
 
 <!---
 
-`reemote5.modules.openrc.openrc` combines the OpenRC facts and the OpenRC
+`reemote.modules.openrc.openrc` combines the OpenRC facts and the OpenRC
 operations in a single source. OpenRC is the init system of Alpine Linux
 (and Gentoo): services are `/etc/init.d` scripts managed at runtime with
 `rc-service`, and *runlevels* are directories under `/etc/runlevels`
@@ -27,7 +27,7 @@ holding one symlink per assigned service, managed with `rc-update`. The
 facts are `OpenrcStatus` and `OpenrcEnabled`, ports of the baseline's two OpenRC
 facts — the per-runlevel name → running bool parsed from
 `rc-status <runlevel>` rows, and the name → enabled-in-runlevel bool parsed
-from `rc-update show -v`'s `name | runlevels` columns — plus four reemote5
+from `rc-update show -v`'s `name | runlevels` columns — plus four reemote
 originals widening the visibility the baseline's pair leaves missing:
 `OpenrcServices`, the same `rc-status` rows kept as their *raw* state words
 (`started`, `stopped`, `crashed`, ...) so a crashed service is
@@ -56,7 +56,7 @@ combined install-and-enable `openrc.ensure` is likewise not an operation:
 A fact is an asynchronous, queryable resource — never yielded by a
 generator — implemented as a `process` coroutine returning the raw value
 (over asyncssh in the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get], which is itself a
+[`FactCache.get`][reemote.core.FactCache.get], which is itself a
 coroutine, so results are awaited and cached within a phase step.
 
 `OpenrcStatus` takes an optional runlevel (default `"default"`) and runs
@@ -69,7 +69,7 @@ ignored; the `Runlevel:` header and blank lines match no row. Deliberate
 deviations from the baseline: the runlevel is `shlex`-quoted in the shell, and
 `requires_command` gating is dropped — a host without `rc-status` exits
 127, reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError].
 
 `OpenrcEnabled` takes the same optional runlevel argument but runs one
 fixed shell, `rc-update show -v`: the `-v` lists *every* service as a
@@ -100,7 +100,7 @@ tooling. Unlike `rc-update show`, it reveals *empty* runlevels too, and a
 Entries keep listing order (ls sorts). The `|| true` guard reads a host
 without OpenRC as `{}`, the missing-file tolerance the guarded apk facts
 follow, so only
-[`HostConnectionError`][reemote5.hosts.HostConnectionError] can escape the
+[`HostConnectionError`][reemote.hosts.HostConnectionError] can escape the
 gather.
 
 `OpenrcVersion` takes no arguments and runs
@@ -138,7 +138,7 @@ it decides a change is needed, and yields one descriptor per command that
 would mutate the host. All four operations write root-owned state, so
 flag the request `sudo=True`, `doas=True` or `su=True` — stock Alpine
 ships no `sudo`, so `doas` is usually the escalator on an OpenRC host:
-reemote5 runs it passwordless as `doas -n`, which needs a `permit nopass`
+reemote runs it passwordless as `doas -n`, which needs a `permit nopass`
 rule for the login user in `/etc/doas.conf` and raises `PrivilegeError`
 without one.
 
@@ -157,7 +157,7 @@ hatch for any rc-service verb defeats the typed-descriptor model;
 `server.shell` covers the rare custom verb, and the keyword is absorbed by
 `**kwargs` with no effect.
 
-`openrc.runlevel` is a reemote5 original with no baseline counterpart:
+`openrc.runlevel` is a reemote original with no baseline counterpart:
 the baseline folds the boot assignment into `openrc.service`'s `enabled`
 option, so managing an assignment *without* touching the runtime state
 needs the whole service operation with `running=None`. This standalone
@@ -189,7 +189,7 @@ name an existing runlevel or `rc-update` fails at apply time. The standard
 runlevels are not special-cased — removing `boot` or `default` is legal
 OpenRC-wise and the operation does not guard against it.
 
-`openrc.config` is the third original — a reemote5 operation with no
+`openrc.config` is the third original — a reemote operation with no
 the baseline counterpart (the baseline's `openrc` ships only `service`) and a member
 of the spool-and-install write family (`files.install`, `apt.repo`,
 `apk.repository`, ...). It manages one shell-variable assignment in
@@ -203,9 +203,9 @@ comment and ordering, so the result is a fixpoint — when the transformed
 text equals the current text the operation is a no-op with a reason
 naming the managed path. The write itself is two descriptors: an
 unprivileged scp of the whole transformed text to a `/tmp` spool named
-after the managed path (`/tmp/reemote5-openrc-config-<sha1(path)[:16]>`,
+after the managed path (`/tmp/reemote-openrc-config-<sha1(path)[:16]>/config`,
 so two requests targeting different files can never share a spool), then
-an elevated `sh -c 'mkdir -p ... && cp ... && chmod 0644 ... && rm -f
+an elevated `sh -c 'mkdir -p ... && cp ... && chmod 0644 ... && rm -rf
 ...'` install — transfers never elevate, so the request's `doas`/`sudo`
 applies to the install half only, by design. Values are always rendered
 double-quoted and validation raises `ValueError` while materializing for
@@ -234,7 +234,7 @@ parameter of its own. They gather `OpenrcStatus`
 `OpenrcServices` (`openrc_openrc_services.py`), `OpenrcRunlevels`
 (`openrc_openrc_runlevels.py`) or `OpenrcVersion`
 (`openrc_openrc_version.py`) on the Alpine hosts only with
-[`gather_fact`][reemote5.drivers.gather_fact], printing each result as
+[`gather_fact`][reemote.drivers.gather_fact], printing each result as
 JSON.
 
 The operation scripts beside them demonstrate `openrc.service`

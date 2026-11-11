@@ -22,7 +22,7 @@ eligibility are independent axes: ``sudo`` fills the unflagged requests
 ``sub_deploy(role_redis, sudo=True)`` retro-fits the policy without editing
 the role: ``sudo=True`` is a *forced-elevation* policy that fills in every
 request which has no opinion of its own. ``sudo``/``su`` are a tri-state
-(``reemote5.core.Privilege``: ``ON``/``OFF``/``UNSET``), so the inheritance
+(``reemote.core.Privilege``: ``ON``/``OFF``/``UNSET``), so the inheritance
 rule is *inner wins* -- a request that already set ``sudo=True`` (``ON``)
 passes through untouched, an unflagged one (``UNSET``) is elevated by the
 policy, and a request that deliberately set ``sudo=False`` (``OFF``) opts out
@@ -53,7 +53,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

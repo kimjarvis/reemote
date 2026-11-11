@@ -35,7 +35,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from reemote5 import (
+from reemote import (
     ActionInDeployError,
     ConnectionTimeoutError,
     Host,
@@ -51,8 +51,8 @@ from reemote5 import (
     op,
     server,
 )
-from reemote5.core import FactCache, HostRuntime
-from reemote5.drivers import run, run_apply
+from reemote.core import FactCache, HostRuntime
+from reemote.drivers import run, run_apply
 
 PASSWORD = "wr0ng-p@ssword"
 
@@ -273,12 +273,12 @@ async def test_sudo_password_rides_the_askpass_helper():
         stdout="root\n",
         privilege={"sudo_user": "root", "sudo_password": PASSWORD},
     )
-    host._askpass_path = "/tmp/reemote5-askpass-cached"
+    host._askpass_path = "/tmp/reemote-askpass-cached"
 
     results = await gather_action([host], Shell, command="whoami", sudo=True)
 
     assert results["web1"]["stdout"] == "root\n"
-    assert "SUDO_ASKPASS=/tmp/reemote5-askpass-cached" in host.shells[0]
+    assert "SUDO_ASKPASS=/tmp/reemote-askpass-cached" in host.shells[0]
     assert "sudo -A -k" in host.shells[0]
     # The password lives only in the execution string, never in the Result.
     assert PASSWORD not in results["web1"]["stdout"]
@@ -296,7 +296,7 @@ async def test_rejected_sudo_raises_privilege_error_aggregated():
         for name in ("web1", "web2")
     ]
     for host in hosts:
-        host._askpass_path = "/tmp/reemote5-askpass-cached"
+        host._askpass_path = "/tmp/reemote-askpass-cached"
 
     with pytest.raises(PrivilegeError) as excinfo:
         await gather_action(hosts, Shell, command="whoami", sudo=True)

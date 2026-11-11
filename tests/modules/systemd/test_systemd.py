@@ -3,13 +3,13 @@
 
 """Tests for the systemd module: facts, descriptors and operations.
 
-Covers ``reemote5.modules.systemd.systemd``: the ``unit_name`` normalization
+Covers ``reemote.modules.systemd.systemd``: the ``unit_name`` normalization
 helper; the per-unit ``SystemdServiceState``/``SystemdServiceEnabled`` probes
 and the ``service``/``daemon_reload`` operations (idempotence against the
 seams, seam mutation, the baseline operation-fixture parity and the
 backward-compatible ``server.service`` alias); the fleet-wide
 ``SystemdStatus``/``SystemdEnabled`` ports (the baseline fact-fixture parity over
-canned shell output, plus the seam projections); and the seven reemote5
+canned shell output, plus the seam projections); and the seven reemote
 originals -- ``SystemdUnitProperties``, ``SystemdFailedUnits``,
 ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``,
 ``SystemdSystemState`` and ``SystemdDependencies`` (command rendering, pure
@@ -24,12 +24,13 @@ relocated from ``tests/modules/server/test_server.py`` alongside the symbols
 themselves; ``server.wait_service``'s tests stay there.
 """
 
+import hashlib
 from collections.abc import Callable, Generator
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, OperationRequest, op
+from reemote.drivers import (
     DeterminismError,
     command_shell,
     format_log,
@@ -40,9 +41,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import server, systemd
-from reemote5.modules.systemd.systemd import (
+from reemote.hosts import Host
+from reemote.modules import server, systemd
+from reemote.modules.systemd.systemd import (
     SystemctlCommand,
     SystemdDependencies,
     SystemdEnabled,
@@ -60,6 +61,7 @@ from reemote5.modules.systemd.systemd import (
     SystemdUnitFiles,
     SystemdUnitProperties,
     SystemdVersion,
+    _spool_path,
     _SystemdConfFile,
     unit_name,
 )
@@ -362,7 +364,7 @@ async def test_service_matches_baseline_operation_fixtures(
     assert [command_shell(cmd) for cmd in commands] == expected
 
 
-# --- service: reemote5 option extensions -------------------------------------
+# --- service: reemote option extensions -------------------------------------
 
 
 async def test_service_reloaded_only_when_running():
@@ -1136,7 +1138,7 @@ async def test_dependencies_gather_fact_forwards_the_unit():
 
 
 def test_new_facts_are_exported_from_the_namespace_and_top_level():
-    import reemote5
+    import reemote
 
     for fact in (
         SystemdStatus, SystemdEnabled, SystemdUnitProperties, SystemdFailedUnits,
@@ -1144,11 +1146,11 @@ def test_new_facts_are_exported_from_the_namespace_and_top_level():
         SystemdDependencies,
     ):
         assert getattr(systemd, fact.__name__) is fact
-        assert getattr(reemote5, fact.__name__) is fact
+        assert getattr(reemote, fact.__name__) is fact
     # The entry TypedDicts are exported too (facts return them).
     for entry in ("SystemdFailedUnit", "SystemdTimer", "SystemdUnitFile", "SystemdVersionInfo"):
         assert entry in systemd.__all__
-        assert entry in reemote5.__all__
+        assert entry in reemote.__all__
 
 
 # --- Phase D descriptors: rendering + elevation ------------------------------
@@ -1175,26 +1177,35 @@ def test_systemctl_command_mask_unmask_preset_rendering():
 
 
 def test_systemd_file_upload_command_is_an_unprivileged_transfer():
-    cmd = SystemdFileUploadCommand(content="[Service]\n", dest="/tmp/reemote5-systemd.conf")
+    cmd = SystemdFileUploadCommand(content="[Service]\n", dest=_DROPIN_SPOOL)
     # A transfer has no shell(); command_shell falls back to __str__ and never
     # adds the sudo prefix (transfers ride as the login user).
-    assert str(cmd) == "scp <systemd conf> -> /tmp/reemote5-systemd.conf"
-    assert command_shell(cmd, sudo=True) == "scp <systemd conf> -> /tmp/reemote5-systemd.conf"
+    assert str(cmd) == f"scp <systemd conf> -> {_DROPIN_SPOOL}"
+    assert command_shell(cmd, sudo=True) == f"scp <systemd conf> -> {_DROPIN_SPOOL}"
 
 
 def test_systemd_file_install_command_renders_the_elevated_sequence():
-    cmd = SystemdFileInstallCommand(
-        spool="/tmp/reemote5-systemd.conf",
-        dest="/etc/systemd/system/httpd.service.d/override.conf",
-    )
+    cmd = SystemdFileInstallCommand(spool=_DROPIN_SPOOL, dest=_DROPIN_PATH)
     inner = (
         "mkdir -p /etc/systemd/system/httpd.service.d && "
-        "cp /tmp/reemote5-systemd.conf /etc/systemd/system/httpd.service.d/override.conf && "
+        f"cp {_DROPIN_SPOOL} /etc/systemd/system/httpd.service.d/override.conf && "
         "chmod 0644 /etc/systemd/system/httpd.service.d/override.conf && "
-        "rm -f /tmp/reemote5-systemd.conf"
+        f"rm -rf {_DROPIN_SPOOL_DIR}"
     )
     assert cmd.shell() == f"sh -c '{inner}'"
     assert command_shell(cmd, sudo=True) == f"sudo sh -c '{inner}'"
+
+
+def test_spool_path_is_dest_derived_and_lives_in_a_subdir():
+    # Same dest -> same spool across both phases; a different dest -> a
+    # different spool, so the three file operations never clobber one
+    # another's upload. The content lands INSIDE a sha1-derived /tmp
+    # directory, never at the top level of /tmp.
+    assert _spool_path(_DROPIN_PATH) == _DROPIN_SPOOL
+    assert _spool_path(_DROPIN_PATH) == _spool_path(_DROPIN_PATH)
+    assert _spool_path(_TMPFILES_PATH) != _DROPIN_SPOOL
+    digest = hashlib.sha1(_DROPIN_PATH.encode()).hexdigest()[:16]
+    assert _DROPIN_SPOOL == f"/tmp/reemote-systemd-{digest}/systemd.conf"
 
 
 def test_systemd_file_remove_and_apply_commands_render_and_elevate():
@@ -1221,16 +1232,16 @@ def test_systemd_file_remove_and_apply_commands_render_and_elevate():
 def test_systemd_conf_file_command_guards_with_a_marker():
     assert _SystemdConfFile.command("/etc/tmpfiles.d/myapp.conf") == (
         "test -e /etc/tmpfiles.d/myapp.conf && "
-        "{ printf '#reemote5-systemd-conf\\n'; cat -- /etc/tmpfiles.d/myapp.conf; }"
+        "{ printf '#reemote-systemd-conf\\n'; cat -- /etc/tmpfiles.d/myapp.conf; }"
     )
 
 
 async def test_systemd_conf_file_parses_content_absent_and_empty():
     # Present with content: the marker prefix is stripped.
-    host = CannedShellHost("#reemote5-systemd-conf\nd /run/myapp 0755\n")
+    host = CannedShellHost("#reemote-systemd-conf\nd /run/myapp 0755\n")
     assert await _SystemdConfFile.process(host, "/x") == "d /run/myapp 0755\n"
     # Present but empty: marker only -> "" (distinguishable from absent).
-    assert await _SystemdConfFile.process(CannedShellHost("#reemote5-systemd-conf\n"), "/x") == ""
+    assert await _SystemdConfFile.process(CannedShellHost("#reemote-systemd-conf\n"), "/x") == ""
     # Absent: no marker -> None.
     assert await _SystemdConfFile.process(CannedShellHost(""), "/x") is None
 
@@ -1334,13 +1345,19 @@ async def test_reset_failed_mutates_the_services_seam():
 
 # --- dropin / tmpfiles / sysusers --------------------------------------------
 
-_SPOOL = "/tmp/reemote5-systemd.conf"
 _DROPIN_CONTENT = "[Service]\nEnvironment=FOO=bar\n"
 _DROPIN_PATH = "/etc/systemd/system/httpd.service.d/override.conf"
 _TMPFILES_CONTENT = "d /run/myapp 0755 root root -\n"
 _TMPFILES_PATH = "/etc/tmpfiles.d/myapp.conf"
 _SYSUSERS_CONTENT = 'u myapp - "My App" /nonexistent /sbin/nologin\n'
 _SYSUSERS_PATH = "/etc/sysusers.d/myapp.conf"
+# The dest-derived spools (and their sha1-derived parent directories) the three
+# file operations upload to -- one per managed path, and always inside a /tmp
+# subdirectory rather than at the top level of /tmp.
+_DROPIN_SPOOL = _spool_path(_DROPIN_PATH)
+_DROPIN_SPOOL_DIR = _DROPIN_SPOOL.rsplit("/", 1)[0]
+_TMPFILES_SPOOL = _spool_path(_TMPFILES_PATH)
+_SYSUSERS_SPOOL = _spool_path(_SYSUSERS_PATH)
 
 
 async def test_dropin_writes_when_absent_then_reloads():
@@ -1351,8 +1368,8 @@ async def test_dropin_writes_when_absent_then_reloads():
     )
     assert ctx.changed
     assert commands == [
-        SystemdFileUploadCommand(content=_DROPIN_CONTENT, dest=_SPOOL),
-        SystemdFileInstallCommand(spool=_SPOOL, dest=_DROPIN_PATH),
+        SystemdFileUploadCommand(content=_DROPIN_CONTENT, dest=_DROPIN_SPOOL),
+        SystemdFileInstallCommand(spool=_DROPIN_SPOOL, dest=_DROPIN_PATH),
         SystemctlCommand(action="daemon-reload"),
     ]
 
@@ -1364,7 +1381,7 @@ async def test_dropin_appends_conf_and_normalizes_the_unit():
         op(systemd.dropin, unit="httpd", filename="override.conf", content=_DROPIN_CONTENT),
     )
     # An explicit .conf is not doubled; the bare unit gains .service.
-    assert commands[1] == SystemdFileInstallCommand(spool=_SPOOL, dest=_DROPIN_PATH)
+    assert commands[1] == SystemdFileInstallCommand(spool=_DROPIN_SPOOL, dest=_DROPIN_PATH)
 
 
 async def test_dropin_no_change_when_content_matches():
@@ -1398,8 +1415,8 @@ async def test_dropin_restart_and_daemon_reload_options():
         ),
     )
     assert commands == [
-        SystemdFileUploadCommand(content=_DROPIN_CONTENT, dest=_SPOOL),
-        SystemdFileInstallCommand(spool=_SPOOL, dest=_DROPIN_PATH),
+        SystemdFileUploadCommand(content=_DROPIN_CONTENT, dest=_DROPIN_SPOOL),
+        SystemdFileInstallCommand(spool=_DROPIN_SPOOL, dest=_DROPIN_PATH),
     ]
 
 
@@ -1435,7 +1452,7 @@ async def test_dropin_mutates_remote_files_and_is_idempotent():
     for cmd in commands:
         host.execute_command(cmd)
     assert host.remote_files[_DROPIN_PATH] == _DROPIN_CONTENT.encode()
-    assert _SPOOL not in host.remote_files  # the install removed the spool
+    assert _DROPIN_SPOOL not in host.remote_files  # the install removed the spool
     assert _DROPIN_PATH in host.existing_files
     # A fresh materialization now reads the written content and plans no change.
     ctx, commands = await materialize(
@@ -1453,8 +1470,8 @@ async def test_tmpfiles_writes_and_applies():
     )
     assert ctx.changed
     assert commands == [
-        SystemdFileUploadCommand(content=_TMPFILES_CONTENT, dest=_SPOOL),
-        SystemdFileInstallCommand(spool=_SPOOL, dest=_TMPFILES_PATH),
+        SystemdFileUploadCommand(content=_TMPFILES_CONTENT, dest=_TMPFILES_SPOOL),
+        SystemdFileInstallCommand(spool=_TMPFILES_SPOOL, dest=_TMPFILES_PATH),
         SystemdTmpfilesCommand(path=_TMPFILES_PATH),
     ]
 
@@ -1485,8 +1502,8 @@ async def test_sysusers_writes_and_applies():
     )
     assert ctx.changed
     assert commands == [
-        SystemdFileUploadCommand(content=_SYSUSERS_CONTENT, dest=_SPOOL),
-        SystemdFileInstallCommand(spool=_SPOOL, dest=_SYSUSERS_PATH),
+        SystemdFileUploadCommand(content=_SYSUSERS_CONTENT, dest=_SYSUSERS_SPOOL),
+        SystemdFileInstallCommand(spool=_SYSUSERS_SPOOL, dest=_SYSUSERS_PATH),
         SystemdSysusersCommand(path=_SYSUSERS_PATH),
     ]
 
@@ -1616,12 +1633,12 @@ async def test_dropin_runs_across_hosts_in_lockstep():
     assert [e.name for e in report.log] == ["Override httpd", "Override httpd"]
     log = format_log(report)
     # The transfer is unprivileged (no sudo); the install + reload are elevated.
-    assert log.count("scp <systemd conf> -> /tmp/reemote5-systemd.conf") == 2
+    assert log.count(f"scp <systemd conf> -> {_DROPIN_SPOOL}") == 2
     assert log.count("$ sudo sh -c 'mkdir -p /etc/systemd/system/httpd.service.d") == 2
     assert log.count("$ sudo systemctl daemon-reload") == 2
     for host in hosts:
         assert host.remote_files[_DROPIN_PATH] == _DROPIN_CONTENT.encode()
-        assert _SPOOL not in host.remote_files
+        assert _DROPIN_SPOOL not in host.remote_files
     # A fresh prepare against the now-written drop-in plans no change.
     for host in hosts:
         _runtimes, plans2 = await run_prepare([host], install_dropin)
@@ -1680,7 +1697,7 @@ async def test_mask_runs_elevated_in_lockstep():
 
 
 def test_phase_d_descriptors_and_operations_exports():
-    import reemote5
+    import reemote
 
     # Descriptors are exported from the namespace and the top level.
     for descriptor in (
@@ -1688,12 +1705,12 @@ def test_phase_d_descriptors_and_operations_exports():
         SystemdTmpfilesCommand, SystemdSysusersCommand,
     ):
         assert getattr(systemd, descriptor.__name__) is descriptor
-        assert getattr(reemote5, descriptor.__name__) is descriptor
+        assert getattr(reemote, descriptor.__name__) is descriptor
     # Operations stay namespace-only (never re-exported at the top level).
     for operation in ("mask", "reset_failed", "dropin", "tmpfiles", "sysusers", "preset"):
         assert operation in systemd.__all__
         assert hasattr(systemd, operation)
-        assert operation not in reemote5.__all__
+        assert operation not in reemote.__all__
     # The private content fact is an internal helper, not part of the surface.
     assert "_SystemdConfFile" not in systemd.__all__
-    assert not hasattr(reemote5, "_SystemdConfFile")
+    assert not hasattr(reemote, "_SystemdConfFile")

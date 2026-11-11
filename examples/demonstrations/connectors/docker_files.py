@@ -14,7 +14,7 @@ so the default ``host_factory`` (``Host.from_inventory``) materializes a
 ``DockerHost`` and the very same deploy -- a ``files.file`` marker plus a
 ``files.put`` upload -- runs *inside a container* on the control machine:
 
-1. ``identifier`` is an image name, so reemote5 starts a throwaway container
+1. ``identifier`` is an image name, so reemote starts a throwaway container
    from it (``docker run -d alpine:3.20 tail -f /dev/null``).
 2. Both phases drive it through ``docker exec`` (facts included -- the
    ``FileExists`` and ``RemoteFileSha1`` reads behind the two operations)
@@ -47,7 +47,7 @@ import io
 import sys
 from collections.abc import Generator
 
-from reemote5 import (
+from reemote import (
     CommandError,
     DockerHost,
     Host,
@@ -74,7 +74,7 @@ INVENTORY = [
 # The content source is defined once at module level: OperationRequest
 # compares the IO object by identity, so both phases must see the same stream.
 APP_CONF = io.BytesIO(
-    b"# installed by reemote5 inside the container\nlisten = 0.0.0.0:8080\n"
+    b"# installed by reemote inside the container\nlisten = 0.0.0.0:8080\n"
 )
 
 
@@ -86,7 +86,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     inside the container, and neither needs elevation: ``docker exec``
     already runs as root on a stock alpine image.
     """
-    yield op(files.file, name="Mark image configured", path="/srv/.reemote5-configured")
+    yield op(files.file, name="Mark image configured", path="/srv/.reemote-configured")
     yield op(files.put, name="Install app.conf", src=APP_CONF, dest="/srv/app.conf")
 
 

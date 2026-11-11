@@ -16,7 +16,7 @@ two-phase execution model:
 3. Gather ``SystemdTimers`` on every remaining host at once with
    ``gather_fact``, then print each host's timer map with ``json.dumps``.
 
-``SystemdTimers`` is a reemote5 original: it runs
+``SystemdTimers`` is a reemote original: it runs
 ``systemctl show '*.timer' --property=Id,ActiveState,UnitFileState,
 NextElapseUSecRealtime,LastTriggerUSec`` and maps each timer unit to a
 ``SystemdTimer`` entry (``{active_state, unit_file_state, next_elapse_usec,
@@ -41,7 +41,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

@@ -20,17 +20,17 @@ from collections.abc import Generator
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, OperationRequest, op
+from reemote.drivers import (
     command_shell,
     format_log,
     format_plan,
     run,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import files
-from reemote5.modules.files.files import (
+from reemote.hosts import Host
+from reemote.modules import files
+from reemote.modules.files.files import (
     ChmodCommand,
     ChownCommand,
     MkdirCommand,
@@ -245,7 +245,7 @@ async def test_directory_remove_absent_is_a_no_op():
 
 async def test_directory_add_force_no_backup_fixture():
     # The baseline's add_force_no_backup.json -- and, deliberately, exactly what
-    # reemote5's plain ``force=True`` does: the baseline's default backup form
+    # reemote's plain ``force=True`` does: the baseline's default backup form
     # ``mv``s to a datetime.now()-stamped name, which would differ between
     # the prepare and apply phases and break the determinism guard, so the
     # timestamped force_backup/force_backup_dir are dropped and force

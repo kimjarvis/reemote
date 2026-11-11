@@ -4,7 +4,7 @@
 """Open a raw port in a firewalld zone with ``firewalld.port``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.port`` is a reemote5 original (the baseline ships no firewalld
+``firewalld.port`` is a reemote original (the baseline ships no firewalld
 module): it opens a single ``port/protocol`` (or a range like
 ``5000-5100/udp``) in a zone -- here ``8080/tcp`` in ``public``, the
 one-off opening for an app that has no service bundle. (Prefer
@@ -75,7 +75,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

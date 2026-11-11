@@ -17,7 +17,7 @@ Two properties shape the script:
   source is gone fails fail-fast (here ``overwrite=True`` keeps the *target*
   side re-runnable; the source is re-staged by run 1 each time).
 * An absent source or an absent/non-directory destination raises
-  ``ValueError`` in **both** phases -- reemote5 operations are phase-unaware,
+  ``ValueError`` in **both** phases -- reemote operations are phase-unaware,
   so the baseline's soft plan-time logging of those cases is deliberately dropped.
   A "create the file then move it" flow therefore cannot share one deploy:
   the prepare phase would raise on the not-yet-created source. That is why
@@ -62,7 +62,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -80,13 +80,13 @@ from reemote5 import (
 # The payload, created once on the control machine: a stream, never a local
 # path. The same object is passed to put in every phase, so the prepare and
 # apply request sequences compare equal.
-PAYLOAD = io.StringIO("staged by the reemote5 files.move example\n")
+PAYLOAD = io.StringIO("staged by the reemote files.move example\n")
 
 # Staging source under /tmp and the destination directory /var/tmp: its
-# basename makes the moved path /var/tmp/reemote5-move.txt. Two distinct
+# basename makes the moved path /var/tmp/reemote-move.txt. Two distinct
 # world-writable directories that exist on every host, so the move has a real
 # destination other than its source and no home directory is assumed.
-STAGED = "/tmp/reemote5-move.txt"
+STAGED = "/tmp/reemote-move.txt"
 DEST_DIR = "/var/tmp"
 
 # examples/modules/files/files_move.py -> the project root, so the inventory

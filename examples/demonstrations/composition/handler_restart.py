@@ -72,7 +72,7 @@ from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     ApplyReport,
     CommandError,
     Host,
@@ -94,10 +94,10 @@ from reemote5 import (
 # files.install takes a plain str (hashable, equal across phases) and is
 # idempotent on content, so a re-run transfers and installs nothing.
 NGINX_CONF_CONTENT = (
-    "# Managed by reemote5 -- handler demonstration drop-in.\n"
+    "# Managed by reemote -- handler demonstration drop-in.\n"
     "# Editing this text is what notifies the nginx restart handler.\n"
 )
-CONF_DEST = "/etc/nginx/conf.d/reemote5-handler-demo.conf"
+CONF_DEST = "/etc/nginx/conf.d/reemote-handler-demo.conf"
 
 # The notification channel: request names whose `changed` outcome queues
 # the restart handler -- the analogue of Ansible's `notify:` list.

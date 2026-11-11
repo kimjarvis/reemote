@@ -4,7 +4,7 @@
 """Generate an unprotected GPG key on the target host, idempotently.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -68,7 +68,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -83,9 +83,9 @@ from reemote5 import (
     validate_inventory,
 )
 
-# The identity of the generated key: its uid reads "Reemote5 Demo
+# The identity of the generated key: its uid reads "Reemote Demo
 # <demo@example.com>", and that exact uid is the idempotence probe.
-REAL_NAME = "Reemote5 Demo"
+REAL_NAME = "Reemote Demo"
 EMAIL = "demo@example.com"
 
 # examples/modules/gpg/gpg_gen_key.py -> the project root, so the inventory

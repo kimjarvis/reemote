@@ -24,8 +24,8 @@ from collections.abc import Generator
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, OperationRequest, op
+from reemote.drivers import (
     DeterminismError,
     format_log,
     format_plan,
@@ -33,9 +33,9 @@ from reemote5.drivers import (
     run,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import files
-from reemote5.modules.files.files import (
+from reemote.hosts import Host
+from reemote.modules import files
+from reemote.modules.files.files import (
     FileContents,
     PutCommand,
     read_source_bytes,
@@ -49,7 +49,7 @@ INVENTORY = [
     },
 ]
 
-REMOTE_PATH = "/tmp/reemote5-edit.txt"
+REMOTE_PATH = "/tmp/reemote-edit.txt"
 
 
 class CannedShellHost(Host):
@@ -70,9 +70,9 @@ def append_marker(current: str | None) -> str:
     """Idempotent transform: ensure a single managed marker line is present."""
     text = current or ""
     lines = text.splitlines()
-    if "# managed by reemote5" in lines:
+    if "# managed by reemote" in lines:
         return text
-    lines.append("# managed by reemote5")
+    lines.append("# managed by reemote")
     return "\n".join(lines) + "\n"
 
 
@@ -155,7 +155,7 @@ async def test_edit_rewrites_when_the_transform_changes_the_content():
     (put,) = commands
     assert isinstance(put, PutCommand)
     assert put.dest == REMOTE_PATH
-    assert read_source_bytes(put.src).decode() == "original\n# managed by reemote5\n"
+    assert read_source_bytes(put.src).decode() == "original\n# managed by reemote\n"
 
 
 async def test_edit_creates_an_absent_file():
@@ -168,13 +168,13 @@ async def test_edit_creates_an_absent_file():
         f"content {REMOTE_PATH} is absent, will create from the transform"
     )
     (put,) = commands
-    assert read_source_bytes(put.src).decode() == "# managed by reemote5\n"
+    assert read_source_bytes(put.src).decode() == "# managed by reemote\n"
 
 
 async def test_edit_is_a_no_op_at_a_transform_fixpoint():
     """Content already equal to its transform yields nothing and no change."""
     host = SimulatedHost(
-        name="h", remote_files={REMOTE_PATH: b"# managed by reemote5\n"}
+        name="h", remote_files={REMOTE_PATH: b"# managed by reemote\n"}
     )
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [cmd async for cmd in files.edit(ctx, REMOTE_PATH, append_marker)]
@@ -225,7 +225,7 @@ async def test_second_edit_is_a_no_op_in_the_apply_log():
     )
 
     # The upload landed in the simulated remote filesystem.
-    assert hosts[0].remote_files == {REMOTE_PATH: b"# managed by reemote5\n"}
+    assert hosts[0].remote_files == {REMOTE_PATH: b"# managed by reemote\n"}
 
     log = format_log(report)
     assert f"$ scp <stream> -> {REMOTE_PATH}" in log
@@ -245,7 +245,7 @@ async def test_edit_of_existing_content_rewrites_once_then_settles():
     assert entries["Edit file"].changed
     assert not entries["Re-edit file"].changed
     assert hosts[0].remote_files == {
-        REMOTE_PATH: b"seed line\n# managed by reemote5\n"
+        REMOTE_PATH: b"seed line\n# managed by reemote\n"
     }
 
 
@@ -278,9 +278,9 @@ async def test_edit_hosts_style_transform():
 async def test_send_command_dispatches_the_edit_put_to_the_seam():
     """The ``PutCommand`` an edit yields writes through the simulated seam."""
     host = SimulatedHost.from_inventory(INVENTORY[0])
-    stream = io.StringIO("# managed by reemote5\n")
+    stream = io.StringIO("# managed by reemote\n")
     await send_command(host, PutCommand(src=stream, dest=REMOTE_PATH))
-    assert host.remote_files == {REMOTE_PATH: b"# managed by reemote5\n"}
+    assert host.remote_files == {REMOTE_PATH: b"# managed by reemote\n"}
 
 
 # --- The determinism constraint on the transform -----------------------------

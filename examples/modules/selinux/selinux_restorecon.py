@@ -4,7 +4,7 @@
 """Relabel a tree from the fcontext database with ``selinux.restorecon``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -26,7 +26,7 @@ it finishes.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``selinux.restorecon`` is a reemote5 original (the baseline ships no restorecon
+``selinux.restorecon`` is a reemote original (the baseline ships no restorecon
 operation): it reapplies the persistent fcontext database to existing
 files -- the documented remedy for ``selinux.file_context``'s limitation
 that ``chcon`` labels are runtime-only and a relabel reverts them, and for
@@ -36,7 +36,7 @@ recursively (``restorecon -R``, the default ``recurse=True``);
 ``force=True`` would add ``-F``, resetting even the user-customizable
 user/role/level components, not just the type.
 
-The operation is deliberately **stateless**: reemote5 has no fact that
+The operation is deliberately **stateless**: reemote has no fact that
 compares a whole tree's labels against the database (that would mean
 walking every file), so every request yields its ``restorecon`` and
 reports a change -- in the prepare plan *and* in the apply log, on the
@@ -75,7 +75,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

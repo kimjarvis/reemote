@@ -3,7 +3,7 @@
 
 """Example: install a PostgreSQL extension on real CentOS hosts.
 
-This is a *usage* example, not part of the library. It drives reemote5's
+This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
@@ -16,7 +16,7 @@ two-phase execution model end to end over a **real SSH transport**
    objects, each guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``postgresql.extension`` is a reemote5-original operation modeled on
+``postgresql.extension`` is a reemote-original operation modeled on
 Ansible's ``postgresql_ext``: it reads the ``PostgresqlExtensions`` fact
 for the database named by ``psql_database`` -- an absent extension yields
 CREATE EXTENSION (with SCHEMA and VERSION when given), an installed one
@@ -74,7 +74,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

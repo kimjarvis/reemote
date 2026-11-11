@@ -4,7 +4,7 @@
 """Manage a custom firewalld zone with ``firewalld.zone``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes. ``run`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``.
 
-``firewalld.zone`` is a reemote5 original (the baseline ships no firewalld
+``firewalld.zone`` is a reemote original (the baseline ships no firewalld
 module): it manages the zone's *existence and properties* -- target,
 short and description -- not the rules inside it (those are the
 membership operations, e.g. ``firewalld.zone_service``). It is idempotent
@@ -76,7 +76,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

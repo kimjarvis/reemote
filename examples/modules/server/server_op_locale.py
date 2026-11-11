@@ -3,7 +3,7 @@
 
 """Example: enable a locale on real Ubuntu hosts (Debian-family only).
 
-This is a *usage* example, not part of the library. It shows reemote5's
+This is a *usage* example, not part of the library. It shows reemote's
 ``server.locale`` operation, baseline ``server.locale`` parity for
 ``/etc/locale.gen``: the deploy ensures every host has ``fr_FR.UTF-8``
 enabled, under ``sudo`` because the definitions file is root-owned and
@@ -71,7 +71,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

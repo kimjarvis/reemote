@@ -28,7 +28,7 @@ two-phase execution model:
    inventory with ``asyncio.gather`` and returns a host-name-keyed
    mapping -- then print each host's values with ``json.dumps(..., indent=2)``.
 
-``Env`` is an original reemote5 fact replacing the migrated ``server.Path``:
+``Env`` is an original reemote fact replacing the migrated ``server.Path``:
 it takes a variable name, runs ``echo $<name>`` and returns that environment
 variable's value from the login shell as the raw string. This script reads
 two variables -- ``PATH`` (the colon-separated directories the user's shell
@@ -56,7 +56,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Env,
     Host,

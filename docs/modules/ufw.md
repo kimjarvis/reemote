@@ -1,6 +1,6 @@
 # ufw module
 
-::: reemote5.modules.ufw.ufw
+::: reemote.modules.ufw.ufw
     options:
       show_root_heading: false
       members:
@@ -19,10 +19,10 @@
 
 <!---
 
-`reemote5.modules.ufw.ufw` gives complete control over and visibility of
+`reemote.modules.ufw.ufw` gives complete control over and visibility of
 UFW (Uncomplicated Firewall) — the default firewall frontend on Ubuntu
 and Debian-family hosts — through the `ufw` CLI. The baseline ships **no ufw
-module at all**, so every fact and operation here is a reemote5 original:
+module at all**, so every fact and operation here is a reemote original:
 three facts (`UfwStatus`, `UfwRules`, `UfwApplications`), two entry
 records (`UfwStatusInfo`, `UfwRule`) and five operations (`state`,
 `default_policy`, `logging`, `rule`, `reset`). The transport is the CLI:
@@ -60,7 +60,7 @@ per concept.
 A fact is an asynchronous, queryable resource — never yielded by a
 generator — implemented as a `process` coroutine returning the raw value
 (over asyncssh in the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get], which is itself a
+[`FactCache.get`][reemote.core.FactCache.get], which is itself a
 coroutine, so results are awaited and cached within a phase step.
 
 `UfwStatus` parses `ufw status verbose` into one `UfwStatusInfo` record:

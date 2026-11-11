@@ -29,7 +29,7 @@ driving the two-phase execution model:
    ``PostgresqlTablespace`` entries (``oid``, ``name``, ``owner``,
    ``location``) with ``json.dumps(..., indent=2)``.
 
-The fact is a reemote5-original visibility fact (the baseline has no tablespace
+The fact is a reemote-original visibility fact (the baseline has no tablespace
 fact): it selects ``pg_tablespace`` with ``pg_tablespace_location(oid)``
 for the filesystem path (the built-in ``pg_default``/``pg_global`` report
 an empty location as None). Both ``postgresql.tablespace`` and
@@ -71,7 +71,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

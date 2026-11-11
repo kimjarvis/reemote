@@ -7,10 +7,10 @@
 ``gpg.import_key``, ``gpg.export_key``, ``gpg.delete_key``, ``gpg.gen_key``,
 ``gpg.trust`` and ``gpg.refresh_keys``.
 
-Covers the read-only state discovery in ``reemote5.modules.gpg.gpg``:
+Covers the read-only state discovery in ``reemote.modules.gpg.gpg``:
 every fact is exercised both over the real-transport path (parsing canned
 ``gpg --with-colons`` output, reusing the baseline's own fact fixtures
-verbatim, with the id-keyed fixture dicts normalized to reemote5's typed
+verbatim, with the id-keyed fixture dicts normalized to reemote's typed
 entry lists) and through the ``SimulatedHost`` seam, plus the
 ``gather_fact`` fan-out with argument forwarding. ``GpgKey`` additionally
 covers its stream-only validation deviation (empty and URL ``src``
@@ -48,8 +48,8 @@ import shlex
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, op
+from reemote.drivers import (
     DeterminismError,
     command_shell,
     format_log,
@@ -60,11 +60,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import gpg
-from reemote5.modules.gpg.gpg import (
-    _IMPORT_SPOOL_PATH,
-    _KEY_SPOOL_PATH,
+from reemote.hosts import Host
+from reemote.modules import gpg
+from reemote.modules.gpg.gpg import (
     GpgDearmorCommand,
     GpgDeleteKeyCommand,
     GpgExportCommand,
@@ -86,6 +84,8 @@ from reemote5.modules.gpg.gpg import (
     GpgTrustCommand,
     GpgVerify,
     _clean_keyid,
+    _import_spool_path,
+    _key_spool_path,
     _KeyringFileExists,
     _matches_keyid,
 )
@@ -106,9 +106,9 @@ class CannedShellHost(Host):
 
 
 def _key_entries(fact: dict) -> list[dict]:
-    """Normalize a baseline id-keyed key-fact dict to reemote5 entry lists.
+    """Normalize a baseline id-keyed key-fact dict to reemote entry lists.
 
-    The baseline keys keys (and their subkeys) by id; reemote5 returns a list of
+    The baseline keys keys (and their subkeys) by id; reemote returns a list of
     entries each carrying its ``id``, with subkeys as a list of their own
     entries (the ``apt.AptKeys`` retyping precedent).
     """
@@ -1322,13 +1322,23 @@ async def test_gpg_verify_gather_fact_forwards_signature_and_file():
 # --dearmor conversion).
 GPG_KEY_BYTES = (
     b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n"
-    b"mQIN reemote5 test key material\n"
+    b"mQIN reemote test key material\n"
     b"-----END PGP PUBLIC KEY BLOCK-----\n"
 )
 
 # The keyring paths of the baseline's gpg.key operation fixtures.
 KEYRING_DEST = "/etc/apt/keyrings/test.gpg"
 VENDOR_DEST = "/etc/apt/keyrings/vendor.gpg"
+
+# The spool paths gpg.key uploads to, derived from the destination keyring --
+# the tests spell the same call the operation makes. The spool file now lives
+# inside a sha1-derived /tmp directory; the install rm -rf's the directory.
+KEY_SPOOL = _key_spool_path(KEYRING_DEST)
+KEY_SPOOL_DIR = KEY_SPOOL.rsplit("/", 1)[0]
+VENDOR_SPOOL = _key_spool_path(VENDOR_DEST)
+# gpg.import_key has no dest, so its spool comes from a fixed sha1 constant.
+IMPORT_SPOOL = _import_spool_path()
+IMPORT_SPOOL_DIR = IMPORT_SPOOL.rsplit("/", 1)[0]
 
 # The vendor key of the baseline's remove_by_id fixture: key id ABCDEF1234567890,
 # full fingerprint ABCDEF1234567890FEDCBA0987654321ABCDEF12, matched by the
@@ -1351,11 +1361,11 @@ def test_gpg_key_upload_command_renders_as_an_unprivileged_scp():
     sudo=True for the install half: the log shows a plain ``scp ...``, never a
     misleading ``sudo scp ...``."""
     stream = io.BytesIO(GPG_KEY_BYTES)
-    cmd = GpgKeyUploadCommand(src=stream, dest=_KEY_SPOOL_PATH)
+    cmd = GpgKeyUploadCommand(src=stream, dest=KEY_SPOOL)
     assert not hasattr(cmd, "shell")
-    assert str(cmd) == f"scp <stream> -> {_KEY_SPOOL_PATH}"
-    assert command_shell(cmd) == f"scp <stream> -> {_KEY_SPOOL_PATH}"
-    assert command_shell(cmd, sudo=True) == f"scp <stream> -> {_KEY_SPOOL_PATH}"
+    assert str(cmd) == f"scp <stream> -> {KEY_SPOOL}"
+    assert command_shell(cmd) == f"scp <stream> -> {KEY_SPOOL}"
+    assert command_shell(cmd, sudo=True) == f"scp <stream> -> {KEY_SPOOL}"
 
 
 def test_gpg_key_install_command_shell_and_elevation():
@@ -1365,16 +1375,16 @@ def test_gpg_key_install_command_shell_and_elevation():
     ``sh -c`` so every step runs under the elevated shell. The paths are
     safe tokens, so shlex.quote leaves them unquoted; the armor marker
     carries spaces and is quoted."""
-    cmd = GpgKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST)
+    cmd = GpgKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST)
     shell = cmd.shell()
     assert shell.startswith("sh -c ")
     inner = shlex.split(shell)[2]
     assert inner == (
         "mkdir -p /etc/apt/keyrings && "
-        f"if grep -q 'BEGIN PGP PUBLIC KEY BLOCK' {_KEY_SPOOL_PATH}; then "
-        f"gpg --batch --yes --dearmor -o {KEYRING_DEST} {_KEY_SPOOL_PATH}; "
-        f"else cp {_KEY_SPOOL_PATH} {KEYRING_DEST}; fi && "
-        f"chmod 0644 {KEYRING_DEST} && rm -f {_KEY_SPOOL_PATH}"
+        f"if grep -q 'BEGIN PGP PUBLIC KEY BLOCK' {KEY_SPOOL}; then "
+        f"gpg --batch --yes --dearmor -o {KEYRING_DEST} {KEY_SPOOL}; "
+        f"else cp {KEY_SPOOL} {KEYRING_DEST}; fi && "
+        f"chmod 0644 {KEYRING_DEST} && rm -rf {KEY_SPOOL_DIR}"
     )
     assert command_shell(cmd, sudo=True).startswith("sudo sh -c ")
     assert command_shell(cmd, su=True) == f"su -c {shlex.quote(shell)}"
@@ -1383,11 +1393,11 @@ def test_gpg_key_install_command_shell_and_elevation():
 def test_gpg_key_install_command_no_dearmor_copies_verbatim():
     """dearmor=False drops the armor sniff entirely (the baseline's no_dearmor
     fixture: a plain cp), keeping the mkdir/chmod/cleanup chain."""
-    cmd = GpgKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST, dearmor=False)
+    cmd = GpgKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST, dearmor=False)
     inner = shlex.split(cmd.shell())[2]
     assert inner == (
-        f"mkdir -p /etc/apt/keyrings && cp {_KEY_SPOOL_PATH} {KEYRING_DEST} && "
-        f"chmod 0644 {KEYRING_DEST} && rm -f {_KEY_SPOOL_PATH}"
+        f"mkdir -p /etc/apt/keyrings && cp {KEY_SPOOL} {KEYRING_DEST} && "
+        f"chmod 0644 {KEYRING_DEST} && rm -rf {KEY_SPOOL_DIR}"
     )
     assert "grep" not in inner
 
@@ -1397,11 +1407,11 @@ def test_gpg_key_install_command_quotes_unsafe_paths():
     the -o target, the cp destination, the chmod operand and the mkdir
     parent."""
     dest = "/etc/apt/keyrings/my key;rm.gpg"
-    cmd = GpgKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=dest)
+    cmd = GpgKeyInstallCommand(spool=KEY_SPOOL, dest=dest)
     inner = shlex.split(cmd.shell())[2]
     quoted = shlex.quote(dest)
-    assert f"gpg --batch --yes --dearmor -o {quoted} {_KEY_SPOOL_PATH}" in inner
-    assert f"cp {_KEY_SPOOL_PATH} {quoted}" in inner
+    assert f"gpg --batch --yes --dearmor -o {quoted} {KEY_SPOOL}" in inner
+    assert f"cp {KEY_SPOOL} {quoted}" in inner
     assert f"chmod 0644 {quoted}" in inner
     assert "mkdir -p /etc/apt/keyrings" in inner
 
@@ -1518,8 +1528,8 @@ async def test_gpg_key_op_yields_upload_then_install():
     assert ctx.changed
     assert ctx.reason == f"install GPG key from <stream> to {KEYRING_DEST}"
     assert commands == [
-        GpgKeyUploadCommand(src=stream, dest=_KEY_SPOOL_PATH),
-        GpgKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST),
+        GpgKeyUploadCommand(src=stream, dest=KEY_SPOOL),
+        GpgKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST),
     ]
 
 
@@ -1532,12 +1542,12 @@ async def test_gpg_key_op_dearmor_false_forwarded():
         c async for c in gpg.key(ctx, src=stream, dest=KEYRING_DEST, dearmor=False)
     ]
     assert commands[1] == GpgKeyInstallCommand(
-        spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST, dearmor=False
+        spool=KEY_SPOOL, dest=KEYRING_DEST, dearmor=False
     )
 
 
 async def test_gpg_key_op_rejects_a_str_src():
-    """The baseline's gpg.key takes a filename/URL the target host reads; reemote5
+    """The baseline's gpg.key takes a filename/URL the target host reads; reemote
     takes an IO stream, so a str src raises rather than being treated as a
     controller-side path."""
     host = SimulatedHost(name="h")
@@ -1579,8 +1589,8 @@ async def test_gpg_key_op_absorbs_unknown_kwargs():
         c async for c in gpg.key(ctx, src=stream, dest=KEYRING_DEST, future_flag=True)
     ]
     assert commands == [
-        GpgKeyUploadCommand(src=stream, dest=_KEY_SPOOL_PATH),
-        GpgKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST),
+        GpgKeyUploadCommand(src=stream, dest=KEY_SPOOL),
+        GpgKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST),
     ]
 
 
@@ -1641,8 +1651,8 @@ async def test_gpg_key_op_keyid_partial_match_installs():
     ]
     assert ctx.changed
     assert commands == [
-        GpgKeyUploadCommand(src=stream, dest=_KEY_SPOOL_PATH),
-        GpgKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=VENDOR_DEST),
+        GpgKeyUploadCommand(src=stream, dest=VENDOR_SPOOL),
+        GpgKeyInstallCommand(spool=VENDOR_SPOOL, dest=VENDOR_DEST),
     ]
 
 
@@ -1917,13 +1927,13 @@ async def test_gpg_key_simulated_seam_spools_then_installs():
     consulted fact stays consistent."""
     host = SimulatedHost(name="h")
     stream = io.BytesIO(GPG_KEY_BYTES)
-    await send_command(host, GpgKeyUploadCommand(src=stream, dest=_KEY_SPOOL_PATH))
-    assert host.remote_files[_KEY_SPOOL_PATH] == GPG_KEY_BYTES
+    await send_command(host, GpgKeyUploadCommand(src=stream, dest=KEY_SPOOL))
+    assert host.remote_files[KEY_SPOOL] == GPG_KEY_BYTES
     await send_command(
-        host, GpgKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST)
+        host, GpgKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST)
     )
     assert host.remote_files[KEYRING_DEST] == GPG_KEY_BYTES
-    assert _KEY_SPOOL_PATH not in host.remote_files
+    assert KEY_SPOOL not in host.remote_files
     assert KEYRING_DEST in host.existing_files
     assert host.file_stats[KEYRING_DEST] == {
         "user": "root",
@@ -2011,14 +2021,14 @@ async def test_gpg_key_end_to_end_installs_over_run():
     (entry,) = report.log
     assert entry.changed
     assert entry.commands == (
-        GpgKeyUploadCommand(src=stream, dest=_KEY_SPOOL_PATH),
-        GpgKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST),
+        GpgKeyUploadCommand(src=stream, dest=KEY_SPOOL),
+        GpgKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST),
     )
     assert host.remote_files[KEYRING_DEST] == GPG_KEY_BYTES
-    assert _KEY_SPOOL_PATH not in host.remote_files
+    assert KEY_SPOOL not in host.remote_files
     assert KEYRING_DEST in host.existing_files
     log = format_log(report)
-    assert f"    $ scp <stream> -> {_KEY_SPOOL_PATH}" in log
+    assert f"    $ scp <stream> -> {KEY_SPOOL}" in log
     assert "    $ sudo sh -c " in log
     plan = format_plan(plans)
     assert f"install GPG key from <stream> to {KEYRING_DEST}" in plan
@@ -2243,27 +2253,27 @@ async def test_gpg_dearmor_dry_run_sends_nothing():
     assert DEARMOR_DEST not in host.remote_files
 
 
-# --- gpg.import_key operation (reemote5 original) -------------------------------
+# --- gpg.import_key operation (reemote original) -------------------------------
 
 
 def test_gpg_import_upload_command_renders_as_an_unprivileged_scp():
     """The import spool transfer has no shell(); it renders via __str__ and is
     never elevated, even under a sudo-flagged request."""
     stream = io.BytesIO(GPG_KEY_BYTES)
-    cmd = GpgImportUploadCommand(src=stream, dest=_IMPORT_SPOOL_PATH)
+    cmd = GpgImportUploadCommand(src=stream, dest=IMPORT_SPOOL)
     assert not hasattr(cmd, "shell")
-    assert str(cmd) == f"scp <stream> -> {_IMPORT_SPOOL_PATH}"
-    assert command_shell(cmd, sudo=True) == f"scp <stream> -> {_IMPORT_SPOOL_PATH}"
+    assert str(cmd) == f"scp <stream> -> {IMPORT_SPOOL}"
+    assert command_shell(cmd, sudo=True) == f"scp <stream> -> {IMPORT_SPOOL}"
 
 
 def test_gpg_import_command_shell_and_elevation():
     """The import wraps gpg --batch --yes --import and the spool cleanup in one
     sh -c so both steps run at the request's privilege."""
-    cmd = GpgImportCommand(spool=_IMPORT_SPOOL_PATH)
+    cmd = GpgImportCommand(spool=IMPORT_SPOOL)
     shell = cmd.shell()
     assert shell.startswith("sh -c ")
     assert shlex.split(shell)[2] == (
-        f"gpg --batch --yes --import {_IMPORT_SPOOL_PATH} && rm -f {_IMPORT_SPOOL_PATH}"
+        f"gpg --batch --yes --import {IMPORT_SPOOL} && rm -rf {IMPORT_SPOOL_DIR}"
     )
     assert command_shell(cmd, sudo=True).startswith("sudo sh -c ")
     assert command_shell(cmd, su=True) == f"su -c {shlex.quote(shell)}"
@@ -2282,8 +2292,8 @@ async def test_gpg_import_key_op_without_keyid_always_imports():
     assert ctx.changed
     assert ctx.reason == "import GPG key from <stream>"
     assert commands == [
-        GpgImportUploadCommand(src=stream, dest=_IMPORT_SPOOL_PATH),
-        GpgImportCommand(spool=_IMPORT_SPOOL_PATH),
+        GpgImportUploadCommand(src=stream, dest=IMPORT_SPOOL),
+        GpgImportCommand(spool=IMPORT_SPOOL),
     ]
 
 
@@ -2366,9 +2376,9 @@ async def test_gpg_import_key_simulated_seam_adds_a_stub_key():
     adds no duplicate."""
     host = SimulatedHost(name="h")
     stream = io.BytesIO(GPG_KEY_BYTES)
-    await send_command(host, GpgImportUploadCommand(src=stream, dest=_IMPORT_SPOOL_PATH))
-    await send_command(host, GpgImportCommand(spool=_IMPORT_SPOOL_PATH))
-    assert _IMPORT_SPOOL_PATH not in host.remote_files
+    await send_command(host, GpgImportUploadCommand(src=stream, dest=IMPORT_SPOOL))
+    await send_command(host, GpgImportCommand(spool=IMPORT_SPOOL))
+    assert IMPORT_SPOOL not in host.remote_files
     fingerprint = hashlib.sha256(GPG_KEY_BYTES).hexdigest().upper()[:40]
     assert host.gpg_keys == [
         {
@@ -2379,8 +2389,8 @@ async def test_gpg_import_key_simulated_seam_adds_a_stub_key():
             "subkeys": [],
         }
     ]
-    await send_command(host, GpgImportUploadCommand(src=stream, dest=_IMPORT_SPOOL_PATH))
-    await send_command(host, GpgImportCommand(spool=_IMPORT_SPOOL_PATH))
+    await send_command(host, GpgImportUploadCommand(src=stream, dest=IMPORT_SPOOL))
+    await send_command(host, GpgImportCommand(spool=IMPORT_SPOOL))
     assert len(host.gpg_keys) == 1
 
 
@@ -2405,7 +2415,7 @@ async def test_gpg_import_key_end_to_end_second_import_with_keyid_is_noop():
     assert not second.changed
     assert second.reason == f"GPG key {fingerprint} already imported"
     log = format_log(report)
-    assert f"    $ scp <stream> -> {_IMPORT_SPOOL_PATH}" in log
+    assert f"    $ scp <stream> -> {IMPORT_SPOOL}" in log
 
 
 async def test_gpg_import_key_dry_run_sends_nothing():
@@ -2443,7 +2453,7 @@ async def test_gpg_import_key_fresh_stream_per_phase_trips_determinism():
         await run_apply(runtimes, plans=plans)
 
 
-# --- gpg.export_key operation (reemote5 original) -------------------------------
+# --- gpg.export_key operation (reemote original) -------------------------------
 
 EXPORT_DEST = "/tmp/exported.gpg"
 
@@ -2584,7 +2594,7 @@ async def test_gpg_export_key_dry_run_sends_nothing():
     assert EXPORT_DEST not in host.remote_files
 
 
-# --- gpg.delete_key operation (reemote5 original) -------------------------------
+# --- gpg.delete_key operation (reemote original) -------------------------------
 
 
 @pytest.mark.parametrize(
@@ -2733,7 +2743,7 @@ async def test_gpg_delete_key_dry_run_sends_nothing():
     assert host.gpg_keys == [VENDOR_KEY]
 
 
-# --- gpg.gen_key operation (reemote5 original) ----------------------------------
+# --- gpg.gen_key operation (reemote original) ----------------------------------
 
 GEN_UID = "Kim Jarvis <kim@example.com>"
 
@@ -2937,7 +2947,7 @@ async def test_gpg_gen_key_dry_run_sends_nothing():
     assert host.gpg_keys == []
 
 
-# --- gpg.trust operation (reemote5 original) ------------------------------------
+# --- gpg.trust operation (reemote original) ------------------------------------
 
 TRUST_FPR = VENDOR_KEY["fingerprint"]
 
@@ -3081,7 +3091,7 @@ async def test_gpg_trust_dry_run_sends_nothing():
     assert host.gpg_trust == []
 
 
-# --- gpg.refresh_keys operation (reemote5 original) -----------------------------
+# --- gpg.refresh_keys operation (reemote original) -----------------------------
 
 
 def test_gpg_refresh_keys_command_shell_and_elevation():

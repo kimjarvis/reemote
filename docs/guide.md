@@ -1,10 +1,10 @@
 # Guide
 
-reemote5 configures and deploys servers through a **pure Python API**. A deployment is ordinary Python code that describes the state you want — installed packages, configuration files, running services — and reemote5 reads each target, reports the work it proposes, and applies the changes that are still needed. You supply the inventory and a program that runs it; reemote5 supplies the facts, operations and the engine that connects them.
+reemote configures and deploys servers through a **pure Python API**. A deployment is ordinary Python code that describes the state you want — installed packages, configuration files, running services — and reemote reads each target, reports the work it proposes, and applies the changes that are still needed. You supply the inventory and a program that runs it; reemote supplies the facts, operations and the engine that connects them.
 
 Allow about **one hour** to read this guide with its examples. It starts from a small, usable script and builds that script up into the patterns a larger deployment needs. You need basic Python — functions, imports, loops, dictionaries. Generators and asyncio are introduced where you first meet them; you never have to implement the execution engine yourself.
 
-Why express server configuration in Python at all? Because a deployment then shares everything else you already write in Python: your types, your validation, your test harness, your data sources. A configuration file in a dedicated language forces a second set of tools, a second way to test, and a boundary wherever your deployment needs data from your application. reemote5 removes that boundary. **Ansible** is a mature alternative when you want playbooks, its module ecosystem and its surrounding tooling; reemote5 is the choice when server configuration should be a library call inside a Python program. Python does not make package names portable across distributions or remove the need for SSH credentials — it makes the *glue* around those facts ordinary code.
+Why express server configuration in Python at all? Because a deployment then shares everything else you already write in Python: your types, your validation, your test harness, your data sources. A configuration file in a dedicated language forces a second set of tools, a second way to test, and a boundary wherever your deployment needs data from your application. reemote removes that boundary. **Ansible** is a mature alternative when you want playbooks, its module ecosystem and its surrounding tooling; reemote is the choice when server configuration should be a library call inside a Python program. Python does not make package names portable across distributions or remove the need for SSH credentials — it makes the *glue* around those facts ordinary code.
 
 !!! note "Reading order"
 
@@ -60,7 +60,7 @@ Four words carry almost the whole model. Learn them once and the rest of the gui
 - **Inventory** — a list of dictionaries naming the servers and how to reach them. This is what you hand to the runner. A minimal entry needs a `host` label and a `connection` mapping; groups, tags and privilege settings are optional and covered later in [Hosts and the inventory](#hosts-and-the-inventory).
 - **Fact** — a read of some server state: a hostname, the set of installed packages, a file's current text. Facts are gathered over the connection and are cached during a run. You usually do not call them yourself; operations read the facts they need.
 - **Operation** — a request to converge the server toward a described state: "ensure these packages are installed", "make this file contain this text", "ensure this service is running". An operation reads facts, decides whether anything must change, and produces the commands to make the change. Operations are **idempotent** wherever that is meaningful: running one twice leaves the same state and reports *no change* the second time.
-- **Action** — something that runs *immediately*, outside a deployment, and hands back its result. Actions are the escape hatch for one-off commands reemote5 has no operation for, and for connectivity itself. They come last in this guide because they are defined by contrast with the deploy model — see [Actions](#actions).
+- **Action** — something that runs *immediately*, outside a deployment, and hands back its result. Actions are the escape hatch for one-off commands reemote has no operation for, and for connectivity itself. They come last in this guide because they are defined by contrast with the deploy model — see [Actions](#actions).
 
 A **deploy** ties these together. It is a Python generator function that takes one host and *yields* operation requests in order:
 
@@ -101,15 +101,15 @@ import json
 from collections.abc import Generator
 from pathlib import Path
 
-from reemote5 import Host, OperationRequest, files, format_log, format_plan, op, run
+from reemote import Host, OperationRequest, files, format_log, format_plan, op, run
 
 
 def deploy(host: Host) -> Generator[OperationRequest, None, None]:
     yield op(
         files.install,
         name="Write a greeting",
-        content="Hello from reemote5!\n",
-        dest="/tmp/reemote5-hello.txt",
+        content="Hello from reemote!\n",
+        dest="/tmp/reemote-hello.txt",
         mode="0644",
     )
 
@@ -143,25 +143,25 @@ The first call passes `dry=True`. It still connects and reads the current state 
 
 ```text
 == Plan ==
-demo: Write a greeting         [changed: content /tmp/reemote5-hello.txt is absent, will install]
+demo: Write a greeting         [changed: content /tmp/reemote-hello.txt is absent, will install]
 == Applied ==
-demo: Write a greeting         [changed: content /tmp/reemote5-hello.txt is absent, will install]
-    $ scp <files install> -> /tmp/reemote5-install-d74126a381f8e984
-    $ sh -c 'mkdir -p /tmp && cp /tmp/reemote5-install-d74126a381f8e984 /tmp/reemote5-hello.txt && chmod 644 /tmp/reemote5-hello.txt && rm -f /tmp/reemote5-install-d74126a381f8e984'
+demo: Write a greeting         [changed: content /tmp/reemote-hello.txt is absent, will install]
+    $ scp <files install> -> /tmp/reemote-install-2e52d4f8373a608a/content
+    $ sh -c 'mkdir -p /tmp && cp /tmp/reemote-install-2e52d4f8373a608a/content /tmp/reemote-hello.txt && chmod 644 /tmp/reemote-hello.txt && rm -rf /tmp/reemote-install-2e52d4f8373a608a'
 ```
 
 Run the script a second time and the state is already correct:
 
 ```text
 == Plan ==
-demo: Write a greeting         [no change: content already up to date (/tmp/reemote5-hello.txt)]
+demo: Write a greeting         [no change: content already up to date (/tmp/reemote-hello.txt)]
 == Applied ==
-demo: Write a greeting         [no change: content already up to date (/tmp/reemote5-hello.txt)]
+demo: Write a greeting         [no change: content already up to date (/tmp/reemote-hello.txt)]
 ```
 
 That is **idempotence** in action: the same request, run again, correctly reports *no change* and sends nothing. The two `$` lines are the commands apply actually sent — an unprivileged `scp` of the text to a temporary spool path, then a `sh -c` chain that copies it into place, sets the mode and removes the spool. This example passes no `sudo=True`, so the chain runs as the login user, which is fine for a `/tmp` path that user can write. For a root-owned destination such as `/etc/...`, add `sudo=True` and the chain renders with a `sudo` prefix — the `scp` stays unprivileged either way, because a transfer is never elevated. [Files and transfers](#files-and-transfers) explains the spool-and-install pattern.
 
-Notice what the script does *not* do. There is no `reemote5` command, no inventory file format it owns, no plugin to register. `run` is an ordinary coroutine you call from ordinary code; `inventory` is a plain Python list you can build however you like. That is the whole shape of using reemote5: **build an inventory, write a deploy, call `run`.**
+Notice what the script does *not* do. There is no `reemote` command, no inventory file format it owns, no plugin to register. `run` is an ordinary coroutine you call from ordinary code; `inventory` is a plain Python list you can build however you like. That is the whole shape of using reemote: **build an inventory, write a deploy, call `run`.**
 
 ## What makes the API work
 
@@ -187,7 +187,7 @@ Every run answers two questions in order — *what would this change?* and then 
 
 ### Asyncio end to end
 
-The execution path is asynchronous: `run`, the prepare and apply drivers, every fact read and every command send are coroutines, so you call them with `await` and drive them from `asyncio.run(...)`. This is not ceremony — it is what lets reemote5 work on **many hosts concurrently**, overlapping the network waits instead of contacting one server at a time. Within apply, hosts advance through their steps in lockstep; the concurrency is across hosts, and the commands for a single host still run in order. Your deploy stays a plain synchronous generator; only the runner is async.
+The execution path is asynchronous: `run`, the prepare and apply drivers, every fact read and every command send are coroutines, so you call them with `await` and drive them from `asyncio.run(...)`. This is not ceremony — it is what lets reemote work on **many hosts concurrently**, overlapping the network waits instead of contacting one server at a time. Within apply, hosts advance through their steps in lockstep; the concurrency is across hosts, and the commands for a single host still run in order. Your deploy stays a plain synchronous generator; only the runner is async.
 
 ```python
 plans, report, hosts = await run(inventory, deploy)   # a coroutine — you must await it
@@ -195,15 +195,15 @@ plans, report, hosts = await run(inventory, deploy)   # a coroutine — you must
 
 ### No awareness of the controller filesystem
 
-reemote5 does not scan your local machine for files to upload, and it has no notion of a "deploy directory" or a role tree on the controller. Content crosses to the host as **data you hand it**, not as a path the library resolves:
+reemote does not scan your local machine for files to upload, and it has no notion of a "deploy directory" or a role tree on the controller. Content crosses to the host as **data you hand it**, not as a path the library resolves:
 
 - `files.install` takes `content` as a plain string and writes it.
 - `files.put` and `files.get` take an **IO-like object** (an open file, an `io.StringIO`, an `io.BytesIO`) — never a local path string.
 
-Every remote path in an operation refers to a path **on the target host**, not on the controller. This keeps a deploy portable: the same code runs unchanged whether your controller is a laptop, a CI runner or a container, because the library never depends on a local file layout. If you want to ship a controller-side file, your code opens it and hands reemote5 the stream:
+Every remote path in an operation refers to a path **on the target host**, not on the controller. This keeps a deploy portable: the same code runs unchanged whether your controller is a laptop, a CI runner or a container, because the library never depends on a local file layout. If you want to ship a controller-side file, your code opens it and hands reemote the stream:
 
 ```python
-# Your code opens the controller file once; reemote5 only ever sees the stream.
+# Your code opens the controller file once; reemote only ever sees the stream.
 def make_deploy(stream):
     def deploy(host: Host) -> Generator[OperationRequest, None, None]:
         yield op(files.put, name="Upload nginx.conf", src=stream, dest="/tmp/nginx.conf")
@@ -225,7 +225,7 @@ import json
 from collections.abc import Generator
 from pathlib import Path
 
-from reemote5 import Host, OperationRequest, apt, files, format_log, format_plan, op, run, systemd
+from reemote import Host, OperationRequest, apt, files, format_log, format_plan, op, run, systemd
 
 
 def is_debian(host: Host) -> bool:
@@ -346,7 +346,7 @@ There is no transaction and no rollback. Apply runs each step to completion; if 
 
 ### Hosts and the inventory
 
-The inventory is a list of dictionaries. Each entry must carry a `host` (its logical label) and a `connection` (how to reach it); `group`, `tags` and `privilege` are optional, and any extra keys are preserved on the materialised `Host`. reemote5 validates the whole inventory with pydantic before it builds a single host, so a malformed entry raises `InventoryError` immediately rather than failing later over the network.
+The inventory is a list of dictionaries. Each entry must carry a `host` (its logical label) and a `connection` (how to reach it); `group`, `tags` and `privilege` are optional, and any extra keys are preserved on the materialised `Host`. reemote validates the whole inventory with pydantic before it builds a single host, so a malformed entry raises `InventoryError` immediately rather than failing later over the network.
 
 ```json
 [
@@ -365,7 +365,7 @@ The inventory is a list of dictionaries. Each entry must carry a `host` (its log
 - **`group`** is a single string; **`tags`** is a list. Both are *static* classifiers a deploy reads off the host to branch, and both are the only data a `when` guard may consult.
 - **`privilege`** holds elevation data: `sudo_user`/`sudo_password`, `su_user`/`su_password`, `doas_user`. These come from the inventory, never from a deploy — an operation asks to elevate with `sudo=True`, but it cannot choose the run-as user or supply a password.
 
-A `sudo_password` is delivered through an askpass helper and never appears in the log or the plan. There is deliberately no `doas_password`: `doas` has no askpass mechanism, so reemote5 always runs `doas -n` and the host must grant a `permit nopass` rule.
+A `sudo_password` is delivered through an askpass helper and never appears in the log or the plan. There is deliberately no `doas_password`: `doas` has no askpass mechanism, so reemote always runs `doas -n` and the host must grant a `permit nopass` rule.
 
 `Host.from_inventory` is the default factory that turns each entry into a `Host`. The connection is opened lazily and cached; `run` closes every connection when it finishes. If a host cannot be reached, `Host.connect` wraps the transport failure in a `HostConnectionError` naming that host, and because prepare connects the whole inventory concurrently, the per-host failures are merged into one aggregate naming every unreachable host.
 
@@ -428,12 +428,12 @@ deploy = compose(base, web, monitoring)
 **`sub_deploy()`** wraps a deploy to add a name prefix, a default privilege policy and an eligibility guard:
 
 ```python
-from reemote5 import sub_deploy
+from reemote import sub_deploy
 
 edge_web = sub_deploy(
     web,
     name_prefix="edge",
-    sudo=True,                 # fills UNSET privilege on inner ops; explicit values win
+    sudo=True,  # fills UNSET privilege on inner ops; explicit values win
     when=lambda host: host.group == "edge",
 )
 ```
@@ -497,7 +497,7 @@ Determinism does **not** mean the two phases produce identical *commands* or ide
 
 ### Change notification (handlers)
 
-reemote5 has **no first-class handler mechanism**. There is no `notify`/`handler` keyword and no event bus. A conditional restart — "restart the service only if the config changed" — is something you build from the *results of a previous run*, in ordinary Python, outside the deploy body.
+reemote has **no first-class handler mechanism**. There is no `notify`/`handler` keyword and no event bus. A conditional restart — "restart the service only if the config changed" — is something you build from the *results of a previous run*, in ordinary Python, outside the deploy body.
 
 The clean pattern is to capture which operations reported `changed` on the last apply, freeze them into a set, and pass that set into the next deploy as a stable input:
 
@@ -554,7 +554,7 @@ Apply **recreates the cache before each request**, which is what lets a later op
 When you *do* want a fact's value directly — to branch between two deploys, or to report it — read it across hosts with `gather_fact`:
 
 ```python
-from reemote5 import gather_fact, server
+from reemote import gather_fact, server
 
 hostnames = await gather_fact(hosts, server.Hostname)
 # {"web1": "web1.example.com", "web2": "web2.example.com"}
@@ -629,12 +629,12 @@ These invariants are what let the runner execute a deploy twice, concurrently ac
 
 ## Actions
 
-An **action** runs *immediately*, outside the deploy model, and returns what happened. Actions exist for the cases the library deliberately does not model: software reemote5 knows nothing about, a script already staged on the host, and connectivity itself.
+An **action** runs *immediately*, outside the deploy model, and returns what happened. Actions exist for the cases the library deliberately does not model: software reemote knows nothing about, a script already staged on the host, and connectivity itself.
 
 You call an action with `await gather_action(...)`:
 
 ```python
-from reemote5 import Shell, gather_action
+from reemote import Shell, gather_action
 
 results = await gather_action(hosts, Shell, command="df -h /")
 # {"web1": Result(exit_status=0, stdout="...", stderr=""), ...}

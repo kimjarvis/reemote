@@ -3,7 +3,7 @@
 
 """Example: flush a demo chain's rules on real CentOS hosts.
 
-This is a *usage* example, not part of the library. It drives reemote5's
+This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
@@ -23,7 +23,7 @@ a no-op, so a flush never shows changed twice. Only rules are flushed --
 chain policies survive (``iptables.policy`` manages those) and the user
 chain itself survives (``iptables.chain`` with ``present=False`` deletes
 it). The deploy composes the full lifecycle on a dedicated demo chain:
-create ``REEMOTE5_DEMO``, seed one rule into it, flush the chain, then
+create ``REEMOTE_DEMO``, seed one rule into it, flush the chain, then
 flush it again -- the second flush's fresh per-step fact cache sees an
 empty chain and reports no rules to flush.
 
@@ -62,7 +62,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -127,32 +127,32 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     )
     yield op(
         iptables.chain,
-        name="Create the REEMOTE5_DEMO chain",
-        chain="REEMOTE5_DEMO",
+        name="Create the REEMOTE_DEMO chain",
+        chain="REEMOTE_DEMO",
         sudo=True,
         when=is_centos,
     )
     yield op(
         iptables.rule,
         name="Seed a demo rule",
-        chain="REEMOTE5_DEMO",
+        chain="REEMOTE_DEMO",
         jump="DROP",
         source="192.0.2.0/24",
-        comment="reemote5-demo",
+        comment="reemote-demo",
         sudo=True,
         when=is_centos,
     )
     yield op(
         iptables.flush,
-        name="Flush the REEMOTE5_DEMO chain",
-        chain="REEMOTE5_DEMO",
+        name="Flush the REEMOTE_DEMO chain",
+        chain="REEMOTE_DEMO",
         sudo=True,
         when=is_centos,
     )
     yield op(
         iptables.flush,
-        name="Flush the REEMOTE5_DEMO chain (again)",
-        chain="REEMOTE5_DEMO",
+        name="Flush the REEMOTE_DEMO chain (again)",
+        chain="REEMOTE_DEMO",
         sudo=True,
         when=is_centos,
     )

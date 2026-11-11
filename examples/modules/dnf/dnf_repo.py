@@ -4,7 +4,7 @@
 """Add a dnf repository ``.repo`` file, with content-based idempotence.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -31,7 +31,7 @@ driven by ``asyncio.run``.
 The deploy adds the Docker CE repository by constructing its
 ``/etc/yum.repos.d/DockerCE.repo`` file from ``dnf.repo``'s arguments
 (``baseurl``, ``description``, ``gpgkey``). Unlike the baseline -- whose
-``dnf.repo`` can also download a remote ``.repo`` file -- reemote5 has no
+``dnf.repo`` can also download a remote ``.repo`` file -- reemote has no
 download operation, so ``dnf.repo`` takes a repository *name* and builds the
 file itself; a URL ``src`` raises ``ValueError``. The ``$releasever`` and
 ``$basearch`` in the baseurl are dnf's own substitutions: the content rides
@@ -79,7 +79,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

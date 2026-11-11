@@ -4,7 +4,7 @@
 """Add an apt repository line by spool-and-install, with fact-based idempotence.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -36,7 +36,7 @@ the Canonical partner repository for Ubuntu noble -- and ``filename``
 scopes it to ``/etc/apt/sources.list.d/canonical-partner.list`` instead of
 the main ``/etc/apt/sources.list``. Unlike the baseline -- whose ``apt.repo``
 delegates the edit to ``files.line``, patching the file in place with an
-``echo >>`` or a ``sed -i`` -- reemote5 *rewrites* the managed file through
+``echo >>`` or a ``sed -i`` -- reemote *rewrites* the managed file through
 the spool-and-install pair ``apt.key`` uses: the file's current text is
 read with the ``AptSourcesFile`` content fact, a pure transform adds or
 deletes the line, the result is scp'd to a ``/tmp`` spool named after the
@@ -91,7 +91,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

@@ -4,7 +4,7 @@
 """Hold apt packages back from upgrades with ``apt-mark hold``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -27,7 +27,7 @@ it finishes. The path is resolved from ``__file__``, so the example works
 from any working directory; point ``INVENTORY_PATH`` at your own file to
 target your machines.
 
-``apt.mark`` is a reemote5 original: the baseline ships no operation managing
+``apt.mark`` is a reemote original: the baseline ships no operation managing
 package hold states. A held package is skipped by ``apt upgrade`` /
 ``apt.dist_upgrade`` until it is released again, which is how a deploy
 pins critical packages at their current version without uninstalling
@@ -75,7 +75,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

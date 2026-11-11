@@ -14,7 +14,7 @@ polling the relocated `SystemdServiceState`.
 
 The `Sysctl` fact has likewise relocated — to the [`sysctl`](sysctl.md)
 namespace (`sysctl.Sysctl`) — but **without** a backward-compatibility
-re-export: `server` no longer exports it, and the top-level `reemote5.Sysctl`
+re-export: `server` no longer exports it, and the top-level `reemote.Sysctl`
 binding now points at `sysctl.Sysctl`. The `sysctl` namespace also owns the
 persistence facts (`SysctlFile`, `SysctlFiles`) and the `setting`/`conf`
 operations that supersede the `server_op_sysctl.py` recipe for everyday use.
@@ -25,7 +25,7 @@ colon-separated string, while any other environment variable can now be
 read through the same fact. `Path` is no longer exported.
 
 `server.script` is an **action**, not an operation: an alias of
-[`Script`][reemote5.actions.Script] from `reemote5.actions`, driven by
+[`Script`][reemote.actions.Script] from `reemote.actions`, driven by
 `gather_action` outside the deploy model. It runs a script file already on
 the host — stage it with `files.put` in a deploy first — executing an
 executable file directly (shebang honoured) and a non-executable one through
@@ -35,7 +35,7 @@ back as an error `Result` (exit 127), never an exception. See the
 
 --->
 
-::: reemote5.modules.server.server
+::: reemote.modules.server.server
     options:
       show_root_heading: false
       members:
@@ -84,7 +84,7 @@ back as an error `Result` (exit 127), never an exception. See the
 
 <!---
 
-`reemote5.modules.server.server` combines the server facts and the server
+`reemote.modules.server.server` combines the server facts and the server
 operations in a single source, so the read side (`Arch`, `AuthorizedKeys`,
 `AuthorizedKeysFile`,
 `Date`, `Env`, `EtcHosts`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
@@ -97,7 +97,7 @@ sits beside the `server.etc_hosts`, `server.group`, `server.hostname`, `server.k
 `server.user_authorized_keys`,
 `server.wait` and
 `server.wait_service`
-operations that consume them. It is also where reemote5's
+operations that consume them. It is also where reemote's
 **waiting** design lives: `server.wait_service` is the first operation that
 blocks until a condition on the host holds, and `server.wait` is the second
 -- it asks the same question of the kernel's socket table through the `Port`
@@ -108,7 +108,7 @@ fact.
 A fact is an asynchronous, queryable resource — never yielded by a generator —
 implemented as a `process` coroutine returning the raw value (over asyncssh in
 the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get], which is itself a coroutine,
+[`FactCache.get`][reemote.core.FactCache.get], which is itself a coroutine,
 so results are awaited and cached within a phase step. `Arch` takes no arguments: it runs `uname -m` and returns the
 machine's architecture string (e.g. `x86_64`), mirroring the baseline's
 `server.Arch`. `AuthorizedKeys` takes a username (and an optional explicit
@@ -137,7 +137,7 @@ timestamp into a timezone-aware `datetime`, mirroring the baseline's
 `default = datetime.now` fallback to the control machine's clock is
 deliberately dropped. `Env` takes a variable name: it runs `echo $<name>`
 and returns that environment variable's value from the login shell as the
-raw string (e.g. `/usr/bin:/bin` for `PATH`) — an original reemote5 fact
+raw string (e.g. `/usr/bin:/bin` for `PATH`) — an original reemote fact
 that replaces the migrated `server.Path` (`Env` with the name `PATH`
 issues the same shell and returns the same string, not split into a list,
 so callers can `split(":")` themselves). The name is validated rather than
@@ -162,15 +162,15 @@ as `[]`. `HasGui` takes no arguments: it runs `ls /usr/bin/*session || true`
 and returns `True` when any listed path is a known desktop-session binary
 (GNOME, MATE, LXDE, KDE Plasma, XFCE 4), mirroring the baseline's `server.HasGui`;
 empty output reads as `False`. The baseline implements it as a short fact over
-`LinuxGui`; reemote5 keeps both facts, sharing the same shell and
+`LinuxGui`; reemote keeps both facts, sharing the same shell and
 known-binary map — `HasGui` is the boolean projection of `LinuxGui`'s list
 of GUI names. `Home` takes an optional username
 (an empty one means the login user) and runs `echo ~user`, letting the
-shell's tilde expansion resolve the home directory (e.g. `/home/reemote5`),
+shell's tilde expansion resolve the home directory (e.g. `/home/reemote`),
 mirroring the baseline's `server.Home`; the username is validated rather than
 quoted, so an unsafe one raises `ValueError`. Empty output reads as `None`,
 and so does an unexpanded `~user` echo — the shell's answer for an unknown
-user, which the baseline returns as the literal string; reemote5 deliberately
+user, which the baseline returns as the literal string; reemote deliberately
 maps it to `None` so a missing user never masquerades as a path. `Hostname`
 takes no arguments: it runs `uname -n` and returns the server's hostname
 string (e.g. `my-host.net`), mirroring the baseline's `server.Hostname`; the
@@ -224,7 +224,7 @@ ignored, and empty output reads as `[]`, the baseline's `default = list`.
 `LinuxName` takes no arguments: it returns just the distribution's pretty
 name (e.g. `Ubuntu`), mirroring the baseline's `server.LinuxName` — a shortcut
 for the `name` key of `LinuxDistribution`. The baseline implements it as a short
-fact over `LinuxDistribution`; reemote5 likewise delegates to that fact's
+fact over `LinuxDistribution`; reemote likewise delegates to that fact's
 `process`, sharing its shell, `distro` parsing and `linux_distribution`
 simulated seam. No release files at all read as `None` (the `name` of
 the baseline's `default()`). `Locales` takes no arguments: it runs `locale -a`
@@ -243,7 +243,7 @@ only the first colon splits — lines without one (the `No LSB modules are
 available.` hint, blank lines) are skipped. Empty output (a failed read)
 parses to `{}`; the baseline's `requires_command` gating is deliberately
 dropped. A *missing* `lsb_release` exits 127, which `run_shell` reports as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError] rather than
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError] rather than
 an empty dict. `Mounts` takes no arguments: it reads the `Kernel`
 fact to pick its shell — FreeBSD lists `mount -p --libxo json`, OpenBSD
 `mount -v`, every other kernel cats `/proc/self/mountinfo` — and returns a
@@ -262,7 +262,7 @@ would raise on empty output — a failed read here simply reports no mounts).
 <protocol>`, every other kernel prefers Linux `ss -lp<flag>n | grep
 ':<port> ' || true` and falls back to `netstat -<flag>lnp ... | awk ...`
 when the `Which` fact reports no `ss` — and returns a
-[`PortInfo`][reemote5.modules.server.server.PortInfo] record: `listening`
+[`PortInfo`][reemote.modules.server.server.PortInfo] record: `listening`
 says whether the port has at least one listening socket, `process` and `pid`
 name the owner of the first row that carries one. `listening` is decided by
 any row surviving the port filter, so it is tool- and
@@ -358,9 +358,9 @@ Operations live in namespace modules so a deploy reads `server.etc_hosts`,
 `server.wait_service`,
 mirroring the baseline's API. Every
 operation is an async
-generator taking an [`OpContext`][reemote5.core.OpContext], awaiting facts via
+generator taking an [`OpContext`][reemote.core.OpContext], awaiting facts via
 `ctx.facts`, setting `ctx.changed`/`ctx.reason` where a change is needed, and
-yielding one [`Command`][reemote5.commands.Command] descriptor per mutation.
+yielding one [`Command`][reemote.commands.Command] descriptor per mutation.
 
 `server.etc_hosts` mirrors the baseline's `server.etc_hosts` for `ip`,
 `hostnames`, `present` and `path` (default `/etc/hosts`): it ensures the
@@ -387,10 +387,10 @@ the IP when omitted.
 
 The transformed text rides an unprivileged scp upload to a `/tmp` spool
 named after the managed path
-(`/tmp/reemote5-server-etc-hosts-<sha1(dest)[:16]>`, so two requests
+(`/tmp/reemote-server-etc-hosts-<sha1(dest)[:16]>/hosts`, so two requests
 targeting different hosts files never share one), then an
 `EtcHostsInstallCommand` — `sh -c 'mkdir -p … && cp … && chmod 0644 … &&
-rm -f …'` — installs it over the hosts file and removes the spool. The
+rm -rf …'` — installs it over the hosts file and removes the spool. The
 `sh -c` wrapper matters: a bare `sudo` prefix would elevate only the first
 command of the chain. A removal that empties the file uploads an empty
 payload, never a delete. `/etc/hosts` is root-owned, so flag the request
@@ -426,7 +426,7 @@ hostname carrying metacharacters is set literally. The command needs root,
 so flag the request `sudo=True`. The baseline's `hostname_file` option is
 deliberately dropped: on systems without `hostnamectl` the baseline also uploads
 the name to a persistent file (`/etc/hostname` on Linux, `/etc/myname` on
-OpenBSD) through `files.put`, which the baseline can elevate — reemote5's
+OpenBSD) through `files.put`, which the baseline can elevate — reemote's
 transfers are always unprivileged, so that root-owned write cannot ride a
 transfer and the whole file branch is omitted rather than silently run as
 the login user. On a systemd host nothing is lost, since `hostnamectl`
@@ -443,7 +443,7 @@ snapshot in a deploy factory (see the
 [kill example](../examples/modules/server.md#killing-a-process-by-pid)) —
 the synchronous deploy generator cannot await a fact, and branching it on
 live process state would raise
-[`DeterminismError`][reemote5.drivers.DeterminismError]. Killing another
+[`DeterminismError`][reemote.drivers.DeterminismError]. Killing another
 user's process needs root, so flag the request `sudo=True`. A PID that
 exited between the snapshot and the apply makes `kill` exit non-zero, which
 fails the run with `CommandError` — the baseline behaves the same.
@@ -459,7 +459,7 @@ unload direction, and `force=True` renders `-f` without ever turning an
 in-state request into a reload. Each name is shell-quoted, so a name
 carrying metacharacters reaches `modprobe` literally. Names are compared
 verbatim — the kernel treats `-` and `_` as equivalent in module names,
-but neither the baseline nor reemote5 normalizes the spelling. The commands
+but neither the baseline nor reemote normalizes the spelling. The commands
 need root, so flag the request `sudo=True`.
 
 `server.mount` mirrors the baseline's `server.mount` for `path`, `mounted`,
@@ -497,13 +497,13 @@ set-timezone`, which also persists the zone across reboots) only when they
 differ. The zone is shell-quoted, so a name carrying metacharacters is set
 literally. When a change is needed the `Which` fact probes `timedatectl`,
 and a host without it raises
-[`OperationError`][reemote5.core.OperationError] during the prepare phase
+[`OperationError`][reemote.core.OperationError] during the prepare phase
 — before anything is sent — rather than falling back; an already-set zone
 is a no-op on any host, like the baseline, which also compares the fact before
 probing for the tool. The command needs root, so flag the request
 `sudo=True`. The baseline's non-systemd fallback — symlinking
 `/usr/share/zoneinfo/<timezone>` onto `/etc/localtime` and echoing the zone
-into `/etc/timezone` — is deliberately dropped: reemote5 supports this
+into `/etc/timezone` — is deliberately dropped: reemote supports this
 operation on systemd systems only, where `timedatectl` already persists
 the zone.
 
@@ -530,7 +530,7 @@ existing group of the user's name when there is one (the baseline's "tell
 `append=True` only the memberships the user lacks are written (`-a -G`) —
 appending never removes one. Pass `groups` as a tuple rather than a list:
 `op()` requests must stay hashable, so a list raises
-[`UnhashableArgumentError`][reemote5.core.UnhashableArgumentError].
+[`UnhashableArgumentError`][reemote.core.UnhashableArgumentError].
 `password` is the *encrypted* hash. On Linux it rides the same `usermod -p`,
 while FreeBSD `pw` has no modify flag for it and gets a separate
 `echo '<hash>' | pw usermod -n <user> -H 0` pipe command, which is the only
@@ -546,7 +546,7 @@ whether the home still needs work, and `_HomeMkdirCommand` and
 An absent home is created and owned, a wrong owner is chowned, a symlinked
 home is accepted as-is (the baseline's `_no_fail_on_link=True`), and a home that
 exists as something other than a directory raises
-[`OperationError`][reemote5.core.OperationError] during the prepare phase —
+[`OperationError`][reemote.core.OperationError] during the prepare phase —
 before anything is sent. Like every other check in the operation, the home
 probes are awaited in the generator body, so the request sequence stays
 identical in both phases. Every command here needs root, so flag the request
@@ -554,14 +554,14 @@ identical in both phases. Every command here needs root, so flag the request
 
 the baseline's `public_keys`/`delete_keys` options are deliberately dropped
 (developer decision): that branch delegates to
-`server.user_authorized_keys`, which reemote5 keeps as its own explicit
+`server.user_authorized_keys`, which reemote keeps as its own explicit
 operation rather than an option on `user` — manage key files with that
 operation directly (its spool-and-install write covers both the append
 and the `delete_keys` rewrite). The baseline's
 plan-time `Which` guards ("`useradd` is not installed", with its Alpine
 shadow-package note) are dropped as well: a missing binary surfaces at apply
 as `CommandNotFoundError` from the exit status, the convention every other
-reemote5 operation follows.
+reemote operation follows.
 
 `server.user_authorized_keys` mirrors the baseline's `server.user_authorized_keys`
 for `user`, `public_keys`, `group`, `delete_keys`, `authorized_key_directory`
@@ -581,7 +581,7 @@ directory is `mkdir -p`'d, chmod'd and chown'd (reusing
 `_KeysChmodCommand`/`_KeysTouchCommand` stand-ins for the chmod/touch verbs
 that pair has no twin for); a wrong mode or owner re-runs just that half; a
 path that exists as the wrong type raises
-[`OperationError`][reemote5.core.OperationError] during the prepare phase.
+[`OperationError`][reemote.core.OperationError] during the prepare phase.
 These state verbs stay in-place shell commands — only the key file's *text*
 is spooled.
 
@@ -595,10 +595,10 @@ request *in order* (the baseline's list comparison, so a pure reorder is a
 change) or the file is rewritten to exactly the requested keys; an empty
 request writes a lone newline, the baseline's own quirk. The transformed text
 rides an unprivileged scp upload to a `/tmp` spool named after the managed
-path (`/tmp/reemote5-server-user-authorized-keys-<sha1(dest)[:16]>`, so two
+path (`/tmp/reemote-server-user-authorized-keys-<sha1(dest)[:16]>/authorized_keys`, so two
 requests targeting different key files never share one), then an
 `AuthorizedKeysInstallCommand` — `sh -c 'mkdir -p … && cp … && chmod 600 …
-&& rm -f …'` — installs it over the key file and removes the spool. The
+&& rm -rf …'` — installs it over the key file and removes the spool. The
 `sh -c` wrapper matters: a bare `sudo` prefix would elevate only the first
 command of the chain. No chown rides the install — the state block above
 already set the owner and `cp` over an existing file preserves it. Writing
@@ -624,9 +624,9 @@ controller-side file path. The baseline's `read_any_pub_key_file`
 `os.path.exists` branch clashes with the same IO-only/no-controller-path
 rule `files.put`/`files.get`/`apt.key`/`dnf.key` follow, and reading a
 controller file in both phases would risk a
-[`DeterminismError`][reemote5.drivers.DeterminismError] if it changed in
+[`DeterminismError`][reemote.drivers.DeterminismError] if it changed in
 between. The `delete_keys` option, originally dropped because the baseline
-implements it through an *elevated* `files.put` that reemote5's
+implements it through an *elevated* `files.put` that reemote's
 unprivileged transfers cannot match, is revived by the spool-and-install
 shape: the rewrite now rides the same unprivileged-spool/elevated-install
 pair as the append.
@@ -645,9 +645,9 @@ RHEL-family host with no `/etc/locale.gen` at all. When a change is due,
 the transformed text (the line uncommented, or commented with a
 fixpoint-guarded `"# "` prepend the baseline's unconditional one lacks) rides an
 unprivileged scp upload to a `/tmp` spool named after the managed path
-(`/tmp/reemote5-server-locale-<sha1(dest)[:16]>`), then a
+(`/tmp/reemote-server-locale-<sha1(dest)[:16]>/locale`), then a
 `LocaleInstallCommand` — `sh -c 'mkdir -p … && cp … && chmod 0644 … &&
-rm -f …'` — installs it over `/etc/locale.gen` and removes the spool, and
+rm -rf …'` — installs it over `/etc/locale.gen` and removes the spool, and
 one `LocaleGenCommand` (`locale-gen`) regenerates the archive — the baseline's
 "locale-gen is always executed" step. The content stage adds a no-op level
 the in-place sed could never reach: a definition line already in the
@@ -685,9 +685,9 @@ fixpoint — the baseline's `files.line` no-op when a matching line already read
 exactly the replacement — with no parsed semantic fact behind limits.conf.
 When a change is due, the transformed text rides an unprivileged scp upload
 to a `/tmp` spool named after the managed path
-(`/tmp/reemote5-server-security-limit-<sha1(dest)[:16]>`), then a
+(`/tmp/reemote-server-security-limit-<sha1(dest)[:16]>/security-limit`), then a
 `SecurityLimitInstallCommand` — `sh -c 'mkdir -p … && cp … && chmod 0644 … &&
-rm -f …'` — installs it over `/etc/security/limits.conf` and removes the
+rm -rf …'` — installs it over `/etc/security/limits.conf` and removes the
 spool. The `chmod 0644` reset matters: a login-user mode would silently stop
 the limits applying. The baseline's timestamped sed backup is gone with the sed
 (its timestamp is non-deterministic across phases). One deviation: the
@@ -705,15 +705,15 @@ which is now a thin single-deploy example of it.
 the baseline waits in two ways: a remote-side shell loop (`server.wait` polls
 `netstat` in a `while` loop *on the host*) or a control-side Python callback
 (`server.reboot` yields a `FunctionCommand` that sleeps and re-reads the
-`Uptime` fact until the host is back). reemote5 takes the second shape and
+`Uptime` fact until the host is back). reemote takes the second shape and
 makes it a descriptor: `server.wait` and `server.wait_service` each yield a
 `WaitForFactCommand`,
 the second kind of *non-shell* descriptor after the transfers. It has no
-`shell()`; [`send_command`][reemote5.drivers.send_command] dispatches on the
-[`WaitCommand`][reemote5.commands.WaitCommand] base and awaits the
+`shell()`; [`send_command`][reemote.drivers.send_command] dispatches on the
+[`WaitCommand`][reemote.commands.WaitCommand] base and awaits the
 descriptor's `wait`, which polls the fact every `interval` seconds until the
 predicate holds or `timeout` expires and
-[`WaitTimeoutError`][reemote5.commands.WaitTimeoutError] aborts the run. Like
+[`WaitTimeoutError`][reemote.commands.WaitTimeoutError] aborts the run. Like
 a transfer it is unprivileged — `sudo`/`su` do not apply to a poll.
 
 `server.wait` mirrors the baseline's `server.wait` for its one option, `port`, and
@@ -725,7 +725,7 @@ scripted, so the driver bounds it with `timeout` and `interval` is adjustable.
 its way up usually appears within a second, where a unit's start takes longer
 — and takes `protocol` (`tcp` or `udp`) because the socket table is read per
 family. The polled fact is `Port`, the predicate
-[`is_listening`][reemote5.modules.server.server.is_listening], which reads the
+[`is_listening`][reemote.modules.server.server.is_listening], which reads the
 `listening` flag alone: because the poll is unprivileged it may well see the
 socket without seeing its owner, and the wait is about the port, not about who
 owns it. `server.wait_service` is the same descriptor over
@@ -747,7 +747,7 @@ Three constraints follow from the execution model:
   the baseline's non-idempotent `server.wait`. Gating them on a fact would read
   pre-deployment state in
   prepare and post-start state in apply, and branching on that would raise
-  [`DeterminismError`][reemote5.drivers.DeterminismError]. Whether the unit is
+  [`DeterminismError`][reemote.drivers.DeterminismError]. Whether the unit is
   *already* active (or the port *already* open) is discovered by the first
   poll — a zero `timeout` still
   polls once, so an already-met condition always succeeds.
@@ -760,8 +760,8 @@ Three constraints follow from the execution model:
 descriptor; `server.wait` is precisely that reuse over `Port`. Its fields end
 up compared by value in plans, so pass module-level
 fact classes and predicates (such as
-[`is_active`][reemote5.modules.server.server.is_active] and
-[`is_listening`][reemote5.modules.server.server.is_listening]), never a lambda
+[`is_active`][reemote.modules.server.server.is_active] and
+[`is_listening`][reemote.modules.server.server.is_listening]), never a lambda
 built inside the generator: the deploy is re-invoked per phase and a fresh
 lambda per invocation would not compare equal.
 
@@ -779,7 +779,7 @@ way the simulated host evaluates a `WaitForFactCommand` *once* without
 sleeping: in-memory state never changes on its own, so the condition either
 already holds or the simulated wait raises `WaitTimeoutError` immediately.
 
-::: reemote5.modules.server.server
+::: reemote.modules.server.server
     options:
       show_root_heading: false
       members:

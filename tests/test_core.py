@@ -19,7 +19,7 @@ from collections.abc import Generator
 
 import pytest
 
-from reemote5.core import (
+from reemote.core import (
     OperationRequest,
     Privilege,
     UnhashableArgumentError,
@@ -27,9 +27,9 @@ from reemote5.core import (
     op,
     sub_deploy,
 )
-from reemote5.drivers import format_log, format_plan, run
-from reemote5.hosts import Host
-from reemote5.modules import dnf, files
+from reemote.drivers import format_log, format_plan, run
+from reemote.hosts import Host
+from reemote.modules import dnf, files
 from tests.simulated_host import SimulatedHost
 
 HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"

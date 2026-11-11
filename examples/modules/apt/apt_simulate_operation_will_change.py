@@ -44,7 +44,7 @@ change-management view ``apt.dist_upgrade`` reads to decide whether the
 real upgrade would do anything. Unlike ``AptUpgradable`` (a plain
 ``upgrade`` listing), the simulation also counts newly-installed and
 removed packages, which only a ``dist-upgrade`` proposes. When no summary
-line appears the fact reports ``None`` -- reemote5's deviation from
+line appears the fact reports ``None`` -- reemote's deviation from
 the baseline's exception, which its caller treats as "run the real command
 anyway".
 
@@ -68,7 +68,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

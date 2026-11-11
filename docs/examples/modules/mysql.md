@@ -61,7 +61,7 @@ MySQL machines.
 
 The database operation: `mysql.database` mirrors the baseline's
 `mysql.database` and extends it beyond creation. It reads
-[`MysqlDatabases`][reemote5.modules.mysql.mysql.MysqlDatabases]
+[`MysqlDatabases`][reemote.modules.mysql.mysql.MysqlDatabases]
 to decide: an absent database yields one `CREATE DATABASE` carrying
 `charset` and `collate`; an existing one whose character set or collation
 differs is reconciled through `ALTER DATABASE` (the baseline applies them only
@@ -82,7 +82,7 @@ The user operation: `mysql.user` mirrors the baseline's `mysql.user`, minus
 the credential: `password` (`IDENTIFIED BY`, creation-only because the
 hash cannot be compared) is deliberately dropped and replaced by
 `auth_plugin` (`IDENTIFIED WITH`, e.g. `auth_socket`), which IS comparable
-against [`MysqlUsers`][reemote5.modules.mysql.mysql.MysqlUsers]' plugin
+against [`MysqlUsers`][reemote.modules.mysql.mysql.MysqlUsers]' plugin
 column and so also alters on drift. It reads the same fact to decide
 existence, reconciles the REQUIRE SSL/X509 options and the `max_*`
 resource limits through `ALTER USER` only where they differ, and
@@ -100,7 +100,7 @@ cache (in the prepare phase, where nothing is sent, both plan as changes).
 
 The privileges operation: `mysql.privileges` mirrors the baseline's
 `mysql.privileges`, diffing the desired set against
-[`MysqlUserGrants`][reemote5.modules.mysql.mysql.MysqlUserGrants] for the
+[`MysqlUserGrants`][reemote.modules.mysql.mysql.MysqlUserGrants] for the
 exact `database.table` target: only missing privileges are granted, only
 extra ones revoked (sorted, so both phases render identically), `USAGE`
 is never revoked when something is granted, and `with_grant_option=True`
@@ -158,9 +158,9 @@ output so the round-trip is self-contained.
 
 ## Managing a table
 
-The table operation: `mysql.table` is a reemote5-original operation
+The table operation: `mysql.table` is a reemote-original operation
 creating or dropping a table. It reads
-[`MysqlTables`][reemote5.modules.mysql.mysql.MysqlTables] and is
+[`MysqlTables`][reemote.modules.mysql.mysql.MysqlTables] and is
 idempotent on EXISTENCE only: an absent table yields `CREATE TABLE` with
 the verbatim `columns` definitions plus `engine`, `charset`, `collate`
 and `comment`; an existing one is left alone — its structure is never
@@ -178,9 +178,9 @@ phase, where nothing is sent, both plan as changes).
 
 ## Managing an index
 
-The index operation: `mysql.index` is a reemote5-original operation, the
+The index operation: `mysql.index` is a reemote-original operation, the
 `postgresql.index` shape. It reads
-[`MysqlIndexes`][reemote5.modules.mysql.mysql.MysqlIndexes] keyed on the
+[`MysqlIndexes`][reemote.modules.mysql.mysql.MysqlIndexes] keyed on the
 index name within the table: an absent index yields `CREATE INDEX`
 (`CREATE UNIQUE INDEX` with `unique=True`, a named `index_type`, and
 FULLTEXT/SPATIAL as the CREATE prefix), and `present=False` drops it. An
@@ -199,12 +199,12 @@ sent, both plan as changes).
 
 ## Tuning a global variable
 
-The variable operation: `mysql.variable` is a reemote5-original
+The variable operation: `mysql.variable` is a reemote-original
 operation, the `postgresql.setting` shape, tuning a global system
 variable through `SET GLOBAL` — or `SET PERSIST` with `persist=True`
 (MySQL 8.0+), which applies at runtime AND survives restarts via
 `mysqld-auto.cnf`. It reads
-[`MysqlVariables`][reemote5.modules.mysql.mysql.MysqlVariables] and
+[`MysqlVariables`][reemote.modules.mysql.mysql.MysqlVariables] and
 compares the value as TEXT in the server's own rendering — there is no
 unit normalization, so pass `262144` rather than `"256K"` for a
 byte-sized variable and `"1"`/`"0"` for booleans; an unknown variable
@@ -221,9 +221,9 @@ plan as changes).
 
 ## Managing a plugin
 
-The plugin operation: `mysql.plugin` is a reemote5-original operation
+The plugin operation: `mysql.plugin` is a reemote-original operation
 installing or uninstalling a server plugin. It reads
-[`MysqlPlugins`][reemote5.modules.mysql.mysql.MysqlPlugins] keyed on the
+[`MysqlPlugins`][reemote.modules.mysql.mysql.MysqlPlugins] keyed on the
 plugin name: an absent plugin yields `INSTALL PLUGIN ... SONAME` (the
 library must exist in the server's plugin directory), and
 `present=False` yields `UNINSTALL PLUGIN`. A plugin loaded from a
@@ -240,13 +240,13 @@ fresh per-step fact cache.
 
 ## Managing a role
 
-The role operation: `mysql.role` is a reemote5-original operation
+The role operation: `mysql.role` is a reemote-original operation
 managing roles (MySQL 8.0+) and their memberships. Existence is
 idempotent against
-[`MysqlUsers`][reemote5.modules.mysql.mysql.MysqlUsers] keyed
+[`MysqlUsers`][reemote.modules.mysql.mysql.MysqlUsers] keyed
 `role@role_hostname`; membership is idempotent against the role-grant
 extension of
-[`MysqlUserGrants`][reemote5.modules.mysql.mysql.MysqlUserGrants] (the
+[`MysqlUserGrants`][reemote.modules.mysql.mysql.MysqlUserGrants] (the
 backticked ``role``@``host`` key with the `ROLE` privilege). `members`
 are `user@host` accounts the role is granted to — memberships are only
 added, never revoked (list every member the role should keep), and the
@@ -263,12 +263,12 @@ nothing is sent, both plan as changes).
 
 ## Controlling replication
 
-The replica operation: `mysql.replica` is a reemote5-original operation
+The replica operation: `mysql.replica` is a reemote-original operation
 scoped to START/STOP/RESET REPLICA (MySQL 8.0.22+ syntax).
 `CHANGE REPLICATION SOURCE TO` is deliberately dropped — it requires
 `SOURCE_PASSWORD` inline and MySQL has no passfile for replication, so
 configure the source through `mysql.sql` or server tooling first. It
-reads [`MysqlReplication`][reemote5.modules.mysql.mysql.MysqlReplication]:
+reads [`MysqlReplication`][reemote.modules.mysql.mysql.MysqlReplication]:
 both threads `Yes` means running, both `No` means stopped, and a channel
 that is not configured raises `OperationError` in prepare — the target
 hosts must already be replicas. `reset=True` statelessly renders
@@ -284,7 +284,7 @@ plan as no-ops.
 
 ## Killing a connection
 
-The kill operation: `mysql.kill` is a reemote5-original operation, the
+The kill operation: `mysql.kill` is a reemote-original operation, the
 `server.kill` shape: stateless, always yields — a connection ID is a
 snapshot value, so comparing it against `MysqlConnections` inside the
 operation would race the server anyway. `query_only=True` renders
@@ -301,7 +301,7 @@ real.
 
 ## Maintaining tables
 
-The optimize operation: `mysql.optimize` is a reemote5-original
+The optimize operation: `mysql.optimize` is a reemote-original
 operation running `OPTIMIZE TABLE` (or `ANALYZE`/`CHECK`/`REPAIR` through
 `action`) over a list of tables in one database. It is stateless like
 the baseline's dump/load: maintenance is a periodic action, not a desired

@@ -4,7 +4,7 @@
 """Install a ``.deb`` file already on the host, with version idempotence.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -36,7 +36,7 @@ already exists on the *target host* -- here ``bat``, the syntax-highlighting
 from a project's GitHub releases and installs by hand. The ``src`` is
 therefore a **remote** path, not a controller-side one: upload the file first
 with ``files.put`` (or place it there by any other means). Unlike the baseline --
-whose ``apt.deb`` can also *download* a remote ``.deb`` mid-deploy -- reemote5
+whose ``apt.deb`` can also *download* a remote ``.deb`` mid-deploy -- reemote
 has no download operation, so a ``src`` with a URL scheme raises
 ``ValueError``. This example stages the file with a demo-side ``curl``
 one-liner (a raw ``StringCommand``, the same pattern as
@@ -91,7 +91,7 @@ from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     Command,
     CommandError,
     Host,
@@ -115,7 +115,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
 # The ``.deb`` file to install, as a path on the *target host*, and the URL
-# the demo-side download step stages it from. reemote5 has no download
+# the demo-side download step stages it from. reemote has no download
 # operation, so the example curls the file onto the host itself before
 # ``apt.deb`` reads it. BAT_DEB is shared by both install requests below so
 # they carry identical operation kwargs (only the log ``name`` differs).
@@ -157,7 +157,7 @@ def is_ubuntu(host: Host) -> bool:
 async def download_deb(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
     """Stage the ``bat`` ``.deb`` on the host (demo-side download step).
 
-    reemote5 ships no download operation and ``apt.deb`` takes a *remote*
+    reemote ships no download operation and ``apt.deb`` takes a *remote*
     path, so the file must already exist on the target host. This example
     stages it with a stateless one-liner over the public raw ``StringCommand``
     descriptor -- the same demo-side pattern as ``server_op_sysctl.py``'s
@@ -179,7 +179,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
     The first request stages the file on the host with a demo-side ``curl``
-    (reemote5 has no download operation, and ``apt.deb`` takes a remote path);
+    (reemote has no download operation, and ``apt.deb`` takes a remote path);
     it is unprivileged, since writing ``/tmp`` and running ``curl`` need no
     root. The next two requests install the file's package: the first
     installs, the second carries the same arguments and is a guaranteed no-op

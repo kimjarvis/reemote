@@ -3,9 +3,9 @@
 
 """Tests for the snap module: its facts and the transport paths.
 
-Covers ``reemote5.modules.snap.snap.SnapPackage`` -- one installed snap
+Covers ``reemote.modules.snap.snap.SnapPackage`` -- one installed snap
 package's identity parsed from the labelled ``snap info`` rows -- and
-``reemote5.modules.snap.snap.SnapPackages``, the bare ``snap list`` names of
+``reemote.modules.snap.snap.SnapPackages``, the bare ``snap list`` names of
 every installed snap. Each check runs both over the real-transport path (a
 ``CannedShellHost`` returning the baseline's own ``snap.SnapPackage`` /
 ``snap.SnapPackages`` fixture output verbatim) and through the
@@ -27,8 +27,8 @@ dispatch, and end-to-end through ``run`` / ``run_prepare`` + ``run_apply``
 
 import shlex
 
-from reemote5.core import FactCache, OpContext, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, op
+from reemote.drivers import (
     command_shell,
     format_log,
     gather_fact,
@@ -37,9 +37,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import snap
-from reemote5.modules.snap.snap import (
+from reemote.hosts import Host
+from reemote.modules import snap
+from reemote.modules.snap.snap import (
     SnapInstallCommand,
     SnapPackage,
     SnapPackageInfo,
@@ -138,7 +138,7 @@ channels:
   4.0/stable:       4.0.9-8e2046b 2022-03-26 (22753)  71MB -
 installed:          4.0.9-8e2046b            (22753)  71MB -"""
 
-# The baseline's documented ``fact`` for the lxd fixture, in reemote5's entry shape:
+# The baseline's documented ``fact`` for the lxd fixture, in reemote's entry shape:
 # the hyphenated ``snap-id`` key becomes the ``snap_id`` field, the ``tracking``
 # row is narrowed to ``<track>/<risk>`` and the ``installed`` row to the version
 # token.

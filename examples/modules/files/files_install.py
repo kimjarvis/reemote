@@ -21,13 +21,14 @@ deploy:
    ``FileContents`` fact. When it already equals ``content``, nothing is
    yielded and the request reports no change.
 2. Spool: an ``InstallSpoolCommand`` transfer copies the content over scp to
-   a dest-derived ``/tmp`` spool path (``/tmp/reemote5-install-<sha1 of
-   dest>``) -- unprivileged regardless of the request's ``sudo``, and named
-   per destination so two installs never clobber one spool file.
+   a dest-derived ``/tmp`` spool file inside a sha1-named directory
+   (``/tmp/reemote-install-<sha1 of dest>/content``) -- unprivileged
+   regardless of the request's ``sudo``, and named per destination so two
+   installs never clobber one spool.
 3. Install: an ``InstallCommand`` shell runs ``mkdir -p``/``cp``/optional
-   ``chown``/``chmod``/``rm -f`` wrapped in ``sh -c``, so the request's
+   ``chown``/``chmod``/``rm -rf`` wrapped in ``sh -c``, so the request's
    ``sudo=True`` elevates every step -- the file lands with the requested
-   owner (root when none is named) and mode and the spool is cleaned up.
+   owner (root when none is named) and mode and the spool directory is cleaned up.
 
 ``content`` is a plain ``str`` (text is what ``FileContents`` compares), so
 unlike ``files.put``'s IO source no identity-stable module-level stream is
@@ -80,7 +81,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -99,14 +100,14 @@ from reemote5 import (
 # The root-owned destination and the text to install there. A plain str is
 # hashable and equal across phases, so it can be built at module level or
 # inline -- no identity constraint like files.put's IO source.
-DEST = "/etc/reemote5-install-demo.conf"
-CONTENT = "# Installed by reemote5 files.install\nmanaged = true\n"
+DEST = "/etc/reemote-install-demo.conf"
+CONTENT = "# Installed by reemote files.install\nmanaged = true\n"
 
 # The owned variant: installed www:www by the install chain's chown step.
 # The mode stays login-readable (0644) so the unprivileged FileContents
 # read-back still sees the content and the second run is a genuine no-op.
-OWNED_DEST = "/etc/reemote5-install-owned-demo.conf"
-OWNED_CONTENT = "# Installed by reemote5 files.install, owned by www\nmanaged = true\n"
+OWNED_DEST = "/etc/reemote-install-owned-demo.conf"
+OWNED_CONTENT = "# Installed by reemote files.install, owned by www\nmanaged = true\n"
 
 # examples/modules/files/files_install.py -> the project root, so the inventory
 # is found whatever the current working directory is.

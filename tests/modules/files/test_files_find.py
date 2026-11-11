@@ -4,7 +4,7 @@
 """Tests for the files module's find-path fact family: ``FindFiles``,
 ``FindDirectories`` and ``FindLinks``.
 
-Covers ``reemote5.modules.files.files.FindFiles``: the baseline's own four
+Covers ``reemote.modules.files.files.FindFiles``: the baseline's own four
 ``files.FindFiles`` fixtures over the real-transport path (the bare find,
 the raw ``args`` escape hatch, a name glob and a wildcard name glob), the
 shared filter command construction (size bounds in bytes, maxdepth,
@@ -13,17 +13,17 @@ iname/regex/path_match quoting, the baseline ``args`` guards, the
 the command-keyed ``find_results`` ``SimulatedHost`` seam (per-filter
 keying, default [], copy-on-read, ``gather_fact`` kwargs forwarding).
 
-Covers ``reemote5.modules.files.files.FindDirectories`` and
-``reemote5.modules.files.files.FindLinks`` the same way: the baseline's
+Covers ``reemote.modules.files.files.FindDirectories`` and
+``reemote.modules.files.files.FindLinks`` the same way: the baseline's
 ``directories.json`` and ``links.json`` fixtures verbatim and the shared
 base's ``-type d`` / ``-type l`` flag.
 """
 
 import pytest
 
-from reemote5.drivers import gather_fact
-from reemote5.hosts import Host
-from reemote5.modules.files.files import (
+from reemote.drivers import gather_fact
+from reemote.hosts import Host
+from reemote.modules.files.files import (
     FindDirectories,
     FindFiles,
     FindLinks,

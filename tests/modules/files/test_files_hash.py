@@ -4,7 +4,7 @@
 """Tests for the files module's hash fact family: ``Sha256File``,
 ``Sha384File`` and ``Md5File``.
 
-Covers ``reemote5.modules.files.files.Sha256File`` / ``Sha384File`` /
+Covers ``reemote.modules.files.files.Sha256File`` / ``Sha384File`` /
 ``Md5File``: the baseline's own twelve hash fixtures over the real-transport
 path (four per fact -- the GNU stdin ``<hash>  -`` form, the bare BSD
 digest form, a backslash-bearing path and a metacharacter path), the
@@ -19,9 +19,9 @@ import hashlib
 
 import pytest
 
-from reemote5.drivers import gather_fact
-from reemote5.hosts import Host
-from reemote5.modules.files.files import Md5File, RemoteFileSha1, Sha256File, Sha384File
+from reemote.drivers import gather_fact
+from reemote.hosts import Host
+from reemote.modules.files.files import Md5File, RemoteFileSha1, Sha256File, Sha384File
 from tests.simulated_host import SimulatedHost
 
 

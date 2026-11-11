@@ -4,7 +4,7 @@
 """Declare system users and groups with ``systemd.sysusers``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root and
@@ -20,7 +20,7 @@ uses the *default* factory (``Host.from_inventory``), opening real asyncssh
 connections that ``run`` closes when it finishes. The path is resolved from
 ``__file__``, so the example works from any working directory.
 
-``systemd.sysusers`` is a reemote5 original. A ``sysusers.d`` fragment under
+``systemd.sysusers`` is a reemote original. A ``sysusers.d`` fragment under
 ``/etc/sysusers.d/<name>.conf`` declares system users and groups that
 systemd-sysusers creates at boot (and on demand) -- the declarative alternative
 to imperative ``useradd``. The operation writes the fragment only when its
@@ -31,7 +31,7 @@ it does **not** delete the users/groups it created (``systemd-sysusers`` has no
 removal verb; deleting accounts is a separate ``userdel`` concern).
 
 The write follows the ``dnf.repo`` spool pattern: an **unprivileged** scp
-transfer spools the text to a fixed ``/tmp`` path, then an **elevated**
+transfer spools the text into a dest-derived ``/tmp`` directory, then an **elevated**
 ``sh -c`` install copies it into ``/etc/sysusers.d``, ``chmod 0644`` it and
 removes the spool. Only the install and the apply are escalated -- the transfer
 never is -- so the request is flagged ``sudo=True``.
@@ -66,7 +66,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

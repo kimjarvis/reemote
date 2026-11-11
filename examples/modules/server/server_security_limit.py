@@ -3,7 +3,7 @@
 
 """Example: ensure a resource limit (baseline server.security_limit parity).
 
-This is a *usage* example, not part of the library. It shows reemote5's
+This is a *usage* example, not part of the library. It shows reemote's
 ``server.security_limit`` operation, baseline ``server.security_limit``
 parity for ``/etc/security/limits.conf``: the deploy ensures every guarded
 host carries ``* soft nofile 1024``, under ``sudo`` because the limits file
@@ -71,7 +71,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

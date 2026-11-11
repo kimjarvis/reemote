@@ -22,8 +22,8 @@ from collections.abc import Generator
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, OperationRequest, op
+from reemote.drivers import (
     command_shell,
     format_log,
     format_plan,
@@ -31,9 +31,9 @@ from reemote5.drivers import (
     run,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import files
-from reemote5.modules.files.files import ChattrCommand, FileFlags
+from reemote.hosts import Host
+from reemote.modules import files
+from reemote.modules.files.files import ChattrCommand, FileFlags
 from tests.modules.files.test_files import CannedShellHost
 from tests.simulated_host import SimulatedHost
 

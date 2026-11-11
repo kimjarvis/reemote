@@ -4,7 +4,7 @@
 """Install packages by name with exact-version idempotence.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -41,7 +41,7 @@ every installed, unpinned name with ``apk upgrade`` (the baseline's legacy blind
 upgrade). apk never prompts, so the commands carry no ``-y`` flag -- unlike
 the apt and dnf examples. Where the baseline's ``apk.packages`` also takes
 ``update`` and ``upgrade`` options that prefix the operation with a
-whole-system ``apk update`` / ``apk upgrade``, reemote5 deliberately drops
+whole-system ``apk update`` / ``apk upgrade``, reemote deliberately drops
 both -- the whole-system refresh/upgrade stays out of the package operation
 -- so those keywords are absorbed with no effect.
 
@@ -63,7 +63,7 @@ Installing packages writes to the root-owned apk database, so the requests
 are flagged ``doas=True`` and the driver elevates their commands. ``doas``
 rather than ``sudo`` because the Alpine host has no ``sudo`` installed at
 all -- ``sudo apk add`` would die with ``sh: sudo: not found`` (exit 127)
-before reaching ``apk``. ``doas`` is passwordless here: reemote5 always runs
+before reaching ``apk``. ``doas`` is passwordless here: reemote always runs
 ``doas -n``, which fails rather than prompts, so the host must grant the
 login user a ``permit nopass`` rule in ``/etc/doas.conf`` (see
 ``examples/demonstrations/privilege/privilege_doas.py``); without one the
@@ -107,7 +107,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

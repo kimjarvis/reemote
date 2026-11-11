@@ -6,13 +6,13 @@
 ``SEUser``, ``Modules``, ``PermissiveDomains`` and ``SelinuxConfigFile``,
 plus all eleven operations.
 
-Covers the read-only state discovery in ``reemote5.modules.selinux.selinux``:
+Covers the read-only state discovery in ``reemote.modules.selinux.selinux``:
 the five the baseline fact ports are exercised over the real-transport path with
 the baseline's own fact fixtures verbatim (the ``getsebool`` row, the ``stat -c %C``
 contexts including the ``?`` unlabelled case, the grepped fcontext rows
 including the no-match deviation to None, all six ``semanage port -ln``
 outputs and the three ``sepolicy network`` outputs), plus the ``SimulatedHost``
-seam projections and their copy semantics. The six reemote5 originals -- with
+seam projections and their copy semantics. The six reemote originals -- with
 no baseline fixtures -- are fed realistic canned ``getsebool -a``, ``sestatus``,
 ``semanage login -ln``, ``semanage user -ln``, ``semodule -lfull`` and
 ``semanage permissive -l`` output respectively, plus the ``SEPorts`` filter
@@ -40,8 +40,8 @@ import shlex
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, op
+from reemote.drivers import (
     command_shell,
     format_log,
     gather_fact,
@@ -50,9 +50,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import selinux
-from reemote5.modules.selinux.selinux import (
+from reemote.hosts import Host
+from reemote.modules import selinux
+from reemote.modules.selinux.selinux import (
     AUTORELABEL_PATH,
     AutorelabelCommand,
     Booleans,
@@ -358,7 +358,7 @@ async def test_se_ports_parses_the_mixed_list_fixture():
 
 
 async def test_se_ports_filters_by_protocol_and_type():
-    """The reemote5 extension: ``protocol`` keeps one protocol, ``se_type``
+    """The reemote extension: ``protocol`` keeps one protocol, ``se_type``
     keeps only its ports, and a protocol left empty is dropped -- on both
     transports with the same shell."""
     stdout = """\
@@ -819,7 +819,7 @@ def test_chcon_command_renders_type_only():
 
 
 def test_chcon_command_renders_the_full_context():
-    """The reemote5 extension: all four components render in chcon(1)'s
+    """The reemote extension: all four components render in chcon(1)'s
     ``-u -r -t -l`` order."""
     cmd = ChconCommand(
         path="/web", se_user="system_u", se_role="object_r",
@@ -2343,11 +2343,11 @@ def test_selinux_config_file_command_guards_and_quotes():
     """The ``test -e`` + marker + ``cat`` form, with the path shell-quoted
     (the ``OpenrcConfigFile.command`` pattern)."""
     assert SelinuxConfigFile.command(CONFIG_PATH) == (
-        "test -e /etc/selinux/config && { printf '#reemote5-selinuxconfig\\n'; "
+        "test -e /etc/selinux/config && { printf '#reemote-selinuxconfig\\n'; "
         "cat -- /etc/selinux/config; }"
     )
     assert SelinuxConfigFile.command("/etc/my config") == (
-        "test -e '/etc/my config' && { printf '#reemote5-selinuxconfig\\n'; "
+        "test -e '/etc/my config' && { printf '#reemote-selinuxconfig\\n'; "
         "cat -- '/etc/my config'; }"
     )
 
@@ -2377,7 +2377,7 @@ async def test_selinux_config_file_seam_decodes_content():
 async def test_selinux_config_file_canned_parses_marker_and_content():
     """Over the real-transport path the marker line is stripped and the
     rest returned verbatim (the seam short-circuit never exercises this)."""
-    host = CannedShellHost(f"#reemote5-selinuxconfig\n{SELINUX_CONFIG_TEXT}")
+    host = CannedShellHost(f"#reemote-selinuxconfig\n{SELINUX_CONFIG_TEXT}")
     assert await SelinuxConfigFile.process(host, CONFIG_PATH) == SELINUX_CONFIG_TEXT
     assert host.last_shell == SelinuxConfigFile.command(CONFIG_PATH)
 
@@ -2389,7 +2389,7 @@ async def test_selinux_config_file_canned_absent_reads_none():
 
 async def test_selinux_config_file_canned_empty_reads_empty_string():
     """The marker alone -- an existing empty file -- reads as \"\"."""
-    host = CannedShellHost("#reemote5-selinuxconfig\n")
+    host = CannedShellHost("#reemote-selinuxconfig\n")
     assert await SelinuxConfigFile.process(host, CONFIG_PATH) == ""
 
 
@@ -2470,8 +2470,9 @@ def test_config_spool_path_is_dest_derived_and_deterministic():
     spool = _config_spool_path(CONFIG_PATH)
     assert spool == _config_spool_path(CONFIG_PATH)
     assert spool != _config_spool_path("/etc/selinux/other")
-    assert spool.startswith("/tmp/reemote5-selinux-config-")
-    assert len(spool.rsplit("-", 1)[1]) == 16
+    assert spool.startswith("/tmp/reemote-selinux-config-")
+    assert spool.endswith("/config")
+    assert len(spool.rsplit("-", 1)[1].split("/")[0]) == 16
 
 
 def test_selinux_config_upload_str_and_never_elevates():
@@ -2489,10 +2490,11 @@ def test_selinux_config_install_shell_and_elevation():
     """The install wraps the whole ``&&`` chain in ``sh -c`` so the
     escalator elevates every step, cleanup included."""
     spool = _config_spool_path(CONFIG_PATH)
+    spool_dir = spool.rsplit("/", 1)[0]
     cmd = SelinuxConfigInstallCommand(spool=spool, dest=CONFIG_PATH)
     inner = (
         f"mkdir -p /etc/selinux && cp {spool} {CONFIG_PATH} && "
-        f"chmod 0644 {CONFIG_PATH} && rm -f {spool}"
+        f"chmod 0644 {CONFIG_PATH} && rm -rf {spool_dir}"
     )
     assert cmd.shell() == f"sh -c {shlex.quote(inner)}"
     assert command_shell(cmd, sudo=True) == f"sudo sh -c {shlex.quote(inner)}"
@@ -2504,13 +2506,13 @@ def test_selinux_config_install_quotes_paths_with_spaces():
     left unquoted by shlex.quote); assert through shlex.split, never a raw
     substring of the quoted wrapper."""
     cmd = SelinuxConfigInstallCommand(
-        spool="/tmp/spool x", dest="/etc/seli nux/wei rd"
+        spool="/tmp/spool dir/config x", dest="/etc/seli nux/wei rd"
     )
     inner = shlex.split(cmd.shell())[2]
     assert "mkdir -p '/etc/seli nux'" in inner
-    assert "cp '/tmp/spool x' '/etc/seli nux/wei rd'" in inner
+    assert "cp '/tmp/spool dir/config x' '/etc/seli nux/wei rd'" in inner
     assert "chmod 0644 '/etc/seli nux/wei rd'" in inner
-    assert "rm -f '/tmp/spool x'" in inner
+    assert "rm -rf '/tmp/spool dir'" in inner
 
 
 # --- selinux.config: the operation ------------------------------------------------------

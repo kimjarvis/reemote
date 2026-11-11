@@ -29,7 +29,7 @@ driving the two-phase execution model:
    ``PostgresqlRoleMembership`` entries (``role``, ``member``,
    ``admin_option``) with ``json.dumps(..., indent=2)``.
 
-The fact is a reemote5-original visibility fact (the baseline has no membership
+The fact is a reemote-original visibility fact (the baseline has no membership
 fact): it selects ``pg_auth_members`` joined to ``pg_roles`` for both
 names, one entry per ``GRANT role TO member``, so ``postgresql.membership``
 can reconcile memberships idempotently. It runs ``psql -Ac '<select>'`` as
@@ -68,7 +68,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

@@ -17,7 +17,7 @@ two-phase execution model:
    ``gather_fact``, then print each host's failed-unit list with
    ``json.dumps(..., indent=2)``.
 
-``SystemdFailedUnits`` is a reemote5 original: it runs
+``SystemdFailedUnits`` is a reemote original: it runs
 ``systemctl --failed --no-legend --no-pager`` and parses each row into a
 ``SystemdFailedUnit`` entry (``{unit, load, active, sub, description}``),
 stripping the leading bullet and keeping the description's internal spaces.
@@ -40,7 +40,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

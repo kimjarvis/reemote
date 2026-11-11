@@ -4,7 +4,7 @@
 """Install a systemd unit drop-in override with ``systemd.dropin``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root and
@@ -20,7 +20,7 @@ uses the *default* factory (``Host.from_inventory``), opening real asyncssh
 connections that ``run`` closes when it finishes. The path is resolved from
 ``__file__``, so the example works from any working directory.
 
-``systemd.dropin`` is a reemote5 original. A drop-in is a fragment under
+``systemd.dropin`` is a reemote original. A drop-in is a fragment under
 ``/etc/systemd/system/<unit>.d/<name>.conf`` that overrides selected settings of
 a vendor unit without editing the packaged file. The operation writes the
 fragment only when its content differs from what is already there (idempotent
@@ -30,7 +30,7 @@ unit so the running process picks up the override. ``present=False`` removes the
 fragment (and reloads) instead.
 
 The write follows the ``dnf.repo`` spool pattern: an **unprivileged** scp
-transfer spools the text to a fixed ``/tmp`` path, then an **elevated**
+transfer spools the text into a dest-derived ``/tmp`` directory, then an **elevated**
 ``sh -c`` install creates the ``.d`` directory, copies the file into place,
 ``chmod 0644`` it and removes the spool. Only the install is escalated -- the
 transfer itself never is -- so the request is flagged ``sudo=True`` while the
@@ -68,7 +68,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

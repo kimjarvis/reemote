@@ -1,6 +1,6 @@
 # hardware module
 
-::: reemote5.modules.hardware.hardware
+::: reemote.modules.hardware.hardware
     options:
       show_root_heading: false
       members:
@@ -25,7 +25,7 @@
 
 <!---
 
-`reemote5.modules.hardware.hardware` holds the hardware facts — `BlockDevices`,
+`reemote.modules.hardware.hardware` holds the hardware facts — `BlockDevices`,
 the mounted block devices and their disk usage read from `df`, `CpuInfo`,
 the CPU details reported by `lscpu`, `Cpus`, the number of online CPUs
 reported by `getconf`, `DiskStats`, the per-device IO counters read from
@@ -35,7 +35,7 @@ addresses per network interface, `LsBlk`, the complete block device tree
 reported by `lsblk -J`, `NetworkDevices`, the full network device
 details, the last three read from `ip addr show` or `ifconfig -a`, and
 `SmbiosInfo`, the full SMBIOS/DMI tables decoded by `dmidecode`.
-`DiskStats`, `DmiInfo`, `LsBlk` and `SmbiosInfo` are reemote5 originals
+`DiskStats`, `DmiInfo`, `LsBlk` and `SmbiosInfo` are reemote originals
 with no baseline counterpart: `DiskStats` and `LsBlk` complement
 `BlockDevices`, whose `df` listing only shows mounted filesystems, while
 `DmiInfo` and `SmbiosInfo` report the machine's firmware identity —
@@ -56,7 +56,7 @@ It is a fact-only namespace so far: no operations live here yet.
 A fact is an asynchronous, queryable resource — never yielded by a generator —
 implemented as a `process` coroutine returning the raw value (over asyncssh in
 the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get], which is itself a coroutine,
+[`FactCache.get`][reemote.core.FactCache.get], which is itself a coroutine,
 so results are awaited and cached within a phase step. `BlockDevices` takes
 no arguments: it runs `df` and returns a dict of device → `BlockDevice`
 entry (`{blocks, used, available, used_percent, mount}`), mirroring the baseline's
@@ -79,7 +79,7 @@ other value stays a raw string. As in the baseline the value is the segment afte
 the first colon, so a second colon in a value truncates it; lines without a
 colon are skipped. Empty output (a failed read) reads as `None`, exactly like
 the baseline's `invalid` fixture, and a missing `lscpu` exits 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError] rather than
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError] rather than
 `None` (the baseline's `requires_command` gating is deliberately dropped). The
 dict stays plain (no entry TypedDict): its keys are `lscpu`'s open-ended
 labels, which vary with the tool version — the agreed dynamic-key
@@ -96,7 +96,7 @@ integer reads as `None` — the baseline's `invalid` fixture — as does empty o
 
 `DiskStats` also takes no arguments: it runs `cat /proc/diskstats` and maps
 each device name to the kernel's IO counters as a `DiskStat` entry of ints
-— a reemote5 original
+— a reemote original
 with no baseline counterpart, reading `/proc/diskstats` directly so no
 sysstat package (`iostat`) is required on the target. The eleven classic
 counters (`reads_completed`, `reads_merged`, `sectors_read`, `ms_reading`,
@@ -117,7 +117,7 @@ reads as `{}`.
 `grep -H '' /sys/class/dmi/id/* 2> /dev/null || true` and maps each DMI
 identity file's name to its raw value (`sys_vendor`, `product_name`,
 `product_serial`, `bios_vendor`, `bios_version`, `bios_date`,
-`chassis_type`, ...) — a reemote5 original with no baseline counterpart.
+`chassis_type`, ...) — a reemote original with no baseline counterpart.
 Reading sysfs needs no `dmidecode` binary and no root for most fields,
 so this is the unprivileged sibling of `SmbiosInfo`; the root-only files
 (`product_serial`, `product_uuid`, `board_serial`, `chassis_serial`) are
@@ -139,7 +139,7 @@ addresses — the primary address first, then any aliases in listing order —
 mirroring the baseline's `hardware.Ipv4Addrs`. Interfaces without an IPv4
 address are not part of the dict, and the addresses are the raw strings
 the command printed (no octet validation). The baseline implements the fact as
-a `ShortFactBase` projection over `hardware.NetworkDevices`; reemote5
+a `ShortFactBase` projection over `hardware.NetworkDevices`; reemote
 collapses that indirection into this single class, keeping only the IPv4
 address lists (the IPv6 addresses are the sibling `Ipv6Addrs` fact's
 projection); the richer device dict — ether, mtu, state and each address's
@@ -158,7 +158,7 @@ address are not part of the dict, and the addresses are the raw strings
 the command printed (no address validation — the baseline's documented example
 even carries a doubled `::`). The baseline implements the fact as a
 `ShortFactBase` projection over `hardware.NetworkDevices` (a subclass of
-its `Ipv4Addrs` swapping the projected family); reemote5 collapses that
+its `Ipv4Addrs` swapping the projected family); reemote collapses that
 indirection into this single sibling class sharing `Ipv4Addrs`' command
 and projection helpers, keeping only the IPv6 address lists; the richer
 device dict — ether, mtu, state and each address's mask details — is the
@@ -169,7 +169,7 @@ the baseline's `default = dict`. The projection keeps its plain
 
 `LsBlk` also takes no arguments: it runs
 `lsblk -J -b -o NAME,TYPE,SIZE,MOUNTPOINT` and returns the JSON document's
-`blockdevices` array as `LsBlkNode` entries — a reemote5 original with no
+`blockdevices` array as `LsBlkNode` entries — a reemote original with no
 the baseline counterpart,
 reporting the complete block device tree including unmounted disks,
 partitions, LVM volumes and raw devices that the `df`-based
@@ -183,7 +183,7 @@ non-dict JSON document and a missing/non-list `blockdevices` key all read
 as `[]`; non-dict nodes are skipped at every level and a non-list
 `children` value is dropped rather than raising. A missing `lsblk` exits
 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError].
 
 `NetworkDevices` also takes no arguments: it runs the same
 `ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a`
@@ -205,13 +205,13 @@ keeps an `ether` even for loopback. Addresses stay raw strings, without
 validation. Empty or undecodable output reads as `{}`, the baseline's
 `default = dict`. Unreadable entries are skipped silently (the baseline logs
 them through its logger) and non-dict JSON devices or address entries
-are skipped rather than raising — reemote5 hardens the parser.
+are skipped rather than raising — reemote hardens the parser.
 
 `SmbiosInfo` also takes no arguments: it runs
 `dmidecode -q 2> /dev/null || sudo -n dmidecode -q 2> /dev/null || true`
 and maps each SMBIOS section's
 verbatim title (`BIOS Information`, `System Information`,
-`Chassis Information`, ...) to its field dict — a reemote5 original with
+`Chassis Information`, ...) to its field dict — a reemote original with
 no baseline counterpart and the privileged sibling of `DmiInfo`:
 `dmidecode` usually requires root (and the binary must be installed),
 but in exchange it decodes the full tables — the chassis `Type` arrives
@@ -250,7 +250,7 @@ under
 `BlockDevices`, `CpuInfo`, `Cpus`, `DiskStats`, `DmiInfo`, `Ipv4Addrs`,
 `Ipv6Addrs`, `LsBlk`, `NetworkDevices` and `SmbiosInfo` respectively
 across an inventory with
-[`gather_fact`][reemote5.drivers.gather_fact] and print each host's result
+[`gather_fact`][reemote.drivers.gather_fact] and print each host's result
 as JSON.
 
 --->

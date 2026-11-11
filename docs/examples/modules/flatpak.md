@@ -14,7 +14,7 @@ documented on the [`flatpak` module page](../../modules/flatpak.md).
 
 The package operation: `flatpak.packages` installs (or with `present=False`
 removes) flatpak applications by their reverse-domain IDs, reading the
-[`FlatpakPackages`][reemote5.modules.flatpak.flatpak.FlatpakPackages] fact
+[`FlatpakPackages`][reemote.modules.flatpak.flatpak.FlatpakPackages] fact
 once for name-membership idempotence — flatpak application IDs carry no
 version to compare, so a listed ID is present — and re-running is a no-op.
 An optional `remote` names the source to install from (e.g. `flathub`),

@@ -35,12 +35,12 @@ these examples can apply; the read-only fact gathers are unaffected.
 
 ## Managing a single kernel parameter
 
-The setting operation: `sysctl.setting` is a reemote5 original superseding
+The setting operation: `sysctl.setting` is a reemote original superseding
 the baseline's `server.sysctl` recipe. It manages one parameter along two
 independent halves — the runtime apply (`sysctl -w`, gated by the
-[`Sysctl`][reemote5.modules.sysctl.sysctl.Sysctl] fact with the baseline's value
+[`Sysctl`][reemote.modules.sysctl.sysctl.Sysctl] fact with the baseline's value
 normalization) and the persistence edit (a keyed line replacement gated by
-[`SysctlFile`][reemote5.modules.sysctl.sysctl.SysctlFile]) — each switchable
+[`SysctlFile`][reemote.modules.sysctl.sysctl.SysctlFile]) — each switchable
 via `sysctl_set` and `persist`. `present=False` removes the key from the
 persistence file (runtime values stay), `sysctl_file` targets a
 `/etc/sysctl.d` drop-in instead of the legacy `/etc/sysctl.conf`, and
@@ -55,12 +55,12 @@ first and reports the second as a no-op.
 
 ## Managing a whole drop-in file
 
-The conf operation: `sysctl.conf` is a reemote5 original for bulk
+The conf operation: `sysctl.conf` is a reemote original for bulk
 persistence — the whole file's content is the rendered `settings` pairs,
 one `key = value` line each in the given order, written only when it differs
-from what [`SysctlFile`][reemote5.modules.sysctl.sysctl.SysctlFile] reads
+from what [`SysctlFile`][reemote.modules.sysctl.sysctl.SysctlFile] reads
 back (the `systemd.dropin` whole-file model, not `setting`'s keyed edit).
-The default target is the `/etc/sysctl.d/99-reemote5.conf` drop-in, and a
+The default target is the `/etc/sysctl.d/99-reemote.conf` drop-in, and a
 changed write is followed by a scoped `sysctl -p <sysctl_file>` reload so
 the settings apply immediately (`reload=False` defers them to the next
 boot; `present=False` removes the file instead). `settings` is a tuple of

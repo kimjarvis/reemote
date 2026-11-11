@@ -4,7 +4,7 @@
 """Example: gather the ``firewalld.FirewalldIpSets`` fact on real CentOS hosts.
 
 This is a *usage* example, not part of the library. Where
-``examples/modules/firewalld/firewalld_ipset.py`` drives reemote5's
+``examples/modules/firewalld/firewalld_ipset.py`` drives reemote's
 two-phase execution model (a deploy generator of operations run through
 ``run``), this one reads a single **fact** directly over the same *real
 SSH transport* (asyncssh):
@@ -30,7 +30,7 @@ SSH transport* (asyncssh):
    host-name-keyed mapping -- then print each host's raw records with
    ``json.dumps(..., indent=2)``.
 
-``FirewalldIpSets`` is a reemote5 original (the baseline ships no firewalld
+``FirewalldIpSets`` is a reemote original (the baseline ships no firewalld
 module): one shell round-trip enumerates ``firewall-cmd --get-ipsets``
 and runs ``--info-ipset`` for every name behind echo markers, keeping
 each set's ``type`` (e.g. hash:ip or hash:net), its ``options`` as a
@@ -68,7 +68,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     FirewalldIpSets,
     Host,

@@ -4,7 +4,7 @@
 """Manage a whole sysctl drop-in file with ``sysctl.conf``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -21,12 +21,12 @@ via ``run``'s ``host_factory`` and never touches the network -- this example
 uses the *default* factory (``Host.from_inventory``), opening real asyncssh
 connections that ``run`` closes when it finishes.
 
-``sysctl.conf`` is a reemote5 original for **bulk persistence**: the whole
+``sysctl.conf`` is a reemote original for **bulk persistence**: the whole
 file's content is the rendered ``settings`` pairs, one ``key = value`` line
 each in the given order, written only when it differs from what the
 ``SysctlFile`` fact reads back (the ``systemd.dropin`` whole-file model, not
 ``sysctl.setting``'s keyed edit -- stale lines are replaced, not kept). The
-default target is the ``/etc/sysctl.d/99-reemote5.conf`` drop-in, so the
+default target is the ``/etc/sysctl.d/99-reemote.conf`` drop-in, so the
 legacy ``/etc/sysctl.conf`` and other packages' drop-ins stay untouched.
 ``settings`` is a **tuple of pairs**, not a dict: ``op()`` rejects unhashable
 request arguments. A changed write is followed by a scoped
@@ -35,7 +35,7 @@ immediately (``reload=False`` defers them to the next boot);
 ``present=False`` removes the file instead, leaving runtime values alone.
 
 The write follows the ``systemd.dropin`` spool pattern: an **unprivileged**
-scp transfer spools the rendered text to a fixed ``/tmp`` path, then an
+scp transfer spools the rendered text into a dest-derived ``/tmp`` directory, then an
 **elevated** ``sh -c`` install creates ``/etc/sysctl.d`` if needed, copies
 the file into place ``0644`` and removes the spool. Only the shell steps are
 escalated -- the transfer itself never is -- so the request is flagged
@@ -76,7 +76,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

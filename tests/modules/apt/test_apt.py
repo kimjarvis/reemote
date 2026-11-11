@@ -5,7 +5,7 @@
 ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources`` and
 ``AptUpgradable``.
 
-Covers the read-only state discovery in ``reemote5.modules.apt.apt``:
+Covers the read-only state discovery in ``reemote.modules.apt.apt``:
 ``AptKeys`` is exercised both over the real-transport path (parsing canned
 ``find`` + ``gpg --with-colons`` output, reusing the baseline's own fact fixtures
 verbatim) and through the ``SimulatedHost`` seam, plus the ``gather_fact``
@@ -15,17 +15,17 @@ exercised the same way against the baseline's ``apt.AptPackages`` fixtures
 edge cases, its ``apt_packages`` seam and the ``gather_fact`` fan-out.
 ``AptSources`` is exercised against all eleven baseline ``apt.AptSources``
 fixtures (legacy ``.list`` and deb822 ``.sources`` output), with the two
-documented usability deviations applied -- reemote5's own file marker and
+documented usability deviations applied -- reemote's own file marker and
 list-valued options -- plus its ``apt_sources`` seam and ``gather_fact``
-fan-out. ``AptHeldPackages`` is a reemote5 original (the baseline ships no
+fan-out. ``AptHeldPackages`` is a reemote original (the baseline ships no
 counterpart), so it is exercised against canned realistic ``apt-mark
 showhold`` output instead of fixture parity, plus its strip/dedup/sort
 edge cases, its ``apt_held_packages`` seam and the ``gather_fact`` fan-out.
-``AptPolicy`` is a reemote5 original too, exercised against canned
+``AptPolicy`` is a reemote original too, exercised against canned
 realistic ``apt-cache policy`` output (candidate, origins, ``(none)``
 values, an unknown package), plus its ``apt_policy`` seam and the
 ``gather_fact`` fan-out with its ``package`` argument forwarding.
-``AptUpgradable`` and ``AptAutoremovable`` are reemote5 originals as
+``AptUpgradable`` and ``AptAutoremovable`` are reemote originals as
 well, exercised against canned realistic ``apt list --upgradable`` and
 ``apt-get --just-print autoremove`` simulation output (version jumps,
 epoch prefixes, ``Remv``-only parsing), plus their ``apt_upgradable`` /
@@ -53,7 +53,7 @@ non-idempotent stream install it is: yield order, dest resolution, str-src
 and empty-dest rejection, the unprivileged spool transfer versus the
 elevated ``sh -c`` install, the SimulatedHost spool-then-install effect and
 end-to-end / dry-run / determinism-guard runs. ``apt.mark`` is covered as
-the reemote5 original it is (the baseline ships no hold-state operation):
+the reemote original it is (the baseline ships no hold-state operation):
 hold/unhold descriptor rendering, fact-gated idempotence in both
 directions against ``AptHeldPackages``, the SimulatedHost hold/unhold
 mutations and end-to-end / dry-run / hold-then-unhold runs. ``apt.repo`` is covered
@@ -82,8 +82,8 @@ import shlex
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, op
+from reemote.drivers import (
     DeterminismError,
     command_shell,
     format_log,
@@ -94,11 +94,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import apt
-from reemote5.modules.apt.apt import (
-    _KEY_SPOOL_PATH,
-    _SOURCES_SPOOL_PATH,
+from reemote.hosts import Host
+from reemote.modules import apt
+from reemote.modules.apt.apt import (
     AptAutoremovable,
     AptAutoRemoveCommand,
     AptDistUpgradeCommand,
@@ -132,8 +130,10 @@ from reemote5.modules.apt.apt import (
     DebPackageInfo,
     SimulateOperationWillChange,
     _add_repo_line,
+    _key_spool_path,
     _remove_repo_line,
     _repo_spool_path,
+    _sources_spool_path,
 )
 from tests.simulated_host import SimulatedHost
 
@@ -245,10 +245,10 @@ UBUNTU_APT_KEYS = {
 
 
 def _key_entries(fixture: dict[str, dict]) -> list[AptKey]:
-    """A the baseline key fixture as reemote5's typed entry list.
+    """A the baseline key fixture as reemote's typed entry list.
 
     The baseline keys its answer by key id and re-keys subkeys by their ids;
-    reemote5's documented shape keeps each entry's ``id`` and its subkeys
+    reemote's documented shape keeps each entry's ``id`` and its subkeys
     as a list (the ``_list_valued`` AptSources precedent), so fixture
     parity compares against this normalization.
     """
@@ -527,9 +527,9 @@ UBUNTU_APT_PACKAGES = {
 
 
 def _package_entries(fixture: dict[str, list[str]]) -> list[AptPackageInfo]:
-    """A the baseline package fixture as reemote5's sorted typed entry list.
+    """A the baseline package fixture as reemote's sorted typed entry list.
 
-    The baseline keys its answer by name; reemote5's documented shape returns
+    The baseline keys its answer by name; reemote's documented shape returns
     ``AptPackageInfo`` entries sorted by name (the ``ApkInstalledPackages``
     divergence), so fixture parity compares against this normalization.
     """
@@ -643,21 +643,21 @@ async def test_gather_fact_apt_packages_over_canned_shells():
 # --- AptSources: command parity (the baseline's apt.AptSources fixtures) -----------
 
 # The baseline's fixture command cats the same three globs behind its
-# ``##UPSTREAM_FILE`` marker inside an ``sh -c`` wrapper; reemote5 renames
-# the marker to its own ``#reemote5-aptsource`` (like DnfRepositories'
+# ``##UPSTREAM_FILE`` marker inside an ``sh -c`` wrapper; reemote renames
+# the marker to its own ``#reemote-aptsource`` (like DnfRepositories'
 # filename marker) and drops the wrapper -- run_shell already provides a
 # shell.
 SOURCES_COMMAND = (
     "for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list"
     " /etc/apt/sources.list.d/*.sources; do "
-    '[ -e "$f" ] || continue; printf "#reemote5-aptsource %s\\n" "$f"; cat "$f"; echo; '
+    '[ -e "$f" ] || continue; printf "#reemote-aptsource %s\\n" "$f"; cat "$f"; echo; '
     "done"
 )
 
 
 def test_apt_sources_command_cats_the_sources_files():
     """The command cats the legacy sources file and both .list/.sources
-    globs, each behind reemote5's own file marker line."""
+    globs, each behind reemote's own file marker line."""
     assert AptSources.COMMAND == SOURCES_COMMAND
 
 
@@ -665,7 +665,7 @@ def _sources_stdout(output: list[str]) -> str:
     """Join a baseline fixture's output lines, renaming its file marker.
 
     The fixture lines are otherwise verbatim; only the ``##UPSTREAM_FILE``
-    prefix becomes reemote5's own FILE_MARKER (the documented rename).
+    prefix becomes reemote's own FILE_MARKER (the documented rename).
     """
     return "\n".join(
         line.replace("##UPSTREAM_FILE ", f"{AptSources.FILE_MARKER} ", 1)
@@ -678,7 +678,7 @@ def _sources_stdout(output: list[str]) -> str:
 def _list_valued(fact: list[dict]) -> list[dict]:
     """A baseline fixture fact with every option value wrapped into a list.
 
-    The baseline collapses single-valued options to a bare string; reemote5's
+    The baseline collapses single-valued options to a bare string; reemote's
     documented usability deviation keeps every value a list, so fixture
     parity compares against this normalization.
     """
@@ -1097,7 +1097,7 @@ async def test_gather_fact_apt_sources_reads_simulated_seams():
     assert await gather_fact([host1, host2], AptSources) == {"web1": sources, "web2": []}
 
 
-# --- AptHeldPackages: command (a reemote5 original, no baseline fixture) -------
+# --- AptHeldPackages: command (a reemote original, no baseline fixture) -------
 
 
 def test_apt_held_packages_command_runs_apt_mark_showhold():
@@ -1110,7 +1110,7 @@ def test_apt_held_packages_command_runs_apt_mark_showhold():
 
 # Realistic ``apt-mark showhold`` output: four held packages in arbitrary
 # dpkg order, one with an architecture suffix. The baseline ships no fixture
-# for this fact -- it is a reemote5 original.
+# for this fact -- it is a reemote original.
 HELD_OUTPUT = [
     "linux-image-generic",
     "docker-ce",
@@ -1210,7 +1210,7 @@ async def test_gather_fact_apt_held_packages_over_canned_shells():
     assert host2.last_shell == AptHeldPackages.COMMAND
 
 
-# --- AptPolicy: command (a reemote5 original, no baseline fixture) --------------
+# --- AptPolicy: command (a reemote original, no baseline fixture) --------------
 
 
 def test_apt_policy_command_quotes_the_package():
@@ -1230,7 +1230,7 @@ def test_apt_policy_command_quotes_the_package():
 # available from noble-updates, the installed version came from
 # noble-security (the *** row, also in the local dpkg status), and the base
 # noble version is still offered. The baseline ships no fixture for this fact --
-# it is a reemote5 original.
+# it is a reemote original.
 NGINX_POLICY_OUTPUT = """\
 nginx:
   Installed: 1.24.0-2ubuntu7.1
@@ -1432,7 +1432,7 @@ async def test_gather_fact_apt_policy_reads_simulated_seams():
     }
 
 
-# --- AptUpgradable: command (a reemote5 original, no baseline fixture) ----------
+# --- AptUpgradable: command (a reemote original, no baseline fixture) ----------
 
 
 def test_apt_upgradable_command_lists_upgradable():
@@ -1446,7 +1446,7 @@ def test_apt_upgradable_command_lists_upgradable():
 # Realistic ``apt list --upgradable`` output on Ubuntu noble: the
 # ``Listing... Done`` header, a comma-separated multi-suite source-info,
 # an epoch-prefixed version jump and an architecture-suffixed name.
-# The baseline ships no fixture for this fact -- it is a reemote5 original.
+# The baseline ships no fixture for this fact -- it is a reemote original.
 UPGRADABLE_OUTPUT = """\
 Listing... Done
 libssl3t64/noble-updates 3.0.13-0ubuntu3.5 amd64 [upgradable from: 3.0.13-0ubuntu3.4]
@@ -1587,7 +1587,7 @@ async def test_gather_fact_apt_upgradable_over_canned_shells():
     assert host2.last_shell == AptUpgradable.COMMAND
 
 
-# --- AptAutoremovable: command (a reemote5 original, no baseline fixture) -------
+# --- AptAutoremovable: command (a reemote original, no baseline fixture) -------
 
 
 def test_apt_autoremovable_command_simulates_the_autoremove():
@@ -1601,7 +1601,7 @@ def test_apt_autoremovable_command_simulates_the_autoremove():
 # Realistic ``apt-get --just-print autoremove`` output on Ubuntu noble:
 # progress lines, the indented removal summary, the count line, then one
 # machine-readable Remv row per removable package. The baseline ships no
-# fixture for this fact -- it is a reemote5 original.
+# fixture for this fact -- it is a reemote original.
 AUTOREMOVE_OUTPUT = """\
 Reading package lists... Done
 Building dependency tree... Done
@@ -1799,7 +1799,7 @@ async def test_deb_package_parses_tab_indented_dpkg_i_output():
 
 
 async def test_deb_package_absent_parses_to_none():
-    """No ``Package:``/``Version:`` line reads as None -- reemote5's
+    """No ``Package:``/``Version:`` line reads as None -- reemote's
     None-on-absent convention (the baseline returns an empty dict)."""
     host = CannedShellHost("")
     assert await DebPackage.process(host, "random-file.txt") is None
@@ -1928,7 +1928,7 @@ async def test_apt_deb_removal_noop_when_file_absent():
 
 
 async def test_apt_deb_rejects_a_url_src():
-    """The baseline downloads a URL ``.deb``; reemote5 has no download operation, so a
+    """The baseline downloads a URL ``.deb``; reemote has no download operation, so a
     URL src raises instead of silently doing nothing (mirroring dnf.rpm)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2438,7 +2438,7 @@ async def test_apt_dist_upgrade_dry_run_sends_nothing():
     assert host.apt_simulations["dist-upgrade"] == DIST_UPGRADE_CHANGES
 
 
-# --- apt.auto_remove operation (a reemote5 original standalone) ---------------
+# --- apt.auto_remove operation (a reemote original standalone) ---------------
 
 # The autoremove rendering: the same non-interactive prefix as the baseline's
 # dist-upgrade fixtures, with the standalone ``autoremove`` subcommand.
@@ -2598,13 +2598,20 @@ async def test_apt_dist_upgrade_then_auto_remove_in_one_deploy():
 # --dearmor conversion).
 GPG_KEY_BYTES = (
     b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n"
-    b"mQIN reemote5 test key material\n"
+    b"mQIN reemote test key material\n"
     b"-----END PGP PUBLIC KEY BLOCK-----\n"
 )
 
 # The keyring path a relative dest="docker.gpg" resolves to, the baseline's
 # /etc/apt/keyrings/ convention for signed-by= references.
 KEYRING_DEST = "/etc/apt/keyrings/docker.gpg"
+
+# The spool now lives inside a sha1-derived /tmp directory keyed on the dest;
+# the install rm -rf's the whole directory rather than the bare file.
+KEY_SPOOL = _key_spool_path(KEYRING_DEST)
+KEY_SPOOL_DIR = KEY_SPOOL.rsplit("/", 1)[0]
+VENDOR_DEST = "/usr/share/keyrings/vendor.asc"
+VENDOR_SPOOL = _key_spool_path(VENDOR_DEST)
 
 
 async def test_apt_key_yields_upload_then_install():
@@ -2618,8 +2625,8 @@ async def test_apt_key_yields_upload_then_install():
     assert ctx.changed
     assert ctx.reason == f"install GPG key from <stream> to {KEYRING_DEST}"
     assert commands == [
-        AptKeyUploadCommand(src=stream, dest=_KEY_SPOOL_PATH),
-        AptKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST),
+        AptKeyUploadCommand(src=stream, dest=KEY_SPOOL),
+        AptKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST),
     ]
 
 
@@ -2635,12 +2642,12 @@ async def test_apt_key_absolute_dest_used_verbatim():
         async for c in apt.key(ctx, src=stream, dest="/usr/share/keyrings/vendor.asc")
     ]
     assert commands[1] == AptKeyInstallCommand(
-        spool=_KEY_SPOOL_PATH, dest="/usr/share/keyrings/vendor.asc"
+        spool=VENDOR_SPOOL, dest="/usr/share/keyrings/vendor.asc"
     )
 
 
 async def test_apt_key_rejects_a_str_src():
-    """The baseline's apt.key takes a filename/URL the target host reads; reemote5
+    """The baseline's apt.key takes a filename/URL the target host reads; reemote
     takes an IO stream, so a str src raises rather than being treated as a
     controller-side path."""
     host = SimulatedHost(name="h")
@@ -2674,8 +2681,8 @@ async def test_apt_key_absorbs_unknown_kwargs():
         c async for c in apt.key(ctx, src=stream, dest="docker.gpg", future_flag=True)
     ]
     assert commands == [
-        AptKeyUploadCommand(src=stream, dest=_KEY_SPOOL_PATH),
-        AptKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST),
+        AptKeyUploadCommand(src=stream, dest=KEY_SPOOL),
+        AptKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST),
     ]
 
 
@@ -2685,11 +2692,11 @@ def test_apt_key_upload_command_renders_as_an_unprivileged_scp():
     sudo=True for the install half: the log shows a plain ``scp ...``, never a
     misleading ``sudo scp ...``."""
     stream = io.BytesIO(GPG_KEY_BYTES)
-    cmd = AptKeyUploadCommand(src=stream, dest=_KEY_SPOOL_PATH)
+    cmd = AptKeyUploadCommand(src=stream, dest=KEY_SPOOL)
     assert not hasattr(cmd, "shell")
-    assert str(cmd) == f"scp <stream> -> {_KEY_SPOOL_PATH}"
-    assert command_shell(cmd) == f"scp <stream> -> {_KEY_SPOOL_PATH}"
-    assert command_shell(cmd, sudo=True) == f"scp <stream> -> {_KEY_SPOOL_PATH}"
+    assert str(cmd) == f"scp <stream> -> {KEY_SPOOL}"
+    assert command_shell(cmd) == f"scp <stream> -> {KEY_SPOOL}"
+    assert command_shell(cmd, sudo=True) == f"scp <stream> -> {KEY_SPOOL}"
 
 
 def test_apt_key_install_command_shell_and_elevation():
@@ -2700,16 +2707,16 @@ def test_apt_key_install_command_shell_and_elevation():
     non-idempotent install must succeed on repeat runs, which ``--batch``
     alone would refuse. The paths are safe tokens, so shlex.quote leaves
     them unquoted; the armor marker carries spaces and is quoted."""
-    cmd = AptKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST)
+    cmd = AptKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST)
     shell = cmd.shell()
     assert shell.startswith("sh -c ")
     inner = shlex.split(shell)[2]
     assert inner == (
         "mkdir -p /etc/apt/keyrings && "
-        f"if grep -q 'BEGIN PGP PUBLIC KEY BLOCK' {_KEY_SPOOL_PATH}; then "
-        f"gpg --batch --yes --dearmor -o {KEYRING_DEST} {_KEY_SPOOL_PATH}; "
-        f"else cp {_KEY_SPOOL_PATH} {KEYRING_DEST}; fi && "
-        f"chmod 0644 {KEYRING_DEST} && rm -f {_KEY_SPOOL_PATH}"
+        f"if grep -q 'BEGIN PGP PUBLIC KEY BLOCK' {KEY_SPOOL}; then "
+        f"gpg --batch --yes --dearmor -o {KEYRING_DEST} {KEY_SPOOL}; "
+        f"else cp {KEY_SPOOL} {KEYRING_DEST}; fi && "
+        f"chmod 0644 {KEYRING_DEST} && rm -rf {KEY_SPOOL_DIR}"
     )
     assert command_shell(cmd, sudo=True).startswith("sudo sh -c ")
 
@@ -2719,11 +2726,12 @@ def test_apt_key_install_command_quotes_unsafe_paths():
     the -o target, the cp destination, the chmod operand and the mkdir
     parent."""
     dest = "/etc/apt/keyrings/my key;rm.gpg"
-    cmd = AptKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=dest)
+    spool = _key_spool_path(dest)
+    cmd = AptKeyInstallCommand(spool=spool, dest=dest)
     inner = shlex.split(cmd.shell())[2]
     quoted = shlex.quote(dest)
-    assert f"gpg --batch --yes --dearmor -o {quoted} {_KEY_SPOOL_PATH}" in inner
-    assert f"cp {_KEY_SPOOL_PATH} {quoted}" in inner
+    assert f"gpg --batch --yes --dearmor -o {quoted} {spool}" in inner
+    assert f"cp {spool} {quoted}" in inner
     assert f"chmod 0644 {quoted}" in inner
     assert "mkdir -p /etc/apt/keyrings" in inner
 
@@ -2735,13 +2743,13 @@ async def test_apt_key_simulated_seam_spools_then_installs():
     file_stats (root, mode 644), so the file facts stay consistent."""
     host = SimulatedHost(name="h")
     stream = io.BytesIO(GPG_KEY_BYTES)
-    await send_command(host, AptKeyUploadCommand(src=stream, dest=_KEY_SPOOL_PATH))
-    assert host.remote_files[_KEY_SPOOL_PATH] == GPG_KEY_BYTES
+    await send_command(host, AptKeyUploadCommand(src=stream, dest=KEY_SPOOL))
+    assert host.remote_files[KEY_SPOOL] == GPG_KEY_BYTES
     await send_command(
-        host, AptKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST)
+        host, AptKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST)
     )
     assert host.remote_files[KEYRING_DEST] == GPG_KEY_BYTES
-    assert _KEY_SPOOL_PATH not in host.remote_files
+    assert KEY_SPOOL not in host.remote_files
     assert KEYRING_DEST in host.existing_files
     assert host.file_stats[KEYRING_DEST] == {
         "user": "root",
@@ -2773,13 +2781,13 @@ async def test_apt_key_end_to_end_installs_over_run():
     (entry,) = report.log
     assert entry.changed
     assert entry.commands == (
-        AptKeyUploadCommand(src=stream, dest=_KEY_SPOOL_PATH),
-        AptKeyInstallCommand(spool=_KEY_SPOOL_PATH, dest=KEYRING_DEST),
+        AptKeyUploadCommand(src=stream, dest=KEY_SPOOL),
+        AptKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST),
     )
     assert host.remote_files[KEYRING_DEST] == GPG_KEY_BYTES
-    assert _KEY_SPOOL_PATH not in host.remote_files
+    assert KEY_SPOOL not in host.remote_files
     log = format_log(report)
-    assert f"    $ scp <stream> -> {_KEY_SPOOL_PATH}" in log
+    assert f"    $ scp <stream> -> {KEY_SPOOL}" in log
     assert "    $ sudo sh -c " in log
 
 
@@ -2825,7 +2833,7 @@ async def test_apt_key_fresh_stream_per_phase_trips_determinism():
         await run_apply(runtimes, plans=plans)
 
 
-# --- apt.mark operation (a reemote5 original) ----------------------------------
+# --- apt.mark operation (a reemote original) ----------------------------------
 
 # The hold/unhold renderings: bare ``apt-mark`` verbs with shell-quoted
 # names -- no non-interactive wrapper, since ``apt-mark`` is not ``apt-get``.
@@ -3394,7 +3402,7 @@ async def test_apt_packages_cache_time_is_dropped():
 
 
 async def test_apt_packages_force_is_dropped():
-    """The baseline's ``add_package_force.json`` renders ``--force-yes``; reemote5
+    """The baseline's ``add_package_force.json`` renders ``--force-yes``; reemote
     drops the deprecated flag (the apt.deb decision), absorbing the keyword."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -4114,7 +4122,7 @@ async def test_apt_ppa_add_then_remove_in_one_deploy():
 # --- apt.repo operation (baseline parity, spool-and-install write) --------------
 
 # The baseline's apt.repo fixtures all use the Canonical partner repo line; the
-# AptSource below is their ``apt.AptSources`` fact entry in reemote5's shape
+# AptSource below is their ``apt.AptSources`` fact entry in reemote's shape
 # (options always list-valued -- here empty).
 REPO_SRC = "deb http://archive.canonical.com/ubuntu hardy partner"
 REPO_SOURCE = {
@@ -4137,14 +4145,16 @@ OTHER_SOURCE = {
 SOURCES_LIST = "/etc/apt/sources.list"
 LISTS_PATH = "/etc/apt/sources.list.d/somefile.list"
 # The spool path apt.repo uploads to, derived from the managed file -- the
-# tests spell the same call the operation makes.
+# tests spell the same call the operation makes. The spool file now lives
+# inside a sha1-derived /tmp directory; the install rm -rf's the directory.
 REPO_SPOOL = _repo_spool_path(SOURCES_LIST)
+REPO_SPOOL_DIR = REPO_SPOOL.rsplit("/", 1)[0]
 LISTS_SPOOL = _repo_spool_path(LISTS_PATH)
 # The install's inner script: create the parent directory, overlay the
-# protected file with the spooled text, reset apt's mode, drop the spool.
+# protected file with the spooled text, reset apt's mode, drop the spool dir.
 REPO_INSTALL_INNER = (
     f"mkdir -p /etc/apt && cp {REPO_SPOOL} {SOURCES_LIST} && "
-    f"chmod 0644 {SOURCES_LIST} && rm -f {REPO_SPOOL}"
+    f"chmod 0644 {SOURCES_LIST} && rm -rf {REPO_SPOOL_DIR}"
 )
 
 
@@ -4176,12 +4186,13 @@ def test_apt_repo_spool_path_is_deterministic_per_dest():
     path = "/etc/apt/sources list.d/we ird.list"
     spool = _repo_spool_path(path)
     assert spool == _repo_spool_path(path)
-    assert spool.startswith("/tmp/reemote5-apt-repo-")
+    assert spool.startswith("/tmp/reemote-apt-repo-")
     assert spool != REPO_SPOOL
+    spool_dir = spool.rsplit("/", 1)[0]
     inner = shlex.split(AptRepoInstallCommand(spool=spool, dest=path).shell())[2]
     assert inner.startswith("mkdir -p '/etc/apt/sources list.d' && ")
     assert f"cp {shlex.quote(spool)} {shlex.quote(path)} && " in inner
-    assert f"chmod 0644 {shlex.quote(path)} && rm -f {shlex.quote(spool)}" in inner
+    assert f"chmod 0644 {shlex.quote(path)} && rm -rf {shlex.quote(spool_dir)}" in inner
 
 
 def test_apt_repo_add_transform_is_pure_and_idempotent():
@@ -4610,7 +4621,7 @@ async def test_apt_repo_add_then_remove_in_one_deploy():
 
 # The baseline's create.json kwargs: the Docker deb822 repository from its docstring
 # example. The content below is the fixture's upload payload verbatim and the
-# source entry its apt.AptSources fact holds in reemote5's list-valued shape.
+# source entry its apt.AptSources fact holds in reemote's list-valued shape.
 DOCKER_KWARGS = {
     "filename": "docker",
     "types": ["deb"],
@@ -4636,6 +4647,12 @@ DOCKER_SOURCE = {
     "components": ["stable"],
     "options": {"arch": ["amd64"], "signed-by": ["/etc/apt/keyrings/docker.gpg"]},
 }
+# The spool now lives inside a sha1-derived /tmp directory keyed on the dest;
+# the install rm -rf's the whole directory rather than the bare file.
+SOURCES_SPOOL = _sources_spool_path(DOCKER_DEST)
+SOURCES_SPOOL_DIR = SOURCES_SPOOL.rsplit("/", 1)[0]
+DEBIAN_DEST = "/etc/apt/sources.list.d/debian.sources"
+DEBIAN_SPOOL = _sources_spool_path(DEBIAN_DEST)
 
 
 # --- AptSourcesFile fact (the DnfRepoFile pattern in this namespace) -----------
@@ -4695,8 +4712,8 @@ async def test_apt_sources_file_create_matches_baseline():
     assert ctx.changed
     assert ctx.reason == f'apt sources file "{DOCKER_DEST}" missing or outdated, will be written'
     assert commands == [
-        AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=_SOURCES_SPOOL_PATH),
-        AptSourcesFileInstallCommand(spool=_SOURCES_SPOOL_PATH, dest=DOCKER_DEST),
+        AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=SOURCES_SPOOL),
+        AptSourcesFileInstallCommand(spool=SOURCES_SPOOL, dest=DOCKER_DEST),
     ]
 
 
@@ -4730,10 +4747,8 @@ async def test_apt_sources_file_create_minimal():
     assert ctx.changed
     content = "Types: deb\nURIs: http://deb.debian.org/debian\nSuites: bookworm\n"
     assert commands == [
-        AptSourcesFileUploadCommand(content=content, dest=_SOURCES_SPOOL_PATH),
-        AptSourcesFileInstallCommand(
-            spool=_SOURCES_SPOOL_PATH, dest="/etc/apt/sources.list.d/debian.sources"
-        ),
+        AptSourcesFileUploadCommand(content=content, dest=DEBIAN_SPOOL),
+        AptSourcesFileInstallCommand(spool=DEBIAN_SPOOL, dest=DEBIAN_DEST),
     ]
 
 
@@ -4759,7 +4774,7 @@ async def test_apt_sources_file_string_args():
         "Suites: bookworm bookworm-updates\n"
     )
     assert commands[0] == AptSourcesFileUploadCommand(
-        content=content, dest=_SOURCES_SPOOL_PATH
+        content=content, dest=DEBIAN_SPOOL
     )
 
 
@@ -4777,14 +4792,14 @@ async def test_apt_sources_file_create_update():
     commands = [c async for c in apt.sources_file(ctx, **DOCKER_KWARGS)]
     assert ctx.changed
     assert commands == [
-        AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=_SOURCES_SPOOL_PATH),
-        AptSourcesFileInstallCommand(spool=_SOURCES_SPOOL_PATH, dest=DOCKER_DEST),
+        AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=SOURCES_SPOOL),
+        AptSourcesFileInstallCommand(spool=SOURCES_SPOOL, dest=DOCKER_DEST),
     ]
 
 
 async def test_apt_sources_file_requires_uris():
     """The baseline's error_missing_uris.json: suites without any URI raises
-    ValueError with the baseline's message verbatim (reemote5's single validation
+    ValueError with the baseline's message verbatim (reemote's single validation
     error type)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -4878,8 +4893,8 @@ async def test_apt_sources_file_absorbs_unknown_kwargs():
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.sources_file(ctx, **DOCKER_KWARGS, future_flag=True)]
     assert commands == [
-        AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=_SOURCES_SPOOL_PATH),
-        AptSourcesFileInstallCommand(spool=_SOURCES_SPOOL_PATH, dest=DOCKER_DEST),
+        AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=SOURCES_SPOOL),
+        AptSourcesFileInstallCommand(spool=SOURCES_SPOOL, dest=DOCKER_DEST),
     ]
 
 
@@ -4887,25 +4902,25 @@ def test_apt_sources_file_upload_command_renders_as_an_unprivileged_scp():
     """The spool transfer has no shell(); it renders via __str__ and -- being
     a TransferCommand -- is never elevated, even though the request is
     sudo=True for the install half."""
-    cmd = AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=_SOURCES_SPOOL_PATH)
+    cmd = AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=SOURCES_SPOOL)
     assert not hasattr(cmd, "shell")
-    assert str(cmd) == f"scp <deb822 sources> -> {_SOURCES_SPOOL_PATH}"
-    assert command_shell(cmd) == f"scp <deb822 sources> -> {_SOURCES_SPOOL_PATH}"
-    assert command_shell(cmd, sudo=True) == f"scp <deb822 sources> -> {_SOURCES_SPOOL_PATH}"
+    assert str(cmd) == f"scp <deb822 sources> -> {SOURCES_SPOOL}"
+    assert command_shell(cmd) == f"scp <deb822 sources> -> {SOURCES_SPOOL}"
+    assert command_shell(cmd, sudo=True) == f"scp <deb822 sources> -> {SOURCES_SPOOL}"
 
 
 def test_apt_sources_file_install_command_shell_and_elevation():
     """The install wraps mkdir, cp, chmod 0644 (the baseline's fixed mode) and the
     spool cleanup in one sh -c so every step runs under the elevated shell.
     The paths are safe tokens, so shlex.quote leaves them unquoted."""
-    cmd = AptSourcesFileInstallCommand(spool=_SOURCES_SPOOL_PATH, dest=DOCKER_DEST)
+    cmd = AptSourcesFileInstallCommand(spool=SOURCES_SPOOL, dest=DOCKER_DEST)
     shell = cmd.shell()
     assert shell.startswith("sh -c ")
     inner = shlex.split(shell)[2]
     assert inner == (
         "mkdir -p /etc/apt/sources.list.d && "
-        f"cp {_SOURCES_SPOOL_PATH} {DOCKER_DEST} && "
-        f"chmod 0644 {DOCKER_DEST} && rm -f {_SOURCES_SPOOL_PATH}"
+        f"cp {SOURCES_SPOOL} {DOCKER_DEST} && "
+        f"chmod 0644 {DOCKER_DEST} && rm -rf {SOURCES_SPOOL_DIR}"
     )
     assert command_shell(cmd, sudo=True) == f"sudo {shell}"
     assert command_shell(cmd, su=True) == f"su -c {shlex.quote(shell)}"
@@ -4915,10 +4930,10 @@ def test_apt_sources_file_install_command_quotes_unsafe_paths():
     """A dest carrying shell metacharacters is quoted everywhere it appears:
     the cp destination, the chmod operand and the mkdir parent."""
     dest = "/etc/apt/sources.list.d/my repo;rm.sources"
-    cmd = AptSourcesFileInstallCommand(spool=_SOURCES_SPOOL_PATH, dest=dest)
+    cmd = AptSourcesFileInstallCommand(spool=SOURCES_SPOOL, dest=dest)
     inner = shlex.split(cmd.shell())[2]
     quoted = shlex.quote(dest)
-    assert f"cp {_SOURCES_SPOOL_PATH} {quoted}" in inner
+    assert f"cp {SOURCES_SPOOL} {quoted}" in inner
     assert f"chmod 0644 {quoted}" in inner
     assert "mkdir -p /etc/apt/sources.list.d" in inner
 
@@ -4954,14 +4969,14 @@ async def test_apt_sources_file_simulated_seam_spools_then_installs():
     entry lands in apt_sources so the AptSources fact sees it."""
     host = SimulatedHost(name="h")
     await send_command(
-        host, AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=_SOURCES_SPOOL_PATH)
+        host, AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=SOURCES_SPOOL)
     )
-    assert host.remote_files[_SOURCES_SPOOL_PATH] == DOCKER_CONTENT.encode()
+    assert host.remote_files[SOURCES_SPOOL] == DOCKER_CONTENT.encode()
     await send_command(
-        host, AptSourcesFileInstallCommand(spool=_SOURCES_SPOOL_PATH, dest=DOCKER_DEST)
+        host, AptSourcesFileInstallCommand(spool=SOURCES_SPOOL, dest=DOCKER_DEST)
     )
     assert host.remote_files[DOCKER_DEST] == DOCKER_CONTENT.encode()
-    assert _SOURCES_SPOOL_PATH not in host.remote_files
+    assert SOURCES_SPOOL not in host.remote_files
     assert DOCKER_DEST in host.existing_files
     assert host.file_stats[DOCKER_DEST] == {
         "user": "root",
@@ -4977,17 +4992,17 @@ async def test_apt_sources_file_simulated_seam_rewrite_replaces_entries():
     the new ones, so apt_sources never accumulates stale repositories."""
     host = SimulatedHost(name="h")
     await send_command(
-        host, AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=_SOURCES_SPOOL_PATH)
+        host, AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=SOURCES_SPOOL)
     )
     await send_command(
-        host, AptSourcesFileInstallCommand(spool=_SOURCES_SPOOL_PATH, dest=DOCKER_DEST)
+        host, AptSourcesFileInstallCommand(spool=SOURCES_SPOOL, dest=DOCKER_DEST)
     )
     updated = DOCKER_CONTENT.replace("bookworm", "bookworm-updates")
     await send_command(
-        host, AptSourcesFileUploadCommand(content=updated, dest=_SOURCES_SPOOL_PATH)
+        host, AptSourcesFileUploadCommand(content=updated, dest=SOURCES_SPOOL)
     )
     await send_command(
-        host, AptSourcesFileInstallCommand(spool=_SOURCES_SPOOL_PATH, dest=DOCKER_DEST)
+        host, AptSourcesFileInstallCommand(spool=SOURCES_SPOOL, dest=DOCKER_DEST)
     )
     assert host.remote_files[DOCKER_DEST] == updated.encode()
     assert host.apt_sources == [{**DOCKER_SOURCE, "distribution": "bookworm-updates"}]
@@ -4998,10 +5013,10 @@ async def test_apt_sources_file_simulated_seam_remove():
     entries together, and tolerates an absent path (rm -f exits 0)."""
     host = SimulatedHost(name="h")
     await send_command(
-        host, AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=_SOURCES_SPOOL_PATH)
+        host, AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=SOURCES_SPOOL)
     )
     await send_command(
-        host, AptSourcesFileInstallCommand(spool=_SOURCES_SPOOL_PATH, dest=DOCKER_DEST)
+        host, AptSourcesFileInstallCommand(spool=SOURCES_SPOOL, dest=DOCKER_DEST)
     )
     await send_command(host, AptSourcesFileRemoveCommand(path=DOCKER_DEST))
     assert DOCKER_DEST not in host.remote_files
@@ -5039,14 +5054,14 @@ async def test_apt_sources_file_end_to_end_write_then_noop():
     (entry,) = report.log
     assert entry.changed
     assert entry.commands == (
-        AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=_SOURCES_SPOOL_PATH),
-        AptSourcesFileInstallCommand(spool=_SOURCES_SPOOL_PATH, dest=DOCKER_DEST),
+        AptSourcesFileUploadCommand(content=DOCKER_CONTENT, dest=SOURCES_SPOOL),
+        AptSourcesFileInstallCommand(spool=SOURCES_SPOOL, dest=DOCKER_DEST),
     )
     assert host.remote_files[DOCKER_DEST] == DOCKER_CONTENT.encode()
-    assert _SOURCES_SPOOL_PATH not in host.remote_files
+    assert SOURCES_SPOOL not in host.remote_files
     assert host.apt_sources == [DOCKER_SOURCE]
     log = format_log(report)
-    assert f"    $ scp <deb822 sources> -> {_SOURCES_SPOOL_PATH}" in log
+    assert f"    $ scp <deb822 sources> -> {SOURCES_SPOOL}" in log
     assert "    $ sudo sh -c " in log
 
     # Idempotent: the fresh fact read sees the installed entries -> no change.
@@ -5140,7 +5155,7 @@ async def test_apt_sources_file_repeat_write_in_one_deploy_apply_noop():
     assert not second.changed
     assert second.reason == f'apt sources file "{DOCKER_DEST}" is already configured'
     assert host.apt_sources == [DOCKER_SOURCE]
-    assert _SOURCES_SPOOL_PATH not in host.remote_files
+    assert SOURCES_SPOOL not in host.remote_files
 
 
 async def test_apt_sources_file_write_then_remove_in_one_deploy():

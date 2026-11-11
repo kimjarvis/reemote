@@ -17,7 +17,7 @@ two-phase execution model:
    once with ``gather_fact`` (the unit name is forwarded as a positional
    argument), then print each host's property map with ``json.dumps``.
 
-``SystemdUnitProperties`` is a reemote5 original: it runs
+``SystemdUnitProperties`` is a reemote original: it runs
 ``systemctl show <unit> --property=Id,Description,LoadState,ActiveState,
 SubState,UnitFileState,FragmentPath,MainPID`` and returns the curated
 properties as raw strings (``MainPID`` is ``"0"`` for a stopped unit, not an
@@ -40,7 +40,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

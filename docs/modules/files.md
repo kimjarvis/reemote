@@ -1,6 +1,6 @@
 # files module
 
-::: reemote5.modules.files.files
+::: reemote.modules.files.files
     options:
       show_root_heading: false
       members:
@@ -41,7 +41,7 @@
 
 <!---
 
-`reemote5.modules.files.files` combines the file facts and the file operations
+`reemote.modules.files.files` combines the file facts and the file operations
 in a single source, so the read side (`FileLink`, `FileExists`,
 `LocalSha1`, `RemoteFileSha1`, `Sha256File`, `Sha384File`, `Md5File`,
 `SameFile`, `FileContents`, `File`,
@@ -58,7 +58,7 @@ operations that consume it.
 A fact is an asynchronous, queryable resource — never yielded by a generator —
 implemented as a `process` coroutine returning the raw value (over asyncssh in
 the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get], which is itself a coroutine,
+[`FactCache.get`][reemote.core.FactCache.get], which is itself a coroutine,
 so results are awaited and cached within a phase step. `LocalSha1` is the
 one fact whose input is not the host: it hashes an IO-like stream on the
 *control* machine — the source `files.put` uploads or the destination
@@ -142,7 +142,7 @@ to audit configuration content — "is this legacy source still enabled?",
 "does the agent config still name the old endpoint?" — without pulling the
 whole file through `FileContents`.
 
-`FindFilesInfo` is a reemote5 original (the baseline ships no counterpart): the
+`FindFilesInfo` is a reemote original (the baseline ships no counterpart): the
 find family's filters plus GNU `find -printf` gather path, size, mode,
 user, group and mtime for every hit in *one* command — the metadata
 Ansible's `find` module returns per hit, which bare `FindFiles` would need
@@ -153,7 +153,7 @@ GNU-only: BSD find has no `-printf`, and the `|| true` guard masks that to
 `[]`. Use it to branch on per-hit metadata — "delete logs older than X",
 "report world-writable files under the share" — in a single read.
 
-`DirectoryEntries` is a reemote5 original: the shallow listing the
+`DirectoryEntries` is a reemote original: the shallow listing the
 stat-only `Directory` fact cannot give — one
 `find <path> -mindepth 1 -maxdepth 1 -printf '%f\t%y\n'` sweep reports each
 immediate entry's basename and type (`DirectoryEntry`: "file",
@@ -208,15 +208,15 @@ Operations live in namespace modules so a deploy reads `files.link`,
 `files.copy`, `files.directory` and `files.flags`,
 mirroring the baseline's
 API. Every
-operation is an async generator taking an [`OpContext`][reemote5.core.OpContext],
+operation is an async generator taking an [`OpContext`][reemote.core.OpContext],
 awaiting facts via `ctx.facts`, setting `ctx.changed`/`ctx.reason` where a
-change is needed, and yielding one [`Command`][reemote5.commands.Command]
+change is needed, and yielding one [`Command`][reemote.commands.Command]
 descriptor per mutation.
 
 `files.put` and `files.get` yield the *non-shell* descriptors:
 `PutCommand` and
 `GetCommand` have no `shell()` —
-[`send_command`][reemote5.drivers.send_command] dispatches them over the host's
+[`send_command`][reemote.drivers.send_command] dispatches them over the host's
 asyncssh connection with scp instead of running shell text, so the `sudo`/`su`
 flags do not apply and the remote path must be writable (put) or readable (get)
 by the login user. Each takes an **IO-like object only** on the control-machine
@@ -255,7 +255,7 @@ such as `/etc/hosts` must be transformed into a writable path and moved into
 place with `files.move` flagged `sudo=True` — or written in one deploy with
 `files.install` below.
 
-`files.install` is a reemote5 original: the generic "write text content to a
+`files.install` is a reemote original: the generic "write text content to a
 root-owned path" operation the namespace-specific spool-and-install operations
 (`apt.sources_file`, `dnf.repo`, `systemd.dropin`) each spell out for their own
 config paths. It reads the destination's current text with `FileContents` and,
@@ -299,7 +299,7 @@ reads `File(src)`, `Directory(dest)` and `File(dest/basename(src))` to
 validate. An absent source, an absent or non-directory destination, and an
 existing target without `overwrite` raise `ValueError`. The baseline's
 phase-aware softness for the two absence cases (a log while planning, an
-error only while executing) is deliberately dropped — reemote5 operations
+error only while executing) is deliberately dropped — reemote operations
 are phase-unaware, so they raise in *both* phases. A consequence: a
 "create a file then move it" flow cannot share one deploy (prepare would
 raise on the not-yet-created source) and spans two runs instead. Both

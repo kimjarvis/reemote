@@ -4,7 +4,7 @@
 """Create, stack and remove a custom runlevel with ``openrc.custom_runlevel``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -30,7 +30,7 @@ your machines.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``openrc.custom_runlevel`` is a reemote5 original with no baseline
+``openrc.custom_runlevel`` is a reemote original with no baseline
 counterpart: it manages the runlevel *directories themselves* under
 ``/etc/runlevels``, where ``openrc.runlevel`` only manages one service's
 membership in an existing runlevel. A runlevel is just a directory of
@@ -78,7 +78,7 @@ root-owned state, so the requests are flagged ``doas=True`` and the driver
 elevates their commands. ``doas`` rather than ``sudo`` because the Alpine
 host has no ``sudo`` installed at all -- ``sudo rc-update`` would die with
 ``sh: sudo: not found`` (exit 127) before reaching OpenRC. ``doas`` is
-passwordless here: reemote5 always runs ``doas -n``, which fails rather
+passwordless here: reemote always runs ``doas -n``, which fails rather
 than prompts, so the host must grant the login user a ``permit nopass``
 rule in ``/etc/doas.conf`` (see ``examples/demonstrations/privilege/
 privilege_doas.py``); without one the driver raises ``PrivilegeError``. No
@@ -115,7 +115,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

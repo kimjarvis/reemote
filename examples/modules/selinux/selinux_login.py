@@ -4,7 +4,7 @@
 """Map a Linux login to a confined SELinux user with ``selinux.login``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -26,7 +26,7 @@ it finishes.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``selinux.login`` is a reemote5 original (the baseline ships no login
+``selinux.login`` is a reemote original (the baseline ships no login
 operation): it manages the Linux-user -> SELinux-user mapping, the core of
 least-privilege confined-user management. Here the login ``kjarvis`` is
 mapped to ``staff_u`` with range ``s0`` -- the confined-administrator user
@@ -73,7 +73,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

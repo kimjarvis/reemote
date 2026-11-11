@@ -1,12 +1,12 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-site_name: reemote5
+site_name: reemote
 site_description: >-
   Configure and deploy servers from Python: a generator-based, two-phase
   execution model with pure, idempotent operations.
 repo_url: https://github.com/kimjarvis/reemote5
-repo_name: kimjarvis/reemote5
+repo_name: kimjarvis/reemote
 
 theme:
   name: material
@@ -34,7 +34,7 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
-          # Besides the installed reemote5 package, the example scripts are
+          # Besides the installed reemote package, the example scripts are
           # importable by file name so docs/examples.md can render their
           # module docstrings (the explanation lives in the example itself).
           paths:

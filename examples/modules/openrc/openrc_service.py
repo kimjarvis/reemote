@@ -4,7 +4,7 @@
 """Manage an OpenRC service's runtime and boot state with ``openrc.service``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -67,7 +67,7 @@ running before the deploy.
 are flagged ``doas=True`` and the driver elevates their commands. ``doas``
 rather than ``sudo`` because the Alpine host has no ``sudo`` installed at
 all -- ``sudo rc-service`` would die with ``sh: sudo: not found`` (exit 127)
-before reaching OpenRC. ``doas`` is passwordless here: reemote5 always runs
+before reaching OpenRC. ``doas`` is passwordless here: reemote always runs
 ``doas -n``, which fails rather than prompts, so the host must grant the
 login user a ``permit nopass`` rule in ``/etc/doas.conf`` (see
 ``examples/demonstrations/privilege/privilege_doas.py``); without one the
@@ -106,7 +106,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

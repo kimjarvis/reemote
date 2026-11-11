@@ -3,7 +3,7 @@
 
 """Tests for the dnf module: its facts and the operations layer.
 
-Covers the read-only state discovery in ``reemote5.modules.dnf.dnf``:
+Covers the read-only state discovery in ``reemote.modules.dnf.dnf``:
 ``DnfRepositories``, ``DnfRepoList``, ``DnfEnabledModules``,
 ``DnfDisabledModules``, ``DnfInstalledModules``, ``DnfGroups``,
 ``DnfAvailableGroups``, ``RpmPackage`` and ``RpmGpgKeys``. Each fact is
@@ -32,8 +32,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, OperationRequest, Privilege, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, OperationRequest, Privilege, op
+from reemote.drivers import (
     DeterminismError,
     command_shell,
     format_log,
@@ -43,17 +43,15 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import (
+from reemote.hosts import (
     CommandError,
     CommandNotFoundError,
     Host,
     InventoryError,
     validate_inventory,
 )
-from reemote5.modules import dnf, files
-from reemote5.modules.dnf.dnf import (
-    _KEY_IMPORT_PATH,
-    _REPO_SPOOL_PATH,
+from reemote.modules import dnf, files
+from reemote.modules.dnf.dnf import (
     DnfAvailableGroups,
     DnfCleanCommand,
     DnfDisabledModules,
@@ -79,8 +77,10 @@ from reemote5.modules.dnf.dnf import (
     RpmGpgKeys,
     RpmInstallCommand,
     RpmPackage,
+    _key_spool_path,
+    _repo_spool_path,
 )
-from reemote5.modules.files.files import FileCommand, FileLink, LinkCommand
+from reemote.modules.files.files import FileCommand, FileLink, LinkCommand
 from tests.simulated_host import SimulatedHost
 
 
@@ -161,7 +161,7 @@ async def test_dnf_packages_seam_read_is_a_sorted_copy():
 
 # The example result from the baseline ``dnf.DnfRepositories`` documentation: a
 # single AlmaLinux BaseOS repository parsed out of its ``.repo`` file. The baseline
-# flattens every option into the entry; reemote5 keeps the identifying fields
+# flattens every option into the entry; reemote keeps the identifying fields
 # fixed and moves the open-ended options into the ``options`` sub-dict.
 ALMALINUX_BASEOS_REPO = {
     "repoid": "baseos",
@@ -221,6 +221,11 @@ DOCKER_REPO_CONTENT = (
     "enabled=1\n"
     "gpgcheck=1\n"
 )
+# The spool path dnf.repo uploads to, derived from the managed file -- the
+# tests spell the same call the operation makes. The spool file now lives
+# inside a sha1-derived /tmp directory; the install rm -rf's the directory.
+REPO_SPOOL = _repo_spool_path(DOCKER_REPO_PATH)
+REPO_SPOOL_DIR = REPO_SPOOL.rsplit("/", 1)[0]
 
 
 async def test_dnf_repofile_reads_the_simulated_seam():
@@ -619,7 +624,7 @@ HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
 # The library provides the execution model (drivers, core, operations,
 # facts, Host) and accepts the inventory as a parameter. SimulatedHost is
 # part of the test framework: it lives in tests/simulated_host.py (never in
-# src/reemote5/) and is injected via ``run``'s ``host_factory`` argument,
+# src/reemote/) and is injected via ``run``'s ``host_factory`` argument,
 # never constructed by the library. The specific nginx deploy script and
 # the web1/web2 inventory and initial state below are test fixtures, not
 # part of the library.
@@ -1013,7 +1018,7 @@ class _AskpassRecordingHost(Host):
     its ``mktemp``) returns a canned helper path, everything else empty stdout.
     """
 
-    ASKPASS_PATH = "/tmp/reemote5-askpass-abc123"
+    ASKPASS_PATH = "/tmp/reemote-askpass-abc123"
 
     def __init__(self, privilege):
         super().__init__(name="rec", privilege=privilege)
@@ -1035,8 +1040,8 @@ async def test_run_shell_sudo_uses_askpass_when_password_configured():
     setup, elevated = host.sent
     assert "mktemp" in setup
     assert elevated == (
-        "env SUDO_ASKPASS=/tmp/reemote5-askpass-abc123 "
-        "REEMOTE5_SUDO_PASSWORD=s3cr3t "
+        "env SUDO_ASKPASS=/tmp/reemote-askpass-abc123 "
+        "REEMOTE_SUDO_PASSWORD=s3cr3t "
         "sudo -A -k -u deploy dnf install -y nginx"
     )
 
@@ -1049,8 +1054,8 @@ async def test_run_shell_sudo_collapses_the_root_run_as_user_to_a_bare_sudo():
     await send_command(host, DnfInstallCommand(packages=("nginx",)), sudo=True)
     _setup, elevated = host.sent
     assert elevated == (
-        "env SUDO_ASKPASS=/tmp/reemote5-askpass-abc123 "
-        "REEMOTE5_SUDO_PASSWORD=s3cr3t "
+        "env SUDO_ASKPASS=/tmp/reemote-askpass-abc123 "
+        "REEMOTE_SUDO_PASSWORD=s3cr3t "
         "sudo -A -k dnf install -y nginx"
     )
     assert "-u root" not in elevated
@@ -1171,7 +1176,7 @@ async def test_run_shell_su_uses_askpass_when_password_configured():
     setup, elevated = host.sent
     assert "mktemp" in setup
     assert elevated == (
-        "env REEMOTE5_SU_PASSWORD=s3cr3t /tmp/reemote5-askpass-abc123 "
+        "env REEMOTE_SU_PASSWORD=s3cr3t /tmp/reemote-askpass-abc123 "
         "| su deploy -c 'dnf install -y nginx'"
     )
 
@@ -1204,7 +1209,7 @@ async def test_send_command_sudo_su_with_su_password_wraps_the_pipe_in_sh():
     assert elevated.startswith("sudo ")
     assert "sh -c " in elevated
     assert "su app -c" in elevated
-    assert "REEMOTE5_SU_PASSWORD=s3cr3t" in elevated
+    assert "REEMOTE_SU_PASSWORD=s3cr3t" in elevated
 
 
 # --- doas elevation on the command path --------------------------------------
@@ -1332,7 +1337,7 @@ async def test_send_command_doas_su_with_su_password_wraps_the_pipe_in_sh():
     assert elevated.startswith("doas -n ")
     assert "sh -c " in elevated
     assert "su app -c" in elevated
-    assert "REEMOTE5_SU_PASSWORD=s3cr3t" in elevated
+    assert "REEMOTE_SU_PASSWORD=s3cr3t" in elevated
 
 
 async def test_run_shell_doas_is_passwordless_and_needs_no_askpass_helper():
@@ -1375,7 +1380,7 @@ async def test_run_shell_sudo_failure_reports_a_credential_free_command():
                 name="f",
                 privilege={"sudo_user": "root", "sudo_password": "s3cr3t"},
             )
-            self._askpass_path = "/tmp/reemote5-askpass-cached"  # skip the setup
+            self._askpass_path = "/tmp/reemote-askpass-cached"  # skip the setup
 
         async def _run_shell(self, shell: str):
             return SimpleNamespace(exit_status=1, stdout="", stderr="sudo: failed")
@@ -1781,8 +1786,8 @@ async def test_dnf_repo_writes_the_constructed_file():
         f"repo file {DOCKER_REPO_PATH} missing or differs from the desired content"
     )
     assert commands == [
-        DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=_REPO_SPOOL_PATH),
-        DnfRepoInstallCommand(spool=_REPO_SPOOL_PATH, dest=DOCKER_REPO_PATH),
+        DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=REPO_SPOOL),
+        DnfRepoInstallCommand(spool=REPO_SPOOL, dest=DOCKER_REPO_PATH),
     ]
 
 
@@ -1846,7 +1851,7 @@ async def test_dnf_repo_removal_noop_when_absent():
 
 
 async def test_dnf_repo_rejects_a_url_src():
-    """The baseline downloads a URL ``.repo`` file; reemote5 has no download
+    """The baseline downloads a URL ``.repo`` file; reemote has no download
     operation, so a URL src raises instead of silently doing nothing."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -1890,8 +1895,8 @@ async def test_dnf_repo_absorbs_unknown_kwargs():
         )
     ]
     assert commands == [
-        DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=_REPO_SPOOL_PATH),
-        DnfRepoInstallCommand(spool=_REPO_SPOOL_PATH, dest=DOCKER_REPO_PATH),
+        DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=REPO_SPOOL),
+        DnfRepoInstallCommand(spool=REPO_SPOOL, dest=DOCKER_REPO_PATH),
     ]
 
 
@@ -1900,18 +1905,18 @@ def test_dnf_repo_upload_command_renders_as_an_unprivileged_scp():
     TransferCommand -- is never elevated, even though dnf.repo's request is
     sudo=True for the install half. The content rides as data, so the literal
     ``$basearch`` can never be shell-expanded."""
-    cmd = DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=_REPO_SPOOL_PATH)
+    cmd = DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=REPO_SPOOL)
     assert not hasattr(cmd, "shell")
-    assert str(cmd) == f"scp <repo file> -> {_REPO_SPOOL_PATH}"
-    assert command_shell(cmd) == f"scp <repo file> -> {_REPO_SPOOL_PATH}"
-    assert command_shell(cmd, sudo=True) == f"scp <repo file> -> {_REPO_SPOOL_PATH}"
+    assert str(cmd) == f"scp <repo file> -> {REPO_SPOOL}"
+    assert command_shell(cmd) == f"scp <repo file> -> {REPO_SPOOL}"
+    assert command_shell(cmd, sudo=True) == f"scp <repo file> -> {REPO_SPOOL}"
 
 
 def test_dnf_repo_install_command_shell_and_elevation():
     """The install wraps the mkdir/cp/chmod/rm chain in ``sh -c`` so every step
     runs under the elevated shell (a bare ``sudo ... && rm`` would leave the
     cleanup unprivileged), and shell-quotes every path."""
-    cmd = DnfRepoInstallCommand(spool=_REPO_SPOOL_PATH, dest=DOCKER_REPO_PATH)
+    cmd = DnfRepoInstallCommand(spool=REPO_SPOOL, dest=DOCKER_REPO_PATH)
     shell = cmd.shell()
     assert shell.startswith("sh -c ")
     # The chain is a single ``sh -c`` argument; shlex.split recovers the inner
@@ -1919,8 +1924,8 @@ def test_dnf_repo_install_command_shell_and_elevation():
     inner = shlex.split(shell)[2]
     assert inner == (
         "mkdir -p /etc/yum.repos.d && "
-        f"cp {_REPO_SPOOL_PATH} {DOCKER_REPO_PATH} && "
-        f"chmod 0644 {DOCKER_REPO_PATH} && rm -f {_REPO_SPOOL_PATH}"
+        f"cp {REPO_SPOOL} {DOCKER_REPO_PATH} && "
+        f"chmod 0644 {DOCKER_REPO_PATH} && rm -rf {REPO_SPOOL_DIR}"
     )
     # Under sudo the whole sh -c chain runs as root.
     assert command_shell(cmd, sudo=True).startswith("sudo sh -c ")
@@ -1942,14 +1947,14 @@ async def test_dnf_repo_simulated_seam_spools_then_installs():
     host = SimulatedHost(name="h")
     await send_command(
         host,
-        DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=_REPO_SPOOL_PATH),
+        DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=REPO_SPOOL),
     )
-    assert host.remote_files[_REPO_SPOOL_PATH] == DOCKER_REPO_CONTENT.encode()
+    assert host.remote_files[REPO_SPOOL] == DOCKER_REPO_CONTENT.encode()
     await send_command(
-        host, DnfRepoInstallCommand(spool=_REPO_SPOOL_PATH, dest=DOCKER_REPO_PATH)
+        host, DnfRepoInstallCommand(spool=REPO_SPOOL, dest=DOCKER_REPO_PATH)
     )
     assert host.remote_files[DOCKER_REPO_PATH] == DOCKER_REPO_CONTENT.encode()
-    assert _REPO_SPOOL_PATH not in host.remote_files
+    assert REPO_SPOOL not in host.remote_files
     assert DOCKER_REPO_PATH in host.existing_files
     assert host.file_stats[DOCKER_REPO_PATH] == {
         "user": "root",
@@ -1985,13 +1990,13 @@ async def test_dnf_repo_end_to_end_write_then_noop():
     (entry,) = report.log
     assert entry.changed
     assert entry.commands == (
-        DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=_REPO_SPOOL_PATH),
-        DnfRepoInstallCommand(spool=_REPO_SPOOL_PATH, dest=DOCKER_REPO_PATH),
+        DnfRepoUploadCommand(content=DOCKER_REPO_CONTENT, dest=REPO_SPOOL),
+        DnfRepoInstallCommand(spool=REPO_SPOOL, dest=DOCKER_REPO_PATH),
     )
     assert host.remote_files[DOCKER_REPO_PATH] == DOCKER_REPO_CONTENT.encode()
-    assert _REPO_SPOOL_PATH not in host.remote_files  # install cleaned the spool
+    assert REPO_SPOOL not in host.remote_files  # install cleaned the spool
     log = format_log(report)
-    assert f"    $ scp <repo file> -> {_REPO_SPOOL_PATH}" in log
+    assert f"    $ scp <repo file> -> {REPO_SPOOL}" in log
     assert "    $ sudo sh -c " in log
 
     _plans2, report2, _hosts2 = await run(
@@ -2144,7 +2149,7 @@ def test_dnf_repo_install_command_renders_the_requested_mode():
     """The chmod step uses the descriptor's mode field, inside the elevated
     sh -c chain."""
     cmd = DnfRepoInstallCommand(
-        spool=_REPO_SPOOL_PATH, dest=DOCKER_REPO_PATH, mode="0600"
+        spool=REPO_SPOOL, dest=DOCKER_REPO_PATH, mode="0600"
     )
     inner = shlex.split(cmd.shell())[2]
     assert f"chmod 0600 {DOCKER_REPO_PATH}" in inner
@@ -2188,7 +2193,7 @@ async def test_dnf_repo_datadog_options_end_to_end_write_then_noop():
     assert entry2.reason == f"repo file already up to date ({DOCKER_REPO_PATH})"
 
 
-# --- dnf.makecache / dnf.clean operations (reemote5 originals) ------------------
+# --- dnf.makecache / dnf.clean operations (reemote originals) ------------------
 
 
 async def test_dnf_makecache_is_stateless_and_unscoped():
@@ -2422,7 +2427,7 @@ async def test_dnf_rpm_removal_noop_when_file_absent():
 
 
 async def test_dnf_rpm_rejects_a_url_src():
-    """The baseline downloads a URL ``.rpm``; reemote5 has no download operation, so a
+    """The baseline downloads a URL ``.rpm``; reemote has no download operation, so a
     URL src raises instead of silently doing nothing (mirroring dnf.repo)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -2523,7 +2528,7 @@ async def test_dnf_rpm_remove_after_install_in_one_deploy():
     assert RPM_FILE_NAME not in host.packages
 
 
-# --- RpmGpgKeys fact (reemote5 original) --------------------------------------
+# --- RpmGpgKeys fact (reemote original) --------------------------------------
 
 # Canned ``rpm -qa gpg-pubkey`` rows: the legacy Datadog key (the one the
 # ansible-datadog role removes, short id 4172A230) and the Docker CE rpm key.
@@ -2609,9 +2614,13 @@ async def test_rpm_gpg_keys_seam_read_is_a_sorted_copy():
 # simulated host records them verbatim.
 GPG_KEY_BYTES = (
     b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n"
-    b"mQIN reemote5 test key material\n"
+    b"mQIN reemote test key material\n"
     b"-----END PGP PUBLIC KEY BLOCK-----\n"
 )
+# dnf.key imports into the rpm keyring (no managed dest), so the spool dir is
+# keyed on a fixed constant; the import rm -rf's the whole directory.
+KEY_SPOOL = _key_spool_path()
+KEY_SPOOL_DIR = KEY_SPOOL.rsplit("/", 1)[0]
 
 
 async def test_dnf_key_yields_upload_then_import():
@@ -2624,13 +2633,13 @@ async def test_dnf_key_yields_upload_then_import():
     assert ctx.changed
     assert ctx.reason == "import GPG key from <stream>"
     assert commands == [
-        DnfKeyUploadCommand(src=stream, dest=_KEY_IMPORT_PATH),
-        DnfKeyImportCommand(path=_KEY_IMPORT_PATH),
+        DnfKeyUploadCommand(src=stream, dest=KEY_SPOOL),
+        DnfKeyImportCommand(path=KEY_SPOOL),
     ]
 
 
 async def test_dnf_key_rejects_a_str_src():
-    """The baseline's dnf.key takes a filename/URL the target host reads; reemote5
+    """The baseline's dnf.key takes a filename/URL the target host reads; reemote
     takes an IO stream, so a str src raises rather than being treated as a
     controller-side path."""
     host = SimulatedHost(name="h")
@@ -2647,8 +2656,8 @@ async def test_dnf_key_absorbs_unknown_kwargs():
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in dnf.key(ctx, src=stream, future_flag=True)]
     assert commands == [
-        DnfKeyUploadCommand(src=stream, dest=_KEY_IMPORT_PATH),
-        DnfKeyImportCommand(path=_KEY_IMPORT_PATH),
+        DnfKeyUploadCommand(src=stream, dest=KEY_SPOOL),
+        DnfKeyImportCommand(path=KEY_SPOOL),
     ]
 
 
@@ -2658,22 +2667,23 @@ def test_dnf_key_upload_command_renders_as_an_unprivileged_scp():
     sudo=True for the import half. This is the command_shell guard: the log
     shows a plain ``scp ...``, never a misleading ``sudo scp ...``."""
     stream = io.BytesIO(GPG_KEY_BYTES)
-    cmd = DnfKeyUploadCommand(src=stream, dest=_KEY_IMPORT_PATH)
+    cmd = DnfKeyUploadCommand(src=stream, dest=KEY_SPOOL)
     assert not hasattr(cmd, "shell")
-    assert str(cmd) == f"scp <stream> -> {_KEY_IMPORT_PATH}"
-    assert command_shell(cmd) == f"scp <stream> -> {_KEY_IMPORT_PATH}"
-    assert command_shell(cmd, sudo=True) == f"scp <stream> -> {_KEY_IMPORT_PATH}"
+    assert str(cmd) == f"scp <stream> -> {KEY_SPOOL}"
+    assert command_shell(cmd) == f"scp <stream> -> {KEY_SPOOL}"
+    assert command_shell(cmd, sudo=True) == f"scp <stream> -> {KEY_SPOOL}"
 
 
 def test_dnf_key_import_command_shell_and_elevation():
     """The import wraps ``rpm --import && rm`` in ``sh -c`` so both steps run
     under the elevated shell (a bare ``sudo ... && rm`` would leave the rm
-    unprivileged), and shell-quotes the spool path."""
-    cmd = DnfKeyImportCommand(path=_KEY_IMPORT_PATH)
+    unprivileged), and shell-quotes the spool path. The spool file lives inside
+    a sha1-derived /tmp directory, so the cleanup removes the whole directory."""
+    cmd = DnfKeyImportCommand(path=KEY_SPOOL)
     shell = cmd.shell()
     assert shell.startswith("sh -c ")
     inner = shlex.split(shell)[2]
-    assert inner == f"rpm --import {_KEY_IMPORT_PATH} && rm -f {_KEY_IMPORT_PATH}"
+    assert inner == f"rpm --import {KEY_SPOOL} && rm -rf {KEY_SPOOL_DIR}"
     assert command_shell(cmd, sudo=True).startswith("sudo sh -c ")
 
 
@@ -2683,11 +2693,11 @@ async def test_dnf_key_simulated_seam_spools_then_imports():
     effect of one dnf.key request."""
     host = SimulatedHost(name="h")
     stream = io.BytesIO(GPG_KEY_BYTES)
-    await send_command(host, DnfKeyUploadCommand(src=stream, dest=_KEY_IMPORT_PATH))
-    assert host.remote_files[_KEY_IMPORT_PATH] == GPG_KEY_BYTES
-    await send_command(host, DnfKeyImportCommand(path=_KEY_IMPORT_PATH))
+    await send_command(host, DnfKeyUploadCommand(src=stream, dest=KEY_SPOOL))
+    assert host.remote_files[KEY_SPOOL] == GPG_KEY_BYTES
+    await send_command(host, DnfKeyImportCommand(path=KEY_SPOOL))
     assert host.imported_keys == {GPG_KEY_BYTES}
-    assert _KEY_IMPORT_PATH not in host.remote_files
+    assert KEY_SPOOL not in host.remote_files
 
 
 async def test_dnf_key_end_to_end_imports_over_run():
@@ -2712,13 +2722,13 @@ async def test_dnf_key_end_to_end_imports_over_run():
     (entry,) = report.log
     assert entry.changed
     assert entry.commands == (
-        DnfKeyUploadCommand(src=stream, dest=_KEY_IMPORT_PATH),
-        DnfKeyImportCommand(path=_KEY_IMPORT_PATH),
+        DnfKeyUploadCommand(src=stream, dest=KEY_SPOOL),
+        DnfKeyImportCommand(path=KEY_SPOOL),
     )
     assert host.imported_keys == {GPG_KEY_BYTES}
-    assert _KEY_IMPORT_PATH not in host.remote_files
+    assert KEY_SPOOL not in host.remote_files
     log = format_log(report)
-    assert f"    $ scp <stream> -> {_KEY_IMPORT_PATH}" in log
+    assert f"    $ scp <stream> -> {KEY_SPOOL}" in log
     assert "    $ sudo sh -c " in log
 
 
@@ -2759,7 +2769,7 @@ async def test_dnf_key_fresh_stream_per_phase_trips_determinism():
         await run_apply(runtimes, plans=plans)
 
 
-# --- dnf.key present=False (reemote5 extension, Ansible rpm_key parity) -------
+# --- dnf.key present=False (reemote extension, Ansible rpm_key parity) -------
 
 # The legacy Datadog signing key the ansible-datadog role removes by default
 # (datadog_rpm_remove_keys: [4172A230]), as rpm stores it: lowercased short id
@@ -2906,15 +2916,15 @@ async def test_dnf_key_import_seam_registers_an_rpmdb_entry():
     no duplicate."""
     host = SimulatedHost(name="h")
     stream = io.BytesIO(GPG_KEY_BYTES)
-    await send_command(host, DnfKeyUploadCommand(src=stream, dest=_KEY_IMPORT_PATH))
-    await send_command(host, DnfKeyImportCommand(path=_KEY_IMPORT_PATH))
+    await send_command(host, DnfKeyUploadCommand(src=stream, dest=KEY_SPOOL))
+    await send_command(host, DnfKeyImportCommand(path=KEY_SPOOL))
     assert len(host.rpm_gpg_keys) == 1
     entry = host.rpm_gpg_keys[0]
-    assert entry["summary"] == "gpg(reemote5 simulated key)"
+    assert entry["summary"] == "gpg(reemote simulated key)"
     assert await RpmGpgKeys.process(host) == [entry]
     stream.seek(0)
-    await send_command(host, DnfKeyUploadCommand(src=stream, dest=_KEY_IMPORT_PATH))
-    await send_command(host, DnfKeyImportCommand(path=_KEY_IMPORT_PATH))
+    await send_command(host, DnfKeyUploadCommand(src=stream, dest=KEY_SPOOL))
+    await send_command(host, DnfKeyImportCommand(path=KEY_SPOOL))
     assert len(host.rpm_gpg_keys) == 1
 
 
@@ -3045,7 +3055,7 @@ async def test_dnf_module_enable_switches_stream():
 
 async def test_dnf_module_enable_requires_stream():
     """enabled=True with no stream raises -- the baseline's ``OperationValueError``
-    (a ValueError subclass) maps to reemote5's plain ValueError."""
+    (a ValueError subclass) maps to reemote's plain ValueError."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     with pytest.raises(ValueError, match="stream is required when enabled=True"):

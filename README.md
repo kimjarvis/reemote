@@ -1,4 +1,4 @@
-# reemote5
+# reemote
 
 A python library for configuration management, built on a two-phase
 *prepare → execute* execution model.
@@ -11,7 +11,7 @@ fact cache per step, so sequential *"act, then read"* logic gives the correct
 answer in both phases. Facts and operations stay phase-unaware — only the
 drivers know which phase they are in.
 
-**Scope.** reemote5 is a library, not a deployment tool. It ships no CLI and
+**Scope.** reemote is a library, not a deployment tool. It ships no CLI and
 no inventory format: hosts are a plain *inventory* (a list of dictionaries)
 handed to `run`. The transport is real -- the default `Host.from_inventory`
 factory opens an [asyncssh] connection per entry, gathers facts and runs
@@ -29,43 +29,43 @@ import json
 from collections.abc import Generator
 from pathlib import Path
 
-from reemote5 import Host, OperationRequest, dnf, files, format_log, op, run
+from reemote import Host, OperationRequest, dnf, files, format_log, op, run
 
 HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
 
 
 def is_centos(host: Host) -> bool:
-    # A `when` guard reads static inventory data (host.group) only, so the
-    # prepare and apply phases reach the same eligibility decision and the
-    # steps never reach a host that has no dnf.
-    return host.group == "centos"
+  # A `when` guard reads static inventory data (host.group) only, so the
+  # prepare and apply phases reach the same eligibility decision and the
+  # steps never reach a host that has no dnf.
+  return host.group == "centos"
 
 
 def deploy(host: Host) -> Generator[OperationRequest, None, None]:
-    # The welcome configuration only appears once the package is installed.
-    # The apply phase rebuilds the fact cache before each step, so this
-    # removal still sees it -- no branch, no phase flag.
-    yield op(
-        dnf.packages,
-        name="Install httpd",
-        packages=("httpd",),
-        sudo=True,
-        when=is_centos,
-    )
-    yield op(
-        files.file,
-        name="Remove welcome configuration",
-        path=HTTPD_WELCOME_CONF,
-        present=False,
-        sudo=True,
-        when=is_centos,
-    )
+  # The welcome configuration only appears once the package is installed.
+  # The apply phase rebuilds the fact cache before each step, so this
+  # removal still sees it -- no branch, no phase flag.
+  yield op(
+    dnf.packages,
+    name="Install httpd",
+    packages=("httpd",),
+    sudo=True,
+    when=is_centos,
+  )
+  yield op(
+    files.file,
+    name="Remove welcome configuration",
+    path=HTTPD_WELCOME_CONF,
+    present=False,
+    sudo=True,
+    when=is_centos,
+  )
 
 
 async def main() -> None:
-    inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
-    plans, report, hosts = await run(inventory, deploy)
-    print(format_log(report))
+  inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+  plans, report, hosts = await run(inventory, deploy)
+  print(format_log(report))
 
 
 asyncio.run(main())
@@ -123,14 +123,14 @@ uv run --group docs mkdocs serve   # http://localhost:8000
 ## Layout
 
 ```text
-src/reemote5/core.py         OperationRequest, OpContext, FactCache, HostRuntime, op()
-src/reemote5/commands.py     command descriptors yielded by operations
-src/reemote5/drivers.py      run_prepare / run_apply / send_command / run
-src/reemote5/actions.py      Shell + WaitForConnection actions (outside deploys)
-src/reemote5/hosts.py        Host (inventory entry, owns the asyncssh transport)
-src/reemote5/connectors/     alternative transports, e.g. docker.py (local
+src/reemote/core.py         OperationRequest, OpContext, FactCache, HostRuntime, op()
+src/reemote/commands.py     command descriptors yielded by operations
+src/reemote/drivers.py      run_prepare / run_apply / send_command / run
+src/reemote/actions.py      Shell + WaitForConnection actions (outside deploys)
+src/reemote/hosts.py        Host (inventory entry, owns the asyncssh transport)
+src/reemote/connectors/     alternative transports, e.g. docker.py (local
                              Docker/Podman containers via the CLI)
-src/reemote5/modules/        self-contained namespaces, facts + operations together:
+src/reemote/modules/        self-contained namespaces, facts + operations together:
                              apk, apt, dnf, files, firewalld, git, gpg, hardware,
                              iptables, lxd, mysql, openrc, postgresql, selinux,
                              server, sysctl, systemd, ufw

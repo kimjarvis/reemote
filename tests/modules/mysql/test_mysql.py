@@ -6,7 +6,7 @@
 ``kill``/``optimize``/``plugin``/``replica``/``role``/``table``/
 ``variable`` operations.
 
-Covers ``reemote5.modules.mysql.mysql``. ``MysqlDatabases``, ``MysqlUsers``
+Covers ``reemote.modules.mysql.mysql``. ``MysqlDatabases``, ``MysqlUsers``
 and ``MysqlUserGrants`` mirror the baseline's ``mysql`` facts, so their
 real-transport parity reuses the baseline's own fact fixtures verbatim (canned
 ``mysql -Be`` output plus the name-keyed result), including the
@@ -15,7 +15,7 @@ namespace deliberately drops, with space-separated shlex-quoted flags).
 The operation parity reuses the baseline's own operation-test fixtures
 (``mysql.privileges`` add/delete and the ALL+GRANT OPTION special cases,
 ``mysql.user`` resource limits and REQUIRE SSL alter, ``mysql.database``'s
-privileges bundle). The ten reemote5-original facts and eight original
+privileges bundle). The ten reemote-original facts and eight original
 operations have no upstream fixture, so they are exercised with realistic
 canned ``mysql -B`` output plus their parsing edge cases (empty output,
 the NULL batch marker, grouped index columns, view rows, replica lag).
@@ -32,9 +32,9 @@ import shlex
 
 import pytest
 
-import reemote5
-from reemote5.core import FactCache, OpContext, OperationError, op
-from reemote5.drivers import (
+import reemote
+from reemote.core import FactCache, OpContext, OperationError, op
+from reemote.drivers import (
     DeterminismError,
     command_shell,
     format_log,
@@ -45,9 +45,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import mysql
-from reemote5.modules.mysql.mysql import (
+from reemote.hosts import Host
+from reemote.modules import mysql
+from reemote.modules.mysql.mysql import (
     MysqlBinaryLogs,
     MysqlColumns,
     MysqlConnections,
@@ -557,7 +557,7 @@ async def test_mysql_user_grants_absent_user_reads_empty():
 
 
 def test_mysql_user_grants_role_grant_extension():
-    # reemote5 extension: role-grant lines (no ON clause) are captured
+    # reemote extension: role-grant lines (no ON clause) are captured
     # under the backticked role@host key with the single ROLE privilege.
     lines = [
         "GRANT `ro`@`%` TO `app`@`localhost`",
@@ -1113,7 +1113,7 @@ async def test_database_creates_with_charset_and_collate():
 
 
 async def test_database_alters_on_charset_drift():
-    # The reemote5 extension over the baseline: charset/collate compare
+    # The reemote extension over the baseline: charset/collate compare
     # against MysqlDatabases and render ALTER DATABASE on drift.
     host = SimulatedHost(
         name="h",
@@ -2222,9 +2222,9 @@ def test_mysql_top_level_exports():
     # mysql namespace only.
     assert len(MYSQL_EXPORTS) == 37
     for name in MYSQL_EXPORTS:
-        assert name in reemote5.__all__
-        assert getattr(reemote5, name) is getattr(mysql, name)
-    assert "mysql" in reemote5.__all__
+        assert name in reemote.__all__
+        assert getattr(reemote, name) is getattr(mysql, name)
+    assert "mysql" in reemote.__all__
     for op_name in (
         "database", "dump", "index", "kill", "load", "optimize", "plugin",
         "privileges", "replica", "role", "sql", "table", "user", "variable",

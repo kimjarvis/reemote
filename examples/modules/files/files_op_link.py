@@ -4,7 +4,7 @@
 """Example: manage a symbolic link on real CentOS hosts with files.link.
 
 This is a *usage* example, not part of the library. It drives the
-``files.link`` operation through reemote5's two-phase execution model:
+``files.link`` operation through reemote's two-phase execution model:
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
    -- an inventory is just a list of dictionaries, which is exactly what
@@ -80,7 +80,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -98,7 +98,7 @@ from reemote5 import (
 # The link to manage: a /tmp path, writable by whatever account the inventory
 # logs in as, so the unprivileged shell can create it, pointing at the classic
 # timezone symlink target.
-LINK_PATH = "/tmp/reemote5-link"
+LINK_PATH = "/tmp/reemote-link"
 LINK_TARGET = "/etc/localtime"
 
 # examples/modules/files/files_op_link.py -> the project root, so the inventory

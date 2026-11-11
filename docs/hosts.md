@@ -5,19 +5,19 @@ of dictionaries, each describing one host. Every entry must carry at least a
 `host` (its name) and a `connection` (the SSH connection data); `privilege`,
 `group` and `tags` are optional and any extra keys are preserved. The inventory
 is the parameter the library functions accept;
-[`Host.from_inventory`][reemote5.hosts.Host.from_inventory]
-materializes each entry into a [`Host`][reemote5.hosts.Host] whose
+[`Host.from_inventory`][reemote.hosts.Host.from_inventory]
+materializes each entry into a [`Host`][reemote.hosts.Host] whose
 `connection` data reaches both operations
-([`send_command`][reemote5.drivers.send_command]) and facts (each `process`).
+([`send_command`][reemote.drivers.send_command]) and facts (each `process`).
 
 The inventory is validated with pydantic before any host is materialized.
-Each entry is checked against the [`InventoryEntry`][reemote5.hosts.InventoryEntry]
+Each entry is checked against the [`InventoryEntry`][reemote.hosts.InventoryEntry]
 schema — `host` and `connection` are required, `privilege`, `group` and `tags`
 optional, and unrecognised keys are allowed (they land in `Host.extra`).
-[`validate_inventory`][reemote5.hosts.validate_inventory] checks a whole
+[`validate_inventory`][reemote.hosts.validate_inventory] checks a whole
 inventory up front (it must be a list of dictionaries), and
-[`run`][reemote5.drivers.run] calls it before building any host, so a
-malformed inventory raises [`InventoryError`][reemote5.hosts.InventoryError]
+[`run`][reemote.drivers.run] calls it before building any host, so a
+malformed inventory raises [`InventoryError`][reemote.hosts.InventoryError]
 rather than failing later over SSH.
 
 `SimulatedHost` is part of the *test framework*, not of the inventory or the
@@ -26,28 +26,28 @@ holding the state facts read (`packages`, `links`) and the mutations commands
 apply (`execute_command`), which is what makes the "fresh fact cache per
 lockstep step" property observable. The library never imports or constructs
 it; tests inject it via `run`'s `host_factory` argument and it overrides the
-seams [`send_command`][reemote5.drivers.send_command] and the facts otherwise
+seams [`send_command`][reemote.drivers.send_command] and the facts otherwise
 use to run over a real asyncssh connection. A plain
-[`Host`][reemote5.hosts.Host] built from a real inventory entry connects over
+[`Host`][reemote.hosts.Host] built from a real inventory entry connects over
 asyncssh instead: it opens a connection lazily from its `connection` data,
 runs each command with `run_shell`, copies IO-like sources to the host with
-[`upload_file`][reemote5.hosts.Host.upload_file] and remote files into IO-like
-destinations with [`download_file`][reemote5.hosts.Host.download_file] (both
+[`upload_file`][reemote.hosts.Host.upload_file] and remote files into IO-like
+destinations with [`download_file`][reemote.hosts.Host.download_file] (both
 asyncssh's scp, via a temporary local file — the seams
-[`files.put`][reemote5.modules.files.files.put]'s non-shell
+[`files.put`][reemote.modules.files.files.put]'s non-shell
 `PutCommand` and
-[`files.get`][reemote5.modules.files.files.get]'s
+[`files.get`][reemote.modules.files.files.get]'s
 `GetCommand` ride), and
 `run` closes the connection when it finishes.
 
-When a host cannot be reached, [`Host.connect`][reemote5.hosts.Host.connect]
+When a host cannot be reached, [`Host.connect`][reemote.hosts.Host.connect]
 wraps the underlying transport failure — an `OSError` (reset, timeout,
 unreachable) or an `asyncssh.Error` (host-key or authentication rejection) —
-in a single [`HostConnectionError`][reemote5.hosts.HostConnectionError] naming
+in a single [`HostConnectionError`][reemote.hosts.HostConnectionError] naming
 that host, so callers never have to catch asyncssh internals or read a raw
 transport traceback. The message stays generic (which host, or hosts, could
 not be reached); the original error is still available as `__cause__` for
-diagnosis. Because [`run_prepare`][reemote5.drivers.run_prepare] connects the
+diagnosis. Because [`run_prepare`][reemote.drivers.run_prepare] connects the
 whole inventory concurrently, it collects the per-host failures and merges them
 into one aggregate naming every unreachable host, rather than surfacing only
 the first to fail.
@@ -102,29 +102,29 @@ options above, for example:
 
 A few asyncssh options are *expressly forbidden* rather than merely omitted
 from the curated list: an inventory that requests one raises
-[`InventoryError`][reemote5.hosts.InventoryError] instead of the option being
+[`InventoryError`][reemote.hosts.InventoryError] instead of the option being
 silently dropped or passed on to asyncssh.
 
 `kbdint_auth` (keyboard-interactive authentication) is forbidden. It produces
 interactive challenge/MFA prompts, which asyncssh's non-interactive channels
-cannot answer, so reemote5 does not support keyboard-interactive auth at all.
+cannot answer, so reemote does not support keyboard-interactive auth at all.
 The rejection also covers the `asyncssh_connect_kwargs` passthrough — because
 that mapping is merged last and could otherwise override the curated options, a
 forbidden key cannot be smuggled through it either. The forbidden set is defined
-by `_FORBIDDEN_OPTIONS` in [`reemote5.hosts`][reemote5.hosts] and is checked by
+by `_FORBIDDEN_OPTIONS` in [`reemote.hosts`][reemote.hosts] and is checked by
 `_connect_options` before any connection is attempted.
 
 ## Connectors
 
 The `connection` mapping may also select an alternative transport with a
 `connector` key. The default `"ssh"` builds a plain
-[`Host`][reemote5.hosts.Host] (see [the ssh connector](connectors/ssh.md)
+[`Host`][reemote.hosts.Host] (see [the ssh connector](connectors/ssh.md)
 for its connection options); `"docker"` builds a
 `DockerHost`, which drives a local
 Docker/Podman container through the very same seams (shell, transfers,
 close) — see [the docker connector](connectors/docker.md) for its connection
 options and container lifecycle. Any other connector value raises
-[`InventoryError`][reemote5.hosts.InventoryError]. The dispatch applies only
+[`InventoryError`][reemote.hosts.InventoryError]. The dispatch applies only
 to the default `Host.from_inventory` factory; a subclass factory (such as
 the test framework's `SimulatedHost.from_inventory`) always builds its own
 class.
@@ -132,7 +132,7 @@ class.
 ## Groups and tags
 
 An entry may carry two optional, static classifiers that a deploy script reads
-off the materialized [`Host`][reemote5.hosts.Host] to branch per host:
+off the materialized [`Host`][reemote.hosts.Host] to branch per host:
 
 - `group` — a single string naming the group the host belongs to, exposed as
   `host.group` (`None` when unset).
@@ -183,7 +183,7 @@ Five keys are recognised:
   defaults to `root`, a `doas_user` of `root`, or none at all, collapses to a
   bare `doas -n`). It applies only when an operation is flagged `doas=True`.
   There is deliberately no `doas_password`: `doas` has no askpass mechanism and
-  asyncssh channels offer no TTY, so reemote5 always runs `doas -n`
+  asyncssh channels offer no TTY, so reemote always runs `doas -n`
   (non-interactive — it fails rather than prompts) and the host must grant the
   login user a `permit nopass` rule in `/etc/doas.conf`.
 
@@ -210,7 +210,7 @@ sudo (NOPASSWD or a cached credential) and runs a bare `sudo`; with one, the
 real transport runs `sudo -A` against a generated askpass helper, so the
 password is supplied without a TTY (asyncssh channels are non-interactive).
 `su` has no askpass mechanism, so with a `su_password` the helper's output is
-piped to su's stdin (`env REEMOTE5_SU_PASSWORD=… <helper> | su …`); when that
+piped to su's stdin (`env REEMOTE_SU_PASSWORD=… <helper> | su …`); when that
 pipeline also runs under `sudo` it is wrapped in `sh -c` so the pipe stays
 intact inside sudo's elevation (the same wrap applies when `doas` is the
 outermost wrapper around an su-password pipeline with no `sudo` in between).
@@ -221,19 +221,19 @@ in the rendered apply log, which shows the credential-free `sudo -u <user> …` 
 simply `doas -n [-u <user>] …`.
 
 An applied command that exits non-zero raises
-[`CommandError`][reemote5.hosts.CommandError] (fail-fast), carrying the host,
+[`CommandError`][reemote.hosts.CommandError] (fail-fast), carrying the host,
 the credential-free command text, the exit status and the captured stderr, so a
 permission error or a failed package transaction surfaces instead of being
 silently logged as applied. Fact reads tolerate other non-zero exits (e.g.
 `readlink` on an absent link), but exit 127 — the shell's command-not-found
-status — raises [`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError]
+status — raises [`CommandNotFoundError`][reemote.hosts.CommandNotFoundError]
 on *every* path, even with `check` off: a command a fact relies on that is not
 installed (e.g. `lsb_release` on a minimal CentOS install) must never parse as
 an empty fact default. It subclasses `CommandError`, so existing error
 handling catches it unchanged. A fact that deliberately tolerates an absent
 tool guards its command in the shell itself (`Which`'s `command -v … || true`,
 `Last`'s fallback chain), masking the 127 before it reaches the transport.
-Because [`gather_fact`][reemote5.drivers.gather_fact] reads hosts concurrently,
+Because [`gather_fact`][reemote.drivers.gather_fact] reads hosts concurrently,
 it merges the per-host errors into one aggregate naming *every* host missing
 the command — the same treatment `run_prepare` gives `HostConnectionError` —
 so a whole fleet without `lsb_release` is reported in a single message.
@@ -243,11 +243,11 @@ so a whole fleet without `lsb_release` is reported in a single message.
 A failure doas, sudo or su reports as its *own* authorization/authentication
 rejection — a wrong password, a missing one where it is demanded, a denied doas
 rule, or a run-as user the login user may not become — raises
-[`PrivilegeError`][reemote5.hosts.PrivilegeError] instead: the privilege
-counterpart of [`HostConnectionError`][reemote5.hosts.HostConnectionError],
+[`PrivilegeError`][reemote.hosts.PrivilegeError] instead: the privilege
+counterpart of [`HostConnectionError`][reemote.hosts.HostConnectionError],
 reported the same way.
 
-reemote5 invokes `sudo -A` exactly once, but sudo re-runs the askpass helper up
+reemote invokes `sudo -A` exactly once, but sudo re-runs the askpass helper up
 to its own `passwd_tries` limit (3 by default), so one bad password costs three
 identical attempts and three `Sorry, try again.` lines before sudo gives up with
 `sudo: 3 incorrect password attempts`. (`su` does not retry — it fails at once, and `doas -n` never prompts at all.)
@@ -259,7 +259,7 @@ neither the retry noise nor the password reaches the report. The detail is prese
 discarded: `failures` carries `(host_name, command, cause)` triples, where the
 command is the credential-free rendering and the cause is the `CommandError`
 holding the exit status and captured stderr (also chained as `__cause__`).
-[`run_apply`][reemote5.drivers.run_apply] merges the per-host failures of a
+[`run_apply`][reemote.drivers.run_apply] merges the per-host failures of a
 concurrent lockstep step into one aggregate via `PrivilegeError.aggregate`, so
 every host whose credentials were rejected is reported at once.
 
@@ -271,24 +271,24 @@ the command's own exit status must travel back as *data*, so the caller decides
 what a bespoke command's failure means. Two raw-result seams provide that
 without re-interpreting the outcome:
 
-- [`run_shell_result`][reemote5.hosts.Host.run_shell_result] — the unprivileged
+- [`run_shell_result`][reemote.hosts.Host.run_shell_result] — the unprivileged
   counterpart of `run_shell`: it opens the connection lazily, sends the command
   verbatim and returns the transport's completion record untouched.
-- [`run_shell_privileged_result`][reemote5.hosts.Host.run_shell_privileged_result]
+- [`run_shell_privileged_result`][reemote.hosts.Host.run_shell_privileged_result]
   — the raw-result variant of
-  [`run_shell_privileged`][reemote5.hosts.Host.run_shell_privileged]. The
+  [`run_shell_privileged`][reemote.hosts.Host.run_shell_privileged]. The
   escalation is built identically (the shared `_build_privileged_command`
   produces the execution string and the credential-free rendering), but the
   command's own exit travels back instead of raising `CommandError`. The one
   exception is doas's, sudo's or su's *own* authentication rejection, which still
-  raises [`PrivilegeError`][reemote5.hosts.PrivilegeError]: a rejected credential
+  raises [`PrivilegeError`][reemote.hosts.PrivilegeError]: a rejected credential
   is a library-level failure, never a mere exit status.
 
-[`Shell.process`][reemote5.actions.Shell] rides these seams and copies
-the record into a library-owned [`Result`][reemote5.actions.Result], so no
+[`Shell.process`][reemote.actions.Shell] rides these seams and copies
+the record into a library-owned [`Result`][reemote.actions.Result], so no
 asyncssh type reaches the public API.
 
-::: reemote5.hosts
+::: reemote.hosts
     options:
       members:
         - CommandError

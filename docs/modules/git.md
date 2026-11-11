@@ -1,6 +1,6 @@
 # git module
 
-::: reemote5.modules.git.git
+::: reemote.modules.git.git
     options:
       show_root_heading: false
       members:
@@ -29,7 +29,7 @@
 
 <!---
 
-`reemote5.modules.git.git` holds the git facts — `GitBranch`, the branch a
+`reemote.modules.git.git` holds the git facts — `GitBranch`, the branch a
 repository is on, read from `git describe --all`, `GitConfig`, the
 configuration items of a repository's local config or of the login user's
 global/system config, as `GitConfigItem` entries, read from `git config -l`,
@@ -69,7 +69,7 @@ tree — creating it from a repository, pulling it, or removing it.
 A fact is an asynchronous, queryable resource — never yielded by a generator —
 implemented as a `process` coroutine returning the raw value (over asyncssh in
 the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get], which is itself a coroutine,
+[`FactCache.get`][reemote.core.FactCache.get], which is itself a coroutine,
 so results are awaited and cached within a phase step. `GitBranch` takes the
 repository path: it runs
 `! test -d <repo> || (cd <repo> && git describe --all)` and strips the
@@ -77,7 +77,7 @@ repository path: it runs
 so a checkout of `develop` reads as `"develop"`. A missing repository
 directory short-circuits the guard to no output, which reads as `""`. With
 the directory present, a missing `git` exits 127 — reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError] (the baseline's
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError] (the baseline's
 `requires_command` gating is deliberately dropped).
 
 `GitConfig` takes an optional repository path and a `system` flag: without a
@@ -90,12 +90,12 @@ entry per key, in first-appearance order, where a multi-valued key
 (`safe.directory`) keeps every value in its `values` list, for example
 `[{"key": "user.email", "values": ["nick@gmail.com"]}]`. Rows without an
 `=` are skipped
-(the baseline would raise `ValueError` on them; reemote5 hardens the parser).
+(the baseline would raise `ValueError` on them; reemote hardens the parser).
 The `|| true` guard maps a missing git or config file to `[]` (the baseline's
 `default = dict`, projected onto entries), as does a missing repository
 directory.
 
-`GitHeadDetached` takes the repository path: it runs a reemote5-original
+`GitHeadDetached` takes the repository path: it runs a reemote-original
 probe with no baseline equivalent,
 `! test -d <repo> || (cd <repo> && if git symbolic-ref -q HEAD >/dev/null 2>&1; then echo attached; elif git rev-parse --git-dir >/dev/null 2>&1; then echo detached; fi)`.
 `git symbolic-ref -q HEAD` succeeds only when HEAD names a branch, so an
@@ -107,7 +107,7 @@ undetermined one rather than guessing.
 
 `GitIsRepo` takes the repository path: it runs
 `! test -d <repo> || (cd <repo> && git rev-parse --is-inside-work-tree 2>/dev/null)`,
-a reemote5-original fact, and answers `True` only when git prints `true`. It
+a reemote-original fact, and answers `True` only when git prints `true`. It
 validates a work tree precisely rather than trusting the existence of a
 `.git` directory, which a corrupt or half-cloned repository also has. A bare
 repository prints `false`; a missing directory or a non-repo prints nothing
@@ -133,7 +133,7 @@ reads as `None`.
 `GitRemoteUrl` takes the repository path, a `remote` (default `origin`) and a
 `push` flag: it runs
 `! test -d <repo> || (cd <repo> && git remote get-url [--push] <remote> 2>/dev/null)`,
-a reemote5-original fact, and keeps the first non-blank line. An operation
+a reemote-original fact, and keeps the first non-blank line. An operation
 can confirm a clone still points at the expected URL — detecting a migration
 — instead of pulling blindly; `push=True` reads the push URL, which may
 differ from the fetch one. An unknown remote or a missing repository prints
@@ -148,11 +148,11 @@ deployment verify connectivity before a clone or pull would fail on
 authentication. Only ssh's exit 255 (a connection or auth failure) counts as
 unauthenticated — a successful `ssh -T git@<host>` handshake exits non-zero
 by design — while a missing `ssh` exits 127 and surfaces as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError].
 
 `GitStatus` takes the repository path: it runs
 `! test -d <repo> || (cd <repo> && git status --porcelain)`, a
-reemote5-original fact, and classifies each row into a `GitStatusSummary` —
+reemote-original fact, and classifies each row into a `GitStatusSummary` —
 a `dirty` flag plus the `staged`, `unstaged` and `untracked` path lists —
 from the two-column porcelain status prefix, where `??` marks an untracked
 path. It gives an operation the working-tree state it needs to refuse a pull
@@ -160,7 +160,7 @@ or checkout that would clobber local changes. A missing repository directory
 reads as a clean, empty summary.
 
 `GitSubmodule` takes the repository path: it runs
-`! test -d <repo> || (cd <repo> && git submodule status)`, a reemote5-original
+`! test -d <repo> || (cd <repo> && git submodule status)`, a reemote-original
 fact, and returns one `GitSubmoduleStatus` entry per line — the `path`, the
 recorded `sha`, the optional `describe` and a `state` mapped from the leading
 status character (a space for synced, `-` uninitialized, `+` modified, `U`
@@ -187,7 +187,7 @@ reaches the match.
 ## Operations
 
 An operation is an async generator: it reads facts through
-[`FactCache.get`][reemote5.core.FactCache.get], decides whether a change is
+[`FactCache.get`][reemote.core.FactCache.get], decides whether a change is
 needed, records `ctx.changed`/`ctx.reason`, and yields one typed command
 descriptor per mutation — never touching the host itself. Reach operations
 through the namespace (`git.config`), not the top-level package.
@@ -289,7 +289,7 @@ yields (`GitWorktreeAddCommand`, `GitWorktreeRemoveCommand` and
 the baseline's raw `QuoteString` interpolation — and a tracking-driven pull renders
 a bare `git pull`, naming the remote and branch only for the explicit
 `from_remote_branch` form. The baseline's `user`/`group` options and the up-to-four
-`chown` commands they emit are deliberately dropped: reemote5 has no `chown`
+`chown` commands they emit are deliberately dropped: reemote has no `chown`
 primitive and routes ownership through the inventory `privilege` plus the
 `sudo`/`su` meta-parameters.
 
@@ -305,25 +305,25 @@ The read-only fact-gathering scripts `git_git_branch.py`,
 `GitConfig`, `GitHeadDetached`, `GitIsRepo`, `GitLocalCommit`,
 `GitRemoteBranchCommit`, `GitRemoteUrl`, `GitSshKeyConfigured`, `GitStatus`,
 `GitSubmodule`, `GitTag` and `GitTrackingBranch` respectively across an
-inventory with [`gather_fact`][reemote5.drivers.gather_fact] and print each
+inventory with [`gather_fact`][reemote.drivers.gather_fact] and print each
 host's result as JSON.
 
 The `git_config.py` operation script under
 [`examples/modules/git/`](../examples/modules/git.md) drives `git.config`
-through the two-phase [`run`][reemote5.drivers.run] — a dry-run plan then a
+through the two-phase [`run`][reemote.drivers.run] — a dry-run plan then a
 real apply — over an inventory, yielding the same request twice so the second
 is a guaranteed apply-phase no-op.
 
 The `git_repo.py` operation script under
 [`examples/modules/git/`](../examples/modules/git.md) drives `git.repo`
-through the same two-phase [`run`][reemote5.drivers.run], cloning a
+through the same two-phase [`run`][reemote.drivers.run], cloning a
 repository into a fresh directory and yielding the request twice so the
 second pass sees `dest/.git` present, `origin` reconciled and the branch
 already checked out, and is a guaranteed apply-phase no-op.
 
 The `git_worktree.py` operation script under
 [`examples/modules/git/`](../examples/modules/git.md) drives `git.worktree`
-through the same two-phase [`run`][reemote5.drivers.run], ensuring a linked
+through the same two-phase [`run`][reemote.drivers.run], ensuring a linked
 working tree checked out on a new branch from a repository and yielding the
 request twice so the second, seeing the tree already present, is a guaranteed
 apply-phase no-op.

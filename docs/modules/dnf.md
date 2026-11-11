@@ -1,6 +1,6 @@
 # dnf module
 
-::: reemote5.modules.dnf.dnf
+::: reemote.modules.dnf.dnf
     options:
       show_root_heading: false
       members:
@@ -34,12 +34,12 @@
 
 <!---
 
-`reemote5.modules.dnf.dnf` combines the dnf facts and the dnf operations in a
+`reemote.modules.dnf.dnf` combines the dnf facts and the dnf operations in a
 single source, so the read side (`DnfPackages` and friends) sits beside the
 `dnf.packages`, `dnf.repo`, `dnf.rpm` and `dnf.module` operations that consume
 it, plus the non-idempotent `dnf.update`, which reads no fact and runs
 `dnf update -y` over every package. `dnf.makecache` and `dnf.clean` are
-reemote5 originals (the baseline has neither): equally stateless metadata
+reemote originals (the baseline has neither): equally stateless metadata
 refresh and cache removal, optionally scoped to named repos with
 `--disablerepo='*' --enablerepo=<id>` — the ansible-datadog role's scoped
 `makecache`/`clean metadata` steps, which `dnf.packages(update=True)` (a
@@ -59,7 +59,7 @@ matching `gpg-pubkey` pseudo-packages with an elevated `rpm -e`.
 A fact is an asynchronous, queryable resource — never yielded by a generator —
 implemented as a `process` coroutine returning the raw value (over asyncssh in
 the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get], which is itself a coroutine,
+[`FactCache.get`][reemote.core.FactCache.get], which is itself a coroutine,
 so results are awaited and cached within a phase step. Every fact returns a
 TypedDict or a list of TypedDicts: the enumerating facts return sorted,
 de-duplicated entry lists (`DnfPackages` → `DnfPackageInfo`, the three module

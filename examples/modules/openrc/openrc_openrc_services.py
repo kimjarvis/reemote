@@ -35,7 +35,7 @@ inventory comes from the shared ``inventory.json`` in the project root:
    mapping -- then print each host's name -> state-word mapping with
    ``json.dumps(..., indent=2)``.
 
-``OpenrcServices`` is a reemote5 original and the lossless sibling of the
+``OpenrcServices`` is a reemote original and the lossless sibling of the
 ported ``OpenrcStatus``: it runs the same ``rc-status <runlevel>`` shell,
 but keeps each row's bracketed state word *verbatim* -- ``started``,
 ``stopped``, ``crashed``, ``starting``, ``stopping``, ``inactive`` --
@@ -72,7 +72,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

@@ -4,7 +4,7 @@
 """Install a ``.rpm`` file already on the host, with version idempotence.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -34,7 +34,7 @@ joke, the kind of small standalone ``.rpm`` one commonly downloads from a
 mirror and installs by hand. The ``src`` is therefore a **remote** path, not a
 controller-side one: upload the file first with ``files.put`` (or place it
 there by any other means). Unlike the baseline -- whose ``dnf.rpm`` can also
-*download* a remote ``.rpm`` mid-deploy -- reemote5 has no download operation,
+*download* a remote ``.rpm`` mid-deploy -- reemote has no download operation,
 so a ``src`` with a URL scheme raises ``ValueError``. This example stages the
 file with a demo-side ``curl`` one-liner (a raw ``StringCommand``, the same
 pattern as ``server_op_sysctl.py``'s ``sysctl_set`` and ``apt_deb.py``'s
@@ -60,7 +60,7 @@ use to avoid sweep-ordering pollution).
 
 Installing a package writes to the root-owned rpm database, so the request is
 flagged ``sudo=True`` and the driver elevates its ``rpm -i`` command. Because
-reemote5 re-materializes the operation at apply time against a fresh fact
+reemote re-materializes the operation at apply time against a fresh fact
 cache, the command is a plain ``rpm -i`` -- not the baseline's defensive
 ``rpm -q \\`rpm -qp <src>\\` ... || rpm -i <src>`` runtime check -- which also
 keeps elevation correct (a ``sudo``-prefixed ``|| ...`` chain would leave its
@@ -91,7 +91,7 @@ from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     Command,
     CommandError,
     Host,
@@ -110,7 +110,7 @@ from reemote5 import (
 )
 
 # The ``.rpm`` file to install, as a path on the *target host*, and the URL
-# the demo-side download step stages it from. reemote5 has no download
+# the demo-side download step stages it from. reemote has no download
 # operation, so the example curls the file onto the host itself before
 # ``dnf.rpm`` reads it. SL_RPM is shared by the install and removal requests
 # below so they carry identical operation kwargs (only the log ``name`` and
@@ -158,7 +158,7 @@ def is_centos(host: Host) -> bool:
 async def download_rpm(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
     """Stage the ``sl`` ``.rpm`` on the host (demo-side download step).
 
-    reemote5 ships no download operation and ``dnf.rpm`` takes a *remote*
+    reemote ships no download operation and ``dnf.rpm`` takes a *remote*
     path, so the file must already exist on the target host. This example
     stages it with a stateless one-liner over the public raw ``StringCommand``
     descriptor -- the same demo-side pattern as ``server_op_sysctl.py``'s
@@ -183,7 +183,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     and identical on every host: eligibility is expressed with the
     ``when=is_centos`` guard each request carries, not with an ``if``.
     The first request stages the file on the host with a demo-side ``curl``
-    (reemote5 has no download operation, and ``dnf.rpm`` takes a remote path);
+    (reemote has no download operation, and ``dnf.rpm`` takes a remote path);
     it is unprivileged, since writing ``/tmp`` and running ``curl`` need no
     root. The next two requests install the file's package: the first
     installs, the second carries the same arguments and is a guaranteed no-op

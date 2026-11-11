@@ -28,11 +28,11 @@ dnf re-fetches the metadata on next use; pair this with ``dnf.makecache``
 ``dnf.clean`` is **non-idempotent** like ``dnf.update``: it reads no fact,
 always reports a change and always runs -- the command is itself cheap
 when the cache is already empty. The Ansible role gates the clean on the
-repo task's ``changed`` flag; reemote5 cannot gate on a same-deploy write
+repo task's ``changed`` flag; reemote cannot gate on a same-deploy write
 (a ``when`` predicate must reach the same decision in both phases, and the
 repo-file fact flips between prepare and apply), so the clean is
 unconditional and sits right after the ``dnf.repo`` request in the same
-deploy. The role also marks its step ``failed_when: false``; reemote5
+deploy. The role also marks its step ``failed_when: false``; reemote
 keeps its fail-fast convention -- a failing clean raises ``CommandError``
 at apply, which ``main`` reports without a traceback.
 
@@ -56,7 +56,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

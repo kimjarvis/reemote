@@ -29,7 +29,7 @@ driving the two-phase execution model:
    path and remote name arguments verbatim, and returns a host-name-keyed
    mapping -- then print each host's remote URL.
 
-``GitRemoteUrl`` is a reemote5-original fact -- the baseline has no equivalent.
+``GitRemoteUrl`` is a reemote-original fact -- the baseline has no equivalent.
 It runs ``! test -d <repo> || (cd <repo> && git remote get-url [--push]
 <remote> 2>/dev/null)`` and keeps the first non-blank line, so a deployment
 can confirm a clone still points at the expected URL -- detecting a
@@ -56,7 +56,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     GitRemoteUrl,
     Host,
@@ -69,7 +69,7 @@ from reemote5 import (
 # The repository and remote to inspect on each host: the command guards on
 # the directory and swallows get-url failures, so a host without the repo or
 # the remote answers None rather than raising.
-REPO = "/tmp/reemote5-app"
+REPO = "/tmp/reemote-app"
 REMOTE = "origin"
 
 # examples/modules/git/git_git_remote_url.py -> the project root, so the inventory

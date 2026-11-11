@@ -4,7 +4,7 @@
 """Hold packages back from upgrades, then release the holds.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -30,7 +30,7 @@ your machines.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``apk.hold`` is the apk counterpart of ``apt.mark`` and a reemote5 original --
+``apk.hold`` is the apk counterpart of ``apt.mark`` and a reemote original --
 the baseline ships no apk hold. apk has no ``apt-mark`` verb: it keeps a package
 out of upgrades by writing a version *constraint* into ``/etc/apk/world``, so
 ``present=True`` re-adds each name with ``apk add <pkg>=<version>`` to pin it,
@@ -70,7 +70,7 @@ so every request is flagged ``doas=True`` and the driver elevates its
 command. ``doas`` rather than ``sudo`` because the Alpine host has no
 ``sudo`` installed at all -- ``sudo apk add`` would die with
 ``sh: sudo: not found`` (exit 127) before reaching ``apk``. ``doas`` is
-passwordless here: reemote5 always runs ``doas -n``, which fails rather than
+passwordless here: reemote always runs ``doas -n``, which fails rather than
 prompts, so the host must grant the login user a ``permit nopass`` rule in
 ``/etc/doas.conf`` (see
 ``examples/demonstrations/privilege/privilege_doas.py``); without one the
@@ -105,7 +105,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

@@ -30,16 +30,16 @@ from pathlib import Path
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, OperationRequest, op
+from reemote.drivers import (
     DeterminismError,
     format_log,
     format_plan,
     run,
 )
-from reemote5.hosts import Host
-from reemote5.modules import files
-from reemote5.modules.files.files import PutCommand, read_source_bytes
+from reemote.hosts import Host
+from reemote.modules import files
+from reemote.modules.files.files import PutCommand, read_source_bytes
 from tests.simulated_host import SimulatedHost
 
 # Import the example module by path: the factory under test lives in
@@ -64,10 +64,10 @@ INVENTORY = [
     },
 ]
 
-REMOTE_PATH = "/tmp/reemote5-block.txt"
+REMOTE_PATH = "/tmp/reemote-block.txt"
 
-BEGIN = "# BEGIN REEMOTE5 BLOCK"
-END = "# END REEMOTE5 BLOCK"
+BEGIN = "# BEGIN REEMOTE BLOCK"
+END = "# END REEMOTE BLOCK"
 
 
 def block_text(*lines: str) -> str:

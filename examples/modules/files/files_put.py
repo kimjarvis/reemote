@@ -3,13 +3,13 @@
 
 """Example: upload an in-memory stream to two real hosts with files.put.
 
-This is a *usage* example, not part of the library. It shows reemote5's
+This is a *usage* example, not part of the library. It shows reemote's
 first **non-shell** operation: ``files.put`` does not run a command string,
 it copies content from the control machine over each host's asyncssh
 connection using the scp protocol.
 
 The source is an **IO-like object only** -- the baseline's ``files.put`` accepts
-``str | IO[Any]``, but reemote5 deliberately supports just the stream form:
+``str | IO[Any]``, but reemote deliberately supports just the stream form:
 here a module-level ``io.BytesIO``. Two rules follow from that. The stream
 must be *seekable*: it is rewound to position 0 before every read, so the
 prepare-phase hash, the apply-phase hash and the copy itself all see the
@@ -69,7 +69,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -87,11 +87,11 @@ from reemote5 import (
 # The IO-like source, created once on the control machine: the same object
 # is passed to every put in every phase, so the prepare and apply request
 # sequences compare equal (OperationRequest compares it by identity).
-LOCAL_SRC = io.BytesIO(b"hello from the reemote5 files.put example\n")
+LOCAL_SRC = io.BytesIO(b"hello from the reemote files.put example\n")
 
 # The remote destination: a /tmp path, writable by whatever account the
 # inventory logs in as, so the unprivileged scp transfer can create it.
-REMOTE_DEST = "/tmp/reemote5-put.txt"
+REMOTE_DEST = "/tmp/reemote-put.txt"
 
 # examples/modules/files/files_put.py -> the project root, so the inventory
 # is found whatever the current working directory is.

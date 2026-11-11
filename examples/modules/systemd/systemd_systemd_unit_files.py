@@ -16,7 +16,7 @@ two-phase execution model:
 3. Gather ``SystemdUnitFiles`` on every remaining host at once with
    ``gather_fact``, then print each host's unit-file map with ``json.dumps``.
 
-``SystemdUnitFiles`` is a reemote5 original: it runs
+``SystemdUnitFiles`` is a reemote original: it runs
 ``systemctl list-unit-files --no-legend --no-pager`` and maps each unit file to
 a ``SystemdUnitFile`` entry (``{state, preset}``). Unlike ``SystemdEnabled``
 (which collapses to a bool) it keeps the raw boot-time state, so ``masked``,
@@ -40,7 +40,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

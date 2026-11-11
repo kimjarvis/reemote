@@ -3,9 +3,9 @@
 
 """Tests for the flatpak module: its facts, the operation and the transport paths.
 
-Covers ``reemote5.modules.flatpak.flatpak.FlatpakPackage`` -- one installed
+Covers ``reemote.modules.flatpak.flatpak.FlatpakPackage`` -- one installed
 flatpak package's identity parsed from the indented ``flatpak info`` label
-rows -- and ``reemote5.modules.flatpak.flatpak.FlatpakPackages``, the bare
+rows -- and ``reemote.modules.flatpak.flatpak.FlatpakPackages``, the bare
 ``flatpak list --columns=application`` IDs of every installed flatpak. Each
 check runs both over the real-transport path (a ``CannedShellHost`` returning
 the baseline's own ``flatpak.FlatpakPackage`` / ``flatpak.FlatpakPackages`` fixture
@@ -28,8 +28,8 @@ and a dry run).
 
 import shlex
 
-from reemote5.core import FactCache, OpContext, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, op
+from reemote.drivers import (
     command_shell,
     format_log,
     gather_fact,
@@ -38,9 +38,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import flatpak
-from reemote5.modules.flatpak.flatpak import (
+from reemote.hosts import Host
+from reemote.modules import flatpak
+from reemote.modules.flatpak.flatpak import (
     FlatpakInstallCommand,
     FlatpakPackage,
     FlatpakPackageInfo,
@@ -116,7 +116,7 @@ Installation: system
      Subject: Update VLC to 3.0.21 and some deps (c6a6bb62)
         Date: 2024-06-09 13:21:31 +0000"""
 
-# The baseline's documented ``fact`` for the vlc fixture, in reemote5's entry shape.
+# The baseline's documented ``fact`` for the vlc fixture, in reemote's entry shape.
 VLC_FACT: FlatpakPackageInfo = {
     "id": "org.videolan.VLC",
     "ref": "app/org.videolan.VLC/x86_64/stable",

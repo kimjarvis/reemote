@@ -3,7 +3,7 @@
 
 """Example: manage an /etc/hosts entry with server.etc_hosts.
 
-This is a *usage* example, not part of the library. It shows reemote5's
+This is a *usage* example, not part of the library. It shows reemote's
 ``server.etc_hosts`` operation, baseline ``server.etc_hosts`` parity:
 the deploy ensures the line keyed by an IP address holds exactly the
 requested hostnames, rewriting it in place when the names differ and
@@ -25,8 +25,8 @@ are dropped, baseline parity).
 
 The write is a spool-and-install pair: the transformed text rides an
 unprivileged scp to a ``/tmp`` spool whose name is derived from the managed
-path, then an ``sh -c 'mkdir -p ... && cp ... && chmod 0644 ... && rm -f ...'``
-install overlays the hosts file and removes the spool. The scp half stays
+path, then an ``sh -c 'mkdir -p ... && cp ... && chmod 0644 ... && rm -rf ...'``
+install overlays the hosts file and removes the spool directory. The scp half stays
 unprivileged even under ``sudo=True`` -- transfers never elevate -- so the
 log shows two privilege levels in one request: a ``$ scp <hosts file> -> ...``
 line followed by a ``$ sudo sh -c '...'`` line. ``/etc/hosts`` is root-owned,
@@ -80,7 +80,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

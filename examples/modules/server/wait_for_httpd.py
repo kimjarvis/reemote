@@ -3,7 +3,7 @@
 
 """Example: start httpd on real CentOS hosts, then wait until systemd reports it active.
 
-This is a *usage* example, not part of the library. It shows reemote5's
+This is a *usage* example, not part of the library. It shows reemote's
 second kind of **non-shell** operation: ``server.wait_service`` does not run
 a command string, it yields a ``WaitForFactCommand`` that the driver *polls*
 -- re-reading the ``SystemdServiceState`` fact over each host's asyncssh
@@ -71,7 +71,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

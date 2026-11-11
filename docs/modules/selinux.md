@@ -1,6 +1,6 @@
 # selinux module
 
-::: reemote5.modules.selinux.selinux
+::: reemote.modules.selinux.selinux
     options:
       show_root_heading: false
       members:
@@ -37,13 +37,13 @@
 
 <!---
 
-`reemote5.modules.selinux.selinux` combines the SELinux facts and the SELinux
+`reemote.modules.selinux.selinux` combines the SELinux facts and the SELinux
 operations in a single source, covering the core toolchain of
 `getenforce`/`setenforce`, `semanage` (fcontext/login/user/port/permissive),
 `semodule` and `restorecon` for complete control over and visibility of
 SELinux on RHEL-family hosts. Five facts port the baseline's baseline
 (`SEBoolean`, `FileContext`, `FileContextMapping`, `SEPorts`, `SEPort`) and
-seven are reemote5 originals filling the gaps the baseline leaves (`Mode`,
+seven are reemote originals filling the gaps the baseline leaves (`Mode`,
 `Booleans`, `SELogin`, `SEUser`, `Modules`, `PermissiveDomains`,
 `SelinuxConfigFile`); four
 operations port the baseline's baseline (`boolean`, `file_context`,
@@ -63,7 +63,7 @@ the `Shell` action.
 A fact is an asynchronous, queryable resource — never yielded by a
 generator — implemented as a `process` coroutine returning the raw value
 (over asyncssh in the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get], which is itself a
+[`FactCache.get`][reemote.core.FactCache.get], which is itself a
 coroutine, so results are awaited and cached within a phase step.
 
 `SEBoolean` takes a boolean name and runs `getsebool <name>`, keeping the
@@ -83,12 +83,12 @@ for the single matching row's trailing context, returning the same
 label a file carries now. Deliberate deviation from the baseline: no mapping
 reads `None` rather than `{}`, the house None-on-absent convention. A
 missing `semanage` exits 127, reported as
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError].
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError].
 
 `SEPorts` runs `semanage port -ln` and keeps a protocol → port → type map,
 expanding ranges (`9000-9010`) to individual ports and skipping the
 `unreserved_port_t` catch-all (baseline parity); the two optional filter
-arguments are the reemote5 enhancement — `protocol` keeps one protocol's
+arguments are the reemote enhancement — `protocol` keeps one protocol's
 table, `se_type` keeps only ports carrying one type label, so a port audit
 is one filtered read. `SEPort` takes a protocol and port and runs
 `(sepolicy network -p <port> 2>/dev/null || true) | grep <protocol>`,

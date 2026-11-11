@@ -3,7 +3,7 @@
 
 """Example: a health-check style deploy combining dnf, files.put and files.get.
 
-This is a *usage* example, not part of the library. It is the reemote5 take on
+This is a *usage* example, not part of the library. It is the reemote take on
 a relatable the baseline scenario -- a simple web-server health-check / log-rotation
 deploy -- in one flat generator that crosses module boundaries:
 
@@ -20,7 +20,7 @@ deploy -- in one flat generator that crosses module boundaries:
    into an in-memory stream the script prints afterwards.
 
 Where the baseline original works with local *paths* (``src="files/motd"``,
-``dest="local_os_release.txt"``, ``add_deploy_dir=True``), reemote5's transfer
+``dest="local_os_release.txt"``, ``add_deploy_dir=True``), reemote's transfer
 operations take **IO-like objects only**: the put source is a module-level
 ``io.StringIO`` (no local ``files/`` directory needed) and the get destination
 is a per-host ``io.BytesIO`` sink. ``files.put`` also has no ``mode`` option;
@@ -78,7 +78,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -98,7 +98,7 @@ from reemote5 import (
 # path. The same object is passed to put in every phase, so the prepare and
 # apply request sequences compare equal (OperationRequest compares it by
 # identity), and it is rewound to position 0 before every read.
-MOTD_SRC = io.StringIO("Managed by reemote5 -- report problems to the ops team.\n")
+MOTD_SRC = io.StringIO("Managed by reemote -- report problems to the ops team.\n")
 
 # The remote destination for the motd: under /tmp, so the unprivileged scp
 # transfer can write it as the login user.

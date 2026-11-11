@@ -4,7 +4,7 @@
 """Ensure an apk repository line with ``apk.repository``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -30,7 +30,7 @@ your machines.
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
 
-``apk.repository`` is a reemote5 original modeled on ``apt.repo`` --
+``apk.repository`` is a reemote original modeled on ``apt.repo`` --
 the baseline's ``apk`` namespace ships no repository operation, so the
 ``ApkRepositories`` fact had no write counterpart. It ensures one line in
 ``/etc/apk/repositories``: the ``ApkRepositories`` fact is read first,
@@ -89,7 +89,7 @@ transfer never elevates, however the request is flagged), and the
 chain inside ``sh -c`` so every step, the spool cleanup included, runs
 elevated. That asymmetry is exactly why the new text detours through
 world-writable ``/tmp`` instead of being pushed straight into the
-root-owned ``/etc/apk``. ``doas`` is passwordless here: reemote5 always runs
+root-owned ``/etc/apk``. ``doas`` is passwordless here: reemote always runs
 ``doas -n``, which fails rather than prompts, so the host must grant the
 login user a ``permit nopass`` rule in ``/etc/doas.conf`` (see
 ``examples/demonstrations/privilege/privilege_doas.py``); without one the
@@ -123,7 +123,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

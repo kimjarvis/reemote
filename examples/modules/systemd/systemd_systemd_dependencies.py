@@ -17,7 +17,7 @@ two-phase execution model:
    with ``gather_fact`` (the unit name is forwarded as a positional argument),
    then print each host's dependency map with ``json.dumps``.
 
-``SystemdDependencies`` is a reemote5 original: it runs
+``SystemdDependencies`` is a reemote original: it runs
 ``systemctl show <unit> --property=Requires,Wants,After,Before,Conflicts`` and
 maps each of the five dependency properties to its list of unit names (an
 empty value yields ``[]``). It answers "what does this unit pull in, and what
@@ -40,7 +40,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

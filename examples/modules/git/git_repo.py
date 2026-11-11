@@ -4,7 +4,7 @@
 """Example: clone a git repository on real CentOS hosts.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -24,7 +24,7 @@ facts and runs commands for real, and ``run`` closes those connections when
 it finishes.
 
 ``git.repo`` mirrors the baseline's ``git.repo``: it clones a fresh repository or
-reconciles an existing one. This script ensures a ``/tmp/reemote5-deploy``
+reconciles an existing one. This script ensures a ``/tmp/reemote-deploy``
 repository cloned from the public
 ``https://github.com/octocat/Hello-World.git`` demo repository on the
 ``master`` branch -- a real, anonymously cloneable HTTPS source, so no
@@ -57,7 +57,7 @@ request ``sudo=True`` when the login user cannot write there -- the run-as
 user and its password come from the inventory ``privilege``, never the
 operation. The baseline's ``user``/``group`` options, its ``ssh_keyscan``
 preflight and its leading ``files.directory`` ensure-directory step are
-deliberately dropped: reemote5 has no ``chown`` primitive or ``ssh``
+deliberately dropped: reemote has no ``chown`` primitive or ``ssh``
 namespace, and there is no ``files.directory`` operation to reach across
 namespaces, so the clone names ``dest`` itself instead of cloning into ``.``
 from inside a pre-created directory.
@@ -89,7 +89,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -168,7 +168,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         git.repo,
         name="Clone the deploy repository",
         src="https://github.com/octocat/Hello-World.git",
-        dest="/tmp/reemote5-deploy",
+        dest="/tmp/reemote-deploy",
         branch="master",
         pull=False,
         when=is_centos,
@@ -177,7 +177,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         git.repo,
         name="Clone the deploy repository",
         src="https://github.com/octocat/Hello-World.git",
-        dest="/tmp/reemote5-deploy",
+        dest="/tmp/reemote-deploy",
         branch="master",
         pull=False,
         when=is_centos,

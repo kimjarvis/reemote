@@ -71,7 +71,7 @@ from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     FindFiles,
     Host,
@@ -104,7 +104,7 @@ TRACKED_CHECKS = ("cpu", "memory", "network")
 # demonstrate the convergence; a real deploy renders its check config.
 CHECK_CONF = {
     check: (
-        f"# Managed by reemote5 -- the {check} check, conf.d cleanup example.\n"
+        f"# Managed by reemote -- the {check} check, conf.d cleanup example.\n"
         "init_config:\n"
         "\n"
         "instances:\n"

@@ -26,9 +26,9 @@ where they would fail with `CommandNotFoundError`.
 
 The service operation: `openrc.service` manages one service along two
 independent axes — `running` compares the
-[`OpenrcStatus`][reemote5.modules.openrc.openrc.OpenrcStatus] fact and
+[`OpenrcStatus`][reemote.modules.openrc.openrc.OpenrcStatus] fact and
 starts/stops with `rc-service`, `enabled` compares the
-[`OpenrcEnabled`][reemote5.modules.openrc.openrc.OpenrcEnabled] fact and
+[`OpenrcEnabled`][reemote.modules.openrc.openrc.OpenrcEnabled] fact and
 assigns/unassigns the runlevel with `rc-update` — so one request can
 converge runtime *and* boot state. The script targets `crond` (which every
 stock Alpine install ships) and yields the same start-and-enable request
@@ -65,7 +65,7 @@ the run manages crond on the Alpine host and skips every other one.
 
 ## Assigning a service to a runlevel
 
-The runlevel operation: `openrc.runlevel` is a reemote5 original with no
+The runlevel operation: `openrc.runlevel` is a reemote original with no
 the baseline counterpart — the baseline folds the boot assignment into
 `openrc.service`'s `enabled` option, so managing an assignment *without*
 touching the runtime state needs the whole service operation with
@@ -95,7 +95,7 @@ runlevel *directories themselves* under `/etc/runlevels`, where
 `openrc.runlevel` only manages membership in an existing runlevel. A
 runlevel is a directory of service symlinks — rc-update(8) ships no verb
 that creates one — so `present=True` yields `mkdir -p` when the
-[`OpenrcRunlevels`][reemote5.modules.openrc.openrc.OpenrcRunlevels] fact
+[`OpenrcRunlevels`][reemote.modules.openrc.openrc.OpenrcRunlevels] fact
 does not list it, and `stacked_to="default"` yields `rc-update -s add` so
 entering `default` also enters the custom runlevel. Removal unstacks
 first (one `rc-update -s del` per target whose list names the runlevel,
@@ -118,12 +118,12 @@ carry `when=is_alpine`, like the other openrc operation examples.
 
 ## Managing rc.conf
 
-The config operation: `openrc.config` is a reemote5 original with no
+The config operation: `openrc.config` is a reemote original with no
 the baseline counterpart (the baseline's `openrc` ships only `service`), managing
 one shell-variable assignment in `/etc/rc.conf` — or a service's
 `/etc/conf.d/<service>` with the `service` option. It belongs to the
 spool-and-install write family: the
-[`OpenrcConfigFile`][reemote5.modules.openrc.openrc.OpenrcConfigFile]
+[`OpenrcConfigFile`][reemote.modules.openrc.openrc.OpenrcConfigFile]
 fact supplies the file's verbatim text, a pure transform drops every
 existing assignment of the key (commented ones included) and appends the
 double-quoted `key="value"` line, and when the result differs from the
@@ -154,8 +154,8 @@ on the systemd hosts the inventory also holds.
 
 No combined `openrc.ensure` operation exists either: the two halves
 already compose in a deploy —
-[`apk.packages`][reemote5.modules.apk.apk.packages] installs the package,
-[`openrc.service`][reemote5.modules.openrc.openrc.service] enables and
+[`apk.packages`][reemote.modules.apk.apk.packages] installs the package,
+[`openrc.service`][reemote.modules.openrc.openrc.service] enables and
 starts the service it ships — and the driver's lockstep execution gives
 the composition its ordering guarantee: every host finishes the install
 step before any host begins the service step, so the service request

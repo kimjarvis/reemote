@@ -36,7 +36,7 @@ returns a ``PortInfo`` record -- ``listening``, ``process`` and ``pid``.
 ``listening`` is decided by any socket row that survives the filter, while
 the owner pair is best-effort: an unprivileged read sees the socket but not
 the process behind it, so ``process``/``pid`` come back ``None`` even though
-the port is plainly up. That distinction is the reason reemote5 answers with
+the port is plainly up. That distinction is the reason reemote answers with
 a record rather than with the baseline's ``(process, pid)`` tuple, and the reason
 ``server.wait`` polls ``listening`` alone.
 
@@ -67,7 +67,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

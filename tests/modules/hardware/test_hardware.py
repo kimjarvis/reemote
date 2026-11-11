@@ -5,7 +5,7 @@
 ``DiskStats``, ``DmiInfo``, ``Ipv4Addrs``, ``Ipv6Addrs``, ``LsBlk``,
 ``NetworkDevices`` and ``SmbiosInfo``.
 
-Covers ``reemote5.modules.hardware.hardware``: the baseline's own fixtures over
+Covers ``reemote.modules.hardware.hardware``: the baseline's own fixtures over
 the real-transport path, the documented example results, ``df`` parsing
 edge cases (header and ``none`` rows, unmatched rows, repeated devices),
 ``lscpu`` parsing edge cases (flag lists, colon-less lines, the
@@ -27,10 +27,10 @@ the same literal-dict assertions -- a TypedDict entry IS a plain dict at
 runtime -- plus the namespace export identity checks.
 """
 
-from reemote5.drivers import gather_fact
-from reemote5.hosts import Host
-from reemote5.modules import hardware
-from reemote5.modules.hardware.hardware import (
+from reemote.drivers import gather_fact
+from reemote.hosts import Host
+from reemote.modules import hardware
+from reemote.modules.hardware.hardware import (
     BlockDevice,
     BlockDevices,
     CpuInfo,
@@ -395,7 +395,7 @@ def test_cpu_info_parse_splits_flag_keys_into_lists():
 
 def test_cpu_info_parse_skips_colonless_lines():
     # Blank lines and stray output without a colon are skipped (the baseline
-    # would raise IndexError on them; reemote5 hardens the parser).
+    # would raise IndexError on them; reemote hardens the parser).
     assert CpuInfo.parse(
         ["", "no colon here", "   ", "Architecture: x86_64"]
     ) == {"Architecture": "x86_64"}
@@ -1002,7 +1002,7 @@ def test_ipv4_addrs_json_skips_unusable_entries():
         ]
     ) == {"eth0": ["10.0.0.1"]}
     # Non-dict devices or addr entries are skipped rather than raising
-    # (the baseline's walker would crash; reemote5 hardens the parser). The
+    # (the baseline's walker would crash; reemote hardens the parser). The
     # first element stays a dict so the JSON sniff still fires.
     assert Ipv4Addrs.parse(
         ['[{"ifname": "eth0", "addr_info": [5, {"family": "inet", "local": "10.0.0.1"}]}, 7]']
@@ -1297,7 +1297,7 @@ def test_ipv6_addrs_json_skips_unusable_entries():
         ]
     ) == {"eth0": ["fe80::1"]}
     # Non-dict devices or addr entries are skipped rather than raising
-    # (the baseline's walker would crash; reemote5 hardens the parser). The
+    # (the baseline's walker would crash; reemote hardens the parser). The
     # first element stays a dict so the JSON sniff still fires.
     assert Ipv6Addrs.parse(
         ['[{"ifname": "eth0", "addr_info": [5, {"family": "inet6", "local": "fe80::1"}]}, 7]']
@@ -1965,7 +1965,7 @@ def test_network_devices_json_skips_unusable_entries():
         ]
     ) == {"eth0": {"state": "UNKNOWN", "ipv6": {"address": "fe80::1"}}}
     # Non-dict devices or addr entries are skipped rather than raising
-    # (the baseline's walker would crash; reemote5 hardens the parser). The
+    # (the baseline's walker would crash; reemote hardens the parser). The
     # first element stays a dict so the JSON sniff still fires.
     assert NetworkDevices.parse(
         ['[{"ifname": "eth0", "addr_info": [5, {"family": "inet6", "local": "fe80::1"}]}, 7]']

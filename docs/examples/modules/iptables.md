@@ -48,7 +48,7 @@ domain (or permissive SELinux) to apply, while the version facts only read
 The chain operation: `iptables.chain` mirrors the baseline's operation, creating
 a missing user chain with `-N` (or deleting an unwanted one with `-X`),
 idempotent on the
-[`IptablesChains`][reemote5.modules.iptables.iptables.IptablesChains] fact.
+[`IptablesChains`][reemote.modules.iptables.iptables.IptablesChains] fact.
 The script creates `LOG_DROP` — the classic custom chain a later rule fills
 with a rate-limited LOG and a DROP — and yields the same request twice (the
 second a guaranteed no-op in the apply phase, because the first `-N` is
@@ -66,7 +66,7 @@ flagged `sudo=True` (CAP_NET_ADMIN).
 The policy operation: `iptables.policy` is the standalone policy surface
 (the baseline couples policy setting to `chain`), validating the word against
 ACCEPT/DROP/QUEUE/RETURN and yielding `-P` only when the
-[`IptablesChains`][reemote5.modules.iptables.iptables.IptablesChains] fact
+[`IptablesChains`][reemote.modules.iptables.iptables.IptablesChains] fact
 shows a different policy. The script targets FORWARD — the routed-traffic
 chain a non-router host can safely default to DROP — twice; INPUT is
 deliberately left alone, because dropping INPUT without first allowing SSH
@@ -83,7 +83,7 @@ firewall's default policy is an operator decision. The requests are flagged
 
 The rule operation: `iptables.rule` mirrors the baseline's definition comparison
 (named matches plus the sorted `extras` pair list against
-[`IptablesRules`][reemote5.modules.iptables.iptables.IptablesRules]) and
+[`IptablesRules`][reemote.modules.iptables.iptables.IptablesRules]) and
 extends it with first-class matchers — `ctstate` (conntrack),
 `destination_ports`/`source_ports` (multiport), `limit`/`limit_burst`,
 `match_set` (ipset), `log_level` and `comment` — each folded into the same
@@ -102,10 +102,10 @@ script is safe to run live. The requests are flagged `sudo=True`.
 
 The flush operation: `iptables.flush` empties one chain or a whole table,
 idempotent on the
-[`IptablesRules`][reemote5.modules.iptables.iptables.IptablesRules] fact — an
+[`IptablesRules`][reemote.modules.iptables.iptables.IptablesRules] fact — an
 empty scope is a no-op, so a flush never shows changed twice. Policies and
 user chains survive a flush; only rules go. The script composes the full
-lifecycle on a dedicated `REEMOTE5_DEMO` chain: create it, seed one inert
+lifecycle on a dedicated `REEMOTE_DEMO` chain: create it, seed one inert
 rule (an RFC 5737 documentation-net source), flush the chain, then flush it
 again — the second flush's fresh per-step fact cache sees the empty chain.
 **Compile-checked by the test suite, not executed against the shared demo
@@ -138,7 +138,7 @@ flagged `sudo=True`.
 
 The save operation: `iptables.save` snapshots the live rules to a host-side
 file, idempotent on the
-[`IptablesPersistence`][reemote5.modules.iptables.iptables.IptablesPersistence]
+[`IptablesPersistence`][reemote.modules.iptables.iptables.IptablesPersistence]
 fact — the live `iptables-save` output is compared against the file with
 comment lines stripped (the save header's timestamp changes every run), and
 the write is skipped when they match. The script passes
@@ -160,12 +160,12 @@ boot is the distro service's job, not this operation's.
 The restore operation: `iptables.restore` is the atomic bulk-apply surface —
 `iptables-restore` applies the whole file or fails without partial state,
 the resolution of the `bulk_rule(rules=[...])` proposal that `op()`'s
-hashability rule blocks. The path is HOST-side (reemote5 transfers are
+hashability rule blocks. The path is HOST-side (reemote transfers are
 IO-only), so the script first uploads a module-level `io.BytesIO` snapshot
-with [`files.put`][reemote5.modules.files.files.put] (unprivileged scp into
+with [`files.put`][reemote.modules.files.files.put] (unprivileged scp into
 `/tmp`), then restores it twice under `sudo=True`, idempotent
 on the same
-[`IptablesPersistence`][reemote5.modules.iptables.iptables.IptablesPersistence]
+[`IptablesPersistence`][reemote.modules.iptables.iptables.IptablesPersistence]
 fact. In prepare the file does not exist yet, so both restores plan as
 changes; in apply the first loads it and the second reports no change.
 **Compile-checked by the test suite, not executed against the shared demo
@@ -182,7 +182,7 @@ replacing a production firewall is always an operator decision).
 The ipset operation: `iptables.ipset` manages the performance companion to
 iptables rules — one `match_set` rule replaces thousands of per-address
 rules — idempotent on the
-[`IpSets`][reemote5.modules.iptables.iptables.IpSets] fact: a missing set is
+[`IpSets`][reemote.modules.iptables.iptables.IpSets] fact: a missing set is
 created with the requested type (`-exist` tolerates a stale read), missing
 entries are added in sorted order, and a type mismatch raises `ValueError`
 rather than silently recreating the set. Membership is additive;

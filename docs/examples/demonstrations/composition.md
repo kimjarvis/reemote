@@ -2,7 +2,7 @@
 
 Scripts under `examples/demonstrations/composition/` — scenarios that cross
 module boundaries to demonstrate the composition helpers
-[`sub_deploy`][reemote5.core.sub_deploy] and [`compose`][reemote5.core.compose]
+[`sub_deploy`][reemote.core.sub_deploy] and [`compose`][reemote.core.compose]
 — one scenario each, in the order the [guide](../../guide.md#composing-deploys)
 introduces them — plus a role-selection scenario keyed on the inventory's
 `group`/`tags`, a `when`-guard scenario that keeps one shared schedule

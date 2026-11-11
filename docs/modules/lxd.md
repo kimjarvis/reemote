@@ -1,6 +1,6 @@
 # lxd module
 
-::: reemote5.modules.lxd.lxd
+::: reemote.modules.lxd.lxd
     options:
       show_root_heading: false
       members:
@@ -54,7 +54,7 @@
 
 <!---
 
-`reemote5.modules.lxd.lxd` combines the LXD facts and operations in a
+`reemote.modules.lxd.lxd` combines the LXD facts and operations in a
 single source, extending the baseline's one-fact/one-operation `lxd` namespace
 (`lxd.LxdContainers` / `lxd.container`) toward complete control over and
 visibility into the LXD daemon. Every fact and operation runs through the
@@ -71,7 +71,7 @@ configured in the host's `lxc remote` list; the parity pair
 A fact is an asynchronous, queryable resource — never yielded by a
 generator — implemented as a `process` coroutine returning the raw value
 (over asyncssh in the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get]. The server-wide facts
+[`FactCache.get`][reemote.core.FactCache.get]. The server-wide facts
 (`LxdServerInfo`, `LxdServerResources`, `LxdProjects`, `LxdProjectConfig`,
 `LxdStoragePools`, `LxdOperations`) take only `remote`; the
 project-scoped listings (`LxdImages`, `LxdImageAliases`, `LxdInstances`,
@@ -84,7 +84,7 @@ also take `project`.
 entries, with empty output hardened to `[]` instead of upstream's
 assert-on-one-line crash.
 
-The fifteen reemote5-original facts answer the visibility gaps the baseline
+The fifteen reemote-original facts answer the visibility gaps the baseline
 leaves: `LxdServerInfo` (daemon metadata and the `api_extensions`
 capability list a deploy can branch on before using extension-dependent
 features), `LxdServerResources` (CPU/memory/GPU/storage/network hardware
@@ -108,7 +108,7 @@ currently registered on the daemon). The guarded single-target reads
 ## Operations
 
 An operation is an async generator: it reads facts through
-[`FactCache.get`][reemote5.core.FactCache.get], decides whether a change
+[`FactCache.get`][reemote.core.FactCache.get], decides whether a change
 is needed, records `ctx.changed`/`ctx.reason`, and yields one typed
 command descriptor per mutation — never touching the host itself. Reach
 operations through the namespace (`lxd.instance`), not the top-level
@@ -118,14 +118,14 @@ package.
 the stop-then-delete sequence for a running container and its documented
 limitation of not checking an existing container's base image).
 
-The thirteen reemote5-original operations close the control gaps:
+The thirteen reemote-original operations close the control gaps:
 `lxd.instance` is the comprehensive successor — create containers or VMs
 with profiles/config/devices/ephemeral, reconcile an existing instance
 NON-DESTRUCTIVELY (assign profiles, set drifted config keys, remove and
 re-add drifted devices), and REPORT base-image drift in the reason only
 (the developer-approved decision: a mismatch never recreates the
 instance; a container/VM type mismatch raises
-[`OperationError`][reemote5.core.OperationError]).
+[`OperationError`][reemote.core.OperationError]).
 `lxd.instance_state` drives started/stopped/frozen idempotently against
 `LxdInstanceState` (restarted/unfrozen are stateless actions that always
 yield), `lxd.instance_config` reconciles an existing instance's own
@@ -158,7 +158,7 @@ The read-only fact-gathering scripts `lxd_lxd_containers.py`,
 `lxd_lxd_storage_pools.py` and `lxd_lxd_storage_volumes.py` under
 [`examples/modules/lxd/`](../examples/modules/lxd.md) gather the sixteen
 facts respectively across an inventory with
-[`gather_fact`][reemote5.drivers.gather_fact] and print each host's
+[`gather_fact`][reemote.drivers.gather_fact] and print each host's
 result as JSON.
 
 The operation scripts (`lxd_container.py`, `lxd_image.py`,
@@ -167,7 +167,7 @@ The operation scripts (`lxd_container.py`, `lxd_image.py`,
 `lxd_instance_state.py`, `lxd_network.py`, `lxd_operation.py`,
 `lxd_profile.py`, `lxd_project.py`, `lxd_storage_pool.py`,
 `lxd_storage_volume.py`) under the same directory drive each operation
-through the two-phase [`run`][reemote5.drivers.run] — a dry-run plan then
+through the two-phase [`run`][reemote.drivers.run] — a dry-run plan then
 a real apply — over an inventory, yielding the same request twice so the
 second is a guaranteed apply-phase no-op where the operation is
 idempotent.

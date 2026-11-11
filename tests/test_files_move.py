@@ -22,17 +22,17 @@ from collections.abc import Generator
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, OperationRequest, op
+from reemote.drivers import (
     command_shell,
     format_log,
     format_plan,
     run,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import files
-from reemote5.modules.files.files import MoveCommand, RemoveTreeCommand
+from reemote.hosts import Host
+from reemote.modules import files
+from reemote.modules.files.files import MoveCommand, RemoveTreeCommand
 from tests.simulated_host import SimulatedHost
 
 INVENTORY = [
@@ -180,7 +180,7 @@ async def test_move_invalid_dest_fixture_raises():
 
 async def test_move_absent_src_raises_in_both_phases():
     # The baseline's invalid_src.json logs softly while planning and raises only
-    # while executing; reemote5 is phase-unaware and deliberately raises in
+    # while executing; reemote is phase-unaware and deliberately raises in
     # both phases (the recorded deviation).
     host = make_host(dest_stats={"mode": 700})
     with pytest.raises(ValueError, match=r"src /tmp/testfile does not exist"):

@@ -10,11 +10,11 @@ flow over the real asyncssh transport -- but the operations ask to elevate with
 
 doas is passwordless here. ``doas`` (OpenBSD's ``doas``; ``opendoas`` on Linux)
 has no ``-A`` askpass mechanism like sudo and reads a password only from a TTY,
-which asyncssh's non-interactive channels do not provide. reemote5 therefore
+which asyncssh's non-interactive channels do not provide. reemote therefore
 always runs ``doas -n`` -- *non-interactive*, so it fails rather than prompts --
 and there is deliberately no ``doas_password`` inventory option. The host must
 grant the login user a ``permit nopass`` rule in ``/etc/doas.conf``; without one
-``doas -n`` is denied and reemote5 reports a ``PrivilegeError``. In this respect
+``doas -n`` is denied and reemote reports a ``PrivilegeError``. In this respect
 doas is simpler than both sudo and su: there is no credential to supply, and so
 none that could leak into a log.
 
@@ -67,7 +67,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -96,7 +96,7 @@ INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 # -- ``root`` here, because installing packages needs superuser. ``root`` is
 # ``doas``'s own default target, so the command sent is a bare
 # ``doas -n dnf install ...`` with no explicit user. There is NO password: doas
-# is passwordless in reemote5, so the host must grant the login user a
+# is passwordless in reemote, so the host must grant the login user a
 # ``permit nopass`` rule in ``/etc/doas.conf`` -- e.g. ``permit nopass kim``.
 # The deploy script supplies neither the user nor a credential -- it only asks
 # for ``doas=True``.

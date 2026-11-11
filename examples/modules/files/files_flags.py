@@ -61,7 +61,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -79,7 +79,7 @@ from reemote5 import (
 # The marker file the attribute is toggled on. Its /tmp location keeps the
 # create unprivileged whatever account the inventory logs in as; chattr is
 # elevated no matter the owner.
-MARKER = "/tmp/reemote5-flags.txt"
+MARKER = "/tmp/reemote-flags.txt"
 
 # The immutable attribute letter, as a *tuple* -- op() hashes every argument,
 # so a list would be rejected. Each element is validated against the ext2

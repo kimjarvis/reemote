@@ -65,7 +65,7 @@ the login user (facts) and the `postgres` OS user (operations).
 
 The database operation: `postgresql.database` mirrors the baseline's
 `postgresql.database` and extends it beyond creation. It reads
-[`PostgresqlDatabases`][reemote5.modules.postgresql.postgresql.PostgresqlDatabases]
+[`PostgresqlDatabases`][reemote.modules.postgresql.postgresql.PostgresqlDatabases]
 to decide: an absent database yields one `CREATE DATABASE` carrying
 `owner`, `template`, `encoding`, the `lc_*` options, `tablespace`,
 `connection_limit` and `allow_connections`; an existing one reconciles
@@ -73,7 +73,7 @@ to decide: an absent database yields one `CREATE DATABASE` carrying
 through `ALTER DATABASE` only where they differ, reporting the
 creation-only options (template, encoding, locales) as skipped rather than
 pretending to change them. Tablespaces resolve by NAME against
-[`PostgresqlTablespaces`][reemote5.modules.postgresql.postgresql.PostgresqlTablespaces]'
+[`PostgresqlTablespaces`][reemote.modules.postgresql.postgresql.PostgresqlTablespaces]'
 OIDs — fixing the baseline's comparison of the name against the OID column,
 which never matched. `present=False` drops the database. The script yields
 the same create request twice — the second is a guaranteed no-op in the
@@ -89,7 +89,7 @@ as changes).
 
 The role operation: `postgresql.role` mirrors the baseline's
 `postgresql.role` and extends it beyond creation. It reads
-[`PostgresqlRoles`][reemote5.modules.postgresql.postgresql.PostgresqlRoles]
+[`PostgresqlRoles`][reemote.modules.postgresql.postgresql.PostgresqlRoles]
 to decide: an absent role yields one `CREATE ROLE` rendering every flag
 explicitly as X/NOX pairs (`SUPERUSER`, `CREATEDB`, `CREATEROLE`, `INHERIT`,
 `LOGIN`, `REPLICATION`) plus `CONNECTION LIMIT`; an existing
@@ -146,10 +146,10 @@ its own output so the round-trip is self-contained.
 
 ## Granting or revoking privileges
 
-The privilege operation: `postgresql.privilege` is a reemote5-original
+The privilege operation: `postgresql.privilege` is a reemote-original
 operation modeled on Ansible's `postgresql_privs`, granting or revoking
 object privileges idempotently. It reads
-[`PostgresqlPrivileges`][reemote5.modules.postgresql.postgresql.PostgresqlPrivileges]
+[`PostgresqlPrivileges`][reemote.modules.postgresql.postgresql.PostgresqlPrivileges]
 for the grantee's current grants and touches only the difference:
 `present=True` grants just the missing privileges (`ALL` expands to the
 object type's full set), `present=False` revokes just the held ones, and
@@ -167,10 +167,10 @@ prepare phase, where nothing is sent, both plan as changes).
 
 ## Managing role membership
 
-The membership operation: `postgresql.membership` is a reemote5-original
+The membership operation: `postgresql.membership` is a reemote-original
 operation modeled on Ansible's `postgresql_membership`, managing
 `GRANT <target_role> TO <role>` idempotently. It reads
-[`PostgresqlRoleMemberships`][reemote5.modules.postgresql.postgresql.PostgresqlRoleMemberships]
+[`PostgresqlRoleMemberships`][reemote.modules.postgresql.postgresql.PostgresqlRoleMemberships]
 for the pair's current state: `present=True` grants the membership (or
 upgrades it to `WITH ADMIN OPTION` when `admin_option=True` and the option
 is missing), `admin_option=False` on an existing admin grant withdraws
@@ -186,10 +186,10 @@ cache (in the prepare phase, where nothing is sent, both plan as changes).
 
 ## Managing a schema
 
-The schema operation: `postgresql.schema` is a reemote5-original operation
+The schema operation: `postgresql.schema` is a reemote-original operation
 modeled on Ansible's `postgresql_schema`, managing a schema inside the
 database named by `psql_database`. It reads
-[`PostgresqlSchemas`][reemote5.modules.postgresql.postgresql.PostgresqlSchemas]
+[`PostgresqlSchemas`][reemote.modules.postgresql.postgresql.PostgresqlSchemas]
 to decide: an absent schema yields `CREATE SCHEMA` (with `AUTHORIZATION`
 when `owner` is given), an existing one re-owns through
 `ALTER SCHEMA ... OWNER TO` only when the owner differs, and
@@ -205,10 +205,10 @@ both plan as changes).
 
 ## Managing an extension
 
-The extension operation: `postgresql.extension` is a reemote5-original
+The extension operation: `postgresql.extension` is a reemote-original
 operation modeled on Ansible's `postgresql_ext`, installing an extension
 into the database named by `psql_database`. It reads
-[`PostgresqlExtensions`][reemote5.modules.postgresql.postgresql.PostgresqlExtensions]
+[`PostgresqlExtensions`][reemote.modules.postgresql.postgresql.PostgresqlExtensions]
 to decide: an absent extension yields `CREATE EXTENSION` (with `SCHEMA`
 and `VERSION` when given), an installed one reconciles a schema move
 (`ALTER EXTENSION ... SET SCHEMA`) and a version update
@@ -225,10 +225,10 @@ both plan as changes).
 
 ## Managing an index
 
-The index operation: `postgresql.index` is a reemote5-original operation
+The index operation: `postgresql.index` is a reemote-original operation
 modeled on Ansible's `postgresql_idx`, managing an index in the database
 named by `psql_database`. It reads
-[`PostgresqlIndexes`][reemote5.modules.postgresql.postgresql.PostgresqlIndexes]
+[`PostgresqlIndexes`][reemote.modules.postgresql.postgresql.PostgresqlIndexes]
 to decide: an absent index yields `CREATE INDEX` (or
 `CREATE UNIQUE INDEX`, `CONCURRENTLY` with `concurrent=True`, a named
 `method`, `tablespace` and `where` clause), and `present=False` drops it.
@@ -246,12 +246,12 @@ plan as changes).
 
 ## Tuning a server setting
 
-The setting operation: `postgresql.setting` is a reemote5-original
+The setting operation: `postgresql.setting` is a reemote-original
 operation modeled on Ansible's `postgresql_set`, tuning a GUC through
 `ALTER SYSTEM SET`/`RESET` — which writes `postgresql.auto.conf`,
 overriding the main configuration file (the config-file-rewrite apply
 method is deliberately dropped). It reads
-[`PostgresqlSettings`][reemote5.modules.postgresql.postgresql.PostgresqlSettings]
+[`PostgresqlSettings`][reemote.modules.postgresql.postgresql.PostgresqlSettings]
 to compare the requested value against the parameter's current `setting`
 as text in the parameter's own unit — there is no unit normalization, so
 pass `262144` rather than `2GB` for `shared_buffers` in 8kB blocks;
@@ -270,10 +270,10 @@ plan as changes).
 
 ## Managing a tablespace
 
-The tablespace operation: `postgresql.tablespace` is a reemote5-original
+The tablespace operation: `postgresql.tablespace` is a reemote-original
 operation modeled on Ansible's `postgresql_tablespace`, managing a
 tablespace's lifecycle. It reads
-[`PostgresqlTablespaces`][reemote5.modules.postgresql.postgresql.PostgresqlTablespaces]
+[`PostgresqlTablespaces`][reemote.modules.postgresql.postgresql.PostgresqlTablespaces]
 to decide: an absent tablespace yields `CREATE TABLESPACE ... LOCATION`
 (with `OWNER` when given — the directory must already exist, be empty and
 be owned by the server user, so prepare it out of band first),
@@ -292,9 +292,9 @@ both plan as changes).
 ## Managing a publication
 
 The publication operation: `postgresql.publication` is a
-reemote5-original operation managing logical-replication publications in
+reemote-original operation managing logical-replication publications in
 the database named by `psql_database`. It reads
-[`PostgresqlPublications`][reemote5.modules.postgresql.postgresql.PostgresqlPublications]
+[`PostgresqlPublications`][reemote.modules.postgresql.postgresql.PostgresqlPublications]
 to decide: an absent publication yields `CREATE PUBLICATION ... FOR TABLE`
 (the table set sorted and schema-qualified) or `FOR ALL TABLES`, followed
 by an owner `ALTER` when `owner` is given; an existing one reconciles its
@@ -313,9 +313,9 @@ nothing is sent, both plan as changes).
 ## Managing a subscription
 
 The subscription operation: `postgresql.subscription` is a
-reemote5-original operation managing logical-replication subscriptions in
+reemote-original operation managing logical-replication subscriptions in
 the database named by `psql_database`. It reads
-[`PostgresqlSubscriptions`][reemote5.modules.postgresql.postgresql.PostgresqlSubscriptions]
+[`PostgresqlSubscriptions`][reemote.modules.postgresql.postgresql.PostgresqlSubscriptions]
 to decide: an absent subscription yields `CREATE SUBSCRIPTION ...
 CONNECTION '<dsn>' PUBLICATION <names>` (with `WITH (enabled = false)`
 when `enabled=False`), and an existing one reconciles its publication list

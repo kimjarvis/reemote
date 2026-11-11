@@ -3,7 +3,7 @@
 
 """Example: set the system timezone on real CentOS hosts (systemd only).
 
-This is a *usage* example, not part of the library. It shows reemote5's
+This is a *usage* example, not part of the library. It shows reemote's
 ``server.timezone`` operation, baseline ``server.timezone`` parity for
 the system timezone: the deploy ensures every host keeps ``Europe/Amsterdam``
 (the baseline's documented example), under ``sudo`` because ``timedatectl``
@@ -63,7 +63,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

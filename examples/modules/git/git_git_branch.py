@@ -54,7 +54,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     GitBranch,
     Host,
@@ -67,7 +67,7 @@ from reemote5 import (
 # The repository to inspect on each host: every git fact takes the repo path
 # it reads, and the command guards on the directory, so a host without it
 # answers "" rather than raising.
-REPO = "/tmp/reemote5-app"
+REPO = "/tmp/reemote-app"
 
 # examples/modules/git/git_git_branch.py -> the project root, so the inventory
 # is found whatever the current working directory is.

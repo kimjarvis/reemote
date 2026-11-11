@@ -3,7 +3,7 @@
 
 """Tests for the sysctl module: facts, descriptors and operations.
 
-Covers ``reemote5.modules.sysctl.sysctl``: the private helpers
+Covers ``reemote.modules.sysctl.sysctl``: the private helpers
 (``_normalize_value``'s the baseline chain, ``_parse_conf`` and ``_edit_conf``'s
 keyed replacement); the relocated ``Sysctl`` runtime fact (its ten tests
 moved from ``tests/modules/server/test_server.py`` alongside the class
@@ -14,22 +14,23 @@ descriptors (shell rendering + elevation, the non-shell transfer's
 ``__str__``); the ``setting`` and ``conf`` operations (idempotence against
 the seams, every option branch, seam mutation and the end-to-end
 plan/apply/dry/lockstep and determinism guards); and the export rewiring
-(``reemote5.Sysctl`` now binds the sysctl class, ``server`` no longer
+(``reemote.Sysctl`` now binds the sysctl class, ``server`` no longer
 exports one).
 """
 
+import hashlib
 from collections.abc import Generator
 
 import pytest
 
-from reemote5.core import (
+from reemote.core import (
     FactCache,
     OpContext,
     OperationRequest,
     UnhashableArgumentError,
     op,
 )
-from reemote5.drivers import (
+from reemote.drivers import (
     DeterminismError,
     command_shell,
     format_log,
@@ -40,10 +41,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import sysctl
-from reemote5.modules.sysctl.sysctl import (
-    _SPOOL_PATH,
+from reemote.hosts import Host
+from reemote.modules import sysctl
+from reemote.modules.sysctl.sysctl import (
     Sysctl,
     SysctlFile,
     SysctlFileInstallCommand,
@@ -55,6 +55,7 @@ from reemote5.modules.sysctl.sysctl import (
     _edit_conf,
     _normalize_value,
     _parse_conf,
+    _spool_path,
 )
 from tests.simulated_host import SimulatedHost
 
@@ -64,7 +65,16 @@ INVENTORY = [
 ]
 
 _CONF_PATH = "/etc/sysctl.conf"
-_DROPIN_PATH = "/etc/sysctl.d/99-reemote5.conf"
+_DROPIN_PATH = "/etc/sysctl.d/99-reemote.conf"
+_NETWORK_PATH = "/etc/sysctl.d/90-network.conf"
+# The dest-derived spools (and their sha1-derived parent directories) the
+# operations upload to -- one per managed file, and always inside a /tmp
+# subdirectory rather than at the top level of /tmp.
+_CONF_SPOOL = _spool_path(_CONF_PATH)
+_CONF_SPOOL_DIR = _CONF_SPOOL.rsplit("/", 1)[0]
+_DROPIN_SPOOL = _spool_path(_DROPIN_PATH)
+_DROPIN_SPOOL_DIR = _DROPIN_SPOOL.rsplit("/", 1)[0]
+_NETWORK_SPOOL = _spool_path(_NETWORK_PATH)
 
 
 class CannedShellHost(Host):
@@ -310,16 +320,16 @@ async def test_sysctl_gather_fact_across_hosts():
 def test_sysctl_file_command_quotes_the_path():
     assert SysctlFile.command(_CONF_PATH) == (
         "test -e /etc/sysctl.conf && "
-        "{ printf '#reemote5-sysctl-file\\n'; cat -- /etc/sysctl.conf; }"
+        "{ printf '#reemote-sysctl-file\\n'; cat -- /etc/sysctl.conf; }"
     )
     assert SysctlFile.command("/etc/my file.conf") == (
         "test -e '/etc/my file.conf' && "
-        "{ printf '#reemote5-sysctl-file\\n'; cat -- '/etc/my file.conf'; }"
+        "{ printf '#reemote-sysctl-file\\n'; cat -- '/etc/my file.conf'; }"
     )
 
 
 async def test_sysctl_file_reads_content_behind_the_marker():
-    host = CannedShellHost("#reemote5-sysctl-file\nvm.swappiness = 10\n")
+    host = CannedShellHost("#reemote-sysctl-file\nvm.swappiness = 10\n")
     assert await SysctlFile.process(host, _CONF_PATH) == "vm.swappiness = 10\n"
     assert host.shells == [SysctlFile.command(_CONF_PATH)]
 
@@ -328,7 +338,7 @@ async def test_sysctl_file_tells_empty_from_absent():
     # The marker alone means an existing-but-empty file (""); no marker at
     # all (test -e failed, empty stdout) means the file is absent (None).
     assert await SysctlFile.process(
-        CannedShellHost("#reemote5-sysctl-file\n"), _CONF_PATH
+        CannedShellHost("#reemote-sysctl-file\n"), _CONF_PATH
     ) == ""
     assert await SysctlFile.process(CannedShellHost(""), _CONF_PATH) is None
 
@@ -355,12 +365,12 @@ async def test_sysctl_file_gather_fact_forwards_the_path():
 def test_sysctl_files_parse_splits_marker_sections():
     output = [
         "ignored before the first marker",
-        "#reemote5-sysctl-files /etc/sysctl.conf",
+        "#reemote-sysctl-files /etc/sysctl.conf",
         "# a comment",
         "vm.swappiness = 10",
-        "#reemote5-sysctl-files /etc/sysctl.d/90-net.conf",
+        "#reemote-sysctl-files /etc/sysctl.d/90-net.conf",
         "net.ipv4.ip_forward = 1",
-        "#reemote5-sysctl-files /etc/sysctl.d/empty.conf",
+        "#reemote-sysctl-files /etc/sysctl.d/empty.conf",
     ]
     assert SysctlFiles.parse(output) == {
         "/etc/sysctl.conf": {"vm.swappiness": "10"},
@@ -373,9 +383,9 @@ def test_sysctl_files_parse_splits_marker_sections():
 
 async def test_sysctl_files_walks_the_standard_paths_over_the_shell():
     host = CannedShellHost(
-        "#reemote5-sysctl-files /etc/sysctl.conf\n"
+        "#reemote-sysctl-files /etc/sysctl.conf\n"
         "vm.swappiness = 10\n"
-        "#reemote5-sysctl-files /etc/sysctl.d/90-net.conf\n"
+        "#reemote-sysctl-files /etc/sysctl.d/90-net.conf\n"
         "net.ipv4.ip_forward = 1\n"
     )
     assert await SysctlFiles.process(host) == {
@@ -446,38 +456,49 @@ def test_sysctl_set_command_shell_rendering():
 
 
 def test_sysctl_file_upload_command_is_a_non_shell_transfer():
-    cmd = SysctlFileUploadCommand(content="vm.swappiness = 10\n", dest=_SPOOL_PATH)
+    cmd = SysctlFileUploadCommand(content="vm.swappiness = 10\n", dest=_CONF_SPOOL)
     assert not hasattr(cmd, "shell")
-    assert str(cmd) == "scp <sysctl conf> -> /tmp/reemote5-sysctl.conf"
+    assert str(cmd) == f"scp <sysctl conf> -> {_CONF_SPOOL}"
     assert command_shell(cmd) == str(cmd)
     # The content is a plain hashable str, stable across phases.
     assert hash(cmd) == hash(
-        SysctlFileUploadCommand(content="vm.swappiness = 10\n", dest=_SPOOL_PATH)
+        SysctlFileUploadCommand(content="vm.swappiness = 10\n", dest=_CONF_SPOOL)
     )
 
 
 def test_sysctl_file_install_command_wraps_the_chain_in_sh():
-    cmd = SysctlFileInstallCommand(spool=_SPOOL_PATH, dest=_CONF_PATH)
+    cmd = SysctlFileInstallCommand(spool=_CONF_SPOOL, dest=_CONF_PATH)
     assert cmd.shell() == (
-        "sh -c 'mkdir -p /etc && cp /tmp/reemote5-sysctl.conf /etc/sysctl.conf "
-        "&& chmod 0644 /etc/sysctl.conf && rm -f /tmp/reemote5-sysctl.conf'"
+        f"sh -c 'mkdir -p /etc && cp {_CONF_SPOOL} /etc/sysctl.conf "
+        f"&& chmod 0644 /etc/sysctl.conf && rm -rf {_CONF_SPOOL_DIR}'"
     )
     # sudo elevates the WHOLE chain, cleanup included.
     assert command_shell(cmd, sudo=True) == f"sudo {cmd.shell()}"
     assert SysctlFileInstallCommand(
-        spool=_SPOOL_PATH, dest=_DROPIN_PATH
+        spool=_DROPIN_SPOOL, dest=_DROPIN_PATH
     ).shell() == (
-        "sh -c 'mkdir -p /etc/sysctl.d && "
-        "cp /tmp/reemote5-sysctl.conf /etc/sysctl.d/99-reemote5.conf && "
-        "chmod 0644 /etc/sysctl.d/99-reemote5.conf && "
-        "rm -f /tmp/reemote5-sysctl.conf'"
+        f"sh -c 'mkdir -p /etc/sysctl.d && "
+        f"cp {_DROPIN_SPOOL} /etc/sysctl.d/99-reemote.conf && "
+        f"chmod 0644 /etc/sysctl.d/99-reemote.conf && "
+        f"rm -rf {_DROPIN_SPOOL_DIR}'"
     )
+
+
+def test_spool_path_is_dest_derived_and_lives_in_a_subdir():
+    # Same dest -> same spool across both phases; a different dest -> a
+    # different spool, so two files never clobber one upload. The content
+    # lands INSIDE a sha1-derived /tmp directory, never at the top level.
+    assert _spool_path(_CONF_PATH) == _CONF_SPOOL
+    assert _spool_path(_CONF_PATH) == _spool_path(_CONF_PATH)
+    assert _spool_path(_DROPIN_PATH) != _CONF_SPOOL
+    digest = hashlib.sha1(_CONF_PATH.encode()).hexdigest()[:16]
+    assert _CONF_SPOOL == f"/tmp/reemote-sysctl-{digest}/sysctl.conf"
 
 
 def test_sysctl_remove_and_reload_command_rendering():
     assert (
         SysctlFileRemoveCommand(path=_DROPIN_PATH).shell()
-        == "rm -f /etc/sysctl.d/99-reemote5.conf"
+        == "rm -f /etc/sysctl.d/99-reemote.conf"
     )
     assert (
         SysctlReloadCommand(path=_CONF_PATH).shell() == "sysctl -p /etc/sysctl.conf"
@@ -501,8 +522,8 @@ async def test_setting_applies_runtime_and_persists_when_both_differ():
     assert "/etc/sysctl.conf missing or differs for vm.swappiness, will write" in ctx.reason
     assert commands == [
         SysctlSetCommand(key="vm.swappiness", value="10"),
-        SysctlFileUploadCommand(content="vm.swappiness = 10\n", dest=_SPOOL_PATH),
-        SysctlFileInstallCommand(spool=_SPOOL_PATH, dest=_CONF_PATH),
+        SysctlFileUploadCommand(content="vm.swappiness = 10\n", dest=_CONF_SPOOL),
+        SysctlFileInstallCommand(spool=_CONF_SPOOL, dest=_CONF_PATH),
         SysctlReloadCommand(path=_CONF_PATH),
     ]
 
@@ -527,8 +548,8 @@ async def test_setting_only_the_persist_half_when_the_runtime_matches():
     assert ctx.changed
     assert "vm.swappiness already set to 10 at runtime" in ctx.reason
     assert commands == [
-        SysctlFileUploadCommand(content="vm.swappiness = 10\n", dest=_SPOOL_PATH),
-        SysctlFileInstallCommand(spool=_SPOOL_PATH, dest=_CONF_PATH),
+        SysctlFileUploadCommand(content="vm.swappiness = 10\n", dest=_CONF_SPOOL),
+        SysctlFileInstallCommand(spool=_CONF_SPOOL, dest=_CONF_PATH),
         SysctlReloadCommand(path=_CONF_PATH),
     ]
 
@@ -616,8 +637,8 @@ async def test_setting_absent_removes_the_key_lines_only():
     assert "vm.swappiness present in /etc/sysctl.conf, will remove" in ctx.reason
     # The runtime value is untouched; the file keeps its other lines.
     assert commands == [
-        SysctlFileUploadCommand(content="fs.file-max = 100000\n", dest=_SPOOL_PATH),
-        SysctlFileInstallCommand(spool=_SPOOL_PATH, dest=_CONF_PATH),
+        SysctlFileUploadCommand(content="fs.file-max = 100000\n", dest=_CONF_SPOOL),
+        SysctlFileInstallCommand(spool=_CONF_SPOOL, dest=_CONF_PATH),
         SysctlReloadCommand(path=_CONF_PATH),
     ]
 
@@ -651,8 +672,8 @@ async def test_setting_sysctl_set_false_manages_only_the_file():
     assert ctx.changed
     assert "runtime apply skipped (sysctl_set=False)" in ctx.reason
     assert commands == [
-        SysctlFileUploadCommand(content="vm.swappiness = 10\n", dest=_SPOOL_PATH),
-        SysctlFileInstallCommand(spool=_SPOOL_PATH, dest=_CONF_PATH),
+        SysctlFileUploadCommand(content="vm.swappiness = 10\n", dest=_CONF_SPOOL),
+        SysctlFileInstallCommand(spool=_CONF_SPOOL, dest=_CONF_PATH),
         SysctlReloadCommand(path=_CONF_PATH),
     ]
 
@@ -663,8 +684,8 @@ async def test_setting_reload_false_skips_the_reload():
         host, op(sysctl.setting, key="vm.swappiness", value=10, reload=False)
     )
     assert commands == [
-        SysctlFileUploadCommand(content="vm.swappiness = 10\n", dest=_SPOOL_PATH),
-        SysctlFileInstallCommand(spool=_SPOOL_PATH, dest=_CONF_PATH),
+        SysctlFileUploadCommand(content="vm.swappiness = 10\n", dest=_CONF_SPOOL),
+        SysctlFileInstallCommand(spool=_CONF_SPOOL, dest=_CONF_PATH),
     ]
 
 
@@ -693,9 +714,9 @@ async def test_setting_targets_a_dropin_file():
     # The legacy /etc/sysctl.conf stays untouched.
     assert commands == [
         SysctlFileUploadCommand(
-            content="net.ipv4.ip_forward = 1\n", dest=_SPOOL_PATH
+            content="net.ipv4.ip_forward = 1\n", dest=_NETWORK_SPOOL
         ),
-        SysctlFileInstallCommand(spool=_SPOOL_PATH, dest="/etc/sysctl.d/90-network.conf"),
+        SysctlFileInstallCommand(spool=_NETWORK_SPOOL, dest="/etc/sysctl.d/90-network.conf"),
         SysctlReloadCommand(path="/etc/sysctl.d/90-network.conf"),
     ]
 
@@ -719,7 +740,7 @@ async def test_setting_mutates_the_seams_and_is_idempotent():
         await send_command(host, cmd)
     assert host.sysctls == {"vm.swappiness": 10}
     assert host.remote_files[_CONF_PATH] == b"vm.swappiness = 10\n"
-    assert _SPOOL_PATH not in host.remote_files  # the install removed the spool
+    assert _CONF_SPOOL not in host.remote_files  # the install removed the spool
     assert _CONF_PATH in host.existing_files
     assert host.file_stats[_CONF_PATH]["mode"] == 644
     # A fresh materialization now reads both halves in state.
@@ -744,8 +765,8 @@ async def test_conf_writes_the_whole_file_then_reloads():
         f"sysctl config {_DROPIN_PATH} missing or differs from the settings"
     )
     assert commands == [
-        SysctlFileUploadCommand(content=_CONF_CONTENT, dest=_SPOOL_PATH),
-        SysctlFileInstallCommand(spool=_SPOOL_PATH, dest=_DROPIN_PATH),
+        SysctlFileUploadCommand(content=_CONF_CONTENT, dest=_DROPIN_SPOOL),
+        SysctlFileInstallCommand(spool=_DROPIN_SPOOL, dest=_DROPIN_PATH),
         SysctlReloadCommand(path=_DROPIN_PATH),
     ]
 
@@ -767,7 +788,7 @@ async def test_conf_rewrites_a_drifted_file_wholesale():
     _ctx, commands = await materialize(host, op(sysctl.conf, settings=_SETTINGS))
     # The whole-file model replaces the content, stale lines included.
     assert commands[0] == SysctlFileUploadCommand(
-        content=_CONF_CONTENT, dest=_SPOOL_PATH
+        content=_CONF_CONTENT, dest=_DROPIN_SPOOL
     )
 
 
@@ -805,9 +826,9 @@ async def test_conf_reload_false_and_custom_file():
         ),
     )
     assert commands == [
-        SysctlFileUploadCommand(content=_CONF_CONTENT, dest=_SPOOL_PATH),
+        SysctlFileUploadCommand(content=_CONF_CONTENT, dest=_NETWORK_SPOOL),
         SysctlFileInstallCommand(
-            spool=_SPOOL_PATH, dest="/etc/sysctl.d/90-network.conf"
+            spool=_NETWORK_SPOOL, dest="/etc/sysctl.d/90-network.conf"
         ),
     ]
 
@@ -816,7 +837,7 @@ async def test_conf_empty_settings_write_an_empty_file():
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(host, op(sysctl.conf, settings=()))
     assert ctx.changed
-    assert commands[0] == SysctlFileUploadCommand(content="", dest=_SPOOL_PATH)
+    assert commands[0] == SysctlFileUploadCommand(content="", dest=_DROPIN_SPOOL)
 
 
 def test_op_rejects_a_dict_of_settings():
@@ -839,7 +860,7 @@ async def test_conf_mutates_the_seams_and_the_reload_applies_at_runtime():
     for cmd in commands:
         await send_command(host, cmd)
     assert host.remote_files[_DROPIN_PATH] == _CONF_CONTENT.encode()
-    assert _SPOOL_PATH not in host.remote_files
+    assert _DROPIN_SPOOL not in host.remote_files
     # The scoped sysctl -p applied every assignment to the runtime seam.
     assert host.sysctls == {"vm.swappiness": 10, "net.ipv4.ip_forward": 1}
     ctx, commands = await materialize(host, op(sysctl.conf, settings=_SETTINGS))
@@ -864,13 +885,13 @@ async def test_set_command_mutates_the_sysctls_seam_with_parsed_values():
 async def test_install_and_remove_keep_every_file_store_consistent():
     host = SimulatedHost(name="h")
     await send_command(
-        host, SysctlFileUploadCommand(content=_CONF_CONTENT, dest=_SPOOL_PATH)
+        host, SysctlFileUploadCommand(content=_CONF_CONTENT, dest=_DROPIN_SPOOL)
     )
     await send_command(
-        host, SysctlFileInstallCommand(spool=_SPOOL_PATH, dest=_DROPIN_PATH)
+        host, SysctlFileInstallCommand(spool=_DROPIN_SPOOL, dest=_DROPIN_PATH)
     )
     assert host.remote_files[_DROPIN_PATH] == _CONF_CONTENT.encode()
-    assert _SPOOL_PATH not in host.remote_files
+    assert _DROPIN_SPOOL not in host.remote_files
     assert _DROPIN_PATH in host.existing_files
     assert host.file_stats[_DROPIN_PATH] == {
         "user": "root",
@@ -933,14 +954,14 @@ async def test_setting_runs_across_hosts_in_lockstep():
     assert [e.name for e in report.log] == ["Tune swappiness", "Tune swappiness"]
     log = format_log(report)
     # The transfer is unprivileged (no sudo); runtime/install/reload elevate.
-    assert log.count("scp <sysctl conf> -> /tmp/reemote5-sysctl.conf") == 2
+    assert log.count(f"scp <sysctl conf> -> {_CONF_SPOOL}") == 2
     assert log.count("$ sudo sysctl -w vm.swappiness=10") == 2
-    assert log.count("$ sudo sh -c 'mkdir -p /etc && cp /tmp/reemote5-sysctl.conf") == 2
+    assert log.count(f"$ sudo sh -c 'mkdir -p /etc && cp {_CONF_SPOOL}") == 2
     assert log.count("$ sudo sysctl -p /etc/sysctl.conf") == 2
     for host in hosts:
         assert host.sysctls == {"vm.swappiness": 10}
         assert host.remote_files[_CONF_PATH] == b"vm.swappiness = 10\n"
-        assert _SPOOL_PATH not in host.remote_files
+        assert _CONF_SPOOL not in host.remote_files
     # A fresh prepare against the now-tuned hosts plans no change.
     for host in hosts:
         _runtimes, plans2 = await run_prepare([host], tune_swappiness)
@@ -967,7 +988,7 @@ async def test_conf_runs_across_hosts_and_the_reload_applies():
     assert [p.changed for p in plans["web1"]] == [True]
     assert report is not None
     log = format_log(report)
-    assert log.count("$ sudo sysctl -p /etc/sysctl.d/99-reemote5.conf") == 2
+    assert log.count("$ sudo sysctl -p /etc/sysctl.d/99-reemote.conf") == 2
     for host in hosts:
         assert host.remote_files[_DROPIN_PATH] == _CONF_CONTENT.encode()
         assert host.sysctls == {"vm.swappiness": 10, "net.ipv4.ip_forward": 1}
@@ -995,8 +1016,8 @@ async def test_setting_branching_on_live_state_raises_determinism_error():
 
 
 def test_sysctl_exports_and_the_server_relocation():
-    import reemote5
-    from reemote5.modules import server
+    import reemote
+    from reemote.modules import server
 
     # Facts and descriptors are exported from the namespace and the top level.
     for symbol in (
@@ -1010,14 +1031,14 @@ def test_sysctl_exports_and_the_server_relocation():
         SysctlReloadCommand,
     ):
         assert getattr(sysctl, symbol.__name__) is symbol
-        assert getattr(reemote5, symbol.__name__) is symbol
+        assert getattr(reemote, symbol.__name__) is symbol
     # The top-level Sysctl binding now points at the sysctl module's class.
-    assert reemote5.Sysctl is Sysctl
+    assert reemote.Sysctl is Sysctl
     # Operations stay namespace-only (never re-exported at the top level).
     for operation in ("setting", "conf"):
         assert operation in sysctl.__all__
         assert hasattr(sysctl, operation)
-        assert operation not in reemote5.__all__
+        assert operation not in reemote.__all__
     # server no longer exports a Sysctl fact (the canonical-home decision).
     assert not hasattr(server, "Sysctl")
     assert "Sysctl" not in server.__all__

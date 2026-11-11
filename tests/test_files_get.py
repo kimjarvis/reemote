@@ -22,11 +22,11 @@ from collections.abc import Generator
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import format_log, format_plan, run, send_command
-from reemote5.hosts import Host
-from reemote5.modules import files
-from reemote5.modules.files.files import GetCommand, _sha1_of_source, write_dest_bytes
+from reemote.core import FactCache, OpContext, OperationRequest, op
+from reemote.drivers import format_log, format_plan, run, send_command
+from reemote.hosts import Host
+from reemote.modules import files
+from reemote.modules.files.files import GetCommand, _sha1_of_source, write_dest_bytes
 from tests.simulated_host import SimulatedHost
 
 INVENTORY = [
@@ -36,7 +36,7 @@ INVENTORY = [
     },
 ]
 
-REMOTE_SRC = "/tmp/reemote5-get.txt"
+REMOTE_SRC = "/tmp/reemote-get.txt"
 
 CONTENT = b"hello from the remote host\n"
 CONTENT_SHA1 = hashlib.sha1(CONTENT).hexdigest()

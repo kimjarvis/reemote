@@ -19,9 +19,9 @@ inventory = [
 
 <!---
 
-[`Host.from_inventory`][reemote5.hosts.Host.from_inventory] then materializes
-a [`DockerHost`][reemote5.connectors.docker.DockerHost] instead of a plain
-[`Host`][reemote5.hosts.Host]. `DockerHost` overrides exactly the transport
+[`Host.from_inventory`][reemote.hosts.Host.from_inventory] then materializes
+a [`DockerHost`][reemote.connectors.docker.DockerHost] instead of a plain
+[`Host`][reemote.hosts.Host]. `DockerHost` overrides exactly the transport
 seams the SSH host uses — `connect`, the shell seam, `upload_file`,
 `download_file` and `aclose` — so the drivers, every fact, every operation
 and the privilege machinery work unchanged: a deploy script is written once
@@ -42,9 +42,9 @@ dependency):
   `PodmanConnector` (which only swaps the binary).
 
 A missing binary or an unreachable daemon surfaces as
-[`HostConnectionError`][reemote5.hosts.HostConnectionError] labelled
+[`HostConnectionError`][reemote.hosts.HostConnectionError] labelled
 `docker`, aggregated across the inventory by
-[`run_prepare`][reemote5.drivers.run_prepare] exactly like unreachable SSH
+[`run_prepare`][reemote.drivers.run_prepare] exactly like unreachable SSH
 hosts. Containers on a *remote* SSH host (the baseline's `@dockerssh`) are not
 covered by this connector.
 
@@ -53,7 +53,7 @@ covered by this connector.
 ## Connection options
 
 The docker `connection` mapping is a *closed* set — an unknown or SSH-only
-key (say `port`) raises [`InventoryError`][reemote5.hosts.InventoryError]
+key (say `port`) raises [`InventoryError`][reemote.hosts.InventoryError]
 rather than being silently ignored, the same fail-fast policy as the
 forbidden SSH options.
 
@@ -76,15 +76,15 @@ the baseline's `docker_architecture` is deliberately dropped: `--arch` is not a
 
 - **Image name** — `docker run -d <image> tail -f /dev/null` starts a
   throwaway container; the deploy executes against it; when
-  [`run`][reemote5.drivers.run] closes the host, the container is
+  [`run`][reemote.drivers.run] closes the host, the container is
   **committed into a new image** and removed. The short image ID is exposed
-  as [`DockerHost.image_id`][reemote5.connectors.docker.DockerHost.image_id]
+  as [`DockerHost.image_id`][reemote.connectors.docker.DockerHost.image_id]
   on the hosts `run` returns. Teardown is best-effort (it must not mask an
   in-flight run error); a failed commit leaves `image_id` as `None` and the
   container is still removed.
 - **Existing container ID** — inspected, started if stopped, and **left
   running** on close: never committed, never removed. (the baseline removes a
-  stopped container it started itself; reemote5 deliberately does not touch
+  stopped container it started itself; reemote deliberately does not touch
   containers it did not create.)
 
 !!! note "Dry runs still start (and commit) a container"
@@ -99,14 +99,14 @@ the baseline's `docker_architecture` is deliberately dropped: `--arch` is not a
 Commands run through `docker exec -i <container> sh -c <shell>` (no `-t`:
 the transport is non-interactive, exactly like asyncssh's channels).
 Container-side exit codes propagate verbatim, so exit 127 still raises
-[`CommandNotFoundError`][reemote5.hosts.CommandNotFoundError] and the apply
-path still fails fast with [`CommandError`][reemote5.hosts.CommandError].
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError] and the apply
+path still fails fast with [`CommandError`][reemote.hosts.CommandError].
 Docker daemon-level failures (`exec` exit 125) surface as ordinary non-zero
 exits — the transport cannot distinguish them from a container-side failure
 without parsing stderr prose.
 
-[`files.put`][reemote5.modules.files.files.put] and
-[`files.get`][reemote5.modules.files.files.get] ride `docker cp` through the
+[`files.put`][reemote.modules.files.files.put] and
+[`files.get`][reemote.modules.files.files.get] ride `docker cp` through the
 same temporary-file dance the scp seams use; a failed copy raises
 `CommandError` with the CLI's real exit status. Transfers are unprivileged,
 exactly as over SSH.
@@ -117,7 +117,7 @@ exactly as over SSH.
 the exec-level identity applied to *every* command, including fact
 gathering.
 
-::: reemote5.connectors.docker
+::: reemote.connectors.docker
     options:
       members:
         - DockerHost

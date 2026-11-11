@@ -19,11 +19,11 @@ from collections.abc import Generator
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import format_log, format_plan, run, send_command
-from reemote5.hosts import Host
-from reemote5.modules import files
-from reemote5.modules.files.files import (
+from reemote.core import FactCache, OpContext, OperationRequest, op
+from reemote.drivers import format_log, format_plan, run, send_command
+from reemote.hosts import Host
+from reemote.modules import files
+from reemote.modules.files.files import (
     PutCommand,
     RemoteFileSha1,
     _sha1_of_source,
@@ -38,9 +38,9 @@ INVENTORY = [
     },
 ]
 
-REMOTE_DEST = "/tmp/reemote5-put.txt"
+REMOTE_DEST = "/tmp/reemote-put.txt"
 
-CONTENT = b"hello from reemote5\n"
+CONTENT = b"hello from reemote\n"
 CONTENT_SHA1 = hashlib.sha1(CONTENT).hexdigest()
 
 
@@ -176,7 +176,7 @@ async def test_read_source_bytes_rewinds_and_normalizes():
     stream.read(5)  # a partially consumed stream still hashes fully
     assert read_source_bytes(stream) == CONTENT
 
-    text = io.StringIO("hello from reemote5\n")
+    text = io.StringIO("hello from reemote\n")
     assert read_source_bytes(text) == CONTENT
 
 
@@ -188,7 +188,7 @@ async def test_repeated_materializations_hash_identically(src_stream):
 
 
 async def test_text_stream_source_hashes_as_utf8():
-    stream = io.StringIO("hello from reemote5\n")
+    stream = io.StringIO("hello from reemote\n")
     assert _sha1_of_source(stream) == CONTENT_SHA1
 
 

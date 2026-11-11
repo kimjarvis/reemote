@@ -4,7 +4,7 @@
 """Manage /etc/selinux/config with the ``selinux.config`` operation.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -16,7 +16,7 @@ application drives reemote5's two-phase execution model end to end over a
    objects, each guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``selinux.config`` is a reemote5 original (the baseline ships no config
+``selinux.config`` is a reemote original (the baseline ships no config
 operation): it ensures the boot-time settings ``SELINUX=enforcing`` and
 ``SELINUXTYPE=targeted`` in ``/etc/selinux/config``. It supersedes the
 ``files.edit`` + ``files.move`` two-run recipe this example used to
@@ -29,7 +29,7 @@ and appends ``KEY=value`` unquoted, the stock convention; a file that
 already holds exactly the wanted assignments is a no-op, so re-running
 the script changes nothing. When the content differs, the request sends
 *two* commands: an unprivileged ``scp`` spooling the new text to a
-deterministic ``/tmp`` path (reemote5's transfers never elevate, which is
+deterministic ``/tmp`` path (reemote's transfers never elevate, which is
 *why* the root-owned file cannot be written directly), then an elevated
 ``sh -c`` that copies it over ``/etc/selinux/config``, chmods it ``0644``
 and removes the spool. The request's ``sudo=True`` applies to the install
@@ -71,7 +71,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

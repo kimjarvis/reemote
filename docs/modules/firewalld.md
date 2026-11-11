@@ -1,6 +1,6 @@
 # firewalld module
 
-::: reemote5.modules.firewalld.firewalld
+::: reemote.modules.firewalld.firewalld
     options:
       show_root_heading: false
       members:
@@ -36,11 +36,11 @@
 
 <!---
 
-`reemote5.modules.firewalld.firewalld` gives complete control over and
+`reemote.modules.firewalld.firewalld` gives complete control over and
 visibility of the firewalld daemon — the default firewall on RHEL, CentOS,
 Fedora, openSUSE and friends — through the `firewall-cmd` CLI. The baseline
 ships **no firewalld module at all**, so every fact and operation here is a
-reemote5 original: six facts (`FirewalldStatus`, `FirewalldDefaultZone`,
+reemote original: six facts (`FirewalldStatus`, `FirewalldDefaultZone`,
 `FirewalldZones`, `FirewalldServices`, `FirewalldIpSets`,
 `FirewalldPolicies`), five entry records and sixteen operations (`zone`,
 `zone_service`, `port`, `interface`, `source`, `rich_rule`, `protocol`,
@@ -123,7 +123,7 @@ daemon's own ipset objects that zone sources reference as `ipset:name`.
 A fact is an asynchronous, queryable resource — never yielded by a
 generator — implemented as a `process` coroutine returning the raw value
 (over asyncssh in the real implementation). Read facts through
-[`FactCache.get`][reemote5.core.FactCache.get], which is itself a
+[`FactCache.get`][reemote.core.FactCache.get], which is itself a
 coroutine, so results are awaited and cached within a phase step.
 
 `FirewalldStatus` answers `--state` and `--version` behind echo markers in

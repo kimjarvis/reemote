@@ -30,7 +30,7 @@ two-phase execution model:
    -- then print each host's metadata rows with
    ``json.dumps(..., indent=2)``.
 
-``FindFilesInfo`` is a reemote5 *original* -- the baseline ships no
+``FindFilesInfo`` is a reemote *original* -- the baseline ships no
 counterpart: its ``FindFiles`` returns bare paths, so branching on a
 hit's size, owner or age (Ansible's ``find`` module returns that metadata
 per hit, and roles use it: "delete logs older than X") would need one
@@ -69,7 +69,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     FindFilesInfo,
     FoundFile,

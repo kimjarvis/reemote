@@ -29,7 +29,7 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's configuration with
    ``json.dumps(..., indent=2)``.
 
-``SysctlFiles`` is a reemote5 original: one shell round-trip walks the two
+``SysctlFiles`` is a reemote original: one shell round-trip walks the two
 standard persistence locations -- the legacy ``/etc/sysctl.conf`` and the
 ``/etc/sysctl.d/*.conf`` drop-ins -- and returns a dict of **file path ->
 settings dict**. Comment lines (``#``/``;``), blanks and separator-less
@@ -61,7 +61,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

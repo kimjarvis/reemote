@@ -3,7 +3,7 @@
 
 """Example: tune a global system variable on real CentOS hosts.
 
-This is a *usage* example, not part of the library. It drives reemote5's
+This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
@@ -20,7 +20,7 @@ two-phase execution model end to end over a **real SSH transport**
    dropped namespace-wide).
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-``mysql.variable`` is a reemote5-original operation, the
+``mysql.variable`` is a reemote-original operation, the
 ``postgresql.setting`` shape: it reads the ``MysqlVariables`` fact and
 compares the requested value as TEXT in the server's own rendering --
 there is no unit normalization, so pass ``262144`` rather than ``"256K"``
@@ -71,7 +71,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

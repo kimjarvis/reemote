@@ -3,7 +3,7 @@
 
 """Example: edit a remote file in place with a pure transform via files.edit.
 
-This is a *usage* example, not part of the library. It shows reemote5's
+This is a *usage* example, not part of the library. It shows reemote's
 generic content-editing primitive, ``files.edit``: instead of a bespoke
 operation for every config-file format (the baseline ships ``server.etc_hosts``,
 ``files.line``, ``files.replace`` and more, each hard-coding one shape of
@@ -77,7 +77,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -94,10 +94,10 @@ from reemote5 import (
 
 # The remote file to edit: a /tmp path, writable by whatever account the
 # inventory logs in as, so the unprivileged scp transfer can create it.
-REMOTE_PATH = "/tmp/reemote5-edit.txt"
+REMOTE_PATH = "/tmp/reemote-edit.txt"
 
 # The managed line the transform ensures is present exactly once.
-MARKER_LINE = "# managed by the reemote5 files.edit example"
+MARKER_LINE = "# managed by the reemote files.edit example"
 
 
 def ensure_marker(current: str | None) -> str:

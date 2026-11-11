@@ -22,18 +22,18 @@ from collections.abc import Generator
 
 import pytest
 
-from reemote5.core import FactCache, OpContext, OperationRequest, op
-from reemote5.drivers import (
+from reemote.core import FactCache, OpContext, OperationRequest, op
+from reemote.drivers import (
     command_shell,
     format_log,
     format_plan,
     run,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import files
-from reemote5.modules.dnf.dnf import DnfInstallCommand
-from reemote5.modules.files.files import (
+from reemote.hosts import Host
+from reemote.modules import files
+from reemote.modules.dnf.dnf import DnfInstallCommand
+from reemote.modules.files.files import (
     ChmodCommand,
     ChownCommand,
     FileCommand,
@@ -387,7 +387,7 @@ async def test_file_parent_that_is_not_a_directory_raises():
 
 async def test_file_add_force_no_backup_fixture():
     # The baseline's add_force_no_backup.json -- and, deliberately, exactly what
-    # reemote5's plain ``force=True`` does: the baseline's default backup form
+    # reemote's plain ``force=True`` does: the baseline's default backup form
     # ``mv``s to a datetime.now()-stamped name, which would differ between
     # the prepare and apply phases and break the determinism guard, so the
     # timestamped force_backup/force_backup_dir are dropped and force
@@ -405,7 +405,7 @@ async def test_file_add_force_no_backup_fixture():
 
 async def test_file_force_absorbs_the_dropped_backup_knobs():
     # add_force.json/add_force_backup_dir*.json assert the timestamped mv
-    # that reemote5 never emits; the options are absorbed by **kwargs and
+    # that reemote never emits; the options are absorbed by **kwargs and
     # force still takes the deterministic rm -rf form.
     host = make_host(False)
     ctx, commands = await materialize(

@@ -4,7 +4,7 @@
 """Manage a systemd unit's runtime and boot state with ``systemd.service``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root and
@@ -43,7 +43,7 @@ against the same pre-deployment state), while the apply phase starts on the
 first and reports the second as a no-op, because the fresh per-step fact cache
 now sees the state the first step produced.
 
-A third request demonstrates the reemote5 extensions over the baseline's option
+A third request demonstrates the reemote extensions over the baseline's option
 set: ``reloaded=True`` with ``soft_reload=True`` issues
 ``systemctl reload-or-try-restart`` (re-reading configuration without a full
 restart, falling back to a restart when the unit has no reload handler),
@@ -85,7 +85,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

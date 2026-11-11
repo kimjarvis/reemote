@@ -4,7 +4,7 @@
 """Import a GPG key from a controller-side stream into the target keychain.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read ``inventory.json`` in the project root and parse it as JSON
@@ -20,10 +20,10 @@ application drives reemote5's two-phase execution model end to end over a
 keychain (unlike ``gpg.key``, which installs a standalone keyring file).
 The ``src`` is the key *content* as a seekable IO-like stream on the
 control machine, never a filename or URL. One request yields two
-commands: a ``GpgImportUploadCommand`` transfer spools the stream to a
-fixed ``/tmp`` path over scp as the login user, then a
+commands: a ``GpgImportUploadCommand`` transfer spools the stream into a
+sha1-derived ``/tmp`` directory over scp as the login user, then a
 ``GpgImportCommand`` runs one ``sh -c`` that imports the spool with
-``gpg --batch --yes --import`` and removes it. The request is flagged
+``gpg --batch --yes --import`` and removes the spool directory. The request is flagged
 ``sudo=True`` here so the key lands in root's keychain; the transfer
 stays unprivileged regardless.
 
@@ -70,7 +70,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,
@@ -158,7 +158,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     apply phases (a branch on a mutable fact would raise DeterminismError).
 
     Without a ``keyid`` both requests import -- gpg deduplicates the key
-    material itself, but reemote5 cannot know that controller-side, so
+    material itself, but reemote cannot know that controller-side, so
     both stay changed in the apply log too.
     """
     yield op(

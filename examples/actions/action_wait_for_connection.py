@@ -27,7 +27,7 @@ This is a *usage* example, not part of the library. It demonstrates
 
 The purpose is the reboot sequence between deploys::
 
-    from reemote5 import (
+    from reemote import (
         Host, Shell, WaitForConnection, gather_action, run,
     )
 
@@ -65,7 +65,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     ConnectionTimeoutError,
     Host,
     HostConnectionError,

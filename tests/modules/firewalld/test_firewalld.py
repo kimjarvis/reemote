@@ -6,7 +6,7 @@
 ``FirewalldPolicies``, plus all sixteen operations.
 
 the baseline ships no firewalld module, so every fact and operation here is a
-reemote5 original with no upstream fixtures to replay. The facts are fed
+reemote original with no upstream fixtures to replay. The facts are fed
 realistic canned ``firewall-cmd`` output instead (the marked state/version
 echo, ``--list-all-zones`` blocks including the tab-indented rich-rule
 lines real daemons print, and the marker-separated ``--info-service`` /
@@ -32,9 +32,9 @@ from dataclasses import dataclass
 
 import pytest
 
-from reemote5.commands import Command
-from reemote5.core import FactCache, OpContext, op
-from reemote5.drivers import (
+from reemote.commands import Command
+from reemote.core import FactCache, OpContext, op
+from reemote.drivers import (
     DeterminismError,
     command_shell,
     format_log,
@@ -45,9 +45,9 @@ from reemote5.drivers import (
     run_prepare,
     send_command,
 )
-from reemote5.hosts import Host
-from reemote5.modules import firewalld
-from reemote5.modules.firewalld.firewalld import (
+from reemote.hosts import Host
+from reemote.modules import firewalld
+from reemote.modules.firewalld.firewalld import (
     FirewalldDefaultZone,
     FirewalldDefaultZoneCommand,
     FirewalldIpSet,

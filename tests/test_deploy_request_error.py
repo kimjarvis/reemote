@@ -23,15 +23,15 @@ tracked deploy invocation.
 
 import pytest
 
-from reemote5.core import (
+from reemote.core import (
     DeployRequestError,
     FactCache,
     HostRuntime,
     compose,
     op,
 )
-from reemote5.drivers import run, run_apply, run_prepare
-from reemote5.modules import dnf
+from reemote.drivers import run, run_apply, run_prepare
+from reemote.modules import dnf
 from tests.simulated_host import SimulatedHost
 
 INVENTORY = [

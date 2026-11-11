@@ -4,7 +4,7 @@
 """Mask a systemd unit so it cannot be started, with ``systemd.mask``.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root and
@@ -22,7 +22,7 @@ lazily opens an asyncssh connection, gathers facts and runs commands for real,
 and ``run`` closes those connections when it finishes. The path is resolved
 from ``__file__``, so the example works from any working directory.
 
-``systemd.mask`` is a reemote5 original (the baseline has no ``systemd.mask``). It
+``systemd.mask`` is a reemote original (the baseline has no ``systemd.mask``). It
 is bidirectional and idempotent through one present-flagged path: it reads the
 unit's ``UnitFileState`` from the ``SystemdUnitProperties`` fact and yields
 ``systemctl mask`` only when the unit is not already masked. Masking symlinks
@@ -66,7 +66,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

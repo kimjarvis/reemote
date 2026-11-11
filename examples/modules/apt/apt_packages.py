@@ -4,7 +4,7 @@
 """Install packages by name with exact-version idempotence.
 
 This is a *usage* example, not part of the library. It shows how an
-application drives reemote5's two-phase execution model end to end over a
+application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -41,7 +41,7 @@ unpinned name (the baseline's legacy blind upgrade); ``update=True`` runs a
 stateless ``apt-get update`` first, and ``upgrade=True`` an
 ``apt-get upgrade`` gated by the ``SimulateOperationWillChange`` simulation,
 exactly like ``apt.dist_upgrade``. Where the baseline's ``cache_time`` skips the
-update while its stamp file is fresh, reemote5 deliberately drops the
+update while its stamp file is fresh, reemote deliberately drops the
 option -- update is always stateless. The baseline's ``force`` option
 (``--force-yes``) is dropped as deprecated, the same decision as ``apt.deb``.
 
@@ -91,7 +91,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

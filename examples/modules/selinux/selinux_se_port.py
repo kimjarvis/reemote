@@ -4,7 +4,7 @@
 """Example: gather the ``selinux.SEPort`` fact on real CentOS hosts.
 
 This is a *usage* example, not part of the library. Where
-``examples/modules/selinux/selinux_port.py`` drives reemote5's two-phase
+``examples/modules/selinux/selinux_port.py`` drives reemote's two-phase
 execution model (a deploy generator of operations run through ``run``),
 this one reads a single **fact** directly over the same *real SSH
 transport* (asyncssh):
@@ -62,7 +62,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

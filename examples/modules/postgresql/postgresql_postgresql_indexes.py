@@ -30,7 +30,7 @@ driving the two-phase execution model:
    ``tablespace``, ``unique``, ``method``) with
    ``json.dumps(..., indent=2)``.
 
-The fact is a reemote5-original visibility fact (the baseline has no index
+The fact is a reemote-original visibility fact (the baseline has no index
 fact): it selects ``pg_indexes`` joined to ``pg_class`` for uniqueness
 and the access method, so ``postgresql.index`` can detect an existing
 index and refuse to silently rebuild one whose definition differs. The
@@ -72,7 +72,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

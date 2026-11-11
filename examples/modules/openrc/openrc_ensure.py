@@ -3,7 +3,7 @@
 
 """Install a package and ensure its service by composing apk + openrc.
 
-This is a *usage* example, not part of the library. It is reemote5's answer
+This is a *usage* example, not part of the library. It is reemote's answer
 to the proposed ``openrc.ensure`` operation: no combined install-and-enable
 operation exists, because the two halves already compose in a deploy --
 ``apk.packages`` installs the package, ``openrc.service`` enables and
@@ -11,7 +11,7 @@ starts the service it ships -- and the driver's lockstep execution gives
 the composition the ordering guarantee a bespoke operation would have to
 build itself.
 
-It shows how an application drives reemote5's two-phase execution model
+It shows how an application drives reemote's two-phase execution model
 end to end over a **real SSH transport** (asyncssh):
 
 1. Read the target hosts from ``inventory.json`` in the project root -- an
@@ -71,7 +71,7 @@ runlevel trees), so every request is flagged ``doas=True`` and the driver
 elevates their commands. ``doas`` rather than ``sudo`` because the Alpine
 host has no ``sudo`` installed at all -- ``sudo apk add`` would die with
 ``sh: sudo: not found`` (exit 127) before reaching apk. ``doas`` is
-passwordless here: reemote5 always runs ``doas -n``, which fails rather
+passwordless here: reemote always runs ``doas -n``, which fails rather
 than prompts, so the host must grant the login user a ``permit nopass``
 rule in ``/etc/doas.conf`` (see ``examples/demonstrations/privilege/
 privilege_doas.py``); without one the driver raises ``PrivilegeError``.
@@ -104,7 +104,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     Host,
     HostConnectionError,

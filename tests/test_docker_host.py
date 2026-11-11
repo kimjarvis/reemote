@@ -21,7 +21,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from reemote5 import (
+from reemote import (
     CommandError,
     CommandNotFoundError,
     DockerHost,
@@ -33,7 +33,7 @@ from reemote5 import (
     op,
     run,
 )
-from reemote5.drivers import run_prepare
+from reemote.drivers import run_prepare
 from tests.simulated_host import SimulatedHost
 
 

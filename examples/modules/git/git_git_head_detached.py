@@ -29,7 +29,7 @@ driving the two-phase execution model:
    path argument verbatim, and returns a host-name-keyed mapping -- then
    print each host's detached-HEAD answer.
 
-``GitHeadDetached`` is a reemote5-original fact -- the baseline has no
+``GitHeadDetached`` is a reemote-original fact -- the baseline has no
 equivalent. It runs ``! test -d <repo> || (cd <repo> && if git
 symbolic-ref -q HEAD >/dev/null 2>&1; then echo attached; elif git
 rev-parse --git-dir >/dev/null 2>&1; then echo detached; fi)`` and answers
@@ -58,7 +58,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from reemote5 import (
+from reemote import (
     CommandError,
     GitHeadDetached,
     Host,
@@ -71,7 +71,7 @@ from reemote5 import (
 # The repository to inspect on each host: every git fact takes the repo path
 # it reads, and the command guards on the directory, so a host without it
 # answers None rather than raising.
-REPO = "/tmp/reemote5-app"
+REPO = "/tmp/reemote-app"
 
 # examples/modules/git/git_git_head_detached.py -> the project root, so the inventory
 # is found whatever the current working directory is.
