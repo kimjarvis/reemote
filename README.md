@@ -21,6 +21,12 @@ to `run`. The transport is real — the default `Host.from_inventory` factory
 opens an [asyncssh] connection per entry, gathers facts and runs commands over
 it, and `run` closes the connections when it finishes.
 
+## Documentation
+
+Full documentation — a getting-started guide, the API reference for every module,
+actions and connectors, and runnable examples — is available at
+**[https://reemote.org/](https://reemote.org/)**.
+
 ## Installation
 
 The *controller* is the machine running your Python script. It needs **Python
