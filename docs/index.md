@@ -23,17 +23,26 @@ A **deploy** is a Python generator that yields operation requests in order. You 
 
 ## 1. Install on your controller
 
-The *controller* is the machine running your Python script. It needs **Python 3.13 or newer**. The following source installation uses Git and Python's virtual environments; run it in a directory where you want to keep the project:
+The *controller* is the machine running your Python script. It needs **Python 3.13 or newer**. This tutorial uses [uv](https://docs.astral.sh/uv/) to create the environment and install the package; `venv` and `pip` work just as well if you prefer them.
+
+**Installing from source is the recommended route**, because the checkout also gives you the runnable `examples/` tree that the reference pages link to, and lets you pin the exact revision you deploy from. Run this in a directory where you want to keep the project:
 
 ```bash
 git clone https://github.com/kimjarvis/reemote5.git
-cd reemote
-python3.13 -m venv .venv
+cd reemote5
+uv sync
 source .venv/bin/activate
-python -m pip install -e . asyncssh
 ```
 
-If you already have a checkout, start with the virtual-environment commands inside it. `asyncssh` is explicitly included because the current package metadata does not declare the dependency required by the SSH transport. For reproducible automation, pin the project revision and your environment's dependencies.
+`uv sync` creates `.venv`, installs reemote in editable mode and resolves its declared dependencies — `asyncssh`, `distro` and `pydantic` — so the SSH transport needs no separate install step. Activating the environment lets the rest of this tutorial call `python` directly; if you would rather not activate it, prefix those commands with `uv run`.
+
+The package is **also published on [PyPI](https://pypi.org/project/reemote/)**, which is enough if you only need the library and not the examples:
+
+```bash
+uv pip install reemote
+```
+
+Inside a project of your own, use `uv add reemote` instead so it lands in your `pyproject.toml`. Check that the release you install is the version these documents describe; the source checkout is always current, and it records the resolved dependencies in `uv.lock` for reproducible automation.
 
 reemote is a library: there is no `reemote` command to invoke. You will run your own Python script. The Python deployment program runs on the controller; you do not install reemote on the target. This example needs an SSH server, a working login, ordinary Linux shell utilities and SCP support on the target.
 
