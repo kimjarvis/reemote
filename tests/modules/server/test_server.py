@@ -25,9 +25,9 @@ and the ``SimulatedHost`` seam), the ``Hostname`` fact (the baseline's own
 fixture over the real-transport path, parsing edge cases, and the
 ``SimulatedHost`` seam), the ``Kernel`` fact (the baseline's own fixture over
 the real-transport path, parsing edge cases, and the ``SimulatedHost``
-seam), the ``KernelModules`` fact (the baseline's own Linux and FreeBSD fixtures
-over the real-transport path, kernel-dispatched command and parser edge
-cases, and the ``SimulatedHost`` seam), the ``KernelVersion`` fact
+seam), the ``KernelModules`` fact (the baseline's own Linux fixture over the
+real-transport path, the ``/proc/modules`` command and parser edge cases, and
+the ``SimulatedHost`` seam), the ``KernelVersion`` fact
 (the baseline's own fixture over the real-transport path, parsing edge cases,
 and the ``SimulatedHost`` seam), the ``Last`` fact (the baseline's own
 fixtures over the real-transport path, login-record parsing edge cases,
@@ -43,35 +43,35 @@ with ``LinuxDistribution``, and the shared ``SimulatedHost`` seam), the
 path, ``utf8`` normalization edge cases, and the ``SimulatedHost`` seam),
 the ``LsbRelease`` fact (the baseline's own fixture over the real-transport
 path, key-normalization parsing edge cases, and the ``SimulatedHost``
-seam), the ``Mounts`` fact (the baseline's own Linux and OpenBSD fixtures over
-the real-transport path, kernel-dispatched command and parser edge cases
-including the FreeBSD JSON branch, and the ``SimulatedHost`` seam), the
+seam), the ``Mounts`` fact (the baseline's own Linux fixture over the
+real-transport path, the ``/proc/self/mountinfo`` command and parser edge
+cases, and the ``SimulatedHost`` seam), the
 ``Port`` fact (the baseline's own thirteen fixtures over the real-transport
-path, the ``Kernel``/``Which``-dispatched tool selection, the
+path, the ``Which``-dispatched tool selection, the
 port/protocol validation and the parser edge cases -- including the
 owner-less rows an unprivileged read produces, which is where reemote's
 record deliberately differs from the baseline's tuple -- and the
 ``listening_ports`` ``SimulatedHost`` seam), the
 ``Processes`` fact
-(the baseline's own eleven Linux, FreeBSD, BusyBox and Darwin fixtures over the
-real-transport path, kernel/busybox-dispatched command and parser edge
-cases, and the ``SimulatedHost`` seam), the ``Timezone`` fact (the baseline's own
+(the baseline's own Linux and BusyBox fixtures over the real-transport path,
+busybox-dispatched command and parser edge cases, and the ``SimulatedHost``
+seam), the ``Timezone`` fact (the baseline's own
 fixture over the real-transport path, parsing edge cases, and the
-``SimulatedHost`` seam), the ``Uptime`` fact (the baseline's own Linux and macOS
-fixtures over the real-transport path, kernel-dispatched command and parser
-edge cases, and the ``SimulatedHost`` seam), the ``Users`` fact (the baseline's
+``SimulatedHost`` seam), the ``Uptime`` fact (the baseline's own Linux fixture
+over the real-transport path, the ``/proc/uptime`` command and parser edge
+cases, and the ``SimulatedHost`` seam), the ``Users`` fact (the baseline's
 own mixed fixture over the real-transport path, passwd/lastlog parsing edge
 cases, and the ``SimulatedHost`` seam), the ``Which`` fact (the baseline's own
 fixtures over the real-transport path, name quoting and parsing edge cases,
 and the ``SimulatedHost`` seam), the ``group`` operation's option set and its
-``GroupAddCommand``/``GroupDelCommand`` descriptors (the baseline's own eight
-operation fixtures replayed over the ``SimulatedHost`` seams, idempotence,
-the kernel dispatch and the end-to-end lockstep run), the ``user`` operation
+``GroupAddCommand``/``GroupDelCommand`` descriptors (the baseline's own Linux
+operation fixtures replayed over the ``SimulatedHost`` seams, idempotence and
+the end-to-end lockstep run), the ``user`` operation
 and its ``UserAddCommand``/``UserModCommand``/``UserDelCommand`` descriptors
 with the private ``_HomeMkdirCommand``/``_HomeChownCommand`` pair (the baseline's
-own operation fixtures replayed over the ``SimulatedHost`` seams minus the
+own Linux operation fixtures replayed over the ``SimulatedHost`` seams minus the
 dropped ``public_keys``/``delete_keys`` and ``Which`` guard cases, per-field
-update idempotence, the Linux/FreeBSD/OpenBSD dispatch, the
+update idempotence, the
 ``directory_stats``/``link_stats`` home branch, the argument-hashability
 boundary and the end-to-end lockstep run), the ``user_authorized_keys``
 operation and its ``AuthorizedKeysUploadCommand``/
@@ -97,9 +97,9 @@ nine operation fixtures replayed over the ``SimulatedHost`` seam, the
 load/unload partition against ``KernelModules``, the ``kernel_modules`` seam
 mutation, the determinism guard against live-state branching and the
 end-to-end lockstep run), the ``mount`` operation and its ``MountCommand``
-descriptor (the baseline's own fifteen operation fixtures replayed over the
-``SimulatedHost`` seam, the lookup-by-device fallback and the BSD remount
-dispatch against ``Mounts``/``Kernel``, the ``mounts`` seam mutation, the
+descriptor (the baseline's own Linux operation fixtures replayed over the
+``SimulatedHost`` seam, the lookup-by-device fallback and the remount against
+``Mounts``, the ``mounts`` seam mutation, the
 determinism guard against live-state branching and the end-to-end lockstep
 run), the ``timezone`` operation and its ``SetTimezoneCommand`` descriptor
 (the baseline's own noop and set_timedatectl fixtures replayed over the
@@ -239,37 +239,17 @@ class CannedShellHost(Host):
         return self._stdout
 
 
-class CannedKernelHost(CannedShellHost):
-    """A CannedShellHost that answers ``uname -s`` with a fixed kernel name.
+class CannedProcessesHost(CannedShellHost):
+    """A CannedShellHost that also answers the BusyBox probe.
 
-    ``KernelModules`` first reads the ``Kernel`` fact, so the canned host
-    must answer two different shells: the kernel name for ``uname -s`` and
-    the module listing for the command that kernel selects.
+    ``Processes`` probes ``command -v busybox`` through the ``Which`` fact
+    and then runs the ps listing that answer selects, so the canned host
+    must answer two different shells: the probe's path-or-empty answer and
+    the ps output.
     """
 
-    def __init__(self, kernel: str, stdout: str):
+    def __init__(self, busybox: str, stdout: str):
         super().__init__(stdout)
-        self._kernel = kernel
-
-    async def run_shell(self, shell: str, *, check: bool = False) -> str:
-        if shell == Kernel.COMMAND:
-            self.shells.append(shell)
-            return self._kernel
-        return await super().run_shell(shell)
-
-
-class CannedProcessesHost(CannedKernelHost):
-    """A CannedKernelHost that also answers the BusyBox probe.
-
-    ``Processes`` reads the ``Kernel`` fact, probes ``command -v busybox``
-    through the ``Which`` fact on non-BSD kernels and then runs the ps
-    listing those answers select, so the canned host must answer three
-    different shells: the kernel name for ``uname -s``, the probe's
-    path-or-empty answer, and the ps output.
-    """
-
-    def __init__(self, kernel: str, busybox: str, stdout: str):
-        super().__init__(kernel, stdout)
         self._busybox = busybox
 
     async def run_shell(self, shell: str, *, check: bool = False) -> str:
@@ -280,24 +260,19 @@ class CannedProcessesHost(CannedKernelHost):
 
 
 class CannedPortHost(CannedShellHost):
-    """A CannedShellHost that also answers the Kernel and ``ss`` probes.
+    """A CannedShellHost that also answers the ``ss`` probe.
 
-    ``Port`` reads the ``Kernel`` fact, probes ``command -v ss`` through the
-    ``Which`` fact on every kernel but FreeBSD and then runs the socket
-    listing those answers select, so the canned host must answer three
-    different shells: the kernel name for ``uname -s``, the probe's
-    path-or-empty answer, and the ``ss``/``netstat``/``sockstat`` output.
+    ``Port`` probes ``command -v ss`` through the ``Which`` fact and then
+    runs the socket listing that answer selects, so the canned host must
+    answer two different shells: the probe's path-or-empty answer and the
+    ``ss``/``netstat`` output.
     """
 
-    def __init__(self, kernel: str, ss: str, stdout: str):
+    def __init__(self, ss: str, stdout: str):
         super().__init__(stdout)
-        self._kernel = kernel
         self._ss = ss
 
     async def run_shell(self, shell: str, *, check: bool = False) -> str:
-        if shell == Kernel.COMMAND:
-            self.shells.append(shell)
-            return self._kernel
         if shell == Which.command("ss"):
             self.shells.append(shell)
             return self._ss
@@ -876,10 +851,9 @@ async def test_kernel_version_gather_fact_across_hosts():
 
 async def test_kernel_modules_parses_baseline_linux_fixture():
     # The baseline's own fact fixture (tests/facts/server.KernelModules/
-    # linux_modules.json): Kernel "Linux", command
+    # linux_modules.json): command
     # "! test -f /proc/modules || cat /proc/modules", five rows.
-    host = CannedKernelHost(
-        "Linux",
+    host = CannedShellHost(
         """libahci 32768 1 ahci, Live 0x0000000000000000
 i2c_piix4 24576 0 - Live 0x0000000000000000
 e1000 143360 0 - Live 0x0000000000000000
@@ -899,54 +873,7 @@ video 45056 0 - Live 0x0000000000000000
         "pata_acpi": {"size": "16384", "instances": 0, "state": "Live"},
         "video": {"size": "45056", "instances": 0, "state": "Live"},
     }
-    assert host.shells == ["uname -s", "! test -f /proc/modules || cat /proc/modules"]
-
-
-async def test_kernel_modules_parses_baseline_freebsd_fixture():
-    # The baseline's freebsd_modules.json fixture: Kernel "FreeBSD", command
-    # "kldstat | tail +2" (the header row already dropped), five rows.
-    host = CannedKernelHost(
-        "FreeBSD",
-        """ 1   46 0xffffffff80200000  1f4dad0 kernel
- 2    1 0xffffffff8214f000   620c10 zfs.ko
- 3    1 0xffffffff82770000     8808 cryptodev.ko
- 4    1 0xffffffff83018000     3570 fdescfs.ko
- 5    1 0xffffffff8301c000     21e8 hms.ko
-""",
-    )
-    assert await KernelModules.process(host) == {
-        "kernel": {
-            "address": "0xffffffff80200000",
-            "id": "1",
-            "refs": "46",
-            "size": "1f4dad0",
-        },
-        "zfs.ko": {
-            "address": "0xffffffff8214f000",
-            "id": "2",
-            "refs": "1",
-            "size": "620c10",
-        },
-        "cryptodev.ko": {
-            "address": "0xffffffff82770000",
-            "id": "3",
-            "refs": "1",
-            "size": "8808",
-        },
-        "fdescfs.ko": {
-            "address": "0xffffffff83018000",
-            "id": "4",
-            "refs": "1",
-            "size": "3570",
-        },
-        "hms.ko": {
-            "address": "0xffffffff8301c000",
-            "id": "5",
-            "refs": "1",
-            "size": "21e8",
-        },
-    }
-    assert host.shells == ["uname -s", "kldstat | tail +2"]
+    assert host.shells == ["! test -f /proc/modules || cat /proc/modules"]
 
 
 def test_kernel_modules_parse_linux_edge_cases():
@@ -954,7 +881,7 @@ def test_kernel_modules_parse_linux_edge_cases():
     # dropped, only instances becomes an int, the state is kept verbatim
     # (Loading, not just Live) and the trailing address field is ignored.
     assert KernelModules.parse(
-        ["bridge 245760 2 stp,llc, Loading 0x0000000000000000"], "Linux"
+        ["bridge 245760 2 stp,llc, Loading 0x0000000000000000"]
     ) == {
         "bridge": {
             "size": "245760",
@@ -963,41 +890,17 @@ def test_kernel_modules_parse_linux_edge_cases():
             "depends": ["stp", "llc"],
         }
     }
-    assert KernelModules.parse([], "Linux") == {}
+    assert KernelModules.parse([]) == {}
 
 
-def test_kernel_modules_parse_freebsd_splits_on_whitespace():
-    # kldstat rows are padded with runs of spaces; split(None) collapses
-    # them, and all four info fields stay raw (hex) strings.
-    assert KernelModules.parse(
-        [" 2    1 0xffffffff8214f000   620c10 zfs.ko"], "FreeBSD"
-    ) == {
-        "zfs.ko": {
-            "address": "0xffffffff8214f000",
-            "id": "2",
-            "refs": "1",
-            "size": "620c10",
-        }
-    }
-    assert KernelModules.parse([], "FreeBSD") == {}
-
-
-def test_kernel_modules_command_dispatches_on_the_kernel():
-    assert KernelModules.command("FreeBSD") == "kldstat | tail +2"
-    assert KernelModules.command(" FreeBSD ") == "kldstat | tail +2"
-    # Anything else -- including a failed `uname -s` ("") -- takes the
-    # /proc/modules branch, exactly like the baseline.
-    for kernel in ("Linux", "Darwin", ""):
-        assert (
-            KernelModules.command(kernel)
-            == "! test -f /proc/modules || cat /proc/modules"
-        )
+def test_kernel_modules_command_is_the_proc_modules_guard():
+    assert KernelModules.COMMAND == "! test -f /proc/modules || cat /proc/modules"
 
 
 async def test_kernel_modules_is_empty_on_empty_output():
     # The ``! test -f`` guard short-circuits when /proc/modules is absent,
     # so a failed read maps to {} (the baseline's ``default = dict``).
-    assert await KernelModules.process(CannedKernelHost("Linux", "")) == {}
+    assert await KernelModules.process(CannedShellHost("")) == {}
 
 
 async def test_kernel_modules_reads_the_simulated_seam():
@@ -2035,11 +1938,10 @@ async def test_lsb_release_gather_fact_across_hosts():
 
 async def test_mounts_parses_baseline_linux_fixture():
     # The baseline's own fact fixture (tests/facts/server.Mounts/mounts.json):
-    # Kernel "Linux", command "cat /proc/self/mountinfo", three rows --
+    # command "cat /proc/self/mountinfo", three rows --
     # including the octal-escaped overlay mount point, device options and
     # a "shared" optional tag, reused verbatim for parity.
-    host = CannedKernelHost(
-        "Linux",
+    host = CannedShellHost(
         r"""2 1 0:26 / / ro,noatime - ext4 /dev/sdb1 rw
 33 29 8:1 / /boot rw,relatime - vfat /dev/sda1 rw,lazytime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,utf8,errors=remount-ro
 408 35 0:352 / /mnt/overlay/overlay,dir\040with\040spaces\040and\040\134backslashes ro,relatime shared:27 - overlay none ro,lowerdir=lower\054dir,upperdir=upper\054dir,workdir=work\054dir
@@ -2079,116 +1981,14 @@ async def test_mounts_parses_baseline_linux_fixture():
             ],
         },
     }
-    assert host.shells == ["uname -s", "cat /proc/self/mountinfo"]
-
-
-async def test_mounts_parses_baseline_openbsd_fixture():
-    # The baseline's openbsd.json fixture: Kernel "OpenBSD", command "mount -v";
-    # the (diskname.label) part is optional, ctime= flags are dropped and
-    # options after them are kept, reused verbatim for parity.
-    host = CannedKernelHost(
-        "OpenBSD",
-        """/dev/sd0a (b486026f5c43e172.a) on / type ffs (rw, local, ctime=Thu Jan  1 12:00:00 1970)
-/dev/sd0k (b486026f5c43e172.k) on /home type ffs (rw, local, nodev, nosuid, ctime=Thu Jan  1 12:00:00 1970)
-/dev/sd0d (b486026f5c43e172.d) on /tmp type ffs (rw, local, nodev, nosuid, ctime=Thu Jan  1 12:00:00 1970)
-/dev/sd0f (b486026f5c43e172.f) on /usr type ffs (rw, local, nodev, ctime=Thu Jan  1 12:00:00 1970)
-/dev/sd0g (b486026f5c43e172.g) on /usr/X11R6 type ffs (rw, local, nodev, ctime=Thu Jan  1 12:00:00 1970)
-/dev/sd0h (b486026f5c43e172.h) on /usr/local type ffs (rw, local, nodev, wxallowed, ctime=Thu Jan  1 12:00:00 1970)
-/dev/sd0j (b486026f5c43e172.j) on /usr/obj type ffs (rw, local, nodev, nosuid, ctime=Thu Jan  1 12:00:00 1970)
-/dev/sd0i (b486026f5c43e172.i) on /usr/src type ffs (rw, local, nodev, nosuid, ctime=Thu Jan  1 12:00:00 1970)
-/dev/sd0e on /var type ffs (rw, local, nosuid, ctime=Thu Jan  1 12:00:00 1970)
-skynet:/sys on /sys type nfs (rw, nodev, nosuid, ctime=Mon Aug  4 16:21:19 1997, tcp, soft, intr)
-mfs:75 on /run type mfs (rw, noexec, nosuid, ctime=Thu Jan  1 12:00:00 1970)
-""",
-    )
-    assert await Mounts.process(host) == {
-        "/": {"device": "/dev/sd0a", "type": "ffs", "options": ["rw", "local"]},
-        "/home": {
-            "device": "/dev/sd0k",
-            "type": "ffs",
-            "options": ["rw", "local", "nodev", "nosuid"],
-        },
-        "/tmp": {
-            "device": "/dev/sd0d",
-            "type": "ffs",
-            "options": ["rw", "local", "nodev", "nosuid"],
-        },
-        "/usr": {
-            "device": "/dev/sd0f",
-            "type": "ffs",
-            "options": ["rw", "local", "nodev"],
-        },
-        "/usr/X11R6": {
-            "device": "/dev/sd0g",
-            "type": "ffs",
-            "options": ["rw", "local", "nodev"],
-        },
-        "/usr/local": {
-            "device": "/dev/sd0h",
-            "type": "ffs",
-            "options": ["rw", "local", "nodev", "wxallowed"],
-        },
-        "/usr/obj": {
-            "device": "/dev/sd0j",
-            "type": "ffs",
-            "options": ["rw", "local", "nodev", "nosuid"],
-        },
-        "/usr/src": {
-            "device": "/dev/sd0i",
-            "type": "ffs",
-            "options": ["rw", "local", "nodev", "nosuid"],
-        },
-        "/var": {
-            "device": "/dev/sd0e",
-            "type": "ffs",
-            "options": ["rw", "local", "nosuid"],
-        },
-        "/sys": {
-            "device": "skynet:/sys",
-            "type": "nfs",
-            "options": ["rw", "nodev", "nosuid", "tcp", "soft", "intr"],
-        },
-        "/run": {
-            "device": "mfs:75",
-            "type": "mfs",
-            "options": ["rw", "noexec", "nosuid"],
-        },
-    }
-    assert host.shells == ["uname -s", "mount -v"]
-
-
-async def test_mounts_parses_freebsd_json():
-    # The baseline ships no FreeBSD fixture for Mounts; the JSON shape is its
-    # parser's contract: mount.fstab entries with mntpoint/device/fstype
-    # and a comma-separated opts string whose items are stripped.
-    host = CannedKernelHost(
-        "FreeBSD",
-        """{"mount": {"fstab": [
-{"device": "/dev/ada0p2", "mntpoint": "/", "fstype": "ufs", "opts": "rw, userquota, groupquota"},
-{"device": "tmpfs", "mntpoint": "/tmp", "fstype": "tmpfs", "opts": "rw, nosuid, mode=01777"}
-]}}
-""",
-    )
-    assert await Mounts.process(host) == {
-        "/": {
-            "device": "/dev/ada0p2",
-            "type": "ufs",
-            "options": ["rw", "userquota", "groupquota"],
-        },
-        "/tmp": {
-            "device": "tmpfs",
-            "type": "tmpfs",
-            "options": ["rw", "nosuid", "mode=01777"],
-        },
-    }
-    assert host.shells == ["uname -s", "mount -p --libxo json"]
+    assert host.shells == ["cat /proc/self/mountinfo"]
 
 
 def test_mounts_parses_baseline_documented_example():
     # The baseline's docstring example result: "/" on /dev/mv2, ext4, rw+relatime.
     # The super-block "rw" is filtered so it never appears twice.
     assert Mounts.parse(
-        ["29 1 253:0 / / rw,relatime - ext4 /dev/mv2 rw"], "Linux"
+        ["29 1 253:0 / / rw,relatime - ext4 /dev/mv2 rw"]
     ) == {"/": {"device": "/dev/mv2", "type": "ext4", "options": ["rw", "relatime"]}}
 
 
@@ -2202,36 +2002,17 @@ def test_mounts_parse_linux_edge_cases():
             "30 1 0:23 / /sys rw - sysfs old rw",
             "31 1 0:23 / /sys ro - sysfs new ro",
         ],
-        "Linux",
     ) == {"/sys": {"device": "new", "type": "sysfs", "options": ["ro"]}}
-    assert Mounts.parse([], "Linux") == {}
+    assert Mounts.parse([]) == {}
 
 
-def test_mounts_parse_openbsd_skips_unmatched_lines():
-    # Only full "device on /path type (flags)" rows count; anything else
-    # (headers, blank lines) is skipped, like the baseline's fullmatch guard.
-    assert (
-        Mounts.parse(["not a mount row", "", "dev on relative type x (rw)"], "OpenBSD")
-        == {}
-    )
-
-
-def test_mounts_command_dispatches_on_the_kernel():
-    assert Mounts.command("FreeBSD") == "mount -p --libxo json"
-    assert Mounts.command(" FreeBSD ") == "mount -p --libxo json"
-    assert Mounts.command("OpenBSD") == "mount -v"
-    assert Mounts.command(" OpenBSD ") == "mount -v"
-    # Anything else -- including a failed `uname -s` ("") -- takes the
-    # /proc/self/mountinfo branch, exactly like the baseline.
-    for kernel in ("Linux", "Darwin", ""):
-        assert Mounts.command(kernel) == "cat /proc/self/mountinfo"
+def test_mounts_command_is_the_mountinfo_read():
+    assert Mounts.COMMAND == "cat /proc/self/mountinfo"
 
 
 async def test_mounts_is_empty_on_empty_output():
-    # A failed read maps to {} on every branch (the baseline's ``default =
-    # dict``); on FreeBSD empty output is caught before json.loads.
-    for kernel in ("Linux", "FreeBSD", "OpenBSD"):
-        assert await Mounts.process(CannedKernelHost(kernel, "")) == {}
+    # A failed read maps to {} (the baseline's ``default = dict``).
+    assert await Mounts.process(CannedShellHost("")) == {}
 
 
 async def test_mounts_reads_the_simulated_seam():
@@ -2276,10 +2057,6 @@ async def test_mounts_gather_fact_across_hosts():
 # matches no row, and what an unseeded ``listening_ports`` seam reads as.
 NOT_LISTENING = PortInfo(listening=False, process=None, pid=None)
 
-# The column header FreeBSD's sockstat prints even when nothing matches --
-# The baseline's empty fixture holds nothing else, and it is no socket row.
-_SOCKSTAT_HEADER = "USER     COMMAND    PID   FD PROTO  LOCAL ADDRESS         FOREIGN ADDRESS"
-
 
 def _listening(process: str | None, pid: int | None) -> PortInfo:
     """A listening record, with (or without, as ``None``) an owner."""
@@ -2287,18 +2064,17 @@ def _listening(process: str | None, pid: int | None) -> PortInfo:
 
 
 # The baseline's own fact fixtures (tests/facts/server.Port/*.json), captured
-# verbatim: the kernel name and ``command -v ss`` answer its ``facts`` block
-# seeds, the port and protocol arguments, the command string the fixture
-# records, its raw output lines and the record reemote derives. The last
-# column is where reemote deliberately departs from the baseline's
-# ``(process, pid)`` tuple: the ``ss_no_process_info`` rows are a listening
-# port with no owner to name, where the baseline answers ``(None, None)`` and its
-# ``server.wait`` would keep looping.
-PORT_FIXTURES: list[tuple[str, str, str, int, str, str, list[str], PortInfo]] = [
-    ("ss_empty", "Linux", "/usr/sbin/ss", 53, "tcp", "ss -lptn | grep ':53 ' || true", [], NOT_LISTENING),
+# verbatim: the ``command -v ss`` answer its ``facts`` block seeds, the port
+# and protocol arguments, the command string the fixture records, its raw
+# output lines and the record reemote derives. The last column is where
+# reemote deliberately departs from the baseline's ``(process, pid)`` tuple:
+# the ``ss_no_process_info`` rows are a listening port with no owner to name,
+# where the baseline answers ``(None, None)`` and its ``server.wait`` would
+# keep looping.
+PORT_FIXTURES: list[tuple[str, str, int, str, str, list[str], PortInfo]] = [
+    ("ss_empty", "/usr/sbin/ss", 53, "tcp", "ss -lptn | grep ':53 ' || true", [], NOT_LISTENING),
     (
         "ss_one_process",
-        "Linux",
         "/usr/sbin/ss",
         10025,
         "tcp",
@@ -2310,7 +2086,6 @@ PORT_FIXTURES: list[tuple[str, str, str, int, str, str, list[str], PortInfo]] = 
     ),
     (
         "ss_two_processes",
-        "Linux",
         "/usr/sbin/ss",
         443,
         "tcp",
@@ -2323,7 +2098,6 @@ PORT_FIXTURES: list[tuple[str, str, str, int, str, str, list[str], PortInfo]] = 
     ),
     (
         "ss_no_process_info",
-        "Linux",
         "/usr/sbin/ss",
         22,
         "tcp",
@@ -2334,10 +2108,9 @@ PORT_FIXTURES: list[tuple[str, str, str, int, str, str, list[str], PortInfo]] = 
         ],
         _listening(None, None),
     ),
-    ("ss_udp_empty", "Linux", "/usr/sbin/ss", 53, "udp", "ss -lpun | grep ':53 ' || true", [], NOT_LISTENING),
+    ("ss_udp_empty", "/usr/sbin/ss", 53, "udp", "ss -lpun | grep ':53 ' || true", [], NOT_LISTENING),
     (
         "ss_udp_one_process",
-        "Linux",
         "/usr/sbin/ss",
         53,
         "udp",
@@ -2347,7 +2120,6 @@ PORT_FIXTURES: list[tuple[str, str, str, int, str, str, list[str], PortInfo]] = 
     ),
     (
         "netstat_tcp_empty",
-        "Linux",
         "",
         80,
         "tcp",
@@ -2357,7 +2129,6 @@ PORT_FIXTURES: list[tuple[str, str, str, int, str, str, list[str], PortInfo]] = 
     ),
     (
         "netstat_tcp_one_process",
-        "Linux",
         "",
         80,
         "tcp",
@@ -2367,7 +2138,6 @@ PORT_FIXTURES: list[tuple[str, str, str, int, str, str, list[str], PortInfo]] = 
     ),
     (
         "netstat_tcp_truncated_name",
-        "Linux",
         "",
         22,
         "tcp",
@@ -2377,7 +2147,6 @@ PORT_FIXTURES: list[tuple[str, str, str, int, str, str, list[str], PortInfo]] = 
     ),
     (
         "netstat_udp_one_process",
-        "Linux",
         "",
         53,
         "udp",
@@ -2385,72 +2154,28 @@ PORT_FIXTURES: list[tuple[str, str, str, int, str, str, list[str], PortInfo]] = 
         ["udp        0      0 0.0.0.0:53              0.0.0.0:*                           1234/named"],
         _listening("named", 1234),
     ),
-    (
-        "sockstat_tcp_empty",
-        "FreeBSD",
-        "",
-        80,
-        "tcp",
-        "sockstat -l -p 80 -P tcp",
-        [_SOCKSTAT_HEADER],
-        NOT_LISTENING,
-    ),
-    (
-        "sockstat_tcp_one_process",
-        "FreeBSD",
-        "",
-        80,
-        "tcp",
-        "sockstat -l -p 80 -P tcp",
-        [_SOCKSTAT_HEADER, "www      nginx      1234  3  tcp4   *:80                  *:*"],
-        _listening("nginx", 1234),
-    ),
-    (
-        "sockstat_udp_one_process",
-        "FreeBSD",
-        "",
-        53,
-        "udp",
-        "sockstat -l -p 53 -P udp",
-        [_SOCKSTAT_HEADER, "root     named      5678  20 udp4   *:53                  *:*"],
-        _listening("named", 5678),
-    ),
 ]
 
 
 @pytest.mark.parametrize(
-    ("name", "kernel", "ss", "port", "protocol", "command", "output", "expected"),
+    ("name", "ss", "port", "protocol", "command", "output", "expected"),
     PORT_FIXTURES,
     ids=[row[0] for row in PORT_FIXTURES],
 )
 async def test_port_matches_baseline_fixtures(
-    name, kernel, ss, port, protocol, command, output, expected
+    name, ss, port, protocol, command, output, expected
 ):
-    host = CannedPortHost(kernel, ss, "\n".join(output))
+    host = CannedPortHost(ss, "\n".join(output))
     assert await Port.process(host, port, protocol) == expected
-    # Kernel name first, then the ss probe FreeBSD never makes, then the
-    # listing the two answers select -- the fixture's own command string.
-    probe = [] if kernel == "FreeBSD" else ["command -v ss || true"]
-    assert host.shells == ["uname -s", *probe, command]
+    # The ss probe first, then the listing that answer selects -- the
+    # fixture's own command string.
+    assert host.shells == ["command -v ss || true", command]
 
 
-def test_port_tool_dispatches_on_the_kernel_and_ss():
-    assert Port._tool("FreeBSD", has_ss=True) == "sockstat"
-    assert Port._tool(" FreeBSD ", has_ss=False) == "sockstat"
-    assert Port._tool("Linux", has_ss=True) == "ss"
-    # Anything else -- including a failed `uname -s` ("") -- is a Linux
-    # kernel, which prefers ss and falls back to netstat, like the baseline.
-    assert Port._tool("Darwin", has_ss=True) == "ss"
-    for kernel in ("Linux", "Darwin", ""):
-        assert Port._tool(kernel, has_ss=False) == "netstat"
-
-
-def test_port_parse_skips_the_sockstat_header_and_blank_lines():
-    assert Port.parse(["", "  ", _SOCKSTAT_HEADER], "sockstat") == NOT_LISTENING
-    # A row is found by whitespace-splitting, so its padding is irrelevant.
-    assert Port.parse(["  root  named  5678  20  udp4  *:53  *:*  "], "sockstat") == _listening(
-        "named", 5678
-    )
+def test_port_tool_prefers_ss_then_netstat():
+    assert Port._tool(has_ss=True) == "ss"
+    # No ``ss`` on the box falls back to netstat, like the baseline.
+    assert Port._tool(has_ss=False) == "netstat"
 
 
 def test_port_parse_owner_is_optional_but_the_row_still_listens():
@@ -2465,11 +2190,11 @@ def test_port_parse_owner_is_optional_but_the_row_still_listens():
 
 def test_port_parse_survives_a_malformed_owner_cell():
     # A PID column that is not a number reports the name without a number
-    # (ss) or no owner at all (sockstat/netstat) -- never an exception.
+    # (ss) or no owner at all (netstat) -- never an exception.
     assert Port.parse(['LISTEN users:(("nginx",pid=oops,fd=3))'], "ss") == _listening(
         "nginx", None
     )
-    assert Port.parse(["www nginx notapid 3 tcp4 *:80 *:*"], "sockstat") == _listening(
+    assert Port.parse(["www nginx notapid 3 tcp4 *:80 *:*"], "ss") == _listening(
         None, None
     )
     # netstat's unprivileged "-/nginx" cell has a separator but no PID, and
@@ -2477,22 +2202,21 @@ def test_port_parse_survives_a_malformed_owner_cell():
     assert Port.parse(["tcp 0 0 0.0.0.0:80 0.0.0.0:* LISTEN -/nginx"], "netstat") == (
         _listening(None, None)
     )
-    # A short sockstat row carries no owner columns to read.
-    assert Port.parse(["www nginx"], "sockstat") == _listening(None, None)
+    # A short ss row carries no owner columns to read.
+    assert Port.parse(["www nginx"], "ss") == _listening(None, None)
 
 
 async def test_port_is_not_listening_on_empty_output():
     # A failed or unmatched read maps to "nothing listening" on every branch
     # (the baseline's ``(None, None)`` default).
-    assert await Port.process(CannedPortHost("Linux", "/usr/sbin/ss", ""), 80) == NOT_LISTENING
-    assert await Port.process(CannedPortHost("Linux", "", ""), 80) == NOT_LISTENING
-    assert await Port.process(CannedPortHost("FreeBSD", "", ""), 80) == NOT_LISTENING
+    assert await Port.process(CannedPortHost("/usr/sbin/ss", ""), 80) == NOT_LISTENING
+    assert await Port.process(CannedPortHost("", ""), 80) == NOT_LISTENING
 
 
 async def test_port_rejects_a_bad_port_or_protocol():
     # Both values are interpolated into a grep pattern or awk program, so a
     # bad one is rejected identically on both transports and from command().
-    for host in (CannedPortHost("Linux", "/usr/sbin/ss", ""), SimulatedHost(name="h")):
+    for host in (CannedPortHost("/usr/sbin/ss", ""), SimulatedHost(name="h")):
         with pytest.raises(TypeError, match="port must be an int"):
             await Port.process(host, "80 || 1")
     with pytest.raises(ValueError, match="protocol must be one of"):
@@ -2544,9 +2268,8 @@ async def test_port_gather_fact_across_hosts():
 
 async def test_processes_parses_baseline_linux_all_fixture():
     # The baseline's own fact fixture (tests/facts/server.Processes/linux_all.json):
-    # a non-BusyBox Linux kernel selects the --no-headers listing.
+    # a non-BusyBox Linux host selects the --no-headers listing.
     host = CannedProcessesHost(
-        "Linux",
         "",
         """    1 root     Ss    0.0  0.1 init            /sbin/init
   200 www-data S     1.2  3.4 nginx           nginx: worker process
@@ -2589,9 +2312,8 @@ async def test_processes_parses_baseline_linux_all_fixture():
         "command": "init",
         "args": "/sbin/init",
     }
-    # Kernel read, BusyBox probe (empty answer), then the Linux listing.
+    # BusyBox probe (empty answer), then the Linux listing.
     assert host.shells == [
-        "uname -s",
         "command -v busybox || true",
         "LANG=C ps -eo pid,user,stat,%cpu,%mem,comm,args --no-headers",
     ]
@@ -2600,7 +2322,6 @@ async def test_processes_parses_baseline_linux_all_fixture():
 async def test_processes_parses_baseline_linux_single_pid_fixture():
     # linux_single_pid.json: ps -p keeps the header row, which is skipped.
     host = CannedProcessesHost(
-        "Linux",
         "",
         """  PID USER     STAT %CPU %MEM COMMAND         COMMAND
     1 root     Ss    0.0  0.1 systemd         /lib/systemd/systemd --system
@@ -2619,67 +2340,10 @@ async def test_processes_parses_baseline_linux_single_pid_fixture():
     assert host.shells[-1] == "LANG=C ps -p 1 -o pid,user,stat,%cpu,%mem,comm,args"
 
 
-async def test_processes_parses_baseline_bsd_all_fixture():
-    # bsd_all.json: FreeBSD keeps the header row and never probes BusyBox.
-    host = CannedProcessesHost(
-        "FreeBSD",
-        "",
-        """  PID USER     STAT %CPU %MEM COMMAND         COMMAND
-    1 root     SLs   0.0  0.0 init            /sbin/init --
-  742 root     Ss    0.0  0.2 sshd            /usr/sbin/sshd
-""",
-    )
-    assert await Processes.process(host) == {
-        1: {
-            "user": "root",
-            "state": "SLs",
-            "cpu_percent": 0.0,
-            "mem_percent": 0.0,
-            "command": "init",
-            "args": "/sbin/init --",
-        },
-        742: {
-            "user": "root",
-            "state": "Ss",
-            "cpu_percent": 0.0,
-            "mem_percent": 0.2,
-            "command": "sshd",
-            "args": "/usr/sbin/sshd",
-        },
-    }
-    assert host.shells == [
-        "uname -s",
-        "LANG=C ps -eo pid,user,stat,%cpu,%mem,comm,args",
-    ]
-
-
-async def test_processes_parses_baseline_bsd_single_pid_fixture():
-    # bsd_single_pid.json.
-    host = CannedProcessesHost(
-        "FreeBSD",
-        "",
-        """  PID USER     STAT %CPU %MEM COMMAND         COMMAND
-  742 root     Ss    0.0  0.2 sshd            /usr/sbin/sshd
-""",
-    )
-    assert await Processes.process(host, pid=742) == {
-        742: {
-            "user": "root",
-            "state": "Ss",
-            "cpu_percent": 0.0,
-            "mem_percent": 0.2,
-            "command": "sshd",
-            "args": "/usr/sbin/sshd",
-        },
-    }
-    assert host.shells[-1] == "LANG=C ps -p 742 -o pid,user,stat,%cpu,%mem,comm,args"
-
-
 async def test_processes_parses_baseline_busybox_all_fixture():
     # busybox_all.json: the probe answers a path, selecting the five-column
     # listing; percents are always 0.0 and command is args' basename.
     host = CannedProcessesHost(
-        "Linux",
         "/bin/busybox\n",
         """  PID USER       VSZ STAT ARGS
     1 root      2108 S    /sbin/init
@@ -2714,7 +2378,6 @@ async def test_processes_parses_baseline_busybox_all_fixture():
         },
     }
     assert host.shells == [
-        "uname -s",
         "command -v busybox || true",
         "LANG=C ps -o pid,user,vsz,stat,args",
     ]
@@ -2723,7 +2386,6 @@ async def test_processes_parses_baseline_busybox_all_fixture():
 async def test_processes_parses_baseline_busybox_single_pid_fixture():
     # busybox_single_pid.json: BusyBox ps has no -p, so awk filters the PID.
     host = CannedProcessesHost(
-        "Linux",
         "/bin/busybox\n",
         """  PID USER       VSZ STAT ARGS
     1 root      2108 S    /sbin/init
@@ -2744,219 +2406,21 @@ async def test_processes_parses_baseline_busybox_single_pid_fixture():
     )
 
 
-async def test_processes_parses_baseline_darwin_all_fixture():
-    # darwin_all.json: two ps snapshots joined by the marker line; comm
-    # supplies the untruncated command, args the full command line.
-    helper = (
-        "/System/Library/PrivateFrameworks/CoreServicesInternal.framework"
-        "/Versions/A/XPCServices/backupd-helper.xpc/Contents/MacOS/backupd-helper"
-    )
-    host = CannedProcessesHost(
-        "Darwin",
-        "",
-        f"""  PID USER     STAT  %CPU %MEM ARGS
-    1 root     Ss    0.0  0.1 /sbin/launchd
-  200 root     S     0.0  0.0 /usr/libexec/opendirectoryd
-  300 root     Ss    0.0  0.2 /usr/sbin/sshd -D -o PermitRootLogin=no
-  500 root     Ss    0.3  1.2 {helper}
-  600 karlicos S     0.1  0.4 /Applications/Some App.app/Contents/MacOS/Some App --flag value
-===REEMOTE-PROCESSES-COMM===
-  PID COMM
-    1 /sbin/launchd
-  200 /usr/libexec/opendirectoryd
-  300 /usr/sbin/sshd
-  500 {helper}
-  600 /Applications/Some App.app/Contents/MacOS/Some App
-""",
-    )
-    assert await Processes.process(host) == {
-        1: {
-            "user": "root",
-            "state": "Ss",
-            "cpu_percent": 0.0,
-            "mem_percent": 0.1,
-            "command": "/sbin/launchd",
-            "args": "/sbin/launchd",
-        },
-        200: {
-            "user": "root",
-            "state": "S",
-            "cpu_percent": 0.0,
-            "mem_percent": 0.0,
-            "command": "/usr/libexec/opendirectoryd",
-            "args": "/usr/libexec/opendirectoryd",
-        },
-        300: {
-            "user": "root",
-            "state": "Ss",
-            "cpu_percent": 0.0,
-            "mem_percent": 0.2,
-            "command": "/usr/sbin/sshd",
-            "args": "/usr/sbin/sshd -D -o PermitRootLogin=no",
-        },
-        500: {
-            "user": "root",
-            "state": "Ss",
-            "cpu_percent": 0.3,
-            "mem_percent": 1.2,
-            "command": helper,
-            "args": helper,
-        },
-        600: {
-            "user": "karlicos",
-            "state": "S",
-            "cpu_percent": 0.1,
-            "mem_percent": 0.4,
-            "command": "/Applications/Some App.app/Contents/MacOS/Some App",
-            "args": "/Applications/Some App.app/Contents/MacOS/Some App --flag value",
-        },
-    }
-    # Darwin never probes BusyBox; one marker-joined pipeline is the shell.
-    assert host.shells == [
-        "uname -s",
-        (
-            "LANG=C ps -eo pid,user,stat,%cpu,%mem,args -ww && "
-            "echo ===REEMOTE-PROCESSES-COMM=== && LANG=C ps -eo pid,comm -ww"
-        ),
-    ]
-
-
-async def test_processes_parses_baseline_darwin_single_pid_fixture():
-    # darwin_single_pid.json: both ps runs are restricted to the one PID.
-    host = CannedProcessesHost(
-        "Darwin",
-        "",
-        """  PID USER     STAT  %CPU %MEM ARGS
-  742 root     Ss    0.0  0.2 /usr/sbin/sshd -D
-===REEMOTE-PROCESSES-COMM===
-  PID COMM
-  742 /usr/sbin/sshd
-""",
-    )
-    assert await Processes.process(host, pid=742) == {
-        742: {
-            "user": "root",
-            "state": "Ss",
-            "cpu_percent": 0.0,
-            "mem_percent": 0.2,
-            "command": "/usr/sbin/sshd",
-            "args": "/usr/sbin/sshd -D",
-        },
-    }
-    assert host.shells[-1] == (
-        "LANG=C ps -p 742 -o pid,user,stat,%cpu,%mem,args -ww && "
-        "echo ===REEMOTE-PROCESSES-COMM=== && LANG=C ps -p 742 -o pid,comm -ww"
-    )
-
-
-async def test_processes_parses_baseline_darwin_pty_crlf_fixture():
-    # darwin_pty_crlf.json: a PTY transport leaves \r on every line; the
-    # parser strips them (and the trailing empty line is skipped).
-    helper = (
-        "/System/Library/PrivateFrameworks/CoreServicesInternal.framework"
-        "/Versions/A/XPCServices/backupd-helper.xpc/Contents/MacOS/backupd-helper"
-    )
-    host = CannedProcessesHost(
-        "Darwin",
-        "",
-        f"""  PID USER     STAT  %CPU %MEM ARGS\r
-    1 root     Ss    0.0  0.1 /sbin/launchd\r
-  200 root     S     0.0  0.0 /usr/libexec/opendirectoryd\r
-  300 root     Ss    0.0  0.2 /usr/sbin/sshd -D -o PermitRootLogin=no\r
-  500 root     Ss    0.3  1.2 {helper}\r
-===REEMOTE-PROCESSES-COMM===\r
-  PID COMM\r
-    1 /sbin/launchd\r
-  200 /usr/libexec/opendirectoryd\r
-  300 /usr/sbin/sshd\r
-  500 {helper}\r""",
-    )
-    result = await Processes.process(host)
-    assert set(result) == {1, 200, 300, 500}
-    assert result[300]["args"] == "/usr/sbin/sshd -D -o PermitRootLogin=no"
-    assert result[500]["command"] == helper
-
-
-async def test_processes_parses_baseline_darwin_spaced_executable_fixture():
-    # darwin_spaced_executable.json: an executable path with spaces stays
-    # whole because comm is the last column of its own ps run.
-    host = CannedProcessesHost(
-        "Darwin",
-        "",
-        """  PID USER             STAT  %CPU %MEM ARGS
-36470 karlicos         S      0.0  0.0 ./Example Application 120
-===REEMOTE-PROCESSES-COMM===
-  PID COMM
-36470 ./Example Application
-""",
-    )
-    assert await Processes.process(host) == {
-        36470: {
-            "user": "karlicos",
-            "state": "S",
-            "cpu_percent": 0.0,
-            "mem_percent": 0.0,
-            "command": "./Example Application",
-            "args": "./Example Application 120",
-        },
-    }
-
-
-async def test_processes_parses_baseline_darwin_vanished_pid_fixture():
-    # darwin_vanished_pid.json: PID 200 appears only in the args snapshot,
-    # so it vanished between the two ps runs and is dropped.
-    host = CannedProcessesHost(
-        "Darwin",
-        "",
-        """  PID USER     STAT  %CPU %MEM ARGS
-    1 root     Ss    0.0  0.1 /sbin/launchd
-  200 root     S     0.0  0.0 /usr/libexec/opendirectoryd
-  300 root     Ss    0.0  0.2 /usr/sbin/sshd -D
-===REEMOTE-PROCESSES-COMM===
-  PID COMM
-    1 /sbin/launchd
-  300 /usr/sbin/sshd
-""",
-    )
-    result = await Processes.process(host)
-    assert set(result) == {1, 300}
-    assert result[300]["command"] == "/usr/sbin/sshd"
-
-
 def test_processes_command_matches_baseline_fixture_commands():
     # Every command string is the "command" field of the matching the baseline
     # fixture, verbatim.
-    assert Processes.command("Linux") == (
+    assert Processes.command() == (
         "LANG=C ps -eo pid,user,stat,%cpu,%mem,comm,args --no-headers"
     )
-    assert Processes.command("Linux", pid=1) == (
+    assert Processes.command(pid=1) == (
         "LANG=C ps -p 1 -o pid,user,stat,%cpu,%mem,comm,args"
     )
-    assert Processes.command("FreeBSD") == (
-        "LANG=C ps -eo pid,user,stat,%cpu,%mem,comm,args"
-    )
-    assert Processes.command("FreeBSD", pid=742) == (
-        "LANG=C ps -p 742 -o pid,user,stat,%cpu,%mem,comm,args"
-    )
-    assert Processes.command("Linux", busybox=True) == (
-        "LANG=C ps -o pid,user,vsz,stat,args"
-    )
-    assert Processes.command("Linux", busybox=True, pid=1) == (
+    assert Processes.command(busybox=True) == "LANG=C ps -o pid,user,vsz,stat,args"
+    assert Processes.command(busybox=True, pid=1) == (
         "LANG=C ps -o pid,user,vsz,stat,args | awk 'NR==1 || $1==1'"
     )
-    assert Processes.command("Darwin") == (
-        "LANG=C ps -eo pid,user,stat,%cpu,%mem,args -ww && "
-        "echo ===REEMOTE-PROCESSES-COMM=== && LANG=C ps -eo pid,comm -ww"
-    )
-    assert Processes.command("Darwin", pid=742) == (
-        "LANG=C ps -p 742 -o pid,user,stat,%cpu,%mem,args -ww && "
-        "echo ===REEMOTE-PROCESSES-COMM=== && LANG=C ps -p 742 -o pid,comm -ww"
-    )
-    # The kernel name is stripped; an unknown kernel (or a failed uname -s,
-    # which reads as "") takes the Linux branch, exactly like the baseline.
-    assert Processes.command(" Linux ") == Processes.COMMAND_LINUX
-    assert Processes.command("") == Processes.COMMAND_LINUX
-    assert Processes.command(" FreeBSD ") == Processes.COMMAND_BSD
+    assert Processes.command() == Processes.COMMAND_LINUX
+    assert Processes.command(busybox=True) == Processes.COMMAND_BUSYBOX
 
 
 def test_processes_parse_skips_headers_and_malformed_rows():
@@ -2967,7 +2431,7 @@ def test_processes_parse_skips_headers_and_malformed_rows():
         "not-a-pid root Ss 0.0 0.1 init /sbin/init",
         "    1 root     Ss    0.0  0.1 init            /sbin/init",
     ]
-    assert Processes.parse(rows, "Linux") == {
+    assert Processes.parse(rows) == {
         1: {
             "user": "root",
             "state": "Ss",
@@ -2978,14 +2442,13 @@ def test_processes_parse_skips_headers_and_malformed_rows():
         },
     }
     # Empty output reads as {} on every branch (the baseline's default = dict).
-    assert Processes.parse([], "Linux") == {}
-    assert Processes.parse([], "FreeBSD") == {}
-    assert Processes.parse([], "Linux", busybox=True) == {}
+    assert Processes.parse([]) == {}
+    assert Processes.parse([], busybox=True) == {}
 
 
 def test_processes_parse_args_falls_back_to_comm():
     # A row with no separate args column reuses comm (the baseline's fallback).
-    result = Processes.parse(["1 root Ss 0.0 0.1 init"], "Linux")
+    result = Processes.parse(["1 root Ss 0.0 0.1 init"])
     assert result[1]["command"] == "init"
     assert result[1]["args"] == "init"
 
@@ -2998,7 +2461,7 @@ def test_processes_parse_busybox_edge_cases():
         "not-a-pid root 2108 S /sbin/init",
         "  310 root      1488 S    /usr/sbin/crond -c /etc/crontabs",
     ]
-    assert Processes.parse(rows, "Linux", busybox=True) == {
+    assert Processes.parse(rows, busybox=True) == {
         310: {
             "user": "root",
             "state": "S",
@@ -3010,33 +2473,21 @@ def test_processes_parse_busybox_edge_cases():
     }
 
 
-def test_processes_darwin_parse_requires_the_marker():
-    # A missing marker means the double-ps pipeline produced unexpected
-    # output; reemote raises ValueError (the baseline a bare Exception).
-    with pytest.raises(ValueError, match="REEMOTE-PROCESSES-COMM"):
-        Processes.parse(["    1 root     Ss    0.0  0.1 /sbin/launchd"], "Darwin")
-    assert Processes.parse(["===REEMOTE-PROCESSES-COMM==="], "Darwin") == {}
-
-
 async def test_processes_is_empty_on_empty_output():
-    # A failed ps read maps to {} (the baseline's default = dict); the Darwin
-    # branch never sees empty output here because the marker echo always
-    # runs, but a bare empty stdout still reads as {} on Linux/BSD/BusyBox.
-    assert await Processes.process(CannedProcessesHost("Linux", "", "")) == {}
-    assert await Processes.process(CannedProcessesHost("FreeBSD", "", "")) == {}
-    assert await Processes.process(
-        CannedProcessesHost("Linux", "/bin/busybox\n", "")
-    ) == {}
+    # A failed ps read maps to {} (the baseline's default = dict) on both the
+    # plain Linux listing and the BusyBox listing.
+    assert await Processes.process(CannedProcessesHost("", "")) == {}
+    assert await Processes.process(CannedProcessesHost("/bin/busybox\n", "")) == {}
 
 
 async def test_processes_rejects_a_non_int_pid():
     # The BusyBox branch interpolates the pid into an awk program, so a
     # non-int pid is rejected identically on both transports.
-    for host in (CannedProcessesHost("Linux", "", ""), SimulatedHost(name="h")):
+    for host in (CannedProcessesHost("", ""), SimulatedHost(name="h")):
         with pytest.raises(TypeError, match="pid must be an int"):
             await Processes.process(host, pid="1")
     with pytest.raises(TypeError, match="pid must be an int"):
-        Processes.command("Linux", busybox=True, pid="1 || 1")
+        Processes.command(busybox=True, pid="1 || 1")
 
 
 async def test_processes_reads_the_simulated_seam():
@@ -3170,59 +2621,33 @@ async def test_timezone_gather_fact_across_hosts():
 
 async def test_uptime_parses_baseline_linux_fixture():
     # The baseline's own fact fixture (tests/facts/server.Uptime/uptime_linux.json):
-    # Kernel "Linux", command "cut -d. -f1 /proc/uptime",
-    # output ["86400"] -> fact 86400.
-    host = CannedKernelHost("Linux", "86400\n")
+    # command "cut -d. -f1 /proc/uptime", output ["86400"] -> fact 86400.
+    host = CannedShellHost("86400\n")
     assert await Uptime.process(host) == 86400
-    assert host.shells == ["uname -s", "cut -d. -f1 /proc/uptime"]
+    assert host.shells == ["cut -d. -f1 /proc/uptime"]
 
 
-async def test_uptime_parses_baseline_macos_fixture():
-    # The baseline's uptime_macos.json fixture: Kernel "Darwin", command
-    # "date +%s; sysctl -n kern.boottime | awk '{print $4}' | tr -d ','",
-    # output ["1746748800", "1746662400"] -> fact 86400 (now - boottime).
-    host = CannedKernelHost("Darwin", "1746748800\n1746662400\n")
-    assert await Uptime.process(host) == 86400
-    assert host.shells == [
-        "uname -s",
-        "date +%s; sysctl -n kern.boottime | awk '{print $4}' | tr -d ','",
-    ]
-
-
-def test_uptime_command_dispatches_on_the_kernel():
-    bsd = "date +%s; sysctl -n kern.boottime | awk '{print $4}' | tr -d ','"
-    assert Uptime.command("Darwin") == bsd
-    assert Uptime.command("FreeBSD") == bsd
-    assert Uptime.command(" FreeBSD ") == bsd
-    # Anything else -- including a failed `uname -s` ("") -- takes the
-    # /proc/uptime branch, exactly like the baseline.
-    for kernel in ("Linux", "OpenBSD", ""):
-        assert Uptime.command(kernel) == "cut -d. -f1 /proc/uptime"
+def test_uptime_command_is_the_proc_uptime_read():
+    assert Uptime.COMMAND == "cut -d. -f1 /proc/uptime"
 
 
 def test_uptime_parse_edge_cases():
-    # Blank lines are skipped and the Linux answer is the first integer;
-    # anything after it is ignored.
-    assert Uptime.parse(["", "  3600  ", "ignored"], "Linux") == 3600
-    # The BSD branch subtracts boottime from now, whichever BSD kernel.
-    assert Uptime.parse(["1746748800", "1746662400"], "FreeBSD") == 86400
-    assert Uptime.parse(["100", "40"], "Darwin") == 60
+    # Blank lines are skipped and the answer is the first integer; anything
+    # after it is ignored.
+    assert Uptime.parse(["", "  3600  ", "ignored"]) == 3600
 
 
 def test_uptime_parse_rejects_bad_rows_like_baseline():
-    # A non-integer line raises ValueError, and a BSD answer missing its
-    # second line raises IndexError -- the baseline's parser does neither guard.
+    # A non-integer line raises ValueError -- the baseline's parser does no
+    # guard, so int() surfaces the failure.
     with pytest.raises(ValueError):
-        Uptime.parse(["oops"], "Linux")
-    with pytest.raises(IndexError):
-        Uptime.parse(["1746748800"], "Darwin")
+        Uptime.parse(["oops"])
 
 
 async def test_uptime_is_none_on_empty_output():
     # A failed read maps to None (the baseline's FactBase default), never to a
     # freshly booted host's 0.
-    assert await Uptime.process(CannedKernelHost("Linux", "")) is None
-    assert await Uptime.process(CannedKernelHost("Darwin", "")) is None
+    assert await Uptime.process(CannedShellHost("")) is None
 
 
 async def test_uptime_reads_the_simulated_seam():
@@ -3545,10 +2970,6 @@ def test_group_add_command_shell_rendering():
         GroupAddCommand(group="my group; whoami").shell()
         == "groupadd 'my group; whoami'"
     )
-    assert (
-        GroupAddCommand(group="somegroup", gid=1000, freebsd=True).shell()
-        == "pw groupadd -n somegroup -g 1000"
-    )
     assert command_shell(GroupAddCommand(group="docker"), sudo=True) == (
         "sudo groupadd docker"
     )
@@ -3560,47 +2981,31 @@ def test_group_del_command_shell_rendering():
         GroupDelCommand(group="my group; whoami").shell()
         == "groupdel 'my group; whoami'"
     )
-    assert (
-        GroupDelCommand(group="somegroup", freebsd=True).shell()
-        == "pw groupdel -n somegroup"
-    )
     assert command_shell(GroupDelCommand(group="docker"), sudo=True) == (
         "sudo groupdel docker"
     )
 
 
 @pytest.mark.parametrize(
-    ("group", "kernel", "groups", "kwargs", "expected"),
+    ("group", "groups", "kwargs", "expected"),
     [
-        # The baseline's own operation fixtures (tests/operations/server.group/):
-        # add.json, add_needs_quotes.json, add.freebsd.json,
-        # add_freebsd_needs_quotes.json, delete.json, delete_needs_quotes.json,
-        # delete.freebsd.json, delete_freebsd_needs_quotes.json. Its server.Os
-        # fact is the deprecated alias of server.Kernel, so the fixture's Os
-        # value feeds the os_kernel seam.
-        ("somegroup", "Linux", [], {"gid": 1000, "system": True},
+        # The baseline's own Linux operation fixtures
+        # (tests/operations/server.group/): add.json, add_needs_quotes.json,
+        # delete.json, delete_needs_quotes.json.
+        ("somegroup", [], {"gid": 1000, "system": True},
          ["groupadd -r somegroup --gid 1000"]),
-        ("my group; whoami", "Linux", [], {},
+        ("my group; whoami", [], {},
          ["groupadd 'my group; whoami'"]),
-        # system=True is ignored on FreeBSD ("BSD" in the kernel name).
-        ("somegroup", "FreeBSD", [], {"gid": 1000, "system": True},
-         ["pw groupadd -n somegroup -g 1000"]),
-        ("my group; whoami", "FreeBSD", [], {"gid": 1000},
-         ["pw groupadd -n 'my group; whoami' -g 1000"]),
-        ("somegroup", "Linux", ["somegroup"], {"present": False},
+        ("somegroup", ["somegroup"], {"present": False},
          ["groupdel somegroup"]),
-        ("my group; whoami", "Linux", ["my group; whoami"], {"present": False},
+        ("my group; whoami", ["my group; whoami"], {"present": False},
          ["groupdel 'my group; whoami'"]),
-        ("somegroup", "FreeBSD", ["somegroup"], {"present": False},
-         ["pw groupdel -n somegroup"]),
-        ("my group; whoami", "FreeBSD", ["my group; whoami"], {"present": False},
-         ["pw groupdel -n 'my group; whoami'"]),
     ],
 )
 async def test_group_matches_baseline_operation_fixtures(
-    group: str, kernel: str, groups: list[str], kwargs: dict, expected: list[str]
+    group: str, groups: list[str], kwargs: dict, expected: list[str]
 ):
-    host = SimulatedHost(name="h", os_groups=groups, os_kernel=kernel)
+    host = SimulatedHost(name="h", os_groups=groups)
     ctx, commands = await materialize(host, op(server.group, group=group, **kwargs))
     assert ctx.changed
     assert [cmd.shell() for cmd in commands] == expected
@@ -3810,20 +3215,6 @@ def test_user_add_command_shell_rendering():
         UserAddCommand(user="some user; whoami", comment="Full Name; rm -rf /").shell()
         == "useradd -c 'Full Name; rm -rf /' -M 'some user; whoami'"
     )
-    # FreeBSD: pw leads with -n, the uid is -u, and -M has no spelling there.
-    assert (
-        UserAddCommand(user="someuser", uid=1000, freebsd=True).shell()
-        == "pw useradd -n someuser -u 1000"
-    )
-    # ...and a password rides the echo | pw -H 0 pipe instead of -p.
-    assert (
-        UserAddCommand(user="someuser", home="homedir", password="$pw$", freebsd=True).shell()
-        == "echo '$pw$' | pw useradd -n someuser -H 0 -d homedir"
-    )
-    # OpenBSD has -m but no -M; the system flag is cleared by the operation.
-    assert UserAddCommand(user="someuser", create_home=True, openbsd=True).shell() == (
-        "useradd -m someuser"
-    )
     assert command_shell(UserAddCommand(user="someuser"), sudo=True) == (
         "sudo useradd -M someuser"
     )
@@ -3859,15 +3250,6 @@ def test_user_mod_command_shell_rendering():
         UserModCommand(user="someuser", password="$pw$").shell()
         == "usermod -p '$pw$' someuser"
     )
-    assert (
-        UserModCommand(user="someuser", group="somegroup", freebsd=True).shell()
-        == "pw usermod -n someuser -g somegroup"
-    )
-    # The FreeBSD password form is a pipe of its own, with no other flags.
-    assert (
-        UserModCommand(user="someuser", password="$pw$", freebsd=True).shell()
-        == "echo '$pw$' | pw usermod -n someuser -H 0"
-    )
     assert command_shell(UserModCommand(user="someuser"), sudo=True) == (
         "sudo usermod someuser"
     )
@@ -3876,10 +3258,6 @@ def test_user_mod_command_shell_rendering():
 def test_user_del_command_shell_rendering():
     assert UserDelCommand(user="someuser").shell() == "userdel someuser"
     assert UserDelCommand(user="evil; rm -rf /").shell() == "userdel 'evil; rm -rf /'"
-    assert (
-        UserDelCommand(user="someuser", freebsd=True).shell()
-        == "pw userdel -n someuser"
-    )
     assert command_shell(UserDelCommand(user="someuser"), sudo=True) == (
         "sudo userdel someuser"
     )
@@ -3901,16 +3279,15 @@ def test_home_descriptor_shell_rendering():
     )
 
 
-# The baseline's own operation fixtures (tests/operations/server.user/), replayed
-# verbatim: (fixture, user, kernel, os_users, os_groups, directory_stats,
-# link_stats, kwargs, expected shells). Its server.Os fact is the deprecated
-# alias of server.Kernel, so the fixture's Os value feeds os_kernel; a
-# fixture's files.Directory row of null/False/dict maps onto an absent,
-# False or dict directory_stats entry, and files.Link onto link_stats.
+# The baseline's own Linux operation fixtures (tests/operations/server.user/),
+# replayed verbatim: (fixture, user, os_users, os_groups, directory_stats,
+# link_stats, kwargs, expected shells). A fixture's files.Directory row of
+# null/False/dict maps onto an absent, False or dict directory_stats entry,
+# and files.Link onto link_stats.
 # The keys* and *_missing_* fixtures are deliberately not replayed: the
 # public_keys/delete_keys branch and the plan-time Which guards were dropped.
 BASELINE_USER_FIXTURES = [
-    ("add.json", "someuser", "Linux", {}, [], {}, {}, {
+    ("add.json", "someuser", {}, [], {}, {}, {
         "home": "homedir", "shell": "shellbin", "group": "mygroup",
         "groups": ("secondary_group", "another"), "uid": 1000, "system": True,
         "comment": "Full Name", "create_home": True,
@@ -3923,36 +3300,7 @@ BASELINE_USER_FIXTURES = [
         "mkdir -p homedir",
         "chown someuser:mygroup homedir",
     ]),
-    ("add.freebsd.json", "someuser", "FreeBSD", {}, [], {}, {}, {
-        "home": "homedir", "shell": "shellbin", "group": "mygroup",
-        "groups": ("secondary_group", "another"), "uid": 1000, "system": True,
-        "comment": "Full Name", "create_home": True,
-        "password": "$somecryptedpassword$",
-    }, [
-        (
-            "echo '$somecryptedpassword$' | pw useradd -n someuser -H 0"
-            " -d homedir -s shellbin -g mygroup -G secondary_group,another"
-            " -u 1000 -c 'Full Name' -m"
-        ),
-        "mkdir -p homedir",
-        "chown someuser:mygroup homedir",
-    ]),
-    # -m is emitted on OpenBSD too, but never -M (no such flag there).
-    ("add_create_home_skeleton_openbsd.json", "someuser", "OpenBSD", {}, [], {}, {}, {
-        "home": "homedir", "create_home": True, "ensure_home": True,
-    }, [
-        "useradd -d homedir -m someuser",
-        "mkdir -p homedir",
-        "chown someuser:someuser homedir",
-    ]),
-    ("add_no_create_home_skeleton_openbsd.json", "someuser", "OpenBSD", {}, [], {}, {}, {
-        "home": "homedir", "create_home": False, "ensure_home": True,
-    }, [
-        "useradd -d homedir someuser",
-        "mkdir -p homedir",
-        "chown someuser:someuser homedir",
-    ]),
-    ("add_needs_quotes.json", "some user; whoami", "Linux", {}, [], {}, {}, {
+    ("add_needs_quotes.json", "some user; whoami", {}, [], {}, {}, {
         "home": "/home/evil $(id)", "shell": "/bin/bash",
         "comment": "Full Name; rm -rf /", "ensure_home": False,
     }, [
@@ -3961,54 +3309,31 @@ BASELINE_USER_FIXTURES = [
             " -M 'some user; whoami'"
         ),
     ]),
-    ("add_freebsd_needs_quotes.json", "evil; whoami", "FreeBSD", {}, [], {}, {}, {
-        "home": "/home/evil $(id)", "shell": "/bin/bash",
-        "password": "$evil;password$", "ensure_home": False,
-    }, [
-        (
-            "echo '$evil;password$' | pw useradd -n 'evil; whoami' -H 0"
-            " -d '/home/evil $(id)' -s /bin/bash"
-        ),
-    ]),
-    ("add_groups_needs_quotes.json", "testuser", "Linux", {}, [], {}, {}, {
+    ("add_groups_needs_quotes.json", "testuser", {}, [], {}, {}, {
         "groups": ("group one", "group; two"), "ensure_home": False,
     }, [
         "useradd -d /home/testuser -G 'group one','group; two' -M testuser",
     ]),
     # A group of the user's name already exists: useradd is told to use it.
-    ("add_group_exists.json", "someuser", "Linux", {}, ["someuser"], {}, {}, {}, [
+    ("add_group_exists.json", "someuser", {}, ["someuser"], {}, {}, {}, [
         "useradd -d /home/someuser -g someuser -M someuser",
         "mkdir -p /home/someuser",
         "chown someuser:someuser /home/someuser",
     ]),
-    ("add_group_exists.freebsd.json", "someuser", "FreeBSD", {}, ["someuser"], {}, {}, {}, [
-        "pw useradd -n someuser -d /home/someuser -g someuser",
-        "mkdir -p /home/someuser",
-        "chown someuser:someuser /home/someuser",
-    ]),
-    ("add_non_unique.json", "someuser", "Linux", {}, [], {}, {}, {
+    ("add_non_unique.json", "someuser", {}, [], {}, {}, {
         "unique": False, "ensure_home": False,
     }, ["useradd -d /home/someuser -o -M someuser"]),
-    ("add_non_unique.freebsd.json", "someuser", "FreeBSD", {}, [], {}, {}, {
-        "unique": False, "ensure_home": False,
-    }, ["pw useradd -n someuser -d /home/someuser -o"]),
     # A symlinked home is accepted as-is (the baseline's _no_fail_on_link).
-    ("add_home_is_link.json", "someuser", "Linux", {}, [], {"homedir": False},
+    ("add_home_is_link.json", "someuser", {}, [], {"homedir": False},
      {"homedir": {"mode": 777}}, {"home": "homedir"},
      ["useradd -d homedir -M someuser"]),
-    ("add_home_is_link.freebsd.json", "someuser", "FreeBSD", {}, [],
-     {"homedir": False}, {"homedir": {"mode": 777}}, {"home": "homedir"},
-     ["pw useradd -n someuser -d homedir"]),
-    ("delete.json", "someuser", "Linux", {"someuser": {"home": "/home",
+    ("delete.json", "someuser", {"someuser": {"home": "/home",
      "shell": "/bin/bash"}}, [], {}, {}, {"present": False},
      ["userdel someuser"]),
-    ("delete.freebsd.json", "someuser", "FreeBSD", {"someuser": {"home": "/home",
-     "shell": "/bin/bash"}}, [], {}, {}, {"present": False},
-     ["pw userdel -n someuser"]),
-    ("delete_needs_quotes.json", "evil; rm -rf /", "Linux",
+    ("delete_needs_quotes.json", "evil; rm -rf /",
      {"evil; rm -rf /": {"home": "/home", "shell": "/bin/bash"}}, [], {}, {},
      {"present": False}, ["userdel 'evil; rm -rf /'"]),
-    ("edit.json", "someuser", "Linux", {"someuser": {"comment": "Full Name",
+    ("edit.json", "someuser", {"someuser": {"comment": "Full Name",
      "home": "/home/someuser", "shell": "/bin/bash", "group": "nowt",
      "groups": ["group1", "group2"], "password": "$somepw$"}}, [],
      {"/home/someotheruser": {"user": "someuser", "group": "somegroup"}}, {}, {
@@ -4021,20 +3346,7 @@ BASELINE_USER_FIXTURES = [
             " -G group1,group2,group3 -c 'New Full Name' someuser"
         ),
     ]),
-    ("edit.freebsd.json", "someuser", "FreeBSD", {"someuser": {"comment": "Full Name",
-     "home": "/home/someuser", "shell": "/bin/bash", "group": "nowt",
-     "groups": ["group1", "group2"], "password": "$somepw$"}}, [],
-     {"/home/someotheruser": {"user": "someuser", "group": "somegroup"}}, {}, {
-        "shell": "/bin/false", "group": "somegroup",
-        "groups": ("group1", "group2", "group3"), "home": "/home/someotheruser",
-        "comment": "New Full Name",
-    }, [
-        (
-            "pw usermod -n someuser -d /home/someotheruser -s /bin/false"
-            " -g somegroup -G group1,group2,group3 -c 'New Full Name'"
-        ),
-    ]),
-    ("edit_needs_quotes.json", "some user; whoami", "Linux",
+    ("edit_needs_quotes.json", "some user; whoami",
      {"some user; whoami": {"comment": "Old Name", "home": "/home/old",
       "shell": "/bin/sh", "group": "oldgroup", "groups": [], "password": ""}},
      [], {}, {}, {
@@ -4047,27 +3359,21 @@ BASELINE_USER_FIXTURES = [
             " -g 'mygroup; inject' -c 'Full Name; rm -rf /' 'some user; whoami'"
         ),
     ]),
-    ("append_secondary_groups.json", "someuser", "Linux", {"someuser":
+    ("append_secondary_groups.json", "someuser", {"someuser":
      {"home": "/home/someuser", "group": "somegroup",
       "groups": ["group1", "group2"]}}, [],
      {"/home/someuser": {"user": "someuser", "group": "somegroup"}}, {}, {
         "group": "somegroup", "groups": ("group3", "group4"), "append": True,
     }, ["usermod -a -G group3,group4 someuser"]),
-    ("append_secondary_groups.freebsd.json", "someuser", "FreeBSD", {"someuser":
-     {"home": "/home/someuser", "group": "somegroup",
-      "groups": ["group1", "group2"]}}, [],
-     {"/home/someuser": {"user": "someuser", "group": "somegroup"}}, {}, {
-        "group": "somegroup", "groups": ("group3", "group4"), "append": True,
-    }, ["pw usermod -n someuser -a -G group3,group4"]),
     # append never removes, and membership the user already has is a no-op.
-    ("append_secondary_existing_groups.json", "someuser", "Linux", {"someuser":
+    ("append_secondary_existing_groups.json", "someuser", {"someuser":
      {"home": "/home/someuser", "group": "somegroup",
       "groups": ["group1", "group2", "group3"]}}, [],
      {"/home/someuser": {"user": "someuser", "group": "somegroup"}}, {}, {
         "group": "somegroup", "groups": ("group1", "group2"), "append": True,
     }, []),
     # exists_noop.json: the recorded user already matches, home included.
-    ("exists_noop.json", "someuser", "Linux", {"someuser": {"home": "/home/someuser",
+    ("exists_noop.json", "someuser", {"someuser": {"home": "/home/someuser",
      "shell": "/bin/bash", "group": "someuser", "groups": [], "comment": "",
      "password": ""}}, ["someuser"],
      {"/home/someuser": {"user": "someuser", "group": "someuser"}}, {}, {}, []),
@@ -4075,7 +3381,7 @@ BASELINE_USER_FIXTURES = [
 
 
 @pytest.mark.parametrize(
-    ("fixture", "user", "kernel", "users", "groups", "directories", "links",
+    ("fixture", "user", "users", "groups", "directories", "links",
      "kwargs", "expected"),
     BASELINE_USER_FIXTURES,
     ids=[row[0] for row in BASELINE_USER_FIXTURES],
@@ -4083,7 +3389,6 @@ BASELINE_USER_FIXTURES = [
 async def test_user_matches_baseline_operation_fixtures(
     fixture: str,
     user: str,
-    kernel: str,
     users: dict,
     groups: list,
     directories: dict,
@@ -4093,7 +3398,6 @@ async def test_user_matches_baseline_operation_fixtures(
 ):
     host = SimulatedHost(
         name="h",
-        os_kernel=kernel,
         os_users=users,
         os_groups=groups,
         directory_stats=directories,
@@ -4206,20 +3510,6 @@ async def test_user_update_carries_only_the_differing_fields():
     assert ctx.reason == "user deploy differs, will update"
     # Only the home differs: shell/group/comment already match the fact.
     assert commands == [UserModCommand(user="deploy", home="/srv/deploy", groups=())]
-
-
-async def test_user_password_only_change_on_freebsd_is_one_pipe_command():
-    # FreeBSD has no -p modify flag, so a lone password change yields the
-    # echo | pw -H 0 pipe and no empty argument-less usermod after it.
-    host = SimulatedHost(
-        name="h",
-        os_kernel="FreeBSD",
-        os_users={"deploy": {"home": "/home/deploy", "password": ""}},
-    )
-    _ctx, commands = await materialize(
-        host, op(server.user, user="deploy", password="$new$", ensure_home=False)
-    )
-    assert commands == [UserModCommand(user="deploy", password="$new$", freebsd=True)]
 
 
 async def test_user_uid_zero_is_skipped():
@@ -5219,17 +4509,6 @@ def test_mount_command_shell_rendering():
         == "mount -o remount,rw,noatime /data"
     )
     assert (
-        MountCommand(
-            path="/data",
-            options=("rw", "noatime"),
-            device="/dev/sd0a",
-            fs_type="ufs",
-            remount=True,
-            bsd=True,
-        ).shell()
-        == "mount -uo rw,noatime -t ufs /dev/sd0a /data"
-    )
-    assert (
         MountCommand(path="/data dir; rm -rf /", mounted=False).shell()
         == "umount '/data dir; rm -rf /'"
     )
@@ -5241,9 +4520,9 @@ def test_mount_command_shell_rendering():
 
 
 @pytest.mark.parametrize(
-    ("path", "mounts", "kernel", "kwargs", "expected", "changed"),
+    ("path", "mounts", "kwargs", "expected", "changed"),
     [
-        # The baseline's own fifteen operation fixtures
+        # The baseline's own Linux operation fixtures
         # (tests/operations/server.mount/), replayed verbatim over the
         # SimulatedHost seams. The bare {} info dicts (mount_exists.json,
         # unmount.json) feed the mounts seam as-is: only membership matters.
@@ -5251,70 +4530,65 @@ def test_mount_command_shell_rendering():
         # because OperationRequest rejects an unhashable argument value
         # (UnhashableArgumentError); the seam entries keep the baseline's lists.
         # mount.json
-        ("/data", {}, "Linux", {}, ["mount /data"], True),
+        ("/data", {}, {}, ["mount /data"], True),
         # mount_device.json
-        ("/data", {}, "Linux", {"device": "/dev/sdb1"},
+        ("/data", {}, {"device": "/dev/sdb1"},
          ["mount /dev/sdb1 /data"], True),
         # mount_device_fstype.json
-        ("/data", {}, "Linux", {"device": "/dev/sdc3", "fs_type": "xfs"},
+        ("/data", {}, {"device": "/dev/sdc3", "fs_type": "xfs"},
          ["mount -t xfs /dev/sdc3 /data"], True),
         # mount_options.json
-        ("/data", {}, "Linux", {"options": ("rw",)}, ["mount -o rw /data"], True),
+        ("/data", {}, {"options": ("rw",)}, ["mount -o rw /data"], True),
         # mount_exists.json
-        ("/data", {"/data": {}}, "Linux", {}, [], False),
+        ("/data", {"/data": {}}, {}, [], False),
         # mount_exists_device_match.json
         ("/data",
          {"/data": {"device": "/dev/sdb1", "type": "ext4",
                     "options": ["rw", "relatime"]}},
-         "Linux", {"device": "/dev/sdb1"}, [], False),
+         {"device": "/dev/sdb1"}, [], False),
         # mount_exists_device_fallback.json
         ("/data",
          {"/mnt/data": {"device": "/dev/sdb1", "type": "ext4",
                         "options": ["rw", "relatime"]}},
-         "Linux", {"device": "/dev/sdb1"}, [], False),
+         {"device": "/dev/sdb1"}, [], False),
         # unmount.json
-        ("/data", {"/data": {}}, "Linux", {"mounted": False},
+        ("/data", {"/data": {}}, {"mounted": False},
          ["umount /data"], True),
         # unmount_needs_quotes.json
-        ("/data dir; rm -rf /", {"/data dir; rm -rf /": {}}, "Linux",
+        ("/data dir; rm -rf /", {"/data dir; rm -rf /": {}},
          {"mounted": False}, ["umount '/data dir; rm -rf /'"], True),
         # unmount_device_fallback.json
         ("/data",
          {"/mnt/data": {"device": "/dev/sdb1", "type": "ext4",
                         "options": ["rw", "relatime"]}},
-         "Linux", {"mounted": False, "device": "/dev/sdb1"},
+         {"mounted": False, "device": "/dev/sdb1"},
          ["umount /mnt/data"], True),
         # unmount_device_fallback_needs_quotes.json
         ("/data",
          {"/mnt/my data; rm -rf /": {"device": "/dev/sdb1", "type": "ext4",
                                     "options": ["rw", "relatime"]}},
-         "Linux", {"mounted": False, "device": "/dev/sdb1"},
+         {"mounted": False, "device": "/dev/sdb1"},
          ["umount '/mnt/my data; rm -rf /'"], True),
         # remount_options.json
-        ("/data", {"/data": {"options": ["rw"]}}, "Linux",
+        ("/data", {"/data": {"options": ["rw"]}},
          {"options": ("rw", "noatime")},
          ["mount -o remount,rw,noatime /data"], True),
         # remount_needs_quotes.json
         ("/data dir; rm -rf /", {"/data dir; rm -rf /": {"options": ["rw"]}},
-         "Linux", {"options": ("rw", "noatime")},
+         {"options": ("rw", "noatime")},
          ["mount -o remount,rw,noatime '/data dir; rm -rf /'"], True),
         # remount_options_device_fallback.json
         ("/data",
          {"/mnt/data": {"device": "/dev/sdb1", "type": "ext4",
                         "options": ["rw"]}},
-         "Linux", {"device": "/dev/sdb1", "options": ("rw", "noatime")},
+         {"device": "/dev/sdb1", "options": ("rw", "noatime")},
          ["mount -o remount,rw,noatime /mnt/data"], True),
-        # remount_options_bsd.json
-        ("/data",
-         {"/data": {"options": ["rw"], "type": "ufs", "device": "/dev/sd0a"}},
-         "*BSD", {"options": ("rw", "noatime")},
-         ["mount -uo rw,noatime -t ufs /dev/sd0a /data"], True),
     ],
 )
 async def test_mount_matches_baseline_operation_fixtures(
-    path, mounts: dict, kernel: str, kwargs: dict, expected: list[str], changed: bool
+    path, mounts: dict, kwargs: dict, expected: list[str], changed: bool
 ):
-    host = SimulatedHost(name="h", mounts=mounts, os_kernel=kernel)
+    host = SimulatedHost(name="h", mounts=mounts)
     ctx, commands = await materialize(host, op(server.mount, path=path, **kwargs))
     assert ctx.changed == changed
     assert [cmd.shell() for cmd in commands] == expected
@@ -5398,30 +4672,6 @@ async def test_mount_remount_reason_lists_missing_options_sorted():
     )
     assert commands == [
         MountCommand(path="/data", options=("rw", "noatime", "nodiratime"), remount=True)
-    ]
-
-
-async def test_mount_remounts_on_bsd_with_fact_device_and_type():
-    # The Kernel fact picks the -uo form; device/type come from the Mounts
-    # entry, not the request (the baseline's BSD remount branch).
-    host = SimulatedHost(
-        name="h",
-        os_kernel="FreeBSD",
-        mounts={"/data": {"options": ["rw"], "type": "ufs", "device": "/dev/sd0a"}},
-    )
-    ctx, commands = await materialize(
-        host, op(server.mount, path="/data", options=("rw", "noatime"))
-    )
-    assert ctx.changed
-    assert commands == [
-        MountCommand(
-            path="/data",
-            options=("rw", "noatime"),
-            device="/dev/sd0a",
-            fs_type="ufs",
-            remount=True,
-            bsd=True,
-        )
     ]
 
 

@@ -29,12 +29,10 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's uptime in seconds with
    ``json.dumps(..., indent=2)``.
 
-``Uptime`` mirrors the baseline's ``server.Uptime``: it first reads the
-``Kernel`` fact (``uname -s``) to pick its shell -- on Linux that is
+``Uptime`` mirrors the baseline's ``server.Uptime``: it reads
 ``cut -d. -f1 /proc/uptime``, whose integer answer is the number of seconds
-since boot (e.g. ``86400`` -- one day); on Darwin/FreeBSD it subtracts the
-boot-time epoch seconds from the current epoch seconds instead. A failed
-read maps to ``None``, never to a freshly booted host's ``0``.
+since boot (e.g. ``86400`` -- one day). A failed read maps to ``None``,
+never to a freshly booted host's ``0``.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
 ``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven
@@ -118,8 +116,8 @@ async def main() -> None:
         # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans Uptime.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
-        # running one host at a time. process reads the Kernel fact to pick
-        # the shell, then returns the whole seconds since boot.
+        # running one host at a time. process reads /proc/uptime, then returns
+        # the whole seconds since boot.
         uptime = await gather_fact(hosts, Uptime)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's

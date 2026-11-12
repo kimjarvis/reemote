@@ -16,6 +16,7 @@
         - FindFiles
         - FindFilesInfo
         - FindInFile
+        - FindInFiles
         - FindLinks
         - FoundFile
         - Link
@@ -36,6 +37,7 @@
         - link
         - move
         - put
+        - template
 
 
 
@@ -47,9 +49,9 @@ in a single source, so the read side (`FileLink`, `FileExists`,
 `SameFile`, `FileContents`, `File`,
 `Directory`, `Link`, `Socket`,
 `FileFlags`, `FindFiles`, `FindDirectories`, `FindLinks`, `FindInFile`,
-`FindFilesInfo`, `DirectoryEntries`)
+`FindInFiles`, `FindFilesInfo`, `DirectoryEntries`)
 sits beside the `files.link`, `files.file`, `files.put`, `files.get`,
-`files.edit`, `files.install`, `files.move`, `files.copy`, `files.directory`
+`files.edit`, `files.install`, `files.template`, `files.move`, `files.copy`, `files.directory`
 and `files.flags`
 operations that consume it.
 
@@ -65,8 +67,8 @@ one fact whose input is not the host: it hashes an IO-like stream on the
 `files.get` downloads into — which both compare against the remote file's hash.
 
 `File` mirrors the baseline's `files.File`: it guards the path with
-`test -e`/`test -L`, then describes it with GNU `stat -c`, falling back to BSD
-`stat -f` and finally `ls -ld`, and returns the metadata dict — `user`,
+`test -e`/`test -L`, then describes it with GNU `stat -c`, falling back to
+`ls -ld`, and returns the metadata dict — `user`,
 `group`, `mode` (the octal-looking int the baseline returns, e.g. `644` or `4755`,
 setuid/setgid/sticky bits included), `size`, and `atime`/`mtime`/`ctime` as
 *naive UTC* `datetime`s (the baseline's convention; the `ls -ld` fallback provides
@@ -142,6 +144,24 @@ to audit configuration content — "is this legacy source still enabled?",
 "does the agent config still name the old endpoint?" — without pulling the
 whole file through `FileContents`.
 
+`FindInFiles` is a reemote original (the baseline ships no counterpart) that
+closes the gap between the *name*-selecting find family and the *single-file*
+content grep of `FindInFile`: one recursive `grep -rlE <pattern> <path>`
+returns the **paths** of every file under a tree whose *content* matches the
+extended regex — `-r` recurses, `-l` prints one path per matching file (never
+their lines), `-E` selects the extended regex. It always answers with a
+`list[str]`: the `|| true` guard masks no-match (grep exit 1), an absent or
+unreadable start path and a missing grep binary alike to `[]`, so unlike
+`FindInFile` there is no `None` — a recursive search over a tree has no single
+"the file is missing" answer to distinguish. `interpolate_variables=True`
+double-quotes the pattern so the remote shell expands `$VAR` references,
+otherwise it is single-quoted literally. This is the read half of the very
+common "delete unmanaged files matching content" Ansible idiom — an
+APCu/OpCache stale-cache sweep, a legacy-endpoint config cleanup — and it
+feeds the same gather-then-branch two-deploy split `FindFiles` does: gather
+the hits in one deploy, compute the closure (found minus managed), and remove
+the surplus with `files.file`/`files.directory` in the next.
+
 `FindFilesInfo` is a reemote original (the baseline ships no counterpart): the
 find family's filters plus GNU `find -printf` gather path, size, mode,
 user, group and mtime for every hit in *one* command — the metadata
@@ -204,7 +224,7 @@ leading `~/` stays unquoted so the remote shell expands it.
 
 Operations live in namespace modules so a deploy reads `files.link`,
 `files.file`, `files.put`, `files.get`, `files.edit`, `files.install`,
-`files.move`,
+`files.template`, `files.move`,
 `files.copy`, `files.directory` and `files.flags`,
 mirroring the baseline's
 API. Every
@@ -289,6 +309,37 @@ idempotence needs a login-readable file.
 There is no `present=False` branch — `files.file(present=False)` owns removal.
 Installing under `/etc` needs root, so flag the request `sudo=True`; the
 transfer stays unprivileged regardless.
+
+`files.template` is `files.install` with a Jinja2 render step in front, and a
+reemote original in the same spirit: where the baseline reads a template from a
+local *path*, reemote takes the template as a seekable IO-like **stream** on
+the control machine (`template: IO[Any]`) — never a path — exactly the
+`files.put` source contract. The stream is rewound and read with
+`read_source_bytes` (in a worker thread), decoded as UTF-8, and expanded
+against `variables` into the plain `str` `files.install` spools-and-installs;
+the whole write then *delegates* to `files.install`, so the `FileContents`
+content-only idempotence, the octal-digit `mode` validation, the dest-derived
+`/tmp` spool naming, the optional `user`/`group` chown and the
+`InstallSpoolCommand`/`InstallCommand` pair are all reused unchanged — a
+template converges exactly like the equivalent literal `content`, and any future
+`files.install` behaviour applies here too. Rendering uses Jinja2 with
+`StrictUndefined` (a variable the template references but `variables` omits
+raises rather than silently rendering empty) and `keep_trailing_newline` (a
+template's final newline survives, so the content comparison is exact); a
+malformed template or a missing variable raises `ValueError` chained from the
+Jinja2 error before any host is contacted. Rendering is pure and local, so it
+is safe in both phases and deterministic. Two contract notes follow from the
+stream and request rules: because `OperationRequest` compares a stream *by
+identity*, the deploy must pass the **same** template object in every phase (a
+module-level constant, not a fresh stream inside the generator, which would
+trip `DeterminismError`) — one shared stream serves every host, since it is
+rewound before each read; and because a request argument must stay *hashable*,
+`variables` is spelled at an `op()` site as a tuple of `(key, value)` pairs
+(`(("name", "nginx"), ("port", 80))`), never a dict literal, though a direct
+call accepts a mapping. The values may be built from the `host` the deploy
+receives (`host.name`, static inventory data), which is what makes the render
+per-host. As with `files.install`, flag the request `sudo=True` for a
+root-owned destination; the spool transfer stays unprivileged regardless.
 
 `files.move` mirrors the baseline's `files.move`: `src` is a remote path, `dest`
 is the remote *directory* to move it into (the moved path becomes

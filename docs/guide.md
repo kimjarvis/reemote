@@ -497,29 +497,31 @@ Determinism does **not** mean the two phases produce identical *commands* or ide
 
 ### Change notification (handlers)
 
-reemote has **no first-class handler mechanism**. There is no `notify`/`handler` keyword and no event bus. A conditional restart — "restart the service only if the config changed" — is something you build from the *results of a previous run*, in ordinary Python, outside the deploy body.
+reemote has **no first-class handler mechanism** — there is no `notify`/`handler` keyword and no event bus. A conditional restart — "restart the service only if the config changed" — is built from the *results of a previous run*, in ordinary Python, outside the deploy body. This is the **two-deploy outcome split**: run the notifying tasks, read their `ApplyReport` in the gap *between* two complete prepare/apply cycles, freeze the hosts that reported a change, and pass that frozen set into a second deploy as a stable input.
 
-The clean pattern is to capture which operations reported `changed` on the last apply, freeze them into a set, and pass that set into the next deploy as a stable input:
+Because this is the single most common Ansible construct, `reemote.handlers` ships two helpers so a role migration stops copy-pasting a bespoke `notifying_hosts`/`build_restart_*` pair:
+
+- [`changed_hosts(report, names)`][reemote.handlers.changed_hosts] — the *notification read*: one pass over a report's log, freezing the hosts whose **named** entries reported `changed` into a `frozenset[str]`.
+- [`restart_handler(hosts, services)`][reemote.handlers.restart_handler] — the *handler factory*: closes over that frozen set and returns a deploy that yields `systemd.service(restarted=True)` for those hosts only.
 
 ```python
+from reemote import changed_hosts, restart_handler, run
+
 async def main() -> None:
-    # Pass 1: converge config files.
-    _, config_report, _ = await run(inventory, config_deploy)
-    changed = frozenset(
-        (entry.host, entry.name)
-        for entry in config_report.log
-        if entry.changed
-    )
+    # Pass 1: converge config files (the notifying tasks).
+    _, report, _ = await run(inventory, config_deploy)
 
-    # Pass 2: restart only the services whose config actually changed.
-    def service_deploy(host):
-        if (host.name, "Write app config") in changed:
-            yield op(systemd.service, name="Restart app", service="app", restarted=True, sudo=True)
+    # The notification read, taken between the two runs.
+    changed = changed_hosts(report, {"Write app config"})
 
-    await run(inventory, service_deploy)
+    # Pass 2: restart only on the hosts whose config actually changed.
+    restart = restart_handler(changed, "app", sudo=True)
+    await run(inventory, restart)
 ```
 
-`changed` is computed *before* `service_deploy` is defined and is then a fixed value, so the deploy stays pure and deterministic. `systemd.service` with `restarted=True` restarts unconditionally when the unit is active; the conditional logic lives in your code, not in a handler.
+`changed` is a fixed value by the time `restart_handler` builds the deploy, so the returned generator branches on a snapshot — never a live fact or report — and stays pure and deterministic across both of its phases. An empty `changed` yields an empty deploy: no host restarts, the converged no-op Ansible's handler gives for free. The restart happens in a *second* full prepare/apply cycle, and a `dry=True` preview of pass 1 cannot know whether the handler will fire (Ansible check mode skips handlers for the same reason); a `dry=True` preview of pass 2 *is* honest, because it consults the frozen outcome of pass 1.
+
+`systemd.service(restarted=True)` restarts a unit that is already running; the operation's default `running=True` starts a stopped one. `restart_handler` also takes a `name` template, a `sudo` flag (default `True`) and a `when` guard, all forwarded to each request. For a handler that is not a systemd restart, build the same shape yourself — a factory closing over `changed_hosts(...)` — and see the [handlers reference](handlers.md) plus the runnable [handler example](examples/demonstrations/composition.md#restarting-a-service-only-when-a-notifying-operation-changed).
 
 ## Facts
 

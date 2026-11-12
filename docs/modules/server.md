@@ -180,15 +180,12 @@ reads as `""`, just like `Arch`. `Kernel` takes no arguments: it runs
 `FreeBSD`), mirroring the baseline's `server.Kernel`; the first non-blank line is
 the answer and empty output reads as `""`, just like `Arch`. The baseline's
 deprecated `server.Os` alias for the same fact is deliberately dropped.
-`KernelModules` takes no arguments: it reads the `Kernel` fact to pick its
-shell — FreeBSD lists `kldstat | tail +2`, every other kernel cats
-`/proc/modules` — and returns a dict of module name → info dict, mirroring
-the baseline's `server.KernelModules`. On Linux each info dict holds `size`
-(the raw string), `instances` (an int), `state` (e.g. `Live`) and, only
-when the row lists dependencies, a `depends` list; on FreeBSD it holds
-`id`, `refs`, `address` and `size`, all raw strings with hex `size` and
-`address`. A failed read (no `/proc/modules`) maps to `{}`, the baseline's
-`default = dict`. `KernelVersion` takes no arguments: it runs `uname -r`
+`KernelModules` takes no arguments: it cats `/proc/modules` and returns a
+dict of module name → info dict, mirroring the baseline's
+`server.KernelModules`. Each info dict holds `size` (the raw string),
+`instances` (an int), `state` (e.g. `Live`) and, only when the row lists
+dependencies, a `depends` list. A failed read (no `/proc/modules`) maps to
+`{}`, the baseline's `default = dict`. `KernelVersion` takes no arguments: it runs `uname -r`
 and returns the kernel release string (e.g. `6.1.0-26-amd64`), mirroring
 the baseline's `server.KernelVersion`; the first non-blank line is the answer
 and empty output reads as `""`, just like `Arch`. The baseline's deprecated
@@ -244,24 +241,20 @@ available.` hint, blank lines) are skipped. Empty output (a failed read)
 parses to `{}`; the baseline's `requires_command` gating is deliberately
 dropped. A *missing* `lsb_release` exits 127, which `run_shell` reports as
 [`CommandNotFoundError`][reemote.hosts.CommandNotFoundError] rather than
-an empty dict. `Mounts` takes no arguments: it reads the `Kernel`
-fact to pick its shell — FreeBSD lists `mount -p --libxo json`, OpenBSD
-`mount -v`, every other kernel cats `/proc/self/mountinfo` — and returns a
-dict of mount point → `{device, type, options}` dict, mirroring the baseline's
-`server.Mounts`. On Linux the octal escapes in mount points, devices and
-super-block options (`\040` space, `\054` comma, `\134` backslash) are
-decoded, the optional `shared`/`master`/`propagate_from`/`unbindable` tags
-are skipped, and `options` combines the per-mount options with the
-super-block ones — `ro`/`rw` are filtered from the super-block side
-because the per-mount options override them. On OpenBSD the `ctime=...`
-flag is dropped and non-matching lines are skipped. Empty output reads as
-`{}` on every branch, the baseline's `default = dict` (its FreeBSD JSON branch
-would raise on empty output — a failed read here simply reports no mounts).
-`Port` takes a port and an optional protocol (default `tcp`): it reads the
-`Kernel` fact to pick its tool — FreeBSD runs `sockstat -l -p <port> -P
-<protocol>`, every other kernel prefers Linux `ss -lp<flag>n | grep
-':<port> ' || true` and falls back to `netstat -<flag>lnp ... | awk ...`
-when the `Which` fact reports no `ss` — and returns a
+an empty dict. `Mounts` takes no arguments: it cats `/proc/self/mountinfo`
+and returns a dict of mount point → `{device, type, options}` dict,
+mirroring the baseline's `server.Mounts`. The octal escapes in mount points,
+devices and super-block options (`\040` space, `\054` comma, `\134`
+backslash) are decoded, the optional
+`shared`/`master`/`propagate_from`/`unbindable` tags are skipped, and
+`options` combines the per-mount options with the super-block ones —
+`ro`/`rw` are filtered from the super-block side because the per-mount
+options override them. Empty output reads as `{}`, the baseline's
+`default = dict` (a failed read simply reports no mounts).
+`Port` takes a port and an optional protocol (default `tcp`): it prefers
+Linux `ss -lp<flag>n | grep ':<port> ' || true` and falls back to
+`netstat -<flag>lnp ... | awk ...` when the `Which` fact reports no `ss` —
+and returns a
 [`PortInfo`][reemote.modules.server.server.PortInfo] record: `listening`
 says whether the port has at least one listening socket, `process` and `pid`
 name the owner of the first row that carries one. `listening` is decided by
@@ -279,23 +272,17 @@ port raises `TypeError`, one outside 1-65535 or a protocol other than
 check, so they can never reach the command line as syntax. Empty output — no
 matching row — reads as `listening=False`, and a malformed PID cell reads as
 no PID where the baseline's parser would raise.
-`Processes` takes an optional `pid`: it reads the `Kernel` fact and probes
-for BusyBox to pick its shell — Linux lists `ps -eo
-pid,user,stat,%cpu,%mem,comm,args --no-headers`, FreeBSD the same `ps -eo`
-without `--no-headers`, BusyBox (Alpine) the limited `ps -o
-pid,user,vsz,stat,args` columns, and Darwin runs `ps` twice (`args` last,
-then `comm` last, joined by a marker line) because macOS truncates any
-non-last text column — and returns a dict of PID → `{user, state,
-cpu_percent, mem_percent, command, args}` dict, mirroring the baseline's
-`server.Processes`. A `pid` restricts the listing to that one process (an
-absent PID reads as `{}`); on BusyBox the percents are always `0.0` and
-`command` is the basename of `args`' first word, and on Darwin a PID that
-vanished between the two `ps` snapshots is dropped. Header rows, blank
-lines, short rows and non-integer PIDs are skipped, and empty output reads
-as `{}`, the baseline's `default = dict`. The BusyBox detection reads the `Which`
-fact (`command -v busybox || true`), exactly like the baseline; one deliberate
-deviation remains: a missing Darwin marker line raises `ValueError` rather
-than the baseline's bare `Exception`. A non-int `pid` raises `TypeError` on both
+`Processes` takes an optional `pid`: it probes for BusyBox to pick its
+shell — Linux lists `ps -eo pid,user,stat,%cpu,%mem,comm,args --no-headers`,
+BusyBox (Alpine) the limited `ps -o pid,user,vsz,stat,args` columns — and
+returns a dict of PID → `{user, state, cpu_percent, mem_percent, command,
+args}` dict, mirroring the baseline's `server.Processes`. A `pid` restricts
+the listing to that one process (an absent PID reads as `{}`); on BusyBox
+the percents are always `0.0` and `command` is the basename of `args`'
+first word. Header rows, blank lines, short rows and non-integer PIDs are
+skipped, and empty output reads as `{}`, the baseline's `default = dict`.
+The BusyBox detection reads the `Which` fact (`command -v busybox || true`),
+exactly like the baseline. A non-int `pid` raises `TypeError` on both
 transports — the BusyBox branch interpolates it into an `awk` program,
 where shell quoting cannot protect it. `Sysctl` has relocated to the
 `sysctl` namespace (`sysctl.Sysctl`, keeping the baseline's `server.Sysctl`
@@ -307,17 +294,13 @@ current system timezone (e.g. `Europe/Amsterdam`), mirroring the baseline's
 symlink into zoneinfo, the resolved path is returned verbatim, exactly like
 the baseline. The first non-blank line is the answer and empty output (the
 command failed) reads as `""`, just like `Arch` — the baseline's `output[0]`
-would raise on empty output. `Uptime` takes no arguments: it reads the
-`Kernel` fact to pick its shell — Darwin and FreeBSD print the current
-epoch seconds followed by the boot-time epoch seconds (`date +%s` plus a
-`sysctl kern.boottime` pipeline) and the uptime is their difference, every
-other kernel runs `cut -d. -f1 /proc/uptime` — and returns the number of
-seconds the system has been up (e.g. `86400` — one day), mirroring
-the baseline's `server.Uptime`. Blank lines are skipped; empty output (the
-command failed) reads as `None`, the baseline's `FactBase` default, so a failed
-read never masquerades as a freshly booted host. A non-integer line raises
-`ValueError`, and a BSD answer missing its second line raises
-`IndexError`, exactly like the baseline's parser. `User` takes no arguments: it
+would raise on empty output. `Uptime` takes no arguments: it runs
+`cut -d. -f1 /proc/uptime` and returns the number of seconds the system has
+been up (e.g. `86400` — one day), mirroring the baseline's `server.Uptime`.
+Blank lines are skipped; empty output (the command failed) reads as `None`,
+the baseline's `FactBase` default, so a failed read never masquerades as a
+freshly booted host. A non-integer line raises `ValueError`, exactly like
+the baseline's parser. `User` takes no arguments: it
 runs `echo $USER` and returns the current user's name (e.g. `root`),
 mirroring the baseline's `server.User`; the first non-blank line is the answer
 and empty output — the command failed, or `USER` is unset or empty — reads
@@ -404,14 +387,10 @@ suffices (see the
 
 `server.group` mirrors the baseline's `server.group` for `group`, `present`,
 `system` and `gid`: it compares the name against the `Groups` fact and yields
-a `GroupAddCommand` or `GroupDelCommand` only when the group differs from the
-request. The `Kernel` fact picks the command form — FreeBSD gets
-`pw groupadd`/`pw groupdel -n`, every other kernel `groupadd`/`groupdel` —
-the same dispatch `KernelModules` uses (the baseline reads its deprecated `Os`
-fact, renamed `Kernel` upstream). `system` renders `groupadd -r` but is
-ignored on BSD kernels, which have no system groups, and `gid` renders
-`--gid` (`-g` on FreeBSD); a falsy gid (`None` or `0`) is skipped, exactly
-like the baseline's `if gid:` check. Both options only apply at creation — an
+a `GroupAddCommand` (`groupadd`) or `GroupDelCommand` (`groupdel`) only when
+the group differs from the request. `system` renders `groupadd -r` and `gid`
+renders `--gid`; a falsy gid (`None` or `0`) is skipped, exactly like the
+baseline's `if gid:` check. Both options only apply at creation — an
 existing group is never modified, so a gid or system change on a present
 group plans no command. The commands need root, so flag the request
 `sudo=True`.
@@ -474,9 +453,7 @@ instead (the baseline's fallback for paths whose spelling differs from
 `/proc/self/mountinfo`), and that found mount point is what an unmount or
 remount acts on. The options check is a subset test, not equality: extra
 options already on the mount never trigger a remount, and a remount always
-carries the full requested option set. On a BSD kernel the remount takes
-the `mount -uo <options> -t <type> <device> <path>` form instead — the
-`Kernel` fact picks it, and the type/device come from the fact. `options`
+carries the full requested option set. `options`
 accepts a list/tuple of option strings (prefer tuples in `op()` requests,
 which must stay hashable), and every path, device and option string is
 shell-quoted, so a value carrying metacharacters reaches `mount` literally.
@@ -513,16 +490,12 @@ the zone.
 against the `Users` fact and a descriptor is yielded only where they differ —
 a `UserDelCommand` when `present=False` finds the user, a `UserAddCommand`
 when the user is absent, and a `UserModCommand` carrying just the differing
-fields when it is present (the baseline's per-field `mod_args`). The `Kernel` fact
-picks the command form — FreeBSD gets `pw useradd`/`pw usermod`/`pw userdel
--n`, every other kernel the shadow-suite commands — the same dispatch
-`server.group` and `KernelModules` use. `uid`, `system` and `unique` only
-apply at creation: a present user is never re-id'd or turned into a system
-account, a falsy `uid` (`None` or `0`) renders nothing, exactly like
-the baseline's `if uid:` check, and `system` is ignored on BSD kernels, which have
-no system accounts. `create_home` renders `-m` and the opposite default `-M`
-carries over only to kernels that have the skeleton flag at all — neither
-FreeBSD nor OpenBSD does. `home` defaults to `/home/<user>` for an absent
+fields when it is present (the baseline's per-field `mod_args`). The commands
+are the shadow-suite `useradd`/`usermod`/`userdel`. `uid`, `system` and
+`unique` only apply at creation: a present user is never re-id'd or turned
+into a system account, and a falsy `uid` (`None` or `0`) renders nothing,
+exactly like the baseline's `if uid:` check. `create_home` renders `-m` and
+the opposite default `-M`. `home` defaults to `/home/<user>` for an absent
 user and to the recorded home for a present one, so omitting the option never
 plans a spurious change, and a creation with no primary `group` reuses an
 existing group of the user's name when there is one (the baseline's "tell
@@ -531,13 +504,10 @@ existing group of the user's name when there is one (the baseline's "tell
 appending never removes one. Pass `groups` as a tuple rather than a list:
 `op()` requests must stay hashable, so a list raises
 [`UnhashableArgumentError`][reemote.core.UnhashableArgumentError].
-`password` is the *encrypted* hash. On Linux it rides the same `usermod -p`,
-while FreeBSD `pw` has no modify flag for it and gets a separate
-`echo '<hash>' | pw usermod -n <user> -H 0` pipe command, which is the only
-command a password-only change plans there. Removal is the one direction
-with no extras: `present=False` removes the user and nothing
-else, since neither `userdel` nor the baseline's branch touches the home directory
-or any files.
+`password` is the *encrypted* hash and rides `useradd -p`/`usermod -p`.
+Removal is the one direction with no extras: `present=False` removes the user
+and nothing else, since neither `userdel` nor the baseline's branch touches
+the home directory or any files.
 
 `ensure_home` (on by default) is the baseline's delegation to `files.directory`,
 inlined: the server-local `_HomeDirectory` and `_HomeIsLink` probes decide

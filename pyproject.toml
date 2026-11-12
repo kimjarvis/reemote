@@ -38,6 +38,7 @@ requires-python = ">=3.13"
 dependencies = [
     "asyncssh>=2.24.1",
     "distro>=1.6,<2",
+    "jinja2>=3.1.6",
     "pydantic>=2.14.1",
 ]
 

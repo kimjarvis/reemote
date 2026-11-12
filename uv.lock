@@ -894,6 +894,7 @@ source = { editable = "." }
 dependencies = [
     { name = "asyncssh" },
     { name = "distro" },
+    { name = "jinja2" },
     { name = "pydantic" },
 ]
 
@@ -913,6 +914,7 @@ docs = [
 requires-dist = [
     { name = "asyncssh", specifier = ">=2.24.1" },
     { name = "distro", specifier = ">=1.6,<2" },
+    { name = "jinja2", specifier = ">=3.1.6" },
     { name = "pydantic", specifier = ">=2.14.1" },
 ]
 

@@ -28,11 +28,10 @@ two-phase execution model:
    inventory with ``asyncio.gather`` and returns a host-name-keyed mapping
    -- then print each host's record with ``json.dumps(..., indent=2)``.
 
-``Port`` mirrors the baseline's ``server.Port``: it reads the ``Kernel`` fact to
-pick the tool (FreeBSD lists ``sockstat -l -p <port> -P <protocol>``, every
-other kernel prefers Linux ``ss`` and falls back to ``netstat`` when the
-``Which`` fact reports no ``ss``), filters the listing down to one port and
-returns a ``PortInfo`` record -- ``listening``, ``process`` and ``pid``.
+``Port`` mirrors the baseline's ``server.Port``: it prefers ``ss`` and falls
+back to ``netstat`` when the ``Which`` fact reports no ``ss``, filters the
+listing down to one port and returns a ``PortInfo`` record -- ``listening``,
+``process`` and ``pid``.
 ``listening`` is decided by any socket row that survives the filter, while
 the owner pair is best-effort: an unprivileged read sees the socket but not
 the process behind it, so ``process``/``pid`` come back ``None`` even though
@@ -131,8 +130,8 @@ async def main() -> None:
         # fans Port.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
         # running one host at a time. The 80 is forwarded to process as the
-        # port argument; process reads the Kernel fact to choose ss, netstat
-        # or sockstat, then greps that tool's output for the port.
+        # port argument; process picks ss (or netstat when the Which fact finds
+        # no ss), then greps that tool's output for the port.
         http = await gather_fact(hosts, Port, 80)
         # A second protocol family: the "udp" argument selects the -lu/-up
         # variant of the listing, and the fact argument order is

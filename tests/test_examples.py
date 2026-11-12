@@ -70,10 +70,6 @@ SNAPSHOT_ARGS = {
         ]
     },
     (
-        "examples/demonstrations/composition/handler_restart.py",
-        "build_restart_nginx",
-    ): lambda name: frozenset({name}),
-    (
         "examples/actions/deploy_action_deploy.py",
         "build_configure_nginx",
     ): lambda name: {name: Result(exit_status=0, stdout="nginx/1.24.0", stderr="")},

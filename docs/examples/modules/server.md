@@ -54,9 +54,7 @@ documented example) and a `lusers` system group with a fixed gid, both under
 `sudo`. The operation is idempotent — it compares each name against the
 `Groups` fact and yields a `GroupAddCommand` only where the group is absent,
 so a second run plans no change. `system=True` renders `groupadd -r` and
-`gid=1500` renders `--gid 1500`; on a FreeBSD host the same deploy would
-render `pw groupadd -n ...` instead (the `Kernel` fact picks the command
-form, and `system` is ignored on BSD). Removing a group is the mirror image:
+`gid=1500` renders `--gid 1500`. Removing a group is the mirror image:
 `present=False` yields a `GroupDelCommand` only when the group is present.
 
 ::: server_group
@@ -143,9 +141,8 @@ finds it present, and a `mount -o remount,...` only when an already-mounted
 filesystem is missing some of the requested options (a subset check, so
 extra options already on the mount never trigger a remount). When `path`
 is not found directly but `device` is given, the mount is located by device
-instead, and that found mount point is what an unmount or remount acts on;
-on a BSD host the remount takes the `mount -uo ... -t ...` form (the
-`Kernel` fact picks it). Like the baseline, `/etc/fstab` is never touched — a
+instead, and that found mount point is what an unmount or remount acts on.
+Like the baseline, `/etc/fstab` is never touched — a
 mount made this way does not survive a reboot unless an fstab entry is
 managed separately. The mount target directory must already exist and the
 device must be present; a missing device or directory makes `mount` exit

@@ -3,11 +3,13 @@
 
 """Example: Ansible-style handlers -- restart a service only on change.
 
-This is a *usage* example, not part of the library. It demonstrates the
-sanctioned answer to a gap every Ansible role closes with ``notify:`` /
-handlers: "restart nginx only when a package install or a config write
-actually changed something". ``systemd.service(restarted=True)`` cannot
-express that by itself -- ``restarted`` is deliberately stateless, so it
+It demonstrates the sanctioned answer to a gap every Ansible role closes
+with ``notify:`` / handlers: "restart nginx only when a package install or
+a config write actually changed something" -- built from the reusable
+helpers ``reemote.changed_hosts`` and ``reemote.restart_handler`` (shipped
+in ``reemote.handlers``) so a role migration does not hand-roll a bespoke
+``notifying_hosts``/``build_restart_*`` pair. ``systemd.service(restarted=True)``
+cannot express that by itself -- ``restarted`` is deliberately stateless, so it
 restarts a running unit on EVERY deploy that reaches it, and nothing feeds
 an earlier operation's outcome back into a later request:
 
@@ -27,19 +29,20 @@ two complete prepare/apply cycles.
    spool-and-install family, content-idempotent). Both requests are named;
    their names form the NOTIFYING set, the analogue of Ansible's
    ``notify: restart datadog-agent`` on every config task.
-2. The notification read: ``notifying_hosts`` filters run 1's
-   ``ApplyReport.log`` for entries that are ``changed`` AND named in
+2. The notification read: ``changed_hosts(report, NOTIFYING)`` filters run
+   1's ``ApplyReport.log`` for entries that are ``changed`` AND named in
    NOTIFYING, and freezes the host names into a ``frozenset``. A
    ``changed`` entry is trustworthy: the driver is fail-fast (a non-zero
    exit raises ``CommandError``), so it means the commands really ran.
    The apply-phase join of run 1 is the barrier -- every config write has
    landed before any restart is planned.
-3. ``build_restart_nginx(changed)`` -- a factory closing over that frozen
-   set, returning the handler deploy. Its ``if`` consults the snapshot,
-   never a live fact or report, so the generator is a pure function of
-   static input and the determinism guard holds. Deduplication and
-   end-of-run flushing come free: at most one restart request per host,
-   after ALL notifying operations, exactly like an Ansible handler.
+3. ``restart_handler(changed, "nginx", when=is_centos)`` -- the library
+   factory closing over that frozen set, returning the handler deploy. Its
+   ``if`` consults the snapshot, never a live fact or report, so the
+   generator is a pure function of static input and the determinism guard
+   holds. Deduplication and end-of-run flushing come free: at most one
+   restart request per host, after ALL notifying operations, exactly like
+   an Ansible handler.
 
 ``systemd.service`` semantics inside the handler: ``restarted=True`` only
 restarts a unit that is already running; the default ``running=True``
@@ -68,25 +71,25 @@ Run it with::
 import asyncio
 import json
 import sys
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
 from reemote import (
-    ApplyReport,
     CommandError,
     Host,
     HostConnectionError,
     InventoryError,
     OperationRequest,
     PrivilegeError,
+    changed_hosts,
     dnf,
     files,
     format_log,
     format_plan,
     op,
+    restart_handler,
     run,
-    systemd,
     validate_inventory,
 )
 
@@ -156,50 +159,6 @@ def configure_nginx(host: Host) -> Generator[OperationRequest]:
     )
 
 
-def notifying_hosts(report: ApplyReport) -> frozenset[str]:
-    """Freeze the hosts whose NOTIFYING operations reported a change.
-
-    This is the whole notification mechanism: one pass over run 1's
-    apply log, between the two runs. Skipped entries (``when`` guard
-    failed) carry ``changed=False`` and never queue the handler; a
-    ``changed`` entry means its commands were sent and succeeded, because
-    the driver raises ``CommandError`` on any non-zero exit.
-    """
-    return frozenset(
-        entry.host
-        for entry in report.log
-        if entry.changed and entry.name in NOTIFYING
-    )
-
-
-def build_restart_nginx(
-    changed: frozenset[str],
-) -> Callable[[Host], Generator[OperationRequest]]:
-    """Handler factory: close over the frozen set of notified hosts.
-
-    The returned generator branches on ``host.name in changed`` -- an
-    ordinary lookup on a snapshot taken BEFORE this deploy's prepare
-    phase -- so both phases resolve the branch identically. Reading a
-    live fact or a run outcome here instead would re-introduce the
-    phase-dependent branch and trip the determinism guard. An empty set
-    yields an empty deploy: no host restarts, which is the converged
-    no-op Ansible's handler mechanism gives for free.
-    """
-
-    def restart_nginx(host: Host) -> Generator[OperationRequest]:
-        if host.name in changed:
-            yield op(
-                systemd.service,
-                name="Restart nginx (handler)",
-                service="nginx",
-                restarted=True,
-                sudo=True,
-                when=is_centos,
-            )
-
-    return restart_nginx
-
-
 async def main() -> None:
     try:
         inventory = load_inventory(INVENTORY_PATH)
@@ -214,8 +173,10 @@ async def main() -> None:
         assert report is not None
         print(format_log(report))
 
-        # The notification read: freeze which hosts the handler must visit.
-        changed = notifying_hosts(report)
+        # The notification read: freeze which hosts the handler must visit,
+        # with the library helper -- one pass over run 1's apply log selecting
+        # the entries whose name is in NOTIFYING and that reported a change.
+        changed = changed_hosts(report, NOTIFYING)
         print("\n== Handler notifications ==")
         if changed:
             print("restart queued for: " + ", ".join(sorted(changed)))
@@ -224,8 +185,9 @@ async def main() -> None:
 
         # Build the handler deploy ONCE, before either of its phases: the
         # dry run and the real run use the very same callable closing over
-        # the same frozen set -- determinism by construction.
-        restart = build_restart_nginx(changed)
+        # the same frozen set -- determinism by construction. ``when=is_centos``
+        # keeps the shared schedule aligned across the whole inventory.
+        restart = restart_handler(changed, "nginx", when=is_centos)
 
         # --dry for the handler: an honest preview, because the branch
         # consults run 1's frozen outcome, not pre-deployment state.

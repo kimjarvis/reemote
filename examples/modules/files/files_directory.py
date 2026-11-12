@@ -31,7 +31,7 @@ two-phase execution model:
 
 ``Directory`` mirrors the baseline's ``files.Directory`` -- its ``File``
 subclass with ``type = "directory"``: the same ``test -e``/``test -L``
-guard and GNU ``stat -c`` / BSD ``stat -f`` / ``ls -ld`` chain, but the
+guard and GNU ``stat -c`` / ``ls -ld`` chain, but the
 path's type flag must be ``d``. The result is a metadata dict -- ``user``,
 ``group``, ``mode`` (the octal-looking int the baseline returns, e.g. ``755``,
 setuid/setgid/sticky bits included), ``size``, and ``atime``/``mtime``/

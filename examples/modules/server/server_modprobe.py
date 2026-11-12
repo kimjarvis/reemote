@@ -45,8 +45,8 @@ of a traceback.
 Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
 via ``run``'s ``host_factory`` and never touches the network -- this example
 uses the *default* factory (``Host.from_inventory``): each plain ``Host``
-lazily opens an asyncssh connection, reads ``uname -s`` and
-``/proc/modules`` for real, and runs ``modprobe`` under sudo where needed.
+lazily opens an asyncssh connection, reads ``/proc/modules`` for real, and
+runs ``modprobe`` under sudo where needed.
 
 Every request carries ``when=is_centos``, the declarative eligibility
 guard: the predicate reads only **static** inventory data --

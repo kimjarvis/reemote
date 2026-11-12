@@ -20,7 +20,8 @@ a real asyncssh transport is missing:
 - ``packages`` / ``links`` / ``existing_files`` / ``file_stats`` /
   ``file_flags`` / ``directory_stats`` / ``directory_entries`` /
   ``link_stats`` / ``socket_stats`` / ``same_files`` /
-  ``find_results`` / ``found_files`` / ``grep_lines`` / ``remote_files`` /
+  ``find_results`` / ``found_files`` / ``grep_lines`` / ``grep_files`` /
+  ``remote_files`` /
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``rpm_gpg_keys`` / ``services`` / ``enabled_services``
@@ -81,6 +82,7 @@ a real asyncssh transport is missing:
   the state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
   ``File``, ``Directory``, ``Link``, ``Socket``, ``SameFile``, ``FileFlags``,
   ``FindFiles``, ``FindDirectories``, ``FindLinks``, ``FindInFile``,
+  ``FindInFiles``,
   ``FindFilesInfo``, ``DirectoryEntries``, ``RemoteFileSha1``, ``Sha256File``,
   ``Sha384File``, ``Md5File``, ``FileContents``, ``DnfRepoFile``, ``DnfRepositories``,
   ``DnfRepoList``,
@@ -1213,6 +1215,15 @@ class SimulatedHost(Host):
     # key reads as None, like a missing file. A read-only seam; the read
     # copies the list.
     grep_lines: dict[tuple[str, str], list[str]] = field(default_factory=dict)
+    # Recursive grep matches ((path, pattern) -> the matching file paths
+    # ``FindInFiles`` returns), backing ``FindInFiles``. The same dedicated-
+    # store rationale as ``grep_lines``: grep's ERE semantics cannot be
+    # faithfully re-derived from the ``remote_files`` content bytes with
+    # Python's ``re``, so a test seeds the matching paths directly. Unlike
+    # ``grep_lines`` there is no None answer -- ``FindInFiles`` always returns
+    # a list -- so an absent key reads as [] (the ``|| true`` guard's empty
+    # answer). A read-only seam; the read copies the list.
+    grep_files: dict[tuple[str, str], list[str]] = field(default_factory=dict)
     # Group names present on the system (the first ``/etc/group`` field of
     # each row, in file order), backing ``Groups``. Named distinctly from
     # ``Host.group`` (the inventory classifier) so the two are never confused.

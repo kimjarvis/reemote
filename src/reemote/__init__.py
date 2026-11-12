@@ -68,6 +68,10 @@ from .drivers import (
     run_prepare,
     send_command,
 )
+from .handlers import (
+    changed_hosts,
+    restart_handler,
+)
 from .hosts import (
     CommandError,
     CommandNotFoundError,
@@ -210,6 +214,7 @@ from .modules.files.files import (
     FindFiles,
     FindFilesInfo,
     FindInFile,
+    FindInFiles,
     FindLinks,
     FoundFile,
     GetCommand,
@@ -783,6 +788,7 @@ __all__ = [
     "FindFiles",
     "FindFilesInfo",
     "FindInFile",
+    "FindInFiles",
     "FindLinks",
     "FirewalldDefaultZone",
     "FirewalldDefaultZoneCommand",
@@ -1195,6 +1201,7 @@ __all__ = [
     "Which",
     "apk",
     "apt",
+    "changed_hosts",
     "command_shell",
     "compose",
     "dnf",
@@ -1215,6 +1222,7 @@ __all__ = [
     "op",
     "openrc",
     "postgresql",
+    "restart_handler",
     "run",
     "run_apply",
     "run_prepare",

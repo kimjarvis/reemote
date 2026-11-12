@@ -123,6 +123,7 @@ nav:
 #          - Connectors: examples/demonstrations/connectors.md
 #          - Privilege: examples/demonstrations/privilege.md
   - API Reference:
+      - Handlers: handlers.md
 #      - Drivers: drivers.md
 #      - Core: core.md
 #      - Commands: commands.md

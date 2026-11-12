@@ -5,7 +5,7 @@
 
 Re-exports everything from ``files.py`` so the operations (``files.link``,
 ``files.file``, ``files.put``, ``files.get``, ``files.edit``,
-``files.install``, ``files.move``,
+``files.install``, ``files.template``, ``files.move``,
 ``files.copy``, ``files.directory`` and ``files.flags``) and the facts
 (``files.FileLink``, ``files.FileExists``,
 ``files.RemoteFileSha1``, ``files.Sha256File``, ``files.Sha384File``,
@@ -13,7 +13,8 @@ Re-exports everything from ``files.py`` so the operations (``files.link``,
 ``files.File``,
 ``files.Directory``, ``files.Link``, ``files.Socket``, ``files.SameFile``,
 ``files.FindFiles``, ``files.FindDirectories``, ``files.FindLinks``,
-``files.FindInFile``, ``files.FindFilesInfo``, ``files.DirectoryEntries``)
+``files.FindInFile``, ``files.FindInFiles``, ``files.FindFilesInfo``,
+``files.DirectoryEntries``)
 are reachable through the package name alone.
 """
 
@@ -36,6 +37,7 @@ from .files import (
     FindFiles,
     FindFilesInfo,
     FindInFile,
+    FindInFiles,
     FindLinks,
     FoundFile,
     GetCommand,
@@ -63,6 +65,7 @@ from .files import (
     link,
     move,
     put,
+    template,
 )
 
 __all__ = [
@@ -83,6 +86,7 @@ __all__ = [
     "FindFiles",
     "FindFilesInfo",
     "FindInFile",
+    "FindInFiles",
     "FindLinks",
     "FoundFile",
     "GetCommand",
@@ -111,4 +115,5 @@ __all__ = [
     "link",
     "move",
     "put",
+    "template",
 ]

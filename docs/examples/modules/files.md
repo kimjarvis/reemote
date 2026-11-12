@@ -25,6 +25,10 @@ reads `FindFiles` for the `conf.yaml` files under the agent's `conf.d`
 `FindDirectories` for its immediate check subdirectories, `files_find_links.py`
 reads `FindLinks` for the symlinks under `/etc`, `files_find_in_file.py`
 reads `FindInFile` for the lines of `/etc/yum.conf` matching `gpgcheck`,
+`files_find_in_files.py` reads the original `FindInFiles` for the paths of
+every `.repo` file under `/etc/yum.repos.d` whose content still names the
+retired `mirrorlist.centos.org` endpoint (the "delete unmanaged files
+matching content" cleanup read),
 `files_find_files_info.py` reads the original `FindFilesInfo` for
 per-hit size/mode/owner/mtime metadata under `/var/log`, and
 `files_directory_entries.py` reads the original `DirectoryEntries` for the
@@ -287,6 +291,30 @@ request reporting no change. The owned variant keeps the login-readable
 service-account file would read back as empty and re-install on every deploy.
 
 ::: files_install
+    options:
+      members: []
+
+## Rendering a Jinja2 template at a root-owned path
+
+`files.template` (a reemote original) is `files.install` with a Jinja2 render
+step in front: it takes the template as a seekable IO-like **stream** on the
+control machine (a module-level `io.StringIO`, never a path — the `files.put`
+source contract), expands it against a `variables` mapping, and then delegates
+the write to `files.install`, so the spool-and-install machinery and the
+content-only idempotence are reused unchanged. The stream is identity-stable
+across phases (`OperationRequest` compares it by identity, so a fresh stream
+inside the generator would trip `DeterminismError`) and rewound before each
+read, so one shared stream serves every host; only the `variables` differ per
+machine. Because a request argument must stay hashable, `variables` is spelled
+as a tuple of `(key, value)` pairs — never a dict literal — and one value comes
+straight from `host.name`, so each host renders its own hostname into the same
+template. Rendering uses `StrictUndefined` (a missing variable raises rather
+than silently rendering empty) and keeps a template's trailing newline. The
+example installs a per-host rendered config under `/etc` with `sudo=True` (the
+scp spool transfer stays unprivileged), then runs the same deploy again to show
+every request reporting no change.
+
+::: files_template
     options:
       members: []
 

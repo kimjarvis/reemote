@@ -23,15 +23,17 @@
 # ``FindLinks`` (the baseline's find family -- the paths under a start path, the
 # read that discovers names the deploy author does not know), ``FindInFile``
 # (grep's matching lines, [] for no match vs None for absent), and the
-# originals ``FindFilesInfo`` (find -printf metadata per hit) and
-# ``DirectoryEntries`` (a shallow name/type listing). The digest side adds
+# originals ``FindInFiles`` (a recursive ``grep -rlE`` returning the paths of
+# the files whose content matches), ``FindFilesInfo`` (find -printf metadata
+# per hit) and ``DirectoryEntries`` (a shallow name/type listing). The digest
+# side adds
 # ``Sha256File``/``Sha384File``/``Md5File`` beside ``RemoteFileSha1``. Like
 # every fact they are phase-unaware: each ``process`` coroutine just gathers
 # the raw value.
 #
 # Operation side (design doc section 6): ``files.link``, ``files.file``,
 # ``files.put``, ``files.get``, ``files.edit``, ``files.install``,
-# ``files.move``, ``files.copy``,
+# ``files.template``, ``files.move``, ``files.copy``,
 # ``files.directory`` and ``files.flags`` plus the typed command descriptors
 # they yield (``LinkCommand``/``FileCommand``/``PutCommand``/``GetCommand``/
 # ``InstallSpoolCommand``/``InstallCommand``/
@@ -54,11 +56,13 @@ import posixpath
 import re
 import shlex
 import stat
-from collections.abc import AsyncGenerator, Callable, Iterable
+from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import IO, Any, Literal, TypedDict
+
+from jinja2 import Environment, StrictUndefined, TemplateError
 
 from ...commands import Command, TransferCommand
 from ...core import OpContext
@@ -504,9 +508,8 @@ _CHAR_TO_PERMISSION = (
     {"x": stat.S_IXOTH, "T": stat.S_ISVTX, "t": stat.S_IXOTH | stat.S_ISVTX},
 )
 
-#: The keyed ``stat`` format whose rows ``File.parse`` matches; the GNU
-#: (``-c``) and BSD (``-f``) forms print the same ``user=... group=...``
-#: shape, so one regex parses both.
+#: The keyed ``stat`` format whose rows ``File.parse`` matches: GNU
+#: ``stat -c`` prints the ``user=... group=...`` shape this regex parses.
 _STAT_REGEX = (
     r"user=(.*) group=(.*) mode=(.*) "
     r"atime=(-?[0-9]*) mtime=(-?[0-9]*) ctime=(-?[0-9]*) "
@@ -542,12 +545,6 @@ _LS_MONTHS = {
 #: GNU ``stat -c`` format printing the keyed row ``File.parse`` matches
 #: (the baseline's ``LINUX_STAT_COMMAND`` format string).
 _LINUX_STAT_FORMAT = "user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N"
-
-#: BSD ``stat -f`` format printing the same keyed row (the baseline's
-#: ``BSD_STAT_COMMAND`` format string).
-_BSD_STAT_FORMAT = (
-    "user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY"
-)
 
 
 def _unquote_stat_name(name: str) -> str:
@@ -653,7 +650,7 @@ class File:
     **Commands:**
 
     ```bash
-    ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' <path> || ls -ld <path> )
+    ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || ls -ld <path> )
     ```
 
     **Returns:**
@@ -674,8 +671,8 @@ class File:
 
     # Mirrors the baseline's ``files.File``: the path is guarded with
     # ``test -e``/``test -L`` (so a dangling symlink is still probed), then
-    # described by GNU ``stat -c``, falling back to BSD ``stat -f`` and
-    # finally ``ls -ld``. The parsed result is a dict, for example::
+    # described by GNU ``stat -c``, falling back to ``ls -ld``. The parsed
+    # result is a dict, for example::
     #
     #     {"user": "reemote", "group": "reemote", "mode": 644, "size": 3928}
     #
@@ -701,8 +698,8 @@ class File:
 
         The ``test -e || test -L`` guard means a missing path produces no
         output at all; ``test -L`` additionally lets a dangling symlink
-        through to ``ls -ld`` (both ``stat`` forms follow the link and
-        fail), which reports it as a non-file.
+        through to ``ls -ld`` (``stat`` follows the link and fails), which
+        reports it as a non-file.
         """
         # A leading ~/ must stay unquoted so the shell expands it (the baseline's
         # tilde branch); everything after it -- or the whole path -- is quoted.
@@ -713,7 +710,7 @@ class File:
         return (
             f"! (test -e {quoted} || test -L {quoted} ) || "
             f"( stat -c '{_LINUX_STAT_FORMAT}' {quoted} 2> /dev/null || "
-            f"stat -f '{_BSD_STAT_FORMAT}' {quoted} || ls -ld {quoted} )"
+            f"ls -ld {quoted} )"
         )
 
     @classmethod
@@ -780,7 +777,7 @@ class Directory(File):
     **Commands:**
 
     ```bash
-    ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' <path> || ls -ld <path> )
+    ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || ls -ld <path> )
     ```
 
     **Returns:**
@@ -842,7 +839,7 @@ class Link(File):
     **Commands:**
 
     ```bash
-    ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' <path> || ls -ld <path> )
+    ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || ls -ld <path> )
     ```
 
     **Returns:**
@@ -872,7 +869,7 @@ class Link(File):
     #     {"user": "reemote", "group": "reemote", "link_target": "/path/to/link/target"}
     #
     # The ``test -L`` guard lets a *dangling* symlink through to the
-    # ``ls -ld`` fallback (both ``stat`` forms follow the link and fail), so
+    # ``ls -ld`` fallback (``stat`` follows the link and fails), so
     # a broken link is still reported with its target. ``files.link``
     # consumes this stat-level read for its idempotence (the target alone is
     # not enough to tell "correct" from "wrong target" from "not a link");
@@ -911,7 +908,7 @@ class Socket(File):
     **Commands:**
 
     ```bash
-    ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' <path> || ls -ld <path> )
+    ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || ls -ld <path> )
     ```
 
     **Returns:**
@@ -1527,6 +1524,107 @@ class FindInFile:
             )
         )
         return cls.parse(stdout.splitlines(), path)
+
+
+class FindInFiles:
+    """Paths of the files under a start path whose content matches a pattern.
+
+    **Commands:**
+
+    ```bash
+    grep -rlE <pattern> <path> || true
+    ```
+
+    **Returns:**
+
+    ```python
+    list[str]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_find_in_files.py``.
+    """
+
+    # A reemote ORIGINAL closing a genuine gap the baseline's find-path
+    # family and the sibling ``FindInFile`` leave open: ``FindFiles``/
+    # ``FindDirectories``/``FindLinks`` select on *name* metadata and
+    # ``FindInFile`` greps the content of *one* known file, so neither can
+    # answer "which files under this tree contain this content?" -- the very
+    # common "delete unmanaged files matching content" idiom Ansible roles
+    # lean on (an APCu/OpCache stale-cache sweep, a legacy-endpoint config
+    # cleanup). One recursive ``grep -rlE`` returns just the matching *paths*
+    # (``-l`` prints one path per matching file, never their lines), so a
+    # whole tree is scanned in a single round-trip and the result feeds the
+    # read side of the same gather-then-branch two-deploy cleanup
+    # ``FindFiles`` does: gather the hits in one deploy, compute the closure
+    # (found minus managed), and remove the surplus in the next.
+    # ``-r`` recurses, ``-l`` lists files-with-matches and ``-E`` selects the
+    # extended regex -- the spec's fixed spelling, so there is no BRE toggle
+    # unlike ``FindInFile``. ``interpolate_variables`` mirrors ``FindInFile``:
+    # it wraps the pattern in double quotes (embedded double quotes escaped)
+    # so the remote shell expands ``$VAR`` references, otherwise the pattern
+    # is single-quoted literally. ``|| true`` guards every failure mode to
+    # [] -- no match (grep exits 1), an absent or unreadable path and a
+    # missing grep binary all read as an empty list -- so unlike
+    # ``FindInFile`` this never returns None: a recursive search over a tree
+    # has no single "the file is missing" answer to distinguish. The
+    # SimulatedHost seam is the dedicated ``grep_files`` store keyed by
+    # ``(path, pattern)``, in the same style as ``FindInFile``'s
+    # ``grep_lines``: grep's ERE semantics cannot be faithfully re-derived
+    # from the ``remote_files`` content bytes with Python's ``re``, so a test
+    # seeds the matching paths directly (an absent key reads as []).
+
+    @classmethod
+    def command(
+        cls,
+        path: str,
+        pattern: str,
+        *,
+        interpolate_variables: bool = False,
+    ) -> str:
+        """Shell printing one path per file whose content matches, guarded."""
+        if interpolate_variables:
+            pattern_arg = '"{}"'.format(pattern.replace('"', '\\"'))
+        else:
+            pattern_arg = shlex.quote(pattern)
+        quoted = shlex.quote(path)
+        return f"grep -rlE {pattern_arg} {quoted} || true"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> list[str]:
+        """The grep's stdout lines verbatim -- one path per matching file.
+
+        grep's ``-l`` traversal order is kept as-is; no output reads as [].
+        """
+        return list(output)
+
+    @classmethod
+    async def process(
+        cls,
+        host: Host,
+        path: str,
+        pattern: str,
+        *,
+        interpolate_variables: bool = False,
+    ) -> list[str]:
+        matches = getattr(host, "grep_files", None)
+        if matches is not None:
+            # SimulatedHost seam: (path, pattern) -> the matching file paths a
+            # test seeds; copy so callers never mutate simulated state, and an
+            # absent key reads as [] (never None).
+            value = matches.get((path, pattern))
+            return list(value) if value is not None else []
+        # Real transport: the guarded recursive grep over asyncssh.
+        stdout = await host.run_shell(
+            cls.command(path, pattern, interpolate_variables=interpolate_variables)
+        )
+        return cls.parse(stdout.splitlines())
 
 
 class FoundFile(TypedDict):
@@ -2680,6 +2778,102 @@ async def install(
     )
 
 
+# The Jinja2 environment ``files.template`` renders with. ``StrictUndefined``
+# makes a missing variable raise rather than silently render empty (a config
+# that quietly drops a value is worse than a deploy that stops), and
+# ``keep_trailing_newline`` preserves a template's final newline -- Jinja2
+# strips one by default, which would otherwise churn the content-only
+# idempotence comparison against a destination that keeps it. The
+# environment is a module-level constant: rendering compiles a fresh template
+# per call and mutates nothing, so both phases reach the identical string.
+_JINJA_ENV = Environment(undefined=StrictUndefined, keep_trailing_newline=True)
+
+
+async def template(
+    ctx: OpContext,
+    template: IO[Any],
+    dest: str,
+    variables: Mapping[str, Any] | Iterable[tuple[str, Any]] | None = None,
+    mode: str = "0644",
+    user: str | None = None,
+    group: str | None = None,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Render a control-side Jinja2 template stream and install it at a path.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        template (IO[Any]): The seekable IO-like source on the control
+            machine holding the Jinja2 template *text* -- a stream, never a
+            path (the ``files.put`` contract). ``OperationRequest`` equality
+            compares it by identity, so the deploy must pass the *same*
+            object in every phase -- define it once (e.g. at module level),
+            not inside the generator -- and it is rewound before each read.
+        dest (str): The remote path to install the rendered content at.
+        variables (Mapping[str, Any] | Iterable[tuple[str, Any]] | None,
+            optional): The Jinja2 render context. Accepts a mapping or an
+            iterable of ``(key, value)`` pairs; because a request argument
+            must stay hashable, the ``op()`` spelling is a tuple of pairs
+            (``(("name", "nginx"), ("port", 80))``), never a dict literal.
+            Defaults to None (an empty context).
+        mode (str, optional): The installed file's permissions as
+            octal-digit text (``"0644"``, ``"600"``). Defaults to "0644".
+        user (str | None, optional): The user to own the installed file.
+            Defaults to None (root, the elevated install's owner).
+        group (str | None, optional): The group to own the installed file.
+            Defaults to None (root).
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The spool transfer and the elevated install command, only
+            when the rendered content differs from the destination's.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_template.py``.
+    """
+
+    # ``files.install`` with a render step in front. ``template`` is a
+    # seekable IO-like source on the control machine -- a stream, never a
+    # path, exactly the ``files.put`` contract: it is rewound and read with
+    # ``read_source_bytes`` (in a worker thread, so a large local template
+    # file never blocks the event loop), decoded as UTF-8, and expanded by
+    # Jinja2 against ``variables`` into the plain ``str`` ``files.install``
+    # already knows how to spool-and-install. Because ``OperationRequest``
+    # compares a stream by identity, the deploy passes the *same* template
+    # object in both phases (a module-level constant, not a fresh stream per
+    # phase, which would trip the determinism guard); the rendered ``str`` it
+    # produces is what the two phases actually compare, and it is identical
+    # whenever the template text and ``variables`` are.
+    #
+    # Delegation is the reuse: the ``FileContents`` content-only idempotence,
+    # the octal-digit ``mode`` validation, the dest-derived ``/tmp`` spool
+    # naming, the optional ``user``/``group`` chown and the
+    # ``InstallSpoolCommand``/``InstallCommand`` pair all stay ``install``'s,
+    # so a template converges exactly like the equivalent literal content and
+    # any future install behaviour applies here too. Rendering is pure and
+    # local -- it contacts no host -- so it is safe in both phases. A
+    # malformed template, or a variable the template references but
+    # ``variables`` omits (``StrictUndefined``), raises ``ValueError`` chained
+    # from the Jinja2 error before anything reaches the host, naming ``dest``.
+    raw = await asyncio.to_thread(read_source_bytes, template)
+    context = dict(variables) if variables else {}
+    try:
+        content = _JINJA_ENV.from_string(raw.decode("utf-8")).render(**context)
+    except TemplateError as exc:
+        raise ValueError(f"failed to render template for {dest!r}: {exc}") from exc
+
+    async for command in install(
+        ctx, content, dest, mode=mode, user=user, group=group, **kwargs
+    ):
+        yield command
+
+
 @dataclass(frozen=True)
 class MoveCommand(Command):
     """Move a remote path into a remote directory (``mv src dest``)."""
@@ -3272,6 +3466,7 @@ __all__ = [
     "FindFiles",
     "FindFilesInfo",
     "FindInFile",
+    "FindInFiles",
     "FindLinks",
     "FoundFile",
     "GetCommand",
@@ -3300,5 +3495,6 @@ __all__ = [
     "move",
     "put",
     "read_source_bytes",
+    "template",
     "write_dest_bytes",
 ]

@@ -31,7 +31,7 @@ two-phase execution model:
 
 ``Link`` mirrors the baseline's ``files.Link`` -- its ``File`` subclass with
 ``type = "link"``: the same ``test -e``/``test -L`` guard and GNU
-``stat -c`` / BSD ``stat -f`` / ``ls -ld`` chain, but the path's type flag
+``stat -c`` / ``ls -ld`` chain, but the path's type flag
 must be ``l``. The result is a metadata dict -- ``user``, ``group``,
 ``mode``, ``size``, ``atime``/``mtime``/``ctime`` as *naive UTC*
 ``datetime``s -- plus ``link_target``: the target path with the stat/ls

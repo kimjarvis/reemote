@@ -18,11 +18,9 @@ some of the requested options -- so a second run is a no-op everywhere.
 When ``path`` is not found directly but ``device`` is given, the mount is
 located by device instead (the baseline's fallback for paths whose spelling
 differs from the kernel's listing), and that found mount point is what an
-unmount or remount acts on. On a BSD host the remount takes the
-``mount -uo ... -t ...`` form instead (the ``Kernel`` fact picks it). Like
-the baseline, ``/etc/fstab`` is never touched: a mount made this way does not
-survive a reboot unless an fstab entry is managed separately (a
-``files.edit`` recipe).
+unmount or remount acts on. Like the baseline, ``/etc/fstab`` is never
+touched: a mount made this way does not survive a reboot unless an fstab
+entry is managed separately (a ``files.edit`` recipe).
 
 The mount target directory must already exist and the device must be
 present -- this example does not create ``/data`` or partition disks. A
@@ -48,9 +46,8 @@ instead of a traceback.
 Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
 via ``run``'s ``host_factory`` and never touches the network -- this example
 uses the *default* factory (``Host.from_inventory``): each plain ``Host``
-lazily opens an asyncssh connection, reads ``uname -s`` and
-``/proc/self/mountinfo`` for real, and runs ``mount``/``umount`` under sudo
-where needed.
+lazily opens an asyncssh connection, reads ``/proc/self/mountinfo`` for real,
+and runs ``mount``/``umount`` under sudo where needed.
 
 Every request carries ``when=is_centos``, the declarative eligibility
 guard: the predicate reads only **static** inventory data --
