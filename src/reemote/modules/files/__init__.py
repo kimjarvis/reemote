@@ -5,7 +5,7 @@
 
 Re-exports everything from ``files.py`` so the operations (``files.link``,
 ``files.file``, ``files.put``, ``files.get``, ``files.edit``,
-``files.install``, ``files.template``, ``files.move``,
+``files.install``, ``files.transform``, ``files.move``,
 ``files.copy``, ``files.directory`` and ``files.flags``) and the facts
 (``files.FileLink``, ``files.FileExists``,
 ``files.RemoteFileSha1``, ``files.Sha256File``, ``files.Sha384File``,
@@ -65,7 +65,7 @@ from .files import (
     link,
     move,
     put,
-    template,
+    transform,
 )
 
 __all__ = [
@@ -115,5 +115,5 @@ __all__ = [
     "link",
     "move",
     "put",
-    "template",
+    "transform",
 ]

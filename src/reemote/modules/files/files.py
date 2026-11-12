@@ -33,7 +33,7 @@
 #
 # Operation side (design doc section 6): ``files.link``, ``files.file``,
 # ``files.put``, ``files.get``, ``files.edit``, ``files.install``,
-# ``files.template``, ``files.move``, ``files.copy``,
+# ``files.move``, ``files.copy``,
 # ``files.directory`` and ``files.flags`` plus the typed command descriptors
 # they yield (``LinkCommand``/``FileCommand``/``PutCommand``/``GetCommand``/
 # ``InstallSpoolCommand``/``InstallCommand``/
@@ -56,13 +56,11 @@ import posixpath
 import re
 import shlex
 import stat
-from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
+from collections.abc import AsyncGenerator, Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import IO, Any, Literal, TypedDict
-
-from jinja2 import Environment, StrictUndefined, TemplateError
 
 from ...commands import Command, TransferCommand
 from ...core import OpContext
@@ -2778,55 +2776,34 @@ async def install(
     )
 
 
-# The Jinja2 environment ``files.template`` renders with. ``StrictUndefined``
-# makes a missing variable raise rather than silently render empty (a config
-# that quietly drops a value is worse than a deploy that stops), and
-# ``keep_trailing_newline`` preserves a template's final newline -- Jinja2
-# strips one by default, which would otherwise churn the content-only
-# idempotence comparison against a destination that keeps it. The
-# environment is a module-level constant: rendering compiles a fresh template
-# per call and mutates nothing, so both phases reach the identical string.
-_JINJA_ENV = Environment(undefined=StrictUndefined, keep_trailing_newline=True)
-
-
-async def template(
+async def transform(
     ctx: OpContext,
-    template: IO[Any],
-    dest: str,
-    variables: Mapping[str, Any] | Iterable[tuple[str, Any]] | None = None,
+    path: str,
+    transform: Callable[[str | None], str],
     mode: str = "0644",
     user: str | None = None,
     group: str | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Render a control-side Jinja2 template stream and install it at a path.
+    """Edit a root-owned remote file through a pure content transform.
 
     Args:
         ctx (OpContext): Execution context for the operation.
-        template (IO[Any]): The seekable IO-like source on the control
-            machine holding the Jinja2 template *text* -- a stream, never a
-            path (the ``files.put`` contract). ``OperationRequest`` equality
-            compares it by identity, so the deploy must pass the *same*
-            object in every phase -- define it once (e.g. at module level),
-            not inside the generator -- and it is rewound before each read.
-        dest (str): The remote path to install the rendered content at.
-        variables (Mapping[str, Any] | Iterable[tuple[str, Any]] | None,
-            optional): The Jinja2 render context. Accepts a mapping or an
-            iterable of ``(key, value)`` pairs; because a request argument
-            must stay hashable, the ``op()`` spelling is a tuple of pairs
-            (``(("name", "nginx"), ("port", 80))``), never a dict literal.
-            Defaults to None (an empty context).
-        mode (str, optional): The installed file's permissions as
-            octal-digit text (``"0644"``, ``"600"``). Defaults to "0644".
-        user (str | None, optional): The user to own the installed file.
-            Defaults to None (root, the elevated install's owner).
-        group (str | None, optional): The group to own the installed file.
-            Defaults to None (root).
+        path (str): The remote file to edit.
+        transform (Callable[[str | None], str]): A pure, idempotent callable
+            taking the current content (``str``, or ``None`` when the file is
+            absent) and returning the desired content as a ``str``.
+        mode (str, optional): The installed file's permissions as octal-digit
+            text (``"0644"``, ``"600"``). Defaults to "0644".
+        user (str | None, optional): The user to own the file after the
+            install. Defaults to None (leaves the file's owner unchanged).
+        group (str | None, optional): The group to own the file after the
+            install. Defaults to None (leaves the file's group unchanged).
         **kwargs: Additional keyword arguments.
 
     Yields:
-        Command: The spool transfer and the elevated install command, only
-            when the rendered content differs from the destination's.
+        Command: The spool transfer and the elevated install command, when the
+            transformed content differs from the file's current text.
 
     **Raises:**
 
@@ -2835,41 +2812,53 @@ async def template(
     ```
 
     Examples:
-        Examples can be found in ``examples/modules/files/files_template.py``.
+        Examples can be found in ``examples/modules/files/files_transform.py``.
     """
 
-    # ``files.install`` with a render step in front. ``template`` is a
-    # seekable IO-like source on the control machine -- a stream, never a
-    # path, exactly the ``files.put`` contract: it is rewound and read with
-    # ``read_source_bytes`` (in a worker thread, so a large local template
-    # file never blocks the event loop), decoded as UTF-8, and expanded by
-    # Jinja2 against ``variables`` into the plain ``str`` ``files.install``
-    # already knows how to spool-and-install. Because ``OperationRequest``
-    # compares a stream by identity, the deploy passes the *same* template
-    # object in both phases (a module-level constant, not a fresh stream per
-    # phase, which would trip the determinism guard); the rendered ``str`` it
-    # produces is what the two phases actually compare, and it is identical
-    # whenever the template text and ``variables`` are.
+    # The root-owned sibling of ``files.edit``: the same contract for the
+    # caller-supplied *pure* ``transform`` -- read the file's current text with
+    # the ``FileContents`` fact, hand it (``None`` when the file is absent) to
+    # ``transform`` -- but a different *write mechanism*. ``files.edit`` writes
+    # back through ``files.put``'s unprivileged scp (``PutCommand``), so its
+    # ``sudo``/``su`` do not apply and ``path`` must be writable by the login
+    # user; it therefore cannot converge a root-owned target such as
+    # ``/etc/httpd/conf/httpd.conf`` in one deploy. ``files.transform`` closes
+    # that gap by delegating the write to ``files.install``: the transformed
+    # text is spooled over scp to a dest-derived ``/tmp`` path (unprivileged
+    # regardless of ``sudo``) and an elevated ``sh -c`` overlays ``path`` with
+    # it, so a single ``sudo=True`` request both preserves the rest of the
+    # protected file and lands the edit. This is the generic form of the
+    # pattern ``server.etc_hosts`` hard-wires to ``/etc/hosts``.
     #
-    # Delegation is the reuse: the ``FileContents`` content-only idempotence,
-    # the octal-digit ``mode`` validation, the dest-derived ``/tmp`` spool
-    # naming, the optional ``user``/``group`` chown and the
-    # ``InstallSpoolCommand``/``InstallCommand`` pair all stay ``install``'s,
-    # so a template converges exactly like the equivalent literal content and
-    # any future install behaviour applies here too. Rendering is pure and
-    # local -- it contacts no host -- so it is safe in both phases. A
-    # malformed template, or a variable the template references but
-    # ``variables`` omits (``StrictUndefined``), raises ``ValueError`` chained
-    # from the Jinja2 error before anything reaches the host, naming ``dest``.
-    raw = await asyncio.to_thread(read_source_bytes, template)
-    context = dict(variables) if variables else {}
-    try:
-        content = _JINJA_ENV.from_string(raw.decode("utf-8")).render(**context)
-    except TemplateError as exc:
-        raise ValueError(f"failed to render template for {dest!r}: {exc}") from exc
-
+    # The transform must be *idempotent* -- ``transform(transform(x)) ==
+    # transform(x)`` -- and side-effect free, since it runs once per phase
+    # (prepare, then each apply step); it must also be a *stable, hashable*
+    # object -- a module-level function, not a lambda or closure built inside
+    # the deploy generator -- because it is stored in the ``OperationRequest``
+    # kwargs the determinism guard compares by value across phases (a fresh
+    # callable per phase would diverge and raise ``DeterminismError``). See
+    # ``docs/migrating.md`` for how to write one.
+    #
+    # Idempotence and every write detail are ``files.install``'s, inherited by
+    # delegation (the project's rule for a derived content-producing files
+    # operation): install re-reads ``FileContents`` -- served from the same
+    # phase ``FactCache``, so no second host round-trip -- yields nothing when
+    # the transformed text already equals the file's content, validates
+    # ``mode`` (raising ``ValueError`` on a non-octal-digit string), derives
+    # the ``/tmp`` spool name from ``path``, and applies the optional
+    # ``user``/``group`` chown inside the elevated chain. An absent file is a
+    # change: ``transform(None)`` produces the content to create it from.
+    # Content-only idempotence means a mode- or owner-only drift does not
+    # re-install (``files.file`` converges metadata), and the read-back caveat
+    # is install's too -- a file whose mode the login user cannot read cats
+    # back empty and re-installs every deploy. ``/etc`` targets are root-owned,
+    # so flag the request ``sudo=True`` (or ``su=True``). ``**kwargs`` absorbs
+    # any further global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
+    current = await ctx.facts.get(FileContents, path)
+    new = transform(current)
     async for command in install(
-        ctx, content, dest, mode=mode, user=user, group=group, **kwargs
+        ctx, new, path, mode=mode, user=user, group=group, **kwargs
     ):
         yield command
 
@@ -3495,6 +3484,6 @@ __all__ = [
     "move",
     "put",
     "read_source_bytes",
-    "template",
+    "transform",
     "write_dest_bytes",
 ]

@@ -37,7 +37,7 @@
         - link
         - move
         - put
-        - template
+        - transform
 
 
 
@@ -51,7 +51,7 @@ in a single source, so the read side (`FileLink`, `FileExists`,
 `FileFlags`, `FindFiles`, `FindDirectories`, `FindLinks`, `FindInFile`,
 `FindInFiles`, `FindFilesInfo`, `DirectoryEntries`)
 sits beside the `files.link`, `files.file`, `files.put`, `files.get`,
-`files.edit`, `files.install`, `files.template`, `files.move`, `files.copy`, `files.directory`
+`files.edit`, `files.install`, `files.transform`, `files.move`, `files.copy`, `files.directory`
 and `files.flags`
 operations that consume it.
 
@@ -224,7 +224,8 @@ leading `~/` stays unquoted so the remote shell expands it.
 
 Operations live in namespace modules so a deploy reads `files.link`,
 `files.file`, `files.put`, `files.get`, `files.edit`, `files.install`,
-`files.template`, `files.move`,
+`files.transform`,
+`files.move`,
 `files.copy`, `files.directory` and `files.flags`,
 mirroring the baseline's
 API. Every
@@ -310,36 +311,32 @@ There is no `present=False` branch — `files.file(present=False)` owns removal.
 Installing under `/etc` needs root, so flag the request `sudo=True`; the
 transfer stays unprivileged regardless.
 
-`files.template` is `files.install` with a Jinja2 render step in front, and a
-reemote original in the same spirit: where the baseline reads a template from a
-local *path*, reemote takes the template as a seekable IO-like **stream** on
-the control machine (`template: IO[Any]`) — never a path — exactly the
-`files.put` source contract. The stream is rewound and read with
-`read_source_bytes` (in a worker thread), decoded as UTF-8, and expanded
-against `variables` into the plain `str` `files.install` spools-and-installs;
-the whole write then *delegates* to `files.install`, so the `FileContents`
-content-only idempotence, the octal-digit `mode` validation, the dest-derived
-`/tmp` spool naming, the optional `user`/`group` chown and the
-`InstallSpoolCommand`/`InstallCommand` pair are all reused unchanged — a
-template converges exactly like the equivalent literal `content`, and any future
-`files.install` behaviour applies here too. Rendering uses Jinja2 with
-`StrictUndefined` (a variable the template references but `variables` omits
-raises rather than silently rendering empty) and `keep_trailing_newline` (a
-template's final newline survives, so the content comparison is exact); a
-malformed template or a missing variable raises `ValueError` chained from the
-Jinja2 error before any host is contacted. Rendering is pure and local, so it
-is safe in both phases and deterministic. Two contract notes follow from the
-stream and request rules: because `OperationRequest` compares a stream *by
-identity*, the deploy must pass the **same** template object in every phase (a
-module-level constant, not a fresh stream inside the generator, which would
-trip `DeterminismError`) — one shared stream serves every host, since it is
-rewound before each read; and because a request argument must stay *hashable*,
-`variables` is spelled at an `op()` site as a tuple of `(key, value)` pairs
-(`(("name", "nginx"), ("port", 80))`), never a dict literal, though a direct
-call accepts a mapping. The values may be built from the `host` the deploy
-receives (`host.name`, static inventory data), which is what makes the render
-per-host. As with `files.install`, flag the request `sudo=True` for a
-root-owned destination; the spool transfer stays unprivileged regardless.
+`files.transform` is the root-owned sibling of `files.edit` and a reemote
+original: it applies the same caller-supplied *pure* `transform`
+(`str | None -> str`) to a file's current text, but writes the result through
+the spool-and-install path instead of `files.edit`'s unprivileged scp. It reads
+the target with `FileContents`, hands the text (`None` when the file is absent)
+to `transform`, and — only when the result differs — delegates the write to
+`files.install` above: an `InstallSpoolCommand` transfer spools the transformed
+text to a dest-derived `/tmp` path over unprivileged scp, then an
+`InstallCommand` shell overlays the target with it under an elevated `sh -c`.
+This closes the gap `files.edit` cannot: because the put/edit transfers never
+elevate, `files.edit` needs a login-user-writable target and cannot converge a
+root-owned config such as `/etc/httpd/conf/httpd.conf` in one deploy, whereas a
+single `sudo=True` `files.transform` request both preserves the rest of the
+protected file and lands the edit. It is the generic form of the pattern
+`server.etc_hosts` hard-wires to `/etc/hosts`. The `transform` obeys the same
+two rules as `files.edit` — idempotent (`transform(transform(x)) ==
+transform(x)`, so a second run is a fixpoint) and a stable, hashable
+module-level callable (compared by value across phases, so a lambda built
+inside the deploy generator would trip `DeterminismError`); see
+[Migrating a protected-file line edit](../migrating.md#migrating-a-protected-file-line-edit-lineinfile)
+for how to write one. `mode`/`user`/`group` are forwarded straight to the
+install, so the request that lands the edit can also set permissions and
+ownership; idempotence stays content-only (a mode- or owner-only drift does not
+re-install — `files.file` converges metadata), and the read-back caveat is
+install's too. Editing under `/etc` needs root, so flag the request
+`sudo=True`; the spool transfer stays unprivileged regardless.
 
 `files.move` mirrors the baseline's `files.move`: `src` is a remote path, `dest`
 is the remote *directory* to move it into (the moved path becomes

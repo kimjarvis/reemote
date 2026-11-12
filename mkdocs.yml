@@ -155,3 +155,4 @@ nav:
       - Connectors:
           - docker: connectors/docker.md
           - ssh: connectors/ssh.md
+      - Migrating: migrating.md

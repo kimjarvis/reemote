@@ -136,7 +136,8 @@ fresh per-step fact cache. The transform must be a module-level function (a
 lambda built inside the deploy generator would diverge across phases and raise
 `DeterminismError`), and because the write is an unprivileged transfer the
 target is a login-user-writable path in `/tmp`, not a root-owned file like
-`/etc/hosts` — for that, see `files.install` below (or the dedicated
+`/etc/hosts` — for that, see `files.transform` or `files.install` below (or the
+dedicated
 [`server.etc_hosts`](server.md#managing-etchosts-entries) operation).
 
 ::: files_edit
@@ -294,27 +295,32 @@ service-account file would read back as empty and re-install on every deploy.
     options:
       members: []
 
-## Rendering a Jinja2 template at a root-owned path
+## Editing a root-owned file with a pure transform
 
-`files.template` (a reemote original) is `files.install` with a Jinja2 render
-step in front: it takes the template as a seekable IO-like **stream** on the
-control machine (a module-level `io.StringIO`, never a path — the `files.put`
-source contract), expands it against a `variables` mapping, and then delegates
-the write to `files.install`, so the spool-and-install machinery and the
-content-only idempotence are reused unchanged. The stream is identity-stable
-across phases (`OperationRequest` compares it by identity, so a fresh stream
-inside the generator would trip `DeterminismError`) and rewound before each
-read, so one shared stream serves every host; only the `variables` differ per
-machine. Because a request argument must stay hashable, `variables` is spelled
-as a tuple of `(key, value)` pairs — never a dict literal — and one value comes
-straight from `host.name`, so each host renders its own hostname into the same
-template. Rendering uses `StrictUndefined` (a missing variable raises rather
-than silently rendering empty) and keeps a template's trailing newline. The
-example installs a per-host rendered config under `/etc` with `sudo=True` (the
-scp spool transfer stays unprivileged), then runs the same deploy again to show
-every request reporting no change.
+`files.transform` (a reemote original) is `files.edit`'s pure-transform contract
+with the write mechanism `files.edit` lacks: it reads the target's text with
+`FileContents`, applies a caller-supplied *pure* transform, and — only when the
+result differs — delegates the write to `files.install`, spooling the
+transformed text over unprivileged scp to a dest-derived `/tmp` path and
+overlaying the target with an elevated `sh -c`. Because the put/edit transfers
+never elevate, `files.edit` cannot converge a root-owned config such as
+`/etc/httpd/conf/httpd.conf` in one deploy; a single `sudo=True`
+`files.transform` request both preserves the rest of the protected file and
+lands the edit — the generic form of what `server.etc_hosts` hard-wires to
+`/etc/hosts`. The example's `ensure_listen_directive` rewrites any `Listen`
+line to the wanted port (appending one when the file has none), preserving
+every other line, comment and blank line, so it is a fixpoint and the second
+transform is a guaranteed no-op — visible through the fresh per-step fact
+cache. As for `files.edit`, the transform must be a module-level function (a
+lambda built inside the deploy generator would diverge across phases and raise
+`DeterminismError`); `mode`/`user`/`group` are forwarded to the install, and
+idempotence stays content-only. See
+[Migrating a protected-file line edit](../../migrating.md#migrating-a-protected-file-line-edit-lineinfile)
+for how to write a transform. The script transforms a demo config under `/etc`
+with `sudo=True` (the spool transfer stays unprivileged regardless), then runs
+the same deploy again to show every request reporting no change.
 
-::: files_template
+::: files_transform
     options:
       members: []
 
