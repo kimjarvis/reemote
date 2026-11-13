@@ -1022,3 +1022,181 @@ the second is a no-op — is the
   always rides as the login user into world-writable `/tmp`; only the `sh -c`
   install that overlays the protected file elevates — the same trade-off every
   spool-and-install operation makes.
+
+## Migrating a build-from-source role
+
+Some roles install software the package managers do not carry: they clone an
+upstream tree (`git:`), then compile and install it with a `command:`/`shell:`
+sequence — `./buildconf --force`, `./configure --prefix=/usr/local`, `make`,
+`make install` — before wiring the result into place with a symlink
+(`file: state=link`) and a config or unit file (`copy:`/`template:`). The build
+is usually an **opt-in path, default off**, guarded by a `when:` flag and a
+`creates:`/`stat:` check so the expensive compile runs only when the tree is
+fresh or the binary is missing.
+
+This role does not migrate as one deploy, and the reason is structural, not a
+missing feature. reemote has **no generic command operation inside a deploy** —
+that is a deliberate determinism boundary. The runner executes the deploy
+generator twice (prepare against pre-deployment state, apply against live
+state), so a `make` step in the body would run *twice*, the prepare phase would
+mutate the host mid-plan (poisoning every later fact read), and an immediate
+command has no request value for the guard to pair — it trips
+[`DeterminismError`][reemote.drivers.DeterminismError] (see
+[Guide — Determinism](guide.md#determinism)). The compile half therefore belongs
+to [`Shell`][reemote.actions.Shell] / [`Script`][reemote.actions.Script] driven
+by [`gather_action`](guide.md#actions), **outside** the deploy —
+before, between or after it, never inside a generator. `gather_action` raises
+[`ActionInDeployError`](guide.md#actions) the moment it is
+called while a deploy is running, so the boundary is enforced, not conventional
+(see [Guide — Actions](guide.md#actions)).
+
+The migration is a **split**, not a swap: the declarative "converge the tree"
+half (clone, symlink, config write) becomes one idempotent deploy, the
+imperative "compile it" half becomes an action fan-out, and `main()` sequences
+them — deploy the source, run the build as an action, then deploy the links and
+config that depend on the built binary.
+
+### The mapping
+
+| Ansible | reemote |
+| --- | --- |
+| `git: {repo, dest, version}` clone the source | [`git.repo(src=..., dest=..., branch=...)`][reemote.modules.git.git.repo] — inside a deploy |
+| `command: ./buildconf --force` / `./configure …` / `make` / `make install` | [`gather_action(hosts, Shell, command="…")`](guide.md#actions) — **outside** any deploy, one action per step (or a staged build script run by [`Script`][reemote.actions.Script]) |
+| `file: {src, dest, state: link}` symlink the binary | [`files.link(path=..., target=...)`][reemote.modules.files.files.link] — inside a deploy |
+| `copy:`/`template:` a config or unit file | [`files.install(content=..., dest=...)`][reemote.modules.files.files.install] — inside a deploy (pre-render a template control-side, see the [Jinja2 migration](#migrating-jinja2-templates)) |
+| `when: build_from_source` (opt-in, default off) | a Python `if`/`when=` guard on static inventory data (`host.extra`, `host.group`, `host.tags`) — never on a fact read inside the deploy |
+| `creates: /usr/local/bin/foo` (skip if already built) | gather the built state *between* deploys — a fact, or a `Shell` probe whose [`Result`][reemote.actions.Result] you freeze — and gate the build action on it |
+| `register: build` + `failed_when` | read `result["exit_status"]`/`result["stdout"]` from the frozen `Result` dict; an action interprets nothing, so *you* decide what a non-zero build exit means |
+
+### The process
+
+1. **Deploy the source tree.** One deploy yields the
+   [`git.repo`][reemote.modules.git.git.repo] clone (and any config/unit write
+   that does not depend on the built binary). Keep it branch-free so both of its
+   phases agree; the opt-in flag is static inventory data (`host.extra`), so a
+   `when=` guard may read it.
+2. **Read the built state between deploys.** To make the compile run only when
+   needed — the `creates:`/`stat:` idempotence the role relied on — gather it
+   *after* the source deploy's apply join: either a fact (does
+   `/usr/local/bin/foo` exist?) or a `Shell` probe whose
+   [`Result`][reemote.actions.Result] you freeze into a per-host snapshot.
+3. **Run the build as an action, outside any deploy.**
+   [`gather_action(hosts, Shell, command="./configure … && make && make install", sudo=True)`](guide.md#actions)
+   runs the compile concurrently on the selected hosts and is a barrier: every
+   host's build has finished before the next deploy starts. Filter the host list
+   yourself (or pass `group=`/`tags=`) so only the opt-in hosts build. For a
+   long sequence, stage a build script with `files.put`/`files.install` in deploy
+   1 and run it with [`Script`][reemote.actions.Script] instead of a chained
+   `Shell` command.
+4. **Deploy what depends on the build.** A second deploy yields the
+   [`files.link`][reemote.modules.files.files.link] symlinks and any config that
+   references the installed binary. Build it from a factory closing over the
+   frozen snapshot when the link/config depends on what step 2 or 3 observed.
+5. **Sequence it all in `main()`.** Deploy → gather → action → deploy, each an
+   awaited barrier. Close the gather's hosts yourself (`gather_fact` does not);
+   `gather_action` and [`run`][reemote.drivers.run] close their own.
+
+### Before / after
+
+```yaml
+# Ansible -------------------------------------------------------------
+# roles/foo/tasks/install-from-source.yml   (opt-in, default off)
+- name: Clone the source tree
+  git: { repo: "https://example.com/foo.git", dest: /usr/local/src/foo, version: main }
+- name: Build foo
+  shell: ./buildconf --force && ./configure --prefix=/usr/local && make && make install
+  args: { chdir: /usr/local/src/foo }
+  when: build_from_source | default(false)
+- name: Symlink the binary into PATH
+  file: { src: /usr/local/src/foo/bin/foo, dest: /usr/local/bin/foo, state: link }
+```
+
+```python
+# reemote -------------------------------------------------------------
+import asyncio
+
+from reemote import Host, Shell, files, gather_action, git, op, run, validate_inventory
+
+SRC = "/usr/local/src/foo"
+BUILD_DIR = SRC
+
+
+def clone_source(host):
+    """Deploy 1: the declarative half. Branch-free; the opt-in flag is static."""
+    if not host.extra.get("build_from_source", False):
+        return
+    yield op(git.repo, name="Clone the source tree",
+             src="https://example.com/foo.git", dest=SRC, branch="main",
+             sudo=True)
+
+
+def link_binary(host):
+    """Deploy 2: what depends on the built binary."""
+    if not host.extra.get("build_from_source", False):
+        return
+    yield op(files.link, name="Symlink the binary into PATH",
+             path="/usr/local/bin/foo", target=f"{SRC}/bin/foo", sudo=True)
+
+
+async def main() -> None:
+    inventory = ...                        # loaded + validate_inventory(...)
+    # 1. Deploy the source tree (its own connections, opened and closed by run).
+    await run(inventory, clone_source)
+
+    # 2+3. Build as an action, OUTSIDE any deploy. Filter to the opt-in hosts,
+    #      then run the compile concurrently; the await is the barrier.
+    hosts = [
+        Host.from_inventory(entry) for entry in inventory
+        if entry.get("build_from_source", False)
+    ]
+    results = await gather_action(
+        hosts, Shell, sudo=True,
+        command=(f"cd {BUILD_DIR} && ./buildconf --force "
+                 "&& ./configure --prefix=/usr/local && make && make install"),
+    )
+    for name, result in results.items():   # an action interprets nothing -- you do
+        if result["exit_status"] != 0:
+            raise RuntimeError(f"build failed on {name}: {result['stderr']}")
+
+    # 4. Deploy what depends on the build, over fresh connections.
+    await run(inventory, link_binary)
+
+
+asyncio.run(main())
+```
+
+The deploy → action → deploy shape this builds on — an install deploy, a
+bespoke `Shell` probe between the two, then a factory-built second deploy that
+closes over the frozen `Result` dict — is the runnable
+[`deploy_action_deploy` example](examples/actions.md#deploy-action-deploy);
+swap its `nginx -v` probe for your compile step and its configure deploy for the
+links.
+
+### What to watch
+
+- **The compile never goes inside a generator.** `op(Shell, ...)` is refused
+  ([`materialize`][reemote.drivers.materialize] wants an async-generator
+  operation) and `gather_action(...)` inside a deploy raises
+  [`ActionInDeployError`](guide.md#actions). There is no
+  spelling that puts a `make` step in a deploy; the boundary is the point.
+- **A build is not idempotent, and that is fine — outside a deploy.** The
+  determinism guard only governs deploys. To avoid a needless recompile, do the
+  `creates:` check yourself: gather the built state (step 2) and skip the
+  `gather_action` for hosts whose binary already exists.
+- **An action interprets nothing.** A non-zero `make` exit — even 127 — comes
+  back as data in the [`Result`][reemote.actions.Result] (`exit_status`,
+  `stdout`, `stderr`); it does not raise. Inspect it and raise yourself, exactly
+  as the `failed_when`/`register` idiom did. Library-level failures
+  (`HostConnectionError`, `PrivilegeError`) still raise.
+- **`gather_action` closes its own hosts.** Unlike `gather_fact`, the action
+  fan-out tears down every selected host's connection when it finishes, so do
+  not `aclose` them afterward; each call re-connects. `run` builds and closes its
+  own fresh hosts too, so the three phases do not share connections.
+- **Filter to the opt-in hosts before the fan-out.** `gather_action` has no
+  `when` of its own; select the host list yourself, or pass `group=`/`tags=`
+  (combined with AND) from the same static classifiers the deploy guards on.
+- **Keep the declarative halves in the deploys.** The clone, the symlink and the
+  config write are idempotent operations and belong in a deploy — only the
+  open-ended compile is an action. Resist the temptation to drag the whole role
+  into one big `Shell` command; split it and each half keeps the guarantees its
+  model makes.
