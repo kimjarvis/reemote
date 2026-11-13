@@ -207,6 +207,7 @@ from reemote.modules.apt.apt import (
 )
 from reemote.modules.dnf.dnf import (
     DnfCleanCommand,
+    DnfDowngradeCommand,
     DnfInstallCommand,
     DnfKeyImportCommand,
     DnfKeyRemoveCommand,
@@ -1870,6 +1871,8 @@ class SimulatedHost(Host):
                 self.add_apk_virtual(tag, packages)
             case DnfInstallCommand(packages=packages):
                 self.install_packages(packages)
+            case DnfDowngradeCommand(packages=packages):
+                self.downgrade_packages(packages)
             case DnfRemoveCommand(packages=packages):
                 self.remove_packages(packages)
             case DnfUpdateCommand() | DnfCleanCommand() | DnfMakecacheCommand():
@@ -2699,16 +2702,18 @@ class SimulatedHost(Host):
     def install_packages(self, packages: tuple[str, ...]) -> None:
         for package in packages:
             # A version pin (``pkg=version``) records exactly that version in
-            # the name -> versions store; an unpinned name carries no
-            # repository metadata to resolve a version from, so it gets the
-            # [""] placeholder (the ``install_apt_packages`` precedent). The
-            # dnf.packages operation itself still compares names only.
+            # the name -> versions store, overwriting whatever was there
+            # before (the ``install_apt_packages`` precedent), so a pinned
+            # install converges even when the name was already present at a
+            # different version; an unpinned name carries no repository
+            # metadata to resolve a version from, so it gets the [""]
+            # placeholder and never overwrites an existing entry.
             name, sep, version = package.rpartition("=")
-            if not sep:
-                name, version = package, ""
-            if name in self.packages:
-                continue
-            self.packages[name] = [version]
+            if sep:
+                self.packages[name] = [version]
+            else:
+                name = package
+                self.packages.setdefault(name, [""])
             for src, target in self.installs_links.get(name, {}).items():
                 self.links[src] = target
                 # The Link-fact seam too: files.link stats the path instead
@@ -2730,6 +2735,38 @@ class SimulatedHost(Host):
                 # stats the path instead of only probing existence, so a
                 # package-dropped file must answer with a metadata row
                 # (root-owned mode 644, the rpm default).
+                self.file_stats.setdefault(
+                    path, {"mode": 644, "user": "root", "group": "root"}
+                )
+
+    def downgrade_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``dnf downgrade``: pin the name to the requested
+        version.
+
+        ``dnf.packages(allow_downgrade=True)``'s mutation for a pinned
+        ``<pkg>=<version>`` whose name is already installed at a different
+        version. Always overwrites the name's versions with exactly the
+        requested one and re-applies the same package side effects (dropped
+        links/files) as ``install_packages``, keyed on the bare name.
+        """
+        for package in packages:
+            name, sep, version = package.rpartition("=")
+            if not sep:
+                name, version = package, ""
+            self.packages[name] = [version]
+            for src, target in self.installs_links.get(name, {}).items():
+                self.links[src] = target
+                self.link_stats.setdefault(
+                    src,
+                    {
+                        "mode": 777,
+                        "user": "root",
+                        "group": "root",
+                        "link_target": target,
+                    },
+                )
+            for path in self.installs_files.get(name, set()):
+                self.existing_files.add(path)
                 self.file_stats.setdefault(
                     path, {"mode": 644, "user": "root", "group": "root"}
                 )

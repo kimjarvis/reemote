@@ -34,6 +34,15 @@ the default welcome configuration the package drops in
 ``/etc/httpd/conf.d/`` -- the *next* operation's fresh fact cache sees the
 file over SSH and removes it.
 
+``dnf.packages`` reads the installed versions through the ``DnfPackages``
+fact, so a name pinned as ``<pkg>=<version>`` counts as present only when
+that *exact* version is installed (the ``apt.packages`` precedent, not a
+name-only match). ``allow_downgrade=True`` would render ``dnf downgrade
+--allowerasing`` for a pinned package whose name is already installed at a
+different version -- dnf's dedicated verb for crossing that boundary, since
+``dnf install`` alone refuses to and has no equivalent flag; this example
+leaves it unset, since httpd is installed unpinned.
+
 Every request carries ``when=is_centos``, the declarative eligibility guard
 (see ``examples/demonstrations/composition/composed_when_guard.py``). The
 predicate reads only **static** inventory data -- ``host.group``, set by the

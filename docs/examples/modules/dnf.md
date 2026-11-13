@@ -31,7 +31,19 @@ hosts in other groups, so the skip is visible on every run.
 
 The starting point for everything below: a single flat deploy generator
 installing httpd and removing the welcome configuration the package drops,
-run end to end over SSH in both phases.
+run end to end over SSH in both phases. `dnf.packages` reads the
+[`DnfPackages`][reemote.modules.dnf.dnf.DnfPackages] fact for the installed
+versions, so a `<pkg>=<version>` pin counts as present only when that exact
+version is installed (the [`apt.packages`][reemote.modules.apt.apt.packages]
+precedent, not a name-only match) — `present=True` installs only what is
+missing or mismatched, `latest=True` additionally upgrades installed unpinned
+names, and `present=False` removes only what is installed. `allow_downgrade=True`
+renders `dnf downgrade --allowerasing` for a pinned package whose name is
+already installed at a *different* version, since `dnf install` alone refuses
+to cross from a newer installed version to an older requested one and has no
+equivalent flag (unlike apt's `--allow-downgrades`); without it, a mismatch is
+treated exactly like a missing name and left for dnf's own default behavior to
+reject (the example leaves it unset, since httpd is installed unpinned).
 
 ::: dnf_packages
     options:

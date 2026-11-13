@@ -26,7 +26,8 @@
 # Operation side (design doc section 6): ``dnf.packages``, ``dnf.update``,
 # ``dnf.makecache``, ``dnf.clean``, ``dnf.repo``,
 # ``dnf.rpm``, ``dnf.key`` and ``dnf.module`` plus the typed command descriptors
-# they yield (``DnfInstallCommand``/``DnfRemoveCommand``/``DnfUpdateCommand``/
+# they yield (``DnfInstallCommand``/``DnfDowngradeCommand``/``DnfRemoveCommand``/
+# ``DnfUpdateCommand``/
 # ``DnfCleanCommand``/``DnfMakecacheCommand``/``DnfRepoUploadCommand``/``DnfRepoInstallCommand``/
 # ``DnfRepoRemoveCommand``/``RpmInstallCommand``/
 # ``DnfKeyUploadCommand``/``DnfKeyImportCommand``/``DnfKeyRemoveCommand``/
@@ -40,7 +41,13 @@
 # ``update``, ``clean``, ``nobest``, ``extra_install_args``,
 # ``extra_uninstall_args``) with the same names and semantics, plus a
 # first-class ``repos`` scope (``--disablerepo='*' --enablerepo=<id>``) on the
-# install/remove it yields. ``dnf.repo``
+# install/remove it yields. A pinned ``<pkg>=<version>`` is present only when
+# that *exact* version is installed (the ``DnfPackages`` fact already reports
+# each name's versions -- the ``apt.packages`` precedent -- so the comparison
+# is version-aware rather than name-only), and ``allow_downgrade`` renders
+# ``dnf downgrade --allowerasing`` for a pinned package whose name is already
+# installed at a different version, since ``dnf install`` alone will not cross
+# from a newer installed version to an older requested one. ``dnf.repo``
 # constructs a repo file for the manual-construction case (``present``,
 # ``baseurl``, ``description``, ``enabled``, ``gpgcheck``, ``gpgkey``) and
 # extends it with the ansible-datadog role's ``yum_repository`` fields
@@ -1140,6 +1147,20 @@ def _split_version(package: str) -> tuple[str, str | None]:
     return (name, version) if sep else (package, None)
 
 
+def _dnf_package_spec(package: str) -> str:
+    """Render a ``pkg=version`` pin as dnf's native ``pkg-version`` NEVRA spec.
+
+    reemote spells a version pin ``pkg=version`` across every package module
+    (the ``apt.packages`` convention, since apt-get's own CLI syntax is
+    ``pkg=version``); dnf's CLI has no ``=`` form and takes
+    ``name-[epoch:]version[-release]`` instead, so the pin is rewritten to a
+    dash-joined spec before it reaches the shell. An unpinned name passes
+    through unchanged.
+    """
+    name, version = _split_version(package)
+    return package if version is None else f"{name}-{version}"
+
+
 def _repo_scope_args(repos: tuple[str, ...]) -> str:
     """Render the repo-scoping flags shared by the package and cache descriptors.
 
@@ -1183,7 +1204,42 @@ class DnfInstallCommand(Command):
         scope = _repo_scope_args(self.repos).strip()
         if scope:
             parts.append(scope)
-        parts.extend(shlex.quote(package) for package in self.packages)
+        parts.extend(shlex.quote(_dnf_package_spec(package)) for package in self.packages)
+        return " ".join(parts)
+
+
+@dataclass(frozen=True)
+class DnfDowngradeCommand(Command):
+    """``dnf downgrade --allowerasing <packages>``: downgrade already-installed
+    packages to an explicitly requested older version.
+
+    ``dnf install`` will not cross from a newer installed version to an older
+    requested one; ``dnf downgrade`` is dnf's dedicated verb for that (there is
+    no ``--allow-downgrades`` install flag equivalent, unlike apt), and
+    ``--allowerasing`` lets it drop packages whose dependencies would
+    otherwise block the downgrade. ``dnf.packages(allow_downgrade=True)``
+    yields this for a pinned ``<pkg>=<version>`` whose *name* is already
+    installed at a different version; a name that is not installed at all
+    still goes through ``DnfInstallCommand``, since there is nothing to
+    downgrade from. ``nobest``/``extra_args``/``repos`` render exactly as they
+    do on the install descriptor.
+    """
+
+    packages: tuple[str, ...]
+    nobest: bool = False
+    extra_args: str | None = None
+    repos: tuple[str, ...] = ()
+
+    def shell(self) -> str:
+        parts = ["dnf", "downgrade", "-y", "--allowerasing"]
+        if self.nobest:
+            parts.append("--nobest")
+        if self.extra_args:
+            parts.append(self.extra_args)
+        scope = _repo_scope_args(self.repos).strip()
+        if scope:
+            parts.append(scope)
+        parts.extend(shlex.quote(_dnf_package_spec(package)) for package in self.packages)
         return " ".join(parts)
 
 
@@ -1200,7 +1256,7 @@ class DnfRemoveCommand(Command):
         scope = _repo_scope_args(self.repos).strip()
         if scope:
             parts.append(scope)
-        parts.extend(shlex.quote(package) for package in self.packages)
+        parts.extend(shlex.quote(_dnf_package_spec(package)) for package in self.packages)
         return " ".join(parts)
 
 
@@ -1239,6 +1295,7 @@ async def packages(
     update: bool = False,
     clean: bool = False,
     nobest: bool = False,
+    allow_downgrade: bool = False,
     extra_install_args: str | None = None,
     extra_uninstall_args: str | None = None,
     repos: str | list[str] | tuple[str, ...] | None = None,
@@ -1262,6 +1319,17 @@ async def packages(
             packages. Defaults to False.
         nobest (bool, optional): Add the ``--nobest`` option to the install
             command. Defaults to False.
+        allow_downgrade (bool, optional): Allow a pinned ``<pkg>=<version>``
+            whose name is already installed at a *different* version to be
+            downgraded to the requested one, rendering ``dnf downgrade
+            --allowerasing`` instead of ``dnf install`` (dnf's own verb for
+            crossing from a newer installed version to an older requested one,
+            since ``dnf install`` will not do it and has no equivalent flag).
+            Without this, a version mismatch is treated as "not present" and
+            routed through ``DnfInstallCommand`` exactly like a missing name,
+            leaving dnf's own default behavior (which refuses the downgrade)
+            to decide the outcome -- the ``apt.packages(allow_downgrades=...)``
+            precedent. Defaults to False.
         extra_install_args (str | None, optional): Additional arguments to the
             dnf install command. Defaults to None.
         extra_uninstall_args (str | None, optional): Additional arguments to
@@ -1291,12 +1359,19 @@ async def packages(
     #
     # ``clean`` and ``update`` are stateless (always yield, like the other
     # non-idempotent operations). The ``DnfPackages`` fact reports each
-    # name's installed versions, but the comparison stays name-only
-    # (name-only parity): a pinned ``<pkg>=<version>`` is considered present
-    # when *any* version of ``pkg`` is installed, and ``latest`` follows
-    # the same name-only behavior: every installed, unpinned package is
-    # upgraded without checking whether an upgrade actually exists.
-    # ``repos`` scopes the install/remove this operation yields to named repos
+    # name's installed versions, so the comparison is version-aware (the
+    # ``apt.packages`` precedent): a pinned ``<pkg>=<version>`` is present
+    # only when that *exact* version is installed, and ``latest`` still only
+    # upgrades unpinned names (every installed, unpinned package is upgraded
+    # without checking whether an upgrade actually exists, the same blind
+    # behavior as before). ``allow_downgrade`` decides what a version mismatch
+    # does when ``present=True``: with it, a pinned package whose name is
+    # installed at a different version routes to ``DnfDowngradeCommand``
+    # (``dnf downgrade --allowerasing``) instead of ``DnfInstallCommand``,
+    # since ``dnf install`` alone refuses to cross that boundary; without it,
+    # the mismatch is treated exactly like a missing name and left for dnf's
+    # own default behavior to reject. ``repos`` scopes the
+    # install/downgrade/remove this operation yields to named repos
     # (``--disablerepo='*' --enablerepo=<id>``), reusing the ``_repo_scope_args``
     # the cache descriptors render -- a first-class alternative to smuggling the
     # same flags through ``extra_install_args``/``extra_uninstall_args``.
@@ -1325,31 +1400,64 @@ async def packages(
 
     if requested:
         installed = await ctx.facts.get(DnfPackages)
-        installed_names = {entry["name"] for entry in installed}
+        versions_by_name = {entry["name"]: entry["versions"] for entry in installed}
+
+        def is_installed(package: str) -> bool:
+            name, version = _split_version(package)
+            versions = versions_by_name.get(name)
+            if versions is None:
+                return False
+            return version is None or version in versions
 
         if present:
-            to_install = tuple(
-                pkg for pkg in requested if _split_version(pkg)[0] not in installed_names
-            )
+            to_install = tuple(pkg for pkg in requested if not is_installed(pkg))
             # ``latest``: installed, unpinned packages are upgrade candidates.
             to_upgrade = (
                 tuple(
                     pkg
                     for pkg in requested
-                    if _split_version(pkg)[1] is None and pkg in installed_names
+                    if _split_version(pkg)[1] is None and is_installed(pkg)
                 )
                 if latest
                 else ()
             )
             if to_install:
                 ctx.changed = True
-                reasons.append(f"{len(to_install)} package(s) to install")
-                yield DnfInstallCommand(
-                    packages=to_install,
-                    nobest=nobest,
-                    extra_args=extra_install_args,
-                    repos=scoped,
-                )
+                # ``allow_downgrade``: a pinned package whose *name* is already
+                # installed (but at a different version, so ``is_installed``
+                # returned False) needs dnf's dedicated downgrade verb; a name
+                # that is not installed at all has nothing to downgrade from
+                # and stays a plain install.
+                if allow_downgrade:
+                    to_downgrade = tuple(
+                        pkg
+                        for pkg in to_install
+                        if _split_version(pkg)[0] in versions_by_name
+                    )
+                    to_fresh_install = tuple(
+                        pkg
+                        for pkg in to_install
+                        if _split_version(pkg)[0] not in versions_by_name
+                    )
+                else:
+                    to_downgrade = ()
+                    to_fresh_install = to_install
+                if to_fresh_install:
+                    reasons.append(f"{len(to_fresh_install)} package(s) to install")
+                    yield DnfInstallCommand(
+                        packages=to_fresh_install,
+                        nobest=nobest,
+                        extra_args=extra_install_args,
+                        repos=scoped,
+                    )
+                if to_downgrade:
+                    reasons.append(f"{len(to_downgrade)} package(s) to downgrade")
+                    yield DnfDowngradeCommand(
+                        packages=to_downgrade,
+                        nobest=nobest,
+                        extra_args=extra_install_args,
+                        repos=scoped,
+                    )
             if to_upgrade:
                 ctx.changed = True
                 reasons.append(f"{len(to_upgrade)} package(s) to upgrade")
@@ -1357,9 +1465,7 @@ async def packages(
             if not to_install and not to_upgrade:
                 reasons.append("all packages present")
         else:
-            to_remove = tuple(
-                pkg for pkg in requested if _split_version(pkg)[0] in installed_names
-            )
+            to_remove = tuple(pkg for pkg in requested if is_installed(pkg))
             if to_remove:
                 ctx.changed = True
                 reasons.append(f"{len(to_remove)} package(s) to remove")

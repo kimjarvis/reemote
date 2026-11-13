@@ -55,6 +55,7 @@ from reemote.modules.dnf.dnf import (
     DnfAvailableGroups,
     DnfCleanCommand,
     DnfDisabledModules,
+    DnfDowngradeCommand,
     DnfEnabledModules,
     DnfGroups,
     DnfInstallCommand,
@@ -1748,16 +1749,18 @@ async def test_dnf_packages_latest_upgrades_installed_unpinned_packages():
 
 
 async def test_dnf_packages_latest_skips_version_pins():
-    """A pinned ``<pkg>=<version>`` is never an upgrade candidate, and the
-    name-only comparison treats any installed version as present."""
+    """A pinned ``<pkg>=<version>`` is never an upgrade candidate; the
+    version-aware comparison now treats a mismatch against the installed
+    version as not present, so it routes to an install rather than the old
+    name-only no-op."""
     host = SimulatedHost(name="h", packages={"nginx": [""]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
         c async for c in dnf.packages(ctx, packages=("nginx=1.23.0",), latest=True)
     ]
-    assert not ctx.changed
-    assert ctx.reason == "all packages present"
-    assert commands == []
+    assert ctx.changed
+    assert ctx.reason == "1 package(s) to install"
+    assert commands == [DnfInstallCommand(packages=("nginx=1.23.0",))]
 
 
 async def test_dnf_packages_version_pin_installs_when_name_absent():
@@ -1765,21 +1768,153 @@ async def test_dnf_packages_version_pin_installs_when_name_absent():
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in dnf.packages(ctx, packages=("nginx=1.23.0",))]
     assert commands == [DnfInstallCommand(packages=("nginx=1.23.0",))]
-    assert commands[0].shell() == "dnf install -y nginx=1.23.0"
+    assert commands[0].shell() == "dnf install -y nginx-1.23.0"
+
+
+async def test_dnf_packages_version_pin_present_requires_an_exact_version_match():
+    """The version-aware comparison (the ``apt.packages`` precedent): a pinned
+    ``<pkg>=<version>`` is present only when that *exact* version is in the
+    ``DnfPackages`` fact's versions list for the name, not when any version
+    of the name is installed."""
+    host = SimulatedHost(name="h", packages={"nginx": ["1.23.0"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.packages(ctx, packages=("nginx=1.23.0",))]
+    assert not ctx.changed
+    assert ctx.reason == "all packages present"
+    assert commands == []
+
+
+async def test_dnf_packages_version_pin_mismatch_is_not_present_without_downgrade():
+    """A name installed at a *different* version than the pin is not present;
+    without ``allow_downgrade`` it routes through ``DnfInstallCommand`` (leaving
+    dnf's own refusal to downgrade as the outcome), never ``DnfDowngradeCommand``."""
+    host = SimulatedHost(name="h", packages={"nginx": ["1.24.0"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.packages(ctx, packages=("nginx=1.23.0",))]
+    assert ctx.changed
+    assert ctx.reason == "1 package(s) to install"
+    assert commands == [DnfInstallCommand(packages=("nginx=1.23.0",))]
+    assert commands[0].shell() == "dnf install -y nginx-1.23.0"
+
+
+async def test_dnf_packages_allow_downgrade_routes_a_mismatched_pin_to_downgrade():
+    """``allow_downgrade=True`` renders ``dnf downgrade --allowerasing`` for a
+    pinned package whose name is already installed at a different version,
+    instead of ``dnf install``."""
+    host = SimulatedHost(name="h", packages={"nginx": ["1.24.0"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=("nginx=1.23.0",), allow_downgrade=True
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == "1 package(s) to downgrade"
+    assert commands == [DnfDowngradeCommand(packages=("nginx=1.23.0",))]
+    assert commands[0].shell() == "dnf downgrade -y --allowerasing nginx-1.23.0"
+
+
+async def test_dnf_packages_allow_downgrade_leaves_a_missing_name_on_install():
+    """``allow_downgrade=True`` only reroutes a *name-already-installed*
+    mismatch; a name that is not installed at all has nothing to downgrade
+    from and stays a plain ``DnfInstallCommand``."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=("nginx=1.23.0",), allow_downgrade=True
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == "1 package(s) to install"
+    assert commands == [DnfInstallCommand(packages=("nginx=1.23.0",))]
+
+
+async def test_dnf_packages_allow_downgrade_splits_a_mixed_request():
+    """One request mixing a missing name and a mismatched pin yields both
+    descriptors: the fresh install first, then the downgrade."""
+    host = SimulatedHost(name="h", packages={"nginx": ["1.24.0"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx=1.23.0", "vim=9.0"),
+            allow_downgrade=True,
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == "1 package(s) to install; 1 package(s) to downgrade"
+    assert commands == [
+        DnfInstallCommand(packages=("vim=9.0",)),
+        DnfDowngradeCommand(packages=("nginx=1.23.0",)),
+    ]
+
+
+async def test_dnf_packages_allow_downgrade_is_a_noop_when_the_version_matches():
+    """``allow_downgrade`` never forces a change on an already-exact pin: the
+    version-aware presence check short-circuits before the downgrade split."""
+    host = SimulatedHost(name="h", packages={"nginx": ["1.23.0"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=("nginx=1.23.0",), allow_downgrade=True
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "all packages present"
+    assert commands == []
+
+
+async def test_dnf_packages_downgrade_carries_nobest_extra_args_and_repos():
+    """The downgrade descriptor renders ``nobest``/``extra_install_args``/``repos``
+    exactly like the install descriptor, in the same slot order."""
+    host = SimulatedHost(name="h", packages={"nginx": ["1.24.0"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx=1.23.0",),
+            allow_downgrade=True,
+            nobest=True,
+            extra_install_args="--skip-broken",
+            repos=("datadog",),
+        )
+    ]
+    assert commands == [
+        DnfDowngradeCommand(
+            packages=("nginx=1.23.0",),
+            nobest=True,
+            extra_args="--skip-broken",
+            repos=("datadog",),
+        )
+    ]
+    assert commands[0].shell() == (
+        "dnf downgrade -y --allowerasing --nobest --skip-broken "
+        "'--disablerepo=*' --enablerepo=datadog nginx-1.23.0"
+    )
 
 
 async def test_dnf_packages_version_pin_splits_on_the_last_equals():
     """The pin splits on the *last* ``=`` (the baseline's ``rsplit`` join, apt's
     ``rpartition``), so an ``=`` inside the version never cuts the name short:
-    the installed name ``foo=1.0`` matches the pin ``foo=1.0=2``."""
+    the installed name ``foo=1.0`` is looked up as a whole, and the pin
+    ``foo=1.0=2`` asks for version ``2`` of that name -- a mismatch against the
+    installed ``[""]``, so the version-aware comparison routes it to an install
+    rather than the old name-only no-op."""
     host = SimulatedHost(name="h", packages={"foo=1.0": [""]})
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
         c async for c in dnf.packages(ctx, packages=("foo=1.0=2",), latest=True)
     ]
-    assert not ctx.changed
-    assert ctx.reason == "all packages present"
-    assert commands == []
+    assert ctx.changed
+    assert ctx.reason == "1 package(s) to install"
+    assert commands == [DnfInstallCommand(packages=("foo=1.0=2",))]
+    assert commands[0].shell() == "dnf install -y foo=1.0-2"
 
 
 def test_dnf_package_commands_shell_quote_the_names():
@@ -1789,6 +1924,9 @@ def test_dnf_package_commands_shell_quote_the_names():
     quoted = shlex.quote(package)
     assert quoted != package
     assert DnfInstallCommand(packages=(package,)).shell() == f"dnf install -y {quoted}"
+    assert DnfDowngradeCommand(packages=(package,)).shell() == (
+        f"dnf downgrade -y --allowerasing {quoted}"
+    )
     assert DnfRemoveCommand(packages=(package,)).shell() == f"dnf remove -y {quoted}"
     assert DnfUpdateCommand(packages=(package,)).shell() == f"dnf update -y {quoted}"
 
@@ -1837,7 +1975,7 @@ async def test_dnf_options_flow_through_run_and_format_log():
 
 async def test_dnf_version_pin_install_simulates_by_name():
     """The simulated seam records the pin's version under the bare name, so
-    the name-only comparison and the fresh-fact-cache property hold for
+    the version-aware comparison and the fresh-fact-cache property hold for
     pinned installs too."""
 
     def pinned_deploy(host):
@@ -1850,6 +1988,32 @@ async def test_dnf_version_pin_install_simulates_by_name():
     assert report.log[0].changed
     assert host.packages == {"nginx": ["1.23.0"]}
     # A second prepare sees the name as installed: no change.
+    _runtimes, plans2 = await run_prepare([host], pinned_deploy)
+    assert not plans2["h"][0].changed
+    assert plans2["h"][0].reason == "all packages present"
+
+
+async def test_dnf_version_pin_downgrade_simulates_and_converges():
+    """End-to-end: ``allow_downgrade=True`` downgrades an already-installed
+    name to the pinned version through the simulated seam, and a second
+    prepare sees the exact version as present and plans no change."""
+
+    def pinned_deploy(host):
+        yield op(
+            dnf.packages,
+            name="Downgrade pinned nginx",
+            packages=("nginx=1.23.0",),
+            allow_downgrade=True,
+        )
+
+    host = SimulatedHost(name="h", packages={"nginx": ["1.24.0"]})
+    runtimes, plans = await run_prepare([host], pinned_deploy)
+    assert plans["h"][0].changed
+    assert plans["h"][0].reason == "1 package(s) to downgrade"
+    report = await run_apply(runtimes, plans=plans)
+    assert report.log[0].changed
+    assert host.packages == {"nginx": ["1.23.0"]}
+    # A second prepare now sees the exact pinned version: no change.
     _runtimes, plans2 = await run_prepare([host], pinned_deploy)
     assert not plans2["h"][0].changed
     assert plans2["h"][0].reason == "all packages present"

@@ -38,7 +38,14 @@
 single source, so the read side (`DnfPackages` and friends) sits beside the
 `dnf.packages`, `dnf.repo`, `dnf.rpm` and `dnf.module` operations that consume
 it, plus the non-idempotent `dnf.update`, which reads no fact and runs
-`dnf update -y` over every package. `dnf.makecache` and `dnf.clean` are
+`dnf update -y` over every package. `dnf.packages` reads the `DnfPackages`
+fact's per-name version lists, so a pinned `<pkg>=<version>` is present only
+when that *exact* version is installed (the `apt.packages` precedent, not a
+name-only match), and `allow_downgrade=True` renders `dnf downgrade
+--allowerasing` for a pinned package whose name is already installed at a
+different version — dnf's dedicated verb for crossing that boundary, since
+`dnf install` will not do it and has no equivalent flag. `dnf.makecache` and
+`dnf.clean` are
 reemote originals (the baseline has neither): equally stateless metadata
 refresh and cache removal, optionally scoped to named repos with
 `--disablerepo='*' --enablerepo=<id>` — the ansible-datadog role's scoped
