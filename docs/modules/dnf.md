@@ -44,7 +44,14 @@ when that *exact* version is installed (the `apt.packages` precedent, not a
 name-only match), and `allow_downgrade=True` renders `dnf downgrade
 --allowerasing` for a pinned package whose name is already installed at a
 different version — dnf's dedicated verb for crossing that boundary, since
-`dnf install` will not do it and has no equivalent flag. `dnf.makecache` and
+`dnf install` will not do it and has no equivalent flag. Beyond `repos=`
+(enable-only-named scoping, `--disablerepo='*' --enablerepo=<id>`),
+`dnf.packages` also takes a bare `disable_repos=` (one `--disablerepo=<id>`
+per name, no `--disablerepo='*'`) so Ansible's `disablerepo: appstream` —
+"every repo except this one" — is first-class rather than smuggled through
+`extra_install_args`, and an `update_cache=True` flag that yields a scoped
+`dnf -y makecache` ahead of the transaction so `update_cache: true` is
+first-class rather than a separate `dnf.makecache` request. `dnf.makecache` and
 `dnf.clean` are
 reemote originals (the baseline has neither): equally stateless metadata
 refresh and cache removal, optionally scoped to named repos with

@@ -1732,6 +1732,236 @@ def test_dnf_package_commands_quote_odd_repo_ids():
     assert remove.shell().endswith(f"{quoted} nginx")
 
 
+async def test_dnf_packages_disable_repos_renders_bare_disablerepo_on_install():
+    """``disable_repos`` is the *bare* per-id counterpart of ``repos``: it
+    renders one ``--disablerepo=<id>`` per name with no ``--disablerepo='*'``
+    and no ``--enablerepo``, so the install resolves from every configured
+    repo except the named ones (Ansible's ``disablerepo: appstream``)."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=("nginx",), disable_repos=("appstream",)
+        )
+    ]
+    assert commands == [
+        DnfInstallCommand(packages=("nginx",), disable_repos=("appstream",))
+    ]
+    assert commands[0].shell() == "dnf install -y --disablerepo=appstream nginx"
+
+
+async def test_dnf_packages_disable_repos_renders_bare_disablerepo_on_remove():
+    """The same bare flag rides the remove descriptor when ``present=False``."""
+    host = SimulatedHost(name="h", packages={"nginx": [""]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx",),
+            present=False,
+            disable_repos=("appstream",),
+        )
+    ]
+    assert commands == [
+        DnfRemoveCommand(packages=("nginx",), disable_repos=("appstream",))
+    ]
+    assert commands[0].shell() == "dnf remove -y --disablerepo=appstream nginx"
+
+
+async def test_dnf_packages_disable_repos_renders_bare_disablerepo_on_downgrade():
+    """The bare flag also rides the downgrade descriptor ``allow_downgrade``
+    routes a mismatched pin to, in the same slot as ``repos``."""
+    host = SimulatedHost(name="h", packages={"nginx": ["1.24.0"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx=1.23.0",),
+            allow_downgrade=True,
+            disable_repos=("appstream",),
+        )
+    ]
+    assert commands == [
+        DnfDowngradeCommand(
+            packages=("nginx=1.23.0",), disable_repos=("appstream",)
+        )
+    ]
+    assert commands[0].shell() == (
+        "dnf downgrade -y --allowerasing --disablerepo=appstream nginx-1.23.0"
+    )
+
+
+async def test_dnf_packages_repos_and_disable_repos_render_both_scopes():
+    """Passing both is allowed and stacks in a defined order: ``repos``'
+    ``--disablerepo='*' --enablerepo=<id>...`` first, then ``disable_repos``'
+    bare ``--disablerepo=<id>``. dnf processes the flags left to right, so a
+    name in both ends up disabled -- the caller's responsibility."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx",),
+            repos=("datadog",),
+            disable_repos=("appstream",),
+        )
+    ]
+    assert commands[0].shell() == (
+        "dnf install -y '--disablerepo=*' --enablerepo=datadog "
+        "--disablerepo=appstream nginx"
+    )
+
+
+async def test_dnf_packages_normalizes_str_and_list_disable_repos():
+    """A bare string becomes a one-tuple and a list a tuple, mirroring the
+    ``repos``/``makecache`` normalization shape."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    (from_str,) = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=("nginx",), disable_repos="appstream"
+        )
+    ]
+    (from_list,) = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=("nginx",), disable_repos=["a", "b"]
+        )
+    ]
+    assert from_str.disable_repos == ("appstream",)
+    assert from_list.disable_repos == ("a", "b")
+    assert from_list.shell() == (
+        "dnf install -y --disablerepo=a --disablerepo=b nginx"
+    )
+
+
+def test_dnf_package_commands_quote_odd_disable_repo_ids():
+    """A repo id with shell metacharacters rides shlex.quote on the bare
+    ``--disablerepo=<id>`` too, on both the install and the remove."""
+    repo = "odd repo"
+    quoted = shlex.quote(f"--disablerepo={repo}")
+    install = DnfInstallCommand(packages=("nginx",), disable_repos=(repo,))
+    remove = DnfRemoveCommand(packages=("nginx",), disable_repos=(repo,))
+    assert quoted in install.shell()
+    assert quoted in remove.shell()
+
+
+async def test_dnf_packages_update_cache_yields_makecache_before_install():
+    """``update_cache=True`` yields a ``DnfMakecacheCommand`` ahead of the
+    install work -- Ansible's ``update_cache: true`` spelling -- so the
+    metadata is fresh before dnf resolves packages. Non-idempotent: it
+    always reports a change even when every requested package is present."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=("nginx",), update_cache=True
+        )
+    ]
+    assert commands == [
+        DnfMakecacheCommand(),
+        DnfInstallCommand(packages=("nginx",)),
+    ]
+    assert commands[0].shell() == "dnf -y makecache"
+    assert ctx.changed
+    assert ctx.reason == "dnf makecache; 1 package(s) to install"
+
+
+async def test_dnf_packages_update_cache_inherits_repos_and_disable_repos_scoping():
+    """The yielded makecache is scoped by the same ``repos``/``disable_repos``
+    as the transaction that follows, so the refresh and the install agree on
+    which repos are in play."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx",),
+            update_cache=True,
+            repos=("datadog",),
+            disable_repos=("appstream",),
+        )
+    ]
+    assert commands[0] == DnfMakecacheCommand(
+        repos=("datadog",), disable_repos=("appstream",)
+    )
+    assert commands[0].shell() == (
+        "dnf -y makecache '--disablerepo=*' --enablerepo=datadog "
+        "--disablerepo=appstream"
+    )
+
+
+async def test_dnf_packages_update_cache_alone_still_yields_makecache():
+    """``update_cache=True`` on its own (no packages requested) is a
+    first-class metadata refresh -- a standalone alternative to
+    ``dnf.makecache`` that also accepts the ``disable_repos`` scope."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx, update_cache=True, disable_repos=("appstream",)
+        )
+    ]
+    assert commands == [DnfMakecacheCommand(disable_repos=("appstream",))]
+    assert commands[0].shell() == "dnf -y makecache --disablerepo=appstream"
+    assert ctx.changed
+    assert ctx.reason == "dnf makecache"
+
+
+async def test_dnf_packages_clean_update_cache_update_yield_in_order():
+    """The three stateless prefixes run in a fixed order -- ``clean`` wipes
+    the cache, ``update_cache`` refreshes it, ``update`` upgrades the system
+    -- so the install that follows resolves against fresh metadata."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx",),
+            clean=True,
+            update_cache=True,
+            update=True,
+        )
+    ]
+    assert commands == [
+        DnfCleanCommand(),
+        DnfMakecacheCommand(),
+        DnfUpdateCommand(),
+        DnfInstallCommand(packages=("nginx",)),
+    ]
+    assert ctx.reason == (
+        "dnf clean; dnf makecache; dnf update; 1 package(s) to install"
+    )
+
+
+async def test_dnf_packages_update_cache_is_a_noop_second_run_only_when_unset():
+    """``update_cache=True`` breaks the usual two-run convergence: the
+    makecache is stateless, so a second prepare still reports a change even
+    when every requested package is present. This is the deliberate parity
+    with Ansible's ``update_cache: true`` and with the standalone
+    ``dnf.makecache`` operation."""
+    host = SimulatedHost(name="h", packages={"nginx": [""]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=("nginx",), update_cache=True
+        )
+    ]
+    assert commands == [DnfMakecacheCommand()]
+    assert ctx.changed
+    assert ctx.reason == "dnf makecache; all packages present"
+
+
 async def test_dnf_packages_latest_upgrades_installed_unpinned_packages():
     """``latest`` upgrades present, unpinned packages; missing ones install."""
     host = SimulatedHost(name="h", packages={"nginx": [""]})

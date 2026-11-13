@@ -43,6 +43,18 @@ different version -- dnf's dedicated verb for crossing that boundary, since
 ``dnf install`` alone refuses to and has no equivalent flag; this example
 leaves it unset, since httpd is installed unpinned.
 
+Repo scoping has two first-class spellings on ``dnf.packages``:
+``repos=(<id>, ...)`` renders ``--disablerepo='*' --enablerepo=<id>...``
+(*enable only these*), while ``disable_repos=(<id>, ...)`` renders a bare
+``--disablerepo=<id>`` per name (*every repo except these* -- Ansible's
+``disablerepo: appstream`` shape, so it no longer has to be smuggled
+through ``extra_install_args``). ``update_cache=True`` yields a scoped
+``dnf -y makecache`` ahead of the transaction -- Ansible's
+``update_cache: true`` -- inheriting the same ``repos``/``disable_repos``
+scoping so the refresh and the install agree on which repos are in play.
+This example leaves all three unset: httpd resolves from CentOS's default
+repos and the base image's cache is fresh.
+
 Every request carries ``when=is_centos``, the declarative eligibility guard
 (see ``examples/demonstrations/composition/composed_when_guard.py``). The
 predicate reads only **static** inventory data -- ``host.group``, set by the

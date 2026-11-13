@@ -44,6 +44,16 @@ to cross from a newer installed version to an older requested one and has no
 equivalent flag (unlike apt's `--allow-downgrades`); without it, a mismatch is
 treated exactly like a missing name and left for dnf's own default behavior to
 reject (the example leaves it unset, since httpd is installed unpinned).
+Repo scoping has two first-class spellings: `repos=(<id>, ...)` means
+*enable-only-named* (`--disablerepo='*' --enablerepo=<id>...`), while
+`disable_repos=(<id>, ...)` means *every repo except these* (a bare
+`--disablerepo=<id>` per name) — Ansible's `disablerepo: appstream` shape,
+first-class rather than smuggled through `extra_install_args`. And
+`update_cache=True` yields a scoped `dnf -y makecache` ahead of the
+transaction — Ansible's `update_cache: true` — so a metadata refresh is
+first-class rather than a separate `dnf.makecache` request. The example
+leaves all three unset: httpd resolves from CentOS's default repos and the
+base image's cache is fresh.
 
 ::: dnf_packages
     options:
