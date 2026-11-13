@@ -47,9 +47,10 @@
 # ``apt.deb`` mirrors the baseline's ``apt.deb`` (``src``, ``present``,
 # ``wait_for_lock``) for a ``.deb`` file already on the target host;
 # The baseline's URL source -- which downloads the file mid-deploy -- is dropped,
-# since reemote has no download operation, so a URL ``src`` raises
-# ``ValueError``, and the baseline's ``force`` option (the deprecated
-# ``--force-yes`` apt flag) is deliberately dropped. ``apt.dist_upgrade``
+# since ``apt.deb`` installs a *binary* package file that must already be on the
+# host and reemote's URL download (``files.download``) is text-only, so a URL
+# ``src`` raises ``ValueError``, and the baseline's ``force`` option (the
+# deprecated ``--force-yes`` apt flag) is deliberately dropped. ``apt.dist_upgrade``
 # mirrors the baseline's ``apt.dist_upgrade`` (simulate ``dist-upgrade``, skip
 # when nothing would change), with the baseline's ``auto_remove`` parameter
 # split out into the standalone ``apt.auto_remove`` operation -- a reemote
@@ -1812,10 +1813,12 @@ async def deb(
     # Installing or removing needs root, so flag the request ``sudo=True`` (or
     # ``su=True``).
     #
-    # The baseline's URL ``src`` -- downloading a remote ``.deb`` mid-deploy via
-    # ``files.download`` -- is deliberately dropped: reemote has no download
-    # operation, so a ``src`` with a URL scheme raises ``ValueError`` (mirroring
-    # ``dnf.rpm``). Because removal reads the package name from the file, a
+    # The baseline's URL ``src`` -- downloading a remote ``.deb`` mid-deploy --
+    # is deliberately dropped: ``apt.deb`` installs a *binary* package file that
+    # must already be on the host, and reemote's URL download (``files.download``)
+    # is text-only, so a ``src`` with a URL scheme raises ``ValueError``
+    # (mirroring ``dnf.rpm``). Stage the ``.deb`` control-side and ``files.put``
+    # it onto the host first. Because removal reads the package name from the file, a
     # ``present=False`` request whose ``.deb`` is absent from the host cannot
     # resolve a name and is a no-op -- the same limitation the baseline documents for
     # an un-downloaded URL source. The baseline's ``force`` option (``--force-yes``)
@@ -1824,8 +1827,9 @@ async def deb(
     # ``name``/``sudo``/``su``).
     if urlparse(src).scheme:
         raise ValueError(
-            "apt.deb does not support a URL src (reemote has no download "
-            f"operation); put the .deb on the host first, got: {src}"
+            "apt.deb does not support a URL src (it installs a binary .deb "
+            "that must already be on the host; files.download is text-only); "
+            f"put the .deb on the host first, got: {src}"
         )
 
     info = await ctx.facts.get(DebPackage, src)

@@ -1928,8 +1928,9 @@ async def test_apt_deb_removal_noop_when_file_absent():
 
 
 async def test_apt_deb_rejects_a_url_src():
-    """The baseline downloads a URL ``.deb``; reemote has no download operation, so a
-    URL src raises instead of silently doing nothing (mirroring dnf.rpm)."""
+    """The baseline downloads a URL ``.deb``; reemote's apt.deb installs a binary
+    that must already be on the host (files.download is text-only), so a URL src
+    raises instead of silently doing nothing (mirroring dnf.rpm)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     with pytest.raises(ValueError, match="does not support a URL src"):

@@ -3055,8 +3055,10 @@ async def download(
     # onto the caller -- the hand-rolled ``urllib.request`` + ``io.BytesIO``
     # recipe ``dnf.key``/``apt.key``/``gpg.key`` force, since each *rejects* a
     # URL ``src`` -- this takes the URL and lands it at a root-owned path in
-    # ONE ``sudo=True`` request. It is the operation ``dnf.repo``/``dnf.rpm``
-    # name in their "reemote has no download operation" refusals.
+    # ONE ``sudo=True`` request. It is the general URL fetch the package
+    # modules point a text ``.repo``/key-file download at: ``dnf.repo``/
+    # ``dnf.rpm``/``apt.deb`` reject a URL ``src`` because they build or
+    # install a host-side (binary) file, not because reemote cannot download.
     #
     # The write is delegated to ``files.install`` (the project's rule for a
     # derived content-producing files operation): the body fetches the URL

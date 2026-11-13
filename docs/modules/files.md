@@ -360,8 +360,9 @@ install's too. Editing under `/etc` needs root, so flag the request
 original: it takes an `http(s)` `url` and lands its body at a (root-owned)
 `dest` in one `sudo=True` request, retiring the hand-rolled `urllib.request` +
 `io.BytesIO` workaround that `dnf.key`/`apt.key`/`gpg.key` force (each
-*rejects* a URL `src`) and that `dnf.repo` names in its "reemote has no
-download operation" refusal. The fetch is *control-side* — the control machine
+*rejects* a URL `src`) and giving the package modules a text URL fetch to point
+at (`dnf.repo`/`dnf.rpm`/`apt.deb` reject a URL `src` because they build or
+install a host-side binary file, not because reemote cannot download). The fetch is *control-side* — the control machine
 opens the connection (`urllib` in a worker thread), not the target host, so the
 download works when only the control side has internet egress and the host never
 needs `curl`/`wget` (the opposite of Ansible's `get_url`, which fetches on the

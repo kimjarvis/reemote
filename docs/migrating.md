@@ -908,8 +908,10 @@ reemote's answer is
 `sudo=True` request. This retires the workaround the key-import operations force
 — [`dnf.key`][reemote.modules.dnf.dnf.key], `apt.key` and `gpg.key` each
 *reject* a URL `src` and push the fetch onto the caller as a hand-rolled
-`urllib.request` + `io.BytesIO` — and it is the operation `dnf.repo` names in its
-"reemote has no download operation" refusal.
+`urllib.request` + `io.BytesIO` — and it is the general URL fetch the package
+modules point a text `.repo`/key-file download at (`dnf.repo`/`dnf.rpm`/`apt.deb`
+reject a URL `src` because they build or install a host-side binary file, not
+because reemote cannot download).
 
 The fetch is **control-side**: the *control* machine opens the connection
 (`urllib` in a worker thread), not the target host. So the download works when

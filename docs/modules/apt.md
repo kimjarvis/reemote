@@ -358,8 +358,9 @@ whose `.deb` is absent cannot resolve a name and is a no-op. `wait_for_lock`
 (`True` → 60s, an int → that many seconds) makes apt wait for its lock instead
 of failing instantly. Installing or removing needs root, so flag the request
 `sudo=True` (or `su=True`). Two the baseline options are deliberately dropped: a URL
-`src` (reemote has no download operation, so it raises `ValueError`, mirroring
-`dnf.rpm`) and `force` (`--force-yes` is deprecated in modern apt).
+`src` (`apt.deb` installs a binary `.deb` that must already be on the host, and
+reemote's URL download `files.download` is text-only, so it raises `ValueError`,
+mirroring `dnf.rpm`) and `force` (`--force-yes` is deprecated in modern apt).
 
 `apt.dist_upgrade` updates all apt packages, employing `dist-upgrade`
 (the baseline's `apt.dist_upgrade` parity). The `SimulateOperationWillChange`

@@ -239,7 +239,7 @@ You can use reemote instead of Ansible whenever managing CentOS is part of a Pyt
 - **Not a deployment CLI.** There is no `reemote` command; you write the script.
 - **Not an inventory format.** Inventory is a Python list of dicts — load it from JSON, YAML, a database, or write it inline.
 - **Not a role ecosystem.** Reemote ships modules for `dnf`, `systemd`, `apt`, `apk`, `openrc`, `files`, `server`, `git`, `mysql`, `postgresql`, `iptables`, `firewalld`, `ufw`, `selinux`, `lxd`, `snap`, `flatpak`, `sysctl`, `gpg`, and `hardware` — but there is no Ansible Galaxy equivalent.
-- **Not a download tool.** Reemote never fetches a URL mid-run: `dnf.repo`, `dnf.rpm`, and `dnf.key` all reject a URL `src` by design. Fetch control-side (optionally checksum-verified) and stream the bytes in.
+- **Not a target-side downloader.** Reemote fetches URLs *control-side*: `files.download` pulls an `http(s)` body (optionally checksum-verified) onto the control machine and installs it at a root-owned path, so a host with no internet egress still receives the file. No operation makes the *target* fetch a URL mid-run — `dnf.repo`, `dnf.rpm`, and `dnf.key` all reject a URL `src` by design; for a binary a host needs, fetch control-side and stream the bytes in.
 - **Not a translation layer between OSes.** Python does not make `httpd` installable by the same name on CentOS and Ubuntu, nor make `dnf update` mean the same as `apt-get update`. You still pick the right module for the target — and on CentOS that means `dnf` and `systemd`, which reemote ships as first-class citizens.
 
 ## Try it

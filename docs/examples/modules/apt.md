@@ -43,8 +43,9 @@ only when it does not and is otherwise a no-op, while `present=False` removes it
 with `apt-get remove <name>`. The install runs the baseline's three-pass sequence (a
 tolerant `dpkg -i`, an `apt-get install -f` to resolve dependencies, then a final
 `dpkg -i` that fails fast if they are still missing). Where the baseline's `apt.deb`
-can also *download* a remote `.deb` mid-deploy, reemote has no download
-operation, so a URL `src` raises `ValueError`. The example therefore stages the
+can also *download* a remote `.deb` mid-deploy, reemote's `apt.deb` installs a
+binary `.deb` that must already be on the host (and `files.download` is
+text-only), so a URL `src` raises `ValueError`. The example therefore stages the
 file itself first: a demo-side `curl` one-liner (a raw `StringCommand`, the same
 pattern as `server_op_sysctl.py`'s `sysctl_set`) downloads the small,
 self-contained `bat` `.deb` (~2.4 MB, no library dependencies — chosen to fit the

@@ -9,8 +9,10 @@ it takes an ``http(s)`` URL and lands its body at a path the login user cannot
 write directly (anything under ``/etc``), in ONE ``sudo=True`` request. It
 retires the hand-rolled ``urllib.request`` + ``io.BytesIO`` workaround that
 ``dnf.key``/``apt.key``/``gpg.key`` force -- each of those *rejects* a URL
-``src`` and pushes the fetch onto the caller -- and it is the operation
-``dnf.repo`` names in its "reemote has no download operation" refusal.
+``src`` and pushes the fetch onto the caller -- and it is the general URL fetch
+the package modules point a text ``.repo``/key-file download at
+(``dnf.repo``/``dnf.rpm``/``apt.deb`` reject a URL ``src`` because they build or
+install a host-side binary file, not because reemote cannot download).
 
 The Docker CE role is the canonical case, and it hits the gap *twice*: it pulls
 both the ``.repo`` stanza and the ASCII-armored GPG key from

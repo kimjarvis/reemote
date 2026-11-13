@@ -59,8 +59,9 @@ The repository-file operation: `dnf.repo` builds an
 `description`, `gpgkey`, …) and writes it only when the content differs from
 what the [`DnfRepoFile`][reemote.modules.dnf.dnf.DnfRepoFile] fact reads back
 — so re-running is a no-op. Where the baseline's `dnf.repo` can also *download* a
-remote `.repo` file, reemote has no download operation, so a URL `src` raises
-`ValueError` and the file is always constructed locally from the arguments.
+remote `.repo` file, reemote's `dnf.repo` *constructs* the file from its
+arguments, so a URL `src` raises `ValueError` (use `files.download` to place a
+vendor `.repo` straight from a URL).
 The script yields the same repository request twice — the second is a
 guaranteed no-op in the apply phase, because the first write is visible to it
 through the fresh per-step fact cache (in the prepare phase, where nothing is
@@ -131,7 +132,8 @@ counts the package as present only when the installed version matches the
 file's, so `present=True` installs with `rpm -i` only when it does not and is
 otherwise a no-op, while `present=False` removes it with `dnf remove -y <name>`.
 Where the baseline's `dnf.rpm` can also *download* a remote `.rpm` mid-deploy,
-reemote has no download operation, so a URL `src` raises `ValueError`. The
+reemote's `dnf.rpm` installs a binary `.rpm` that must already be on the host
+(and `files.download` is text-only), so a URL `src` raises `ValueError`. The
 example therefore stages the file itself first: a demo-side `curl` one-liner (a
 raw `StringCommand`, the same pattern as `apt_deb.py`'s `download_deb`)
 downloads `sl` — the small steam-locomotive `ls` joke, whose only library

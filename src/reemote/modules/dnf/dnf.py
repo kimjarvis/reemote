@@ -1616,11 +1616,12 @@ async def repo(
     # unprivileged regardless.
     #
     # A URL ``src`` -- downloading a remote ``.repo`` file -- is
-    # deliberately dropped: reemote has no download operation, so a ``src``
-    # with a URL scheme raises ``ValueError``. So does a ``present`` request
-    # with no ``baseurl`` (there is nothing to construct the file from), a
-    # ``gpgkey`` token that is neither a URL nor an absolute path, and a
-    # ``proxy`` that is neither a URL nor dnf's ``_none_`` disable token.
+    # deliberately dropped: ``dnf.repo`` *constructs* the file from its
+    # arguments, so a ``src`` with a URL scheme raises ``ValueError``. So does a
+    # ``present`` request with no ``baseurl`` (there is nothing to construct the
+    # file from), a ``gpgkey`` token that is neither a URL nor an absolute path,
+    # and a ``proxy`` that is neither a URL nor dnf's ``_none_`` disable token.
+    # To place a vendor's ``.repo`` straight from a URL, use ``files.download``.
     # ``**kwargs`` absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     #
@@ -1636,8 +1637,9 @@ async def repo(
     # mode-only drift does not re-install.
     if urlparse(src).scheme:
         raise ValueError(
-            "dnf.repo does not support a URL src (reemote has no download "
-            f"operation); pass a repository name and baseurl instead, got: {src}"
+            "dnf.repo does not support a URL src (it constructs the file from "
+            "its arguments; use files.download to place a URL .repo); pass a "
+            f"repository name and baseurl instead, got: {src}"
         )
 
     path = f"{_REPO_DIRECTORY}{src}.repo"
@@ -1894,18 +1896,21 @@ async def rpm(
     # exact version is installed. Installing needs root, so flag the request
     # ``sudo=True`` (or ``su=True``).
     #
-    # A URL ``src`` -- downloading a remote ``.rpm`` mid-deploy via
-    # ``files.download`` -- is deliberately dropped: reemote has no download
-    # operation, so a ``src`` with a URL scheme raises ``ValueError`` (mirroring
-    # ``dnf.repo``). Because removal reads the package name from the file, a
+    # A URL ``src`` -- downloading a remote ``.rpm`` mid-deploy -- is
+    # deliberately dropped: ``dnf.rpm`` installs a *binary* package file that
+    # must already be on the host, and reemote's URL download (``files.download``)
+    # is text-only, so a ``src`` with a URL scheme raises ``ValueError``
+    # (mirroring ``dnf.repo``). Stage the ``.rpm`` control-side and ``files.put``
+    # it onto the host first. Because removal reads the package name from the file, a
     # ``present=False`` request whose ``.rpm`` is absent from the host cannot
     # resolve a name and is a no-op -- the same limitation documented for
     # an un-downloaded URL source. ``**kwargs`` absorbs any further global
     # arguments (``op()`` already strips ``name``/``sudo``/``su``).
     if urlparse(src).scheme:
         raise ValueError(
-            "dnf.rpm does not support a URL src (reemote has no download "
-            f"operation); put the .rpm on the host first, got: {src}"
+            "dnf.rpm does not support a URL src (it installs a binary .rpm "
+            "that must already be on the host; files.download is text-only); "
+            f"put the .rpm on the host first, got: {src}"
         )
 
     info = await ctx.facts.get(RpmPackage, src)

@@ -1934,8 +1934,9 @@ async def test_dnf_repo_removal_noop_when_absent():
 
 
 async def test_dnf_repo_rejects_a_url_src():
-    """The baseline downloads a URL ``.repo`` file; reemote has no download
-    operation, so a URL src raises instead of silently doing nothing."""
+    """The baseline downloads a URL ``.repo`` file; reemote's dnf.repo constructs
+    the file from its arguments (files.download covers the URL case), so a URL src
+    raises instead of silently doing nothing."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     with pytest.raises(ValueError, match="does not support a URL src"):
@@ -2510,8 +2511,9 @@ async def test_dnf_rpm_removal_noop_when_file_absent():
 
 
 async def test_dnf_rpm_rejects_a_url_src():
-    """The baseline downloads a URL ``.rpm``; reemote has no download operation, so a
-    URL src raises instead of silently doing nothing (mirroring dnf.repo)."""
+    """The baseline downloads a URL ``.rpm``; reemote's dnf.rpm installs a binary
+    that must already be on the host (files.download is text-only), so a URL src
+    raises instead of silently doing nothing (mirroring dnf.repo)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     with pytest.raises(ValueError, match="does not support a URL src"):

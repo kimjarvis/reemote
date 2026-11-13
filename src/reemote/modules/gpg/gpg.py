@@ -231,8 +231,9 @@ class GpgKey:
     # as a list (the ``apt.AptKeys`` retyping precedent).
     # A URL branch -- ``(wget -O - <url> || curl -sSLf <url>) | gpg
     # --with-colons`` fetching the key target-side -- is deliberately
-    # dropped: reemote does not download mid-gather, so a ``src`` with a
-    # URL scheme raises ``ValueError`` (stream the key through ``gpg.key``
+    # dropped: a *fact gather* never fetches a URL (a fact is a phase-unaware
+    # read, so a mid-gather download would break determinism), so a ``src``
+    # with a URL scheme raises ``ValueError`` (stream the key through ``gpg.key``
     # or ``gpg.import_key`` instead, then read the installed file). An
     # empty ``src`` raises ``ValueError`` too. There is no command-existence
     # gate on ``gpg``: a
@@ -252,7 +253,7 @@ class GpgKey:
         if urlparse(src).scheme:
             raise ValueError(
                 "src must be a path on the target host, not a URL; "
-                "reemote does not download keys mid-gather"
+                "a fact gather does not fetch a URL mid-gather"
             )
         return f"gpg --with-colons {shlex.quote(src)}"
 
