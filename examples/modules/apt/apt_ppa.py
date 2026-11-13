@@ -36,17 +36,21 @@ here the Bitcoin PPA, the baseline's documented example. The operation runs
 ``apt-add-repository -y <src>`` (``--remove`` for ``present=False``), which
 requires ``software-properties-common`` on the target host.
 
-The operation is **non-idempotent**, exactly as the baseline marks it: it reads no
-fact and always reports a change, yielding one command whether or not the PPA
-is already configured (``apt-add-repository`` itself is idempotent on the host,
-so re-adding an existing PPA is harmless). The script therefore yields an add
-followed by a ``present=False`` remove, so the example is *self-restoring*: it
-leaves the host's apt sources exactly as it found them. That matters because
+The operation is **idempotent**: it reads the ``AptSources`` fact, resolves
+``ppa:user/repo`` to its Launchpad archive and reports a change only when the
+entry is actually added or removed -- a deviation from the baseline, which reads
+no fact and always re-runs ``apt-add-repository``. Reporting the real delta is
+what lets an Ansible ``apt_repository`` migration use the ``register`` +
+``when: ... is changed`` pattern instead of firing on every run. The script
+therefore yields the add twice -- the second is a guaranteed no-op in the apply
+phase, because the first add is visible to it through the fresh per-step fact
+cache (in the prepare phase, where nothing is sent, both plan as changes) --
+then a ``present=False`` remove, so the example is *self-restoring*: it leaves
+the host's apt sources exactly as it found them. That matters because
 ``run_examples.py`` sweeps every example over the same shared hosts -- the
 Bitcoin PPA publishes no ``noble`` Release file, so leaving it configured would
 make the later ``apt_update.py`` example fail (``apt-get update`` exits 100 on a
 repository with no Release). The add-then-remove cycle keeps the sweep clean.
-Both requests plan and apply as changes, since neither direction reads a fact.
 
 Adding a repository writes to the root-owned apt sources, so the request is
 flagged ``sudo=True`` and the driver elevates its command over SSH.
@@ -128,21 +132,30 @@ def is_ubuntu(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Add the Bitcoin PPA, then remove it again (self-restoring).
+    """Add the Bitcoin PPA twice, then remove it again (self-restoring).
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
-    The operation is non-idempotent, so both the add and the ``present=False``
-    remove plan and apply as changes. The closing remove leaves the host's
-    sources as found -- the Bitcoin PPA has no ``noble`` Release, so a
+    The operation is idempotent on ``AptSources``, so the second add is a
+    guaranteed no-op in the apply phase -- the first add's source is visible
+    to it through the fresh per-step fact cache -- while both plan as changes
+    in the prepare phase, where nothing is sent. The closing remove leaves the
+    host's sources as found -- the Bitcoin PPA has no ``noble`` Release, so a
     lingering entry would break the later ``apt_update.py`` sweep step.
     Adding or removing a repository writes to the root-owned apt sources, so
-    both requests are flagged ``sudo=True`` and the driver elevates their
+    every request is flagged ``sudo=True`` and the driver elevates its
     commands over SSH.
     """
     yield op(
         apt.ppa,
         name="Add the Bitcoin ppa",
+        src=BITCOIN_PPA,
+        sudo=True,
+        when=is_ubuntu,
+    )
+    yield op(
+        apt.ppa,
+        name="Add the Bitcoin ppa again",
         src=BITCOIN_PPA,
         sudo=True,
         when=is_ubuntu,
@@ -163,8 +176,8 @@ async def main() -> None:
         print(f"== Inventory loaded from {INVENTORY_PATH} ==")
         print(", ".join(entry["host"] for entry in inventory))
 
-        # --dry: prepare phase only. The operation reads no fact (it is
-        # non-idempotent), so the plan simply shows the pending add; no
+        # --dry: prepare phase only. The plan shows the changes the fact reads
+        # propose (both adds, since the prepare phase mutates nothing), but no
         # command that mutates a host is sent. A request the ``when`` guard
         # rejects is planned as [skipped: when guard is_ubuntu] without
         # materializing it.

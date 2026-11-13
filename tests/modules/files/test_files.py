@@ -83,14 +83,12 @@ async def test_file_parses_baseline_valid_fixture():
 
 
 def test_file_command_guards_then_stat_then_ls():
-    # The full the baseline command shape: existence guard (test -e || test -L),
-    # GNU stat, BSD stat fallback, then the ls -ld fallback.
+    # The full command shape: existence guard (test -e || test -L), GNU stat,
+    # then the ls -ld fallback.
     assert File.command("/etc/hosts") == (
         "! (test -e /etc/hosts || test -L /etc/hosts ) || "
         "( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' "
-        "/etc/hosts 2> /dev/null || "
-        "stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' "
-        "/etc/hosts || ls -ld /etc/hosts )"
+        "/etc/hosts 2> /dev/null || ls -ld /etc/hosts )"
     )
 
 
@@ -337,7 +335,7 @@ def test_file_parse_unknown_month_reads_as_none_mtime():
 
 def test_file_parse_ls_fallback_reports_non_files_as_false():
     assert File.parse(["drwxr-xr-x 2 root root 4096 Jan  1  1970 /etc"]) is False
-    # A dangling symlink: both stat forms follow it and fail, so ls -ld
+    # A dangling symlink: stat follows it and fails, so ls -ld
     # describes the link itself -> False.
     assert (
         File.parse(["lrwxrwxrwx 1 root root 8 Jan  1  1970 /link -> missing.txt"])
@@ -423,9 +421,7 @@ async def test_directory_parses_baseline_valid_fixture():
         (
             "! (test -e /home/reemote/myd@-_ir || test -L /home/reemote/myd@-_ir ) || "
             "( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' "
-            "/home/reemote/myd@-_ir 2> /dev/null || "
-            "stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' "
-            "/home/reemote/myd@-_ir || ls -ld /home/reemote/myd@-_ir )"
+            "/home/reemote/myd@-_ir 2> /dev/null || ls -ld /home/reemote/myd@-_ir )"
         )
     ]
 
@@ -634,9 +630,7 @@ async def test_link_parses_baseline_valid_fixture():
         (
             "! (test -e /home/reemote/my@-_link || test -L /home/reemote/my@-_link ) || "
             "( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' "
-            "/home/reemote/my@-_link 2> /dev/null || "
-            "stat -f 'user=%Su group=%Sg mode=%Sp atime=%a mtime=%m ctime=%c size=%z %N%SY' "
-            "/home/reemote/my@-_link || ls -ld /home/reemote/my@-_link )"
+            "/home/reemote/my@-_link 2> /dev/null || ls -ld /home/reemote/my@-_link )"
         )
     ]
 
@@ -731,7 +725,7 @@ def test_link_command_is_files_command():
 
 
 def test_link_parse_reports_a_dangling_symlink_with_its_target():
-    # Both stat forms follow a dangling link and fail, so ls -ld describes
+    # stat follows a dangling link and fails, so ls -ld describes
     # the link itself: still a dict (test -L let it through the guard),
     # with the missing target named and ls's None atime/ctime.
     parsed = Link.parse(["lrwxrwxrwx 1 root root 8 Jan  1  1970 /link -> missing.txt"])

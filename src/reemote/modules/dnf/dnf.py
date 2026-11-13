@@ -38,7 +38,9 @@
 #
 # ``dnf.packages`` covers the usual option set (``present``, ``latest``,
 # ``update``, ``clean``, ``nobest``, ``extra_install_args``,
-# ``extra_uninstall_args``) with the same names and semantics. ``dnf.repo``
+# ``extra_uninstall_args``) with the same names and semantics, plus a
+# first-class ``repos`` scope (``--disablerepo='*' --enablerepo=<id>``) on the
+# install/remove it yields. ``dnf.repo``
 # constructs a repo file for the manual-construction case (``present``,
 # ``baseurl``, ``description``, ``enabled``, ``gpgcheck``, ``gpgkey``) and
 # extends it with the ansible-datadog role's ``yum_repository`` fields
@@ -1138,11 +1140,39 @@ def _split_version(package: str) -> tuple[str, str | None]:
     return (name, version) if sep else (package, None)
 
 
+def _repo_scope_args(repos: tuple[str, ...]) -> str:
+    """Render the repo-scoping flags shared by the package and cache descriptors.
+
+    An empty tuple renders nothing (the command applies to every configured
+    repo); a non-empty one disables all repos and re-enables just the named
+    ids -- the ansible-datadog role's
+    ``--disablerepo="*" --enablerepo=datadog`` scoping. Each flag is
+    shell-quoted whole, so the remote shell never globs the ``*``.
+    """
+    if not repos:
+        return ""
+    parts = [shlex.quote("--disablerepo=*")]
+    parts.extend(shlex.quote(f"--enablerepo={repo}") for repo in repos)
+    return " " + " ".join(parts)
+
+
+def _normalize_repos(repos: str | list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    """Normalize a repos argument: a bare string becomes a one-tuple, None an
+    empty tuple (every repo), anything else a tuple -- the ``dnf.packages``
+    normalization shape."""
+    if repos is None:
+        return ()
+    if isinstance(repos, str):
+        return (repos,)
+    return tuple(repos)
+
+
 @dataclass(frozen=True)
 class DnfInstallCommand(Command):
     packages: tuple[str, ...]
     nobest: bool = False
     extra_args: str | None = None
+    repos: tuple[str, ...] = ()
 
     def shell(self) -> str:
         parts = ["dnf", "install", "-y"]
@@ -1150,6 +1180,9 @@ class DnfInstallCommand(Command):
             parts.append("--nobest")
         if self.extra_args:
             parts.append(self.extra_args)
+        scope = _repo_scope_args(self.repos).strip()
+        if scope:
+            parts.append(scope)
         parts.extend(shlex.quote(package) for package in self.packages)
         return " ".join(parts)
 
@@ -1158,11 +1191,15 @@ class DnfInstallCommand(Command):
 class DnfRemoveCommand(Command):
     packages: tuple[str, ...]
     extra_args: str | None = None
+    repos: tuple[str, ...] = ()
 
     def shell(self) -> str:
         parts = ["dnf", "remove", "-y"]
         if self.extra_args:
             parts.append(self.extra_args)
+        scope = _repo_scope_args(self.repos).strip()
+        if scope:
+            parts.append(scope)
         parts.extend(shlex.quote(package) for package in self.packages)
         return " ".join(parts)
 
@@ -1179,22 +1216,6 @@ class DnfUpdateCommand(Command):
         parts = ["dnf", "update", "-y"]
         parts.extend(shlex.quote(package) for package in self.packages)
         return " ".join(parts)
-
-
-def _repo_scope_args(repos: tuple[str, ...]) -> str:
-    """Render the repo-scoping flags shared by the cache descriptors.
-
-    An empty tuple renders nothing (the command applies to every configured
-    repo); a non-empty one disables all repos and re-enables just the named
-    ids -- the ansible-datadog role's
-    ``--disablerepo="*" --enablerepo=datadog`` scoping. Each flag is
-    shell-quoted whole, so the remote shell never globs the ``*``.
-    """
-    if not repos:
-        return ""
-    parts = [shlex.quote("--disablerepo=*")]
-    parts.extend(shlex.quote(f"--enablerepo={repo}") for repo in repos)
-    return " " + " ".join(parts)
 
 
 @dataclass(frozen=True)
@@ -1220,6 +1241,7 @@ async def packages(
     nobest: bool = False,
     extra_install_args: str | None = None,
     extra_uninstall_args: str | None = None,
+    repos: str | list[str] | tuple[str, ...] | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Install/remove/update dnf packages.
@@ -1244,6 +1266,12 @@ async def packages(
             dnf install command. Defaults to None.
         extra_uninstall_args (str | None, optional): Additional arguments to
             the dnf remove command. Defaults to None.
+        repos (str | list[str] | tuple[str, ...] | None, optional): Repository
+            ids to scope the install/remove to (``--disablerepo='*'`` plus one
+            ``--enablerepo`` per id), so packages resolve only from the named
+            repos. Prefer tuples when building requests via ``op()``, since
+            ``OperationRequest`` kwargs must stay hashable. Defaults to None
+            (every enabled repo).
         **kwargs: Additional keyword arguments.
 
     Yields:
@@ -1268,6 +1296,10 @@ async def packages(
     # when *any* version of ``pkg`` is installed, and ``latest`` follows
     # the same name-only behavior: every installed, unpinned package is
     # upgraded without checking whether an upgrade actually exists.
+    # ``repos`` scopes the install/remove this operation yields to named repos
+    # (``--disablerepo='*' --enablerepo=<id>``), reusing the ``_repo_scope_args``
+    # the cache descriptors render -- a first-class alternative to smuggling the
+    # same flags through ``extra_install_args``/``extra_uninstall_args``.
     # ``kwargs`` absorbs any further keyword arguments (any further global
     # arguments are meta-parameters handled by ``op()`` here).
     reasons: list[str] = []
@@ -1289,6 +1321,7 @@ async def packages(
         requested = (packages,)
     else:
         requested = tuple(packages)
+    scoped = _normalize_repos(repos)
 
     if requested:
         installed = await ctx.facts.get(DnfPackages)
@@ -1315,6 +1348,7 @@ async def packages(
                     packages=to_install,
                     nobest=nobest,
                     extra_args=extra_install_args,
+                    repos=scoped,
                 )
             if to_upgrade:
                 ctx.changed = True
@@ -1330,7 +1364,9 @@ async def packages(
                 ctx.changed = True
                 reasons.append(f"{len(to_remove)} package(s) to remove")
                 yield DnfRemoveCommand(
-                    packages=to_remove, extra_args=extra_uninstall_args
+                    packages=to_remove,
+                    extra_args=extra_uninstall_args,
+                    repos=scoped,
                 )
             else:
                 reasons.append("no packages to remove")
@@ -1669,17 +1705,6 @@ async def repo(
 
 #: The cache kinds ``dnf clean`` accepts (dnf's own subcommand arguments).
 _CLEAN_KINDS = ("all", "metadata", "packages", "dbcache", "expire-cache")
-
-
-def _normalize_repos(repos: str | list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
-    """Normalize a repos argument: a bare string becomes a one-tuple, None an
-    empty tuple (every repo), anything else a tuple -- the ``dnf.packages``
-    normalization shape."""
-    if repos is None:
-        return ()
-    if isinstance(repos, str):
-        return (repos,)
-    return tuple(repos)
 
 
 @dataclass(frozen=True)

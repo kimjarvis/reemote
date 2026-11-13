@@ -14,7 +14,7 @@
 # desktop-session binary is installed), ``Home`` (a user's home directory, resolved by shell
 # tilde expansion), ``Hostname`` (the server's hostname from ``uname -n``),
 # ``Kernel`` (the kernel name from ``uname -s``), ``KernelModules`` (the
-# loaded kernel modules from ``/proc/modules``, or ``kldstat`` on FreeBSD),
+# loaded kernel modules from ``/proc/modules``),
 # ``KernelVersion`` (the kernel release from ``uname -r``),
 # ``Last`` (the login records parsed from ``last``), ``LinuxDistribution``
 # (the distribution name and version parsed from the ``/etc/*-release``
@@ -24,12 +24,12 @@
 # ``locale -a``, normalized to ``UTF-8`` spellings), ``LsbRelease`` (the
 # release information parsed from ``lsb_release -ca``), ``Mounts`` (the
 # mounted filesystems, keyed by mount point, read from
-# ``/proc/self/mountinfo`` or the BSD ``mount`` variants), ``Port`` (whether a port has a listening socket, with the process
-# and PID that own it, listed by ``ss``, ``netstat`` or FreeBSD ``sockstat``),
+# ``/proc/self/mountinfo``), ``Port`` (whether a port has a listening socket, with the process
+# and PID that own it, listed by ``ss`` or ``netstat``),
 # ``Processes`` (the running processes keyed by PID, parsed from
 # ``ps``), ``Timezone`` (the system timezone resolved from
 # ``/etc/localtime``) and ``Uptime`` (the seconds since boot, from
-# ``/proc/uptime`` or the BSD boot-time difference), ``User`` (the
+# ``/proc/uptime``), ``User`` (the
 # current user's name from ``echo $USER``), ``Users`` (the system users
 # keyed by name, joined from ``/etc/passwd``, ``id``, ``lastlog`` and the
 # shadow password files) and ``Which`` (the path of a given command from
@@ -60,9 +60,7 @@
 # ``server.wait`` plus the ``WaitForFactCommand`` descriptor it yields, and
 # ``server.wait_service`` plus the ``WaitForFactCommand`` descriptor it yields.
 # ``server.group`` mirrors the baseline's ``server.group`` for ``group``,
-# ``present``, ``system`` and ``gid``, dispatching on the ``Kernel`` fact
-# (the baseline's deprecated ``Os``) exactly like ``KernelModules``: FreeBSD gets
-# ``pw groupadd``/``pw groupdel``, every other kernel ``groupadd``/``groupdel``.
+# ``present``, ``system`` and ``gid``: it yields ``groupadd``/``groupdel``.
 # ``server.hostname`` mirrors the baseline's ``server.hostname`` for the hostname
 # itself: the ``Which`` fact picks ``hostnamectl set-hostname`` when
 # ``hostnamectl`` is available and the bare ``hostname`` command otherwise;
@@ -89,7 +87,7 @@
 # ``mounted``, ``options``, ``device`` and ``fs_type``: it compares against
 # the ``Mounts`` fact (with a lookup-by-device fallback) and yields one
 # ``MountCommand`` -- a fresh ``mount``, an ``umount`` or an options remount
-# (the ``Kernel`` fact picks the BSD remount form).
+# (``mount -o remount,<options> <path>``).
 # ``server.security_limit`` mirrors the baseline's ``server.security_limit`` for
 # ``domain``, ``limit_type``, ``item`` and ``value``: the
 # ``AuthorizedKeysFile`` raw-content fact feeds a pure limits.conf line edit
@@ -107,8 +105,8 @@
 # ``home``, ``shell``, ``group``, ``groups``, ``append``, ``ensure_home``,
 # ``create_home``, ``system``, ``uid``, ``comment``, ``unique`` and
 # ``password``: the requested state is compared against the ``Users`` fact
-# and one ``useradd``/``usermod``/``userdel`` (or the FreeBSD ``pw`` form,
-# picked by the ``Kernel`` fact) is yielded only where they differ; the
+# and one ``useradd``/``usermod``/``userdel`` is yielded only where they
+# differ; the
 # ``ensure_home`` branch reads a private ``_HomeDirectory`` stand-in for
 # ``files.Directory`` and yields the ``mkdir -p``/``chown`` pair. The baseline's
 # ``public_keys``/``delete_keys`` branch and its ``Which``
@@ -139,7 +137,6 @@
 import asyncio
 import hashlib
 import io
-import json
 import pathlib
 import re
 import shlex
@@ -1018,13 +1015,12 @@ class KernelModules:
         Examples can be found in ``examples/modules/server/server_kernel_modules.py``.
     """
 
-    # Mirrors the baseline's ``server.KernelModules``: the shell is chosen from the
-    # ``Kernel`` fact -- FreeBSD lists ``kldstat | tail +2``, every other
-    # kernel cats ``/proc/modules`` (the ``! test -f`` guard short-circuits to
-    # no output when the file is absent, so a failed read maps to ``{}``,
-    # The baseline's ``default = dict``).
+    # Mirrors the baseline's ``server.KernelModules`` on Linux: ``/proc/modules``
+    # is cat'd (the ``! test -f`` guard short-circuits to no output when the
+    # file is absent, so a failed read maps to ``{}``, the baseline's
+    # ``default = dict``).
     #
-    # On Linux each ``/proc/modules`` row becomes, for example::
+    # Each ``/proc/modules`` row becomes, for example::
     #
     #     {
     #         "libahci": {
@@ -1038,45 +1034,15 @@ class KernelModules:
     # ``size`` stays the raw string and only ``instances`` is converted to an
     # int (the baseline's docstring example shows ints for both, but its parser
     # converts only ``instances``); ``depends`` is present only when the row
-    # lists dependencies (``-`` means none). On FreeBSD each ``kldstat`` row
-    # becomes ``{"id", "refs", "address", "size"}`` -- all raw strings, with
-    # hex ``size`` and ``address``.
+    # lists dependencies (``-`` means none).
 
-    #: Shell listing the loaded modules on Linux (the baseline's non-FreeBSD
-    #: branch): the guard yields no output when /proc/modules is absent.
-    COMMAND_LINUX = "! test -f /proc/modules || cat /proc/modules"
-
-    #: Shell listing the loaded modules on FreeBSD; ``tail +2`` drops the
-    #: ``kldstat`` header row.
-    COMMAND_FREEBSD = "kldstat | tail +2"
+    #: Shell listing the loaded modules: the guard yields no output when
+    #: /proc/modules is absent.
+    COMMAND = "! test -f /proc/modules || cat /proc/modules"
 
     @classmethod
-    def command(cls, kernel: str) -> str:
-        """Shell for the kernel name the ``Kernel`` fact reports.
-
-        Only ``FreeBSD`` selects ``kldstat``; every other answer (including
-        a failed ``uname -s``, which reads as ``""``) takes the
-        ``/proc/modules`` branch, exactly like the baseline.
-        """
-        if kernel.strip() == "FreeBSD":
-            return cls.COMMAND_FREEBSD
-        return cls.COMMAND_LINUX
-
-    @classmethod
-    def parse(cls, output: Iterable[str], kernel: str) -> dict[str, dict[str, Any]]:
-        """Parse module rows into the name -> info dict for ``kernel``.
-
-        Dispatches on the kernel name exactly like ``command``: FreeBSD rows
-        are whitespace-split ``kldstat`` lines, everything else is
-        space-split ``/proc/modules`` rows. Pure and testable.
-        """
-        if kernel.strip() == "FreeBSD":
-            return cls._parse_freebsd(output)
-        return cls._parse_linux(output)
-
-    @classmethod
-    def _parse_linux(cls, output: Iterable[str]) -> dict[str, dict[str, Any]]:
-        """Parse ``/proc/modules`` rows (the baseline's non-FreeBSD branch).
+    def parse(cls, output: Iterable[str]) -> dict[str, dict[str, Any]]:
+        """Parse ``/proc/modules`` rows into the name -> info dict. Pure.
 
         Each row is ``name size instances depends state address``; only
         ``instances`` becomes an int, ``depends`` is kept as a list only
@@ -1097,25 +1063,6 @@ class KernelModules:
         return modules
 
     @classmethod
-    def _parse_freebsd(cls, output: Iterable[str]) -> dict[str, dict[str, Any]]:
-        """Parse ``kldstat`` rows (the baseline's FreeBSD branch).
-
-        Each row is whitespace-split into ``id refs address size name``;
-        all four info fields stay raw strings (``size`` and ``address``
-        are hex).
-        """
-        modules: dict[str, dict[str, Any]] = {}
-        for line in output:
-            module_id, refs, address, size, name = line.split(None, 4)
-            modules[name] = {
-                "address": address,
-                "id": module_id,
-                "refs": refs,
-                "size": size,
-            }
-        return modules
-
-    @classmethod
     async def process(cls, host: Host) -> dict[str, dict[str, Any]]:
         modules = getattr(host, "kernel_modules", None)
         if modules is not None:
@@ -1129,11 +1076,9 @@ class KernelModules:
                 }
                 for name, info in modules.items()
             }
-        # Real transport: the Kernel fact picks the shell (the baseline reads it
-        # inside command()), then its output is parsed the same way.
-        kernel = await Kernel.process(host)
-        stdout = await host.run_shell(cls.command(kernel))
-        return cls.parse(stdout.splitlines(), kernel)
+        # Real transport: `cat /proc/modules` over asyncssh.
+        stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
 
 
 class KernelVersion:
@@ -1342,7 +1287,7 @@ def _try_int(value: str) -> int | str:
 
 
 class LinuxDistribution:
-    """The Linux distribution's name and version, as a dict.
+    """The Linux distribution's name, family and version, as a dict.
 
     **Commands:**
 
@@ -1378,6 +1323,7 @@ class LinuxDistribution:
     #
     #     {
     #         "name": "Ubuntu",
+    #         "family": "Debian",
     #         "major": 20,
     #         "minor": 4,
     #         "release_meta": {
@@ -1390,12 +1336,22 @@ class LinuxDistribution:
     #
     # ``name`` is the pretty form of the distro id (``centos`` -> ``CentOS``,
     # ``rhel`` -> ``RedHat``); an id outside the known map keeps the name
-    # ``distro`` reports. ``release_meta`` holds the upper-cased
+    # ``distro`` reports. ``family`` is the Ansible-style OS family the distro
+    # groups under (``centos``/``rhel``/``fedora``/``rocky``/``almalinux`` ->
+    # ``RedHat``, ``ubuntu``/``debian`` -> ``Debian``, ``arch`` ->
+    # ``Archlinux``, ``alpine`` -> ``Alpine``, ``opensuse-leap`` -> ``Suse``),
+    # so an ``include_vars: "{{ os_family }}.yml"`` dispatch becomes a
+    # single-key family lookup instead of an enumeration of every rebuild's
+    # name. It is resolved from ``ID_TO_FAMILY`` on the id, then on the
+    # ``ID_LIKE`` tokens, then on the pretty name, and falls back to the name
+    # itself for an unrecognised distro -- Ansible's own ``os_family``
+    # fallback. ``release_meta`` holds the upper-cased
     # ``/etc/os-release`` key/values (distro 1.7+'s ``RELEASE_CODENAME`` is
     # dropped, like the baseline). Empty release files (Arch's empty
     # ``/etc/arch-release``) are skipped, and no release files at all read as
-    # ``{"name": None, "major": None, "minor": None, "release_meta": {}}``
-    # (the baseline's ``default``). The baseline's ``LinuxDistributionDict`` TypedDict is
+    # ``{"name": None, "family": None, "major": None, "minor": None,
+    # "release_meta": {}}`` (the baseline's ``default``, plus reemote's
+    # ``family`` extension). The baseline's ``LinuxDistributionDict`` TypedDict is
     # represented as a plain dict, like ``Last``'s record dicts.
 
     #: Shell used to dump every ``/etc/*-release`` file over SSH: each file's
@@ -1420,6 +1376,102 @@ class LinuxDistribution:
         "debian": "Debian",
     }
 
+    #: The ``distro`` id -> Ansible-style OS family, mirroring ansible-core's
+    #: ``OS_FAMILY_MAP`` but keyed on the lower-case id ``distro.id()`` reports
+    #: rather than the pretty distribution name: reemote's ``name`` is its own
+    #: pretty-form map and does not enumerate every rebuild (``rocky`` and
+    #: ``almalinux`` fall through to ``distro``'s name), so the id is the
+    #: stable single key a family dispatch needs. An id outside the map is
+    #: resolved through its ``ID_LIKE`` tokens, then through the pretty name,
+    #: and finally falls back to the name itself (see ``_family``).
+    ID_TO_FAMILY: ClassVar[dict[str, str]] = {
+        # RedHat -- RHEL, its rebuilds, Fedora and the RPM-based derivatives.
+        "rhel": "RedHat",
+        "centos": "RedHat",
+        "fedora": "RedHat",
+        "rocky": "RedHat",
+        "almalinux": "RedHat",
+        "ol": "RedHat",
+        "amzn": "RedHat",
+        "scientific": "RedHat",
+        "cloudlinux": "RedHat",
+        "virtuozzo": "RedHat",
+        "xenserver": "RedHat",
+        "alinux": "RedHat",
+        "euleros": "RedHat",
+        "openeuler": "RedHat",
+        "kylin": "RedHat",
+        "redos": "RedHat",
+        # Debian -- Debian, Ubuntu and the dpkg-based derivatives.
+        "debian": "Debian",
+        "ubuntu": "Debian",
+        "raspbian": "Debian",
+        "linuxmint": "Debian",
+        "lmde": "Debian",
+        "devuan": "Debian",
+        "kali": "Debian",
+        "deepin": "Debian",
+        "elementary": "Debian",
+        "neon": "Debian",
+        "pop": "Debian",
+        "parrot": "Debian",
+        "steamos": "Debian",
+        "uos": "Debian",
+        # Suse -- SLES, openSUSE and their variants.
+        "suse": "Suse",
+        "sles": "Suse",
+        "sled": "Suse",
+        "sles_sap": "Suse",
+        "opensuse": "Suse",
+        "opensuse-leap": "Suse",
+        "opensuse-tumbleweed": "Suse",
+        "opensuse-microos": "Suse",
+        "sl-micro": "Suse",
+        # Archlinux -- Arch and its derivatives.
+        "arch": "Archlinux",
+        "antergos": "Archlinux",
+        "manjaro": "Archlinux",
+        "artix": "Archlinux",
+        "endeavouros": "Archlinux",
+        # Gentoo, Alpine, Slackware, Altlinux and Mandrake -- the remaining
+        # single-family distributions ``distro`` reports on Linux.
+        "gentoo": "Gentoo",
+        "funtoo": "Gentoo",
+        "alpine": "Alpine",
+        "slackware": "Slackware",
+        "altlinux": "Altlinux",
+        "mandrake": "Mandrake",
+        "mandriva": "Mandrake",
+    }
+
+    @classmethod
+    def _family(cls, distro_id: str, like: str, name: str | None) -> str | None:
+        """Resolve the Ansible-style OS family for a parsed distribution.
+
+        ``ID_TO_FAMILY`` is consulted on the ``distro`` id first, then on each
+        ``ID_LIKE`` token -- so an unenumerated rebuild declaring
+        ``ID_LIKE="rhel fedora"`` still groups under ``RedHat`` -- then on the
+        pretty name lower-cased, which equals the id for the single-word
+        distributions and rescues a minimal ``os-release`` that omits ``ID=``
+        (the baseline's ubuntu fixture, ``NAME="Ubuntu"`` -> ``Debian``). A
+        distro with no recognised family falls back to ``name`` itself,
+        mirroring Ansible's ``os_family`` fallback for an unlisted
+        distribution; ``None`` (no release files at all) stays ``None``. Pure
+        and testable.
+        """
+        family = cls.ID_TO_FAMILY.get(distro_id)
+        if family is not None:
+            return family
+        for token in like.split():
+            family = cls.ID_TO_FAMILY.get(token)
+            if family is not None:
+                return family
+        if name is not None:
+            family = cls.ID_TO_FAMILY.get(name.lower())
+            if family is not None:
+                return family
+        return name
+
     @classmethod
     def parse(cls, output: Iterable[str]) -> dict[str, Any]:
         """Parse the ``---``-separated release-file dump into the info dict.
@@ -1442,6 +1494,7 @@ class LinuxDistribution:
 
         release_info: dict[str, Any] = {
             "name": None,
+            "family": None,
             "major": None,
             "minor": None,
             "release_meta": {},
@@ -1474,9 +1527,12 @@ class LinuxDistribution:
             major = _try_int(parsed.major_version(best=True))
             minor = _try_int(parsed.minor_version(best=True))
 
+            distro_id = parsed.id()
+            name = cls.NAME_TO_PRETTY_NAME.get(distro_id, parsed.name())
             release_info.update(
                 {
-                    "name": cls.NAME_TO_PRETTY_NAME.get(parsed.id(), parsed.name()),
+                    "name": name,
+                    "family": cls._family(distro_id, parsed.like(), name),
                     "major": major if isinstance(major, int) else None,
                     "minor": minor if isinstance(minor, int) else None,
                     "release_meta": release_meta,
@@ -1757,18 +1813,6 @@ class LsbRelease:
         return cls.parse(stdout.splitlines())
 
 
-# OpenBSD ``mount -v`` rows (the baseline's ``_OPENBSD_MOUNT_V_RE``): the
-# ``(diskname.label)`` part after the device is not always there.
-_OPENBSD_MOUNT_V_RE = re.compile(
-    r"""
-        (\S+) (?:\ \(.*\))?\  # the (diskname.label) part isn't always there, hence optional group
-        on\ (/.*)\            # *, not +, since root path "/" will be mounted
-        type\ (\w+)\          # types from /sbin/mount_*
-        \((.+)\)              # flags are in this group""",
-    flags=re.VERBOSE,
-)
-
-
 def _unescape_octal(match: re.Match[str]) -> str:
     return chr(int(match.group(0)[1:], base=8))
 
@@ -1808,10 +1852,9 @@ class Mounts:
         Examples can be found in ``examples/modules/server/server_mounts.py``.
     """
 
-    # Mirrors the baseline's ``server.Mounts``: the shell is chosen from the
-    # ``Kernel`` fact -- FreeBSD lists ``mount -p --libxo json``, OpenBSD
-    # ``mount -v``, every other kernel cats ``/proc/self/mountinfo``. Each
-    # mount point maps to a ``{device, type, options}`` dict, for example::
+    # Mirrors the baseline's ``server.Mounts`` on Linux: ``/proc/self/mountinfo``
+    # is cat'd. Each mount point maps to a ``{device, type, options}`` dict,
+    # for example::
     #
     #     {
     #         "/": {
@@ -1821,109 +1864,27 @@ class Mounts:
     #         },
     #     }
     #
-    # On Linux the octal escapes in mount points, devices and super-block
-    # options (``\\040`` space, ``\\054`` comma, ``\\134`` backslash) are
-    # decoded, the optional ``shared``/``master``/``propagate_from``/
-    # ``unbindable`` tags are skipped, and ``options`` combines the per-mount
-    # options with the super-block ones -- ``ro``/``rw`` are filtered from
-    # the super-block side because the per-mount options override them
-    # (the baseline's parser). On OpenBSD the ``ctime=...`` flag is dropped and
-    # lines that do not match the ``mount -v`` row shape are skipped.
-    # Empty output reads as ``{}`` on every branch (the baseline's
-    # ``default = dict``; its FreeBSD JSON branch would raise on empty
-    # output -- a failed read here simply reports no mounts).
+    # The octal escapes in mount points, devices and super-block options
+    # (``\\040`` space, ``\\054`` comma, ``\\134`` backslash) are decoded, the
+    # optional ``shared``/``master``/``propagate_from``/``unbindable`` tags are
+    # skipped, and ``options`` combines the per-mount options with the
+    # super-block ones -- ``ro``/``rw`` are filtered from the super-block side
+    # because the per-mount options override them (the baseline's parser).
+    # Empty output reads as ``{}`` (the baseline's ``default = dict``; a failed
+    # read simply reports no mounts).
 
-    #: Shell listing the mounts on Linux (the baseline's non-BSD branch).
-    COMMAND_LINUX = "cat /proc/self/mountinfo"
-
-    #: Shell listing the mounts as JSON on FreeBSD.
-    COMMAND_FREEBSD = "mount -p --libxo json"
-
-    #: Shell listing the mounts on OpenBSD.
-    COMMAND_OPENBSD = "mount -v"
+    #: Shell listing the mounts.
+    COMMAND = "cat /proc/self/mountinfo"
 
     @classmethod
-    def command(cls, kernel: str) -> str:
-        """Shell for the kernel name the ``Kernel`` fact reports.
-
-        Only ``FreeBSD`` and ``OpenBSD`` select the BSD ``mount`` variants;
-        every other answer (including a failed ``uname -s``, which reads as
-        ``""``) takes the ``/proc/self/mountinfo`` branch, exactly like
-        the baseline.
-        """
-        kernel = kernel.strip()
-        if kernel == "FreeBSD":
-            return cls.COMMAND_FREEBSD
-        if kernel == "OpenBSD":
-            return cls.COMMAND_OPENBSD
-        return cls.COMMAND_LINUX
-
-    @classmethod
-    def parse(cls, output: Iterable[str], kernel: str) -> dict[str, dict[str, Any]]:
-        """Parse mount rows into the mount point -> info dict for ``kernel``.
-
-        Dispatches on the kernel name exactly like ``command``: FreeBSD
-        output is one JSON document, OpenBSD rows are ``mount -v`` lines,
-        everything else is ``/proc/self/mountinfo`` rows. Pure and testable.
-        """
-        kernel = kernel.strip()
-        if kernel == "FreeBSD":
-            return cls._parse_freebsd(output)
-        if kernel == "OpenBSD":
-            return cls._parse_openbsd(output)
-        return cls._parse_linux(output)
-
-    @classmethod
-    def _parse_freebsd(cls, output: Iterable[str]) -> dict[str, dict[str, Any]]:
-        """Parse ``mount -p --libxo json`` output (the baseline's FreeBSD branch).
-
-        The ``mount.fstab`` entries carry ``mntpoint``, ``device``,
-        ``fstype`` and a comma-separated ``opts`` string whose items are
-        stripped. Empty output maps to ``{}`` rather than a JSON error.
-        """
-        lines = [line for line in output if line.strip()]
-        if not lines:
-            return {}
-        fstab = json.loads("\n".join(lines))["mount"]["fstab"]
-        devices: dict[str, dict[str, Any]] = {}
-        for entry in fstab:
-            devices[entry["mntpoint"]] = {
-                "device": entry["device"],
-                "type": entry["fstype"],
-                "options": [option.strip() for option in entry["opts"].split(",")],
-            }
-        return devices
-
-    @classmethod
-    def _parse_openbsd(cls, output: Iterable[str]) -> dict[str, dict[str, Any]]:
-        """Parse ``mount -v`` rows (the baseline's OpenBSD branch).
-
-        Rows that do not match the ``device on /path type (flags)`` shape
-        are skipped; the flags are comma-split, stripped and any
-        ``ctime=...`` entry is dropped (the baseline's filter).
-        """
-        devices: dict[str, dict[str, Any]] = {}
-        for line in output:
-            m = _OPENBSD_MOUNT_V_RE.fullmatch(line)
-            if m is None:
-                continue
-            devices[m[2]] = {
-                "device": m[1],
-                "type": m[3],
-                "options": [
-                    opt.strip(" ") for opt in m[4].split(",") if "ctime=" not in opt
-                ],
-            }
-        return devices
-
-    @classmethod
-    def _parse_linux(cls, output: Iterable[str]) -> dict[str, dict[str, Any]]:
-        """Parse ``/proc/self/mountinfo`` rows (the baseline's non-BSD branch).
+    def parse(cls, output: Iterable[str]) -> dict[str, dict[str, Any]]:
+        """Parse ``/proc/self/mountinfo`` rows into the mount point -> info dict.
 
         Blank lines are skipped. The per-mount options override the
         super-block ``ro``/``rw``, which are filtered so they never appear
         twice; mount point, device and super-block options are octal-
-        unescaped. A repeated mount point keeps the last row, like the baseline.
+        unescaped. A repeated mount point keeps the last row, like the
+        baseline. Pure and testable.
         """
         devices: dict[str, dict[str, Any]] = {}
         for line in output:
@@ -1962,11 +1923,9 @@ class Mounts:
                 point: {**info, "options": list(info.get("options", []))}
                 for point, info in mounts.items()
             }
-        # Real transport: the Kernel fact picks the shell (the baseline reads it
-        # inside command()), then its output is parsed the same way.
-        kernel = await Kernel.process(host)
-        stdout = await host.run_shell(cls.command(kernel))
-        return cls.parse(stdout.splitlines(), kernel)
+        # Real transport: `cat /proc/self/mountinfo` over asyncssh.
+        stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
 
 
 class PortInfo(TypedDict):
@@ -1993,7 +1952,7 @@ class PortInfo(TypedDict):
 
 
 #: Protocol -> the one-letter ``ss``/``netstat`` flag (the baseline's
-#: ``proto_flag``); FreeBSD's ``sockstat`` takes the protocol name verbatim.
+#: ``proto_flag``).
 _PROTOCOL_FLAGS = {"tcp": "t", "udp": "u"}
 
 
@@ -2036,11 +1995,9 @@ class Port:
         Examples can be found in ``examples/modules/server/server_port.py``.
     """
 
-    # Mirrors the baseline's ``server.Port``: the ``Kernel`` fact picks the tool --
-    # FreeBSD runs ``sockstat -l -p <port> -P <protocol>``, every other kernel
-    # prefers Linux ``ss`` and falls back to ``netstat`` when the ``Which``
-    # fact reports no ``ss`` -- and one port's socket rows are the answer.
-    # Two deliberate deviations:
+    # Mirrors the baseline's ``server.Port`` on Linux: the tool prefers ``ss``
+    # and falls back to ``netstat`` when the ``Which`` fact reports no ``ss``;
+    # one port's socket rows are the answer. Two deliberate deviations:
     #
     # 1. The value is a ``PortInfo`` record, not the baseline's ``(process, pid)``
     #    tuple. Presence is decided by any surviving row, because the tools
@@ -2051,29 +2008,22 @@ class Port:
     # 2. ``_check_port`` rejects a non-int or out-of-range port and an unknown
     #    protocol, and a malformed PID reads as no PID rather than raising.
 
-    #: Shell listing one port's sockets with Linux ``ss`` (the baseline's preferred
-    #: branch): ``{flag}`` is the protocol letter, ``{pattern}`` the
-    #: ``:<port> `` match, and the ``|| true`` swallows grep's no-match exit.
+    #: Shell listing one port's sockets with ``ss`` (the preferred branch):
+    #: ``{flag}`` is the protocol letter, ``{pattern}`` the ``:<port> `` match,
+    #: and the ``|| true`` swallows grep's no-match exit.
     COMMAND_SS = "ss -lp{flag}n | grep {pattern} || true"
 
-    #: Shell listing one port's sockets with Linux ``netstat`` (the fallback
-    #: when ``Which`` finds no ``ss``): ``{flag}`` is the protocol letter and
+    #: Shell listing one port's sockets with ``netstat`` (the fallback when
+    #: ``Which`` finds no ``ss``): ``{flag}`` is the protocol letter and
     #: ``{program}`` the awk filter on the local-address column.
     COMMAND_NETSTAT = "netstat -{flag}lnp 2>/dev/null | awk {program}"
 
-    #: Shell listing one port's sockets on FreeBSD.
-    COMMAND_SOCKSTAT = "sockstat -l -p {port} -P {protocol}"
-
     @classmethod
-    def _tool(cls, kernel: str, has_ss: bool) -> str:
-        """Tool name for the kernel and whether ``ss`` is installed.
+    def _tool(cls, has_ss: bool) -> str:
+        """Tool name for whether ``ss`` is installed.
 
-        Only ``FreeBSD`` selects ``sockstat``; every other kernel (including a
-        failed ``uname -s``, which reads as ``""``) prefers ``ss`` and falls
-        back to ``netstat``, exactly like the baseline.
+        Prefers ``ss`` and falls back to ``netstat``, exactly like the baseline.
         """
-        if kernel.strip() == "FreeBSD":
-            return "sockstat"
         return "ss" if has_ss else "netstat"
 
     @classmethod
@@ -2086,15 +2036,11 @@ class Port:
         """
         _check_port(port, protocol)
         flag = _PROTOCOL_FLAGS[protocol]
-        if tool == "ss":
-            return cls.COMMAND_SS.format(flag=flag, pattern=shlex.quote(f":{port} "))
         if tool == "netstat":
             return cls.COMMAND_NETSTAT.format(
                 flag=flag, program=shlex.quote(f"$4 ~ /:{port}$/")
             )
-        return cls.COMMAND_SOCKSTAT.format(
-            port=shlex.quote(str(port)), protocol=shlex.quote(protocol)
-        )
+        return cls.COMMAND_SS.format(flag=flag, pattern=shlex.quote(f":{port} "))
 
     @classmethod
     def parse(cls, output: Iterable[str], tool: str) -> PortInfo:
@@ -2102,20 +2048,15 @@ class Port:
 
         Dispatches on the tool name exactly like ``command``. Blank lines are
         never rows, and the ``ss``/``netstat`` shells have already filtered by
-        port while ``sockstat`` prints its ``USER`` header even when nothing
-        matches, so empty output reads as "nothing listening" (the baseline's
+        port, so empty output reads as "nothing listening" (the baseline's
         ``(None, None)`` default). The owner pair comes from the first row
         that carries one.
         """
         rows = [line.strip() for line in output if line.strip()]
-        if tool == "sockstat":
-            rows = [row for row in rows if not row.startswith("USER")]
-        if tool == "ss":
-            process, pid = cls._owner_ss(rows)
-        elif tool == "netstat":
+        if tool == "netstat":
             process, pid = cls._owner_netstat(rows)
         else:
-            process, pid = cls._owner_sockstat(rows)
+            process, pid = cls._owner_ss(rows)
         return PortInfo(listening=bool(rows), process=process, pid=pid)
 
     @classmethod
@@ -2154,23 +2095,6 @@ class Port:
         return None, None
 
     @classmethod
-    def _owner_sockstat(cls, rows: list[str]) -> tuple[str | None, int | None]:
-        """Owner from the ``COMMAND``/``PID`` columns of the first row.
-
-        A row too short to carry both, or with a non-numeric PID, reports no
-        owner (the baseline would raise on the latter).
-        """
-        for line in rows:
-            parts = line.split()
-            if len(parts) < 3:
-                continue
-            try:
-                return parts[1], int(parts[2])
-            except ValueError:
-                continue
-        return None, None
-
-    @classmethod
     async def process(
         cls, host: Host, port: int, protocol: str = "tcp"
     ) -> PortInfo:
@@ -2186,24 +2110,12 @@ class Port:
             if info is not None:
                 return dict(info)  # type: ignore[return-value]
             return PortInfo(listening=False, process=None, pid=None)
-        # Real transport: the Kernel and Which facts pick the tool (the baseline
-        # reads both inside command()), the FreeBSD branch never probing for
-        # ss; the output is then parsed the same way.
-        kernel = await Kernel.process(host)
-        has_ss = False
-        if kernel.strip() != "FreeBSD":
-            has_ss = bool(await Which.process(host, "ss"))
-        tool = cls._tool(kernel, has_ss)
+        # Real transport: the Which fact picks the tool (the baseline reads it
+        # inside command()); the output is then parsed the same way.
+        has_ss = bool(await Which.process(host, "ss"))
+        tool = cls._tool(has_ss)
         stdout = await host.run_shell(cls.command(tool, port, protocol))
         return cls.parse(stdout.splitlines(), tool)
-
-
-# macOS ps truncates any non-last text column (comm to 16 bytes, args to 64),
-# so the Darwin branch runs ps twice with each of those columns last and joins
-# the snapshots by PID across this marker (the baseline's ``_DARWIN_ARGS_FIELDS``
-# and ``_DARWIN_COMM_MARKER``).
-_DARWIN_ARGS_FIELDS = "pid,user,stat,%cpu,%mem,args"
-_DARWIN_COMM_MARKER = "===REEMOTE-PROCESSES-COMM==="
 
 
 def _check_pid(pid: int | None) -> None:
@@ -2238,15 +2150,12 @@ class Processes:
         Examples can be found in ``examples/modules/server/server_processes.py``.
     """
 
-    # Mirrors the baseline's ``server.Processes``: the shell is chosen from the
-    # ``Kernel`` fact and a BusyBox probe -- Linux lists
-    # ``ps -eo pid,user,stat,%cpu,%mem,comm,args --no-headers``, FreeBSD the
-    # same ``ps -eo`` without ``--no-headers``, BusyBox (Alpine) the limited
-    # ``ps -o pid,user,vsz,stat,args`` columns, and Darwin runs ``ps`` twice
-    # (``args`` last, then ``comm`` last, separated by a marker line) because
-    # macOS truncates any non-last text column. Each PID maps to a
-    # ``{user, state, cpu_percent, mem_percent, command, args}`` dict, for
-    # example::
+    # Mirrors the baseline's ``server.Processes`` on Linux: the shell is chosen
+    # from a BusyBox probe -- a full Linux lists
+    # ``ps -eo pid,user,stat,%cpu,%mem,comm,args --no-headers``, BusyBox
+    # (Alpine) the limited ``ps -o pid,user,vsz,stat,args`` columns. Each PID
+    # maps to a ``{user, state, cpu_percent, mem_percent, command, args}`` dict,
+    # for example::
     #
     #     {
     #         1: {
@@ -2262,58 +2171,30 @@ class Processes:
     # An optional ``pid`` restricts the listing to that single process (an
     # absent PID reads as ``{}``). On BusyBox ``cpu_percent``/``mem_percent``
     # are always ``0.0`` and ``command`` is the basename of ``args``' first
-    # word; on Darwin a PID that vanished between the two ``ps`` snapshots
-    # is dropped. Header rows, blank lines, short rows and non-integer PIDs
-    # are skipped; empty output reads as ``{}`` (the baseline's
-    # ``default = dict``).
+    # word. Header rows, blank lines, short rows and non-integer PIDs are
+    # skipped; empty output reads as ``{}`` (the baseline's ``default = dict``).
     #
     # The BusyBox detection reads the ``Which`` fact (``command -v busybox
-    # || true``), exactly like the baseline. One deliberate deviation: a missing
-    # Darwin marker line raises ``ValueError`` rather than the baseline's bare
-    # ``Exception``.
+    # || true``), exactly like the baseline.
 
-    #: Shell listing every process on Linux (the baseline's non-BSD, non-BusyBox
-    #: branch): ``--no-headers`` drops the header row.
+    #: Shell listing every process on a full Linux ``ps`` (the baseline's
+    #: non-BusyBox branch): ``--no-headers`` drops the header row.
     COMMAND_LINUX = "LANG=C ps -eo pid,user,stat,%cpu,%mem,comm,args --no-headers"
-
-    #: Shell listing every process on FreeBSD, whose ps has no
-    #: ``--no-headers`` (the header row is skipped by the parser).
-    COMMAND_BSD = "LANG=C ps -eo pid,user,stat,%cpu,%mem,comm,args"
 
     #: Shell listing every process on BusyBox (Alpine): only pid, user,
     #: vsz, stat and args are reliable columns.
     COMMAND_BUSYBOX = "LANG=C ps -o pid,user,vsz,stat,args"
 
-    #: Shell listing every process on Darwin: two ``ps -ww`` runs joined by
-    #: the marker line, so neither ``args`` nor ``comm`` is truncated.
-    COMMAND_DARWIN = (
-        f"LANG=C ps -eo {_DARWIN_ARGS_FIELDS} -ww && "
-        f"echo {_DARWIN_COMM_MARKER} && "
-        "LANG=C ps -eo pid,comm -ww"
-    )
-
     @classmethod
-    def command(cls, kernel: str, busybox: bool = False, pid: int | None = None) -> str:
-        """Shell for the kernel name and BusyBox presence, optionally one PID.
+    def command(cls, busybox: bool = False, pid: int | None = None) -> str:
+        """Shell for the BusyBox presence, optionally restricted to one PID.
 
-        Only ``Darwin`` selects the double-``ps`` pipeline and only
-        ``FreeBSD`` the header-bearing BSD listing; every other kernel
-        (including a failed ``uname -s``, which reads as ``""``) takes the
-        Linux or BusyBox branch, exactly like the baseline. A ``pid`` switches
-        to ``ps -p`` (BusyBox has no ``-p``, so ``awk`` keeps the header
-        and the one PID row).
+        A ``pid`` switches to ``ps -p`` (BusyBox has no ``-p``, so ``awk``
+        keeps the header and the one PID row); otherwise BusyBox takes the
+        limited-column listing and every other Linux the full one, exactly
+        like the baseline.
         """
         _check_pid(pid)
-        kernel = kernel.strip()
-        if kernel == "Darwin":
-            if pid is None:
-                return cls.COMMAND_DARWIN
-            quoted = shlex.quote(str(pid))
-            return (
-                f"LANG=C ps -p {quoted} -o {_DARWIN_ARGS_FIELDS} -ww && "
-                f"echo {_DARWIN_COMM_MARKER} && "
-                f"LANG=C ps -p {quoted} -o pid,comm -ww"
-            )
         if busybox:
             fields = "pid,user,vsz,stat,args"
         else:
@@ -2322,32 +2203,27 @@ class Processes:
             if busybox:
                 return f"LANG=C ps -o {fields} | awk {shlex.quote(f'NR==1 || $1=={pid}')}"
             return f"LANG=C ps -p {shlex.quote(str(pid))} -o {fields}"
-        if kernel == "FreeBSD":
-            return cls.COMMAND_BSD
         if busybox:
             return cls.COMMAND_BUSYBOX
         return cls.COMMAND_LINUX
 
     @classmethod
     def parse(
-        cls, output: Iterable[str], kernel: str, busybox: bool = False
+        cls, output: Iterable[str], busybox: bool = False
     ) -> dict[int, dict[str, Any]]:
         """Parse ``ps`` rows into the PID -> info dict for the chosen shell.
 
-        Dispatches exactly like ``command``: Darwin output is the two
-        marker-separated snapshots, BusyBox rows the five-column listing,
-        everything else the seven-column Linux/FreeBSD listing. Pure and
+        Dispatches exactly like ``command``: BusyBox rows the five-column
+        listing, everything else the seven-column Linux listing. Pure and
         testable.
         """
-        if kernel.strip() == "Darwin":
-            return cls._parse_darwin(output)
         if busybox:
             return cls._parse_busybox(output)
         return cls._parse_posix(output)
 
     @classmethod
     def _parse_posix(cls, output: Iterable[str]) -> dict[int, dict[str, Any]]:
-        """Parse seven-column ``ps`` rows (the baseline's Linux/FreeBSD branch).
+        """Parse seven-column ``ps`` rows (the baseline's Linux branch).
 
         Each row is ``pid user stat %cpu %mem comm args``; ``args`` keeps
         the whole remainder (spaces included) and falls back to ``comm``
@@ -2409,67 +2285,6 @@ class Processes:
         return processes
 
     @classmethod
-    def _parse_darwin(cls, output: Iterable[str]) -> dict[int, dict[str, Any]]:
-        """Parse the two marker-separated Darwin snapshots (the baseline's branch).
-
-        The ``args`` snapshot supplies the record, the ``comm`` snapshot
-        the untruncated ``command``; a PID missing from the second snapshot
-        vanished between the two ``ps`` runs and is dropped rather than
-        returned with an empty command. A missing marker line raises
-        ``ValueError`` (the baseline raises a bare ``Exception``).
-        """
-        args_lines: list[str] = []
-        comm_lines: list[str] = []
-        current = args_lines
-        marker_seen = False
-        for line in output:
-            if line.strip() == _DARWIN_COMM_MARKER:
-                marker_seen = True
-                current = comm_lines
-                continue
-            current.append(line)
-        if not marker_seen:
-            raise ValueError(
-                f"server.Processes: did not find the {_DARWIN_COMM_MARKER!r} "
-                "marker in the ps output; the ps -eo/-p pipeline may have "
-                "produced unexpected output"
-            )
-        processes: dict[int, dict[str, Any]] = {}
-        for raw in args_lines:
-            line = raw.strip()
-            if not line or line.startswith("PID"):
-                continue
-            parts = line.split(None, 5)
-            if len(parts) < 6:
-                continue
-            try:
-                pid = int(parts[0])
-            except ValueError:
-                continue
-            processes[pid] = {
-                "user": parts[1],
-                "state": parts[2],
-                "cpu_percent": float(parts[3]),
-                "mem_percent": float(parts[4]),
-                "command": "",
-                "args": parts[5],
-            }
-        for raw in comm_lines:
-            line = raw.strip()
-            if not line or line.startswith("PID"):
-                continue
-            parts = line.split(None, 1)
-            if len(parts) < 2:
-                continue
-            try:
-                pid = int(parts[0])
-            except ValueError:
-                continue
-            if pid in processes:
-                processes[pid]["command"] = parts[1]
-        return {pid: proc for pid, proc in processes.items() if proc["command"]}
-
-    @classmethod
     async def process(cls, host: Host, pid: int | None = None) -> dict[int, dict[str, Any]]:
         # Validate the pid even on the simulated path so a bad argument is
         # rejected identically on both transports.
@@ -2483,15 +2298,11 @@ class Processes:
                 info = processes.get(pid)
                 return {pid: dict(info)} if info is not None else {}
             return {proc_pid: dict(info) for proc_pid, info in processes.items()}
-        # Real transport: the Kernel and Which facts pick the shell (the baseline
-        # reads both inside command()), then the ps output is parsed the same
-        # way. BSD kernels never probe.
-        kernel = await Kernel.process(host)
-        busybox = False
-        if kernel.strip() not in ("FreeBSD", "Darwin"):
-            busybox = bool(await Which.process(host, "busybox"))
-        stdout = await host.run_shell(cls.command(kernel, busybox, pid))
-        return cls.parse(stdout.splitlines(), kernel, busybox)
+        # Real transport: the Which fact picks the shell (the baseline reads it
+        # inside command()), then the ps output is parsed the same way.
+        busybox = bool(await Which.process(host, "busybox"))
+        stdout = await host.run_shell(cls.command(busybox, pid))
+        return cls.parse(stdout.splitlines(), busybox)
 
 
 class Timezone:
@@ -2582,54 +2393,28 @@ class Uptime:
         Examples can be found in ``examples/modules/server/server_uptime.py``.
     """
 
-    # Mirrors the baseline's ``server.Uptime``: the shell is chosen from the
-    # ``Kernel`` fact -- Darwin and FreeBSD print the current epoch seconds
-    # followed by the boot-time epoch seconds (``date +%s; sysctl -n
-    # kern.boottime | awk '{print $4}' | tr -d ','``), and the uptime is
-    # their difference; every other kernel cuts the integer part out of
-    # ``/proc/uptime``, so the answer is whole seconds either way (e.g.
+    # Mirrors the baseline's ``server.Uptime`` on Linux: the integer part is
+    # cut out of ``/proc/uptime``, so the answer is whole seconds (e.g.
     # ``86400`` -- one day). Blank lines are skipped; empty output (the
-    # command failed) reads as ``None``, the baseline's ``FactBase`` default, so a
-    # failed read never masquerades as a freshly booted host. A non-integer
-    # line raises ``ValueError``, and a BSD answer missing its second line
-    # raises ``IndexError``, exactly like the baseline's parser.
+    # command failed) reads as ``None``, the baseline's ``FactBase`` default,
+    # so a failed read never masquerades as a freshly booted host. A
+    # non-integer line raises ``ValueError``, exactly like the baseline's
+    # parser.
 
-    #: Shell reading the uptime on Linux (the baseline's non-BSD branch): the
-    #: integer seconds before ``/proc/uptime``'s decimal point.
-    COMMAND_LINUX = "cut -d. -f1 /proc/uptime"
-
-    #: Shell reading the uptime on Darwin/FreeBSD: the current epoch
-    #: seconds, then the boot-time epoch seconds (``awk`` keeps the
-    #: ``sysctl kern.boottime`` ``sec`` field, ``tr`` drops its comma).
-    COMMAND_BSD = "date +%s; sysctl -n kern.boottime | awk '{print $4}' | tr -d ','"
+    #: Shell reading the uptime: the integer seconds before ``/proc/uptime``'s
+    #: decimal point.
+    COMMAND = "cut -d. -f1 /proc/uptime"
 
     @classmethod
-    def command(cls, kernel: str) -> str:
-        """Shell for the kernel name the ``Kernel`` fact reports.
+    def parse(cls, output: Iterable[str]) -> int | None:
+        """Parse the ``/proc/uptime`` row into whole seconds. Pure.
 
-        Only ``Darwin`` and ``FreeBSD`` select the boot-time pipeline;
-        every other answer (including a failed ``uname -s``, which reads
-        as ``""``) takes the ``/proc/uptime`` branch, exactly like the baseline.
-        """
-        if kernel.strip() in ("Darwin", "FreeBSD"):
-            return cls.COMMAND_BSD
-        return cls.COMMAND_LINUX
-
-    @classmethod
-    def parse(cls, output: Iterable[str], kernel: str) -> int | None:
-        """Parse the uptime rows into whole seconds for ``kernel``.
-
-        Dispatches on the kernel name exactly like ``command``: BSD output
-        is ``now`` then ``boottime`` (their difference is the uptime),
-        everything else is the single ``/proc/uptime`` integer. Blank
-        lines are skipped and empty output reads as None. Pure and
-        testable.
+        Blank lines are skipped and empty output reads as None; the first
+        surviving line is the integer uptime.
         """
         lines = [line.strip() for line in output if line.strip()]
         if not lines:
             return None
-        if kernel.strip() in ("Darwin", "FreeBSD"):
-            return int(lines[0]) - int(lines[1])
         return int(lines[0])
 
     @classmethod
@@ -2639,11 +2424,9 @@ class Uptime:
             # SimulatedHost seam: read the in-memory state directly.
             # int is immutable, so no copy is needed.
             return uptime
-        # Real transport: the Kernel fact picks the shell (the baseline reads it
-        # inside command()), then its output is parsed the same way.
-        kernel = await Kernel.process(host)
-        stdout = await host.run_shell(cls.command(kernel))
-        return cls.parse(stdout.splitlines(), kernel)
+        # Real transport: `cut -d. -f1 /proc/uptime` over asyncssh.
+        stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
 
 
 class User:
@@ -2939,43 +2722,33 @@ class Which:
 
 @dataclass(frozen=True)
 class GroupAddCommand(Command):
-    """One ``groupadd`` (``pw groupadd`` on FreeBSD) invocation.
+    """One ``groupadd`` invocation.
 
-    ``system`` renders ``-r`` and ``gid`` renders ``--gid`` (``-g`` on
-    FreeBSD); the operation clears ``system`` on BSD kernels, where
-    ``groupadd`` has no such flag (the baseline's ``"BSD" not in Os`` check).
+    ``system`` renders ``-r`` and ``gid`` renders ``--gid``.
     """
 
     group: str
     system: bool = False
     gid: int | str | None = None
-    freebsd: bool = False
 
     def shell(self) -> str:
-        parts = ["pw", "groupadd"] if self.freebsd else ["groupadd"]
+        parts = ["groupadd"]
         if self.system:
             parts.append("-r")
-        if self.freebsd:
-            parts.extend(["-n", shlex.quote(self.group)])
-        else:
-            parts.append(shlex.quote(self.group))
+        parts.append(shlex.quote(self.group))
         # The baseline's truthiness check: a gid of 0 is skipped, not rendered.
         if self.gid:
-            flag = "-g" if self.freebsd else "--gid"
-            parts.extend([flag, shlex.quote(str(self.gid))])
+            parts.extend(["--gid", shlex.quote(str(self.gid))])
         return " ".join(parts)
 
 
 @dataclass(frozen=True)
 class GroupDelCommand(Command):
-    """One ``groupdel`` (``pw groupdel -n`` on FreeBSD) invocation."""
+    """One ``groupdel`` invocation."""
 
     group: str
-    freebsd: bool = False
 
     def shell(self) -> str:
-        if self.freebsd:
-            return f"pw groupdel -n {shlex.quote(self.group)}"
         return f"groupdel {shlex.quote(self.group)}"
 
 
@@ -2995,8 +2768,7 @@ async def group(
         present (bool, optional): Whether the group should be present or not.
             Defaults to True.
         system (bool, optional): Whether to create a system group
-            (``groupadd -r``); ignored on BSD kernels, which have no system
-            groups. Defaults to False.
+            (``groupadd -r``). Defaults to False.
         gid (int | str | None, optional): Use a specific group id number; a
             falsy gid (``None`` or ``0``) is skipped, exactly like the baseline's
             ``if gid:`` check. Defaults to None.
@@ -3016,35 +2788,24 @@ async def group(
     """
 
     # Mirrors the baseline's ``server.group``. Idempotent: the group name is
-    # compared against the ``Groups`` fact and a descriptor is yielded only
-    # when the group differs from the request. The ``Kernel`` fact picks the
-    # command form -- FreeBSD gets ``pw groupadd``/``pw groupdel``, every other
-    # kernel ``groupadd``/``groupdel`` -- mirroring the baseline's dispatch on its
-    # deprecated ``Os`` fact (renamed ``Kernel`` upstream, the same fact
-    # ``KernelModules`` dispatches on here). ``system`` and ``gid`` only apply
-    # at creation: an existing group is never modified, so a gid or system
-    # change on a present group plans no command, like the baseline. The commands
-    # need root: flag the request ``sudo=True``. ``**kwargs`` absorbs the baseline's
-    # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    # compared against the ``Groups`` fact and a ``groupadd``/``groupdel``
+    # descriptor is yielded only when the group differs from the request.
+    # ``system`` and ``gid`` only apply at creation: an existing group is never
+    # modified, so a gid or system change on a present group plans no command,
+    # like the baseline. The commands need root: flag the request ``sudo=True``.
+    # ``**kwargs`` absorbs the baseline's global arguments (``op()`` already
+    # strips ``name``/``sudo``/``su``).
     groups = await ctx.facts.get(Groups)
-    kernel = (await ctx.facts.get(Kernel)).strip()
     is_present = group in groups
-    freebsd = kernel == "FreeBSD"
 
     if not present and is_present:
         ctx.changed = True
         ctx.reason = f"group {group} present, will remove"
-        yield GroupDelCommand(group=group, freebsd=freebsd)
+        yield GroupDelCommand(group=group)
     elif present and not is_present:
         ctx.changed = True
         ctx.reason = f"group {group} absent, will create"
-        yield GroupAddCommand(
-            group=group,
-            # BSD doesn't do system groups (the baseline's "BSD" not in Os).
-            system=system and "BSD" not in kernel,
-            gid=gid,
-            freebsd=freebsd,
-        )
+        yield GroupAddCommand(group=group, system=system, gid=gid)
     else:
         ctx.reason = f"group {group} already {'present' if present else 'absent'}"
 
@@ -3063,13 +2824,12 @@ class _HomeDirectory:
     non-directory) and an absent key (a missing path) answer ``False`` and
     ``None`` exactly like ``Directory``. On the real transport a
     ``test -d`` guard short-circuits a missing path to no output, and the
-    GNU/BSD ``stat`` chain behind it prints only the owner fields.
+    GNU ``stat`` behind it prints only the owner fields.
     """
 
-    # GNU and BSD stat owner-only formats, the two halves of the baseline's
-    # ``Directory`` command that ``server.user`` actually consumes.
+    # The GNU stat owner-only format, the half of the baseline's ``Directory``
+    # command that ``server.user`` actually consumes.
     _GNU_STAT_FORMAT = "user=%U group=%G"
-    _BSD_STAT_FORMAT = "user=%Su group=%Sg"
     _STAT_RE = re.compile(r"user=(\S+) group=(\S+)")
 
     @classmethod
@@ -3080,11 +2840,7 @@ class _HomeDirectory:
         short-circuits), like the baseline's ``Directory`` chain.
         """
         quoted = shlex.quote(path)
-        return (
-            f"test -d {quoted} && "
-            f"( stat -c '{cls._GNU_STAT_FORMAT}' {quoted} 2> /dev/null || "
-            f"stat -f '{cls._BSD_STAT_FORMAT}' {quoted} )"
-        )
+        return f"test -d {quoted} && stat -c '{cls._GNU_STAT_FORMAT}' {quoted}"
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> dict[str, Any] | Literal[False] | None:
@@ -3187,17 +2943,13 @@ class _HomeChownCommand(Command):
 
 @dataclass(frozen=True)
 class UserAddCommand(Command):
-    """One ``useradd`` (``pw useradd`` on FreeBSD) invocation.
+    """One ``useradd`` invocation.
 
     Renders the baseline's argument order verbatim: ``-d`` home, ``-s`` shell,
     ``-g`` group, ``-G`` the comma-joined secondary groups, ``-r`` for a
-    system account, the uid (``--uid`` on Linux, ``-u`` on FreeBSD),
-    ``-c`` comment, ``-o`` for a non-unique uid, then ``-m``/``-M`` for
-    ``create_home`` and ``-p`` for the encrypted password. On FreeBSD with
-    a password the whole form rides ``echo '<password>' | pw useradd -n
-    <user> -H 0`` (the baseline's pipe). Only ``-M`` is BSD-gated: the baseline skips
-    it on FreeBSD and OpenBSD, which have no such flag, while ``-m`` is
-    emitted on every kernel. Falsy ``uid`` renders nothing (the baseline's
+    system account, ``--uid`` for the uid, ``-c`` comment, ``-o`` for a
+    non-unique uid, then ``-m``/``-M`` for ``create_home`` and ``-p`` for the
+    encrypted password. Falsy ``uid`` renders nothing (the baseline's
     ``if uid:`` truthiness check).
     """
 
@@ -3212,8 +2964,6 @@ class UserAddCommand(Command):
     unique: bool = True
     create_home: bool = False
     password: str | None = None
-    freebsd: bool = False
-    openbsd: bool = False
 
     def shell(self) -> str:
         args: list[str] = []
@@ -3225,48 +2975,32 @@ class UserAddCommand(Command):
             args.extend(["-g", shlex.quote(self.group)])
         if self.groups:
             args.extend(["-G", ",".join(shlex.quote(g) for g in self.groups)])
-        # BSD has no system accounts (the baseline's "BSD" not in Os check).
-        if self.system and not self.freebsd:
+        if self.system:
             args.append("-r")
         # The baseline's truthiness check: a uid of 0 is skipped, not rendered.
         if self.uid:
-            args.extend(["-u" if self.freebsd else "--uid", shlex.quote(str(self.uid))])
+            args.extend(["--uid", shlex.quote(str(self.uid))])
         if self.comment:
             args.extend(["-c", shlex.quote(self.comment)])
         if not self.unique:
             args.append("-o")
         if self.create_home:
             args.append("-m")
-        elif not self.freebsd and not self.openbsd:
-            # FreeBSD/OpenBSD have no -M skeleton flag (the baseline).
+        else:
             args.append("-M")
-        if self.password and not self.freebsd:
+        if self.password:
             args.extend(["-p", shlex.quote(self.password)])
-        if self.freebsd:
-            # pw takes the login name first; the optional -H 0 (read the
-            # hash from stdin, the baseline's echo-pipe form) leads the flags.
-            head = ["pw", "useradd", "-n", shlex.quote(self.user)]
-            if self.password:
-                # The baseline pipes the hash to pw -H 0 instead of passing -p.
-                return (
-                    f"echo {shlex.quote(self.password)} | "
-                    f"{' '.join(head)} -H 0 {' '.join(args)}"
-                )
-            return " ".join([*head, *args])
         return " ".join(["useradd", *args, shlex.quote(self.user)])
 
 
 @dataclass(frozen=True)
 class UserModCommand(Command):
-    """One ``usermod`` (``pw usermod`` on FreeBSD) invocation.
+    """One ``usermod`` invocation.
 
     The operation fills only the fields that differ from the ``Users``
     fact, in the baseline's argument order: ``-d`` home, ``-s`` shell, ``-g``
     primary group, ``-a -G``/``-G`` secondary groups, ``-c`` comment, and
-    ``-p`` password (Linux only -- FreeBSD takes the password through
-    ``echo '<password>' | pw usermod -n <user> -H 0`` instead of a modify
-    flag). The user name trails the flags on Linux and leads them as
-    ``-n <user>`` on FreeBSD (the baseline's forms).
+    ``-p`` password. The user name trails the flags.
     """
 
     user: str
@@ -3277,7 +3011,6 @@ class UserModCommand(Command):
     append: bool = False
     comment: str | None = None
     password: str | None = None
-    freebsd: bool = False
 
     def shell(self) -> str:
         args: list[str] = []
@@ -3295,21 +3028,14 @@ class UserModCommand(Command):
                 args.extend(["-G", joined])
         if self.comment:
             args.extend(["-c", shlex.quote(self.comment)])
-        if self.password and not self.freebsd:
+        if self.password:
             args.extend(["-p", shlex.quote(self.password)])
-        if self.freebsd:
-            if self.password:
-                return (
-                    f"echo {shlex.quote(self.password)} | pw usermod"
-                    f" -n {shlex.quote(self.user)} -H 0"
-                )
-            return " ".join(["pw", "usermod", "-n", shlex.quote(self.user), *args])
         return " ".join(["usermod", *args, shlex.quote(self.user)])
 
 
 @dataclass(frozen=True)
 class UserDelCommand(Command):
-    """One ``userdel`` (``pw userdel -n`` on FreeBSD) invocation.
+    """One ``userdel`` invocation.
 
     The name is ``shlex``-quoted (the baseline's ``QuoteString``), so a username
     carrying shell metacharacters is removed literally rather than
@@ -3317,11 +3043,8 @@ class UserDelCommand(Command):
     """
 
     user: str
-    freebsd: bool = False
 
     def shell(self) -> str:
-        if self.freebsd:
-            return f"pw userdel -n {shlex.quote(self.user)}"
         return f"userdel {shlex.quote(self.user)}"
 
 
@@ -3369,7 +3092,7 @@ async def user(
             is built from the system skeleton (``useradd -m``). Defaults
             to False.
         system (bool, optional): Whether to create a system account
-            (``useradd -r``); ignored on BSD kernels. Defaults to False.
+            (``useradd -r``). Defaults to False.
         uid (int | None, optional): Use a specific user id number; a
             falsy uid (``None`` or ``0``) is skipped, exactly like
             the baseline's ``if uid:`` check. Defaults to None.
@@ -3399,11 +3122,7 @@ async def user(
     # compared against the ``Users`` fact and a descriptor is yielded only
     # where they differ -- ``userdel`` (an existing user, ``present=False``),
     # ``useradd`` (an absent one), or ``usermod`` (a field-by-field update
-    # of a present one). The ``Kernel`` fact (the baseline's deprecated ``Os``
-    # alias) picks the command form: FreeBSD gets ``pw useradd/usermod/
-    # userdel``, every other kernel the shadow-suite commands; OpenBSD keeps
-    # the plain forms and simply has no ``-m``/``-M`` skeleton flags, exactly
-    # The baseline's branches. A creation with no primary ``group`` reuses an
+    # of a present one). A creation with no primary ``group`` reuses an
     # existing group of the user's name when there is one (the baseline's
     # tell-useradd-to-use-it fix). ``home`` defaults to ``/home/<user>`` for
     # an absent user and to the recorded home for a present one. The
@@ -3429,10 +3148,6 @@ async def user(
     # ``name``/``sudo``/``su``).
     users = await ctx.facts.get(Users)
     existing_groups = await ctx.facts.get(Groups)
-    kernel = (await ctx.facts.get(Kernel)).strip()
-    freebsd = kernel == "FreeBSD"
-    # The baseline gates the -M skeleton flag on os_type not in (FreeBSD, OpenBSD).
-    openbsd = kernel == "OpenBSD"
     existing_user = users.get(user)
     requested_groups = tuple(groups) if groups else ()
 
@@ -3449,7 +3164,7 @@ async def user(
         if existing_user:
             ctx.changed = True
             reasons.append(f"user {user} present, will remove")
-            yield UserDelCommand(user=user, freebsd=freebsd)
+            yield UserDelCommand(user=user)
         else:
             reasons.append(f"user {user} already absent")
         ctx.reason = "; ".join(reasons)
@@ -3468,15 +3183,12 @@ async def user(
             shell_path=shell,
             group=group,
             groups=requested_groups,
-            # BSD doesn't do system accounts (the baseline's "BSD" not in Os).
-            system=system and "BSD" not in kernel,
+            system=system,
             uid=uid,
             comment=comment,
             unique=unique,
             create_home=create_home,
             password=password,
-            freebsd=freebsd,
-            openbsd=openbsd,
         )
     else:
         # Update: each requested field is compared against the fact and only
@@ -3494,9 +3206,7 @@ async def user(
         password_changed = bool(
             password and password != existing_user.get("password")
         )
-        # Linux folds the hash into the same usermod; FreeBSD has no modify
-        # flag for it and rides the echo pipe instead (the baseline).
-        mod_password = password if password_changed and not freebsd else None
+        mod_password = password if password_changed else None
         current_groups = list(existing_user.get("groups") or [])
         mod_groups: tuple[str, ...] = ()
         groups_change = False
@@ -3517,10 +3227,6 @@ async def user(
         else:
             ctx.changed = True
             reasons.append(f"user {user} differs, will update")
-            if freebsd and password_changed:
-                # pw has no modify flag for the hash; -H 0 reads it from
-                # stdin, which the baseline pipes as its own command.
-                yield UserModCommand(user=user, password=password, freebsd=True)
             if other_changes or mod_password:
                 yield UserModCommand(
                     user=user,
@@ -3531,7 +3237,6 @@ async def user(
                     append=append,
                     comment=mod_comment,
                     password=mod_password,
-                    freebsd=freebsd,
                 )
 
     # Ensure home directory ownership (the baseline's files.directory
@@ -3589,12 +3294,11 @@ class _KeysPathStat:
     only a test seeds a deliberately wrong-typed path.
     """
 
-    # GNU and BSD stat owner/mode formats. ``%a``/``%Lp`` print the mode as
-    # its octal digits spelled out (e.g. ``700``), which is exactly the
-    # octal-looking int convention ``files.File``/``files.Directory`` store
-    # and compare against (``int(oct(bits)[2:])``, not the raw bit value).
+    # GNU stat owner/mode format. ``%a`` prints the mode as its octal digits
+    # spelled out (e.g. ``700``), which is exactly the octal-looking int
+    # convention ``files.File``/``files.Directory`` store and compare against
+    # (``int(oct(bits)[2:])``, not the raw bit value).
     _GNU_STAT_FORMAT = "user=%U group=%G mode=%a"
-    _BSD_STAT_FORMAT = "user=%Su group=%Sg mode=%Lp"
     _STAT_RE = re.compile(r"user=(\S+) group=(\S+) mode=(\S+)")
 
     @classmethod
@@ -3607,11 +3311,7 @@ class _KeysPathStat:
         """
         test = "-d" if directory else "-f"
         quoted = shlex.quote(path)
-        return (
-            f"test {test} {quoted} && "
-            f"( stat -c '{cls._GNU_STAT_FORMAT}' {quoted} 2> /dev/null || "
-            f"stat -f '{cls._BSD_STAT_FORMAT}' {quoted} )"
-        )
+        return f"test {test} {quoted} && stat -c '{cls._GNU_STAT_FORMAT}' {quoted}"
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> dict[str, Any] | Literal[False] | None:
@@ -5025,10 +4725,8 @@ class MountCommand(Command):
     """One ``mount``/``umount`` invocation.
 
     ``mounted=False`` renders ``umount <path>``. ``remount=True`` renders
-    the options-update form -- ``mount -o remount,<options> <path>`` on
-    Linux, ``mount -uo <options> -t <fs_type> <device> <path>`` on the BSDs
-    (``bsd=True``, with ``fs_type``/``device`` taken from the ``Mounts``
-    fact). Otherwise it renders a fresh mount
+    the options-update form ``mount -o remount,<options> <path>``. Otherwise
+    it renders a fresh mount
     ``mount [-t <fs_type>] [-o <options>] [<device>] <path>``. Every
     user-supplied string is ``shlex``-quoted: the baseline quotes only some of
     them, and quoting the rest leaves simple values unchanged while a path
@@ -5041,19 +4739,12 @@ class MountCommand(Command):
     device: str | None = None
     fs_type: str | None = None
     remount: bool = False
-    bsd: bool = False
 
     def shell(self) -> str:
         if not self.mounted:
             return f"umount {shlex.quote(self.path)}"
         options_string = ",".join(self.options)
         if self.remount:
-            if self.bsd:
-                return (
-                    f"mount -uo {shlex.quote(options_string)} "
-                    f"-t {shlex.quote(self.fs_type)} "
-                    f"{shlex.quote(self.device)} {shlex.quote(self.path)}"
-                )
             return (
                 f"mount -o {shlex.quote(f'remount,{options_string}')} "
                 f"{shlex.quote(self.path)}"
@@ -5116,9 +4807,7 @@ async def mount(
     # ``mount [-t fs_type] [-o options] [device] path``; ``mounted=False`` on a
     # present mount yields ``umount``; an already-mounted filesystem whose
     # options do not include all of ``options`` is remounted --
-    # ``mount -o remount,<options> <path>`` on Linux,
-    # ``mount -uo <options> -t <type> <device> <path>`` on the BSDs, where the
-    # ``Kernel`` fact picks the form and the type/device come from the fact.
+    # ``mount -o remount,<options> <path>``.
     # The options check is a subset test, not equality: extra options already
     # on the mount never trigger a remount, and a remount always carries the
     # full requested option set. Like the baseline, ``/etc/fstab`` is never touched
@@ -5157,27 +4846,13 @@ async def mount(
         info = mounts[mounted_path]
         needed = set(opts) - set(info.get("options", []))
         if needed:
-            # The -u option is common among FreeBSD, OpenBSD, NetBSD and
-            # DragonFlyBSD; the Kernel fact picks the remount form.
-            kernel = await ctx.facts.get(Kernel)
-            bsd = "BSD" in kernel.strip()
             ctx.changed = True
             missing = ", ".join(sorted(needed))
             ctx.reason = (
                 f"filesystem {mounted_path} is missing options {missing}, "
                 "will remount"
             )
-            if bsd:
-                yield MountCommand(
-                    path=mounted_path,
-                    options=opts,
-                    device=info["device"],
-                    fs_type=info["type"],
-                    remount=True,
-                    bsd=True,
-                )
-            else:
-                yield MountCommand(path=mounted_path, options=opts, remount=True)
+            yield MountCommand(path=mounted_path, options=opts, remount=True)
         else:
             ctx.reason = f"filesystem {path} is mounted"
     else:

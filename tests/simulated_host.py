@@ -20,7 +20,8 @@ a real asyncssh transport is missing:
 - ``packages`` / ``links`` / ``existing_files`` / ``file_stats`` /
   ``file_flags`` / ``directory_stats`` / ``directory_entries`` /
   ``link_stats`` / ``socket_stats`` / ``same_files`` /
-  ``find_results`` / ``found_files`` / ``grep_lines`` / ``remote_files`` /
+  ``find_results`` / ``found_files`` / ``grep_lines`` / ``grep_files`` /
+  ``remote_files`` /
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``rpm_gpg_keys`` / ``services`` / ``enabled_services``
@@ -81,6 +82,7 @@ a real asyncssh transport is missing:
   the state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
   ``File``, ``Directory``, ``Link``, ``Socket``, ``SameFile``, ``FileFlags``,
   ``FindFiles``, ``FindDirectories``, ``FindLinks``, ``FindInFile``,
+  ``FindInFiles``,
   ``FindFilesInfo``, ``DirectoryEntries``, ``RemoteFileSha1``, ``Sha256File``,
   ``Sha384File``, ``Md5File``, ``FileContents``, ``DnfRepoFile``, ``DnfRepositories``,
   ``DnfRepoList``,
@@ -159,7 +161,7 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from reemote.commands import Command, StringCommand, WaitTimeoutError
-from reemote.hosts import Host
+from reemote.hosts import CommandError, Host
 from reemote.modules.apk.apk import (
     ApkHoldCommand,
     ApkInstallCommand,
@@ -234,6 +236,7 @@ from reemote.modules.files.files import (
     GetCommand,
     InstallCommand,
     InstallSpoolCommand,
+    InstallValidateCommand,
     LinkCommand,
     MkdirCommand,
     MoveCommand,
@@ -574,6 +577,14 @@ class SimulatedHost(Host):
     # transfer a no-op: execute_command mutates it, and the next step's fresh
     # fact cache sees the mutation.
     remote_files: dict[str, bytes] = field(default_factory=dict)
+    # Spool paths whose ``files.install`` validation is simulated to fail: the
+    # ``InstallValidateCommand`` case raises ``CommandError`` for a spool named
+    # here, so a test can drive the abort path and prove a failed ``validate``
+    # stops the install and leaves the destination untouched (the real
+    # command's non-zero exit does the same through ``send_command``'s
+    # fail-fast). Empty by default -- validation passes, as a correct config
+    # would, and the simulation models no config parser to run for real.
+    fail_validate: set[str] = field(default_factory=set)
     # Configured dnf repositories (the ``DnfRepository`` entries
     # ``DnfRepositories`` returns -- repoid/name, the source filename and the
     # open-ended config options in an ``options`` sub-dict).
@@ -1213,6 +1224,15 @@ class SimulatedHost(Host):
     # key reads as None, like a missing file. A read-only seam; the read
     # copies the list.
     grep_lines: dict[tuple[str, str], list[str]] = field(default_factory=dict)
+    # Recursive grep matches ((path, pattern) -> the matching file paths
+    # ``FindInFiles`` returns), backing ``FindInFiles``. The same dedicated-
+    # store rationale as ``grep_lines``: grep's ERE semantics cannot be
+    # faithfully re-derived from the ``remote_files`` content bytes with
+    # Python's ``re``, so a test seeds the matching paths directly. Unlike
+    # ``grep_lines`` there is no None answer -- ``FindInFiles`` always returns
+    # a list -- so an absent key reads as [] (the ``|| true`` guard's empty
+    # answer). A read-only seam; the read copies the list.
+    grep_files: dict[tuple[str, str], list[str]] = field(default_factory=dict)
     # Group names present on the system (the first ``/etc/group`` field of
     # each row, in file order), backing ``Groups``. Named distinctly from
     # ``Host.group`` (the inventory classifier) so the two are never confused.
@@ -1373,16 +1393,18 @@ class SimulatedHost(Host):
     # ``default = list`` for an empty or failed ``last`` read.
     login_records: list[dict[str, str]] = field(default_factory=list)
     # The Linux distribution info (the parsed /etc/*-release dump), backing
-    # ``LinuxDistribution``: {name, major, minor, release_meta} in the shape
-    # the fact returns. ``LinuxName`` delegates to ``LinuxDistribution`` and
-    # so reads this same seam -- there is deliberately no separate name
+    # ``LinuxDistribution``: {name, family, major, minor, release_meta} in the
+    # shape the fact returns. ``LinuxName`` delegates to ``LinuxDistribution``
+    # and so reads this same seam -- there is deliberately no separate name
     # field, keeping the two facts consistent by construction. Defaults to
     # The baseline's ``default()`` -- all None with an empty release_meta, the
-    # "no release files matched" answer -- so a simulated machine makes no
-    # distro claim until a test sets one.
+    # "no release files matched" answer (``family`` is reemote's extension and
+    # defaults to None too) -- so a simulated machine makes no distro claim
+    # until a test sets one.
     linux_distribution: dict[str, Any] = field(
         default_factory=lambda: {
             "name": None,
+            "family": None,
             "major": None,
             "minor": None,
             "release_meta": {},
@@ -1950,6 +1972,16 @@ class SimulatedHost(Host):
                 self.get_file(src, dest)
             case InstallSpoolCommand(content=content, dest=dest):
                 self.put_file(io.BytesIO(content.encode()), dest)
+            case InstallValidateCommand(validate=validate, spool=spool):
+                # The atomic validate-then-install step. A real validator exits
+                # non-zero on a bad config and send_command's fail-fast aborts
+                # before the InstallCommand runs; the simulation models no
+                # config parser, so validation passes unless a test seeds the
+                # spool into fail_validate to drive the abort.
+                if spool in self.fail_validate:
+                    raise CommandError(
+                        self.name, validate, 1, "simulated validation failure"
+                    )
             case InstallCommand(
                 spool=spool, dest=dest, mode=mode, user=user, group=group
             ):
@@ -2923,7 +2955,8 @@ class SimulatedHost(Host):
         ``apt.ppa``'s ``present=False`` mutation. Removes every ``apt_sources``
         entry whose URL matches the PPA's Launchpad URL, so ``AptSources`` no
         longer reports it. An absent PPA is tolerated (the real command would
-        exit non-zero, but the operation is non-idempotent and always yields).
+        exit non-zero, but the operation only yields the removal once it has
+        read the source as present, so this seam rarely sees an absent one).
         """
         url = self._ppa_url(src)
         self.apt_sources[:] = [s for s in self.apt_sources if s["url"] != url]

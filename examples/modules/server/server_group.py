@@ -14,10 +14,7 @@ in ``/etc/group``) and yields a ``groupadd`` only where the group is absent,
 so a host that already has ``docker`` plans no change and a second run is a
 no-op everywhere. ``system=True`` renders ``groupadd -r`` and ``gid=1500``
 renders ``--gid 1500``; both options only apply at creation -- an existing
-group is never modified. The ``Kernel`` fact picks the command form: on a
-FreeBSD host the same deploy renders ``pw groupadd -n ...`` (and ``system``
-is ignored, BSD having no system groups), every other kernel gets
-``groupadd``/``groupdel``. Removing a group is the mirror image:
+group is never modified. Removing a group is the mirror image:
 ``present=False`` yields ``groupdel`` only when the group is present.
 
 Every failure mode of the run -- an unreachable host, a rejected elevation,
@@ -28,8 +25,8 @@ reaches ``main`` as a typed error whose message already names the host, so
 Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
 via ``run``'s ``host_factory`` and never touches the network -- this example
 uses the *default* factory (``Host.from_inventory``): each plain ``Host``
-lazily opens an asyncssh connection, reads ``/etc/group`` and ``uname -s``
-for real, and runs ``groupadd`` under sudo where needed.
+lazily opens an asyncssh connection, reads ``/etc/group`` for real, and runs
+``groupadd`` under sudo where needed.
 
 Every request carries ``when=is_centos``, the declarative eligibility
 guard: the predicate reads only **static** inventory data --

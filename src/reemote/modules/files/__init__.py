@@ -5,7 +5,7 @@
 
 Re-exports everything from ``files.py`` so the operations (``files.link``,
 ``files.file``, ``files.put``, ``files.get``, ``files.edit``,
-``files.install``, ``files.move``,
+``files.install``, ``files.transform``, ``files.download``, ``files.move``,
 ``files.copy``, ``files.directory`` and ``files.flags``) and the facts
 (``files.FileLink``, ``files.FileExists``,
 ``files.RemoteFileSha1``, ``files.Sha256File``, ``files.Sha384File``,
@@ -13,7 +13,8 @@ Re-exports everything from ``files.py`` so the operations (``files.link``,
 ``files.File``,
 ``files.Directory``, ``files.Link``, ``files.Socket``, ``files.SameFile``,
 ``files.FindFiles``, ``files.FindDirectories``, ``files.FindLinks``,
-``files.FindInFile``, ``files.FindFilesInfo``, ``files.DirectoryEntries``)
+``files.FindInFile``, ``files.FindInFiles``, ``files.FindFilesInfo``,
+``files.DirectoryEntries``)
 are reachable through the package name alone.
 """
 
@@ -36,11 +37,13 @@ from .files import (
     FindFiles,
     FindFilesInfo,
     FindInFile,
+    FindInFiles,
     FindLinks,
     FoundFile,
     GetCommand,
     InstallCommand,
     InstallSpoolCommand,
+    InstallValidateCommand,
     Link,
     LinkCommand,
     Md5File,
@@ -55,6 +58,7 @@ from .files import (
     Socket,
     copy,
     directory,
+    download,
     edit,
     file,
     flags,
@@ -63,6 +67,7 @@ from .files import (
     link,
     move,
     put,
+    transform,
 )
 
 __all__ = [
@@ -83,11 +88,13 @@ __all__ = [
     "FindFiles",
     "FindFilesInfo",
     "FindInFile",
+    "FindInFiles",
     "FindLinks",
     "FoundFile",
     "GetCommand",
     "InstallCommand",
     "InstallSpoolCommand",
+    "InstallValidateCommand",
     "Link",
     "LinkCommand",
     "Md5File",
@@ -102,6 +109,7 @@ __all__ = [
     "Socket",
     "copy",
     "directory",
+    "download",
     "edit",
     "file",
     "files",
@@ -111,4 +119,5 @@ __all__ = [
     "link",
     "move",
     "put",
+    "transform",
 ]

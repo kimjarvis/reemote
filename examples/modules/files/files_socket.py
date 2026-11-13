@@ -31,7 +31,7 @@ two-phase execution model:
 
 ``Socket`` mirrors the baseline's ``files.Socket`` -- the ``File`` subclass
 with ``type = "socket"``: the same ``test -e``/``test -L`` guard and GNU
-``stat -c`` / BSD ``stat -f`` / ``ls -ld`` chain, but the path's type flag
+``stat -c`` / ``ls -ld`` chain, but the path's type flag
 must be ``s``. The result is the same metadata dict ``File`` returns --
 ``user``, ``group``, ``mode`` (the octal-looking int, e.g. ``660``),
 ``size`` and ``atime``/``mtime``/``ctime`` as *naive UTC* ``datetime``s --

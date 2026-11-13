@@ -40,7 +40,11 @@ version match. ``latest=True`` would additionally upgrade every installed,
 unpinned name (the baseline's legacy blind upgrade); ``update=True`` runs a
 stateless ``apt-get update`` first, and ``upgrade=True`` an
 ``apt-get upgrade`` gated by the ``SimulateOperationWillChange`` simulation,
-exactly like ``apt.dist_upgrade``. Where the baseline's ``cache_time`` skips the
+exactly like ``apt.dist_upgrade``. ``default_release`` would add apt's
+``-t <release>`` to the install -- and, unlike a raw ``extra_install_args``,
+to the ``latest`` upgrade too -- so unpinned names resolve their candidate
+from a target release; this example leaves it unset, since the demo host's
+own release is already apt's default. Where the baseline's ``cache_time`` skips the
 update while its stamp file is fresh, reemote deliberately drops the
 option -- update is always stateless. The baseline's ``force`` option
 (``--force-yes``) is dropped as deprecated, the same decision as ``apt.deb``.

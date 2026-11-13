@@ -1648,6 +1648,89 @@ async def test_dnf_packages_extra_uninstall_args():
     assert commands[0].shell() == "dnf remove -y --autoremove nginx"
 
 
+async def test_dnf_packages_scopes_install_to_named_repos():
+    """``repos`` is a first-class scope on the install: it renders the role's
+    --disablerepo='*' --enablerepo=<id> flags (reusing ``_repo_scope_args``)
+    rather than an ``extra_install_args`` string, quoted whole so the shell
+    never globs the *."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.packages(ctx, packages=("nginx",), repos=("datadog",))
+    ]
+    assert commands == [DnfInstallCommand(packages=("nginx",), repos=("datadog",))]
+    assert commands[0].shell() == (
+        "dnf install -y '--disablerepo=*' --enablerepo=datadog nginx"
+    )
+
+
+async def test_dnf_packages_scopes_remove_to_named_repos():
+    """The same scope rides the remove descriptor when ``present=False``."""
+    host = SimulatedHost(name="h", packages={"nginx": [""]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=("nginx",), present=False, repos=("datadog",)
+        )
+    ]
+    assert commands == [DnfRemoveCommand(packages=("nginx",), repos=("datadog",))]
+    assert commands[0].shell() == (
+        "dnf remove -y '--disablerepo=*' --enablerepo=datadog nginx"
+    )
+
+
+async def test_dnf_packages_normalizes_str_and_list_repos():
+    """A bare string becomes a one-tuple and a list a tuple (direct generator
+    calls; op() requests must pass tuples for hashability) -- the makecache/
+    clean normalization shape."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    (from_str,) = [
+        c async for c in dnf.packages(ctx, packages=("nginx",), repos="datadog")
+    ]
+    (from_list,) = [
+        c async for c in dnf.packages(ctx, packages=("nginx",), repos=["a", "b"])
+    ]
+    assert from_str.repos == ("datadog",)
+    assert from_list.repos == ("a", "b")
+    assert from_list.shell() == (
+        "dnf install -y '--disablerepo=*' --enablerepo=a --enablerepo=b nginx"
+    )
+
+
+async def test_dnf_packages_repos_slot_in_after_the_other_install_flags():
+    """The scope combines with ``nobest``/``extra_install_args``, rendering
+    after them and before the package names."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx",),
+            nobest=True,
+            extra_install_args="--skip-broken",
+            repos=("datadog",),
+        )
+    ]
+    assert commands[0].shell() == (
+        "dnf install -y --nobest --skip-broken "
+        "'--disablerepo=*' --enablerepo=datadog nginx"
+    )
+
+
+def test_dnf_package_commands_quote_odd_repo_ids():
+    """A repo id with shell metacharacters rides shlex.quote like every other
+    descriptor argument, on both the install and the remove."""
+    repo = "odd repo"
+    quoted = shlex.quote(f"--enablerepo={repo}")
+    install = DnfInstallCommand(packages=("nginx",), repos=(repo,))
+    remove = DnfRemoveCommand(packages=("nginx",), repos=(repo,))
+    assert install.shell().endswith(f"{quoted} nginx")
+    assert remove.shell().endswith(f"{quoted} nginx")
+
+
 async def test_dnf_packages_latest_upgrades_installed_unpinned_packages():
     """``latest`` upgrades present, unpinned packages; missing ones install."""
     host = SimulatedHost(name="h", packages={"nginx": [""]})

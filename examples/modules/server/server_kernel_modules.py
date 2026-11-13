@@ -29,11 +29,9 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's module dict with
    ``json.dumps(..., indent=2)``.
 
-``KernelModules`` mirrors the baseline's ``server.KernelModules``: it first
-reads the ``Kernel`` fact to pick its shell -- FreeBSD lists
-``kldstat | tail +2``, every other kernel cats ``/proc/modules`` -- and
-returns a dict of module name -> info dict. On Linux each info dict holds
-``size`` (the raw string), ``instances`` (an int), ``state`` (e.g.
+``KernelModules`` mirrors the baseline's ``server.KernelModules``: it cats
+``/proc/modules`` and returns a dict of module name -> info dict. Each info
+dict holds ``size`` (the raw string), ``instances`` (an int), ``state`` (e.g.
 ``Live``) and, only when the module has dependencies, a ``depends`` list;
 a host without ``/proc/modules`` reads as ``{}``. Useful for checking
 that a required module (say ``zfs`` or ``br_netfilter``) is loaded before
@@ -121,8 +119,8 @@ async def main() -> None:
         # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans KernelModules.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
-        # running one host at a time. process reads the Kernel fact to pick
-        # the shell, then parses the module listing into name -> info dicts.
+        # running one host at a time. process cats /proc/modules, then parses
+        # the listing into name -> info dicts.
         modules = await gather_fact(hosts, KernelModules)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's

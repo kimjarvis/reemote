@@ -29,16 +29,13 @@ two-phase execution model:
    host-name-keyed mapping -- then print each host's process dict with
    ``json.dumps(..., indent=2)``.
 
-``Processes`` mirrors the baseline's ``server.Processes``: it first reads the
-``Kernel`` fact and probes for BusyBox to pick its shell -- Linux lists
-``ps -eo pid,user,stat,%cpu,%mem,comm,args --no-headers``, FreeBSD the
-same ``ps -eo`` without ``--no-headers``, BusyBox (Alpine) the limited
-``ps -o pid,user,vsz,stat,args`` columns, and Darwin runs ``ps`` twice
-(``args`` last, then ``comm`` last, joined by a marker line) because
-macOS truncates any non-last text column -- and returns a dict of PID ->
-``{user, state, cpu_percent, mem_percent, command, args}`` dict. An
-optional ``pid`` argument restricts the listing to a single process;
-here the whole table is gathered, so the output shows every running
+``Processes`` mirrors the baseline's ``server.Processes``: it probes for
+BusyBox to pick its shell -- Linux lists
+``ps -eo pid,user,stat,%cpu,%mem,comm,args --no-headers``, while BusyBox
+(Alpine) uses the limited ``ps -o pid,user,vsz,stat,args`` columns -- and
+returns a dict of PID -> ``{user, state, cpu_percent, mem_percent, command,
+args}`` dict. An optional ``pid`` argument restricts the listing to a single
+process; here the whole table is gathered, so the output shows every running
 process keyed by its PID (rendered as a string by ``json.dumps``).
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
@@ -123,9 +120,8 @@ async def main() -> None:
         # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans Processes.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
-        # running one host at a time. process reads the Kernel fact and the
-        # BusyBox probe to pick the shell, then parses the ps listing into
-        # PID -> info dicts.
+        # running one host at a time. process reads the BusyBox probe to pick
+        # the shell, then parses the ps listing into PID -> info dicts.
         processes = await gather_fact(hosts, Processes)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's

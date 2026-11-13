@@ -16,6 +16,7 @@
         - FindFiles
         - FindFilesInfo
         - FindInFile
+        - FindInFiles
         - FindLinks
         - FoundFile
         - Link
@@ -28,6 +29,7 @@
         - Socket
         - copy
         - directory
+        - download
         - edit
         - file
         - flags
@@ -36,6 +38,7 @@
         - link
         - move
         - put
+        - transform
 
 
 
@@ -47,9 +50,9 @@ in a single source, so the read side (`FileLink`, `FileExists`,
 `SameFile`, `FileContents`, `File`,
 `Directory`, `Link`, `Socket`,
 `FileFlags`, `FindFiles`, `FindDirectories`, `FindLinks`, `FindInFile`,
-`FindFilesInfo`, `DirectoryEntries`)
+`FindInFiles`, `FindFilesInfo`, `DirectoryEntries`)
 sits beside the `files.link`, `files.file`, `files.put`, `files.get`,
-`files.edit`, `files.install`, `files.move`, `files.copy`, `files.directory`
+`files.edit`, `files.install`, `files.transform`, `files.move`, `files.copy`, `files.directory`
 and `files.flags`
 operations that consume it.
 
@@ -65,8 +68,8 @@ one fact whose input is not the host: it hashes an IO-like stream on the
 `files.get` downloads into — which both compare against the remote file's hash.
 
 `File` mirrors the baseline's `files.File`: it guards the path with
-`test -e`/`test -L`, then describes it with GNU `stat -c`, falling back to BSD
-`stat -f` and finally `ls -ld`, and returns the metadata dict — `user`,
+`test -e`/`test -L`, then describes it with GNU `stat -c`, falling back to
+`ls -ld`, and returns the metadata dict — `user`,
 `group`, `mode` (the octal-looking int the baseline returns, e.g. `644` or `4755`,
 setuid/setgid/sticky bits included), `size`, and `atime`/`mtime`/`ctime` as
 *naive UTC* `datetime`s (the baseline's convention; the `ls -ld` fallback provides
@@ -142,6 +145,24 @@ to audit configuration content — "is this legacy source still enabled?",
 "does the agent config still name the old endpoint?" — without pulling the
 whole file through `FileContents`.
 
+`FindInFiles` is a reemote original (the baseline ships no counterpart) that
+closes the gap between the *name*-selecting find family and the *single-file*
+content grep of `FindInFile`: one recursive `grep -rlE <pattern> <path>`
+returns the **paths** of every file under a tree whose *content* matches the
+extended regex — `-r` recurses, `-l` prints one path per matching file (never
+their lines), `-E` selects the extended regex. It always answers with a
+`list[str]`: the `|| true` guard masks no-match (grep exit 1), an absent or
+unreadable start path and a missing grep binary alike to `[]`, so unlike
+`FindInFile` there is no `None` — a recursive search over a tree has no single
+"the file is missing" answer to distinguish. `interpolate_variables=True`
+double-quotes the pattern so the remote shell expands `$VAR` references,
+otherwise it is single-quoted literally. This is the read half of the very
+common "delete unmanaged files matching content" Ansible idiom — an
+APCu/OpCache stale-cache sweep, a legacy-endpoint config cleanup — and it
+feeds the same gather-then-branch two-deploy split `FindFiles` does: gather
+the hits in one deploy, compute the closure (found minus managed), and remove
+the surplus with `files.file`/`files.directory` in the next.
+
 `FindFilesInfo` is a reemote original (the baseline ships no counterpart): the
 find family's filters plus GNU `find -printf` gather path, size, mode,
 user, group and mtime for every hit in *one* command — the metadata
@@ -204,6 +225,7 @@ leading `~/` stays unquoted so the remote shell expands it.
 
 Operations live in namespace modules so a deploy reads `files.link`,
 `files.file`, `files.put`, `files.get`, `files.edit`, `files.install`,
+`files.transform`,
 `files.move`,
 `files.copy`, `files.directory` and `files.flags`,
 mirroring the baseline's
@@ -282,13 +304,88 @@ last — and the file lands with the requested owner instead of the root:root
 the elevated `cp` creates. The owner is applied on every write but never
 compared, so an owner-only drift is `files.file`'s job too, and the named
 account must already exist (provision it with `server.user`/`server.group`
-first). One read-back caveat: `FileContents` cats unprivileged, so a file
+first). The optional `validate` parameter is the atomic validate-then-install
+hook Ansible's `template`/`copy` `validate:` provides: a command template run
+on the spooled `/tmp` file *between* the transfer and the install, so a
+non-zero exit raises `CommandError` and the `InstallCommand` never runs — the
+destination keeps its previous content and a bad config never lands, because
+the bytes checked are the very bytes about to be copied into place. The
+`{spool}`/`{dest}` placeholders are substituted with shell-quoted paths
+(`validate="nginx -t -c {spool}"`), keeping the template a hashable,
+deterministic `str`, and the command inherits the request's privilege flags, so
+a `sudo=True` install validates elevated (as root) — matching Ansible's
+become-scoped `validate` and letting a checker read every file the staged
+config references. It is the narrow, safe slice of "a command inside a
+deploy": scoped to validating the content being installed at one well-defined
+injection point, not a generic shell operation, so the action/deploy boundary
+stays intact. One read-back caveat: `FileContents` cats unprivileged, so a file
 installed with a mode the login user cannot read (a `0640` service-account
 config) reads back as empty content and re-installs on every deploy — content
 idempotence needs a login-readable file.
 There is no `present=False` branch — `files.file(present=False)` owns removal.
 Installing under `/etc` needs root, so flag the request `sudo=True`; the
 transfer stays unprivileged regardless.
+
+`files.transform` is the root-owned sibling of `files.edit` and a reemote
+original: it applies the same caller-supplied *pure* `transform`
+(`str | None -> str`) to a file's current text, but writes the result through
+the spool-and-install path instead of `files.edit`'s unprivileged scp. It reads
+the target with `FileContents`, hands the text (`None` when the file is absent)
+to `transform`, and — only when the result differs — delegates the write to
+`files.install` above: an `InstallSpoolCommand` transfer spools the transformed
+text to a dest-derived `/tmp` path over unprivileged scp, then an
+`InstallCommand` shell overlays the target with it under an elevated `sh -c`.
+This closes the gap `files.edit` cannot: because the put/edit transfers never
+elevate, `files.edit` needs a login-user-writable target and cannot converge a
+root-owned config such as `/etc/httpd/conf/httpd.conf` in one deploy, whereas a
+single `sudo=True` `files.transform` request both preserves the rest of the
+protected file and lands the edit. It is the generic form of the pattern
+`server.etc_hosts` hard-wires to `/etc/hosts`. The `transform` obeys the same
+two rules as `files.edit` — idempotent (`transform(transform(x)) ==
+transform(x)`, so a second run is a fixpoint) and a stable, hashable
+module-level callable (compared by value across phases, so a lambda built
+inside the deploy generator would trip `DeterminismError`); see
+[Migrating a protected-file line edit](../migrating.md#migrating-a-protected-file-line-edit-lineinfile)
+for how to write one. `mode`/`user`/`group`/`validate` are forwarded straight
+to the install, so the request that lands the edit can also set permissions and
+ownership and validate the staged spool before it lands (a non-zero exit aborts
+before the target is touched — the same atomic validate-then-install hook
+`files.install` above provides); idempotence stays content-only (a mode- or
+owner-only drift does not
+re-install — `files.file` converges metadata), and the read-back caveat is
+install's too. Editing under `/etc` needs root, so flag the request
+`sudo=True`; the spool transfer stays unprivileged regardless.
+
+`files.download` is the general download-to-path operation and a reemote
+original: it takes an `http(s)` `url` and lands its body at a (root-owned)
+`dest` in one `sudo=True` request, retiring the hand-rolled `urllib.request` +
+`io.BytesIO` workaround that `dnf.key`/`apt.key`/`gpg.key` force (each
+*rejects* a URL `src`) and that `dnf.repo` names in its "reemote has no
+download operation" refusal. The fetch is *control-side* — the control machine
+opens the connection (`urllib` in a worker thread), not the target host, so the
+download works when only the control side has internet egress and the host never
+needs `curl`/`wget` (the opposite of Ansible's `get_url`, which fetches on the
+target). The body decodes the fetched bytes to text and delegates the write to
+`files.install` above, so a download inherits install's content-only idempotence
+(a converged file yields zero commands), its dest-derived `/tmp` spool, its
+owner/mode handling, its optional `validate` hook and its two-privilege-level
+signature (unprivileged scp transfer + elevated `sh -c` install) with no new
+command descriptor. The optional `checksum` is Ansible's `get_url` spelling —
+`"<algorithm>:<hexdigest>"` (eg `"sha256:9f2c..."`) — verified against the
+fetched bytes before anything is written; pinning it is also what makes the
+two-phase fetch deterministic, because the body runs once per phase (prepare,
+then apply, so the URL is fetched twice per host) and both phases verify the
+same digest and so install byte-identical content. Text only: `install` takes
+`content: str`, so a binary body (a `.rpm`, a tarball) raises `ValueError`
+rather than corrupting the write — a binary download stays `files.put`'s job
+(fetch control-side into an `io.BytesIO`, put into a login-writable path).
+`mode`/`user`/`group`/`validate` forward straight to the install, `url` must be
+`http(s)` (a `file:`/`ftp:` scheme raises `ValueError` before any fetch), and
+idempotence and the unprivileged-read-back caveat are install's. Downloading
+under `/etc` needs root, so flag the request `sudo=True`; the spool transfer
+stays unprivileged regardless. See
+[Migrating a URL download](../migrating.md#migrating-a-url-download-get_url)
+for the `get_url`/`rpm_key` mapping.
 
 `files.move` mirrors the baseline's `files.move`: `src` is a remote path, `dest`
 is the remote *directory* to move it into (the moved path becomes

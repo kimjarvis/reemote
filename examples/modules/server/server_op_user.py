@@ -49,9 +49,9 @@ Unlike the pytest suite -- which injects the test framework's
 ``SimulatedHost`` via ``run``'s ``host_factory`` and never touches the
 network -- this example uses the *default* factory
 (``Host.from_inventory``): each plain ``Host`` lazily opens an asyncssh
-connection, reads ``/etc/passwd``, ``/etc/group``, ``/etc/shadow``,
-``uname -s`` and the home directory status for real, and runs the account
-commands under sudo where needed.
+connection, reads ``/etc/passwd``, ``/etc/group``, ``/etc/shadow`` and the
+home directory status for real, and runs the account commands under sudo
+where needed.
 
 Every failure mode of the run -- an unreachable host, a rejected
 elevation, an ``OperationError`` for a home path that exists as something

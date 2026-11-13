@@ -25,7 +25,18 @@ deploy:
    (``/tmp/reemote-install-<sha1 of dest>/content``) -- unprivileged
    regardless of the request's ``sudo``, and named per destination so two
    installs never clobber one spool.
-3. Install: an ``InstallCommand`` shell runs ``mkdir -p``/``cp``/optional
+3. Validate (optional): with ``validate=`` set, an ``InstallValidateCommand``
+   runs the caller's command against the just-spooled ``/tmp`` file *between*
+   the transfer and the install -- the atomic validate-then-install hook
+   Ansible's ``template``/``copy`` ``validate:`` provides. A non-zero exit
+   raises ``CommandError``, so the install never runs and a bad config never
+   reaches the protected path; the bytes checked are the very bytes about to
+   be copied into place. The demo validates the staged content with
+   ``grep -q '^managed = true' {spool}``; the real-world shape is
+   ``nginx -t -c {spool}``, which needs root to read every file the config
+   references, so the validator inherits the request's ``sudo`` and runs
+   elevated. ``{spool}``/``{dest}`` are substituted with shell-quoted paths.
+4. Install: an ``InstallCommand`` shell runs ``mkdir -p``/``cp``/optional
    ``chown``/``chmod``/``rm -rf`` wrapped in ``sh -c``, so the request's
    ``sudo=True`` elevates every step -- the file lands with the requested
    owner (root when none is named) and mode and the spool directory is cleaned up.
@@ -175,6 +186,10 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Install demo config",
         content=CONTENT,
         dest=DEST,
+        # Validate the staged spool before it lands: a non-zero exit aborts the
+        # install and leaves DEST untouched. ``grep -q`` is portable; the
+        # real-world shape is ``nginx -t -c {spool}``.
+        validate="grep -q '^managed = true' {spool}",
         sudo=True,
         when=is_centos,
     )

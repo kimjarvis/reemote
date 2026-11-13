@@ -111,16 +111,22 @@ cleanup — swap the directory, the filter and the tracked set.
 
 The Ansible `notify:`/handler pattern — "restart the agent only when a
 config write actually changed something" — built from the apply report
-instead of a fact snapshot. `systemd.service(restarted=True)` is
+instead of a fact snapshot, with the reusable helpers
+[`changed_hosts`][reemote.handlers.changed_hosts] and
+[`restart_handler`][reemote.handlers.restart_handler] shipped in
+`reemote.handlers` so a role migration does not hand-roll them.
+`systemd.service(restarted=True)` is
 stateless: it restarts a running unit on every deploy that reaches it,
 and neither `when` (static inventory data only) nor the deploy body (no
 access to earlier outcomes) can condition it on a change. Deploy 1
 (`configure_nginx`) installs nginx and writes a content-idempotent
 `conf.d` drop-in with `files.install`, both requests named after the
-script's `NOTIFYING` set; between the runs, `notifying_hosts` freezes the
-hosts whose named entries report `changed` in run 1's `ApplyReport`;
-deploy 2 is built by a factory closing over that frozen set and yields
-`systemd.service(restarted=True)` only for those hosts. Deduplication and
+script's `NOTIFYING` set; between the runs, `changed_hosts(report, NOTIFYING)`
+freezes the hosts whose named entries report `changed` in run 1's
+`ApplyReport`; deploy 2 is built by
+`restart_handler(changed, "nginx", when=is_centos)` closing over that
+frozen set and yields `systemd.service(restarted=True)` only for those
+hosts. Deduplication and
 end-of-run flushing come free — at most one restart per host, after every
 config write landed — and a converged re-run queues no restart at all.
 The guide's [Change notification](../../guide.md#change-notification-handlers)

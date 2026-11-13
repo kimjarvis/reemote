@@ -80,7 +80,7 @@ original; `apt.packages`, which
 installs, upgrades or removes packages by name, reading `AptPackages`
 for exact-version idempotence and `SimulateOperationWillChange` to gate
 its optional `upgrade`; `apt.ppa`, which adds or removes an Ubuntu
-PPA with `apt-add-repository`, deliberately non-idempotent like the baseline's;
+PPA with `apt-add-repository`, idempotent on `AptSources`;
 `apt.repo`, which adds or removes one apt source line in
 `/etc/apt/sources.list` or a `sources.list.d` file, idempotent on
 `AptSources` and on the managed file's own text, and rewrites that file
@@ -457,7 +457,15 @@ first, gated on `SimulateOperationWillChange` exactly like
 simulation runs anyway). `no_recommends` and `allow_downgrades` add the
 matching `apt-get` flags to installs; `extra_install_args` /
 `extra_uninstall_args` append raw arguments to the install / remove
-command; `wait_for_lock` behaves as above. Installing, upgrading and
+command; `wait_for_lock` behaves as above. `default_release` adds apt's
+`-t <release>` (`--target-release`) to the install so unpinned names
+resolve their candidate version from that release — a first-class
+alternative to smuggling `-t` through `extra_install_args`, and, unlike
+that raw string (the `latest` upgrade drops it), it is carried on the
+upgrade command too, so release targeting stays consistent and a re-run
+converges. It scopes the command only: the `AptPackages` presence
+comparison has no release dimension and stays name/version based (the
+`dnf.packages` `repos` command-scoping precedent). Installing, upgrading and
 removing need root, so flag the request `sudo=True` (or `su=True`). Two
 the baseline options are deliberately dropped: `cache_time` (the baseline skips
 `update` while its stamp file is fresh and `touch`es it afterwards —
@@ -471,11 +479,19 @@ same decision as `apt.deb`). The installed-versions fact is
 parity). `src` is the full `ppa:user/repo` name and `present` selects the
 direction: `present=True` runs `apt-add-repository -y <src>`,
 `present=False` runs `apt-add-repository -y --remove <src>`. The operation
-is **non-idempotent** — like the baseline's it reads no fact and always reports a
-change, yielding one command whether or not the PPA is already configured
-(`apt-add-repository` is itself idempotent on the host, so a repeat add is
-harmless). Adding or removing a repository writes to the root-owned apt
-sources, so flag the request `sudo=True` (or `su=True`). It requires
+is **idempotent** on `AptSources`: it reduces `src` to its `user/repo`
+Launchpad path and matches that against every configured source's URL (the
+`ppa.launchpad.net` host or the modern `ppa.launchpadcontent.net`, either
+scheme), so a PPA already configured in *any* sources file is a no-op for
+`present=True` and an unconfigured one is a no-op for `present=False`. That
+is a deliberate deviation from the baseline, which reads no fact and always
+re-runs `apt-add-repository`; reporting the real delta is what unblocks the
+`register` + `when: ... is changed` pattern an Ansible `apt_repository`
+migration relies on. A `src` that is not a resolvable `ppa:user/repo` name
+cannot be proven present or absent, so it falls back to always reporting a
+change rather than silently skipping a legitimate add or remove. Adding or
+removing a repository writes to the root-owned apt sources, so flag the request
+`sudo=True` (or `su=True`). It requires
 `apt-add-repository` (from `software-properties-common`) on the target host;
 the baseline's `requires_command` gating is deliberately dropped, so a missing
 binary exits 127 — reported as
@@ -614,9 +630,10 @@ guaranteed no-op in the apply phase. The `apt_packages.py` script demonstrates
 `apt.packages`: it installs packages by name with exact-version
 idempotence, yielding the same request twice so the second is a guaranteed
 no-op in the apply phase. The `apt_ppa.py` script demonstrates `apt.ppa`:
-it adds the Bitcoin PPA with `apt-add-repository` under `sudo` — a single
-request, since the operation is non-idempotent and has no state for a second
-request to converge on. The `apt_repo.py` script demonstrates `apt.repo`:
+it adds the Bitcoin PPA with `apt-add-repository` under `sudo`, yielding the
+same request twice so the second is a guaranteed no-op in the apply phase
+(the operation is idempotent on `AptSources`), then removes it again so the
+example leaves the host's sources as it found them. The `apt_repo.py` script demonstrates `apt.repo`:
 it rewrites the Canonical partner repository line into its own
 `sources.list.d` file — unprivileged spool transfer plus elevated install
 in one request — yielding the same request twice so the second is a

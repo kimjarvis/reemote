@@ -29,14 +29,12 @@ driving the two-phase execution model:
    host-name-keyed mapping -- then print each host's mount dict with
    ``json.dumps(..., indent=2)``.
 
-``Mounts`` mirrors the baseline's ``server.Mounts``: it first reads the
-``Kernel`` fact to pick its shell -- FreeBSD lists ``mount -p --libxo
-json``, OpenBSD ``mount -v``, every other kernel cats
-``/proc/self/mountinfo`` -- and returns a dict of mount point -> info
-dict. Each info dict holds ``device``, ``type`` and ``options`` (the
-per-mount options plus the super-block ones, with ``ro``/``rw`` kept only
-from the per-mount side and Linux's octal escapes decoded). Useful for
-checking that a data disk is mounted (and mounted ``rw``) before applying
+``Mounts`` mirrors the baseline's ``server.Mounts``: it cats
+``/proc/self/mountinfo`` and returns a dict of mount point -> info dict.
+Each info dict holds ``device``, ``type`` and ``options`` (the per-mount
+options plus the super-block ones, with ``ro``/``rw`` kept only from the
+per-mount side and Linux's octal escapes decoded). Useful for checking
+that a data disk is mounted (and mounted ``rw``) before applying
 operations that write to it.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
@@ -121,8 +119,8 @@ async def main() -> None:
         # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans Mounts.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
-        # running one host at a time. process reads the Kernel fact to pick
-        # the shell, then parses the mount listing into point -> info dicts.
+        # running one host at a time. process cats /proc/self/mountinfo, then
+        # parses the listing into point -> info dicts.
         mounts = await gather_fact(hosts, Mounts)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's
