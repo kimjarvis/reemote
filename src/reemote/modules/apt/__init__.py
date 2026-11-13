@@ -6,7 +6,7 @@
 Re-exports everything from ``apt.py`` so the facts (``apt.AptAutoremovable``,
 ``apt.AptHeldPackages``, ``apt.AptKeys``, ``apt.AptPackages``,
 ``apt.AptPolicy``, ``apt.AptSources``, ``apt.AptSourcesFile``,
-``apt.AptUpgradable``,
+``apt.AptUpdateStamp``, ``apt.AptUpgradable``,
 ``apt.DebPackage``, ``apt.SimulateOperationWillChange``), the
 ``apt.AptKey`` / ``apt.AptPackageInfo`` / ``apt.AptPackagePolicy``
 / ``apt.AptPackageUpgrade``
@@ -60,6 +60,7 @@ from .apt import (
     AptSourcesFileRemoveCommand,
     AptSourcesFileUploadCommand,
     AptUpdateCommand,
+    AptUpdateStamp,
     AptUpgradable,
     AptUpgradeCommand,
     DebInstallCommand,
@@ -110,6 +111,7 @@ __all__ = [
     "AptSourcesFileRemoveCommand",
     "AptSourcesFileUploadCommand",
     "AptUpdateCommand",
+    "AptUpdateStamp",
     "AptUpgradable",
     "AptUpgradeCommand",
     "DebInstallCommand",

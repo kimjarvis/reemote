@@ -17,6 +17,7 @@
         - AptSource
         - AptSources
         - AptSourcesFile
+        - AptUpdateStamp
         - AptUpgradable
         - DebPackage
         - DebPackageInfo
@@ -56,7 +57,12 @@ origins of one package, parsed from `apt-cache policy` into a plain
 repositories, parsed from the legacy `.list` files and the modern deb822
 `.sources` files into plain `AptSource` TypedDict-shaped dicts,
 `AptSourcesFile`, the raw content of one apt sources file (None when it is
-absent), read behind a `test -e`-guarded marker, and
+absent), read behind a `test -e`-guarded marker,
+`AptUpdateStamp`, the mtime of apt's `/var/lib/apt/periodic/
+update-success-stamp` file as a *naive UTC* `datetime` (None when the
+stamp is missing or unreadable), parsed from `stat -c %Y` and read by
+the `cache_valid_time` freshness gate `apt.packages(update=True, ...)`
+and `apt.update(...)` share, and
 `AptUpgradable`, the packages `apt upgrade` would move with both ends of
 each version jump, parsed from `apt list --upgradable` into plain
 `AptPackageUpgrade` TypedDict-shaped dicts, `DebPackage`, the name and
@@ -88,8 +94,10 @@ through the spool-and-install pair; and `apt.sources_file`, which manages a
 modern deb822 `.sources` file under `sources.list.d`, idempotent on
 `AptSources` for the write direction and on `AptSourcesFile` for the
 removal;
-`apt.update`, the stateless package-list refresh,
-deliberately non-idempotent like the baseline's; and `apt.upgrade`, which
+`apt.update`, the package-list refresh, non-idempotent by default (it
+always yields, like the baseline's) but skippable within a window via
+the Ansible-shaped `cache_valid_time` gate `AptUpdateStamp` supplies;
+and `apt.upgrade`, which
 upgrades every upgradable package when `SimulateOperationWillChange`
 proposes changes.
 
@@ -264,6 +272,35 @@ repository into `AptSource` dicts, this fact answers the single-file content
 question twice over: `apt.sources_file(present=False)` reads it to make its
 removal idempotent, and `apt.repo` reads it for the text it transforms and
 spools back — both without importing another namespace's facts.
+
+`AptUpdateStamp` takes no arguments and runs
+`stat -c %Y /var/lib/apt/periodic/update-success-stamp 2>/dev/null || true`
+-- the stamp `apt-get update` itself touches on success (the operation
+never yields a separate `touch`), and the freshness gate
+`apt.packages(update=True, cache_valid_time=N)` and
+`apt.update(cache_valid_time=N)` share. `stat -c %Y` prints the file's
+mtime as an epoch-seconds int (e.g. `1731523200`), which the fact parses
+into a *naive UTC* `datetime` -- the `files.File` convention, kept here
+so the answer compares cleanly against
+`datetime.now(UTC).replace(tzinfo=None)` on the control side without a
+tzinfo mismatch. A missing stamp (a machine that has never run
+`apt-get update`, or one where `apt-daily` has not fired yet) reads as
+`None`: the `2>/dev/null || true` chain swallows `stat`'s non-zero exit
+and empty output, so the caller sees an absent stamp rather than a
+`CommandError`. Any other non-integer first line -- noise from a broken
+shell -- is likewise treated as absent rather than raising, matching the
+tolerant read the freshness gate needs (a corrupt stamp should force an
+update, not abort the deploy). It is a reemote original: the baseline's
+`apt.update`/`apt.packages` reach for a generic `files.File`/
+`server.Date` pair to read the same stamp, which reemote's apt namespace
+cannot do -- namespaces never reuse each other's facts -- so the read
+lives here as a dedicated single-path fact. This is the fact that
+reverses the earlier "the baseline's `cache_time` is deliberately
+dropped" decision: with `AptUpdateStamp` in-namespace, the Ansible-shaped
+`cache_valid_time` parameter is expressible without breaking the
+zero-cross-module-import invariant. A missing `stat` exits 127 --
+reported as
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError].
 
 `AptUpgradable` takes no arguments and runs
 `apt list --upgradable 2>/dev/null` (the redirect suppresses the
@@ -467,12 +504,25 @@ upgrade command too, so release targeting stays consistent and a re-run
 converges. It scopes the command only: the `AptPackages` presence
 comparison has no release dimension and stays name/version based (the
 `dnf.packages` `repos` command-scoping precedent). Installing, upgrading and
-removing need root, so flag the request `sudo=True` (or `su=True`). Two
-the baseline options are deliberately dropped: `cache_time` (the baseline skips
-`update` while its stamp file is fresh and `touch`es it afterwards —
-here `update` is always stateless and the keyword is absorbed with no
-effect) and `force` (`--force-yes` is deprecated in modern apt, the
-same decision as `apt.deb`). The installed-versions fact is
+removing need root, so flag the request `sudo=True` (or `su=True`).
+`cache_valid_time` (Ansible's `apt` module option of the same name)
+gates the `update=True` prefix on the `AptUpdateStamp` fact: when it is
+`> 0` and the stamp is at most that many seconds old, the update is
+skipped with reason `apt update skipped, cache is fresh` and the
+stateless prefix is not yielded — reversing the earlier “the baseline's
+`cache_time` is deliberately dropped” decision, since the in-namespace
+`AptUpdateStamp` fact answers the freshness question without a
+cross-module import. The age is computed against the *controller's* UTC
+clock (Ansible's shape — a fact read of the target's clock would double
+the gather for a gate that is only ever approximate); a missing or
+unreadable stamp counts as stale, so the update still runs;
+`cache_valid_time=0` (the default) keeps the always-update behaviour;
+and the gate applies only to the `update=True` prefix — installs and
+upgrades are unaffected. The baseline's `cache_time` keyword is still
+absorbed by `**kwargs` with no effect — the first-class spelling is
+`cache_valid_time`, matching Ansible. One further baseline option is
+deliberately dropped: `force` (`--force-yes` is deprecated in modern apt,
+the same decision as `apt.deb`). The installed-versions fact is
 `AptPackages` (`apt list --installed`) rather than the baseline's
 `DebPackages` (`dpkg -l`) — the same substitution `apt.deb` made.
 
@@ -571,18 +621,30 @@ facts, so the in-namespace `AptSourcesFile` content fact provides the
 existence answer — the same pattern `dnf.repo` uses with `DnfRepoFile`.
 
 `apt.update` refreshes the package lists (the baseline's `apt.update` parity)
-— the standalone form of `apt.packages`' stateless `update=True` prefix.
-It runs the bare `apt-get update` (no non-interactive wrapper, since
-`update` asks no questions) and is **non-idempotent**: it reads no fact
-and always reports a change. `wait_for_lock` (`True` → 60s, an int → that
+— the standalone form of `apt.packages`' `update=True` prefix. By
+default it runs the bare `apt-get update` (no non-interactive wrapper,
+since `update` asks no questions) and is **non-idempotent**: it reads no
+fact and always reports a change. `cache_valid_time` (Ansible's `apt`
+module option of the same name) gates that yield on the `AptUpdateStamp`
+fact — the mtime of `/var/lib/apt/periodic/update-success-stamp`, which
+`apt-get update` itself touches on success: when it is `> 0` and the
+stamp is at most that many seconds old (compared against the
+*controller's* UTC clock, Ansible's shape), the operation returns with
+reason `apt update skipped, cache is fresh` and no change is reported,
+making the operation idempotent within that window. A missing or
+unreadable stamp counts as stale, so the update still runs;
+`cache_valid_time=0` (the default) keeps the always-update behaviour.
+This is the reversal of the earlier “the baseline's `cache_time` is
+deliberately dropped” decision — the in-namespace `AptUpdateStamp` fact
+answers the freshness question without breaking the namespaces'
+zero-cross-module-import invariant (the `File`/`Date` fact reads the
+baseline would need live in other namespaces). The baseline's
+`cache_time` keyword is still absorbed by `**kwargs` with no effect —
+the first-class spelling is `cache_valid_time`, matching Ansible.
+`wait_for_lock` (`True` → 60s, an int → that
 many seconds) makes apt wait for its lock instead of failing instantly.
 Refreshing the lists needs root, so flag the request `sudo=True` (or
-`su=True`). The baseline's `cache_time` option (skip the update while the
-`/var/lib/apt/periodic/update-success-stamp` file is fresh, and `touch`
-it afterwards) is deliberately dropped — the same decision
-`apt.packages` made, since the `File`/`Date` fact reads it needs would
-break the namespaces' zero-cross-module-import invariant — so the
-keyword is absorbed with no effect.
+`su=True`).
 
 `apt.upgrade` upgrades all apt packages (the baseline's `apt.upgrade` parity)
 — the standalone form of `apt.packages`' `upgrade=True` prefix. The
@@ -605,12 +667,13 @@ separately plannable step.
 
 The read-only fact-gathering scripts `apt_apt_autoremovable.py`,
 `apt_apt_held_packages.py`, `apt_apt_keys.py`, `apt_apt_packages.py`,
-`apt_apt_policy.py`, `apt_apt_sources.py`, `apt_apt_upgradable.py` and
+`apt_apt_policy.py`, `apt_apt_sources.py`, `apt_apt_update_stamp.py`,
+`apt_apt_upgradable.py` and
 `apt_simulate_operation_will_change.py`
 under
 [`examples/modules/apt/`](../examples/modules/apt.md) gather
 `AptAutoremovable`, `AptHeldPackages`, `AptKeys`, `AptPackages`,
-`AptPolicy`, `AptSources`, `AptUpgradable` and
+`AptPolicy`, `AptSources`, `AptUpdateStamp`, `AptUpgradable` and
 `SimulateOperationWillChange`
 on an inventory of Ubuntu hosts with
 [`gather_fact`][reemote.drivers.gather_fact] and print each host's result
@@ -645,11 +708,13 @@ modern deb822 `docker.sources` file — unprivileged spool transfer plus
 elevated install in one request — yielding the same request twice so the
 second is a guaranteed no-op in the apply phase. The `apt_update.py`
 script demonstrates `apt.update`: it refreshes the package lists under
-`sudo` — a single request, since the operation is non-idempotent and has
-no state for a second request to converge on. The `apt_upgrade.py` script
+`sudo` — a single request, since the operation is non-idempotent by
+default and has no state for a second request to converge on (a
+`cache_valid_time=N` gate would make it idempotent within a window, but
+the example keeps the always-update shape). The `apt_upgrade.py` script
 demonstrates `apt.upgrade`: it upgrades all packages gated by the dry-run
 simulation, yielding the same request twice to show simulation-gated
-idempotence. All eleven are rendered on the
+idempotence. All twelve are rendered on the
 [apt examples page](../examples/modules/apt.md).
 
 --->

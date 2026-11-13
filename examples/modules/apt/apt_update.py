@@ -29,19 +29,35 @@ target your machines.
 
 ``apt.update`` mirrors the baseline's ``apt.update``: it refreshes the package
 lists with the bare ``apt-get update`` -- no non-interactive wrapper, since
-``update`` asks no questions. It is **non-idempotent**: it reads no fact and
-always reports a change, exactly like the stateless ``update=True`` prefix
-of ``apt.packages``. The script therefore yields the request only once --
-there is no state for a second request to converge on, so both the prepare
-plan and the apply log show it as a change. ``wait_for_lock=True`` (or an
+``update`` asks no questions. By default it is **non-idempotent**: it reads
+no fact and always reports a change, exactly like the stateless
+``update=True`` prefix of ``apt.packages``. The script therefore yields the
+request only once -- there is no state for a second request to converge on
+under the always-update default, so both the prepare plan and the apply log
+show it as a change. ``wait_for_lock=True`` (or an
 int) makes apt wait for its lock instead of failing instantly, useful when
 unattended-upgrades may hold it right after boot.
 
-Where the baseline's ``apt.update`` also takes a ``cache_time`` parameter (skip
-the update while the ``/var/lib/apt/periodic/update-success-stamp`` file is
-fresh, and ``touch`` it afterwards), reemote deliberately drops the option
--- the same decision ``apt.packages`` made -- so the update is always
-stateless and a ``cache_time`` keyword is absorbed with no effect.
+``cache_valid_time`` (Ansible's ``apt`` module option of the same name) gates
+that yield on the in-namespace ``AptUpdateStamp`` fact -- the mtime of
+``/var/lib/apt/periodic/update-success-stamp``, which ``apt-get update``
+itself touches on success (the operation never yields a separate
+``touch``). When ``cache_valid_time > 0`` and the stamp is at most that many
+seconds old, the operation returns with reason ``apt update skipped, cache
+is fresh`` and no change is reported, making it idempotent within that
+window. The age is compared against the *controller's* UTC clock (Ansible's
+shape -- a fact read of the target's clock would double the gather for a
+gate that is only ever approximate); a missing or unreadable stamp counts
+as stale, so the update still runs; ``cache_valid_time=0`` (the default)
+keeps the always-update behaviour. This is the reversal of the earlier
+"the baseline's ``cache_time`` is deliberately dropped" decision -- with
+``AptUpdateStamp`` in-namespace, the Ansible-shaped parameter is expressible
+without breaking the namespaces' zero-cross-module-import invariant (the
+baseline reads the stamp through its ``files.File``/``server.Date`` pair).
+The baseline's ``cache_time`` keyword is still absorbed by ``**kwargs``
+with no effect -- the first-class spelling is ``cache_valid_time``,
+matching Ansible. This example leaves it unset so the demo shows the
+always-update default.
 
 Refreshing the lists writes to the root-owned ``/var/lib/apt`` state, so
 the request is flagged ``sudo=True`` and the driver elevates its command.
@@ -119,12 +135,15 @@ def is_ubuntu(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Update the package lists -- once, since the operation is stateless.
+    """Update the package lists -- once, since the default is stateless.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
-    The operation is non-idempotent: there is no state for a second request
-    to converge on, so the request is yielded only once.
+    The operation is non-idempotent by default: there is no state for a
+    second request to converge on under ``cache_valid_time=0``, so the
+    request is yielded only once. A ``cache_valid_time=N`` gate would read
+    ``AptUpdateStamp`` and skip when the stamp is fresh, but the example
+    keeps the always-update shape.
 
     Refreshing the lists writes to the root-owned /var/lib/apt state, so the
     request is flagged ``sudo=True`` and the driver elevates its command
@@ -144,11 +163,12 @@ async def main() -> None:
         print(f"== Inventory loaded from {INVENTORY_PATH} ==")
         print(", ".join(entry["host"] for entry in inventory))
 
-        # --dry: prepare phase only. No fact is read (the operation is
-        # stateless), so the plan simply shows the pending update; no
-        # command that mutates a host is sent. A request the ``when`` guard
-        # rejects is planned as [skipped: when guard is_ubuntu] without
-        # materializing it.
+        # --dry: prepare phase only. Under the always-update default no
+        # fact is read, so the plan simply shows the pending update; no
+        # command that mutates a host is sent. A ``cache_valid_time > 0``
+        # gate would read ``AptUpdateStamp`` here to decide freshness.
+        # A request the ``when`` guard rejects is planned as
+        # [skipped: when guard is_ubuntu] without materializing it.
         plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("\n== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))

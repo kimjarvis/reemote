@@ -10,7 +10,8 @@ The read-only fact-gathering examples (`apt_apt_autoremovable.py` reading
 `apt_apt_keys.py` reading `AptKeys`,
 `apt_apt_packages.py` reading `AptPackages`, `apt_apt_policy.py` reading
 `AptPolicy` for `nginx`, `apt_apt_sources.py` reading
-`AptSources`, `apt_apt_upgradable.py` reading `AptUpgradable` and
+`AptSources`, `apt_apt_update_stamp.py` reading `AptUpdateStamp`,
+`apt_apt_upgradable.py` reading `AptUpgradable` and
 `apt_simulate_operation_will_change.py` reading
 `SimulateOperationWillChange` for `dist-upgrade`,
 all over `gather_fact`, loading the shared `inventory.json` from the project
@@ -77,9 +78,18 @@ fact exactly like `apt.dist_upgrade`. `default_release` would add apt's
 `-t <release>` to the install — and, unlike a raw `extra_install_args`, to
 the `latest` upgrade too — so unpinned names resolve from a target release
 (the example leaves it unset, since the demo host's own release is already
-apt's default). Where the baseline's `cache_time` skips the
-update while its stamp file is fresh, reemote deliberately drops the option
-(update is always stateless); `force` (`--force-yes`) is dropped as
+apt's default). `cache_valid_time` (Ansible's `apt` module option of the
+same name) gates the `update=True` prefix on the
+[`AptUpdateStamp`][reemote.modules.apt.apt.AptUpdateStamp] fact — the mtime
+of `/var/lib/apt/periodic/update-success-stamp`, which `apt-get update`
+itself touches on success — so a stamp at most `cache_valid_time` seconds
+old (compared against the controller's UTC clock) skips the update with
+reason `apt update skipped, cache is fresh`; `0` (the default) keeps the
+always-update behaviour, and a missing or unreadable stamp counts as
+stale. The example leaves it unset, since a demo install wants the fresh
+package lists. The baseline's `cache_time` keyword is still absorbed by
+`**kwargs` with no effect — the first-class spelling is `cache_valid_time`,
+matching Ansible; `force` (`--force-yes`) is dropped as
 deprecated, the same decision as `apt.deb`. The install rides under `sudo`
 (managing packages needs root), and the script yields the same request
 twice — the second is a guaranteed no-op in the apply phase, because the
@@ -92,18 +102,26 @@ the prepare phase, where nothing is sent, both plan as changes).
 
 ## Refreshing the package lists
 
-The standalone form of `apt.packages`' stateless `update=True` prefix:
+The standalone form of `apt.packages`' `update=True` prefix:
 `apt.update` mirrors the baseline's `apt.update`, refreshing the package lists
 with the bare `apt-get update` — no non-interactive wrapper, since
-`update` asks no questions. It is **non-idempotent**: it reads no fact and
-always reports a change. Where the baseline's `cache_time` skips the update
-while its stamp file is fresh (and `touch`es it afterwards), reemote
-deliberately drops the option — the same decision `apt.packages` made —
-so the update is always stateless. The refresh rides under `sudo`
+`update` asks no questions. By default it is **non-idempotent**: it reads no
+fact and always reports a change. `cache_valid_time` (Ansible's `apt` module
+option of the same name) gates that yield on the
+[`AptUpdateStamp`][reemote.modules.apt.apt.AptUpdateStamp] fact — the mtime of
+`/var/lib/apt/periodic/update-success-stamp`, which `apt-get update` itself
+touches on success — so a stamp at most `cache_valid_time` seconds old
+(compared against the controller's UTC clock) returns with reason `apt update
+skipped, cache is fresh` and no change is reported, making the operation
+idempotent within that window; `0` (the default) keeps the always-update
+behaviour, and a missing or unreadable stamp counts as stale. The example
+leaves it unset so both the prepare plan and the apply log show the refresh
+as a change. The baseline's `cache_time` keyword is still absorbed by
+`**kwargs` with no effect — the first-class spelling is `cache_valid_time`,
+matching Ansible. The refresh rides under `sudo`
 (writing the root-owned `/var/lib/apt` state needs root), and the script
 yields the request only once — there is no state for a second request to
-converge on, so both the prepare plan and the apply log show it as a
-change.
+converge on when the always-update default is in force.
 
 ::: apt_update
     options:

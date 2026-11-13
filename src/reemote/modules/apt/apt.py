@@ -19,7 +19,10 @@
 # ``AptSources``, the configured repositories, parsed from the legacy
 # ``.list`` files and the modern deb822 ``.sources`` files into plain
 # ``AptSource`` TypedDict-shaped dicts, ``AptSourcesFile``, the raw content
-# of a single ``.sources`` file (read by ``apt.sources_file``), and
+# of a single ``.sources`` file (read by ``apt.sources_file``),
+# ``AptUpdateStamp``, the mtime of apt's ``update-success-stamp`` file
+# (the freshness gate ``apt.packages(update=True, cache_valid_time=N)``
+# and ``apt.update(cache_valid_time=N)`` read), and
 # ``AptUpgradable``, the packages
 # ``apt upgrade`` would move with both ends of each version jump, parsed
 # from ``apt list --upgradable`` into plain ``AptPackageUpgrade``
@@ -68,8 +71,10 @@
 # packages with version pins, ``latest`` upgrades and ``update``/``upgrade``
 # prefixes), reading ``AptPackages`` rather than the baseline's ``DebPackages``
 # (the same substitution ``apt.deb`` made); the baseline's ``cache_time``
-# stamp-file caching and ``force`` (the deprecated ``--force-yes`` flag) are
-# deliberately dropped. ``apt.ppa`` mirrors the baseline's ``apt.ppa`` (add/remove
+# stamp-file caching is exposed under Ansible's ``cache_valid_time`` name
+# (reversing the earlier "dropped" decision) via the in-namespace
+# ``AptUpdateStamp`` fact, and ``force`` (the deprecated ``--force-yes`` flag)
+# is deliberately dropped. ``apt.ppa`` mirrors the baseline's ``apt.ppa`` (add/remove
 # an Ubuntu PPA with ``apt-add-repository``), idempotent on ``AptSources`` --
 # it resolves the ``ppa:user/repo`` name to its Launchpad archive and reports a
 # change only when the entry is actually added or removed, unlike the baseline,
@@ -98,6 +103,7 @@ import re
 import shlex
 from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import IO, Any, NotRequired, TypedDict
 from urllib.parse import urlparse
@@ -1293,6 +1299,107 @@ class AptSourcesFile:
         return stdout[len(prefix) :]
 
 
+class AptUpdateStamp:
+    """The mtime of apt's ``update-success-stamp`` file, or None when missing.
+
+    **Commands:**
+
+    ```bash
+    stat -c %Y /var/lib/apt/periodic/update-success-stamp 2>/dev/null || true
+    ```
+
+    **Returns:**
+
+    ```python
+    datetime | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/apt/apt_apt_update_stamp.py``.
+    """
+
+    # The stamp ``apt-get update`` touches on success and the freshness gate
+    # ``apt.packages(update=True, cache_valid_time=N)`` and
+    # ``apt.update(cache_valid_time=N)`` read: ``stat -c %Y`` prints the
+    # file's mtime as an epoch-seconds int (e.g. ``1731523200``), which
+    # parses into a *naive UTC* ``datetime`` -- the ``files.File``
+    # convention, kept here so the answer compares cleanly against
+    # ``datetime.now(UTC).replace(tzinfo=None)`` on the control side
+    # without a tzinfo mismatch, for example::
+    #
+    #     datetime(2026, 11, 13, 19, 20, 0)
+    #
+    # A missing stamp (a machine that has never run ``apt-get update``, or
+    # one where ``apt-daily`` has not fired yet) reads as ``None``: the
+    # ``2>/dev/null || true`` chain swallows ``stat``'s non-zero exit and
+    # empty output, so the caller sees an absent stamp rather than a
+    # ``CommandError``. Any other line -- noise from a broken shell -- is
+    # likewise treated as absent rather than raising, matching the
+    # tolerant read the freshness gate needs (a corrupt stamp should force
+    # an update, not abort the deploy). Only the first non-blank line is
+    # consulted; anything after it is ignored.
+    #
+    # This is a reemote original: the baseline's ``apt.update``/
+    # ``apt.packages`` reach for a generic ``files.File``/
+    # ``server.Date`` pair to read the same stamp, which reemote's apt
+    # namespace cannot do -- namespaces never reuse each other's facts --
+    # so the read lives here as a dedicated single-path fact. The
+    # ``apt-get update`` command touches this file itself on success; the
+    # operation never yields a separate ``touch``.
+
+    #: Absolute path of the stamp ``apt-get update`` writes on success.
+    PATH = "/var/lib/apt/periodic/update-success-stamp"
+
+    #: Shell printing the stamp's mtime as an epoch-seconds int, or
+    #: nothing when the file is missing (``stat``'s non-zero exit and
+    #: stderr swallowed by ``2>/dev/null || true``).
+    COMMAND = f"stat -c %Y {PATH} 2>/dev/null || true"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> datetime | None:
+        """Parse ``stat -c %Y`` output into a naive UTC datetime, or None.
+
+        The first non-blank line is parsed as an epoch-seconds int and
+        converted to a *naive UTC* ``datetime`` (the ``files.File``
+        convention). Empty output, a non-integer line or a value
+        ``datetime.fromtimestamp`` rejects (out of range) all read as
+        ``None`` so a corrupt stamp forces an update instead of raising.
+        Pure and testable.
+        """
+        for line in output:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                seconds = int(stripped)
+                return datetime.fromtimestamp(seconds, UTC).replace(tzinfo=None)
+            except (ValueError, OSError, OverflowError):
+                return None
+        return None
+
+    @classmethod
+    async def process(cls, host: Host) -> datetime | None:
+        # The seam value is itself Optional (None means "stamp absent"), so
+        # ``getattr(...) is not None`` cannot distinguish a SimulatedHost
+        # without a stamp from a real Host; ``hasattr`` is the seam check.
+        if hasattr(host, "apt_update_stamp"):
+            # SimulatedHost seam: read the in-memory mtime directly.
+            # datetime is immutable, so no copy is needed; None (the field's
+            # default) is the missing-stamp answer.
+            return host.apt_update_stamp  # type: ignore[attr-defined]
+        # Real transport: stat the stamp file over asyncssh. A missing file
+        # produces empty stdout (the ``|| true`` short-circuits), which
+        # parses to None.
+        stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
 class AptPackageUpgrade(TypedDict):
     """
     Attributes:
@@ -2405,6 +2512,7 @@ async def packages(
     extra_install_args: str | None = None,
     extra_uninstall_args: str | None = None,
     wait_for_lock: bool | int = False,
+    cache_valid_time: int = 0,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Install/remove/update apt packages.
@@ -2445,6 +2553,18 @@ async def packages(
         wait_for_lock (bool | int, optional): Wait for the apt lock instead of
             failing instantly; ``True`` waits up to 60 seconds, an int sets
             the timeout in seconds. Defaults to False.
+        cache_valid_time (int, optional): Skip the ``update=True`` prefix when
+            apt's ``/var/lib/apt/periodic/update-success-stamp`` file is at
+            most this many seconds old (Ansible's ``apt`` module option of
+            the same name, reversing the earlier "``cache_time`` is dropped"
+            decision). Read through the in-namespace ``AptUpdateStamp`` fact;
+            the age is computed against the *controller's* UTC clock, since a
+            fact read of the target's clock would double the gather for a
+            gate that is only ever approximate. ``0`` (the default) keeps the
+            stateless always-update behaviour; a missing or unreadable stamp
+            counts as stale, so the update still runs. Applies only to the
+            ``update=True`` prefix -- installs and upgrades are unaffected.
+            Defaults to 0.
         **kwargs: Additional keyword arguments.
 
     Yields:
@@ -2480,12 +2600,21 @@ async def packages(
     # ``AptPackages`` (``apt list --installed``) rather than the baseline's
     # ``DebPackages`` (``dpkg -l``) -- the same substitution ``apt.deb``
     # made, reading the same per-name version information from its
-    # ``AptPackageInfo`` entries. The baseline's ``cache_time``
-    # option (skip ``update`` when the
-    # ``/var/lib/apt/periodic/update-success-stamp`` file is fresh, and
-    # ``touch`` it after updating) is deliberately dropped: ``update`` is
-    # always stateless, and a ``cache_time`` keyword is absorbed by
-    # ``**kwargs`` with no effect. The baseline's ``force`` option
+    # ``AptPackageInfo`` entries. ``cache_valid_time`` is Ansible's
+    # ``apt`` module option of the same name and the reversal of the
+    # earlier "the baseline's ``cache_time`` is dropped" decision: when
+    # ``update=True`` and ``cache_valid_time > 0``, the stateless prefix
+    # reads the in-namespace ``AptUpdateStamp`` fact (the mtime of
+    # ``/var/lib/apt/periodic/update-success-stamp``, which ``apt-get
+    # update`` itself touches on success -- the operation never yields a
+    # separate ``touch``) and skips the update when the stamp is at most
+    # ``cache_valid_time`` seconds old, comparing against the
+    # *controller's* UTC clock. A missing or unreadable stamp counts as
+    # stale, so the update still runs; ``cache_valid_time=0`` (the
+    # default) keeps the always-update behaviour. The baseline's ``cache_time``
+    # keyword is still absorbed by ``**kwargs`` with no effect -- the
+    # first-class spelling is ``cache_valid_time``, matching Ansible. The
+    # baseline's ``force`` option
     # (``--force-yes``) is deliberately dropped: the flag is deprecated in
     # modern apt (the same decision as ``apt.deb``). ``default_release`` is
     # a reemote addition beyond the baseline -- the Ansible ``apt`` module's
@@ -2504,9 +2633,21 @@ async def packages(
     reasons: list[str] = []
 
     if update:
-        ctx.changed = True
-        reasons.append("apt update")
-        yield AptUpdateCommand(wait_for_lock=wait_for_lock)
+        if cache_valid_time > 0:
+            stamp = await ctx.facts.get(AptUpdateStamp)
+            now = datetime.now(UTC).replace(tzinfo=None)
+            fresh = (
+                stamp is not None
+                and (now - stamp).total_seconds() < cache_valid_time
+            )
+        else:
+            fresh = False
+        if fresh:
+            reasons.append("apt update skipped, cache is fresh")
+        else:
+            ctx.changed = True
+            reasons.append("apt update")
+            yield AptUpdateCommand(wait_for_lock=wait_for_lock)
 
     if upgrade:
         changes = await ctx.facts.get(SimulateOperationWillChange, "upgrade")
@@ -2604,6 +2745,7 @@ async def packages(
 async def update(
     ctx: OpContext,
     wait_for_lock: bool | int = False,
+    cache_valid_time: int = 0,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Update apt repositories.
@@ -2613,6 +2755,15 @@ async def update(
         wait_for_lock (bool | int, optional): Wait for the apt lock instead of
             failing instantly; ``True`` waits up to 60 seconds, an int sets
             the timeout in seconds. Defaults to False.
+        cache_valid_time (int, optional): Skip the update when apt's
+            ``/var/lib/apt/periodic/update-success-stamp`` file is at most
+            this many seconds old (Ansible's ``apt`` module option of the
+            same name, reversing the earlier "``cache_time`` is dropped"
+            decision). Read through the in-namespace ``AptUpdateStamp``
+            fact and compared against the *controller's* UTC clock;
+            ``0`` (the default) keeps the stateless always-update
+            behaviour, and a missing or unreadable stamp counts as stale.
+            Defaults to 0.
         **kwargs: Additional keyword arguments.
 
     Yields:
@@ -2630,19 +2781,30 @@ async def update(
 
     # baseline ``apt.update`` parity.
     #
-    # This is **non-idempotent**: refreshing the package lists always yields
-    # the bare ``apt-get update`` and reports a change, exactly like the
-    # stateless ``update=True`` prefix of ``apt.packages``. Updating the
-    # lists needs root, so flag the request ``sudo=True`` (or ``su=True``).
+    # By default this is **non-idempotent**: refreshing the package lists
+    # always yields the bare ``apt-get update`` and reports a change,
+    # exactly like the stateless ``update=True`` prefix of ``apt.packages``.
+    # Updating the lists needs root, so flag the request ``sudo=True`` (or
+    # ``su=True``).
     #
-    # The baseline's ``cache_time`` option (skip the update when the
-    # ``/var/lib/apt/periodic/update-success-stamp`` file is fresh, and
-    # ``touch`` it after updating) is deliberately dropped -- the same
-    # decision ``apt.packages`` made, since the ``File``/``Date`` fact reads
-    # it needs would break the zero-cross-module-import invariant; a
-    # ``cache_time`` keyword is absorbed by ``**kwargs`` with no effect.
+    # ``cache_valid_time > 0`` gates that yield on the ``AptUpdateStamp``
+    # fact (the mtime of ``/var/lib/apt/periodic/update-success-stamp``,
+    # which ``apt-get update`` itself touches on success): a stamp at most
+    # ``cache_valid_time`` seconds old -- compared against the
+    # *controller's* UTC clock -- skips the update and reports no change,
+    # making the operation idempotent within that window (Ansible's
+    # ``apt`` module semantics, and the reversal of the earlier
+    # "``cache_time`` is dropped" decision). The baseline's ``cache_time``
+    # keyword is still absorbed by ``**kwargs`` with no effect -- the
+    # first-class spelling is ``cache_valid_time``, matching Ansible.
     # ``**kwargs`` also absorbs any further global arguments (``op()`` already
     # strips ``name``/``sudo``/``su``).
+    if cache_valid_time > 0:
+        stamp = await ctx.facts.get(AptUpdateStamp)
+        now = datetime.now(UTC).replace(tzinfo=None)
+        if stamp is not None and (now - stamp).total_seconds() < cache_valid_time:
+            ctx.reason = "apt update skipped, cache is fresh"
+            return
     ctx.changed = True
     ctx.reason = "apt update"
     yield AptUpdateCommand(wait_for_lock=wait_for_lock)

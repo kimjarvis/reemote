@@ -79,6 +79,7 @@ repeat-noop / determinism runs.
 import io
 import json
 import shlex
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -123,6 +124,7 @@ from reemote.modules.apt.apt import (
     AptSourcesFileRemoveCommand,
     AptSourcesFileUploadCommand,
     AptUpdateCommand,
+    AptUpdateStamp,
     AptUpgradable,
     AptUpgradeCommand,
     DebInstallCommand,
@@ -3456,9 +3458,10 @@ async def test_apt_packages_wait_for_lock():
 
 
 async def test_apt_packages_cache_time_is_dropped():
-    """The developer chose to drop the baseline's ``cache_time``: the keyword is
-    absorbed with no effect -- update stays stateless and no stamp-file
-    touch is ever yielded."""
+    """The baseline's ``cache_time`` spelling stays absorbed with no effect:
+    reemote's first-class name is Ansible's ``cache_valid_time``, so a
+    ``cache_time`` keyword never reaches the freshness gate and update stays
+    stateless."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.packages(ctx, update=True, cache_time=3600)]
@@ -3545,15 +3548,22 @@ async def test_apt_packages_simulated_seam_install_and_remove():
 
 async def test_apt_packages_simulated_seam_upgrade_and_update():
     """The upgrade arm applies pending candidates and zeroes the ``upgrade``
-    simulation; the update arm has no simulated effect."""
+    simulation; the update arm refreshes ``apt_update_stamp`` to wall-clock
+    now (real apt touches the stamp on success) but leaves every other seam
+    alone."""
     host = SimulatedHost(
         name="h",
         apt_simulations={"upgrade": DIST_UPGRADE_CHANGES},
         apt_packages={"vim": ["2:9.1-1"]},
         apt_upgradable=[{"name": "vim", "installed": "2:9.1-1", "candidate": "2:9.1-2"}],
     )
+    assert host.apt_update_stamp is None
+    before = datetime.now(UTC).replace(tzinfo=None)
     await send_command(host, AptUpdateCommand())
     assert host.apt_simulations["upgrade"] == DIST_UPGRADE_CHANGES
+    assert host.apt_update_stamp is not None
+    assert host.apt_update_stamp >= before
+    assert host.apt_update_stamp.tzinfo is None
     await send_command(host, AptUpgradeCommand())
     assert host.apt_packages == {"vim": ["2:9.1-2"]}
     assert host.apt_upgradable == []
@@ -3781,9 +3791,10 @@ async def test_apt_update_wait_for_lock():
 
 
 async def test_apt_update_cache_time_is_dropped():
-    """The ``apt.packages`` decision applies to the standalone form too:
-    ``cache_time`` is absorbed with no effect -- the update stays stateless
-    and no stamp-file touch is ever yielded."""
+    """The baseline's ``cache_time`` spelling stays absorbed with no effect:
+    reemote's first-class name is Ansible's ``cache_valid_time``, so a
+    ``cache_time`` keyword never reaches the freshness gate and the update
+    stays stateless."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.update(ctx, cache_time=3600)]
@@ -3809,13 +3820,260 @@ def test_apt_update_command_shell_and_elevation():
     )
 
 
-async def test_apt_update_simulated_seam_is_a_noop():
-    """The update arm is recognised but tracks no package-list metadata:
-    sending it mutates no simulated state."""
+async def test_apt_update_simulated_seam_refreshes_stamp_only():
+    """The update arm refreshes ``apt_update_stamp`` (real apt touches the
+    stamp on success) but tracks no package-list metadata: no simulation,
+    no installed-package state, no upgradable listing is disturbed."""
     host = SimulatedHost(name="h", apt_simulations={"upgrade": SIM_UPGRADE_FACT})
+    assert host.apt_update_stamp is None
     await send_command(host, AptUpdateCommand())
     assert host.apt_simulations["upgrade"] == SIM_UPGRADE_FACT
     assert host.apt_packages == {}
+    assert host.apt_update_stamp is not None
+    assert host.apt_update_stamp.tzinfo is None
+
+
+# --- AptUpdateStamp fact and cache_valid_time freshness gate -------------------
+
+# The stamp path apt itself writes on a successful ``apt-get update``; the
+# fact hardcodes it and the SimulatedHost ``AptUpdateCommand`` arm refreshes
+# the matching seam.
+STAMP_EPOCH = 1_731_523_200  # 2024-11-13T20:26:40+00:00
+STAMP_DATETIME = datetime.fromtimestamp(STAMP_EPOCH, UTC).replace(tzinfo=None)
+
+
+def test_apt_update_stamp_command_targets_the_standard_path():
+    """The command stats apt's own stamp path with ``-c %Y`` (epoch mtime),
+    swallowing a missing file's non-zero exit and stderr so an absent stamp
+    reads as empty output rather than a CommandError."""
+    assert AptUpdateStamp.PATH == "/var/lib/apt/periodic/update-success-stamp"
+    assert AptUpdateStamp.COMMAND == (
+        "stat -c %Y /var/lib/apt/periodic/update-success-stamp 2>/dev/null || true"
+    )
+
+
+def test_apt_update_stamp_parse_reads_the_first_epoch_line():
+    """A bare epoch-seconds line parses into a naive UTC datetime (the
+    ``files.File`` convention); surrounding blank lines and trailing noise
+    are ignored."""
+    assert AptUpdateStamp.parse([str(STAMP_EPOCH)]) == STAMP_DATETIME
+    assert AptUpdateStamp.parse(["", f"  {STAMP_EPOCH}  ", "ignored"]) == STAMP_DATETIME
+    assert STAMP_DATETIME.tzinfo is None
+
+
+def test_apt_update_stamp_parse_missing_or_corrupt_reads_as_none():
+    """Empty output (the missing-file case), a non-integer line and an
+    out-of-range epoch all read as None so a corrupt stamp forces an update
+    instead of raising."""
+    assert AptUpdateStamp.parse([]) is None
+    assert AptUpdateStamp.parse(["", "   "]) is None
+    assert AptUpdateStamp.parse(["not-a-number"]) is None
+    # ``datetime.fromtimestamp`` raises OverflowError/OSError far outside the
+    # representable range; the parse swallows it.
+    assert AptUpdateStamp.parse(["99999999999999999999"]) is None
+
+
+async def test_apt_update_stamp_real_transport_missing_file_reads_as_none():
+    """A real-transport gather of a host whose stamp file is missing produces
+    empty stdout (the ``|| true`` short-circuits ``stat``), which parses to
+    None -- no CommandError."""
+    host = CannedShellHost("")
+    assert await AptUpdateStamp.process(host) is None
+    assert host.last_shell == AptUpdateStamp.COMMAND
+
+
+async def test_apt_update_stamp_real_transport_reads_epoch():
+    """A real-transport gather of a host whose stamp file exists reads its
+    mtime as a naive UTC datetime."""
+    host = CannedShellHost(f"{STAMP_EPOCH}\n")
+    assert await AptUpdateStamp.process(host) == STAMP_DATETIME
+
+
+async def test_apt_update_stamp_simulated_seam_reads_the_field():
+    """The SimulatedHost seam is a ``datetime | None`` field: absent (None,
+    the default) reads as a missing stamp, a seeded datetime is returned
+    verbatim."""
+    host = SimulatedHost(name="h")
+    assert await AptUpdateStamp.process(host) is None
+    host.apt_update_stamp = STAMP_DATETIME
+    assert await AptUpdateStamp.process(host) == STAMP_DATETIME
+
+
+async def test_apt_update_stamp_gather_fact_fans_out():
+    """``gather_fact`` returns a host-name-keyed mapping of the parsed stamp,
+    including the None answer for a host without one."""
+    host_a = SimulatedHost(name="a", apt_update_stamp=STAMP_DATETIME)
+    host_b = SimulatedHost(name="b")
+    results = await gather_fact([host_a, host_b], AptUpdateStamp)
+    assert results == {"a": STAMP_DATETIME, "b": None}
+
+
+async def test_apt_update_cache_valid_time_zero_always_updates():
+    """The default ``cache_valid_time=0`` keeps the pre-issue-9 stateless
+    behaviour: even a fresh stamp does not gate the yield, and no fact is
+    consulted (so a seeded stamp is untouched)."""
+    host = SimulatedHost(
+        name="h",
+        apt_update_stamp=datetime.now(UTC).replace(tzinfo=None),
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.update(ctx)]
+    assert ctx.changed
+    assert ctx.reason == "apt update"
+    assert commands == [AptUpdateCommand()]
+
+
+async def test_apt_update_cache_valid_time_skips_when_stamp_is_fresh():
+    """A stamp younger than ``cache_valid_time`` gates the update: nothing
+    yields and the operation reports no change with the freshness reason."""
+    fresh = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=30)
+    host = SimulatedHost(name="h", apt_update_stamp=fresh)
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.update(ctx, cache_valid_time=3600)]
+    assert not ctx.changed
+    assert ctx.reason == "apt update skipped, cache is fresh"
+    assert commands == []
+
+
+async def test_apt_update_cache_valid_time_runs_when_stamp_is_stale():
+    """A stamp older than ``cache_valid_time`` runs the update as usual."""
+    stale = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=7200)
+    host = SimulatedHost(name="h", apt_update_stamp=stale)
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.update(ctx, cache_valid_time=3600)]
+    assert ctx.changed
+    assert ctx.reason == "apt update"
+    assert commands == [AptUpdateCommand()]
+
+
+async def test_apt_update_cache_valid_time_runs_when_stamp_is_missing():
+    """No stamp file at all counts as stale, so the update still runs -- the
+    ``cache_valid_time`` gate never silences a first-ever update."""
+    host = SimulatedHost(name="h")
+    assert host.apt_update_stamp is None
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.update(ctx, cache_valid_time=3600)]
+    assert ctx.changed
+    assert commands == [AptUpdateCommand()]
+
+
+async def test_apt_update_cache_valid_time_end_to_end_second_run_skips():
+    """Through run(): the first apply refreshes the stamp (real apt touches
+    it on success, mirrored by the SimulatedHost ``AptUpdateCommand`` arm);
+    a second run within the window sees the fresh stamp and skips."""
+
+    def update_deploy(host):
+        yield op(
+            apt.update,
+            name="Update apt repositories",
+            cache_valid_time=3600,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+
+    def factory(entry):
+        return host
+
+    _plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}], update_deploy, host_factory=factory
+    )
+    (entry,) = report.log
+    assert entry.changed
+    assert entry.reason == "apt update"
+    assert entry.commands == (AptUpdateCommand(),)
+    assert host.apt_update_stamp is not None
+
+    _plans2, report2, _hosts2 = await run(
+        [{"host": "h", "connection": {}}], update_deploy, host_factory=factory
+    )
+    (entry2,) = report2.log
+    assert not entry2.changed
+    assert entry2.reason == "apt update skipped, cache is fresh"
+    assert entry2.commands == ()
+
+
+async def test_apt_packages_cache_valid_time_skips_update_prefix_only():
+    """A fresh stamp gates the ``update=True`` prefix of ``apt.packages``;
+    the install half is unaffected and still yields when packages are
+    missing."""
+    fresh = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=30)
+    host = SimulatedHost(name="h", apt_update_stamp=fresh)
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.packages(
+            ctx, packages=("git",), update=True, cache_valid_time=3600
+        )
+    ]
+    # Only the install yields; no AptUpdateCommand.
+    assert commands == [AptInstallCommand(packages=("git",))]
+    assert ctx.changed
+    assert ctx.reason == "apt update skipped, cache is fresh; 1 package(s) to install"
+
+
+async def test_apt_packages_cache_valid_time_stale_yields_update_then_install():
+    """A stale stamp lets the update prefix through, so both commands yield
+    in the classic update-then-install order."""
+    stale = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=7200)
+    host = SimulatedHost(name="h", apt_update_stamp=stale)
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.packages(
+            ctx, packages=("git",), update=True, cache_valid_time=3600
+        )
+    ]
+    assert commands == [
+        AptUpdateCommand(),
+        AptInstallCommand(packages=("git",)),
+    ]
+    assert ctx.reason == "apt update; 1 package(s) to install"
+
+
+async def test_apt_packages_cache_valid_time_end_to_end_second_run_skips_update():
+    """Through run(): the first apply installs (and refreshes the stamp via
+    the yielded update); a second run within the window skips the update
+    prefix and reports the packages as present -- the whole request is a
+    no-op."""
+
+    def packages_deploy(host):
+        yield op(
+            apt.packages,
+            name="Install git with a fresh-cache gate",
+            packages=("git",),
+            update=True,
+            cache_valid_time=3600,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+
+    def factory(entry):
+        return host
+
+    _plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}], packages_deploy, host_factory=factory
+    )
+    (entry,) = report.log
+    assert entry.changed
+    assert entry.commands == (
+        AptUpdateCommand(),
+        AptInstallCommand(packages=("git",)),
+    )
+    assert host.apt_update_stamp is not None
+    assert host.apt_packages == {"git": [""]}
+
+    _plans2, report2, _hosts2 = await run(
+        [{"host": "h", "connection": {}}], packages_deploy, host_factory=factory
+    )
+    (entry2,) = report2.log
+    # The stamp is fresh AND git is installed, so nothing yields and the
+    # whole entry is a no-op -- exactly the Ansible role's "skip a
+    # redundant apt-get update within 24 h" behaviour the issue asked for.
+    assert not entry2.changed
+    assert entry2.reason == "apt update skipped, cache is fresh; all packages present"
+    assert entry2.commands == ()
 
 
 async def test_apt_update_end_to_end_stays_non_idempotent():

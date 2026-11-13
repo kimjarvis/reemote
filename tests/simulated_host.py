@@ -25,7 +25,7 @@ a real asyncssh transport is missing:
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``rpm_gpg_keys`` / ``services`` / ``enabled_services``
-  / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``deb_files``
+  / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_update_stamp`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``deb_files``
   / ``date`` / ``disk_stats`` / ``dmi_info`` / ``os_env``
   / ``firewalld_default_zone``
   / ``firewalld_ipsets`` / ``firewalld_lockdown`` / ``firewalld_panic_mode``
@@ -88,7 +88,7 @@ a real asyncssh transport is missing:
   ``DnfRepoList``,
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``, ``RpmGpgKeys``,
-  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``SystemdStatus``, ``SystemdEnabled``, ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState``, ``SystemdDependencies``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``ApkRepositoriesFile``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpgradable``, ``Arch``,
+  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``SystemdStatus``, ``SystemdEnabled``, ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState``, ``SystemdDependencies``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``ApkRepositoriesFile``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpdateStamp``, ``AptUpgradable``, ``Arch``,
   ``AuthorizedKeys``, ``AuthorizedKeysFile``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``, ``DebPackage``,
   ``DiskStats``, ``DmiInfo``, ``Env``, ``EtcHosts`` (parses the shared
   ``remote_files`` seam at the hosts-file path), ``FirewalldStatus``, ``FirewalldDefaultZone``,
@@ -858,6 +858,23 @@ class SimulatedHost(Host):
     # content parses into, keeping the seam consistent across a simulated
     # sources-file write/remove too.
     apt_sources: list[AptSource] = field(default_factory=list)
+    # The mtime of apt's ``update-success-stamp`` file (a naive UTC
+    # ``datetime``, the ``files.File`` convention), backing
+    # ``AptUpdateStamp`` -- the freshness gate
+    # ``apt.packages(update=True, cache_valid_time=N)`` and
+    # ``apt.update(cache_valid_time=N)`` read. Kept separate from
+    # ``file_stats`` (the generic ``files.File`` metadata store, keyed by
+    # path) because reemote's apt namespace never reaches into another
+    # module's fact seam -- the stamp lives here as its own single-value
+    # field. Defaults to None -- a simulated machine that has never run
+    # ``apt-get update``, like the fact's answer for a missing stamp file.
+    # A test seeds it directly (typically ``datetime.now(UTC).replace
+    # (tzinfo=None) - timedelta(seconds=N)`` to model an N-second-old
+    # stamp); the ``AptUpdateCommand`` arm of ``execute_command`` refreshes
+    # it to the *wall-clock* now, mirroring the real ``apt-get update``
+    # touching the stamp on success so an end-to-end run's second apply
+    # sees a fresh cache and skips.
+    apt_update_stamp: datetime | None = None
     # Pending apt upgrades (the list of ``AptPackageUpgrade`` dicts
     # ``AptUpgradable`` returns -- name, installed and candidate versions,
     # architecture-suffixed names like ``libc6:i386`` included), backing
@@ -1894,7 +1911,13 @@ class SimulatedHost(Host):
             case AptInstallCommand(packages=packages):
                 self.install_apt_packages(packages)
             case AptUpdateCommand():
-                pass  # the simulation tracks no package-list metadata to refresh
+                # ``apt-get update`` touches /var/lib/apt/periodic/
+                # update-success-stamp on success. Refresh the seam to the
+                # wall-clock now (naive UTC, matching ``AptUpdateStamp``'s
+                # return type) so a ``cache_valid_time`` gate on a second
+                # apply sees a fresh stamp and skips, mirroring real apt.
+                # The simulation still tracks no package-list metadata.
+                self.apt_update_stamp = datetime.now(UTC).replace(tzinfo=None)
             case AptUpgradeCommand():
                 self.upgrade_apt_packages()
             case AptDistUpgradeCommand():

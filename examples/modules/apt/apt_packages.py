@@ -44,9 +44,18 @@ exactly like ``apt.dist_upgrade``. ``default_release`` would add apt's
 ``-t <release>`` to the install -- and, unlike a raw ``extra_install_args``,
 to the ``latest`` upgrade too -- so unpinned names resolve their candidate
 from a target release; this example leaves it unset, since the demo host's
-own release is already apt's default. Where the baseline's ``cache_time`` skips the
-update while its stamp file is fresh, reemote deliberately drops the
-option -- update is always stateless. The baseline's ``force`` option
+own release is already apt's default. ``cache_valid_time`` (Ansible's ``apt``
+module option of the same name) gates the ``update=True`` prefix on the
+in-namespace ``AptUpdateStamp`` fact -- the mtime of
+``/var/lib/apt/periodic/update-success-stamp``, which ``apt-get update``
+itself touches on success -- so a stamp at most ``cache_valid_time`` seconds
+old (compared against the controller's UTC clock) skips the update with
+reason ``apt update skipped, cache is fresh``; ``0`` (the default) keeps the
+always-update behaviour, and a missing or unreadable stamp counts as stale.
+The example leaves it unset since it does not combine ``update=True`` with a
+freshness gate. The baseline's ``cache_time`` keyword is still absorbed by
+``**kwargs`` with no effect -- the first-class spelling is
+``cache_valid_time``, matching Ansible. The baseline's ``force`` option
 (``--force-yes``) is dropped as deprecated, the same decision as ``apt.deb``.
 
 The script yields the *same* install request twice to show that idempotence
