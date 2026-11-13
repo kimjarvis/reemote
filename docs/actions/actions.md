@@ -114,6 +114,45 @@ escalation is built identically, but the command's own exit status travels back
 in the result instead of raising `CommandError`. The unprivileged path rides
 [`Host.run_shell_result`][reemote.hosts.Host.run_shell_result].
 
+## Setting environment variables
+
+[`Shell`][reemote.actions.Shell] and [`Script`][reemote.actions.Script] accept
+an `env` keyword — a mapping of environment variable names to values — rendered
+as a shell-quoted `env K=V ...` prefix on the command:
+
+```python
+from reemote import Shell, gather_action
+
+# Run a command with DD_APM_INSTRUMENTATION_ENABLED set.
+results = await gather_action(
+    hosts, Shell,
+    command="/opt/app/start.sh",
+    env={"DD_APM_INSTRUMENTATION_ENABLED": "true", "DD_SERVICE": "my-app"},
+)
+```
+
+Each key and value is shell-quoted individually, so spaces, quotes and
+metacharacters are safe. An empty or `None` mapping leaves the command
+unchanged. The prefix combines with privilege escalation: `sudo env K=V ...`
+sets the variables for the elevated command.
+
+For [`Script`][reemote.actions.Script], the prefix lands on the `sh -c`
+carrier, so the variables reach the script's process:
+
+```python
+from reemote import gather_action, server
+
+results = await gather_action(
+    hosts, server.script,
+    path="/tmp/instrument.sh",
+    env={"DD_APM_INSTRUMENTATION_LIBRARIES": "python"},
+)
+```
+
+Actions bypass `op()` and the plan layer's hashing, so a plain `dict` is legal
+here — no [`UnhashableArgumentError`][reemote.core.UnhashableArgumentError]
+concern.
+
 ## Selecting hosts: group and tags
 
 [`gather_action`][reemote.actions.gather_action] accepts `group` and `tags`

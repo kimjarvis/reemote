@@ -69,7 +69,7 @@
 
 import asyncio
 import shlex
-from collections.abc import Coroutine, Iterable
+from collections.abc import Coroutine, Iterable, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
@@ -206,6 +206,21 @@ def _as_text(value: Any) -> str:
     return value
 
 
+def _env_prefix(env: Mapping[str, str] | None) -> str:
+    """Render a shell-quoted ``env K=V ...`` prefix, or ``""`` when unset.
+
+    Each key and value is shell-quoted individually so spaces, quotes and
+    metacharacters are safe. An empty or ``None`` mapping yields no prefix,
+    leaving the command unchanged.
+    """
+    if not env:
+        return ""
+    assignments = " ".join(
+        f"{shlex.quote(key)}={shlex.quote(value)}" for key, value in env.items()
+    )
+    return f"env {assignments} "
+
+
 class Shell:
     """Run an arbitrary shell command on a host and return its ``Result``.
 
@@ -214,6 +229,10 @@ class Shell:
             ``gather_action``'s fan-out.
         command (str): The shell command text, sent verbatim -- nothing is
             interpreted or escaped.
+        env (Mapping[str, str] | None, optional): Environment variables to
+            set for the command, rendered as a shell-quoted ``env K=V ...``
+            prefix. Each key and value is quoted individually. ``None`` or an
+            empty mapping leaves the command unchanged. Defaults to None.
         sudo (bool, optional): Elevate with ``sudo``, using the run-as user
             and password from the host's inventory ``privilege`` section.
             Defaults to False.
@@ -227,7 +246,7 @@ class Shell:
     command:
 
     ```bash
-    <command>
+    [env K=V ... ]<command>
     ```
 
     return:
@@ -248,11 +267,13 @@ class Shell:
     # The first action kind. ``process`` mirrors a fact's single-host signature
     # so ``gather_action`` can fan it out identically, but unlike a fact it
     # interprets nothing: the command text is sent verbatim and the outcome
-    # comes back whole. ``doas``/``sudo``/``su`` ask for elevation with the
-    # host's inventory privilege data (run-as users, passwords via askpass
-    # helpers, fixed ``doas`` then ``sudo`` then ``su`` order); a rejected
-    # credential raises ``PrivilegeError`` rather than travelling back as an
-    # exit status.
+    # comes back whole. ``env`` renders a shell-quoted ``env K=V ...`` prefix
+    # so environment variables can be set for the command without inlining
+    # them into the command string. ``doas``/``sudo``/``su`` ask for elevation
+    # with the host's inventory privilege data (run-as users, passwords via
+    # askpass helpers, fixed ``doas`` then ``sudo`` then ``su`` order); a
+    # rejected credential raises ``PrivilegeError`` rather than travelling back
+    # as an exit status.
 
     @classmethod
     async def process(
@@ -260,6 +281,7 @@ class Shell:
         host: Host,
         *,
         command: str,
+        env: Mapping[str, str] | None = None,
         sudo: bool = False,
         su: bool = False,
         doas: bool = False,
@@ -270,12 +292,13 @@ class Shell:
         ``run_shell_privileged_result``), so no exit status is interpreted on
         the way out. Connection and privilege failures still raise.
         """
+        full_command = f"{_env_prefix(env)}{command}"
         if sudo or su or doas:
             raw = await host.run_shell_privileged_result(
-                command, sudo=sudo, su=su, doas=doas
+                full_command, sudo=sudo, su=su, doas=doas
             )
         else:
-            raw = await host.run_shell_result(command)
+            raw = await host.run_shell_result(full_command)
         return Result(
             exit_status=raw.exit_status,
             stdout=_as_text(raw.stdout),
@@ -309,6 +332,11 @@ class Script:
             file: an executable file runs directly (the kernel honours its
             shebang), a non-executable file runs through ``sh``. Defaults
             to None.
+        env (Mapping[str, str] | None, optional): Environment variables to
+            set for the script, rendered as a shell-quoted ``env K=V ...``
+            prefix on the ``sh -c`` carrier. Each key and value is quoted
+            individually. ``None`` or an empty mapping leaves the command
+            unchanged. Defaults to None.
         sudo (bool, optional): Elevate with ``sudo``, using the run-as user
             and password from the host's inventory ``privilege`` section.
             Defaults to False.
@@ -322,7 +350,7 @@ class Script:
     command:
 
     ```bash
-    sh -c 'if [ ! -f <path> ]; then echo "server.script: no such file: <path>" >&2; exit 127; fi; if [ -x <path> ]; then <path> <args>; else sh <path> <args>; fi'
+    [env K=V ... ]sh -c 'if [ ! -f <path> ]; then echo "server.script: no such file: <path>" >&2; exit 127; fi; if [ -x <path> ]; then <path> <args>; else sh <path> <args>; fi'
     ```
 
     return:
@@ -342,9 +370,11 @@ class Script:
     # and the wrapper always rides an explicit ``sh -c``: sudo and doas exec
     # their command directly rather than through a shell, so a bare ``sudo if
     # ...`` would fail -- the ``sh -c`` carrier keeps the rendering identical
-    # unprivileged and under any escalation. Execution itself delegates to
-    # ``Shell.process``, so the raw-result seams, privilege handling and the
-    # ``Result`` copy are shared, never duplicated.
+    # unprivileged and under any escalation. ``env`` renders a shell-quoted
+    # ``env K=V ...`` prefix on the carrier so environment variables reach the
+    # script. Execution itself delegates to ``Shell.process``, so the
+    # raw-result seams, privilege handling and the ``Result`` copy are shared,
+    # never duplicated.
 
     @classmethod
     async def process(
@@ -354,6 +384,7 @@ class Script:
         path: str,
         args: Iterable[str] = (),
         interpreter: str | None = None,
+        env: Mapping[str, str] | None = None,
         sudo: bool = False,
         su: bool = False,
         doas: bool = False,
@@ -393,7 +424,9 @@ class Script:
             f"{invocation}"
         )
         command = f"sh -c {shlex.quote(wrapper)}"
-        return await Shell.process(host, command=command, sudo=sudo, su=su, doas=doas)
+        return await Shell.process(
+            host, command=command, env=env, sudo=sudo, su=su, doas=doas
+        )
 
 
 class WaitForConnection:
@@ -531,8 +564,10 @@ def gather_action(
     maps ``host.name`` to that host's outcome, in input order -- a ``Result``
     for ``Shell``, ``None`` for ``WaitForConnection`` (the key's presence is
     the success signal). ``args``/``kwargs`` are forwarded verbatim
-    (``command=``, ``sudo=``, ``su=``, ``doas=`` for ``Shell``; ``timeout=``,
-    ``retry=`` for ``WaitForConnection``).
+    (``command=``, ``env=``, ``sudo=``, ``su=``, ``doas=`` for ``Shell``;
+    ``path=``, ``args=``, ``interpreter=``, ``env=``, ``sudo=``, ``su=``,
+    ``doas=`` for ``Script``; ``timeout=``, ``retry=`` for
+    ``WaitForConnection``).
     The gather join is the barrier: every host's action has completed before
     the caller's next deploy or fact read begins.
 

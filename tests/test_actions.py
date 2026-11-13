@@ -15,16 +15,18 @@ is never imported:
   exercising the fan-out's connection-error aggregation.
 
 Covered: the ``gather_action`` fan-out (host-keyed dict, verbatim forwarding,
-non-zero and 127 exits as data, bytes decoding), privilege escalation through
-the raw-result path (sudo/su rendering, askpass, ``PrivilegeError`` still
-raised and aggregated), the per-call reconnect lifecycle, the in-deploy
-guard -- raised synchronously at the call site in both phases, reset
-afterwards, and ``op(Shell, ...)`` rejected by ``materialize`` -- the
-``group``/``tags`` host selection, ``WaitForConnection`` (retry until
-reachable, the fatal aggregated ``ConnectionTimeoutError``, stale-connection
-discard and the attempt bound), and ``Script`` / ``server.script`` (the
-wrapper rendering, the missing-file error Result, and real local-sh
-execution of the executable/non-executable/interpreter branches).
+non-zero and 127 exits as data, bytes decoding), the ``env`` prefix (shell-
+quoted ``env K=V ...`` rendering, special characters, combination with
+privilege escalation and ``Script``, real local-sh execution), privilege
+escalation through the raw-result path (sudo/su rendering, askpass,
+``PrivilegeError`` still raised and aggregated), the per-call reconnect
+lifecycle, the in-deploy guard -- raised synchronously at the call site in
+both phases, reset afterwards, and ``op(Shell, ...)`` rejected by
+``materialize`` -- the ``group``/``tags`` host selection, ``WaitForConnection``
+(retry until reachable, the fatal aggregated ``ConnectionTimeoutError``,
+stale-connection discard and the attempt bound), and ``Script`` /
+``server.script`` (the wrapper rendering, the missing-file error Result, and
+real local-sh execution of the executable/non-executable/interpreter branches).
 """
 
 import asyncio
@@ -186,6 +188,98 @@ def test_result_is_a_plain_typed_dict():
     result = Result(exit_status=0, stdout="", stderr="")
     assert type(result) is dict
     assert result == {"exit_status": 0, "stdout": "", "stderr": ""}
+
+
+# --- env prefix -----------------------------------------------------------------
+
+
+async def test_env_renders_a_shell_quoted_prefix():
+    host = ActionHost("web1")
+
+    await gather_action([host], Shell, command="printenv FOO", env={"FOO": "bar"})
+
+    assert host.shells == ["env FOO=bar printenv FOO"]
+
+
+async def test_env_renders_multiple_variables():
+    host = ActionHost("web1")
+
+    await gather_action(
+        [host], Shell, command="env", env={"FOO": "bar", "BAZ": "qux"}
+    )
+
+    assert host.shells == ["env FOO=bar BAZ=qux env"]
+
+
+async def test_env_quotes_keys_and_values_with_special_characters():
+    host = ActionHost("web1")
+
+    await gather_action(
+        [host], Shell, command="echo", env={"MY VAR": "it's a test"}
+    )
+
+    shell = host.shells[0]
+    # shlex.quote wraps each key and value; the apostrophe becomes '"'"'.
+    expected_key = shlex.quote("MY VAR")
+    expected_value = shlex.quote("it's a test")
+    assert shell == f"env {expected_key}={expected_value} echo"
+
+
+async def test_env_none_leaves_the_command_unchanged():
+    host = ActionHost("web1")
+
+    await gather_action([host], Shell, command="ls", env=None)
+
+    assert host.shells == ["ls"]
+
+
+async def test_env_empty_mapping_leaves_the_command_unchanged():
+    host = ActionHost("web1")
+
+    await gather_action([host], Shell, command="ls", env={})
+
+    assert host.shells == ["ls"]
+
+
+async def test_env_with_sudo_prefixes_before_the_command():
+    host = ActionHost("web1", privilege={"sudo_user": "root"})
+
+    await gather_action(
+        [host], Shell, command="cat /etc/shadow", env={"FOO": "bar"}, sudo=True
+    )
+
+    assert host.shells == ["sudo env FOO=bar cat /etc/shadow"]
+
+
+async def test_env_with_doas_prefixes_before_the_command():
+    host = ActionHost("web1", privilege={"doas_user": "root"})
+
+    await gather_action(
+        [host], Shell, command="id", env={"FOO": "bar"}, doas=True
+    )
+
+    assert host.shells == ["doas -n env FOO=bar id"]
+
+
+async def test_env_with_script_prefixes_the_sh_c_carrier():
+    host = ActionHost("web1")
+
+    await gather_action([host], Script, path="/tmp/setup.sh", env={"FOO": "bar"})
+
+    shell = host.shells[0]
+    assert shell.startswith("env FOO=bar sh -c ")
+    assert "if [ ! -f /tmp/setup.sh ]" in shell
+
+
+async def test_env_with_script_and_sudo():
+    host = ActionHost("web1", privilege={"sudo_user": "root"})
+
+    await gather_action(
+        [host], Script, path="/tmp/setup.sh", env={"FOO": "bar"}, sudo=True
+    )
+
+    shell = host.shells[0]
+    assert shell.startswith("sudo env FOO=bar sh -c ")
 
 
 # --- privilege escalation through the raw-result path --------------------------
@@ -852,3 +946,32 @@ async def test_script_own_failure_travels_back_as_data(tmp_path):
 
     assert results["web1"]["exit_status"] == 3
     assert results["web1"]["stderr"] == "boom\n"
+
+
+async def test_env_reaches_the_script_via_real_execution(tmp_path):
+    """The env prefix really sets the variable for the script's process."""
+    script = tmp_path / "printenv.sh"
+    script.write_text('echo "$MY_VAR"\n', encoding="utf-8")
+    script.chmod(0o644)
+    host = LocalShellHost("web1")
+
+    results = await gather_action(
+        [host], Script, path=str(script), env={"MY_VAR": "hello world"}
+    )
+
+    assert results["web1"]["exit_status"] == 0
+    assert results["web1"]["stdout"] == "hello world\n"
+
+
+async def test_env_reaches_a_shell_command_via_real_execution():
+    """The env prefix really sets the variable for a Shell command."""
+    host = LocalShellHost("web1")
+
+    # printenv reads the environment directly, without shell expansion, so
+    # the env prefix's variable is visible to it.
+    results = await gather_action(
+        [host], Shell, command="printenv GREETING", env={"GREETING": "hi there"}
+    )
+
+    assert results["web1"]["exit_status"] == 0
+    assert results["web1"]["stdout"] == "hi there\n"
