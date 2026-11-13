@@ -111,6 +111,15 @@ preview and inventory loading — is
   [`service_handler(hosts, services, action=...)`][reemote.handlers.service_handler]
   with `action="restarted"`, `"reloaded"` or `"running"`; `restart_handler` and
   `reload_handler` are thin wrappers over it.
+- **A handler that `notify:`s another handler has no first-class analogue.**
+  Ansible chains handlers (a role's `restart webserver` handler itself carrying
+  `notify: restart php-fpm`); reemote handlers are flat — one frozen
+  [`changed_hosts`][reemote.handlers.changed_hosts] set feeds one
+  [`service_handler`][reemote.handlers.service_handler]. The chain collapses to
+  listing every downstream service in the single pass-2 call —
+  `restart_handler(changed, ("nginx", "php-fpm"))` restarts both on the notified
+  hosts. That is equivalent here, but a hand-composition rather than a keyword:
+  order the `services` tuple to reproduce the chain's ordering (upstream first).
 - **A handler that is not a systemd service action** — a script, a custom
   command — has no factory. Build the same shape by hand: a function closing
   over `changed_hosts(...)` that `return`s for hosts outside the set and
