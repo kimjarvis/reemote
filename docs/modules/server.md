@@ -204,16 +204,26 @@ remainder starts with a weekday has no host (`""`). Blank lines,
 `/etc/*-release` file (each preceded by its path and followed by a `---`
 separator) and replays the parts into a scratch `etc` directory that the
 `distro` library parses — the same library the baseline uses — returning
-`{name, major, minor, release_meta}`, mirroring the baseline's
-`server.LinuxDistribution`. `major`/`minor` come from the most precise
-source available (a distro-specific release file supplies the minor when
-`/etc/os-release` exposes only a major version); `minor` is `None` when no
-source provides it (e.g. CentOS Stream). `name` is the pretty form of the
-distro id (`centos` → `CentOS`), `release_meta` holds the upper-cased
-`/etc/os-release` key/values, empty release files (Arch's
-`/etc/arch-release`) are skipped, and no release files at all read as
-`{"name": None, "major": None, "minor": None, "release_meta": {}}`,
-the baseline's `default`. `LinuxGui` takes no arguments: it runs the same
+`{name, family, major, minor, release_meta}`, mirroring the baseline's
+`server.LinuxDistribution` plus a reemote `family` extension. `major`/`minor`
+come from the most precise source available (a distro-specific release file
+supplies the minor when `/etc/os-release` exposes only a major version);
+`minor` is `None` when no source provides it (e.g. CentOS Stream). `name` is
+the pretty form of the distro id (`centos` → `CentOS`), and `family` is the
+Ansible-style OS family the distro groups under (`centos`/`rhel`/`fedora`/
+`rocky`/`almalinux` → `RedHat`, `ubuntu`/`debian` → `Debian`, `arch` →
+`Archlinux`, `alpine` → `Alpine`, `opensuse-leap` → `Suse`) — resolved from
+the distro id, then its `ID_LIKE` tokens, then the pretty name, and falling
+back to the name itself for an unrecognised distro, exactly as Ansible's
+`os_family` does. `family` turns an `include_vars: "{{ os_family }}.yml"`
+dispatch into a single-key lookup instead of an enumeration of every rebuild's
+name (see the
+[include_vars migration](../migrating.md#migrating-include_vars-os-dispatch)).
+`release_meta` holds the upper-cased `/etc/os-release` key/values, empty
+release files (Arch's `/etc/arch-release`) are skipped, and no release files
+at all read as
+`{"name": None, "family": None, "major": None, "minor": None, "release_meta": {}}`,
+the baseline's `default` plus the `family` extension. `LinuxGui` takes no arguments: it runs the same
 `ls /usr/bin/*session || true` as `HasGui` and returns the GUI names of the
 recognised session binaries (e.g. `["GNOME"]`) in listing order, mirroring
 the baseline's `server.LinuxGui`; lines are matched exactly, unknown lines are

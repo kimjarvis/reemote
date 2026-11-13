@@ -70,7 +70,9 @@ from .drivers import (
 )
 from .handlers import (
     changed_hosts,
+    reload_handler,
     restart_handler,
+    service_handler,
 )
 from .hosts import (
     CommandError,
@@ -220,6 +222,7 @@ from .modules.files.files import (
     GetCommand,
     InstallCommand,
     InstallSpoolCommand,
+    InstallValidateCommand,
     Link,
     LinkCommand,
     Md5File,
@@ -884,6 +887,7 @@ __all__ = [
     "Hostname",
     "InstallCommand",
     "InstallSpoolCommand",
+    "InstallValidateCommand",
     "InventoryEntry",
     "InventoryError",
     "Ip6tablesChains",
@@ -1222,6 +1226,7 @@ __all__ = [
     "op",
     "openrc",
     "postgresql",
+    "reload_handler",
     "restart_handler",
     "run",
     "run_apply",
@@ -1229,6 +1234,7 @@ __all__ = [
     "selinux",
     "send_command",
     "server",
+    "service_handler",
     "snap",
     "sub_deploy",
     "sysctl",

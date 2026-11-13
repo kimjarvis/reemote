@@ -72,7 +72,11 @@ upgrades installed unpinned names (the baseline's legacy blind upgrade), and
 `remove` to `purge`. `update=True` runs a stateless `apt-get update` first;
 `upgrade=True` runs `apt-get upgrade`, gated by the
 `SimulateOperationWillChange`
-fact exactly like `apt.dist_upgrade`. Where the baseline's `cache_time` skips the
+fact exactly like `apt.dist_upgrade`. `default_release` would add apt's
+`-t <release>` to the install — and, unlike a raw `extra_install_args`, to
+the `latest` upgrade too — so unpinned names resolve from a target release
+(the example leaves it unset, since the demo host's own release is already
+apt's default). Where the baseline's `cache_time` skips the
 update while its stamp file is fresh, reemote deliberately drops the option
 (update is always stateless); `force` (`--force-yes`) is dropped as
 deprecated, the same decision as `apt.deb`. The install rides under `sudo`
@@ -235,17 +239,20 @@ with `present=False` removing) an Ubuntu PPA via `apt-add-repository`. `src`
 is the full `ppa:user/repo` name — here the Bitcoin PPA, the baseline's documented
 example — and the operation runs `apt-add-repository -y <src>` (`--remove`
 for `present=False`), which requires `software-properties-common` on the
-target host. Unlike the idempotent operations above, this one is
-deliberately **non-idempotent**, exactly as the baseline marks it: it reads no
-fact and always reports a change, yielding one command whether or not the
-PPA is already configured (`apt-add-repository` is itself idempotent on the
-host, so a repeat add is harmless). The add rides under `sudo` (writing the
-apt sources needs root), and the script yields an add followed by a
-`present=False` remove, so the example is *self-restoring*: it leaves the host's
-sources as found. The Bitcoin PPA publishes no `noble` Release file, so a
-lingering entry would make the later `apt_update.py` step fail (`apt-get update`
-exits 100 on a repository with no Release); both requests plan and apply as
-changes, since neither direction reads a fact.
+target host. The operation is **idempotent** on
+[`AptSources`][reemote.modules.apt.apt.AptSources]: it resolves `ppa:user/repo`
+to its Launchpad archive and reports a change only when the entry is actually
+added or removed — a deviation from the baseline, which reads no fact and always
+re-runs the command, and what unblocks the `register` + `when: ... is changed`
+pattern an Ansible `apt_repository` migration relies on. The add rides under
+`sudo` (writing the apt sources needs root), and the script yields the add twice
+— the second a guaranteed no-op in the apply phase, since the first add is
+visible to it through the fresh per-step fact cache (both plan as changes in the
+prepare phase, where nothing is sent) — then a `present=False` remove, so the
+example is *self-restoring*: it leaves the host's sources as found. The Bitcoin
+PPA publishes no `noble` Release file, so a lingering entry would make the later
+`apt_update.py` step fail (`apt-get update` exits 100 on a repository with no
+Release); the add-then-remove cycle keeps the shared-host sweep clean.
 
 ::: apt_ppa
     options:

@@ -5,13 +5,16 @@
 
 Covers ``reemote.handlers``: ``changed_hosts`` (the notification read -- one
 pass over an ``ApplyReport`` freezing the hosts whose *named* entries reported
-a change) and ``restart_handler`` (the factory that closes over that frozen set
-and returns a deploy yielding ``systemd.service(restarted=True)`` for those
-hosts only). The end-to-end tests drive the sanctioned two-deploy outcome split
-against ``SimulatedHost``: a notifying deploy, the report read between the two
-runs, and a handler run that restarts only the changed hosts -- plus the
-converged re-run that queues no restart at all.
+a change) and the handler factories -- ``service_handler`` (the general form,
+selecting the ``systemd.service`` verb via ``action``) plus its ``restart_handler``
+and ``reload_handler`` wrappers -- that close over that frozen set and return a
+deploy yielding one request for those hosts only. The end-to-end tests drive the
+sanctioned two-deploy outcome split against ``SimulatedHost``: a notifying deploy,
+the report read between the two runs, and a handler run that acts only on the
+changed hosts -- plus the converged re-run that queues nothing at all.
 """
+
+import pytest
 
 from reemote import (
     ApplyReport,
@@ -22,8 +25,10 @@ from reemote import (
     changed_hosts,
     format_plan,
     op,
+    reload_handler,
     restart_handler,
     run,
+    service_handler,
     systemd,
 )
 from tests.simulated_host import SimulatedHost
@@ -153,6 +158,82 @@ def test_restart_handler_requests_are_hashable():
         hash(request)
 
 
+# --- reload_handler: the reload-on-config-change wrapper ----------------------
+
+
+def test_reload_handler_yields_a_reloaded_request():
+    deploy = reload_handler({"web2"}, "nginx")
+
+    assert _requests(deploy, Host(name="web1")) == []
+    (request,) = _requests(deploy, Host(name="web2"))
+    assert request.func is systemd.service
+    assert request.kwargs["service"] == "nginx"
+    assert request.kwargs["reloaded"] is True
+    assert "restarted" not in request.kwargs
+    assert request.name == "Reload nginx (handler)"
+
+
+def test_reload_handler_forwards_privilege_and_guard():
+    deploy = reload_handler({"web1"}, "nginx", sudo=False, when=is_centos)
+    (request,) = _requests(deploy, Host(name="web1"))
+
+    assert request.sudo is Privilege.OFF
+    assert request.when == (is_centos,)
+
+
+def test_reload_handler_yields_one_request_per_service():
+    deploy = reload_handler({"web1"}, ("nginx", "php-fpm"))
+    requests = _requests(deploy, Host(name="web1"))
+
+    assert [r.kwargs["service"] for r in requests] == ["nginx", "php-fpm"]
+    assert [r.name for r in requests] == [
+        "Reload nginx (handler)",
+        "Reload php-fpm (handler)",
+    ]
+
+
+# --- service_handler: the general factory ------------------------------------
+
+
+def test_service_handler_defaults_to_the_restart_action():
+    # The default action reproduces restart_handler exactly.
+    (default,) = _requests(service_handler({"web1"}, "nginx"), Host(name="web1"))
+    (wrapper,) = _requests(restart_handler({"web1"}, "nginx"), Host(name="web1"))
+
+    assert default.kwargs["restarted"] is True
+    assert default.name == wrapper.name == "Restart nginx (handler)"
+
+
+def test_service_handler_running_action_omits_restart_and_reload_flags():
+    (request,) = _requests(
+        service_handler({"web1"}, "nginx", action="running"), Host(name="web1")
+    )
+
+    # ``running`` relies on the operation's default running=True: neither the
+    # restart nor the reload flag is set, and the name verb is "Start".
+    assert "restarted" not in request.kwargs
+    assert "reloaded" not in request.kwargs
+    assert request.name == "Start nginx (handler)"
+
+
+def test_service_handler_honours_a_custom_name_template():
+    deploy = service_handler({"web1"}, "nginx", action="reloaded", name="H: {service}")
+    (request,) = _requests(deploy, Host(name="web1"))
+
+    assert request.name == "H: nginx"
+
+
+def test_service_handler_an_empty_host_set_yields_nothing():
+    deploy = service_handler(frozenset(), "nginx", action="reloaded")
+
+    assert _requests(deploy, Host(name="web1")) == []
+
+
+def test_service_handler_rejects_an_unknown_action():
+    with pytest.raises(ValueError, match="unknown action"):
+        service_handler({"web1"}, "nginx", action="stopped")
+
+
 # --- end to end: the two-deploy outcome split --------------------------------
 
 INVENTORY = [
@@ -204,6 +285,31 @@ async def test_restart_fires_only_on_the_changed_host():
     # web1 is not in the frozen set, so it plans nothing; web2 restarts.
     assert plans["web1"] == []
     assert [p.request.name for p in plans["web2"]] == ["Restart nginx (handler)"]
+    assert handler_report is not None
+    assert [e.host for e in handler_report.log] == ["web2"]
+    assert handler_report.log[0].changed
+
+
+async def test_reload_fires_only_on_the_changed_host():
+    # The same two-deploy split, but the handler reloads instead of restarting:
+    # web2 is the only host whose notifying request changed, and nginx is active
+    # there, so the reload really fires on web2 and nowhere else.
+    _plans, report, _hosts = await run(
+        INVENTORY, ensure_nginx_enabled, host_factory=host_factory
+    )
+    assert report is not None
+
+    changed = changed_hosts(report, {"Ensure nginx enabled"})
+    assert changed == frozenset({"web2"})
+
+    reload_ = reload_handler(changed, "nginx", when=is_centos)
+    plans, handler_report, _hosts = await run(
+        INVENTORY, reload_, host_factory=host_factory
+    )
+
+    assert plans["web1"] == []
+    assert [p.request.name for p in plans["web2"]] == ["Reload nginx (handler)"]
+    assert plans["web2"][0].request.kwargs["reloaded"] is True
     assert handler_report is not None
     assert [e.host for e in handler_report.log] == ["web2"]
     assert handler_report.log[0].changed

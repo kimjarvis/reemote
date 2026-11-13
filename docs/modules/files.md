@@ -29,6 +29,7 @@
         - Socket
         - copy
         - directory
+        - download
         - edit
         - file
         - flags
@@ -303,7 +304,21 @@ last — and the file lands with the requested owner instead of the root:root
 the elevated `cp` creates. The owner is applied on every write but never
 compared, so an owner-only drift is `files.file`'s job too, and the named
 account must already exist (provision it with `server.user`/`server.group`
-first). One read-back caveat: `FileContents` cats unprivileged, so a file
+first). The optional `validate` parameter is the atomic validate-then-install
+hook Ansible's `template`/`copy` `validate:` provides: a command template run
+on the spooled `/tmp` file *between* the transfer and the install, so a
+non-zero exit raises `CommandError` and the `InstallCommand` never runs — the
+destination keeps its previous content and a bad config never lands, because
+the bytes checked are the very bytes about to be copied into place. The
+`{spool}`/`{dest}` placeholders are substituted with shell-quoted paths
+(`validate="nginx -t -c {spool}"`), keeping the template a hashable,
+deterministic `str`, and the command inherits the request's privilege flags, so
+a `sudo=True` install validates elevated (as root) — matching Ansible's
+become-scoped `validate` and letting a checker read every file the staged
+config references. It is the narrow, safe slice of "a command inside a
+deploy": scoped to validating the content being installed at one well-defined
+injection point, not a generic shell operation, so the action/deploy boundary
+stays intact. One read-back caveat: `FileContents` cats unprivileged, so a file
 installed with a mode the login user cannot read (a `0640` service-account
 config) reads back as empty content and re-installs on every deploy — content
 idempotence needs a login-readable file.
@@ -331,12 +346,46 @@ transform(x)`, so a second run is a fixpoint) and a stable, hashable
 module-level callable (compared by value across phases, so a lambda built
 inside the deploy generator would trip `DeterminismError`); see
 [Migrating a protected-file line edit](../migrating.md#migrating-a-protected-file-line-edit-lineinfile)
-for how to write one. `mode`/`user`/`group` are forwarded straight to the
-install, so the request that lands the edit can also set permissions and
-ownership; idempotence stays content-only (a mode- or owner-only drift does not
+for how to write one. `mode`/`user`/`group`/`validate` are forwarded straight
+to the install, so the request that lands the edit can also set permissions and
+ownership and validate the staged spool before it lands (a non-zero exit aborts
+before the target is touched — the same atomic validate-then-install hook
+`files.install` above provides); idempotence stays content-only (a mode- or
+owner-only drift does not
 re-install — `files.file` converges metadata), and the read-back caveat is
 install's too. Editing under `/etc` needs root, so flag the request
 `sudo=True`; the spool transfer stays unprivileged regardless.
+
+`files.download` is the general download-to-path operation and a reemote
+original: it takes an `http(s)` `url` and lands its body at a (root-owned)
+`dest` in one `sudo=True` request, retiring the hand-rolled `urllib.request` +
+`io.BytesIO` workaround that `dnf.key`/`apt.key`/`gpg.key` force (each
+*rejects* a URL `src`) and that `dnf.repo` names in its "reemote has no
+download operation" refusal. The fetch is *control-side* — the control machine
+opens the connection (`urllib` in a worker thread), not the target host, so the
+download works when only the control side has internet egress and the host never
+needs `curl`/`wget` (the opposite of Ansible's `get_url`, which fetches on the
+target). The body decodes the fetched bytes to text and delegates the write to
+`files.install` above, so a download inherits install's content-only idempotence
+(a converged file yields zero commands), its dest-derived `/tmp` spool, its
+owner/mode handling, its optional `validate` hook and its two-privilege-level
+signature (unprivileged scp transfer + elevated `sh -c` install) with no new
+command descriptor. The optional `checksum` is Ansible's `get_url` spelling —
+`"<algorithm>:<hexdigest>"` (eg `"sha256:9f2c..."`) — verified against the
+fetched bytes before anything is written; pinning it is also what makes the
+two-phase fetch deterministic, because the body runs once per phase (prepare,
+then apply, so the URL is fetched twice per host) and both phases verify the
+same digest and so install byte-identical content. Text only: `install` takes
+`content: str`, so a binary body (a `.rpm`, a tarball) raises `ValueError`
+rather than corrupting the write — a binary download stays `files.put`'s job
+(fetch control-side into an `io.BytesIO`, put into a login-writable path).
+`mode`/`user`/`group`/`validate` forward straight to the install, `url` must be
+`http(s)` (a `file:`/`ftp:` scheme raises `ValueError` before any fetch), and
+idempotence and the unprivileged-read-back caveat are install's. Downloading
+under `/etc` needs root, so flag the request `sudo=True`; the spool transfer
+stays unprivileged regardless. See
+[Migrating a URL download](../migrating.md#migrating-a-url-download-get_url)
+for the `get_url`/`rpm_key` mapping.
 
 `files.move` mirrors the baseline's `files.move`: `src` is a remote path, `dest`
 is the remote *directory* to move it into (the moved path becomes

@@ -69,9 +69,10 @@
 # (the same substitution ``apt.deb`` made); the baseline's ``cache_time``
 # stamp-file caching and ``force`` (the deprecated ``--force-yes`` flag) are
 # deliberately dropped. ``apt.ppa`` mirrors the baseline's ``apt.ppa`` (add/remove
-# an Ubuntu PPA with ``apt-add-repository``), deliberately non-idempotent --
-# it always yields one command and reads no fact, exactly as the baseline marks
-# it. ``apt.repo`` mirrors the baseline's ``apt.repo`` (add/remove one source
+# an Ubuntu PPA with ``apt-add-repository``), idempotent on ``AptSources`` --
+# it resolves the ``ppa:user/repo`` name to its Launchpad archive and reports a
+# change only when the entry is actually added or removed, unlike the baseline,
+# which reads no fact and always re-runs the command. ``apt.repo`` mirrors the baseline's ``apt.repo`` (add/remove one source
 # line in ``/etc/apt/sources.list`` or a ``sources.list.d`` file), idempotent
 # on ``AptSources`` and on the managed file's own text; the baseline's delegation
 # to ``files.line`` is replaced by a pure content transform installed through
@@ -2353,15 +2354,19 @@ class AptInstallCommand(Command):
 
     The ``present=True`` direction of ``apt.packages``; the ``latest``
     upgrade path reuses it with ``extra_args=None`` (the baseline builds its
-    upgrade command before appending ``extra_install_args``).
-    ``no_recommends``/``allow_downgrades`` add apt's
+    upgrade command before appending ``extra_install_args``) but keeps
+    ``default_release``, so release targeting stays consistent across the
+    install and the upgrade and a re-run converges on the same release.
+    ``default_release`` adds apt's ``-t <release>`` (``--target-release``)
+    right after ``install``, ``no_recommends``/``allow_downgrades`` add apt's
     ``--no-install-recommends``/``--allow-downgrades`` flags, ``extra_args``
-    is appended verbatim after them, and the package names
+    is appended verbatim after them, and the release and the package names
     (``<pkg>=<version>`` pins included) are shell-quoted.
     ``wait_for_lock`` adds the ``DPkg::Lock::Timeout`` option.
     """
 
     packages: tuple[str, ...]
+    default_release: str | None = None
     no_recommends: bool = False
     allow_downgrades: bool = False
     extra_args: str | None = None
@@ -2369,6 +2374,8 @@ class AptInstallCommand(Command):
 
     def shell(self) -> str:
         command = "install"
+        if self.default_release is not None:
+            command += f" -t {shlex.quote(self.default_release)}"
         if self.no_recommends:
             command += " --no-install-recommends"
         if self.allow_downgrades:
@@ -2389,6 +2396,7 @@ async def packages(
     upgrade: bool = False,
     no_recommends: bool = False,
     allow_downgrades: bool = False,
+    default_release: str | None = None,
     purge: bool = False,
     extra_install_args: str | None = None,
     extra_uninstall_args: str | None = None,
@@ -2416,6 +2424,13 @@ async def packages(
             install command. Defaults to False.
         allow_downgrades (bool, optional): Add ``--allow-downgrades`` to the
             install command. Defaults to False.
+        default_release (str | None, optional): Pin the install to a target
+            release with apt's ``-t <release>`` (``--target-release``), so
+            unpinned names resolve their candidate version from that release.
+            Unlike ``extra_install_args`` this is carried on the ``latest``
+            upgrade command too, so a re-run converges on the same release;
+            the ``AptPackages`` presence comparison has no release dimension
+            and stays name/version based. Defaults to None.
         purge (bool, optional): When removing (``present=False``), use
             ``apt-get purge`` so configuration files are removed alongside
             the package. Defaults to False.
@@ -2468,7 +2483,17 @@ async def packages(
     # always stateless, and a ``cache_time`` keyword is absorbed by
     # ``**kwargs`` with no effect. The baseline's ``force`` option
     # (``--force-yes``) is deliberately dropped: the flag is deprecated in
-    # modern apt (the same decision as ``apt.deb``). ``**kwargs`` absorbs
+    # modern apt (the same decision as ``apt.deb``). ``default_release`` is
+    # a reemote addition beyond the baseline -- the Ansible ``apt`` module's
+    # ``default_release``, apt's ``-t <release>`` -- and a first-class
+    # alternative to smuggling ``-t`` through ``extra_install_args``: it is
+    # rendered on the install command *and*, unlike the raw
+    # ``extra_install_args`` the upgrade path drops, carried on the ``latest``
+    # upgrade command so release targeting stays consistent and a re-run
+    # converges. It scopes which release unpinned candidates resolve from;
+    # the ``AptPackages`` presence comparison has no release dimension, so it
+    # stays name/version based (the ``dnf.packages`` ``repos`` command-scoping
+    # precedent). ``**kwargs`` absorbs
     # any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
 
@@ -2532,6 +2557,7 @@ async def packages(
                 reasons.append(f"{len(to_install)} package(s) to install")
                 yield AptInstallCommand(
                     packages=to_install,
+                    default_release=default_release,
                     no_recommends=no_recommends,
                     allow_downgrades=allow_downgrades,
                     extra_args=extra_install_args,
@@ -2542,6 +2568,7 @@ async def packages(
                 reasons.append(f"{len(to_upgrade)} package(s) to upgrade")
                 yield AptInstallCommand(
                     packages=to_upgrade,
+                    default_release=default_release,
                     no_recommends=no_recommends,
                     allow_downgrades=allow_downgrades,
                     wait_for_lock=wait_for_lock,
@@ -2685,6 +2712,38 @@ async def upgrade(
 # --- apt.ppa -------------------------------------------------------------------
 
 
+def _ppa_owner_name(src: str) -> str | None:
+    """The ``user/repo`` Launchpad path a ``ppa:user/repo`` name carries.
+
+    ``apt.ppa``'s ``src`` is the full ``ppa:`` token ``apt-add-repository``
+    takes; strip the scheme to get the owner/name path the PPA's sources
+    entry is keyed on. Returns ``None`` for a token that is not a ``ppa:``
+    name or carries no ``user/repo`` path, so ``ppa`` can tell a resolvable
+    name from one whose presence it cannot read and fall back to the
+    baseline's always-change behaviour for the latter.
+    """
+    if not src.startswith("ppa:"):
+        return None
+    owner_name = src[len("ppa:") :].strip("/")
+    return owner_name if "/" in owner_name else None
+
+
+def _source_is_ppa(url: str, owner_name: str) -> bool:
+    """Whether a source URL is the Launchpad archive of ``owner_name``'s PPA.
+
+    ``apt-add-repository ppa:user/repo`` writes a sources entry pointing at
+    the PPA's Launchpad archive -- historically
+    ``http://ppa.launchpad.net/user/repo/ubuntu``, on modern Ubuntu
+    ``https://ppa.launchpadcontent.net/user/repo/ubuntu``. Match the host
+    (either name, either scheme) and the ``user/repo/ubuntu`` path so the
+    presence read is robust across releases instead of pinning one URL.
+    """
+    parsed = urlparse(url)
+    if parsed.netloc not in ("ppa.launchpad.net", "ppa.launchpadcontent.net"):
+        return False
+    return parsed.path.strip("/").startswith(f"{owner_name}/ubuntu")
+
+
 @dataclass(frozen=True)
 class AptPpaCommand(Command):
     """``apt-add-repository -y [--remove] <src>``: add or remove a PPA.
@@ -2728,7 +2787,7 @@ async def ppa(
     **Raises:**
 
     ```python
-    None
+    CommandNotFoundError, HostConnectionError
     ```
 
     Examples:
@@ -2737,21 +2796,32 @@ async def ppa(
 
     # baseline ``apt.ppa`` parity.
     #
-    # The operation is **non-idempotent** -- like the baseline's ``apt.ppa`` it
-    # always reports a change and yields one ``AptPpaCommand``:
-    # ``present=True`` runs ``apt-add-repository -y <src>``, ``present=False``
-    # runs ``apt-add-repository -y --remove <src>``. No fact is read: the baseline
-    # marks the operation non-idempotent and never compares against the
-    # configured sources, so a repeat add re-runs the command
-    # (``apt-add-repository`` is itself idempotent on the host). Adding or
-    # removing a repository writes to the root-owned apt sources, so flag the
-    # request ``sudo=True`` (or ``su=True``).
+    # Presence is decided by reading ``AptSources`` and looking for the PPA's
+    # Launchpad archive, so the operation is **idempotent** and reports a
+    # change only when it actually adds or removes the entry -- unlike the
+    # baseline, which reads no fact and always re-runs ``apt-add-repository``.
+    # ``_ppa_owner_name`` reduces ``src`` to its ``user/repo`` path and
+    # ``_source_is_ppa`` matches that against every configured source's URL
+    # (either ``ppa.launchpad.net`` or the modern ``ppa.launchpadcontent.net``
+    # host, either scheme), so a PPA already configured in *any* sources file
+    # is a no-op for ``present=True`` and an unconfigured one is a no-op for
+    # ``present=False``. When the delta is real the operation yields one
+    # ``AptPpaCommand``: ``present=True`` runs ``apt-add-repository -y <src>``,
+    # ``present=False`` runs ``apt-add-repository -y --remove <src>``. This
+    # unblocks the ``register``+``when: ... is changed`` pattern an Ansible
+    # ``apt_repository`` migration relies on, which a non-idempotent operation
+    # would fire on every run. Adding or removing a repository writes to the
+    # root-owned apt sources, so flag the request ``sudo=True`` (or ``su=True``).
     #
-    # Requires ``apt-add-repository`` (from ``software-properties-common``) on
-    # the target host; the baseline's ``requires_command`` gating is deliberately
-    # dropped, so a missing binary exits 127 -- reported as
-    # ``CommandNotFoundError``. ``**kwargs`` absorbs any further global arguments
-    # (``op()`` already strips ``name``/``sudo``/``su``).
+    # A ``src`` that is not a resolvable ``ppa:user/repo`` name cannot be
+    # proven present or absent, so it falls through to the baseline's
+    # always-change behaviour rather than silently skipping a legitimate add
+    # or remove. Requires ``apt-add-repository`` (from
+    # ``software-properties-common``) on the target host; the baseline's
+    # ``requires_command`` gating is deliberately dropped, so a missing binary
+    # exits 127 -- reported as ``CommandNotFoundError``. ``**kwargs`` absorbs
+    # any further global arguments (``op()`` already strips ``name``/``sudo``/
+    # ``su``).
     #
     # Deliberately NOT spool-and-install: the payload is a CLI invocation, not
     # the file's text -- ``apt-add-repository`` owns the sources file and also
@@ -2760,6 +2830,17 @@ async def ppa(
     # transform can reproduce. The spool family is for whole-content edits of
     # a protected file (``apt.repo`` is that shape here); a tool-owned
     # mutation stays in place, like ``git.config``.
+    sources = await ctx.facts.get(AptSources)
+    owner_name = _ppa_owner_name(src)
+    if owner_name is not None:
+        is_present = any(_source_is_ppa(source["url"], owner_name) for source in sources)
+        if present and is_present:
+            ctx.reason = f"ppa {src} exists"
+            return
+        if not present and not is_present:
+            ctx.reason = f"ppa {src} does not exist"
+            return
+
     ctx.changed = True
     if present:
         ctx.reason = f"ppa {src} will be added"

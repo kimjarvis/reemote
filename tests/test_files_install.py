@@ -35,12 +35,13 @@ from reemote.drivers import (
     run,
     send_command,
 )
-from reemote.hosts import Host
+from reemote.hosts import CommandError, Host
 from reemote.modules import files
 from reemote.modules.files.files import (
     FileContents,
     InstallCommand,
     InstallSpoolCommand,
+    InstallValidateCommand,
     _install_spool_path,
 )
 from tests.simulated_host import SimulatedHost
@@ -525,3 +526,184 @@ async def test_install_with_owner_end_to_end():
     log = format_log(report)
     assert f"chown dd-agent:dd-agent {DEST}" in log
     assert "chmod 640 " in log
+
+
+# --- The validate hook: atomic validate-then-install ---------------------------
+
+
+def test_install_validate_command_substitutes_the_spool_placeholder():
+    """``{spool}`` renders the deterministic spool path (space-free, so
+    ``shlex.quote`` leaves it bare) into the caller's command template."""
+    cmd = InstallValidateCommand(validate="nginx -t -c {spool}", spool=SPOOL, dest=DEST)
+    assert cmd.shell() == f"nginx -t -c {SPOOL}"
+
+
+def test_install_validate_command_substitutes_and_quotes_both_placeholders():
+    """A dest carrying a space is shell-quoted into one argument, so a
+    validator that names ``{dest}`` stays safe; ``{spool}`` substitutes too."""
+    dest = "/etc/my config.conf"
+    cmd = InstallValidateCommand(
+        validate="check {spool} for {dest}", spool=SPOOL, dest=dest
+    )
+    assert cmd.shell() == f"check {SPOOL} for '/etc/my config.conf'"
+    assert shlex.split(cmd.shell())[-1] == dest
+
+
+def test_install_validate_command_is_elevated_with_the_request():
+    """A regular shell descriptor, so ``sudo`` prefixes it -- the validation
+    runs elevated (as root) exactly as the install half does, matching
+    Ansible's become-scoped ``validate``."""
+    cmd = InstallValidateCommand(validate="nginx -t -c {spool}", spool=SPOOL, dest=DEST)
+    assert command_shell(cmd, sudo=True) == f"sudo nginx -t -c {SPOOL}"
+
+
+async def test_install_yields_validate_between_spool_and_install():
+    """The injection point: with ``validate`` set the operation yields three
+    descriptors, the validation sitting between the transfer and the install
+    so a failure aborts before the destination is touched."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        cmd
+        async for cmd in files.install(
+            ctx, CONTENT, DEST, validate="nginx -t -c {spool}"
+        )
+    ]
+    assert [type(cmd) for cmd in commands] == [
+        InstallSpoolCommand,
+        InstallValidateCommand,
+        InstallCommand,
+    ]
+    validate_cmd = commands[1]
+    assert validate_cmd.validate == "nginx -t -c {spool}"
+    assert validate_cmd.spool == SPOOL
+    assert validate_cmd.dest == DEST
+
+
+async def test_install_without_validate_yields_only_two_commands():
+    """No ``validate`` keeps the historical two-descriptor write."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [cmd async for cmd in files.install(ctx, CONTENT, DEST)]
+    assert [type(cmd) for cmd in commands] == [
+        InstallSpoolCommand,
+        InstallCommand,
+    ]
+
+
+@pytest.mark.parametrize("validate", ["", "   ", "\t\n"])
+async def test_install_rejects_an_empty_validate_template(validate):
+    """An empty/whitespace-only template is a request error, raised before the
+    idempotence read just as the mode validation is."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="non-empty command template"):
+        [cmd async for cmd in files.install(ctx, CONTENT, DEST, validate=validate)]
+
+
+async def test_install_validate_is_a_no_op_when_the_content_matches():
+    """Idempotence still short-circuits first: a converged file yields nothing,
+    so the validator never runs on an unchanged destination."""
+    host = SimulatedHost(name="h", remote_files={DEST: CONTENT.encode()})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        cmd
+        async for cmd in files.install(
+            ctx, CONTENT, DEST, validate="nginx -t -c {spool}"
+        )
+    ]
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_send_command_dispatches_the_validate_as_a_no_op():
+    """With no seeded failure the simulated validation passes and mutates
+    nothing -- the spool stays staged for the install that follows."""
+    host = SimulatedHost.from_inventory(INVENTORY[0])
+    await send_command(host, InstallSpoolCommand(content=CONTENT, dest=SPOOL))
+    await send_command(
+        host, InstallValidateCommand(validate="nginx -t -c {spool}", spool=SPOOL, dest=DEST)
+    )
+    assert host.remote_files == {SPOOL: CONTENT.encode()}
+
+
+async def test_send_command_raises_when_the_validate_fails():
+    """A spool seeded into ``fail_validate`` makes the simulated validator
+    raise ``CommandError`` -- the fail-fast the real non-zero exit produces."""
+    host = SimulatedHost.from_inventory(INVENTORY[0])
+    host.fail_validate.add(SPOOL)
+    await send_command(host, InstallSpoolCommand(content=CONTENT, dest=SPOOL))
+    with pytest.raises(CommandError):
+        await send_command(
+            host,
+            InstallValidateCommand(
+                validate="nginx -t -c {spool}", spool=SPOOL, dest=DEST
+            ),
+        )
+
+
+async def test_install_validate_end_to_end_lands_and_logs_in_order():
+    """A passing validation installs the content and the log carries the three
+    steps in order: the unprivileged scp, the elevated validator, the elevated
+    install."""
+
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            files.install,
+            name="Install validated config",
+            content=CONTENT,
+            dest=DEST,
+            validate="nginx -t -c {spool}",
+            sudo=True,
+        )
+
+    _plans, report, hosts = await run(
+        INVENTORY, deploy, host_factory=SimulatedHost.from_inventory
+    )
+    assert report is not None
+    entry = report.log[0]
+    assert entry.changed
+    assert [type(cmd) for cmd in entry.commands] == [
+        InstallSpoolCommand,
+        InstallValidateCommand,
+        InstallCommand,
+    ]
+    assert hosts[0].remote_files == {DEST: CONTENT.encode()}
+
+    log = format_log(report)
+    assert f"$ scp <files install> -> {SPOOL}" in log
+    assert f"$ sudo nginx -t -c {SPOOL}" in log
+    assert "$ sudo sh -c 'mkdir -p /etc && cp" in log
+
+
+async def test_install_validate_failure_aborts_and_preserves_the_original():
+    """The atomic guarantee end to end: a validator that fails raises out of the
+    apply, so the ``InstallCommand`` never runs and the destination keeps the
+    content it held before -- only the ``/tmp`` spool was staged."""
+    built: list[SimulatedHost] = []
+
+    def failing_factory(entry: dict) -> SimulatedHost:
+        host = SimulatedHost.from_inventory(entry)
+        host.remote_files[DEST] = b"old = true\n"
+        host.fail_validate.add(SPOOL)
+        built.append(host)
+        return host
+
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            files.install,
+            name="Install rejected config",
+            content=CONTENT,
+            dest=DEST,
+            validate="nginx -t -c {spool}",
+            sudo=True,
+        )
+
+    with pytest.raises(CommandError):
+        await run(INVENTORY, deploy, host_factory=failing_factory)
+
+    # The bad config never landed: dest still holds the original bytes, and
+    # only the spool the transfer staged before the validator ran is present.
+    assert built[0].remote_files[DEST] == b"old = true\n"
+    assert built[0].remote_files[SPOOL] == CONTENT.encode()
+    assert DEST not in built[0].file_stats

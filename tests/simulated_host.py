@@ -161,7 +161,7 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from reemote.commands import Command, StringCommand, WaitTimeoutError
-from reemote.hosts import Host
+from reemote.hosts import CommandError, Host
 from reemote.modules.apk.apk import (
     ApkHoldCommand,
     ApkInstallCommand,
@@ -236,6 +236,7 @@ from reemote.modules.files.files import (
     GetCommand,
     InstallCommand,
     InstallSpoolCommand,
+    InstallValidateCommand,
     LinkCommand,
     MkdirCommand,
     MoveCommand,
@@ -576,6 +577,14 @@ class SimulatedHost(Host):
     # transfer a no-op: execute_command mutates it, and the next step's fresh
     # fact cache sees the mutation.
     remote_files: dict[str, bytes] = field(default_factory=dict)
+    # Spool paths whose ``files.install`` validation is simulated to fail: the
+    # ``InstallValidateCommand`` case raises ``CommandError`` for a spool named
+    # here, so a test can drive the abort path and prove a failed ``validate``
+    # stops the install and leaves the destination untouched (the real
+    # command's non-zero exit does the same through ``send_command``'s
+    # fail-fast). Empty by default -- validation passes, as a correct config
+    # would, and the simulation models no config parser to run for real.
+    fail_validate: set[str] = field(default_factory=set)
     # Configured dnf repositories (the ``DnfRepository`` entries
     # ``DnfRepositories`` returns -- repoid/name, the source filename and the
     # open-ended config options in an ``options`` sub-dict).
@@ -1384,16 +1393,18 @@ class SimulatedHost(Host):
     # ``default = list`` for an empty or failed ``last`` read.
     login_records: list[dict[str, str]] = field(default_factory=list)
     # The Linux distribution info (the parsed /etc/*-release dump), backing
-    # ``LinuxDistribution``: {name, major, minor, release_meta} in the shape
-    # the fact returns. ``LinuxName`` delegates to ``LinuxDistribution`` and
-    # so reads this same seam -- there is deliberately no separate name
+    # ``LinuxDistribution``: {name, family, major, minor, release_meta} in the
+    # shape the fact returns. ``LinuxName`` delegates to ``LinuxDistribution``
+    # and so reads this same seam -- there is deliberately no separate name
     # field, keeping the two facts consistent by construction. Defaults to
     # The baseline's ``default()`` -- all None with an empty release_meta, the
-    # "no release files matched" answer -- so a simulated machine makes no
-    # distro claim until a test sets one.
+    # "no release files matched" answer (``family`` is reemote's extension and
+    # defaults to None too) -- so a simulated machine makes no distro claim
+    # until a test sets one.
     linux_distribution: dict[str, Any] = field(
         default_factory=lambda: {
             "name": None,
+            "family": None,
             "major": None,
             "minor": None,
             "release_meta": {},
@@ -1961,6 +1972,16 @@ class SimulatedHost(Host):
                 self.get_file(src, dest)
             case InstallSpoolCommand(content=content, dest=dest):
                 self.put_file(io.BytesIO(content.encode()), dest)
+            case InstallValidateCommand(validate=validate, spool=spool):
+                # The atomic validate-then-install step. A real validator exits
+                # non-zero on a bad config and send_command's fail-fast aborts
+                # before the InstallCommand runs; the simulation models no
+                # config parser, so validation passes unless a test seeds the
+                # spool into fail_validate to drive the abort.
+                if spool in self.fail_validate:
+                    raise CommandError(
+                        self.name, validate, 1, "simulated validation failure"
+                    )
             case InstallCommand(
                 spool=spool, dest=dest, mode=mode, user=user, group=group
             ):
@@ -2934,7 +2955,8 @@ class SimulatedHost(Host):
         ``apt.ppa``'s ``present=False`` mutation. Removes every ``apt_sources``
         entry whose URL matches the PPA's Launchpad URL, so ``AptSources`` no
         longer reports it. An absent PPA is tolerated (the real command would
-        exit non-zero, but the operation is non-idempotent and always yields).
+        exit non-zero, but the operation only yields the removal once it has
+        read the source as present, so this seam rarely sees an absent one).
         """
         url = self._ppa_url(src)
         self.apt_sources[:] = [s for s in self.apt_sources if s["url"] != url]

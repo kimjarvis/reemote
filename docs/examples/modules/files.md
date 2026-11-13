@@ -275,7 +275,7 @@ need two runs for: it reads the
 destination's text with `FileContents` and, only when it differs from the
 desired `content`, yields an unprivileged `InstallSpoolCommand` scp transfer
 to a dest-derived `/tmp` spool path followed by an elevated `InstallCommand`
-(`mkdir -p`/`cp`/optional `chown`/`chmod`/`rm -f` wrapped in `sh -c`) — both
+(`mkdir -p`/`cp`/optional `chown`/`chmod`/`rm -rf` wrapped in `sh -c`) — both
 from one request, so prepare records them and apply runs them in order.
 `content` is a plain `str`, hashable and equal across phases, so no
 identity-stable stream is needed; the spool name is the destination's sha1
@@ -283,6 +283,15 @@ prefix, so two installs never clobber one spool file. The optional
 `user`/`group` parameters add a `chown` step inside the elevated chain (before
 the `chmod`), so a service config lands with its service-account owner in the
 same request that writes its content — no companion `files.file` needed. The
+optional `validate` parameter injects an `InstallValidateCommand` *between* the
+spool transfer and the install: a hashable command template (`{spool}`/`{dest}`
+placeholders substituted with shell-quoted paths) run against the just-spooled
+`/tmp` file, so a non-zero exit raises before the elevated install runs and a
+bad config never reaches the protected path — the atomic validate-then-install
+hook Ansible's `template`/`copy` `validate:` provides. The example validates
+the staged bytes with `grep -q '^managed = true' {spool}` (the real-world shape
+is `nginx -t -c {spool}`, which inherits the request's `sudo` so the validator
+can read every file the config references). The
 example first provisions the `www` group and system user (the account the
 sibling `files_op_file.py` uses), then installs a plain demo config and an
 owned `www:www` variant under `/etc` with `sudo=True` (the transfer stays
@@ -313,7 +322,7 @@ every other line, comment and blank line, so it is a fixpoint and the second
 transform is a guaranteed no-op — visible through the fresh per-step fact
 cache. As for `files.edit`, the transform must be a module-level function (a
 lambda built inside the deploy generator would diverge across phases and raise
-`DeterminismError`); `mode`/`user`/`group` are forwarded to the install, and
+`DeterminismError`); `mode`/`user`/`group`/`validate` are forwarded to the install, and
 idempotence stays content-only. See
 [Migrating a protected-file line edit](../../migrating.md#migrating-a-protected-file-line-edit-lineinfile)
 for how to write a transform. The script transforms a demo config under `/etc`
@@ -321,6 +330,40 @@ with `sudo=True` (the spool transfer stays unprivileged regardless), then runs
 the same deploy again to show every request reporting no change.
 
 ::: files_transform
+    options:
+      members: []
+
+## Downloading a URL to a root-owned path
+
+`files.download` (a reemote original) is the general download-to-path operation
+every package-repository role needs: it takes an `http(s)` `url` and lands its
+body at a root-owned `dest` in one `sudo=True` request, retiring the hand-rolled
+`urllib.request` + `io.BytesIO` workaround that `dnf.key`/`apt.key`/`gpg.key`
+force (each *rejects* a URL `src`). The fetch is *control-side* — the control
+machine opens the connection (`urllib` in a worker thread), not the target host,
+so the download works when only the control side has internet egress and the host
+never needs `curl`/`wget`. The body decodes the fetched bytes to text and
+delegates the write to `files.install`, so a download inherits install's
+content-only idempotence, its dest-derived `/tmp` spool, its owner/mode handling,
+its optional `validate` hook and its two-privilege-level signature (unprivileged
+scp transfer + elevated `sh -c` install). The optional `checksum` is Ansible's
+`get_url` spelling (`"sha256:<hexdigest>"`), verified before anything is written
+and what makes the two-phase fetch deterministic — the body runs once per phase,
+so the URL is fetched twice per host, and both phases install byte-identical
+content. Text only: a binary body (a `.rpm`, a tarball) raises `ValueError` and
+stays `files.put`'s job. The example pulls the two Docker CE artifacts the role
+hits the gap twice for — the `docker-ce.repo` stanza to
+`/etc/yum.repos.d/docker-ce.repo` and the ASCII-armored GPG key to
+`/etc/pki/rpm-gpg/RPM-GPG-KEY-DOCKER` (the file the downloaded `.repo`'s
+`gpgkey=` line points dnf at) —
+with `sudo=True`, and runs the same deploy again to show every request reporting
+no change. It omits a hardcoded checksum so it stays runnable against the live
+Docker URLs; add `checksum="sha256:<hex>"` in production from the vendor's
+published value. See
+[Migrating a URL download](../../migrating.md#migrating-a-url-download-get_url)
+for the `get_url`/`rpm_key` mapping.
+
+::: files_download
     options:
       members: []
 

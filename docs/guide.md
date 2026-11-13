@@ -1,6 +1,6 @@
 # Guide
 
-reemote configures and deploys servers through a **pure Python API**. A deployment is ordinary Python code that describes the state you want — installed packages, configuration files, running services — and reemote reads each target, reports the work it proposes, and applies the changes that are still needed. You supply the inventory and a program that runs it; reemote supplies the facts, operations and the engine that connects them.
+Reemote configures and deploys servers through a **pure Python API**. A deployment is ordinary Python code that describes the state you want — installed packages, configuration files, running services — and reemote reads each target, reports the work it proposes, and applies the changes that are still needed. You supply the inventory and a program that runs it; reemote supplies the facts, operations and the engine that connects them.
 
 Allow about **one hour** to read this guide with its examples. It starts from a small, usable script and builds that script up into the patterns a larger deployment needs. You need basic Python — functions, imports, loops, dictionaries. Generators and asyncio are introduced where you first meet them; you never have to implement the execution engine yourself.
 
@@ -502,7 +502,7 @@ reemote has **no first-class handler mechanism** — there is no `notify`/`handl
 Because this is the single most common Ansible construct, `reemote.handlers` ships two helpers so a role migration stops copy-pasting a bespoke `notifying_hosts`/`build_restart_*` pair:
 
 - [`changed_hosts(report, names)`][reemote.handlers.changed_hosts] — the *notification read*: one pass over a report's log, freezing the hosts whose **named** entries reported `changed` into a `frozenset[str]`.
-- [`restart_handler(hosts, services)`][reemote.handlers.restart_handler] — the *handler factory*: closes over that frozen set and returns a deploy that yields `systemd.service(restarted=True)` for those hosts only.
+- [`service_handler(hosts, services, action=...)`][reemote.handlers.service_handler] — the *handler factory*: closes over that frozen set and returns a deploy that yields one `systemd.service` request per service for those hosts only, with `action` picking the verb (`"restarted"`, `"reloaded"` or `"running"`). [`restart_handler`][reemote.handlers.restart_handler] and [`reload_handler`][reemote.handlers.reload_handler] are thin wrappers pinning `action` to the two commonest idioms.
 
 ```python
 from reemote import changed_hosts, restart_handler, run
@@ -521,7 +521,7 @@ async def main() -> None:
 
 `changed` is a fixed value by the time `restart_handler` builds the deploy, so the returned generator branches on a snapshot — never a live fact or report — and stays pure and deterministic across both of its phases. An empty `changed` yields an empty deploy: no host restarts, the converged no-op Ansible's handler gives for free. The restart happens in a *second* full prepare/apply cycle, and a `dry=True` preview of pass 1 cannot know whether the handler will fire (Ansible check mode skips handlers for the same reason); a `dry=True` preview of pass 2 *is* honest, because it consults the frozen outcome of pass 1.
 
-`systemd.service(restarted=True)` restarts a unit that is already running; the operation's default `running=True` starts a stopped one. `restart_handler` also takes a `name` template, a `sudo` flag (default `True`) and a `when` guard, all forwarded to each request. For a handler that is not a systemd restart, build the same shape yourself — a factory closing over `changed_hosts(...)` — and see the [handlers reference](handlers.md) plus the runnable [handler example](examples/demonstrations/composition.md#restarting-a-service-only-when-a-notifying-operation-changed).
+`systemd.service(restarted=True)` restarts a unit that is already running; the operation's default `running=True` starts a stopped one, and `reloaded=True` reloads a running one — so `restart_handler`, `reload_handler` and `service_handler(action="running")` cover the `state: restarted`/`reloaded`/`started` idioms. Each also takes a `name` template, a `sudo` flag (default `True`) and a `when` guard, all forwarded to every request. For a handler that is not a systemd service action — a script, a custom command — build the same shape yourself: a factory closing over `changed_hosts(...)`. See the [handlers reference](handlers.md) plus the runnable [handler example](examples/demonstrations/composition.md#restarting-a-service-only-when-a-notifying-operation-changed).
 
 ## Facts
 

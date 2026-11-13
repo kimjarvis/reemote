@@ -31,12 +31,13 @@ two-phase execution model:
 
 ``LinuxDistribution`` mirrors the baseline's ``server.LinuxDistribution``: it
 dumps every ``/etc/*-release`` file and parses them with the ``distro``
-library, returning ``{name, major, minor, release_meta}`` -- the pretty
-distribution name (e.g. ``CentOS``, ``Fedora``), the version resolved from
-the most precise source available (``minor`` is ``None`` when no source
+library, returning ``{name, family, major, minor, release_meta}`` -- the
+pretty distribution name (e.g. ``CentOS``, ``Fedora``), the Ansible-style OS
+family it groups under (e.g. ``RedHat``, ``Debian``), the version resolved
+from the most precise source available (``minor`` is ``None`` when no source
 provides it, e.g. CentOS Stream) and the upper-cased ``/etc/os-release``
-key/values -- useful for branching per-host logic on the distribution and
-its release before applying platform-specific operations.
+key/values -- useful for branching per-host logic on the distribution family
+and its release before applying platform-specific operations.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
 ``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven
@@ -121,7 +122,7 @@ async def main() -> None:
         # fans LinuxDistribution.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead of
         # running one host at a time. process dumps the /etc/*-release files
-        # and returns the {name, major, minor, release_meta} info dict.
+        # and returns the {name, family, major, minor, release_meta} info dict.
         distribution = await gather_fact(hosts, LinuxDistribution)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's

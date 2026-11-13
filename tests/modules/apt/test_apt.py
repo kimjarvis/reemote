@@ -3182,6 +3182,71 @@ async def test_apt_packages_extra_install_args():
     assert commands[0].shell() == f"{APT_GET_PREFIX}install --extra-install-arg git"
 
 
+async def test_apt_packages_default_release():
+    """``default_release`` renders apt's ``-t <release>`` right after
+    ``install`` -- a first-class alternative to smuggling it through
+    ``extra_install_args``."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.packages(ctx, packages=["git"], default_release="bookworm")
+    ]
+    assert ctx.changed
+    assert commands == [
+        AptInstallCommand(packages=("git",), default_release="bookworm")
+    ]
+    assert commands[0].shell() == f"{APT_GET_PREFIX}install -t bookworm git"
+
+
+async def test_apt_packages_default_release_carried_on_latest_upgrade():
+    """Unlike ``extra_install_args`` -- which the ``latest`` upgrade path drops
+    for baseline parity -- ``default_release`` rides the upgrade command too,
+    so release targeting stays consistent and a re-run converges."""
+    host = SimulatedHost(name="h", apt_packages={"git": ["1.0"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.packages(
+            ctx,
+            packages=["git", "another"],
+            latest=True,
+            default_release="bookworm",
+            extra_install_args="--extra-install-arg",
+        )
+    ]
+    assert ctx.changed
+    assert commands == [
+        AptInstallCommand(
+            packages=("another",),
+            default_release="bookworm",
+            extra_args="--extra-install-arg",
+        ),
+        AptInstallCommand(packages=("git",), default_release="bookworm"),
+    ]
+    # The install carries both the release and the raw extra args; the
+    # upgrade carries the release but drops the raw extra args.
+    assert commands[0].shell() == (
+        f"{APT_GET_PREFIX}install -t bookworm --extra-install-arg another"
+    )
+    assert commands[1].shell() == f"{APT_GET_PREFIX}install -t bookworm git"
+
+
+async def test_apt_packages_default_release_no_change_when_present():
+    """``default_release`` scopes the install command only; it adds no release
+    dimension to the ``AptPackages`` presence check, so an installed name is
+    still a no-op (the ``dnf.packages`` ``repos`` command-scoping precedent)."""
+    host = SimulatedHost(name="h", apt_packages={"git": ["1.0"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.packages(ctx, packages=["git"], default_release="bookworm")
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "all packages present"
+    assert commands == []
+
+
 async def test_apt_packages_removes_installed_packages():
     """The baseline's ``remove_packages.json``: only the installed names are
     removed, in request order, with the fixture's ``remove`` command."""
@@ -3442,7 +3507,7 @@ async def test_apt_packages_absorbs_unknown_kwargs():
 
 def test_apt_packages_command_shells_and_elevation():
     """All four descriptors elevate as a whole under sudo/su, and package
-    names needing it are shell-quoted."""
+    names and a ``default_release`` needing it are shell-quoted."""
     install = AptInstallCommand(packages=("git",))
     assert command_shell(install, sudo=True) == f"sudo {APT_GET_PREFIX}install git"
     assert command_shell(install, su=True) == (
@@ -3451,6 +3516,9 @@ def test_apt_packages_command_shells_and_elevation():
     assert AptInstallCommand(packages=("my pkg",)).shell().endswith(
         "install 'my pkg'"
     )
+    assert AptInstallCommand(
+        packages=("git",), default_release="a b; rm"
+    ).shell().endswith("install -t 'a b; rm' git")
     assert command_shell(AptUpdateCommand(), sudo=True) == "sudo apt-get update"
     upgrade = AptUpgradeCommand()
     assert command_shell(upgrade, sudo=True) == f"sudo {APT_GET_PREFIX}upgrade"
@@ -3554,6 +3622,45 @@ async def test_apt_packages_pinned_end_to_end_converges():
 
     _plans2, report2, _hosts2 = await run(
         [{"host": "h", "connection": {}}], pin_deploy, host_factory=factory
+    )
+    (entry2,) = report2.log
+    assert not entry2.changed
+    assert entry2.reason == "all packages present"
+    assert entry2.commands == ()
+
+
+async def test_apt_packages_default_release_end_to_end_then_noop():
+    """Through run(): the elevated install log carries ``-t <release>``; a
+    second run sees the package present (the comparison stays name-based) and
+    is a no-op."""
+
+    def release_deploy(host):
+        yield op(
+            apt.packages,
+            name="Install nginx from a target release",
+            packages=("nginx",),
+            default_release="bookworm",
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+
+    def factory(entry):
+        return host  # reuse ONE host so the second run sees the first's install
+
+    _plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}], release_deploy, host_factory=factory
+    )
+    (entry,) = report.log
+    assert entry.changed
+    assert entry.commands == (
+        AptInstallCommand(packages=("nginx",), default_release="bookworm"),
+    )
+    log = format_log(report)
+    assert f"sudo {APT_GET_PREFIX}install -t bookworm nginx" in log
+
+    _plans2, report2, _hosts2 = await run(
+        [{"host": "h", "connection": {}}], release_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -3947,7 +4054,7 @@ async def test_apt_upgrade_dry_run_sends_nothing():
     assert host.apt_simulations["upgrade"] == SIM_UPGRADE_FACT
 
 
-# --- apt.ppa operation (baseline parity) ---------------------------------------
+# --- apt.ppa operation (idempotent on AptSources) ------------------------------
 
 # The baseline's apt.ppa/add.json renders ``apt-add-repository -y ppa:some-repo``;
 # the Bitcoin PPA is the baseline's documented example. ``shlex.quote`` leaves the
@@ -3983,8 +4090,9 @@ def test_apt_ppa_command_shell_matches_baseline():
     )
 
 
-async def test_apt_ppa_add_always_yields():
-    """present=True always reports a change and yields one add command."""
+async def test_apt_ppa_add_when_absent_yields():
+    """present=True on a host with no matching source reports a change and
+    yields one add command."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.ppa(ctx, src=PPA_SRC)]
@@ -3993,10 +4101,10 @@ async def test_apt_ppa_add_always_yields():
     assert commands == [AptPpaCommand(src=PPA_SRC)]
 
 
-async def test_apt_ppa_remove_always_yields():
-    """present=False always reports a change and yields one --remove command
-    (the baseline's remove.json)."""
-    host = SimulatedHost(name="h")
+async def test_apt_ppa_remove_when_present_yields():
+    """present=False on a host already carrying the PPA reports a change and
+    yields one --remove command (the baseline's remove.json)."""
+    host = SimulatedHost(name="h", apt_sources=[dict(PPA_SOURCE)])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.ppa(ctx, src=PPA_SRC, present=False)]
     assert ctx.changed
@@ -4004,14 +4112,54 @@ async def test_apt_ppa_remove_always_yields():
     assert commands == [AptPpaCommand(src=PPA_SRC, present=False)]
 
 
-async def test_apt_ppa_is_non_idempotent():
-    """Even with the PPA already configured, the operation reads no fact and
-    still yields -- the baseline marks apt.ppa non-idempotent."""
+async def test_apt_ppa_add_is_idempotent():
+    """With the PPA already configured, present=True reads ``AptSources``,
+    reports no change and yields nothing."""
     host = SimulatedHost(name="h", apt_sources=[dict(PPA_SOURCE)])
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.ppa(ctx, src=PPA_SRC)]
-    assert ctx.changed
-    assert commands == [AptPpaCommand(src=PPA_SRC)]
+    assert not ctx.changed
+    assert ctx.reason == f"ppa {PPA_SRC} exists"
+    assert commands == []
+
+
+async def test_apt_ppa_remove_is_idempotent():
+    """With the PPA absent, present=False reads ``AptSources``, reports no
+    change and yields nothing."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.ppa(ctx, src=PPA_SRC, present=False)]
+    assert not ctx.changed
+    assert ctx.reason == f"ppa {PPA_SRC} does not exist"
+    assert commands == []
+
+
+async def test_apt_ppa_matches_modern_launchpad_url():
+    """Presence is matched on the ``user/repo`` Launchpad path, so a source
+    written by modern ``apt-add-repository`` -- the ``ppa.launchpadcontent.net``
+    host over https -- is recognized and makes the add a no-op."""
+    modern = {
+        **PPA_SOURCE,
+        "url": "https://ppa.launchpadcontent.net/bitcoin/bitcoin/ubuntu",
+    }
+    host = SimulatedHost(name="h", apt_sources=[modern])
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.ppa(ctx, src=PPA_SRC)]
+    assert not ctx.changed
+    assert ctx.reason == f"ppa {PPA_SRC} exists"
+    assert commands == []
+
+
+async def test_apt_ppa_unresolvable_src_always_changes():
+    """A ``src`` that is not a ``ppa:user/repo`` name cannot be resolved to a
+    Launchpad archive, so both directions fall back to the baseline's
+    always-change behaviour rather than silently skipping."""
+    host = SimulatedHost(name="h", apt_sources=[dict(PPA_SOURCE)])
+    for present in (True, False):
+        ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+        commands = [c async for c in apt.ppa(ctx, src="bitcoin/bitcoin", present=present)]
+        assert ctx.changed
+        assert commands == [AptPpaCommand(src="bitcoin/bitcoin", present=present)]
 
 
 async def test_apt_ppa_absorbs_unknown_kwargs():
@@ -4050,7 +4198,7 @@ async def test_apt_ppa_seam_default_codename():
 
 async def test_apt_ppa_end_to_end_over_run():
     """Through run(): the add elevates under sudo in the log and mutates the
-    simulated sources; being non-idempotent, a second run still changes."""
+    simulated sources; being idempotent, a second run reports no change."""
 
     def ppa_deploy(host):
         yield op(apt.ppa, name="Add the Bitcoin ppa", src=PPA_SRC, sudo=True)
@@ -4071,12 +4219,16 @@ async def test_apt_ppa_end_to_end_over_run():
     log = format_log(report)
     assert f"$ sudo {PPA_ADD_SHELL}" in log
 
-    # Non-idempotent: a second run reports a change again (no fact convergence).
-    _plans2, report2, _hosts2 = await run(
+    # Idempotent: a second run reads the now-configured source and is a no-op.
+    plans2, report2, _hosts2 = await run(
         [{"host": "h", "connection": {}}], ppa_deploy, host_factory=factory
     )
+    assert not plans2["h"][0].changed
     (entry2,) = report2.log
-    assert entry2.changed
+    assert not entry2.changed
+    assert entry2.reason == f"ppa {PPA_SRC} exists"
+    assert entry2.commands == ()
+    assert host.apt_sources == [PPA_SOURCE]
 
 
 async def test_apt_ppa_dry_run_sends_nothing():
@@ -4100,8 +4252,12 @@ async def test_apt_ppa_dry_run_sends_nothing():
 
 
 async def test_apt_ppa_add_then_remove_in_one_deploy():
-    """Both directions are non-idempotent, so the prepare plan and the apply log
-    show both as changes; the apply leaves the simulated sources empty."""
+    """The prepare phase never mutates, so it plans the add (PPA absent) as a
+    change and the remove (still absent in prepare) as a no-op. The apply
+    phase recreates the fact cache per step, so the remove sees the source the
+    add just wrote and reports a change -- the plan/apply divergence a
+    fact-reading operation depending on a prior op in the same deploy shows.
+    Either way the apply leaves the simulated sources empty."""
 
     def ppa_deploy(host):
         yield op(apt.ppa, name="add", src=PPA_SRC, sudo=True)
@@ -4110,7 +4266,7 @@ async def test_apt_ppa_add_then_remove_in_one_deploy():
     host = SimulatedHost(name="h", lsb_release={"Codename": "noble"})
     runtimes, plans = await run_prepare([host], ppa_deploy)
     assert plans["h"][0].changed
-    assert plans["h"][1].changed
+    assert not plans["h"][1].changed
     report = await run_apply(runtimes, plans=plans)
     add, remove = report.log
     assert add.changed

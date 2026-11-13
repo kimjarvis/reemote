@@ -1287,7 +1287,7 @@ def _try_int(value: str) -> int | str:
 
 
 class LinuxDistribution:
-    """The Linux distribution's name and version, as a dict.
+    """The Linux distribution's name, family and version, as a dict.
 
     **Commands:**
 
@@ -1323,6 +1323,7 @@ class LinuxDistribution:
     #
     #     {
     #         "name": "Ubuntu",
+    #         "family": "Debian",
     #         "major": 20,
     #         "minor": 4,
     #         "release_meta": {
@@ -1335,12 +1336,22 @@ class LinuxDistribution:
     #
     # ``name`` is the pretty form of the distro id (``centos`` -> ``CentOS``,
     # ``rhel`` -> ``RedHat``); an id outside the known map keeps the name
-    # ``distro`` reports. ``release_meta`` holds the upper-cased
+    # ``distro`` reports. ``family`` is the Ansible-style OS family the distro
+    # groups under (``centos``/``rhel``/``fedora``/``rocky``/``almalinux`` ->
+    # ``RedHat``, ``ubuntu``/``debian`` -> ``Debian``, ``arch`` ->
+    # ``Archlinux``, ``alpine`` -> ``Alpine``, ``opensuse-leap`` -> ``Suse``),
+    # so an ``include_vars: "{{ os_family }}.yml"`` dispatch becomes a
+    # single-key family lookup instead of an enumeration of every rebuild's
+    # name. It is resolved from ``ID_TO_FAMILY`` on the id, then on the
+    # ``ID_LIKE`` tokens, then on the pretty name, and falls back to the name
+    # itself for an unrecognised distro -- Ansible's own ``os_family``
+    # fallback. ``release_meta`` holds the upper-cased
     # ``/etc/os-release`` key/values (distro 1.7+'s ``RELEASE_CODENAME`` is
     # dropped, like the baseline). Empty release files (Arch's empty
     # ``/etc/arch-release``) are skipped, and no release files at all read as
-    # ``{"name": None, "major": None, "minor": None, "release_meta": {}}``
-    # (the baseline's ``default``). The baseline's ``LinuxDistributionDict`` TypedDict is
+    # ``{"name": None, "family": None, "major": None, "minor": None,
+    # "release_meta": {}}`` (the baseline's ``default``, plus reemote's
+    # ``family`` extension). The baseline's ``LinuxDistributionDict`` TypedDict is
     # represented as a plain dict, like ``Last``'s record dicts.
 
     #: Shell used to dump every ``/etc/*-release`` file over SSH: each file's
@@ -1365,6 +1376,102 @@ class LinuxDistribution:
         "debian": "Debian",
     }
 
+    #: The ``distro`` id -> Ansible-style OS family, mirroring ansible-core's
+    #: ``OS_FAMILY_MAP`` but keyed on the lower-case id ``distro.id()`` reports
+    #: rather than the pretty distribution name: reemote's ``name`` is its own
+    #: pretty-form map and does not enumerate every rebuild (``rocky`` and
+    #: ``almalinux`` fall through to ``distro``'s name), so the id is the
+    #: stable single key a family dispatch needs. An id outside the map is
+    #: resolved through its ``ID_LIKE`` tokens, then through the pretty name,
+    #: and finally falls back to the name itself (see ``_family``).
+    ID_TO_FAMILY: ClassVar[dict[str, str]] = {
+        # RedHat -- RHEL, its rebuilds, Fedora and the RPM-based derivatives.
+        "rhel": "RedHat",
+        "centos": "RedHat",
+        "fedora": "RedHat",
+        "rocky": "RedHat",
+        "almalinux": "RedHat",
+        "ol": "RedHat",
+        "amzn": "RedHat",
+        "scientific": "RedHat",
+        "cloudlinux": "RedHat",
+        "virtuozzo": "RedHat",
+        "xenserver": "RedHat",
+        "alinux": "RedHat",
+        "euleros": "RedHat",
+        "openeuler": "RedHat",
+        "kylin": "RedHat",
+        "redos": "RedHat",
+        # Debian -- Debian, Ubuntu and the dpkg-based derivatives.
+        "debian": "Debian",
+        "ubuntu": "Debian",
+        "raspbian": "Debian",
+        "linuxmint": "Debian",
+        "lmde": "Debian",
+        "devuan": "Debian",
+        "kali": "Debian",
+        "deepin": "Debian",
+        "elementary": "Debian",
+        "neon": "Debian",
+        "pop": "Debian",
+        "parrot": "Debian",
+        "steamos": "Debian",
+        "uos": "Debian",
+        # Suse -- SLES, openSUSE and their variants.
+        "suse": "Suse",
+        "sles": "Suse",
+        "sled": "Suse",
+        "sles_sap": "Suse",
+        "opensuse": "Suse",
+        "opensuse-leap": "Suse",
+        "opensuse-tumbleweed": "Suse",
+        "opensuse-microos": "Suse",
+        "sl-micro": "Suse",
+        # Archlinux -- Arch and its derivatives.
+        "arch": "Archlinux",
+        "antergos": "Archlinux",
+        "manjaro": "Archlinux",
+        "artix": "Archlinux",
+        "endeavouros": "Archlinux",
+        # Gentoo, Alpine, Slackware, Altlinux and Mandrake -- the remaining
+        # single-family distributions ``distro`` reports on Linux.
+        "gentoo": "Gentoo",
+        "funtoo": "Gentoo",
+        "alpine": "Alpine",
+        "slackware": "Slackware",
+        "altlinux": "Altlinux",
+        "mandrake": "Mandrake",
+        "mandriva": "Mandrake",
+    }
+
+    @classmethod
+    def _family(cls, distro_id: str, like: str, name: str | None) -> str | None:
+        """Resolve the Ansible-style OS family for a parsed distribution.
+
+        ``ID_TO_FAMILY`` is consulted on the ``distro`` id first, then on each
+        ``ID_LIKE`` token -- so an unenumerated rebuild declaring
+        ``ID_LIKE="rhel fedora"`` still groups under ``RedHat`` -- then on the
+        pretty name lower-cased, which equals the id for the single-word
+        distributions and rescues a minimal ``os-release`` that omits ``ID=``
+        (the baseline's ubuntu fixture, ``NAME="Ubuntu"`` -> ``Debian``). A
+        distro with no recognised family falls back to ``name`` itself,
+        mirroring Ansible's ``os_family`` fallback for an unlisted
+        distribution; ``None`` (no release files at all) stays ``None``. Pure
+        and testable.
+        """
+        family = cls.ID_TO_FAMILY.get(distro_id)
+        if family is not None:
+            return family
+        for token in like.split():
+            family = cls.ID_TO_FAMILY.get(token)
+            if family is not None:
+                return family
+        if name is not None:
+            family = cls.ID_TO_FAMILY.get(name.lower())
+            if family is not None:
+                return family
+        return name
+
     @classmethod
     def parse(cls, output: Iterable[str]) -> dict[str, Any]:
         """Parse the ``---``-separated release-file dump into the info dict.
@@ -1387,6 +1494,7 @@ class LinuxDistribution:
 
         release_info: dict[str, Any] = {
             "name": None,
+            "family": None,
             "major": None,
             "minor": None,
             "release_meta": {},
@@ -1419,9 +1527,12 @@ class LinuxDistribution:
             major = _try_int(parsed.major_version(best=True))
             minor = _try_int(parsed.minor_version(best=True))
 
+            distro_id = parsed.id()
+            name = cls.NAME_TO_PRETTY_NAME.get(distro_id, parsed.name())
             release_info.update(
                 {
-                    "name": cls.NAME_TO_PRETTY_NAME.get(parsed.id(), parsed.name()),
+                    "name": name,
+                    "family": cls._family(distro_id, parsed.like(), name),
                     "major": major if isinstance(major, int) else None,
                     "minor": minor if isinstance(minor, int) else None,
                     "release_meta": release_meta,

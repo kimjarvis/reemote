@@ -33,6 +33,7 @@ from reemote.modules.files.files import (
     FileContents,
     InstallCommand,
     InstallSpoolCommand,
+    InstallValidateCommand,
     _install_spool_path,
 )
 from tests.simulated_host import SimulatedHost
@@ -161,6 +162,28 @@ async def test_transform_surfaces_install_mode_validation(mode):
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     with pytest.raises(ValueError, match="Invalid file mode"):
         [cmd async for cmd in files.transform(ctx, DEST, ensure_marker, mode=mode)]
+
+
+async def test_transform_forwards_validate_to_install():
+    """The ``validate`` param reaches install, which yields the validation step
+    between the spool transfer and the elevated install -- so a transform
+    inherits the same atomic validate-then-install hook."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        cmd
+        async for cmd in files.transform(
+            ctx, DEST, ensure_marker, validate="nginx -t -c {spool}"
+        )
+    ]
+    assert [type(c) for c in commands] == [
+        InstallSpoolCommand,
+        InstallValidateCommand,
+        InstallCommand,
+    ]
+    assert commands[1].validate == "nginx -t -c {spool}"
+    assert commands[1].spool == SPOOL
+    assert commands[1].dest == DEST
 
 
 async def test_transform_absorbs_unknown_kwargs():

@@ -59,6 +59,16 @@ uv pip install reemote
 Inside a project of your own, use `uv add reemote` instead so it lands in your
 `pyproject.toml`.
 
+## Supported Linux Targets
+
+reemote manages **Linux servers**. The supported targets are the Red Hat family
+(RHEL, CentOS, Rocky Linux, AlmaLinux, Fedora, openEuler), the Ubuntu / Debian
+family, and Alpine.
+
+**BSD, macOS and Windows targets are not supported.**
+
+The `examples/` tree is verified on CentOS 9, openEuler 24.03 LTS SP4, Ubuntu 26.04 LTS and Alpine 3.24.
+
 ## License & Intellectual Property
 
 ### License

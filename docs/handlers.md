@@ -24,24 +24,31 @@ the driver is fail-fast, so a non-zero command exit raises
 a skipped entry (a `when` guard failed) carries `changed=False` and never queues
 the handler.
 
-[`restart_handler`][reemote.handlers.restart_handler] is the *handler factory*:
+[`service_handler`][reemote.handlers.service_handler] is the *handler factory*:
 it closes over that frozen set and returns a deploy-shaped callable
 (`(host) -> generator of OperationRequest`) that yields one
-[`systemd.service`][reemote.modules.systemd.systemd.service]`(restarted=True)`
-request per service, for the notified hosts only. Because its branch consults a
-snapshot taken *before* the deploy's prepare phase, both phases resolve it
-identically and the determinism guard holds; an empty host set yields an empty
-deploy — the converged no-op. It composes with the other deploy helpers: pass it
-to [`run`][reemote.drivers.run], [`compose`][reemote.core.compose] or
-[`sub_deploy`][reemote.core.sub_deploy].
+[`systemd.service`][reemote.modules.systemd.systemd.service] request per service,
+for the notified hosts only. Its `action` picks the verb — `"restarted"`,
+`"reloaded"` or `"running"` — reproducing the matching Ansible `state:`. Because
+its branch consults a snapshot taken *before* the deploy's prepare phase, both
+phases resolve it identically and the determinism guard holds; an empty host set
+yields an empty deploy — the converged no-op. It composes with the other deploy
+helpers: pass it to [`run`][reemote.drivers.run],
+[`compose`][reemote.core.compose] or [`sub_deploy`][reemote.core.sub_deploy].
+
+[`restart_handler`][reemote.handlers.restart_handler] and
+[`reload_handler`][reemote.handlers.reload_handler] are thin wrappers pinning
+`action` to the two commonest idioms — restart-on-change and the
+reload-on-config-change half of a role that also restarts on other changes.
 
 ```python
-from reemote import changed_hosts, restart_handler, run
+from reemote import changed_hosts, reload_handler, restart_handler, run
 
 _, report, _ = await run(inventory, config_deploy)          # the notifying tasks
 changed = changed_hosts(report, {"Write app config"})       # the notification read
-restart = restart_handler(changed, "app", when=is_web)      # the handler deploy
-await run(inventory, restart)                               # restart on changed hosts
+restart = restart_handler(changed, "app", when=is_web)      # systemd.service(restarted=True)
+reload = reload_handler(changed, "nginx", when=is_web)      # systemd.service(reloaded=True)
+await run(inventory, restart)                               # act on changed hosts only
 ```
 
 ## Reference
@@ -50,4 +57,6 @@ await run(inventory, restart)                               # restart on changed
     options:
       members:
         - changed_hosts
+        - service_handler
         - restart_handler
+        - reload_handler

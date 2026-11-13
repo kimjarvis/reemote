@@ -1177,6 +1177,7 @@ LOGO=archlinux
 """,
         {
             "name": "Arch Linux",
+            "family": "Archlinux",
             "major": None,
             "minor": None,
             "release_meta": {
@@ -1204,6 +1205,7 @@ LSB_VERSION=base-4.0-amd64:base-4.0-noarch:core-4.0-amd64:core-4.0-noarch
 """,
         {
             "name": "CentOS",
+            "family": "RedHat",
             "major": 6,
             "minor": 9,
             "release_meta": {
@@ -1243,6 +1245,7 @@ CentOS Linux release 7.9.2009 (Core)
 """,
         {
             "name": "CentOS",
+            "family": "RedHat",
             "major": 7,
             "minor": 9,
             "release_meta": {
@@ -1293,6 +1296,7 @@ CentOS Linux release 8.4.2105
 """,
         {
             "name": "CentOS",
+            "family": "RedHat",
             "major": 8,
             "minor": 4,
             "release_meta": {
@@ -1342,6 +1346,7 @@ CentOS Stream release 9
 """,
         {
             "name": "CentOS",
+            "family": "RedHat",
             "major": 9,
             "minor": None,
             "release_meta": {
@@ -1392,6 +1397,7 @@ SUPPORT_END=2025-05-13
 """,
         {
             "name": "Fedora",
+            "family": "RedHat",
             "major": 40,
             "minor": None,
             "release_meta": {
@@ -1422,7 +1428,7 @@ SUPPORT_END=2025-05-13
     ),
     pytest.param(
         "",
-        {"name": None, "major": None, "minor": None, "release_meta": {}},
+        {"name": None, "family": None, "major": None, "minor": None, "release_meta": {}},
         id="no_match",
     ),
     pytest.param(
@@ -1453,6 +1459,7 @@ RED OS release (8.0) MINIMAL
 """,
         {
             "name": "RED OS",
+            "family": "RedHat",
             "major": 8,
             "minor": 0,
             "release_meta": {
@@ -1481,6 +1488,7 @@ VERSION_ID="20.04"
 """,
         {
             "name": "Ubuntu",
+            "family": "Debian",
             "major": 20,
             "minor": 4,
             "release_meta": {
@@ -1516,6 +1524,7 @@ def test_linux_distribution_parse_skips_empty_release_files():
     # is skipped, leaving no parts and the baseline's default dict.
     assert LinuxDistribution.parse(["/etc/arch-release", "---"]) == {
         "name": None,
+        "family": None,
         "major": None,
         "minor": None,
         "release_meta": {},
@@ -1525,6 +1534,7 @@ def test_linux_distribution_parse_skips_empty_release_files():
 def test_linux_distribution_parse_empty_output():
     assert LinuxDistribution.parse([]) == {
         "name": None,
+        "family": None,
         "major": None,
         "minor": None,
         "release_meta": {},
@@ -1534,6 +1544,7 @@ def test_linux_distribution_parse_empty_output():
 async def test_linux_distribution_reads_the_simulated_seam():
     info = {
         "name": "Fedora",
+        "family": "RedHat",
         "major": 40,
         "minor": None,
         "release_meta": {"ID": "fedora", "VERSION_ID": "40"},
@@ -1543,6 +1554,7 @@ async def test_linux_distribution_reads_the_simulated_seam():
     # The seam defaults to the baseline's default(): no distro claim until set.
     assert await LinuxDistribution.process(SimulatedHost(name="h")) == {
         "name": None,
+        "family": None,
         "major": None,
         "minor": None,
         "release_meta": {},
@@ -1554,6 +1566,7 @@ async def test_linux_distribution_seam_returns_a_copy():
         name="h",
         linux_distribution={
             "name": "CentOS",
+            "family": "RedHat",
             "major": 9,
             "minor": None,
             "release_meta": {"ID": "centos"},
@@ -1564,6 +1577,7 @@ async def test_linux_distribution_seam_returns_a_copy():
     info["release_meta"]["ID"] = "mallory"
     assert host.linux_distribution == {
         "name": "CentOS",
+        "family": "RedHat",
         "major": 9,
         "minor": None,
         "release_meta": {"ID": "centos"},
@@ -1576,6 +1590,7 @@ async def test_linux_distribution_gather_fact_across_hosts():
             name="web1",
             linux_distribution={
                 "name": "Fedora",
+                "family": "RedHat",
                 "major": 40,
                 "minor": None,
                 "release_meta": {},
@@ -1584,8 +1599,20 @@ async def test_linux_distribution_gather_fact_across_hosts():
         SimulatedHost(name="web2"),
     ]
     assert await gather_fact(hosts, LinuxDistribution) == {
-        "web1": {"name": "Fedora", "major": 40, "minor": None, "release_meta": {}},
-        "web2": {"name": None, "major": None, "minor": None, "release_meta": {}},
+        "web1": {
+            "name": "Fedora",
+            "family": "RedHat",
+            "major": 40,
+            "minor": None,
+            "release_meta": {},
+        },
+        "web2": {
+            "name": None,
+            "family": None,
+            "major": None,
+            "minor": None,
+            "release_meta": {},
+        },
     }
 
 
@@ -1724,6 +1751,7 @@ async def test_linux_name_gather_fact_across_hosts():
             name="web1",
             linux_distribution={
                 "name": "Fedora",
+                "family": "RedHat",
                 "major": 40,
                 "minor": None,
                 "release_meta": {},

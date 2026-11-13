@@ -100,8 +100,19 @@ preview and inventory loading — is
   (Ansible check mode skips handlers for the same reason). A `dry=True` preview
   of pass 2 *is* honest: its branch consults pass 1's frozen outcome, not
   pre-deployment state.
-- **A handler that is not a systemd restart** — a reload, a script, a custom
-  command — has no factory yet. Build the same shape by hand: a function closing
+- **A reload, not a restart, is a one-word swap.**
+  [`reload_handler(hosts, services)`][reemote.handlers.reload_handler] is the
+  same factory pinned to
+  [`systemd.service`][reemote.modules.systemd.systemd.service]`(reloaded=True)` —
+  the reload-on-config-change half of a role that also restarts on other changes
+  (a config/vhost write queues a reload while a package or default-vhost change
+  queues a restart). To pick the verb at run time, or reach for `state: started`,
+  use the general
+  [`service_handler(hosts, services, action=...)`][reemote.handlers.service_handler]
+  with `action="restarted"`, `"reloaded"` or `"running"`; `restart_handler` and
+  `reload_handler` are thin wrappers over it.
+- **A handler that is not a systemd service action** — a script, a custom
+  command — has no factory. Build the same shape by hand: a function closing
   over `changed_hosts(...)` that `return`s for hosts outside the set and
   `yield`s your requests for those inside it.
 - For the full rationale and the reference signatures, see the
@@ -243,12 +254,21 @@ The deploy then branches on an ordinary `dict` lookup of data captured before
 its own prepare phase, so both phases resolve it identically and the
 determinism guard holds.
 
+`ansible_os_family` has a direct reemote equivalent: the
+[`server.LinuxDistribution`][reemote.modules.server.server.LinuxDistribution]
+fact returns a `family` field — the Ansible-style OS family the distro groups
+under (`RedHat`, `Debian`, `Suse`, `Archlinux`, `Alpine`, …), resolved from the
+distro id and its `ID_LIKE`. Key the dispatch table on `family` and one entry
+covers a whole family — RHEL, CentOS, Rocky, AlmaLinux and Fedora all collapse
+to `RedHat` — instead of enumerating every distribution name.
+
 ### The mapping
 
 | Ansible | reemote |
 | --- | --- |
-| `vars/RedHat.yml`, `vars/Debian.yml` | a module-level table keyed by distribution name |
-| `include_vars: "{{ ansible_os_family }}.yml"` | [`gather_fact(hosts, LinuxDistribution)`][reemote.drivers.gather_fact] before the run, mapped to that table |
+| `vars/RedHat.yml`, `vars/Debian.yml` | a module-level table keyed by OS family |
+| `ansible_os_family` | the gathered `LinuxDistribution` `family` field |
+| `include_vars: "{{ ansible_os_family }}.yml"` | [`gather_fact(hosts, LinuxDistribution)`][reemote.drivers.gather_fact] before the run, mapped to that table by `family` |
 | `{{ nginx_package }}` in a task | `packages_by_host[host.name]` read inside the factory-built deploy |
 | dispatch resolved at play time from a gathered fact | dispatch resolved once, frozen into a `dict`, then closed over — both phases agree |
 | a converged host with no matching var file | a host absent from the frozen map yields nothing — the deploy `return`s early |
@@ -260,14 +280,15 @@ determinism guard holds.
    distribution across all hosts at once with
    [`gather_fact(hosts, server.LinuxDistribution)`][reemote.drivers.gather_fact]
    — it fans `LinuxDistribution.process` out concurrently and returns a
-   `{host.name: {"name", "major", "minor", "release_meta"}}` mapping. Filter
-   the host list yourself first if only a subset should be gathered; the
+   `{host.name: {"name", "family", "major", "minor", "release_meta"}}` mapping.
+   Filter the host list yourself first if only a subset should be gathered; the
    `gather_fact` fan-out has no `when` parameter of its own.
 2. **Snapshot it into a per-host map.** Translate each host's gathered
-   `name` (or `major`) through a module-level table into the concrete request
-   data — the package manager and the package tuple. Freeze the result into a
-   plain `dict[str, ...]`. Keep every value **hashable**: a package list must
-   become a `tuple` before it can reach `op()`.
+   `family` (or `name`/`major` when a role splits finer) through a
+   module-level table into the concrete request data — the package manager and
+   the package tuple. Freeze the result into a plain `dict[str, ...]`. Keep
+   every value **hashable**: a package list must become a `tuple` before it can
+   reach `op()`.
 3. **Close the deploy over the map.** A factory `build_install(packages_by_host)`
    returns a deploy generator whose branch reads `packages_by_host.get(host.name)`
    — a lookup on data captured *before* this deploy's prepare phase, never a
@@ -299,14 +320,14 @@ import asyncio
 
 from reemote import Host, apt, dnf, gather_fact, op, run, server, validate_inventory
 
-# The OS-specific vars, as a module-level table keyed by the distribution
-# name LinuxDistribution reports -- one vars/<family>.yml per OS, collapsed
-# into data the factory can read. The value carries the package manager too,
-# so the dispatch swaps apt for dnf as well as the package name.
-WEB_BY_DISTRO = {
-    "CentOS": (dnf, ("nginx",)),
+# The OS-specific vars, as a module-level table keyed by the OS family
+# LinuxDistribution reports -- one vars/<family>.yml per family, collapsed into
+# data the factory can read. One entry now covers a whole family: RHEL, CentOS,
+# Rocky, AlmaLinux and Fedora all report family "RedHat". The value carries the
+# package manager too, so the dispatch swaps apt for dnf as well as the package
+# name.
+WEB_BY_FAMILY = {
     "RedHat": (dnf, ("nginx",)),
-    "Ubuntu": (apt, ("nginx-full",)),
     "Debian": (apt, ("nginx-full",)),
 }
 
@@ -330,11 +351,11 @@ async def main() -> None:
     finally:
         for host in hosts:
             await host.aclose()            # gather_fact does not close them
-    # 2. Snapshot: freeze the per-host dispatch map from the gathered fact.
+    # 2. Snapshot: freeze the per-host dispatch map from the gathered family.
     web_by_host = {
-        name: WEB_BY_DISTRO[info["name"]]
+        name: WEB_BY_FAMILY[info["family"]]
         for name, info in distro.items()
-        if info["name"] in WEB_BY_DISTRO
+        if info["family"] in WEB_BY_FAMILY
     }
     # 3+4. Close the deploy over the frozen map and run it.
     await run(inventory, build_install(web_by_host))
@@ -368,11 +389,16 @@ identical gather → snapshot → factory sequence.
   the OS is already known statically — carried on the inventory entry — you do
   not need to gather at all: that is the
   [host_vars migration](#migrating-host_vars), reading `host.extra` directly.
-- **`LinuxDistribution.name` is the pretty form.** It reports `CentOS`,
-  `RedHat`, `Ubuntu`, `Debian`, … (the `distro` id mapped through a known
-  table); key your dispatch on that, or on `major`/`release_meta` when a role
-  splits by version. See the
-  [server reference](modules/server.md) for the full return shape.
+- **Key the dispatch on `family`, not `name`.** `family` is the Ansible-style
+  OS family (`RedHat`, `Debian`, `Suse`, `Archlinux`, `Alpine`, …) that groups
+  the RHEL rebuilds and the Debian derivatives, so one table entry covers a
+  whole family — the direct equivalent of `ansible_os_family`. `name` is the
+  per-distro pretty form (`CentOS`, `Rocky Linux`, `Ubuntu`, …); reach for it,
+  or `major`/`release_meta`, only when a role splits finer than a family. An
+  unrecognised distro's `family` falls back to its `name`, and a host with no
+  release files reports `family=None` — neither matches a family key, so it
+  queues nothing. See the [server reference](modules/server.md) for the full
+  return shape.
 
 ## Migrating Jinja2 templates
 
@@ -580,6 +606,102 @@ deploy for a `files.install` of your own rendered text.
   and a `when`-guarded deploy compose the same way they do in the
   [include_vars migration](#migrating-include_vars-os-dispatch).
 
+## Migrating a validate hook
+
+Ansible's `copy:` and `template:` modules take a `validate:` command —
+`validate: nginx -t -c %s` — that runs against the **staged** file before it is
+moved into place. A non-zero exit fails the task and the destination is never
+touched, so a malformed config can never reach `/etc/nginx/nginx.conf`. The `%s`
+is a placeholder for the temporary file Ansible wrote the content to; the check
+therefore runs on the very bytes about to land, not on some earlier copy.
+
+[`files.install`][reemote.modules.files.files.install] closes this gap with a
+`validate=` parameter, and it is atomic for the same structural reason the whole
+spool-and-install write is: the operation yields three commands from ONE request
+— an unprivileged `InstallSpoolCommand` scp to a dest-derived `/tmp` spool, an
+optional `InstallValidateCommand` run against that spool, and the elevated
+`InstallCommand` that copies the spool into place. The driver is fail-fast, so a
+non-zero validator exit raises
+[`CommandError`][reemote.hosts.CommandError] *before* the install command is ever
+sent: the original file stays exactly as it was. [`files.transform`][reemote.modules.files.files.transform]
+forwards `validate=` straight to the install, so a transformed root-owned config
+gains the same guard.
+
+### The mapping
+
+| Ansible | reemote |
+| --- | --- |
+| `validate: nginx -t -c %s` on `copy:`/`template:` | `files.install(validate="nginx -t -c {spool}")` |
+| `%s` — the staged temp file | `{spool}` — the dest-derived `/tmp` spool path |
+| the destination path inside a validator | `{dest}` — substituted with the install target |
+| non-zero exit fails the task, dest untouched | non-zero exit raises `CommandError` before the install command runs |
+| `validate` runs with the task's `become` | the validator inherits the request's `sudo`/`su`/`doas` |
+
+### The process
+
+1. **Produce the content control-side.** A static file becomes a `str`;
+   a Jinja2 template is pre-rendered in `main()` exactly as the
+   [Jinja2 migration](#migrating-jinja2-templates) describes. Either way
+   `files.install` sees a plain hashable `content`.
+2. **Write the validator as a template string.** `validate=` is a plain `str`
+   carrying `{spool}` and/or `{dest}` placeholders — hashable and identical
+   across the prepare and apply phases, so it never trips the determinism guard.
+   Both placeholders are substituted with shell-quoted paths, so a `dest` with
+   spaces stays one argument.
+3. **Pass it to `files.install` (or `files.transform`).** The validator is
+   injected between the spool transfer and the elevated install automatically;
+   there is nothing to sequence by hand.
+4. **Let fail-fast do the rest.** A non-zero exit aborts the request with
+   `CommandError`; the install command is never sent and the destination keeps
+   its previous content.
+
+### Before / after
+
+```yaml
+# Ansible -------------------------------------------------------------
+# roles/nginx/tasks/main.yml
+- name: Copy nginx configuration in place.
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    validate: nginx -t -c %s      # runs on the STAGED file before it lands
+  notify: reload nginx
+```
+
+```python
+# reemote -------------------------------------------------------------
+from reemote import files, op
+
+NGINX_CONF = ...   # pre-rendered control-side (see the Jinja2 migration)
+
+def configure_nginx(host):
+    yield op(files.install, name="Write nginx config",
+             content=NGINX_CONF, dest="/etc/nginx/nginx.conf",
+             # Runs on the spooled /tmp file BETWEEN the scp and the install;
+             # a non-zero exit aborts before /etc/nginx/nginx.conf is touched.
+             validate="nginx -t -c {spool}", sudo=True)
+```
+
+### What to watch
+
+- **Validate `{spool}`, not `{dest}`.** Until the install command runs, `dest`
+  still holds the *previous* file; the bytes about to land live at `{spool}`.
+  `nginx -t -c {spool}` checks the new config, matching Ansible's `%s`.
+- **The validator is elevated with the request.** `nginx -t` must read every
+  file the config references, so with `sudo=True` the `InstallValidateCommand`
+  runs as root — the become-scoped behaviour Ansible's `validate` has.
+- **`validate` must be a non-empty string.** An empty or whitespace-only
+  template raises `ValueError` at the `op()` line rather than silently
+  installing an unvalidated file.
+- **It is a command template, not a shell operation.** The hook is scoped to
+  validating the content being installed at a single well-defined injection
+  point; reemote still has no generic in-deploy shell operation, and the
+  action/deploy boundary is unchanged.
+- **Atomicity is the point.** Spool, validate and install are three commands of
+  one request sent in order, so there is no window where a bad config is live —
+  the all-or-nothing guarantee the old put → check → install workaround (two
+  deploys, a separate spool) could not make.
+
 ## Migrating a protected-file line edit (lineinfile)
 
 Ansible edits a line inside an existing config file with `lineinfile` (one
@@ -770,3 +892,131 @@ twice to prove the second is a no-op — is the
   `sh -c` install that overlays the protected file elevates. The predictable
   `/tmp` spool name avoids collisions, not a hostile local user — the same
   trade-off every spool-and-install operation makes.
+
+## Migrating a URL download (get_url)
+
+Ansible pulls a file from a URL onto the target with `get_url` (a `url`, a
+`dest`, a `mode`, an optional `checksum`), and the package-repository roles lean
+on it twice: once for the `.repo`/`.sources` stanza and once for the
+ASCII-armored GPG key. The Docker CE role is the canonical case — both artifacts
+come from `download.docker.com`, and the role pairs the key download with an
+`rpm_key` import.
+
+reemote's answer is
+[`files.download`][reemote.modules.files.files.download]: it takes the same
+`url`/`dest`/`mode`/`checksum` and lands the body at a root-owned path in one
+`sudo=True` request. This retires the workaround the key-import operations force
+— [`dnf.key`][reemote.modules.dnf.dnf.key], `apt.key` and `gpg.key` each
+*reject* a URL `src` and push the fetch onto the caller as a hand-rolled
+`urllib.request` + `io.BytesIO` — and it is the operation `dnf.repo` names in its
+"reemote has no download operation" refusal.
+
+The fetch is **control-side**: the *control* machine opens the connection
+(`urllib` in a worker thread), not the target host. So the download works when
+only the control side has internet egress and the host never needs `curl`/`wget`
+— the opposite of Ansible's `get_url`, which fetches *on the target*. The body
+decodes the fetched bytes to text and delegates the write to
+[`files.install`][reemote.modules.files.files.install], so a download inherits
+install's content-only idempotence (a converged file yields zero commands), its
+dest-derived `/tmp` spool, its owner/mode handling and its two-privilege-level
+signature: an *unprivileged* scp transfer plus an *elevated* `sh -c` install.
+
+### The mapping
+
+| Ansible | reemote |
+| --- | --- |
+| `get_url: {url, dest}` | `files.download(url=..., dest=...)` |
+| `get_url: {mode, owner, group}` | `files.download(mode=..., user=..., group=...)` — forwarded to the install |
+| `get_url: {checksum: "sha256:<hex>"}` | `files.download(checksum="sha256:<hex>")` — the same spelling, verified before the write |
+| `get_url: {validate: ...}` | `files.download(validate=...)` — the atomic validate-then-install hook |
+| `get_url` of a **binary** (a `.rpm`, a tarball) | not `files.download` (text only) — fetch control-side into an `io.BytesIO` and [`files.put`][reemote.modules.files.files.put] it into a login-writable path, or use the package module ([`dnf.rpm`][reemote.modules.dnf.dnf.rpm]) |
+| `rpm_key: {key: <url or path>}` (import into the keyring) | a separate [`dnf.key`][reemote.modules.dnf.dnf.key] request — it takes the key *content* as a control-side IO stream (`src=io.BytesIO(...)`), **not** the downloaded path (`dnf.key` rejects a filename/URL `src`). `files.download` places the key *file* a `.repo`'s `gpgkey=file://` references; `dnf.key` does the `rpm --import` |
+| the module's own privilege escalation | `sudo=True` on the [`op(...)`][reemote.core.op]: the spool transfer stays unprivileged, only the install elevates |
+
+### The process
+
+1. **Yield the `files.download` request.** Pass `url` (an `http(s)` URL) and
+   `dest` (the root-owned target). Flag `sudo=True`: an `/etc` file needs root
+   for the install half.
+2. **Pin the `checksum` in production.** The Ansible
+   `"<algorithm>:<hexdigest>"` spelling verifies the fetched bytes before
+   anything is written, and — because the body runs once per phase (prepare,
+   then apply, so the URL is fetched twice per host) — pinning the digest is what
+   makes both phases install byte-identical content. Without it a URL whose body
+   changes mid-run would plan one content and install another.
+3. **Optionally set `mode`/`user`/`group`/`validate`.** They forward straight to
+   the install. Idempotence stays **content-only**: a mode- or owner-only drift
+   does not re-download (use
+   [`files.file`][reemote.modules.files.files.file] to converge metadata).
+4. **Import a downloaded key as a separate step.** `files.download` lands the key
+   *file*; loading it into the rpm keyring is
+   [`dnf.key`][reemote.modules.dnf.dnf.key], which takes the key *content* as a
+   control-side IO stream — fetch the same bytes into an `io.BytesIO` for it (its
+   import direction is **non-idempotent**: rpm dedupes, so it re-imports every
+   run). Or skip the explicit import and let the downloaded `.repo`'s `gpgkey=`
+   point dnf at the key.
+
+### Before / after
+
+```yaml
+# Ansible -------------------------------------------------------------
+# roles/docker/tasks/main.yml
+- name: Add the Docker CE repo
+  get_url:
+    url: https://download.docker.com/linux/centos/docker-ce.repo
+    dest: /etc/yum.repos.d/docker-ce.repo
+    mode: '0644'
+- name: Add the Docker CE GPG key
+  get_url:
+    url: https://download.docker.com/linux/centos/gpg
+    dest: /etc/pki/rpm-gpg/RPM-GPG-KEY-DOCKER
+    mode: '0644'
+```
+
+```python
+# reemote -------------------------------------------------------------
+from reemote import files, op
+
+def configure_docker_repo(host):
+    yield op(files.download, name="Add the Docker CE repo",
+             url="https://download.docker.com/linux/centos/docker-ce.repo",
+             dest="/etc/yum.repos.d/docker-ce.repo", sudo=True)
+    yield op(files.download, name="Add the Docker CE GPG key",
+             url="https://download.docker.com/linux/centos/gpg",
+             dest="/etc/pki/rpm-gpg/RPM-GPG-KEY-DOCKER", sudo=True)
+```
+
+Both `get_url` tasks become one `files.download` each, and the downloaded
+`.repo`'s `gpgkey=` line then points dnf at the key. If the role *also* ran
+`rpm_key` to import the key into the keyring, add a
+[`dnf.key`][reemote.modules.dnf.dnf.key] request whose `src` is the key bytes in
+an `io.BytesIO` (fetched control-side) — `dnf.key` imports content, it does not
+read the path `files.download` wrote.
+
+The runnable version of this — the two Docker CE downloads, run twice to prove
+the second is a no-op — is the
+[`files.download` example](examples/modules/files.md#downloading-a-url-to-a-root-owned-path).
+
+### What to watch
+
+- **The fetch is control-side, not on the target.** Unlike Ansible's `get_url`,
+  the *control* machine opens the connection. That is what lets a host with no
+  internet egress still receive the file, but it means the control side must be
+  able to reach the URL, and the body is fetched once per phase (twice per host
+  per run). Pass `checksum` to pin it.
+- **Text only.** `files.download` decodes the body as UTF-8 and delegates to
+  `files.install`, which takes `content: str`. A binary response (a `.rpm`, a
+  tarball) raises `ValueError` — fetch it control-side into an `io.BytesIO` and
+  [`files.put`][reemote.modules.files.files.put] it into a login-writable path,
+  or use the package module ([`dnf.rpm`][reemote.modules.dnf.dnf.rpm]).
+- **`url` must be `http(s)`.** A `file:`/`ftp:` scheme raises `ValueError` before
+  any fetch.
+- **A file the login user cannot read re-downloads every deploy.** Idempotence is
+  `files.install`'s content-equality against the unprivileged
+  [`FileContents`][reemote.modules.files.files.FileContents] read, so a target
+  with a mode the login user cannot read (a `0640` secret) reads back empty and
+  never matches. Keep the destination login-readable, or converge it another way.
+- **`sudo=True` elevates the install, not the transfer.** The scp spool copy
+  always rides as the login user into world-writable `/tmp`; only the `sh -c`
+  install that overlays the protected file elevates — the same trade-off every
+  spool-and-install operation makes.

@@ -56,6 +56,7 @@ import posixpath
 import re
 import shlex
 import stat
+import urllib.request
 from collections.abc import AsyncGenerator, Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -2611,6 +2612,47 @@ class InstallSpoolCommand(TransferCommand):
 
 
 @dataclass(frozen=True)
+class InstallValidateCommand(Command):
+    """Validate the spooled file before the elevated install lands it.
+
+    The optional middle step of ``files.install`` (and so of
+    ``files.transform``, which delegates its write here): a plain shell
+    descriptor yielded *between* the ``InstallSpoolCommand`` transfer and the
+    ``InstallCommand`` install, running the caller's ``validate`` command
+    against the just-spooled ``/tmp`` file. The driver runs every shell
+    descriptor fail-fast, so a non-zero exit raises ``CommandError`` out of
+    ``send_command`` and the ``InstallCommand`` that follows never runs -- the
+    destination keeps whatever it held before, which is exactly the
+    all-or-nothing guarantee Ansible's ``template``/``copy`` ``validate:``
+    gives (``nginx -t -c %s`` on the staged file, a bad config never reaching
+    ``/etc/nginx/nginx.conf``). Validating the spool rather than a separate
+    copy is what makes it atomic: the bytes checked are the very bytes the
+    install is about to ``cp`` into place, in one request and one deploy.
+
+    The ``validate`` template's ``{spool}`` and ``{dest}`` placeholders are
+    substituted with the shell-quoted spool and destination paths, so the
+    caller writes them bare (``"nginx -t -c {spool}"``) and a destination
+    carrying spaces or metacharacters still renders as one safe argument.
+    ``{dest}`` is offered for a validator that must know the target name (a
+    tool that infers its config type from the path) even though the file it
+    reads is the spool. The command inherits the request's privilege flags --
+    a ``sudo=True`` install runs the validation elevated, matching Ansible's
+    become-scoped ``validate`` and letting a checker read every file the
+    staged config references -- so it is a regular ``Command``, never a
+    ``TransferCommand`` (which could not elevate).
+    """
+
+    validate: str  # the command template with {spool}/{dest} placeholders
+    spool: str  # the /tmp spool file the content was staged at
+    dest: str  # the install target, for the {dest} placeholder
+
+    def shell(self) -> str:
+        return self.validate.replace("{spool}", shlex.quote(self.spool)).replace(
+            "{dest}", shlex.quote(self.dest)
+        )
+
+
+@dataclass(frozen=True)
 class InstallCommand(Command):
     """Install the spooled file with ``mode`` (and optional owner), then
     remove the spool file.
@@ -2671,6 +2713,7 @@ async def install(
     mode: str = "0644",
     user: str | None = None,
     group: str | None = None,
+    validate: str | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Install text content at a root-owned path via spool-and-install.
@@ -2685,11 +2728,18 @@ async def install(
             Defaults to None (root, the elevated install's owner).
         group (str | None, optional): The group to own the installed file.
             Defaults to None (root).
+        validate (str | None, optional): A command template run on the spooled
+            ``/tmp`` file between the transfer and the install; a non-zero exit
+            aborts the install and leaves the destination untouched. The
+            ``{spool}`` and ``{dest}`` placeholders are substituted with the
+            shell-quoted spool and destination paths (eg
+            ``"nginx -t -c {spool}"``). Defaults to None (no validation).
         **kwargs: Additional keyword arguments.
 
     Yields:
-        Command: The spool transfer and the elevated install command, only
-            when the content differs.
+        Command: The spool transfer, the optional validation of the spooled
+            file, and the elevated install command, only when the content
+            differs.
 
     **Raises:**
 
@@ -2743,6 +2793,27 @@ async def install(
     # never compared -- an owner-only drift is ``files.file``'s job too.
     # The named owner must already exist on the host (provision it with
     # ``server.user``/``server.group`` first) or the chown fails at apply.
+    #
+    # ``validate`` is the atomic validate-then-install hook Ansible's
+    # ``template``/``copy`` ``validate:`` provides and the reason a bad config
+    # never reaches a protected path. When set, an ``InstallValidateCommand``
+    # is yielded *between* the spool transfer and the install, running the
+    # caller's command template against the just-spooled ``/tmp`` bytes -- the
+    # very bytes the install is about to ``cp`` into place, so the check is of
+    # the content actually installed, not a separate copy. The driver runs
+    # every shell descriptor fail-fast, so a non-zero exit raises
+    # ``CommandError`` and the ``InstallCommand`` never runs: the destination
+    # keeps its previous content and the whole write is all-or-nothing within
+    # ONE request and ONE deploy. This is the narrow, safe slice of "a command
+    # inside a deploy" -- scoped to validating the staged content at a single
+    # well-defined injection point, not a generic shell operation (the
+    # action/deploy boundary stays intact). The template's ``{spool}``/``{dest}``
+    # placeholders are substituted with shell-quoted paths, so it stays a
+    # hashable ``str`` and deterministic across phases; the command inherits
+    # the request's privilege flags, so a ``sudo=True`` install validates
+    # elevated (as root), matching Ansible's become-scoped ``validate`` and
+    # letting a checker like ``nginx -t`` read every file the config
+    # references. An empty/whitespace-only template raises ``ValueError``.
     # One read-back caveat: ``FileContents`` cats unprivileged, so a file
     # installed with a mode the login user cannot read (eg ``0640`` owned
     # by a service account) reads back as empty content and re-installs on
@@ -2757,6 +2828,8 @@ async def install(
             "(eg '0644' or '600')"
         )
     mode_int = int(mode)
+    if validate is not None and not validate.strip():
+        raise ValueError("validate must be a non-empty command template")
 
     current = await ctx.facts.get(FileContents, dest)
     if current == content:
@@ -2771,6 +2844,8 @@ async def install(
     )
     spool = _install_spool_path(dest)
     yield InstallSpoolCommand(content=content, dest=spool)
+    if validate is not None:
+        yield InstallValidateCommand(validate=validate, spool=spool, dest=dest)
     yield InstallCommand(
         spool=spool, dest=dest, mode=mode_int, user=user, group=group
     )
@@ -2783,6 +2858,7 @@ async def transform(
     mode: str = "0644",
     user: str | None = None,
     group: str | None = None,
+    validate: str | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Edit a root-owned remote file through a pure content transform.
@@ -2799,6 +2875,12 @@ async def transform(
             install. Defaults to None (leaves the file's owner unchanged).
         group (str | None, optional): The group to own the file after the
             install. Defaults to None (leaves the file's group unchanged).
+        validate (str | None, optional): A command template run on the spooled
+            ``/tmp`` file between the transfer and the install, forwarded
+            straight to ``files.install``; a non-zero exit aborts the install
+            and leaves the file untouched. The ``{spool}``/``{dest}``
+            placeholders are substituted with the shell-quoted paths.
+            Defaults to None (no validation).
         **kwargs: Additional keyword arguments.
 
     Yields:
@@ -2851,14 +2933,203 @@ async def transform(
     # Content-only idempotence means a mode- or owner-only drift does not
     # re-install (``files.file`` converges metadata), and the read-back caveat
     # is install's too -- a file whose mode the login user cannot read cats
-    # back empty and re-installs every deploy. ``/etc`` targets are root-owned,
+    # back empty and re-installs every deploy. ``validate`` is forwarded
+    # straight through, so a transform inherits the same atomic
+    # validate-then-install hook on the spooled bytes (a non-zero exit aborts
+    # before the target is touched). ``/etc`` targets are root-owned,
     # so flag the request ``sudo=True`` (or ``su=True``). ``**kwargs`` absorbs
     # any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     current = await ctx.facts.get(FileContents, path)
     new = transform(current)
     async for command in install(
-        ctx, new, path, mode=mode, user=user, group=group, **kwargs
+        ctx,
+        new,
+        path,
+        mode=mode,
+        user=user,
+        group=group,
+        validate=validate,
+        **kwargs,
+    ):
+        yield command
+
+
+def _fetch_url_bytes(url: str) -> bytes:
+    """Fetch an ``http(s)`` ``url`` control-side and return its body bytes.
+
+    The single network read behind ``files.download``, run in a worker thread
+    (``asyncio.to_thread``) because ``urllib`` blocks the event loop. The
+    *control* machine -- not the target host -- opens the connection, so the
+    download works when only the control side has internet egress and the host
+    never needs ``curl``/``wget`` (the same control-side-fetch stance the
+    ``dnf.key``/``apt.key``/``gpg.key`` stream workaround already takes, now
+    behind a first-class operation). The caller validates the scheme, so this
+    only ever sees an ``http(s)`` URL. An unreachable URL or a non-2xx
+    response raises ``urllib.error.URLError``/``HTTPError`` (both ``OSError``
+    subclasses), which propagates out of the deploy exactly as a host
+    connection error would. Tests replace this function to stay offline.
+    """
+    with urllib.request.urlopen(url) as response:
+        return response.read()
+
+
+def _parse_checksum(checksum: str) -> tuple[str, str]:
+    """Split an Ansible-style ``"<algorithm>:<hexdigest>"`` checksum spec.
+
+    Returns the lowercased algorithm name and the lowercased expected digest,
+    validating that the algorithm is one ``hashlib`` knows. A malformed spec
+    (no ``:`` separator, an empty algorithm or digest) or an unknown algorithm
+    raises ``ValueError`` before any fetch, so a typo fails fast at the deploy
+    line rather than after a network round-trip. The spelling mirrors
+    Ansible's ``get_url`` ``checksum`` (``"sha256:9f2c..."``).
+    """
+    algorithm, sep, expected = checksum.partition(":")
+    algorithm = algorithm.strip().lower()
+    expected = expected.strip().lower()
+    if not sep or not algorithm or not expected:
+        raise ValueError(
+            f"checksum must be '<algorithm>:<hexdigest>' "
+            f"(eg 'sha256:9f2c...'), got: {checksum!r}"
+        )
+    if algorithm not in hashlib.algorithms_available:
+        raise ValueError(f"unknown checksum algorithm {algorithm!r} in {checksum!r}")
+    return algorithm, expected
+
+
+async def download(
+    ctx: OpContext,
+    url: str,
+    dest: str,
+    mode: str = "0644",
+    checksum: str | None = None,
+    user: str | None = None,
+    group: str | None = None,
+    validate: str | None = None,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Download a text file from a URL to a (root-owned) path.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        url (str): The ``http(s)`` URL to fetch control-side.
+        dest (str): The remote path to install the downloaded text at.
+        mode (str, optional): The installed file's permissions as octal-digit
+            text (``"0644"``, ``"600"``). Defaults to "0644".
+        checksum (str | None, optional): An Ansible-style
+            ``"<algorithm>:<hexdigest>"`` (eg ``"sha256:9f2c..."``) the fetched
+            bytes must match; a mismatch raises ``ValueError`` before anything
+            is written. Pinning it is what makes the two-phase fetch
+            deterministic -- both phases verify the same digest, so the plan
+            and the apply install byte-identical content. Defaults to None
+            (fetch without verification).
+        user (str | None, optional): The user to own the installed file.
+            Defaults to None (root, the elevated install's owner).
+        group (str | None, optional): The group to own the installed file.
+            Defaults to None (root).
+        validate (str | None, optional): A command template run on the spooled
+            ``/tmp`` file between the transfer and the install, forwarded
+            straight to ``files.install``; a non-zero exit aborts the install
+            and leaves the destination untouched. The ``{spool}``/``{dest}``
+            placeholders are substituted with the shell-quoted paths.
+            Defaults to None (no validation).
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The spool transfer and the elevated install command, only when
+            the downloaded content differs from the file's current text.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, OSError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/files/files_download.py``.
+    """
+
+    # The general download-to-path operation, and the answer to the friction
+    # every package-repository role hits twice (a GPG key + a ``.repo``/
+    # ``.sources`` file pulled from a vendor URL): instead of pushing the fetch
+    # onto the caller -- the hand-rolled ``urllib.request`` + ``io.BytesIO``
+    # recipe ``dnf.key``/``apt.key``/``gpg.key`` force, since each *rejects* a
+    # URL ``src`` -- this takes the URL and lands it at a root-owned path in
+    # ONE ``sudo=True`` request. It is the operation ``dnf.repo``/``dnf.rpm``
+    # name in their "reemote has no download operation" refusals.
+    #
+    # The write is delegated to ``files.install`` (the project's rule for a
+    # derived content-producing files operation): the body fetches the URL
+    # *control-side*, verifies the optional checksum, decodes the bytes to
+    # text, and hands the string to install -- which re-reads ``FileContents``
+    # (served from the same phase ``FactCache``, no second host round-trip),
+    # yields nothing when the text already equals the file's content, validates
+    # ``mode`` (raising ``ValueError`` on a non-octal-digit string), derives the
+    # ``/tmp`` spool name from ``dest``, spools over *unprivileged* scp and
+    # installs with an elevated ``sh -c`` (``mkdir -p``/``cp``/optional
+    # ``chown``/``chmod``/``rm -rf``), and applies the optional ``validate``
+    # hook on the staged bytes. So a download inherits install's content-only
+    # idempotence (a converged file yields zero commands), its owner/mode
+    # handling and its read-back caveat (a mode the login user cannot read cats
+    # back empty and re-installs every deploy) -- and needs no new command
+    # descriptor, so ``SimulatedHost`` is unchanged.
+    #
+    # The fetch is control-side, not host-side: the *control* machine opens the
+    # connection (``urllib`` in a worker thread), so the download works when
+    # only the control side has internet egress and the target never needs
+    # ``curl``/``wget``. The cost is that the body runs once per phase (prepare,
+    # then apply) per host, so the URL is fetched twice per host. That is
+    # harmless for the small text artifacts this targets -- and *deterministic*
+    # when ``checksum`` is passed, because both phases verify the same pinned
+    # digest and so install the same bytes. Without a checksum the request
+    # sequence still matches across phases (``url``/``dest``/``mode``/
+    # ``checksum`` are hashable scalars, so no ``DeterminismError``), but a URL
+    # whose body changes mid-run would plan one content and install another:
+    # pass ``checksum`` to pin it. ``url`` must be ``http(s)`` -- a ``file:``/
+    # ``ftp:`` scheme raises ``ValueError`` before any fetch.
+    #
+    # Text only: install takes ``content: str`` and ``FileContents`` compares
+    # text, so the body is decoded as UTF-8 and a binary response (a ``.rpm``,
+    # a tarball) raises ``ValueError`` rather than corrupting the install. The
+    # motivating artifacts -- an ASCII-armored GPG key, a ``.repo``/``.sources``/
+    # ``.conf`` file -- are all text; a binary download stays ``files.put``'s
+    # job (fetch control-side into an ``io.BytesIO``, put into a login-writable
+    # path). ``/etc`` targets are root-owned, so flag the request ``sudo=True``
+    # (or ``su=True``); the spool transfer stays unprivileged regardless.
+    # ``**kwargs`` absorbs any further global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
+    if not url.startswith(("http://", "https://")):
+        raise ValueError(f"url must be an http(s) URL, got: {url!r}")
+    expected = _parse_checksum(checksum) if checksum is not None else None
+
+    data = await asyncio.to_thread(_fetch_url_bytes, url)
+    if expected is not None:
+        algorithm, digest = expected
+        actual = hashlib.new(algorithm, data).hexdigest().lower()
+        if actual != digest:
+            raise ValueError(
+                f"checksum mismatch for {url}: expected {algorithm} {digest}, "
+                f"got {actual}"
+            )
+    try:
+        content = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"{url} is not valid UTF-8 text; files.download installs text "
+            "content only (a binary body -- a .rpm, a tarball -- stays "
+            "files.put's job: fetch it control-side into an io.BytesIO and "
+            "put it into a login-writable path)"
+        ) from exc
+
+    async for command in install(
+        ctx,
+        content,
+        dest,
+        mode=mode,
+        user=user,
+        group=group,
+        validate=validate,
+        **kwargs,
     ):
         yield command
 
@@ -3461,6 +3732,7 @@ __all__ = [
     "GetCommand",
     "InstallCommand",
     "InstallSpoolCommand",
+    "InstallValidateCommand",
     "Link",
     "LinkCommand",
     "Md5File",
@@ -3475,6 +3747,7 @@ __all__ = [
     "Socket",
     "copy",
     "directory",
+    "download",
     "edit",
     "file",
     "flags",

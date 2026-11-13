@@ -94,6 +94,16 @@ plugins:
 nav:
   - Home: index.md
   - Guide: guide.md
+  - Articles:
+      - Tutorials:
+        - Website: articles/website.md
+      - Introductions:
+        - General: articles/introduction.md
+        - Alpine: articles/alpine.md
+        - CentOS: articles/centos.md
+        - Ubuntu: articles/ubuntu.md
+      - Migrating: migrating.md
+
 #  - Examples:
 #      - Overview: examples.md
 #      - Modules:
@@ -123,7 +133,6 @@ nav:
 #          - Connectors: examples/demonstrations/connectors.md
 #          - Privilege: examples/demonstrations/privilege.md
   - API Reference:
-      - Handlers: handlers.md
 #      - Drivers: drivers.md
 #      - Core: core.md
 #      - Commands: commands.md
@@ -150,9 +159,10 @@ nav:
           - sysctl: modules/sysctl.md
           - systemd: modules/systemd.md
           - ufw: modules/ufw.md
-      - Actions:
-          - actions: actions/actions.md
+      - Actions: actions/actions.md
       - Connectors:
           - docker: connectors/docker.md
           - ssh: connectors/ssh.md
-      - Migrating: migrating.md
+      - Handlers: handlers.md
+
+
