@@ -59,6 +59,11 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "ruff>=0.17.2",
+    # examples/roles/ansible-datadog renders the role's to_nice_yaml templates
+    # with PyYAML; the suite exercises that example offline, so the renderer
+    # has to be importable in the test environment. It is deliberately not a
+    # runtime dependency of the library itself.
+    "pyyaml>=6.0.2",
 ]
 docs = [
     "mkdocs-material>=9.8.0",

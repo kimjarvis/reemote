@@ -97,11 +97,12 @@ nav:
   - Articles:
       - Tutorials:
         - Website: articles/website.md
-      - Introductions:
-        - General: articles/introduction.md
-        - Alpine: articles/alpine.md
-        - CentOS: articles/centos.md
-        - Ubuntu: articles/ubuntu.md
+#      - Introductions:
+#        - General: articles/introduction.md
+#        - Alpine: articles/alpine.md
+#        - CentOS: articles/centos.md
+#        - Ubuntu: articles/ubuntu.md
+#      - Ansible to Python: articles/migrating.md
       - Migrating: migrating.md
 
 #  - Examples:
