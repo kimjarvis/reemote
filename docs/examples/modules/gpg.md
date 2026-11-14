@@ -62,22 +62,31 @@ flagged `sudo=True`.
     options:
       members: []
 
-## Importing a key into the target keychain
+## Importing a key into the target keychain or a keyring file
 
 The import operation: `gpg.import_key` spools a controller-side key
 stream over scp and imports it into the executing user's keychain with
 `gpg --batch --yes --import`. Without a `keyid` it is deliberately
 non-idempotent — the fingerprint of a raw stream is unknowable
-controller-side, so both requests in the script stay changed even in the
-apply log; pass `keyid=...` to compare against `GpgKeys` instead. The
-stream is one module-level `io.BytesIO` constant (identity across the
-phases) embedding the **real** Docker Release (CE rpm) signing key, so
-`gpg --import` accepts it. Unlike `gpg.key`/`gpg.dearmor`, this operation
-writes root's *keychain* (`~root/.gnupg`), not `/etc`, so it **applies for
-real even on the SELinux `staff_t`-confined CentOS hosts**: gpg reads the
-`/tmp` spool and imports into root's keychain, and the elevated `sh -c`
-removes the spool afterwards. The requests are flagged `sudo=True`
-for root's keychain; the spool transfer stays unprivileged.
+controller-side, so the two keychain requests in the script stay changed
+even in the apply log; pass `keyid=...` to compare against `GpgKeys`
+instead. The stream is one module-level `io.BytesIO` constant (identity
+across the phases) embedding the **real** Docker Release (CE rpm) signing
+key, so `gpg --import` accepts it. Unlike `gpg.key`/`gpg.dearmor`, the
+keychain import writes root's *keychain* (`~root/.gnupg`), not `/etc`, so
+it **applies for real even on the SELinux `staff_t`-confined CentOS
+hosts**: gpg reads the `/tmp` spool and imports into root's keychain, and
+the elevated `sh -c` removes the spool afterwards.
+
+The script's two `dest` requests import the same key into
+`/tmp/docker-archive-keyring.gpg` instead
+(`--no-default-keyring --keyring`), an additive merge into a keyring
+*file*. They carry the key's fingerprint, so the first imports and the
+second is a no-op in the apply log (idempotence against that file's
+`GpgKeyrings` entry). `/tmp` keeps them applicable on the confined hosts
+too — `staff_t` denies `/etc` writes but allows `/tmp`; a real deployment
+would point `dest` at `/etc/apt/keyrings` or `/usr/share/keyrings`. All
+requests are flagged `sudo=True`; the spool transfer stays unprivileged.
 
 ::: gpg_import_key
     options:

@@ -1198,7 +1198,10 @@ class SimulatedHost(Host):
     # upserts an entry (with empty keys -- key material is not modeled,
     # a test seeds keys directly), a selective delete drops the matching
     # key entries, and a whole-file removal (or the empty-file cleanup)
-    # drops the entry.
+    # drops the entry. ``import_gpg_key`` with a keyring appends a
+    # content-hash stub key to the entry (creating it when absent) and
+    # accumulates the imported bytes in ``remote_files`` -- an additive
+    # merge, not an overwrite.
     gpg_keyrings: list[GpgKeyring] = field(default_factory=list)
     # Public keys in the default keychain (the ``GpgKeyInfo`` entries
     # ``GpgKeys`` returns -- id, validity, length, subkeys, fingerprint,
@@ -1208,7 +1211,9 @@ class SimulatedHost(Host):
     # state never mixes with the apt projection. Defaults to [] -- a
     # simulated machine with an empty keychain. Tests seed it directly;
     # the ``import_gpg_key``/``gen_gpg_key``/``delete_gpg_key`` mutators
-    # keep it consistent with the keychain operations.
+    # keep it consistent with the keychain operations (a keyring-scoped
+    # ``import_gpg_key`` appends to ``gpg_keyrings`` instead, leaving this
+    # keychain untouched).
     gpg_keys: list[GpgKeyInfo] = field(default_factory=list)
     # Secret keys in the default keychain (the ``GpgKeyInfo`` entries
     # ``GpgSecretKeys`` returns), backing ``GpgSecretKeys``. Kept separate
@@ -1966,8 +1971,8 @@ class SimulatedHost(Host):
                 self.dearmor_gpg_key(src, dest)
             case GpgImportUploadCommand(src=src, dest=dest):
                 self.put_file(src, dest)
-            case GpgImportCommand(spool=spool):
-                self.import_gpg_key(spool)
+            case GpgImportCommand(spool=spool, keyring=keyring):
+                self.import_gpg_key(spool, keyring)
             case GpgExportCommand(keyid=keyid, dest=dest, armor=armor, secret=secret):
                 self.export_gpg_key(keyid, dest, armor, secret)
             case GpgDeleteKeyCommand(fingerprint=fingerprint, secret=secret):
@@ -3334,34 +3339,59 @@ class SimulatedHost(Host):
             return
         self._store_gpg_keyring_file(dest, data)
 
-    def import_gpg_key(self, spool: str) -> None:
+    def import_gpg_key(self, spool: str, keyring: str | None = None) -> None:
         """Record a simulated ``gpg.import_key`` of the spooled key stream.
 
         Pops the spool bytes out of ``remote_files`` (the paired
         ``GpgImportUploadCommand`` stored them via ``put_file``) and appends
-        a stub ``GpgKeyInfo`` entry to ``gpg_keys`` so a repeat import with
-        ``keyid`` sees the key. The simulation models no OpenPGP parsing:
-        the stub's fingerprint is derived from the content hash (stable
-        across phases), it carries no uid, and secret material is not
-        modeled into ``gpg_secret_keys`` (a test seeds that directly). An
-        already-present fingerprint is left alone (gpg's merge is a
-        no-op); an absent spool path imports nothing.
+        a stub ``GpgKeyInfo`` entry so a repeat import with ``keyid`` sees
+        the key. Without ``keyring`` the stub lands in ``gpg_keys`` (the
+        default keychain). With ``keyring`` the import is path-scoped: the
+        stub is appended to that file's ``gpg_keyrings`` entry (created
+        when absent), the spool bytes are *appended* to the file's
+        ``remote_files`` content -- gpg merges into the keyring, it does
+        not overwrite it -- and the existence/metadata seams are maintained
+        like ``_store_gpg_keyring_file`` (root-owned, mode 644, the real
+        command's ``chmod 0644``); the default keychain stays untouched.
+        The simulation models no OpenPGP parsing: the stub's fingerprint is
+        derived from the content hash (stable across phases), it carries no
+        uid, and secret material is not modeled into ``gpg_secret_keys`` (a
+        test seeds that directly). An already-present fingerprint is left
+        alone (gpg's merge is a no-op); an absent spool path imports
+        nothing.
         """
         data = self.remote_files.pop(spool, None)
         if data is None:
             return
         fingerprint = hashlib.sha256(data).hexdigest().upper()[:40]
-        if any(key.get("fingerprint") == fingerprint for key in self.gpg_keys):
+        stub: GpgKeyInfo = {
+            "id": fingerprint[-16:],
+            "validity": "u",
+            "length": 4096,
+            "fingerprint": fingerprint,
+            "subkeys": [],
+        }
+        if keyring is None:
+            if any(key.get("fingerprint") == fingerprint for key in self.gpg_keys):
+                return
+            self.gpg_keys.append(stub)
             return
-        self.gpg_keys.append(
-            {
-                "id": fingerprint[-16:],
-                "validity": "u",
-                "length": 4096,
-                "fingerprint": fingerprint,
-                "subkeys": [],
-            }
-        )
+        entry = next((kr for kr in self.gpg_keyrings if kr["path"] == keyring), None)
+        if entry is None:
+            entry = {"path": keyring, "format": keyring.split(".")[-1].lower(), "keys": []}
+            self.gpg_keyrings.append(entry)
+        if any(key.get("fingerprint") == fingerprint for key in entry["keys"]):
+            return
+        entry["keys"].append(stub)
+        merged = self.remote_files.get(keyring, b"") + data
+        self.remote_files[keyring] = merged
+        self.existing_files.add(keyring)
+        self.file_stats[keyring] = {
+            "user": "root",
+            "group": "root",
+            "mode": 644,
+            "size": len(merged),
+        }
 
     def export_gpg_key(self, keyid: str, dest: str, armor: bool, secret: bool) -> None:
         """Record a simulated ``gpg.export_key`` write of one key to ``dest``.

@@ -1554,21 +1554,24 @@ async def dearmor(
 # --- gpg.import_key --------------------------------------------------------------
 
 
-def _import_spool_path() -> str:
+def _import_spool_path(dest: str | None = None) -> str:
     """The deterministic ``/tmp`` spool *file* path ``gpg.import_key`` uploads to.
 
     The key stream is spooled inside a subdirectory of ``/tmp`` rather than at
-    its top level. ``gpg.import_key`` has no destination file -- the key lands
-    in the executing user's keychain -- so there is no path to hash; the
-    directory name is derived from a fixed sha1 constant instead, which keeps it
-    identical across the prepare and apply phases (a per-materialization temp
-    name would diverge and trip the determinism guard). The stream is spooled to
-    a fixed ``import.gpg`` file inside that directory, and the elevated import
-    ``rm -rf``s the whole directory afterwards, so no leftover lands in ``/tmp``.
-    An import-specific name so ``gpg.key`` and ``gpg.import_key`` never collide
-    on one host.
+    its top level. With ``dest`` the directory name is derived from the
+    destination keyring path's sha1 (the ``_key_spool_path`` pattern), so two
+    imports targeting different keyrings never share (and clobber) one spool;
+    without it -- the key lands in the executing user's keychain, so there is
+    no path to hash -- the directory name is derived from a fixed sha1 constant
+    instead. Either way the name is identical across the prepare and apply
+    phases (a per-materialization temp name would diverge and trip the
+    determinism guard). The stream is spooled to a fixed ``import.gpg`` file
+    inside that directory, and the elevated import ``rm -rf``s the whole
+    directory afterwards, so no leftover lands in ``/tmp``. An import-specific
+    name so ``gpg.key`` and ``gpg.import_key`` never collide on one host.
     """
-    digest = hashlib.sha1(b"gpg.import_key").hexdigest()[:16]
+    seed = dest.encode() if dest else b"gpg.import_key"
+    digest = hashlib.sha1(seed).hexdigest()[:16]
     return f"/tmp/reemote-gpg-import-{digest}/import.gpg"
 
 
@@ -1608,20 +1611,35 @@ class GpgImportCommand(Command):
     The second half of ``gpg.import_key``: ``gpg --batch --yes --import``
     reads the spooled stream into the executing user's default keychain
     (``--yes`` so an existing key is merged without a prompt), then the
-    spool file is removed. Wrapped in ``sh -c`` so a ``sudo``-flagged
-    request elevates both steps of the ``&&`` chain -- though the keychain
-    operations normally run as the login user, whose ``GNUPGHOME`` they
-    act on. The spool path is shell-quoted.
+    spool file is removed. With ``keyring`` the import is scoped to that one
+    keyring file instead (``--no-default-keyring --keyring``, the
+    ``GpgKeyDeleteKeysCommand`` form): the destination directory is created,
+    gpg merges the key into the file -- additive, the keys already there
+    stay -- the file is chmod'ed ``0644`` (the fixed mode, the
+    ``GpgKeyInstallCommand`` precedent) and the spool removed. Wrapped in
+    ``sh -c`` so a ``sudo``-flagged request elevates every step of the
+    ``&&`` chain -- though the keychain operations normally run as the login
+    user, whose ``GNUPGHOME`` they act on. All paths are shell-quoted.
     """
 
     spool: str  # where GpgImportUploadCommand wrote the key stream
+    keyring: str | None = None  # explicit keyring file, or the default keychain
 
     def shell(self) -> str:
         spool = shlex.quote(self.spool)
         # The spool file lives inside a sha1-derived /tmp directory; remove
         # the whole directory so no leftover lands in /tmp.
         spool_dir = shlex.quote(str(PurePosixPath(self.spool).parent))
-        inner = f"gpg --batch --yes --import {spool} && rm -rf {spool_dir}"
+        if self.keyring:
+            keyring = shlex.quote(self.keyring)
+            parent = shlex.quote(str(PurePosixPath(self.keyring).parent))
+            inner = (
+                f"mkdir -p {parent} && "
+                f"gpg --batch --yes --no-default-keyring --keyring {keyring}"
+                f" --import {spool} && chmod 0644 {keyring} && rm -rf {spool_dir}"
+            )
+        else:
+            inner = f"gpg --batch --yes --import {spool} && rm -rf {spool_dir}"
         return f"sh -c {shlex.quote(inner)}"
 
 
@@ -1630,9 +1648,10 @@ async def import_key(
     src: IO[Any],
     keyid: str | None = None,
     secret: bool = False,
+    dest: str | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Import a GPG key stream into the executing user's keychain.
+    """Import a GPG key stream into the executing user's keychain or a keyring file.
 
     Args:
         ctx (OpContext): Execution context for the operation.
@@ -1642,11 +1661,21 @@ async def import_key(
             is read; public and secret key material are both accepted.
         keyid (str | None, optional): The key id or fingerprint (``0x``
             prefix accepted) that makes the import idempotent: when the
-            keychain already holds a matching key, nothing is imported.
-            Without it the import always runs. Defaults to None.
+            keychain -- or ``dest``'s keyring -- already holds a matching
+            key, nothing is imported. Without it the import always runs.
+            Defaults to None.
         secret (bool, optional): Whether ``keyid`` is checked against the
             secret keys (``GpgSecretKeys``) instead of the public keys
-            (``GpgKeys``). Defaults to False.
+            (``GpgKeys``). Cannot be combined with ``dest``. Defaults to
+            False.
+        dest (str | None, optional): Path of a keyring file on the target
+            host to import into instead of the default keychain
+            (``--no-default-keyring --keyring``); its parent directory is
+            created when missing and the file is chmod'ed ``0644``. The
+            import is additive -- keys already in the file stay -- and with
+            ``keyid`` idempotence is decided against that file's
+            ``GpgKeyrings`` entry. Defaults to None (the executing user's
+            keychain).
         **kwargs: Additional keyword arguments.
 
     Yields:
@@ -1662,21 +1691,32 @@ async def import_key(
         Examples can be found in ``examples/modules/gpg/gpg_import_key.py``.
     """
 
-    # A reemote original (``gpg.key``
-    # installs keyring *files*; this imports into the user's keychain).
+    # A reemote original (``gpg.key`` installs keyring *files* wholesale;
+    # this imports into the user's keychain, or additively into one keyring
+    # file with ``dest``).
     #
     # The stream rides an unprivileged ``GpgImportUploadCommand`` scp
     # transfer to a fixed ``/tmp`` spool path, then ``GpgImportCommand``
-    # runs ``gpg --batch --yes --import`` and removes the spool. The import
-    # acts on the *executing user's* default ``GNUPGHOME`` -- flag the
-    # request ``sudo=True`` to import into root's keychain instead. With
-    # ``keyid`` the operation is idempotent against ``GpgKeys`` (or
-    # ``GpgSecretKeys`` with ``secret=True``); without it the import always
-    # runs and always reports a change: the stream's fingerprint is unknown
-    # controller-side (reading it would mean parsing OpenPGP packets), and
-    # gpg's own merge of an already-imported key is harmless. ``str`` src
-    # is rejected like ``gpg.key``'s. ``**kwargs`` absorbs any further global
-    # arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    # runs ``gpg --batch --yes --import`` and removes the spool. Without
+    # ``dest`` the import acts on the *executing user's* default
+    # ``GNUPGHOME`` -- flag the request ``sudo=True`` to import into root's
+    # keychain instead. With ``dest`` it is scoped to that one keyring file
+    # (``--no-default-keyring --keyring``): gpg merges the key into the
+    # file, leaving the keys already there in place -- the additive import
+    # ``gpg.key``'s whole-file install cannot do -- and the file is
+    # chmod'ed ``0644`` (the ``GpgKeyInstallCommand`` precedent); flag the
+    # request ``sudo=True`` when ``dest`` lives in a system directory.
+    # ``dest`` cannot combine with ``secret``: gpg keeps secret material in
+    # ``GNUPGHOME``, never in an explicit keyring file. With ``keyid`` the
+    # operation is idempotent against ``GpgKeys`` (or ``GpgSecretKeys``
+    # with ``secret=True``), or against ``dest``'s own ``GpgKeyrings``
+    # entry when ``dest`` is set (the ``gpg.key`` install pattern); without
+    # it the import always runs and always reports a change: the stream's
+    # fingerprint is unknown controller-side (reading it would mean parsing
+    # OpenPGP packets), and gpg's own merge of an already-imported key is
+    # harmless. ``str`` src is rejected like ``gpg.key``'s. ``**kwargs``
+    # absorbs any further global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
     if isinstance(src, str):
         # ValueError (not TypeError) for consistency with gpg.key/apt.key.
         raise ValueError(  # noqa: TRY004
@@ -1684,20 +1724,37 @@ async def import_key(
             "IO streams, not controller-side file locations); pass the key "
             f"content as an IO-like object, got: {src!r}"
         )
+    if dest is not None and not dest:
+        raise ValueError("gpg.import_key requires a non-empty dest keyring path")
+    if secret and dest:
+        raise ValueError(
+            "gpg.import_key cannot combine dest with secret: gpg stores secret "
+            "material in GNUPGHOME, not in an explicit keyring file"
+        )
 
     if keyid:
-        fact_cls = GpgSecretKeys if secret else GpgKeys
-        keys = await ctx.facts.get(fact_cls)
         clean_key = _clean_keyid(keyid)
-        if any(_matches_keyid(key["id"], clean_key) for key in keys):
-            ctx.reason = f"GPG key {keyid} already imported"
-            return
+        if dest:
+            # Path-scoped: decide against dest's own keyring entry, never
+            # the default keychain (the gpg.key install pattern).
+            keyrings = await ctx.facts.get(GpgKeyrings, (str(PurePosixPath(dest).parent),))
+            entry = next((kr for kr in keyrings if kr["path"] == dest), None)
+            if entry and any(_matches_keyid(key["id"], clean_key) for key in entry["keys"]):
+                ctx.reason = f"GPG key {keyid} already imported into {dest}"
+                return
+        else:
+            fact_cls = GpgSecretKeys if secret else GpgKeys
+            keys = await ctx.facts.get(fact_cls)
+            if any(_matches_keyid(key["id"], clean_key) for key in keys):
+                ctx.reason = f"GPG key {keyid} already imported"
+                return
 
     ctx.changed = True
-    ctx.reason = f"import GPG key from {getattr(src, 'name', '<stream>')}"
-    spool = _import_spool_path()
+    target = f" into {dest}" if dest else ""
+    ctx.reason = f"import GPG key from {getattr(src, 'name', '<stream>')}{target}"
+    spool = _import_spool_path(dest)
     yield GpgImportUploadCommand(src=src, dest=spool)
-    yield GpgImportCommand(spool=spool)
+    yield GpgImportCommand(spool=spool, keyring=dest)
 
 
 # --- gpg.export_key --------------------------------------------------------------

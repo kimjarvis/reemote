@@ -38,6 +38,9 @@ or deliberate statelessness (export/refresh), validation and kwargs
 absorption, the ``gen_key`` ``real_name`` meta-parameter collision
 regression, the SimulatedHost keychain mutators and end-to-end
 ``run``/``run_prepare``+``run_apply`` with dry-run and determinism guards.
+``gpg.import_key`` additionally covers its ``dest`` keyring-file mode: the
+scoped descriptor rendering, path-scoped idempotence against ``GpgKeyrings``,
+the additive SimulatedHost seam and the ``secret``/empty-``dest`` validation.
 
 ``asyncio_mode = "auto"`` lets the async tests below run without decorators.
 """
@@ -1336,9 +1339,12 @@ VENDOR_DEST = "/etc/apt/keyrings/vendor.gpg"
 KEY_SPOOL = _key_spool_path(KEYRING_DEST)
 KEY_SPOOL_DIR = KEY_SPOOL.rsplit("/", 1)[0]
 VENDOR_SPOOL = _key_spool_path(VENDOR_DEST)
-# gpg.import_key has no dest, so its spool comes from a fixed sha1 constant.
+# gpg.import_key's keychain spool comes from a fixed sha1 constant; with a
+# dest keyring it is derived from that path (the _key_spool_path pattern).
 IMPORT_SPOOL = _import_spool_path()
 IMPORT_SPOOL_DIR = IMPORT_SPOOL.rsplit("/", 1)[0]
+KEYRING_IMPORT_SPOOL = _import_spool_path(KEYRING_DEST)
+KEYRING_IMPORT_SPOOL_DIR = KEYRING_IMPORT_SPOOL.rsplit("/", 1)[0]
 
 # The vendor key of the baseline's remove_by_id fixture: key id ABCDEF1234567890,
 # full fingerprint ABCDEF1234567890FEDCBA0987654321ABCDEF12, matched by the
@@ -2451,6 +2457,250 @@ async def test_gpg_import_key_fresh_stream_per_phase_trips_determinism():
     runtimes, plans = await run_prepare([host], import_deploy)
     with pytest.raises(DeterminismError):
         await run_apply(runtimes, plans=plans)
+
+
+# --- gpg.import_key dest mode (import into an explicit keyring file) -----------
+
+
+def test_import_spool_path_is_dest_scoped():
+    """With dest the spool directory derives from the keyring path, so two
+    dests never share (and clobber) one spool; without it the fixed keychain
+    constant is kept."""
+    assert _import_spool_path() == IMPORT_SPOOL
+    assert _import_spool_path(KEYRING_DEST) == KEYRING_IMPORT_SPOOL
+    assert _import_spool_path(VENDOR_DEST) != KEYRING_IMPORT_SPOOL
+
+
+def test_gpg_import_command_keyring_shell_and_elevation():
+    """With keyring the import is scoped to that one file: mkdir the parent,
+    gpg --no-default-keyring --keyring --import (an additive merge), chmod
+    0644 and the spool cleanup, all in one sh -c so every step elevates."""
+    cmd = GpgImportCommand(spool=KEYRING_IMPORT_SPOOL, keyring=KEYRING_DEST)
+    shell = cmd.shell()
+    assert shell.startswith("sh -c ")
+    assert shlex.split(shell)[2] == (
+        "mkdir -p /etc/apt/keyrings && "
+        f"gpg --batch --yes --no-default-keyring --keyring {KEYRING_DEST}"
+        f" --import {KEYRING_IMPORT_SPOOL} && chmod 0644 {KEYRING_DEST}"
+        f" && rm -rf {KEYRING_IMPORT_SPOOL_DIR}"
+    )
+    assert command_shell(cmd, sudo=True).startswith("sudo sh -c ")
+    assert command_shell(cmd, su=True) == f"su -c {shlex.quote(shell)}"
+
+
+def test_gpg_import_command_keyring_quotes_unsafe_paths():
+    """An unsafe keyring path is quoted in the --keyring operand, the chmod
+    operand and the mkdir parent."""
+    dest = "/etc/apt/keyrings/my key;rm.gpg"
+    spool = _import_spool_path(dest)
+    inner = shlex.split(GpgImportCommand(spool=spool, keyring=dest).shell())[2]
+    quoted = shlex.quote(dest)
+    assert f"--keyring {quoted} --import" in inner
+    assert f"chmod 0644 {quoted}" in inner
+    assert "mkdir -p /etc/apt/keyrings" in inner
+
+
+async def test_gpg_import_key_op_dest_without_keyid_always_imports():
+    """dest without keyid always imports into the keyring file: the spool is
+    dest-derived, the import descriptor carries the keyring and the reason
+    names the destination."""
+    host = SimulatedHost(name="h", gpg_keyrings=[VENDOR_KEYRING])
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in gpg.import_key(ctx, src=stream, dest=KEYRING_DEST)]
+    assert ctx.changed
+    assert ctx.reason == f"import GPG key from <stream> into {KEYRING_DEST}"
+    assert commands == [
+        GpgImportUploadCommand(src=stream, dest=KEYRING_IMPORT_SPOOL),
+        GpgImportCommand(spool=KEYRING_IMPORT_SPOOL, keyring=KEYRING_DEST),
+    ]
+
+
+@pytest.mark.parametrize("keyid", ["ABCDEF1234567890", "34567890", "0xABCDEF1234567890"])
+async def test_gpg_import_key_op_dest_keyid_present_is_noop(keyid):
+    """With dest and keyid the check is path-scoped: a matching key in dest's
+    own GpgKeyrings entry (long id, short-id suffix or 0x form) reports the
+    key imported into that file and yields nothing."""
+    host = SimulatedHost(name="h", gpg_keyrings=[VENDOR_KEYRING])
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in gpg.import_key(
+            ctx, src=io.BytesIO(GPG_KEY_BYTES), keyid=keyid, dest=VENDOR_DEST
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == f"GPG key {keyid} already imported into {VENDOR_DEST}"
+    assert commands == []
+
+
+async def test_gpg_import_key_op_dest_keyid_absent_imports():
+    """A keyid matching nothing in dest's keyring entry imports into it."""
+    host = SimulatedHost(name="h", gpg_keyrings=[VENDOR_KEYRING])
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in gpg.import_key(
+            ctx, src=io.BytesIO(GPG_KEY_BYTES), keyid="DEADBEEF", dest=VENDOR_DEST
+        )
+    ]
+    assert ctx.changed
+    assert len(commands) == 2
+    assert commands[1] == GpgImportCommand(
+        spool=_import_spool_path(VENDOR_DEST), keyring=VENDOR_DEST
+    )
+
+
+async def test_gpg_import_key_op_dest_keyid_in_other_keyring_imports():
+    """The check is scoped to dest's entry: the same key living in another
+    keyring file does not satisfy it."""
+    host = SimulatedHost(name="h", gpg_keyrings=[VENDOR_KEYRING])
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in gpg.import_key(
+            ctx,
+            src=io.BytesIO(GPG_KEY_BYTES),
+            keyid="ABCDEF1234567890",
+            dest=KEYRING_DEST,
+        )
+    ]
+    assert ctx.changed
+    assert len(commands) == 2
+
+
+async def test_gpg_import_key_op_dest_ignores_the_default_keychain():
+    """A key in the default keychain does not satisfy a dest-scoped check:
+    the keyring file is a separate store."""
+    host = SimulatedHost(name="h", gpg_keys=[VENDOR_KEY])
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in gpg.import_key(
+            ctx,
+            src=io.BytesIO(GPG_KEY_BYTES),
+            keyid="ABCDEF1234567890",
+            dest=VENDOR_DEST,
+        )
+    ]
+    assert ctx.changed
+    assert len(commands) == 2
+
+
+async def test_gpg_import_key_op_rejects_dest_with_secret():
+    """dest cannot combine with secret: gpg stores secret material in
+    GNUPGHOME, not in an explicit keyring file."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="cannot combine dest with secret"):
+        _ = [
+            c
+            async for c in gpg.import_key(
+                ctx, src=io.BytesIO(GPG_KEY_BYTES), dest=VENDOR_DEST, secret=True
+            )
+        ]
+
+
+async def test_gpg_import_key_op_rejects_empty_dest():
+    """An empty dest raises the house validation error rather than silently
+    importing into the keychain."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="non-empty dest"):
+        _ = [c async for c in gpg.import_key(ctx, src=io.BytesIO(GPG_KEY_BYTES), dest="")]
+
+
+async def test_gpg_import_key_simulated_seam_accumulates_into_the_keyring():
+    """A keyring import appends: the seeded key survives, the stub key joins
+    it, the file bytes grow by the imported body and the default keychain is
+    untouched; re-importing the same bytes adds no duplicate."""
+    host = SimulatedHost(
+        name="h",
+        gpg_keyrings=[{"path": VENDOR_DEST, "format": "gpg", "keys": [VENDOR_KEY]}],
+        remote_files={VENDOR_DEST: b"existing keyring bytes"},
+    )
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    spool = _import_spool_path(VENDOR_DEST)
+    await send_command(host, GpgImportUploadCommand(src=stream, dest=spool))
+    await send_command(host, GpgImportCommand(spool=spool, keyring=VENDOR_DEST))
+    assert spool not in host.remote_files
+    fingerprint = hashlib.sha256(GPG_KEY_BYTES).hexdigest().upper()[:40]
+    (entry,) = host.gpg_keyrings
+    assert entry["path"] == VENDOR_DEST
+    assert entry["keys"][0] == VENDOR_KEY
+    assert entry["keys"][1] == {
+        "id": fingerprint[-16:],
+        "validity": "u",
+        "length": 4096,
+        "fingerprint": fingerprint,
+        "subkeys": [],
+    }
+    merged = b"existing keyring bytes" + GPG_KEY_BYTES
+    assert host.remote_files[VENDOR_DEST] == merged
+    assert VENDOR_DEST in host.existing_files
+    assert host.file_stats[VENDOR_DEST]["size"] == len(merged)
+    assert host.gpg_keys == []
+    await send_command(host, GpgImportUploadCommand(src=stream, dest=spool))
+    await send_command(host, GpgImportCommand(spool=spool, keyring=VENDOR_DEST))
+    assert len(entry["keys"]) == 2
+    assert host.remote_files[VENDOR_DEST] == merged
+
+
+async def test_gpg_import_key_simulated_seam_creates_the_keyring_entry():
+    """Importing into an unseeded keyring path creates the gpg_keyrings entry
+    (format from the extension) and stores the bytes."""
+    host = SimulatedHost(name="h")
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    spool = _import_spool_path(KEYRING_DEST)
+    await send_command(host, GpgImportUploadCommand(src=stream, dest=spool))
+    await send_command(host, GpgImportCommand(spool=spool, keyring=KEYRING_DEST))
+    (entry,) = host.gpg_keyrings
+    assert entry["path"] == KEYRING_DEST
+    assert entry["format"] == "gpg"
+    assert len(entry["keys"]) == 1
+    assert host.remote_files[KEYRING_DEST] == GPG_KEY_BYTES
+    assert host.gpg_keys == []
+
+
+async def test_gpg_import_key_dest_end_to_end_second_import_is_noop():
+    """Two dest+keyid imports of the same stream: the prepare plan shows both
+    changed, but the apply log's fresh per-step cache sees the stub key the
+    first import added to the keyring entry (the keyid names its content-hash
+    fingerprint), and the file bytes accumulate exactly once."""
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    fingerprint = hashlib.sha256(GPG_KEY_BYTES).hexdigest().upper()[:40]
+
+    def import_deploy(host):
+        yield op(
+            gpg.import_key,
+            name="Import once",
+            src=stream,
+            keyid=fingerprint,
+            dest=KEYRING_DEST,
+            sudo=True,
+        )
+        yield op(
+            gpg.import_key,
+            name="Import twice",
+            src=stream,
+            keyid=fingerprint,
+            dest=KEYRING_DEST,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], import_deploy)
+    assert plans["h"][0].changed
+    assert plans["h"][1].changed
+    report = await run_apply(runtimes, plans=plans)
+    first, second = report.log
+    assert first.changed
+    assert not second.changed
+    assert second.reason == f"GPG key {fingerprint} already imported into {KEYRING_DEST}"
+    assert host.remote_files[KEYRING_DEST] == GPG_KEY_BYTES
+    log = format_log(report)
+    assert f"    $ scp <stream> -> {KEYRING_IMPORT_SPOOL}" in log
+    assert "sudo sh -c " in log
 
 
 # --- gpg.export_key operation (reemote original) -------------------------------

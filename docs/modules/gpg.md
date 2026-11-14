@@ -231,15 +231,23 @@ keeps a `sudo`-flagged request elevated across the whole chain.
 
 [`gpg.import_key`][reemote.modules.gpg.gpg.import_key] is a reemote
 original: it imports a key from a seekable IO-like *stream* on the
-controller into the executing user's keychain. The bytes ride an
-unprivileged scp transfer into a sha1-derived `/tmp` directory, then one `sh -c`
-runs `gpg --batch --yes --import <spool>` and removes the spool directory. With
-`keyid` the import is idempotent — the id is matched against `GpgKeys`
-(or `GpgSecretKeys` with `secret=True`) and an already-imported key is
+controller into the executing user's keychain, or — with `dest` — into
+an explicit keyring file. The bytes ride an unprivileged scp transfer
+into a sha1-derived `/tmp` directory, then one `sh -c`
+runs `gpg --batch --yes --import <spool>` and removes the spool directory.
+With `dest` the import is scoped to that one file
+(`--no-default-keyring --keyring <dest>`): the parent directory is
+created, gpg merges the key in additively (keys already in the file
+stay), the file is chmod'ed `0644` and the spool removed — the additive
+multi-key import `gpg.key`'s whole-file install cannot do. With `keyid`
+the import is idempotent — the id is matched against `GpgKeys`
+(or `GpgSecretKeys` with `secret=True`), or against `dest`'s own
+`GpgKeyrings` entry when `dest` is set, and an already-imported key is
 left alone; without `keyid` it always imports and always reports a
 change, because the fingerprint of a raw key stream is unknowable
-controller-side. A `str` src raises `ValueError` (the same stream-only
-decision as `gpg.key`).
+controller-side. `dest` cannot combine with `secret` (gpg keeps secret
+material in `GNUPGHOME`, not in an explicit keyring file). A `str` src
+raises `ValueError` (the same stream-only decision as `gpg.key`).
 
 [`gpg.export_key`][reemote.modules.gpg.gpg.export_key] is a reemote
 original: one `sh -c` creates the destination directory and redirects
@@ -297,7 +305,9 @@ surface as `CommandError` at apply time.
 
 All six keychain operations act on the *executing user's* default
 `GNUPGHOME` (no `homedir`/user parameter in v1); flag the request
-`sudo=True` for root's keychain. Transfers stay unprivileged regardless.
+`sudo=True` for root's keychain. The one exception is `gpg.import_key`
+with `dest`, which writes the named keyring file instead of any
+keychain. Transfers stay unprivileged regardless.
 
 ## Example
 

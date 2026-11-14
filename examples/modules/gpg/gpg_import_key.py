@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Import a GPG key from a controller-side stream into the target keychain.
+"""Import a GPG key from a controller-side stream into the target keychain or keyring file.
 
 This is a *usage* example, not part of the library. It shows how an
 application drives reemote's two-phase execution model end to end over a
@@ -29,9 +29,22 @@ stays unprivileged regardless.
 
 Without a ``keyid`` the import is deliberately non-idempotent: the
 fingerprint of a raw key stream is unknowable controller-side, so the
-operation always imports and always reports a change -- both requests
-below stay changed even in the apply log. Pass ``keyid=...`` to compare
-against the ``GpgKeys`` fact instead and skip an already-imported key.
+operation always imports and always reports a change -- the two keychain
+requests below stay changed even in the apply log. Pass ``keyid=...`` to
+compare against the ``GpgKeys`` fact instead and skip an already-imported
+key.
+
+``dest=...`` imports into an explicit keyring *file* instead of the
+keychain (``gpg --no-default-keyring --keyring <dest> --import``): the
+merge is additive -- keys already in the file stay -- and with ``keyid``
+idempotence is decided against that file's ``GpgKeyrings`` entry. The two
+``dest`` requests below import the same key into
+``/tmp/docker-archive-keyring.gpg`` and then repeat it: the first changes,
+the second is a no-op in the apply log. ``/tmp`` is deliberate -- the demo
+CentOS hosts confine the login user to SELinux ``staff_t``, which denies
+writes under ``/etc`` but allows ``/tmp``; point ``dest`` at
+``/etc/apt/keyrings/...`` (or ``/usr/share/keyrings/...``) on a host where
+that is permitted. ``dest`` cannot combine with ``secret``.
 
 **The stream below carries a real public key** -- the Docker CE release
 signing key for CentOS/rpm (fingerprint
@@ -120,6 +133,14 @@ GPG_KEY = io.BytesIO(
     b"-----END PGP PUBLIC KEY BLOCK-----\n"
 )
 
+# The key's published fingerprint, for the idempotent dest imports below.
+GPG_KEY_FINGERPRINT = "060A61C51B558A7F742B77AAC52FEB6B621E9F35"
+
+# An explicit keyring file to import into with dest=. /tmp keeps the example
+# applicable on the SELinux-confined demo hosts (staff_t denies /etc writes);
+# a real deployment would target /etc/apt/keyrings or /usr/share/keyrings.
+KEYRING_DEST = "/tmp/docker-archive-keyring.gpg"
+
 # examples/modules/gpg/gpg_import_key.py -> the project root, so the inventory
 # is found whatever the current working directory is.
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -152,14 +173,16 @@ def is_centos(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Import the key stream into root's keychain, twice.
+    """Import the key stream into root's keychain and into a keyring file.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
 
-    Without a ``keyid`` both requests import -- gpg deduplicates the key
-    material itself, but reemote cannot know that controller-side, so
-    both stay changed in the apply log too.
+    The two keychain requests carry no ``keyid``, so both import -- gpg
+    deduplicates the key material itself, but reemote cannot know that
+    controller-side, so both stay changed in the apply log too. The two
+    ``dest`` requests carry the key's fingerprint: the first imports into
+    the keyring file, the second sees it in ``GpgKeyrings`` and is a no-op.
     """
     yield op(
         gpg.import_key,
@@ -172,6 +195,24 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         gpg.import_key,
         name="Import demo GPG key (again)",
         src=GPG_KEY,
+        sudo=True,
+        when=is_centos,
+    )
+    yield op(
+        gpg.import_key,
+        name="Import demo GPG key into a keyring file",
+        src=GPG_KEY,
+        keyid=GPG_KEY_FINGERPRINT,
+        dest=KEYRING_DEST,
+        sudo=True,
+        when=is_centos,
+    )
+    yield op(
+        gpg.import_key,
+        name="Import demo GPG key into a keyring file (again)",
+        src=GPG_KEY,
+        keyid=GPG_KEY_FINGERPRINT,
+        dest=KEYRING_DEST,
         sudo=True,
         when=is_centos,
     )

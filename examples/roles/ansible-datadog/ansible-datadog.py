@@ -41,13 +41,15 @@ it. The barriers below are therefore load-bearing, not stylistic:
 Implementation gaps
 -------------------
 
-Five genuine library gaps were proven while mapping the role. Each is
-worked around here, marked ``GAP-n`` at the point of use, and tracked as a
-GitHub issue; the workarounds carry a documented deviation. They are all
-bridgeable, so the migration completes -- a second pass will replace them
-once the library extensions land:
+Five genuine library gaps were proven while mapping the role. GAP-1 (#11,
+additive multi-key import into a non-default keyring) is now **closed**:
+``gpg.import_key`` gained ``dest=``, so the five signing keys import
+additively into the shared keyring, each fingerprint-pinned. The four
+remaining gaps are worked around here, marked ``GAP-n`` at the point of
+use, and tracked as GitHub issues; the workarounds carry a documented
+deviation. They are all bridgeable, so the migration completes -- a second
+pass will replace them once the library extensions land:
 
-* GAP-1 (#11) -- additive multi-key import into a non-default keyring
 * GAP-2 (#12) -- unprivileged read-back of ``0640`` service-owned files
 * GAP-3 (#13) -- ``apt.packages(latest=True)`` is non-idempotent
 * GAP-4 (#14) -- ``apt.repo`` has no ``update_cache``
@@ -133,7 +135,8 @@ MANAGED_HEADER = (
     f"(datadog.datadog {ROLE_VERSION})"
 )
 
-#: ``datadog_apt_default_keys``: CURRENT plus four fingerprint-pinned keys.
+#: ``datadog_apt_default_keys``: CURRENT plus four named keys, in the role's
+#: own URL order.
 APT_KEY_URLS = (
     "https://s3.amazonaws.com/public-signing-keys/DATADOG_APT_KEY_CURRENT.public",
     "https://s3.amazonaws.com/public-signing-keys/DATADOG_APT_KEY_382E94DE.public",
@@ -141,7 +144,14 @@ APT_KEY_URLS = (
     "https://s3.amazonaws.com/public-signing-keys/DATADOG_APT_KEY_C0962C7D.public",
     "https://s3.amazonaws.com/public-signing-keys/DATADOG_APT_KEY_06462314.public",
 )
+#: One fingerprint per URL, in the same order. The role leaves CURRENT
+#: unpinned (it rotates); this migration pins it to the fingerprint it serves
+#: today so every import is idempotent and a CURRENT rotation becomes a
+#: one-line constant update instead of a manual keyring removal. CURRENT
+#: currently serves the same key as C0962C7D (the 2023-04-20 APT key), so
+#: those two imports deduplicate against each other.
 APT_KEY_FINGERPRINTS = (
+    "5F1E256061D813B125E156E8E6266D4AC0962C7D",  # CURRENT
     "A2923DFF56EDA6E76E55E492D3A80E30382E94DE",
     "D75CEA17048B9ACBF186794B32637D44F14F620E",
     "5F1E256061D813B125E156E8E6266D4AC0962C7D",
@@ -566,21 +576,19 @@ def legacy_repo_targets(hits: tuple[str, ...]) -> tuple[str | None, ...]:
     return (None,) * main_file + tuple(sorted(stems))
 
 
-def fetch_key_bundle(urls: tuple[str, ...]) -> bytes:
-    """Download every signing key control-side and concatenate the bodies.
+def fetch_keys(urls: tuple[str, ...]) -> tuple[bytes, ...]:
+    """Download every signing key control-side, one body per URL.
 
-    GAP-1 (#11) workaround: ``gpg.import_key`` has no ``dest``/``keyring``
-    parameter, so the role's ``gpg --no-default-keyring --keyring <path>
-    --import`` cannot be reproduced key by key. ``gpg.key`` *does* write an
-    arbitrary keyring, and ``gpg --dearmor`` accepts a multi-key armored
-    bundle -- so the five imports collapse into one transfer of the
-    concatenated ASCII-armored bodies.
+    The role fetches each key into a host-side tempdir and imports it on the
+    host; reemote takes IO streams, so the fetch moves control-side (D7) and
+    each body becomes its own ``gpg.import_key(dest=...)`` request -- an
+    additive import into the shared keyring, fingerprint-pinned.
     """
     bodies = []
     for url in urls:
         with urllib.request.urlopen(url, timeout=60) as response:
             bodies.append(response.read())
-    return b"\n".join(bodies)
+    return tuple(bodies)
 
 
 def reemote_version() -> str:
@@ -728,9 +736,10 @@ def build_repository(
 ) -> Callable[[Host], Generator[OperationRequest]]:
     """``pkg-debian.yml``: the keyring, the legacy sweep and the agent repo.
 
-    GAP-1 (#11, multi-key import into a non-default keyring) and GAP-4/GAP-5
-    (#14/#15: ``apt.repo`` has no ``update_cache`` and no source provenance)
-    are all worked around here; see the comments at each site.
+    GAP-4/GAP-5 (#14/#15: ``apt.repo`` has no ``update_cache`` and no source
+    provenance) are worked around here; see the comments at each site. The
+    signing keys import additively into the shared keyring with
+    ``gpg.import_key(dest=...)`` (GAP-1/#11, now closed).
 
     The per-host ``io.BytesIO`` objects are built ONCE, in the factory body
     outside the generator: a stream is hashable but compared by *identity*,
@@ -739,7 +748,8 @@ def build_repository(
     the dry run and the real run alike.
     """
     streams = {
-        name: io.BytesIO(plan["keyring"]) for name, plan in snapshot.items()
+        name: tuple(io.BytesIO(body) for body in plan["keys"])
+        for name, plan in snapshot.items()
     }
 
     def repository(host: Host) -> Generator[OperationRequest]:
@@ -766,30 +776,27 @@ def build_repository(
             when=is_ubuntu,
         )
 
-        # GAP-1 (#11): gpg.import_key(ctx, src, keyid=None, secret=False)
-        # has no `dest`/`keyring` parameter -- it imports into the login user's
-        # default GNUPGHOME, so the role's
-        #   gpg --no-default-keyring --keyring /usr/share/keyrings/... --import
-        # cannot be expressed. gpg.key *does* target an arbitrary keyring,
-        # and `gpg --dearmor` accepts a multi-key armored bundle, so the five
-        # per-key imports collapse into ONE request carrying all five bodies
-        # concatenated control-side (fetch_key_bundle).
-        # Deviations: (a) the install is a whole-file overwrite, not an
-        # additive import -- a key an operator added to this keyring by hand
-        # is dropped; (b) CURRENT rides in the bundle but is not
-        # fingerprint-pinned (the role does not pin it either), so a
-        # CURRENT-only rotation is not detected by the keyid idempotence
-        # check and needs the keyring file removed to take effect.
-        yield op(
-            gpg.key,
-            name="Install Datadog apt signing keys",
-            src=streams[host.name],
-            dest=USR_SHARE_KEYRING,
-            keyid=APT_KEY_FINGERPRINTS,
-            dearmor=True,
-            sudo=True,
-            when=is_ubuntu,
-        )
+        # The role's five `_apt-key-import.yml` iterations: each key imports
+        # additively into the shared keyring (gpg --no-default-keyring
+        # --keyring ... --import), fingerprint-pinned so a repeat import is a
+        # no-op. gpg.import_key(dest=...) reproduces this directly (GAP-1/#11,
+        # closed): the keys already in the file stay, so an operator-added key
+        # survives. CURRENT is pinned too -- a documented deviation from the
+        # role, which leaves it unpinned -- so a rotation is a one-line
+        # constant update. The streams zip with the URLs and fingerprints in
+        # the role's own order.
+        for url, stream, fingerprint in zip(
+            APT_KEY_URLS, streams[host.name], APT_KEY_FINGERPRINTS
+        ):
+            yield op(
+                gpg.import_key,
+                name=f"Import Datadog apt signing key {Path(url).stem}",
+                src=stream,
+                dest=USR_SHARE_KEYRING,
+                keyid=fingerprint,
+                sudo=True,
+                when=is_ubuntu,
+            )
 
         # GAP-5 (#15): AptSources entries carry no filename, and apt.repo's
         # removal only edits the file `filename` names -- so "remove this
@@ -1292,13 +1299,13 @@ def pre_cleanup_snapshot(
 
 
 def repository_snapshot(
-    keyring: bytes,
+    keys: tuple[bytes, ...],
     sources: dict[str, Any],
     hits: dict[str, Any],
     repo_files: dict[str, Any],
     settings: dict[str, Any],
 ) -> dict[str, Any]:
-    """Freeze the keyring bytes and the three apt reads the repository deploy needs.
+    """Freeze the signing-key bodies and the three apt reads the repository deploy needs.
 
     ``needs_update`` is the GAP-4 (#14) workaround's gate: true when this
     deploy will change a sources file (a legacy line to drop, the desired repo
@@ -1311,7 +1318,7 @@ def repository_snapshot(
     for name, config in settings.items():
         configured = sources.get(name, ())
         snapshot[name] = {
-            "keyring": keyring,
+            "keys": keys,
             "legacy_files": legacy_repo_targets(tuple(hits.get(name, ()))),
             "needs_update": (
                 any(is_legacy_datadog_source(source) for source in configured)
@@ -1476,11 +1483,11 @@ async def main() -> None:
                         "use the distribution's own key management instead."
                     )
 
-        # GAP-1 (#11): one control-side fetch of all five keys, concatenated
-        # into the armored bundle gpg.key will dearmor into the shared keyring.
+        # One control-side fetch of all five keys, one body per URL; each
+        # imports additively into the shared keyring (gpg.import_key dest=).
         print("\n== Fetching the Datadog apt signing keys (control-side) ==")
-        keyring = fetch_key_bundle(APT_KEY_URLS)
-        print(f"{len(APT_KEY_URLS)} keys, {len(keyring)} armored bytes")
+        keys = fetch_keys(APT_KEY_URLS)
+        print(f"{len(keys)} keys, {sum(len(body) for body in keys)} armored bytes")
 
         # Pre-state snapshot. gather_fact does not close its hosts, so the
         # finally does; run() builds and closes its own.
@@ -1517,7 +1524,7 @@ async def main() -> None:
             await execute(inventory, deploy_bootstrap, "Deploy 2: apt bootstrap packages")
         )
         repository = build_repository(
-            repository_snapshot(keyring, sources, hits, repo_files, settings)
+            repository_snapshot(keys, sources, hits, repo_files, settings)
         )
         reports.append(
             await execute(inventory, repository, "Deploy 3: signing keys and apt repo")

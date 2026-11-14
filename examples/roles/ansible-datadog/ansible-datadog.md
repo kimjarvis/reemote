@@ -44,10 +44,10 @@ Nothing else is needed on the control machine: no Jinja2, no Ansible, no `gh`.
 
 ### 1.2 Control machine
 
-- **Outbound HTTPS to `s3.amazonaws.com`.** `fetch_key_bundle()` downloads the five
-  Datadog signing keys control-side (`urllib`, 60 s timeout each) and concatenates
-  them into one armored bundle. This happens *before* any host is contacted, so a
-  network failure here aborts the run with no target touched.
+- **Outbound HTTPS to `s3.amazonaws.com`.** `fetch_keys()` downloads the five
+  Datadog signing keys control-side (`urllib`, 60 s timeout each) and keeps them
+  as five separate armored bodies, one per import. This happens *before* any host
+  is contacted, so a network failure here aborts the run with no target touched.
 - **SSH access** to each `ubuntu` host with the key named in its `connection`
   (`~/.ssh/id_ed25519` for the shipped `ubuntu` entry).
 
@@ -154,7 +154,7 @@ flag — for a rehearsal that touches nothing, use the offline test ([§8](#8-of
 
 **Run it twice.** The second invocation must report `0 changed request(s)` and an
 empty handler notification set. That is the migration's idempotence claim, and it
-is what the five gap workarounds exist to preserve.
+is what the remaining gap workarounds exist to preserve.
 
 Failures are typed and printed to stderr with exit status 1 — no traceback:
 
@@ -229,15 +229,15 @@ barriers are load-bearing, not stylistic.
 ```
 load_inventory + validate_inventory ──► Host.from_inventory ──► targets = group "ubuntu"
 role_settings(host)  ──► API-key / custom-repo / removed-variable gates   (no host contacted)
-fetch_key_bundle(5 URLs)                                                  (control-side HTTPS)
+fetch_keys(5 URLs)                                                        (control-side HTTPS)
 │
 ├─ gather: AptPackages, AptSources, FindInFiles(/etc/apt), FindFiles(sources.list.d),
 │          SystemdUnitFiles                          ← pre-state snapshot
 │
 ├─ run 1  build_pre_cleanup      __pycache__ + legacy datadog-installer package/units/files
 ├─ run 2  deploy_bootstrap       apt-transport-https, gnupg                (branch-free)
-├─ run 3  build_repository       keyring, gpg.key bundle, legacy repo sweep, agent repo,
-│                                custom-file removal, gated apt.update
+├─ run 3  build_repository       keyring, 5 × gpg.import_key(dest=…), legacy repo sweep,
+│                                agent repo, custom-file removal, gated apt.update
 │
 ├─ gather: AptUpgradable                             ← after the index refresh (GAP-3)
 ├─ run 4  build_agent            datadog-agent (pinned or latest), datadog-signing-keys
@@ -318,7 +318,7 @@ filed) · **out** (scoped out).
 | Install `apt-transport-https` / `gnupg` (`update_cache: true`) | `apt.packages(update=True, cache_valid_time=3600)` × 2 | covered (D5) |
 | Check if keyring exists with correct mode (`stat`) | folded into `files.file(present=True, mode, user, group)` — content/attr idempotence needs no probe | recipe |
 | Ensure keyring exists (`file state=touch mode=0644 root:root`) | `files.file(present=True, mode="0644", user="root", group="root")` | workaround (D6) |
-| Install apt keys from default URLs (5 × `_apt-key-import.yml`) | `fetch_key_bundle()` control-side + **one** `gpg.key(src=BytesIO(bundle), dest=…, keyid=4 fingerprints, dearmor=True)` | **GAP-1 → [#11](https://github.com/kimjarvis/reemote/issues/11)** |
+| Install apt keys from default URLs (5 × `_apt-key-import.yml`) | `fetch_keys()` control-side + **five** `gpg.import_key(src=stream, dest=USR_SHARE_KEYRING, keyid=fingerprint)` requests | covered (GAP-1 closed by [#11](https://github.com/kimjarvis/reemote/issues/11)) |
 | Install apt keys from custom URL (`datadog_apt_key_url_new`) | — | out |
 | Copy keyring to `trusted.gpg.d` (Debian < 9 / Ubuntu < 16) | — | out |
 | Deprecate non-https / non-`signed-by` repositories (6 × `apt_repository state=absent`, **no filename**, `update_cache: true`) | `FindInFiles("/etc/apt", LEGACY_REPO_PATTERN)` → `legacy_repo_targets()` → `apt.repo(present=False, filename=stem)` per line × per file | **GAP-5 → [#15](https://github.com/kimjarvis/reemote/issues/15)** |
@@ -335,11 +335,11 @@ filed) · **out** (scoped out).
 
 | Ansible task | reemote target | Status |
 | --- | --- | --- |
-| `gpg --no-default-keyring --keyring … --list-keys \| grep <fpr>` | `gpg.key`'s own `keyid` idempotence check (`GpgKeys`) | covered |
-| tempfile + `get_url force=true mode=600` | `fetch_key_bundle()` control-side (`urllib`) | recipe (D7) |
-| `cat … \| gpg --dearmor` | `gpg.key(dearmor=True)` | covered |
-| export the single key / `copy` for CURRENT | not needed — the bundle carries all five bodies | recipe |
-| `cat single.gpg \| gpg --no-default-keyring --keyring … --import --batch` | `gpg.key(dest=USR_SHARE_KEYRING)` — **whole-file overwrite, not additive** | **GAP-1 → [#11](https://github.com/kimjarvis/reemote/issues/11)** |
+| `gpg --no-default-keyring --keyring … --list-keys \| grep <fpr>` | `gpg.import_key`'s own `keyid` idempotence check (`GpgKeyrings` on the dest's directory) | covered |
+| tempfile + `get_url force=true mode=600` | `fetch_keys()` control-side (`urllib`) | recipe (D7) |
+| `cat … \| gpg --dearmor` | not needed — `gpg --import` reads armored input natively | recipe |
+| export the single key / `copy` for CURRENT | not needed — each URL's body imports as-is; CURRENT is fingerprint-pinned (D7) | recipe |
+| `cat single.gpg \| gpg --no-default-keyring --keyring … --import --batch` | `gpg.import_key(dest=USR_SHARE_KEYRING)` — **additive merge**, keys already in the file stay | covered (GAP-1 closed) |
 | remove tempdir | nothing to clean — no host-side tempdir is created | covered |
 
 ### `tasks/agent-linux.yml` → deploys 5–6
@@ -398,13 +398,14 @@ each handler's own `when:`.
 
 Five genuine library gaps were proven (full module surface enumerated, then
 corroborated by identifier greps), classified and ranked. **All five are
-bridgeable, so the migration completes.** Each is marked `GAP-n (#issue)` at its
-point of use in the program, and each ticket carries the evidence, the workaround,
-the acceptance criteria and the second-pass plan.
+bridgeable, so the migration completes.** G1 has since been closed by #11 and its
+workaround removed from the program ([§10](#10-second-pass)). Each gap is marked
+`GAP-n (#issue)` at its point of use in the program, and each ticket carries the
+evidence, the workaround, the acceptance criteria and the second-pass plan.
 
 | Gap | Ticket | Rank | Workaround | Deviation it costs |
 | --- | --- | --- | --- | --- |
-| **G1** `gpg.import_key` cannot import into an arbitrary keyring (no `dest`/`keyring`) | [#11](https://github.com/kimjarvis/reemote/issues/11) | core | concatenate all five armored bodies control-side → one `gpg.key(src=BytesIO(bundle), dest=…, keyid=…, dearmor=True)` | whole-file overwrite instead of additive import; CURRENT not fingerprint-pinned, so a CURRENT-only rotation needs the keyring removed; one bad URL fails all five |
+| **G1** `gpg.import_key` had no `dest`/`keyring` — **closed** | [#11](https://github.com/kimjarvis/reemote/issues/11) | core | none left — five additive `gpg.import_key(dest=USR_SHARE_KEYRING, keyid=…)` requests | none left; the retired bundle workaround overwrote the whole file, left CURRENT unpinned and failed all five on one bad URL |
 | **G2** `files.install` reads the destination back **unprivileged**, so `0640` service-owned files re-install every deploy | [#12](https://github.com/kimjarvis/reemote/issues/12) | core | deploy 5 adds the login user to `dd-agent` (`server.user(append=True)`), in an **earlier run** than the writes | an extra privileged change the role never makes; widens API-key readability to the login user |
 | **G3** `apt.packages(latest=True)` upgrades unconditionally — non-idempotent | [#13](https://github.com/kimjarvis/reemote/issues/13) | core | gather `AptUpgradable` after the repo deploy; `latest = pkg in upgradable_names` | the decision is pre-state, so a candidate appearing between gather and apply waits for the next run |
 | **G4** `apt.repo` has no `update_cache` (`**kwargs` absorbs it silently) | [#14](https://github.com/kimjarvis/reemote/issues/14) | core (ordering) | snapshot boolean `needs_update` gates a **stateless** `apt.update()` | the refresh decision is frozen one barrier early; whole-index rather than scoped |
@@ -412,11 +413,11 @@ the acceptance criteria and the second-pass plan.
 
 Evidence highlights (line numbers in `src/reemote/modules/`):
 
-- **G1** — `gpg/gpg.py` `import_key` L1628-L1700 takes `src, keyid, secret` only;
-  `key` L1304-L1358 takes `dest`; `GpgKeyInstallCommand` L1151-L1194 renders
-  `gpg --dearmor -o <dest> <spool>` (overwrite) with a fixed `chmod 0644`.
-  `GpgKeyDeleteKeysCommand` L1215-L1239 already renders
-  `--no-default-keyring --keyring`, so the fix has an in-repo precedent.
+- **G1** — closed: `gpg/gpg.py` `import_key` now takes `dest` and renders
+  `gpg --batch --yes --no-default-keyring --keyring <dest> --import <spool>`
+  (additive), with idempotence decided against `GpgKeyrings` on the dest's parent
+  directory. `GpgKeyDeleteKeysCommand`'s `--no-default-keyring --keyring`
+  rendering was the in-repo precedent.
 - **G2** — `files/files.py` `FileContents` L413-L479 cats unprivileged; an
   unreadable file returns `""`, which never equals the intended content.
   `install` L2709 (caveat comment L2817-L2820) and `transform` L2854 both inherit it.
@@ -458,7 +459,7 @@ Every one is recorded in a comment at its site in the program.
 | D4 | `daemon_reload` is gated on a unit having been forgotten | it is stateless (always `changed`), so an unconditional request would break the no-op second pass |
 | D5 | The bootstrap installs honour `cache_valid_time=3600` (the role passes `update_cache: true` with no window) | reemote's `apt.update` prefix is stateless; without the window every run reports a change |
 | D6 | `file state=touch` → `files.file(present=True, mode, user, group)` | Ansible's `touch` bumps mtime every run and reemote reproduces that faithfully; `present=True` converges to the same end state without the churn |
-| D7 | Keys are fetched **control-side** and transferred as one bundle | no controller filesystem paths inside a deploy, and GAP-1; the role's host-side tempdir/`get_url`/`cat` chain disappears |
+| D7 | Keys are fetched **control-side**, one stream per key, and CURRENT is **fingerprint-pinned** like the other four | no controller filesystem paths inside a deploy; the role's host-side tempdir/`get_url`/`cat` chain disappears. The role imports CURRENT without a fingerprint check; pinning it makes every import idempotent and turns a rotation into a one-line constant update (CURRENT currently serves the same key as `C0962C7D`, so the two deduplicate) |
 | D8 | `agent_datadog_before_7610` is **corrected** | the role tests `datadog_major/minor/bugfix`, which it never defines (`parse-version.yml` sets `agent_datadog_*`). The flag is always false, so the "since 6/7.61.0" block always runs and overwrites the three earlier ones — they are dead code. The migration implements the 7610 expression as the effective one |
 | D9 | The sysprobe-enabled expression's `and`/`or` precedence is **corrected** to `(any enabled flag or other config) and installed` | as written, a non-empty `system_probe_other_config` bypasses `sysprobe_installed`, and reemote would then start a nonexistent unit and raise |
 | D10 | The `conf.d` `find` is gated on **all three** disable flags | the role gates it on `disable_untracked or disable_default` only, so `disable_example_checks` alone leaves the example loop with nothing to iterate — a role oversight |
@@ -487,17 +488,18 @@ preview. Four tests:
 
 Three simulation limits are bridged explicitly between passes, because the
 in-memory host models no real subsystem: `apt_upgradable` is not cleared by a
-simulated install; `gpg_keyrings` entries carry no key material (the simulation
-parses no OpenPGP); `systemd_unit_files` is a static table, so a removed unit is
-forgotten by hand — what `daemon-reload` does for real. The `find`/`grep` seams are
-recomputed from the simulated filesystem after every pass, so the second pass
-really observes the first pass's removals.
+simulated install; `gpg_keyrings` entries hold content-hash stub keys (the
+simulation parses no OpenPGP), so the real imported fingerprints are seeded by
+hand; `systemd_unit_files` is a static table, so a removed unit is forgotten by
+hand — what `daemon-reload` does for real. The `find`/`grep` seams are recomputed
+from the simulated filesystem after every pass, so the second pass really
+observes the first pass's removals.
 
 `tests/test_examples.py` also scans the program statically (no mutable-container
 literals in `op()`, import-time-constructible module constants) and drives every
 factory with a `SNAPSHOT_ARGS` fixture.
 
-Gates: `uv run pytest tests/ -q` → **4252 passed**; `uv run ruff check .` → clean.
+Gates: `uv run pytest tests/ -q` → **4267 passed**; `uv run ruff check .` → clean.
 The docs build is unaffected (`examples/roles` is not in `mkdocs.yml`'s example
 scan paths).
 
@@ -530,12 +532,12 @@ Agreed in Phase 0: one target OS, the role's default path, opt-in branches exclu
 
 ## 10. Second pass
 
-When the five tickets land, the workarounds come out and the program gets closer to
-the role's own shape:
+As the tickets land, the workarounds come out and the program gets closer to the
+role's own shape. #11 has landed:
 
 | Ticket | What disappears from the program |
 | --- | --- |
-| [#11](https://github.com/kimjarvis/reemote/issues/11) | `fetch_key_bundle()`'s concatenation and the single-bundle `gpg.key`; five additive per-key imports into the shared keyring, CURRENT fingerprint-pinned |
+| [#11](https://github.com/kimjarvis/reemote/issues/11) — **done** | `fetch_key_bundle()`'s concatenation and the single-bundle `gpg.key` are gone: `fetch_keys()` keeps the five bodies separate and deploy 3 issues five additive `gpg.import_key(dest=…)` imports, CURRENT fingerprint-pinned |
 | [#12](https://github.com/kimjarvis/reemote/issues/12) | deploy 5's login-user group membership (and D15); the `0640` files stay service-owned and unreadable to the login user |
 | [#13](https://github.com/kimjarvis/reemote/issues/13) | the `AptUpgradable` gather and its snapshot; `latest=True` directly — one barrier fewer |
 | [#14](https://github.com/kimjarvis/reemote/issues/14) | `repository_snapshot`'s `needs_update` and the gated `apt.update`; `update_cache=True` on each `apt.repo` request |

@@ -91,7 +91,7 @@ SNAPSHOT_ARGS = {
         "build_repository",
     ): lambda name: {
         name: {
-            "keyring": b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n",
+            "keys": (b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n",) * 5,
             "legacy_files": (None, "datadog"),
             "needs_update": True,
         }

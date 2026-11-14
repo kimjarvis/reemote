@@ -13,18 +13,18 @@ driver (prepare + apply, plus a ``dry=True`` preview).
 The load-bearing assertion is the migration's idempotence claim: run the
 whole eight-deploy sequence, then run it *again* against the same persistent
 hosts, and the second pass must report ``changed=False`` everywhere and
-queue no restart handler. That is what proves the five GAP workarounds
-converge rather than churn -- in particular the ``AptUpgradable``-gated
-``latest`` (GAP-3), the snapshot-gated ``apt.update`` (GAP-4) and the
-per-file legacy repo fan-out (GAP-5).
+queue no restart handler. That is what proves the GAP workarounds converge
+rather than churn -- in particular the additive per-key import (GAP-1, now
+closed), the ``AptUpgradable``-gated ``latest`` (GAP-3), the snapshot-gated
+``apt.update`` (GAP-4) and the per-file legacy repo fan-out (GAP-5).
 
 Three simulation limits are bridged explicitly between the passes, each
 because the in-memory host models no real subsystem:
 
 * ``apt_upgradable`` is not cleared by a simulated ``apt-get install``, so
   the pending upgrade is retired by hand once it has been applied;
-* ``gpg_keyrings`` entries are written with no key material (the simulation
-  parses no OpenPGP), so the imported fingerprints are seeded by hand;
+* ``gpg_keyrings`` entries hold content-hash stub keys (the simulation
+  parses no OpenPGP), so the real imported fingerprints are seeded by hand;
 * ``systemd_unit_files`` is a static table, so a unit whose file the deploy
   removed is forgotten by hand -- what ``daemon-reload`` does for real.
 
@@ -70,13 +70,16 @@ def load_example() -> Any:
 
 datadog = load_example()
 
-#: The armored bundle ``fetch_key_bundle`` would download. The test never
-#: reaches the network: the bytes are handed to the repository snapshot
-#: directly, exactly as main() hands them over after its control-side fetch.
-KEYRING = (
+#: The five armored key bodies ``fetch_keys`` would download, one per URL.
+#: The test never reaches the network: the bytes are handed to the repository
+#: snapshot directly, exactly as main() hands them over after its control-side
+#: fetch. Each body imports additively into the shared keyring, so the file
+#: ends up holding their concatenation.
+KEYS = tuple(
     b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n\n"
-    b"c2ltdWxhdGVkIGtleSBidW5kbGUsIG5vdCByZWFsIGtleSBtYXRlcmlhbAo=\n"
-    b"-----END PGP PUBLIC KEY BLOCK-----\n"
+    + f"simulated key body {index}, not real key material\n".encode()
+    + b"-----END PGP PUBLIC KEY BLOCK-----\n"
+    for index in range(len(datadog.APT_KEY_URLS))
 )
 
 API_KEY = "0123456789abcdef0123456789abcdef"
@@ -239,8 +242,8 @@ def settle(host: SimulatedHost) -> None:
     # apt-get install applied the pending upgrade; the simulation keeps the
     # candidate list, so retire it (a real `apt list --upgradable` is empty).
     host.apt_upgradable = []
-    # gpg --dearmor wrote the keyring; the simulation stores no key material,
-    # so attach the fingerprints the bundle carries.
+    # The keyring import stored content-hash stub keys; the simulation parses
+    # no OpenPGP, so replace them with the real fingerprints the keys carry.
     for keyring in host.gpg_keyrings:
         if keyring["path"] == datadog.USR_SHARE_KEYRING:
             keyring["keys"] = [
@@ -311,7 +314,7 @@ async def migrate(
     await execute(datadog.deploy_bootstrap)
     await execute(
         datadog.build_repository(
-            datadog.repository_snapshot(KEYRING, sources, hits, repo_files, settings)
+            datadog.repository_snapshot(KEYS, sources, hits, repo_files, settings)
         )
     )
 
@@ -424,9 +427,15 @@ async def test_first_pass_installs_and_configures_the_agent(rig):
     for package in (*datadog.BOOTSTRAP_PACKAGES, "datadog-agent", "datadog-signing-keys"):
         assert package in host.apt_packages
 
-    # GAP-1: one bundle transfer landed in the shared, non-default keyring.
-    assert host.remote_files[datadog.USR_SHARE_KEYRING] == KEYRING
+    # The five per-key imports accumulated additively in the shared,
+    # non-default keyring (gpg.import_key dest=), and never touched the
+    # default keychain.
+    assert host.remote_files[datadog.USR_SHARE_KEYRING] == b"".join(KEYS)
     assert host.file_stats[datadog.USR_SHARE_KEYRING]["mode"] == 644
+    assert host.gpg_keys == []
+    (keyring_entry,) = host.gpg_keyrings
+    assert keyring_entry["path"] == datadog.USR_SHARE_KEYRING
+    assert len(keyring_entry["keys"]) == len(KEYS)
 
     # GAP-5: the legacy line is gone from the file that held it, and the
     # signed-by repo for the chosen major replaced it.
@@ -528,7 +537,7 @@ async def test_dry_preview_matches_the_apply_for_every_deploy(rig):
         inventory[:1],
         datadog.build_repository(
             datadog.repository_snapshot(
-                KEYRING,
+                KEYS,
                 await gather_fact([untouched], AptSources),
                 await gather_fact(
                     [untouched], FindInFiles, "/etc/apt", datadog.LEGACY_REPO_PATTERN
