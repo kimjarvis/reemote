@@ -630,16 +630,15 @@ def app_config(host):
              group="app", mode="0640", sudo=True)
 ```
 
-!!! warning "A restrictive mode costs you content idempotence"
+!!! note "A restrictive mode is re-read elevated"
 
     `files.install` decides whether to write by reading the destination back —
-    unprivileged, as the login user. A file installed `0640` and owned by a
-    service account cannot be read by that login user, so it reads back empty
-    and re-installs on **every** run. Content idempotence needs a
-    login-readable file. Either install the secret `0644` (world-readable —
-    usually not what you want for a key), or accept the re-write, or keep the
-    secret out of a file the login user cannot read. This is a real, documented
-    trade-off, not a bug — plan the mode with it in mind.
+    unprivileged, as the login user, first. A file installed `0640` and owned
+    by a service account cannot be read by that login user, so the read-back
+    falls back to an elevated `sudo` cat: content idempotence holds for the
+    restrictive mode and the second run is a no-op. The re-read uses the same
+    elevation the install already needs — the run-as user and any password
+    come from the inventory's `privilege` block.
 
 Where you store the secret is up to you; reading an unencrypted JSON file is the simple-and-wrong baseline, exactly as hardcoding it would be. Use an encrypted store in production.
 

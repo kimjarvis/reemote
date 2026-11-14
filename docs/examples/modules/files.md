@@ -296,9 +296,9 @@ example first provisions the `www` group and system user (the account the
 sibling `files_op_file.py` uses), then installs a plain demo config and an
 owned `www:www` variant under `/etc` with `sudo=True` (the transfer stays
 unprivileged regardless), and runs the same deploy again to show every
-request reporting no change. The owned variant keeps the login-readable
-`0644` mode on purpose: `FileContents` cats unprivileged, so a `0640`
-service-account file would read back as empty and re-install on every deploy.
+request reporting no change. The owned variant uses the login-readable
+`0644` mode; a restrictive `0640` service-account mode stays idempotent too —
+`FileContents` re-reads a file the login user cannot read elevated with `sudo`.
 
 ::: files_install
     options:

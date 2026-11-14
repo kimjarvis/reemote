@@ -33,24 +33,26 @@ it. The barriers below are therefore load-bearing, not stylistic:
 2. ``deploy_bootstrap``    -- apt-transport-https + gnupg (branch-free)
 3. ``build_repository``    -- keyring, legacy repo sweep, agent repo
 4. ``build_agent``         -- the agent + signing-keys packages
-5. ``deploy_identity``     -- group memberships (see GAP-2, #12)
-6. ``build_configure``     -- every config file and the systemd units
-7. ``build_cleanup_conf_d``-- the untracked/default/example check sweep
-8. ``compose(restart_handler(...), restart_handler(...))`` -- the handlers
+5. ``build_configure``     -- additional groups, every config file, the units
+6. ``build_cleanup_conf_d``-- the untracked/default/example check sweep
+7. ``compose(restart_handler(...), restart_handler(...))`` -- the handlers
 
 Implementation gaps
 -------------------
 
-Five genuine library gaps were proven while mapping the role. GAP-1 (#11,
-additive multi-key import into a non-default keyring) is now **closed**:
-``gpg.import_key`` gained ``dest=``, so the five signing keys import
-additively into the shared keyring, each fingerprint-pinned. The four
-remaining gaps are worked around here, marked ``GAP-n`` at the point of
-use, and tracked as GitHub issues; the workarounds carry a documented
-deviation. They are all bridgeable, so the migration completes -- a second
-pass will replace them once the library extensions land:
+Five genuine library gaps were proven while mapping the role. Two are now
+**closed**: GAP-1 (#11, additive multi-key import into a non-default
+keyring) -- ``gpg.import_key`` gained ``dest=``, so the five signing keys
+import additively into the shared keyring, each fingerprint-pinned; and
+GAP-2 (#12, unprivileged read-back of ``0640`` service-owned files) --
+``FileContents`` now re-reads a present-but-unreadable file elevated, so
+``files.install`` converges on service-owned configs and the login-user
+group-membership workaround is gone. The three remaining gaps are worked
+around here, marked ``GAP-n`` at the point of use, and tracked as GitHub
+issues; the workarounds carry a documented deviation. They are all
+bridgeable, so the migration completes -- a second pass will replace them
+once the library extensions land:
 
-* GAP-2 (#12) -- unprivileged read-back of ``0640`` service-owned files
 * GAP-3 (#13) -- ``apt.packages(latest=True)`` is non-idempotent
 * GAP-4 (#14) -- ``apt.repo`` has no ``update_cache``
 * GAP-5 (#15) -- ``apt.repo`` removal is file-scoped, no source provenance
@@ -923,54 +925,6 @@ def build_agent(
     return agent
 
 
-def deploy_identity(host: Host) -> Generator[OperationRequest]:
-    """Group memberships: ``datadog_additional_groups``, plus GAP-2 (#12).
-
-    GAP-2 (#12): ``files.install`` decides idempotence by reading the destination
-    back with ``FileContents``, which cats *unprivileged*. The role's config
-    files are ``0640`` owned by ``dd-agent`` (or root:dd-agent), so the login
-    user cannot read them and every deploy would re-install all of them.
-    The workaround is to make the login user a member of the agent group,
-    which the ``0640`` group-read bit then covers.
-
-    Ordering is load-bearing: this deploy runs AFTER the agent package
-    install (the group must exist) and BEFORE any ``0640`` write, and each
-    ``run`` opens fresh SSH sessions -- so the configure deploy's sessions
-    pick up the new supplementary group. A membership change inside the
-    *same* run would not take effect for that run's own sessions.
-
-    Deviation: the role never touches the login user. This is an extra
-    privileged change to the target, made so content idempotence works; the
-    alternative (leaving the files unreadable) re-installs every config on
-    every pass and restarts the agent each time.
-    """
-    settings = role_settings(host)
-    login = host.connection.get("username")
-    if login:
-        yield op(
-            server.user,
-            name="Add the login user to the agent group",
-            user=login,
-            groups=(settings["agent_group"],),
-            append=True,
-            ensure_home=False,
-            sudo=True,
-            when=is_ubuntu,
-        )
-    additional = settings["additional_groups"]
-    if additional:
-        yield op(
-            server.user,
-            name="Add user to additional groups",
-            user=settings["agent_user"],
-            groups=additional,
-            append=True,
-            ensure_home=False,
-            sudo=True,
-            when=is_ubuntu,
-        )
-
-
 def build_configure(
     plans: dict[str, Any],
 ) -> Callable[[Host], Generator[OperationRequest]]:
@@ -991,6 +945,25 @@ def build_configure(
             return
         agent_user = plan["agent_user"]
         agent_group = plan["agent_group"]
+
+        # The role's "Add user to additional groups" (agent-linux.yml), which
+        # notifies restart datadog-agent. It modifies the agent user the
+        # package install created, so it lives here -- after that install,
+        # with the user present in both phases. GAP-2 (#12) is closed: the
+        # 0640 read-back re-reads elevated, so the login user is never added
+        # to the agent group and this no longer needs an earlier run.
+        additional = plan["additional_groups"]
+        if additional:
+            yield op(
+                server.user,
+                name="Add user to additional groups",
+                user=agent_user,
+                groups=additional,
+                append=True,
+                ensure_home=False,
+                sudo=True,
+                when=is_ubuntu,
+            )
 
         if plan["manage_config"]:
             yield op(
@@ -1389,6 +1362,7 @@ def configure_plan(
         "units": units,
         "agent_user": settings["agent_user"],
         "agent_group": settings["agent_group"],
+        "additional_groups": settings["additional_groups"],
         "datadog_yaml": render_datadog_yaml(settings),
         "install_info": render_install_info(tool_version),
         "system_probe_yaml": (
@@ -1548,13 +1522,6 @@ async def main() -> None:
             await execute(inventory, agent, "Deploy 4: the Datadog agent package")
         )
 
-        # GAP-2 (#12): group membership must land before any 0640 write, and
-        # in an earlier run than the write -- each run opens fresh SSH
-        # sessions, so only a later run sees the new supplementary group.
-        reports.append(
-            await execute(inventory, deploy_identity, "Deploy 5: group memberships")
-        )
-
         # service_facts, after the install: which agent units exist now, and
         # whether the experimental agent owns the service manager.
         try:
@@ -1577,7 +1544,7 @@ async def main() -> None:
         }
         configure = build_configure(plans)
         reports.append(
-            await execute(inventory, configure, "Deploy 6: configuration and services")
+            await execute(inventory, configure, "Deploy 5: configuration and services")
         )
 
         # The conf.d enumeration, after the installs it must observe. The
@@ -1608,7 +1575,7 @@ async def main() -> None:
                 print(f"{name}: {len(paths)} check config file(s)")
         cleanup = build_cleanup_conf_d(found)
         reports.append(
-            await execute(inventory, cleanup, "Deploy 7: conf.d cleanup")
+            await execute(inventory, cleanup, "Deploy 6: conf.d cleanup")
         )
 
         # The handlers. Every notifying request name is enumerated from the
@@ -1644,7 +1611,7 @@ async def main() -> None:
             ),
             restart_handler(agent_restart, ("datadog-agent",), when=is_ubuntu),
         )
-        reports.append(await execute(inventory, handlers, "Deploy 8: restart handlers"))
+        reports.append(await execute(inventory, handlers, "Deploy 7: restart handlers"))
 
         changed = sum(
             1 for report in reports for entry in report.log if entry.changed

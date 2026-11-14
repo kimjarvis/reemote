@@ -188,10 +188,10 @@ def app_config(host: Host):
 
     The stage comes from ``host.extra`` (static), so the branch is deterministic.
     ``sudo`` is omitted for the root container; a real SSH target passes
-    ``sudo=True``. Note the documented trade-off: ``files.install`` decides
-    whether to write by reading the destination back *unprivileged*, so a 0640
-    file a non-root login user cannot read re-installs on every run. Root reads it
-    fine, so idempotence holds here on beta.
+    ``sudo=True``. The read-back is two-tier: ``files.install`` reads the
+    destination back *unprivileged* first and re-reads elevated with ``sudo``
+    when the login user cannot read the 0640 file, so idempotence holds for
+    the restrictive mode. Root reads it directly here on beta.
     """
     stage = host.extra.get("stage", "beta")
     secret = get_secret("app_secret_key", stage)

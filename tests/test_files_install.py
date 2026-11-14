@@ -35,6 +35,7 @@ from reemote.drivers import (
     run,
     send_command,
 )
+from reemote.handlers import changed_hosts
 from reemote.hosts import CommandError, Host
 from reemote.modules import files
 from reemote.modules.files.files import (
@@ -70,6 +71,29 @@ class CannedShellHost(Host):
 
     async def run_shell(self, shell: str, *, check: bool = False) -> str:
         return self._stdout
+
+
+class CannedFallbackHost(Host):
+    """Canned stdout for both read tiers, recording the elevated calls.
+
+    ``run_shell`` answers the unprivileged ``FileContents`` read and
+    ``run_shell_privileged`` the fallback re-read an unreadable file triggers.
+    """
+
+    def __init__(self, stdout: str, privileged_stdout: str):
+        super().__init__(name="canned")
+        self._stdout = stdout
+        self._privileged_stdout = privileged_stdout
+        self.privileged_calls: list[tuple[str, bool]] = []
+
+    async def run_shell(self, shell: str, *, check: bool = False) -> str:
+        return self._stdout
+
+    async def run_shell_privileged(
+        self, shell: str, *, sudo: bool = False, su: bool = False, doas: bool = False
+    ) -> str:
+        self.privileged_calls.append((shell, sudo))
+        return self._privileged_stdout
 
 
 # --- The spool naming: deterministic and dest-derived ------------------------
@@ -301,6 +325,21 @@ async def test_install_reads_current_content_over_the_real_transport():
     commands = [cmd async for cmd in files.install(ctx, CONTENT, DEST)]
     assert ctx.changed
     assert len(commands) == 2
+
+
+async def test_install_unreadable_file_falls_back_to_an_elevated_read():
+    """Over the real transport, a file the login user cannot read cats back
+    the UNREADABLE marker; the fact's elevated re-read returns the real
+    content, so a matching install is a no-op instead of a re-install."""
+    host = CannedFallbackHost(
+        f"{FileContents.MARKER}\n{FileContents.UNREADABLE}\n",
+        f"{FileContents.MARKER}\n{CONTENT}",
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [cmd async for cmd in files.install(ctx, CONTENT, DEST)]
+    assert not ctx.changed
+    assert commands == []
+    assert host.privileged_calls == [(FileContents.command(DEST), True)]
 
 
 # --- The SimulatedHost seam: dispatch and mutation -----------------------------
@@ -707,3 +746,69 @@ async def test_install_validate_failure_aborts_and_preserves_the_original():
     assert built[0].remote_files[DEST] == b"old = true\n"
     assert built[0].remote_files[SPOOL] == CONTENT.encode()
     assert DEST not in built[0].file_stats
+
+
+# --- The unreadable-file fallback: restrictive modes stay idempotent ---------
+
+
+UNREADABLE_INVENTORY = [
+    {
+        "host": "web1",
+        "connection": {"key_path": "~/.ssh/id_ed25519", "username": "kim"},
+    },
+]
+
+
+def unreadable_install_deploy():
+    """One install of a 0640 root:dd-agent config the login user (kim, outside
+    the dd-agent group) cannot read back unprivileged."""
+
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            files.install,
+            name="Install service config",
+            content=CONTENT,
+            dest=DEST,
+            mode="0640",
+            user="root",
+            group="dd-agent",
+            sudo=True,
+        )
+
+    return deploy
+
+
+async def test_unreadable_install_is_idempotent_across_deploys():
+    """The acceptance: installing 0640 root:dd-agent content twice with a login
+    user outside that group reports changed=False on pass 2 -- FileContents
+    re-reads the unreadable file elevated -- and queues no handler."""
+    _plans, first, hosts = await run(
+        UNREADABLE_INVENTORY,
+        unreadable_install_deploy(),
+        host_factory=SimulatedHost.from_inventory,
+    )
+    assert first is not None
+    assert first.log[0].changed
+    assert changed_hosts(first, {"Install service config"}) == frozenset({"web1"})
+
+    # The installed file is 0640 root:dd-agent, and kim cannot read it.
+    host = hosts[0]
+    assert host.file_stats[DEST] == {
+        "user": "root",
+        "group": "dd-agent",
+        "mode": 640,
+        "size": len(CONTENT.encode()),
+    }
+    assert not host.login_can_read(DEST)
+
+    # The second deploy shares run 1's host state: the read-back falls back
+    # to the elevated tier and the install is a no-op.
+    _plans, second, _hosts = await run(
+        UNREADABLE_INVENTORY,
+        unreadable_install_deploy(),
+        host_factory=lambda entry: host,
+    )
+    assert second is not None
+    assert not second.log[0].changed
+    assert second.log[0].reason == f"content already up to date ({DEST})"
+    assert changed_hosts(second, {"Install service config"}) == frozenset()

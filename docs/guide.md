@@ -603,7 +603,7 @@ The files namespace shows the design boundaries most clearly.
 
 **Protected text files** (root-owned `/etc/...` paths) use a *spool-and-install* pattern rather than an in-place edit: `files.install` uploads the text to a deterministic `/tmp` spool path derived from the destination, then runs an elevated `sh -c` chain that copies the spool into place, sets ownership and mode, and removes the spool. The upload itself is unprivileged; only the install chain is elevated. The `/tmp` spool path is predictable and is **not** a security boundary — it is a staging location, not a secret.
 
-Because the transfer is unprivileged, an existing file whose content the login user cannot read may appear empty to a generic read-back, which can undermine idempotence for restrictive permissions. Prefer `files.install` for a single-cycle protected text write; it does not have the "create then move" two-run problem that `files.move` has (a `move` validates its source during materialisation, so a source created in the same run is not yet present at plan time).
+The read-back is two-tier: `FileContents` cats unprivileged first and re-reads elevated with `sudo` when the login user cannot read the file, so restrictive permissions keep content idempotence. Prefer `files.install` for a single-cycle protected text write; it does not have the "create then move" two-run problem that `files.move` has (a `move` validates its source during materialisation, so a source created in the same run is not yet present at plan time).
 
 ## Command descriptors
 

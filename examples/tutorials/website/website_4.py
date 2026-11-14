@@ -327,11 +327,10 @@ def app_venv(host: Host):
 def app_config(host: Host):
     """Render the secret config control-side and install it (website_3.py).
 
-    Note the documented trade-off: files.install decides whether to write by
-    reading the destination back *unprivileged*, so a 0640 file the login user
-    cannot read re-installs on every run -- which also queues the restart handler
-    below each time. Grant the login user read membership, or use a
-    login-readable mode, to make it converge.
+    The read-back is two-tier: files.install reads the destination back
+    *unprivileged* first and re-reads elevated with sudo when the login user
+    cannot read the 0640 file, so the restrictive mode converges -- a second
+    run is a no-op and queues no restart handler below.
     """
     stage = host.extra.get("stage", "beta")
     secret = get_secret("app_secret_key", stage)

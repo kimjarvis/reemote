@@ -116,6 +116,7 @@ SNAPSHOT_ARGS = {
             ),
             "agent_user": "dd-agent",
             "agent_group": "dd-agent",
+            "additional_groups": (),
             "datadog_yaml": "api_key: seed\n",
             "install_info": "---\ninstall_method:\n  tool: reemote\n",
             "system_probe_yaml": "# managed\n",

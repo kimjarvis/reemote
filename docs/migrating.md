@@ -891,11 +891,12 @@ twice to prove the second is a no-op — is the
   inside the deploy generator, produces a fresh callable per phase and trips
   [`DeterminismError`][reemote.drivers.DeterminismError]. Build it once at
   module level (or once in `main()`) and pass that one function.
-- **A file the login user cannot read re-installs every deploy.**
-  `FileContents` cats *unprivileged*, so a target with a mode the login user
-  cannot read (a `0640` service-account config) reads back empty and never
-  matches the transform's output. Keep the target login-readable, or converge
-  it with a fact that can read it.
+- **A file the login user cannot read is re-read elevated.**
+  `FileContents` cats *unprivileged* first; when the login user cannot read
+  the target (a `0640` service-account config), it re-reads it with `sudo`, so
+  a restrictive mode keeps content idempotence instead of re-installing every
+  deploy. The re-read's run-as user and any password come from the inventory
+  `privilege` data.
 - **`sudo=True` elevates the install, not the transfer.** The scp spool copy
   always rides as the login user into world-writable `/tmp`; only the
   `sh -c` install that overlays the protected file elevates. The predictable
@@ -1022,11 +1023,12 @@ the second is a no-op — is the
   or use the package module ([`dnf.rpm`][reemote.modules.dnf.dnf.rpm]).
 - **`url` must be `http(s)`.** A `file:`/`ftp:` scheme raises `ValueError` before
   any fetch.
-- **A file the login user cannot read re-downloads every deploy.** Idempotence is
-  `files.install`'s content-equality against the unprivileged
-  [`FileContents`][reemote.modules.files.files.FileContents] read, so a target
-  with a mode the login user cannot read (a `0640` secret) reads back empty and
-  never matches. Keep the destination login-readable, or converge it another way.
+- **A file the login user cannot read is re-read elevated.** Idempotence is
+  `files.install`'s content-equality against the
+  [`FileContents`][reemote.modules.files.files.FileContents] read, which cats
+  unprivileged first and re-reads with `sudo` when the login user cannot read
+  the target (a `0640` secret) — so a restrictive mode keeps content idempotence
+  instead of re-downloading every deploy.
 - **`sudo=True` elevates the install, not the transfer.** The scp spool copy
   always rides as the login user into world-writable `/tmp`; only the `sh -c`
   install that overlays the protected file elevates — the same trade-off every

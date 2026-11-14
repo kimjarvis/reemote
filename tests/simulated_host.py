@@ -4214,6 +4214,45 @@ class SimulatedHost(Host):
             "size": len(data),
         }
 
+    def login_can_read(self, path: str) -> bool:
+        """Whether the login user can read the file at ``path`` (POSIX bits).
+
+        The permission model behind ``FileContents``' simulated read: the
+        unprivileged seam read consults this before decoding, so a file the
+        login user cannot read returns the same unreadable sentinel the real
+        transport's failed ``cat`` produces and the elevated fallback runs
+        offline too. The login name is the inventory's
+        ``connection.username``/``user`` (absent means root, which bypasses
+        the check); the mode comes from the ``file_stats`` row, stored as
+        the decimal int of the octal digits (640 means 0o640). Owner, group
+        (the primary ``group`` plus supplementary ``groups`` of the
+        ``os_users`` row) and other read bits are checked in POSIX order. A
+        path with no row -- or a non-dict row/non-int mode -- reads as
+        readable: the legacy seam stored content without metadata, and those
+        tests model a login-readable file.
+        """
+        stats = self.file_stats.get(path)
+        if not isinstance(stats, dict):
+            return True
+        mode = stats.get("mode")
+        if not isinstance(mode, int):
+            return True
+        login = (
+            self.connection.get("username") or self.connection.get("user") or "root"
+        )
+        if login == "root":
+            return True
+        perm = int(str(mode), 8)
+        if login == stats.get("user"):
+            return bool(perm & 0o400)
+        info = self.os_users.get(login, {})
+        groups = set(info.get("groups") or [])
+        if info.get("group"):
+            groups.add(info["group"])
+        if stats.get("group") in groups:
+            return bool(perm & 0o040)
+        return bool(perm & 0o004)
+
     def move_path(self, src: str, dest: str) -> None:
         """Record a simulated ``mv``: relocate ``src`` into the directory ``dest``.
 

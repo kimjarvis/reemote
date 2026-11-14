@@ -11,12 +11,14 @@ gathered from simulated state, and every deploy goes through the real
 driver (prepare + apply, plus a ``dry=True`` preview).
 
 The load-bearing assertion is the migration's idempotence claim: run the
-whole eight-deploy sequence, then run it *again* against the same persistent
+whole seven-deploy sequence, then run it *again* against the same persistent
 hosts, and the second pass must report ``changed=False`` everywhere and
 queue no restart handler. That is what proves the GAP workarounds converge
 rather than churn -- in particular the additive per-key import (GAP-1, now
-closed), the ``AptUpgradable``-gated ``latest`` (GAP-3), the snapshot-gated
-``apt.update`` (GAP-4) and the per-file legacy repo fan-out (GAP-5).
+closed), the elevated read-back of ``0640`` service-owned configs (GAP-2,
+now closed), the ``AptUpgradable``-gated ``latest`` (GAP-3), the
+snapshot-gated ``apt.update`` (GAP-4) and the per-file legacy repo fan-out
+(GAP-5).
 
 Three simulation limits are bridged explicitly between the passes, each
 because the in-memory host models no real subsystem:
@@ -327,7 +329,6 @@ async def migrate(
             }
         )
     )
-    await execute(datadog.deploy_identity)
 
     units_after = await gather_fact(targets, SystemdUnitFiles)
     exp_state = await gather_fact(
@@ -471,9 +472,11 @@ async def test_first_pass_installs_and_configures_the_agent(rig):
     assert EXAMPLE_CONF not in host.existing_files
     assert DISK_CONF in host.existing_files
 
-    # GAP-2: the login user can now group-read the 0640 configs.
-    assert "dd-agent" in host.os_users["kjarvis"]["groups"]
-    assert "sudo" in host.os_users["kjarvis"]["groups"]
+    # GAP-2 (#12) closed: the 0640 configs converge via an elevated read-back,
+    # so the login user is never added to the agent group -- the role's own
+    # shape, with no extra privileged change to the login user.
+    assert "dd-agent" not in host.os_users["kjarvis"]["groups"]
+    assert host.os_users["kjarvis"]["groups"] == ["sudo"]
 
     # The agent is running and enabled, and the restart handler fired.
     assert host.services["datadog-agent.service"] == "active"

@@ -410,13 +410,28 @@ class Md5File(_HashFileBase):
     ALGO = "md5"
 
 
+class _UnreadableFile:
+    """Sentinel type: a file that exists but the login user cannot read."""
+
+
+#: The single sentinel instance ``FileContents._read`` returns for a present
+#: but unreadable file; ``process`` re-reads it elevated. A private object, so
+#: no content string can ever compare equal to it.
+_UNREADABLE = _UnreadableFile()
+
+
 class FileContents:
     """The text content of a file on the remote host, or None when absent.
+
+    A file the login user cannot read (eg a ``0640`` service-account config)
+    is re-read elevated with ``sudo``, so restrictive modes keep content
+    idempotence; the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
 
     **Commands:**
 
     ```bash
-    test -e <path> && { printf '#reemote-filecontents\\n'; cat -- <path>; }
+    test -e <path> && { printf '#reemote-filecontents\\n'; cat -- <path> || printf '#reemote-filecontents-unreadable\\n'; }
     ```
 
     **Returns:**
@@ -428,7 +443,7 @@ class FileContents:
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -442,11 +457,25 @@ class FileContents:
     # ``dnf.DnfRepoFile`` -- the same read-content-or-None shape -- absence is
     # reported as ``None``, never the empty string, so a file that exists but is
     # empty stays distinguishable from one that is missing.
+    #
+    # The read is two-tier: the first cat rides unprivileged, and a cat that
+    # fails (permission denied on a service-owned ``0640`` file) prints the
+    # ``UNREADABLE`` marker instead, which ``process`` turns into one elevated
+    # re-read -- the fallback that keeps ``files.install``'s content idempotence
+    # honest for files the login user cannot read, without changing any
+    # operation's signature. A readable file whose content is exactly the
+    # ``UNREADABLE`` marker line also triggers the elevated re-read, which
+    # returns the same content -- a spurious elevation, never a wrong answer.
 
     #: Marker printed before the ``cat``'d content, only when ``test -e``
     #: passes, so ``process`` can tell an existing (possibly empty) file from
     #: a missing one (no marker on stdout).
     MARKER = "#reemote-filecontents"
+
+    #: Marker the ``cat``'s failure arm prints when the file exists but the
+    #: login user cannot read it: stdout is then exactly the two marker lines,
+    #: which ``process`` detects to trigger the elevated re-read.
+    UNREADABLE = "#reemote-filecontents-unreadable"
 
     @classmethod
     def command(cls, path: str) -> str:
@@ -454,13 +483,30 @@ class FileContents:
 
         The ``test -e`` guard means a missing file produces no output at all
         (not even the marker), while an existing one -- empty or not -- always
-        leads with the marker line.
+        leads with the marker line. A ``cat`` that fails (the login user
+        cannot read the file) prints ``UNREADABLE`` instead of content, so an
+        unreadable file stays distinguishable from an empty one.
         """
         quoted = shlex.quote(path)
-        return f"test -e {quoted} && {{ printf '{cls.MARKER}\\n'; cat -- {quoted}; }}"
+        return (
+            f"test -e {quoted} && {{ printf '{cls.MARKER}\\n'; "
+            f"cat -- {quoted} || printf '{cls.UNREADABLE}\\n'; }}"
+        )
 
     @classmethod
     async def process(cls, host: Host, path: str) -> str | None:
+        content = await cls._read(host, path, privileged=False)
+        if content is _UNREADABLE:
+            # Present but unreadable as the login user: re-read elevated. The
+            # run-as user and any password come from the inventory privilege
+            # data (run_shell_privileged), never from an operation.
+            content = await cls._read(host, path, privileged=True)
+        return content
+
+    @classmethod
+    async def _read(
+        cls, host: Host, path: str, *, privileged: bool
+    ) -> str | None | _UnreadableFile:
         remote_files = getattr(host, "remote_files", None)
         if remote_files is not None:
             # SimulatedHost seam: decode the content the simulated remote
@@ -469,13 +515,29 @@ class FileContents:
             # upload -- which stores its bytes here -- reads back through this
             # fact, and an ``edit`` sees the content a prior ``edit`` wrote.
             data = remote_files.get(path)
-            return data.decode("utf-8") if data is not None else None
+            if data is None:
+                return None
+            if not privileged:
+                # The seam models the permission check too: a login user
+                # without read access gets the same sentinel the real
+                # transport's failed cat produces, so the elevated fallback
+                # runs offline exactly as it does over SSH.
+                can_read = getattr(host, "login_can_read", None)
+                if can_read is not None and not can_read(path):
+                    return _UNREADABLE
+            return data.decode("utf-8")
         # Real transport: cat the file over asyncssh behind the marker, so a
         # missing file (no marker) reads as None rather than empty content.
-        stdout = await host.run_shell(cls.command(path))
+        command = cls.command(path)
+        if privileged:
+            stdout = await host.run_shell_privileged(command, sudo=True)
+        else:
+            stdout = await host.run_shell(command)
         prefix = f"{cls.MARKER}\n"
         if not stdout.startswith(prefix):
             return None
+        if not privileged and stdout == prefix + f"{cls.UNREADABLE}\n":
+            return _UNREADABLE
         return stdout[len(prefix) :]
 
 
@@ -2814,10 +2876,11 @@ async def install(
     # elevated (as root), matching Ansible's become-scoped ``validate`` and
     # letting a checker like ``nginx -t`` read every file the config
     # references. An empty/whitespace-only template raises ``ValueError``.
-    # One read-back caveat: ``FileContents`` cats unprivileged, so a file
-    # installed with a mode the login user cannot read (eg ``0640`` owned
-    # by a service account) reads back as empty content and re-installs on
-    # every deploy -- content idempotence needs a login-readable file.
+    # The read-back is two-tier: ``FileContents`` cats unprivileged first and,
+    # when the login user cannot read the file (eg a ``0640`` config owned by
+    # a service account), re-reads it elevated with ``sudo`` -- so content
+    # idempotence holds for restrictive modes too, and the re-read's run-as
+    # user and any password come from the inventory ``privilege`` data.
     # There is deliberately no ``present=False`` removal branch --
     # ``files.file(present=False)`` already owns removal. ``**kwargs``
     # absorbs any further global arguments (``op()`` already strips
@@ -2931,10 +2994,10 @@ async def transform(
     # ``user``/``group`` chown inside the elevated chain. An absent file is a
     # change: ``transform(None)`` produces the content to create it from.
     # Content-only idempotence means a mode- or owner-only drift does not
-    # re-install (``files.file`` converges metadata), and the read-back caveat
-    # is install's too -- a file whose mode the login user cannot read cats
-    # back empty and re-installs every deploy. ``validate`` is forwarded
-    # straight through, so a transform inherits the same atomic
+    # re-install (``files.file`` converges metadata), and the read-back is
+    # install's too -- a file the login user cannot read is re-read elevated,
+    # so a restrictive mode does not re-install every deploy. ``validate`` is
+    # forwarded straight through, so a transform inherits the same atomic
     # validate-then-install hook on the spooled bytes (a non-zero exit aborts
     # before the target is touched). ``/etc`` targets are root-owned,
     # so flag the request ``sudo=True`` (or ``su=True``). ``**kwargs`` absorbs
@@ -3072,9 +3135,10 @@ async def download(
     # ``chown``/``chmod``/``rm -rf``), and applies the optional ``validate``
     # hook on the staged bytes. So a download inherits install's content-only
     # idempotence (a converged file yields zero commands), its owner/mode
-    # handling and its read-back caveat (a mode the login user cannot read cats
-    # back empty and re-installs every deploy) -- and needs no new command
-    # descriptor, so ``SimulatedHost`` is unchanged.
+    # handling and its two-tier read-back (a file the login user cannot read
+    # is re-read elevated, so a restrictive mode does not re-download every
+    # deploy) -- and needs no new command descriptor, so ``SimulatedHost`` is
+    # unchanged.
     #
     # The fetch is control-side, not host-side: the *control* machine opens the
     # connection (``urllib`` in a worker thread), so the download works when

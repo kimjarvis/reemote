@@ -63,6 +63,30 @@ class CannedShellHost(Host):
         return self._stdout
 
 
+class CannedFallbackHost(Host):
+    """Canned stdout for both read tiers, recording the elevated calls.
+
+    ``run_shell`` answers the unprivileged read and ``run_shell_privileged``
+    the fallback re-read, so a test can prove both that the fallback fires
+    for an unreadable file and that it never fires for a readable one.
+    """
+
+    def __init__(self, stdout: str, privileged_stdout: str):
+        super().__init__(name="canned")
+        self._stdout = stdout
+        self._privileged_stdout = privileged_stdout
+        self.privileged_calls: list[tuple[str, bool]] = []
+
+    async def run_shell(self, shell: str, *, check: bool = False) -> str:
+        return self._stdout
+
+    async def run_shell_privileged(
+        self, shell: str, *, sudo: bool = False, su: bool = False, doas: bool = False
+    ) -> str:
+        self.privileged_calls.append((shell, sudo))
+        return self._privileged_stdout
+
+
 # --- Module-level transforms (stable, hashable identity across phases) --------
 
 
@@ -124,6 +148,50 @@ def test_file_contents_command_guards_on_existence():
     assert f"cat -- {REMOTE_PATH}" in command
 
 
+def test_file_contents_command_marks_a_failed_cat():
+    """The cat's failure arm prints the UNREADABLE marker, so a present but
+    unreadable file stays distinguishable from an empty one on stdout alone."""
+    command = FileContents.command(REMOTE_PATH)
+    assert (
+        f"cat -- {REMOTE_PATH} || printf '{FileContents.UNREADABLE}\\n'" in command
+    )
+
+
+async def test_file_contents_falls_back_to_an_elevated_read():
+    """A present-but-unreadable file (marker + UNREADABLE line) triggers one
+    elevated re-read with sudo, so a 0640 service-owned file reads its real
+    content instead of appearing empty."""
+    host = CannedFallbackHost(
+        f"{FileContents.MARKER}\n{FileContents.UNREADABLE}\n",
+        f"{FileContents.MARKER}\nsecret = true\n",
+    )
+    assert await FileContents.process(host, "/etc/app.conf") == "secret = true\n"
+    assert host.privileged_calls == [(FileContents.command("/etc/app.conf"), True)]
+
+
+async def test_file_contents_readable_file_never_elevates():
+    """A successful unprivileged cat returns the content directly -- the
+    fallback is for unreadable files only."""
+    host = CannedFallbackHost(f"{FileContents.MARKER}\nhello\n", "unused")
+    assert await FileContents.process(host, "/etc/app.conf") == "hello\n"
+    assert host.privileged_calls == []
+
+
+async def test_file_contents_empty_file_never_elevates():
+    """Marker-only stdout is an empty file, not an unreadable one: it returns
+    the empty string without an elevated re-read."""
+    host = CannedFallbackHost(f"{FileContents.MARKER}\n", "unused")
+    assert await FileContents.process(host, "/etc/app.conf") == ""
+    assert host.privileged_calls == []
+
+
+async def test_file_contents_absent_file_never_elevates():
+    """No marker means absence: None, with no elevated re-read."""
+    host = CannedFallbackHost("", "unused")
+    assert await FileContents.process(host, "/etc/app.conf") is None
+    assert host.privileged_calls == []
+
+
 # --- The FileContents fact: simulated seam -----------------------------------
 
 
@@ -133,6 +201,76 @@ async def test_file_contents_reads_the_simulated_seam():
     host = SimulatedHost(name="h", remote_files={REMOTE_PATH: b"hello\n"})
     assert await FileContents.process(host, REMOTE_PATH) == "hello\n"
     assert await FileContents.process(host, "/absent") is None
+
+
+async def test_file_contents_seam_falls_back_for_an_unreadable_file():
+    """The mode-aware seam: a 0640 root:dd-agent file the login user cannot
+    read returns the unreadable sentinel unprivileged, and ``process``'s
+    shared fallback re-reads it elevated -- offline, exactly as over SSH.
+    Removing the fallback would leak the sentinel and fail this test."""
+    host = SimulatedHost(
+        name="h",
+        connection={"username": "kim"},
+        remote_files={REMOTE_PATH: b"secret = true\n"},
+    )
+    host.file_stats[REMOTE_PATH] = {
+        "user": "root",
+        "group": "dd-agent",
+        "mode": 640,
+        "size": len(b"secret = true\n"),
+    }
+    assert not host.login_can_read(REMOTE_PATH)
+    assert await FileContents.process(host, REMOTE_PATH) == "secret = true\n"
+
+
+async def test_file_contents_seam_reads_a_group_member_directly():
+    """A login user in the file's group reads through the group bit -- the
+    unprivileged seam read succeeds and no fallback is needed."""
+    host = SimulatedHost(
+        name="h",
+        connection={"username": "kim"},
+        remote_files={REMOTE_PATH: b"secret = true\n"},
+    )
+    host.os_users["kim"] = {"group": "kim", "groups": ["dd-agent"]}
+    host.file_stats[REMOTE_PATH] = {
+        "user": "root",
+        "group": "dd-agent",
+        "mode": 640,
+        "size": len(b"secret = true\n"),
+    }
+    assert host.login_can_read(REMOTE_PATH)
+    assert await FileContents.process(host, REMOTE_PATH) == "secret = true\n"
+
+
+def test_login_can_read_models_the_posix_read_bits():
+    """Owner, group (primary plus supplementary) and other read bits in POSIX
+    order; root bypasses the check; a path with no metadata row reads as
+    readable (the legacy content-only seam)."""
+    host = SimulatedHost(name="h", connection={"username": "kim"})
+    path = "/etc/app.conf"
+    assert host.login_can_read(path)  # no row: legacy login-readable seam
+
+    host.file_stats[path] = {"user": "root", "group": "dd-agent", "mode": 640}
+    assert not host.login_can_read(path)  # other: 0640 has no other-read bit
+
+    host.os_users["kim"] = {"group": "kim", "groups": ["dd-agent"]}
+    assert host.login_can_read(path)  # supplementary group membership
+
+    host.os_users["kim"] = {"group": "dd-agent", "groups": []}
+    assert host.login_can_read(path)  # primary group membership
+
+    host.file_stats[path] = {"user": "root", "group": "root", "mode": 600}
+    assert not host.login_can_read(path)  # owner-only mode, kim is not root
+
+    host.file_stats[path] = {"user": "kim", "group": "root", "mode": 600}
+    assert host.login_can_read(path)  # the owner read bit
+
+    host.file_stats[path] = {"user": "root", "group": "root", "mode": 644}
+    assert host.login_can_read(path)  # the other read bit
+
+    root = SimulatedHost(name="r", connection={"username": "root"})
+    root.file_stats[path] = {"user": "root", "group": "root", "mode": 600}
+    assert root.login_can_read(path)  # root bypasses the check
 
 
 async def test_gather_fact_reads_file_contents_across_hosts():

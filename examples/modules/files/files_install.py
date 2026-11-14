@@ -54,11 +54,11 @@ every write but never compared: idempotence stays content-only, and an
 owner-only drift is ``files.file``'s job to converge. The named owner must
 already exist -- the deploy below provisions the ``www`` group and system
 user first (the same account the sibling ``files_op_file.py`` example
-uses), so the ``chown`` never fails on an unknown user. One caveat the
-owned demo deliberately sidesteps: ``FileContents`` cats *unprivileged*,
-so a file installed with a mode the login user cannot read (a ``0640``
-service-account config) reads back as empty content and re-installs on
-every deploy -- the owned demo therefore uses the login-readable ``0644``.
+uses), so the ``chown`` never fails on an unknown user. The read-back is
+two-tier: ``FileContents`` cats *unprivileged* first and re-reads elevated
+with ``sudo`` when the login user cannot read the file (a ``0640``
+service-account config), so a restrictive mode keeps content idempotence
+too -- the owned demo uses the login-readable ``0644``.
 
 The script installs a demo config and an owned demo config, then runs the
 very same deploy a second time: the first run writes, the second reports
@@ -115,8 +115,8 @@ DEST = "/etc/reemote-install-demo.conf"
 CONTENT = "# Installed by reemote files.install\nmanaged = true\n"
 
 # The owned variant: installed www:www by the install chain's chown step.
-# The mode stays login-readable (0644) so the unprivileged FileContents
-# read-back still sees the content and the second run is a genuine no-op.
+# The mode is login-readable (0644); a restrictive 0640 would stay idempotent
+# too -- FileContents re-reads an unreadable file elevated with sudo.
 OWNED_DEST = "/etc/reemote-install-owned-demo.conf"
 OWNED_CONTENT = "# Installed by reemote files.install, owned by www\nmanaged = true\n"
 

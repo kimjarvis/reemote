@@ -318,10 +318,11 @@ become-scoped `validate` and letting a checker read every file the staged
 config references. It is the narrow, safe slice of "a command inside a
 deploy": scoped to validating the content being installed at one well-defined
 injection point, not a generic shell operation, so the action/deploy boundary
-stays intact. One read-back caveat: `FileContents` cats unprivileged, so a file
-installed with a mode the login user cannot read (a `0640` service-account
-config) reads back as empty content and re-installs on every deploy — content
-idempotence needs a login-readable file.
+stays intact. The read-back is two-tier: `FileContents` cats unprivileged
+first and, when the login user cannot read the file (a `0640` service-account
+config), re-reads it elevated with `sudo` — so content idempotence holds for
+restrictive modes too, and the re-read's run-as user and any password come
+from the inventory `privilege` data.
 There is no `present=False` branch — `files.file(present=False)` owns removal.
 Installing under `/etc` needs root, so flag the request `sudo=True`; the
 transfer stays unprivileged regardless.
@@ -352,9 +353,10 @@ ownership and validate the staged spool before it lands (a non-zero exit aborts
 before the target is touched — the same atomic validate-then-install hook
 `files.install` above provides); idempotence stays content-only (a mode- or
 owner-only drift does not
-re-install — `files.file` converges metadata), and the read-back caveat is
-install's too. Editing under `/etc` needs root, so flag the request
-`sudo=True`; the spool transfer stays unprivileged regardless.
+re-install — `files.file` converges metadata), and the read-back is install's
+too — a file the login user cannot read is re-read elevated, so a restrictive
+mode does not re-install every deploy. Editing under `/etc` needs root, so
+flag the request `sudo=True`; the spool transfer stays unprivileged regardless.
 
 `files.download` is the general download-to-path operation and a reemote
 original: it takes an `http(s)` `url` and lands its body at a (root-owned)
@@ -382,7 +384,8 @@ rather than corrupting the write — a binary download stays `files.put`'s job
 (fetch control-side into an `io.BytesIO`, put into a login-writable path).
 `mode`/`user`/`group`/`validate` forward straight to the install, `url` must be
 `http(s)` (a `file:`/`ftp:` scheme raises `ValueError` before any fetch), and
-idempotence and the unprivileged-read-back caveat are install's. Downloading
+idempotence and the two-tier read-back (a file the login user cannot read is
+re-read elevated) are install's. Downloading
 under `/etc` needs root, so flag the request `sudo=True`; the spool transfer
 stays unprivileged regardless. See
 [Migrating a URL download](../migrating.md#migrating-a-url-download-get_url)

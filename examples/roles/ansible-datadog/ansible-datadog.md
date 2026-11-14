@@ -144,7 +144,7 @@ ubuntu: 812 installed packages, 6 apt sources, 1 legacy repo file(s), 940 system
 == Handler notification set ==
 restart datadog-agent-sysprobe: (none)
 restart datadog-agent: ['ubuntu']
-== Done: 17 changed request(s) across 8 deploys ==
+== Done: 16 changed request(s) across 7 deploys ==
 ```
 
 Each deploy is **previewed then applied** in the same invocation: `run(..., dry=True)`
@@ -216,7 +216,7 @@ Rejected with a clear message before any host is contacted:
 
 ---
 
-## 4. Program shape: eight deploys and their barriers
+## 4. Program shape: seven deploys and their barriers
 
 reemote runs a deploy **twice** (prepare against pre-state, apply against live
 state) and both passes must yield the identical request sequence. The role is full
@@ -241,27 +241,25 @@ fetch_keys(5 URLs)                                                        (contr
 │
 ├─ gather: AptUpgradable                             ← after the index refresh (GAP-3)
 ├─ run 4  build_agent            datadog-agent (pinned or latest), datadog-signing-keys
-├─ run 5  deploy_identity        login user → dd-agent group (GAP-2), additional groups
 │
 ├─ gather: SystemdUnitFiles, SystemdServiceState(datadog-agent-exp.service)
 │          + render every template control-side      ← the role's service_facts
-├─ run 6  build_configure        config dir, datadog.yaml, conf.d/*, checks.d/*,
-│                                install_info, system-probe.yaml, security-agent.yaml, units
+├─ run 5  build_configure        additional groups, config dir, datadog.yaml, conf.d/*,
+│                                checks.d/*, install_info, system-probe.yaml,
+│                                security-agent.yaml, units
 │
 ├─ gather: FindFiles(conf.d, "conf.yaml*", maxdepth=2)   ← only if a disable_* flag is set
-├─ run 7  build_cleanup_conf_d   untracked / default / example check sweep
+├─ run 6  build_cleanup_conf_d   untracked / default / example check sweep
 │
-├─ changed_hosts(union of all 8 reports, notifying names) → split by notify target
-└─ run 8  compose(restart_handler(sysprobe), restart_handler(agent))
+├─ changed_hosts(union of all 7 reports, notifying names) → split by notify target
+└─ run 7  compose(restart_handler(sysprobe), restart_handler(agent))
 ```
 
 Why this order:
 
 - **repos before packages** — the agent install must see the new repository.
-- **package before group membership** — `dd-agent` is created by the package.
-- **group membership in an *earlier run* than the `0640` writes** — each `run`
-  opens fresh SSH sessions, so only a later run sees the new supplementary group
-  (GAP-2). A membership change inside the same run would not help that run.
+- **package before group membership** — `dd-agent` is created by the package, so
+  the `datadog_additional_groups` request runs in the configure deploy after it.
 - **installs before config** — `systemd.service` on a nonexistent unit raises
   `CommandError`, so the unit list is read after the install.
 - **the `conf.d` sweep after the installs** — the enumeration must observe them.
@@ -298,7 +296,7 @@ filed) · **out** (scoped out).
 | `_remove_rpm_keys.yml` (RedHat/Rocky/Alma/Suse) | — | out |
 | `check-removed-config.yml` (yum/zypper gpgkey) | `ValueError` gates in `main` | covered |
 | RedHat / Suse / Windows / MacOS install + config | — | out |
-| Linux Configuration Tasks | `agent-linux.yml` → deploys 5–7 | covered |
+| Linux Configuration Tasks | `agent-linux.yml` → deploys 5–6 | covered |
 | Integrations Tasks (`datadog_integration`) | — | out |
 | APM Single Step Instrumentation (validate + install) | — | out |
 
@@ -342,18 +340,18 @@ filed) · **out** (scoped out).
 | `cat single.gpg \| gpg --no-default-keyring --keyring … --import --batch` | `gpg.import_key(dest=USR_SHARE_KEYRING)` — **additive merge**, keys already in the file stay | covered (GAP-1 closed) |
 | remove tempdir | nothing to clean — no host-side tempdir is created | covered |
 
-### `tasks/agent-linux.yml` → deploys 5–6
+### `tasks/agent-linux.yml` → deploy 5
 
 | Ansible task | reemote target | Status |
 | --- | --- | --- |
-| Populate service facts | `gather_fact(SystemdUnitFiles)` + `SystemdServiceState("datadog-agent-exp.service")` between runs 5 and 6 | recipe |
+| Populate service facts | `gather_fact(SystemdUnitFiles)` + `SystemdServiceState("datadog-agent-exp.service")` between runs 4 and 5 | recipe |
 | Set before 6/7.40.0 / 7.24.1 / 7.18.0 flags | `before_version(parsed, …)` | covered |
 | Set before 6/7.61.0 flag | **corrected** — the role tests undefined `datadog_major/minor/bugfix`, so the flag is always false | workaround (D8) |
 | Add user to additional groups (`notify: restart datadog-agent`) | `server.user(groups=…, append=True, ensure_home=False)`, named request | covered |
-| Include configuration setup tasks | `_agent-linux-macos-shared.yml` → deploy 6 | covered |
+| Include configuration setup tasks | `_agent-linux-macos-shared.yml` → deploy 5 | covered |
 | Set system probe installed | `"datadog-agent-sysprobe.service" in units` | covered |
 | Set system probe enabled (4 version-gated blocks) | `sysprobe_is_enabled()` — the intended `(any enabled flag or other config) and installed` | workaround (D8, D9) |
-| Create system-probe configuration file (`0640 root:dd-agent`, notify) | `render_system_probe_yaml()` + `files.install`, named | covered (GAP-2 read-back) |
+| Create system-probe configuration file (`0640 root:dd-agent`, notify) | `render_system_probe_yaml()` + `files.install`, named | covered (GAP-2 closed) |
 | Remove system-probe configuration file | `files.file(present=False)`, named | covered |
 | Ensure `datadog-agent` is running | `systemd.service(running=True, enabled=True)` gated on enabled ∧ exp not running ∧ unit exists | covered |
 | Ensure `datadog-agent-sysprobe` is running | `systemd.service(...)` gated on enabled ∧ sysprobe_enabled ∧ unit exists | covered |
@@ -362,33 +360,33 @@ filed) · **out** (scoped out).
 | Ensure `datadog-agent-security` is not running (`failed_when: false`) | `systemd.service(...)` gated on the unit existing | workaround (D2) |
 | Create / Remove security-agent configuration file | `render_security_agent_yaml()` + `files.install` / `files.file(present=False)`, named | covered |
 
-### `tasks/_agent-linux-macos-shared.yml` → deploys 6–7
+### `tasks/_agent-linux-macos-shared.yml` → deploys 5–6
 
 | Ansible task | reemote target | Status |
 | --- | --- | --- |
 | Create Datadog agent config directory (`0755`) | `files.directory(mode="0755", user, group)` | covered |
-| Create main Datadog agent configuration file (`0640`, notify) | `render_datadog_yaml()` + `files.install`, named | covered (GAP-2) |
-| Register all check configs (`find`, gated on untracked **or** default) | `gather_fact(FindFiles, CONF_D, fname="conf.yaml*", maxdepth=2)` between runs 6 and 7, gated on **all three** flags | recipe (D10) |
-| Delete checks not in tracked / all default / all example (3 loops, notify) | `files.file(present=False)` per stale path, named, in deploy 7 | recipe (D11) |
+| Create main Datadog agent configuration file (`0640`, notify) | `render_datadog_yaml()` + `files.install`, named | covered (GAP-2 closed) |
+| Register all check configs (`find`, gated on untracked **or** default) | `gather_fact(FindFiles, CONF_D, fname="conf.yaml*", maxdepth=2)` between runs 5 and 6, gated on **all three** flags | recipe (D10) |
+| Delete checks not in tracked / all default / all example (3 loops, notify) | `files.file(present=False)` per stale path, named, in deploy 6 | recipe (D11) |
 | Ensure configuration directories per check (`0755`) | `files.directory` per check | covered |
-| Create a configuration file per check (`checks.yaml.j2`, `0640`, notify) | `render_check_yaml()` + `files.install`, named | covered (GAP-2) |
+| Create a configuration file per check (`checks.yaml.j2`, `0640`, notify) | `render_check_yaml()` + `files.install`, named | covered (GAP-2 closed) |
 | Remove old configuration file per check (`conf.d/<check>.yaml`, notify) | `files.file(present=False)`, named | covered |
 | Create custom check file per custom check (`copy`, `0755`, notify) | controller-side `Path.read_text()` + `files.install(content=…)`, named | recipe (D12) |
 | Create installation information file (`install_info.j2`, `0644`) | `render_install_info()` + `files.install` — **`tool: reemote`** | covered (D13) |
 | `install.json`: stat / slurp / debug / parse / uuid (`command: cat /proc/…`) / rescue `uuidgen` / signature / template | — | out (opt-in: `datadog_apm_instrumentation_enabled`) |
 
-### `handlers/main.yml` → deploy 8
+### `handlers/main.yml` → deploy 7
 
 | Ansible handler | reemote target | Status |
 | --- | --- | --- |
 | `restart datadog-agent-sysprobe` | `restart_handler(sysprobe_restart, ("datadog-agent-sysprobe",), when=is_ubuntu)` | recipe |
-| Gather service facts | the `SystemdUnitFiles` / `SystemdServiceState` gather before deploy 6 | recipe |
+| Gather service facts | the `SystemdUnitFiles` / `SystemdServiceState` gather before deploy 5 | recipe |
 | `restart datadog-agent` | `restart_handler(agent_restart, ("datadog-agent",), when=is_ubuntu)` | recipe |
 | `restart datadog-agent-win` / `-macos` | — | out |
 
 Notification channel: every notifying request carries a stable `name=`;
 `notifying_names()` enumerates them from the same frozen inputs the deploys were
-built from; `notified_hosts()` unions `changed_hosts(report, names)` over all eight
+built from; `notified_hosts()` unions `changed_hosts(report, names)` over all seven
 reports; the set is split by the role's `before_7180` notify switch and filtered by
 each handler's own `when:`.
 
@@ -398,15 +396,16 @@ each handler's own `when:`.
 
 Five genuine library gaps were proven (full module surface enumerated, then
 corroborated by identifier greps), classified and ranked. **All five are
-bridgeable, so the migration completes.** G1 has since been closed by #11 and its
-workaround removed from the program ([§10](#10-second-pass)). Each gap is marked
-`GAP-n (#issue)` at its point of use in the program, and each ticket carries the
-evidence, the workaround, the acceptance criteria and the second-pass plan.
+bridgeable, so the migration completes.** G1 and G2 have since been closed by #11
+and #12 and their workarounds removed from the program ([§10](#10-second-pass)).
+Each gap is marked `GAP-n (#issue)` at its point of use in the program, and each
+ticket carries the evidence, the workaround, the acceptance criteria and the
+second-pass plan.
 
 | Gap | Ticket | Rank | Workaround | Deviation it costs |
 | --- | --- | --- | --- | --- |
 | **G1** `gpg.import_key` had no `dest`/`keyring` — **closed** | [#11](https://github.com/kimjarvis/reemote/issues/11) | core | none left — five additive `gpg.import_key(dest=USR_SHARE_KEYRING, keyid=…)` requests | none left; the retired bundle workaround overwrote the whole file, left CURRENT unpinned and failed all five on one bad URL |
-| **G2** `files.install` reads the destination back **unprivileged**, so `0640` service-owned files re-install every deploy | [#12](https://github.com/kimjarvis/reemote/issues/12) | core | deploy 5 adds the login user to `dd-agent` (`server.user(append=True)`), in an **earlier run** than the writes | an extra privileged change the role never makes; widens API-key readability to the login user |
+| **G2** `files.install` read the destination back **unprivileged**, so `0640` service-owned files re-installed every deploy — **closed** | [#12](https://github.com/kimjarvis/reemote/issues/12) | core | none left — `FileContents` re-reads a present-but-unreadable file elevated (`run_shell_privileged`), so `install`/`transform`/`download` converge on service-owned configs | none left; the retired workaround added the login user to `dd-agent` in an earlier run — an extra privileged change the role never makes, widening API-key readability |
 | **G3** `apt.packages(latest=True)` upgrades unconditionally — non-idempotent | [#13](https://github.com/kimjarvis/reemote/issues/13) | core | gather `AptUpgradable` after the repo deploy; `latest = pkg in upgradable_names` | the decision is pre-state, so a candidate appearing between gather and apply waits for the next run |
 | **G4** `apt.repo` has no `update_cache` (`**kwargs` absorbs it silently) | [#14](https://github.com/kimjarvis/reemote/issues/14) | core (ordering) | snapshot boolean `needs_update` gates a **stateless** `apt.update()` | the refresh decision is frozen one barrier early; whole-index rather than scoped |
 | **G5** `apt.repo` removal is file-scoped and `AptSources` discards provenance | [#15](https://github.com/kimjarvis/reemote/issues/15) | core for the deprecation path | one `FindInFiles("/etc/apt", LEGACY_REPO_PATTERN)` grep → fan the six lines out across every file that holds one | hand-written ERE to keep in sync; `6 × files` requests; deb822 / `.list.save` hits cannot be edited and are dropped; an extra barrier |
@@ -418,12 +417,12 @@ Evidence highlights (line numbers in `src/reemote/modules/`):
   (additive), with idempotence decided against `GpgKeyrings` on the dest's parent
   directory. `GpgKeyDeleteKeysCommand`'s `--no-default-keyring --keyring`
   rendering was the in-repo precedent.
-- **G2** — `files/files.py` `FileContents` L413-L479 cats unprivileged; an
-  unreadable file returns `""`, which never equals the intended content.
-  `install` L2709 (caveat comment L2817-L2820) and `transform` L2854 both inherit it.
-  `hosts.py` already has `run_shell_privileged` L949 — the natural fix path — but
-  `core.py`'s `OpContext` L259-L269 carries no privilege flags, so an operation
-  cannot see its request's `sudo`.
+- **G2** — closed: `files/files.py` `FileContents` now distinguishes *present but
+  unreadable* (the `cat` fails and prints an `UNREADABLE` marker) from absent and
+  empty, and `process` re-reads it with `run_shell_privileged(..., sudo=True)` —
+  elevation from the host's inventory `privilege`, no API change. `install`,
+  `transform` and `download` inherit the fix. The `SimulatedHost` seam gained a
+  mode-aware `login_can_read`, so the offline suite proves the fallback.
 - **G3** — `apt/apt.py` L2688-L2720: the `latest` candidate set is *installed ∧
   unpinned*, with no upgrade check; the comment at L2592-L2596 says so explicitly.
   The `upgrade=True` branch **is** fact-gated (L2652-L2667), and `AptUpgradable`
@@ -467,9 +466,8 @@ Every one is recorded in a comment at its site in the program.
 | D12 | Custom checks are read control-side as **text** | `files.install` takes `content: str`; the role's `checks.d` entries are Python source. A binary check would need `files.put` into a login-writable path |
 | D13 | `install_info` stamps **`tool: reemote`** and reemote's version | the file exists to tell Datadog how the agent got there; `installer_version` still carries `datadog_role-5.6.0` |
 | D14 | `ansible_managed` → a **static** `MANAGED_HEADER` | Ansible's string is timestamped, which a deterministic deploy may not render |
-| D15 | The login user is added to `dd-agent` (deploy 5) | GAP-2; the role never touches the login user |
-| D16 | `skip_install` gates only the `__pycache__` cleanup, not the install request | `apt.packages` is version-aware for a `name=version` pin, so an already-installed pin is a no-op by construction |
-| D17 | `exp_state` is compared to systemd's raw `ActiveState == "active"` | Ansible's `service_facts` reports `running`/`stopped`; `active` is the equivalent test |
+| D15 | `skip_install` gates only the `__pycache__` cleanup, not the install request | `apt.packages` is version-aware for a `name=version` pin, so an already-installed pin is a no-op by construction |
+| D16 | `exp_state` is compared to systemd's raw `ActiveState == "active"` | Ansible's `service_facts` reports `running`/`stopped`; `active` is the equivalent test |
 
 ---
 
@@ -499,7 +497,7 @@ observes the first pass's removals.
 literals in `op()`, import-time-constructible module constants) and drives every
 factory with a `SNAPSHOT_ARGS` fixture.
 
-Gates: `uv run pytest tests/ -q` → **4267 passed**; `uv run ruff check .` → clean.
+Gates: `uv run pytest tests/ -q` → **4277 passed**; `uv run ruff check .` → clean.
 The docs build is unaffected (`examples/roles` is not in `mkdocs.yml`'s example
 scan paths).
 
@@ -533,12 +531,12 @@ Agreed in Phase 0: one target OS, the role's default path, opt-in branches exclu
 ## 10. Second pass
 
 As the tickets land, the workarounds come out and the program gets closer to the
-role's own shape. #11 has landed:
+role's own shape. #11 and #12 have landed:
 
 | Ticket | What disappears from the program |
 | --- | --- |
 | [#11](https://github.com/kimjarvis/reemote/issues/11) — **done** | `fetch_key_bundle()`'s concatenation and the single-bundle `gpg.key` are gone: `fetch_keys()` keeps the five bodies separate and deploy 3 issues five additive `gpg.import_key(dest=…)` imports, CURRENT fingerprint-pinned |
-| [#12](https://github.com/kimjarvis/reemote/issues/12) | deploy 5's login-user group membership (and D15); the `0640` files stay service-owned and unreadable to the login user |
+| [#12](https://github.com/kimjarvis/reemote/issues/12) — **done** | the login-user group-membership deploy is gone (and its deviation): `FileContents` re-reads unreadable files elevated, so the `0640` configs stay service-owned and converge. The eight-deploy sequence is now seven, with `datadog_additional_groups` folded into the configure deploy |
 | [#13](https://github.com/kimjarvis/reemote/issues/13) | the `AptUpgradable` gather and its snapshot; `latest=True` directly — one barrier fewer |
 | [#14](https://github.com/kimjarvis/reemote/issues/14) | `repository_snapshot`'s `needs_update` and the gated `apt.update`; `update_cache=True` on each `apt.repo` request |
 | [#15](https://github.com/kimjarvis/reemote/issues/15) | `LEGACY_REPO_PATTERN`, `legacy_repo_targets()`, the `FindInFiles` gather and the per-file fan-out; six `apt.repo(present=False)` requests exactly as the role has them |
