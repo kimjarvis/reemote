@@ -1852,6 +1852,167 @@ def test_dnf_package_commands_quote_odd_disable_repo_ids():
     assert quoted in remove.shell()
 
 
+async def test_dnf_packages_enable_repos_renders_bare_enablerepo_on_install():
+    """``enable_repos`` is the *additive* mirror of ``disable_repos``: it
+    renders one bare ``--enablerepo=<id>`` per name with no
+    ``--disablerepo='*``, so a configured-but-disabled repo joins every
+    already-enabled repo for the install (Ansible's ``yum: enablerepo=<id>``,
+    the postgresql role's ``postgresql_enablerepo``)."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=("postgresql-server",), enable_repos=("pgdg16",)
+        )
+    ]
+    assert commands == [
+        DnfInstallCommand(packages=("postgresql-server",), enable_repos=("pgdg16",))
+    ]
+    assert commands[0].shell() == (
+        "dnf install -y --enablerepo=pgdg16 postgresql-server"
+    )
+
+
+async def test_dnf_packages_enable_repos_renders_bare_enablerepo_on_remove():
+    """The same bare flag rides the remove descriptor when ``present=False``."""
+    host = SimulatedHost(name="h", packages={"nginx": [""]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx",),
+            present=False,
+            enable_repos=("pgdg16",),
+        )
+    ]
+    assert commands == [
+        DnfRemoveCommand(packages=("nginx",), enable_repos=("pgdg16",))
+    ]
+    assert commands[0].shell() == "dnf remove -y --enablerepo=pgdg16 nginx"
+
+
+async def test_dnf_packages_enable_repos_renders_bare_enablerepo_on_downgrade():
+    """The bare flag also rides the downgrade descriptor ``allow_downgrade``
+    routes a mismatched pin to, in the same slot as ``repos``."""
+    host = SimulatedHost(name="h", packages={"nginx": ["1.24.0"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx=1.23.0",),
+            allow_downgrade=True,
+            enable_repos=("pgdg16",),
+        )
+    ]
+    assert commands == [
+        DnfDowngradeCommand(
+            packages=("nginx=1.23.0",), enable_repos=("pgdg16",)
+        )
+    ]
+    assert commands[0].shell() == (
+        "dnf downgrade -y --allowerasing --enablerepo=pgdg16 nginx-1.23.0"
+    )
+
+
+async def test_dnf_packages_repos_and_enable_repos_render_both_scopes():
+    """Passing both is allowed: ``repos``' disable-all-then-enable-named
+    scope first, then the bare ``--enablerepo=<id>`` widening it -- the
+    named-only scope plus the additively enabled repos."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx",),
+            repos=("datadog",),
+            enable_repos=("pgdg16",),
+        )
+    ]
+    assert commands[0].shell() == (
+        "dnf install -y '--disablerepo=*' --enablerepo=datadog "
+        "--enablerepo=pgdg16 nginx"
+    )
+
+
+async def test_dnf_packages_disable_repos_and_enable_repos_render_in_order():
+    """The bare lists stack in a defined order: ``disable_repos`` first,
+    ``enable_repos`` last. dnf processes the flags left to right, so a name
+    in both ends up enabled -- the mirror of the ``repos``/``disable_repos``
+    overlap rule, and the caller's responsibility."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx",),
+            disable_repos=("appstream",),
+            enable_repos=("pgdg16",),
+        )
+    ]
+    assert commands[0].shell() == (
+        "dnf install -y --disablerepo=appstream --enablerepo=pgdg16 nginx"
+    )
+
+
+async def test_dnf_packages_normalizes_str_and_list_enable_repos():
+    """A bare string becomes a one-tuple and a list a tuple, mirroring the
+    ``repos``/``disable_repos`` normalization shape."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    (from_str,) = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=("nginx",), enable_repos="pgdg16"
+        )
+    ]
+    (from_list,) = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=("nginx",), enable_repos=["a", "b"]
+        )
+    ]
+    assert from_str.enable_repos == ("pgdg16",)
+    assert from_list.enable_repos == ("a", "b")
+    assert from_list.shell() == (
+        "dnf install -y --enablerepo=a --enablerepo=b nginx"
+    )
+
+
+def test_dnf_package_commands_quote_odd_enable_repo_ids():
+    """A repo id with shell metacharacters rides shlex.quote on the bare
+    ``--enablerepo=<id>`` too, on both the install and the remove."""
+    repo = "odd repo"
+    quoted = shlex.quote(f"--enablerepo={repo}")
+    install = DnfInstallCommand(packages=("nginx",), enable_repos=(repo,))
+    remove = DnfRemoveCommand(packages=("nginx",), enable_repos=(repo,))
+    assert quoted in install.shell()
+    assert quoted in remove.shell()
+
+
+async def test_dnf_packages_enable_repos_does_not_force_a_change_when_present():
+    """``enable_repos`` is command-scoping only: presence stays fact-based,
+    so an already-installed package with ``enable_repos`` set is still a
+    no-op."""
+    host = SimulatedHost(name="h", packages={"nginx": ["1.24.0"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("nginx",),
+            enable_repos=("pgdg16",),
+        )
+    ]
+    assert commands == []
+    assert not ctx.changed
+    assert ctx.reason == "all packages present"
+
+
 async def test_dnf_packages_exclude_renders_on_install():
     """``exclude`` is a first-class transaction filter: it renders one
     ``--exclude=<pkg>`` per name on the install, so dnf never pulls an
@@ -2083,6 +2244,33 @@ async def test_dnf_packages_update_cache_inherits_repos_and_disable_repos_scopin
     assert commands[0].shell() == (
         "dnf -y makecache '--disablerepo=*' --enablerepo=datadog "
         "--disablerepo=appstream"
+    )
+
+
+async def test_dnf_packages_update_cache_inherits_enable_repos_scoping():
+    """The yielded makecache also inherits the additive ``enable_repos``
+    scope, so the refresh fetches metadata for the same additionally
+    enabled repos the install resolves from."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("postgresql-server",),
+            update_cache=True,
+            enable_repos=("pgdg16",),
+        )
+    ]
+    assert commands == [
+        DnfMakecacheCommand(enable_repos=("pgdg16",)),
+        DnfInstallCommand(
+            packages=("postgresql-server",), enable_repos=("pgdg16",)
+        ),
+    ]
+    assert commands[0].shell() == "dnf -y makecache --enablerepo=pgdg16"
+    assert commands[1].shell() == (
+        "dnf install -y --enablerepo=pgdg16 postgresql-server"
     )
 
 
