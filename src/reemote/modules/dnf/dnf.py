@@ -45,6 +45,9 @@
 # ``--disablerepo=<id>`` per id, distinct from ``repos``' disable-all-then-
 # enable-named) so the ansible-datadog role's ``disablerepo: appstream`` does
 # not have to be smuggled through ``extra_install_args``, a first-class
+# ``enable_repos`` (bare ``--enablerepo=<id>`` per id, the additive mirror of
+# ``disable_repos`` -- Ansible's ``yum: enablerepo=``, the postgresql role's
+# ``postgresql_enablerepo``), a first-class
 # ``exclude`` (one ``--exclude=<pkg>`` per name on the install/downgrade/
 # update transactions -- Ansible's ``yum: exclude=``, the postgresql role's
 # ``exclude: python-unversioned-command``), and an
@@ -1176,11 +1179,13 @@ def _dnf_package_spec(package: str) -> str:
 
 
 def _repo_scope_args(
-    repos: tuple[str, ...], disable_repos: tuple[str, ...] = ()
+    repos: tuple[str, ...],
+    disable_repos: tuple[str, ...] = (),
+    enable_repos: tuple[str, ...] = (),
 ) -> str:
     """Render the repo-scoping flags shared by the package and cache descriptors.
 
-    Two orthogonal knobs, either or both of which may be empty:
+    Three orthogonal knobs, any of which may be empty:
 
     * ``repos`` is enable-only-named scoping -- a non-empty tuple renders
       ``--disablerepo='*'`` followed by one ``--enablerepo=<id>`` per id, the
@@ -1192,8 +1197,13 @@ def _repo_scope_args(
       ``disablerepo: appstream`` shape). Rendering the two together is
       allowed but rarely useful: dnf processes the flags in order, so a name
       appearing in both lists ends up disabled.
+    * ``enable_repos`` is bare per-id enabling -- a non-empty tuple renders
+      one ``--enablerepo=<id>`` per id and no ``--disablerepo='*``, so the
+      named repos join every already-enabled repo for the command (Ansible's
+      ``yum: enablerepo=<id>`` -- the additive mirror of ``disable_repos``).
+      Rendered last, so a name appearing in both bare lists ends up enabled.
 
-    Empty tuples on both sides render nothing (the command applies to every
+    Empty tuples on every side render nothing (the command applies to every
     configured repo). Each flag is shell-quoted whole, so the remote shell
     never globs the ``*``.
     """
@@ -1202,6 +1212,7 @@ def _repo_scope_args(
         parts.append(shlex.quote("--disablerepo=*"))
         parts.extend(shlex.quote(f"--enablerepo={repo}") for repo in repos)
     parts.extend(shlex.quote(f"--disablerepo={repo}") for repo in disable_repos)
+    parts.extend(shlex.quote(f"--enablerepo={repo}") for repo in enable_repos)
     if not parts:
         return ""
     return " " + " ".join(parts)
@@ -1210,8 +1221,8 @@ def _repo_scope_args(
 def _normalize_repos(repos: str | list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
     """Normalize a repos-shaped argument: a bare string becomes a one-tuple,
     None an empty tuple, anything else a tuple -- the ``dnf.packages``
-    normalization shape shared by ``repos``, ``disable_repos`` and
-    ``exclude``."""
+    normalization shape shared by ``repos``, ``disable_repos``,
+    ``enable_repos`` and ``exclude``."""
     if repos is None:
         return ()
     if isinstance(repos, str):
@@ -1226,6 +1237,7 @@ class DnfInstallCommand(Command):
     extra_args: str | None = None
     repos: tuple[str, ...] = ()
     disable_repos: tuple[str, ...] = ()
+    enable_repos: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
 
     def shell(self) -> str:
@@ -1234,7 +1246,7 @@ class DnfInstallCommand(Command):
             parts.append("--nobest")
         if self.extra_args:
             parts.append(self.extra_args)
-        scope = _repo_scope_args(self.repos, self.disable_repos).strip()
+        scope = _repo_scope_args(self.repos, self.disable_repos, self.enable_repos).strip()
         if scope:
             parts.append(scope)
         parts.extend(shlex.quote(f"--exclude={pkg}") for pkg in self.exclude)
@@ -1264,6 +1276,7 @@ class DnfDowngradeCommand(Command):
     extra_args: str | None = None
     repos: tuple[str, ...] = ()
     disable_repos: tuple[str, ...] = ()
+    enable_repos: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
 
     def shell(self) -> str:
@@ -1272,7 +1285,7 @@ class DnfDowngradeCommand(Command):
             parts.append("--nobest")
         if self.extra_args:
             parts.append(self.extra_args)
-        scope = _repo_scope_args(self.repos, self.disable_repos).strip()
+        scope = _repo_scope_args(self.repos, self.disable_repos, self.enable_repos).strip()
         if scope:
             parts.append(scope)
         parts.extend(shlex.quote(f"--exclude={pkg}") for pkg in self.exclude)
@@ -1286,12 +1299,13 @@ class DnfRemoveCommand(Command):
     extra_args: str | None = None
     repos: tuple[str, ...] = ()
     disable_repos: tuple[str, ...] = ()
+    enable_repos: tuple[str, ...] = ()
 
     def shell(self) -> str:
         parts = ["dnf", "remove", "-y"]
         if self.extra_args:
             parts.append(self.extra_args)
-        scope = _repo_scope_args(self.repos, self.disable_repos).strip()
+        scope = _repo_scope_args(self.repos, self.disable_repos, self.enable_repos).strip()
         if scope:
             parts.append(scope)
         parts.extend(shlex.quote(_dnf_package_spec(package)) for package in self.packages)
@@ -1344,6 +1358,7 @@ async def packages(
     extra_uninstall_args: str | None = None,
     repos: str | list[str] | tuple[str, ...] | None = None,
     disable_repos: str | list[str] | tuple[str, ...] | None = None,
+    enable_repos: str | list[str] | tuple[str, ...] | None = None,
     exclude: str | list[str] | tuple[str, ...] | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
@@ -1367,8 +1382,8 @@ async def packages(
             scoped ``dnf -y makecache`` before the install/remove work --
             Ansible's ``update_cache: true`` spelling, and a first-class
             alternative to a standalone ``dnf.makecache`` request. Inherits
-            the same ``repos``/``disable_repos`` scoping as the transaction
-            that follows, is **non-idempotent** (always reports a change and
+            the same ``repos``/``disable_repos``/``enable_repos`` scoping as
+            the transaction that follows, is **non-idempotent** (always reports a change and
             always runs; dnf itself is cheap on a warm cache), and yields
             ahead of ``update``/install/remove so the metadata is fresh
             before dnf resolves anything. Defaults to False.
@@ -1408,6 +1423,24 @@ async def packages(
             appearing in both ends up disabled. Prefer tuples when building
             requests via ``op()``, since ``OperationRequest`` kwargs must
             stay hashable. Defaults to None (no repo disabled).
+        enable_repos (str | list[str] | tuple[str, ...] | None, optional):
+            Repository ids to enable *additively* on the install/downgrade/
+            remove this operation yields (one bare ``--enablerepo=<id>`` per
+            id, no ``--disablerepo='*'``), so a configured-but-disabled repo
+            joins every already-enabled repo for the transaction --
+            Ansible's ``yum: enablerepo=<id>`` spelling (the postgresql
+            role's ``postgresql_enablerepo``) and the additive mirror of
+            ``disable_repos``, a first-class alternative to smuggling
+            ``--enablerepo=<id>`` through ``extra_install_args``. Distinct
+            from ``repos`` (which means disable-all-then-enable-named);
+            passing both is allowed, the bare enables simply widen the
+            named-only scope. Rendered after ``disable_repos``, so a name
+            appearing in both bare lists ends up enabled (dnf processes the
+            flags in order). Also threads into the ``update_cache``
+            makecache so the refresh sees the same repos. Prefer tuples
+            when building requests via ``op()``, since ``OperationRequest``
+            kwargs must stay hashable. Defaults to None (no additional
+            repo enabled).
         exclude (str | list[str] | tuple[str, ...] | None, optional): Package
             names (globs allowed, dnf's own syntax) to exclude from the
             install/downgrade/update transactions this operation yields --
@@ -1468,7 +1501,13 @@ async def packages(
     # ``disablerepo: appstream`` -- "every repo except this one" -- is
     # first-class rather than smuggled through ``extra_install_args``; it
     # also threads into the ``update_cache`` makecache so the refresh skips
-    # the same repos the transaction does. ``exclude`` is the transaction
+    # the same repos the transaction does. ``enable_repos`` is the additive
+    # mirror (one bare ``--enablerepo=<id>`` per name, no ``--disablerepo='*'``),
+    # so Ansible's ``enablerepo: <id>`` -- "these repos too, alongside every
+    # enabled one" -- is first-class rather than smuggled through
+    # ``extra_install_args``; it rides the same commands and the makecache,
+    # rendered after ``disable_repos`` so a name in both bare lists ends up
+    # enabled. ``exclude`` is the transaction
     # filter (one ``--exclude=<pkg>`` per name, Ansible's ``yum: exclude=``):
     # it rides the install/downgrade/update commands -- including the
     # ``update=True`` full upgrade and the ``latest`` upgrades -- but not the
@@ -1483,17 +1522,20 @@ async def packages(
         reasons.append("dnf clean")
         yield DnfCleanCommand()
 
-    # ``update_cache`` is scoped by the same ``repos``/``disable_repos`` as
-    # the transaction that follows, so the refresh and the install agree on
-    # which repos are in play. Yielded ahead of ``update`` so a full system
-    # upgrade sees fresh metadata too.
+    # ``update_cache`` is scoped by the same ``repos``/``disable_repos``/
+    # ``enable_repos`` as the transaction that follows, so the refresh and
+    # the install agree on which repos are in play. Yielded ahead of
+    # ``update`` so a full system upgrade sees fresh metadata too.
     scoped = _normalize_repos(repos)
     scoped_disable = _normalize_repos(disable_repos)
+    scoped_enable = _normalize_repos(enable_repos)
     excluded = _normalize_repos(exclude)
     if update_cache:
         ctx.changed = True
         reasons.append("dnf makecache")
-        yield DnfMakecacheCommand(repos=scoped, disable_repos=scoped_disable)
+        yield DnfMakecacheCommand(
+            repos=scoped, disable_repos=scoped_disable, enable_repos=scoped_enable
+        )
 
     if update:
         ctx.changed = True
@@ -1560,6 +1602,7 @@ async def packages(
                         extra_args=extra_install_args,
                         repos=scoped,
                         disable_repos=scoped_disable,
+                        enable_repos=scoped_enable,
                         exclude=excluded,
                     )
                 if to_downgrade:
@@ -1570,6 +1613,7 @@ async def packages(
                         extra_args=extra_install_args,
                         repos=scoped,
                         disable_repos=scoped_disable,
+                        enable_repos=scoped_enable,
                         exclude=excluded,
                     )
             if to_upgrade:
@@ -1588,6 +1632,7 @@ async def packages(
                     extra_args=extra_uninstall_args,
                     repos=scoped,
                     disable_repos=scoped_disable,
+                    enable_repos=scoped_enable,
                 )
             else:
                 reasons.append("no packages to remove")
@@ -1934,18 +1979,21 @@ _CLEAN_KINDS = ("all", "metadata", "packages", "dbcache", "expire-cache")
 class DnfMakecacheCommand(Command):
     """``dnf -y makecache``: download/refresh repository metadata, optionally
     scoped to ``repos`` with ``--disablerepo='*' --enablerepo=<id>`` flags
-    (the ansible-datadog role's repo-scoped cache refresh) and/or bare
+    (the ansible-datadog role's repo-scoped cache refresh), bare
     ``--disablerepo=<id>`` flags from ``disable_repos`` (the role's
-    ``disablerepo: appstream`` shape, also reached from
-    ``dnf.packages(update_cache=True, disable_repos=...)``). Never upgrades a
+    ``disablerepo: appstream`` shape) and/or bare ``--enablerepo=<id>`` flags
+    from ``enable_repos`` (the additive mirror, Ansible's ``enablerepo``
+    shape) -- the latter two also reached from
+    ``dnf.packages(update_cache=True, ...)``. Never upgrades a
     package -- unlike ``DnfUpdateCommand`` -- and never touches another
     repo's cache when scoped."""
 
     repos: tuple[str, ...] = ()
     disable_repos: tuple[str, ...] = ()
+    enable_repos: tuple[str, ...] = ()
 
     def shell(self) -> str:
-        return f"dnf -y makecache{_repo_scope_args(self.repos, self.disable_repos)}"
+        return f"dnf -y makecache{_repo_scope_args(self.repos, self.disable_repos, self.enable_repos)}"
 
 
 async def makecache(

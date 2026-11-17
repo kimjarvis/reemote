@@ -49,7 +49,11 @@ different version — dnf's dedicated verb for crossing that boundary, since
 `dnf.packages` also takes a bare `disable_repos=` (one `--disablerepo=<id>`
 per name, no `--disablerepo='*'`) so Ansible's `disablerepo: appstream` —
 "every repo except this one" — is first-class rather than smuggled through
-`extra_install_args`, an `exclude=` filter (one `--exclude=<pkg>` per name on
+`extra_install_args`, its additive mirror `enable_repos=` (one bare
+`--enablerepo=<id>` per name, no `--disablerepo='*'`) so Ansible's
+`enablerepo: <id>` — "this configured-but-disabled repo too, alongside every
+enabled one" (the postgresql role's `postgresql_enablerepo`) — is equally
+first-class, an `exclude=` filter (one `--exclude=<pkg>` per name on
 the install/downgrade/update transactions, Ansible's `yum: exclude=` — the
 postgresql role's `exclude: python-unversioned-command` — but not the remove
 or the makecache), and an `update_cache=True` flag that yields a scoped
