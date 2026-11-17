@@ -1514,6 +1514,23 @@ def test_role_command_renders_baseline_create_fixtures():
     ).shell() == "psql -Ac 'ALTER ROLE \"testuser\" CONNECTION LIMIT 15'"
 
 
+def test_role_command_renders_the_bypassrls_pair():
+    # Issue #31: BYPASSRLS/NOBYPASSRLS renders like the other X/NOX flags;
+    # the tri-state None omits the clause entirely.
+    assert PostgresqlRoleCommand(role="testuser", bypassrls=True).shell() == (
+        "psql -Ac 'CREATE ROLE \"testuser\" BYPASSRLS'"
+    )
+    assert PostgresqlRoleCommand(role="testuser", bypassrls=False).shell() == (
+        "psql -Ac 'CREATE ROLE \"testuser\" NOBYPASSRLS'"
+    )
+    assert PostgresqlRoleCommand(
+        role="testuser", alter=True, bypassrls=False
+    ).shell() == "psql -Ac 'ALTER ROLE \"testuser\" NOBYPASSRLS'"
+    assert PostgresqlRoleCommand(role="testuser").shell() == (
+        "psql -Ac 'CREATE ROLE \"testuser\"'"
+    )
+
+
 async def test_role_creates_an_absent_role():
     # user_add.json minus the dropped password option; the create carries
     # every flag explicitly (the X/NOX deviation).
@@ -1547,6 +1564,96 @@ async def test_role_absorbs_the_dropped_password_option():
     )
     (cmd,) = commands
     assert "PASSWORD" not in cmd.shell()
+
+
+async def test_role_absorbs_the_excluded_valid_until_option():
+    # VALID UNTIL is deliberately excluded (password-expiry metadata, the
+    # same no-credentials boundary as password); passed anyway it lands in
+    # **kwargs and is ignored -- no VALID UNTIL clause ever renders. Set it
+    # out of band through postgresql.sql.
+    host = SimulatedHost(name="h")
+    _ctx, commands = await materialize(
+        host, postgresql.role, role="testuser", valid_until="2027-01-01"
+    )
+    (cmd,) = commands
+    assert "VALID UNTIL" not in cmd.shell()
+
+
+async def test_role_create_carries_bypassrls():
+    # Issue #31: the Ansible role_attr_flags BYPASSRLS keyword now has a
+    # parameter; the create carries it alongside the other explicit flags.
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host, postgresql.role, role="testuser", bypassrls=True
+    )
+    assert ctx.changed
+    assert commands == [
+        PostgresqlRoleCommand(
+            role="testuser",
+            login=True,
+            superuser=False,
+            inherit=True,
+            createdb=False,
+            createrole=False,
+            replication=False,
+            bypassrls=True,
+        )
+    ]
+
+
+async def test_role_alters_only_the_differing_bypassrls():
+    # The fact's rolbypassrls is False, the request True -> a single
+    # BYPASSRLS alter, reconciled through the catalog key like the others.
+    host = SimulatedHost(name="h", postgres_roles={"testuser": ROLE_ENTRY})
+    ctx, commands = await materialize(
+        host, postgresql.role, role="testuser", bypassrls=True
+    )
+    assert ctx.changed
+    assert ctx.reason == "postgresql role testuser will be altered (bypassrls)"
+    assert commands == [
+        PostgresqlRoleCommand(role="testuser", alter=True, bypassrls=True)
+    ]
+    assert commands[0].shell() == "psql -Ac 'ALTER ROLE \"testuser\" BYPASSRLS'"
+
+
+async def test_role_alters_bypassrls_back_to_nobypassrls():
+    # The NOBYPASSRLS direction: a bypassing role reconciled back down.
+    host = SimulatedHost(
+        name="h",
+        postgres_roles={"testuser": {**ROLE_ENTRY, "bypassrls": True}},
+    )
+    ctx, commands = await materialize(
+        host, postgresql.role, role="testuser", bypassrls=False
+    )
+    assert ctx.changed
+    assert commands == [
+        PostgresqlRoleCommand(role="testuser", alter=True, bypassrls=False)
+    ]
+
+
+async def test_role_bypassrls_noop_when_matching():
+    host = SimulatedHost(
+        name="h",
+        postgres_roles={"testuser": {**ROLE_ENTRY, "bypassrls": True}},
+    )
+    ctx, commands = await materialize(
+        host, postgresql.role, role="testuser", bypassrls=True
+    )
+    assert not ctx.changed
+    assert ctx.reason == "postgresql role testuser exists and does not need updates"
+    assert commands == []
+
+
+async def test_role_bypassrls_unset_is_left_alone():
+    # Tri-state like connection_limit: an unset bypassrls never alters a
+    # role that already has BYPASSRLS (the pre-issue behaviour is kept).
+    host = SimulatedHost(
+        name="h",
+        postgres_roles={"testuser": {**ROLE_ENTRY, "bypassrls": True}},
+    )
+    ctx, commands = await materialize(host, postgresql.role, role="testuser")
+    assert not ctx.changed
+    assert commands == []
 
 
 async def test_role_alters_only_the_differing_connection_limit():
@@ -1645,6 +1752,26 @@ async def test_role_seam_create_alter_drop():
     assert host.postgres_roles["testuser"]["canlogin"] is False
     await send_command(host, PostgresqlRoleCommand(role="testuser", present=False))
     assert host.postgres_roles == {}
+
+
+async def test_role_seam_applies_bypassrls():
+    # The seam models rolbypassrls both ways: a create seeds it from the
+    # descriptor, an alter flips it, and a repeat request reads the mutated
+    # seam as a no-op.
+    host = SimulatedHost(name="h")
+    await send_command(
+        host, PostgresqlRoleCommand(role="testuser", bypassrls=True)
+    )
+    assert host.postgres_roles["testuser"]["bypassrls"] is True
+    ctx, commands = await materialize(
+        host, postgresql.role, role="testuser", bypassrls=True
+    )
+    assert not ctx.changed
+    assert commands == []
+    await send_command(
+        host, PostgresqlRoleCommand(role="testuser", alter=True, bypassrls=False)
+    )
+    assert host.postgres_roles["testuser"]["bypassrls"] is False
 
 
 # --- sql / dump / load operations (stateless baseline parity) -----------------

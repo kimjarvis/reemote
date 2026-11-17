@@ -5114,6 +5114,7 @@ class SimulatedHost(Host):
                 ("createdb", "createdb"),
                 ("createrole", "createrole"),
                 ("replication", "replication"),
+                ("bypassrls", "bypassrls"),
             ):
                 value = getattr(cmd, option)
                 if value is not None:
@@ -5131,7 +5132,7 @@ class SimulatedHost(Host):
             "connlimit": -1 if cmd.connection_limit is None else cmd.connection_limit,
             "password": None,
             "validuntil": None,
-            "bypassrls": False,
+            "bypassrls": False if cmd.bypassrls is None else cmd.bypassrls,
             "config": None,
             "oid": max(
                 (e["oid"] for e in self.postgres_roles.values()), default=16383

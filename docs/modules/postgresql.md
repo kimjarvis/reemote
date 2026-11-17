@@ -64,8 +64,10 @@ requests `sudo=True` with the inventory `privilege.sudo_user = "postgres"`
 for peer authentication, or point `psql_host`/`psql_user` at a TCP login
 backed by a host-side `.pgpass`. The baseline's `psql_password` option (and the
 `PGPASSWORD=` prefix it renders) is deliberately dropped namespace-wide,
-as is `postgresql.role`'s `password` parameter: credentials never travel
-through operation arguments, plans or logs.
+as is `postgresql.role`'s `password` parameter and its `VALID UNTIL`
+password-expiry option (expiry metadata belongs to credential provisioning,
+not to role shape — set it out of band through `postgresql.sql`): credentials
+never travel through operation arguments, plans or logs.
 
 Fact reads ride the login user first; a read the server denies
 (`Peer authentication failed` / `no pg_hba.conf entry` — a peer-auth
@@ -152,7 +154,11 @@ creation-only options (TEMPLATE/ENCODING/LC_*) as skipped rather than
 pretending to change them; the role operation renders every flag
 explicitly as X/NOX pairs (so `INHERIT` appears where the baseline omitted
 it) and reconciles an existing role's flags and connection limit through
-`ALTER ROLE`.
+`ALTER ROLE`. Beyond the baseline's flag set, `bypassrls` covers the
+Ansible `role_attr_flags` `BYPASSRLS`/`NOBYPASSRLS` keywords (tri-state:
+reconciled against `rolbypassrls` when set, left alone when unset), while
+`VALID UNTIL` stays deliberately excluded on the no-credentials boundary
+above — `postgresql.sql` is its escape hatch.
 
 The nine reemote-original operations close the control gaps, modeled on
 the Ansible `community.postgresql` parameter shapes:

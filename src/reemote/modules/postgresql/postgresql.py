@@ -42,7 +42,9 @@
 #
 # Credentials decision (developer-approved): the ``psql_password``
 # connection parameter and ``role``'s ``password`` option are deliberately
-# dropped. reemote renders raw shell strings into the plan/apply log and
+# dropped, as is ``role``'s ``VALID UNTIL`` password-expiry option (the
+# same boundary: expiry metadata belongs to credential provisioning, not
+# to role shape). reemote renders raw shell strings into the plan/apply log and
 # takes credentials only from the inventory ``privilege`` section, so no
 # operation accepts a password. Authenticate with peer auth (``sudo=True``
 # with ``privilege.sudo_user = "postgres"`` in the inventory) or a host-side
@@ -3625,6 +3627,7 @@ class PostgresqlRoleCommand(_PsqlCommand):
     createdb: bool | None = None
     createrole: bool | None = None
     replication: bool | None = None
+    bypassrls: bool | None = None
     connection_limit: int | None = None
 
     def _clauses(self) -> list[str]:
@@ -3636,6 +3639,7 @@ class PostgresqlRoleCommand(_PsqlCommand):
             ("CREATEDB", self.createdb),
             ("CREATEROLE", self.createrole),
             ("REPLICATION", self.replication),
+            ("BYPASSRLS", self.bypassrls),
         ):
             if value is not None:
                 clauses.append(keyword if value else f"NO{keyword}")
@@ -3662,6 +3666,7 @@ async def role(
     createdb: bool = False,
     createrole: bool = False,
     replication: bool = False,
+    bypassrls: bool | None = None,
     connection_limit: int | None = None,
     psql_user: str | None = None,
     psql_host: str | None = None,
@@ -3690,6 +3695,9 @@ async def role(
         replication (bool, optional): Whether the role may initiate
             replication; reconciled on an existing role. Defaults to
             False.
+        bypassrls (bool | None, optional): Whether the role bypasses
+            row-level security (BYPASSRLS/NOBYPASSRLS); altered when it
+            differs, left alone when unset. Defaults to None.
         connection_limit (int | None, optional): Connection limit (-1
             for unlimited); altered when it differs, left alone when
             unset. Defaults to None.
@@ -3732,6 +3740,12 @@ async def role(
     # stored password, so a password option could never be idempotent
     # anyway; provision credentials via peer auth/.pgpass or a
     # out-of-band ALTER ROLE ... PASSWORD through postgresql.sql.
+    # ``VALID UNTIL`` is deliberately excluded on the same boundary:
+    # password-expiry metadata belongs to credential provisioning, not
+    # to role shape -- set it out of band through postgresql.sql
+    # (``ALTER ROLE ... VALID UNTIL '<timestamp>'``). ``bypassrls`` is
+    # the Ansible role_attr_flags parity flag: tri-state like
+    # connection_limit, reconciled against the fact's ``rolbypassrls``.
     # Needs CREATEROLE or superuser: flag the request ``sudo=True`` with
     # ``privilege.sudo_user = "postgres"``. ``**kwargs`` absorbs
     # any further global arguments.
@@ -3759,6 +3773,7 @@ async def role(
         "createdb": createdb,
         "createrole": createrole,
         "replication": replication,
+        "bypassrls": bypassrls,
         "connection_limit": connection_limit,
     }
     if role not in roles:
@@ -3776,6 +3791,7 @@ async def role(
         "createdb": "createdb",
         "createrole": "createrole",
         "replication": "replication",
+        "bypassrls": "bypassrls",
         "connection_limit": "connlimit",
     }
     current = roles[role]
