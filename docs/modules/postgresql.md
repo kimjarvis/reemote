@@ -8,6 +8,8 @@
         - PostgresqlConnections
         - PostgresqlDatabase
         - PostgresqlDatabases
+        - PostgresqlDefaultPrivilege
+        - PostgresqlDefaultPrivileges
         - PostgresqlExtension
         - PostgresqlExtensions
         - PostgresqlIndex
@@ -62,8 +64,20 @@ requests `sudo=True` with the inventory `privilege.sudo_user = "postgres"`
 for peer authentication, or point `psql_host`/`psql_user` at a TCP login
 backed by a host-side `.pgpass`. The baseline's `psql_password` option (and the
 `PGPASSWORD=` prefix it renders) is deliberately dropped namespace-wide,
-as is `postgresql.role`'s `password` parameter: credentials never travel
-through operation arguments, plans or logs.
+as is `postgresql.role`'s `password` parameter and its `VALID UNTIL`
+password-expiry option (expiry metadata belongs to credential provisioning,
+not to role shape — set it out of band through `postgresql.sql`): credentials
+never travel through operation arguments, plans or logs.
+
+Fact reads ride the login user first; a read the server denies
+(`Peer authentication failed` / `no pg_hba.conf entry` — a peer-auth
+`pg_hba.conf` admits only the matching OS user) is re-read elevated with
+`sudo` (the `_MysqlFact._run` fallback precedent), so the facts stay
+idempotent under the same peer authentication the operations use. With
+`privilege.sudo_user = "postgres"` in the inventory this reproduces
+Ansible's `become_user: postgres` for reads. The run-as user and any
+password come from the inventory `privilege` data, never from an
+operation.
 
 ## Facts
 
@@ -76,6 +90,7 @@ generator — implemented as a `process` coroutine returning the raw value
 `PostgresqlConnections`) take only the four connection options; the
 database-scoped facts (`PostgresqlSchemas`, `PostgresqlTables`,
 `PostgresqlIndexes`, `PostgresqlExtensions`, `PostgresqlPrivileges`,
+`PostgresqlDefaultPrivileges`,
 `PostgresqlPublications`, `PostgresqlSubscriptions`) read the database
 named by `psql_database` (the server's default, `postgres`, when unset).
 
@@ -87,12 +102,16 @@ name-keyed dicts of catalog columns, with `t`/`f` coerced to bools and the
 `(N rows)` trailer dropped by pattern rather than by chopping the last
 line — so empty output reads as `{}` instead of raising.
 
-The twelve reemote-original facts answer the visibility gaps the baseline
+The thirteen reemote-original facts answer the visibility gaps the baseline
 leaves: `PostgresqlRoleMemberships` (role/member/admin-option rows from
 `pg_auth_members`), `PostgresqlPrivileges` (one ACL row per grant —
 object type, schema, name, grantee, privilege, grantable — expanded from
-the `aclitem[]` columns of databases, schemas, tables, sequences and
-functions, so a NULL ACL expands to no rows), `PostgresqlSchemas`
+the `aclitem[]` columns of databases, tablespaces, schemas, tables,
+sequences and functions, so a NULL ACL expands to no rows),
+`PostgresqlDefaultPrivileges` (the ALTER DEFAULT PRIVILEGES grants from
+`pg_default_acl` — target role, schema scope, object class, grantee,
+privilege, grantable — backing the `default_privs` object type),
+`PostgresqlSchemas`
 (user schemas and owners from `pg_namespace`), `PostgresqlTables` and
 `PostgresqlIndexes` (names, owners, tablespaces and row estimates /
 uniqueness and access method from `pg_tables` / `pg_indexes` joined to
@@ -135,7 +154,11 @@ creation-only options (TEMPLATE/ENCODING/LC_*) as skipped rather than
 pretending to change them; the role operation renders every flag
 explicitly as X/NOX pairs (so `INHERIT` appears where the baseline omitted
 it) and reconciles an existing role's flags and connection limit through
-`ALTER ROLE`.
+`ALTER ROLE`. Beyond the baseline's flag set, `bypassrls` covers the
+Ansible `role_attr_flags` `BYPASSRLS`/`NOBYPASSRLS` keywords (tri-state:
+reconciled against `rolbypassrls` when set, left alone when unset), while
+`VALID UNTIL` stays deliberately excluded on the no-credentials boundary
+above — `postgresql.sql` is its escape hatch.
 
 The nine reemote-original operations close the control gaps, modeled on
 the Ansible `community.postgresql` parameter shapes:
@@ -143,7 +166,13 @@ the Ansible `community.postgresql` parameter shapes:
 privileges are granted, only held ones revoked; `grant_option` upgrades
 to WITH GRANT OPTION or withdraws just the option; `ALL` expands to the
 type's full privilege set; `all_in_schema` addresses every object of the
-type the grantee holds grants on), `postgresql.membership` manages
+type the grantee holds grants on; `role` accepts a list of grantees, each
+reconciled against its own grants; the `tablespace` type grants CREATE
+on a tablespace, and the `default_privs` type manages ALTER DEFAULT
+PRIVILEGES idempotently against `PostgresqlDefaultPrivileges`, with
+`objects` naming the object classes, `all_in_schema` scoping IN SCHEMA
+and `target_roles` naming the FOR ROLE targets; `session_role` prefixes
+SET ROLE), `postgresql.membership` manages
 `GRANT role TO member` with the admin option reconciled both ways,
 `postgresql.schema` creates/re-owns/drops schemas,
 `postgresql.extension` installs extensions and reconciles schema moves
@@ -167,7 +196,9 @@ because the fact hides conninfo).
 The read-only fact-gathering scripts `postgresql_postgresql_roles.py`,
 `postgresql_postgresql_databases.py`,
 `postgresql_postgresql_role_memberships.py`,
-`postgresql_postgresql_privileges.py`, `postgresql_postgresql_schemas.py`,
+`postgresql_postgresql_privileges.py`,
+`postgresql_postgresql_default_privileges.py`,
+`postgresql_postgresql_schemas.py`,
 `postgresql_postgresql_tables.py`, `postgresql_postgresql_indexes.py`,
 `postgresql_postgresql_extensions.py`,
 `postgresql_postgresql_settings.py`,
@@ -177,7 +208,7 @@ The read-only fact-gathering scripts `postgresql_postgresql_roles.py`,
 `postgresql_postgresql_publications.py` and
 `postgresql_postgresql_subscriptions.py` under
 [`examples/modules/postgresql/`](../examples/modules/postgresql.md)
-gather the fourteen facts respectively across an inventory with
+gather the fifteen facts respectively across an inventory with
 [`gather_fact`][reemote.drivers.gather_fact] and print each host's
 result as JSON.
 

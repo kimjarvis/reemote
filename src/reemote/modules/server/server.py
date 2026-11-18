@@ -9,7 +9,9 @@
 # one remote file, or None when it is absent), ``Date`` (the current datetime on the
 # server, parsed from an ISO 8601 ``date`` timestamp), ``Env`` (the value
 # of a given environment variable from ``echo $<name>``), ``EtcHosts`` (the
-# hosts file parsed as a mapping of IP address to hostnames), ``Groups`` (the
+# hosts file parsed as a mapping of IP address to hostnames), ``FipsEnabled``
+# (whether the kernel is running in FIPS mode, from
+# ``/proc/sys/crypto/fips_enabled``), ``Groups`` (the
 # group names listed in ``/etc/group``), ``HasGui`` (whether a known
 # desktop-session binary is installed), ``Home`` (a user's home directory, resolved by shell
 # tilde expansion), ``Hostname`` (the server's hostname from ``uname -n``),
@@ -657,6 +659,73 @@ class EtcHosts:
             return cls.parse(data.decode("utf-8").splitlines())
         # Real transport: cat the hosts file over asyncssh.
         stdout = await host.run_shell(cls.command(path))
+        return cls.parse(stdout.splitlines())
+
+
+class FipsEnabled:
+    """Whether the kernel is running in FIPS mode (Linux only).
+
+    **Commands:**
+
+    ```bash
+    cat /proc/sys/crypto/fips_enabled 2>/dev/null || true
+    ```
+
+    **Returns:**
+
+    ```python
+    bool
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_fips_enabled.py``.
+    """
+
+    # Ansible's ``ansible_facts.fips`` parity: the kernel exposes its FIPS
+    # (Federal Information Processing Standards) crypto mode through
+    # ``/proc/sys/crypto/fips_enabled`` -- ``1`` when the host booted with
+    # ``fips=1`` and the crypto self-tests passed, ``0`` otherwise. The file
+    # is absent on kernels without FIPS support (and on non-Linux hosts), so
+    # the ``cat`` error is swallowed by ``|| true`` and an absent file reads
+    # as ``False``, exactly like an explicit ``0``. Only a ``1`` line means
+    # enabled; anything else -- ``0``, blank or stray output -- is ``False``.
+    # A deploy can branch on it the way ``geerlingguy.postgresql`` does:
+    # ``postgresql_auth_method: "{{ ansible_facts.fips | ternary('scram-sha-256', 'md5') }}"``
+    # becomes a plain ``"scram-sha-256" if fips else "md5"`` in the program's
+    # gather-then-plan step, because md5 is unavailable on a FIPS host.
+
+    #: Shell reading the kernel's FIPS flag: a missing file prints nothing.
+    COMMAND = "cat /proc/sys/crypto/fips_enabled 2>/dev/null || true"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> bool:
+        """Parse the ``/proc/sys/crypto/fips_enabled`` row into the flag.
+
+        The first non-blank line is the answer and only ``"1"`` reads as
+        True; ``"0"``, empty output (the file is absent) and stray lines all
+        read as False.
+        """
+        for line in output:
+            stripped = line.strip()
+            if stripped:
+                return stripped == "1"
+        return False
+
+    @classmethod
+    async def process(cls, host: Host) -> bool:
+        fips_enabled = getattr(host, "fips_enabled", None)
+        if fips_enabled is not None:
+            # SimulatedHost seam: read the in-memory flag directly.
+            # bool is immutable, so no copy is needed.
+            return fips_enabled
+        # Real transport: cat /proc/sys/crypto/fips_enabled over asyncssh.
+        stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
 
 

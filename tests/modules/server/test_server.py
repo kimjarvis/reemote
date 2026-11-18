@@ -14,7 +14,10 @@ parsing, and the ``SimulatedHost`` seam), the ``Env`` fact (canned
 validation, parsing edge cases, and the ``SimulatedHost`` seam), the
 ``EtcHosts`` fact (the baseline's own fixture over the real-transport path,
 comment/duplicate-IP parsing edge cases, and the shared ``remote_files``
-``SimulatedHost`` seam), the
+``SimulatedHost`` seam), the ``FipsEnabled`` fact (canned
+``/proc/sys/crypto/fips_enabled`` output over the real-transport path,
+absent-file and stray-output parsing edge cases, and the ``SimulatedHost``
+seam), the
 ``Groups`` fact (the baseline's own
 fixture over the real-transport path, ``/etc/group`` parsing edge cases, and
 the ``SimulatedHost`` seam), the ``HasGui`` fact (the baseline's own fixtures over
@@ -160,6 +163,7 @@ from reemote.modules.server.server import (
     EtcHosts,
     EtcHostsInstallCommand,
     EtcHostsUploadCommand,
+    FipsEnabled,
     GroupAddCommand,
     GroupDelCommand,
     Groups,
@@ -533,6 +537,67 @@ async def test_env_gather_fact_across_hosts():
         "web1": "/custom/bin:/usr/bin",
         "web2": "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin",
     }
+
+
+# --- FipsEnabled -----------------------------------------------------------------
+
+
+async def test_fips_enabled_reads_a_one_as_true():
+    # A FIPS-enabled host: /proc/sys/crypto/fips_enabled reads 1.
+    host = CannedShellHost("1\n")
+    assert await FipsEnabled.process(host) is True
+    assert host.shells == ["cat /proc/sys/crypto/fips_enabled 2>/dev/null || true"]
+
+
+async def test_fips_enabled_reads_a_zero_as_false():
+    host = CannedShellHost("0\n")
+    assert await FipsEnabled.process(host) is False
+    assert host.shells == ["cat /proc/sys/crypto/fips_enabled 2>/dev/null || true"]
+
+
+async def test_fips_enabled_is_false_on_empty_output():
+    # An absent file (a kernel without FIPS support): the cat error is
+    # swallowed by ``|| true``, so no output reads as False.
+    assert await FipsEnabled.process(CannedShellHost("")) is False
+
+
+def test_fips_enabled_parse_only_a_one_line_means_enabled():
+    # The first non-blank line is the answer; only "1" is True -- "0", stray
+    # output and blank lines all read as False.
+    assert FipsEnabled.parse(["", " 1 ", "ignored"]) is True
+    assert FipsEnabled.parse(["0"]) is False
+    assert FipsEnabled.parse(["", "0", "1"]) is False
+    assert FipsEnabled.parse(["yes"]) is False
+    assert FipsEnabled.parse([]) is False
+
+
+async def test_fips_enabled_reads_the_simulated_seam():
+    assert await FipsEnabled.process(SimulatedHost(name="h", fips_enabled=True)) is True
+    # The seam defaults to False: a simulated server boots with FIPS off.
+    assert await FipsEnabled.process(SimulatedHost(name="h")) is False
+
+
+async def test_fips_enabled_gather_fact_across_hosts():
+    hosts = [
+        SimulatedHost(name="web1", fips_enabled=True),
+        SimulatedHost(name="web2", fips_enabled=False),
+    ]
+    assert await gather_fact(hosts, FipsEnabled) == {"web1": True, "web2": False}
+
+
+async def test_fips_enabled_resolves_the_postgresql_auth_method_ternary():
+    # The issue's motivating recipe: geerlingguy.postgresql's
+    # ansible_facts.fips | ternary('scram-sha-256', 'md5') resolves from the
+    # gathered snapshot in the program's gather-then-plan step.
+    hosts = [
+        SimulatedHost(name="web1", fips_enabled=True),
+        SimulatedHost(name="web2"),
+    ]
+    fips = await gather_fact(hosts, FipsEnabled)
+    auth_methods = {
+        name: "scram-sha-256" if enabled else "md5" for name, enabled in fips.items()
+    }
+    assert auth_methods == {"web1": "scram-sha-256", "web2": "md5"}
 
 
 # --- Groups --------------------------------------------------------------------

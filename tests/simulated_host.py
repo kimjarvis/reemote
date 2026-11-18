@@ -41,7 +41,7 @@ a real asyncssh transport is missing:
   / ``firewalld_permanent_ipsets`` / ``firewalld_permanent_policies``
   / ``firewalld_permanent_zones`` / ``firewalld_policies``
   / ``firewalld_services`` / ``firewalld_status`` / ``firewalld_zones``
-  / ``flatpak_package_info`` / ``git_branches``
+  / ``fips_enabled`` / ``flatpak_package_info`` / ``git_branches``
   / ``git_configs`` / ``git_head_detached`` / ``git_local_commits``
   / ``git_remote_commits`` / ``git_remote_urls`` / ``git_repos``
   / ``git_ssh_authenticated`` / ``git_statuses`` / ``git_submodules``
@@ -74,7 +74,8 @@ a real asyncssh transport is missing:
   / ``network_devices`` / ``openrc_runlevels`` / ``openrc_service_states``
   / ``openrc_version``
   / ``processes``
-  / ``postgres_connections`` / ``postgres_databases`` / ``postgres_extensions``
+  / ``postgres_connections`` / ``postgres_databases``
+  / ``postgres_default_privileges`` / ``postgres_extensions``
   / ``postgres_indexes`` / ``postgres_privileges`` / ``postgres_publications``
   / ``postgres_replication`` / ``postgres_role_memberships`` / ``postgres_roles``
   / ``postgres_schemas`` / ``postgres_settings`` / ``postgres_subscriptions``
@@ -104,7 +105,7 @@ a real asyncssh transport is missing:
   ``FirewalldZones``, ``FirewalldServices``, ``FirewalldIpSets``,
   ``FirewalldPolicies`` (the firewalld-local ``_FirewalldLockdown`` and
   ``_FirewalldPanicMode`` probes read the ``firewalld_lockdown`` and
-  ``firewalld_panic_mode`` seams), ``FlatpakPackage``, ``FlatpakPackages``,
+  ``firewalld_panic_mode`` seams), ``FipsEnabled``, ``FlatpakPackage``, ``FlatpakPackages``,
   ``GitBranch``, ``GitConfig``,
   ``GitHeadDetached``, ``GitIsRepo``, ``GitLocalCommit``,
   ``GitRemoteBranchCommit``, ``GitRemoteUrl``, ``GitSshKeyConfigured``,
@@ -134,6 +135,7 @@ a real asyncssh transport is missing:
   ``OpenrcRunlevels``, ``OpenrcServices``, ``OpenrcStatus``, ``OpenrcVersion``,
   ``Port``, ``Processes``,
   ``PostgresqlConnections``, ``PostgresqlDatabases``,
+  ``PostgresqlDefaultPrivileges``,
   ``PostgresqlExtensions``, ``PostgresqlIndexes``, ``PostgresqlPrivileges``,
   ``PostgresqlPublications``, ``PostgresqlReplication``,
   ``PostgresqlRoleMemberships``, ``PostgresqlRoles``, ``PostgresqlSchemas``,
@@ -420,6 +422,8 @@ from reemote.modules.postgresql.postgresql import (
     PostgresqlConnection,
     PostgresqlDatabase,
     PostgresqlDatabaseCommand,
+    PostgresqlDefaultPrivilege,
+    PostgresqlDefaultPrivilegeCommand,
     PostgresqlDumpCommand,
     PostgresqlExtension,
     PostgresqlExtensionCommand,
@@ -1113,6 +1117,12 @@ class SimulatedHost(Host):
     # Whether panic mode is on, backing the private ``_FirewalldPanicMode``
     # probe the ``firewalld.panic`` operation compares against.
     firewalld_panic_mode: bool = False
+    # Whether the kernel is running in FIPS mode, backing ``FipsEnabled``.
+    # Defaults to False -- a simulated server boots with FIPS off, like a
+    # host whose /proc/sys/crypto/fips_enabled reads 0 (or is absent). A
+    # read-only seam: enabling FIPS is a boot-time kernel setting no
+    # operation changes, so a test simulating a FIPS host sets it directly.
+    fips_enabled: bool = False
     # Per-package flatpak identity (package name -> the ``FlatpakPackageInfo``
     # dict ``FlatpakPackage`` returns -- id, ref and version), backing
     # ``FlatpakPackage``. A name absent from the mapping reads as None, like an
@@ -1646,7 +1656,8 @@ class SimulatedHost(Host):
     # / ``postgres_role_memberships`` / ``postgres_settings`` /
     # ``postgres_replication`` / ``postgres_tablespaces``) hold the entry
     # lists / name-keyed dicts their facts return verbatim; database-scoped
-    # seams (``postgres_extensions`` / ``postgres_indexes`` /
+    # seams (``postgres_default_privileges`` / ``postgres_extensions`` /
+    # ``postgres_indexes`` /
     # ``postgres_privileges`` / ``postgres_publications`` /
     # ``postgres_schemas`` / ``postgres_subscriptions`` / ``postgres_tables``)
     # are keyed by database name, with the fact's default database
@@ -1660,6 +1671,11 @@ class SimulatedHost(Host):
     # The cluster's databases (name -> pg_database metadata), backing
     # ``PostgresqlDatabases``.
     postgres_databases: dict[str, PostgresqlDatabase] = field(default_factory=dict)
+    # ALTER DEFAULT PRIVILEGES grants per database, backing
+    # ``PostgresqlDefaultPrivileges``.
+    postgres_default_privileges: dict[str, list[PostgresqlDefaultPrivilege]] = field(
+        default_factory=dict
+    )
     # Installed extensions per database, backing ``PostgresqlExtensions``.
     postgres_extensions: dict[str, list[PostgresqlExtension]] = field(
         default_factory=dict
@@ -2334,6 +2350,8 @@ class SimulatedHost(Host):
                 self.set_mysql_variable(cmd)
             case PostgresqlDatabaseCommand():
                 self.manage_postgresql_database(cmd)
+            case PostgresqlDefaultPrivilegeCommand():
+                self.manage_postgresql_default_privileges(cmd)
             case PostgresqlDumpCommand():
                 self.dump_postgresql_database(cmd)
             case PostgresqlExtensionCommand():
@@ -4918,6 +4936,54 @@ class SimulatedHost(Host):
         if current is not None:
             self.postgres_role_memberships.remove(current)
 
+    def manage_postgresql_default_privileges(
+        self, cmd: PostgresqlDefaultPrivilegeCommand
+    ) -> None:
+        """Record a simulated ALTER DEFAULT PRIVILEGES GRANT/REVOKE.
+
+        The default_privs arm of ``postgresql.privilege`` on the
+        database-keyed ``postgres_default_privileges`` seam. Entries key
+        on (target role, schema, object class, grantee, privilege) -- the
+        same tuple the operation compares. A grant upserts one entry per
+        privilege, ORing the grant option in; REVOKE GRANT OPTION FOR
+        only clears ``grantable``; a plain revoke removes the entries
+        (the manage_postgresql_privileges semantics).
+        """
+        database = cmd.psql_database or "postgres"
+        entries = self.postgres_default_privileges.setdefault(database, [])
+        for privilege in cmd.privileges:
+            current = next(
+                (
+                    e
+                    for e in entries
+                    if e["target_role"] == cmd.target_role
+                    and e["schema"] == cmd.schema
+                    and e["object_class"] == cmd.object_class
+                    and e["grantee"] == cmd.role
+                    and e["privilege"] == privilege
+                ),
+                None,
+            )
+            if cmd.present:
+                if current is None:
+                    entries.append(
+                        {
+                            "target_role": cmd.target_role or "postgres",
+                            "schema": cmd.schema,
+                            "object_class": cmd.object_class,
+                            "grantee": cmd.role,
+                            "privilege": privilege,
+                            "grantable": cmd.grant_option,
+                        }
+                    )
+                else:
+                    current["grantable"] = current["grantable"] or cmd.grant_option
+            elif cmd.revoke_grant_option:
+                if current is not None:
+                    current["grantable"] = False
+            elif current is not None:
+                entries.remove(current)
+
     def manage_postgresql_privileges(self, cmd: PostgresqlPrivilegeCommand) -> None:
         """Record a simulated GRANT/REVOKE of object privileges.
 
@@ -5048,6 +5114,7 @@ class SimulatedHost(Host):
                 ("createdb", "createdb"),
                 ("createrole", "createrole"),
                 ("replication", "replication"),
+                ("bypassrls", "bypassrls"),
             ):
                 value = getattr(cmd, option)
                 if value is not None:
@@ -5065,7 +5132,7 @@ class SimulatedHost(Host):
             "connlimit": -1 if cmd.connection_limit is None else cmd.connection_limit,
             "password": None,
             "validuntil": None,
-            "bypassrls": False,
+            "bypassrls": False if cmd.bypassrls is None else cmd.bypassrls,
             "config": None,
             "oid": max(
                 (e["oid"] for e in self.postgres_roles.values()), default=16383

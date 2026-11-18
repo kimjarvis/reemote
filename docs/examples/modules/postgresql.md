@@ -20,7 +20,9 @@ The read-only fact-gathering examples (`postgresql_postgresql_roles.py`
 reading `PostgresqlRoles`, `postgresql_postgresql_databases.py` reading
 `PostgresqlDatabases`, `postgresql_postgresql_role_memberships.py` reading
 `PostgresqlRoleMemberships`, `postgresql_postgresql_privileges.py` reading
-`PostgresqlPrivileges`, `postgresql_postgresql_schemas.py` reading
+`PostgresqlPrivileges`, `postgresql_postgresql_default_privileges.py`
+reading `PostgresqlDefaultPrivileges`, `postgresql_postgresql_schemas.py`
+reading
 `PostgresqlSchemas`, `postgresql_postgresql_tables.py` reading
 `PostgresqlTables`, `postgresql_postgresql_indexes.py` reading
 `PostgresqlIndexes`, `postgresql_postgresql_extensions.py` reading
@@ -156,7 +158,15 @@ object type's full set), `present=False` revokes just the held ones, and
 `grant_option` upgrades to `WITH GRANT OPTION` or withdraws only the
 option. Objects are named by `objects` (bare or `schema.name`) or by
 `all_in_schema`, which addresses every object of the type the grantee
-already holds grants on. The script yields the same grant request twice —
+already holds grants on. `role` also accepts a list of grantees (Ansible's
+`roles` plural), each reconciled against its own grants; the `tablespace`
+type grants `CREATE` on a tablespace, and the `default_privs` type manages
+`ALTER DEFAULT PRIVILEGES` idempotently against
+[`PostgresqlDefaultPrivileges`][reemote.modules.postgresql.postgresql.PostgresqlDefaultPrivileges]
+(`objects` names the object classes, `all_in_schema` scopes `IN SCHEMA`,
+`target_roles` names the `FOR ROLE` targets); `session_role` prefixes
+`SET ROLE` so the statement rides that SQL role. The script yields the
+same grant requests twice —
 the second is a guaranteed no-op in the apply phase, because the first
 grant is visible to it through the fresh per-step fact cache (in the
 prepare phase, where nothing is sent, both plan as changes).

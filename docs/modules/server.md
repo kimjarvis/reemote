@@ -45,6 +45,7 @@ back as an error `Result` (exit 127), never an exception. See the
         - Date
         - Env
         - EtcHosts
+        - FipsEnabled
         - Groups
         - HasGui
         - Home
@@ -87,7 +88,7 @@ back as an error `Result` (exit 127), never an exception. See the
 `reemote.modules.server.server` combines the server facts and the server
 operations in a single source, so the read side (`Arch`, `AuthorizedKeys`,
 `AuthorizedKeysFile`,
-`Date`, `Env`, `EtcHosts`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
+`Date`, `Env`, `EtcHosts`, `FipsEnabled`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
 `KernelVersion`, `Last`, `LinuxDistribution`, `LinuxGui`, `LinuxName`,
 `Locales`, `LsbRelease`, `Mounts`, `Port`, `Processes`,
 `Timezone`, `Uptime`, `User`, `Users`, `Which`)
@@ -154,7 +155,16 @@ merge their hostnames in file order without duplicates; a missing file
 (the `cat` error swallowed by `|| true`) reads as `{}`, the baseline's
 `default = dict`. It gates `server.etc_hosts`' presence comparison; the
 file's *text* for the rewrite comes from `AuthorizedKeysFile`, never from
-rebuilding these parsed entries. `Groups` takes no arguments: it cats `/etc/group` and
+rebuilding these parsed entries. `FipsEnabled` takes no arguments: it runs
+`cat /proc/sys/crypto/fips_enabled 2>/dev/null || true` and returns `True`
+only when the file reads `1` — the kernel booted in FIPS mode — while `0`
+and an absent file (kernels without FIPS support, the `cat` error swallowed
+by `|| true`) both read as `False`. An original reemote fact giving Ansible's
+`ansible_facts.fips` parity, so a role default like `geerlingguy.postgresql`'s
+`postgresql_auth_method: "{{ ansible_facts.fips | ternary('scram-sha-256', 'md5') }}"`
+resolves in the program's gather-then-plan step as
+`"scram-sha-256" if fips else "md5"` — md5 is unavailable on a FIPS host.
+`Groups` takes no arguments: it cats `/etc/group` and
 returns the first `:`-separated field of every colon-bearing line — the
 group names in file order, with no dedup or sorting — mirroring the baseline's
 `server.Groups`; lines without a colon are skipped and empty output reads

@@ -5,6 +5,7 @@
 
 Re-exports everything from ``postgresql.py`` so the facts
 (``postgresql.PostgresqlConnections``, ``postgresql.PostgresqlDatabases``,
+``postgresql.PostgresqlDefaultPrivileges``,
 ``postgresql.PostgresqlExtensions``, ``postgresql.PostgresqlIndexes``,
 ``postgresql.PostgresqlPrivileges``, ``postgresql.PostgresqlPublications``,
 ``postgresql.PostgresqlReplication``, ``postgresql.PostgresqlRoleMemberships``,
@@ -24,6 +25,9 @@ from .postgresql import (
     PostgresqlDatabase,
     PostgresqlDatabaseCommand,
     PostgresqlDatabases,
+    PostgresqlDefaultPrivilege,
+    PostgresqlDefaultPrivilegeCommand,
+    PostgresqlDefaultPrivileges,
     PostgresqlDumpCommand,
     PostgresqlExtension,
     PostgresqlExtensionCommand,
@@ -83,6 +87,9 @@ __all__ = [
     "PostgresqlDatabase",
     "PostgresqlDatabaseCommand",
     "PostgresqlDatabases",
+    "PostgresqlDefaultPrivilege",
+    "PostgresqlDefaultPrivilegeCommand",
+    "PostgresqlDefaultPrivileges",
     "PostgresqlDumpCommand",
     "PostgresqlExtension",
     "PostgresqlExtensionCommand",

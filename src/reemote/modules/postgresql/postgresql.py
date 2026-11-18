@@ -6,7 +6,9 @@
 # Fact side: ``PostgresqlConnections`` (active client connections from
 # ``pg_stat_activity``, without the query text), ``PostgresqlDatabases``
 # (the cluster's databases and their ``pg_database`` metadata),
-# ``PostgresqlExtensions`` (installed extensions and versions),
+# ``PostgresqlDefaultPrivileges`` (ALTER DEFAULT PRIVILEGES grants from
+# ``pg_default_acl``), ``PostgresqlExtensions`` (installed extensions and
+# versions),
 # ``PostgresqlIndexes`` (user index metadata), ``PostgresqlPrivileges``
 # (object-level grants exploded from the system-catalog ACLs),
 # ``PostgresqlPublications`` (logical-replication publications and their
@@ -29,7 +31,8 @@
 # produces, so reemote reworks it against the real fact keys);
 # ``postgresql.sql`` executes arbitrary SQL; ``postgresql.dump`` and
 # ``postgresql.load`` write/read host-side ``pg_dump`` files;
-# ``postgresql.privilege`` grants/revokes object privileges;
+# ``postgresql.privilege`` grants/revokes object privileges (including
+# tablespaces and ALTER DEFAULT PRIVILEGES, for one or more grantees);
 # ``postgresql.membership`` manages role membership; ``postgresql.schema``,
 # ``postgresql.extension`` and ``postgresql.index`` manage schema objects;
 # ``postgresql.setting`` tunes GUCs via ALTER SYSTEM; ``postgresql.tablespace``
@@ -39,12 +42,22 @@
 #
 # Credentials decision (developer-approved): the ``psql_password``
 # connection parameter and ``role``'s ``password`` option are deliberately
-# dropped. reemote renders raw shell strings into the plan/apply log and
+# dropped, as is ``role``'s ``VALID UNTIL`` password-expiry option (the
+# same boundary: expiry metadata belongs to credential provisioning, not
+# to role shape). reemote renders raw shell strings into the plan/apply log and
 # takes credentials only from the inventory ``privilege`` section, so no
 # operation accepts a password. Authenticate with peer auth (``sudo=True``
 # with ``privilege.sudo_user = "postgres"`` in the inventory) or a host-side
 # ``~/.pgpass``; ``postgresql.subscription``'s ``connection`` DSN should
 # likewise reference a passfile/service rather than embed a password.
+#
+# Fact reads ride the login user first; a read the server denies
+# (``Peer authentication failed`` / ``no pg_hba.conf entry`` -- a
+# peer-auth ``pg_hba.conf`` admits only the matching OS user) is
+# re-read elevated with ``sudo`` (the ``_MysqlFact._run`` fallback
+# precedent), so the facts stay idempotent under the same peer
+# authentication the operations use. The run-as user and any password
+# come from the inventory ``privilege`` data, never from an operation.
 #
 # Every fact and operation accepts the connection keyword arguments
 # ``psql_user``/``psql_host``/``psql_port``/``psql_database`` (the
@@ -61,7 +74,7 @@ from typing import Any, TypedDict, cast
 
 from ...commands import Command
 from ...core import OpContext, OperationError
-from ...hosts import Host
+from ...hosts import CommandNotFoundError, Host
 
 
 def _psql_base(
@@ -196,6 +209,15 @@ def _parse_array(value: str | None) -> list[str]:
     return value.strip("{}").split(",")
 
 
+#: The psql client's authentication-rejection signatures ("FATAL:  Peer
+#: authentication failed for user \"postgres\"" over the unix socket,
+#: "FATAL:  no pg_hba.conf entry for host ..." over TCP). Matched
+#: case-insensitively on stderr -- the _MysqlFact._run idiom -- because
+#: a peer-auth pg_hba.conf admits only the matching OS user, never the
+#: SSH login user.
+_PEER_AUTH_MARKERS = ("peer authentication failed", "no pg_hba.conf entry")
+
+
 class _PostgresqlFact:
     """Shared transport plumbing for the psql-backed facts.
 
@@ -204,6 +226,15 @@ class _PostgresqlFact:
     fact body is just its seam read plus ``parse``. Never exported or
     rendered; every concrete fact keeps its own ``process`` classmethod
     choosing between the SimulatedHost seam and ``_gather``.
+
+    The real-transport read is two-tier (the ``_MysqlFact._run``
+    precedent): the query rides the login user first, and a read the
+    server denies -- a peer-auth ``pg_hba.conf`` admits only the
+    matching OS user -- is re-read elevated with ``sudo``, so the peer
+    authentication the operations ride keeps the facts idempotent
+    instead of parsing the denial as an empty cluster. The run-as user
+    and any password come from the inventory ``privilege`` data, never
+    from an operation.
     """
 
     PSQL: str
@@ -237,14 +268,29 @@ class _PostgresqlFact:
         psql_database: str | None = None,
     ) -> Any:
         # Real transport: run the query over asyncssh and parse stdout.
-        stdout = await host.run_shell(
-            cls.command(
-                psql_user=psql_user,
-                psql_host=psql_host,
-                psql_port=psql_port,
-                psql_database=psql_database,
-            )
+        # The raw result keeps the exit status and stderr a plain run_shell
+        # read hides: 127 stays CommandNotFoundError (a missing psql must
+        # never parse as an empty fact), and a peer-auth rejection
+        # triggers the elevated re-read.
+        shell = cls.command(
+            psql_user=psql_user,
+            psql_host=psql_host,
+            psql_port=psql_port,
+            psql_database=psql_database,
         )
+        result = await host.run_shell_result(shell)
+        if result.exit_status == 127:
+            raise CommandNotFoundError(
+                host.name, shell, result.exit_status, result.stderr
+            )
+        stderr = (result.stderr or "").lower()
+        if any(marker in stderr for marker in _PEER_AUTH_MARKERS):
+            # The login user cannot authenticate: re-read elevated, the
+            # _MysqlFact._run precedent. With privilege.sudo_user =
+            # "postgres" this reproduces become_user: postgres for reads.
+            stdout = await host.run_shell_privileged(shell, sudo=True)
+        else:
+            stdout = result.stdout or ""
         return cls.parse(stdout.splitlines())  # type: ignore[attr-defined]
 
 
@@ -283,6 +329,11 @@ class PostgresqlConnection(TypedDict):
 class PostgresqlConnections(_PostgresqlFact):
     """The server's client connections, without the query text.
 
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
@@ -298,7 +349,7 @@ class PostgresqlConnections(_PostgresqlFact):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -396,6 +447,11 @@ class PostgresqlDatabase(TypedDict):
 class PostgresqlDatabases(_PostgresqlFact):
     """The cluster's databases and their metadata, keyed by database name.
 
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
@@ -411,7 +467,7 @@ class PostgresqlDatabases(_PostgresqlFact):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -481,6 +537,123 @@ class PostgresqlDatabases(_PostgresqlFact):
         )
 
 
+class PostgresqlDefaultPrivilege(TypedDict):
+    """
+    Attributes:
+        target_role: The role whose future objects the default applies to
+            (``pg_default_acl.defaclrole`` resolved to a role name).
+        schema: The schema the default is scoped to; None for a
+            database-wide default (``defaclnamespace`` 0).
+        object_class: The kind of future object the default covers:
+            ``TABLES``, ``SEQUENCES``, ``FUNCTIONS``, ``TYPES`` or
+            ``SCHEMAS`` (decoded from ``defaclobjtype``).
+        grantee: The role the default privilege is granted to; ``PUBLIC``
+            for the implicit grant to every role.
+        privilege: The privilege name, e.g. ``SELECT``, ``USAGE``.
+        grantable: Whether the default grant carries WITH GRANT OPTION.
+    """
+
+    target_role: str
+    schema: str | None
+    object_class: str
+    grantee: str
+    privilege: str
+    grantable: bool
+
+
+class PostgresqlDefaultPrivileges(_PostgresqlFact):
+    """The ALTER DEFAULT PRIVILEGES grants recorded in a database.
+
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
+    **Commands:**
+
+    ```bash
+    psql -Ac 'SELECT pg_catalog.pg_get_userbyid(d.defaclrole) AS target_role, n.nspname AS schema, CASE d.defaclobjtype WHEN '"'"'r'"'"' THEN '"'"'TABLES'"'"' WHEN '"'"'S'"'"' THEN '"'"'SEQUENCES'"'"' WHEN '"'"'f'"'"' THEN '"'"'FUNCTIONS'"'"' WHEN '"'"'T'"'"' THEN '"'"'TYPES'"'"' WHEN '"'"'n'"'"' THEN '"'"'SCHEMAS'"'"' END AS object_class, COALESCE(pg_catalog.pg_get_userbyid(acl.grantee), '"'"'PUBLIC'"'"') AS grantee, acl.privilege_type, acl.is_grantable FROM pg_catalog.pg_default_acl d LEFT JOIN pg_catalog.pg_namespace n ON n.oid = d.defaclnamespace, LATERAL pg_catalog.aclexplode(d.defaclacl) acl ORDER BY target_role, n.nspname, object_class, grantee, acl.privilege_type'
+    ```
+
+    **Returns:**
+
+    ```python
+    list[PostgresqlDefaultPrivilege]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
+    ```
+
+    Examples:
+        Examples can be found in
+        ``examples/modules/postgresql/postgresql_postgresql_default_privileges.py``.
+    """
+
+    # reemote-original: backs the idempotence of ``postgresql.privilege``'s
+    # default_privs object type -- PostgresqlPrivileges reports grants on
+    # EXISTING objects, while pg_default_acl records the defaults applied
+    # to objects created in the future. Database-scoped. One aclexplode
+    # sweep over pg_default_acl yields one entry per (target role, schema,
+    # object class, grantee, privilege); defaclobjtype decodes to the
+    # GRANT ... ON <class> plural word, defaclnamespace 0 (no IN SCHEMA)
+    # reads as a None schema, and a grantee OID of 0 resolves to PUBLIC.
+
+    PSQL = (
+        "SELECT pg_catalog.pg_get_userbyid(d.defaclrole) AS target_role, "
+        "n.nspname AS schema, "
+        "CASE d.defaclobjtype WHEN 'r' THEN 'TABLES' WHEN 'S' THEN 'SEQUENCES' "
+        "WHEN 'f' THEN 'FUNCTIONS' WHEN 'T' THEN 'TYPES' WHEN 'n' THEN 'SCHEMAS' "
+        "END AS object_class, "
+        "COALESCE(pg_catalog.pg_get_userbyid(acl.grantee), 'PUBLIC') AS grantee, "
+        "acl.privilege_type, acl.is_grantable "
+        "FROM pg_catalog.pg_default_acl d "
+        "LEFT JOIN pg_catalog.pg_namespace n ON n.oid = d.defaclnamespace, "
+        "LATERAL pg_catalog.aclexplode(d.defaclacl) acl "
+        "ORDER BY target_role, n.nspname, object_class, grantee, acl.privilege_type"
+    )
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> list[PostgresqlDefaultPrivilege]:
+        """Parse the pg_default_acl aclexplode rows into default-grant entries."""
+        return [
+            {
+                "target_role": cast(str, row["target_role"]),
+                "schema": row["schema"],
+                "object_class": cast(str, row["object_class"]),
+                "grantee": cast(str, row["grantee"]),
+                "privilege": cast(str, row["privilege_type"]),
+                "grantable": row["is_grantable"] == "t",
+            }
+            for row in _parse_rows(output)
+        ]
+
+    @classmethod
+    async def process(
+        cls,
+        host: Host,
+        *,
+        psql_user: str | None = None,
+        psql_host: str | None = None,
+        psql_port: int | None = None,
+        psql_database: str | None = None,
+    ) -> list[PostgresqlDefaultPrivilege]:
+        defaults = getattr(host, "postgres_default_privileges", None)
+        if defaults is not None:
+            # SimulatedHost seam: database name -> default-grant entries.
+            entries = defaults.get(psql_database or "postgres", [])
+            return [cast(PostgresqlDefaultPrivilege, dict(entry)) for entry in entries]
+        return await cls._gather(
+            host,
+            psql_user=psql_user,
+            psql_host=psql_host,
+            psql_port=psql_port,
+            psql_database=psql_database,
+        )
+
+
 class PostgresqlExtension(TypedDict):
     """
     Attributes:
@@ -497,6 +670,11 @@ class PostgresqlExtension(TypedDict):
 class PostgresqlExtensions(_PostgresqlFact):
     """The extensions installed in a database, with versions and schemas.
 
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
@@ -512,7 +690,7 @@ class PostgresqlExtensions(_PostgresqlFact):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -595,6 +773,11 @@ class PostgresqlIndex(TypedDict):
 class PostgresqlIndexes(_PostgresqlFact):
     """The user indexes in a database, with table, owner and access method.
 
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
@@ -610,7 +793,7 @@ class PostgresqlIndexes(_PostgresqlFact):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -684,9 +867,9 @@ class PostgresqlPrivilege(TypedDict):
     Attributes:
         object_type: The granted-on object kind: ``database``, ``schema``,
             ``table``, ``view``, ``materialized_view``, ``foreign_table``,
-            ``sequence`` or ``function``.
-        schema: The object's schema; None for databases and schemas
-            (which are not schema-qualified).
+            ``sequence``, ``function`` or ``tablespace``.
+        schema: The object's schema; None for databases, schemas and
+            tablespaces (which are not schema-qualified).
         name: The object's name (unqualified).
         grantee: The role the privilege is granted to; ``PUBLIC`` for the
             implicit grant to every role.
@@ -705,6 +888,11 @@ class PostgresqlPrivilege(TypedDict):
 class PostgresqlPrivileges(_PostgresqlFact):
     """The object-level privilege grants visible from a database.
 
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
@@ -720,7 +908,7 @@ class PostgresqlPrivileges(_PostgresqlFact):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -731,13 +919,14 @@ class PostgresqlPrivileges(_PostgresqlFact):
     # reemote-original: nothing else reports who is granted what --
     # the core permission blind spot this fact closes.
     # One aclexplode sweep over a UNION of pg_database.datacl,
-    # pg_namespace.nspacl, pg_class.relacl (tables, views, materialized
-    # views, foreign tables, sequences, partitioned tables) and
-    # pg_proc.proacl yields one entry per (object, grantee, privilege).
-    # A grantee OID of 0 resolves to PUBLIC via the COALESCE. Database
-    # ACLs are cluster-wide but reported alongside the connected
-    # database's object ACLs; the other catalogs are database-scoped, so
-    # ``psql_database`` selects whose tables/schemas/functions are seen.
+    # pg_tablespace.spcacl, pg_namespace.nspacl, pg_class.relacl (tables,
+    # views, materialized views, foreign tables, sequences, partitioned
+    # tables) and pg_proc.proacl yields one entry per (object, grantee,
+    # privilege). A grantee OID of 0 resolves to PUBLIC via the COALESCE.
+    # Database and tablespace ACLs are cluster-wide but reported alongside
+    # the connected database's object ACLs; the other catalogs are
+    # database-scoped, so ``psql_database`` selects whose
+    # tables/schemas/functions are seen.
     # NULL ACLs (default privileges: owner-only) are NOT expanded --
     # aclexplode of NULL yields no rows, matching what GRANT would
     # change. System schemas are filtered out. The Commands block above
@@ -750,6 +939,8 @@ class PostgresqlPrivileges(_PostgresqlFact):
         "FROM (SELECT 'database' AS object_type, NULL AS schema_name, "
         "d.datname AS object_name, d.datacl AS acl "
         "FROM pg_catalog.pg_database d "
+        "UNION ALL SELECT 'tablespace', NULL, t.spcname, t.spcacl "
+        "FROM pg_catalog.pg_tablespace t "
         "UNION ALL SELECT 'schema', NULL, n.nspname, n.nspacl "
         f"FROM pg_catalog.pg_namespace n WHERE {_USER_SCHEMAS} "
         "UNION ALL SELECT CASE c.relkind WHEN 'S' THEN 'sequence' "
@@ -828,6 +1019,11 @@ class PostgresqlPublication(TypedDict):
 class PostgresqlPublications(_PostgresqlFact):
     """The logical-replication publications in a database, with their tables.
 
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
@@ -843,7 +1039,7 @@ class PostgresqlPublications(_PostgresqlFact):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -937,6 +1133,11 @@ class PostgresqlReplicationClient(TypedDict):
 class PostgresqlReplication(_PostgresqlFact):
     """The streaming-replication standbys connected to this server.
 
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
@@ -952,7 +1153,7 @@ class PostgresqlReplication(_PostgresqlFact):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -1029,6 +1230,11 @@ class PostgresqlRoleMembership(TypedDict):
 class PostgresqlRoleMemberships(_PostgresqlFact):
     """The role-to-role membership grants in the cluster.
 
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
@@ -1044,7 +1250,7 @@ class PostgresqlRoleMemberships(_PostgresqlFact):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -1139,6 +1345,11 @@ class PostgresqlRole(TypedDict):
 class PostgresqlRoles(_PostgresqlFact):
     """The cluster's roles and their attributes, keyed by role name.
 
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
@@ -1154,7 +1365,7 @@ class PostgresqlRoles(_PostgresqlFact):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -1240,6 +1451,11 @@ class PostgresqlSchema(TypedDict):
 class PostgresqlSchemas(_PostgresqlFact):
     """The non-system schemas in a database, with their owners.
 
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
@@ -1255,7 +1471,7 @@ class PostgresqlSchemas(_PostgresqlFact):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -1333,6 +1549,11 @@ class PostgresqlSetting(TypedDict):
 class PostgresqlSettings(_PostgresqlFact):
     """The server's active configuration parameters (GUCs).
 
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
@@ -1348,7 +1569,7 @@ class PostgresqlSettings(_PostgresqlFact):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -1426,6 +1647,11 @@ class PostgresqlSubscription(TypedDict):
 class PostgresqlSubscriptions(_PostgresqlFact):
     """The logical-replication subscriptions in a database.
 
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
@@ -1441,7 +1667,7 @@ class PostgresqlSubscriptions(_PostgresqlFact):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -1533,6 +1759,11 @@ class PostgresqlTable(TypedDict):
 class PostgresqlTables(_PostgresqlFact):
     """The user tables in a database, with owners and row estimates.
 
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
@@ -1548,7 +1779,7 @@ class PostgresqlTables(_PostgresqlFact):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -1634,6 +1865,11 @@ class PostgresqlTablespace(TypedDict):
 class PostgresqlTablespaces(_PostgresqlFact):
     """The cluster's tablespaces and their filesystem locations.
 
+    A read the server denies the login user (a peer-auth ``pg_hba.conf``
+    admits only the matching OS user) is re-read elevated with ``sudo``
+    -- the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
@@ -1649,7 +1885,7 @@ class PostgresqlTablespaces(_PostgresqlFact):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -2171,7 +2407,7 @@ async def extension(
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -2587,7 +2823,7 @@ async def membership(
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -2672,6 +2908,39 @@ _PRIVILEGES_BY_TYPE = {
     "schema": ("USAGE", "CREATE"),
     "function": ("EXECUTE",),
     "database": ("CREATE", "CONNECT", "TEMPORARY"),
+    "tablespace": ("CREATE",),
+    # default_privs spans every object class, so its top-level set is the
+    # union; the per-class check below narrows it (a SELECT default on
+    # SEQUENCES is valid SQL, one on FUNCTIONS is not).
+    "default_privs": (
+        "CREATE", "DELETE", "EXECUTE", "INSERT", "REFERENCES", "SELECT",
+        "TRIGGER", "TRUNCATE", "UPDATE", "USAGE",
+    ),
+}
+
+# The object classes ALTER DEFAULT PRIVILEGES addresses, mapped from the
+# singular/plural names Ansible's postgresql_privs objs accepts to the
+# canonical GRANT ... ON <plural> word.
+_DEFAULT_PRIV_CLASSES = {
+    "TABLE": "TABLES",
+    "TABLES": "TABLES",
+    "SEQUENCE": "SEQUENCES",
+    "SEQUENCES": "SEQUENCES",
+    "FUNCTION": "FUNCTIONS",
+    "FUNCTIONS": "FUNCTIONS",
+    "TYPE": "TYPES",
+    "TYPES": "TYPES",
+    "SCHEMA": "SCHEMAS",
+    "SCHEMAS": "SCHEMAS",
+}
+
+# The privileges each default-privileges object class accepts.
+_DEFAULT_PRIV_VALID = {
+    "TABLES": _PRIVILEGES_BY_TYPE["table"],
+    "SEQUENCES": _PRIVILEGES_BY_TYPE["sequence"],
+    "FUNCTIONS": _PRIVILEGES_BY_TYPE["function"],
+    "TYPES": ("USAGE",),
+    "SCHEMAS": _PRIVILEGES_BY_TYPE["schema"],
 }
 
 # GRANT ON ALL <plural> IN SCHEMA wording per type.
@@ -2690,17 +2959,18 @@ _PRIVILEGE_ALIASES = {
     "schema": {"schema"},
     "function": {"function"},
     "database": {"database"},
+    "tablespace": {"tablespace"},
 }
 
 
 def _normalize_object(object_type: str, name: str) -> tuple[str | None, str]:
     """Split an object name into (schema, name) the fact entries use.
 
-    Databases and schemas are not schema-qualified (None schema); other
-    kinds default to the ``public`` schema when unqualified -- the
-    simulation's search_path convention, documented on the operation.
+    Databases, schemas and tablespaces are not schema-qualified (None
+    schema); other kinds default to the ``public`` schema when unqualified
+    -- the simulation's search_path convention, documented on the operation.
     """
-    if object_type in ("database", "schema"):
+    if object_type in ("database", "schema", "tablespace"):
         return None, name
     schema, _, bare = name.rpartition(".")
     return schema or "public", bare
@@ -2715,6 +2985,8 @@ class PostgresqlPrivilegeCommand(_PsqlCommand):
     explicit object list (``ON TABLE a, b``) or ``ALL <plural> IN SCHEMA
     s``; ``grant_option`` appends WITH GRANT OPTION on a grant and
     ``revoke_grant_option`` renders REVOKE GRANT OPTION FOR on a revoke.
+    ``session_role`` prefixes SET ROLE so the statement rides that SQL
+    role (Ansible's session_role) inside the same psql invocation.
     """
 
     privileges: tuple[str, ...]
@@ -2725,6 +2997,7 @@ class PostgresqlPrivilegeCommand(_PsqlCommand):
     present: bool = True
     grant_option: bool = False
     revoke_grant_option: bool = False
+    session_role: str | None = None
 
     def shell(self) -> str:
         privs = ", ".join(self.privileges)
@@ -2741,49 +3014,117 @@ class PostgresqlPrivilegeCommand(_PsqlCommand):
             sql = f"GRANT {privs} ON {target} TO {role}"
             if self.grant_option:
                 sql += " WITH GRANT OPTION"
-            return self._sql_shell(sql)
-        option_for = "GRANT OPTION FOR " if self.revoke_grant_option else ""
-        return self._sql_shell(
-            f"REVOKE {option_for}{privs} ON {target} FROM {role}"
-        )
+        else:
+            option_for = "GRANT OPTION FOR " if self.revoke_grant_option else ""
+            sql = f"REVOKE {option_for}{privs} ON {target} FROM {role}"
+        if self.session_role is not None:
+            sql = f"SET ROLE {_quote_ident(self.session_role)}; {sql}"
+        return self._sql_shell(sql)
+
+
+@dataclass(frozen=True)
+class PostgresqlDefaultPrivilegeCommand(_PsqlCommand):
+    """``psql -Ac 'ALTER DEFAULT PRIVILEGES ... GRANT/REVOKE ...'``.
+
+    The default_privs arm of ``postgresql.privilege``: manages the
+    privileges future objects inherit, not grants on existing ones. One
+    present-flagged descriptor for both directions; ``target_role``
+    renders FOR ROLE (the role whose future objects the default covers),
+    ``schema`` renders IN SCHEMA (None for a database-wide default), and
+    ``object_class`` is the plural ON word (TABLES, SEQUENCES, FUNCTIONS,
+    TYPES, SCHEMAS). ``grant_option``/``revoke_grant_option`` and
+    ``session_role`` behave exactly as on PostgresqlPrivilegeCommand.
+    """
+
+    privileges: tuple[str, ...]
+    role: str
+    object_class: str = "TABLES"
+    schema: str | None = None
+    target_role: str | None = None
+    present: bool = True
+    grant_option: bool = False
+    revoke_grant_option: bool = False
+    session_role: str | None = None
+
+    def shell(self) -> str:
+        bits = ["ALTER DEFAULT PRIVILEGES"]
+        if self.target_role is not None:
+            bits.append(f"FOR ROLE {_quote_ident(self.target_role)}")
+        if self.schema is not None:
+            bits.append(f"IN SCHEMA {_quote_ident(self.schema)}")
+        prefix = " ".join(bits)
+        privs = ", ".join(self.privileges)
+        role = _quote_ident(self.role)
+        if self.present:
+            sql = f"{prefix} GRANT {privs} ON {self.object_class} TO {role}"
+            if self.grant_option:
+                sql += " WITH GRANT OPTION"
+        else:
+            option_for = "GRANT OPTION FOR " if self.revoke_grant_option else ""
+            sql = (
+                f"{prefix} REVOKE {option_for}{privs} "
+                f"ON {self.object_class} FROM {role}"
+            )
+        if self.session_role is not None:
+            sql = f"SET ROLE {_quote_ident(self.session_role)}; {sql}"
+        return self._sql_shell(sql)
 
 
 async def privilege(
     ctx: OpContext,
     privileges: str | list[str],
-    role: str,
+    role: str | list[str],
     object_type: str = "table",
     objects: list[str] | None = None,
     all_in_schema: str | None = None,
     present: bool = True,
     grant_option: bool = False,
+    target_roles: str | list[str] | None = None,
+    session_role: str | None = None,
     psql_user: str | None = None,
     psql_host: str | None = None,
     psql_port: int | None = None,
     psql_database: str | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Grant or revoke object privileges for a PostgreSQL role.
+    """Grant or revoke object privileges for one or more PostgreSQL roles.
 
     Args:
         ctx (OpContext): Execution context for the operation.
         privileges (str | list[str]): Privilege names (SELECT, INSERT,
             USAGE, ...) or the string "ALL" for the type's full set.
-        role (str): The grantee role (or PUBLIC).
+        role (str | list[str]): The grantee role (or PUBLIC), or a list
+            of grantees -- each is reconciled against its own grants
+            (Ansible's roles plural).
         object_type (str, optional): One of table, schema, sequence,
-            function, database. Defaults to "table".
+            function, database, tablespace, default_privs. Defaults to
+            "table".
         objects (list[str] | None, optional): Object names, schema-
-            qualified or defaulting to the public schema (databases and
-            schemas are never qualified). Mutually exclusive with
-            all_in_schema. Defaults to None.
+            qualified or defaulting to the public schema (databases,
+            schemas and tablespaces are never qualified). Mutually
+            exclusive with all_in_schema. For default_privs these are
+            object CLASSES instead (tables, sequences, functions, types,
+            schemas; singular or plural, defaulting to tables).
+            Defaults to None.
         all_in_schema (str | None, optional): Apply to ALL objects of the
-            type IN SCHEMA this schema (not valid for databases).
+            type IN SCHEMA this schema (not valid for databases or
+            tablespaces). For default_privs it scopes the default with
+            IN SCHEMA and is optional (unset means database-wide).
             Defaults to None.
         present (bool, optional): Grant when True, revoke when False.
             Defaults to True.
         grant_option (bool, optional): WITH GRANT OPTION on a grant; on
             a revoke, withdraw only the grant option (REVOKE GRANT
             OPTION FOR), keeping the privilege. Defaults to False.
+        target_roles (str | list[str] | None, optional): default_privs
+            only: the roles whose FUTURE objects the defaults cover
+            (ALTER DEFAULT PRIVILEGES FOR ROLE). Unset targets the
+            connecting role (psql_user, or postgres when unset -- name
+            target_roles explicitly when the login role differs).
+            Defaults to None.
+        session_role (str | None, optional): Prefix SET ROLE so the
+            statement executes as this SQL role (Ansible's session_role;
+            the connecting role must be a member of it). Defaults to None.
         psql_user (str | None, optional): Role to connect as.
             Defaults to None.
         psql_host (str | None, optional): Server host to connect to.
@@ -2792,7 +3133,8 @@ async def privilege(
             Defaults to None.
         psql_database (str | None, optional): Database whose objects are
             addressed. Defaults to None.
-        **kwargs: Additional keyword arguments.
+        **kwargs: Additional keyword arguments (Ansible's fail_on_role
+            convenience is deliberately out of scope and absorbed here).
 
     Yields:
         Command: Generated PostgreSQL GRANT/REVOKE commands.
@@ -2809,12 +3151,13 @@ async def privilege(
 
     # reemote-original (there is no other privilege operation -- a
     # significant gap in PostgreSQL support), the Ansible postgresql_privs
-    # parameter shape. Idempotent against PostgresqlPrivileges: only
-    # privileges the grantee lacks are granted, only ones it holds are
-    # revoked, and a grant_option upgrade re-grants the full requested
-    # set WITH GRANT OPTION. Grants held via PUBLIC or via a group role
-    # are NOT counted (the fact reports direct grants only) -- the
-    # operation manages the named role's own ACL entries. Unqualified
+    # parameter shape. Idempotent against PostgresqlPrivileges (or
+    # PostgresqlDefaultPrivileges for default_privs): only privileges the
+    # grantee lacks are granted, only ones it holds are revoked, and a
+    # grant_option upgrade re-grants the full requested set WITH GRANT
+    # OPTION. Grants held via PUBLIC or via a group role are NOT counted
+    # (the facts report direct grants only) -- the operation manages the
+    # named roles' own ACL entries, one command per grantee. Unqualified
     # table/sequence/function names are treated as ``public`` (the
     # simulation's search_path convention); qualify names to address
     # other schemas. ALL-in-schema with no matching objects is a no-op.
@@ -2826,19 +3169,38 @@ async def privilege(
             f"unknown postgresql object_type {object_type!r}; expected one "
             f"of {', '.join(sorted(_PRIVILEGES_BY_TYPE))}"
         )
-    if bool(objects) == bool(all_in_schema):
-        raise ValueError(
-            "postgresql.privilege requires exactly one of objects or "
-            "all_in_schema"
-        )
-    if all_in_schema and object_type == "database":
-        raise ValueError("databases cannot be addressed ALL IN SCHEMA")
+    grantees = [role] if isinstance(role, str) else sorted(set(role))
+    if not grantees:
+        raise ValueError("postgresql.privilege requires at least one grantee role")
+    if target_roles is not None and object_type != "default_privs":
+        raise ValueError("target_roles is only valid for object_type default_privs")
+    classes: list[str] = []
+    if object_type == "default_privs":
+        for name in objects or ["TABLES"]:
+            key = name.upper()
+            if key not in _DEFAULT_PRIV_CLASSES:
+                raise ValueError(
+                    f"unknown default_privs object class {name!r}; expected "
+                    f"one of {', '.join(sorted(set(_DEFAULT_PRIV_CLASSES.values())))}"
+                )
+            classes.append(_DEFAULT_PRIV_CLASSES[key])
+        classes = sorted(set(classes))
+    else:
+        if bool(objects) == bool(all_in_schema):
+            raise ValueError(
+                "postgresql.privilege requires exactly one of objects or "
+                "all_in_schema"
+            )
+        if all_in_schema and object_type == "database":
+            raise ValueError("databases cannot be addressed ALL IN SCHEMA")
+        if all_in_schema and object_type == "tablespace":
+            raise ValueError("tablespaces cannot be addressed ALL IN SCHEMA")
     valid = _PRIVILEGES_BY_TYPE[object_type]
     if isinstance(privileges, str):
-        requested = (
-            list(valid) if privileges.upper() == "ALL" else [privileges.upper()]
-        )
+        expand_all = privileges.upper() == "ALL"
+        requested = list(valid) if expand_all else [privileges.upper()]
     else:
+        expand_all = False
         requested = [p.upper() for p in privileges]
     unknown = sorted(set(requested) - set(valid))
     if unknown:
@@ -2854,99 +3216,205 @@ async def privilege(
         "psql_port": psql_port,
         "psql_database": psql_database,
     }
+    reasons: list[str] = []
+
+    if object_type == "default_privs":
+        # ALTER DEFAULT PRIVILEGES arm: one command per (grantee, target
+        # role, object class) whose desired set differs from the recorded
+        # defaults. The FOR ROLE target is always rendered explicitly so
+        # the SQL and the fact comparison address the same role.
+        default_entries = await ctx.facts.get(PostgresqlDefaultPrivileges, **conn)
+        if target_roles is None:
+            owners = [psql_user or "postgres"]
+        elif isinstance(target_roles, str):
+            owners = [target_roles]
+        else:
+            owners = sorted(set(target_roles))
+        for grantee in grantees:
+            for owner in owners:
+                for object_class in classes:
+                    class_valid = _DEFAULT_PRIV_VALID[object_class]
+                    if expand_all:
+                        want = sorted(class_valid)
+                    else:
+                        bad = sorted(set(desired) - set(class_valid))
+                        if bad:
+                            raise ValueError(
+                                f"privileges {', '.join(bad)} are not valid on "
+                                f"default {object_class.lower()} "
+                                f"(valid: {', '.join(class_valid)})"
+                            )
+                        want = desired
+                    current_defaults = {
+                        e["privilege"]: e["grantable"]
+                        for e in default_entries
+                        if e["grantee"] == grantee
+                        and e["target_role"] == owner
+                        and e["object_class"] == object_class
+                        and e["schema"] == all_in_schema
+                    }
+                    what = f"default {object_class.lower()}"
+                    if present:
+                        missing = [p for p in want if p not in current_defaults]
+                        need_option = grant_option and any(
+                            not current_defaults.get(p, False) for p in want
+                        )
+                        if missing or need_option:
+                            grant_privs = want if need_option else missing
+                            ctx.changed = True
+                            reasons.append(
+                                f"postgresql will grant {', '.join(grant_privs)} "
+                                f"on {what} to {grantee}"
+                            )
+                            yield PostgresqlDefaultPrivilegeCommand(
+                                privileges=tuple(grant_privs),
+                                role=grantee,
+                                object_class=object_class,
+                                schema=all_in_schema,
+                                target_role=owner,
+                                grant_option=grant_option,
+                                session_role=session_role,
+                                **conn,
+                            )
+                        else:
+                            reasons.append(
+                                f"postgresql role {grantee} already has the "
+                                f"{what} privileges"
+                            )
+                        continue
+                    if grant_option:
+                        removable = [p for p in want if current_defaults.get(p, False)]
+                    else:
+                        removable = [p for p in want if p in current_defaults]
+                    if removable:
+                        ctx.changed = True
+                        what_option = "grant option for " if grant_option else ""
+                        reasons.append(
+                            f"postgresql will revoke {what_option}"
+                            f"{', '.join(removable)} on {what} from {grantee}"
+                        )
+                        yield PostgresqlDefaultPrivilegeCommand(
+                            privileges=tuple(removable),
+                            role=grantee,
+                            object_class=object_class,
+                            schema=all_in_schema,
+                            target_role=owner,
+                            present=False,
+                            revoke_grant_option=grant_option,
+                            session_role=session_role,
+                            **conn,
+                        )
+                    else:
+                        reasons.append(
+                            f"postgresql role {grantee} has none of the "
+                            f"{what} privileges"
+                        )
+        ctx.reason = "; ".join(reasons)
+        return
+
     entries = await ctx.facts.get(PostgresqlPrivileges, **conn)
     aliases = _PRIVILEGE_ALIASES[object_type]
-    mine = [e for e in entries if e["grantee"] == role and e["object_type"] in aliases]
-    current = {(e["schema"], e["name"], e["privilege"]): e["grantable"] for e in mine}
+    for grantee in grantees:
+        mine = [
+            e for e in entries if e["grantee"] == grantee and e["object_type"] in aliases
+        ]
+        current = {(e["schema"], e["name"], e["privilege"]): e["grantable"] for e in mine}
 
-    if all_in_schema:
-        targets = sorted(
-            {(e["schema"], e["name"]) for e in mine if e["schema"] == all_in_schema}
-        )
-        if not targets:
-            ctx.reason = (
-                f"no {object_type}s in schema {all_in_schema} to manage"
+        if all_in_schema:
+            targets = sorted(
+                {(e["schema"], e["name"]) for e in mine if e["schema"] == all_in_schema}
             )
-            return
-        target_args: dict[str, Any] = {"all_in_schema": all_in_schema}
-    else:
-        targets = sorted(
-            {_normalize_object(object_type, name) for name in objects or []}
-        )
-        target_args = {
-            "objects": tuple(
-                name if schema is None else f"{schema}.{name}"
-                for schema, name in targets
+            if not targets:
+                reasons.append(
+                    f"no {object_type}s in schema {all_in_schema} to manage"
+                )
+                continue
+            target_args: dict[str, Any] = {"all_in_schema": all_in_schema}
+        else:
+            targets = sorted(
+                {_normalize_object(object_type, name) for name in objects or []}
             )
-        }
+            target_args = {
+                "objects": tuple(
+                    name if schema is None else f"{schema}.{name}"
+                    for schema, name in targets
+                )
+            }
 
-    if present:
-        missing = sorted(
-            {
-                privilege
+        if present:
+            missing = sorted(
+                {
+                    privilege
+                    for schema, name in targets
+                    for privilege in desired
+                    if (schema, name, privilege) not in current
+                }
+            )
+            need_option = grant_option and any(
+                not current.get((schema, name, privilege), False)
                 for schema, name in targets
                 for privilege in desired
-                if (schema, name, privilege) not in current
-            }
-        )
-        need_option = grant_option and any(
-            not current.get((schema, name, privilege), False)
-            for schema, name in targets
-            for privilege in desired
-        )
-        if missing or need_option:
-            grant_privs = desired if need_option else missing
+            )
+            if missing or need_option:
+                grant_privs = desired if need_option else missing
+                ctx.changed = True
+                reasons.append(
+                    f"postgresql will grant {', '.join(grant_privs)} to {grantee}"
+                )
+                yield PostgresqlPrivilegeCommand(
+                    privileges=tuple(grant_privs),
+                    role=grantee,
+                    object_type=object_type,
+                    grant_option=grant_option,
+                    session_role=session_role,
+                    **target_args,
+                    **conn,
+                )
+            else:
+                reasons.append(
+                    f"postgresql role {grantee} already has the privileges"
+                )
+            continue
+
+        if grant_option:
+            removable = sorted(
+                {
+                    privilege
+                    for schema, name in targets
+                    for privilege in desired
+                    if current.get((schema, name, privilege), False)
+                }
+            )
+        else:
+            removable = sorted(
+                {
+                    privilege
+                    for schema, name in targets
+                    for privilege in desired
+                    if (schema, name, privilege) in current
+                }
+            )
+        if removable:
             ctx.changed = True
-            ctx.reason = (
-                f"postgresql will grant {', '.join(grant_privs)} to {role}"
+            what = "grant option for " if grant_option else ""
+            reasons.append(
+                f"postgresql will revoke {what}{', '.join(removable)} from {grantee}"
             )
             yield PostgresqlPrivilegeCommand(
-                privileges=tuple(grant_privs),
-                role=role,
+                privileges=tuple(removable),
+                role=grantee,
                 object_type=object_type,
-                grant_option=grant_option,
+                present=False,
+                revoke_grant_option=grant_option,
+                session_role=session_role,
                 **target_args,
                 **conn,
             )
         else:
-            ctx.reason = f"postgresql role {role} already has the privileges"
-        return
-
-    if grant_option:
-        removable = sorted(
-            {
-                privilege
-                for schema, name in targets
-                for privilege in desired
-                if current.get((schema, name, privilege), False)
-            }
-        )
-    else:
-        removable = sorted(
-            {
-                privilege
-                for schema, name in targets
-                for privilege in desired
-                if (schema, name, privilege) in current
-            }
-        )
-    if removable:
-        ctx.changed = True
-        what = "grant option for " if grant_option else ""
-        ctx.reason = (
-            f"postgresql will revoke {what}{', '.join(removable)} from {role}"
-        )
-        yield PostgresqlPrivilegeCommand(
-            privileges=tuple(removable),
-            role=role,
-            object_type=object_type,
-            present=False,
-            revoke_grant_option=grant_option,
-            **target_args,
-            **conn,
-        )
-    else:
-        ctx.reason = f"postgresql role {role} has none of the privileges"
+            reasons.append(
+                f"postgresql role {grantee} has none of the privileges"
+            )
+    ctx.reason = "; ".join(reasons)
 
 
 @dataclass(frozen=True)
@@ -3159,6 +3627,7 @@ class PostgresqlRoleCommand(_PsqlCommand):
     createdb: bool | None = None
     createrole: bool | None = None
     replication: bool | None = None
+    bypassrls: bool | None = None
     connection_limit: int | None = None
 
     def _clauses(self) -> list[str]:
@@ -3170,6 +3639,7 @@ class PostgresqlRoleCommand(_PsqlCommand):
             ("CREATEDB", self.createdb),
             ("CREATEROLE", self.createrole),
             ("REPLICATION", self.replication),
+            ("BYPASSRLS", self.bypassrls),
         ):
             if value is not None:
                 clauses.append(keyword if value else f"NO{keyword}")
@@ -3196,6 +3666,7 @@ async def role(
     createdb: bool = False,
     createrole: bool = False,
     replication: bool = False,
+    bypassrls: bool | None = None,
     connection_limit: int | None = None,
     psql_user: str | None = None,
     psql_host: str | None = None,
@@ -3224,6 +3695,9 @@ async def role(
         replication (bool, optional): Whether the role may initiate
             replication; reconciled on an existing role. Defaults to
             False.
+        bypassrls (bool | None, optional): Whether the role bypasses
+            row-level security (BYPASSRLS/NOBYPASSRLS); altered when it
+            differs, left alone when unset. Defaults to None.
         connection_limit (int | None, optional): Connection limit (-1
             for unlimited); altered when it differs, left alone when
             unset. Defaults to None.
@@ -3243,7 +3717,7 @@ async def role(
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -3266,6 +3740,12 @@ async def role(
     # stored password, so a password option could never be idempotent
     # anyway; provision credentials via peer auth/.pgpass or a
     # out-of-band ALTER ROLE ... PASSWORD through postgresql.sql.
+    # ``VALID UNTIL`` is deliberately excluded on the same boundary:
+    # password-expiry metadata belongs to credential provisioning, not
+    # to role shape -- set it out of band through postgresql.sql
+    # (``ALTER ROLE ... VALID UNTIL '<timestamp>'``). ``bypassrls`` is
+    # the Ansible role_attr_flags parity flag: tri-state like
+    # connection_limit, reconciled against the fact's ``rolbypassrls``.
     # Needs CREATEROLE or superuser: flag the request ``sudo=True`` with
     # ``privilege.sudo_user = "postgres"``. ``**kwargs`` absorbs
     # any further global arguments.
@@ -3293,6 +3773,7 @@ async def role(
         "createdb": createdb,
         "createrole": createrole,
         "replication": replication,
+        "bypassrls": bypassrls,
         "connection_limit": connection_limit,
     }
     if role not in roles:
@@ -3310,6 +3791,7 @@ async def role(
         "createdb": "createdb",
         "createrole": "createrole",
         "replication": "replication",
+        "bypassrls": "bypassrls",
         "connection_limit": "connlimit",
     }
     current = roles[role]
@@ -3403,7 +3885,7 @@ async def schema(
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:

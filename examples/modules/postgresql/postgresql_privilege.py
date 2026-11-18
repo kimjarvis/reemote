@@ -23,14 +23,20 @@ for the grantee's current grants and touches only the difference --
 the object type's full set), ``present=False`` revokes just the held
 ones, and ``grant_option`` upgrades to WITH GRANT OPTION or withdraws
 only the option. Objects are named by ``objects`` (bare or
-``schema.name``) or by ``all_in_schema``.
+``schema.name``) or by ``all_in_schema``. ``role`` also accepts a tuple
+of grantees (Ansible's ``roles`` plural), each reconciled against its own
+grants, and the ``default_privs`` object type manages ALTER DEFAULT
+PRIVILEGES idempotently against the ``PostgresqlDefaultPrivileges`` fact:
+``objects`` names the object classes (tables, sequences, functions,
+types, schemas), ``all_in_schema`` scopes IN SCHEMA and ``target_roles``
+names the FOR ROLE targets whose future objects the defaults cover.
 
-The deploy first provisions the grantee role, the database and the table
+The deploy first provisions the grantee roles, the database and the table
 (the table through the ``postgresql.sql`` escape hatch with a naturally
-idempotent statement), then yields the same grant request twice: in the
+idempotent statement), then yields the same grant requests twice: in the
 prepare phase (where nothing is sent) both plan as changes, but in the
 apply phase the second request's fresh per-step fact cache sees the first
-GRANT and reports the role already has the privileges.
+GRANT and reports the roles already have the privileges.
 
 **Host prerequisite.** This example needs a running PostgreSQL server. The
 demo Ubuntu host runs PostgreSQL 18.6 as a snap whose local socket uses
@@ -129,7 +135,7 @@ def is_ubuntu(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Provision role/database/table, then grant SELECT+INSERT twice.
+    """Provision roles/database/table, then grant to one and two grantees.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
@@ -143,6 +149,15 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         postgresql.role,
         name="Ensure app grantee role",
         role="app_user",
+        login=True,
+        sudo=True,
+        psql_user="postgres",
+        when=is_ubuntu,
+    )
+    yield op(
+        postgresql.role,
+        name="Ensure reporting grantee role",
+        role="report_user",
         login=True,
         sudo=True,
         psql_user="postgres",
@@ -185,6 +200,63 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         role="app_user",
         object_type="table",
         objects=("public.users",),
+        psql_database="appdb",
+        sudo=True,
+        psql_user="postgres",
+        when=is_ubuntu,
+    )
+    # Ansible's roles plural: one request reconciles both grantees against
+    # their own grants -- app_user already holds SELECT, so only
+    # report_user's grant is yielded.
+    yield op(
+        postgresql.privilege,
+        name="Grant SELECT on users to both grantees",
+        privileges=("SELECT",),
+        role=("app_user", "report_user"),
+        object_type="table",
+        objects=("public.users",),
+        psql_database="appdb",
+        sudo=True,
+        psql_user="postgres",
+        when=is_ubuntu,
+    )
+    yield op(
+        postgresql.privilege,
+        name="Grant SELECT on users to both grantees (again)",
+        privileges=("SELECT",),
+        role=("app_user", "report_user"),
+        object_type="table",
+        objects=("public.users",),
+        psql_database="appdb",
+        sudo=True,
+        psql_user="postgres",
+        when=is_ubuntu,
+    )
+    # default_privs: tables app_user creates in the FUTURE carry SELECT for
+    # both grantees. target_roles names the FOR ROLE target explicitly (the
+    # database owner), so the SQL and the fact comparison address the same
+    # role regardless of who connects.
+    yield op(
+        postgresql.privilege,
+        name="Default SELECT on future app_user tables",
+        privileges=("SELECT",),
+        role=("app_user", "report_user"),
+        object_type="default_privs",
+        objects=("tables",),
+        target_roles="app_user",
+        psql_database="appdb",
+        sudo=True,
+        psql_user="postgres",
+        when=is_ubuntu,
+    )
+    yield op(
+        postgresql.privilege,
+        name="Default SELECT on future app_user tables (again)",
+        privileges=("SELECT",),
+        role=("app_user", "report_user"),
+        object_type="default_privs",
+        objects=("tables",),
+        target_roles="app_user",
         psql_database="appdb",
         sudo=True,
         psql_user="postgres",
