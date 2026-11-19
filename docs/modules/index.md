@@ -1,6 +1,6 @@
 # Modules
 
-reemote's facts and operations are grouped into twenty self-contained
+reemote's facts and operations are grouped into twenty-one self-contained
 *module namespaces*, each shipped under `reemote.modules.<name>` and
 imported into a deploy by that name — `from reemote import apt, files,
 systemd`. A namespace keeps its own facts, operations, typed entry shapes
@@ -18,6 +18,7 @@ operations; typed entry shapes describe returned data, not extra commands.
 | [apk](apk.md) | Alpine `apk` — packages, holds, world, repositories, virtual groups, autoremove |
 | [apt](apt.md) | Debian/Ubuntu `apt` — packages, sources, keys, PPAs, `.deb` files, holds, upgrades |
 | [dnf](dnf.md) | Fedora/RHEL `dnf` — packages, modules, groups, repositories, GPG keys, `.rpm` files |
+| [pip](pip.md) | Python `pip` — packages, requirements files, virtualenvs via the stdlib `venv` module or the `virtualenv` tool |
 | [flatpak](flatpak.md) | Flatpak applications |
 | [snap](snap.md) | Ubuntu `snap` packages |
 

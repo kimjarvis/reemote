@@ -79,7 +79,7 @@ a real asyncssh transport is missing:
   / ``postgres_indexes`` / ``postgres_privileges`` / ``postgres_publications``
   / ``postgres_replication`` / ``postgres_role_memberships`` / ``postgres_roles``
   / ``postgres_schemas`` / ``postgres_settings`` / ``postgres_subscriptions``
-  / ``postgres_tables`` / ``postgres_tablespaces``
+  / ``postgres_tables`` / ``postgres_tablespaces`` / ``python_versions``
   / ``selinux_booleans`` / ``selinux_file_contexts``
   / ``selinux_fcontext_mappings`` / ``selinux_ports`` / ``selinux_mode``
   / ``selinux_logins`` / ``selinux_users`` / ``selinux_modules``
@@ -88,7 +88,7 @@ a real asyncssh transport is missing:
   / ``systemd_system_state`` / ``systemd_timers`` / ``systemd_unit_files``
   / ``systemd_unit_properties`` / ``systemd_version`` / ``os_timezone`` / ``os_user`` / ``os_users``
   / ``ufw_applications`` / ``ufw_rules`` / ``ufw_status``
-  / ``uptime_seconds`` / ``command_paths``:
+  / ``uptime_seconds`` / ``virtualenv_python_versions`` / ``command_paths``:
   the state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
   ``File``, ``Directory``, ``Link``, ``Socket``, ``SameFile``, ``FileFlags``,
   ``FindFiles``, ``FindDirectories``, ``FindLinks``, ``FindInFile``,
@@ -133,7 +133,9 @@ a real asyncssh transport is missing:
   ``MysqlUserGrants``, ``MysqlUsers``, ``MysqlVariables``, ``NetworkDevices``,
   ``OpenrcConfigFile``, ``OpenrcEnabled``,
   ``OpenrcRunlevels``, ``OpenrcServices``, ``OpenrcStatus``, ``OpenrcVersion``,
-  ``PipPackages``, ``Port``, ``Processes``,
+  ``PipPackages`` (the pip-local ``_VirtualenvPython`` probe reads the
+  ``virtualenv_python_versions`` seam), ``Port``, ``Processes``,
+  ``PythonVersion``,
   ``PostgresqlConnections``, ``PostgresqlDatabases``,
   ``PostgresqlDefaultPrivileges``,
   ``PostgresqlExtensions``, ``PostgresqlIndexes``, ``PostgresqlPrivileges``,
@@ -422,6 +424,8 @@ from reemote.modules.pip.pip import (
     PipRemoveCommand,
     PipRequirementsCommand,
     PipUpgradeCommand,
+    PipVenvCreateCommand,
+    PipVenvRemoveCommand,
     _normalize_name,
     _split_pin,
 )
@@ -497,6 +501,7 @@ from reemote.modules.server.server import (
     MountCommand,
     Port,
     PortInfo,
+    PythonVersionInfo,
     SecurityLimitInstallCommand,
     SecurityLimitUploadCommand,
     SetHostnameCommand,
@@ -1158,6 +1163,26 @@ class SimulatedHost(Host):
     # (the simulated ``pip install``/``uninstall``/``-r``) mutate it as the
     # corresponding pip commands would.
     pip_packages: dict[str, str] = field(default_factory=dict)
+    # Interpreter command -> the version it reports (the ``PythonVersionInfo``
+    # entry ``server.PythonVersion`` returns), backing that fact: the key is
+    # exactly how the caller names the interpreter (``python3``,
+    # ``python3.12``, an absolute path). The fact raises ``KeyError`` for an
+    # unseeded interpreter -- a test that reads an interpreter it has not
+    # seeded has asked a question the simulation cannot answer. No operation
+    # installs interpreters, so this is a read-only seam: a test seeds it
+    # directly.
+    python_versions: dict[str, PythonVersionInfo] = field(default_factory=dict)
+    # Virtualenv path -> the version that tree's own ``bin/python`` reports
+    # (the entry the pip-local ``_VirtualenvPython`` probe returns), backing
+    # ``pip.virtualenv``/``pip.venv`` idempotence. An absent path reads as
+    # None -- no virtualenv, the normal first run, not an error. Named with
+    # the virtualenv_ prefix so it never mixes with the strict
+    # ``python_versions`` store. ``create_virtualenv`` writes it from
+    # ``python_versions`` (the base interpreter's version),
+    # ``remove_virtualenv`` pops it.
+    virtualenv_python_versions: dict[str, PythonVersionInfo] = field(
+        default_factory=dict
+    )
     # The branch a repository is on (``git describe --all``, the
     # heads/tags prefix stripped), backing ``GitBranch``: repo path ->
     # branch name. An absent repo reads as "", like the short-circuited
@@ -2535,6 +2560,10 @@ class SimulatedHost(Host):
                 self.remove_pip_packages(packages)
             case PipRequirementsCommand(path=path, present=present):
                 self.apply_pip_requirements(path, present)
+            case PipVenvCreateCommand():
+                self.create_virtualenv(cmd)
+            case PipVenvRemoveCommand(path=path):
+                self.remove_virtualenv(path)
             case SnapInstallCommand(packages=packages, channel=channel):
                 self.install_snap_packages(packages, channel)
             case SnapRefreshCommand(packages=packages, channel=channel):
@@ -7217,6 +7246,42 @@ class SimulatedHost(Host):
                 self.install_pip_packages((line,))
             else:
                 self.remove_pip_packages((_split_pin(line)[0],))
+
+    def create_virtualenv(self, cmd: PipVenvCreateCommand) -> None:
+        """Record a simulated ``venv``/``virtualenv`` create.
+
+        ``pip.venv``/``pip.virtualenv``'s create mutation. The freshly built
+        virtualenv's own interpreter reports its base interpreter's version,
+        so the entry is copied out of ``python_versions`` at the command's
+        ``python`` (bare ``python`` when the command named none). An
+        unseeded base gets the ``3.12.1`` stand-in -- the simulation tracks
+        the *shape* of the state, not real versions (the empty-string
+        ``pip_packages`` placeholder precedent), and a test comparing
+        versions seeds the base
+        interpreter explicitly. Creating over an existing path
+        replaces its entry, as ``venv --clear``/recreate would; the shared
+        ``pip_packages`` store models one environment whatever the path, so
+        a create (or the recreate of a mismatched tree) leaves it untouched.
+        """
+        base = cmd.python or "python"
+        version = self.python_versions.get(base) or {
+            "major": 3,
+            "minor": 12,
+            "micro": 1,
+        }
+        self.virtualenv_python_versions[cmd.path] = dict(version)
+
+    def remove_virtualenv(self, path: str) -> None:
+        """Record a simulated ``rm -rf`` of a virtualenv tree.
+
+        The ``present=False`` direction of ``pip.venv``/``pip.virtualenv``
+        and the first half of an interpreter-mismatch recreate. The path's
+        entry leaves ``virtualenv_python_versions``, so the
+        ``_VirtualenvPython`` probe reports no virtualenv there afterwards.
+        An absent path is tolerated (the real ``rm -rf`` exits 0 either
+        way).
+        """
+        self.virtualenv_python_versions.pop(path, None)
 
     def install_snap_packages(self, packages: tuple[str, ...], channel: str) -> None:
         """Record a simulated ``snap install``: mark the snaps installed.

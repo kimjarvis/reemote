@@ -189,6 +189,7 @@ from reemote.modules.server.server import (
     Port,
     PortInfo,
     Processes,
+    PythonVersion,
     SecurityLimitInstallCommand,
     SecurityLimitUploadCommand,
     SetHostnameCommand,
@@ -2656,6 +2657,90 @@ async def test_processes_gather_fact_across_hosts():
 # The Sysctl fact's tests were relocated to tests/modules/sysctl/test_sysctl.py
 # alongside the class itself (the sysctl namespace is the canonical home for
 # everything sysctl; server no longer exports the fact).
+
+
+# --- PythonVersion -------------------------------------------------------------
+
+
+def test_python_version_command_defaults_to_python3():
+    """The baseline spelling: the interpreter named by ``command``, asked to
+    print its own ``sys.version_info`` triple as one quoted ``-c`` argument."""
+    snippet = shlex.quote(PythonVersion.VERSION_SNIPPET)
+    assert PythonVersion.command() == f"python3 -c {snippet}"
+    assert PythonVersion.command("python3.12") == f"python3.12 -c {snippet}"
+    assert PythonVersion.command("/venv/bin/python") == f"/venv/bin/python -c {snippet}"
+
+
+def test_python_version_command_quotes_a_hostile_interpreter():
+    hostile = "python;rm -rf /"
+    assert PythonVersion.command(hostile).startswith("'python;rm -rf /' -c ")
+
+
+def test_python_version_parse_reads_the_dotted_triple():
+    assert PythonVersion.parse(["3.12.1"]) == {"major": 3, "minor": 12, "micro": 1}
+    # Blank lines skip; anything after the first answer line is ignored.
+    assert PythonVersion.parse(["", "  3.11.4  ", "ignored"]) == {
+        "major": 3,
+        "minor": 11,
+        "micro": 4,
+    }
+
+
+def test_python_version_parse_rejects_anything_else():
+    # An interpreter that got this far printed something; anything
+    # unparsable is a broken interpreter or a broken snippet, never a
+    # state to guess at.
+    for output in ([], [""], ["3.12"], ["3.12.1.0"], ["oops"], ["3.x.1"]):
+        with pytest.raises(ValueError):
+            PythonVersion.parse(output)
+
+
+async def test_python_version_parses_the_printed_triple():
+    host = CannedShellHost("3.12.1\n")
+    assert await PythonVersion.process(host) == {"major": 3, "minor": 12, "micro": 1}
+    assert host.shells == [PythonVersion.command("python3")]
+
+
+async def test_python_version_names_the_requested_interpreter():
+    host = CannedShellHost("3.11.2\n")
+    assert await PythonVersion.process(host, "python3.11") == {
+        "major": 3,
+        "minor": 11,
+        "micro": 2,
+    }
+    assert host.shells == [PythonVersion.command("python3.11")]
+
+
+async def test_python_version_reads_the_simulated_seam():
+    entry = {"major": 3, "minor": 12, "micro": 1}
+    host = SimulatedHost(name="h", python_versions={"python3.12": entry})
+    assert await PythonVersion.process(host, "python3.12") == entry
+    # The key is exactly how the caller names the interpreter.
+    with pytest.raises(KeyError):
+        await PythonVersion.process(host)
+
+
+async def test_python_version_seam_returns_a_copy():
+    entry = {"major": 3, "minor": 12, "micro": 1}
+    host = SimulatedHost(name="h", python_versions={"python3": entry})
+    answer = await PythonVersion.process(host, "python3")
+    answer["micro"] = 99
+    assert host.python_versions["python3"] == {"major": 3, "minor": 12, "micro": 1}
+
+
+async def test_python_version_gather_fact_across_hosts():
+    hosts = [
+        SimulatedHost(
+            name="web1", python_versions={"python3": {"major": 3, "minor": 12, "micro": 1}}
+        ),
+        SimulatedHost(
+            name="web2", python_versions={"python3": {"major": 3, "minor": 11, "micro": 2}}
+        ),
+    ]
+    assert await gather_fact(hosts, PythonVersion, "python3") == {
+        "web1": {"major": 3, "minor": 12, "micro": 1},
+        "web2": {"major": 3, "minor": 11, "micro": 2},
+    }
 
 
 # --- Timezone ----------------------------------------------------------------

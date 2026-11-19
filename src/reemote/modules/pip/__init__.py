@@ -4,10 +4,12 @@
 """The ``pip`` module namespace.
 
 Re-exports everything from ``pip.py`` so the fact (``pip.PipPackages``,
-returning its ``pip.PipPackageInfo`` entry type) and the ``pip.packages``
-operation with its typed command descriptors
+returning its ``pip.PipPackageInfo`` entry type), the ``pip.packages``
+operation and the ``pip.virtualenv``/``pip.venv`` virtualenv operations, with
+their typed command descriptors
 (``pip.PipInstallCommand``, ``pip.PipUpgradeCommand``,
-``pip.PipRemoveCommand``, ``pip.PipRequirementsCommand``) are reachable
+``pip.PipRemoveCommand``, ``pip.PipRequirementsCommand``,
+``pip.PipVenvCreateCommand``, ``pip.PipVenvRemoveCommand``) are reachable
 through the package name alone.
 """
 
@@ -19,7 +21,11 @@ from .pip import (
     PipRemoveCommand,
     PipRequirementsCommand,
     PipUpgradeCommand,
+    PipVenvCreateCommand,
+    PipVenvRemoveCommand,
     packages,
+    venv,
+    virtualenv,
 )
 
 __all__ = [
@@ -29,6 +35,10 @@ __all__ = [
     "PipRemoveCommand",
     "PipRequirementsCommand",
     "PipUpgradeCommand",
+    "PipVenvCreateCommand",
+    "PipVenvRemoveCommand",
     "packages",
     "pip",
+    "venv",
+    "virtualenv",
 ]

@@ -2374,6 +2374,133 @@ class Processes:
         return cls.parse(stdout.splitlines(), busybox)
 
 
+class PythonVersionInfo(TypedDict):
+    """
+    Attributes:
+        major: The interpreter's major version number (``3``).
+        minor: The interpreter's minor version number (``12`` for
+            ``python3.12``).
+        micro: The interpreter's micro/patch version number (``1`` for
+            ``3.12.1``).
+    """
+
+    # One Python interpreter's version -- the entry of the ``PythonVersion``
+    # fact. A TypedDict rather than a class instance: the answer is an
+    # ordinary triple of ints, so equality against a literal dict works and
+    # ``json.dumps`` serializes it directly -- the ``PipPackageInfo`` /
+    # ``DebPackageInfo`` convention of every structured version entry here.
+
+    major: int
+    minor: int
+    micro: int
+
+
+class PythonVersion:
+    """The version of a Python interpreter, as a ``PythonVersionInfo`` entry.
+
+    **Commands:**
+
+    ```bash
+    <command> -c 'import sys; print("{}.{}.{}".format(*sys.version_info[:3]))'
+    ```
+
+    **Returns:**
+
+    ```python
+    PythonVersionInfo
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_python_version.py``.
+    """
+
+    # Closes the missing ``ansible_facts['python']['version']`` parity (the
+    # pip role's EXTERNALLY-MANAGED path, the same interpreter question
+    # ``pip.virtualenv``/``pip.venv`` must ask to reconcile a requested base
+    # interpreter): the interpreter's own ``sys.version_info`` triple is the
+    # only reliable source, since a distro's ``python3`` symlink chain
+    # (``python3`` -> ``python3.12`` -> ``/usr/bin/...``) says nothing about
+    # the version the running interpreter actually reports, and a stale
+    # ``pyvenv.cfg`` says even less (see the ``pip`` namespace's own
+    # deviation note). The ``command`` argument selects which interpreter
+    # answers -- a bare ``python``/``python3`` on the PATH, a versioned name
+    # (``python3.12``) or an absolute path (a virtualenv's ``bin/python``)
+    # -- and defaults to ``"python3"``, the spelling the Ansible fact and
+    # the pip role's path interpolation both assume.
+    #
+    # Like ``PipPackages`` and ``KernelVersion`` the command runs bare: a
+    # missing interpreter exits 127 and surfaces as ``CommandNotFoundError``,
+    # not a silently ``None`` answer -- the caller named that interpreter and
+    # an environment without it is an error the deployer hears about, not a
+    # state to branch on. A *tolerant*, may-be-absent probe -- an
+    # already-created virtualenv's own interpreter -- is a different
+    # question, answered by a different, guarded read (the ``pip``
+    # namespace's private ``_VirtualenvPython`` fact), which is why this
+    # fact stays the strict one.
+
+    #: The ``sys.version_info`` triple the ``-c`` snippet prints, dotted.
+    VERSION_SNIPPET = "import sys; print('{}.{}.{}'.format(*sys.version_info[:3]))"
+
+    @classmethod
+    def command(cls, command: str = "python3") -> str:
+        """Shell asking ``command`` to print its ``major.minor.micro``.
+
+        The interpreter is ``shlex``-quoted, so a path carrying a
+        metacharacter cannot break out of the argument; the ``-c`` snippet
+        is quoted as one whole argument.
+        """
+        return f"{shlex.quote(command)} -c {shlex.quote(cls.VERSION_SNIPPET)}"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> PythonVersionInfo:
+        """Parse the printed ``major.minor.micro`` into a ``PythonVersionInfo``.
+
+        The first non-blank line is split on ``.`` into three ints. Empty
+        output, a non-dotted line, a wrong number of parts or a non-integer
+        part raises ``ValueError`` -- an interpreter that got this far
+        printed something, and anything unreadable is a broken interpreter
+        or a broken snippet, never a state to guess at. Pure and testable.
+        """
+        for line in output:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            parts = stripped.split(".")
+            if len(parts) != 3:
+                raise ValueError(f"unparsable Python version: {stripped!r}")
+            try:
+                major, minor, micro = (int(part) for part in parts)
+            except ValueError:
+                raise ValueError(
+                    f"unparsable Python version: {stripped!r}"
+                ) from None
+            return {"major": major, "minor": minor, "micro": micro}
+        raise ValueError("no Python version printed")
+
+    @classmethod
+    async def process(cls, host: Host, command: str = "python3") -> PythonVersionInfo:
+        python_versions = getattr(host, "python_versions", None)
+        if python_versions is not None:
+            # SimulatedHost seam: the store maps an interpreter command to
+            # the version it prints, keyed exactly as ``command`` names it.
+            # A KeyError is deliberate -- a test that reads an interpreter it
+            # has not seeded has asked a question the simulation cannot
+            # answer, and must not silently get one. Copy the entry so
+            # callers never mutate simulated state.
+            return dict(python_versions[command])
+        # Real transport: ask the interpreter itself over asyncssh. A missing
+        # interpreter exits 127, which ``run_shell`` raises as
+        # CommandNotFoundError before ``parse`` is ever reached.
+        stdout = await host.run_shell(cls.command(command))
+        return cls.parse(stdout.splitlines())
+
+
 class Timezone:
     """The current system timezone (e.g. ``Europe/Amsterdam``).
 
@@ -5246,6 +5373,8 @@ __all__ = [
     "Port",
     "PortInfo",
     "Processes",
+    "PythonVersion",
+    "PythonVersionInfo",
     "SecurityLimitInstallCommand",
     "SecurityLimitUploadCommand",
     "SetHostnameCommand",

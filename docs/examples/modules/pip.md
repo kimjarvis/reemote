@@ -6,7 +6,7 @@ Scripts under `examples/modules/pip/` — one per fact or operation of the
 warning and the error-reporting contract every script follows.
 
 The provisioning helper (`provision_pip.py`) is not rendered here — it is the
-shared prerequisite step the script below awaits, not a per-fact or
+shared prerequisite step the scripts below await, not a per-fact or
 per-operation demonstration.
 
 ## Installing and removing pip packages
@@ -37,5 +37,56 @@ non-Ubuntu host neither the `pip` commands nor the fact behind them run,
 and plan and log render `[skipped: when guard is_ubuntu]`.
 
 ::: pip_packages
+    options:
+      members: []
+
+## Creating and removing stdlib virtualenvs
+
+`pip.venv` in action: the deploy creates a virtualenv at
+`/tmp/reemote-pip-venv-example` from the base interpreter `python3`
+(`python3 -m venv <path>`), re-runs the same create so the apply log shows
+the per-phase fact cache — the second step probes the freshly created tree,
+finds the requested interpreter at `major.minor`, and reports no change —
+then removes the tree with the whole-tree `rm -rf` the baseline delegates
+to `files.directory(present=False)`, followed by its own no-op repeat: a
+self-restoring cycle for the shared demo hosts. The idempotence goes
+*beyond* the baseline: a private guarded probe reads the virtualenv's own
+interpreter (answering `None` when the tree is absent) and, when `python=`
+is given, the requested interpreter is resolved through the
+[`PythonVersion`][reemote.modules.server.server.PythonVersion] fact, so a
+`major.minor` mismatch plans a remove-then-create *recreate* instead of
+the baseline's silent no-op (upstream bug #2028) — and a micro/patch bump
+of the base interpreter never recreates. `site_packages` and
+`always_copy` render the command's flags. The tree lives in the SSH user's
+own `/tmp` path, so every request is unprivileged (a root-owned parent
+would be the case for flagging `sudo=True`). The stdlib `ensurepip`
+bootstrap needs Ubuntu's separate `python3-venv` deb, so the script first
+awaits the sibling `provision_pip.py`'s idempotent apt prerequisite deploy
+before the reconciliation reads any facts. Like every pip example the
+script validates the shared project-root `inventory.json` up front and
+every request carries `when=is_ubuntu`.
+
+::: pip_venv
+    options:
+      members: []
+
+## Creating and removing virtualenv-tool environments
+
+`pip.virtualenv` in action: the same reconciliation asked of the
+standalone `virtualenv` tool — `virtualenv -p python3 <path>` at
+`/tmp/reemote-pip-virtualenv-example`, the no-op re-run, the `rm -rf`
+removal and its no-op repeat. The two operations share one decision core;
+only the command shape differs (the tool takes the interpreter as `-p`
+where the stdlib branch names it before `-m venv`, and `always_copy`
+renders `--always-copy` here rather than `--copies`), so the probe, the
+mismatch-recreate policy and the reasons are exactly as in the section
+above. The prerequisite here is the tool itself: Ubuntu ships `virtualenv`
+in the `python3-virtualenv` deb, so the script drives its own idempotent,
+`sudo`-flagged `apt.packages` install of that package before deploying —
+and a host still without the binary fails the create with a bare
+`CommandNotFoundError` at apply. As in the sibling example the tree is
+unprivileged and the whole deploy carries `when=is_ubuntu`.
+
+::: pip_virtualenv
     options:
       members: []

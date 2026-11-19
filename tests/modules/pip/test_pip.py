@@ -26,6 +26,16 @@ the shared ``remote_files`` store), and end-to-end through
 ``run_prepare`` + ``run_apply`` (sudo elevation, per-step fresh-cache
 no-ops, and a dry run).
 
+The virtualenv half -- ``pip.virtualenv``/``pip.venv``, pyinfra's two
+operations over one shared reconciliation -- is exercised over its two
+descriptors (``PipVenvCreateCommand`` / ``PipVenvRemoveCommand``), the
+private ``_VirtualenvPython`` probe (its guarded command, None-on-absence
+reads, simulated seam), the stdlib and tool command shapes with every
+option, the interpreter-aware idempotence beyond pyinfra (existence is
+convergence when no ``python=`` was requested; a major.minor mismatch
+recreates, a micro bump does not), the ``present=False`` removal, the
+seam dispatch, and end-to-end create-then-noop, recreate and dry runs.
+
 ``asyncio_mode = "auto"`` lets the async tests run without decorators.
 """
 
@@ -50,7 +60,11 @@ from reemote.modules.pip.pip import (
     PipRemoveCommand,
     PipRequirementsCommand,
     PipUpgradeCommand,
+    PipVenvCreateCommand,
+    PipVenvRemoveCommand,
+    _VirtualenvPython,
 )
+from reemote.modules.server.server import PythonVersion
 from tests.simulated_host import SimulatedHost
 
 
@@ -71,6 +85,11 @@ class CannedShellHost(Host):
 def _entry(name: str, version: str) -> PipPackageInfo:
     """One installed ``PipPackageInfo`` entry, spelled once per test."""
     return {"name": name, "version": version}
+
+
+def _version(major: int, minor: int, micro: int) -> dict:
+    """One ``PythonVersionInfo`` entry, spelled once per test."""
+    return {"major": major, "minor": minor, "micro": micro}
 
 
 # --- Fact: command parity -----------------------------------------------------
@@ -584,9 +603,10 @@ async def test_pip_packages_threads_pip_and_extra_args_into_every_command():
 async def test_pip_packages_absorbs_the_dropped_virtualenv_options():
     """pyinfra's ``virtualenv``/``virtualenv_kwargs`` are deliberately
     dropped -- a dict would break the hashable-request rule at ``op()``, and
-    venv creation delegates to the unmigrated ``pip.virtualenv``; a venv is
-    targeted via ``pip=<venv>/bin/pip`` instead. Both keywords are absorbed
-    by ``**kwargs`` with no effect, like the rest of the baseline globals."""
+    venv creation belongs to the sibling ``pip.virtualenv``/``pip.venv``
+    operations; a venv is targeted here via ``pip=<venv>/bin/pip`` instead.
+    Both keywords are absorbed by ``**kwargs`` with no effect, like the rest
+    of the baseline globals."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [
@@ -756,3 +776,395 @@ async def test_pip_packages_dry_run_plans_without_sending():
     assert planned.commands == (PipInstallCommand(pip="pip", packages=("six",)),)
     # Nothing ran: the dry run sent no command.
     assert host.pip_packages == {}
+
+
+# --- Fact: _VirtualenvPython probe ----------------------------------------------
+
+
+def test_virtualenv_python_probe_command_is_guarded():
+    """One brace group whose failure ``|| true`` swallows: the probe always
+    exits 0 and answers only when a runnable ``bin/python`` is there."""
+    probe = _VirtualenvPython.command("/tmp/venv")
+    interpreter = "/tmp/venv/bin/python"
+    assert probe == (
+        f"{{ test -x {interpreter} && {interpreter} "
+        f"-c {shlex.quote(PythonVersion.VERSION_SNIPPET)} ; }} || true"
+    )
+
+
+def test_virtualenv_python_probe_quotes_the_path():
+    probe = _VirtualenvPython.command("/tmp/my venv;rm")
+    assert "'/tmp/my venv;rm'/bin/python" in probe
+
+
+async def test_virtualenv_python_reads_the_printed_triple():
+    host = CannedShellHost("3.12.1\n")
+    assert await _VirtualenvPython.process(host, "/tmp/venv") == {
+        "major": 3,
+        "minor": 12,
+        "micro": 1,
+    }
+    assert host.last_shell == _VirtualenvPython.command("/tmp/venv")
+
+
+async def test_virtualenv_python_is_none_on_no_answer():
+    """Empty output (the guard swallowed a failed ``test -x``) and garbage
+    both read as no working virtualenv -- never an exception, which is what
+    separates this probe from the strict ``server.PythonVersion``."""
+    assert await _VirtualenvPython.process(CannedShellHost(""), "/tmp/venv") is None
+    assert (
+        await _VirtualenvPython.process(CannedShellHost("not a version\n"), "/tmp/v")
+        is None
+    )
+
+
+async def test_virtualenv_python_reads_the_simulated_seam():
+    entry = {"major": 3, "minor": 12, "micro": 1}
+    host = SimulatedHost(name="h", virtualenv_python_versions={"/tmp/venv": entry})
+    assert await _VirtualenvPython.process(host, "/tmp/venv") == entry
+    # An unlisted path is simply no virtualenv there; the returned entry is
+    # a copy, so mutating it never touches simulated state.
+    assert await _VirtualenvPython.process(host, "/tmp/other") is None
+    answer = await _VirtualenvPython.process(host, "/tmp/venv")
+    answer["micro"] = 99
+    assert host.virtualenv_python_versions["/tmp/venv"] == entry
+
+
+# --- Operation: virtualenv command descriptors ------------------------------------
+
+
+def test_pip_venv_create_command_renders_the_stdlib_branch():
+    """pyinfra's venv builder: ``<python or "python"> -m venv`` plus
+    ``--system-site-packages``/``--copies``, the path last."""
+    assert PipVenvCreateCommand(path="/tmp/v").shell() == "python -m venv /tmp/v"
+    assert (
+        PipVenvCreateCommand(path="/tmp/v", python="python3.12").shell()
+        == "python3.12 -m venv /tmp/v"
+    )
+    assert (
+        PipVenvCreateCommand(path="/tmp/v", site_packages=True).shell()
+        == "python -m venv --system-site-packages /tmp/v"
+    )
+    assert (
+        PipVenvCreateCommand(path="/tmp/v", always_copy=True).shell()
+        == "python -m venv --copies /tmp/v"
+    )
+
+
+def test_pip_venv_create_command_renders_the_tool_branch():
+    """pyinfra's virtualenv builder: bare ``virtualenv``, the interpreter as
+    ``-p`` only when one was given, ``always_copy`` as ``--always-copy``."""
+    assert (
+        PipVenvCreateCommand(path="/tmp/v", venv=False).shell() == "virtualenv /tmp/v"
+    )
+    assert (
+        PipVenvCreateCommand(path="/tmp/v", python="python3.9", venv=False).shell()
+        == "virtualenv -p python3.9 /tmp/v"
+    )
+    assert (
+        PipVenvCreateCommand(
+            path="/tmp/v",
+            python="python3.9",
+            venv=False,
+            site_packages=True,
+            always_copy=True,
+        ).shell()
+        == "virtualenv -p python3.9 --system-site-packages --always-copy /tmp/v"
+    )
+
+
+def test_pip_venv_create_command_shell_quotes_path_and_interpreter():
+    cmd = PipVenvCreateCommand(path="/tmp/v;rm", python="py;rm", venv=False)
+    assert cmd.shell() == f"virtualenv -p {shlex.quote('py;rm')} {shlex.quote('/tmp/v;rm')}"
+    stdlib = PipVenvCreateCommand(path="/tmp/v rm")
+    assert stdlib.shell() == f"python -m venv {shlex.quote('/tmp/v rm')}"
+
+
+def test_pip_venv_remove_command_renders_rm_rf():
+    """The whole-tree removal pyinfra performs through
+    ``files.directory(present=False)``, pip-local here."""
+    cmd = PipVenvRemoveCommand(path="/tmp/v")
+    assert cmd.shell() == "rm -rf /tmp/v"
+    hostile = PipVenvRemoveCommand(path="/tmp/v;rm")
+    assert hostile.shell() == f"rm -rf {shlex.quote('/tmp/v;rm')}"
+
+
+def test_pip_venv_commands_elevate_like_every_shell():
+    create = PipVenvCreateCommand(path="/tmp/v", python="python3.12")
+    assert command_shell(create, sudo=True) == f"sudo {create.shell()}"
+    remove = PipVenvRemoveCommand(path="/tmp/v")
+    assert command_shell(remove, su=True) == f"su -c {shlex.quote(remove.shell())}"
+
+
+# --- Operation: venv idempotence -----------------------------------------------------
+
+
+async def test_pip_venv_creates_a_missing_virtualenv():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in pip.venv(ctx, "/tmp/v")]
+    assert ctx.changed
+    assert ctx.reason == "virtualenv /tmp/v missing, will create"
+    assert commands == [PipVenvCreateCommand(path="/tmp/v")]
+
+
+async def test_pip_venv_existing_is_noop_without_requested_python():
+    """With no ``python=`` to reconcile against, a runnable ``bin/python``
+    is convergence itself -- the tool's implicit default is not a state
+    reemote can compare."""
+    host = SimulatedHost(
+        name="h", virtualenv_python_versions={"/tmp/v": _version(3, 12, 1)}
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in pip.venv(ctx, "/tmp/v")]
+    assert not ctx.changed
+    assert ctx.reason == "virtualenv /tmp/v already exists"
+    assert commands == []
+
+
+async def test_pip_venv_requested_python_match_is_noop_even_on_micro():
+    """Only major.minor is compared, so a micro/patch bump of the base
+    interpreter never recreates the tree."""
+    host = SimulatedHost(
+        name="h",
+        virtualenv_python_versions={"/tmp/v": _version(3, 12, 0)},
+        python_versions={"python3.12": _version(3, 12, 1)},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in pip.venv(ctx, "/tmp/v", python="python3.12")]
+    assert not ctx.changed
+    assert ctx.reason == "virtualenv /tmp/v already exists on python python3.12"
+    assert commands == []
+
+
+async def test_pip_venv_interpreter_mismatch_recreates():
+    """Beyond pyinfra's existence-only check (upstream bug #2028): a venv
+    on 3.11 requested as 3.12 yields remove-then-create, losing whatever
+    packages live inside -- the chosen always-recreate policy."""
+    host = SimulatedHost(
+        name="h",
+        virtualenv_python_versions={"/tmp/v": _version(3, 11, 2)},
+        python_versions={"python3.12": _version(3, 12, 1)},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in pip.venv(ctx, "/tmp/v", python="python3.12")]
+    assert ctx.changed
+    assert ctx.reason == (
+        "virtualenv /tmp/v runs python 3.11, requested python 3.12, will recreate"
+    )
+    assert commands == [
+        PipVenvRemoveCommand(path="/tmp/v"),
+        PipVenvCreateCommand(path="/tmp/v", python="python3.12"),
+    ]
+
+
+async def test_pip_venv_missing_venv_never_reads_the_requested_python():
+    """Creation does not resolve ``python=`` through ``server.PythonVersion``
+    -- the tree is built and converged on the next read, and an absent
+    base interpreter must not raise at this point."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in pip.venv(ctx, "/tmp/v", python="python3.12")]
+    assert commands == [PipVenvCreateCommand(path="/tmp/v", python="python3.12")]
+    assert commands[0].shell() == "python3.12 -m venv /tmp/v"
+
+
+async def test_pip_virtualenv_interpreter_mismatch_recreates_in_tool_shape():
+    host = SimulatedHost(
+        name="h",
+        virtualenv_python_versions={"/tmp/v": _version(3, 10, 12)},
+        python_versions={"python3.12": _version(3, 12, 1)},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in pip.virtualenv(ctx, "/tmp/v", python="python3.12")]
+    assert ctx.changed
+    assert commands == [
+        PipVenvRemoveCommand(path="/tmp/v"),
+        PipVenvCreateCommand(path="/tmp/v", python="python3.12", venv=False),
+    ]
+    assert commands[1].shell() == "virtualenv -p python3.12 /tmp/v"
+
+
+async def test_pip_virtualenv_threads_the_tool_options():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in pip.virtualenv(
+            ctx,
+            "/tmp/v",
+            python="python3.9",
+            site_packages=True,
+            always_copy=True,
+        )
+    ]
+    assert commands == [
+        PipVenvCreateCommand(
+            path="/tmp/v",
+            python="python3.9",
+            venv=False,
+            site_packages=True,
+            always_copy=True,
+        )
+    ]
+
+
+# --- Operation: venv removal ------------------------------------------------------------
+
+
+async def test_pip_venv_removal_yields_rm_rf():
+    host = SimulatedHost(
+        name="h", virtualenv_python_versions={"/tmp/v": _version(3, 12, 1)}
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in pip.venv(ctx, "/tmp/v", present=False)]
+    assert ctx.changed
+    assert ctx.reason == "virtualenv /tmp/v present, will remove"
+    assert commands == [PipVenvRemoveCommand(path="/tmp/v")]
+
+
+async def test_pip_venv_absent_removal_is_noop():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in pip.virtualenv(
+            ctx, "/tmp/v", python="python3.12", present=False
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "virtualenv /tmp/v does not exist"
+    assert commands == []
+
+
+async def test_pip_venv_absorbs_unknown_kwargs():
+    """``**kwargs`` swallows the baseline globals (``op()`` already strips
+    ``name``/``sudo``/``su``); the request stays a plain create."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in pip.venv(ctx, "/tmp/v", ignore_me=True)]
+    assert commands == [PipVenvCreateCommand(path="/tmp/v")]
+
+
+# --- Operation: virtualenv SimulatedHost seam dispatch --------------------------
+
+
+async def test_pip_venv_create_seam_records_the_base_version():
+    """A created virtualenv reports its base interpreter's version, copied
+    out of the strict ``python_versions`` store into the tolerant
+    ``virtualenv_python_versions`` one -- so the next read converges."""
+    host = SimulatedHost(name="h", python_versions={"python3.12": _version(3, 12, 1)})
+    await send_command(
+        host, PipVenvCreateCommand(path="/tmp/v", python="python3.12")
+    )
+    assert host.virtualenv_python_versions == {"/tmp/v": _version(3, 12, 1)}
+
+
+async def test_pip_venv_create_seam_stands_in_an_unseeded_base():
+    """An unseeded base interpreter gets the ``3.12.1`` placeholder (the
+    empty-version placeholder precedent); creating over an existing path
+    replaces its entry, and the shared single-environment ``pip_packages``
+    store is left untouched."""
+    host = SimulatedHost(name="h", pip_packages={"six": "1.16.0"})
+    host.virtualenv_python_versions["/tmp/v"] = _version(3, 11, 2)
+    await send_command(host, PipVenvCreateCommand(path="/tmp/v"))
+    assert host.virtualenv_python_versions == {"/tmp/v": _version(3, 12, 1)}
+    assert host.pip_packages == {"six": "1.16.0"}
+
+
+async def test_pip_venv_remove_seam_drops_the_tree():
+    host = SimulatedHost(
+        name="h", virtualenv_python_versions={"/tmp/v": _version(3, 12, 1)}
+    )
+    await send_command(host, PipVenvRemoveCommand(path="/tmp/v"))
+    assert host.virtualenv_python_versions == {}
+    # An absent path is tolerated, as ``rm -rf`` exits 0 either way.
+    await send_command(host, PipVenvRemoveCommand(path="/tmp/gone"))
+
+
+# --- Operation: virtualenv end to end --------------------------------------------
+
+
+async def test_pip_venv_end_to_end_create_then_noop():
+    """Through run_prepare/run_apply: the create runs under sudo and
+    renders in the log; a second prepare sees the created tree (the fresh
+    per-step fact cache observes the mutation) and plans no change."""
+
+    def create_deploy(host):
+        yield op(
+            pip.venv,
+            name="Create venv",
+            path="/tmp/venv",
+            python="python3.12",
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h", python_versions={"python3.12": _version(3, 12, 1)})
+    runtimes, plans = await run_prepare([host], create_deploy)
+    assert plans["h"][0].changed
+    report = await run_apply(runtimes, plans=plans)
+    (entry,) = report.log
+    assert entry.changed
+    assert entry.commands == (
+        PipVenvCreateCommand(path="/tmp/venv", python="python3.12"),
+    )
+    assert "$ sudo python3.12 -m venv /tmp/venv" in format_log(report)
+    assert host.virtualenv_python_versions == {"/tmp/venv": _version(3, 12, 1)}
+    _runtimes, plans2 = await run_prepare([host], create_deploy)
+    assert not plans2["h"][0].changed
+    assert plans2["h"][0].reason == "virtualenv /tmp/venv already exists on python python3.12"
+
+
+async def test_pip_venv_end_to_end_mismatch_recreate_cycle():
+    """One deploy creates a fresh tree and then re-requests it on another
+    interpreter: apply re-materializes the second request against the
+    first's mutation, so it logs the remove-plus-create pair and the tree
+    ends up on the requested version."""
+
+    def cycle_deploy(host):
+        yield op(pip.venv, name="Fresh venv", path="/tmp/venv")
+        yield op(
+            pip.venv, name="Rebase on 3.12", path="/tmp/venv", python="python3.12"
+        )
+
+    host = SimulatedHost(
+        name="h",
+        python_versions={"python": _version(3, 11, 2), "python3.12": _version(3, 12, 1)},
+    )
+    runtimes, plans = await run_prepare([host], cycle_deploy)
+    # Prepare reads pre-deployment state only: the create is planned, the
+    # rebase sees no tree yet and plans the same create.
+    assert plans["h"][0].changed
+    assert plans["h"][1].commands == (
+        PipVenvCreateCommand(path="/tmp/venv", python="python3.12"),
+    )
+    report = await run_apply(runtimes, plans=plans)
+    log = format_log(report)
+    assert "$ python -m venv /tmp/venv" in log
+    # The rebase re-materializes against the tree step 1 created -- on the
+    # 3.11 base its own interpreter reports -- finds the 3.12 request a
+    # mismatch and recreates in both shells.
+    assert "$ rm -rf /tmp/venv" in log
+    assert "$ python3.12 -m venv /tmp/venv" in log
+    assert host.virtualenv_python_versions == {"/tmp/venv": _version(3, 12, 1)}
+
+
+async def test_pip_venv_dry_run_plans_without_sending():
+    """``dry=True`` stops after prepare: the create is planned as a change
+    but nothing runs, so the seam store stays empty."""
+
+    def create_deploy(host):
+        yield op(pip.virtualenv, name="Create venv", path="/tmp/venv", sudo=True)
+
+    host = SimulatedHost(name="h")
+    plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}],
+        create_deploy,
+        host_factory=lambda entry: host,
+        dry=True,
+    )
+    assert report is None
+    (planned,) = plans["h"]
+    assert planned.changed
+    assert planned.commands == (PipVenvCreateCommand(path="/tmp/venv", venv=False),)
+    assert host.virtualenv_python_versions == {}

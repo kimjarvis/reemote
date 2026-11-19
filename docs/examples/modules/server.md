@@ -24,6 +24,8 @@ for the login user and for `root`, `server_hostname.py`, reading
 `server_mounts.py`, reading `Mounts`,
 `server_port.py`, reading `Port` for TCP 80, UDP 53 and a closed port,
 `server_processes.py`, reading `Processes`,
+`server_python_version.py`, reading `PythonVersion` for the default
+`python3` interpreter,
 `server_timezone.py`, reading `Timezone`,
 `server_uptime.py`, reading `Uptime`,
 `server_user.py`, reading `User`,

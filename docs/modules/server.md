@@ -63,6 +63,8 @@ back as an error `Result` (exit 127), never an exception. See the
         - Port
         - PortInfo
         - Processes
+        - PythonVersion
+        - PythonVersionInfo
         - Timezone
         - Uptime
         - User
@@ -90,7 +92,7 @@ operations in a single source, so the read side (`Arch`, `AuthorizedKeys`,
 `AuthorizedKeysFile`,
 `Date`, `Env`, `EtcHosts`, `FipsEnabled`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
 `KernelVersion`, `Last`, `LinuxDistribution`, `LinuxGui`, `LinuxName`,
-`Locales`, `LsbRelease`, `Mounts`, `Port`, `Processes`,
+`Locales`, `LsbRelease`, `Mounts`, `Port`, `Processes`, `PythonVersion`,
 `Timezone`, `Uptime`, `User`, `Users`, `Which`)
 sits beside the `server.etc_hosts`, `server.group`, `server.hostname`, `server.kill`,
 `server.locale`,
@@ -304,7 +306,20 @@ skipped, and empty output reads as `{}`, the baseline's `default = dict`.
 The BusyBox detection reads the `Which` fact (`command -v busybox || true`),
 exactly like the baseline. A non-int `pid` raises `TypeError` on both
 transports — the BusyBox branch interpolates it into an `awk` program,
-where shell quoting cannot protect it. `Sysctl` has relocated to the
+where shell quoting cannot protect it. `PythonVersion` takes an optional
+interpreter `command` (default `python3`): it runs that interpreter with
+the one-line `sys.version_info` snippet (`<command> -c 'import sys;
+print(...)'`) and returns a `PythonVersionInfo` `{major, minor, micro}`
+dict — Ansible `ansible_facts.python.version.*` parity, which the pip role
+interpolates into the PEP 668 `EXTERNALLY-MANAGED` marker path. The
+interpreter runs bare: a missing `python3` exits 127 and surfaces as
+`CommandNotFoundError` rather than answering silently, unparsable output
+raises `ValueError`, and the command is `shlex`-quoted, so a virtualenv's
+`bin/python` is just another spelling of it. The tolerant, may-be-absent
+question — an *already-created virtualenv's own* interpreter version — is
+deliberately not this fact's: the `pip` namespace answers it with a
+private guarded probe, because a missing virtualenv is a normal first run,
+not an error. `Sysctl` has relocated to the
 `sysctl` namespace (`sysctl.Sysctl`, keeping the baseline's `server.Sysctl`
 parse verbatim); `server` no longer exports it, and the persistence facts
 and management operations live there too. `Timezone` takes no arguments: it

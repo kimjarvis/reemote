@@ -53,10 +53,11 @@ runs against the interpreter named by ``pip``. Here that is
 
 Managing a *virtualenv* is also why this example needs no ``sudo``: the
 baseline's ``virtualenv``/``virtualenv_kwargs`` options are deliberately
-dropped (an auto-created environment would delegate to the unmigrated
-``pip.virtualenv``), and a venv is targeted by passing its interpreter as
-``pip=<venv>/bin/pip`` instead -- the deviation ``provision_pip.py`` provisions up
-front. A venv lives in the SSH user's own writable /tmp path, so all four
+dropped (venv creation belongs to the sibling ``pip.virtualenv``/``pip.venv``
+operations, which a deploy expresses as its own request), and a venv is
+targeted by passing its interpreter as
+``pip=<venv>/bin/pip`` instead -- the deviation ``provision_pip.py``
+provisions up front. A venv lives in the SSH user's own writable /tmp path, so all four
 requests stay unprivileged; installing into a *system* interpreter's
 site-packages would need root (``sudo=True``) and, on modern Ubuntu, a
 ``--break-system-packages`` extra argument, since PEP 668 marks that

@@ -5,8 +5,9 @@
 
 This is a *usage* example, not part of the library. It is the shared
 prerequisite step for ``pip_packages.py``: reemote's ``pip`` module deliberately
-dropped the baseline's ``virtualenv`` option (its auto-creation would delegate
-to the unmigrated ``pip.virtualenv`` operation), so a virtualenv is targeted by
+dropped the baseline's ``virtualenv`` option (venv creation belongs to the
+sibling ``pip.virtualenv``/``pip.venv`` operations, which a deploy expresses
+as its own request), so a virtualenv is targeted by
 passing its interpreter as ``pip=<venv>/bin/pip`` instead -- and this module
 creates that virtualenv up front. It is also the documented way to install on
 modern Ubuntu at all: the system interpreter is *externally managed* (PEP 668),
@@ -26,9 +27,10 @@ that already has the wheel package plans no change. Ubuntu splits the stock
 is what ``venv``'s ``ensurepip`` bootstrap installs into the new environment;
 without it ``python3 -m venv`` produces a pip-less venv (or fails outright).
 
-The second has no operation counterpart -- creating a venv is exactly what the
-``pip`` module does *not* do -- so it rides a ``Shell`` *action* through
-``gather_action``. Actions act immediately and cannot run inside a deploy
+The second deliberately stays a ``Shell`` *action* instead of a sibling
+``pip.venv`` request -- the operation creates only when the path is absent,
+while this helper needs ``--clear``'s always-fresh recreation -- and it rides
+through ``gather_action``. Actions act immediately and cannot run inside a deploy
 (prepare must never send, and the generator is re-invoked per phase), so
 ``provision_pip_venv`` awaits the ``apt.packages`` deploy to completion first
 and only then fans the ``venv`` command out. ``--clear`` makes the creation

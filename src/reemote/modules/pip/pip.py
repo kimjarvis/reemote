@@ -12,7 +12,11 @@
 # Operation side: ``pip.packages`` installs, upgrades or removes pip
 # packages -- bare names, ``<pkg>==<version>`` pins or a requirements file --
 # through its ``PipInstallCommand``/``PipUpgradeCommand``/
-# ``PipRemoveCommand``/``PipRequirementsCommand`` descriptors. Operations are
+# ``PipRemoveCommand``/``PipRequirementsCommand`` descriptors, and
+# ``pip.virtualenv``/``pip.venv`` create, reconcile or remove Python
+# virtualenvs through the ``PipVenvCreateCommand``/``PipVenvRemoveCommand``
+# descriptors, reading the private ``_VirtualenvPython`` probe and the
+# public ``server.PythonVersion`` fact. Operations are
 # async generators that receive an ``OpContext``, await facts, set
 # ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never
 # touch the host directly.
@@ -27,6 +31,7 @@ from typing import Any, ClassVar, TypedDict
 from ...commands import Command
 from ...core import OpContext
 from ...hosts import Host
+from ..server.server import PythonVersion, PythonVersionInfo
 
 # --- Shared helpers ----------------------------------------------------------
 
@@ -200,6 +205,64 @@ class PipPackages:
         return cls.parse(stdout.splitlines())
 
 
+class _VirtualenvPython:
+    # Private, module-local probe: the version of an *already-created*
+    # virtualenv's own interpreter, or None when there is no runnable
+    # ``bin/python`` under the path. The tolerant counterpart of the
+    # public, strict ``server.PythonVersion`` (which requires the named
+    # interpreter to exist): ``pip.virtualenv``/``pip.venv`` must ask
+    # whether a tree is a working virtualenv and answer "no, create it"
+    # rather than hear ``CommandNotFoundError`` -- a missing virtualenv is
+    # the normal first run, not an error. Kept private and in-namespace on
+    # purpose, like gpg's ``_KeyringFileExists``: existence of the venv and
+    # the version of its interpreter are one question, not two, and only
+    # this module asks it.
+    #
+    # Only ``HostConnectionError`` escapes: the ``{ ... ; } || true`` guard
+    # swallows the failed ``test -x`` and a non-runnable or broken
+    # interpreter, and unparsable (or empty) output reads as None. Two
+    # deliberate deviations from pyinfra, whose existence check is a
+    # ``files.File`` fact on ``<path>/bin/activate``: the probe keys on the
+    # runnable ``bin/python`` instead, because the same guarded shell must
+    # also read the interpreter's version -- an activate file that exists
+    # next to a deleted interpreter is a broken virtualenv, not a
+    # converged one.
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Guarded shell asking ``<path>/bin/python`` for its version.
+
+        ``test -x`` and the interpreter run inside one brace group whose
+        failure is swallowed by ``|| true``, so the command always exits 0
+        and prints the dotted triple only when a working interpreter is
+        there. The path is ``shlex``-quoted.
+        """
+        interpreter = f"{shlex.quote(path)}/bin/python"
+        return (
+            f"{{ test -x {interpreter} && {interpreter} "
+            f"-c {shlex.quote(PythonVersion.VERSION_SNIPPET)} ; }} || true"
+        )
+
+    @classmethod
+    async def process(cls, host: Host, path: str) -> PythonVersionInfo | None:
+        virtualenvs = getattr(host, "virtualenv_python_versions", None)
+        if virtualenvs is not None:
+            # SimulatedHost seam: the store maps a virtualenv path to the
+            # version its ``bin/python`` reports; an absent path is simply
+            # no virtualenv there, not an error to raise. Copy the entry so
+            # callers never mutate simulated state.
+            entry = virtualenvs.get(path)
+            return dict(entry) if entry is not None else None
+        # Real transport: the guarded probe over asyncssh. Anything the
+        # snippet cannot answer -- no interpreter, unrunnable, garbage
+        # output -- reads as no virtualenv.
+        stdout = await host.run_shell(cls.command(path))
+        try:
+            return PythonVersion.parse(stdout.splitlines())
+        except ValueError:
+            return None
+
+
 # --- Operations --------------------------------------------------------------
 
 
@@ -370,10 +433,11 @@ async def packages(
     #
     # Deliberate deviations from pyinfra. Its ``virtualenv`` and
     # ``virtualenv_kwargs`` options are dropped: ``virtualenv_kwargs`` is a
-    # dict, which breaks the hashable-request rule ``op()`` enforces, and its
-    # auto-creation would delegate to ``pip.virtualenv`` -- an operation
-    # reemote does not (yet) provide. A virtualenv is targeted instead by
-    # passing its interpreter as ``pip=<venv>/bin/pip``. Other PEP 508
+    # dict, which breaks the hashable-request rule ``op()`` enforces, and
+    # auto-creation belongs to ``pip.virtualenv``/``pip.venv``, which a
+    # deploy expresses as its own request instead of a hidden side effect of
+    # this one. A virtualenv is targeted here by passing its interpreter as
+    # ``pip=<venv>/bin/pip``. Other PEP 508
     # specifiers (``>=``, ``~=``) are not interpreted -- reemote carries no
     # ``packaging`` dependency -- so they fall back to name-only presence via
     # ``_split_pin``. And the removal direction feeds pip *bare names*, not
@@ -476,6 +540,279 @@ async def packages(
     ctx.reason = "; ".join(reasons)
 
 
+@dataclass(frozen=True)
+class PipVenvCreateCommand(Command):
+    """``<python> -m venv [flags] <path>`` / ``virtualenv [-p <python>] [flags] <path>``: create a virtualenv.
+
+    The ``present=True`` direction of ``pip.venv`` (``venv=True``, pyinfra's
+    ``venv_command``) and ``pip.virtualenv`` (``venv=False``, its
+    ``virtualenv_command``), branch for branch. The stdlib branch names the
+    base interpreter itself (bare ``python`` when none was requested,
+    because ``venv`` has no ``-p`` option); the tool branch calls
+    ``virtualenv`` and passes the interpreter as ``-p`` only when one was
+    given. ``--system-site-packages`` is shared by both tools;
+    ``always_copy`` renders as ``--copies`` for the stdlib branch and
+    ``--always-copy`` for the tool, exactly as pyinfra maps it. Every
+    user string -- interpreter and path -- is ``shlex``-quoted, so a path
+    carrying a metacharacter cannot break out of the argument.
+    """
+
+    path: str
+    python: str | None = None
+    venv: bool = True
+    site_packages: bool = False
+    always_copy: bool = False
+
+    def shell(self) -> str:
+        if self.venv:
+            parts = [shlex.quote(self.python or "python"), "-m", "venv"]
+            if self.site_packages:
+                parts.append("--system-site-packages")
+            if self.always_copy:
+                parts.append("--copies")
+        else:
+            parts = ["virtualenv"]
+            if self.python:
+                parts.extend(["-p", shlex.quote(self.python)])
+            if self.site_packages:
+                parts.append("--system-site-packages")
+            if self.always_copy:
+                parts.append("--always-copy")
+        parts.append(shlex.quote(self.path))
+        return " ".join(parts)
+
+
+@dataclass(frozen=True)
+class PipVenvRemoveCommand(Command):
+    """``rm -rf <path>``: remove a virtualenv tree.
+
+    The ``present=False`` direction of ``pip.virtualenv``/``pip.venv`` and
+    the first half of an interpreter-mismatch recreate -- the same whole-
+    tree ``rm -rf`` pyinfra performs by delegating to
+    ``files.directory(present=False)``, restated as a pip-owned descriptor
+    because operations do not cross into another namespace. The path is
+    ``shlex``-quoted.
+    """
+
+    path: str
+
+    def shell(self) -> str:
+        return f"rm -rf {shlex.quote(self.path)}"
+
+
+async def _venv(
+    ctx: OpContext,
+    path: str,
+    python: str | None,
+    venv: bool,
+    site_packages: bool,
+    always_copy: bool,
+    present: bool,
+) -> AsyncGenerator[Command]:
+    """Reconcile one virtualenv; the shared body of ``virtualenv``/``venv``.
+
+    Reads the private ``_VirtualenvPython`` probe and, when a base
+    interpreter was requested, the public ``server.PythonVersion`` fact,
+    then yields at most a remove/create pair. Pure decision logic: all
+    host access happens through the two facts.
+    """
+
+    # The reconciliation, in the two-phase model's spirit: the probe is
+    # read once, and the *sequence of facts read* depends only on the
+    # options and the probe's answer -- never on mutable state the
+    # operation itself changes -- so prepare and apply ask the same
+    # questions in the same order. Branching inside one operation body is
+    # not the deploy-generator determinism guard; the plan's commands are
+    # simply re-derived from fresh state at apply time.
+    current = await ctx.facts.get(_VirtualenvPython, path)
+
+    reasons: list[str] = []
+    if not present:
+        if current is not None:
+            ctx.changed = True
+            reasons.append(f"virtualenv {path} present, will remove")
+            yield PipVenvRemoveCommand(path=path)
+        else:
+            reasons.append(f"virtualenv {path} does not exist")
+        ctx.reason = "; ".join(reasons)
+        return
+
+    create = PipVenvCreateCommand(
+        path=path,
+        python=python,
+        venv=venv,
+        site_packages=site_packages,
+        always_copy=always_copy,
+    )
+    if current is None:
+        ctx.changed = True
+        reasons.append(f"virtualenv {path} missing, will create")
+        yield create
+    elif python is None:
+        # No requested interpreter to reconcile against: a runnable
+        # ``bin/python`` is convergence itself, and the tool's implicit
+        # default is not a state reemote can name, let alone compare.
+        reasons.append(f"virtualenv {path} already exists")
+    else:
+        requested = await ctx.facts.get(PythonVersion, python)
+        if (current["major"], current["minor"]) == (
+            requested["major"],
+            requested["minor"],
+        ):
+            reasons.append(f"virtualenv {path} already exists on python {python}")
+        else:
+            # Deliberate policy beyond pyinfra (whose existence-only check
+            # is upstream bug #2028: a ``python=`` request is silently
+            # ignored once the venv exists): on an interpreter mismatch the
+            # virtualenv is recreated, destructive to packages installed
+            # inside it, because a converging deploy that states which
+            # interpreter it wants is worth more than a stale tree -- and
+            # only major.minor is compared, so a micro/patch bump of the
+            # base interpreter never triggers the recreate.
+            ctx.changed = True
+            reasons.append(
+                f"virtualenv {path} runs python {current['major']}"
+                f".{current['minor']}, requested python "
+                f"{requested['major']}.{requested['minor']}, will recreate"
+            )
+            yield PipVenvRemoveCommand(path=path)
+            yield create
+    ctx.reason = "; ".join(reasons)
+
+
+async def virtualenv(
+    ctx: OpContext,
+    path: str,
+    python: str | None = None,
+    site_packages: bool = False,
+    always_copy: bool = False,
+    present: bool = True,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Create, reconcile or remove a ``virtualenv``-tool virtualenv.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        path (str): Filesystem location of the virtualenv.
+        python (str | None, optional): Base interpreter -- a bare
+            ``python``/``python3`` on the PATH, a versioned name or an
+            absolute path -- passed to ``virtualenv -p``. None uses the
+            tool's default. Defaults to None.
+        site_packages (bool, optional): Whether the virtualenv may see the
+            base interpreter's site-packages (``--system-site-packages``).
+            Defaults to False.
+        always_copy (bool, optional): Whether to copy rather than symlink
+            the interpreter files (``--always-copy``). Defaults to False.
+        present (bool, optional): Whether the virtualenv should exist.
+            Defaults to True.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: Generated pip virtualenv commands.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/pip/pip_virtualenv.py``.
+    """
+
+    # pyinfra ``pip.virtualenv`` parity.
+    #
+    # Idempotence beyond pyinfra: its check is purely existence (a
+    # ``files.File`` fact on ``bin/activate``), which makes a later
+    # ``python=`` change a silent no-op (upstream bug #2028). Here the
+    # private ``_VirtualenvPython`` probe reads the existing virtualenv's
+    # own interpreter and, when ``python=`` is given, the requested
+    # interpreter is resolved through ``server.PythonVersion``; a
+    # major.minor mismatch yields remove-then-create (packages installed
+    # inside are lost -- the chosen "always recreate" policy), while a
+    # micro/patch bump of the base interpreter leaves the tree alone.
+    # When ``python=`` is None an existing virtualenv is simply
+    # converged.
+    #
+    # Removal (``present=False``) is the same whole-tree ``rm -rf`` pyinfra
+    # delegates to ``files.directory(present=False)``, kept pip-local.
+    # pyinfra's ``venv`` switch option is not a parameter here: the stdlib
+    # branch is its own operation, ``pip.venv``. Creating under a
+    # root-owned parent (``/usr/local/...``) needs root, so flag that
+    # request ``sudo=True``; a path in the connected user's home does not.
+    # ``**kwargs`` absorbs pyinfra's global arguments (``op()`` already
+    # strips ``name``/``sudo``/``su``/``doas``).
+    async for command in _venv(
+        ctx,
+        path,
+        python=python,
+        venv=False,
+        site_packages=site_packages,
+        always_copy=always_copy,
+        present=present,
+    ):
+        yield command
+
+
+async def venv(
+    ctx: OpContext,
+    path: str,
+    python: str | None = None,
+    site_packages: bool = False,
+    always_copy: bool = False,
+    present: bool = True,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Create, reconcile or remove a stdlib ``venv`` virtualenv.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        path (str): Filesystem location of the virtualenv.
+        python (str | None, optional): Base interpreter -- a bare
+            ``python``/``python3`` on the PATH, a versioned name or an
+            absolute path -- run as ``<python> -m venv``. None uses bare
+            ``python``. Defaults to None.
+        site_packages (bool, optional): Whether the virtualenv may see the
+            base interpreter's site-packages (``--system-site-packages``).
+            Defaults to False.
+        always_copy (bool, optional): Whether to copy rather than symlink
+            the interpreter files (``--copies``). Defaults to False.
+        present (bool, optional): Whether the virtualenv should exist.
+            Defaults to True.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: Generated pip virtualenv commands.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/pip/pip_venv.py``.
+    """
+
+    # pyinfra ``pip.venv`` parity: pyinfra's thin wrapper over its shared
+    # ``_virtualenv`` builder with ``venv=True``, so this is the same
+    # reconciliation as ``pip.virtualenv`` (see that operation's comments
+    # for the interpreter-mismatch policy, the ``rm -rf`` removal and the
+    # dropped ``venv`` switch option) with the stdlib command shape:
+    # ``<python or "python"> -m venv [--system-site-packages] [--copies]
+    # <path>``.
+    async for command in _venv(
+        ctx,
+        path,
+        python=python,
+        venv=True,
+        site_packages=site_packages,
+        always_copy=always_copy,
+        present=present,
+    ):
+        yield command
+
+
 __all__ = [
     "PipInstallCommand",
     "PipPackageInfo",
@@ -483,5 +820,9 @@ __all__ = [
     "PipRemoveCommand",
     "PipRequirementsCommand",
     "PipUpgradeCommand",
+    "PipVenvCreateCommand",
+    "PipVenvRemoveCommand",
     "packages",
+    "venv",
+    "virtualenv",
 ]

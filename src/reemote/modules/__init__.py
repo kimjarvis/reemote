@@ -70,9 +70,11 @@ descriptors they yield,
 ``custom_runlevel`` operations and the typed command descriptors they
 yield,
 ``modules/pip/pip.py`` holds the ``PipPackages`` fact (with its
-``PipPackageInfo`` entry type) beside the ``packages`` operation and the
+``PipPackageInfo`` entry type) beside the ``packages``, ``virtualenv`` and
+``venv`` operations and the
 ``PipInstallCommand``/``PipUpgradeCommand``/``PipRemoveCommand``/
-``PipRequirementsCommand`` descriptors it yields,
+``PipRequirementsCommand``/``PipVenvCreateCommand``/``PipVenvRemoveCommand``
+descriptors they yield,
 ``modules/postgresql/postgresql.py`` holds the ``PostgresqlConnections``,
 ``PostgresqlDatabases``, ``PostgresqlExtensions``, ``PostgresqlIndexes``,
 ``PostgresqlPrivileges``, ``PostgresqlPublications``,
